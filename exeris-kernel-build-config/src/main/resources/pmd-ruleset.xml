@@ -12,6 +12,14 @@
 
     <!-- Best Practices -->
     <rule ref="category/java/bestpractices.xml">
+        <!--
+            ARCH-DECISION: Zero-Copy Black-Box Contract.
+            ExerisKernelException.rawArgs() deliberately returns the internal array
+            by reference to guarantee zero allocation on the telemetry hot-path.
+            A defensive copy would violate the "No Waste Compute" mandate.
+            See: docs/subsystems/03-telemetry.md § "The Black-Box Pattern"
+        -->
+        <exclude name="MethodReturnsInternalArray"/>
     </rule>
 
     <!-- Code Style -->
@@ -21,6 +29,22 @@
         <exclude name="MethodArgumentCouldBeFinal"/>
         <exclude name="OnlyOneReturn"/>
         <exclude name="TooManyStaticImports"/>
+        <!--
+            ARCH-DECISION: Descriptive names are non-negotiable in kernel SPI.
+            Names like networkOffHeapThreshold, peakAllocatedBytes, CARRIER_INDEX
+            encode domain semantics that abbreviated names would destroy. Kernel APIs
+            are read far more often than written; clarity outweighs character count.
+        -->
+        <exclude name="LongVariable"/>
+        <exclude name="ShortVariable"/>
+        <!--
+            ARCH-DECISION: Pattern-matching instanceof with explicit primitive cast.
+            In TransportException.numericContext(), `(long) port` after
+            `instanceof Integer port` is semantically required — the target return
+            type is long, and the widening is explicit by design.
+            PMD's UnnecessaryCast does not understand widening-primitive intent here.
+        -->
+        <exclude name="UnnecessaryCast"/>
     </rule>
 
     <!-- Design -->
@@ -28,10 +52,38 @@
         <exclude name="LoosePackageCoupling"/>
         <!-- NcssCount replaces old Excessive*Length rules in PMD 7.19.0 -->
         <exclude name="ExcessivePublicCount"/>
+        <!--
+            ARCH-DECISION: Constant registries and value carriers are intentional.
+            KernelErrorCodes is a pure constant registry (by design, WOC=0).
+            ExerisKernelException is a structured value carrier for binary telemetry —
+            accessor methods are part of the Black-Box contract, not a sign of missing
+            behaviour. The DataClass rule was designed to flag anemic domain models in
+            business logic, not SPI-layer telemetry infrastructure.
+        -->
+        <exclude name="DataClass"/>
     </rule>
 
     <!-- Error Prone -->
-    <rule ref="category/java/errorprone.xml"/>
+    <rule ref="category/java/errorprone.xml">
+        <!--
+            ARCH-DECISION: Binary Black-Box serialization replaces Java Serializable.
+            Exeris kernel exceptions are serialised via the off-heap binary Black-Box
+            format (MemorySegment structs), never via java.io.ObjectOutputStream.
+            Adding serialVersionUID would be pure ceremony with no runtime benefit.
+            See: docs/subsystems/03-telemetry.md § "Binary Struct Mapping"
+        -->
+        <exclude name="MissingSerialVersionUID"/>
+        <!--
+            ARCH-DECISION: Record-style accessors (Java 26 / Valhalla-readiness).
+            SPI types use accessor names without a "get" prefix (e.g. errorCode(),
+            traceId(), sizeBytes()). This matches java.lang.Record conventions and
+            prepares the codebase for value class / value record migration (JEP 401).
+            PMD's AvoidFieldNameMatchingMethodName was designed for Java-8-era getters
+            where a field "foo" and method "foo()" would be ambiguous. In record-style
+            classes the method IS the canonical accessor for the field — by design.
+        -->
+        <exclude name="AvoidFieldNameMatchingMethodName"/>
+    </rule>
 
     <!-- Performance -->
     <rule ref="category/java/performance.xml"/>
