@@ -14,7 +14,7 @@ Exeris strictly separates contracts from implementations to ensure hardware-leve
 
 * **`exeris-kernel-spi`**: The immutable constitution. Defines identity-free data carriers (**Value Records**) and lifecycle contracts.
 * **`exeris-kernel-core`**: The orchestration engine and base native muscle. Includes the `CoreOrchestrator` and `ExerisSmartLauncher` for sub-millisecond boot and memory partitioning.
-* **`exeris-kernel-tck`**: The Test Compatibility Kit. Ensures that any driver (Community or Enterprise) adheres to the strict performance and safety rules of the SPI.
+* **`exeris-kernel-tck`**: The Technology Compatibility Kit. Ensures that any driver (Community or Enterprise) adheres to the strict performance and safety rules of the SPI.
 
 ## ⚖️ License
 Copyright (C) 2025-2026 Exeris. All rights reserved.
