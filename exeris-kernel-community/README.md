@@ -1,6 +1,6 @@
 # Exeris Kernel Community
 
-**Module:** `eu.exeris:eu.exeris.kernel.community`  
+**Module:** `eu.exeris:eu.exeris-kernel-community`  
 **Role:** L1 Java-Standard Implementations
 
 ## Overview

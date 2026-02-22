@@ -46,28 +46,31 @@ public class ConfigProvider {
         return SETTINGS.get();
     }
 }
-2. Context Propagation (JEP 506)
-Pass request context, tenant IDs, and security states using ScopedValue. Do not pass these through method parameters if they represent cross-cutting concerns.
+```
+## 2. Context Propagation (JEP 506)
+Pass request context, tenant IDs, and security states using `ScopedValue`. Do not pass these through method parameters if they represent cross-cutting concerns.
 
-Java
+```java
 public static final ScopedValue<TenantContext> CURRENT_TENANT = ScopedValue.newInstance();
 
 // Usage:
 ScopedValue.where(CURRENT_TENANT, tenant).run(() -> {
     // execute scoped logic
 });
-3. High-Density Memory Layout (JEP 401)
+```
+## 3. High-Density Memory Layout (JEP 401)
 Use value record and value class for all immutable data structures to remove object headers and enable array flattening.
 
-Java
+```Java
 // JVM will flatten this in arrays (Zero object header)
 public value record MemorySlab(long address, int capacity) {
     public boolean isAllocated() { return address != 0; }
 }
+```
 4. Structured Concurrency (JEP 525)
 All parallel operations must use StructuredTaskScope to prevent orphan threads and ensure fail-fast semantics.
 
-Java
+```Java
 try (var scope = StructuredTaskScope.open()) {
     Subtask<L1State> l1 = scope.fork(this::initL1);
     Subtask<L2State> l2 = scope.fork(this::initL2);
@@ -75,10 +78,11 @@ try (var scope = StructuredTaskScope.open()) {
     scope.join(); // Short-circuits if any fails
     return new BootResult(l1.get(), l2.get());
 }
+```
 5. Early Construction (JEP 513)
 Validate and compute states before calling super() in constructors to prevent larval object leaks.
 
-Java
+```Java
 public value class InitializationToken {
     private final long timestamp;
 
@@ -88,6 +92,7 @@ public value class InitializationToken {
         this.timestamp = current;
     }
 }
+```
 📋 Kernel Code Review Checklist
 When reviewing or generating code, ensure:
 
