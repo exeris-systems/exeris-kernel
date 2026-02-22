@@ -1,5 +1,5 @@
 # Exeris Kernel: Architecture Overview
-**Version:** 0.2.0‑SNAPSHOT  
+**Version:** 0.5.0-SNAPSHOT 
 **Last Updated:** February 2026  
 **Status:** Validated Architectural Prototype (TRL‑3)
 
@@ -32,7 +32,7 @@ exeris-kernel-parent
 ├── exeris-kernel-spi        (The Constitution: Pure interfaces, Value Records)
 ├── exeris-kernel-core       (The Brain: Orchestration, Watermarks, Load Shedding)
 ├── exeris-kernel-community  (The Muscle: Standard Java 26 FFM adapters)
-├── exeris-kernel-enterprise (The Heavy Muscle: io_uring, QUIC, C-Interop)
+├── exeris-kernel-enterprise (The Heavy Muscle: io_uring, QUIC, C-Interop - External / Closed Source)
 └── exeris-kernel-tck        (The Judge: Technology Compatibility Kit)
 ```
 
@@ -132,7 +132,7 @@ Contracts live in **spi**, orchestration in **core**, execution in the **drivers
 
 ### 4. Row‑Level Security (Tenant Isolation)
 - Enforced at PostgreSQL storage layer
-- Automatic tenant filtering via `SET LOCAL corelio.tenant_id`
+- Automatic tenant filtering via `SET LOCAL exeris.tenant_id`
 - Immune to application‑side query bugs
 
 ---

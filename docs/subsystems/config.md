@@ -87,7 +87,7 @@ import java.lang.invoke.VarHandle;
 
 public class KernelConfigRegistry {
 
-    @Dynamic(key = "corelio.transport.timeout-ms")
+    @Dynamic(key = "exeris.transport.timeout-ms")
     private volatile int connectionTimeoutMs = 5000;
 
     private static final VarHandle TIMEOUT_HANDLE;

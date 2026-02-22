@@ -50,7 +50,7 @@
                     <artifactId>maven-compiler-plugin</artifactId>
                     <version>3.14.1</version>
                     <configuration>
-                        <release>26</release>
+                        <release>${maven.compiler.release}</release>
                         <compilerArgs>
                             <arg>${jdk.preview.enable}</arg>
                         </compilerArgs>
