@@ -45,7 +45,7 @@ model. It provides:
 
 **What Memory Drivers DO:**
 
-1. Allocate and manage physical physical Off-Heap memory.
+1. Allocate and manage physical Off-Heap memory.
 2. Maintain pools of pre-sliced slabs for O(1) network buffer allocation.
 3. Integrate with specific hardware/OS capabilities.
 
