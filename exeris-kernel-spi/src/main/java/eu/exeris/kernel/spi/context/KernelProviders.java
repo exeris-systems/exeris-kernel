@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (C) 2025-2026 Exeris. All rights reserved.
  *
  * This code is part of the Exeris Systems.
@@ -41,9 +41,9 @@ import eu.exeris.kernel.spi.memory.MemoryProvider;
  * }</pre>
  *
  * <h2>CarrierLoop affinity</h2>
-     * <p>{@link #CARRIER_INDEX} is re-bound per carrier loop iteration so that the
-     * carrier-affine slab pool selection in {@link MemoryAllocator#allocateCarrierSlab(int)}
-     * requires no argument threading — the index flows via {@code ScopedValue}.
+ * <p>{@link #CARRIER_INDEX} is re-bound per carrier loop iteration so that the
+ * carrier-affine slab pool selection in {@link MemoryAllocator#allocateCarrierSlab(int)}
+ * requires no argument threading — the index flows via {@code ScopedValue}.
  *
  * @since 0.5.0
  * @see <a href="../../../../../../docs/subsystems/memory.md">memory.md</a>

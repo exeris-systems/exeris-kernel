@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (C) 2025-2026 Exeris. All rights reserved.
  *
  * This code is part of the Exeris Systems.

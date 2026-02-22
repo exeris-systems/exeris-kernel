@@ -176,14 +176,10 @@ TelemetrySink (SPI interface) — implemented by:
 
 ```java
 // ✅ CORRECT:
-KernelProviders.TELEMETRY.get().
-
-emitEvent(event);
+KernelProviders.TELEMETRY.get().emitEvent(event);
 
 // ❌ BANNED (static singleton — violates The Wall):
-TelemetryRouter.
-
-emitMetric(metric);
+TelemetryRouter.emitMetric(metric);
 ```
 
 ---
