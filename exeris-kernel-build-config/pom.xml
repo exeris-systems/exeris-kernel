@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+		 xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+
+	<parent>
+		<groupId>eu.exeris</groupId>
+		<artifactId>exeris-kernel-root</artifactId>
+		<version>0.5.0-SNAPSHOT</version>
+		<relativePath>../pom.xml</relativePath>
+	</parent>
+
+	<artifactId>exeris-kernel-build-config</artifactId>
+	<packaging>jar</packaging>
+
+	<name>Exeris Kernel - Build Config</name>
+	<description>Strict Code Quality Rules (Checkstyle, PMD) for Exeris Kernel (Java 26+)</description>
+
+	<properties>
+		<maven.deploy.skip>false</maven.deploy.skip>
+		<pmd.skip>true</pmd.skip>
+	</properties>
+
+	<build>
+		<plugins>
+			<plugin>
+				<groupId>com.mycila</groupId>
+				<artifactId>license-maven-plugin</artifactId>
+				<version>4.3</version>
+				<configuration>
+					<licenseSets>
+						<licenseSet>
+							<header>src/main/resources/license-header.txt</header>
+							<includes>
+								<include>src/**/*.java</include>
+							</includes>
+							<excludes>
+								<exclude>target/**</exclude>
+							</excludes>
+						</licenseSet>
+					</licenseSets>
+					<strictCheck>true</strictCheck>
+				</configuration>
+				<executions>
+					<execution>
+						<phase>validate</phase>
+						<goals>
+							<goal>check</goal>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
+		</plugins>
+	</build>
+</project>
