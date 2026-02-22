@@ -1,0 +1,92 @@
+<?xml version="1.0"?>
+<!DOCTYPE module PUBLIC "-//Checkstyle//DTD Checkstyle Configuration 1.3//EN"
+		"https://checkstyle.org/dtds/configuration_1_3.dtd">
+<module name="Checker">
+	<property name="charset" value="UTF-8"/>
+	<property name="severity" value="error"/>
+	<property name="fileExtensions" value="java"/>
+
+	<module name="FileLength">
+		<property name="max" value="1500"/>
+	</module>
+
+	<module name="LineLength">
+		<property name="max" value="120"/>
+		<property name="ignorePattern" value="^package.*|^import.*|a href|href|http://|https://"/>
+	</module>
+
+	<module name="TreeWalker">
+		<module name="RegexpSinglelineJavaCheck">
+			<property name="format" value="java\.lang\.ThreadLocal"/>
+			<property name="message" value="[EXERIS L0] ThreadLocal is banned. Use ScopedValue (JEP 506) for Virtual Thread safety."/>
+			<property name="ignoreComments" value="true"/>
+		</module>
+
+		<module name="RegexpSinglelineJavaCheck">
+			<property name="format" value="java\.util\.concurrent\.(ExecutorService|Executors|CompletableFuture)"/>
+			<property name="message" value="[EXERIS L0] Unstructured concurrency is banned. Use StructuredTaskScope (JEP 525)."/>
+			<property name="ignoreComments" value="true"/>
+		</module>
+
+		<module name="RegexpSinglelineJavaCheck">
+			<property name="format" value="sun\.misc\.Unsafe"/>
+			<property name="message" value="[EXERIS L0] Unsafe is banned (JEP 471). Use Panama FFM (MemorySegment, VarHandle)."/>
+			<property name="ignoreComments" value="true"/>
+		</module>
+
+		<module name="RegexpSinglelineJavaCheck">
+			<property name="format" value="Arena\.of(Confined|Shared)\(\)"/>
+			<property name="message" value="[EXERIS L0] Direct Arena allocation is banned. Use MemoryManager to borrow a LoanedBuffer."/>
+			<property name="ignoreComments" value="true"/>
+		</module>
+
+		<module name="RegexpSinglelineJavaCheck">
+			<property name="format" value="org\.springframework\.|javax\.inject\.|jakarta\.inject\."/>
+			<property name="message" value="[EXERIS L0] Magic DI (Spring/Guice) is banned. Use pure Java constructors and ServiceLoader."/>
+			<property name="ignoreComments" value="true"/>
+		</module>
+
+		<module name="RegexpSinglelineJavaCheck">
+			<property name="format" value="java\.util\.Date"/>
+			<property name="message" value="[EXERIS L0] java.util.Date is banned. Use java.time.* (Instant, etc.)."/>
+			<property name="ignoreComments" value="true"/>
+		</module>
+
+		<module name="AvoidStarImport"/>
+		<module name="UnusedImports"/>
+		<module name="IllegalImport">
+			<property name="illegalPkgs" value="sun,com.sun"/>
+		</module>
+
+		<module name="PackageName">
+			<property name="format" value="^[a-z]+(\.[a-z][a-z0-9]*)*$"/>
+		</module>
+		<module name="TypeName">
+			<property name="format" value="^[A-Z][a-zA-Z0-9]*$"/>
+		</module>
+		<module name="MethodName">
+			<property name="format" value="^[a-z][a-zA-Z0-9]*$"/>
+		</module>
+		<module name="ConstantName">
+			<property name="format" value="^[A-Z][A-Z0-9]*(_[A-Z0-9]+)*$"/>
+		</module>
+
+		<module name="ModifierOrder"/>
+		<module name="RedundantModifier"/>
+		<module name="AvoidNestedBlocks"/>
+		<module name="LeftCurly"/>
+		<module name="RightCurly"/>
+		<module name="NeedBraces"/>
+		<module name="OneStatementPerLine"/>
+		<module name="DeclarationOrder"/>
+
+		<module name="EmptyCatchBlock">
+			<property name="exceptionVariableName" value="expected|_"/>
+		</module>
+		<module name="RegexpSinglelineJavaCheck">
+			<property name="format" value="MemoryManager\."/>
+			<property name="message" value="[EXERIS L0] Accessing MemoryManager directly is banned. Use KernelProviders.MEMORY.get()."/>
+			<property name="ignoreComments" value="true"/>
+		</module>
+	</module>
+</module>

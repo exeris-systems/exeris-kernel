@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>eu.exeris</groupId>
+    <artifactId>exeris-kernel-root</artifactId>
+    <version>0.5.0-SNAPSHOT</version>
+    <packaging>pom</packaging>
+
+    <name>Exeris Kernel - Root</name>
+    <description>Cloud-Native, Zero-Copy Runtime Platform (Java 26+, FFM, Open-Core)</description>
+    <inceptionYear>2025</inceptionYear>
+
+    <modules>
+        <module>exeris-kernel-build-config</module>
+        <module>exeris-kernel-bom</module>
+        <module>exeris-kernel-parent</module>
+
+        <module>exeris-kernel-spi</module>
+        <module>exeris-kernel-core</module>
+        <module>exeris-kernel-community</module>
+        <module>exeris-kernel-tck</module>
+    </modules>
+
+    <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+        <maven.compiler.source>26</maven.compiler.source>
+        <maven.compiler.target>26</maven.compiler.target>
+        <maven.compiler.release>26</maven.compiler.release>
+
+        <jdk.preview.enable>--enable-preview</jdk.preview.enable>
+        <test.jvm.args>
+            -XX:+UnlockExperimentalVMOptions
+            -XX:+UseZGC
+            -XX:-ZUncommit
+            --enable-preview
+            --enable-native-access=ALL-UNNAMED
+            -XX:StartFlightRecording=disk=true,filename=target/recording-${maven.build.timestamp}.jfr,maxsize=0,settings=default
+        </test.jvm.args>
+    </properties>
+
+    <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <version>3.11.0</version>
+                    <configuration>
+                        <release>26</release>
+                        <compilerArgs>
+                            <arg>${jdk.preview.enable}</arg>
+                        </compilerArgs>
+                    </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-surefire-plugin</artifactId>
+                    <version>3.2.5</version>
+                    <configuration>
+                        <argLine>${test.jvm.args}</argLine>
+                    </configuration>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+    </build>
+
+    <profiles>
+    </profiles>
+</project>

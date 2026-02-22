@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ruleset name="Exeris PMD Ruleset"
+    xmlns="http://pmd.sourceforge.net/ruleset/2.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://pmd.sourceforge.net/ruleset/2.0.0 http://pmd.sourceforge.net/ruleset_2_0_0.xsd">
+
+    <description>
+        Strict PMD ruleset for Exeris Java 26 projects enforcing Glass Box principles.
+        Rules detect Java anti-patterns, code complexity, and architectural violations.
+        Compatible with PMD 7.21.0+
+    </description>
+
+    <!-- Best Practices -->
+    <rule ref="category/java/bestpractices.xml">
+    </rule>
+
+    <!-- Code Style -->
+    <rule ref="category/java/codestyle.xml">
+        <exclude name="AtLeastOneConstructor"/>
+        <exclude name="LocalVariableCouldBeFinal"/>
+        <exclude name="MethodArgumentCouldBeFinal"/>
+        <exclude name="OnlyOneReturn"/>
+        <exclude name="TooManyStaticImports"/>
+    </rule>
+
+    <!-- Design -->
+    <rule ref="category/java/design.xml">
+        <exclude name="LoosePackageCoupling"/>
+        <!-- NcssCount replaces old Excessive*Length rules in PMD 7.19.0 -->
+        <exclude name="ExcessivePublicCount"/>
+    </rule>
+
+    <!-- Error Prone -->
+    <rule ref="category/java/errorprone.xml"/>
+
+    <!-- Performance -->
+    <rule ref="category/java/performance.xml"/>
+
+    <!-- Security -->
+    <rule ref="category/java/security.xml"/>
+
+    <!-- Exeris-specific rules: Enforce NcssCount for class/method sizes -->
+    <rule ref="category/java/design.xml/NcssCount">
+        <properties>
+            <!-- Warn if method has >60 statements -->
+            <property name="methodReportLevel" value="60"/>
+            <!-- Warn if class has >1000 statements -->
+            <property name="classReportLevel" value="1000"/>
+        </properties>
+    </rule>
+
+    <!-- Exeris-specific rules: Cyclomatic Complexity -->
+    <rule ref="category/java/design.xml/CyclomaticComplexity">
+        <properties>
+            <property name="classReportLevel" value="30"/>
+            <property name="methodReportLevel" value="10"/>
+        </properties>
+    </rule>
+
+    <!-- Note: For more advanced checks like banning ThreadLocal, synchronized blocks,
+         sun.* imports, java.util.Date usage, consider using:
+         1. Checkstyle for syntax-level checks (implemented in checkstyle.xml)
+         2. Custom IDE inspections / annotation processors
+         3. Static analysis tools in CI/CD pipeline
+
+         These checks are already enforced in checkstyle.xml from exeris-build-config.
+    -->
+
+</ruleset>
+
