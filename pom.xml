@@ -39,6 +39,7 @@
             --enable-native-access=ALL-UNNAMED
             -XX:StartFlightRecording=disk=true,filename=target/recording-${maven.build.timestamp}.jfr,maxsize=0,settings=default
         </test.jvm.args>
+        <maven.build.timestamp.format>yyyyMMdd-HHmmss</maven.build.timestamp.format>
     </properties>
 
     <build>

@@ -6,9 +6,9 @@ The **Zero-Copy Runtime Platform** for high-density architectures. Designed for 
 
 Exeris strictly separates contracts from implementations to ensure hardware-level efficiency:
 
-1. **Base Native (Core)**: The default engine. Uses Panama FFM for direct C integration, providing high-performance **TCP** and **OpenSSL** transport while bypassing standard JVM overhead.
-2. **Premium Native (Enterprise)**: Advanced kernel-bypass mechanisms including **io_uring**, **QUIC/HTTP3**, and zero-syscall memory management.
-3. **Java Adapters (Community)**: Standard, easy-to-use implementations based on pure Java libraries (e.g., Jackson, JDBC).
+1. **Base Native (Core)**: The orchestration engine. Uses Panama FFM for direct C integration to coordinate native execution while delegating all physical I/O to drivers.
+2. **Premium Native (Enterprise)**: High-performance drivers implementing io_uring, QUIC/HTTP3, and kernel-bypass I/O.
+3. **Java Adapters (Community)**: Standard drivers based on custom off-heap implementations (TCP/TLS) or pure Java libraries.
 
 ## 🧩 Key Components
 
