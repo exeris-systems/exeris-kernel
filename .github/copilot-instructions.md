@@ -29,5 +29,5 @@ When reviewing code or generating suggestions, strictly prohibit:
 
 ## 📝 Review Style
 - Be pedantic about "Software Inflation". If a class has more than 5 dependencies, suggest refactoring.
-- Explain the "Why" based on the Exeris Whitepaper ([docs/whitepaper.md]()) (e.g., "This causes object churn, use a Value Record instead").
+- Explain the "Why" based on the Exeris Whitepaper ([whitepaper.md](../docs/whitepaper.md)) (e.g., "This causes object churn, use a Value Record instead").
 - Acknowledge clean, zero-copy patterns when you see them.

@@ -31,4 +31,4 @@ Measured with "Hello World" (1KB payload).
 ## 3. Resilience (Load Shedding)
 - **Warning:** Queue > 2,000 requests.
 - **Saturated:** Queue > 5,000 requests -> Trigger Backpressure (`H3_EXCESSIVE_LOAD`).
-- **Starved:** Carrier Thread blocked > 50ms -> Kill Task (`KER-RUN-3002`).
+- **Starved:** Carrier Thread blocked > 50ms -> Kill Task (`EX-RUN-3002`).

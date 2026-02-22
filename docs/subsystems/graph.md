@@ -106,8 +106,6 @@ graphService.streamBfsJson(request, outputStream);
 
 ## Error Codes (Black Box Telemetry)
 
-## Error Codes (Black Box Telemetry)
-
 | Code           | Meaning               | Action                                         |
 |:---------------|:----------------------|:-----------------------------------------------|
 | `EX-GRPH-5001` | Transpilation Failure | Mismatch between DSL and Dialect capabilities. |

@@ -92,24 +92,17 @@ public class RequestHandler {
 ### 2. Retaining Ownership across Threads
 
 ```java
-try(LoanedBuffer buffer = networkCluster.allocate()){
-        buffer.
-
-retain(); // refCount = 2
+try (LoanedBuffer buffer = networkCluster.allocate()) {
+    buffer.retain(); // refCount = 2
     
-    Thread.
-
-startVirtualThread(() ->{
-        try{
-
-processAsync(buffer);
-        }finally{
-                buffer.
-
-close(); // refCount = 1
+    Thread.startVirtualThread(() -> {
+        try {
+            processAsync(buffer);
+        } finally {
+                buffer.close(); // refCount = 1
         }
-                });
-                } // refCount = 0 -> returned to pool
+    });
+} // refCount = 0 -> returned to pool
 ```
 
 ## Testing Strategy
