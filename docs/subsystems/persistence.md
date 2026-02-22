@@ -62,7 +62,7 @@ logic and serialization waste.
 
 1. Orchestrate the Transaction Lifecycle and ScopedValue propagation.
 2. Manage a registry of `ConnectionInterceptors`.
-3. Provide the `ConnectionInitializer` that prepares gniazda SQL (RLS/Schema).
+3. Provide the `ConnectionInitializer` that prepares connection/session initialization SQL for RLS and schema selection.
 4. Translate database-specific errors into standardized Kernel codes.
 
 ---
