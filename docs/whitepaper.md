@@ -1,7 +1,7 @@
 # Exeris Kernel: Technical Whitepaper
 **Author:** Arkadiusz Przychocki, Founder & Lead Architect  
 **Status:** TRL-3 (Experimental proof of concept)  
-**Date:** January 2026
+**Date (original draft):** January 2026
 
 ---
 
