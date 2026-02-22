@@ -9,4 +9,4 @@ This module contains the shared configuration for static analysis tools. It enfo
 ## 🛡️ Enforced Guardrails
 - **Checkstyle:** Bans `ThreadLocal` (in favor of `ScopedValue`), `java.util.Date`, and legacy thread pools (`ExecutorService`).
 - **PMD 7.21+:** Detects high cyclomatic complexity and violations of the "No Waste Compute" mantra.
-- **License Headers:** Ensures every file carries the Proprietary Exeris Software License.
+- **License Headers:** Ensures all Java source files in this module carry the Proprietary Exeris Software License.
