@@ -21,3 +21,4 @@ Import this BOM in your `dependencyManagement` section to inherit validated vers
     <type>pom</type>
     <scope>import</scope>
 </dependency>
+```
