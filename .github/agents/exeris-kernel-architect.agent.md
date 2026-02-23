@@ -29,8 +29,10 @@ modern JVM. You ruthlessly eliminate object headers, heap allocations, and threa
 - **Double-Checked Locking / `volatile` fields**: Banned for lazy initialization. Use `LazyConstant` (JEP 526).
 - **`ExecutorService` / Unstructured Threads**: Banned. All concurrent tasks must be strictly bound within a
   `StructuredTaskScope` (JEP 525).
-- **Identity Classes for Data**: Banned. Domain values (e.g., configurations, pointers, limits) must be `value record`
-  or `value class` to enable heap flattening (JEP 401).
+- **Identity Classes for Data**: Banned. Domain values (e.g., configurations, pointers, limits) must be standard records
+  or deeply immutable final classes prepared for future value record/value class migration (JEP 401). Do NOT use the 
+  value keyword yet, but strictly avoid all identity operations (==, synchronized, System.identityHashCode()) on these 
+  objects so they scalarize cleanly via JIT Escape Analysis.
 - **Reflection / Spring / DI Frameworks**: Banned. We use strict Zero-Magic DI (constructors) and `ServiceLoader` for
   the Open-Core SPI mechanism.
 - **Leaky Abstractions**: Banned. High-level logic (e.g., `CitadelRepository`) must never import JDBC, HikariCP, or
@@ -72,16 +74,18 @@ ScopedValue.where(CURRENT_TENANT, tenant).run(() ->{
 });
 ```
 
-## 3. High-Density Memory Layout (JEP 401)
+## 3. High-Density Memory Layout (Valhalla Readiness)
 
-Use value record and value class for all immutable data structures to remove object headers and enable array flattening.
+Design all immutable data structures to be ready for JEP 401, but do NOT use the restricted `value` keyword yet to
+maintain toolchain stability (Checkstyle/PMD). Use standard `record` or deeply immutable `final class` structures.
 
 ```Java
-// JVM will flatten this in arrays (Zero object header)
-public value record MemorySlab(long address, int capacity) {
-    public boolean isAllocated () {
-        return address != 0;
-    }
+// Valhalla-Ready: Will be migrated to 'value record' once JEP 401 is mainline.
+// Currently relies on C2 JIT Escape Analysis for scalarization on hot-paths.
+public record MemorySlab(long address, int capacity) {
+  public boolean isAllocated() {
+    return address != 0;
+  }
 }
 ```
 
@@ -91,9 +95,8 @@ All parallel operations must use StructuredTaskScope to prevent orphan threads a
 
 ```Java
 try(var scope = StructuredTaskScope.open()) {
-Subtask<L1State> l1 = scope.fork(this::initL1);
-Subtask<L2State> l2 = scope.fork(this::initL2);
-    
+    Subtask<L1State> l1 = scope.fork(this::initL1);
+    Subtask<L2State> l2 = scope.fork(this::initL2);
     scope.join(); // Short-circuits if any fails
     return new BootResult(l1.get(),l2.get());
 }
@@ -104,7 +107,7 @@ Subtask<L2State> l2 = scope.fork(this::initL2);
 Validate and compute states before calling super() in constructors to prevent larval object leaks.
 
 ```Java
-public value class InitializationToken {
+public class InitializationToken {
     private final long timestamp;
 
     public InitializationToken() {

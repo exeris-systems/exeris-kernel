@@ -177,7 +177,7 @@ TelemetrySink (SPI interface) — implemented by:
 
 ```java
 // ✅ CORRECT:
-KernelProviders.TELEMETRY.get().emitEvent(event);
+KernelProviders.TELEMETRY_PROVIDER.get().emitEvent(event);
 
 // ❌ BANNED (static singleton — violates The Wall):
 TelemetryRouter.emitMetric(metric);
@@ -211,7 +211,7 @@ TelemetryRouter.emitMetric(metric);
 | `String.formatted(...)` inside exception constructor         | Allocates StringBuilder                             | `rawArgs[]` primitives                        |
 | `Map.of("key", value)` for metric tags on hot-path           | Creates anonymous Map class                         | Pre-allocated tag arrays or JFR fields        |
 | `Logger.info("allocated {} bytes", size)` in allocation loop | SLF4J formats lazily but still allocates on enabled | JFR event with numeric fields                 |
-| Static `TelemetryRouter.isEnabled()`                         | Breaks provider isolation (The Wall)                | `KernelProviders.TELEMETRY.get().isEnabled()` |
+| Static `TelemetryRouter.isEnabled()`                         | Breaks provider isolation (The Wall)                | `KernelProviders.TELEMETRY_PROVIDER.get().isEnabled()` |
 | `Thread.currentThread().getStackTrace()` in hot-path events  | O(depth) object churn                               | Limit to `PARANOID` mode only                 |
 
 ---
