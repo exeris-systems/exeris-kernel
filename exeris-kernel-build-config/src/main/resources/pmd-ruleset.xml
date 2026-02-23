@@ -12,6 +12,14 @@
 
     <!-- Best Practices -->
     <rule ref="category/java/bestpractices.xml">
+        <!--
+            ARCH-DECISION: Zero-Copy Black-Box Contract.
+            ExerisKernelException.rawArgs() deliberately returns the internal array
+            by reference to guarantee zero allocation on the telemetry hot-path.
+            A defensive copy would violate the "No Waste Compute" mandate.
+            See: docs/subsystems/telemetry.md § "The Black-Box Pattern"
+        -->
+        <exclude name="MethodReturnsInternalArray"/>
     </rule>
 
     <!-- Code Style -->
@@ -21,6 +29,26 @@
         <exclude name="MethodArgumentCouldBeFinal"/>
         <exclude name="OnlyOneReturn"/>
         <exclude name="TooManyStaticImports"/>
+        <!--
+            ARCH-DECISION: Descriptive names are non-negotiable in kernel SPI.
+            Names like networkOffHeapThreshold, peakAllocatedBytes, CARRIER_INDEX
+            encode domain semantics that abbreviated names would destroy. Kernel APIs
+            are read far more often than written; clarity outweighs character count.
+            ShortVariable is intentionally NOT excluded: overly short names (< 3 chars)
+            offer no domain clarity and are banned in public SPI. If a local variable
+            legitimately needs a short name (e.g. loop index `i`), suppress locally
+            with @SuppressWarnings("PMD.ShortVariable") and a justification comment.
+        -->
+        <exclude name="LongVariable"/>
+        <!--
+            ARCH-DECISION: Pattern-matching instanceof with explicit primitive/widening cast.
+            Kernel call sites sometimes rely on explicit primitive casts after pattern
+            matching (for example, widening an Integer to long) to make the numeric
+            contract and range semantics obvious and stable over time.
+            PMD's UnnecessaryCast rule treats these casts as noise, but for Exeris
+            they are part of the documented API surface and are therefore allowed.
+        -->
+        <exclude name="UnnecessaryCast"/>
     </rule>
 
     <!-- Design -->
@@ -28,10 +56,38 @@
         <exclude name="LoosePackageCoupling"/>
         <!-- NcssCount replaces old Excessive*Length rules in PMD 7.19.0 -->
         <exclude name="ExcessivePublicCount"/>
+        <!--
+            ARCH-DECISION: Constant registries and value carriers are intentional.
+            KernelErrorCodes is a pure constant registry (by design, WOC=0).
+            ExerisKernelException is a structured value carrier for binary telemetry —
+            accessor methods are part of the Black-Box contract, not a sign of missing
+            behaviour. The DataClass rule was designed to flag anemic domain models in
+            business logic, not SPI-layer telemetry infrastructure.
+        -->
+        <exclude name="DataClass"/>
     </rule>
 
     <!-- Error Prone -->
-    <rule ref="category/java/errorprone.xml"/>
+    <rule ref="category/java/errorprone.xml">
+        <!--
+            ARCH-DECISION: Binary Black-Box serialization replaces Java Serializable.
+            Exeris kernel exceptions are serialised via the off-heap binary Black-Box
+            format (MemorySegment structs), never via java.io.ObjectOutputStream.
+            Adding serialVersionUID would be pure ceremony with no runtime benefit.
+            See: docs/subsystems/telemetry.md § "Binary Struct Mapping"
+        -->
+        <exclude name="MissingSerialVersionUID"/>
+        <!--
+            ARCH-DECISION: Record-style accessors (Java 26 / Valhalla-readiness).
+            SPI types use accessor names without a "get" prefix (e.g. errorCode(),
+            traceId(), sizeBytes()). This matches java.lang.Record conventions and
+            prepares the codebase for value class / value record migration (JEP 401).
+            PMD's AvoidFieldNameMatchingMethodName was designed for Java-8-era getters
+            where a field "foo" and method "foo()" would be ambiguous. In record-style
+            classes the method IS the canonical accessor for the field — by design.
+        -->
+        <exclude name="AvoidFieldNameMatchingMethodName"/>
+    </rule>
 
     <!-- Performance -->
     <rule ref="category/java/performance.xml"/>
@@ -57,14 +113,20 @@
         </properties>
     </rule>
 
-    <!-- Note: For more advanced checks like banning ThreadLocal, synchronized blocks,
-         sun.* imports, java.util.Date usage, consider using:
-         1. Checkstyle for syntax-level checks (implemented in checkstyle.xml)
-         2. Custom IDE inspections / annotation processors
-         3. Static analysis tools in CI/CD pipeline
-
-         These checks are already enforced in checkstyle.xml from exeris-kernel-build-config.
+    <!--
+        ARCH-DECISION: Skomentowane puste bloki catch są dozwolone.
+        Kernel code frequently has intentional no-op catch blocks for best-effort cleanup
+        (e.g., Arena.close() during release, SSL_free during shutdown) where propagating
+        the exception would be worse than silently accepting the failure.
+        A mandatory comment explains the architectural intent.
+        Unnamed variable _ (Java 22+ JEP 456) is also accepted.
     -->
+    <rule ref="category/java/errorprone.xml/EmptyCatchBlock">
+        <properties>
+            <property name="allowCommentedBlocks" value="true"/>
+            <property name="allowExceptionNameRegex" value="^(_|ignored|expected)$"/>
+        </properties>
+    </rule>
 
 </ruleset>
 
