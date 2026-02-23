@@ -52,6 +52,9 @@ import java.util.UUID;
  */
 public abstract class ExerisKernelException extends RuntimeException {
 
+    /** Shared empty array returned when no rawArgs are supplied — zero allocation per construction. */
+    private static final Object[] EMPTY_ARGS = new Object[0];
+
     /**
      * Structured error code in {@code EX-[DOMAIN]-[ID]} format.
      * Immutable; used by log scrapers and Black-Box binary serializers.
@@ -60,15 +63,19 @@ public abstract class ExerisKernelException extends RuntimeException {
 
     /**
      * Distributed trace identifier – auto-generated at throw site.
-     * <p>UUID generation is the only allocation intentionally permitted here because
-     * a {@code UUID} is 128 bits and critical for distributed forensics.
+     * <p>Two allocations are intentionally permitted at construction time:
+     * a {@code UUID} (128 bits, critical for distributed forensics) and an
+     * {@link Instant} timestamp. Both are bounded, non-recurring, and acceptable
+     * given that exceptions are never on the hot-path.
      */
     private final UUID traceId;
 
     /**
      * Nanosecond-precision timestamp captured at construction time via
-     * {@link Instant#now()}. Stored as an {@link Instant} value type –
-     * the JVM may flatten this on the heap (Valhalla-ready).
+     * {@link Instant#now()} and stored as an immutable {@link Instant}.
+     * <p>This field is intentionally kept as a high-fidelity timestamp object;
+     * if a future version requires zero-allocation/flattened storage, this may
+     * evolve to a primitive epoch-based representation (e.g. epoch-nanos).
      */
     private final Instant timestamp;
 
@@ -112,7 +119,7 @@ public abstract class ExerisKernelException extends RuntimeException {
         this.traceId   = UUID.randomUUID();
         this.timestamp = Instant.now();
         // Null-safe: treat missing rawArgs as an empty array to avoid NPE in telemetry
-        this.rawArgs   = (rawArgs != null) ? rawArgs : new Object[0];
+        this.rawArgs   = (rawArgs != null) ? rawArgs : EMPTY_ARGS;
     }
 
     /**

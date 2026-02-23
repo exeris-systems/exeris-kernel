@@ -2,7 +2,7 @@
 
 **Physical Layout:**
 
-- SPI: `eu.exeris.kernel.spi.crypto.*` (`KernelCryptoProvider`, `TlsEngineFactory`, `TlsEngine`, `TlsSession`)
+- SPI (planned, not yet implemented in this repo): `eu.exeris.kernel.spi.crypto.*` (`KernelCryptoProvider`, `TlsEngineFactory`, `TlsEngine`, `TlsSession`)
 - Core: `eu.exeris.kernel.core.crypto.*` (`OpenSslLinker`, `NativeCipherContext`, `TlsHandshakeOrchestrator`)
 - Community: JSSE-backed TLS engine (no native dependency)
 - Enterprise: OpenSSL 3.x via Panama FFM — zero object allocation per encrypt/decrypt cycle

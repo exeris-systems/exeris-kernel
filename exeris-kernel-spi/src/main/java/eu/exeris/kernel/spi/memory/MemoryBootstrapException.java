@@ -59,7 +59,7 @@ public final class MemoryBootstrapException extends ExerisKernelException {
      * @param message static description (no runtime formatting)
      */
     public MemoryBootstrapException(String message) {
-        super(KernelErrorCodes.EX_BOOT_0004, message, null, (Object[]) null);
+        super(KernelErrorCodes.EX_BOOT_0004, message);
     }
 }
 

@@ -38,11 +38,12 @@
         <exclude name="LongVariable"/>
         <exclude name="ShortVariable"/>
         <!--
-            ARCH-DECISION: Pattern-matching instanceof with explicit primitive cast.
-            In TransportException.numericContext(), `(long) port` after
-            `instanceof Integer port` is semantically required — the target return
-            type is long, and the widening is explicit by design.
-            PMD's UnnecessaryCast does not understand widening-primitive intent here.
+            ARCH-DECISION: Pattern-matching instanceof with explicit primitive/widening cast.
+            Kernel call sites sometimes rely on explicit primitive casts after pattern
+            matching (for example, widening an Integer to long) to make the numeric
+            contract and range semantics obvious and stable over time.
+            PMD's UnnecessaryCast rule treats these casts as noise, but for Exeris
+            they are part of the documented API surface and are therefore allowed.
         -->
         <exclude name="UnnecessaryCast"/>
     </rule>

@@ -77,11 +77,11 @@ public final class KernelErrorCodes {
      * Subsystem initialization or startup failure.
      *
      * <p><b>rawArgs layout for Black-Box:</b>
-     * <ul>
-     *   <li>index 0 – {@code String} subsystemName</li>
-     *   <li>index 1 – {@code SubsystemException.Phase} phase (INITIALIZE | START | STOP)</li>
-     *   <li>index 2 – {@code String} detailMessage (static, no runtime formatting)</li>
-     * </ul>
+     * <p>This code is shared across multiple bootstrap pathways and therefore
+     * does not expose a stable {@code rawArgs} layout for Black-Box decoding.
+     * Callers may attach implementation-specific {@code rawArgs}, but
+     * Black-Box consumers must treat them as opaque and must not rely on a
+     * particular arity or field order.</p>
      */
     public static final String EX_BOOT_0002 = "EX-BOOT-0002";
 

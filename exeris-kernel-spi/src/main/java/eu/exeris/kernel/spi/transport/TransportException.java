@@ -162,9 +162,15 @@ public final class TransportException extends ExerisKernelException {
      * Defined on all {@code EX-NET-*} variants.
      *
      * @return transport name; never {@code null}
+     * @throws IllegalStateException if {@code rawArgs} is missing or empty — use factory methods to construct
      */
     public String transportName() {
-        return (String) rawArgs()[0];
+        Object[] args = rawArgs();
+        if (args == null || args.length < 1) {
+            throw new IllegalStateException(
+                "transportName() requires rawArgs[0]; use factory methods to construct TransportException");
+        }
+        return (String) args[0];
     }
 
     /**
@@ -178,9 +184,15 @@ public final class TransportException extends ExerisKernelException {
      * </ul>
      *
      * @return numeric context value; interpretation is code-dependent
+     * @throws IllegalStateException if {@code rawArgs} has fewer than 2 elements — use factory methods to construct
      */
     public long numericContext() {
-        Object arg = rawArgs()[1];
+        Object[] args = rawArgs();
+        if (args == null || args.length < 2) {
+            throw new IllegalStateException(
+                "numericContext() requires rawArgs[1]; use factory methods to construct TransportException");
+        }
+        Object arg = args[1];
         if (arg instanceof Integer port) {
             return port;
         }

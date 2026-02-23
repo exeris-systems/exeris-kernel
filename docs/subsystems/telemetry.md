@@ -2,7 +2,7 @@
 
 **Physical Layout:**
 
-- SPI: `eu.exeris.kernel.spi.telemetry.*` (`TelemetryRouter`, `TelemetrySink`, `TelemetryEvent`)
+- SPI (planned, not yet implemented in this repo): `eu.exeris.kernel.spi.telemetry.*` (`TelemetryRouter`, `TelemetrySink`, `TelemetryEvent`)
 - Core: `eu.exeris.kernel.core.telemetry.*` (`JfrTelemetrySink`, `BinaryBlackBox`, `BlackBoxSerializer`)
 - Enterprise: Binary crash-log sink, structured JFR streaming over off-heap ring buffer
 
@@ -94,7 +94,7 @@ Every `ExerisKernelException` subclass MUST declare its `rawArgs` binary layout 
 EX-MEM-1001  Off-heap exhausted          rawArgs[0]=long requestedBytes, [1]=long availableBytes
 EX-MEM-1002  Arena leak detected         rawArgs[0]=long segmentAddress, [1]=long segmentByteSize
 EX-MEM-1003  AllocationHint conflict     (no rawArgs)
-EX-BOOT-0002 Subsystem lifecycle failure rawArgs[0]=String subsystemName, [1]=SubsystemException.Phase, [2]=String detail
+EX-BOOT-0002 Bootstrap failure           rawArgs[0]=String subsystemName, [1]=SubsystemException.Phase phase, [2]=String detail
 EX-BOOT-0003 Bootstrap deadline exceeded rawArgs[0]=String subsystemName, [1]=long deadlineMs
 EX-BOOT-0004 Memory provider bootstrap   rawArgs[0]=String providerName, [1]=long requestedBytes
 EX-NET-4001  Transport bind/handshake    rawArgs[0]=String transportName, [1]=int port
@@ -125,7 +125,9 @@ Every critical lifecycle transition MUST emit a typed JFR event. No `Logger.info
 ### JFR Event Pattern (Zero-Allocation)
 
 ```java
-// Static reusable event — avoids per-event allocation on the hot-path:
+// JFR event: allocated per emission — JFR framework copies fields on commit().
+// Exceptions are never on the hot-path; the single allocation here is acceptable.
+// Do NOT share event instances across threads (JFR events are not thread-safe).
 @jdk.jfr.Label("Memory Exhaustion")
 @jdk.jfr.Category({"Exeris", "Memory"})
 @jdk.jfr.StackTrace(false)  // suppress: stack trace = O(n) allocation
@@ -138,13 +140,11 @@ public final class MemoryExhaustionEvent extends jdk.jfr.Event {
     String allocatorName;
 }
 
-// Emission (no allocation for the event object itself — reuse thread-local or scoped instance):
 static void emitExhaustion(long requested, long available, String name) {
     var event = new MemoryExhaustionEvent();
-    // Fields assigned before commit() — JFR copies on commit, not on assignment:
     event.requestedBytes = requested;
     event.availableBytes = available;
-    event.allocatorName = name;
+    event.allocatorName  = name;
     event.commit();
 }
 ```

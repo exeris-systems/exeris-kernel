@@ -9,9 +9,10 @@
 /**
  * Exeris Kernel SPI – Transport layer contracts (L0).
  *
- * <p>Defines the {@code Transport} SPI interface and transport-domain exception.
- * Protocol-specific implementations (HTTP/3, QUIC, raw TCP) reside in Community
- * or Enterprise modules and MUST NOT be referenced here.
+ * <p>Defines transport-domain exceptions and base contracts for the Transport SPI.
+ * A {@code Transport} SPI interface will be introduced in a future revision of
+ * this package. Protocol-specific implementations (HTTP/3, QUIC, raw TCP) reside
+ * in Community or Enterprise modules and MUST NOT be referenced here.
  *
  * <h2>The Wall</h2>
  * <p>Implementation-blind: no references to Netty, io_uring, TLS cipher suites,
