@@ -94,7 +94,7 @@ public interface MemoryAllocator extends AutoCloseable {
      * to guide pool selection — it does not pin the buffer to that carrier.
      *
      * @param carrierIndex zero-based index of the calling carrier thread
-     *                     (obtained from {@code KernelProviders.CURRENT_CARRIER_INDEX})
+     *                     (obtained from {@code KernelProviders.CARRIER_INDEX})
      * @return loaned buffer from the carrier-affine slab pool
      * @throws MemoryExhaustedException if no slab is available in the carrier's pool
      * @throws IllegalStateException    if this allocator has been closed
