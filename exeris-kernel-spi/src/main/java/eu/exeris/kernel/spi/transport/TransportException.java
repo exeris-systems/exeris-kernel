@@ -178,25 +178,28 @@ public final class TransportException extends ExerisKernelException {
      *
      * <p>Semantics depend on the error code:
      * <ul>
-     *   <li>{@value KernelErrorCodes#EX_NET_4001} – port number (cast from {@code int})</li>
-     *   <li>{@value KernelErrorCodes#EX_NET_4002} – bytes sent</li>
-     *   <li>{@value KernelErrorCodes#EX_NET_4003} – timeout in milliseconds</li>
+     * <li>{@value KernelErrorCodes#EX_NET_4001} – port number (cast from {@code int})</li>
+     * <li>{@value KernelErrorCodes#EX_NET_4002} – bytes sent</li>
+     * <li>{@value KernelErrorCodes#EX_NET_4003} – timeout in milliseconds</li>
      * </ul>
      *
      * @return numeric context value; interpretation is code-dependent
-     * @throws IllegalStateException if {@code rawArgs} has fewer than 2 elements — use factory methods to construct
+     * @throws IllegalStateException if {@code rawArgs} has fewer than 2 elements or is not a number
      */
     public long numericContext() {
         Object[] args = rawArgs();
         if (args == null || args.length < 2) {
             throw new IllegalStateException(
-                "numericContext() requires rawArgs[1]; use factory methods to construct TransportException");
+                    "numericContext() requires rawArgs[1]; use factory methods to construct TransportException");
         }
+
         Object arg = args[1];
-        if (arg instanceof Integer port) {
-            return port;
+        if (arg instanceof Number number) {
+            return number.longValue();
         }
-        return (long) arg;
+
+        throw new IllegalStateException(
+                "numericContext() requires a numeric rawArgs[1] (int/long); got: " + arg.getClass().getName());
     }
 }
 
