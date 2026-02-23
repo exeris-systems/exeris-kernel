@@ -5,10 +5,11 @@
  * Distributed under the proprietary Exeris Software License.
  * Unauthorized copying or distribution is prohibited.
  */
-package eu.exeris.kernel.spi.memory;
+package eu.exeris.kernel.spi.exceptions.memory;
 
 import eu.exeris.kernel.spi.exceptions.ExerisKernelException;
 import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
+import eu.exeris.kernel.spi.memory.MemoryProvider;
 
 /**
  * Thrown by {@link MemoryProvider#createAllocator} when the underlying

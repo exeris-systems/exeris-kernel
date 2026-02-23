@@ -5,10 +5,7 @@
  * Distributed under the proprietary Exeris Software License.
  * Unauthorized copying or distribution is prohibited.
  */
-package eu.exeris.kernel.spi.bootstrap;
-
-import eu.exeris.kernel.spi.exceptions.ExerisKernelException;
-import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
+package eu.exeris.kernel.spi.exceptions;
 
 /**
  * Thrown when a {@code Subsystem} fails during a lifecycle transition

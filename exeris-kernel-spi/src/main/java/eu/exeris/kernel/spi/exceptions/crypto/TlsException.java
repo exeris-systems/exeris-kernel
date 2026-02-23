@@ -1,0 +1,38 @@
+/*
+ * Copyright (C) 2025-2026 Exeris. All rights reserved.
+ *
+ * This code is part of the Exeris Systems.
+ * Distributed under the proprietary Exeris Software License.
+ * Unauthorized copying or distribution is prohibited.
+ */
+package eu.exeris.kernel.spi.exceptions.crypto;
+
+import eu.exeris.kernel.spi.exceptions.ExerisKernelException;
+import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
+
+/**
+ * Base SPI exception for TLS/Crypto failures.
+ *
+ * <h2>Zero-Allocation Contract</h2>
+ * <p>No string formatting occurs in any constructor. Numeric context is stored in
+ * {@link #rawArgs()} for binary Black-Box serialization by the Enterprise telemetry tier.
+ *
+ * @since 0.5.0
+ */
+public class TlsException extends ExerisKernelException {
+
+    private static final String MESSAGE = "TLS operation failed";
+
+    public TlsException(String detail) {
+        super(KernelErrorCodes.EX_NET_2001, MESSAGE, null, detail);
+    }
+
+    public TlsException(String detail, Throwable cause) {
+        super(KernelErrorCodes.EX_NET_2001, MESSAGE, cause, detail);
+    }
+
+    public TlsException(int opensslErrorCode, String detail) {
+        super(KernelErrorCodes.EX_NET_2001, MESSAGE, null, opensslErrorCode, detail);
+    }
+}
+
