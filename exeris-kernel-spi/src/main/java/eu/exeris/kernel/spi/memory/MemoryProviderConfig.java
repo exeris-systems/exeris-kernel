@@ -92,7 +92,7 @@ public record MemoryProviderConfig(
      * @param totalOffHeapMb off-heap budget in megabytes; must be &gt; 0 and &le; {@value #MAX_OFF_HEAP_MB}
      * @param carriers       number of carrier threads
      * @return production-ready configuration
-     * @throws IllegalArgumentException if {@code totalOffHeapMb} is negative or would overflow {@code long}
+     * @throws IllegalArgumentException if {@code totalOffHeapMb} is &le; 0 or exceeds {@value #MAX_OFF_HEAP_MB} MB
      */
     public static MemoryProviderConfig production(int totalOffHeapMb, int carriers) {
         if (totalOffHeapMb <= 0) {
