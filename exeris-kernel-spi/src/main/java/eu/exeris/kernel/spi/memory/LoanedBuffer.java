@@ -121,18 +121,32 @@ public interface LoanedBuffer extends AutoCloseable {
     LoanedBuffer view();
 
     /**
-     * Returns a <em>zero-copy view</em> of this buffer covering a specific range.
+     * Returns a <em>zero-copy, non-owning view</em> of this buffer covering a specific range.
      *
-     * <p>Unlike {@link #slice}, this method does <strong>not</strong> increment the
-     * parent refCount — the caller must ensure the parent stays alive for the duration
-     * of use. Suitable for single-threaded pipelines where lifetime is clear.
+     * <h3>Ownership Contract (implementors MUST honour)</h3>
+     * <ul>
+     *   <li>This method does <strong>not</strong> increment the parent refCount.
+     *       The returned view is <em>non-owning</em>.</li>
+     *   <li>The caller is responsible for ensuring the parent {@code LoanedBuffer}
+     *       remains alive (i.e., not closed) for the entire duration of use of the peek view.</li>
+     *   <li>{@link #close()} on a peek view MUST be a no-op with respect to reference counting.
+     *       It must not decrement the parent's refCount.</li>
+     *   <li>{@link #retain()} on a peek view MUST be a no-op with respect to reference counting.
+     *       It must not increment any counter.</li>
+     *   <li>{@link #refCount()} on a peek view is for diagnostics only; it SHOULD reflect
+     *       the parent buffer's refCount and MUST NOT maintain an independent mutable count.</li>
+     * </ul>
      *
-     * <p><b>Warning:</b> prefer {@link #slice} when the view will be shared across
-     * thread boundaries. Use {@code peek} only in strictly same-scope, same-thread paths.
+     * <p>Unlike {@link #slice}, which increments the parent refCount and is safe across thread
+     * boundaries, {@code peek} is intended strictly for same-scope, same-thread use where the
+     * parent buffer's lifetime trivially covers the view's use.
+     *
+     * <p><b>Warning:</b> prefer {@link #slice} whenever the view may cross a thread boundary
+     * or ownership boundaries are not immediately obvious.
      *
      * @param offset byte offset within this buffer
      * @param length number of bytes
-     * @return a lightweight, non-owning view
+     * @return a lightweight, non-owning view; {@code close()} is a no-op for ref-counting
      * @throws IndexOutOfBoundsException if {@code offset + length > capacity()}
      * @throws IllegalStateException     if this buffer is closed
      */

@@ -94,8 +94,9 @@ Every `ExerisKernelException` subclass MUST declare its `rawArgs` binary layout 
 EX-MEM-1001  Off-heap exhausted          rawArgs[0]=long requestedBytes, [1]=long availableBytes
 EX-MEM-1002  Arena leak detected         rawArgs[0]=long segmentAddress, [1]=long segmentByteSize
 EX-MEM-1003  AllocationHint conflict     (no rawArgs)
-EX-BOOT-0002 Bootstrap failure           rawArgs[0]=String subsystemName, [1]=SubsystemException.Phase
+EX-BOOT-0002 Subsystem lifecycle failure rawArgs[0]=String subsystemName, [1]=SubsystemException.Phase, [2]=String detail
 EX-BOOT-0003 Bootstrap deadline exceeded rawArgs[0]=String subsystemName, [1]=long deadlineMs
+EX-BOOT-0004 Memory provider bootstrap   rawArgs[0]=String providerName, [1]=long requestedBytes
 EX-NET-4001  Transport bind/handshake    rawArgs[0]=String transportName, [1]=int port
 EX-NET-4002  Transport send failure      rawArgs[0]=String transportName, [1]=long bytesSent
 EX-NET-4003  Transport receive timeout   rawArgs[0]=String transportName, [1]=long timeoutMs

@@ -18,8 +18,13 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  * <h2>rawArgs Binary Layout (Enterprise Black-Box)</h2>
  * <pre>
  * index 0 → String  providerName   (e.g. "ExerisEnterprise/GlobalArbiter")
- * index 1 → long    requestedBytes (total off-heap budget requested)
+ * index 1 → long    requestedBytes (total off-heap budget requested; -1 if unknown)
  * </pre>
+ *
+ * <h2>Error Code</h2>
+ * <p>{@value KernelErrorCodes#EX_BOOT_0004} — dedicated code for memory-provider
+ * bootstrap failures; distinct from {@value KernelErrorCodes#EX_BOOT_0002} which
+ * covers general subsystem lifecycle failures with a different rawArgs schema.
  *
  * @since 0.5.0
  */
@@ -35,7 +40,7 @@ public final class MemoryBootstrapException extends ExerisKernelException {
      * @param cause          root cause from the native/arena layer
      */
     public MemoryBootstrapException(String providerName, long requestedBytes, Throwable cause) {
-        super(KernelErrorCodes.EX_BOOT_0002, MESSAGE, cause, providerName, requestedBytes);
+        super(KernelErrorCodes.EX_BOOT_0004, MESSAGE, cause, providerName, requestedBytes);
     }
 
     /**
@@ -45,7 +50,7 @@ public final class MemoryBootstrapException extends ExerisKernelException {
      * @param cause        root cause
      */
     public MemoryBootstrapException(String providerName, Throwable cause) {
-        super(KernelErrorCodes.EX_BOOT_0002, MESSAGE, cause, providerName, -1L);
+        super(KernelErrorCodes.EX_BOOT_0004, MESSAGE, cause, providerName, -1L);
     }
 
     /**
@@ -54,7 +59,7 @@ public final class MemoryBootstrapException extends ExerisKernelException {
      * @param message static description (no runtime formatting)
      */
     public MemoryBootstrapException(String message) {
-        super(KernelErrorCodes.EX_BOOT_0002, message, null, (Object[]) null);
+        super(KernelErrorCodes.EX_BOOT_0004, message, null, (Object[]) null);
     }
 }
 

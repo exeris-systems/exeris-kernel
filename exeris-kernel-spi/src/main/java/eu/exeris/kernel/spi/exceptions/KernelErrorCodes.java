@@ -32,6 +32,7 @@ package eu.exeris.kernel.spi.exceptions;
  *
  * @since 0.5.0
  */
+@SuppressWarnings("unused") // Codes are API contracts — referenced by future exception subclasses and external scrapers
 public final class KernelErrorCodes {
 
     // -----------------------------------------------------------------------
@@ -79,6 +80,7 @@ public final class KernelErrorCodes {
      * <ul>
      *   <li>index 0 – {@code String} subsystemName</li>
      *   <li>index 1 – {@code SubsystemException.Phase} phase (INITIALIZE | START | STOP)</li>
+     *   <li>index 2 – {@code String} detailMessage (static, no runtime formatting)</li>
      * </ul>
      */
     public static final String EX_BOOT_0002 = "EX-BOOT-0002";
@@ -95,9 +97,52 @@ public final class KernelErrorCodes {
      */
     public static final String EX_BOOT_0003 = "EX-BOOT-0003";
 
+    /**
+     * Memory provider bootstrap failure: the {@code MemoryProvider} could not
+     * initialise its off-heap tier (e.g., insufficient system memory, mmap permission
+     * denied, or missing native library).
+     *
+     * <p>This code is intentionally separate from {@link #EX_BOOT_0002} to guarantee
+     * a stable, single rawArgs schema per error code – a hard requirement of the
+     * binary Black-Box telemetry contract.
+     *
+     * <p><b>rawArgs layout for Black-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} providerName (e.g. {@code "ExerisEnterprise/GlobalArbiter"})</li>
+     *   <li>index 1 – {@code long}   requestedBytes ({@code -1} if unknown)</li>
+     * </ul>
+     */
+    public static final String EX_BOOT_0004 = "EX-BOOT-0004";
+
+    // -----------------------------------------------------------------------
+    // EX-BOOT – Telemetry bootstrap
+    // -----------------------------------------------------------------------
+
+    /**
+     * Telemetry provider failed to initialise one or more sinks.
+     *
+     * <p><b>rawArgs layout for Black-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} providerName</li>
+     *   <li>index 1 – {@code String} reason</li>
+     * </ul>
+     */
+    public static final String EX_BOOT_3001 = "EX-BOOT-3001";
+
     // -----------------------------------------------------------------------
     // EX-NET – Transport / Network layer
     // -----------------------------------------------------------------------
+
+    /**
+     * TLS/Crypto operation failure (handshake, wrap, unwrap, or shutdown).
+     *
+     * <p><b>rawArgs layout for Black-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code int}    opensslErrorCode (SSL_get_error(); 0 if N/A)</li>
+     *   <li>index 1 – {@code String} detail</li>
+     * </ul>
+     */
+    public static final String EX_NET_2001 = "EX-NET-2001";
 
     /**
      * Transport-level protocol handshake or bind failure.

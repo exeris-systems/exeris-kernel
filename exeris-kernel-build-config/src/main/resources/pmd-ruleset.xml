@@ -70,7 +70,7 @@
             Exeris kernel exceptions are serialised via the off-heap binary Black-Box
             format (MemorySegment structs), never via java.io.ObjectOutputStream.
             Adding serialVersionUID would be pure ceremony with no runtime benefit.
-            See: docs/subsystems/03-telemetry.md § "Binary Struct Mapping"
+            See: docs/subsystems/telemetry.md § "Binary Struct Mapping"
         -->
         <exclude name="MissingSerialVersionUID"/>
         <!--
