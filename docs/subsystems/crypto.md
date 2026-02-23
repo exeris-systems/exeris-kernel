@@ -229,7 +229,7 @@ Use JFR's built-in `MethodProfiling` instead for cipher throughput analysis.
 
 ## Error Handling
 
-Crypto errors follow the Black-Box pattern (see `03-telemetry.md`).
+Crypto errors follow the Black-Box pattern (see [Telemetry](./telemetry.md)).
 No `String.formatted()`, no `e.getMessage()` concatenation at throw sites.
 
 ```java

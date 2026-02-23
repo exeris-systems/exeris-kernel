@@ -17,7 +17,7 @@
             ExerisKernelException.rawArgs() deliberately returns the internal array
             by reference to guarantee zero allocation on the telemetry hot-path.
             A defensive copy would violate the "No Waste Compute" mandate.
-            See: docs/subsystems/03-telemetry.md § "The Black-Box Pattern"
+            See: docs/subsystems/telemetry.md § "The Black-Box Pattern"
         -->
         <exclude name="MethodReturnsInternalArray"/>
     </rule>
