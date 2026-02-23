@@ -60,6 +60,14 @@ public record MemoryProviderConfig(
         if (networkOffHeapThreshold < 0) {
             throw new IllegalArgumentException("networkOffHeapThreshold must be >= 0");
         }
+        if (totalOffHeapBytes < -1) {
+            throw new IllegalArgumentException(
+                    "totalOffHeapBytes must be >= -1 (-1 = disabled), got: " + totalOffHeapBytes);
+        }
+        if (totalOffHeapBytes == 0) {
+            throw new IllegalArgumentException(
+                    "totalOffHeapBytes == 0 is not a valid budget; use -1 to disable off-heap");
+        }
         Objects.requireNonNull(leakDetection, "leakDetection must not be null");
     }
 

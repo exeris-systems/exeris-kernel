@@ -7,8 +7,10 @@
  */
 package eu.exeris.kernel.spi.context;
 
+import eu.exeris.kernel.spi.crypto.KernelCryptoProvider;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.memory.MemoryProvider;
+import eu.exeris.kernel.spi.telemetry.TelemetryProvider;
 
 /**
  * Central {@link ScopedValue} slots for all SPI providers resolved during bootstrap.
@@ -20,7 +22,7 @@ import eu.exeris.kernel.spi.memory.MemoryProvider;
  * that was bound by the kernel bootstrapper.
  *
  * <h2>Context Propagation Model (JEP 506)</h2>
- * <p>{@code ScopedValue} slots are inherited by every {@link Thread#startVirtualThread virtual thread}
+ * <p>{@code ScopedValue} slots are inherited by every {@link Thread#startVirtualThread(Runnable) virtual thread}
  * spawned within the binding scope. This means a single {@code ScopedValue.where(...).run(...)}
  * in {@code KernelBootstrap} covers the entire lifetime of the kernel — thousands of virtual
  * threads all read the same provider instances with zero synchronisation overhead.
@@ -28,10 +30,10 @@ import eu.exeris.kernel.spi.memory.MemoryProvider;
  * <h2>Binding (bootstrap side)</h2>
  * <pre>{@code
  * ScopedValue
-     *     .where(KernelProviders.MEMORY_ALLOCATOR, allocator)
-     *     .where(KernelProviders.MEMORY_PROVIDER,  provider)
-     *     .where(KernelProviders.CARRIER_INDEX, 0)
-     *     .run(kernel::startSubsystems);
+ *     .where(KernelProviders.MEMORY_ALLOCATOR, allocator)
+ *     .where(KernelProviders.MEMORY_PROVIDER,  provider)
+ *     .where(KernelProviders.CARRIER_INDEX, 0)
+ *     .run(kernel::startSubsystems);
  * }</pre>
  *
  * <h2>Reading (subsystem / handler side)</h2>
@@ -87,6 +89,23 @@ public final class KernelProviders {
      */
     public static final ScopedValue<Integer> CARRIER_INDEX = ScopedValue.newInstance();
 
+    /**
+     * The active {@link KernelCryptoProvider} (bound once during bootstrap).
+     *
+     * <p>Transport subsystems read this slot to create {@link eu.exeris.kernel.spi.crypto.TlsEngine}
+     * instances. The bootstrapper also checks {@link KernelCryptoProvider#supportsQuic()} here
+     * to decide whether to activate QUIC transport.
+     */
+    public static final ScopedValue<KernelCryptoProvider> CRYPTO_PROVIDER = ScopedValue.newInstance();
+
+    /**
+     * The active {@link TelemetryProvider} (bound once during bootstrap).
+     *
+     * <p>Subsystems use this slot to emit {@link eu.exeris.kernel.spi.telemetry.KernelEvent} objects
+     * to the active sink chain without holding a direct reference to any sink implementation.
+     */
+    public static final ScopedValue<TelemetryProvider> TELEMETRY_PROVIDER = ScopedValue.newInstance();
+
     private KernelProviders() {
         // Utility class — static ScopedValue slots only, never instantiated.
     }
@@ -111,7 +130,3 @@ public final class KernelProviders {
         return MEMORY_ALLOCATOR.get();
     }
 }
-
-
-
-

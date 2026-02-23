@@ -26,7 +26,7 @@ package eu.exeris.kernel.spi.memory;
  *   <tr><td>MEDIUM</td><td>16 KB</td><td>Paginated list, standard REST response</td></tr>
  *   <tr><td>STREAMING_CHUNK</td><td>32 KB</td><td>Streaming data chunks (graph, file)</td></tr>
  *   <tr><td>JUMBO</td><td>128 KB</td><td>Bulk import/export, large binary blob</td></tr>
- *   <tr><td>NETWORK_FRAME</td><td>64 KB</td><td>Maximum Ethernet MTU-aligned frame</td></tr>
+ *   <tr><td>NETWORK_FRAME</td><td>64 KB</td><td>Maximum IP datagram / UDP payload size</td></tr>
  * </table>
  *
  * @since 0.5.0
@@ -56,8 +56,8 @@ public enum AllocationHint {
     MEDIUM(16 * 1_024),
 
     /**
-     * Network frame: 65 536 bytes.
-     * <p>MTU-aligned network frames for transport pipelines.
+     * Network frame: 64 KB (65 536 bytes).
+     * <p>Maximum IP datagram / UDP payload size for transport pipelines.
      * Typically off-heap to avoid GC pauses on high-throughput paths.
      */
     NETWORK_FRAME(64 * 1_024),

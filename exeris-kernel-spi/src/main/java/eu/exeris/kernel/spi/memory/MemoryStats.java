@@ -48,6 +48,14 @@ public record MemoryStats(
         if (allocatedBytes < 0 || freeBytes < 0 || peakAllocatedBytes < 0) {
             throw new IllegalArgumentException("Memory stats byte counts must be non-negative");
         }
+        if (totalBytes < -1) {
+            throw new IllegalArgumentException(
+                    "totalBytes must be >= -1 (-1 = unknown/heap-only), got: " + totalBytes);
+        }
+        if (carrierPoolCount < 0) {
+            throw new IllegalArgumentException(
+                    "carrierPoolCount must be non-negative, got: " + carrierPoolCount);
+        }
     }
 
     /**

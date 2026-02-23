@@ -10,6 +10,8 @@ package eu.exeris.kernel.spi.transport;
 import eu.exeris.kernel.spi.exceptions.ExerisKernelException;
 import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 
+import java.util.Objects;
+
 /**
  * Thrown when a transport-level operation fails (bind, start, send, receive, shutdown).
  *
@@ -65,6 +67,7 @@ public final class TransportException extends ExerisKernelException {
     private static final String MSG_BIND    = "Transport bind failure";
     private static final String MSG_SEND    = "Transport send failure";
     private static final String MSG_TIMEOUT = "Transport receive timeout";
+    private static final String ERR_TRANSPORT_NAME_NULL = "transportName must not be null";
 
     // -----------------------------------------------------------------------
     // General constructor (used when no typed factory matches)
@@ -106,6 +109,7 @@ public final class TransportException extends ExerisKernelException {
      * @return a fully initialised {@link TransportException}
      */
     public static TransportException bindFailure(String transportName, int port, Throwable cause) {
+        Objects.requireNonNull(transportName, ERR_TRANSPORT_NAME_NULL);
         return new TransportException(
                 KernelErrorCodes.EX_NET_4001,
                 MSG_BIND,
@@ -125,6 +129,7 @@ public final class TransportException extends ExerisKernelException {
      * @return a fully initialised {@link TransportException}
      */
     public static TransportException sendFailure(String transportName, long bytesSent, Throwable cause) {
+        Objects.requireNonNull(transportName, ERR_TRANSPORT_NAME_NULL);
         return new TransportException(
                 KernelErrorCodes.EX_NET_4002,
                 MSG_SEND,
@@ -143,6 +148,7 @@ public final class TransportException extends ExerisKernelException {
      * @return a fully initialised {@link TransportException}
      */
     public static TransportException receiveTimeout(String transportName, long timeoutMs) {
+        Objects.requireNonNull(transportName, ERR_TRANSPORT_NAME_NULL);
         return new TransportException(
                 KernelErrorCodes.EX_NET_4003,
                 MSG_TIMEOUT,

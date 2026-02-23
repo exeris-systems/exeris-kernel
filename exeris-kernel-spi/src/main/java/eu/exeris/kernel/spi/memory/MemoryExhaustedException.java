@@ -87,25 +87,25 @@ public final class MemoryExhaustedException extends ExerisKernelException {
     /**
      * Returns the number of bytes that were requested at the time of failure.
      *
-     * <p>This is a convenience accessor over {@code (long) rawArgs()[0]} with an explicit
-     * semantic name for Community-tier logging paths.
+     * <p>This is a convenience accessor over {@code ((Number) rawArgs()[0]).longValue()}
+     * with an explicit semantic name for Community-tier logging paths.
      *
      * @return requested byte count; always {@code > 0}
      */
     public long requestedBytes() {
-        return (long) rawArgs()[0];
+        return ((Number) rawArgs()[0]).longValue();
     }
 
     /**
      * Returns the number of bytes that were available in the allocator tier
      * at the time of failure.
      *
-     * <p>This is a convenience accessor over {@code (long) rawArgs()[1]}.
+     * <p>This is a convenience accessor over {@code ((Number) rawArgs()[1]).longValue()}.
      *
      * @return available byte count; may be {@code 0}
      */
     public long availableBytes() {
-        return (long) rawArgs()[1];
+        return ((Number) rawArgs()[1]).longValue();
     }
 }
 
