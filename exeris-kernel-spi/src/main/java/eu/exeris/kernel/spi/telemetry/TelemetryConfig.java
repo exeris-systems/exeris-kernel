@@ -45,7 +45,7 @@ public record TelemetryConfig(
         return new TelemetryConfig(true, false, null, 0L, 4096);
     }
 
-    /** Production community configuration: JFR + console disabled, file sink active. */
+    /** Production community configuration: console disabled, JFR enabled, file sink active. */
     public static TelemetryConfig communityProduction(String logPath) {
         return new TelemetryConfig(false, true, logPath, 0L, 16_384);
     }

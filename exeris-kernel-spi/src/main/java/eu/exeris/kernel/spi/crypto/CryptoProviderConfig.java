@@ -20,7 +20,7 @@ import java.util.Objects;
  * <p>The {@link Protocol} field drives which engine path is used:
  * <ul>
  *   <li>{@link Protocol#TCP_TLS} — standard TLS 1.3 over TCP (Community + Enterprise)</li>
- *   <li>{@link Protocol#QUIC}    — QUIC over UDP with io_uring BIO pairs (Enterprise only)</li>
+ *   <li>{@link Protocol#QUIC}    — QUIC over UDP (Enterprise only)</li>
  * </ul>
  * Community implementations MUST throw {@link CryptoBootstrapException} when
  * {@code protocol == QUIC}.
@@ -57,8 +57,8 @@ public record CryptoProviderConfig(
         /** Standard TLS 1.3 over TCP. Supported by Community and Enterprise. */
         TCP_TLS,
         /**
-         * QUIC over UDP with io_uring-integrated OpenSSL BIO pairs.
-         * Enterprise only — Community throws {@link CryptoBootstrapException}.
+         * QUIC over UDP — Enterprise only.
+         * Community implementations MUST throw {@link CryptoBootstrapException}.
          */
         QUIC
     }

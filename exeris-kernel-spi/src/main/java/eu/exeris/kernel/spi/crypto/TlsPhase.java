@@ -29,7 +29,7 @@ package eu.exeris.kernel.spi.crypto;
  *
  * <h2>Valhalla Readiness</h2>
  * <p>Enum constants are singletons — safe as {@code value record} fields.
- * Ordinal-based dispatch in {@link TlsStateMachine} is O(1).
+ * Ordinal-based dispatch in the underlying TLS state machine is O(1).
  *
  * @since 0.5.0
  * @see TlsSessionState

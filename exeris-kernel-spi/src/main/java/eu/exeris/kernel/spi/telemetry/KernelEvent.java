@@ -41,17 +41,31 @@ public record KernelEvent(
         ExerisKernelException exception,
         String component
 ) {
-    /** Factory for informational lifecycle events (bootstrap, transport bind). */
+    /**
+     * Factory for informational lifecycle events (bootstrap, transport bind).
+     *
+     * <p><strong>Allocation note:</strong> each call allocates a record instance and
+     * an {@link Instant}. On truly hot-paths the sink implementation should capture
+     * the timestamp itself (e.g., via epoch-nanos) to avoid per-event GC pressure.
+     */
     public static KernelEvent info(String code, String component) {
         return new KernelEvent(code, EventLevel.INFO, Instant.now(), null, component);
     }
 
-    /** Factory for warning events (soft degradation, pool near exhaustion). */
+    /**
+     * Factory for warning events (soft degradation, pool near exhaustion).
+     *
+     * @see #info(String, String) for the allocation note
+     */
     public static KernelEvent warn(String code, String component, ExerisKernelException exception) {
         return new KernelEvent(code, EventLevel.WARN, Instant.now(), exception, component);
     }
 
-    /** Factory for critical error events (OOM, handshake failure, native crash). */
+    /**
+     * Factory for critical error events (OOM, handshake failure, native crash).
+     *
+     * @see #info(String, String) for the allocation note
+     */
     public static KernelEvent error(String code, String component, ExerisKernelException exception) {
         return new KernelEvent(code, EventLevel.ERROR, Instant.now(), exception, component);
     }

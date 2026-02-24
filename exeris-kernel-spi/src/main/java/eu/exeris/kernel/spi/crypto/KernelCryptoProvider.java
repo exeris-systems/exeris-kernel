@@ -16,13 +16,13 @@ import eu.exeris.kernel.spi.exceptions.crypto.CryptoBootstrapException;
  * <p>One method: {@link #createTlsEngine(CryptoProviderConfig)}.
  * The {@link CryptoProviderConfig#protocol()} field selects the engine path:
  * <ul>
- *   <li>{@code Protocol.TCP_TLS} — standard TLS 1.3 (Community + Enterprise)</li>
- *   <li>{@code Protocol.QUIC}    — io_uring QUIC (Enterprise only; Community throws
+ *   <li>{@code Protocol.TCP_TLS} — standard TLS 1.3 over stream transport (Community + Enterprise)</li>
+ *   <li>{@code Protocol.QUIC}    — datagram-based QUIC transport (Enterprise only; Community throws
  *       {@link CryptoBootstrapException})</li>
  * </ul>
  *
  * <h2>The Wall (SPI Compliance)</h2>
- * <p>Zero knowledge of {@code io_uring}, OpenSSL internals, QUIC BIO pairs, or FFM.
+ * <p>Zero knowledge of underlying native transports, TLS library internals, or foreign memory mechanisms.
  *
  * <h2>Discovery</h2>
  * <p>Loaded via {@link java.util.ServiceLoader}. Enterprise returns {@link #priority()} = 100,
