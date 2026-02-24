@@ -24,12 +24,12 @@ import eu.exeris.kernel.spi.memory.LoanedBuffer;
  *  engine.beginHandshake(out) → TlsStatus
  *  engine.unwrap(in, out)     → decrypt ciphertext → plaintext
  *  engine.wrap(in, out)       → encrypt plaintext  → ciphertext
- *  engine.close()             → send close_notify, release native SSL*
+ *  engine.close()             → send close_notify, release native TLS session handle
  * </pre>
  *
  * <h2>Thread Safety</h2>
  * <p>Instances are NOT thread-safe by design. Each carrier/virtual thread owns its own engine.
- * Shared state lives only in the parent {@code SSL_CTX*}, which is read-only after bootstrap.
+ * Shared state lives only in the provider's global TLS context, which is read-only after bootstrap.
  *
  * @since 0.5.0
  * @see KernelCryptoProvider
@@ -89,7 +89,7 @@ public interface TlsEngine extends AutoCloseable {
     void initiateShutdown(LoanedBuffer outbound);
 
     /**
-     * Releases the native {@code SSL*} pointer and all associated off-heap resources.
+     * Releases the native TLS session handle and all associated off-heap resources.
      * Idempotent — multiple calls are safe.
      */
     @Override

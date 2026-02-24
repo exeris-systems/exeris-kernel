@@ -31,12 +31,13 @@ public record TelemetryConfig(
         int maxEventQueueDepth
 ) {
     private static final long MIN_OFF_HEAP_BYTES = 0L;
+    private static final int  MIN_EVENT_QUEUE_DEPTH = 1;
 
     public TelemetryConfig {
         if (blackBoxOffHeapBytes < MIN_OFF_HEAP_BYTES) {
             throw new IllegalArgumentException("blackBoxOffHeapBytes must be >= 0");
         }
-        if (maxEventQueueDepth <= 0) {
+        if (maxEventQueueDepth < MIN_EVENT_QUEUE_DEPTH) {
             throw new IllegalArgumentException("maxEventQueueDepth must be > 0");
         }
         if (fileSinkPath != null && fileSinkPath.isBlank()) {
@@ -46,12 +47,12 @@ public record TelemetryConfig(
 
     /** Default configuration for development / unit tests. */
     public static TelemetryConfig defaults() {
-        return new TelemetryConfig(true, false, null, 0L, 4096);
+        return new TelemetryConfig(true, false, null, MIN_OFF_HEAP_BYTES, 4096);
     }
 
     /** Production community configuration: console disabled, JFR enabled, file sink active. */
     public static TelemetryConfig communityProduction(String logPath) {
-        return new TelemetryConfig(false, true, logPath, 0L, 16_384);
+        return new TelemetryConfig(false, true, logPath, MIN_OFF_HEAP_BYTES, 16_384);
     }
 }
 

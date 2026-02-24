@@ -22,8 +22,8 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  *
  * <h2>rawArgs Binary Layout</h2>
  * <pre>
- * index 0 → int    opensslErrorCode  (raw SSL_get_error() value; 0 if not applicable)
- * index 1 → String detail            (static message fragment, never formatted)
+ * index 0 → int    nativeErrorCode  (provider-specific error code; 0 if not applicable)
+ * index 1 → String detail           (static message fragment, never formatted)
  * </pre>
  *
  * @since 0.5.0
@@ -32,8 +32,8 @@ public final class TlsHandshakeException extends ExerisKernelException {
 
     private static final String MESSAGE = "TLS handshake failed";
 
-    public TlsHandshakeException(int opensslErrorCode, String detail) {
-        super(KernelErrorCodes.EX_NET_2001, MESSAGE, null, opensslErrorCode, detail);
+    public TlsHandshakeException(int nativeErrorCode, String detail) {
+        super(KernelErrorCodes.EX_NET_2001, MESSAGE, null, nativeErrorCode, detail);
     }
 
     public TlsHandshakeException(String detail, Throwable cause) {
@@ -41,8 +41,8 @@ public final class TlsHandshakeException extends ExerisKernelException {
     }
 
     /**
-     * Creates a state-machine / protocol-level exception with no native OpenSSL error code.
-     * Uses {@code -1} as sentinel — outside the valid {@code SSL_get_error()} range (0–11).
+     * Creates a state-machine / protocol-level exception with no native provider error code.
+     * Uses {@code -1} as sentinel — outside the valid provider error code range.
      *
      * @param detail static message fragment, never formatted
      */

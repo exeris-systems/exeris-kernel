@@ -42,8 +42,8 @@ public class TlsException extends ExerisKernelException {
         super(KernelErrorCodes.EX_NET_2001, MESSAGE, cause, detail);
     }
 
-    public TlsException(int opensslErrorCode, String detail) {
-        super(KernelErrorCodes.EX_NET_2001, MESSAGE, null, opensslErrorCode, detail);
+    public TlsException(int nativeErrorCode, String detail) {
+        super(KernelErrorCodes.EX_NET_2001, MESSAGE, null, nativeErrorCode, detail);
     }
 }
 

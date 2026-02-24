@@ -12,7 +12,7 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 
 /**
  * Thrown by {@link eu.exeris.kernel.spi.crypto.KernelCryptoProvider#createTlsEngine} when the crypto engine
- * cannot be initialised (e.g., missing native OpenSSL library, invalid certificate,
+ * cannot be initialised (e.g., missing native cryptographic library, invalid certificate,
  * insufficient off-heap budget).
  *
  * <h2>Hierarchy &amp; java:S110</h2>

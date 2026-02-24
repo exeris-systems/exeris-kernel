@@ -138,7 +138,7 @@ public final class KernelErrorCodes {
      *
      * <p><b>rawArgs layout for Black-Box:</b>
      * <ul>
-     *   <li>index 0 – {@code int}    opensslErrorCode (SSL_get_error(); 0 if N/A)</li>
+     *   <li>index 0 – {@code int}    nativeErrorCode (provider-specific error code; 0 if N/A)</li>
      *   <li>index 1 – {@code String} detail</li>
      * </ul>
      */
@@ -146,7 +146,7 @@ public final class KernelErrorCodes {
 
     /**
      * Crypto provider bootstrap failure: the {@code KernelCryptoProvider} could not
-     * initialise its engine (e.g., missing native OpenSSL library, invalid certificate,
+     * initialise its engine (e.g., missing native cryptographic library, invalid certificate,
      * or insufficient off-heap budget).
      *
      * <p><b>rawArgs layout for Black-Box:</b>
