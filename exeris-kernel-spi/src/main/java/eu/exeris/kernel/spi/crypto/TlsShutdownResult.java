@@ -11,9 +11,9 @@ package eu.exeris.kernel.spi.crypto;
  * SPI: Immutable result of a single TLS shutdown step.
  *
  * <h2>Valhalla Readiness</h2>
- * <p>Declared as {@code value record} — no object header overhead. The
- * {@code sentCloseNotify}/{@code receivedCloseNotify} booleans are packed
- * together with the status ordinal in a flattened layout.
+ * <p>Designed as a candidate for {@code value record} once JEP 401 is mainline.
+ * At that point the {@code sentCloseNotify}/{@code receivedCloseNotify} booleans
+ * and the status ordinal can be flattened to minimize header and pointer overhead.
  *
  * <h2>Zero-Allocation Contract</h2>
  * <p>{@link #COMPLETE} and {@link #ERROR} are pre-allocated singletons.

@@ -11,7 +11,8 @@ package eu.exeris.kernel.spi.crypto;
  * SPI: Immutable result of a single TLS handshake step.
  *
  * <h2>Valhalla Readiness</h2>
- * <p>Declared as {@code value record} — JVM will flatten instances in arrays and
+ * <p>Immutable data carrier and candidate for {@code value record} once JEP 401
+ * is mainline — at that point JVMs will be able to flatten instances in arrays and
  * as fields of other value types, eliminating object headers on the heap.
  *
  * <h2>Zero-Allocation Contract</h2>

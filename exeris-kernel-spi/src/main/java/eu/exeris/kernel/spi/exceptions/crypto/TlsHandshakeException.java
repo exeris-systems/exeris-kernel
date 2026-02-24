@@ -7,9 +7,18 @@
  */
 package eu.exeris.kernel.spi.exceptions.crypto;
 
+import eu.exeris.kernel.spi.exceptions.ExerisKernelException;
+import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 
 /**
  * Thrown when a TLS handshake cannot be initiated or completed.
+ *
+ * <h2>Hierarchy &amp; java:S110</h2>
+ * <p>Extends {@link ExerisKernelException} <em>directly</em> (skipping the
+ * {@link TlsException} intermediate layer) to remain within the
+ * {@code java:S110} inheritance-depth limit of&nbsp;5:
+ * {@code Object → Throwable → Exception → RuntimeException →
+ * ExerisKernelException → TlsHandshakeException}.
  *
  * <h2>rawArgs Binary Layout</h2>
  * <pre>
@@ -19,14 +28,16 @@ package eu.exeris.kernel.spi.exceptions.crypto;
  *
  * @since 0.5.0
  */
-public final class TlsHandshakeException extends TlsException {
+public final class TlsHandshakeException extends ExerisKernelException {
+
+    private static final String MESSAGE = "TLS handshake failed";
 
     public TlsHandshakeException(int opensslErrorCode, String detail) {
-        super(opensslErrorCode, detail);
+        super(KernelErrorCodes.EX_NET_2001, MESSAGE, null, opensslErrorCode, detail);
     }
 
     public TlsHandshakeException(String detail, Throwable cause) {
-        super(detail, cause);
+        super(KernelErrorCodes.EX_NET_2001, MESSAGE, cause, -1, detail);
     }
 
     /**
@@ -36,6 +47,6 @@ public final class TlsHandshakeException extends TlsException {
      * @param detail static message fragment, never formatted
      */
     public TlsHandshakeException(String detail) {
-        super(-1, detail);
+        super(KernelErrorCodes.EX_NET_2001, MESSAGE, null, -1, detail);
     }
 }

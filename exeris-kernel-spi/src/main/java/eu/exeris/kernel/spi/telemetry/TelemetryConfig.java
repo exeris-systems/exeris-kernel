@@ -1,5 +1,9 @@
 /*
  * Copyright (C) 2025-2026 Exeris. All rights reserved.
+ *
+ * This code is part of the Exeris Systems.
+ * Distributed under the proprietary Exeris Software License.
+ * Unauthorized copying or distribution is prohibited.
  */
 package eu.exeris.kernel.spi.telemetry;
 
@@ -22,6 +26,20 @@ public record TelemetryConfig(
         long blackBoxOffHeapBytes,
         int maxEventQueueDepth
 ) {
+    private static final long MIN_OFF_HEAP_BYTES = 0L;
+
+    public TelemetryConfig {
+        if (blackBoxOffHeapBytes < MIN_OFF_HEAP_BYTES) {
+            throw new IllegalArgumentException("blackBoxOffHeapBytes must be >= 0");
+        }
+        if (maxEventQueueDepth <= 0) {
+            throw new IllegalArgumentException("maxEventQueueDepth must be > 0");
+        }
+        if (fileSinkPath != null && fileSinkPath.isBlank()) {
+            throw new IllegalArgumentException("fileSinkPath must be non-empty when provided");
+        }
+    }
+
     /** Default configuration for development / unit tests. */
     public static TelemetryConfig defaults() {
         return new TelemetryConfig(true, false, null, 0L, 4096);

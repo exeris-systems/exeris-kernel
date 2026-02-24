@@ -8,11 +8,20 @@
 package eu.exeris.kernel.spi.exceptions.crypto;
 
 import eu.exeris.kernel.spi.crypto.KernelCryptoProvider;
+import eu.exeris.kernel.spi.exceptions.ExerisKernelException;
+import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 
 /**
  * Thrown by {@link KernelCryptoProvider#createTlsEngine} when the crypto engine
  * cannot be initialised (e.g., missing native OpenSSL library, invalid certificate,
  * insufficient off-heap budget).
+ *
+ * <h2>Hierarchy &amp; java:S110</h2>
+ * <p>Extends {@link ExerisKernelException} <em>directly</em> (skipping the
+ * {@link TlsException} intermediate layer) to remain within the
+ * {@code java:S110} inheritance-depth limit of&nbsp;5:
+ * {@code Object → Throwable → Exception → RuntimeException →
+ * ExerisKernelException → CryptoBootstrapException}.
  *
  * <h2>rawArgs Binary Layout</h2>
  * <pre>
@@ -22,14 +31,16 @@ import eu.exeris.kernel.spi.crypto.KernelCryptoProvider;
  *
  * @since 0.5.0
  */
-public final class CryptoBootstrapException extends TlsException {
+public final class CryptoBootstrapException extends ExerisKernelException {
+
+    private static final String MESSAGE = "Crypto provider bootstrap failed";
 
     public CryptoBootstrapException(String providerName, String reason) {
-        super(reason);
+        super(KernelErrorCodes.EX_NET_2002, MESSAGE, null, providerName, reason);
     }
 
     public CryptoBootstrapException(String providerName, String reason, Throwable cause) {
-        super(reason, cause);
+        super(KernelErrorCodes.EX_NET_2002, MESSAGE, cause, providerName, reason);
     }
 }
 

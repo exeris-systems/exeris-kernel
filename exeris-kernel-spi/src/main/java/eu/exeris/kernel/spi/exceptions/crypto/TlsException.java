@@ -13,6 +13,14 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 /**
  * Base SPI exception for TLS/Crypto failures.
  *
+ * <h2>Hierarchy</h2>
+ * <p>Extends {@link ExerisKernelException} directly — one level below
+ * {@code RuntimeException} in the Kernel tree — to stay within the
+ * {@code java:S110} depth limit of 5 ({@code Object → Throwable → Exception
+ * → RuntimeException → ExerisKernelException → TlsException}).
+ * Concrete subclasses such as {@link CryptoBootstrapException} and
+ * {@link TlsHandshakeException} therefore inherit directly from this class.
+ *
  * <h2>Zero-Allocation Contract</h2>
  * <p>No string formatting occurs in any constructor. Numeric context is stored in
  * {@link #rawArgs()} for binary Black-Box serialization by the Enterprise telemetry tier.

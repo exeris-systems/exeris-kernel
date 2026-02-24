@@ -1,5 +1,9 @@
 /*
  * Copyright (C) 2025-2026 Exeris. All rights reserved.
+ *
+ * This code is part of the Exeris Systems.
+ * Distributed under the proprietary Exeris Software License.
+ * Unauthorized copying or distribution is prohibited.
  */
 package eu.exeris.kernel.spi.telemetry;
 
@@ -18,7 +22,9 @@ import java.time.Instant;
  * {@code rawArgs()} directly into off-heap mmap buffers.
  *
  * <h2>Valhalla Readiness</h2>
- * <p>{@code value record} — no object header, all fields primitives or stable references.
+ * <p>Candidate for {@code value record} once JEP&nbsp;401 is mainline; currently a standard
+ * {@code record} with reference components ({@link String}, {@link Instant},
+ * {@link ExerisKernelException}).</p>
  *
  * @param code       structured error/event code (e.g. {@code "EX-MEM-1001"})
  * @param level      severity level
