@@ -22,7 +22,7 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  *
  * <h2>rawArgs Binary Layout</h2>
  * <pre>
- * index 0 → int    nativeErrorCode  (provider-specific error code; 0 if not applicable)
+ * index 0 → int    nativeErrorCode  (provider-specific error code; -1 if not applicable)
  * index 1 → String detail           (static message fragment, never formatted)
  * </pre>
  *
