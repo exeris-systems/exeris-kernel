@@ -22,7 +22,7 @@
  *       timestamp, optional {@link eu.exeris.kernel.spi.exceptions.ExerisKernelException},
  *       and a component label; candidate for {@code value record} once JEP 401 is mainline</li>
  *   <li>{@link eu.exeris.kernel.spi.telemetry.EventLevel} — severity enum:
- *       {@code INFO}, {@code WARN}, {@code ERROR}</li>
+ *       {@code INFO}, {@code WARN}, {@code ERROR}, {@code FATAL}</li>
  *   <li>{@link eu.exeris.kernel.spi.telemetry.TelemetryConfig} — immutable configuration record
  *       controlling which sinks are active and their resource budgets</li>
  * </ul>

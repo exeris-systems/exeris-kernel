@@ -70,5 +70,17 @@ public record KernelEvent(
     public static KernelEvent error(String code, String component, ExerisKernelException exception) {
         return new KernelEvent(code, EventLevel.ERROR, Instant.now(), exception, component);
     }
+
+    /**
+     * Factory for fatal events (irrecoverable kernel failure, requires process restart).
+     *
+     * <p>Semantically, {@code FATAL} represents conditions where the kernel can no longer
+     * provide service and higher-level orchestration must perform teardown or failover.</p>
+     *
+     * @see #info(String, String) for the allocation note
+     */
+    public static KernelEvent fatal(String code, String component, ExerisKernelException exception) {
+        return new KernelEvent(code, EventLevel.FATAL, Instant.now(), exception, component);
+    }
 }
 

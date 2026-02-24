@@ -17,6 +17,10 @@ package eu.exeris.kernel.spi.telemetry;
  *                             {@code 0} = disabled (Community mode).
  * @param maxEventQueueDepth   Maximum buffered events before backpressure/drop.
  *
+ * <p>Valhalla readiness: candidate for {@code value record} once JEP&nbsp;401 is mainline.
+ * All components are primitives or immutable references, making this record suitable for
+ * header-less, flattenable representation in future runtimes.</p>
+ *
  * @since 0.5.0
  */
 public record TelemetryConfig(
