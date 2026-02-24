@@ -137,34 +137,37 @@ public interface MemoryAllocator extends AutoCloseable {
     MemoryStats stats();
 
     // =========================================================================
-    // Elastic capacity management
+    // Background maintenance (low-frequency, NEVER resizes the pool)
     // =========================================================================
 
     /**
-     * Requests the allocator to expand its backing capacity (e.g., add arenas or extend
-     * the elastic cluster). Implementations may ignore this if auto-scaling is disabled.
+     * Performs low-frequency background maintenance on this allocator.
      *
-     * @return {@code true} if capacity was successfully expanded
-     */
-    default boolean tryExpand() {
-        return false;
-    }
-
-    /**
-     * Requests the allocator to release idle capacity back to the OS.
+     * <h2>What maintenance IS</h2>
+     * <ul>
+     *   <li><b>Telemetry sampling</b>: reads free-slab counts (O(n) — acceptable
+     *       off hot-path) and emits metrics to {@code KernelProviders.TELEMETRY_SINKS}.</li>
+     *   <li><b>Deferred zeroing (Enterprise optional)</b>: if buffers are not zeroed on
+     *       return to the pool (to save CPU cycles on the hot-path), maintenance zeroes
+     *       them in the background.</li>
+     * </ul>
      *
-     * @return {@code true} if capacity was successfully reduced
-     */
-    default boolean tryShrink() {
-        return false;
-    }
-
-    /**
-     * Performs opportunistic maintenance (arena compaction, quarantine GC, retired-slab
-     * reclamation). Safe to invoke from a low-frequency maintenance scheduler.
+     * <h2>What maintenance is NOT</h2>
+     * <p>This method MUST NOT call {@code mmap}, {@code munmap}, or any OS syscall that
+     * adds or removes pages. The Enterprise tier makes a single, irrevocable allocation
+     * at bootstrap and holds it for the JVM lifetime. Resizing post-bootstrap causes
+     * Page Faults, destroys sub-millisecond latencies, and breaks the Zero-GC contract.
+     *
+     * <h2>Entropy Contract</h2>
+     * <p><em>"If you are out of slabs, throw {@link eu.exeris.kernel.spi.exceptions.memory.MemoryExhaustedException}.
+     * Do not silently ask the OS for more. You either planned for the load, or you did not."</em>
+     *
+     * <h2>Invocation</h2>
+     * <p>Called by the kernel background maintenance Virtual Thread — typically every
+     * 10 seconds. Never call from the io_uring event loop or any carrier thread.
      */
     default void performMaintenance() {
-        // no-op by default
+        // no-op by default — Enterprise override emits slab-pool metrics to TelemetrySinks
     }
 
     // =========================================================================
