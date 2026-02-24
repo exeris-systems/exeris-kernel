@@ -13,6 +13,12 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 /**
  * Thrown when the {@link eu.exeris.kernel.spi.telemetry.TelemetryProvider} cannot initialise one or more sinks.
  *
+ * <h2>rawArgs Binary Layout</h2>
+ * <pre>
+ * index 0 → String providerName  (which provider failed to initialise)
+ * index 1 → String reason        (failure cause — static constant, never formatted)
+ * </pre>
+ *
  * @since 0.5.0
  */
 public final class TelemetryBootstrapException extends ExerisKernelException {
