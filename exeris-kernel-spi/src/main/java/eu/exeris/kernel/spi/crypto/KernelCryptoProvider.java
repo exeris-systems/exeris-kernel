@@ -42,7 +42,8 @@ public interface KernelCryptoProvider {
      *
      * @param config cryptographic configuration including {@link CryptoProviderConfig#protocol()}
      * @return fully initialised TLS engine ready for handshake
-     * @throws eu.exeris.kernel.spi.exceptions.crypto.CryptoBootstrapException if engine cannot be initialised or protocol unsupported
+     * @throws eu.exeris.kernel.spi.exceptions.crypto.CryptoBootstrapException
+     *         if engine cannot be initialised or protocol unsupported
      */
     TlsEngine createTlsEngine(CryptoProviderConfig config);
 

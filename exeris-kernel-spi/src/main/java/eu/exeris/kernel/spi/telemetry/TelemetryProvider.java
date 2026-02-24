@@ -37,7 +37,8 @@ public interface TelemetryProvider {
      *
      * @param config telemetry configuration
      * @return immutable list of active sinks; never empty
-     * @throws eu.exeris.kernel.spi.exceptions.telemetry.TelemetryBootstrapException if a required sink cannot be initialised
+     * @throws eu.exeris.kernel.spi.exceptions.telemetry.TelemetryBootstrapException
+     *         if a required sink cannot be initialised
      */
     List<TelemetrySink> createSinks(TelemetryConfig config);
 
