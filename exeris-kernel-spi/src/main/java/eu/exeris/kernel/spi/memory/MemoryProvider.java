@@ -7,6 +7,8 @@
  */
 package eu.exeris.kernel.spi.memory;
 
+import eu.exeris.kernel.spi.exceptions.memory.MemoryBootstrapException;
+
 /**
  * SPI: Factory for creating {@link MemoryAllocator} instances.
  *

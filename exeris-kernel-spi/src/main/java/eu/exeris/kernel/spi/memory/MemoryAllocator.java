@@ -7,6 +7,8 @@
  */
 package eu.exeris.kernel.spi.memory;
 
+import eu.exeris.kernel.spi.exceptions.memory.MemoryExhaustedException;
+
 /**
  * SPI: Unified, pluggable memory-allocation facade — the single entry-point through
  * which <em>all</em> kernel subsystems acquire {@link LoanedBuffer} instances.

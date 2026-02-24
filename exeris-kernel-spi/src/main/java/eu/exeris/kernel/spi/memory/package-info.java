@@ -23,8 +23,8 @@
  *       (MICRO → JUMBO); decouples call sites from raw byte counts</li>
  *   <li>{@link eu.exeris.kernel.spi.memory.MemoryStats} — value record diagnostics snapshot</li>
  *   <li>{@link eu.exeris.kernel.spi.memory.LeakDetectionMode} — DISABLED / SAMPLED / PARANOID</li>
- *   <li>{@link eu.exeris.kernel.spi.memory.MemoryExhaustedException} — zero-alloc Black-Box exception</li>
- *   <li>{@link eu.exeris.kernel.spi.memory.MemoryBootstrapException} — thrown when provider init fails</li>
+ *   <li>{@link eu.exeris.kernel.spi.exceptions.memory.MemoryExhaustedException} — zero-alloc Black-Box exception</li>
+ *   <li>{@link eu.exeris.kernel.spi.exceptions.memory.MemoryBootstrapException} — thrown when provider init fails</li>
  * </ul>
  *
  * <h2>The Wall (SPI Compliance)</h2>

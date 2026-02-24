@@ -138,11 +138,24 @@ public final class KernelErrorCodes {
      *
      * <p><b>rawArgs layout for Black-Box:</b>
      * <ul>
-     *   <li>index 0 – {@code int}    opensslErrorCode (SSL_get_error(); 0 if N/A)</li>
+     *   <li>index 0 – {@code int}    nativeErrorCode (provider-specific error code; -1 if N/A)</li>
      *   <li>index 1 – {@code String} detail</li>
      * </ul>
      */
     public static final String EX_NET_2001 = "EX-NET-2001";
+
+    /**
+     * Crypto provider bootstrap failure: the {@code KernelCryptoProvider} could not
+     * initialise its engine (e.g., missing native cryptographic library, invalid certificate,
+     * or insufficient off-heap budget).
+     *
+     * <p><b>rawArgs layout for Black-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} providerName (which provider failed to initialise)</li>
+     *   <li>index 1 – {@code String} reason       (failure cause — static constant, never formatted)</li>
+     * </ul>
+     */
+    public static final String EX_NET_2002 = "EX-NET-2002";
 
     /**
      * Transport-level protocol handshake or bind failure.

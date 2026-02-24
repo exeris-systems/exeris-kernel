@@ -5,7 +5,7 @@
  * Distributed under the proprietary Exeris Software License.
  * Unauthorized copying or distribution is prohibited.
  */
-package eu.exeris.kernel.spi.transport;
+package eu.exeris.kernel.spi.exceptions.transport;
 
 import eu.exeris.kernel.spi.exceptions.ExerisKernelException;
 import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
