@@ -14,9 +14,11 @@
  *   <li>{@link eu.exeris.kernel.spi.telemetry.TelemetryProvider} — {@code ServiceLoader} factory;
  *       creates and owns a {@link eu.exeris.kernel.spi.telemetry.TelemetrySink} from a given
  *       {@link eu.exeris.kernel.spi.telemetry.TelemetryConfig}</li>
- *   <li>{@link eu.exeris.kernel.spi.telemetry.TelemetrySink} — low-frequency event receiver;
- *       the single method {@code emit(KernelEvent)} is the only ingestion point for all
- *       kernel lifecycle diagnostics</li>
+ *   <li>{@link eu.exeris.kernel.spi.telemetry.TelemetrySink} — unified ingestion contract
+ *       exposing four methods: {@code emit(KernelEvent)} for structured lifecycle events,
+ *       {@code increment(String, long)} for counters, {@code gauge(String, long)} for
+ *       absolute metric values, and {@code latency(String, long)} for nanosecond-resolution
+ *       timing samples</li>
  *   <li>{@link eu.exeris.kernel.spi.telemetry.KernelEvent} — immutable event record carrying
  *       a structured code, {@link eu.exeris.kernel.spi.telemetry.EventLevel}, wall-clock
  *       timestamp, optional {@link eu.exeris.kernel.spi.exceptions.ExerisKernelException},

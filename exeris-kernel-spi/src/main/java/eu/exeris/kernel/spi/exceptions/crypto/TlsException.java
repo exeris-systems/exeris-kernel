@@ -35,11 +35,11 @@ public class TlsException extends ExerisKernelException {
     private static final String MESSAGE = "TLS operation failed";
 
     public TlsException(String detail) {
-        super(KernelErrorCodes.EX_NET_2001, MESSAGE, null, detail);
+        super(KernelErrorCodes.EX_NET_2001, MESSAGE, null, 0, detail);
     }
 
     public TlsException(String detail, Throwable cause) {
-        super(KernelErrorCodes.EX_NET_2001, MESSAGE, cause, detail);
+        super(KernelErrorCodes.EX_NET_2001, MESSAGE, cause, 0, detail);
     }
 
     public TlsException(int nativeErrorCode, String detail) {

@@ -74,7 +74,7 @@ public enum TlsPhase {
     SHUTDOWN_COMPLETE("Graceful shutdown completed"),
 
     /**
-     * Terminal state: SSL* deallocated, no further operations possible.
+     * Terminal state: native TLS session handle deallocated, no further operations possible.
      */
     CLOSED("Connection closed and resources freed"),
 
