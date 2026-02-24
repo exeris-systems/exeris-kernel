@@ -27,7 +27,8 @@
  *   <li>{@link eu.exeris.kernel.spi.crypto.TlsSessionState} — read-only view of the current
  *       {@link eu.exeris.kernel.spi.crypto.TlsPhase}; consumed by the Core orchestration layer</li>
  *   <li>{@link eu.exeris.kernel.spi.crypto.TlsStatus} — transport-layer outcome codes
- *       ({@code OK}, {@code NEED_MORE_IO}, {@code CLOSED}, {@code ERROR})</li>
+ *       ({@code OK}, {@code NEED_WRAP}, {@code NEED_UNWRAP}, {@code NEED_HANDSHAKE},
+ *       {@code FINISHED}, {@code CLOSED})</li>
  * </ul>
  *
  * <h2>The Wall (SPI Compliance)</h2>

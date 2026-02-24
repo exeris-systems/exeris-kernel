@@ -7,7 +7,6 @@
  */
 package eu.exeris.kernel.spi.telemetry;
 
-import eu.exeris.kernel.spi.exceptions.telemetry.TelemetryBootstrapException;
 
 import java.util.List;
 
@@ -38,7 +37,7 @@ public interface TelemetryProvider {
      *
      * @param config telemetry configuration
      * @return immutable list of active sinks; never empty
-     * @throws TelemetryBootstrapException if a required sink cannot be initialised
+     * @throws eu.exeris.kernel.spi.exceptions.telemetry.TelemetryBootstrapException if a required sink cannot be initialised
      */
     List<TelemetrySink> createSinks(TelemetryConfig config);
 

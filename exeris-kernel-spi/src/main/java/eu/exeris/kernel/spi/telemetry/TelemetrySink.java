@@ -7,7 +7,6 @@
  */
 package eu.exeris.kernel.spi.telemetry;
 
-import eu.exeris.kernel.spi.exceptions.ExerisKernelException;
 
 /**
  * SPI: Pluggable telemetry output channel (sink).
@@ -20,7 +19,7 @@ import eu.exeris.kernel.spi.exceptions.ExerisKernelException;
  * <ul>
  *   <li><b>Community</b>: {@code ConsoleSink}, {@code FileSink}, {@code JfrSink} — text/JFR.</li>
  *   <li><b>Enterprise</b>: {@code BinaryBlackBoxSink} — direct off-heap mmap dump of
- *       {@link ExerisKernelException#rawArgs()}. Zero String allocation on the critical path.</li>
+ *       {@link eu.exeris.kernel.spi.exceptions.ExerisKernelException#rawArgs()}. Zero String allocation on the critical path.</li>
  * </ul>
  *
  * @since 0.5.0
@@ -32,8 +31,8 @@ public interface TelemetrySink extends AutoCloseable {
      * Emits a kernel event to this sink.
      *
      * <p><b>Hot-path contract</b>: implementations MUST NOT allocate {@code String} objects
-     * by calling {@link ExerisKernelException#getMessage()} or similar formatting methods.
-     * They MUST read {@link ExerisKernelException#rawArgs()} directly for zero-copy serialization.
+     * by calling {@link eu.exeris.kernel.spi.exceptions.ExerisKernelException#getMessage()} or similar formatting methods.
+     * They MUST read {@link eu.exeris.kernel.spi.exceptions.ExerisKernelException#rawArgs()} directly for zero-copy serialization.
      *
      * @param event the kernel event to record; never {@code null}
      */

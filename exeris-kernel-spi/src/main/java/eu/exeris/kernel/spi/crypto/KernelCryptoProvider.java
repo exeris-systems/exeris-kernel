@@ -7,8 +7,6 @@
  */
 package eu.exeris.kernel.spi.crypto;
 
-import eu.exeris.kernel.spi.exceptions.crypto.CryptoBootstrapException;
-
 /**
  * SPI: Pluggable cryptographic engine for the Exeris Kernel.
  *
@@ -18,7 +16,7 @@ import eu.exeris.kernel.spi.exceptions.crypto.CryptoBootstrapException;
  * <ul>
  *   <li>{@code Protocol.TCP_TLS} — standard TLS 1.3 over stream transport (Community + Enterprise)</li>
  *   <li>{@code Protocol.QUIC}    — datagram-based QUIC transport (Enterprise only; Community throws
- *       {@link CryptoBootstrapException})</li>
+ *       {@link eu.exeris.kernel.spi.exceptions.crypto.CryptoBootstrapException})</li>
  * </ul>
  *
  * <h2>The Wall (SPI Compliance)</h2>
@@ -38,12 +36,13 @@ public interface KernelCryptoProvider {
      * <p>Protocol routing:
      * <ul>
      *   <li>{@code Protocol.TCP_TLS} — both tiers supported</li>
-     *   <li>{@code Protocol.QUIC}    — Community MUST throw {@link CryptoBootstrapException}</li>
+     *   <li>{@code Protocol.QUIC}    — Community MUST throw
+     *       {@link eu.exeris.kernel.spi.exceptions.crypto.CryptoBootstrapException}</li>
      * </ul>
      *
      * @param config cryptographic configuration including {@link CryptoProviderConfig#protocol()}
      * @return fully initialised TLS engine ready for handshake
-     * @throws CryptoBootstrapException if engine cannot be initialised or protocol unsupported
+     * @throws eu.exeris.kernel.spi.exceptions.crypto.CryptoBootstrapException if engine cannot be initialised or protocol unsupported
      */
     TlsEngine createTlsEngine(CryptoProviderConfig config);
 
