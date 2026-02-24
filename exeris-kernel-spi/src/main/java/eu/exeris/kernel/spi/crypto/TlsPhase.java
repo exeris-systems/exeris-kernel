@@ -37,7 +37,7 @@ package eu.exeris.kernel.spi.crypto;
 public enum TlsPhase {
 
     /**
-     * Initial state: SSL* created but no OpenSSL operations performed yet.
+     * Initial state: native TLS session created but no protocol operations performed yet.
      * Legal transitions: → {@link #HANDSHAKE_IN_PROGRESS}, → {@link #ERROR}
      */
     UNINITIALIZED("Connection not yet initialized"),

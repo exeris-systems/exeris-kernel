@@ -38,33 +38,17 @@ public record TlsShutdownResult(Status status,
 
     /**
      * Creates a partial-shutdown result.
-     * Used when SSL_shutdown() returns 0 — local close-notify sent, peer not yet acknowledged.
+     * Used when the underlying engine indicates that the local close-notify was sent
+     * but the peer has not yet acknowledged — the caller must continue polling.
      *
-     * @param sent     whether local close-notify was sent ({@code SSL_SENT_SHUTDOWN} flag)
-     * @param received whether peer close-notify was received ({@code SSL_RECEIVED_SHUTDOWN} flag)
+     * @param sent     whether the local side has sent a close-notify alert
+     * @param received whether the peer's close-notify has been received
      * @return partial shutdown result
      */
     public static TlsShutdownResult partial(boolean sent, boolean received) {
         return new TlsShutdownResult(Status.NEED_MORE_IO, sent, received);
     }
 
-    /**
-     * Creates a result from OpenSSL {@code SSL_shutdown()} return value and
-     * {@code SSL_get_shutdown()} flags.
-     *
-     * @param retVal         return value of {@code SSL_shutdown()}
-     * @param shutdownStatus flags from {@code SSL_get_shutdown()} (bit 0 = SENT, bit 1 = RECEIVED)
-     * @return mapped shutdown result
-     */
-    public static TlsShutdownResult fromReturnValue(int retVal, int shutdownStatus) {
-        boolean sent     = (shutdownStatus & 1) != 0; // SSL_SENT_SHUTDOWN
-        boolean received = (shutdownStatus & 2) != 0; // SSL_RECEIVED_SHUTDOWN
-        return switch (retVal) {
-            case 1  -> COMPLETE;
-            case 0  -> partial(sent, received);
-            default -> ERROR;
-        };
-    }
 
     /** Returns {@code true} if both close-notify alerts have been exchanged. */
     public boolean isComplete() {

@@ -28,7 +28,8 @@ import java.time.Instant;
  *
  * @param code       structured error/event code (e.g. {@code "EX-MEM-1001"})
  * @param level      severity level
- * @param timestamp  nanosecond-precision capture time
+ * @param timestamp  wall-clock capture time ({@link java.time.Instant#now()} semantics;
+ *                   precision is platform-dependent and not guaranteed to be nanosecond-resolution)
  * @param exception  optional attached exception (may be {@code null})
  * @param component  kernel component name (compile-time constant on call site)
  *

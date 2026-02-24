@@ -20,11 +20,12 @@ package eu.exeris.kernel.spi.crypto;
  * ({@link #COMPLETE}, {@link #NEED_UNWRAP}, {@link #NEED_WRAP}) via the static
  * factory methods. No {@code new} on the hot handshake path unless an error occurs.
  *
- * @param status    the semantic outcome of this handshake step
- * @param sslError  raw OpenSSL error code (0 for non-error outcomes)
+ * @param status          the semantic outcome of this handshake step
+ * @param nativeErrorCode provider-specific error code (0 for non-error outcomes);
+ *                        interpretation is left to the implementation tier
  * @since 0.5.0
  */
-public record TlsHandshakeResult(Status status, int sslError) {
+public record TlsHandshakeResult(Status status, int nativeErrorCode) {
 
     /** Pre-allocated singleton: handshake complete. */
     public static final TlsHandshakeResult COMPLETE    = new TlsHandshakeResult(Status.COMPLETE, 0);
@@ -36,13 +37,13 @@ public record TlsHandshakeResult(Status status, int sslError) {
     public static final TlsHandshakeResult NEED_WRAP   = new TlsHandshakeResult(Status.NEED_WRAP, 0);
 
     /**
-     * Creates an error result with the raw OpenSSL error code.
+     * Creates an error result with the provider-specific native error code.
      *
-     * @param sslError raw SSL_get_error() return value
+     * @param nativeErrorCode provider-specific error code returned by the underlying engine
      * @return new error result (not cached — errors are rare)
      */
-    public static TlsHandshakeResult error(int sslError) {
-        return new TlsHandshakeResult(Status.ERROR, sslError);
+    public static TlsHandshakeResult error(int nativeErrorCode) {
+        return new TlsHandshakeResult(Status.ERROR, nativeErrorCode);
     }
 
     /** Returns {@code true} if the handshake is fully complete. */
