@@ -7,8 +7,6 @@
  */
 package eu.exeris.kernel.spi.crypto;
 
-import eu.exeris.kernel.spi.exceptions.crypto.CryptoBootstrapException;
-
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Objects;
@@ -22,7 +20,8 @@ import java.util.Objects;
  *   <li>{@link Protocol#TCP_TLS} — standard TLS 1.3 over TCP (Community + Enterprise)</li>
  *   <li>{@link Protocol#QUIC}    — QUIC over UDP (Enterprise only)</li>
  * </ul>
- * Community implementations MUST throw {@link CryptoBootstrapException} when
+ * Community implementations MUST throw
+ * {@link eu.exeris.kernel.spi.exceptions.crypto.CryptoBootstrapException} when
  * {@code protocol == QUIC}.
  *
  * <h2>Valhalla Readiness</h2>
@@ -58,7 +57,8 @@ public record CryptoProviderConfig(
         TCP_TLS,
         /**
          * QUIC over UDP — Enterprise only.
-         * Community implementations MUST throw {@link CryptoBootstrapException}.
+         * Community implementations MUST throw
+         * {@link eu.exeris.kernel.spi.exceptions.crypto.CryptoBootstrapException}.
          */
         QUIC
     }

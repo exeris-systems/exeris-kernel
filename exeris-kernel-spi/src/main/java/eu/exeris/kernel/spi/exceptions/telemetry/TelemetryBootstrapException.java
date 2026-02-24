@@ -9,10 +9,9 @@ package eu.exeris.kernel.spi.exceptions.telemetry;
 
 import eu.exeris.kernel.spi.exceptions.ExerisKernelException;
 import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
-import eu.exeris.kernel.spi.telemetry.TelemetryProvider;
 
 /**
- * Thrown when the {@link TelemetryProvider} cannot initialise one or more sinks.
+ * Thrown when the {@link eu.exeris.kernel.spi.telemetry.TelemetryProvider} cannot initialise one or more sinks.
  *
  * @since 0.5.0
  */

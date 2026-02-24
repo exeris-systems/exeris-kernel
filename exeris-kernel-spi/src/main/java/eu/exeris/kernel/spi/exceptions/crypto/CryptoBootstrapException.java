@@ -7,12 +7,11 @@
  */
 package eu.exeris.kernel.spi.exceptions.crypto;
 
-import eu.exeris.kernel.spi.crypto.KernelCryptoProvider;
 import eu.exeris.kernel.spi.exceptions.ExerisKernelException;
 import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 
 /**
- * Thrown by {@link KernelCryptoProvider#createTlsEngine} when the crypto engine
+ * Thrown by {@link eu.exeris.kernel.spi.crypto.KernelCryptoProvider#createTlsEngine} when the crypto engine
  * cannot be initialised (e.g., missing native OpenSSL library, invalid certificate,
  * insufficient off-heap budget).
  *
