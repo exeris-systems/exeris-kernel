@@ -138,7 +138,7 @@ public final class KernelErrorCodes {
      *
      * <p><b>rawArgs layout for Black-Box:</b>
      * <ul>
-     *   <li>index 0 – {@code int}    nativeErrorCode (provider-specific error code; 0 if N/A)</li>
+     *   <li>index 0 – {@code int}    nativeErrorCode (provider-specific error code; -1 if N/A)</li>
      *   <li>index 1 – {@code String} detail</li>
      * </ul>
      */
