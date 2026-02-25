@@ -25,6 +25,7 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  *   <li>{@value KernelErrorCodes#EX_PERS_5003} — Query execution failure</li>
  *   <li>{@value KernelErrorCodes#EX_PERS_5004} — Authentication failure</li>
  *   <li>{@value KernelErrorCodes#EX_PERS_5005} — Transport I/O failure</li>
+ *   <li>{@value KernelErrorCodes#EX_PERS_5006} — Interceptor initialization error</li>
  * </ul>
  *
  * @since 0.5.0
@@ -36,6 +37,7 @@ public final class PersistenceProviderException extends ExerisKernelException {
     private static final String QUERY_MSG = "Persistence query execution failure";
     private static final String AUTH_MSG = "Persistence authentication failure";
     private static final String TRANSPORT_MSG = "Persistence transport I/O failure";
+    private static final String INTERCEPTOR_MSG = "Persistence interceptor initialization failure";
 
     // -----------------------------------------------------------------------
     // Private constructor — use static factories
@@ -112,10 +114,10 @@ public final class PersistenceProviderException extends ExerisKernelException {
     /**
      * Transport I/O failure — socket read/write error.
      *
-     * @param transportName transport display name
+     * @param transportName  transport display name
      * @param fileDescriptor file descriptor
-     * @param errno         OS error number
-     * @param cause         root cause
+     * @param errno          OS error number
+     * @param cause          root cause
      * @return exception with rawArgs: [transportName, fileDescriptor, errno]
      */
     public static PersistenceProviderException transportFailure(
@@ -123,6 +125,26 @@ public final class PersistenceProviderException extends ExerisKernelException {
         return new PersistenceProviderException(
                 KernelErrorCodes.EX_PERS_5005, TRANSPORT_MSG, cause,
                 transportName, fileDescriptor, errno);
+    }
+
+    /**
+     * Interceptor initialization failure — a {@link eu.exeris.kernel.spi.persistence.ConnectionInterceptor}
+     * failed to prepare the connection for the given isolation context.
+     *
+     * <p>The engine MUST discard the connection on receiving this exception —
+     * it MUST NOT be returned to the pool.
+     *
+     * @param interceptorClass simple class name of the failing interceptor
+     * @param isolationKey     value from {@code StorageContext.isolationKey()},
+     *                         or {@code "[none]"} for system-scope operations
+     * @param cause            root cause
+     * @return exception with rawArgs: [interceptorClass, isolationKey]
+     */
+    public static PersistenceProviderException interceptorInitFailed(
+            String interceptorClass, String isolationKey, Throwable cause) {
+        return new PersistenceProviderException(
+                KernelErrorCodes.EX_PERS_5006, INTERCEPTOR_MSG, cause,
+                interceptorClass, isolationKey);
     }
 }
 

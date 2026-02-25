@@ -8,6 +8,8 @@
 package eu.exeris.kernel.spi.context;
 
 import eu.exeris.kernel.spi.crypto.KernelCryptoProvider;
+import eu.exeris.kernel.spi.exceptions.security.PrincipalContextMissingException;
+import eu.exeris.kernel.spi.exceptions.security.StorageContextMissingException;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.memory.MemoryProvider;
 import eu.exeris.kernel.spi.persistence.PersistenceEngine;
@@ -266,19 +268,19 @@ public final class KernelProviders {
      * Returns the active {@link PrincipalContext} from the current request scope.
      *
      * @return principal context bound by the security interceptor
-     * @throws java.util.NoSuchElementException if called outside a security scope
+     * @throws PrincipalContextMissingException if called outside a security scope
      */
     public static PrincipalContext principal() {
-        return PRINCIPAL_CONTEXT.get();
+        return PRINCIPAL_CONTEXT.orElseThrow(PrincipalContextMissingException::new);
     }
 
     /**
      * Returns the active {@link StorageContext} from the current request scope.
      *
      * @return storage context bound by the security interceptor
-     * @throws java.util.NoSuchElementException if called outside a security scope
+     * @throws StorageContextMissingException if called outside a security scope
      */
     public static StorageContext storageContext() {
-        return STORAGE_CONTEXT.get();
+        return STORAGE_CONTEXT.orElseThrow(StorageContextMissingException::new);
     }
 }

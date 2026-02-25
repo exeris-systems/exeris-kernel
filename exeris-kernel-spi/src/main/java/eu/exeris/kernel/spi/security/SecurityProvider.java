@@ -21,8 +21,8 @@ import eu.exeris.kernel.spi.memory.LoanedBuffer;
  *       heap {@code byte[]} internally.</li>
  *   <li><b>Enterprise</b> ({@code priority() = 100}): Off-heap token
  *       validation directly from the {@link LoanedBuffer} segment —
- *       zero-GC role resolution, slab-bound storage context integrated
- *       with {@code GlobalMemoryArbiter}.</li>
+  *       zero-GC role resolution, slab-bound storage context integrated
+  *       with the kernel memory arbiter.</li>
  * </ul>
  *
  * <h2>The Wall (SPI Compliance)</h2>

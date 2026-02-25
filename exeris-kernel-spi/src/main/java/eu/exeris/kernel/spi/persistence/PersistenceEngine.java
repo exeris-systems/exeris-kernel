@@ -67,7 +67,7 @@ public interface PersistenceEngine extends AutoCloseable {
      * knowledge of what the isolation key means at the business level.
      *
      * <p>If per-tenant pooling is disabled, this method MAY delegate to
-     * {@link #openConnection()} and issue a parameterised {@code SET app.tenant_id}
+     * {@link #openConnection()} and issue a parameterised {@code SET LOCAL exeris.tenant_id}
      * command using the isolation key from the context.
      *
      * @param storageContext the tenant-isolation descriptor resolved by the Security edge;

@@ -99,14 +99,18 @@ public interface StorageContext {
      *
      * <p>Allows callers to attach additional context that
      * {@link eu.exeris.kernel.spi.persistence.ConnectionInterceptor} implementations
-     * may inspect. Examples: audit user, request trace ID, feature flags.
+     * may inspect. Examples: audit user label, request trace ID, feature flags.
+     *
+     * <p>Value type is restricted to {@link String} to enforce the "Invisible Wall" —
+     * it is impossible to accidentally smuggle identity or security objects
+     * (e.g., {@code PrincipalContext}) across the persistence boundary.
      *
      * <p>MUST return an unmodifiable map. MUST NOT return {@code null} —
      * use {@link Map#of()} for an empty context.
      *
-     * @return immutable attribute map; never {@code null}
+     * @return immutable {@code String→String} attribute map; never {@code null}
      */
-    default Map<String, Object> attributes() {
+    default Map<String, String> attributes() {
         return Map.of();
     }
 }

@@ -128,6 +128,20 @@ public interface EventStore {
         }
 
         /**
+         * Returns a defensive copy of the payload bytes.
+         *
+         * <p>Overrides the generated accessor to prevent callers from mutating the
+         * internal array after construction — completing the deep immutability contract.
+         * This is consistent with the defensive copy performed in the compact constructor.
+         *
+         * @return copy of the serialised event payload; never {@code null}
+         */
+        @Override
+        public byte[] payload() {
+            return Arrays.copyOf(payload, payload.length);
+        }
+
+        /**
          * Deep equality check — compares {@code payload} by content, not reference.
          */
         @Override

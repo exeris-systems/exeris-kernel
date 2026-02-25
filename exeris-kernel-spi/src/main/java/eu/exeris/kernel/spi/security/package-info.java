@@ -11,9 +11,14 @@
  *
  * <h2>SPI-First Architecture</h2>
  * <p>This package defines all security and identity abstractions consumed by the
- * kernel bootstrap, transport edge, and persistence layer. No implementation-specific
- * class (JWT library, BouncyCastle, Spring Security) is referenced here — only pure
+ * kernel bootstrap and transport edge. No implementation-specific class
+ * (JWT library, BouncyCastle, Spring Security) is referenced here — only pure
  * contracts.
+ *
+ * <p><b>Invisible Wall:</b> The Persistence layer MUST NOT import this package broadly.
+ * It is permitted to depend only on {@link eu.exeris.kernel.spi.security.StorageContext}
+ * (the isolation descriptor) — it must never import {@link eu.exeris.kernel.spi.security.PrincipalContext}
+ * or any other identity type from this package.
  *
  * <h2>Key Types</h2>
  * <ul>
