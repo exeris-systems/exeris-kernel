@@ -268,6 +268,7 @@ public final class KernelErrorCodes {
      * <p><b>rawArgs layout for Black-Box:</b>
      * <ul>
      *   <li>index 0 – {@code String} tokenType (e.g. "JWT", "OPAQUE")</li>
+     *   <li>index 1 – {@code String} failureReason (e.g. "expired", "malformed", "revoked")</li>
      * </ul>
      */
     public static final String EX_SEC_2002 = "EX-SEC-2002";

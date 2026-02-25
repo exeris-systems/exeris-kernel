@@ -12,7 +12,7 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 
 /**
  * Thrown when code attempts to read {@code KernelProviders.PRINCIPAL_CONTEXT}
- * outside of a bound {@link ScopedValue} scope.
+ * outside of a bound {@link java.lang.ScopedValue} scope.
  *
  * <h2>Error Code</h2>
  * <p>{@link KernelErrorCodes#EX_SEC_2001} — PrincipalContext missing.

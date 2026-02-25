@@ -61,7 +61,23 @@ public record ImmutablePrincipal(
         Set<String> scopes
 ) implements PrincipalContext {
 
-    private static final int MASK_SUFFIX_LEN = 8;
+    /**
+     * Number of leading hex characters exposed in {@link #maskUuid(UUID)}.
+     *
+     * <p>UUIDv7 bit layout (RFC 9562):
+     * <pre>
+     *  0        8   12   16   20                  36
+     *  xxxxxxxx-xxxx-7xxx-yxxx-xxxxxxxxxxxx
+     *  |______| |__|          |__________|
+     *  ts_ms_be (48b)          rand_b (62b)
+     * </pre>
+     * The first 8 hex digits encode 32 of the 48 ms-timestamp bits —
+     * sufficient for log-time correlation (±1 second granularity)
+     * but carry no personal identity. The remaining {@code ver},
+     * {@code rand_a}, {@code var}, and {@code rand_b} segments are
+     * masked entirely.
+     */
+    private static final int TS_PREFIX_LEN = 8;
 
     /**
      * Compact constructor — fail-fast validation and defensive copy.
@@ -155,14 +171,25 @@ public record ImmutablePrincipal(
 
     @Override
     public String toString() {
-        String idStr = principalId.toString();
-        String masked = "***-" + idStr.substring(
-                idStr.length() - MASK_SUFFIX_LEN);
-        return "Principal{id=" + masked
+        return "Principal{id=" + maskUuid(principalId)
                 + ", tenant=" + tenantId
-                        .map(UUID::toString).orElse("[global]")
+                        .map(ImmutablePrincipal::maskUuid).orElse("[global]")
                 + ", roles=" + roles.size()
                 + ", scopes=" + scopes.size() + "}";
+    }
+
+    /**
+     * Masks a UUIDv7 for safe log output.
+     *
+     * <p>Exposes only the {@code ts_ms_be} prefix (first {@value #TS_PREFIX_LEN}
+     * hex digits) which is sufficient for log-time correlation while carrying
+     * no personal identity. The {@code ver}, {@code rand_a}, {@code var},
+     * and {@code rand_b} segments are replaced with {@code ~***}.
+     *
+     * <p>Example: {@code 01945a3b-f2c1-7...} → {@code 01945a3b~***}
+     */
+    private static String maskUuid(UUID uuid) {
+        return uuid.toString().substring(0, TS_PREFIX_LEN) + "~***";
     }
 }
 

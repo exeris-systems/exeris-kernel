@@ -28,6 +28,12 @@
  *   <li>{@link eu.exeris.kernel.spi.persistence.AuthProvider} — pluggable SCRAM/SASL auth</li>
  *   <li>{@link eu.exeris.kernel.spi.persistence.PersistenceConfig} — immutable config with opaque properties</li>
  *   <li>{@link eu.exeris.kernel.spi.persistence.EngineStats} — pool metrics snapshot</li>
+ *   <li>{@link eu.exeris.kernel.spi.persistence.ConnectionInterceptor} — plug-and-play isolation hook
+ *       (RLS injection, schema switching); registered by Core, invoked on every connection checkout</li>
+ *   <li>{@link eu.exeris.kernel.spi.persistence.BaseRepository} — generic aggregate-root CRUD contract
+ *       ({@code <T, K>} where {@code K} is the identifier/key type)</li>
+ *   <li>{@link eu.exeris.kernel.spi.persistence.EventStore} — Transactional Outbox contract;
+ *       at-least-once domain event delivery co-committed with the aggregate transaction</li>
  * </ul>
  *
  * <h2>Tier Separation (The Wall)</h2>

@@ -7,6 +7,7 @@
  */
 package eu.exeris.kernel.spi.security;
 
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -92,5 +93,21 @@ public interface StorageContext {
      * @return datasource key or empty if not applicable
      */
     Optional<String> dataSourceKey();
+
+    /**
+     * Opaque key-value attributes for passing interceptor metadata.
+     *
+     * <p>Allows callers to attach additional context that
+     * {@link eu.exeris.kernel.spi.persistence.ConnectionInterceptor} implementations
+     * may inspect. Examples: audit user, request trace ID, feature flags.
+     *
+     * <p>MUST return an unmodifiable map. MUST NOT return {@code null} —
+     * use {@link Map#of()} for an empty context.
+     *
+     * @return immutable attribute map; never {@code null}
+     */
+    default Map<String, Object> attributes() {
+        return Map.of();
+    }
 }
 

@@ -106,18 +106,24 @@ public record PersistenceConfig(
     }
 
     /**
-     * Returns a safe string representation with the {@code password} field redacted.
+     * Returns a safe string representation with all credential-bearing fields redacted.
      *
-     * <p>Overrides the default record {@code toString()} to prevent accidental
-     * credential leakage in logs, JFR events, or exception messages.
+     * <p>The following fields are redacted to prevent accidental exposure in logs,
+     * JFR events, or exception messages:
+     * <ul>
+     *   <li>{@code password} — always {@code [REDACTED]}</li>
+     *   <li>{@code username} — always {@code [REDACTED]}</li>
+     *   <li>{@code connectionUrl} — userinfo stripped; only {@code scheme://host:port/db} shown</li>
+     *   <li>{@code properties} values — always {@code [REDACTED]} (may contain tier secrets)</li>
+     * </ul>
      *
-     * @return string representation with {@code password=[REDACTED]}
+     * @return safe string representation
      */
     @Override
     public String toString() {
         return "PersistenceConfig[" +
-                "connectionUrl=" + connectionUrl +
-                ", username=" + username +
+                "connectionUrl=" + sanitizeUrl(connectionUrl) +
+                ", username=[REDACTED]" +
                 ", password=[REDACTED]" +
                 ", maxPoolSize=" + maxPoolSize +
                 ", minIdleConnections=" + minIdleConnections +
@@ -128,8 +134,22 @@ public record PersistenceConfig(
                 ", perTenantPooling=" + perTenantPooling +
                 ", useTls=" + useTls +
                 ", maxTenantPools=" + maxTenantPools +
-                ", properties=" + properties +
+                ", properties={" + properties.size() + " entries, values=[REDACTED]}" +
                 ']';
+    }
+
+    /**
+     * Strips any embedded userinfo (user:password@) from a JDBC/native connection URL.
+     *
+     * <p>Example: {@code postgresql://user:secret@localhost:5432/db}
+     * → {@code postgresql://localhost:5432/db}
+     */
+    private static String sanitizeUrl(String url) {
+        if (url == null) {
+            return "[null]";
+        }
+        // Strip user:password@ portion from URLs of the form scheme://user:pass@host/...
+        return url.replaceAll("//[^@]*@", "//");
     }
 
     /**

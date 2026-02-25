@@ -12,7 +12,7 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * SPI: Immutable identity representation propagated via {@link ScopedValue} (JEP 506).
+ * SPI: Immutable identity representation propagated via {@link java.lang.ScopedValue} (JEP 506).
  *
  * <h2>Universal Identity Model</h2>
  * <p>This interface supports <em>both</em> multi-tenant SaaS (B2B) and

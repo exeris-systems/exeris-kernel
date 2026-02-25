@@ -214,12 +214,12 @@ public final class KernelProviders {
      * StorageContext sc = KernelProviders.STORAGE_CONTEXT.get();
      * sc.isolationKey().ifPresent(key -> {
      *     // Use a parameterized statement instead of string concatenation
-     *     eu.exeris.kernel.spi.persistence.PersistenceStatement stmt =
-     *         KernelProviders.PERSISTENCE_ENGINE.get()
-     *             .openConnection()
-     *             .prepare("SET LOCAL exeris.tenant_id = ?");
-     *     stmt.bind(0, key);
-     *     stmt.execute();
+     *     try (eu.exeris.kernel.spi.persistence.PersistenceStatement stmt =
+     *             KernelProviders.PERSISTENCE_ENGINE.get()
+     *                 .openConnection()
+     *                 .prepare("SET LOCAL exeris.tenant_id = $1")) {
+     *         stmt.bindString(0, key).executeUpdate();
+     *     }
      * });
      * }</pre>
      *
