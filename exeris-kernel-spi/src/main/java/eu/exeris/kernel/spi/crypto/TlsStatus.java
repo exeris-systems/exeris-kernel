@@ -26,7 +26,7 @@ public enum TlsStatus {
      * <p>ARCH: "OK" is a universal TLS/protocol domain term (POSIX, IETF RFCs, JDK SSLEngineResult.Status).
      * Renaming to a longer alias would break the SPI contract and diverge from industry-standard naming.
      */
-    @SuppressWarnings("PMD.ShortVariable") // "OK" is a canonical protocol domain term, not an abbreviation
+    @SuppressWarnings("PMD.ShortVariable") // "OK" is a canonical protocol domain term
     OK,
 
     /**

@@ -73,6 +73,8 @@ import java.util.UUID;
  * @see eu.exeris.kernel.spi.context.KernelProviders#PRINCIPAL_CONTEXT
  * @see StorageContext
  */
+// intentional: identity + roles + scopes + claims + zero-alloc hasAnyScope overloads
+@SuppressWarnings("PMD.TooManyMethods")
 public interface PrincipalContext {
 
     // =====================================================================
@@ -137,8 +139,17 @@ public interface PrincipalContext {
     /**
      * Quick check for any of the given roles.
      *
+     * <p><b>Hot-path overloads (zero allocation):</b> The single-, two-, and
+     * three-argument forms below are the preferred choices for latency-sensitive
+     * code. They avoid the varargs {@code String[]} array allocation that this
+     * general-purpose varargs overload incurs on every call.
+     * Use the varargs version only when the arity is unknown at compile time.
+     *
      * @param checkRoles role names to check
      * @return {@code true} if the principal holds at least one
+     * @see #hasAnyRole(String)
+     * @see #hasAnyRole(String, String)
+     * @see #hasAnyRole(String, String, String)
      */
     default boolean hasAnyRole(String... checkRoles) {
         Set<String> owned = roles();
@@ -148,6 +159,52 @@ public interface PrincipalContext {
             }
         }
         return false;
+    }
+
+    /**
+     * Zero-allocation hot-path check for a single role.
+     *
+     * <p>Equivalent to {@link #hasRole(String)} but provided here for API
+     * symmetry with the two- and three-argument overloads. No array is allocated.
+     *
+     * @param role1 role name to check
+     * @return {@code true} if the principal holds {@code role1}
+     */
+    default boolean hasAnyRole(String role1) {
+        return roles().contains(role1);
+    }
+
+    /**
+     * Zero-allocation hot-path check for either of two roles.
+     *
+     * <p>Avoids the {@code String[]} varargs array that
+     * {@link #hasAnyRole(String...)} would allocate. Prefer this overload
+     * in the request hot path when exactly two roles are checked.
+     *
+     * @param role1 first role name
+     * @param role2 second role name
+     * @return {@code true} if the principal holds {@code role1} or {@code role2}
+     */
+    default boolean hasAnyRole(String role1, String role2) {
+        Set<String> owned = roles();
+        return owned.contains(role1) || owned.contains(role2);
+    }
+
+    /**
+     * Zero-allocation hot-path check for any of three roles.
+     *
+     * <p>Avoids the {@code String[]} varargs array that
+     * {@link #hasAnyRole(String...)} would allocate. Prefer this overload
+     * in the request hot path when exactly three roles are checked.
+     *
+     * @param role1 first role name
+     * @param role2 second role name
+     * @param role3 third role name
+     * @return {@code true} if the principal holds any of the three roles
+     */
+    default boolean hasAnyRole(String role1, String role2, String role3) {
+        Set<String> owned = roles();
+        return owned.contains(role1) || owned.contains(role2) || owned.contains(role3);
     }
 
     // =====================================================================
@@ -183,8 +240,17 @@ public interface PrincipalContext {
     /**
      * Quick check for any of the given scopes.
      *
+     * <p><b>Hot-path overloads (zero allocation):</b> The single-, two-, and
+     * three-argument forms below are the preferred choices for latency-sensitive
+     * code. They avoid the varargs {@code String[]} array allocation that the
+     * general-purpose varargs overload {@code hasAnyScope(String...)} incurs on every call.
+     * Use the varargs version only when the arity is unknown at compile time.
+     *
      * @param checkScopes scope identifiers to check
      * @return {@code true} if the token carries at least one
+     * @see #hasAnyScope(String)
+     * @see #hasAnyScope(String, String)
+     * @see #hasAnyScope(String, String, String)
      */
     default boolean hasAnyScope(String... checkScopes) {
         Set<String> owned = scopes();
@@ -195,5 +261,50 @@ public interface PrincipalContext {
         }
         return false;
     }
-}
 
+    /**
+     * Zero-allocation hot-path check for a single scope.
+     *
+     * <p>Equivalent to {@link #hasScope(String)} but provided here for API symmetry
+     * with the two- and three-argument overloads. No array is allocated.
+     *
+     * @param scope1 scope identifier to check
+     * @return {@code true} if the token carries {@code scope1}
+     */
+    default boolean hasAnyScope(String scope1) {
+        return scopes().contains(scope1);
+    }
+
+    /**
+     * Zero-allocation hot-path check for either of two scopes.
+     *
+     * <p>Avoids the {@code String[]} varargs array that
+     * {@link #hasAnyScope(String...)} would allocate. Prefer this overload
+     * in the request hot path when exactly two scopes are checked.
+     *
+     * @param scope1 first scope identifier
+     * @param scope2 second scope identifier
+     * @return {@code true} if the token carries {@code scope1} or {@code scope2}
+     */
+    default boolean hasAnyScope(String scope1, String scope2) {
+        Set<String> owned = scopes();
+        return owned.contains(scope1) || owned.contains(scope2);
+    }
+
+    /**
+     * Zero-allocation hot-path check for any of three scopes.
+     *
+     * <p>Avoids the {@code String[]} varargs array that
+     * {@link #hasAnyScope(String...)} would allocate. Prefer this overload
+     * in the request hot path when exactly three scopes are checked.
+     *
+     * @param scope1 first scope identifier
+     * @param scope2 second scope identifier
+     * @param scope3 third scope identifier
+     * @return {@code true} if the token carries any of the three scopes
+     */
+    default boolean hasAnyScope(String scope1, String scope2, String scope3) {
+        Set<String> owned = scopes();
+        return owned.contains(scope1) || owned.contains(scope2) || owned.contains(scope3);
+    }
+}

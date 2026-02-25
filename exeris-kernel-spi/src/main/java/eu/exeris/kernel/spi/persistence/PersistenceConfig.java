@@ -36,6 +36,8 @@ import java.util.Objects;
  *                             Example: {@code "postgresql://localhost:5432/exeris"}
  * @param username             Database username.
  * @param password             Database password.
+ *                             <b>SECRET — treat as a credential. Never log or expose this value.
+ *                             {@link #toString()} deliberately redacts it.</b>
  * @param maxPoolSize          Maximum number of connections in the shared pool.
  * @param minIdleConnections   Minimum idle connections maintained.
  * @param connectionTimeoutMs  Maximum wait time for a connection from pool (ms).
@@ -101,6 +103,33 @@ public record PersistenceConfig(
         }
         // Defensive copy — ensures immutability (Valhalla readiness)
         properties = Map.copyOf(properties);
+    }
+
+    /**
+     * Returns a safe string representation with the {@code password} field redacted.
+     *
+     * <p>Overrides the default record {@code toString()} to prevent accidental
+     * credential leakage in logs, JFR events, or exception messages.
+     *
+     * @return string representation with {@code password=[REDACTED]}
+     */
+    @Override
+    public String toString() {
+        return "PersistenceConfig[" +
+                "connectionUrl=" + connectionUrl +
+                ", username=" + username +
+                ", password=[REDACTED]" +
+                ", maxPoolSize=" + maxPoolSize +
+                ", minIdleConnections=" + minIdleConnections +
+                ", connectionTimeoutMs=" + connectionTimeoutMs +
+                ", idleTimeoutMs=" + idleTimeoutMs +
+                ", maxLifetimeMs=" + maxLifetimeMs +
+                ", rlsEnabled=" + rlsEnabled +
+                ", perTenantPooling=" + perTenantPooling +
+                ", useTls=" + useTls +
+                ", maxTenantPools=" + maxTenantPools +
+                ", properties=" + properties +
+                ']';
     }
 
     /**

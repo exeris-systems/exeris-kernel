@@ -17,20 +17,18 @@ import eu.exeris.kernel.spi.memory.LoanedBuffer;
  * <ul>
  *   <li><b>Community:</b> Blocking TCP via native socket — Virtual Thread friendly
  *       because blocking calls unmount from carrier threads.</li>
- *   <li><b>Enterprise:</b> io_uring-based async I/O with registered buffers,
- *       multishot recvmsg, and provided buffer groups.</li>
+ *   <li><b>Enterprise:</b> High-performance async I/O with zero-copy buffer management.</li>
  * </ul>
  *
  * <h2>SPI Compliance</h2>
- * <p>This interface does NOT reference {@code io_uring}, {@code NativeSocket},
+ * <p>This interface does NOT reference any implementation-specific I/O subsystem,
  * {@code CompletableFuture}, or {@code ExecutorService}. All I/O is synchronous
- * from the Virtual Thread perspective — the io_uring Enterprise implementation
- * parks the VT on a completion callback internally.
+ * from the Virtual Thread perspective — implementations park the VT on a completion
+ * callback internally.
  *
  * <h2>Zero-Copy Contract</h2>
  * <p>Data is read/written directly from/to {@link java.lang.foreign.MemorySegment}
- * instances. No intermediate heap copies. Enterprise buffers may be io_uring-registered
- * for kernel-bypass DMA.
+ * instances. No intermediate heap copies.
  *
  * <h2>Thread Safety</h2>
  * <p>NOT thread-safe. One transport per connection per virtual thread.
@@ -44,22 +42,24 @@ public interface PersistenceTransport extends AutoCloseable {
      * Establishes a TCP connection to the database server.
      *
      * <p>This call blocks the virtual thread until the connection is established
-     * or fails. The implementation MAY use io_uring async connect internally.
+     * or fails.
      *
      * @throws PersistenceProviderException if the connection cannot be established
      */
     void connect();
 
     /**
-     * Writes {@code length} bytes from {@code data} to the socket.
+     * Writes exactly {@code length} bytes from {@code data} to the socket.
      *
-     * <p>Blocks until all bytes are written or an error occurs.
-     * Enterprise implementations may use io_uring SQE submission internally.
+     * <p>Implementations MUST either write exactly {@code length} bytes and return
+     * {@code length}, OR throw {@link PersistenceProviderException}. Partial writes
+     * are not permitted — the caller can rely on an all-or-nothing guarantee.
      *
      * @param data   off-heap buffer containing data to send
-     * @param length number of bytes to write
-     * @return number of bytes actually written
-     * @throws PersistenceProviderException on write failure or connection close
+     * @param length exact number of bytes to write from {@code data}
+     * @return {@code length} — the exact number of bytes written
+     * @throws PersistenceProviderException on write failure, connection close, or
+     *         if fewer than {@code length} bytes could be written
      */
     int write(LoanedBuffer data, int length);
 
@@ -67,7 +67,6 @@ public interface PersistenceTransport extends AutoCloseable {
      * Reads up to {@code maxLength} bytes from the socket into {@code buffer}.
      *
      * <p>Blocks until at least one byte is available or an error occurs.
-     * Enterprise implementations may use io_uring SQE submission internally.
      *
      * @param buffer    off-heap buffer to receive data into
      * @param maxLength maximum bytes to read

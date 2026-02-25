@@ -8,6 +8,7 @@
 package eu.exeris.kernel.spi.persistence;
 
 import eu.exeris.kernel.spi.exceptions.persistence.PersistenceProviderException;
+import eu.exeris.kernel.spi.security.StorageContext;
 
 /**
  * SPI: Manages {@link PersistenceConnection} lifecycle, pooling, and query execution.
@@ -34,7 +35,7 @@ import eu.exeris.kernel.spi.exceptions.persistence.PersistenceProviderException;
  * <table>
  *   <tr><th>Method</th><th>Community</th><th>Enterprise</th></tr>
  *   <tr><td>{@link #openConnection()}</td><td>JDBC from HikariCP</td><td>PG wire protocol from slab pool</td></tr>
- *   <tr><td>{@link #openConnection(String)}</td><td>Per-tenant HikariCP</td><td>Per-tenant RLS pool</td></tr>
+ *   <tr><td>{@link #openConnection(StorageContext)}</td><td>Per-tenant HikariCP</td><td>Per-tenant RLS pool</td></tr>
  *   <tr><td>{@link #healthCheck()}</td><td>JDBC ping</td><td>Native SELECT 1</td></tr>
  * </table>
  *
@@ -56,16 +57,25 @@ public interface PersistenceEngine extends AutoCloseable {
     PersistenceConnection openConnection();
 
     /**
-     * Opens a connection from the per-tenant pool (RLS isolation).
+     * Opens a connection from the pool for the given isolation context.
+     *
+     * <p>This method is <b>identity-blind</b> — it does not accept a raw tenant ID
+     * string. The caller must provide a fully-resolved {@link StorageContext} as
+     * produced by the Security subsystem during token validation. The engine uses the
+     * context's {@link StorageContext#strategy()} and {@link StorageContext#isolationKey()}
+     * to route to the appropriate pool and inject RLS/schema parameters without any
+     * knowledge of what the isolation key means at the business level.
      *
      * <p>If per-tenant pooling is disabled, this method MAY delegate to
-     * {@link #openConnection()} and issue a {@code SET app.tenant_id} command.
+     * {@link #openConnection()} and issue a parameterised {@code SET app.tenant_id}
+     * command using the isolation key from the context.
      *
-     * @param tenantId tenant identifier for pool routing
-     * @return pooled connection bound to the given tenant
+     * @param storageContext the tenant-isolation descriptor resolved by the Security edge;
+     *                       never {@code null}
+     * @return pooled connection configured for the given isolation context
      * @throws PersistenceProviderException if a connection cannot be obtained
      */
-    PersistenceConnection openConnection(String tenantId);
+    PersistenceConnection openConnection(StorageContext storageContext);
 
     /**
      * Performs a lightweight health check against the backing database.

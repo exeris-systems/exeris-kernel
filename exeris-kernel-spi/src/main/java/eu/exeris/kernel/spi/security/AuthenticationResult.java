@@ -19,10 +19,10 @@ import java.util.Objects;
  * are permitted on instances of this type.
  *
  * <h2>Contract</h2>
- * <p>After successful {@link SecurityProvider#authenticate(byte[])}, the kernel
- * bootstrapper binds both contexts into their respective {@code ScopedValue} slots:
+ * <p>After successful {@link SecurityProvider#authenticate(eu.exeris.kernel.spi.memory.LoanedBuffer)},
+ * the kernel bootstrapper binds both contexts into their respective {@code ScopedValue} slots:
  * <pre>{@code
- * AuthenticationResult result = securityProvider.authenticate(rawToken);
+ * AuthenticationResult result = securityProvider.authenticate(tokenBuffer);
  * ScopedValue
  *     .where(KernelProviders.PRINCIPAL_CONTEXT, result.principal())
  *     .where(KernelProviders.STORAGE_CONTEXT,   result.storage())

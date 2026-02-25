@@ -57,7 +57,16 @@ public record ImmutableStorageContext(
                     Optional.empty());
 
     /**
-     * Compact constructor — fail-fast validation.
+     * Compact constructor — fail-fast validation with full strategy-exclusive rules.
+     *
+     * <ul>
+     *   <li>{@link IsolationStrategy#SHARED}: {@code schemaName} and {@code dataSourceKey}
+     *       MUST both be absent — physical isolation is handled purely via RLS.</li>
+     *   <li>{@link IsolationStrategy#SEPARATED_SCHEMA}: {@code schemaName} MUST be present,
+     *       {@code dataSourceKey} MUST be absent.</li>
+     *   <li>{@link IsolationStrategy#DEDICATED}: {@code dataSourceKey} MUST be present,
+     *       {@code schemaName} MUST be absent.</li>
+     * </ul>
      */
     public ImmutableStorageContext {
         Objects.requireNonNull(isolationKey, "isolationKey Optional must not be null");
@@ -65,13 +74,37 @@ public record ImmutableStorageContext(
         Objects.requireNonNull(schemaName, "schemaName Optional must not be null");
         Objects.requireNonNull(dataSourceKey, "dataSourceKey Optional must not be null");
 
-        if (strategy == IsolationStrategy.SEPARATED_SCHEMA && schemaName.isEmpty()) {
-            throw new IllegalArgumentException(
-                    "schemaName is required for SEPARATED_SCHEMA strategy");
-        }
-        if (strategy == IsolationStrategy.DEDICATED && dataSourceKey.isEmpty()) {
-            throw new IllegalArgumentException(
-                    "dataSourceKey is required for DEDICATED strategy");
+        switch (strategy) {
+            case SHARED -> {
+                if (schemaName.isPresent()) {
+                    throw new IllegalArgumentException(
+                            "schemaName must be absent for SHARED strategy, got: " + schemaName.get());
+                }
+                if (dataSourceKey.isPresent()) {
+                    throw new IllegalArgumentException(
+                            "dataSourceKey must be absent for SHARED strategy, got: " + dataSourceKey.get());
+                }
+            }
+            case SEPARATED_SCHEMA -> {
+                if (schemaName.isEmpty()) {
+                    throw new IllegalArgumentException(
+                            "schemaName is required for SEPARATED_SCHEMA strategy");
+                }
+                if (dataSourceKey.isPresent()) {
+                    throw new IllegalArgumentException(
+                            "dataSourceKey must be absent for SEPARATED_SCHEMA strategy, got: " + dataSourceKey.get());
+                }
+            }
+            case DEDICATED -> {
+                if (dataSourceKey.isEmpty()) {
+                    throw new IllegalArgumentException(
+                            "dataSourceKey is required for DEDICATED strategy");
+                }
+                if (schemaName.isPresent()) {
+                    throw new IllegalArgumentException(
+                            "schemaName must be absent for DEDICATED strategy, got: " + schemaName.get());
+                }
+            }
         }
     }
 

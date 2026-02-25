@@ -176,7 +176,8 @@ public final class KernelProviders {
     /**
      * The active {@link SecurityProvider} (bound once during bootstrap).
      *
-     * <p>Used by the transport edge to call {@link SecurityProvider#authenticate(byte[])}
+     * <p>Used by the transport edge to call
+     * {@link SecurityProvider#authenticate(eu.exeris.kernel.spi.memory.LoanedBuffer)}
      * when a new request arrives. Application code should not access this directly —
      * it reads {@link #PRINCIPAL_CONTEXT} and {@link #STORAGE_CONTEXT} instead.
      *
@@ -189,7 +190,7 @@ public final class KernelProviders {
      *
      * <p>Re-bound per request by the transport/security interceptor. Every virtual
      * thread spawned within the request scope inherits this value automatically
-     * (including children forked via {@link StructuredTaskScope}).
+     * (including children forked via {@link java.util.concurrent.StructuredTaskScope}).
      *
      * <h2>Usage</h2>
      * <pre>{@code
@@ -211,8 +212,15 @@ public final class KernelProviders {
      * <h2>Usage (Persistence edge)</h2>
      * <pre>{@code
      * StorageContext sc = KernelProviders.STORAGE_CONTEXT.get();
-     * sc.isolationKey().ifPresent(key ->
-     *     conn.executeQuery("SET LOCAL exeris.tenant_id = '" + key + "'"));
+     * sc.isolationKey().ifPresent(key -> {
+     *     // Use a parameterized statement instead of string concatenation
+     *     eu.exeris.kernel.spi.persistence.PersistenceStatement stmt =
+     *         KernelProviders.PERSISTENCE_ENGINE.get()
+     *             .openConnection()
+     *             .prepare("SET LOCAL exeris.tenant_id = ?");
+     *     stmt.bind(0, key);
+     *     stmt.execute();
+     * });
      * }</pre>
      *
      * @since 0.5.0

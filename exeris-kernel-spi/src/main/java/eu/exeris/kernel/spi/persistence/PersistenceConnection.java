@@ -104,7 +104,7 @@ public interface PersistenceConnection extends AutoCloseable {
      * @return number of rows affected
      * @throws PersistenceProviderException on execution failure
      */
-    int executeUpdate(String sql);
+    long executeUpdate(String sql);
 
     // =========================================================================
     // Transaction Control

@@ -52,7 +52,7 @@ package eu.exeris.kernel.spi.persistence;
  * @see QueryResult
  */
 // SPI contract: one method per JVM primitive type + String/bytes/null + execute/close
-@SuppressWarnings("PMD.TooManyMethods")
+@SuppressWarnings("PMD.TooManyMethods") // intentional: one binder per JVM primitive type (zero-boxing contract)
 public interface PersistenceStatement extends AutoCloseable {
 
     // =========================================================================

@@ -99,8 +99,7 @@ public interface SecurityProvider {
      *
      * @param rawToken the raw token inside a loaned buffer
      * @return authentication result with principal and storage context
-     * @throws eu.exeris.kernel.spi.exceptions.security
-     *         .SecurityAuthenticationException
+     * @throws eu.exeris.kernel.spi.exceptions.security.SecurityAuthenticationException
      *         if the token is invalid, expired, or revoked
      */
     AuthenticationResult authenticate(LoanedBuffer rawToken);
