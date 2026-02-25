@@ -21,12 +21,12 @@ jobs:
     steps:
     # actions/checkout@v4.2.2
     - name: Checkout Code
-      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      uses: actions/checkout@v4
 
     # actions/cache@v4.2.0
     - name: Cache JDK tarball
       id: jdk-cache
-      uses: actions/cache@d937962975a240d5c023098e792a7a5189a85040
+      uses: actions/cache@v4
       with:
         path: ${{ runner.temp }}/jdk.tar.gz
         key: ${{ env.JDK_CACHE_KEY }}
