@@ -7,7 +7,7 @@ on:
     branches: [ "main" ]
 
 env:
-  MAVEN_OPTS: "--enable-preview --enable-final-field-mutation=ALL-UNNAMED --enable-native-access=ALL-UNNAMED"
+  MAVEN_OPTS: "--enable-preview --enable-native-access=ALL-UNNAMED"
 
 jobs:
   build-and-verify:
@@ -42,7 +42,3 @@ jobs:
 
     - name: Build & Run TCK Verification (Maven)
       run: mvn clean verify -B -e -Dmaven.compiler.release=26
-
-    # Optional: Uploads the full dependency graph to GitHub to improve Dependabot alerts
-    - name: Update dependency graph
-      uses: advanced-security/maven-dependency-submission-action@571e99aab1055c2e71a1e2309b9691de18d6b7d6 # v4+
