@@ -8,37 +8,40 @@ on:
 
 env:
   MAVEN_OPTS: "--enable-preview --enable-native-access=ALL-UNNAMED"
+  JDK_DOWNLOAD_URL: "https://download.java.net/java/GA/jdk26/c3cc523845074aa0af4f5e1e1ed4151d/35/GPL/openjdk-26_linux-x64_bin.tar.gz"
+  JDK_CACHE_KEY: "jdk-26-b35-linux-x64"
+  JDK_VERSION: "26.0.0"
 
 jobs:
   build-and-verify:
-    name: Build & TCK Verification (JDK 26)
+    name: Build & TCK Verification
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
+    - name: Checkout Code
+      uses: actions/checkout@v4
 
-      - name: Cache JDK 26 tarball
-        id: jdk-cache
-        uses: actions/cache@v4
-        with:
-          path: ${{ runner.temp }}/jdk26.tar.gz
-          key: jdk-26-b35-linux-x64
+    - name: Cache JDK tarball
+      id: jdk-cache
+      uses: actions/cache@v4
+      with:
+        path: ${{ runner.temp }}/jdk.tar.gz
+        key: ${{ env.JDK_CACHE_KEY }}
 
-      - name: Fetch JDK 26 (Build 35 x64)
-        if: steps.jdk-cache.outputs.cache-hit != 'true'
-        run: |
-          set -euo pipefail
-          wget -O ${{ runner.temp }}/jdk26.tar.gz https://download.java.net/java/GA/jdk26/c3cc523845074aa0af4f5e1e1ed4151d/35/GPL/openjdk-26_linux-x64_bin.tar.gz
+    - name: Fetch JDK
+      if: steps.jdk-cache.outputs.cache-hit != 'true'
+      run: |
+        set -euo pipefail
+        wget -O ${{ runner.temp }}/jdk.tar.gz $JDK_DOWNLOAD_URL
 
-      - name: Inject JDK 26 into Runner
-        uses: actions/setup-java@v5
-        with:
-          distribution: 'jdkfile'
-          jdkFile: ${{ runner.temp }}/jdk26.tar.gz
-          java-version: '26.0.0'
-          architecture: x64
-          cache: maven
+    - name: Inject JDK into Runner
+      uses: actions/setup-java@v5
+      with:
+        distribution: 'jdkfile'
+        jdkFile: ${{ runner.temp }}/jdk.tar.gz
+        java-version: ${{ env.JDK_VERSION }}
+        architecture: x64
+        cache: maven
 
-      - name: Build & Run TCK Verification (Maven)
-        run: mvn clean verify -B -e -Dmaven.compiler.release=26
+    - name: Build & Run TCK Verification (Maven)
+      run: mvn clean verify -B -e -Dmaven.compiler.release=26
