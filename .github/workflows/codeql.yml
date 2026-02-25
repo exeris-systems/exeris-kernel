@@ -6,10 +6,7 @@ on:
   pull_request:
     branches: [ "main" ]
   schedule:
-    - cron: '43 13 * * 3' 
-
-env:
-  MAVEN_OPTS: "--enable-preview --enable-native-access=ALL-UNNAMED"
+    - cron: '43 13 * * 3'
 
 jobs:
   analyze:
@@ -26,33 +23,11 @@ jobs:
       matrix:
         include:
         - language: java-kotlin
-          build-mode: manual # Wymuszamy ręczny build pod nasze wstrzyknięte JDK 26
+          build-mode: none
 
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
-
-    - name: Cache JDK 26 tarball
-      id: jdk-cache
-      uses: actions/cache@v4
-      with:
-        path: ${{ runner.temp }}/jdk26.tar.gz
-        key: jdk-26-b35-linux-x64
-
-    - name: Fetch JDK 26 (Build 35 x64)
-      if: steps.jdk-cache.outputs.cache-hit != 'true'
-      run: |
-        set -euo pipefail
-        wget -O ${{ runner.temp }}/jdk26.tar.gz https://download.java.net/java/GA/jdk26/c3cc523845074aa0af4f5e1e1ed4151d/35/GPL/openjdk-26_linux-x64_bin.tar.gz
-
-    - name: Inject JDK 26 into Runner
-      uses: actions/setup-java@v5
-      with:
-        distribution: 'jdkfile'
-        jdkFile: ${{ runner.temp }}/jdk26.tar.gz
-        java-version: '26.0.0'
-        architecture: x64
-        cache: maven
 
     - name: Initialize CodeQL
       uses: github/codeql-action/init@v4
@@ -60,11 +35,6 @@ jobs:
         languages: ${{ matrix.language }}
         build-mode: ${{ matrix.build-mode }}
         queries: security-extended,security-and-quality
-
-    - name: Compile Code (CodeQL Tracing)
-      if: matrix.build-mode == 'manual'
-      # Zmienne środowiskowe zaciągną się automatycznie z sekcji "env" na górze pliku
-      run: mvn clean compile -B -e -Dmaven.compiler.release=26
 
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@v4
