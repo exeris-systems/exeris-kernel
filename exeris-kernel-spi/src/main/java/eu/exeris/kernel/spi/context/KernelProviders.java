@@ -211,18 +211,19 @@ public final class KernelProviders {
      * layer reads this slot to inject RLS parameters or route connections — it never
      * imports any Security class directly.
      *
-     * <h2>Usage (Persistence edge)</h2>
+     * <h2>Usage (Persistence edge — ConnectionInterceptor)</h2>
      * <pre>{@code
-     * StorageContext sc = KernelProviders.STORAGE_CONTEXT.get();
-     * sc.isolationKey().ifPresent(key -> {
-     *     // Use a parameterized statement instead of string concatenation
-     *     try (eu.exeris.kernel.spi.persistence.PersistenceStatement stmt =
-     *             KernelProviders.PERSISTENCE_ENGINE.get()
-     *                 .openConnection()
-     *                 .prepare("SET LOCAL exeris.tenant_id = $1")) {
-     *         stmt.bindString(0, key).executeUpdate();
-     *     }
-     * });
+     * // Correct: use the connection already checked out by the engine,
+     * // do NOT open a new connection here (would leak).
+     * void applyTenantIsolation(eu.exeris.kernel.spi.persistence.PersistenceConnection connection) {
+     *     StorageContext sc = KernelProviders.STORAGE_CONTEXT.get();
+     *     sc.isolationKey().ifPresent(key -> {
+     *         try (eu.exeris.kernel.spi.persistence.PersistenceStatement stmt =
+     *                 connection.prepare("SET LOCAL exeris.tenant_id = $1")) {
+     *             stmt.bindString(0, key).executeUpdate();
+     *         }
+     *     });
+     * }
      * }</pre>
      *
      * @since 0.5.0
