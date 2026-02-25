@@ -87,7 +87,8 @@ Exeris Kernel supports three levels of physical isolation, resolved transparentl
 | `EX-PERS-5002` | Connection Pool Exhausted        | Trigger Load Shedding (Transport backpressure). |
 | `EX-PERS-5003` | Query Execution Failure          | Surface to caller, rollback transaction.        |
 | `EX-PERS-5004` | Authentication Failure           | Drop connection, alert security subsystem.      |
-| `EX-PERS-5005` | Interceptor Initialization Error | Halt connection checkout, discard connection.   |
+| `EX-PERS-5005` | Transport I/O Failure            | Drop connection, propagate to caller.           |
+| `EX-PERS-5006` | Interceptor Initialization Error | Halt connection checkout, discard connection.   |
 
 ---
 
