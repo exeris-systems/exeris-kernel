@@ -191,6 +191,87 @@ public final class KernelErrorCodes {
     public static final String EX_NET_4003 = "EX-NET-4003";
 
     // -----------------------------------------------------------------------
+    // EX-PERS – Persistence subsystem
+    // -----------------------------------------------------------------------
+
+    /**
+     * Persistence provider bootstrap failure: the {@code PersistenceProvider} could not
+     * initialise its engine (e.g., connection refused, authentication failed, or
+     * missing native driver library).
+     *
+     * <p><b>rawArgs layout for Black-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} providerName (e.g. {@code "ExerisEnterprise/PgNative"})</li>
+     *   <li>index 1 – {@code String} sanitizedConnectionUrl — userinfo ({@code user:password@})
+     *       stripped before capture to prevent credential leakage into telemetry dumps</li>
+     * </ul>
+     */
+    public static final String EX_PERS_5001 = "EX-PERS-5001";
+
+    /**
+     * Persistence connection acquisition failure: pool exhausted or timeout.
+     *
+     * <p><b>rawArgs layout for Black-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} providerName</li>
+     *   <li>index 1 – {@code long}   timeoutMs</li>
+     *   <li>index 2 – {@code int}    activeConnections</li>
+     * </ul>
+     */
+    public static final String EX_PERS_5002 = "EX-PERS-5002";
+
+    /**
+     * Persistence query execution failure: protocol error, SQL error, or I/O.
+     *
+     * <p><b>rawArgs layout for Black-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} sqlState (PostgreSQL SQLSTATE code)</li>
+     *   <li>index 1 – {@code String} detail</li>
+     * </ul>
+     */
+    public static final String EX_PERS_5003 = "EX-PERS-5003";
+
+    /**
+     * Persistence authentication failure: SCRAM/MD5/cleartext auth rejected.
+     *
+     * <p><b>rawArgs layout for Black-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} authMechanism</li>
+     *   <li>index 1 – {@code String} serverMessage</li>
+     * </ul>
+     */
+    public static final String EX_PERS_5004 = "EX-PERS-5004";
+
+    /**
+     * Persistence transport failure: socket I/O error during read/write.
+     *
+     * <p><b>rawArgs layout for Black-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} transportName</li>
+     *   <li>index 1 – {@code long}   fileDescriptor</li>
+     *   <li>index 2 – {@code int}    errno</li>
+     * </ul>
+     */
+    public static final String EX_PERS_5005 = "EX-PERS-5005";
+
+    /**
+     * Persistence interceptor initialization error: a {@code ConnectionInterceptor}
+     * failed to prepare the connection for the given isolation context
+     * (e.g., RLS {@code SET LOCAL} rejected, schema switch refused).
+     *
+     * <p>The engine discards the connection on this error — it MUST NOT be
+     * returned to the pool.
+     *
+     * <p><b>rawArgs layout for Black-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} interceptorClass (simple class name of the failing interceptor)</li>
+     *   <li>index 1 – {@code String} isolationKey (value from {@code StorageContext.isolationKey()},
+     *                                or {@code "[none]"} for system-scope)</li>
+     * </ul>
+     */
+    public static final String EX_PERS_5006 = "EX-PERS-5006";
+
+    // -----------------------------------------------------------------------
     // EX-SEC – Security / Principal context
     // -----------------------------------------------------------------------
 
@@ -205,9 +286,25 @@ public final class KernelErrorCodes {
      * <p><b>rawArgs layout for Black-Box:</b>
      * <ul>
      *   <li>index 0 – {@code String} tokenType (e.g. "JWT", "OPAQUE")</li>
+     *   <li>index 1 – {@code String} failureReason (e.g. "expired", "malformed", "revoked")</li>
      * </ul>
      */
     public static final String EX_SEC_2002 = "EX-SEC-2002";
+
+    /**
+     * Insufficient privileges (RBAC): principal lacks required role(s).
+     *
+     * <p><b>rawArgs layout for Black-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} requiredRole</li>
+     * </ul>
+     */
+    public static final String EX_SEC_2003 = "EX-SEC-2003";
+
+    /**
+     * StorageContext missing from the current {@code ScopedValue} slot.
+     */
+    public static final String EX_SEC_2004 = "EX-SEC-2004";
 
     // -----------------------------------------------------------------------
     // EX-RUN – Runtime / Scheduler

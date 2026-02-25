@@ -8,9 +8,19 @@
 package eu.exeris.kernel.spi.context;
 
 import eu.exeris.kernel.spi.crypto.KernelCryptoProvider;
+import eu.exeris.kernel.spi.exceptions.security.PrincipalContextMissingException;
+import eu.exeris.kernel.spi.exceptions.security.StorageContextMissingException;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.memory.MemoryProvider;
+import eu.exeris.kernel.spi.persistence.PersistenceEngine;
+import eu.exeris.kernel.spi.persistence.PersistenceProvider;
+import eu.exeris.kernel.spi.security.PrincipalContext;
+import eu.exeris.kernel.spi.security.SecurityProvider;
+import eu.exeris.kernel.spi.security.StorageContext;
 import eu.exeris.kernel.spi.telemetry.TelemetryProvider;
+import eu.exeris.kernel.spi.telemetry.TelemetrySink;
+
+import java.util.List;
 
 /**
  * Central {@link ScopedValue} slots for all SPI providers resolved during bootstrap.
@@ -106,6 +116,120 @@ public final class KernelProviders {
      */
     public static final ScopedValue<TelemetryProvider> TELEMETRY_PROVIDER = ScopedValue.newInstance();
 
+    /**
+     * The resolved, ready-to-use list of {@link TelemetrySink} instances (bound once during bootstrap).
+     *
+     * <h2>Why sinks and not the provider</h2>
+     * <p>The provider is a factory — it has already done its job once {@code createSinks()} returned.
+     * Subsystems (Transport, Persistence, Crypto) should never call {@code createSinks()} again.
+     * Binding the pre-built list means zero indirection and zero object creation on the emit path:
+     * <pre>{@code
+     * KernelProviders.TELEMETRY_SINKS.get()
+     *     .forEach(sink -> sink.emit(event));
+     * }</pre>
+     *
+     * <h2>Hot-path contract</h2>
+     * <p>The list is {@link java.util.List#copyOf(java.util.Collection) immutable}.
+     * Iteration is O(n) over a tiny list (typically 1–3 sinks). No lock, no allocation,
+     * no virtual dispatch beyond the list iterator — acceptable for INFO/WARN paths.
+     * JFR-backed sinks guard themselves with an {@code isEnabled()} check so that a
+     * disabled JFR recording costs approximately zero nanoseconds.
+     *
+     * @since 0.5.0
+     */
+    public static final ScopedValue<List<TelemetrySink>> TELEMETRY_SINKS = ScopedValue.newInstance();
+
+    /**
+     * The active {@link PersistenceProvider} factory (bound once during bootstrap).
+     *
+     * <p>Use this slot only in bootstrap code that needs to introspect or reconfigure
+     * the provider. Application code should use {@link #PERSISTENCE_ENGINE} directly.
+     *
+     * @since 0.5.0
+     */
+    public static final ScopedValue<PersistenceProvider> PERSISTENCE_PROVIDER = ScopedValue.newInstance();
+
+    /**
+     * The kernel-wide {@link PersistenceEngine} (created from {@link #PERSISTENCE_PROVIDER}).
+     *
+     * <p>This is the primary slot for all persistence operations. It is populated once
+     * during bootstrap and inherited by every virtual thread in the kernel scope.
+     *
+     * <h2>Usage</h2>
+     * <pre>{@code
+     * try (PersistenceConnection conn = KernelProviders.persistenceEngine().openConnection()) {
+     *     try (QueryResult rs = conn.executeQuery("SELECT id, data FROM events")) {
+     *         while (rs.next()) {
+     *             int id = rs.row().getInt(0);      // zero-alloc (Enterprise)
+     *             MemorySegment data = rs.row().getSegment(1); // zero-copy
+     *         }
+     *     }
+     * }
+     * }</pre>
+     *
+     * @since 0.5.0
+     */
+    public static final ScopedValue<PersistenceEngine> PERSISTENCE_ENGINE = ScopedValue.newInstance();
+
+    // =========================================================================
+    // Security / Context Slots (L1 Citadel)
+    // =========================================================================
+
+    /**
+     * The active {@link SecurityProvider} (bound once during bootstrap).
+     *
+     * <p>Used by the transport edge to call
+     * {@link SecurityProvider#authenticate(eu.exeris.kernel.spi.memory.LoanedBuffer)}
+     * when a new request arrives. Application code should not access this directly —
+     * it reads {@link #PRINCIPAL_CONTEXT} and {@link #STORAGE_CONTEXT} instead.
+     *
+     * @since 0.5.0
+     */
+    public static final ScopedValue<SecurityProvider> SECURITY_PROVIDER = ScopedValue.newInstance();
+
+    /**
+     * The authenticated {@link PrincipalContext} for the current request scope.
+     *
+     * <p>Re-bound per request by the transport/security interceptor. Every virtual
+     * thread spawned within the request scope inherits this value automatically
+     * (including children forked via {@link java.util.concurrent.StructuredTaskScope}).
+     *
+     * <h2>Usage</h2>
+     * <pre>{@code
+     * PrincipalContext ctx = KernelProviders.PRINCIPAL_CONTEXT.get();
+     * if (ctx.hasRole("ROLE_ADMIN")) { ... }
+     * }</pre>
+     *
+     * @since 0.5.0
+     */
+    public static final ScopedValue<PrincipalContext> PRINCIPAL_CONTEXT = ScopedValue.newInstance();
+
+    /**
+     * The tenant-isolation {@link StorageContext} for the current request scope.
+     *
+     * <p>Re-bound per request alongside {@link #PRINCIPAL_CONTEXT}. The Persistence
+     * layer reads this slot to inject RLS parameters or route connections — it never
+     * imports any Security class directly.
+     *
+     * <h2>Usage (Persistence edge — ConnectionInterceptor)</h2>
+     * <pre>{@code
+     * // Correct: use the connection already checked out by the engine,
+     * // do NOT open a new connection here (would leak).
+     * void applyTenantIsolation(eu.exeris.kernel.spi.persistence.PersistenceConnection connection) {
+     *     StorageContext sc = KernelProviders.STORAGE_CONTEXT.get();
+     *     sc.isolationKey().ifPresent(key -> {
+     *         try (eu.exeris.kernel.spi.persistence.PersistenceStatement stmt =
+     *                 connection.prepare("SET LOCAL exeris.tenant_id = $1")) {
+     *             stmt.bindString(0, key).executeUpdate();
+     *         }
+     *     });
+     * }
+     * }</pre>
+     *
+     * @since 0.5.0
+     */
+    public static final ScopedValue<StorageContext> STORAGE_CONTEXT = ScopedValue.newInstance();
+
     private KernelProviders() {
         // Utility class — static ScopedValue slots only, never instantiated.
     }
@@ -128,5 +252,36 @@ public final class KernelProviders {
      */
     public static MemoryAllocator allocator() {
         return MEMORY_ALLOCATOR.get();
+    }
+
+    /**
+     * Returns the active {@link PersistenceEngine} from the current scope.
+     *
+     * @return persistence engine bound by the kernel bootstrapper
+     * @throws java.util.NoSuchElementException if called outside the kernel scope
+     *         or if persistence was not bootstrapped
+     */
+    public static PersistenceEngine persistenceEngine() {
+        return PERSISTENCE_ENGINE.get();
+    }
+
+    /**
+     * Returns the active {@link PrincipalContext} from the current request scope.
+     *
+     * @return principal context bound by the security interceptor
+     * @throws PrincipalContextMissingException if called outside a security scope
+     */
+    public static PrincipalContext principal() {
+        return PRINCIPAL_CONTEXT.orElseThrow(PrincipalContextMissingException::new);
+    }
+
+    /**
+     * Returns the active {@link StorageContext} from the current request scope.
+     *
+     * @return storage context bound by the security interceptor
+     * @throws StorageContextMissingException if called outside a security scope
+     */
+    public static StorageContext storageContext() {
+        return STORAGE_CONTEXT.orElseThrow(StorageContextMissingException::new);
     }
 }

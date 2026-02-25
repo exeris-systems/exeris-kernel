@@ -83,11 +83,12 @@ Exeris Kernel supports three levels of physical isolation, resolved transparentl
 
 | Code           | Meaning                          | Action                                          |
 |:---------------|:---------------------------------|:------------------------------------------------|
-| `EX-PRST-1001` | Connection Pool Exhausted        | Trigger Load Shedding (Transport backpressure). |
-| `EX-PRST-1002` | Optimistic Lock Conflict         | Notify Flow layer for potential retry.          |
-| `EX-PRST-1003` | Isolation Violation (RLS/Schema) | Security breach attempt - kill connection.      |
-| `EX-PRST-1004` | Serialization Failure            | Automatic transaction retry.                    |
-| `EX-PRST-1005` | Interceptor Initialization Error | Halt connection checkout.                       |
+| `EX-PERS-5001` | Bootstrap failure                | Halt kernel startup, emit JFR event.            |
+| `EX-PERS-5002` | Connection Pool Exhausted        | Trigger Load Shedding (Transport backpressure). |
+| `EX-PERS-5003` | Query Execution Failure          | Surface to caller, rollback transaction.        |
+| `EX-PERS-5004` | Authentication Failure           | Drop connection, alert security subsystem.      |
+| `EX-PERS-5005` | Transport I/O Failure            | Drop connection, propagate to caller.           |
+| `EX-PERS-5006` | Interceptor Initialization Error | Halt connection checkout, discard connection.   |
 
 ---
 
@@ -100,11 +101,9 @@ Persistence doesn't know about Security. It only provides the "slot".
 ```java
 package eu.exeris.kernel.spi.persistence;
 
-import java.sql.Connection;
-
 @FunctionalInterface
 public interface ConnectionInterceptor {
-    void onConnectionCreated(Connection connection) throws Exception;
+    void onConnectionAcquired(PersistenceConnection connection, StorageContext storageContext);
 }
 ```
 
