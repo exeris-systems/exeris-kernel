@@ -83,6 +83,14 @@
                         <artifactId>exeris-kernel-build-config</artifactId>
                         <version>${project.version}</version>
                     </dependency>
+                    <!-- Checkstyle 13.x is required for record pattern support in instanceof (java:S6878 / Java 21+).
+                         Overrides the locally cached 9.3 which pre-dates that feature.
+                         Source: https://mvnrepository.com/artifact/com.puppycrawl.tools/checkstyle -->
+                    <dependency>
+                        <groupId>com.puppycrawl.tools</groupId>
+                        <artifactId>checkstyle</artifactId>
+                        <version>13.2.0</version>
+                    </dependency>
                 </dependencies>
                 <configuration>
                     <configLocation>checkstyle.xml</configLocation>
