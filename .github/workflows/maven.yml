@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [ "main" ]
 
+# Ustawiamy MAVEN_OPTS globalnie, żeby akcja Dependabota też z tego skorzystała
+env:
+  MAVEN_OPTS: "--enable-preview --enable-final-field-mutation=ALL-UNNAMED"
+
 jobs:
   build-and-verify:
     name: Build & TCK Verification (JDK 26)
@@ -29,10 +33,8 @@ jobs:
         cache: maven
 
     - name: Enforce Zero-GC & Compile (Maven)
-      run: >
-        MAVEN_OPTS="--enable-preview" 
-        mvn clean verify -B -e 
-        -Dmaven.compiler.release=26
+      # MAVEN_OPTS jest teraz brane z globalnego env
+      run: mvn clean verify -B -e -Dmaven.compiler.release=26
 
     # Optional: Uploads the full dependency graph to GitHub to improve Dependabot alerts
     - name: Update dependency graph
