@@ -1,0 +1,39 @@
+name: Exeris L0 Citadel CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build-and-verify:
+    name: Build & TCK Verification (JDK 26)
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Fetch JDK 26 RC (Build 35 x64)
+      run: |
+        wget -O $RUNNER_TEMP/jdk26.tar.gz https://download.java.net/java/GA/jdk26/c3cc523845074aa0af4f5e1e1ed4151d/35/GPL/openjdk-26_linux-x64_bin.tar.gz
+
+    - name: Inject JDK 26 into Runner
+      uses: actions/setup-java@v5
+      with:
+        distribution: 'jdkfile'
+        jdkFile: ${{ runner.temp }}/jdk26.tar.gz
+        java-version: '26.0.0'
+        architecture: x64
+        cache: maven
+
+    - name: Enforce Zero-GC & Compile (Maven)
+      run: >
+        MAVEN_OPTS="--enable-preview" 
+        mvn clean verify -B -e 
+        -Dmaven.compiler.release=26
+
+    # Optional: Uploads the full dependency graph to GitHub to improve Dependabot alerts
+    - name: Update dependency graph
+      uses: advanced-security/maven-dependency-submission-action@571e99aab1055c2e71a1e2309b9691de18d6b7d6
