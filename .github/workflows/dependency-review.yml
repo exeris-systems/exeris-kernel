@@ -1,0 +1,30 @@
+name: 'Dependency Review (Supply Chain)'
+
+on:
+  pull_request:
+    branches: [ "main" ]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  dependency-review:
+    name: Scan PR Dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - name: 'Checkout repository'
+        uses: actions/checkout@v4
+
+      - name: 'Dependency Review'
+        uses: actions/dependency-review-action@v4
+        with:
+          comment-summary-in-pr: always
+          fail-on-severity: moderate
+          deny-licenses: >
+            GPL-1.0-or-later, GPL-2.0-or-later, GPL-3.0-or-later,
+            LGPL-2.0-or-later, LGPL-2.1-or-later, LGPL-3.0-or-later,
+            AGPL-1.0-or-later, AGPL-3.0-or-later,
+            SSPL-1.0,
+            EPL-1.0, EPL-2.0,
+            MPL-2.0
