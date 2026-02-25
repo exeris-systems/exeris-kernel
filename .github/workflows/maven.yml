@@ -8,9 +8,9 @@ on:
 
 env:
   MAVEN_OPTS: "--enable-preview --enable-native-access=ALL-UNNAMED"
-  JDK_DOWNLOAD_URL: "https://download.java.net/java/GA/jdk26/c3cc523845074aa0af4f5e1e1ed4151d/35/GPL/openjdk-26_linux-x64_bin.tar.gz"
+  JDK_URL: "https://download.java.net/java/GA/jdk26/c3cc523845074aa0af4f5e1e1ed4151d/35/GPL/openjdk-26_linux-x64_bin.tar.gz"
   JDK_CACHE_KEY: "jdk-26-b35-linux-x64"
-  JDK_VERSION: "26.0.0"
+  JDK_VER: "26.0.0"
 
 jobs:
   build-and-verify:
@@ -32,16 +32,16 @@ jobs:
       if: steps.jdk-cache.outputs.cache-hit != 'true'
       run: |
         set -euo pipefail
-        wget -O ${{ runner.temp }}/jdk.tar.gz $JDK_DOWNLOAD_URL
+        wget -O ${{ runner.temp }}/jdk.tar.gz ${{ env.JDK_URL }}
 
     - name: Inject JDK into Runner
       uses: actions/setup-java@v5
       with:
         distribution: 'jdkfile'
         jdkFile: ${{ runner.temp }}/jdk.tar.gz
-        java-version: ${{ env.JDK_VERSION }}
+        java-version: ${{ env.JDK_VER }}
         architecture: x64
         cache: maven
 
-    - name: Build & Run TCK Verification (Maven)
-      run: mvn clean verify -B -e -Dmaven.compiler.release=26
+    - name: Build & Run TCK Verification
+      run: mvn clean verify -B -e
