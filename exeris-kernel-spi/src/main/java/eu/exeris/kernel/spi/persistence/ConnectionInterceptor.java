@@ -42,7 +42,7 @@ import eu.exeris.kernel.spi.security.StorageContext;
  * <h2>Error Handling</h2>
  * <p>If initialisation fails (e.g., the {@code SET} command is rejected by the DB),
  * the interceptor MUST throw {@link PersistenceProviderException} with error code
- * {@code EX-PERS-5005} (Interceptor Initialization Error). The engine will then
+ * {@code EX-PERS-5006} (Interceptor Initialization Error). The engine will then
  * discard the connection and propagate the exception to the caller.
  *
  * @since 0.5.0
@@ -66,8 +66,7 @@ public interface ConnectionInterceptor {
      * sc.isolationKey().ifPresent(key -> {
      *     try (PersistenceStatement stmt =
      *              connection.prepare("SET LOCAL exeris.tenant_id = $1")) {
-     *         stmt.bindString(0, key);
-     *         stmt.execute();
+     *         stmt.bindString(0, key).executeUpdate();
      *     }
      * });
      * }</pre>
@@ -75,7 +74,7 @@ public interface ConnectionInterceptor {
      * @param connection    the freshly acquired connection; MUST NOT be closed by the interceptor
      * @param storageContext the isolation descriptor for the current request scope;
      *                       MUST NOT be {@code null}
-     * @throws PersistenceProviderException with {@code EX-PERS-5005} if the connection
+     * @throws PersistenceProviderException with {@code EX-PERS-5006} if the connection
      *                                      cannot be properly initialised for the given context
      */
     void onConnectionAcquired(PersistenceConnection connection, StorageContext storageContext);

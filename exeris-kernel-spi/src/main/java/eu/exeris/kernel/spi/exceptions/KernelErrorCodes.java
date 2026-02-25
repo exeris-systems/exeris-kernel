@@ -253,6 +253,23 @@ public final class KernelErrorCodes {
      */
     public static final String EX_PERS_5005 = "EX-PERS-5005";
 
+    /**
+     * Persistence interceptor initialization error: a {@code ConnectionInterceptor}
+     * failed to prepare the connection for the given isolation context
+     * (e.g., RLS {@code SET LOCAL} rejected, schema switch refused).
+     *
+     * <p>The engine discards the connection on this error — it MUST NOT be
+     * returned to the pool.
+     *
+     * <p><b>rawArgs layout for Black-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} interceptorClass (simple class name of the failing interceptor)</li>
+     *   <li>index 1 – {@code String} isolationKey (value from {@code StorageContext.isolationKey()},
+     *                                or {@code "[none]"} for system-scope)</li>
+     * </ul>
+     */
+    public static final String EX_PERS_5006 = "EX-PERS-5006";
+
     // -----------------------------------------------------------------------
     // EX-SEC – Security / Principal context
     // -----------------------------------------------------------------------

@@ -106,7 +106,7 @@ public interface EventStore {
             byte[] payload,
             long occurredAt
     ) {
-        /** Compact constructor — validates required fields. */
+        /** Compact constructor — validates required fields and defensively copies mutable state. */
         public OutboxEvent {
             if (eventId == null) {
                 throw new IllegalArgumentException("eventId must not be null");
@@ -114,12 +114,17 @@ public interface EventStore {
             if (aggregateId == null || aggregateId.isBlank()) {
                 throw new IllegalArgumentException("aggregateId must not be blank");
             }
+            if (aggregateType == null || aggregateType.isBlank()) {
+                throw new IllegalArgumentException("aggregateType must not be blank");
+            }
             if (eventType == null || eventType.isBlank()) {
                 throw new IllegalArgumentException("eventType must not be blank");
             }
             if (payload == null || payload.length == 0) {
                 throw new IllegalArgumentException("payload must not be null or empty");
             }
+            // Defensive copy — byte[] is mutable; record must own its data (Valhalla-ready deep immutability)
+            payload = Arrays.copyOf(payload, payload.length);
         }
 
         /**
