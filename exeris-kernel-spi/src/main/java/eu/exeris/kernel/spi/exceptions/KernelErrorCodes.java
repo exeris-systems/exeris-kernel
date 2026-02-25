@@ -300,6 +300,11 @@ public final class KernelErrorCodes {
      */
     public static final String EX_SEC_2003 = "EX-SEC-2003";
 
+    /**
+     * StorageContext missing from the current {@code ScopedValue} slot.
+     */
+    public static final String EX_SEC_2004 = "EX-SEC-2004";
+
     // -----------------------------------------------------------------------
     // EX-RUN – Runtime / Scheduler
     // -----------------------------------------------------------------------
