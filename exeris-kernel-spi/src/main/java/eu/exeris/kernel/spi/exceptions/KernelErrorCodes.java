@@ -202,7 +202,8 @@ public final class KernelErrorCodes {
      * <p><b>rawArgs layout for Black-Box:</b>
      * <ul>
      *   <li>index 0 – {@code String} providerName (e.g. {@code "ExerisEnterprise/PgNative"})</li>
-     *   <li>index 1 – {@code String} connectionUrl</li>
+     *   <li>index 1 – {@code String} sanitizedConnectionUrl — userinfo ({@code user:password@})
+     *       stripped before capture to prevent credential leakage into telemetry dumps</li>
      * </ul>
      */
     public static final String EX_PERS_5001 = "EX-PERS-5001";

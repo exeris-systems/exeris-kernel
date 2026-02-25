@@ -162,6 +162,25 @@ public record ImmutableStorageContext(
     }
 
     /**
+     * Factory for separated-schema mode with interceptor attributes.
+     *
+     * @param tenantId   the tenant UUID used as isolation key
+     * @param schemaName the PostgreSQL schema name
+     * @param attributes opaque {@code String→String} interceptor metadata (e.g. audit label,
+     *                   trace ID, feature flags); copied defensively via {@link Map#copyOf}
+     * @return schema-isolated storage context with attributes
+     */
+    public static ImmutableStorageContext separatedSchema(
+            String tenantId, String schemaName, Map<String, String> attributes) {
+        return new ImmutableStorageContext(
+                Optional.of(tenantId),
+                IsolationStrategy.SEPARATED_SCHEMA,
+                Optional.of(schemaName),
+                Optional.empty(),
+                attributes);
+    }
+
+    /**
      * Factory for dedicated database mode.
      *
      * @param tenantId      the tenant UUID used as isolation key
@@ -175,6 +194,25 @@ public record ImmutableStorageContext(
                 Optional.empty(),
                 Optional.of(dataSourceKey),
                 Map.of());
+    }
+
+    /**
+     * Factory for dedicated database mode with interceptor attributes.
+     *
+     * @param tenantId      the tenant UUID used as isolation key
+     * @param dataSourceKey the routing key for the dedicated datasource
+     * @param attributes    opaque {@code String→String} interceptor metadata (e.g. audit label,
+     *                      trace ID, feature flags); copied defensively via {@link Map#copyOf}
+     * @return dedicated-db storage context with attributes
+     */
+    public static ImmutableStorageContext dedicated(
+            String tenantId, String dataSourceKey, Map<String, String> attributes) {
+        return new ImmutableStorageContext(
+                Optional.of(tenantId),
+                IsolationStrategy.DEDICATED,
+                Optional.empty(),
+                Optional.of(dataSourceKey),
+                attributes);
     }
 
     /**
