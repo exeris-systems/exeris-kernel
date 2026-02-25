@@ -55,16 +55,30 @@ public final class PersistenceProviderException extends ExerisKernelException {
     /**
      * Bootstrap failure — engine could not be created.
      *
+     * <p>The {@code connectionUrl} is sanitized before capture — any embedded
+     * {@code user:password@} userinfo is stripped to prevent credential leakage
+     * into telemetry / Black-Box dumps.
+     *
      * @param providerName  provider display name
-     * @param connectionUrl database URL
+     * @param connectionUrl database URL (sanitized before storage in rawArgs)
      * @param cause         root cause
-     * @return exception with rawArgs: [providerName, connectionUrl]
+     * @return exception with rawArgs: [providerName, sanitizedUrl]
      */
     public static PersistenceProviderException bootstrapFailure(
             String providerName, String connectionUrl, Throwable cause) {
         return new PersistenceProviderException(
                 KernelErrorCodes.EX_PERS_5001, BOOTSTRAP_MSG, cause,
-                providerName, connectionUrl);
+                providerName, sanitizeUrl(connectionUrl));
+    }
+
+    /**
+     * Strips any embedded userinfo ({@code user:password@}) from a connection URL.
+     */
+    private static String sanitizeUrl(String url) {
+        if (url == null) {
+            return "[null]";
+        }
+        return url.replaceAll("//[^@]*@", "//");
     }
 
     /**

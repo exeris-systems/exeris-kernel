@@ -7,6 +7,7 @@
  */
 package eu.exeris.kernel.spi.security;
 
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -27,6 +28,7 @@ import java.util.Optional;
  * @param strategy      the physical isolation strategy
  * @param schemaName    schema name for SEPARATED_SCHEMA (empty otherwise)
  * @param dataSourceKey datasource key for DEDICATED (empty otherwise)
+ * @param attributes    opaque {@code String→String} interceptor metadata; never {@code null}
  *
  * @since 0.5.0
  * @see StorageContext
@@ -35,7 +37,8 @@ public record ImmutableStorageContext(
         Optional<String> isolationKey,
         IsolationStrategy strategy,
         Optional<String> schemaName,
-        Optional<String> dataSourceKey
+        Optional<String> dataSourceKey,
+        Map<String, String> attributes
 ) implements StorageContext {
 
     /**
@@ -54,7 +57,8 @@ public record ImmutableStorageContext(
                     Optional.empty(),
                     IsolationStrategy.SHARED,
                     Optional.empty(),
-                    Optional.empty());
+                    Optional.empty(),
+                    Map.of());
 
     /**
      * Compact constructor — fail-fast validation with full strategy-exclusive rules.
@@ -73,6 +77,8 @@ public record ImmutableStorageContext(
         Objects.requireNonNull(strategy, "strategy must not be null");
         Objects.requireNonNull(schemaName, "schemaName Optional must not be null");
         Objects.requireNonNull(dataSourceKey, "dataSourceKey Optional must not be null");
+        Objects.requireNonNull(attributes, "attributes must not be null");
+        attributes = Map.copyOf(attributes);
 
         switch (strategy) {
             case SHARED -> {
@@ -119,7 +125,24 @@ public record ImmutableStorageContext(
                 Optional.of(tenantId),
                 IsolationStrategy.SHARED,
                 Optional.empty(),
-                Optional.empty());
+                Optional.empty(),
+                Map.of());
+    }
+
+    /**
+     * Factory for the default SHARED/RLS mode with interceptor attributes.
+     *
+     * @param tenantId   the tenant UUID used as isolation key
+     * @param attributes opaque interceptor metadata
+     * @return shared-mode storage context with attributes
+     */
+    public static ImmutableStorageContext shared(String tenantId, Map<String, String> attributes) {
+        return new ImmutableStorageContext(
+                Optional.of(tenantId),
+                IsolationStrategy.SHARED,
+                Optional.empty(),
+                Optional.empty(),
+                attributes);
     }
 
     /**
@@ -134,7 +157,8 @@ public record ImmutableStorageContext(
                 Optional.of(tenantId),
                 IsolationStrategy.SEPARATED_SCHEMA,
                 Optional.of(schemaName),
-                Optional.empty());
+                Optional.empty(),
+                Map.of());
     }
 
     /**
@@ -149,7 +173,8 @@ public record ImmutableStorageContext(
                 Optional.of(tenantId),
                 IsolationStrategy.DEDICATED,
                 Optional.empty(),
-                Optional.of(dataSourceKey));
+                Optional.of(dataSourceKey),
+                Map.of());
     }
 
     /**

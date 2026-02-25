@@ -32,8 +32,9 @@ import java.util.Objects;
  * Community implementations may pass these through to HikariCP data source properties.
  * The SPI layer treats this map as opaque — it never inspects its contents.
  *
- * @param connectionUrl        JDBC-style URL (parsed by implementations for host/port/db).
- *                             Example: {@code "postgresql://localhost:5432/exeris"}
+ * @param connectionUrl        JDBC or URI-style connection URL (parsed by implementations for host/port/db).
+ *                             Examples: {@code "jdbc:postgresql://localhost:5432/exeris"},
+ *                             {@code "postgresql://localhost:5432/exeris"}
  * @param username             Database username.
  * @param password             Database password.
  *                             <b>SECRET — treat as a credential. Never log or expose this value.
