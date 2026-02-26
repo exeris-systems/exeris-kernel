@@ -13,9 +13,9 @@
  * <p>This package defines protocol-agnostic abstractions for the transport subsystem.
  * Business logic operates on {@link eu.exeris.kernel.spi.transport.TransportStream Stream}
  * and {@link eu.exeris.kernel.spi.transport.TransportConnection Connection} objects.
- * It does <em>not</em> know whether data flows over TCP (Community) or QUIC/io_uring
- * (Enterprise). Protocol-specific implementations reside in Community or Enterprise
- * modules and MUST NOT be referenced here.
+ * It does <em>not</em> know which concrete transport protocol or native I/O mechanism
+ * carries the data. Protocol-specific implementations reside in Community or Enterprise
+ * modules and are kept out of this SPI surface (no compile-time dependencies, no API leakage).
  *
  * <h2>Key Contracts</h2>
  * <ul>

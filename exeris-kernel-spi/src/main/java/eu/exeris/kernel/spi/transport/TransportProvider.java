@@ -53,7 +53,7 @@ public interface TransportProvider {
     /**
      * Creates and initialises a {@link TransportEngine} from the given configuration.
      *
-     * <p>This is a potentially blocking call (socket bind, io_uring ring setup, TLS
+     * <p>This is a potentially blocking call (socket bind, native transport setup, TLS
      * context creation). It MUST NOT be called on a virtual thread that is expected
      * to be non-blocking.
      *
@@ -77,7 +77,7 @@ public interface TransportProvider {
      * Returns the display name of this provider.
      *
      * <p>Used in bootstrap JFR events and diagnostics. Must be a stable string constant.
-     * Examples: {@code "Community/NioTransport"}, {@code "Enterprise/IoUringTransport"}.
+     * Examples: {@code "StandardTransport"}, {@code "NativeMultiplexedTransport"}.
      *
      * @return provider name; never {@code null}
      */

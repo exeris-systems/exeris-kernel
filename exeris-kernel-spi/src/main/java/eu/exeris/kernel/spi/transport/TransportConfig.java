@@ -106,7 +106,7 @@ public record TransportConfig(
     public String toString() {
         return "TransportConfig[" +
                 "mode=" + mode + ", " +
-                "bindAddress='" + bindAddress + "', " +
+                "bindAddress='" + (bindAddress != null ? bindAddress : "unbound") + "', " +
                 "port=" + port + ", " +
                 "reactorCount=" + reactorCount + ", " +
                 "certPath=" + (certPath != null ? "***REDACTED***" : "null") + ", " +

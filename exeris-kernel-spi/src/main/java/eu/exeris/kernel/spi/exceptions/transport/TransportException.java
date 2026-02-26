@@ -54,6 +54,14 @@ import java.util.Objects;
  * EX-NET-4003 (receive timeout):
  *   index 0 → String transportName
  *   index 1 → long   timeoutMs
+ *
+ * EX-NET-4004 (bootstrap failure):
+ *   index 0 → String transportName
+ *   index 1 → String reason
+ *
+ * EX-NET-4005 (engine start failure):
+ *   index 0 → String transportName
+ *   index 1 → int    port   (-1 if not applicable)
  * </pre>
  *
  * @since 0.5.0
@@ -162,41 +170,42 @@ public final class TransportException extends ExerisKernelException {
      * Creates a {@code TransportException} for a transport engine bootstrap failure.
      *
      * <p>Sets error code {@value KernelErrorCodes#EX_NET_4004}.
-     * rawArgs layout: {@code [String providerName, String reason]}.
+     * rawArgs layout: {@code [String transportName, String reason]}.
      *
-     * @param providerName name of the provider that failed (from {@code TransportProvider.providerName()})
-     * @param reason       static failure description
-     * @param cause        the upstream throwable; may be {@code null}
+     * @param transportName name of the transport provider/engine that failed
+     *                      (from {@code TransportProvider.providerName()})
+     * @param reason        static failure description
+     * @param cause         the upstream throwable; may be {@code null}
      * @return a fully initialised {@link TransportException}
      */
-    public static TransportException bootstrapFailure(String providerName, String reason, Throwable cause) {
-        Objects.requireNonNull(providerName, "providerName must not be null");
+    public static TransportException bootstrapFailure(String transportName, String reason, Throwable cause) {
+        Objects.requireNonNull(transportName, ERR_TRANSPORT_NAME_NULL);
         Objects.requireNonNull(reason, "reason must not be null");
         return new TransportException(
                 KernelErrorCodes.EX_NET_4004,
                 MSG_BOOTSTRAP,
                 cause,
-                providerName, reason);
+                transportName, reason);
     }
 
     /**
      * Creates a {@code TransportException} for a transport engine start failure.
      *
      * <p>Sets error code {@value KernelErrorCodes#EX_NET_4005}.
-     * rawArgs layout: {@code [String engineName, int port]}.
+     * rawArgs layout: {@code [String transportName, int port]}.
      *
-     * @param engineName name of the engine that failed to start
-     * @param port       port that could not be bound; use {@code -1} if not applicable
-     * @param cause      the upstream throwable; may be {@code null}
+     * @param transportName name of the transport engine that failed to start
+     * @param port          port that could not be bound; use {@code -1} if not applicable
+     * @param cause         the upstream throwable; may be {@code null}
      * @return a fully initialised {@link TransportException}
      */
-    public static TransportException engineStartFailure(String engineName, int port, Throwable cause) {
-        Objects.requireNonNull(engineName, "engineName must not be null");
+    public static TransportException engineStartFailure(String transportName, int port, Throwable cause) {
+        Objects.requireNonNull(transportName, ERR_TRANSPORT_NAME_NULL);
         return new TransportException(
                 KernelErrorCodes.EX_NET_4005,
                 MSG_START,
                 cause,
-                engineName, port);
+                transportName, port);
     }
 
     // -----------------------------------------------------------------------
@@ -208,7 +217,9 @@ public final class TransportException extends ExerisKernelException {
      * Returns the logical name of the transport driver that raised the exception.
      *
      * <p>Convenience accessor over {@code (String) rawArgs()[0]}.
-     * Defined on all {@code EX-NET-*} variants.
+     * Defined on all {@code EX-NET-*} variants ({@value KernelErrorCodes#EX_NET_4001}–
+     * {@value KernelErrorCodes#EX_NET_4005}). Always represents the transport
+     * provider/engine name, regardless of which factory method was used.
      *
      * @return transport name; never {@code null}
      * @throws IllegalStateException if {@code rawArgs} is missing or empty — use factory methods to construct
@@ -230,10 +241,17 @@ public final class TransportException extends ExerisKernelException {
      * <li>{@value KernelErrorCodes#EX_NET_4001} – port number (cast from {@code int})</li>
      * <li>{@value KernelErrorCodes#EX_NET_4002} – bytes sent</li>
      * <li>{@value KernelErrorCodes#EX_NET_4003} – timeout in milliseconds</li>
+     * <li>{@value KernelErrorCodes#EX_NET_4005} – port number (cast from {@code int}; -1 if not applicable)</li>
      * </ul>
      *
+     * <p><b>Note:</b> {@value KernelErrorCodes#EX_NET_4004} stores a {@code String} reason in
+     * {@code rawArgs()[1]}, not a number. Calling this accessor on a bootstrap-failure exception
+     * will throw {@link IllegalStateException}. Use {@code (String) rawArgs()[1]} directly for
+     * that variant.
+     *
      * @return numeric context value; interpretation is code-dependent
-     * @throws IllegalStateException if {@code rawArgs} has fewer than 2 elements or is not a number
+     * @throws IllegalStateException if {@code rawArgs} has fewer than 2 elements, is not a number,
+     *                               or the error code is {@value KernelErrorCodes#EX_NET_4004}
      */
     public long numericContext() {
         Object[] args = rawArgs();
