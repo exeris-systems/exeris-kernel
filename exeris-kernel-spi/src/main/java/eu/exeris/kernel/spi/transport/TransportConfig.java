@@ -28,10 +28,12 @@ package eu.exeris.kernel.spi.transport;
  *                          use {@code 0} as a sentinel "not used" for CLIENT and DISABLED modes.
  *                          Arbitrary out-of-range values are rejected even in CLIENT mode to
  *                          prevent misleading diagnostics output.
- * @param reactorCount      number of carrier reactor threads (typically ≤ CPU cores)
+ * @param reactorCount      number of carrier reactor threads (typically ≤ CPU cores);
+ *                          ignored and not validated when mode is {@link TransportMode#DISABLED}
  * @param certPath          path to TLS certificate (PEM); {@code null} if TLS not configured
  * @param keyPath           path to TLS private key (PEM); {@code null} if TLS not configured
- * @param maxConnections    hard cap on concurrent connections across all reactors
+ * @param maxConnections    hard cap on concurrent connections across all reactors;
+ *                          ignored and not validated when mode is {@link TransportMode#DISABLED}
  * @param idleTimeoutMillis connection idle timeout in milliseconds (0 = no timeout);
  *                          ignored and not validated when mode is {@link TransportMode#DISABLED}
  * @since 0.5.0
