@@ -174,7 +174,7 @@ public record TransportConfig(
     public static TransportConfig disabled() {
         return new TransportConfig(
                 TransportMode.DISABLED,
-                null,
+                "unbound",
                 -1,
                 -1,
                 null,
