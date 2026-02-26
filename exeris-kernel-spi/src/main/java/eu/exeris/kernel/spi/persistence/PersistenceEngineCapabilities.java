@@ -69,6 +69,26 @@ public record PersistenceEngineCapabilities(
 ) {
 
     // CHECKSTYLE.OFF: DeclarationOrder — static constants in records must follow components list
+
+    /**
+     * Pre-built capabilities descriptor for the generic <strong>Community</strong> tier.
+     *
+     * <p>Persistence-provider-agnostic: no advanced flags, blocking TCP transport.
+     * Community-tier engines that do not require a branded constant should return
+     * this instance from {@link PersistenceEngine#capabilities()} to avoid repeated
+     * object construction.
+     *
+     * <p>Javadoc cross-reference for {@code CommunityPersistenceEngine}:
+     * <pre>{@code return PersistenceEngineCapabilities.COMMUNITY; // O(1), no allocation}</pre>
+     *
+     * @see #POSTGRES_COMMUNITY
+     */
+    public static final PersistenceEngineCapabilities COMMUNITY = new PersistenceEngineCapabilities(
+            false, false, false, false,
+            "BlockingTCP",
+            "community"
+    );
+
     /**
      * Pre-built capabilities descriptor for the <strong>PostgreSQL Community</strong> tier engine.
      *

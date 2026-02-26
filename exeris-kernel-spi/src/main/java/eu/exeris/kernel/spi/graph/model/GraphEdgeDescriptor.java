@@ -78,6 +78,14 @@ public record GraphEdgeDescriptor(
     /**
      * Converts CamelCase or UPPER_CASE to snake_case.
      * Computed once at construction — zero allocation on hot-path.
+     *
+     * <p>Edge cases handled:
+     * <ul>
+     *   <li>{@code "FOLLOWS"}    → {@code "follows"}    (all-caps, no underscores)</li>
+     *   <li>{@code "FollowsEdge"} → {@code "follows_edge"}</li>
+     *   <li>{@code "FOLLOWS_EDGE"} → {@code "follows_edge"} (already snake, lower-cased)</li>
+     *   <li>{@code "XMLParser"}  → {@code "xml_parser"}  (acronym + word boundary)</li>
+     * </ul>
      */
     private static String toSnakeCase(String input) {
         if (input == null || input.isEmpty()) {
@@ -86,15 +94,46 @@ public record GraphEdgeDescriptor(
         if (input.contains("_")) {
             return input.toLowerCase(java.util.Locale.ROOT);
         }
+        if (isAllUpperCase(input)) {
+            return input.toLowerCase(java.util.Locale.ROOT);
+        }
         StringBuilder result = new StringBuilder(input.length() + 4);
         for (int i = 0; i < input.length(); i++) {
             char chr = input.charAt(i);
-            if (Character.isUpperCase(chr) && i > 0 && Character.isLowerCase(input.charAt(i - 1))) {
+            if (Character.isUpperCase(chr) && i > 0 && isWordBoundary(input, i)) {
                 result.append('_');
             }
             result.append(Character.toLowerCase(chr));
         }
         return result.toString();
+    }
+
+    /**
+     * Returns {@code true} when position {@code idx} represents a CamelCase word boundary.
+     * Handles two cases:
+     * <ol>
+     *   <li>Standard camel: previous char is lowercase ({@code "followsEdge"}).</li>
+     *   <li>Acronym end: previous char is uppercase AND next char is lowercase
+     *       ({@code "XMLParser"} → boundary before {@code 'P'}).</li>
+     * </ol>
+     */
+    private static boolean isWordBoundary(String input, int idx) {
+        char prev = input.charAt(idx - 1);
+        return Character.isLowerCase(prev)
+                || (Character.isUpperCase(prev)
+                    && idx + 1 < input.length()
+                    && Character.isLowerCase(input.charAt(idx + 1)));
+    }
+
+    /** Returns {@code true} if every letter in {@code input} is uppercase. */
+    private static boolean isAllUpperCase(String input) {
+        for (int i = 0; i < input.length(); i++) {
+            char chr = input.charAt(i);
+            if (Character.isLetter(chr) && Character.isLowerCase(chr)) {
+                return false;
+            }
+        }
+        return true;
     }
 }
 

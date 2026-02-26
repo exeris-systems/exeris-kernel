@@ -47,7 +47,10 @@ public interface PathFinder {
      * @param source   source node ID
      * @param targets  set of target node IDs
      * @param weightFn function to calculate edge weights
-     * @return map of target to path result
+     * @return an <strong>unmodifiable</strong> {@link Map} of target to path result
+     *         (zero-allocation view — callers MUST NOT attempt to modify or cache
+     *         a mutable reference; implementations MUST return an unmodifiable map
+     *         to avoid defensive copies on the hot-path)
      */
     Map<UUID, PathResult> findShortestPaths(UUID source, Set<UUID> targets, EdgeWeightFunction weightFn);
 
@@ -58,7 +61,9 @@ public interface PathFinder {
      * @param target   target node ID
      * @param maxPaths number of paths to find
      * @param weightFn function to calculate edge weights
-     * @return list of up to k shortest paths
+     * @return an <strong>unmodifiable</strong> {@link List} of up to {@code maxPaths} shortest paths
+     *         (zero-allocation view — callers MUST NOT attempt to modify the returned list;
+     *         implementations MUST return an unmodifiable list to avoid defensive copies)
      */
     List<PathResult> findKShortestPaths(UUID source, UUID target, int maxPaths, EdgeWeightFunction weightFn);
 
