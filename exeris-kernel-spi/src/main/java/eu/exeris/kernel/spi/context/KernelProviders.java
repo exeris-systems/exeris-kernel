@@ -21,6 +21,8 @@ import eu.exeris.kernel.spi.security.SecurityProvider;
 import eu.exeris.kernel.spi.security.StorageContext;
 import eu.exeris.kernel.spi.telemetry.TelemetryProvider;
 import eu.exeris.kernel.spi.telemetry.TelemetrySink;
+import eu.exeris.kernel.spi.transport.TransportEngine;
+import eu.exeris.kernel.spi.transport.TransportProvider;
 
 import java.util.List;
 
@@ -174,6 +176,37 @@ public final class KernelProviders {
     public static final ScopedValue<PersistenceEngine> PERSISTENCE_ENGINE = ScopedValue.newInstance();
 
     // =========================================================================
+    // Transport Slots (L2 Native I/O)
+    // =========================================================================
+
+    /**
+     * The active {@link TransportProvider} factory (bound once during bootstrap).
+     *
+     * <p>Use this slot only in bootstrap code that needs to introspect the provider.
+     * Application code should use {@link #TRANSPORT_ENGINE} directly.
+     *
+     * @since 0.5.0
+     */
+    public static final ScopedValue<TransportProvider> TRANSPORT_PROVIDER = ScopedValue.newInstance();
+
+    /**
+     * The kernel-wide {@link TransportEngine} (created from {@link #TRANSPORT_PROVIDER}).
+     *
+     * <p>This is the primary slot for all transport operations. It is populated once
+     * during bootstrap and inherited by every virtual thread in the kernel scope.
+     *
+     * <h2>Usage</h2>
+     * <pre>{@code
+     * TransportEngine engine = KernelProviders.TRANSPORT_ENGINE.get();
+     * TransportConnection conn = engine.connect("remote-host", 443);
+     * TransportStream stream = conn.openStream();
+     * }</pre>
+     *
+     * @since 0.5.0
+     */
+    public static final ScopedValue<TransportEngine> TRANSPORT_ENGINE = ScopedValue.newInstance();
+
+    // =========================================================================
     // Graph Slots (L2 Data Synthesis)
     // =========================================================================
 
@@ -296,6 +329,17 @@ public final class KernelProviders {
      */
     public static PersistenceEngine persistenceEngine() {
         return PERSISTENCE_ENGINE.get();
+    }
+
+    /**
+     * Returns the active {@link TransportEngine} from the current scope.
+     *
+     * @return transport engine bound by the kernel bootstrapper
+     * @throws java.util.NoSuchElementException if called outside the kernel scope
+     *         or if transport was not bootstrapped
+     */
+    public static TransportEngine transportEngine() {
+        return TRANSPORT_ENGINE.get();
     }
 
     /**
