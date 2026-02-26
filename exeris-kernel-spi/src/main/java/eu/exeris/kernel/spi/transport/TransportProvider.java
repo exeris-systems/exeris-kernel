@@ -7,21 +7,17 @@
  */
 package eu.exeris.kernel.spi.transport;
 
-import eu.exeris.kernel.spi.crypto.KernelCryptoProvider;
-import eu.exeris.kernel.spi.memory.MemoryAllocator;
-
 /**
  * SPI: Pluggable transport layer factory — the single entry-point through which
  * the kernel bootstrapper creates a {@link TransportEngine}.
  *
  * <h2>Open-Core (The Wall)</h2>
  * <ul>
- *   <li><b>Community binding</b> (free, priority 0): Standard cross-platform TCP/TLS engine.
- *       1 VT per connection, off-heap buffers via {@link MemoryAllocator},
- *       JDK-native TLS for encryption.</li>
+ *   <li><b>Community binding</b> (free, priority 0): Standard cross-platform transport
+ *       engine. 1 VT per connection, off-heap buffers, JDK-native TLS for encryption.</li>
  *   <li><b>Enterprise binding</b> (secret sauce, priority 100): Multiplexed zero-copy
  *       transport with native asynchronous I/O, provided buffer rings, and a
- *       deterministic slab pool pipeline. Linux-only. This binding lives in
+ *       deterministic slab pool pipeline. This binding lives in
  *       {@code exeris-kernel-enterprise} and must <em>never</em> be referenced from
  *       this SPI.</li>
  * </ul>
@@ -36,13 +32,21 @@ import eu.exeris.kernel.spi.memory.MemoryAllocator;
  *     .max(Comparator.comparingInt(TransportProvider::priority))
  *     .orElseThrow(() -> TransportException.bootstrapFailure("unknown", "No TransportProvider on classpath", null));
  *
- * TransportEngine engine = provider.createEngine(config, allocator, cryptoProvider);
+ * TransportEngine engine = provider.createEngine(config);
  * ScopedValue.where(KernelProviders.TRANSPORT_ENGINE, engine).run(kernel::start);
  * }</pre>
  *
  * <h2>SPI Compliance</h2>
  * <p>This interface is <strong>implementation-blind</strong>: zero references to specific
  * transport APIs, native I/O mechanisms, or TLS library implementations.
+ *
+ * <h2>SPI Dependency Injection</h2>
+ * <p>Implementations obtain their
+ * {@link eu.exeris.kernel.spi.memory.MemoryAllocator} and
+ * {@link eu.exeris.kernel.spi.crypto.KernelCryptoProvider} from
+ * {@link eu.exeris.kernel.spi.context.KernelProviders} scoped slots — they do NOT
+ * receive them as method parameters. This ensures clean SPI isolation and is
+ * consistent with {@code PersistenceProvider} and {@code GraphProvider}.
  *
  * @since 0.5.0
  * @see TransportEngine
@@ -57,21 +61,34 @@ public interface TransportProvider {
      * context creation). It MUST NOT be called on a virtual thread that is expected
      * to be non-blocking.
      *
-     * <p>The engine receives the already-initialised {@link MemoryAllocator} and
-     * {@link KernelCryptoProvider} so that transport implementations can allocate
-     * buffers and create TLS sessions without importing any concrete memory/crypto class.
+     * <p>Implementations read upstream providers from {@code KernelProviders} scoped slots:
+     * <ul>
+     *   <li>{@code KernelProviders.MEMORY_ALLOCATOR} — for off-heap buffer allocation</li>
+     *   <li>{@code KernelProviders.CRYPTO_PROVIDER} — for TLS session creation;
+     *       the slot may be unbound if TLS is not required, implementations must
+     *       guard with {@code KernelProviders.CRYPTO_PROVIDER.isBound()}</li>
+     * </ul>
      *
-     * @param config         transport-layer configuration (mode, port, reactor count)
-     * @param allocator      the kernel-wide memory allocator (already bootstrapped)
-     * @param cryptoProvider the kernel-wide crypto provider (already bootstrapped);
-     *                       may be {@code null} if TLS is not required
+     * @param config transport-layer configuration (mode, port, reactor count)
      * @return a fully initialised, but <em>not yet started</em>, transport engine
      * @throws eu.exeris.kernel.spi.exceptions.transport.TransportException if the engine
      *         cannot be created (missing native lib, bind failure, etc.)
      */
-    TransportEngine createEngine(TransportConfig config,
-                                 MemoryAllocator allocator,
-                                 KernelCryptoProvider cryptoProvider);
+    TransportEngine createEngine(TransportConfig config);
+
+    /**
+     * Returns the stable, programmatic identifier for this provider.
+     *
+     * <p>Used for configuration routing and diagnostic JFR events. Must be a stable
+     * string constant that does not change between releases.
+     * Examples: {@code "community"}, {@code "enterprise"}.
+     *
+     * <p>This differs from {@link #providerName()} which is intended as a
+     * human-readable display name.
+     *
+     * @return provider identifier; never {@code null}
+     */
+    String providerId();
 
     /**
      * Returns the display name of this provider.
