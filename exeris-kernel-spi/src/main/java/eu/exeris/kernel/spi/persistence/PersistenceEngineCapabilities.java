@@ -71,17 +71,17 @@ public record PersistenceEngineCapabilities(
     // CHECKSTYLE.OFF: DeclarationOrder — static constants in records must follow components list
 
     /**
-     * Pre-built capabilities descriptor for the generic <strong>Community</strong> tier.
+     * Generic, provider-agnostic capabilities descriptor for standard
+     * <strong>Community</strong> tier implementations.
      *
-     * <p>Persistence-provider-agnostic: no advanced flags, blocking TCP transport.
-     * Community-tier engines that do not require a branded constant should return
-     * this instance from {@link PersistenceEngine#capabilities()} to avoid repeated
-     * object construction.
-     *
-     * <p>Javadoc cross-reference for {@code CommunityPersistenceEngine}:
+     * <p>This is the baseline "Invisible Wall" compliant descriptor: no advanced flags,
+     * blocking TCP transport, provider-neutral identifier.
+     * Community-tier engines SHOULD return this constant from
+     * {@link PersistenceEngine#capabilities()} to avoid repeated object construction:
      * <pre>{@code return PersistenceEngineCapabilities.COMMUNITY; // O(1), no allocation}</pre>
      *
-     * @see #POSTGRES_COMMUNITY
+     * <p>Provider-specific Community constants (e.g., {@code postgres-community}) belong
+     * in the driver module, not in this SPI contract.
      */
     public static final PersistenceEngineCapabilities COMMUNITY = new PersistenceEngineCapabilities(
             false, false, false, false,
@@ -90,39 +90,22 @@ public record PersistenceEngineCapabilities(
     );
 
     /**
-     * Pre-built capabilities descriptor for the <strong>PostgreSQL Community</strong> tier engine.
+     * Generic, provider-agnostic capabilities descriptor for standard
+     * <strong>Enterprise</strong> tier implementations.
      *
-     * <p>All advanced flags are {@code false}. Transport is blocking TCP.
-     * Use this constant in the PostgreSQL community engine implementation
-     * (e.g., {@code PostgresCommunityPersistenceEngine}) to avoid repeated object
-     * construction.
+     * <p>All advanced flags are {@code true}. Transport is {@code io_uring/native}.
+     * Enterprise engine implementations that do not require a driver-specific constant
+     * MAY return this instance from {@link PersistenceEngine#capabilities()}.
      *
-     * <p>Other persistence providers MUST construct their own
-     * {@link PersistenceEngineCapabilities} instances with an engine-specific
-     * {@link #providerId()} instead of reusing this constant.
+     * <p>Provider-specific Enterprise constants (e.g., {@code postgres-enterprise}) belong
+     * in the driver module, not in this SPI contract.
      */
-    public static final PersistenceEngineCapabilities POSTGRES_COMMUNITY = new PersistenceEngineCapabilities(
-            false, false, false, false,
-            "BlockingTCP",
-            "postgres-community"
+    public static final PersistenceEngineCapabilities ENTERPRISE_GENERIC = new PersistenceEngineCapabilities(
+            true, true, true, true,
+            "io_uring/native",
+            "enterprise-generic"
     );
 
-    /**
-     * Pre-built capabilities descriptor for the <strong>PostgreSQL Enterprise</strong> tier engine.
-     *
-     * <p>All advanced flags are {@code true}. Transport is io_uring.
-     * The PostgreSQL enterprise engine returns this constant from its
-     * {@code capabilities()} method.
-     *
-     * <p>Other persistence providers MUST construct their own
-     * {@link PersistenceEngineCapabilities} instances with an engine-specific
-     * {@link #providerId()} instead of reusing this constant.
-     */
-    public static final PersistenceEngineCapabilities POSTGRES_ENTERPRISE = new PersistenceEngineCapabilities(
-            true, true, true, true,
-            "io_uring/multishot",
-            "postgres-enterprise"
-    );
     // CHECKSTYLE.ON: DeclarationOrder
 
     /**
