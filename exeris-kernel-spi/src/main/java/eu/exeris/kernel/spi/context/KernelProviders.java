@@ -8,6 +8,7 @@
 package eu.exeris.kernel.spi.context;
 
 import eu.exeris.kernel.spi.crypto.KernelCryptoProvider;
+import eu.exeris.kernel.spi.events.EventEngine;
 import eu.exeris.kernel.spi.exceptions.security.PrincipalContextMissingException;
 import eu.exeris.kernel.spi.exceptions.security.StorageContextMissingException;
 import eu.exeris.kernel.spi.graph.GraphEngine;
@@ -174,6 +175,37 @@ public final class KernelProviders {
      * @since 0.5.0
      */
     public static final ScopedValue<PersistenceEngine> PERSISTENCE_ENGINE = ScopedValue.newInstance();
+
+    // =========================================================================
+    // Events Slots (L1 Event Engine)
+    // =========================================================================
+
+    /**
+     * The kernel-wide {@link EventEngine} (created from the selected
+     * {@link eu.exeris.kernel.spi.events.EventProvider}).
+     *
+     * <p>Bound once during bootstrap after {@link java.util.ServiceLoader} resolution.
+     * All subsystems read this slot to publish and subscribe to kernel events.
+     * The slot is inherited automatically by every virtual thread spawned within the
+     * kernel scope — zero constructor coupling, zero static singletons.
+     *
+     * <h2>Usage (publishing)</h2>
+     * <pre>{@code
+     * EventEngine engine = KernelProviders.eventEngine();
+     * engine.bus().publish(EventDescriptor.ofHeap(...));
+     * }</pre>
+     *
+     * <h2>Usage (subscribing)</h2>
+     * <pre>{@code
+     * SubscriptionToken token = KernelProviders.eventEngine()
+     *     .bus().subscribe("TransportBound", event -> handleBind(event));
+     * }</pre>
+     *
+     * @since 0.5.0
+     * @see eu.exeris.kernel.spi.events.EventEngine
+     * @see eu.exeris.kernel.spi.events.EventProvider
+     */
+    public static final ScopedValue<EventEngine> EVENT_ENGINE = ScopedValue.newInstance();
 
     // =========================================================================
     // Transport Slots (L2 Native I/O)
@@ -351,6 +383,17 @@ public final class KernelProviders {
      */
     public static GraphEngine graphEngine() {
         return GRAPH_ENGINE.get();
+    }
+
+    /**
+     * Returns the active {@link EventEngine} from the current scope.
+     *
+     * @return event engine bound by the kernel bootstrapper
+     * @throws java.util.NoSuchElementException if called outside the kernel scope
+     *         or if events were not bootstrapped
+     */
+    public static EventEngine eventEngine() {
+        return EVENT_ENGINE.get();
     }
 
     /**
