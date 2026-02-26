@@ -12,17 +12,18 @@ package eu.exeris.kernel.spi.graph;
  * the kernel bootstrapper creates a {@link GraphEngine}.
  *
  * <h2>Open-Core (The Wall)</h2>
+ * <p>Two tier bindings are loaded via {@link java.util.ServiceLoader} priority.
+ * The SPI contract is implementation-blind — the technologies listed below are
+ * <em>documentation of expected bindings</em>, not API surface:
  * <ul>
- *   <li><b>Community binding</b> (free, priority 0): JDBC + HikariCP (PostgreSQL)
- *       or standard Bolt driver (Neo4j). Off-heap via {@code MemoryAllocator} →
- *       {@code LoanedBuffer} (Arena per request). Temporary arenas for graph building.
+ *   <li><b>Community binding</b> (free, priority 0): standard JDBC-compatible
+ *       driver with arena-per-request {@code LoanedBuffer} allocations.
  *       No preallocated slab pools. No raw pointers.</li>
- *   <li><b>Enterprise binding</b> (secret sauce, priority 100): PG native wire protocol
- *       via io_uring + FFM. {@code GlobalMemoryArbiter} → preallocated partition →
- *       {@code PartitionedSlabPool} for node/edge registries, query caches, and
- *       scheduler queues. Zero dynamic allocation after startup. This binding lives in
- *       {@code exeris-kernel-enterprise} and must <em>never</em> be referenced from
- *       this SPI.</li>
+ *   <li><b>Enterprise binding</b> (secret sauce, priority 100): native wire
+ *       protocol via io_uring + FFM, backed by {@code GlobalMemoryArbiter} →
+ *       {@code PartitionedSlabPool}. Zero dynamic allocation after startup.
+ *       This binding lives in {@code exeris-kernel-enterprise} and must
+ *       <em>never</em> be referenced from this SPI.</li>
  * </ul>
  *
  * <h2>Discovery</h2>

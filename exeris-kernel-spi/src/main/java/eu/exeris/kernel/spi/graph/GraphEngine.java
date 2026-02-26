@@ -30,12 +30,17 @@ import java.util.List;
  *
  * <h2>Memory Contract</h2>
  * <ul>
- *   <li><b>Community:</b> Engine holds references to JDBC/Bolt pools.
+ *   <li><b>Community:</b> Engine holds references to connection pools.
  *       Sessions allocate {@code LoanedBuffer} via {@code MemoryAllocator} (Arena per request).</li>
  *   <li><b>Enterprise:</b> Engine claims a memory partition from
  *       {@code GlobalMemoryArbiter} at startup. Sessions check out slabs from
  *       preallocated pools — zero dynamic allocation after {@code createEngine()}.</li>
  * </ul>
+ *
+ * <h2>Thread Safety</h2>
+ * <p>The engine itself is <strong>thread-safe</strong> and shared across all Virtual Threads.
+ * Individual {@link GraphSession} instances are <strong>NOT thread-safe</strong> — one
+ * session per Virtual Thread, always used within a try-with-resources block.
  *
  * @since 0.5.0
  * @see GraphProvider

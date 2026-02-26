@@ -37,7 +37,7 @@ package eu.exeris.kernel.spi.persistence;
  *   <tr><td>{@link #supportsZeroCopyRows()}</td><td>{@code false}</td><td>{@code true}</td></tr>
  *   <tr><td>{@link #supportsIoUring()}</td><td>{@code false}</td><td>{@code true}</td></tr>
  *   <tr><td>{@link #supportsPerTenantPools()}</td><td>{@code false}</td><td>{@code true}</td></tr>
- *   <tr><td>{@link #transportName()}</td><td>{@code "BlockingTCP"}</td><td>{@code "io_uring/multishot"}</td></tr>
+ *   <tr><td>{@link #transportName()}</td><td>{@code "BlockingTCP"}</td><td>{@code "io_uring/native"}</td></tr>
  * </table>
  *
  * @param supportsNativeProtocol {@code true} if this engine uses the PostgreSQL wire protocol
@@ -51,7 +51,7 @@ package eu.exeris.kernel.spi.persistence;
  *                               pools for full connection-level RLS isolation.
  * @param transportName          Stable display name of the transport layer, used in JFR events
  *                               and diagnostic output (e.g., {@code "BlockingTCP"},
- *                               {@code "io_uring/multishot"}).
+ *                               {@code "io_uring/native"}).
  * @param providerId             Stable provider identifier (mirrors
  *                               {@link PersistenceProvider#providerId()}).
  *

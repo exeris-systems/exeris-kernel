@@ -151,7 +151,7 @@ public interface GraphSession extends AutoCloseable {
      * @param properties encoded node properties payload (caller-owned); may be {@code null}
      * @throws eu.exeris.kernel.spi.exceptions.graph.GraphQueryException if upsert fails
      */
-    void upsertNode(String label, String nodeId, LoanedBuffer properties);
+    void upsertNode(String label, UUID nodeId, LoanedBuffer properties);
 
     /**
      * Deletes a node and all connected edges.
@@ -160,7 +160,7 @@ public interface GraphSession extends AutoCloseable {
      * @param nodeId node identifier
      * @throws eu.exeris.kernel.spi.exceptions.graph.GraphQueryException if deletion fails
      */
-    void deleteNode(String label, String nodeId);
+    void deleteNode(String label, UUID nodeId);
 
     // =========================================================================
     // Graph Root

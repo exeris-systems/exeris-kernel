@@ -42,7 +42,7 @@ public record GraphTraversal(
         Objects.requireNonNull(startNodeId, "startNodeId");
         Objects.requireNonNull(edgeDescriptor, "edgeDescriptor");
         if (maxDepth < MIN_DEPTH) {
-            throw new IllegalArgumentException("maxDepth must be >= 1, got: " + maxDepth);
+            throw new IllegalArgumentException("maxDepth must be >= " + MIN_DEPTH + ", got: " + maxDepth);
         }
     }
 

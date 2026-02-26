@@ -51,7 +51,12 @@ public record PathResult(
     /**
      * Checks if a valid path was found.
      *
-     * @return true if path exists
+     * <p>Invariant: {@code !found()} is always equivalent to
+     * {@code totalCost == Double.POSITIVE_INFINITY && path.isEmpty()}.
+     * Callers SHOULD use this method rather than inspecting {@code totalCost}
+     * directly to avoid coupling to the sentinel value.
+     *
+     * @return {@code true} if a path exists between {@code source} and {@code target}
      */
     public boolean found() {
         return !path.isEmpty();
@@ -76,7 +81,26 @@ public record PathResult(
     }
 
     /**
-     * Factory for "not found" result.
+     * Factory for a "not found" result.
+     *
+     * <p><b>Sentinel invariants</b> — the returned record always satisfies:
+     * <ul>
+     *   <li>{@link #found()} returns {@code false}</li>
+     *   <li>{@link #path()} is empty</li>
+     *   <li>{@link #totalCost()} is {@link Double#POSITIVE_INFINITY}</li>
+     *   <li>{@link #hopCount()} is {@code 0}</li>
+     * </ul>
+     *
+     * <p><b>Design note (zero-allocation contract):</b> {@code Optional<PathResult>}
+     * was deliberately rejected here. Wrapping every result in {@code Optional}
+     * would introduce a heap allocation on every successful path query — incompatible
+     * with the Enterprise tier's zero-alloc hot-path mandate. Callers MUST check
+     * {@link #found()} before consuming {@link #path()} or {@link #totalCost()}.
+     *
+     * @param source    source node ID
+     * @param target    target node ID
+     * @param algorithm algorithm that was executed
+     * @return a "not found" sentinel result; never {@code null}
      */
     public static PathResult notFound(UUID source, UUID target, String algorithm) {
         return new PathResult(source, target, List.of(), Double.POSITIVE_INFINITY, 0, algorithm);

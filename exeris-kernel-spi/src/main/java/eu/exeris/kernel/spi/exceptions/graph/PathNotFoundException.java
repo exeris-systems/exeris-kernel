@@ -10,13 +10,15 @@ package eu.exeris.kernel.spi.exceptions.graph;
 import eu.exeris.kernel.spi.exceptions.ExerisKernelException;
 import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 
+import java.util.UUID;
+
 /**
  * Thrown when a shortest-path algorithm fails to find a path between two nodes.
  *
  * <h2>rawArgs Binary Layout (Enterprise Black-Box)</h2>
  * <pre>
- * index 0 → String  sourceNodeId   (source node identifier)
- * index 1 → String  targetNodeId   (target node identifier)
+ * index 0 → String  sourceNodeId   (source node identifier, UUID string form)
+ * index 1 → String  targetNodeId   (target node identifier, UUID string form)
  * </pre>
  *
  * <h2>Error Code</h2>
@@ -31,11 +33,16 @@ public final class PathNotFoundException extends ExerisKernelException {
     /**
      * Primary constructor.
      *
+     * <p>UUID-to-String conversion is performed internally so callers
+     * are not burdened with formatting — consistent with the Graph SPI
+     * convention that all node identifiers are {@link UUID}.
+     *
      * @param sourceNodeId source node identifier
      * @param targetNodeId target node identifier
      */
-    public PathNotFoundException(String sourceNodeId, String targetNodeId) {
-        super(KernelErrorCodes.EX_GRPH_5004, MESSAGE, null, sourceNodeId, targetNodeId);
+    public PathNotFoundException(UUID sourceNodeId, UUID targetNodeId) {
+        super(KernelErrorCodes.EX_GRPH_5004, MESSAGE, null,
+                sourceNodeId.toString(), targetNodeId.toString());
     }
 }
 

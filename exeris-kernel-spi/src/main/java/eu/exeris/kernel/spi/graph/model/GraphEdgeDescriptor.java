@@ -110,11 +110,15 @@ public record GraphEdgeDescriptor(
 
     /**
      * Returns {@code true} when position {@code idx} represents a CamelCase word boundary.
-     * Handles two cases:
+     * Handles three cases:
      * <ol>
-     *   <li>Standard camel: previous char is lowercase ({@code "followsEdge"}).</li>
-     *   <li>Acronym end: previous char is uppercase AND next char is lowercase
-     *       ({@code "XMLParser"} → boundary before {@code 'P'}).</li>
+     *   <li>Standard camel boundary: previous char is lowercase
+     *       ({@code "followsEdge"} → boundary before {@code 'E'}).</li>
+     *   <li>Acronym-to-word transition: previous char is uppercase AND next char
+     *       is lowercase ({@code "XMLParser"} → boundary before {@code 'P'}).</li>
+     *   <li>Trailing acronym: consecutive uppercase letters at the end of the string
+     *       do NOT produce boundaries ({@code "FollowsXML"} → {@code "follows_xml"},
+     *       not {@code "follows_x_m_l"}).</li>
      * </ol>
      */
     private static boolean isWordBoundary(String input, int idx) {

@@ -111,6 +111,8 @@ public interface PersistenceEngine extends AutoCloseable {
      * <p>Interceptors are invoked in registration order.
      *
      * @param interceptor the interceptor to add; must not be {@code null}
+     * @throws NullPointerException  if {@code interceptor} is {@code null}
+     * @throws IllegalStateException if called after the first connection has been opened
      * @since 0.5.0
      */
     void registerInterceptor(ConnectionInterceptor interceptor);
