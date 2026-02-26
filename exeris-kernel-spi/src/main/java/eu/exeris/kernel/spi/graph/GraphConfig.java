@@ -52,21 +52,25 @@ public record GraphConfig(
     /**
      * Gets a backend-specific property.
      *
-     * @param key property key
-     * @return property value or {@code null}
+     * @param key property key; must not be {@code null}
+     * @return property value or {@code null} if absent
+     * @throws NullPointerException if {@code key} is {@code null}
      */
     public String property(String key) {
+        Objects.requireNonNull(key, "key must not be null");
         return properties.get(key);
     }
 
     /**
      * Gets a backend-specific property with default.
      *
-     * @param key          property key
+     * @param key          property key; must not be {@code null}
      * @param defaultValue value if key is absent
      * @return property value or default
+     * @throws NullPointerException if {@code key} is {@code null}
      */
     public String property(String key, String defaultValue) {
+        Objects.requireNonNull(key, "key must not be null");
         return properties.getOrDefault(key, defaultValue);
     }
 

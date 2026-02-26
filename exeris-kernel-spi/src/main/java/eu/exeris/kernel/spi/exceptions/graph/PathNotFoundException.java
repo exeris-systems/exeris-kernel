@@ -10,6 +10,7 @@ package eu.exeris.kernel.spi.exceptions.graph;
 import eu.exeris.kernel.spi.exceptions.ExerisKernelException;
 import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 
+import java.util.Objects;
 import java.util.UUID;
 
 /**
@@ -17,9 +18,13 @@ import java.util.UUID;
  *
  * <h2>rawArgs Binary Layout (Enterprise Black-Box)</h2>
  * <pre>
- * index 0 → String  sourceNodeId   (source node identifier, UUID string form)
- * index 1 → String  targetNodeId   (target node identifier, UUID string form)
+ * index 0 → UUID  sourceNodeId   (source node identifier, stored as-is for binary telemetry)
+ * index 1 → UUID  targetNodeId   (target node identifier, stored as-is for binary telemetry)
  * </pre>
+ *
+ * <p>UUID objects are stored without eager {@code toString()} conversion, consistent with
+ * the {@link eu.exeris.kernel.spi.exceptions.ExerisKernelException} contract that rawArgs
+ * are captured as-is. The Enterprise Black-Box tier serialises them via its own codec.
  *
  * <h2>Error Code</h2>
  * <p>{@value KernelErrorCodes#EX_GRPH_5004}
@@ -33,16 +38,18 @@ public final class PathNotFoundException extends ExerisKernelException {
     /**
      * Primary constructor.
      *
-     * <p>UUID-to-String conversion is performed internally so callers
-     * are not burdened with formatting — consistent with the Graph SPI
-     * convention that all node identifiers are {@link UUID}.
+     * <p>UUIDs are stored directly in {@code rawArgs} without eager {@code toString()}
+     * conversion, avoiding unnecessary heap allocation and preserving the binary
+     * telemetry contract of {@link eu.exeris.kernel.spi.exceptions.ExerisKernelException}.
      *
-     * @param sourceNodeId source node identifier
-     * @param targetNodeId target node identifier
+     * @param sourceNodeId source node identifier; must not be {@code null}
+     * @param targetNodeId target node identifier; must not be {@code null}
+     * @throws NullPointerException if either argument is {@code null}
      */
     public PathNotFoundException(UUID sourceNodeId, UUID targetNodeId) {
         super(KernelErrorCodes.EX_GRPH_5004, MESSAGE, null,
-                sourceNodeId.toString(), targetNodeId.toString());
+                Objects.requireNonNull(sourceNodeId, "sourceNodeId"),
+                Objects.requireNonNull(targetNodeId, "targetNodeId"));
     }
 }
 

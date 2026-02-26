@@ -30,17 +30,6 @@
         <exclude name="OnlyOneReturn"/>
         <exclude name="TooManyStaticImports"/>
         <!--
-            ARCH-DECISION: SPI interface constant lambdas have interface-mandated parameters.
-            EdgeWeightFunction.DEFAULT/UNIFORM/INVERSE declare parameters (source, target,
-            weight, properties) that are required by the @FunctionalInterface contract, not
-            by the lambda body. PMD flags unused lambda params as naming violations, but
-            renaming them to "ignoredSource" etc. is cargo-cult noise that obscures the
-            contract. The @param Javadoc on calculateWeight() already documents all params.
-            Short, meaningful parameter names (src, tgt, props) on SPI constant lambdas
-            are intentional and should not be flagged.
-        -->
-        <exclude name="FormalParameterNamingConventions"/>
-        <!--
             ARCH-DECISION: Descriptive names are non-negotiable in kernel SPI.
             Names like networkOffHeapThreshold, peakAllocatedBytes, CARRIER_INDEX
             encode domain semantics that abbreviated names would destroy. Kernel APIs
