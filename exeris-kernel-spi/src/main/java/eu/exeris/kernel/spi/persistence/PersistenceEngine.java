@@ -85,6 +85,22 @@ public interface PersistenceEngine extends AutoCloseable {
     boolean healthCheck();
 
     /**
+     * Returns the immutable capability descriptor for this engine instance.
+     *
+     * <p>Used by {@code KernelBootstrap} to populate JFR bootstrap events and
+     * emit operator warnings (e.g., when native protocol is unavailable).
+     * TCK tests use this to gate zero-alloc assertions against the Community tier.
+     *
+     * <p>Implementations SHOULD return a pre-built constant (e.g.,
+     * {@link PersistenceEngineCapabilities#COMMUNITY}) — not a freshly allocated
+     * record on every call.
+     *
+     * @return immutable capabilities descriptor; never {@code null}
+     * @since 0.5.0
+     */
+    PersistenceEngineCapabilities capabilities();
+
+    /**
      * Returns engine-level statistics for monitoring.
      *
      * @return immutable snapshot of pool and connection metrics

@@ -5,6 +5,9 @@ version: 3.0.0
 capabilities:
   - codebase-context
   - web-search
+tools: [ insert_edit_into_file, replace_string_in_file, create_file, run_in_terminal, get_terminal_output,
+         get_errors, show_content, open_file, list_dir, read_file, file_search, grep_search,
+         validate_cves, run_subagent, semantic_search ]
 context:
   runtime: "Java 26+ (with --enable-preview)"
   architecture: "Open-Core (Strict SPI isolation from Enterprise implementation)"
