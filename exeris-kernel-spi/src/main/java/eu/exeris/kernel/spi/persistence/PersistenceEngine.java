@@ -90,7 +90,7 @@ public interface PersistenceEngine extends AutoCloseable {
      * TCK tests use this to gate zero-alloc assertions against the Community tier.
      *
      * <p>Implementations SHOULD return a pre-built constant (e.g.,
-     * {@link PersistenceEngineCapabilities#COMMUNITY}) — not a freshly allocated
+     * {@link PersistenceEngineCapabilities#DEFAULT}) — not a freshly allocated
      * record on every call.
      *
      * @return immutable capabilities descriptor; never {@code null}

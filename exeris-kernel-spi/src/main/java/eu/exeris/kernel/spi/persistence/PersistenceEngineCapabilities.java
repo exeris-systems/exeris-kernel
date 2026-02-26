@@ -71,39 +71,42 @@ public record PersistenceEngineCapabilities(
     // CHECKSTYLE.OFF: DeclarationOrder — static constants in records must follow components list
 
     /**
-     * Generic, provider-agnostic capabilities descriptor for standard
-     * <strong>Community</strong> tier implementations.
-     *
-     * <p>This is the baseline "Invisible Wall" compliant descriptor: no advanced flags,
+     * Baseline capabilities descriptor — all capability flags {@code false},
      * blocking TCP transport, provider-neutral identifier.
-     * Community-tier engines SHOULD return this constant from
-     * {@link PersistenceEngine#capabilities()} to avoid repeated object construction:
-     * <pre>{@code return PersistenceEngineCapabilities.COMMUNITY; // O(1), no allocation}</pre>
      *
-     * <p>Provider-specific Community constants (e.g., {@code postgres-community}) belong
-     * in the driver module, not in this SPI contract.
+     * <p>Use this constant when the engine operates over a standard JDBC-style
+     * TCP connection with no native protocol, no zero-copy rows, no io_uring,
+     * and no per-tenant pools. Provider implementations SHOULD return this
+     * constant from {@link PersistenceEngine#capabilities()} to guarantee
+     * O(1), allocation-free access:
+     * <pre>{@code return PersistenceEngineCapabilities.DEFAULT; // O(1), no allocation}</pre>
+     *
+     * <p>Provider-specific capability constants (e.g., with a branded
+     * {@link #providerId()}) belong in the driver module, not in this SPI.
      */
-    public static final PersistenceEngineCapabilities COMMUNITY = new PersistenceEngineCapabilities(
+    public static final PersistenceEngineCapabilities DEFAULT = new PersistenceEngineCapabilities(
             false, false, false, false,
             "BlockingTCP",
-            "community"
+            "default"
     );
 
     /**
-     * Generic, provider-agnostic capabilities descriptor for standard
-     * <strong>Enterprise</strong> tier implementations.
+     * High-performance capabilities descriptor — all capability flags {@code true},
+     * native io_uring transport, provider-neutral identifier.
      *
-     * <p>All advanced flags are {@code true}. Transport is {@code io_uring/native}.
-     * Enterprise engine implementations that do not require a driver-specific constant
-     * MAY return this instance from {@link PersistenceEngine#capabilities()}.
+     * <p>Use this constant as a starting-point template when the engine supports
+     * all advanced features (native wire protocol, zero-copy rows, io_uring,
+     * per-tenant pools). Enterprise-tier driver implementations that do not
+     * require a branded constant MAY return this instance directly from
+     * {@link PersistenceEngine#capabilities()}.
      *
-     * <p>Provider-specific Enterprise constants (e.g., {@code postgres-enterprise}) belong
-     * in the driver module, not in this SPI contract.
+     * <p>Provider-specific capability constants (e.g., with a branded
+     * {@link #providerId()}) belong in the driver module, not in this SPI.
      */
-    public static final PersistenceEngineCapabilities ENTERPRISE_GENERIC = new PersistenceEngineCapabilities(
+    public static final PersistenceEngineCapabilities HIGH_PERFORMANCE = new PersistenceEngineCapabilities(
             true, true, true, true,
             "io_uring/native",
-            "enterprise-generic"
+            "high-performance"
     );
 
     // CHECKSTYLE.ON: DeclarationOrder
