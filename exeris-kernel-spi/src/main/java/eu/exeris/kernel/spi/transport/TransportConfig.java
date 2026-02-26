@@ -29,7 +29,8 @@ package eu.exeris.kernel.spi.transport;
  * @param certPath          path to TLS certificate (PEM); {@code null} if TLS not configured
  * @param keyPath           path to TLS private key (PEM); {@code null} if TLS not configured
  * @param maxConnections    hard cap on concurrent connections across all reactors
- * @param idleTimeoutMillis connection idle timeout in milliseconds (0 = no timeout)
+ * @param idleTimeoutMillis connection idle timeout in milliseconds (0 = no timeout);
+ *                          ignored and not validated when mode is {@link TransportMode#DISABLED}
  * @since 0.5.0
  * @see TransportProvider
  * @see TransportEngine
@@ -76,20 +77,28 @@ public record TransportConfig(
             throw new IllegalArgumentException("TransportMode must not be null");
         }
         if (mode != TransportMode.DISABLED) {
-            if (mode != TransportMode.CLIENT && (bindAddress == null || bindAddress.isBlank())) {
-                throw new IllegalArgumentException("bindAddress must not be null/blank for SERVER/DUAL mode");
-            }
-            if (mode != TransportMode.CLIENT && (port < MIN_PORT || port > MAX_PORT)) {
-                throw new IllegalArgumentException("port must be 1–65535 for SERVER/DUAL mode, got: " + port);
-            }
-            if (reactorCount < MIN_REACTOR_COUNT) {
-                throw new IllegalArgumentException(
-                        "reactorCount must be >= " + MIN_REACTOR_COUNT + ", got: " + reactorCount);
-            }
-            if (maxConnections < MIN_CONNECTIONS) {
-                throw new IllegalArgumentException(
-                        "maxConnections must be >= " + MIN_CONNECTIONS + ", got: " + maxConnections);
-            }
+            validateServerDualFields(mode, bindAddress, port);
+            validateSharedFields(reactorCount, maxConnections, idleTimeoutMillis);
+        }
+    }
+
+    private static void validateServerDualFields(TransportMode mode, String bindAddress, int port) {
+        if (mode != TransportMode.CLIENT && (bindAddress == null || bindAddress.isBlank())) {
+            throw new IllegalArgumentException("bindAddress must not be null/blank for SERVER/DUAL mode");
+        }
+        if (mode != TransportMode.CLIENT && (port < MIN_PORT || port > MAX_PORT)) {
+            throw new IllegalArgumentException("port must be 1–65535 for SERVER/DUAL mode, got: " + port);
+        }
+    }
+
+    private static void validateSharedFields(int reactorCount, int maxConnections, long idleTimeoutMillis) {
+        if (reactorCount < MIN_REACTOR_COUNT) {
+            throw new IllegalArgumentException(
+                    "reactorCount must be >= " + MIN_REACTOR_COUNT + ", got: " + reactorCount);
+        }
+        if (maxConnections < MIN_CONNECTIONS) {
+            throw new IllegalArgumentException(
+                    "maxConnections must be >= " + MIN_CONNECTIONS + ", got: " + maxConnections);
         }
         if (idleTimeoutMillis < 0) {
             throw new IllegalArgumentException(

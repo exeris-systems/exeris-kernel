@@ -47,13 +47,46 @@ public record TransportEngineCapabilities(
         String providerId
 ) {
 
+    // CHECKSTYLE.OFF: DeclarationOrder — static constants in records must follow components list
+
     /**
-     * Pre-built constant for standard single-stream transports (Community TCP tier).
+     * Baseline capabilities template — single-stream, no zero-copy (Community tier baseline).
      *
-     * <p>No multiplexing, no zero-copy slab writes.
+     * <p><b>Usage:</b> driver implementations SHOULD NOT return this constant directly
+     * from {@link TransportEngine#capabilities()} because its {@link #providerId()}
+     * is {@code "community"}, which may produce incorrect JFR/diagnostic metadata for
+     * custom providers. Instead, build a provider-branded cached constant once at
+     * class-load time:
+     * <pre>{@code
+     * private static final TransportEngineCapabilities CAPS =
+     *         TransportEngineCapabilities.STANDARD.withProvider("my-transport-community");
+     *
+     * public TransportEngineCapabilities capabilities() { return CAPS; }
+     * }</pre>
      */
     public static final TransportEngineCapabilities STANDARD =
             new TransportEngineCapabilities(false, false, "StandardTCP", "community");
+
+    /**
+     * High-performance capabilities template — multiplexed streams, zero-copy slab writes
+     * (Enterprise tier baseline).
+     *
+     * <p><b>Usage:</b> driver implementations SHOULD NOT return this constant directly
+     * from {@link TransportEngine#capabilities()} because its {@link #providerId()}
+     * is {@code "enterprise"}, which may produce incorrect JFR/diagnostic metadata for
+     * custom providers. Instead, build a provider-branded cached constant once at
+     * class-load time:
+     * <pre>{@code
+     * private static final TransportEngineCapabilities CAPS =
+     *         TransportEngineCapabilities.MULTIPLEXED.withProvider("my-transport-enterprise");
+     *
+     * public TransportEngineCapabilities capabilities() { return CAPS; }
+     * }</pre>
+     */
+    public static final TransportEngineCapabilities MULTIPLEXED =
+            new TransportEngineCapabilities(true, true, "NativeMultiplexed", "enterprise");
+
+    // CHECKSTYLE.ON: DeclarationOrder
 
     /**
      * Compact constructor — validates invariants eagerly (fail-fast bootstrap).
@@ -65,6 +98,32 @@ public record TransportEngineCapabilities(
         if (providerId == null || providerId.isBlank()) {
             throw new IllegalArgumentException("providerId must not be blank");
         }
+    }
+
+    /**
+     * Returns a new descriptor identical to this one but with the given {@code providerId}.
+     *
+     * <p>Intended for driver modules that want to reuse a standard template
+     * ({@link #STANDARD} or {@link #MULTIPLEXED}) while stamping their own
+     * provider identifier for accurate JFR and diagnostic output. Call once at
+     * class-load time and cache the result — allocation happens only during bootstrap.
+     *
+     * <pre>{@code
+     * private static final TransportEngineCapabilities CAPS =
+     *         TransportEngineCapabilities.STANDARD.withProvider("community-nio");
+     * }</pre>
+     *
+     * @param newProviderId stable provider identifier; must not be blank
+     * @return new descriptor with all flags/transportName from this instance, new providerId
+     * @throws IllegalArgumentException if {@code newProviderId} is blank
+     */
+    public TransportEngineCapabilities withProvider(String newProviderId) {
+        return new TransportEngineCapabilities(
+                supportsMultiplexing,
+                supportsZeroCopy,
+                transportName,
+                newProviderId
+        );
     }
 }
 
