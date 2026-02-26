@@ -24,8 +24,6 @@
  *   <li>{@link eu.exeris.kernel.spi.persistence.QueryResult} — tier-aware result iteration (flyweight)</li>
  *   <li>{@link eu.exeris.kernel.spi.persistence.RowCursor} — zero-copy row cursor</li>
  *   <li>{@link eu.exeris.kernel.spi.persistence.TransactionIsolation} — SQL isolation levels</li>
- *   <li>{@link eu.exeris.kernel.spi.persistence.TransportProvider} — pluggable transport (TCP / io_uring)</li>
- *   <li>{@link eu.exeris.kernel.spi.persistence.AuthProvider} — pluggable SCRAM/SASL auth</li>
  *   <li>{@link eu.exeris.kernel.spi.persistence.PersistenceConfig} — immutable config with opaque properties</li>
  *   <li>{@link eu.exeris.kernel.spi.persistence.EngineStats} — pool metrics snapshot</li>
  *   <li>{@link eu.exeris.kernel.spi.persistence.ConnectionInterceptor} — plug-and-play isolation hook
