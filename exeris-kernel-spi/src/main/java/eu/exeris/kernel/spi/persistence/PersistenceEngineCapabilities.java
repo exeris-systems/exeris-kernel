@@ -70,25 +70,35 @@ public record PersistenceEngineCapabilities(
 
     // CHECKSTYLE.OFF: DeclarationOrder — static constants in records must follow components list
     /**
-     * Pre-built capabilities descriptor for the Community tier.
+     * Pre-built capabilities descriptor for the <strong>PostgreSQL Community</strong> tier engine.
      *
      * <p>All advanced flags are {@code false}. Transport is blocking TCP.
-     * Use this constant in {@code CommunityPersistenceEngine} to avoid
-     * repeated object construction.
+     * Use this constant in the PostgreSQL community engine implementation
+     * (e.g., {@code PostgresCommunityPersistenceEngine}) to avoid repeated object
+     * construction.
+     *
+     * <p>Other persistence providers MUST construct their own
+     * {@link PersistenceEngineCapabilities} instances with an engine-specific
+     * {@link #providerId()} instead of reusing this constant.
      */
-    public static final PersistenceEngineCapabilities COMMUNITY = new PersistenceEngineCapabilities(
+    public static final PersistenceEngineCapabilities POSTGRES_COMMUNITY = new PersistenceEngineCapabilities(
             false, false, false, false,
             "BlockingTCP",
             "postgres-community"
     );
 
     /**
-     * Pre-built capabilities descriptor for the Enterprise tier.
+     * Pre-built capabilities descriptor for the <strong>PostgreSQL Enterprise</strong> tier engine.
      *
      * <p>All advanced flags are {@code true}. Transport is io_uring.
-     * Enterprise engine returns this constant from its {@code capabilities()} method.
+     * The PostgreSQL enterprise engine returns this constant from its
+     * {@code capabilities()} method.
+     *
+     * <p>Other persistence providers MUST construct their own
+     * {@link PersistenceEngineCapabilities} instances with an engine-specific
+     * {@link #providerId()} instead of reusing this constant.
      */
-    public static final PersistenceEngineCapabilities ENTERPRISE = new PersistenceEngineCapabilities(
+    public static final PersistenceEngineCapabilities POSTGRES_ENTERPRISE = new PersistenceEngineCapabilities(
             true, true, true, true,
             "io_uring/multishot",
             "postgres-enterprise"

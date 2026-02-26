@@ -18,8 +18,6 @@ import eu.exeris.kernel.spi.security.StorageContext;
  * It owns:
  * <ul>
  *   <li>Connection pool(s) — shared and per-tenant</li>
- *   <li>Transport lifecycle (blocking TCP / io_uring)</li>
- *   <li>Auth provider for SCRAM/SASL handshakes</li>
  *   <li>Health checks and pool monitoring</li>
  * </ul>
  *
@@ -99,6 +97,23 @@ public interface PersistenceEngine extends AutoCloseable {
      * @since 0.5.0
      */
     PersistenceEngineCapabilities capabilities();
+
+    /**
+     * Registers a {@link ConnectionInterceptor} to be invoked on every connection
+     * checkout from {@link #openConnection(eu.exeris.kernel.spi.security.StorageContext)}.
+     *
+     * <h2>Registration Contract</h2>
+     * <p>This method MUST be called during bootstrap, before the engine is bound
+     * into {@link eu.exeris.kernel.spi.context.KernelProviders#PERSISTENCE_ENGINE}.
+     * Calling it after the engine is live is an error — implementations MAY throw
+     * {@link IllegalStateException} if called after the first connection is opened.
+     *
+     * <p>Interceptors are invoked in registration order.
+     *
+     * @param interceptor the interceptor to add; must not be {@code null}
+     * @since 0.5.0
+     */
+    void registerInterceptor(ConnectionInterceptor interceptor);
 
     /**
      * Returns engine-level statistics for monitoring.

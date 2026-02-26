@@ -271,6 +271,19 @@ public final class KernelErrorCodes {
      */
     public static final String EX_PERS_5006 = "EX-PERS-5006";
 
+    /**
+     * No {@link eu.exeris.kernel.spi.persistence.PersistenceProvider} found on the classpath.
+     *
+     * <p>Kernel start is aborted. Add {@code exeris-kernel-community} or
+     * {@code exeris-kernel-enterprise} to the runtime dependencies.
+     *
+     * <p><b>rawArgs layout for Black-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} message (human-readable diagnostic)</li>
+     * </ul>
+     */
+    public static final String EX_PERS_5007 = "EX-PERS-5007";
+
     // -----------------------------------------------------------------------
     // EX-SEC – Security / Principal context
     // -----------------------------------------------------------------------

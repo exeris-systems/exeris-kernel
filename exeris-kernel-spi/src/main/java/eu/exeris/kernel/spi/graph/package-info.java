@@ -15,9 +15,12 @@
  * creates a {@link eu.exeris.kernel.spi.graph.GraphEngine}.
  *
  * <h2>The Wall (SPI Compliance)</h2>
- * <p>This package has <strong>zero knowledge</strong> of JDBC, Neo4j Bolt, io_uring,
- * Redis, DataSource, or any backend-specific concept. It contains only pure contracts
- * and Valhalla-ready value records.
+ * <p>This package has <strong>zero knowledge</strong> of any backend-specific APIs,
+ * protocols, drivers, data sources, or transport mechanisms. It defines only pure
+ * contracts and Valhalla-ready value records, and remains implementation-blind at
+ * the SPI surface. References to specific technologies (e.g., JDBC, Neo4j Bolt,
+ * io_uring) appear solely in documentation to describe expected implementation
+ * bindings; they must never appear in types or method signatures within this package.
  *
  * <h2>Package Layout</h2>
  * <pre>

@@ -8,6 +8,7 @@
 package eu.exeris.kernel.spi.graph.model;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 
 /**
@@ -34,9 +35,16 @@ public record PathResult(
         String algorithm
 ) {
     /**
-     * Compact constructor — defensive copy for immutability.
+     * Compact constructor — validates required fields and performs defensive copy of path.
+     *
+     * <p>{@code source}, {@code target}, and {@code algorithm} are mandatory; passing
+     * {@code null} throws {@link NullPointerException} immediately (fail-fast).
+     * {@code path} may be {@code null} and is normalised to an empty list.
      */
     public PathResult {
+        Objects.requireNonNull(source,    "source must not be null");
+        Objects.requireNonNull(target,    "target must not be null");
+        Objects.requireNonNull(algorithm, "algorithm must not be null");
         path = path != null ? List.copyOf(path) : List.of();
     }
 

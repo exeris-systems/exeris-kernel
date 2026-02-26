@@ -40,8 +40,11 @@ package eu.exeris.kernel.spi.graph;
  * }</pre>
  *
  * <h2>SPI Compliance</h2>
- * <p>This interface is <strong>implementation-blind</strong>: zero references to JDBC,
- * Neo4j, Bolt, io_uring, Redis, DataSource, or any backend-specific concept.
+ * <p>The <strong>API surface</strong> of this interface is implementation-blind:
+ * no backend-specific types (JDBC, Neo4j Bolt, io_uring, Redis, DataSource, etc.)
+ * appear in method signatures, return types, or thrown exceptions. The Open-Core
+ * section above names those technologies only to document the bindings that are
+ * expected to implement this interface — they must never leak into the SPI itself.
  *
  * <h2>SPI Dependency Injection</h2>
  * <p>Implementations obtain their {@link eu.exeris.kernel.spi.memory.MemoryAllocator},
