@@ -364,8 +364,8 @@ public final class KernelErrorCodes {
      *
      * <p><b>rawArgs layout for Black-Box:</b>
      * <ul>
-     *   <li>index 0 – {@code String} sourceNodeId</li>
-     *   <li>index 1 – {@code String} targetNodeId</li>
+     *   <li>index 0 – {@code java.util.UUID} sourceNodeId</li>
+     *   <li>index 1 – {@code java.util.UUID} targetNodeId</li>
      * </ul>
      */
     public static final String EX_GRPH_5004 = "EX-GRPH-5004";
