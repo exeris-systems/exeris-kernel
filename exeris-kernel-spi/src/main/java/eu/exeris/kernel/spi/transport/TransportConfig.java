@@ -24,7 +24,10 @@ package eu.exeris.kernel.spi.transport;
  * @param mode              operational mode (SERVER/CLIENT/DUAL/DISABLED)
  * @param bindAddress       listener bind address (e.g. {@code "0.0.0.0"}); required for
  *                          SERVER and DUAL modes, ignored for CLIENT and DISABLED modes
- * @param port              listener port number (1–65 535); ignored if mode is CLIENT
+ * @param port              listener port number (1–65 535) for SERVER/DUAL modes;
+ *                          use {@code 0} as a sentinel "not used" for CLIENT and DISABLED modes.
+ *                          Arbitrary out-of-range values are rejected even in CLIENT mode to
+ *                          prevent misleading diagnostics output.
  * @param reactorCount      number of carrier reactor threads (typically ≤ CPU cores)
  * @param certPath          path to TLS certificate (PEM); {@code null} if TLS not configured
  * @param keyPath           path to TLS private key (PEM); {@code null} if TLS not configured
@@ -86,8 +89,32 @@ public record TransportConfig(
         if (mode != TransportMode.CLIENT && (bindAddress == null || bindAddress.isBlank())) {
             throw new IllegalArgumentException("bindAddress must not be null/blank for SERVER/DUAL mode");
         }
-        if (mode != TransportMode.CLIENT && (port < MIN_PORT || port > MAX_PORT)) {
-            throw new IllegalArgumentException("port must be 1–65535 for SERVER/DUAL mode, got: " + port);
+        validatePort(mode, port);
+    }
+
+    /**
+     * Validates the port value for the given mode.
+     *
+     * <ul>
+     *   <li>SERVER / DUAL: port must be in the range {@value MIN_PORT}–{@value MAX_PORT}.</li>
+     *   <li>CLIENT: port must be either {@code 0} (sentinel "not used") or a valid port number
+     *       in the range {@value MIN_PORT}–{@value MAX_PORT}. Arbitrary out-of-range values
+     *       are rejected to prevent misleading diagnostics output.</li>
+     * </ul>
+     */
+    private static void validatePort(TransportMode mode, int port) {
+        if (mode != TransportMode.CLIENT) {
+            if (port < MIN_PORT || port > MAX_PORT) {
+                throw new IllegalArgumentException(
+                        "port must be 1–65535 for SERVER/DUAL mode, got: " + port);
+            }
+        } else {
+            // CLIENT mode: 0 is the canonical sentinel; valid port numbers are also accepted
+            // (e.g., when the same config object is reused for both client and server roles).
+            if (port != 0 && (port < MIN_PORT || port > MAX_PORT)) {
+                throw new IllegalArgumentException(
+                        "port must be 0 (not used) or 1–65535 for CLIENT mode, got: " + port);
+            }
         }
     }
 
