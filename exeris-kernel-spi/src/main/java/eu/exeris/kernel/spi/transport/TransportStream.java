@@ -145,8 +145,9 @@ public interface TransportStream extends AutoCloseable {
     /**
      * Closes this stream, releasing any associated resources.
      *
-     * <p>For QUIC, sends a FIN frame. For TCP, half-closes the output side.
-     * Idempotent — multiple calls are safe.
+     * <p>For QUIC, signals end-of-stream by sending a STREAM frame with the FIN flag set
+     * (per RFC 9000). For TCP, half-closes the output side. Idempotent — multiple calls
+     * are safe.
      */
     @Override
     void close();
