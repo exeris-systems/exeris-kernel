@@ -12,10 +12,10 @@ package eu.exeris.kernel.spi.transport;
  * connections and streams.
  *
  * <h2>Protocol Blindness (The Wall)</h2>
- * <p>This interface does <strong>not</strong> expose TCP, UDP, QUIC, or io_uring.
+ * <p>This interface does <strong>not</strong> expose TCP, UDP, QUIC, or native I/O mechanisms.
  * Business logic operates on {@link TransportConnection} and {@link TransportStream}
- * abstractions. Whether data flows over a TCP {@code SocketChannel} (Community) or
- * a QUIC/io_uring raw-address pipeline (Enterprise) is entirely opaque.
+ * abstractions. Whether data flows over a standard TCP connection (Community) or
+ * a QUIC/multiplexed pipeline (Enterprise) is entirely opaque.
  *
  * <h2>Lifecycle</h2>
  * <pre>
@@ -125,9 +125,21 @@ public interface TransportEngine extends AutoCloseable {
     TransportStats stats();
 
     /**
+     * Returns the engine's capability descriptor.
+     *
+     * <p>This call is non-blocking and returns a pre-built constant (O(1)).
+     * Used by the Core module for tier-detection and JFR events without downcasting.
+     * For example, the Core may check {@link TransportEngineCapabilities#supportsMultiplexing()}
+     * before opening more than one stream per connection.
+     *
+     * @return immutable capabilities descriptor; never {@code null}
+     */
+    TransportEngineCapabilities capabilities();
+
+    /**
      * Returns the display name of this engine for diagnostics and JFR events.
      *
-     * @return engine name (e.g., {@code "CommunityNioEngine"}, {@code "EnterpriseIoUringEngine"})
+     * @return engine name (e.g., {@code "CommunityTcpEngine"}, {@code "EnterpriseNativeEngine"})
      */
     String engineName();
 

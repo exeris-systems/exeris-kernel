@@ -14,7 +14,7 @@ package eu.exeris.kernel.spi.transport;
  * <h2>Protocol Blindness (The Wall)</h2>
  * <ul>
  *   <li><b>Community (TCP):</b> 1 connection = 1 stream. {@link #openStream()} returns
- *       the single bidirectional stream backed by the {@code SocketChannel}.</li>
+ *       the single bidirectional stream backed by the underlying socket connection.</li>
  *   <li><b>Enterprise (QUIC):</b> 1 connection = N multiplexed streams. Each
  *       {@link #openStream()} call creates a new QUIC stream (RFC 9000 §2).</li>
  * </ul>
@@ -76,7 +76,13 @@ public interface TransportConnection extends AutoCloseable {
     /**
      * Returns the remote peer's port number.
      *
-     * @return remote port (1–65 535)
+     * <p>For standard IP transports this is normally in the range {@code 1–65535}.
+     * Implementations may use {@code 0} or other sentinel values for special cases
+     * (for example, before a connection handshake has completed or for local-only
+     * transports).
+     *
+     * @return the remote peer's port number; semantics for special cases are
+     *         implementation-specific
      */
     int remotePort();
 
@@ -108,8 +114,8 @@ public interface TransportConnection extends AutoCloseable {
     /**
      * Drives the connection's internal state machine forward.
      *
-     * <p>For QUIC, this triggers {@code SSL_handle_events()} and processes pending
-     * acks/retransmissions. For TCP, this is typically a no-op.
+     * <p>For QUIC, this triggers internal connection maintenance (processing
+     * acknowledgments, retransmissions). For TCP, this is typically a no-op.
      *
      * @return {@code true} if the tick produced work (data flushed, acks processed)
      */

@@ -21,8 +21,20 @@ package eu.exeris.kernel.spi.transport;
  * </ul>
  *
  * <h2>Threading</h2>
- * <p>Called on the carrier thread — implementations MUST be non-blocking.
- * Heavy initialization should be offloaded to a virtual thread.
+ * <p>Called on the carrier thread of the virtual-thread scheduler — implementations
+ * MUST be effectively non-blocking.
+ *
+ * <p><strong>Allowed on the carrier thread:</strong> very short, constant-time, in-memory
+ * operations only, such as: updating cheap in-memory state (e.g., setting an attachment,
+ * incrementing a counter), or scheduling follow-up work on a virtual thread via
+ * {@code StructuredTaskScope}.
+ *
+ * <p><strong>Must NOT be done on the carrier thread:</strong> any operation that may
+ * block, perform I/O, or take non-trivial time — including network or disk I/O,
+ * CPU-heavy / allocation-heavy initialisation (parsers, cryptographic primitives,
+ * large object graphs), or interaction with external systems (databases, service
+ * discovery, etc.). Blocking the carrier thread can starve many virtual threads and
+ * degrade overall kernel throughput.
  *
  * @since 0.5.0
  * @see TransportEngine#setConnectionHandler(ConnectionHandler)

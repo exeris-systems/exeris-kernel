@@ -25,9 +25,9 @@ import java.lang.foreign.MemorySegment;
  * <h2>Zero-Copy Contract</h2>
  * <p>Both {@link #read} and {@link #write} operate on {@link MemorySegment} slices
  * within a {@link LoanedBuffer}. The transport implementation MUST NOT copy data
- * between heap and off-heap. Community implementations may use {@code SocketChannel}
- * reads directly into the segment; Enterprise implementations use io_uring completions
- * that write into pre-registered slab buffers.
+ * between heap and off-heap. Community implementations may read directly from the
+ * underlying connection into the segment; Enterprise implementations use native
+ * asynchronous I/O completions that write into pre-registered slab buffers.
  *
  * <h2>Threading Model</h2>
  * <p>Each stream is owned by exactly one virtual thread (the "1 VT per stream" model).
@@ -54,8 +54,9 @@ public interface TransportStream extends AutoCloseable {
      *
      * <h2>Zero-Copy</h2>
      * <p>Enterprise implementations fill the target segment directly from the
-     * io_uring completion buffer (zero intermediate copy). Community implementations
-     * read from the {@code SocketChannel} directly into the off-heap segment.
+     * native asynchronous I/O completion buffer (zero intermediate copy). Community
+     * implementations read directly into the off-heap segment from the underlying
+     * connection.
      *
      * @param target   off-heap segment to read into (from {@link LoanedBuffer#segment()})
      * @param maxBytes maximum number of bytes to read (must be ≤ {@code target.byteSize()})
@@ -87,7 +88,9 @@ public interface TransportStream extends AutoCloseable {
      *
      * <p><strong>Ownership transfer:</strong> the transport takes ownership of the buffer.
      * The caller MUST NOT close the buffer after this call — the transport will close it
-     * after the write completes. If the call fails, the buffer is closed immediately.
+     * after the write completes. If this method throws any exception (including
+     * {@link IllegalStateException}), the buffer is closed by the transport before
+     * the exception propagates. The caller must NOT close the buffer after an exception.
      *
      * <p>This method is non-blocking: data is queued and flushed by the carrier loop.
      *

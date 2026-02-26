@@ -82,12 +82,37 @@ public record TransportConfig(
                 throw new IllegalArgumentException("port must be 1–65535 for SERVER/DUAL mode, got: " + port);
             }
             if (reactorCount < MIN_REACTOR_COUNT) {
-                throw new IllegalArgumentException("reactorCount must be ≥ 1, got: " + reactorCount);
+                throw new IllegalArgumentException(
+                        "reactorCount must be >= " + MIN_REACTOR_COUNT + ", got: " + reactorCount);
             }
             if (maxConnections < MIN_CONNECTIONS) {
-                throw new IllegalArgumentException("maxConnections must be ≥ 1, got: " + maxConnections);
+                throw new IllegalArgumentException(
+                        "maxConnections must be >= " + MIN_CONNECTIONS + ", got: " + maxConnections);
             }
         }
+        if (idleTimeoutMillis < 0) {
+            throw new IllegalArgumentException(
+                    "idleTimeoutMillis must be >= 0 (0 = no timeout), got: " + idleTimeoutMillis);
+        }
+    }
+
+    /**
+     * Overrides the default record {@code toString()} to redact sensitive TLS paths
+     * (certificate and key file locations) from logs and diagnostics output.
+     *
+     * @return a safe string representation with redacted credential paths
+     */
+    @Override
+    public String toString() {
+        return "TransportConfig[" +
+                "mode=" + mode + ", " +
+                "bindAddress='" + bindAddress + "', " +
+                "port=" + port + ", " +
+                "reactorCount=" + reactorCount + ", " +
+                "certPath=" + (certPath != null ? "***REDACTED***" : "null") + ", " +
+                "keyPath=" + (keyPath != null ? "***REDACTED***" : "null") + ", " +
+                "maxConnections=" + maxConnections + ", " +
+                "idleTimeoutMillis=" + idleTimeoutMillis + ']';
     }
 
     /**

@@ -16,12 +16,12 @@ import eu.exeris.kernel.spi.memory.MemoryAllocator;
  *
  * <h2>Open-Core (The Wall)</h2>
  * <ul>
- *   <li><b>Community binding</b> (free, priority 0): Java NIO.2 TCP/TLS engine.
- *       Cross-platform, 1 VT per connection, off-heap buffers via {@link MemoryAllocator},
- *       JDK {@code SSLEngine} for TLS.</li>
- *   <li><b>Enterprise binding</b> (secret sauce, priority 100): io_uring + QUIC + OpenSSL
- *       BIO engine. Linux-only, multishot recvmsg, provided buffer rings, raw-address
- *       zero-copy pipeline, deterministic slab pools. This binding lives in
+ *   <li><b>Community binding</b> (free, priority 0): Standard cross-platform TCP/TLS engine.
+ *       1 VT per connection, off-heap buffers via {@link MemoryAllocator},
+ *       JDK-native TLS for encryption.</li>
+ *   <li><b>Enterprise binding</b> (secret sauce, priority 100): Multiplexed zero-copy
+ *       transport with native asynchronous I/O, provided buffer rings, and a
+ *       deterministic slab pool pipeline. Linux-only. This binding lives in
  *       {@code exeris-kernel-enterprise} and must <em>never</em> be referenced from
  *       this SPI.</li>
  * </ul>
@@ -34,15 +34,15 @@ import eu.exeris.kernel.spi.memory.MemoryAllocator;
  *     .stream()
  *     .map(ServiceLoader.Provider::get)
  *     .max(Comparator.comparingInt(TransportProvider::priority))
- *     .orElseThrow(() -> TransportException.bootstrapFailure("No TransportProvider on classpath"));
+ *     .orElseThrow(() -> TransportException.bootstrapFailure("unknown", "No TransportProvider on classpath", null));
  *
  * TransportEngine engine = provider.createEngine(config, allocator, cryptoProvider);
  * ScopedValue.where(KernelProviders.TRANSPORT_ENGINE, engine).run(kernel::start);
  * }</pre>
  *
  * <h2>SPI Compliance</h2>
- * <p>This interface is <strong>implementation-blind</strong>: zero references to io_uring,
- * Netty, OpenSSL, BIO, SocketChannel, or any native transport mechanism.
+ * <p>This interface is <strong>implementation-blind</strong>: zero references to specific
+ * transport APIs, native I/O mechanisms, or TLS library implementations.
  *
  * @since 0.5.0
  * @see TransportEngine

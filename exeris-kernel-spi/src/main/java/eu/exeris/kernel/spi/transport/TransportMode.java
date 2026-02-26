@@ -17,10 +17,10 @@ package eu.exeris.kernel.spi.transport;
  * allocating server-side structures and conserves memory.
  *
  * <h2>Protocol Blindness (The Wall)</h2>
- * <p>This enum does not encode <em>which</em> protocol is used (TCP vs QUIC vs io_uring).
+ * <p>This enum does not encode <em>which</em> protocol is used (TCP vs QUIC vs native async I/O).
  * It only declares <em>directionality</em>. The Community tier may implement {@link #SERVER}
- * with a {@code ServerSocketChannel}; the Enterprise tier may use an {@code io_uring}
- * QUIC listener. Business logic sees only {@code TransportMode}.
+ * with a standard listener socket; the Enterprise tier may use native asynchronous I/O
+ * mechanisms. Business logic sees only {@code TransportMode}.
  *
  * @since 0.5.0
  * @see TransportConfig
