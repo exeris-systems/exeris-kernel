@@ -7,6 +7,7 @@
  */
 package eu.exeris.kernel.spi.graph.model;
 
+import eu.exeris.kernel.spi.util.SpiDiagnostics;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
@@ -26,6 +27,9 @@ import java.util.UUID;
  *
  * @since 0.5.0
  */
+@SuppressWarnings("PMD.UnusedAssignment") // hopCount record component is normalised in the compact
+// constructor (path.size()-1) — the caller-supplied value is intentionally discarded to enforce
+// the path/hopCount invariant. Documented in the compact constructor Javadoc.
 public record PathResult(
         UUID source,
         UUID target,
@@ -35,31 +39,43 @@ public record PathResult(
         String algorithm
 ) {
     /**
-     * Compact constructor — validates required fields and performs defensive copy of path.
+     * Compact constructor — validates required fields, performs defensive copy of path,
+     * and normalises {@code hopCount} to be consistent with the actual path size.
      *
      * <p>{@code source}, {@code target}, and {@code algorithm} are mandatory; passing
      * {@code null} throws {@link NullPointerException} immediately (fail-fast).
      * {@code path} may be {@code null} and is normalised to an empty list.
+     *
+     * <p><b>hopCount normalisation:</b> the caller-supplied {@code hopCount} is overridden
+     * by the formula {@code path.isEmpty() ? 0 : path.size() - 1}, making it impossible
+     * to construct an inconsistent record (e.g., a 3-node path reporting 0 hops).
+     * {@link #averageCostPerHop()} therefore always operates on a stable denominator.
      */
     public PathResult {
         Objects.requireNonNull(source,    "source must not be null");
         Objects.requireNonNull(target,    "target must not be null");
         Objects.requireNonNull(algorithm, "algorithm must not be null");
-        path = path != null ? List.copyOf(path) : List.of();
+        path     = path != null ? List.copyOf(path) : List.of();
+        // Derive hopCount from path — prevents caller from supplying an inconsistent value.
+        hopCount = path.isEmpty() ? 0 : path.size() - 1;
     }
 
     /**
      * Checks if a valid path was found.
      *
-     * <p>Invariant: {@code !found()} is always equivalent to
-     * {@code totalCost == Double.POSITIVE_INFINITY && path.isEmpty()}.
-     * Callers SHOULD use this method rather than inspecting {@code totalCost}
-     * directly to avoid coupling to the sentinel value.
+     * <p>Returns {@code true} only when all three sentinel conditions hold:
+     * <ul>
+     *   <li>{@link #path()} is non-empty</li>
+     *   <li>{@link #hopCount()} is positive</li>
+     *   <li>{@link #totalCost()} is finite (not {@link Double#POSITIVE_INFINITY})</li>
+     * </ul>
+     * Callers SHOULD use this method rather than inspecting fields directly to avoid
+     * coupling to the sentinel representation.
      *
      * @return {@code true} if a path exists between {@code source} and {@code target}
      */
     public boolean found() {
-        return !path.isEmpty();
+        return !path.isEmpty() && hopCount > 0 && Double.isFinite(totalCost);
     }
 
     /**
@@ -104,6 +120,28 @@ public record PathResult(
      */
     public static PathResult notFound(UUID source, UUID target, String algorithm) {
         return new PathResult(source, target, List.of(), Double.POSITIVE_INFINITY, 0, algorithm);
+    }
+
+    /**
+     * Returns a diagnostic string with masked UUID values.
+     *
+     * <p>Full UUIDs are truncated via {@link SpiDiagnostics#maskUuid(UUID)} —
+     * the canonical masking strategy shared across all SPI node-identity carriers
+     * ({@code ImmutablePrincipal}, {@code PathResult}, etc.).
+     * This prevents accidental exposure of node identifiers in logs, JFR events,
+     * or exception messages.
+     *
+     * <p>Example: {@code PathResult[src=550e8400~***, tgt=6ba7b810~***, hops=3,
+     * cost=12.5, found=true, algorithm=dijkstra]}
+     */
+    @Override
+    public String toString() {
+        return "PathResult[src=" + SpiDiagnostics.maskUuid(source)
+                + ", tgt=" + SpiDiagnostics.maskUuid(target)
+                + ", hops=" + hopCount
+                + ", cost=" + totalCost
+                + ", found=" + found()
+                + ", algorithm=" + algorithm + ']';
     }
 }
 

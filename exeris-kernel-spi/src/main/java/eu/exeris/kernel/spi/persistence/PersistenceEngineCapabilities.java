@@ -35,25 +35,30 @@ package eu.exeris.kernel.spi.persistence;
  *   <tr><th>Capability</th><th>Community</th><th>Enterprise</th></tr>
  *   <tr><td>{@link #supportsNativeProtocol()}</td><td>{@code false}</td><td>{@code true}</td></tr>
  *   <tr><td>{@link #supportsZeroCopyRows()}</td><td>{@code false}</td><td>{@code true}</td></tr>
- *   <tr><td>{@link #supportsIoUring()}</td><td>{@code false}</td><td>{@code true}</td></tr>
+ *   <tr><td>{@link #supportsKernelAsyncTransport()}</td><td>{@code false}</td><td>{@code true}</td></tr>
  *   <tr><td>{@link #supportsPerTenantPools()}</td><td>{@code false}</td><td>{@code true}</td></tr>
- *   <tr><td>{@link #transportName()}</td><td>{@code "BlockingTCP"}</td><td>{@code "io_uring/native"}</td></tr>
+ *   <tr><td>{@link #transportName()}</td><td>{@code "BlockingTCP"}</td><td>{@code "NativeAsync"}</td></tr>
  * </table>
  *
- * @param supportsNativeProtocol {@code true} if this engine uses the PostgreSQL wire protocol
- *                               directly (PG Native), bypassing JDBC entirely.
- * @param supportsZeroCopyRows   {@code true} if {@link QueryResult#row()} reads directly from
- *                               off-heap {@link eu.exeris.kernel.spi.memory.LoanedBuffer} —
- *                               zero heap allocation per row iteration.
- * @param supportsIoUring        {@code true} if the transport layer uses Linux io_uring
- *                               (multishot recvmsg, provided buffer groups).
- * @param supportsPerTenantPools {@code true} if the engine maintains per-tenant connection
- *                               pools for full connection-level RLS isolation.
- * @param transportName          Stable display name of the transport layer, used in JFR events
- *                               and diagnostic output (e.g., {@code "BlockingTCP"},
- *                               {@code "io_uring/native"}).
- * @param providerId             Stable provider identifier (mirrors
- *                               {@link PersistenceProvider#providerId()}).
+ * @param supportsNativeProtocol       {@code true} if this engine bypasses JDBC entirely and
+ *                                     speaks the storage wire protocol directly (PG Native,
+ *                                     Cassandra native, etc.).
+ * @param supportsZeroCopyRows         {@code true} if {@link QueryResult#row()} reads directly
+ *                                     from off-heap {@link eu.exeris.kernel.spi.memory.LoanedBuffer}
+ *                                     — zero heap allocation per row iteration.
+ * @param supportsKernelAsyncTransport {@code true} if the transport layer uses kernel-level
+ *                                     async I/O (e.g. Linux io_uring, Windows IOCP) instead of
+ *                                     blocking or NIO threads. Implementation detail stays in
+ *                                     the driver — SPI only declares the capability tier.
+ * @param supportsPerTenantPools       {@code true} if the engine maintains per-tenant connection
+ *                                     pools for full connection-level isolation.
+ * @param transportName                Stable display name of the transport tier, used in JFR
+ *                                     events and diagnostic output. SPI-level values:
+ *                                     {@code "BlockingTCP"} or {@code "NativeAsync"}.
+ *                                     Driver modules MAY use a more specific label in their
+ *                                     own {@link PersistenceEngineCapabilities} constants.
+ * @param providerId                   Stable provider identifier (mirrors
+ *                                     {@link PersistenceProvider#providerId()}).
  *
  * @since 0.5.0
  * @see PersistenceEngine
@@ -62,7 +67,7 @@ package eu.exeris.kernel.spi.persistence;
 public record PersistenceEngineCapabilities(
         boolean supportsNativeProtocol,
         boolean supportsZeroCopyRows,
-        boolean supportsIoUring,
+        boolean supportsKernelAsyncTransport,
         boolean supportsPerTenantPools,
         String  transportName,
         String  providerId
@@ -75,8 +80,8 @@ public record PersistenceEngineCapabilities(
      * blocking TCP transport, provider-neutral identifier.
      *
      * <p>Use this constant when the engine operates over a standard JDBC-style
-     * TCP connection with no native protocol, no zero-copy rows, no io_uring,
-     * and no per-tenant pools. Provider implementations SHOULD return this
+     * TCP connection with no native protocol, no zero-copy rows, no kernel async
+     * transport, and no per-tenant pools. Provider implementations SHOULD return this
      * constant from {@link PersistenceEngine#capabilities()} to guarantee
      * O(1), allocation-free access:
      * <pre>{@code return PersistenceEngineCapabilities.DEFAULT; // O(1), no allocation}</pre>
@@ -92,11 +97,11 @@ public record PersistenceEngineCapabilities(
 
     /**
      * High-performance capabilities descriptor — all capability flags {@code true},
-     * native io_uring transport, provider-neutral identifier.
+     * native async transport, provider-neutral identifier.
      *
      * <p>Use this constant as a starting-point template when the engine supports
-     * all advanced features (native wire protocol, zero-copy rows, io_uring,
-     * per-tenant pools). Enterprise-tier driver implementations that do not
+     * all advanced features (native wire protocol, zero-copy rows, kernel async
+     * transport, per-tenant pools). Enterprise-tier driver implementations that do not
      * require a branded constant MAY return this instance directly from
      * {@link PersistenceEngine#capabilities()}.
      *
@@ -105,7 +110,7 @@ public record PersistenceEngineCapabilities(
      */
     public static final PersistenceEngineCapabilities HIGH_PERFORMANCE = new PersistenceEngineCapabilities(
             true, true, true, true,
-            "io_uring/native",
+            "NativeAsync",
             "high-performance"
     );
 
@@ -123,4 +128,3 @@ public record PersistenceEngineCapabilities(
         }
     }
 }
-
