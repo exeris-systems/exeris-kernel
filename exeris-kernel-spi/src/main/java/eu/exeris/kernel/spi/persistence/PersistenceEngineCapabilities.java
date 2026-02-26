@@ -76,18 +76,20 @@ public record PersistenceEngineCapabilities(
     // CHECKSTYLE.OFF: DeclarationOrder — static constants in records must follow components list
 
     /**
-     * Baseline capabilities descriptor — all capability flags {@code false},
-     * blocking TCP transport, provider-neutral identifier.
+     * Baseline capabilities template — all capability flags {@code false},
+     * blocking TCP transport.
      *
-     * <p>Use this constant when the engine operates over a standard JDBC-style
-     * TCP connection with no native protocol, no zero-copy rows, no kernel async
-     * transport, and no per-tenant pools. Provider implementations SHOULD return this
-     * constant from {@link PersistenceEngine#capabilities()} to guarantee
-     * O(1), allocation-free access:
-     * <pre>{@code return PersistenceEngineCapabilities.DEFAULT; // O(1), no allocation}</pre>
+     * <p><b>Usage:</b> driver implementations SHOULD NOT return this constant directly
+     * from {@link PersistenceEngine#capabilities()} because its {@link #providerId()}
+     * is {@code "default"}, which would produce incorrect JFR/diagnostic metadata.
+     * Instead, build a provider-branded cached constant once at class-load time:
+     * <pre>{@code
+     * // In your PersistenceEngine implementation:
+     * private static final PersistenceEngineCapabilities CAPS =
+     *         PersistenceEngineCapabilities.DEFAULT.withProvider("my-provider-id");
      *
-     * <p>Provider-specific capability constants (e.g., with a branded
-     * {@link #providerId()}) belong in the driver module, not in this SPI.
+     * public PersistenceEngineCapabilities capabilities() { return CAPS; }
+     * }</pre>
      */
     public static final PersistenceEngineCapabilities DEFAULT = new PersistenceEngineCapabilities(
             false, false, false, false,
@@ -96,17 +98,20 @@ public record PersistenceEngineCapabilities(
     );
 
     /**
-     * High-performance capabilities descriptor — all capability flags {@code true},
-     * native async transport, provider-neutral identifier.
+     * High-performance capabilities template — all capability flags {@code true},
+     * native async transport.
      *
-     * <p>Use this constant as a starting-point template when the engine supports
-     * all advanced features (native wire protocol, zero-copy rows, kernel async
-     * transport, per-tenant pools). Enterprise-tier driver implementations that do not
-     * require a branded constant MAY return this instance directly from
-     * {@link PersistenceEngine#capabilities()}.
+     * <p><b>Usage:</b> driver implementations SHOULD NOT return this constant directly
+     * from {@link PersistenceEngine#capabilities()} because its {@link #providerId()}
+     * is {@code "high-performance"}, which would produce incorrect JFR/diagnostic metadata.
+     * Instead, build a provider-branded cached constant once at class-load time:
+     * <pre>{@code
+     * // In your PersistenceEngine implementation:
+     * private static final PersistenceEngineCapabilities CAPS =
+     *         PersistenceEngineCapabilities.HIGH_PERFORMANCE.withProvider("my-provider-id");
      *
-     * <p>Provider-specific capability constants (e.g., with a branded
-     * {@link #providerId()}) belong in the driver module, not in this SPI.
+     * public PersistenceEngineCapabilities capabilities() { return CAPS; }
+     * }</pre>
      */
     public static final PersistenceEngineCapabilities HIGH_PERFORMANCE = new PersistenceEngineCapabilities(
             true, true, true, true,
@@ -126,5 +131,33 @@ public record PersistenceEngineCapabilities(
         if (providerId == null || providerId.isBlank()) {
             throw new IllegalArgumentException("providerId must not be blank");
         }
+    }
+
+    /**
+     * Returns a new descriptor identical to this one but with the given {@code providerId}.
+     *
+     * <p>Intended for driver modules that want to reuse a standard template
+     * ({@link #DEFAULT} or {@link #HIGH_PERFORMANCE}) while stamping their own
+     * provider identifier for accurate JFR and diagnostic output. Call once at
+     * class-load time and cache the result — allocation happens only during bootstrap.
+     *
+     * <pre>{@code
+     * private static final PersistenceEngineCapabilities CAPS =
+     *         PersistenceEngineCapabilities.DEFAULT.withProvider("postgres-community");
+     * }</pre>
+     *
+     * @param newProviderId stable provider identifier; must not be blank
+     * @return new descriptor with all flags/transport from this instance, new providerId
+     * @throws IllegalArgumentException if {@code newProviderId} is blank
+     */
+    public PersistenceEngineCapabilities withProvider(String newProviderId) {
+        return new PersistenceEngineCapabilities(
+                supportsNativeProtocol,
+                supportsZeroCopyRows,
+                supportsKernelAsyncTransport,
+                supportsPerTenantPools,
+                transportName,
+                newProviderId
+        );
     }
 }

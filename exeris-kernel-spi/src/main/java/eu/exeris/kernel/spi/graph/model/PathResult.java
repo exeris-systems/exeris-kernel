@@ -63,19 +63,20 @@ public record PathResult(
     /**
      * Checks if a valid path was found.
      *
-     * <p>Returns {@code true} only when all three sentinel conditions hold:
+     * <p>Returns {@code true} when both sentinel conditions hold:
      * <ul>
-     *   <li>{@link #path()} is non-empty</li>
-     *   <li>{@link #hopCount()} is positive</li>
+     *   <li>{@link #path()} is non-empty (an empty path always denotes "not found")</li>
      *   <li>{@link #totalCost()} is finite (not {@link Double#POSITIVE_INFINITY})</li>
      * </ul>
+     * This includes valid zero-hop paths where {@code source == target} and the path
+     * contains exactly one node — such paths are considered found with {@code hopCount == 0}.
      * Callers SHOULD use this method rather than inspecting fields directly to avoid
      * coupling to the sentinel representation.
      *
      * @return {@code true} if a path exists between {@code source} and {@code target}
      */
     public boolean found() {
-        return !path.isEmpty() && hopCount > 0 && Double.isFinite(totalCost);
+        return !path.isEmpty() && Double.isFinite(totalCost);
     }
 
     /**

@@ -7,6 +7,7 @@
  */
 package eu.exeris.kernel.spi.util;
 
+import java.util.Objects;
 import java.util.UUID;
 
 /**
@@ -61,6 +62,7 @@ public final class SpiDiagnostics {
      * @return masked string; never {@code null}
      */
     public static String maskUuid(UUID uuid) {
+        Objects.requireNonNull(uuid, "uuid must not be null");
         return uuid.toString().substring(0, UUID_MASK_PREFIX_LEN) + UUID_MASK_SUFFIX;
     }
 }
