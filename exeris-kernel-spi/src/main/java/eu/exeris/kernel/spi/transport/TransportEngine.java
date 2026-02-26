@@ -87,7 +87,12 @@ public interface TransportEngine extends AutoCloseable {
 
     /**
      * Initiates a graceful stop — no new connections accepted, in-flight
-     * streams are drained with a configurable timeout.
+     * streams are drained for a bounded period before being forcefully closed.
+     *
+     * <p>The exact drain/stop timeout is implementation-defined and configured
+     * outside this SPI (for example via provider-specific configuration passed to
+     * {@link TransportProvider#createEngine(TransportConfig)}). This SPI does not
+     * currently expose a dedicated stop/drain timeout parameter.
      *
      * <p>After this call returns, the engine is in STOPPED state and
      * {@link #close()} can be called to release resources.

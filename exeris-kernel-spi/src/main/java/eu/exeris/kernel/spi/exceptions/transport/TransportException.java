@@ -33,9 +33,11 @@ import java.util.Objects;
  * <h2>Error Code Variants</h2>
  * <p>Use the appropriate factory method to ensure the correct {@code EX-NET-*} code is recorded:
  * <ul>
- *   <li>{@link #bindFailure(String, int, Throwable)} → {@value KernelErrorCodes#EX_NET_4001}</li>
- *   <li>{@link #sendFailure(String, long, Throwable)} → {@value KernelErrorCodes#EX_NET_4002}</li>
- *   <li>{@link #receiveTimeout(String, long)} → {@value KernelErrorCodes#EX_NET_4003}</li>
+ *   <li>{@link #bindFailure(String, int, Throwable)}            → {@value KernelErrorCodes#EX_NET_4001}</li>
+ *   <li>{@link #sendFailure(String, long, Throwable)}           → {@value KernelErrorCodes#EX_NET_4002}</li>
+ *   <li>{@link #receiveTimeout(String, long)}                   → {@value KernelErrorCodes#EX_NET_4003}</li>
+ *   <li>{@link #bootstrapFailure(String, String, Throwable)}    → {@value KernelErrorCodes#EX_NET_4004}</li>
+ *   <li>{@link #engineStartFailure(String, int, Throwable)}     → {@value KernelErrorCodes#EX_NET_4005}</li>
  * </ul>
  * <p>Direct construction via the general constructor is also permitted when the above
  * factory methods do not cover the specific operation.

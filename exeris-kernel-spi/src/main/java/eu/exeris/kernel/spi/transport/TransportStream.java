@@ -121,9 +121,19 @@ public interface TransportStream extends AutoCloseable {
     boolean isBidirectional();
 
     /**
-     * Returns {@code true} if this stream was initiated by the remote peer (client).
+     * Returns {@code true} if this stream was initiated by the endpoint that acted
+     * as the <em>client</em> in the underlying connection handshake.
      *
-     * @return {@code true} if client-initiated
+     * <p>This is defined in terms of the connection's client/server role, not
+     * locality:
+     * <ul>
+     *   <li>On a <strong>server-side</strong> engine, {@code true} means the stream
+     *       was initiated by the remote peer.</li>
+     *   <li>On a <strong>client-side</strong> engine, {@code true} means the stream
+     *       was initiated locally.</li>
+     * </ul>
+     *
+     * @return {@code true} if initiated by the client endpoint for this connection
      */
     boolean isClientInitiated();
 
