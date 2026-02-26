@@ -100,12 +100,23 @@ public interface TransportConnection extends AutoCloseable {
      * <p>Used by higher layers (HTTP/3, application handlers) to associate per-connection
      * state without the transport layer knowing the type.
      *
+     * <h3>Thread-Safety Contract</h3>
+     * <p>Implementations MUST provide safe-publication semantics equivalent to a
+     * {@code volatile} read: a value written by {@link #setAttachment(Object)} on one
+     * virtual thread MUST be visible to any subsequent {@code attachment()} call on any
+     * other virtual thread. Concurrent writes are permitted but callers are responsible
+     * for coordinating if ordering between writers matters.
+     *
      * @return the attachment, or {@code null}
      */
     Object attachment();
 
     /**
      * Stores an opaque attachment on this connection.
+     *
+     * <p>Implementations MUST provide safe-publication semantics equivalent to a
+     * {@code volatile} write — visibility to all subsequent {@link #attachment()}
+     * readers is guaranteed. Passing {@code null} clears the attachment.
      *
      * @param attachment object to attach (may be {@code null} to clear)
      */

@@ -22,7 +22,8 @@ package eu.exeris.kernel.spi.transport;
  * Future migration to {@code value record} (JEP 401) is expected.
  *
  * @param mode              operational mode (SERVER/CLIENT/DUAL/DISABLED)
- * @param bindAddress       address to bind the listener to (e.g. {@code "0.0.0.0"})
+ * @param bindAddress       listener bind address (e.g. {@code "0.0.0.0"}); required for
+ *                          SERVER and DUAL modes, ignored for CLIENT and DISABLED modes
  * @param port              listener port number (1–65 535); ignored if mode is CLIENT
  * @param reactorCount      number of carrier reactor threads (typically ≤ CPU cores)
  * @param certPath          path to TLS certificate (PEM); {@code null} if TLS not configured
@@ -75,8 +76,8 @@ public record TransportConfig(
             throw new IllegalArgumentException("TransportMode must not be null");
         }
         if (mode != TransportMode.DISABLED) {
-            if (bindAddress == null || bindAddress.isBlank()) {
-                throw new IllegalArgumentException("bindAddress must not be null/blank when transport is enabled");
+            if (mode != TransportMode.CLIENT && (bindAddress == null || bindAddress.isBlank())) {
+                throw new IllegalArgumentException("bindAddress must not be null/blank for SERVER/DUAL mode");
             }
             if (mode != TransportMode.CLIENT && (port < MIN_PORT || port > MAX_PORT)) {
                 throw new IllegalArgumentException("port must be 1–65535 for SERVER/DUAL mode, got: " + port);

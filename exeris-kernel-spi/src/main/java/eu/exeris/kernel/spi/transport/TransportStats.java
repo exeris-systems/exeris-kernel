@@ -12,13 +12,14 @@ package eu.exeris.kernel.spi.transport;
  *
  * <h2>Zero-Allocation</h2>
  * <p>This record is designed for periodic sampling (every 1–5 s) by the telemetry
- * subsystem. It is a shallow, stack-allocatable value (Valhalla-ready — future
- * {@code value record} migration is expected).
+ * subsystem. It is a small, shallow data carrier, designed to be Valhalla-ready
+ * (future {@code value record} migration is expected once JEP 401 is mainline,
+ * at which point instances will scalarise on hot paths via JIT Escape Analysis).
  *
  * <h2>Protocol Blindness</h2>
- * <p>Fields are protocol-agnostic. Both Community (TCP) and Enterprise (QUIC/io_uring)
- * populate the same fields. Tier-specific metrics (e.g., io_uring SQ depth,
- * QUIC loss rate) are emitted as custom JFR events, not through this record.
+ * <p>Fields are protocol-agnostic. Both Community and Enterprise transport bindings
+ * populate the same fields. Tier-specific metrics (e.g., ring depth, loss rate)
+ * are emitted as custom JFR events, not through this record.
  *
  * @param activeConnections number of currently open connections
  * @param activeStreams      number of currently open streams across all connections

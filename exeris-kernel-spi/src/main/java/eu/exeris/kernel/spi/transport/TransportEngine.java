@@ -19,12 +19,12 @@ package eu.exeris.kernel.spi.transport;
  *
  * <h2>Lifecycle</h2>
  * <pre>
- *  TransportProvider.createEngine(config, ...)  → engine (CREATED)
- *  engine.setStreamHandler(handler)             → handler registered
- *  engine.start()                               → engine (RUNNING)
+ *  TransportProvider.createEngine(config)  → engine (CREATED)
+ *  engine.setStreamHandler(handler)        → handler registered
+ *  engine.start()                          → engine (RUNNING)
  *  ... accept streams / connect ...
- *  engine.stop()                                → engine (STOPPING, draining)
- *  engine.close()                               → engine (CLOSED, resources released)
+ *  engine.stop()                           → engine (STOPPING, draining)
+ *  engine.close()                          → engine (CLOSED, resources released)
  * </pre>
  *
  * <h2>Server Mode</h2>
@@ -37,7 +37,7 @@ package eu.exeris.kernel.spi.transport;
  * outbound connections that the caller can open streams on.
  *
  * <h2>Resource Management</h2>
- * <p>The engine owns all native resources (sockets, io_uring rings, slab pool
+ * <p>The engine owns all native resources (sockets, native I/O rings, slab pool
  * partitions) and releases them in {@link #close()}. Implementations MUST
  * make {@code close()} idempotent.
  *
@@ -118,7 +118,10 @@ public interface TransportEngine extends AutoCloseable {
     /**
      * Returns a point-in-time diagnostics snapshot.
      *
-     * <p>This call is non-blocking and allocation-free (returns a Valhalla-ready record).
+     * <p>This call is non-blocking and low-allocation. {@link TransportStats} is a
+     * Valhalla-ready record — allocations will be eliminated once JEP 401 lands and
+     * the record is migrated to {@code value record}. Until then, implementations
+     * SHOULD return a cached or pool-sourced instance where possible.
      *
      * @return current transport statistics
      */

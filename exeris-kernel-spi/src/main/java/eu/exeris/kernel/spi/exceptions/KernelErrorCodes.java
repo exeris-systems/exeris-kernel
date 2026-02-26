@@ -197,8 +197,8 @@ public final class KernelErrorCodes {
      *
      * <p><b>rawArgs layout for Black-Box:</b>
      * <ul>
-     *   <li>index 0 – {@code String} providerName (which provider failed)</li>
-     *   <li>index 1 – {@code String} reason       (static failure description)</li>
+     *   <li>index 0 – {@code String} transportName (which transport failed)</li>
+     *   <li>index 1 – {@code String} reason        (static failure description)</li>
      * </ul>
      */
     public static final String EX_NET_4004 = "EX-NET-4004";
@@ -210,7 +210,7 @@ public final class KernelErrorCodes {
      *
      * <p><b>rawArgs layout for Black-Box:</b>
      * <ul>
-     *   <li>index 0 – {@code String} engineName   (which engine failed to start)</li>
+     *   <li>index 0 – {@code String} transportName (which engine failed to start)</li>
      *   <li>index 1 – {@code int}    port          (port that could not be bound; -1 if N/A)</li>
      * </ul>
      */

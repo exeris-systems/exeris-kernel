@@ -33,8 +33,10 @@
  * </ul>
  *
  * <h2>The Wall</h2>
- * <p>Implementation-blind: no references to specific transport APIs, native mechanisms,
- * TLS libraries, or protocol implementation details.
+ * <p>Implementation-blind: SPI types and signatures must not depend on or reference specific
+ * transport APIs, native mechanisms, TLS libraries, or protocol implementation details.
+ * Concrete technologies may appear in documentation and examples, but never in the public
+ * SPI surface (types, method signatures, thrown exceptions).
  */
 package eu.exeris.kernel.spi.transport;
 
