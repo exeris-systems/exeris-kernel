@@ -190,6 +190,32 @@ public final class KernelErrorCodes {
      */
     public static final String EX_NET_4003 = "EX-NET-4003";
 
+    /**
+     * Transport engine bootstrap failure: the {@code TransportProvider} could not
+     * create a {@code TransportEngine} (e.g., missing native library, socket allocation
+     * failure, insufficient off-heap budget for slab pools).
+     *
+     * <p><b>rawArgs layout for Black-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} providerName (which provider failed)</li>
+     *   <li>index 1 – {@code String} reason       (static failure description)</li>
+     * </ul>
+     */
+    public static final String EX_NET_4004 = "EX-NET-4004";
+
+    /**
+     * Transport engine start failure: the engine was created but could not be started
+     * (e.g., port already in use, carrier loop thread creation failed, io_uring ring
+     * setup returned an error).
+     *
+     * <p><b>rawArgs layout for Black-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} engineName   (which engine failed to start)</li>
+     *   <li>index 1 – {@code int}    port          (port that could not be bound; -1 if N/A)</li>
+     * </ul>
+     */
+    public static final String EX_NET_4005 = "EX-NET-4005";
+
     // -----------------------------------------------------------------------
     // EX-PERS – Persistence subsystem
     // -----------------------------------------------------------------------

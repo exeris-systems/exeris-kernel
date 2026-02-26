@@ -67,6 +67,8 @@ public final class TransportException extends ExerisKernelException {
     private static final String MSG_BIND    = "Transport bind failure";
     private static final String MSG_SEND    = "Transport send failure";
     private static final String MSG_TIMEOUT = "Transport receive timeout";
+    private static final String MSG_BOOTSTRAP = "Transport engine bootstrap failure";
+    private static final String MSG_START     = "Transport engine start failure";
     private static final String ERR_TRANSPORT_NAME_NULL = "transportName must not be null";
 
     // -----------------------------------------------------------------------
@@ -154,6 +156,47 @@ public final class TransportException extends ExerisKernelException {
                 MSG_TIMEOUT,
                 null,
                 transportName, timeoutMs);
+    }
+
+    /**
+     * Creates a {@code TransportException} for a transport engine bootstrap failure.
+     *
+     * <p>Sets error code {@value KernelErrorCodes#EX_NET_4004}.
+     * rawArgs layout: {@code [String providerName, String reason]}.
+     *
+     * @param providerName name of the provider that failed (from {@code TransportProvider.providerName()})
+     * @param reason       static failure description
+     * @param cause        the upstream throwable; may be {@code null}
+     * @return a fully initialised {@link TransportException}
+     */
+    public static TransportException bootstrapFailure(String providerName, String reason, Throwable cause) {
+        Objects.requireNonNull(providerName, "providerName must not be null");
+        Objects.requireNonNull(reason, "reason must not be null");
+        return new TransportException(
+                KernelErrorCodes.EX_NET_4004,
+                MSG_BOOTSTRAP,
+                cause,
+                providerName, reason);
+    }
+
+    /**
+     * Creates a {@code TransportException} for a transport engine start failure.
+     *
+     * <p>Sets error code {@value KernelErrorCodes#EX_NET_4005}.
+     * rawArgs layout: {@code [String engineName, int port]}.
+     *
+     * @param engineName name of the engine that failed to start
+     * @param port       port that could not be bound; use {@code -1} if not applicable
+     * @param cause      the upstream throwable; may be {@code null}
+     * @return a fully initialised {@link TransportException}
+     */
+    public static TransportException engineStartFailure(String engineName, int port, Throwable cause) {
+        Objects.requireNonNull(engineName, "engineName must not be null");
+        return new TransportException(
+                KernelErrorCodes.EX_NET_4005,
+                MSG_START,
+                cause,
+                engineName, port);
     }
 
     // -----------------------------------------------------------------------
