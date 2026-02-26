@@ -57,9 +57,9 @@ public interface TransportConnection extends AutoCloseable {
      * <p>Community (TCP) does not support unidirectional streams — this method
      * throws {@link UnsupportedOperationException}.
      *
-     * <p>Enterprise (QUIC) creates a server-initiated unidirectional stream
-     * (RFC 9000 §2.1). Used internally for HTTP/3 control streams and QPACK.
-     *
+     * <p>Enterprise (QUIC) creates a locally initiated unidirectional stream
+     * (RFC 9000 §2.1). Typically used for HTTP/3 control streams and QPACK,
+     * regardless of whether the caller is a client or server endpoint.
      * @return a new unidirectional stream
      * @throws UnsupportedOperationException if not supported (Community/TCP)
      * @throws eu.exeris.kernel.spi.exceptions.transport.TransportException on failure
