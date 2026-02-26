@@ -153,20 +153,32 @@ public record TransportConfig(
     }
 
     /**
-     * Returns a disabled configuration — zero resources allocated.
+     * Returns a disabled configuration — zero resources allocated, no sockets bound.
+     *
+     * <p>All fields other than {@code mode} carry explicit sentinel values to make the
+     * "disabled / not applicable" state unambiguous in diagnostics and {@link #toString()}
+     * output:
+     * <ul>
+     *   <li>{@code bindAddress} — {@code "unbound"} (displayed as-is by {@code toString()})</li>
+     *   <li>{@code port} — {@code -1} (out-of-range sentinel; DISABLED skips port validation)</li>
+     *   <li>{@code reactorCount} — {@code -1} (no carrier loops started)</li>
+     *   <li>{@code maxConnections} — {@code -1} (no connection cap applies)</li>
+     *   <li>{@code certPath}, {@code keyPath} — {@code null} (no TLS)</li>
+     *   <li>{@code idleTimeoutMillis} — {@code -1} (not validated, not used)</li>
+     * </ul>
      *
      * @return config with {@link TransportMode#DISABLED}
      */
     public static TransportConfig disabled() {
         return new TransportConfig(
                 TransportMode.DISABLED,
-                DEFAULT_BIND_ADDRESS,
-                0,
-                0,
+                null,
+                -1,
+                -1,
                 null,
                 null,
-                0,
-                0
+                -1,
+                -1
         );
     }
 
