@@ -25,9 +25,9 @@ package eu.exeris.kernel.spi.transport;
  * @param bindAddress       listener bind address (e.g. {@code "0.0.0.0"}); required for
  *                          SERVER and DUAL modes, ignored for CLIENT and DISABLED modes
  * @param port              listener port number (1–65 535) for SERVER/DUAL modes;
- *                          use {@code 0} as a sentinel "not used" for CLIENT and DISABLED modes.
- *                          Arbitrary out-of-range values are rejected even in CLIENT mode to
- *                          prevent misleading diagnostics output.
+ *                          use {@code -1} as a sentinel "not used" for CLIENT and DISABLED modes.
+ *                          Arbitrary out-of-range non-sentinel values are rejected even in CLIENT
+ *                          mode to prevent misleading diagnostics output.
  * @param reactorCount      number of carrier reactor threads (typically ≤ CPU cores);
  *                          ignored and not validated when mode is {@link TransportMode#DISABLED}
  * @param certPath          path to TLS certificate (PEM); {@code null} if TLS not configured
