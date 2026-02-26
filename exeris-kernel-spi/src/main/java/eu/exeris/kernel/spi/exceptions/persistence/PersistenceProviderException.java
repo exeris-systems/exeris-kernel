@@ -160,6 +160,21 @@ public final class PersistenceProviderException extends ExerisKernelException {
                 KernelErrorCodes.EX_PERS_5006, INTERCEPTOR_MSG, cause,
                 interceptorClass, isolationKey);
     }
+
+    /**
+     * No {@link eu.exeris.kernel.spi.persistence.PersistenceProvider} found on the classpath.
+     *
+     * <p>Kernel start MUST abort when this exception is thrown. The operator must add
+     * {@code exeris-kernel-community} or {@code exeris-kernel-enterprise} to the runtime
+     * dependencies.
+     *
+     * @param message human-readable diagnostic (logged before abort)
+     * @return exception with rawArgs: [message]
+     */
+    public static PersistenceProviderException noProviderAvailable(String message) {
+        return new PersistenceProviderException(
+                KernelErrorCodes.EX_PERS_5007,
+                "No PersistenceProvider available — kernel start aborted",
+                null, message);
+    }
 }
-
-

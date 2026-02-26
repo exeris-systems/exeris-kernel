@@ -10,6 +10,8 @@ package eu.exeris.kernel.spi.context;
 import eu.exeris.kernel.spi.crypto.KernelCryptoProvider;
 import eu.exeris.kernel.spi.exceptions.security.PrincipalContextMissingException;
 import eu.exeris.kernel.spi.exceptions.security.StorageContextMissingException;
+import eu.exeris.kernel.spi.graph.GraphEngine;
+import eu.exeris.kernel.spi.graph.GraphProvider;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.memory.MemoryProvider;
 import eu.exeris.kernel.spi.persistence.PersistenceEngine;
@@ -172,6 +174,37 @@ public final class KernelProviders {
     public static final ScopedValue<PersistenceEngine> PERSISTENCE_ENGINE = ScopedValue.newInstance();
 
     // =========================================================================
+    // Graph Slots (L2 Data Synthesis)
+    // =========================================================================
+
+    /**
+     * The active {@link GraphProvider} factory (bound once during bootstrap).
+     *
+     * <p>Use this slot only in bootstrap code that needs to introspect the provider.
+     * Application code should use {@link #GRAPH_ENGINE} directly.
+     *
+     * @since 0.5.0
+     */
+    public static final ScopedValue<GraphProvider> GRAPH_PROVIDER = ScopedValue.newInstance();
+
+    /**
+     * The kernel-wide {@link GraphEngine} (created from {@link #GRAPH_PROVIDER}).
+     *
+     * <p>This is the primary slot for all graph operations. It is populated once
+     * during bootstrap and inherited by every virtual thread in the kernel scope.
+     *
+     * <h2>Usage</h2>
+     * <pre>{@code
+     * try (GraphSession session = KernelProviders.graphEngine().openSession()) {
+     *     List<UUID> nodes = session.traverseBreadthFirst(traversal);
+     * }
+     * }</pre>
+     *
+     * @since 0.5.0
+     */
+    public static final ScopedValue<GraphEngine> GRAPH_ENGINE = ScopedValue.newInstance();
+
+    // =========================================================================
     // Security / Context Slots (L1 Citadel)
     // =========================================================================
 
@@ -263,6 +296,17 @@ public final class KernelProviders {
      */
     public static PersistenceEngine persistenceEngine() {
         return PERSISTENCE_ENGINE.get();
+    }
+
+    /**
+     * Returns the active {@link GraphEngine} from the current scope.
+     *
+     * @return graph engine bound by the kernel bootstrapper
+     * @throws java.util.NoSuchElementException if called outside the kernel scope
+     *         or if graph was not bootstrapped
+     */
+    public static GraphEngine graphEngine() {
+        return GRAPH_ENGINE.get();
     }
 
     /**

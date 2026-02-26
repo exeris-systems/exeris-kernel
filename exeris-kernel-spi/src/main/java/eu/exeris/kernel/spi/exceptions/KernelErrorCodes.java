@@ -271,6 +271,19 @@ public final class KernelErrorCodes {
      */
     public static final String EX_PERS_5006 = "EX-PERS-5006";
 
+    /**
+     * No {@link eu.exeris.kernel.spi.persistence.PersistenceProvider} found on the classpath.
+     *
+     * <p>Kernel start is aborted. Add {@code exeris-kernel-community} or
+     * {@code exeris-kernel-enterprise} to the runtime dependencies.
+     *
+     * <p><b>rawArgs layout for Black-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} message (human-readable diagnostic)</li>
+     * </ul>
+     */
+    public static final String EX_PERS_5007 = "EX-PERS-5007";
+
     // -----------------------------------------------------------------------
     // EX-SEC – Security / Principal context
     // -----------------------------------------------------------------------
@@ -305,6 +318,69 @@ public final class KernelErrorCodes {
      * StorageContext missing from the current {@code ScopedValue} slot.
      */
     public static final String EX_SEC_2004 = "EX-SEC-2004";
+
+    // -----------------------------------------------------------------------
+    // EX-GRPH – Graph subsystem (L2 Data Synthesis)
+    // -----------------------------------------------------------------------
+
+    /**
+     * Graph engine bootstrap failure: the {@code GraphProvider} could not
+     * initialise its engine (e.g., missing backend driver, connection refused,
+     * or insufficient off-heap budget for slab pools).
+     *
+     * <p><b>rawArgs layout for Black-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} providerName (e.g. {@code "ExerisCommunity/JdbcGraph"})</li>
+     *   <li>index 1 – {@code String} reason       (static failure description)</li>
+     * </ul>
+     */
+    public static final String EX_GRPH_5001 = "EX-GRPH-5001";
+
+    /**
+     * Graph query execution failure: traversal, MATCH, or CRUD operation failed.
+     *
+     * <p><b>rawArgs layout for Black-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} queryType (e.g. "BFS", "MATCH", "SHORTEST_PATH")</li>
+     *   <li>index 1 – {@code String} detail    (static failure description)</li>
+     * </ul>
+     */
+    public static final String EX_GRPH_5002 = "EX-GRPH-5002";
+
+    /**
+     * Graph dual-write sync failure: relational change could not be reflected
+     * in the graph structure.
+     *
+     * <p><b>rawArgs layout for Black-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} edgeType (e.g. "FOLLOWS", "SIMILAR_TO")</li>
+     *   <li>index 1 – {@code String} detail   (static failure description)</li>
+     * </ul>
+     */
+    public static final String EX_GRPH_5003 = "EX-GRPH-5003";
+
+    /**
+     * Path not found: shortest-path algorithm failed to reach target node.
+     *
+     * <p><b>rawArgs layout for Black-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code java.util.UUID} sourceNodeId</li>
+     *   <li>index 1 – {@code java.util.UUID} targetNodeId</li>
+     * </ul>
+     */
+    public static final String EX_GRPH_5004 = "EX-GRPH-5004";
+
+    /**
+     * Excessive allocation detected: graph driver exceeded pre-defined churn threshold.
+     *
+     * <p><b>rawArgs layout for Black-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} driverName</li>
+     *   <li>index 1 – {@code long}   bytesAllocated</li>
+     *   <li>index 2 – {@code long}   bytesTransferred</li>
+     * </ul>
+     */
+    public static final String EX_GRPH_5005 = "EX-GRPH-5005";
 
     // -----------------------------------------------------------------------
     // EX-RUN – Runtime / Scheduler
