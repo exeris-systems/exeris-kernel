@@ -103,17 +103,17 @@ public record TransportConfig(
      * </ul>
      */
     private static void validatePort(TransportMode mode, int port) {
-        if (mode != TransportMode.CLIENT) {
-            if (port < MIN_PORT || port > MAX_PORT) {
-                throw new IllegalArgumentException(
-                        "port must be 1–65535 for SERVER/DUAL mode, got: " + port);
-            }
-        } else {
+        if (mode == TransportMode.CLIENT) {
             // CLIENT mode: 0 is the canonical sentinel; valid port numbers are also accepted
             // (e.g., when the same config object is reused for both client and server roles).
             if (port != 0 && (port < MIN_PORT || port > MAX_PORT)) {
                 throw new IllegalArgumentException(
                         "port must be 0 (not used) or 1–65535 for CLIENT mode, got: " + port);
+            }
+        } else {
+            if (port < MIN_PORT || port > MAX_PORT) {
+                throw new IllegalArgumentException(
+                        "port must be 1–65535 for SERVER/DUAL mode, got: " + port);
             }
         }
     }
