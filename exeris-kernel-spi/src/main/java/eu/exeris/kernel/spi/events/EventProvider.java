@@ -31,9 +31,9 @@ import eu.exeris.kernel.spi.exceptions.events.EventProviderException;
  *   <li>On shutdown: call {@link EventEngine#close()}.</li>
  * </ol>
  *
- * @since 0.5.0
  * @see EventEngine
  * @see eu.exeris.kernel.spi.context.KernelProviders#EVENT_ENGINE
+ * @since 0.5.0
  */
 public interface EventProvider {
 
@@ -44,8 +44,8 @@ public interface EventProvider {
      *
      * @return non-null, non-blank name
      */
-    String name();
-
+    String providerName();
+    
     /**
      * Returns the stable, programmatic identifier for this provider.
      *
@@ -60,11 +60,18 @@ public interface EventProvider {
     /**
      * Selection priority. Higher value wins when multiple providers are on the classpath.
      *
-     * <p>Convention: Community=100, Enterprise=200, Test/Noop=0.
+     * <p>Convention:
+     * <ul>
+     *   <li>Community: {@code 0}</li>
+     *   <li>Enterprise: {@code 100}</li>
+     *   <li>Test/Noop: {@code -1}</li>
+     * </ul>
      *
-     * @return non-negative priority
+     * @return priority value used for provider selection (higher wins)
      */
-    int priority();
+    default int priority() {
+        return 0;
+    }
 
     /**
      * Creates the {@link EventEngine} instance for the given configuration.
@@ -77,7 +84,7 @@ public interface EventProvider {
      * directly from the {@link eu.exeris.kernel.spi.context.KernelProviders#MEMORY_ALLOCATOR}
      * scoped value slot to prevent parameter pollution.
      *
-     * @param config  the event engine configuration (non-null)
+     * @param config the event engine configuration (non-null)
      * @return a newly created (but not yet started) {@link EventEngine} instance
      * @throws EventProviderException if the engine cannot be created from the given configuration
      */

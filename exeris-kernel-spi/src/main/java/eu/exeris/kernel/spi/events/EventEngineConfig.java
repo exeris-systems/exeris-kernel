@@ -7,6 +7,8 @@
  */
 package eu.exeris.kernel.spi.events;
 
+import java.util.Objects;
+
 /**
  * Immutable configuration for the {@link EventEngine}.
  *
@@ -46,6 +48,42 @@ public record EventEngineConfig(
         boolean outboxEnabled,
         int     outboxBatchSize
 ) {
+
+    /**
+     * Compact constructor — validates invariants eagerly (fail-fast bootstrap).
+     */
+    public EventEngineConfig {
+        Objects.requireNonNull(engineName, "engineName must not be null");
+        if (engineName.isBlank()) {
+            throw new IllegalArgumentException("engineName must not be blank");
+        }
+        if (queueCapacity <= 0) {
+            throw new IllegalArgumentException("queueCapacity must be > 0, got: " + queueCapacity);
+        }
+        if (batchSize <= 0) {
+            throw new IllegalArgumentException("batchSize must be > 0, got: " + batchSize);
+        }
+        if (slabDescriptorCount < 0) {
+            throw new IllegalArgumentException("slabDescriptorCount must be >= 0, got: " + slabDescriptorCount);
+        }
+        if (slabPayloadSmall < 0) {
+            throw new IllegalArgumentException("slabPayloadSmall must be >= 0, got: " + slabPayloadSmall);
+        }
+        if (slabPayloadMedium < 0) {
+            throw new IllegalArgumentException("slabPayloadMedium must be >= 0, got: " + slabPayloadMedium);
+        }
+        if (slabPayloadLarge < 0) {
+            throw new IllegalArgumentException("slabPayloadLarge must be >= 0, got: " + slabPayloadLarge);
+        }
+        if (slabDescriptorCount > 0 && (slabPayloadSmall == 0 && slabPayloadMedium == 0 && slabPayloadLarge == 0)) {
+            throw new IllegalArgumentException(
+                    "at least one payload slab count must be > 0 when slabDescriptorCount > 0");
+        }
+        if (outboxEnabled && outboxBatchSize <= 0) {
+            throw new IllegalArgumentException(
+                    "outboxBatchSize must be > 0 when outboxEnabled is true, got: " + outboxBatchSize);
+        }
+    }
 
     /**
      * Community default configuration — heap-based, no off-heap settings.

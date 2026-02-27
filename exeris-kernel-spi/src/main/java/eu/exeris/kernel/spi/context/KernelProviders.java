@@ -9,6 +9,7 @@ package eu.exeris.kernel.spi.context;
 
 import eu.exeris.kernel.spi.crypto.KernelCryptoProvider;
 import eu.exeris.kernel.spi.events.EventEngine;
+import eu.exeris.kernel.spi.events.EventProvider;
 import eu.exeris.kernel.spi.exceptions.security.PrincipalContextMissingException;
 import eu.exeris.kernel.spi.exceptions.security.StorageContextMissingException;
 import eu.exeris.kernel.spi.graph.GraphEngine;
@@ -181,6 +182,18 @@ public final class KernelProviders {
     // =========================================================================
 
     /**
+     * The active {@link EventProvider} factory (bound once during bootstrap).
+     *
+     * <p>Populated by the kernel bootstrapper after {@link java.util.ServiceLoader} resolution
+     * — the highest-priority {@link EventProvider} discovered on the classpath is selected
+     * and bound here. Use this slot only in bootstrap code that needs to introspect or
+     * reconfigure the provider. Application code should use {@link #EVENT_ENGINE} directly.
+     *
+     * @since 0.5.0
+     */
+    public static final ScopedValue<EventProvider> EVENT_PROVIDER = ScopedValue.newInstance();
+
+    /**
      * The kernel-wide {@link EventEngine} (created from the selected
      * {@link eu.exeris.kernel.spi.events.EventProvider}).
      *
@@ -192,7 +205,7 @@ public final class KernelProviders {
      * <h2>Usage (publishing)</h2>
      * <pre>{@code
      * EventEngine engine = KernelProviders.eventEngine();
-     * engine.bus().publish(EventDescriptor.ofHeap(...));
+     * engine.bus().publish(EventDescriptor.of(0, 0, 0, 0, 0, 0, 0));
      * }</pre>
      *
      * <h2>Usage (subscribing)</h2>
@@ -394,6 +407,17 @@ public final class KernelProviders {
      */
     public static EventEngine eventEngine() {
         return EVENT_ENGINE.get();
+    }
+
+    /**
+     * Returns the active {@link EventProvider} from the current scope.
+     *
+     * @return event provider bound by the kernel bootstrapper during ServiceLoader resolution
+     * @throws java.util.NoSuchElementException if called outside the kernel scope
+     *         or if events were not bootstrapped
+     */
+    public static EventProvider eventProvider() {
+        return EVENT_PROVIDER.get();
     }
 
     /**

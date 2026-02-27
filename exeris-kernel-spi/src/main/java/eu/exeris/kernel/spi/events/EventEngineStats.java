@@ -39,6 +39,8 @@ public record EventEngineStats(
         boolean loopRunning
 ) {
 
+    // CHECKSTYLE.OFF: DeclarationOrder — static constants in records must follow components list
+
     /** Zero-state snapshot (useful for pre-start or test contexts). */
     public static final EventEngineStats ZERO =
             new EventEngineStats(0L, 0L, 0L, 0L, 0L, 0L, false);
@@ -48,6 +50,8 @@ public record EventEngineStats(
 
     /** Sentinel for zero processed events — avoids PMD AvoidLiteralsInIfCondition. */
     private static final long EMPTY_PROCESSED = 0L;
+
+    // CHECKSTYLE.ON: DeclarationOrder
 
     /**
      * Returns the percentage of queue capacity currently used.

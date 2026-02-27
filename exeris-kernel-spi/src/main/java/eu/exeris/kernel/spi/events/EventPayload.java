@@ -81,7 +81,7 @@ public interface EventPayload extends AutoCloseable {
      * <p><b>Enterprise</b>: segment backed by the off-heap slab at the raw address.
      *
      * <p><b>Lifetime:</b> valid only while this payload is alive ({@link #isAlive()} == true).
-     * For Enterprise, accessing the segment after {@link #close()} reduces refCount to 0
+     * For Enterprise, accessing the segment after the final {@link #close()} that reduces refCount to 0
      * results in undefined behaviour — the slab memory may be reused.
      *
      * @return read-only {@link MemorySegment} over the payload bytes
