@@ -45,7 +45,7 @@ public interface EventProvider {
      * @return non-null, non-blank name
      */
     String providerName();
-    
+
     /**
      * Returns the stable, programmatic identifier for this provider.
      *
