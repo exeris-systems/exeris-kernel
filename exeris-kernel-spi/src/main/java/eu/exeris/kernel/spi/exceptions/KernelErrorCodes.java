@@ -409,6 +409,55 @@ public final class KernelErrorCodes {
     public static final String EX_GRPH_5005 = "EX-GRPH-5005";
 
     // -----------------------------------------------------------------------
+    // EX-EVENT – Event Engine subsystem (L3 Logic Engines)
+    // -----------------------------------------------------------------------
+
+    /**
+     * Generic event engine failure (no specific category).
+     *
+     * <p><b>rawArgs layout for Black-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} message (human-readable diagnostic)</li>
+     * </ul>
+     */
+    public static final String EX_EVENT_6001 = "EX-EVENT-6001";
+
+    /**
+     * Event bus publish failure: queue is full and the implementation cannot accept the event.
+     *
+     * <p><b>rawArgs layout for Black-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} eventType   (event type name)</li>
+     *   <li>index 1 – {@code long}   queueDepth  (current depth when overflow occurred)</li>
+     *   <li>index 2 – {@code long}   queueCapacity</li>
+     * </ul>
+     */
+    public static final String EX_EVENT_6002 = "EX-EVENT-6002";
+
+    /**
+     * Event registry conflict: an event type was registered twice with different settings.
+     *
+     * <p><b>rawArgs layout for Black-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} eventType  (conflicting type name)</li>
+     *   <li>index 1 – {@code int}    ordinal     (ordinal that is already in use)</li>
+     * </ul>
+     */
+    public static final String EX_EVENT_6003 = "EX-EVENT-6003";
+
+    /**
+     * Event provider creation failure: the {@code EventProvider} could not create an engine
+     * from the given configuration.
+     *
+     * <p><b>rawArgs layout for Black-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} providerName</li>
+     *   <li>index 1 – {@code String} reason (static failure description)</li>
+     * </ul>
+     */
+    public static final String EX_EVENT_6004 = "EX-EVENT-6004";
+
+    // -----------------------------------------------------------------------
     // EX-RUN – Runtime / Scheduler
     // -----------------------------------------------------------------------
 

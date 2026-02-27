@@ -8,6 +8,8 @@
 package eu.exeris.kernel.spi.context;
 
 import eu.exeris.kernel.spi.crypto.KernelCryptoProvider;
+import eu.exeris.kernel.spi.events.EventEngine;
+import eu.exeris.kernel.spi.events.EventProvider;
 import eu.exeris.kernel.spi.exceptions.security.PrincipalContextMissingException;
 import eu.exeris.kernel.spi.exceptions.security.StorageContextMissingException;
 import eu.exeris.kernel.spi.graph.GraphEngine;
@@ -174,6 +176,55 @@ public final class KernelProviders {
      * @since 0.5.0
      */
     public static final ScopedValue<PersistenceEngine> PERSISTENCE_ENGINE = ScopedValue.newInstance();
+
+    // =========================================================================
+    // Events Slots (L3 Logic Engines)
+    // =========================================================================
+
+    /**
+     * The active {@link EventProvider} factory (bound once during bootstrap).
+     *
+     * <p>Populated by the kernel bootstrapper after {@link java.util.ServiceLoader} resolution
+     * — the highest-priority {@link EventProvider} discovered on the classpath is selected
+     * and bound here. Use this slot only in bootstrap code that needs to introspect or
+     * reconfigure the provider. Application code should use {@link #EVENT_ENGINE} directly.
+     *
+     * @since 0.5.0
+     */
+    public static final ScopedValue<EventProvider> EVENT_PROVIDER = ScopedValue.newInstance();
+
+    /**
+     * The kernel-wide {@link EventEngine} (created from the selected
+     * {@link eu.exeris.kernel.spi.events.EventProvider}).
+     *
+     * <p>Bound once during bootstrap after {@link java.util.ServiceLoader} resolution.
+     * All subsystems read this slot to publish and subscribe to kernel events.
+     * The slot is inherited automatically by every virtual thread spawned within the
+     * kernel scope — zero constructor coupling, zero static singletons.
+     *
+     * <h2>Usage (publishing)</h2>
+     * <pre>{@code
+     * EventEngine engine = KernelProviders.EVENT_ENGINE.get();
+     * try (EventPayload payload = EventPayload.empty()) {
+     *     engine.bus().publish(EventDescriptor.of(0, 0, 0, 0, 0, 0, 0), payload);
+     * }
+     * }</pre>
+     *
+     * <h2>Usage (subscribing)</h2>
+     * <pre>{@code
+     * SubscriptionToken token = engine.bus()
+     *     .subscribe("TransportBound", (descriptor, payload) -> {
+     *         try (payload) {
+     *             handleBind(descriptor, payload);
+     *         }
+     *     });
+     * }</pre>
+     *
+     * @since 0.5.0
+     * @see eu.exeris.kernel.spi.events.EventEngine
+     * @see eu.exeris.kernel.spi.events.EventProvider
+     */
+    public static final ScopedValue<EventEngine> EVENT_ENGINE = ScopedValue.newInstance();
 
     // =========================================================================
     // Transport Slots (L2 Native I/O)
@@ -351,6 +402,28 @@ public final class KernelProviders {
      */
     public static GraphEngine graphEngine() {
         return GRAPH_ENGINE.get();
+    }
+
+    /**
+     * Returns the active {@link EventEngine} from the current scope.
+     *
+     * @return event engine bound by the kernel bootstrapper
+     * @throws java.util.NoSuchElementException if called outside the kernel scope
+     *         or if events were not bootstrapped
+     */
+    public static EventEngine eventEngine() {
+        return EVENT_ENGINE.get();
+    }
+
+    /**
+     * Returns the active {@link EventProvider} from the current scope.
+     *
+     * @return event provider bound by the kernel bootstrapper during ServiceLoader resolution
+     * @throws java.util.NoSuchElementException if called outside the kernel scope
+     *         or if events were not bootstrapped
+     */
+    public static EventProvider eventProvider() {
+        return EVENT_PROVIDER.get();
     }
 
     /**
