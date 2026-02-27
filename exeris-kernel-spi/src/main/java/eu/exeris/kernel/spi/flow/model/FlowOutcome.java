@@ -25,6 +25,13 @@ public enum FlowOutcome {
     CONTINUE,
 
     /**
+     * Step succeeded and explicitly requests to immediately and successfully
+     * terminate the entire Flow (Short-circuit). The scheduler transitions
+     * state directly to FlowState.COMPLETED without executing further steps.
+     */
+    COMPLETE,
+
+    /**
      * Step is waiting for an external event — suspend execution.
      * The scheduler calls {@link eu.exeris.kernel.spi.flow.FlowScheduler#park(FlowContext)}.
      * Execution resumes when {@link eu.exeris.kernel.spi.flow.FlowScheduler#wake(FlowContext)}

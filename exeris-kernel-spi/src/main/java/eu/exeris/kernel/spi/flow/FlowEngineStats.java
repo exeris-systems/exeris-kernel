@@ -42,9 +42,22 @@ public record FlowEngineStats(
         int  slabUtilizationPct
 ) {
 
+    // CHECKSTYLE.OFF: DeclarationOrder — static constants in records must follow components list
+
+    /**
+     * Zero-value stats snapshot — returned before engine start or in test contexts.
+     *
+     * <p>Cached constant following the {@code EventEngineStats.ZERO} convention.
+     * {@link #empty()} returns this instance to avoid allocating a new record on every
+     * monitoring poll — consistent with the "no object churn" Valhalla-readiness principle.
+     */
+    public static final FlowEngineStats ZERO = new FlowEngineStats(0L, 0L, 0L, 0L, 0L, 0L, 0, -1);
+
+    // CHECKSTYLE.ON: DeclarationOrder
+
     /** Returns a zero-value stats snapshot (useful as a safe default before engine start). */
     public static FlowEngineStats empty() {
-        return new FlowEngineStats(0L, 0L, 0L, 0L, 0L, 0L, 0, -1);
+        return ZERO;
     }
 }
 

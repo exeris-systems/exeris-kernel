@@ -57,6 +57,20 @@ public record FlowSnapshot(
 ) {
 
     /**
+     * Compact constructor — defensively copies both mutable array components to guarantee
+     * true immutability. Without these copies a caller could retain a reference to the
+     * original array and mutate the snapshot after construction, breaking the persistence
+     * contract and the {@code equals}/{@code hashCode} invariants.
+     *
+     * <p>This is the <em>cold</em> construction path (snapshot creation on PARK / eviction),
+     * so the allocation cost is acceptable.
+     */
+    public FlowSnapshot {
+        compensationStack = Arrays.copyOf(compensationStack, compensationStack.length);
+        opaqueState       = Arrays.copyOf(opaqueState, opaqueState.length);
+    }
+
+    /**
      * Returns a combined hex string for JFR events and diagnostic logging.
      *
      * <p><b>Cold-path only</b> — this method allocates a {@code String}.

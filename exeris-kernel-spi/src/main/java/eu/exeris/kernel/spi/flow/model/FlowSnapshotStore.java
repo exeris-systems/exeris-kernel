@@ -13,10 +13,10 @@ import java.util.Optional;
  * SPI: Optional persistence store for flow snapshots.
  *
  * <h2>The Wall (SPI Compliance)</h2>
- * <p>This interface is <strong>implementation-blind</strong>. No reference to JDBC,
- * {@code HikariCP}, {@code RlsDataSource}, {@code PostgreSQL}, or any driver appears
- * here. Community implementations use
- * {@link eu.exeris.kernel.spi.persistence.PersistenceEngine} from
+ * <p>This interface is <strong>implementation-blind</strong>. No reference to any
+ * specific persistence driver, connection pool, or database product appears here.
+ * Community implementations acquire a connection through
+ * {@link eu.exeris.kernel.spi.persistence.PersistenceEngine} obtained from
  * {@link eu.exeris.kernel.spi.context.KernelProviders#PERSISTENCE_ENGINE}.
  * Enterprise implementations perform zero-copy snapshot writes directly from the
  * off-heap context slab slice via {@code MemorySegment}, without a heap byte[] copy.
