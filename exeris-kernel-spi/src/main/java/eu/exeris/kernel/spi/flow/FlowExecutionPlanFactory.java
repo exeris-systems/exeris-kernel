@@ -11,25 +11,54 @@ import eu.exeris.kernel.spi.flow.model.FlowDefinition;
 import eu.exeris.kernel.spi.flow.model.FlowExecutionPlan;
 
 /**
- * SPI: Compiles a {@link FlowDefinition} into an executable {@link FlowExecutionPlan}.
+ * SPI: Compiles {@link FlowDefinition} instances into executable {@link FlowExecutionPlan}s
+ * and provides a fluent builder for constructing definitions.
+ *
+ * <h2>Two Responsibilities</h2>
+ * <ol>
+ *   <li><b>Build</b> — {@link #newDefinition(String)} returns a {@link FlowDefinitionBuilder}
+ *       for constructing a {@link FlowDefinition} step-by-step (fluent API, analogous to
+ *       the legacy {@code SagaBuilder}).</li>
+ *   <li><b>Compile</b> — {@link #compile(FlowDefinition)} converts a completed definition
+ *       into a ready-to-schedule {@link FlowExecutionPlan}.</li>
+ * </ol>
+ *
+ * <h2>Why a Single Interface</h2>
+ * <p>Build and compile are two phases of the same lifecycle: a definition is first
+ * constructed (build), then compiled into a plan (compile). Keeping them together
+ * avoids the DRY violation that would result from having separate {@code FlowBuilder}
+ * and {@code FlowExecutionPlanFactory} interfaces with identical {@code compile()}
+ * signatures. Obtain this factory via {@link FlowEngine#plans()}.
  *
  * <h2>Tier Contract</h2>
  * <ul>
- *   <li><b>Community</b>: returns a heap-based plan backed by an {@code ArrayList} copy
- *       of the definition steps. No off-heap memory consumed.</li>
- *   <li><b>Enterprise</b>: writes step and transition descriptors directly into
- *       pre-allocated slab pools during {@link FlowEngine#start()}. The returned plan is
- *       a thin wrapper holding raw off-heap base addresses of the descriptor arrays.
- *       Zero heap allocation after {@link FlowEngine#start()}.</li>
+ *   <li><b>Community</b>: {@link #newDefinition(String)} returns a heap-based builder.
+ *       {@link #compile(FlowDefinition)} returns a heap-backed plan (no off-heap memory).</li>
+ *   <li><b>Enterprise</b>: {@link #newDefinition(String)} returns a builder that validates
+ *       step count against slab capacity at build time.
+ *       {@link #compile(FlowDefinition)} writes descriptors directly into pre-allocated
+ *       slab pools — zero heap allocation after {@link FlowEngine#start()}.</li>
  * </ul>
  *
  * @since 0.5.0
+ * @see FlowDefinitionBuilder
  * @see FlowDefinition
  * @see FlowExecutionPlan
+ * @see FlowEngine#plans()
  */
-// Intentionally not @FunctionalInterface — future default methods planned.
-@SuppressWarnings("PMD.ImplicitFunctionalInterface")
 public interface FlowExecutionPlanFactory {
+
+    /**
+     * Returns a fluent builder for constructing a new {@link FlowDefinition}.
+     *
+     * <p>The builder accumulates step and transition descriptors and produces
+     * an immutable {@link FlowDefinition} via {@link FlowDefinitionBuilder#build()}.
+     * Safe to call from any virtual thread after {@link FlowEngine#start()}.
+     *
+     * @param definitionName the unique name for the new flow definition; must not be blank
+     * @return a new, empty {@link FlowDefinitionBuilder}; never {@code null}
+     */
+    FlowDefinitionBuilder newDefinition(String definitionName);
 
     /**
      * Compiles the given {@link FlowDefinition} into a ready-to-execute {@link FlowExecutionPlan}.

@@ -22,7 +22,7 @@ import eu.exeris.kernel.spi.exceptions.flow.FlowEngineException;
  * <ol>
  *   <li>{@link FlowProvider#createEngine} — created by the bootstrapper (no I/O, no threads).</li>
  *   <li>{@link #start()} — initialises all components (allocates resources, pre-warms slab pools).</li>
- *   <li>Runtime — subsystems call {@link #builder()}, {@link #scheduler()}, etc.</li>
+ *   <li>Runtime — subsystems call {@link #plans()}, {@link #scheduler()}, etc.</li>
  *   <li>{@link #close()} — graceful shutdown (drains pending flows, releases memory).</li>
  * </ol>
  *
@@ -42,24 +42,30 @@ import eu.exeris.kernel.spi.exceptions.flow.FlowEngineException;
  * </ul>
  *
  * @since 0.5.0
- * @see FlowBuilder
+ * @see FlowExecutionPlanFactory
  * @see FlowScheduler
  * @see FlowRegistry
- * @see FlowExecutionPlanFactory
  */
 public interface FlowEngine extends AutoCloseable {
 
     /**
-     * Returns the {@link FlowBuilder} for compiling flow definitions.
+     * Returns the {@link FlowExecutionPlanFactory} — the single entry point for
+     * both constructing {@link eu.exeris.kernel.spi.flow.model.FlowDefinition}s
+     * (via {@link FlowExecutionPlanFactory#newDefinition(String)}) and compiling
+     * them into executable {@link eu.exeris.kernel.spi.flow.model.FlowExecutionPlan}s
+     * (via {@link FlowExecutionPlanFactory#compile}).
+     *
+     * <p>Replaces the former {@code builder()} and {@code execution()} methods, which
+     * exposed two interfaces with identical {@code compile()} signatures (DRY violation).
      * Available after {@link #start()} returns.
      */
-    FlowBuilder builder();
+    FlowExecutionPlanFactory plans();
 
     /**
      * Returns the {@link FlowScheduler} for schedule/park/wake operations.
      *
      * <p>Community: {@code StructuredTaskScope}-based virtual-thread dispatcher.
-     * Enterprise: lock-free ring buffer with {@code @Contended} head/tail padding.
+     * Enterprise: lock-free ring buffer with cache-line-isolated head/tail counters.
      */
     FlowScheduler scheduler();
 
@@ -71,8 +77,6 @@ public interface FlowEngine extends AutoCloseable {
      */
     FlowRegistry registry();
 
-    /** Returns the {@link FlowExecutionPlanFactory} for compiling flow definitions. */
-    FlowExecutionPlanFactory execution();
 
     /**
      * Returns the immutable capability descriptor.

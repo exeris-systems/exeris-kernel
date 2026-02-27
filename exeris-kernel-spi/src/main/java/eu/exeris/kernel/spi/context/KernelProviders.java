@@ -256,7 +256,7 @@ public final class KernelProviders {
      * <h2>Usage (scheduling a flow)</h2>
      * <pre>{@code
      * FlowEngine engine = KernelProviders.FLOW_ENGINE.get();
-     * FlowExecutionPlan plan = engine.execution().compile(definition);
+     * FlowExecutionPlan plan = engine.plans().compile(definition);
      * engine.scheduler().schedule(plan, context);
      * }</pre>
      *
