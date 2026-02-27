@@ -63,7 +63,8 @@ public record EventEngineConfig(
         if (batchSize <= 0) {
             throw new IllegalArgumentException("batchSize must be > 0, got: " + batchSize);
         }
-        validateSlabs(slabDescriptorCount, slabPayloadSmall, slabPayloadMedium, slabPayloadLarge);
+        validateSlabCounts(slabDescriptorCount, slabPayloadSmall, slabPayloadMedium, slabPayloadLarge);
+        validateSlabCoherence(slabDescriptorCount, slabPayloadSmall, slabPayloadMedium, slabPayloadLarge);
         validatePartition(partitionName, partitionBytes);
         if (outboxEnabled && outboxBatchSize <= 0) {
             throw new IllegalArgumentException(
@@ -72,10 +73,10 @@ public record EventEngineConfig(
     }
 
     /**
-     * Validates all slab-related counts — extracted to keep the compact constructor
-     * within SonarQube's {@code java:S3776} Cognitive Complexity budget of 15.
+     * Validates that every slab count is non-negative — extracted to keep each method
+     * within PMD's {@code CyclomaticComplexity} and SonarQube's {@code java:S3776} budgets.
      */
-    private static void validateSlabs(int descriptorCount, int small, int medium, int large) {
+    private static void validateSlabCounts(int descriptorCount, int small, int medium, int large) {
         if (descriptorCount < 0) {
             throw new IllegalArgumentException("slabDescriptorCount must be >= 0, got: " + descriptorCount);
         }
@@ -88,6 +89,13 @@ public record EventEngineConfig(
         if (large < 0) {
             throw new IllegalArgumentException("slabPayloadLarge must be >= 0, got: " + large);
         }
+    }
+
+    /**
+     * Validates cross-field slab coherence: when descriptors are requested, at least one
+     * payload slab tier must also be non-zero — extracted to isolate the compound boolean check.
+     */
+    private static void validateSlabCoherence(int descriptorCount, int small, int medium, int large) {
         if (descriptorCount > 0 && small == 0 && medium == 0 && large == 0) {
             throw new IllegalArgumentException(
                     "at least one payload slab count must be > 0 when slabDescriptorCount > 0");
