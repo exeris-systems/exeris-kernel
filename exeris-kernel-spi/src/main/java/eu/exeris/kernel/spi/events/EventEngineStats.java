@@ -58,7 +58,7 @@ public record EventEngineStats(
      *
      * @return value in range [0.0, 1.0]
      */
-    public double queueUtilisation() {
+    public double queueUtilization() {
         if (queueCapacity <= EMPTY_CAPACITY) {
             return 0.0;
         }

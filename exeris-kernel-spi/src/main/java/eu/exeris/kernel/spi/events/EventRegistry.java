@@ -15,14 +15,20 @@ import java.util.Set;
  * SPI: Event type registry.
  *
  * <h2>Type System</h2>
- * <p>The registry is responsible for mapping event type names (e.g. {@code "UserCreated"})
- * to integer ordinals. Ordinals enable O(1) routing in the {@link EventBus} and
- * {@link EventLoop} — no {@link String} comparison in the hot path.
+ * <p>The registry maps event type names (e.g. {@code "UserCreated"}) to integer ordinals.
+ * Ordinals enable O(1) routing in the {@link EventBus} and {@link EventLoop} —
+ * no {@link String} comparison in the hot path.
+ *
+ * <h2>Ordinal Assignment</h2>
+ * <p>Ordinals are <b>caller-defined</b>: they are supplied by the caller via
+ * {@link EventTypeSpec} at registration time. Implementations do <b>not</b> assign ordinals
+ * sequentially — they <b>validate</b> that the supplied ordinal is unique within the registry
+ * and throw {@link EventRegistryException} on conflict.
  *
  * <h2>Implementations</h2>
  * <ul>
  *   <li><b>Standard</b>: Thread-safe in-memory map on the heap.
- *       Ordinals are assigned sequentially at registration time.</li>
+ *       Validates ordinal uniqueness on each {@link #register} call.</li>
  *   <li><b>High-performance native</b>: Off-heap map with fixed capacity.
  *       All types must be registered before {@link EventEngine#start()} —
  *       the routing table is built once during startup and immutable thereafter.</li>

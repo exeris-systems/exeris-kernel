@@ -63,25 +63,48 @@ public record EventEngineConfig(
         if (batchSize <= 0) {
             throw new IllegalArgumentException("batchSize must be > 0, got: " + batchSize);
         }
-        if (slabDescriptorCount < 0) {
-            throw new IllegalArgumentException("slabDescriptorCount must be >= 0, got: " + slabDescriptorCount);
-        }
-        if (slabPayloadSmall < 0) {
-            throw new IllegalArgumentException("slabPayloadSmall must be >= 0, got: " + slabPayloadSmall);
-        }
-        if (slabPayloadMedium < 0) {
-            throw new IllegalArgumentException("slabPayloadMedium must be >= 0, got: " + slabPayloadMedium);
-        }
-        if (slabPayloadLarge < 0) {
-            throw new IllegalArgumentException("slabPayloadLarge must be >= 0, got: " + slabPayloadLarge);
-        }
-        if (slabDescriptorCount > 0 && (slabPayloadSmall == 0 && slabPayloadMedium == 0 && slabPayloadLarge == 0)) {
-            throw new IllegalArgumentException(
-                    "at least one payload slab count must be > 0 when slabDescriptorCount > 0");
-        }
+        validateSlabs(slabDescriptorCount, slabPayloadSmall, slabPayloadMedium, slabPayloadLarge);
+        validatePartition(partitionName, partitionBytes);
         if (outboxEnabled && outboxBatchSize <= 0) {
             throw new IllegalArgumentException(
                     "outboxBatchSize must be > 0 when outboxEnabled is true, got: " + outboxBatchSize);
+        }
+    }
+
+    /**
+     * Validates all slab-related counts — extracted to keep the compact constructor
+     * within SonarQube's {@code java:S3776} Cognitive Complexity budget of 15.
+     */
+    private static void validateSlabs(int descriptorCount, int small, int medium, int large) {
+        if (descriptorCount < 0) {
+            throw new IllegalArgumentException("slabDescriptorCount must be >= 0, got: " + descriptorCount);
+        }
+        if (small < 0) {
+            throw new IllegalArgumentException("slabPayloadSmall must be >= 0, got: " + small);
+        }
+        if (medium < 0) {
+            throw new IllegalArgumentException("slabPayloadMedium must be >= 0, got: " + medium);
+        }
+        if (large < 0) {
+            throw new IllegalArgumentException("slabPayloadLarge must be >= 0, got: " + large);
+        }
+        if (descriptorCount > 0 && small == 0 && medium == 0 && large == 0) {
+            throw new IllegalArgumentException(
+                    "at least one payload slab count must be > 0 when slabDescriptorCount > 0");
+        }
+    }
+
+    /**
+     * Validates partition name/bytes consistency — extracted to keep the compact constructor
+     * within SonarQube's {@code java:S3776} Cognitive Complexity budget of 15.
+     */
+    private static void validatePartition(String name, long bytes) {
+        if (bytes < 0) {
+            throw new IllegalArgumentException("partitionBytes must be >= 0, got: " + bytes);
+        }
+        if (bytes > 0 && (name == null || name.isBlank())) {
+            throw new IllegalArgumentException(
+                    "partitionName must be non-null and non-blank when partitionBytes > 0");
         }
     }
 

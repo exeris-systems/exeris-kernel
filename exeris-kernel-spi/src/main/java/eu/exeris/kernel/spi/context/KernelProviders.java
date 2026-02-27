@@ -204,14 +204,20 @@ public final class KernelProviders {
      *
      * <h2>Usage (publishing)</h2>
      * <pre>{@code
-     * EventEngine engine = KernelProviders.eventEngine();
-     * engine.bus().publish(EventDescriptor.of(0, 0, 0, 0, 0, 0, 0));
+     * EventEngine engine = KernelProviders.EVENT_ENGINE.get();
+     * try (EventPayload payload = EventPayload.empty()) {
+     *     engine.bus().publish(EventDescriptor.of(0, 0, 0, 0, 0, 0, 0), payload);
+     * }
      * }</pre>
      *
      * <h2>Usage (subscribing)</h2>
      * <pre>{@code
-     * SubscriptionToken token = KernelProviders.eventEngine()
-     *     .bus().subscribe("TransportBound", event -> handleBind(event));
+     * SubscriptionToken token = engine.bus()
+     *     .subscribe("TransportBound", (descriptor, payload) -> {
+     *         try (payload) {
+     *             handleBind(descriptor, payload);
+     *         }
+     *     });
      * }</pre>
      *
      * @since 0.5.0

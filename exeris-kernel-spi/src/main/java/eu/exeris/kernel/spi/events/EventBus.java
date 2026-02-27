@@ -46,15 +46,17 @@ import eu.exeris.kernel.spi.exceptions.events.EventBusException;
 public interface EventBus {
 
     /**
-     * Publishes an event to all registered handlers for its type.
+     * Publishes an event to all registered handlers for its type (fire-and-forget).
      *
      * <p><b>RAII contract:</b> The caller transfers ownership of {@code payload} to
      * the bus. After this call returns, the caller MUST NOT call {@code payload.close()}
      * (the bus and handlers manage the refCount).
      *
-     * <p>Standard implementations dispatch asynchronously on virtual threads and return
-     * after all handlers complete. High-performance native implementations write the
-     * descriptor and payload reference to a ring buffer and return immediately (O(1)).
+     * <p>This method is <b>fire-and-forget</b> — it enqueues the event and returns
+     * <em>immediately</em>, before any handler is invoked. Dispatch happens
+     * asynchronously on virtual threads (Standard) or is written to a ring buffer
+     * (High-performance native). Use {@link #publishAndAwait} if you need to block
+     * until all handlers have completed.
      *
      * @param descriptor routing metadata (non-null)
      * @param payload    event payload (non-null; use {@link EventPayload#empty()} for no-data events)
