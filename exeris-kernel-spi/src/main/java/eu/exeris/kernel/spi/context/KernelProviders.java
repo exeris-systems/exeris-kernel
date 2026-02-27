@@ -267,11 +267,11 @@ public final class KernelProviders {
     public static final ScopedValue<FlowEngine> FLOW_ENGINE = ScopedValue.newInstance();
 
     // =========================================================================
-    // Security / Context Slots (L1 Citadel)
+    // Transport Slots (L2 Native I/O)
     // =========================================================================
 
     /**
-     * The active {@link SecurityProvider} (bound once during bootstrap).
+     * The active {@link TransportProvider} factory (bound once during bootstrap).
      *
      * <p>Use this slot only in bootstrap code that needs to introspect the provider.
      * Application code should use {@link #TRANSPORT_ENGINE} directly.
