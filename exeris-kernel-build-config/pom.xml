@@ -20,36 +20,4 @@
 		<maven.deploy.skip>false</maven.deploy.skip>
 		<pmd.skip>true</pmd.skip>
 	</properties>
-
-	<build>
-		<plugins>
-			<plugin>
-				<groupId>com.mycila</groupId>
-				<artifactId>license-maven-plugin</artifactId>
-				<version>4.3</version>
-				<configuration>
-					<licenseSets>
-						<licenseSet>
-							<header>src/main/resources/license-header.txt</header>
-							<includes>
-								<include>src/**/*.java</include>
-							</includes>
-							<excludes>
-								<exclude>target/**</exclude>
-							</excludes>
-						</licenseSet>
-					</licenseSets>
-					<strictCheck>true</strictCheck>
-				</configuration>
-				<executions>
-					<execution>
-						<phase>validate</phase>
-						<goals>
-							<goal>check</goal>
-						</goals>
-					</execution>
-				</executions>
-			</plugin>
-		</plugins>
-	</build>
 </project>

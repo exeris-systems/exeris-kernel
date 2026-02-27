@@ -1,0 +1,75 @@
+/*
+ * Copyright (C) 2025-2026 Exeris. All rights reserved.
+ *
+ * This code is part of the Exeris Systems.
+ * Distributed under the proprietary Exeris Software License.
+ * Unauthorized copying or distribution is prohibited.
+ */
+package eu.exeris.kernel.spi.flow;
+
+import eu.exeris.kernel.spi.flow.model.FlowContext;
+import eu.exeris.kernel.spi.flow.model.FlowExecutionPlan;
+
+/**
+ * SPI: Schedules {@link FlowExecutionPlan} instances and manages PARK/WAKE lifecycle.
+ *
+ * <h2>Tier Contract</h2>
+ * <ul>
+ *   <li><b>Community</b>: submits to a {@code StructuredTaskScope} per scheduled batch.
+ *       Parked flows stored in a {@code ConcurrentHashMap}. No ordering guarantees.</li>
+ *   <li><b>Enterprise</b>: enqueues the {@link FlowContext} base address (a raw {@code long})
+ *       into a lock-free MPSC ring buffer backed by an off-heap slab.
+ *       <br>
+ *       <b>False-Sharing prevention:</b> the ring buffer's {@code head} and {@code tail}
+ *       counter fields are annotated with {@code @jdk.internal.vm.annotation.Contended}
+ *       and separated by 128 bytes of padding (2 × 64-byte L1 cache lines) so that
+ *       producer and consumer never contend on the same cache line.
+ *       <br>
+ *       Parked flows stored in an off-heap slot array — zero heap allocation.</li>
+ * </ul>
+ *
+ * <h2>Thread Safety</h2>
+ * <p>All methods MUST be safe for concurrent invocation from any virtual thread.
+ *
+ * @since 0.5.0
+ * @see FlowContext
+ * @see FlowExecutionPlan
+ */
+public interface FlowScheduler {
+
+    /**
+     * Schedules the given flow for execution.
+     *
+     * <p>Community: submits the plan+context pair to a {@code StructuredTaskScope}.
+     * Enterprise: CAS-enqueues the context base address into the lock-free ring buffer.
+     *
+     * @param plan    the compiled execution plan; must not be {@code null}
+     * @param context the runtime flow context identifying the instance; must not be {@code null}
+     * @throws eu.exeris.kernel.spi.exceptions.flow.FlowEngineException if the scheduler
+     *         queue is full (Enterprise: ring buffer at capacity)
+     */
+    void schedule(FlowExecutionPlan plan, FlowContext context);
+
+    /**
+     * Parks the given flow instance, suspending execution until {@link #wake(FlowContext)}.
+     *
+     * <p>Community: stores the context in the internal parked-flows map.
+     * Enterprise: writes the context base address into the off-heap parked-set slab.
+     *
+     * @param context the context to park; must not be {@code null}
+     */
+    void park(FlowContext context);
+
+    /**
+     * Wakes a previously parked flow, re-submitting it for execution.
+     *
+     * <p>Community: retrieves from the parked-flows map and re-schedules.
+     * Enterprise: CAS-enqueues the base address back into the lock-free ring buffer.
+     *
+     * @param context the context to wake; must not be {@code null}
+     * @throws eu.exeris.kernel.spi.exceptions.flow.FlowEngineException if the context is
+     *         not currently parked
+     */
+    void wake(FlowContext context);
+}
+

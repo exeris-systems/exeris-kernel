@@ -12,6 +12,8 @@ import eu.exeris.kernel.spi.events.EventEngine;
 import eu.exeris.kernel.spi.events.EventProvider;
 import eu.exeris.kernel.spi.exceptions.security.PrincipalContextMissingException;
 import eu.exeris.kernel.spi.exceptions.security.StorageContextMissingException;
+import eu.exeris.kernel.spi.flow.FlowEngine;
+import eu.exeris.kernel.spi.flow.FlowProvider;
 import eu.exeris.kernel.spi.graph.GraphEngine;
 import eu.exeris.kernel.spi.graph.GraphProvider;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
@@ -66,6 +68,7 @@ import java.util.List;
  * @since 0.5.0
  * @see <a href="../../../../../../docs/subsystems/memory.md">memory.md</a>
  */
+@SuppressWarnings("PMD.TooManyMethods") // Central ScopedValue slot registry — splitting would violate the SPI Wall.
 public final class KernelProviders {
 
     /**
@@ -227,11 +230,48 @@ public final class KernelProviders {
     public static final ScopedValue<EventEngine> EVENT_ENGINE = ScopedValue.newInstance();
 
     // =========================================================================
-    // Transport Slots (L2 Native I/O)
+    // Flow Slots (L4 Saga / Flow Orchestration)
     // =========================================================================
 
     /**
-     * The active {@link TransportProvider} factory (bound once during bootstrap).
+     * The active {@link FlowProvider} factory (bound once during bootstrap).
+     *
+     * <p>Populated by the kernel bootstrapper after {@link java.util.ServiceLoader} resolution —
+     * the highest-priority {@link FlowProvider} discovered on the classpath is selected
+     * and bound here. Use this slot only in bootstrap code that needs to introspect or
+     * reconfigure the provider. Application code should use {@link #FLOW_ENGINE} directly.
+     *
+     * @since 0.5.0
+     */
+    public static final ScopedValue<FlowProvider> FLOW_PROVIDER = ScopedValue.newInstance();
+
+    /**
+     * The kernel-wide {@link FlowEngine} (created from the selected {@link FlowProvider}).
+     *
+     * <p>Bound once during bootstrap after {@link java.util.ServiceLoader} resolution.
+     * All subsystems that trigger or inspect flows read this slot.
+     * The slot is inherited automatically by every virtual thread spawned within the
+     * kernel scope — zero constructor coupling, zero static singletons.
+     *
+     * <h2>Usage (scheduling a flow)</h2>
+     * <pre>{@code
+     * FlowEngine engine = KernelProviders.FLOW_ENGINE.get();
+     * FlowExecutionPlan plan = engine.execution().compile(definition);
+     * engine.scheduler().schedule(plan, context);
+     * }</pre>
+     *
+     * @since 0.5.0
+     * @see FlowEngine
+     * @see FlowProvider
+     */
+    public static final ScopedValue<FlowEngine> FLOW_ENGINE = ScopedValue.newInstance();
+
+    // =========================================================================
+    // Security / Context Slots (L1 Citadel)
+    // =========================================================================
+
+    /**
+     * The active {@link SecurityProvider} (bound once during bootstrap).
      *
      * <p>Use this slot only in bootstrap code that needs to introspect the provider.
      * Application code should use {@link #TRANSPORT_ENGINE} directly.
@@ -424,6 +464,28 @@ public final class KernelProviders {
      */
     public static EventProvider eventProvider() {
         return EVENT_PROVIDER.get();
+    }
+
+    /**
+     * Returns the active {@link FlowEngine} from the current scope.
+     *
+     * @return flow engine bound by the kernel bootstrapper
+     * @throws java.util.NoSuchElementException if called outside the kernel scope
+     *         or if flow was not bootstrapped
+     */
+    public static FlowEngine flowEngine() {
+        return FLOW_ENGINE.get();
+    }
+
+    /**
+     * Returns the active {@link FlowProvider} from the current scope.
+     *
+     * @return flow provider bound by the kernel bootstrapper during ServiceLoader resolution
+     * @throws java.util.NoSuchElementException if called outside the kernel scope
+     *         or if flow was not bootstrapped
+     */
+    public static FlowProvider flowProvider() {
+        return FLOW_PROVIDER.get();
     }
 
     /**
