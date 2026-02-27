@@ -16,16 +16,19 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  *
  * <h2>rawArgs Binary Layout — {@value KernelErrorCodes#EX_FLOW_7004}</h2>
  * <ul>
- *   <li>index 0 – {@code int}    stepId</li>
- *   <li>index 1 – {@code String} reason</li>
+ *   <li>index 0 – {@code int}    stepId — the step identifier involved in the failure</li>
+ *   <li>index 1 – {@code String} staticReasonCode — stable identifier, never user-supplied
+ *       (e.g. {@code "DUPLICATE_STEP"}, {@code "STEP_NOT_FOUND"})</li>
  * </ul>
  *
  * @since 0.5.0
  */
 public final class FlowRegistryException extends ExerisKernelException {
 
-    private static final String MSG_DUPLICATE  = "Flow registry: duplicate step registration";
-    private static final String MSG_NOT_FOUND  = "Flow registry: step not found";
+    private static final String MSG_DUPLICATE   = "Flow registry: duplicate step registration";
+    private static final String MSG_NOT_FOUND   = "Flow registry: step not found";
+    private static final String REASON_DUPLICATE = "DUPLICATE_STEP";
+    private static final String REASON_NOT_FOUND = "STEP_NOT_FOUND";
 
     public FlowRegistryException(String message) {
         super(KernelErrorCodes.EX_FLOW_7004, message, (Throwable) null);
@@ -37,12 +40,12 @@ public final class FlowRegistryException extends ExerisKernelException {
 
     public static FlowRegistryException duplicateStep(int stepId) {
         return new FlowRegistryException(KernelErrorCodes.EX_FLOW_7004, MSG_DUPLICATE, null,
-                stepId, "Step id already registered: " + stepId);
+                stepId, REASON_DUPLICATE);
     }
 
     public static FlowRegistryException stepNotFound(int stepId) {
         return new FlowRegistryException(KernelErrorCodes.EX_FLOW_7004, MSG_NOT_FOUND, null,
-                stepId, "No step registered with id: " + stepId);
+                stepId, REASON_NOT_FOUND);
     }
 }
 

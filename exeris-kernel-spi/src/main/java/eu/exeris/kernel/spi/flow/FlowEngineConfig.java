@@ -24,7 +24,8 @@ import java.util.Objects;
  *
  * @param engineName             human-readable engine name (for JFR / logging)
  * @param maxConcurrentFlows     maximum number of simultaneously active flow instances
- * @param timeoutNanos           default flow execution timeout in nanoseconds
+ * @param timeoutDurationNanos   default flow duration limit in nanoseconds; basis for computing
+ *                               the absolute {@link eu.exeris.kernel.spi.flow.model.FlowContext#timeoutNanos()}
  * @param maxSteps               maximum number of distinct step types (Enterprise: slab sizing)
  * @param maxTransitions         maximum number of registered transitions (Enterprise: slab sizing)
  * @param maxExecutionPlans      maximum number of compiled execution plans (Enterprise: slab sizing)
@@ -39,7 +40,7 @@ import java.util.Objects;
 public record FlowEngineConfig(
         String  engineName,
         int     maxConcurrentFlows,
-        long    timeoutNanos,
+        long    timeoutDurationNanos,
         int     maxSteps,
         int     maxTransitions,
         int     maxExecutionPlans,
@@ -59,8 +60,8 @@ public record FlowEngineConfig(
         if (maxConcurrentFlows <= 0) {
             throw new IllegalArgumentException("maxConcurrentFlows must be > 0, got: " + maxConcurrentFlows);
         }
-        if (timeoutNanos <= 0) {
-            throw new IllegalArgumentException("timeoutNanos must be > 0, got: " + timeoutNanos);
+        if (timeoutDurationNanos <= 0) {
+            throw new IllegalArgumentException("timeoutDurationNanos must be > 0, got: " + timeoutDurationNanos);
         }
         if (maxSteps <= 0) {
             throw new IllegalArgumentException("maxSteps must be > 0, got: " + maxSteps);
@@ -72,7 +73,19 @@ public record FlowEngineConfig(
             throw new IllegalArgumentException("maxExecutionPlans must be > 0, got: " + maxExecutionPlans);
         }
         if (schedulerQueueCapacity <= 0) {
-            throw new IllegalArgumentException("schedulerQueueCapacity must be > 0, got: " + schedulerQueueCapacity);
+            throw new IllegalArgumentException(
+                    "schedulerQueueCapacity must be > 0, got: " + schedulerQueueCapacity);
+        }
+        validatePartition(partitionName, partitionBytes);
+    }
+
+    private static void validatePartition(String name, long bytes) {
+        if (bytes < 0) {
+            throw new IllegalArgumentException("partitionBytes must be >= 0, got: " + bytes);
+        }
+        if (bytes > 0 && (name == null || name.isBlank())) {
+            throw new IllegalArgumentException(
+                    "partitionName must not be null or blank when partitionBytes > 0");
         }
     }
 
@@ -84,7 +97,7 @@ public record FlowEngineConfig(
         return new FlowEngineConfig(
                 engineName,
                 10_000,
-                300_000_000_000L,   // 5 minutes in nanoseconds
+                300_000_000_000L,   // 5 minutes duration in nanoseconds
                 256,
                 4_096,
                 1_024,

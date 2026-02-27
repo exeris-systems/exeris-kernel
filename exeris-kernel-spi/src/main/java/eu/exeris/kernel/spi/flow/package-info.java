@@ -9,10 +9,16 @@
  * SPI: Flow Engine subsystem — pluggable saga/flow orchestration layer.
  *
  * <h2>Open-Core Boundary (The Wall)</h2>
- * <p>This package is <strong>implementation-blind</strong>. It contains only pure contracts:
- * interfaces, records, enums, and {@code @FunctionalInterface}s. No reference to
- * {@code io_uring}, {@code JDBC}, {@code HikariCP}, {@code PostgreSQL}, off-heap slabs,
- * or any Community/Enterprise driver appears here.
+ * <p>This package contains only pure contracts: interfaces, records, enums, and
+ * {@code @FunctionalInterface}s. No implementation code, driver-specific classes
+ * (e.g. {@code io_uring}, JDBC, Netty), or framework references appear here.
+ *
+ * <p>Javadoc on SPI types may describe <em>behavioural requirements</em> for
+ * both Community and Enterprise tiers (e.g. ordering guarantees, memory access
+ * safety, scheduler semantics) without prescribing concrete implementation
+ * mechanisms. Any mention of "off-heap", "lock-free", or "slab" in type-level
+ * Javadoc describes <em>the required contract the implementation must satisfy</em>,
+ * not the implementation itself.
  *
  * <h2>Architecture</h2>
  * <pre>
@@ -25,10 +31,10 @@
  *                 └── FlowExecutionPlanFactory
  *
  *   exeris-kernel-community (hidden from SPI)
- *     └── HeapFlowProvider (priority=0, heap-based, StructuredTaskScope)
+ *     └── HeapFlowProvider (priority=0)
  *
  *   exeris-kernel-enterprise (hidden from SPI)
- *     └── SlabFlowProvider (priority=100, off-heap, lock-free, zero-GC)
+ *     └── SlabFlowProvider (priority=100)
  * </pre>
  *
  * <h2>Context Propagation</h2>

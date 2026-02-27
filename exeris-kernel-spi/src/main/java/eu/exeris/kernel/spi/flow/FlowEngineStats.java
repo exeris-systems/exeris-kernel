@@ -21,7 +21,9 @@ package eu.exeris.kernel.spi.flow;
  * @param activeFlows         current number of concurrently executing flow instances
  * @param parkedFlows         current number of suspended (parked) flow instances
  * @param completedFlows      total number of successfully completed flows since {@link FlowEngine#start()}
- * @param failedFlows         total number of flows that ended in a FAILED state
+ * @param failedFlows         total number of flows that reached the
+ *                            {@link eu.exeris.kernel.spi.flow.model.FlowState#FAILED_ROLLEDBACK}
+ *                            terminal state (compensation completed after step failure)
  * @param compensationsRun    total number of backward compensation steps executed
  * @param stepExecutions      total number of individual step executions
  * @param schedulerQueueDepth current depth of the scheduler queue (Enterprise: ring buffer fill level)

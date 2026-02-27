@@ -19,10 +19,12 @@ import java.util.Objects;
  * The {@code String name} field is only on the bootstrap path, not the hot path.
  * No identity operations. Ready for {@code value record} when JEP 401 is stable.
  *
- * @param name         unique flow definition name (used as a key in the registry)
- * @param steps        ordered list of step descriptors; must not be empty
- * @param timeoutNanos default timeout for instances compiled from this definition
- * @param maxRetries   maximum number of step-level retries before triggering compensation
+ * @param name                  unique flow definition name (used as a key in the registry)
+ * @param steps                 ordered list of step descriptors; must not be empty
+ * @param timeoutDurationNanos  default duration limit for instances compiled from this definition;
+ *                              scheduler computes the absolute deadline as
+ *                              {@code System.nanoTime() + timeoutDurationNanos}
+ * @param maxRetries            maximum number of step-level retries before triggering compensation
  *
  * @since 0.5.0
  * @see FlowStepDescriptor
@@ -31,7 +33,7 @@ import java.util.Objects;
 public record FlowDefinition(
         String                    name,
         List<FlowStepDescriptor>  steps,
-        long                      timeoutNanos,
+        long                      timeoutDurationNanos,
         int                       maxRetries
 ) {
 
@@ -45,8 +47,8 @@ public record FlowDefinition(
         if (steps.isEmpty()) {
             throw new IllegalArgumentException("flow definition must have at least one step");
         }
-        if (timeoutNanos <= 0) {
-            throw new IllegalArgumentException("timeoutNanos must be > 0, got: " + timeoutNanos);
+        if (timeoutDurationNanos <= 0) {
+            throw new IllegalArgumentException("timeoutDurationNanos must be > 0, got: " + timeoutDurationNanos);
         }
         if (maxRetries < 0) {
             throw new IllegalArgumentException("maxRetries must be >= 0, got: " + maxRetries);

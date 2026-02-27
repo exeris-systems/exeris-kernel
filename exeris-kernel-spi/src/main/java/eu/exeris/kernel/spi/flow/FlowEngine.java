@@ -28,17 +28,17 @@ import eu.exeris.kernel.spi.exceptions.flow.FlowEngineException;
  *
  * <h2>Tier Behaviour</h2>
  * <ul>
- *   <li><b>Community</b>: heap-based components, {@code StructuredTaskScope} scheduler,
- *       no ordering guarantees. Arena uses {@code Arena.ofShared()} to allow cross-virtual-thread
- *       segment access — prevents {@code WrongThreadException} when flow steps execute on
- *       different virtual threads than the allocating thread.</li>
- *   <li><b>Enterprise</b>: off-heap slab pools, lock-free ring buffer scheduler.
- *       The ring buffer's {@code head} and {@code tail} counter fields are annotated with
- *       {@code @jdk.internal.vm.annotation.Contended} and separated by 128 bytes of padding
- *       so that producer and consumer never share a cache line (false-sharing prevention).
- *       {@link eu.exeris.kernel.spi.flow.model.FlowContext} is a Flyweight interface — one
- *       reusable per-carrier view object slides its base address over the off-heap context
- *       slab; no new object is created per dispatch, preserving the Zero-GC contract.</li>
+ *   <li><b>Community</b>: heap-based components, {@code StructuredTaskScope}-style scheduler,
+ *       no ordering guarantees. Any flow-local memory segments MUST be allocated via the
+ *       tier's {@link eu.exeris.kernel.spi.memory.MemoryAllocator} and accessed through
+ *       {@link eu.exeris.kernel.spi.context.KernelProviders} so that segments remain safely
+ *       usable when flow steps execute on different virtual threads than the allocating
+ *       context (no thread-affinity side effects).</li>
+ *   <li><b>Enterprise</b>: all state in pre-allocated segments. Scheduler uses a lock-free
+ *       ring buffer with cache-line-isolated head/tail counters to eliminate false sharing.
+ *       {@link eu.exeris.kernel.spi.flow.model.FlowContext} is a Flyweight — one reusable
+ *       per-carrier view slides its base address over the context segment;
+ *       no new object is created per dispatch, preserving the Zero-GC contract.</li>
  * </ul>
  *
  * @since 0.5.0

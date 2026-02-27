@@ -56,7 +56,13 @@ public record FlowSnapshot(
         byte[]    opaqueState
 ) {
 
-    /** Returns a combined hex string for JFR events and logging (non-allocating format). */
+    /**
+     * Returns a combined hex string for JFR events and diagnostic logging.
+     *
+     * <p><b>Cold-path only</b> — this method allocates a {@code String}.
+     * Do not call from the hot dispatch loop; use {@link #instanceIdMost()} and
+     * {@link #instanceIdLeast()} directly for zero-allocation identity checks.
+     */
     public String instanceId() {
         return Long.toHexString(instanceIdMost) + "-" + Long.toHexString(instanceIdLeast);
     }

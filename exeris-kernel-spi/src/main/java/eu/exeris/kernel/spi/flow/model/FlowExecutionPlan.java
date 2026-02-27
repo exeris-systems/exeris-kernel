@@ -58,10 +58,18 @@ public interface FlowExecutionPlan {
     FlowStepDescriptor stepAt(int stepIndex);
 
     /**
-     * Returns the configured timeout in nanoseconds for flow instances using this plan.
+     * Returns the configured flow <em>duration</em> limit in nanoseconds.
      *
-     * @return timeout in nanoseconds; always &gt; 0
+     * <p>This is a <strong>duration</strong>, not an absolute deadline. When a new flow
+     * instance is created from this plan, the scheduler computes the absolute deadline as:
+     * <pre>{@code
+     *   long deadlineNanos = System.nanoTime() + plan.timeoutDurationNanos();
+     * }</pre>
+     * and stores it in {@link FlowContext#timeoutNanos()} (which IS an absolute deadline
+     * in the {@code System.nanoTime()} epoch).
+     *
+     * @return configured duration limit in nanoseconds; always &gt; 0
      */
-    long timeoutNanos();
+    long timeoutDurationNanos();
 }
 

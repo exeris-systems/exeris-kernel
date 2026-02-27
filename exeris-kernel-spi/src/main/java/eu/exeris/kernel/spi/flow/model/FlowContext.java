@@ -40,7 +40,14 @@ public interface FlowContext {
     /** Current lifecycle state. Off-heap offset 20 (stored as int code). */
     FlowState state();
 
-    /** Absolute deadline in nanoseconds (System.nanoTime epoch). Off-heap offset 32. */
+    /**
+     * Absolute deadline in nanoseconds in the {@code System.nanoTime()} epoch.
+     *
+     * <p>Computed by the scheduler at instance creation as:
+     * {@code System.nanoTime() + plan.timeoutDurationNanos()}.
+     * Distinct from {@link eu.exeris.kernel.spi.flow.model.FlowExecutionPlan#timeoutDurationNanos()}
+     * which is a configured <em>duration</em>. Off-heap offset 32.
+     */
     long timeoutNanos();
 
     /** Safe identity comparison — use instead of {@code ==}. */

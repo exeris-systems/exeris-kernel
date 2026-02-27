@@ -479,8 +479,12 @@ public final class KernelErrorCodes {
      * <p><b>rawArgs layout for Black-Box:</b>
      * <ul>
      *   <li>index 0 – {@code String} engineName</li>
-     *   <li>index 1 – {@code String} phase (e.g. "START", "STOP", "COMPILE", "SCHEDULE")</li>
-     *   <li>index 2 – {@code String} reason</li>
+     *   <li>index 1 – {@code String} phase — one of: {@code "START"}, {@code "STOP"},
+     *       {@code "COMPILE"}, {@code "SCHEDULE"}</li>
+     *   <li>index 2 – {@code String} staticReasonCode — e.g. {@code "STARTUP_FAILED"},
+     *       {@code "COMPILE_FAILED"}, {@code "QUEUE_FULL"}</li>
+     *   <li>index 3 – {@code int}    contextValue — phase-specific numeric context
+     *       (queue depth for SCHEDULE); {@code -1} when not applicable</li>
      * </ul>
      */
     public static final String EX_FLOW_7002 = "EX-FLOW-7002";
@@ -494,7 +498,10 @@ public final class KernelErrorCodes {
      *   <li>index 1 – {@code long}   instanceIdMost</li>
      *   <li>index 2 – {@code long}   instanceIdLeast</li>
      *   <li>index 3 – {@code int}    stepIndex</li>
-     *   <li>index 4 – {@code String} reason</li>
+     *   <li>index 4 – {@code String} staticReasonCode — e.g. {@code "STEP_FAILED"},
+     *       {@code "COMPENSATION_FAILED"}</li>
+     *   <li>index 5 – {@code String} causeType — {@code cause.getClass().getName()}
+     *       or {@code "none"}; class names are stable and not user-controlled</li>
      * </ul>
      */
     public static final String EX_FLOW_7003 = "EX-FLOW-7003";
