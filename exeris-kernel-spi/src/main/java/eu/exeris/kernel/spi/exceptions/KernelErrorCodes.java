@@ -409,7 +409,7 @@ public final class KernelErrorCodes {
     public static final String EX_GRPH_5005 = "EX-GRPH-5005";
 
     // -----------------------------------------------------------------------
-    // EX-EVENT – Event Engine subsystem (L1 Event Bus)
+    // EX-EVENT – Event Engine subsystem (L3 Logic Engines)
     // -----------------------------------------------------------------------
 
     /**

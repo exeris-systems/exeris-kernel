@@ -178,7 +178,7 @@ public final class KernelProviders {
     public static final ScopedValue<PersistenceEngine> PERSISTENCE_ENGINE = ScopedValue.newInstance();
 
     // =========================================================================
-    // Events Slots (L1 Event Engine)
+    // Events Slots (L3 Logic Engines)
     // =========================================================================
 
     /**
