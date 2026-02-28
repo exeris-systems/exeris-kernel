@@ -90,8 +90,12 @@ public record FlowEngineConfig(
     }
 
     /**
-     * Sensible defaults suitable for Community (heap-based) usage.
-     * Enterprise operators should override {@code partitionBytes} and slab-sizing fields.
+     * Sensible defaults suitable for <b>Community (heap-based)</b> usage.
+     *
+     * <p>Off-heap partitioning is disabled ({@code partitionBytes=0}, {@code partitionName=null}),
+     * matching the Community tier which uses standard heap structures.
+     * Enterprise operators should use {@link #enterpriseDefaults(String)} as a starting point
+     * and then override {@code partitionBytes} and slab-sizing fields as needed.
      */
     public static FlowEngineConfig defaults(String engineName) {
         return new FlowEngineConfig(
@@ -102,8 +106,31 @@ public record FlowEngineConfig(
                 4_096,
                 1_024,
                 65_536,
+                null,               // no off-heap partition — Community heap path
+                0L,                 // partitionBytes=0 → heap-only
+                false,              // persistence disabled by default for Community
+                true
+        );
+    }
+
+    /**
+     * Baseline defaults for <b>Enterprise (off-heap / slab-based)</b> usage.
+     *
+     * <p>Enables a 32 MB off-heap partition and snapshot persistence. Enterprise
+     * operators should further tune {@code partitionBytes}, {@code maxSteps},
+     * and {@code schedulerQueueCapacity} to match their deployment density targets.
+     */
+    public static FlowEngineConfig enterpriseDefaults(String engineName) {
+        return new FlowEngineConfig(
+                engineName,
+                10_000,
+                300_000_000_000L,   // 5 minutes duration in nanoseconds
+                256,
+                4_096,
+                1_024,
+                65_536,
                 "flow",
-                32L * 1024 * 1024,  // 32 MB
+                32L * 1024 * 1024,  // 32 MB off-heap partition
                 true,
                 true
         );

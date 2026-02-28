@@ -25,7 +25,7 @@
  *   exeris-kernel-spi (this package)
  *     └── FlowProvider  ← ServiceLoader boundary
  *           └── FlowEngine  ← composite facade
- *                 ├── FlowBuilder
+ *                 ├── FlowDefinitionBuilder  (via FlowExecutionPlanFactory#newDefinition)
  *                 ├── FlowScheduler
  *                 ├── FlowRegistry
  *                 └── FlowExecutionPlanFactory

@@ -80,8 +80,14 @@ public interface FlowRegistry {
      * <p>Must execute in <b>O(1)</b> time. Returns an empty array (not {@code null})
      * if no transitions are registered for this step.
      *
+     * <p><b>Read-only contract:</b> the returned array is owned by the registry.
+     * Callers MUST NOT modify its contents. Implementations MAY return a direct
+     * reference to an internal shared array to avoid hot-path allocations; any
+     * mutation by a caller would silently corrupt the registry's internal state.
+     * If the caller needs a mutable copy it must perform its own {@code Arrays.copyOf}.
+     *
      * @param fromStep the source step id
-     * @return array of outgoing transitions; never {@code null}, may be empty
+     * @return array of outgoing transitions; never {@code null}, may be empty; treat as immutable
      */
     FlowTransitionDescriptor[] lookupTransitions(int fromStep);
 }

@@ -57,17 +57,69 @@ public record FlowSnapshot(
 ) {
 
     /**
-     * Compact constructor — defensively copies both mutable array components to guarantee
-     * true immutability. Without these copies a caller could retain a reference to the
-     * original array and mutate the snapshot after construction, breaking the persistence
-     * contract and the {@code equals}/{@code hashCode} invariants.
+     * Maximum allowed size of the {@code opaqueState} payload (916 bytes), matching the
+     * off-heap context slab reserved region documented in {@code FLOW_CONTEXT_STRIDE}.
+     */
+    public static final int MAX_OPAQUE_STATE_BYTES = 916;
+
+    /**
+     * Compact constructor — validates all invariants eagerly (fail-fast) and defensively
+     * copies both mutable array components to guarantee true immutability.
+     *
+     * <h2>Null Policy</h2>
+     * <p>{@code compensationStack} and {@code opaqueState} must not be {@code null}.
+     * Pass empty arrays ({@code new int[0]}, {@code new byte[0]}) when the data is absent.
+     *
+     * <h2>Bounds Validation</h2>
+     * <ul>
+     *   <li>{@code stackPointer} must be in {@code [0, compensationStack.length]}.</li>
+     *   <li>{@code opaqueState.length} must not exceed {@link #MAX_OPAQUE_STATE_BYTES}.</li>
+     * </ul>
      *
      * <p>This is the <em>cold</em> construction path (snapshot creation on PARK / eviction),
      * so the allocation cost is acceptable.
      */
     public FlowSnapshot {
+        Objects.requireNonNull(definitionName,    "definitionName must not be null");
+        Objects.requireNonNull(state,             "state must not be null");
+        Objects.requireNonNull(lastUpdate,        "lastUpdate must not be null");
+        Objects.requireNonNull(timeout,           "timeout must not be null");
+        Objects.requireNonNull(compensationStack, "compensationStack must not be null — use new int[0] for empty");
+        Objects.requireNonNull(opaqueState,       "opaqueState must not be null — use new byte[0] for empty");
+        if (stackPointer < 0 || stackPointer > compensationStack.length) {
+            throw new IllegalArgumentException(
+                    "stackPointer out of bounds: " + stackPointer
+                    + " (compensationStack.length=" + compensationStack.length + ')');
+        }
+        if (opaqueState.length > MAX_OPAQUE_STATE_BYTES) {
+            throw new IllegalArgumentException(
+                    "opaqueState exceeds max size: " + opaqueState.length
+                    + " > " + MAX_OPAQUE_STATE_BYTES);
+        }
         compensationStack = Arrays.copyOf(compensationStack, compensationStack.length);
         opaqueState       = Arrays.copyOf(opaqueState, opaqueState.length);
+    }
+
+    /**
+     * Returns a <em>defensive copy</em> of the compensation stack array.
+     *
+     * <p>Callers must not modify the returned array. A copy is returned to preserve
+     * the immutability guarantee documented in the compact constructor.
+     * This accessor is on the cold persistence path; the allocation cost is acceptable.
+     */
+    public int[] compensationStack() {
+        return Arrays.copyOf(compensationStack, compensationStack.length);
+    }
+
+    /**
+     * Returns a <em>defensive copy</em> of the opaque state byte array.
+     *
+     * <p>Callers must not modify the returned array. A copy is returned to preserve
+     * the immutability guarantee documented in the compact constructor.
+     * This accessor is on the cold persistence path; the allocation cost is acceptable.
+     */
+    public byte[] opaqueState() {
+        return Arrays.copyOf(opaqueState, opaqueState.length);
     }
 
     /**
