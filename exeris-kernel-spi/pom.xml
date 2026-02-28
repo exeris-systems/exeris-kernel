@@ -14,4 +14,24 @@
     <artifactId>exeris-kernel-spi</artifactId>
     <name>Exeris Kernel :: SPI</name>
     <description>The "Invisible Wall" — agnostic L0/L1/L2 contracts and RAII memory protocols.</description>
+
+    <dependencies>
+        <!--
+            Zero-Magic Test Guard (Architectural Mandate):
+            Only JUnit 5 + AssertJ are permitted here.
+            Mockito is EXPLICITLY EXCLUDED — all test doubles are hand-written
+            anonymous implementations to enforce the "No Reflection" rule and
+            ensure tests remain valid after Valhalla migration to value records.
+        -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
 </project>
