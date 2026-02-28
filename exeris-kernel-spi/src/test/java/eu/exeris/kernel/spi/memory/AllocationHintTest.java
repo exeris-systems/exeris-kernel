@@ -13,13 +13,13 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * L0 Contract: {@link AllocationHint} enum — size correctness and ordering invariants.
+ * L0 Contract: {@link AllocationHint} enum — size correctness and basic enum invariants.
  *
- * <h2>Ordinal Stability</h2>
- * <p>These tests pin both the {@code sizeBytes()} values and the ordinals.
- * The Core engine uses hint ordinals as indices into the pool-selection table.
- * Silent reordering would corrupt the pool routing and cause MICRO frames to
- * be allocated in JUMBO slabs, violating the "No Waste Compute" mandate.
+ * <h2>Size Invariants</h2>
+ * <p>These tests pin the {@code sizeBytes()} values (and, where applicable, the
+ * number of {@link AllocationHint} constants). The Core engine relies on these
+ * invariants when mapping allocation hints into pool-selection tables to uphold
+ * the "No Waste Compute" mandate.
  *
  * @since 0.5.0
  */
