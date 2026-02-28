@@ -19,10 +19,14 @@ import eu.exeris.kernel.spi.flow.model.FlowTransitionDescriptor;
  *
  * <h2>Tier Contract</h2>
  * <ul>
- *   <li><b>Community</b>: backed by a {@code HashMap<Integer, FlowStepDescriptor>} and
- *       a {@code HashMap<Integer, FlowTransitionDescriptor[]>}.
- *       O(1) average (hash lookup). Registration is thread-safe via synchronisation
- *       during bootstrap only — reads after {@link FlowEngine#start()} are lock-free.</li>
+ *   <li><b>Community</b>: backed by a pair of heap arrays ({@code FlowStepDescriptor[]}
+ *       and {@code FlowTransitionDescriptor[][]}) indexed directly by {@code stepId}.
+ *       Since {@link eu.exeris.kernel.spi.flow.model.FlowStepDescriptor#stepId()} is a
+ *       zero-based index (see {@code FlowStepDescriptor} contract), array access is O(1)
+ *       and allocation-free on the hot path — no {@code Integer} boxing, no hash
+ *       computation. Arrays are sized to {@link FlowEngineConfig#maxSteps()} at startup.
+ *       Registration is synchronised during bootstrap only; reads after
+ *       {@link FlowEngine#start()} are lock-free.</li>
  *   <li><b>Enterprise</b>: backed by an off-heap slab array.
  *       Lookup: {@code address = baseAddr + stepId * STEP_DESCRIPTOR_STRIDE} — O(1)
  *       guaranteed, no indirection, no hash computation.

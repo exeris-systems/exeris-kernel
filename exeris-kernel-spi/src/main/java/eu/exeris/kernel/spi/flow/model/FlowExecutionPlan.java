@@ -49,7 +49,18 @@ public interface FlowExecutionPlan {
      * Returns the {@link FlowStepDescriptor} for the given step index.
      *
      * <p>Must execute in <b>O(1)</b> time.
-     * Enterprise: direct slab address arithmetic (no heap lookup).
+     *
+     * <p><b>Cold / diagnostic path only.</b> {@link FlowStepDescriptor} carries heap
+     * references ({@code String name}, {@code FlowStepAction}) that cannot be eliminated
+     * even in the Enterprise tier, where the underlying slab stores raw addresses and
+     * ordinals. Enterprise implementations materialise a {@code FlowStepDescriptor}
+     * on demand by reading the slab at
+     * {@code stepSlabBase + stepIndex * STEP_DESCRIPTOR_STRIDE}, which incurs a heap
+     * allocation per call.
+     *
+     * <p>The hot-path scheduler MUST NOT call this method per step. Use the raw slab
+     * addresses stored in the plan for dispatch; reserve {@code stepAt()} for JFR
+     * events, diagnostics, and TCK verification.
      *
      * @param stepIndex zero-based step index
      * @return step descriptor; never {@code null}

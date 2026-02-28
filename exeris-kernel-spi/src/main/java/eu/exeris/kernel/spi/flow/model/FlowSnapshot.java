@@ -136,28 +136,31 @@ public record FlowSnapshot(
     /**
      * Deep equality check — uses {@link Arrays#equals} for {@code compensationStack}
      * and {@code opaqueState} to avoid reference-equality false negatives.
+     *
+     * <p><b>Allocation-free:</b> uses a simple type-pattern bind ({@code instanceof
+     * FlowSnapshot other}) and accesses {@code other.compensationStack} /
+     * {@code other.opaqueState} as fields directly, bypassing the defensive-copy
+     * accessors. A record deconstruction pattern ({@code instanceof FlowSnapshot(...)})
+     * would invoke those accessors and allocate two unnecessary array copies per call.
      */
     @Override
     public boolean equals(Object obj) {
         if (this == obj) {
             return true;
         }
-        if (!(obj instanceof FlowSnapshot(
-                long idMost, long idLeast, String name, int step, FlowState state1, Instant update, Instant timeout1,
-                int[] stack, int pointer, byte[] opaqueState1
-        ))) {
+        if (!(obj instanceof FlowSnapshot other)) {
             return false;
         }
-        return instanceIdMost == idMost
-               && instanceIdLeast == idLeast
-               && currentStep == step
-               && stackPointer == pointer
-               && state == state1
-               && Objects.equals(definitionName, name)
-               && Objects.equals(lastUpdate, update)
-               && Objects.equals(timeout, timeout1)
-               && Arrays.equals(compensationStack, stack)
-               && Arrays.equals(opaqueState, opaqueState1);
+        return instanceIdMost   == other.instanceIdMost
+               && instanceIdLeast  == other.instanceIdLeast
+               && currentStep      == other.currentStep
+               && stackPointer     == other.stackPointer
+               && state            == other.state
+               && Objects.equals(definitionName, other.definitionName)
+               && Objects.equals(lastUpdate,     other.lastUpdate)
+               && Objects.equals(timeout,        other.timeout)
+               && Arrays.equals(compensationStack, other.compensationStack)
+               && Arrays.equals(opaqueState,       other.opaqueState);
     }
 
     /**
