@@ -32,8 +32,10 @@ import java.util.Objects;
  *
  * @param instanceIdMost    most-significant bits of the 128-bit flow instance UUID
  * @param instanceIdLeast   least-significant bits of the 128-bit flow instance UUID
- * @param definitionName    name of the {@link FlowDefinition} this instance was compiled from
- * @param currentStep       index of the step to resume execution at
+ * @param definitionName    name of the {@link FlowDefinition} this instance was compiled from;
+ *                          must not be {@code null} or blank
+ * @param currentStep       zero-based index of the step to resume execution at;
+ *                          must be {@code >= 0}
  * @param state             current {@link FlowState}
  * @param lastUpdate        timestamp of the last state mutation (for LRU eviction ordering)
  * @param timeout           absolute expiry time of this flow instance
@@ -72,6 +74,8 @@ public record FlowSnapshot(
      *
      * <h2>Bounds Validation</h2>
      * <ul>
+     *   <li>{@code definitionName} must not be blank.</li>
+     *   <li>{@code currentStep} must be {@code >= 0} (zero-based step index).</li>
      *   <li>{@code stackPointer} must be in {@code [0, compensationStack.length]}.</li>
      *   <li>{@code opaqueState.length} must not exceed {@link #MAX_OPAQUE_STATE_BYTES}.</li>
      * </ul>
@@ -86,6 +90,13 @@ public record FlowSnapshot(
         Objects.requireNonNull(timeout,           "timeout must not be null");
         Objects.requireNonNull(compensationStack, "compensationStack must not be null — use new int[0] for empty");
         Objects.requireNonNull(opaqueState,       "opaqueState must not be null — use new byte[0] for empty");
+        if (definitionName.isBlank()) {
+            throw new IllegalArgumentException("definitionName must not be blank");
+        }
+        if (currentStep < 0) {
+            throw new IllegalArgumentException(
+                    "currentStep must be >= 0 (zero-based step index), got: " + currentStep);
+        }
         if (stackPointer < 0 || stackPointer > compensationStack.length) {
             throw new IllegalArgumentException(
                     "stackPointer out of bounds: " + stackPointer

@@ -304,6 +304,7 @@ public final class KernelProviders {
      *
      * @since 0.5.0
      * @see FlowSnapshotStore
+     * @see #flowSnapshotStore()
      * @see eu.exeris.kernel.spi.flow.FlowEngineConfig#persistenceEnabled()
      */
     public static final ScopedValue<FlowSnapshotStore> FLOW_SNAPSHOT_STORE = ScopedValue.newInstance();
