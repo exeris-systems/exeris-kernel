@@ -244,10 +244,11 @@ public interface ConfigProvider {
      *
      * <p><b>Security note:</b> {@code password} should originate from Vault
      * (Enterprise) or an environment variable, never from a checked-in file.
+     * {@link #toString()} deliberately redacts all credential-bearing fields.
      *
      * @param jdbcUrl        JDBC connection URL
-     * @param username       database user
-     * @param password       database password
+     * @param username       database user — <b>SECRET</b>, never logged
+     * @param password       database password — <b>SECRET</b>, never logged
      * @param maxPoolSize    connection pool ceiling
      * @param runMigrations  whether to run schema migrations on startup
      */
@@ -264,6 +265,44 @@ public interface ConfigProvider {
                     "jdbc:postgresql://localhost:5432/exeris",
                     "exeris", "", 20, false
             );
+        }
+
+        /**
+         * Returns a safe string representation with all credential-bearing fields redacted.
+         *
+         * <p>The following fields are always redacted to prevent accidental exposure
+         * in logs, JFR events, or exception messages:
+         * <ul>
+         *   <li>{@code password} — always {@code [REDACTED]}</li>
+         *   <li>{@code username} — always {@code [REDACTED]}</li>
+         *   <li>{@code jdbcUrl}  — userinfo stripped; only {@code scheme://host:port/db} shown</li>
+         * </ul>
+         *
+         * @return safe string representation
+         */
+        @Override
+        public String toString() {
+            return "PersistenceSettings["
+                    + "jdbcUrl=" + sanitizeUrl(jdbcUrl)
+                    + ", username=[REDACTED]"
+                    + ", password=[REDACTED]"
+                    + ", maxPoolSize=" + maxPoolSize
+                    + ", runMigrations=" + runMigrations
+                    + ']';
+        }
+
+        /**
+         * Strips any embedded userinfo ({@code user:password@}) from a JDBC URL.
+         *
+         * <p>Example: {@code jdbc:postgresql://user:secret@localhost:5432/db}
+         * → {@code jdbc:postgresql://localhost:5432/db}
+         */
+        private static String sanitizeUrl(String url) {
+            if (url == null) {
+                return "[null]";
+            }
+            // Strip userinfo: scheme://user:pass@host → scheme://host
+            return url.replaceFirst("(\\w[\\w+\\-.]*://)[^@]+@", "$1");
         }
     }
 

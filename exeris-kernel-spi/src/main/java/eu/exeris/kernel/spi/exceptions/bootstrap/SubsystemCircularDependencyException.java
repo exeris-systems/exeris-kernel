@@ -13,7 +13,7 @@ import java.util.LinkedHashSet;
 import java.util.Set;
 
 /**
- * Fatal L0 exception thrown when Kahn's BFS topological sort detects a circular
+ * Fatal L0 exception thrown when Kahn's topological sort algorithm detects a circular
  * dependency in the subsystem graph.
  *
  * <h2>L0 Hard Failure Semantics</h2>
@@ -39,7 +39,7 @@ import java.util.Set;
  *
  * <h2>Example</h2>
  * <pre>{@code
- * // Kahn's BFS in SubsystemOrchestrator:
+ * // Kahn's topological sort in SubsystemOrchestrator:
  * if (result.size() != subsystems.size()) {
  *     Set<String> cycleMembers = new LinkedHashSet<>(byName.keySet());
  *     result.forEach(s -> cycleMembers.remove(s.name()));
@@ -91,7 +91,8 @@ public final class SubsystemCircularDependencyException extends RuntimeException
      * Creates a diagnostic instance naming every subsystem participating in the cycle.
      *
      * <p>This method allocates a new exception object — it is intended to be called
-     * exactly once at cycle detection time (inside Kahn's BFS), not on any hot path.
+     * exactly once at cycle detection time (inside Kahn's topological sort), not on
+     * any hot path.
      *
      * <p>Example message generated:
      * <pre>

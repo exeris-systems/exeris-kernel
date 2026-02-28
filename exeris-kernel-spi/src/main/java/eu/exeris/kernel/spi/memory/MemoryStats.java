@@ -59,6 +59,11 @@ public record MemoryStats(
             throw new IllegalArgumentException(
                     "totalBytes must be >= -1 (-1 = unknown/heap-only), got: " + totalBytes);
         }
+        if (totalBytes > 0 && allocatedBytes > totalBytes) {
+            throw new IllegalArgumentException(
+                    "allocatedBytes (" + allocatedBytes + ") must not exceed totalBytes ("
+                    + totalBytes + "); utilization() contract requires a ratio in [0.0, 1.0]");
+        }
         if (carrierPoolCount < 0) {
             throw new IllegalArgumentException(
                     "carrierPoolCount must be non-negative, got: " + carrierPoolCount);

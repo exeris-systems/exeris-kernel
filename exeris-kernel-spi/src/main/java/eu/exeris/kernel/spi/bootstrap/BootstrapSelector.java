@@ -86,15 +86,29 @@ public record BootstrapSelector(Set<String> requestedNames, boolean selectAll) {
      * <p>Example: {@code BootstrapSelector.forNames("persistence")} automatically
      * pulls in {@code memory} and {@code telemetry} via dependency closure.
      *
-     * @param names one or more subsystem names (e.g., {@code "persistence"})
+     * @param names one or more subsystem names (e.g., {@code "persistence"});
+     *              each entry must be non-null and non-blank
      * @return selective selector
-     * @throws IllegalArgumentException if {@code names} is empty
+     * @throws IllegalArgumentException if {@code names} is empty, or if any individual
+     *                                  name is {@code null} or blank
      */
     public static BootstrapSelector forNames(String... names) {
         if (names == null || names.length == 0) {
             throw new IllegalArgumentException(
                     "BootstrapSelector.forNames() requires at least one subsystem name. "
                     + "Use BootstrapSelector.all() to activate everything.");
+        }
+        for (int i = 0; i < names.length; i++) {
+            String name = names[i];
+            if (name == null) {
+                throw new IllegalArgumentException(
+                        "BootstrapSelector.forNames(): null subsystem name at index " + i + ".");
+            }
+            if (name.isBlank()) {
+                throw new IllegalArgumentException(
+                        "BootstrapSelector.forNames(): blank subsystem name at index " + i
+                        + ". Subsystem names must be non-empty strings.");
+            }
         }
         return new BootstrapSelector(Set.copyOf(Arrays.asList(names)), false);
     }
