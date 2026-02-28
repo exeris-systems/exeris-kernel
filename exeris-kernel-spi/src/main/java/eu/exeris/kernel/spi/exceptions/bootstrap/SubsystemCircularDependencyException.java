@@ -69,10 +69,10 @@ public final class SubsystemCircularDependencyException extends RuntimeException
      * Pre-allocated sentinel instance — thrown when no diagnostic detail is available.
      *
      * <p>All {@code SubsystemCircularDependencyException} instances — including this sentinel —
-     * are constructed with {@code writableStackTrace=false} via
-     * {@code super(message, null, true, false)}, so no stack trace is ever captured,
-     * regardless of JVM flags (including {@code -XX:-OmitStackTraceInFastThrow}).
-     * The message is always present.
+     * are constructed with {@code enableSuppression=false, writableStackTrace=false} via
+     * {@code super(message, null, false, false)}, so no stack trace is ever captured
+     * and {@code addSuppressed()} is a no-op, keeping the sentinel immutable and
+     * free of cross-throw state contamination.
      */
     public static final SubsystemCircularDependencyException SENTINEL =
             new SubsystemCircularDependencyException(
@@ -91,7 +91,10 @@ public final class SubsystemCircularDependencyException extends RuntimeException
     private SubsystemCircularDependencyException(String message, Set<String> cycleMembers) {
         // writableStackTrace=false: pre-allocated exceptions never capture stack trace
         // fillInStackTrace() intentionally NOT called — no heap allocation on abort path
-        super(message, null, true, false);
+        // enableSuppression=false: sentinel is a shared global instance; addSuppressed()
+        // would acquire an internal lock and mutate state across throws, causing
+        // cross-thread contamination and heap allocation on the abort path.
+        super(message, null, false, false);
         this.cycleMembers = Collections.unmodifiableSet(cycleMembers);
     }
 

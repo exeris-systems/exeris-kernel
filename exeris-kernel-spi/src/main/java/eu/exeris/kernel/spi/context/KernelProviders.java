@@ -82,10 +82,10 @@ public final class KernelProviders {
     /**
      * The active {@link ConfigProvider} (bound once during L0 bootstrap, before any other slot).
      *
-     * <p>Bound by the {@code KernelBootstrap} / {@code SubsystemOrchestrator} in
-     * {@code exeris-kernel-core} immediately after {@code ServiceLoader} selects the
-     * highest-priority {@link ConfigProvider}. All virtual threads spawned within the
-     * kernel scope inherit this slot automatically — zero constructor injection needed.
+     * <p>Bound by the kernel bootstrapper in {@code exeris-kernel-core} immediately
+     * after {@code ServiceLoader} selects the highest-priority {@link ConfigProvider}.
+     * All virtual threads spawned within the kernel scope inherit this slot
+     * automatically — zero constructor injection needed.
      *
      * <h2>Usage</h2>
      * <pre>{@code

@@ -495,6 +495,12 @@ public interface ConfigProvider {
             if (value == null) {
                 return null;
             }
+            if (key == null) {
+                // No key context — truncate only; cannot detect sensitivity without a key.
+                return value.length() > MAX_VALUE_PREVIEW_LENGTH
+                        ? value.substring(0, MAX_VALUE_PREVIEW_LENGTH) + "\u2026"
+                        : value;
+            }
             String keyLower = key.toLowerCase(java.util.Locale.ROOT);
             boolean sensitive = keyLower.contains("pass")
                     || keyLower.contains("secret")
