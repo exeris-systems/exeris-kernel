@@ -12,7 +12,8 @@ package eu.exeris.kernel.spi.bootstrap;
  *
  * <h2>The Holy Order</h2>
  * <p>A subsystem in phase N may only start after <em>all</em> subsystems in phase N-1
- * have reached {@code READY} state. Subsystems within the same phase may run in
+ * have reached the {@code RUNNING} state (i.e., their {@link Subsystem#start()} has
+ * returned cleanly). Subsystems within the same phase may run in
  * parallel (via {@code StructuredTaskScope}) provided their
  * {@link Subsystem#dependsOn()} graph allows it.
  *
@@ -46,7 +47,7 @@ public enum BootstrapPhase {
 
     /**
      * Service subsystems — initialized in <b>parallel</b> via {@code StructuredTaskScope}
-     * after all {@link #FOUNDATION} subsystems are {@code READY}.
+     * after all {@link #FOUNDATION} subsystems have reached the {@code RUNNING} state.
      *
      * <p>Typical members: {@code security}, {@code persistence}, {@code transport},
      * {@code graph}.
@@ -55,7 +56,7 @@ public enum BootstrapPhase {
 
     /**
      * Runtime subsystems — initialized in <b>parallel</b> via {@code StructuredTaskScope}
-     * after all {@link #SERVICES} subsystems are {@code READY}.
+     * after all {@link #SERVICES} subsystems have reached the {@code RUNNING} state.
      *
      * <p>Typical members: {@code events}, {@code flow}.
      */

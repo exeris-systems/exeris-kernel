@@ -20,9 +20,9 @@
  *       Valhalla-ready record expressing which subsystems to activate.</li>
  *   <li>{@link eu.exeris.kernel.spi.bootstrap.BootstrapPhase} — ordered phases
  *       ({@code FOUNDATION → SERVICES → RUNTIME}).</li>
- *   <li>{@link eu.exeris.kernel.spi.bootstrap.SubsystemException} — lifecycle
+ *   <li>{@link eu.exeris.kernel.spi.exceptions.bootstrap.SubsystemException} — lifecycle
  *       failure wrapper.</li>
- *   <li>{@link eu.exeris.kernel.spi.bootstrap.SubsystemCircularDependencyException}
+ *   <li>{@link eu.exeris.kernel.spi.exceptions.bootstrap.SubsystemCircularDependencyException}
  *       — fatal, pre-allocated L0 error for cycle detection in Kahn's algorithm.</li>
  * </ul>
  *

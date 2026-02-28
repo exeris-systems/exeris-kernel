@@ -5,7 +5,7 @@
  * Distributed under the proprietary Exeris Software License.
  * Unauthorized copying or distribution is prohibited.
  */
-package eu.exeris.kernel.spi.bootstrap;
+package eu.exeris.kernel.spi.exceptions.bootstrap;
 
 import java.util.Collection;
 import java.util.Collections;

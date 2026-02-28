@@ -5,7 +5,9 @@
  * Distributed under the proprietary Exeris Software License.
  * Unauthorized copying or distribution is prohibited.
  */
-package eu.exeris.kernel.spi.bootstrap;
+package eu.exeris.kernel.spi.exceptions.bootstrap;
+
+import eu.exeris.kernel.spi.bootstrap.Subsystem;
 
 /**
  * Thrown when a {@link Subsystem} fails during {@link Subsystem#initialize()} or

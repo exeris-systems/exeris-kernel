@@ -19,10 +19,10 @@ import java.util.Set;
  * BootstrapSelector.all()
  *
  * // Selective — only persistence and its transitive dependencies
- * BootstrapSelector.of("persistence")
+ * BootstrapSelector.forNames("persistence")
  *
  * // Headless batch worker — no HTTP transport
- * BootstrapSelector.of("persistence", "events", "flow")
+ * BootstrapSelector.forNames("persistence", "events", "flow")
  * }</pre>
  *
  * <h2>Closure Expansion</h2>
@@ -32,9 +32,9 @@ import java.util.Set;
  * {@code telemetry} are automatically pulled into the active set — no manual listing.
  *
  * <h2>Valhalla Readiness</h2>
- * <p>This is a standard {@code record} with no identity operations. It is a
- * {@code @ConfigProvider.ValueCandidate} and will be promoted to {@code value record}
- * (JEP 401) once the toolchain supports it.
+ * <p>This is a standard {@code record} with no identity operations. It is
+ * designed as a {@code ConfigProvider.ValueCandidate} and may be promoted to
+ * a {@code value record} (JEP 401) once the toolchain supports it.
  *
  * @param requestedNames explicitly requested subsystem names; empty when {@link #selectAll} is true
  * @param selectAll      {@code true} = activate every subsystem found via ServiceLoader

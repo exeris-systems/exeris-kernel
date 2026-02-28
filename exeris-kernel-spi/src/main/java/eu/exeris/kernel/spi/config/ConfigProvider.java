@@ -22,7 +22,7 @@ import java.util.function.Supplier;
  * <p>This interface is the single SPI entry point for configuration. It is loaded via
  * {@code ServiceLoader} by the {@code KernelBootstrap} in {@code exeris-kernel-core}.
  * The highest-{@link #priority()} implementation found on the classpath wins.
- * No implementation class is referenced here.
+ * This SPI does not hard-code any implementation; implementations are discovered via {@code ServiceLoader}.
  *
  * <h2>Design Philosophy</h2>
  * <p>Configuration is no longer a {@code Map<String, Object>} or a mutable POJO.

@@ -7,6 +7,9 @@
  */
 package eu.exeris.kernel.spi.bootstrap;
 
+import eu.exeris.kernel.spi.exceptions.bootstrap.SubsystemCircularDependencyException;
+import eu.exeris.kernel.spi.exceptions.bootstrap.SubsystemException;
+
 import java.util.List;
 
 /**
@@ -60,7 +63,8 @@ public interface Subsystem {
     String name();
 
     /**
-     * Names of subsystems that must reach {@code READY} before this one may initialize.
+     * Names of subsystems that must reach the {@code RUNNING} state (i.e., their
+     * {@link #start()} must complete cleanly) before this subsystem may initialize.
      *
      * <p>The list feeds {@code SubsystemOrchestrator}'s Kahn's BFS topological sort.
      * If a listed name is not present in the registry (because its provider is not
