@@ -532,6 +532,18 @@ public final class KernelProviders {
     }
 
     /**
+     * Returns the optional {@link FlowSnapshotStore} from the current scope.
+     *
+     * @return an {@link Optional} containing the store if persistence is enabled
+     *         and the slot was bound; empty otherwise
+     */
+    public static Optional<FlowSnapshotStore> flowSnapshotStore() {
+        return FLOW_SNAPSHOT_STORE.isBound()
+                ? Optional.of(FLOW_SNAPSHOT_STORE.get())
+                : Optional.empty();
+    }
+
+    /**
      * Returns the active {@link PrincipalContext} from the current request scope.
      *
      * @return principal context bound by the security interceptor
