@@ -30,6 +30,7 @@ import eu.exeris.kernel.spi.transport.TransportEngine;
 import eu.exeris.kernel.spi.transport.TransportProvider;
 
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Central {@link ScopedValue} slots for all SPI providers resolved during bootstrap.
