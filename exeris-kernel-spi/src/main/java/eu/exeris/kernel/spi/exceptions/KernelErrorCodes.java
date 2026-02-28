@@ -74,6 +74,22 @@ public final class KernelErrorCodes {
     // -----------------------------------------------------------------------
 
     /**
+     * Circular dependency detected in the subsystem graph: Kahn's topological sort
+     * found that the declared {@code dependsOn()} relationships form a cycle, making
+     * a valid boot order impossible.
+     *
+     * <p>This is an <em>unrecoverable architectural defect</em>. The kernel halts
+     * immediately; no degraded mode or partial boot is attempted.
+     * Thrown by {@link eu.exeris.kernel.spi.exceptions.bootstrap.SubsystemCircularDependencyException}.
+     *
+     * <p><b>rawArgs layout for Black-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String[]} cycleMembers (ordered subsystem names forming the cycle)</li>
+     * </ul>
+     */
+    public static final String EX_BOOT_0001 = "EX-BOOT-0001";
+
+    /**
      * Subsystem initialization or startup failure.
      *
      * <p><b>rawArgs layout for Black-Box:</b>

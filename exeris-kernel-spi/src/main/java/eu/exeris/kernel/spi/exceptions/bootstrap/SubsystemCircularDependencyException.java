@@ -7,6 +7,8 @@
  */
 package eu.exeris.kernel.spi.exceptions.bootstrap;
 
+import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
+
 import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashSet;
@@ -53,12 +55,15 @@ import java.util.Set;
 public final class SubsystemCircularDependencyException extends RuntimeException {
 
     /**
-     * Telemetry error code for this failure class — {@code "EX-BOOT-0001"}.
+     * Telemetry error code for this failure class — {@link KernelErrorCodes#EX_BOOT_0001}.
+     *
+     * <p>Delegates to {@link KernelErrorCodes} — the single source of truth for all
+     * {@code EX-*} codes — to prevent duplicated string literals across the kernel.
      *
      * <p>Always treated as {@code FAIL_FAST}. Cannot be suppressed by
      * {@code FailurePolicy.DEGRADE}.
      */
-    public static final String ERROR_CODE = "EX-BOOT-0001";
+    public static final String ERROR_CODE = KernelErrorCodes.EX_BOOT_0001;
 
     /**
      * Pre-allocated sentinel instance — thrown when no diagnostic detail is available.
