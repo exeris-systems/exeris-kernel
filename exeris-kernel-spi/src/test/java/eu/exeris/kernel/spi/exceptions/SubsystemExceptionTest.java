@@ -57,15 +57,15 @@ class SubsystemExceptionTest {
         @Test
         @DisplayName("rawArgs[0]=subsystemName, [1]=phase(START), [2]=detail — cause ctor preserves layout")
         void layoutWithCause() {
-            RuntimeException root = new RuntimeException("OpenSSL load failed");
+            RuntimeException root = new RuntimeException("TLS provider load failed");
             SubsystemException ex = new SubsystemException(
-                    "TlsSubsystem", SubsystemException.Phase.START, "OpenSSL load failed", root);
+                    "TlsSubsystem", SubsystemException.Phase.START, "TLS provider load failed", root);
 
             Object[] raw = ex.rawArgs();
             assertThat(raw).hasSize(3);
             assertThat(raw[0]).isEqualTo("TlsSubsystem");
             assertThat(raw[1]).isEqualTo(SubsystemException.Phase.START);
-            assertThat(raw[2]).isEqualTo("OpenSSL load failed");
+            assertThat(raw[2]).isEqualTo("TLS provider load failed");
             assertThat(ex.getCause()).isSameAs(root);
         }
 

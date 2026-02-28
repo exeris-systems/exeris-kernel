@@ -169,11 +169,11 @@ class TransportExceptionLayoutTest {
         @DisplayName("rawArgs[0]=transportName (String), rawArgs[1]=reason (String)")
         void rawArgsLayout() {
             TransportException ex = TransportException.bootstrapFailure(
-                    "io_uring/HTTP3", "native library not found", null);
+                    "TestTransport", "native library not found", null);
             assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_NET_4004);
             Object[] raw = ex.rawArgs();
             assertThat(raw).hasSize(2);
-            assertThat(raw[0]).isEqualTo("io_uring/HTTP3");
+            assertThat(raw[0]).isEqualTo("TestTransport");
             assertThat(raw[1]).isEqualTo("native library not found");
         }
 

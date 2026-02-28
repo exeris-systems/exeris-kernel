@@ -32,12 +32,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *   <li>All provider slots are unbound outside a {@code ScopedValue.where()} scope.</li>
  *   <li>Slots are correctly bound inside a scope and automatically restored on exit.</li>
  *   <li>Nested scopes shadow outer bindings — critical for test isolation.</li>
- *   <li>Bindings propagate into {@link StructuredTaskScope} forks (JEP 525) but NOT
- *       into raw {@code Thread.ofVirtual().start()} threads (this is the documented
- *       JEP 506 contract that prevents silent context leaks).</li>
+ *   <li>Bindings propagate into {@link StructuredTaskScope} forks (JEP 525),
+ *       matching the structured concurrency contract.</li>
  *   <li>Convenience accessors ({@link KernelProviders#principal()},
  *       {@link KernelProviders#storageContext()}) throw the correct SPI exceptions
  *       when called outside a security scope.</li>
+ * </ol>
  * </ol>
  *
  * <h2>Zero-Magic Guard</h2>

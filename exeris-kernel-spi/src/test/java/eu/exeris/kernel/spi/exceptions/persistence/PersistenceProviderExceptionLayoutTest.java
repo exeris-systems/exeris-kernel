@@ -233,12 +233,12 @@ class PersistenceProviderExceptionLayoutTest {
         void rawArgsLayout() {
             RuntimeException root = new RuntimeException("broken pipe");
             PersistenceProviderException ex = PersistenceProviderException.transportFailure(
-                    "io_uring/PgNative", 42L, 32, root);
+                    "NativeTransport", 42L, 32, root);
 
             assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_PERS_5005);
             Object[] raw = ex.rawArgs();
             assertThat(raw).hasSize(3);
-            assertThat(raw[0]).isEqualTo("io_uring/PgNative");
+            assertThat(raw[0]).isEqualTo("NativeTransport");
             assertThat(raw[1]).isEqualTo(42L);
             assertThat(raw[2]).isEqualTo(32);
             assertThat(ex.getCause()).isSameAs(root);
