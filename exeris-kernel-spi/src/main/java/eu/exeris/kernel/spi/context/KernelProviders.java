@@ -14,6 +14,7 @@ import eu.exeris.kernel.spi.exceptions.security.PrincipalContextMissingException
 import eu.exeris.kernel.spi.exceptions.security.StorageContextMissingException;
 import eu.exeris.kernel.spi.flow.FlowEngine;
 import eu.exeris.kernel.spi.flow.FlowProvider;
+import eu.exeris.kernel.spi.flow.model.FlowSnapshotStore;
 import eu.exeris.kernel.spi.graph.GraphEngine;
 import eu.exeris.kernel.spi.graph.GraphProvider;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
@@ -265,6 +266,39 @@ public final class KernelProviders {
      * @see FlowProvider
      */
     public static final ScopedValue<FlowEngine> FLOW_ENGINE = ScopedValue.newInstance();
+
+    /**
+     * The optional {@link FlowSnapshotStore} for persisting parked flow snapshots.
+     *
+     * <p>Bound by the bootstrapper <em>before</em> {@link FlowEngine#start()} is called,
+     * when {@link eu.exeris.kernel.spi.flow.FlowEngineConfig#persistenceEnabled()} is
+     * {@code true}. The {@link FlowEngine} reads this slot during {@code start()} and
+     * wires the store into the PARK / LRU-eviction path.
+     *
+     * <p>If {@code persistenceEnabled} is {@code true} but this slot is unbound,
+     * {@code FlowEngine.start()} MUST throw
+     * {@link eu.exeris.kernel.spi.exceptions.flow.FlowEngineException}.
+     * If {@code persistenceEnabled} is {@code false} this slot SHOULD be left unbound.
+     *
+     * <h2>Usage (bootstrapper side)</h2>
+     * <pre>{@code
+     * ScopedValue
+     *     .where(KernelProviders.FLOW_ENGINE,         engine)
+     *     .where(KernelProviders.FLOW_SNAPSHOT_STORE, myStore)
+     *     .run(engine::start);
+     * }</pre>
+     *
+     * <h2>Usage (engine / subsystem side)</h2>
+     * <pre>{@code
+     * KernelProviders.flowSnapshotStore()
+     *     .ifPresent(store -> store.save(snapshot));
+     * }</pre>
+     *
+     * @since 0.5.0
+     * @see FlowSnapshotStore
+     * @see eu.exeris.kernel.spi.flow.FlowEngineConfig#persistenceEnabled()
+     */
+    public static final ScopedValue<FlowSnapshotStore> FLOW_SNAPSHOT_STORE = ScopedValue.newInstance();
 
     // =========================================================================
     // Transport Slots (L2 Native I/O)

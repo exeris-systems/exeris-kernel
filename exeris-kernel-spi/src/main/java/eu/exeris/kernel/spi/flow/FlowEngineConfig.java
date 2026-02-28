@@ -29,7 +29,11 @@ import java.util.Objects;
  * @param maxSteps               maximum number of distinct step types (Enterprise: slab sizing)
  * @param maxTransitions         maximum number of registered transitions (Enterprise: slab sizing)
  * @param maxExecutionPlans      maximum number of compiled execution plans (Enterprise: slab sizing)
- * @param schedulerQueueCapacity ring buffer capacity for the flow scheduler (power-of-2 for Enterprise)
+ * @param schedulerQueueCapacity ring buffer capacity for the flow scheduler;
+ *                               <b>must be a power of 2 when {@code partitionBytes > 0}</b>
+ *                               (Enterprise lock-free ring buffer uses bitmask reduction
+ *                               {@code index & (capacity - 1)} instead of modulo);
+ *                               any positive value is accepted for Community ({@code partitionBytes = 0})
  * @param partitionName          memory partition name for Enterprise off-heap allocation
  * @param partitionBytes         total bytes to claim for the flow memory partition (Enterprise)
  * @param persistenceEnabled     whether flow snapshot persistence via SPI is enabled
@@ -75,6 +79,14 @@ public record FlowEngineConfig(
         if (schedulerQueueCapacity <= 0) {
             throw new IllegalArgumentException(
                     "schedulerQueueCapacity must be > 0, got: " + schedulerQueueCapacity);
+        }
+        // Enterprise lock-free ring buffer requires a power-of-2 capacity so that
+        // the modulo reduction can be replaced by a bitmask (index & (capacity - 1)).
+        // Community does not use a ring buffer, so any positive value is accepted there.
+        if (partitionBytes > 0 && (schedulerQueueCapacity & (schedulerQueueCapacity - 1)) != 0) {
+            throw new IllegalArgumentException(
+                    "schedulerQueueCapacity must be a power of 2 when partitionBytes > 0 "
+                    + "(Enterprise ring buffer), got: " + schedulerQueueCapacity);
         }
         validatePartition(partitionName, partitionBytes);
     }

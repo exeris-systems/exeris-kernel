@@ -9,6 +9,8 @@ package eu.exeris.kernel.spi.flow.model;
 
 import java.util.Optional;
 
+// ScopedValue is referenced in Javadoc only (@see KernelProviders#FLOW_SNAPSHOT_STORE)
+
 /**
  * SPI: Optional persistence store for flow snapshots.
  *
@@ -21,13 +23,27 @@ import java.util.Optional;
  * Enterprise implementations perform zero-copy snapshot writes directly from the
  * off-heap context slab slice via {@code MemorySegment}, without a heap byte[] copy.
  *
- * <h2>Registration</h2>
- * <p>Registered with the {@link eu.exeris.kernel.spi.flow.FlowEngine} during bootstrap
- * when {@link eu.exeris.kernel.spi.flow.FlowEngineConfig#persistenceEnabled()} is
- * {@code true}. The engine calls {@link #save(FlowSnapshot)} asynchronously on
- * the PARK transition and synchronously on LRU eviction.
+ * <h2>Discovery &amp; Wiring</h2>
+ * <p>The bootstrapper binds a {@code FlowSnapshotStore} implementation to the
+ * {@link eu.exeris.kernel.spi.context.KernelProviders#FLOW_SNAPSHOT_STORE}
+ * {@link ScopedValue} slot <em>before</em> calling {@link eu.exeris.kernel.spi.flow.FlowEngine#start()}.
+ * During {@code start()}, the engine reads that slot (if and only if
+ * {@link eu.exeris.kernel.spi.flow.FlowEngineConfig#persistenceEnabled()} is {@code true})
+ * and wires the store into the PARK / LRU-eviction path. If {@code persistenceEnabled} is
+ * {@code true} but the slot is unbound, {@code FlowEngine.start()} MUST throw
+ * {@link eu.exeris.kernel.spi.exceptions.flow.FlowEngineException}.
+ *
+ * <p>This pattern is identical to how every other optional SPI component
+ * ({@link eu.exeris.kernel.spi.persistence.PersistenceEngine},
+ * {@link eu.exeris.kernel.spi.telemetry.TelemetrySink}, etc.) is injected —
+ * no constructor parameters, no magic DI, no {@code ServiceLoader} for the store itself.
+ *
+ * <h2>Call Contract</h2>
+ * <p>Once wired, the engine calls {@link #save(FlowSnapshot)} asynchronously on the
+ * PARK transition and synchronously on LRU eviction.
  *
  * @since 0.5.0
+ * @see eu.exeris.kernel.spi.context.KernelProviders#FLOW_SNAPSHOT_STORE
  */
 public interface FlowSnapshotStore {
 
