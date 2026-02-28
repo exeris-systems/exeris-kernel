@@ -7,6 +7,7 @@
  */
 package eu.exeris.kernel.spi.context;
 
+import eu.exeris.kernel.spi.config.ConfigProvider;
 import eu.exeris.kernel.spi.crypto.KernelCryptoProvider;
 import eu.exeris.kernel.spi.events.EventEngine;
 import eu.exeris.kernel.spi.events.EventProvider;
@@ -72,6 +73,34 @@ import java.util.Optional;
  */
 @SuppressWarnings("PMD.TooManyMethods") // Central ScopedValue slot registry — splitting would violate the SPI Wall.
 public final class KernelProviders {
+
+    // =========================================================================
+    // Config Slot (L0 Foundation — bound before Memory)
+    // =========================================================================
+
+    /**
+     * The active {@link ConfigProvider} (bound once during L0 bootstrap, before any other slot).
+     *
+     * <p>Bound by the {@code KernelBootstrap} / {@code SubsystemOrchestrator} in
+     * {@code exeris-kernel-core} immediately after {@code ServiceLoader} selects the
+     * highest-priority {@link ConfigProvider}. All virtual threads spawned within the
+     * kernel scope inherit this slot automatically — zero constructor injection needed.
+     *
+     * <h2>Usage</h2>
+     * <pre>{@code
+     * ConfigProvider.KernelSettings settings =
+     *     KernelProviders.CURRENT_CONFIG.get().kernelSettings().get();
+     * int port = settings.network().port();
+     * }</pre>
+     *
+     * <h2>Convenience accessor</h2>
+     * <pre>{@code
+     * ConfigProvider cfg = KernelProviders.config();
+     * }</pre>
+     *
+     * @since 0.5.0
+     */
+    public static final ScopedValue<ConfigProvider> CURRENT_CONFIG = ScopedValue.newInstance();
 
     /**
      * The active {@link MemoryProvider} factory (bound once during bootstrap).
@@ -292,7 +321,6 @@ public final class KernelProviders {
      * <h2>Usage (engine / subsystem side)</h2>
      * <p>Preferred — via the typed convenience accessor:
      * <pre>{@code
-     * // flowSnapshotStore() returns Optional<FlowSnapshotStore>
      * KernelProviders.flowSnapshotStore()
      *     .ifPresent(store -> store.save(snapshot));
      * }</pre>
@@ -562,5 +590,17 @@ public final class KernelProviders {
      */
     public static StorageContext storageContext() {
         return STORAGE_CONTEXT.orElseThrow(StorageContextMissingException::new);
+    }
+
+    /**
+     * Returns the active {@link ConfigProvider} from the current kernel scope.
+     *
+     * <p>Available on every virtual thread after L0 bootstrap completes.
+     *
+     * @return config provider bound by the kernel bootstrapper
+     * @throws java.util.NoSuchElementException if called outside the kernel scope
+     */
+    public static ConfigProvider config() {
+        return CURRENT_CONFIG.get();
     }
 }

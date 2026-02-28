@@ -7,15 +7,31 @@
  */
 
 /**
- * Exeris Kernel SPI – Bootstrap / Subsystem lifecycle contracts (L0).
- *
- * <p>Defines the {@code Subsystem} SPI interface and lifecycle exception.
- * Bootstrap sequence is orchestrated by {@code KernelBootstrap} in the Core module
- * using {@code StructuredTaskScope} for parallel initialization.
+ * Exeris Kernel SPI — Bootstrap and Subsystem lifecycle contracts (L0).
  *
  * <h2>The Wall</h2>
- * <p>Implementation-blind: no references to specific subsystem implementations,
- * Spring lifecycle, or CDI.
+ * <p>This package is implementation-blind. It contains only pure contracts:
+ * <ul>
+ *   <li>{@link eu.exeris.kernel.spi.bootstrap.Subsystem} — the lifecycle contract
+ *       every kernel subsystem must implement.</li>
+ *   <li>{@link eu.exeris.kernel.spi.bootstrap.SubsystemProvider} — the
+ *       {@code ServiceLoader} discovery point for subsystem sets.</li>
+ *   <li>{@link eu.exeris.kernel.spi.bootstrap.BootstrapSelector} — immutable
+ *       Valhalla-ready record expressing which subsystems to activate.</li>
+ *   <li>{@link eu.exeris.kernel.spi.bootstrap.BootstrapPhase} — ordered phases
+ *       ({@code FOUNDATION → SERVICES → RUNTIME}).</li>
+ *   <li>{@link eu.exeris.kernel.spi.bootstrap.SubsystemException} — lifecycle
+ *       failure wrapper.</li>
+ *   <li>{@link eu.exeris.kernel.spi.bootstrap.SubsystemCircularDependencyException}
+ *       — fatal, pre-allocated L0 error for cycle detection in Kahn's algorithm.</li>
+ * </ul>
+ *
+ * <h2>No references to</h2>
+ * <p>io_uring, Netty, OpenSSL, JDBC, HikariCP, Spring, CDI, or any concrete driver.
+ *
+ * @see eu.exeris.kernel.spi.bootstrap.Subsystem
+ * @see eu.exeris.kernel.spi.bootstrap.SubsystemProvider
+ * @since 0.5.0
  */
 package eu.exeris.kernel.spi.bootstrap;
 

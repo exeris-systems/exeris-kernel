@@ -29,6 +29,11 @@ package eu.exeris.kernel.spi.memory;
  * @param peakAllocatedBytes  Historical maximum of {@code allocatedBytes} observed.
  * @param carrierPoolCount    Number of carrier-affine slab pools active (0 if carrier-slabs are
  *                            not supported by this allocator).
+ * @param leakCount           Cumulative count of {@link LoanedBuffer} instances detected as leaked
+ *                            (abandoned without close()) since start. Non-zero only when
+ *                            {@link #leakDetectionMode()} is {@link LeakDetectionMode#SAMPLED}
+ *                            or {@link LeakDetectionMode#PARANOID}.
+ * @param leakDetectionMode   The active leak detection mode for this allocator instance.
  *
  * @since 0.5.0
  * @see MemoryAllocator#stats()
@@ -40,7 +45,9 @@ public record MemoryStats(
         long allocationCount,
         long releaseCount,
         long peakAllocatedBytes,
-        int  carrierPoolCount
+        int  carrierPoolCount,
+        long leakCount,
+        LeakDetectionMode leakDetectionMode
 ) {
 
     /** Compact canonical constructor with basic consistency validation. */
@@ -56,6 +63,11 @@ public record MemoryStats(
             throw new IllegalArgumentException(
                     "carrierPoolCount must be non-negative, got: " + carrierPoolCount);
         }
+        if (leakCount < 0) {
+            throw new IllegalArgumentException(
+                    "leakCount must be non-negative, got: " + leakCount);
+        }
+        java.util.Objects.requireNonNull(leakDetectionMode, "leakDetectionMode must not be null");
     }
 
     /**
@@ -79,7 +91,7 @@ public record MemoryStats(
      * @return all-zero stats instance
      */
     public static MemoryStats zero() {
-        return new MemoryStats(0L, 0L, 0L, 0L, 0L, 0L, 0);
+        return new MemoryStats(0L, 0L, 0L, 0L, 0L, 0L, 0, 0L, LeakDetectionMode.DISABLED);
     }
 }
 
