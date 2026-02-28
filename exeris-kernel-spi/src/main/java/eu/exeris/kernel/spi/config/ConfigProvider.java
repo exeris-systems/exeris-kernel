@@ -398,6 +398,9 @@ public interface ConfigProvider {
      */
     class ConfigProviderException extends ExerisKernelException {
 
+        /** Maximum number of characters retained from a non-sensitive config value in telemetry. */
+        private static final int MAX_VALUE_PREVIEW_LENGTH = 32;
+
         /**
          * General-purpose constructor for config failures not covered by the typed factory methods.
          *
@@ -436,11 +439,27 @@ public interface ConfigProvider {
         /**
          * Type mismatch — {@link KernelErrorCodes#EX_CFG_1002}.
          *
-         * <p><b>rawArgs:</b> [0] key, [1] expectedType, [2] actualValue (truncated)
+         * <p><b>rawArgs:</b> [0] key, [1] expectedType, [2] sanitizedValue
+         *
+         * <p>The {@code actualValue} parameter is automatically sanitized before it is
+         * stored in {@code rawArgs} to prevent CWE-532 (Information Exposure Through Log
+         * Files). Sanitization rules, applied in order:
+         * <ol>
+         *   <li><b>Redaction</b> — if {@code key} (case-insensitive) contains any of
+         *       {@code "pass"}, {@code "secret"}, {@code "token"}, {@code "credential"},
+         *       {@code "apikey"}, or {@code "private"}, the value is replaced with
+         *       {@code "[REDACTED]"} unconditionally.</li>
+         *   <li><b>Truncation</b> — all other values are truncated to at most
+         *       {@value #MAX_VALUE_PREVIEW_LENGTH} characters and suffixed with
+         *       {@code "…"} when truncated, preventing large blobs from inflating the
+         *       telemetry stream.</li>
+         * </ol>
          *
          * @param key          dot-path key
          * @param expectedType simple class name of the requested target type
-         * @param actualValue  raw string value present in the config source
+         * @param actualValue  raw string value present in the config source — will be
+         *                     sanitized before reaching telemetry; callers need not
+         *                     pre-sanitize this parameter
          * @return exception with error code {@code EX-CFG-1002}
          */
         public static ConfigProviderException typeMismatch(String key, String expectedType, String actualValue) {
@@ -448,7 +467,37 @@ public interface ConfigProvider {
                     KernelErrorCodes.EX_CFG_1002,
                     "Configuration type mismatch for key: " + key,
                     null,
-                    key, expectedType, actualValue);
+                    key, expectedType, sanitizeConfigValue(key, actualValue));
+        }
+
+        /**
+         * Sanitizes a raw configuration value for safe inclusion in Black-Box telemetry.
+         *
+         * <p>Sensitive keys are fully redacted; all other values are truncated to
+         * {@value #MAX_VALUE_PREVIEW_LENGTH} characters.
+         *
+         * @param key   dot-path config key used to detect sensitivity
+         * @param value raw value to sanitize; {@code null} is returned as-is
+         * @return a telemetry-safe snapshot of the value
+         */
+        private static String sanitizeConfigValue(String key, String value) {
+            if (value == null) {
+                return null;
+            }
+            String keyLower = key.toLowerCase(java.util.Locale.ROOT);
+            boolean sensitive = keyLower.contains("pass")
+                    || keyLower.contains("secret")
+                    || keyLower.contains("token")
+                    || keyLower.contains("credential")
+                    || keyLower.contains("apikey")
+                    || keyLower.contains("private");
+            if (sensitive) {
+                return "[REDACTED]";
+            }
+            if (value.length() > MAX_VALUE_PREVIEW_LENGTH) {
+                return value.substring(0, MAX_VALUE_PREVIEW_LENGTH) + "\u2026";
+            }
+            return value;
         }
 
         /**

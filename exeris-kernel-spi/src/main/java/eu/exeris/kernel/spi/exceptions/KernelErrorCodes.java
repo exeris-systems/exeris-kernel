@@ -565,7 +565,13 @@ public final class KernelErrorCodes {
      * <ul>
      *   <li>index 0 – {@code String} key          (dot-path key)</li>
      *   <li>index 1 – {@code String} expectedType (simple class name of the target type)</li>
-     *   <li>index 2 – {@code String} actualValue  (raw string value; may be truncated)</li>
+     *   <li>index 2 – {@code String} actualValue  (caller-sanitized string snapshot of the
+     *       underlying configuration value; callers <strong>MUST</strong> redact or truncate
+     *       this field so that it never contains secrets, credentials, tokens, or other
+     *       sensitive material. Emitting a raw config value verbatim constitutes a
+     *       CWE-532 (Information Exposure Through Log Files) violation against the
+     *       Exeris Security Contract. Any truncation or redaction is performed by the
+     *       caller before emitting {@code rawArgs} to the Black-Box telemetry sink.)</li>
      * </ul>
      */
     public static final String EX_CFG_1002 = "EX-CFG-1002";
