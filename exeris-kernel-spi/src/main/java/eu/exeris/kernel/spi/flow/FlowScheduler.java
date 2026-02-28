@@ -20,10 +20,12 @@ import eu.exeris.kernel.spi.flow.model.FlowExecutionPlan;
  *   <li><b>Enterprise</b>: enqueues the {@link FlowContext} base address (a raw {@code long})
  *       into a lock-free MPSC ring buffer backed by an off-heap slab.
  *       <br>
- *       <b>False-Sharing prevention:</b> the ring buffer's {@code head} and {@code tail}
- *       counter fields are annotated with {@code @jdk.internal.vm.annotation.Contended}
- *       and separated by 128 bytes of padding (2 × 64-byte L1 cache lines) so that
- *       producer and consumer never contend on the same cache line.
+ *       <b>False-sharing prevention:</b> the ring buffer MUST physically separate the
+ *       {@code head} and {@code tail} counter fields by at least 128 bytes (2 × 64-byte
+ *       L1 cache lines) so that producer and consumer threads never contend on the same
+ *       cache line. The specific mechanism (padding fields, off-heap layout, or any
+ *       cache-line isolation technique) is left to the implementation and MUST NOT rely
+ *       on JDK-internal APIs.
  *       <br>
  *       Parked flows stored in an off-heap slot array — zero heap allocation.</li>
  * </ul>

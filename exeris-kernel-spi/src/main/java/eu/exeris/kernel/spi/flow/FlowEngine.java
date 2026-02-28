@@ -72,8 +72,12 @@ public interface FlowEngine extends AutoCloseable {
     /**
      * Returns the {@link FlowRegistry} for step and transition registration.
      *
-     * <p>Community: {@code HashMap}-backed, O(1) average.
+     * <p>Community: heap array-backed registry indexed by {@code stepId}, pre-sized to
+     * {@link FlowEngineConfig#maxSteps()} at engine start for allocation-free O(1) lookups
+     * — no {@code Integer} boxing, no hash computation.
      * Enterprise: off-heap slab array, O(1) guaranteed via direct address arithmetic.
+     *
+     * @see FlowRegistry
      */
     FlowRegistry registry();
 
