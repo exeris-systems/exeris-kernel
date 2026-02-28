@@ -29,6 +29,11 @@ package eu.exeris.kernel.spi.memory;
  * @param peakAllocatedBytes  Historical maximum of {@code allocatedBytes} observed.
  * @param carrierPoolCount    Number of carrier-affine slab pools active (0 if carrier-slabs are
  *                            not supported by this allocator).
+ * @param leakCount           Cumulative count of {@link LoanedBuffer} instances detected as leaked
+ *                            (abandoned without close()) since start. Non-zero only when
+ *                            {@link #leakDetectionMode()} is {@link LeakDetectionMode#SAMPLED}
+ *                            or {@link LeakDetectionMode#PARANOID}.
+ * @param leakDetectionMode   The active leak detection mode for this allocator instance.
  *
  * @since 0.5.0
  * @see MemoryAllocator#stats()
@@ -40,7 +45,9 @@ public record MemoryStats(
         long allocationCount,
         long releaseCount,
         long peakAllocatedBytes,
-        int  carrierPoolCount
+        int  carrierPoolCount,
+        long leakCount,
+        LeakDetectionMode leakDetectionMode
 ) {
 
     /** Compact canonical constructor with basic consistency validation. */
@@ -52,22 +59,35 @@ public record MemoryStats(
             throw new IllegalArgumentException(
                     "totalBytes must be >= -1 (-1 = unknown/heap-only), got: " + totalBytes);
         }
+        if (totalBytes > 0 && allocatedBytes > totalBytes) {
+            throw new IllegalArgumentException(
+                    "allocatedBytes (" + allocatedBytes + ") must not exceed totalBytes ("
+                    + totalBytes + "); utilization() contract requires a ratio in [0.0, 1.0]");
+        }
         if (carrierPoolCount < 0) {
             throw new IllegalArgumentException(
                     "carrierPoolCount must be non-negative, got: " + carrierPoolCount);
         }
+        if (leakCount < 0) {
+            throw new IllegalArgumentException(
+                    "leakCount must be non-negative, got: " + leakCount);
+        }
+        java.util.Objects.requireNonNull(leakDetectionMode, "leakDetectionMode must not be null");
     }
 
     /**
      * Returns the utilisation ratio in range {@code [0.0, 1.0]}.
      *
-     * <p>Result is {@code 0.0} when {@code totalBytes == 0} (heap-only allocators
-     * that do not track total budget).
+     * <p>Returns {@code 0.0} (unknown) when {@code totalBytes <= 0}:
+     * <ul>
+     *   <li>{@code -1} — heap-only allocator with no off-heap budget (sentinel value)</li>
+     *   <li>{@code  0} — allocator that does not track a total budget</li>
+     * </ul>
      *
-     * @return utilisation ratio
+     * @return utilisation ratio, or {@code 0.0} when the total budget is unknown/absent
      */
     public double utilization() {
-        if (totalBytes == 0) {
+        if (totalBytes <= 0) {
             return 0.0;
         }
         return (double) allocatedBytes / totalBytes;
@@ -79,7 +99,7 @@ public record MemoryStats(
      * @return all-zero stats instance
      */
     public static MemoryStats zero() {
-        return new MemoryStats(0L, 0L, 0L, 0L, 0L, 0L, 0);
+        return new MemoryStats(0L, 0L, 0L, 0L, 0L, 0L, 0, 0L, LeakDetectionMode.DISABLED);
     }
 }
 

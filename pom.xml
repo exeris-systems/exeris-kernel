@@ -10,7 +10,7 @@
 
     <name>Exeris Kernel - Root</name>
     <description>Cloud-Native, Zero-Copy Runtime Platform (Java 26+, FFM, Open-Core)</description>
-    <inceptionYear>2025</inceptionYear>
+    <inceptionYear>2026</inceptionYear>
 
     <modules>
         <module>exeris-kernel-build-config</module>
@@ -18,9 +18,9 @@
         <module>exeris-kernel-parent</module>
 
         <module>exeris-kernel-spi</module>
+        <module>exeris-kernel-tck</module>
         <module>exeris-kernel-core</module>
         <module>exeris-kernel-community</module>
-        <module>exeris-kernel-tck</module>
     </modules>
 
     <properties>

@@ -74,6 +74,29 @@ public final class KernelErrorCodes {
     // -----------------------------------------------------------------------
 
     /**
+     * Circular dependency detected in the subsystem graph: Kahn's topological sort
+     * found that the declared {@code dependsOn()} relationships form a cycle, making
+     * a valid boot order impossible.
+     *
+     * <p>This is an <em>unrecoverable architectural defect</em>. The kernel halts
+     * immediately; no degraded mode or partial boot is attempted.
+     *
+     * <p>Semantically associated with
+     * {@link eu.exeris.kernel.spi.exceptions.bootstrap.SubsystemCircularDependencyException}:
+     * because that exception is a pure pre-telemetry panic type (plain {@code RuntimeException},
+     * no {@code rawArgs}), the bootstrap orchestrator catches it and translates the failure
+     * into Black-Box telemetry using this error code.
+     *
+     * <p><b>rawArgs layout for Black-Box</b> (emitted by the orchestrator, not by the exception):
+     * <ul>
+     *   <li>index 0 – {@code String[]} cycleMembers — ordered subsystem names forming the cycle,
+     *       typically derived from
+     *       {@link eu.exeris.kernel.spi.exceptions.bootstrap.SubsystemCircularDependencyException#cycleMembers()}</li>
+     * </ul>
+     */
+    public static final String EX_BOOT_0001 = "EX-BOOT-0001";
+
+    /**
      * Subsystem initialization or startup failure.
      *
      * <p><b>rawArgs layout for Black-Box:</b>
@@ -517,6 +540,53 @@ public final class KernelErrorCodes {
      * </ul>
      */
     public static final String EX_FLOW_7004 = "EX-FLOW-7004";
+
+    // -----------------------------------------------------------------------
+    // EX-CFG – Config subsystem (L0 Bootstrap)
+    // -----------------------------------------------------------------------
+
+    /**
+     * Required configuration property missing: a mandatory key was not found in any
+     * source (environment variable, file, Vault) during L0 bootstrap.
+     *
+     * <p><b>rawArgs layout for Black-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} missingKey (dot-path key, e.g. {@code "network.port"})</li>
+     *   <li>index 1 – {@code String} providerName (which ConfigProvider was active)</li>
+     * </ul>
+     */
+    public static final String EX_CFG_1001 = "EX-CFG-1001";
+
+    /**
+     * Configuration type mismatch: a property value exists but cannot be deserialized
+     * into the requested target type.
+     *
+     * <p><b>rawArgs layout for Black-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} key          (dot-path key)</li>
+     *   <li>index 1 – {@code String} expectedType (simple class name of the target type)</li>
+     *   <li>index 2 – {@code String} actualValue  (caller-sanitized string snapshot of the
+     *       underlying configuration value; callers <strong>MUST</strong> redact or truncate
+     *       this field so that it never contains secrets, credentials, tokens, or other
+     *       sensitive material. Emitting a raw config value verbatim constitutes a
+     *       CWE-532 (Information Exposure Through Log Files) violation against the
+     *       Exeris Security Contract. Any truncation or redaction is performed by the
+     *       caller before emitting {@code rawArgs} to the Black-Box telemetry sink.)</li>
+     * </ul>
+     */
+    public static final String EX_CFG_1002 = "EX-CFG-1002";
+
+    /**
+     * Hot-reload file read error: the {@code NIO WatchService} watcher failed to read
+     * or re-parse the configuration file on a change notification.
+     *
+     * <p><b>rawArgs layout for Black-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} filename (relative path under the config directory)</li>
+     *   <li>index 1 – {@code String} reason   (static failure description)</li>
+     * </ul>
+     */
+    public static final String EX_CFG_1003 = "EX-CFG-1003";
 
     // -----------------------------------------------------------------------
     // EX-RUN – Runtime / Scheduler

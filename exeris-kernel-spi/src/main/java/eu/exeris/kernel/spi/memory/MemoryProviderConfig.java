@@ -72,6 +72,32 @@ public record MemoryProviderConfig(
     }
 
     /**
+     * Returns a copy of this configuration with the specified {@link LeakDetectionMode}.
+     *
+     * <p>Designed for TCK and integration tests that need to override the detection mode
+     * without reconstructing the full configuration from scratch.
+     *
+     * <pre>{@code
+     * MemoryProviderConfig paranoid = MemoryProviderConfig.defaults()
+     *         .withLeakDetection(LeakDetectionMode.PARANOID);
+     * }</pre>
+     *
+     * @param mode the new leak detection mode; must not be {@code null}
+     * @return a new {@link MemoryProviderConfig} with all fields identical except
+     *         {@code leakDetection}
+     */
+    public MemoryProviderConfig withLeakDetection(LeakDetectionMode mode) {
+        Objects.requireNonNull(mode, "mode must not be null");
+        return new MemoryProviderConfig(
+                totalOffHeapBytes,
+                networkOffHeapThreshold,
+                carrierCount,
+                mode,
+                jfrEnabled
+        );
+    }
+
+    /**
      * Default configuration for development / unit tests.
      * Off-heap disabled (heap only), single carrier, no leak detection.
      */
