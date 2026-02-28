@@ -234,9 +234,10 @@ public interface ConfigProvider {
      *
      * @param port                     HTTP/3 + QUIC listener port
      * @param bufferSize               per-connection off-heap buffer size in bytes
-     * @param nativeTransportPreferred hint to prefer kernel-native async I/O where available
-     *                                 (implementations may ignore if unsupported on the host OS;
-     *                                 Enterprise maps this to {@code io_uring}/epoll/KQueue internally)
+     * @param nativeTransportPreferred hint to prefer a native asynchronous I/O transport where available
+     *                                 (implementations may ignore this flag if no suitable native backend
+     *                                 is available on the host; mapping to concrete mechanisms is
+     *                                 implementation-specific and out of scope for this SPI)
      * @param reactorCount             number of reactor threads (0 = auto-detect from CPU topology)
      * @param quicEnabled              whether QUIC transport is active
      */

@@ -13,8 +13,8 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Marks a {@code static volatile} field for zero-downtime hot-reload via the
- * Enterprise {@code VirtualThreadConfigWatcher}.
+ * Marks a {@code static volatile} field for zero-downtime hot-reload via an
+ * implementation-specific virtual-thread configuration watcher.
  *
  * <h2>Contract</h2>
  * <ul>
