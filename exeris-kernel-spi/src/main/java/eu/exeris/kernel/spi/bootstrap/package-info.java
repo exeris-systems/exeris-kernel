@@ -20,14 +20,17 @@
  *       Valhalla-ready record expressing which subsystems to activate.</li>
  *   <li>{@link eu.exeris.kernel.spi.bootstrap.BootstrapPhase} — ordered phases
  *       ({@code FOUNDATION → SERVICES → RUNTIME}).</li>
- *   <li>{@link eu.exeris.kernel.spi.exceptions.bootstrap.SubsystemException} — lifecycle
- *       failure wrapper.</li>
+ *   <li>{@link eu.exeris.kernel.spi.exceptions.SubsystemException} — lifecycle
+ *       failure wrapper (unchecked, {@code ExerisKernelException}-based,
+ *       bound to {@code EX-BOOT-0002}).</li>
  *   <li>{@link eu.exeris.kernel.spi.exceptions.bootstrap.SubsystemCircularDependencyException}
  *       — fatal, pre-allocated L0 error for cycle detection in Kahn's algorithm.</li>
  * </ul>
  *
- * <h2>No references to</h2>
- * <p>io_uring, Netty, OpenSSL, JDBC, HikariCP, Spring, CDI, or any concrete driver.
+ * <h2>No compile-time dependencies on drivers/frameworks</h2>
+ * <p>This SPI package defines pure contracts only. It has no compile-time dependencies
+ *    on specific stacks such as io_uring, Netty, OpenSSL, JDBC, HikariCP, Spring, CDI,
+ *    or any other concrete driver or framework.
  *
  * @see eu.exeris.kernel.spi.bootstrap.Subsystem
  * @see eu.exeris.kernel.spi.bootstrap.SubsystemProvider

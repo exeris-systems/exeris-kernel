@@ -29,10 +29,10 @@ import java.lang.annotation.Target;
  * <h2>Community vs Enterprise</h2>
  * <p><b>Community</b>: {@code @Dynamic} fields are registered but never reloaded —
  * {@link ConfigProvider#watch(String, String, java.util.function.Consumer)} is a no-op.
- * <p><b>Enterprise</b>: Fields are registered at startup via explicit call to
- * {@code EnterpriseConfigProvider.registerDynamic(Class<?>)} (no reflection classpath
- * scan — banned). The {@code VirtualThreadConfigWatcher} (NIO.2 + Virtual Thread) then
- * performs the swap atomically on file change.
+ * <p><b>Enterprise</b>: Fields are registered at startup via an explicit call on the
+ * Enterprise {@code ConfigProvider} implementation (no reflection classpath scan — banned).
+ * A Virtual Thread watcher (NIO.2 + Virtual Thread) then performs the swap atomically
+ * on file change.
  *
  * <h2>Usage</h2>
  * <pre>{@code

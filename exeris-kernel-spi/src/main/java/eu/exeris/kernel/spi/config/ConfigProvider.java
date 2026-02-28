@@ -218,17 +218,19 @@ public interface ConfigProvider {
     /**
      * Network / transport layer settings.
      *
-     * @param port         HTTP/3 + QUIC listener port
-     * @param bufferSize   per-connection off-heap buffer size in bytes
-     * @param useIoUring   use {@code io_uring} on Linux (ignored on other OS)
-     * @param reactorCount number of reactor threads (0 = auto-detect from CPU topology)
-     * @param quicEnabled  whether QUIC transport is active
+     * @param port                     HTTP/3 + QUIC listener port
+     * @param bufferSize               per-connection off-heap buffer size in bytes
+     * @param nativeTransportPreferred hint to prefer kernel-native async I/O where available
+     *                                 (implementations may ignore if unsupported on the host OS;
+     *                                 Enterprise maps this to {@code io_uring}/epoll/KQueue internally)
+     * @param reactorCount             number of reactor threads (0 = auto-detect from CPU topology)
+     * @param quicEnabled              whether QUIC transport is active
      */
     @ValueCandidate
     record NetworkSettings(
             int port,
             int bufferSize,
-            boolean useIoUring,
+            boolean nativeTransportPreferred,
             int reactorCount,
             boolean quicEnabled
     ) {

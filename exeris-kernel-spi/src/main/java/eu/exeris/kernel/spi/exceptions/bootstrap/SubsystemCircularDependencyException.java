@@ -48,7 +48,7 @@ import java.util.Set;
  * }</pre>
  *
  * @since 0.5.0
- * @see SubsystemException
+ * @see eu.exeris.kernel.spi.exceptions.SubsystemException
  */
 public final class SubsystemCircularDependencyException extends RuntimeException {
 
@@ -102,8 +102,10 @@ public final class SubsystemCircularDependencyException extends RuntimeException
      * </pre>
      *
      * @param members the subsystem names that form the cycle (insertion-ordered)
-     * @return a new exception instance with full diagnostic message
-     * @throws IllegalArgumentException if {@code members} is null or empty
+     * @return a new exception instance with full diagnostic message; if {@code members}
+     *         is {@code null} or empty (diagnostic detail unavailable), returns
+     *         {@link #SENTINEL} to prevent secondary heap allocations during an
+     *         Entropy Panic state — no {@code IllegalArgumentException} is thrown
      */
     public static SubsystemCircularDependencyException forCycle(Collection<String> members) {
         if (members == null || members.isEmpty()) {

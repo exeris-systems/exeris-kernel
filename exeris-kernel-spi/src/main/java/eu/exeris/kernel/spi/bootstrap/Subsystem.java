@@ -8,7 +8,7 @@
 package eu.exeris.kernel.spi.bootstrap;
 
 import eu.exeris.kernel.spi.exceptions.bootstrap.SubsystemCircularDependencyException;
-import eu.exeris.kernel.spi.exceptions.bootstrap.SubsystemException;
+import eu.exeris.kernel.spi.exceptions.SubsystemException;
 
 import java.util.List;
 
@@ -17,8 +17,8 @@ import java.util.List;
  *
  * <h2>The Wall</h2>
  * <p>This interface is the only coupling point between the bootstrap orchestrator
- * and any subsystem. The orchestrator knows <em>nothing</em> about JDBC, HikariCP,
- * io_uring, Netty, or OpenSSL — only {@code Subsystem}.
+ * and any subsystem. The orchestrator knows <em>nothing</em> about specific
+ * persistence, transport, or cryptography backends — only {@code Subsystem}.
  *
  * <h2>Lifecycle State Machine</h2>
  * <pre>
@@ -94,9 +94,10 @@ public interface Subsystem {
      * guarantees it is called exactly once per kernel lifecycle).
      * Must NOT start accepting external requests or connections.
      *
-     * @throws SubsystemException if initialization fails unrecoverably
+     * <p>Throws {@link eu.exeris.kernel.spi.exceptions.SubsystemException}
+     * (unchecked) if initialization fails unrecoverably.
      */
-    void initialize() throws SubsystemException;
+    void initialize();
 
     /**
      * Phase 2 of the lifecycle — activates the subsystem and begins accepting work.
@@ -104,9 +105,10 @@ public interface Subsystem {
      * <p>Called by the orchestrator only after {@code initialize()} has returned
      * cleanly and all {@link #dependsOn()} subsystems have completed {@code start()}.
      *
-     * @throws SubsystemException if startup fails unrecoverably
+     * <p>Throws {@link eu.exeris.kernel.spi.exceptions.SubsystemException}
+     * (unchecked) if startup fails unrecoverably.
      */
-    void start() throws SubsystemException;
+    void start();
 
     /**
      * Phase 3 — graceful shutdown. Flushes in-flight work and releases resources.

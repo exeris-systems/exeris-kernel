@@ -35,7 +35,7 @@ package eu.exeris.kernel.spi.bootstrap;
 public enum BootstrapPhase {
 
     /**
-     * Foundation subsystems — must be fully {@code READY} before any other phase starts.
+     * Foundation subsystems — must be fully {@code RUNNING} before any other phase starts.
      *
      * <p>Initialized <b>sequentially</b> in topological order within this phase.
      * Failure of any {@code FOUNDATION} subsystem always triggers {@code FAIL_FAST}
