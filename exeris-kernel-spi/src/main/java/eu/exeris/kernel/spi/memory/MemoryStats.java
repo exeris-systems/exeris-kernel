@@ -73,13 +73,16 @@ public record MemoryStats(
     /**
      * Returns the utilisation ratio in range {@code [0.0, 1.0]}.
      *
-     * <p>Result is {@code 0.0} when {@code totalBytes == 0} (heap-only allocators
-     * that do not track total budget).
+     * <p>Returns {@code 0.0} (unknown) when {@code totalBytes <= 0}:
+     * <ul>
+     *   <li>{@code -1} — heap-only allocator with no off-heap budget (sentinel value)</li>
+     *   <li>{@code  0} — allocator that does not track a total budget</li>
+     * </ul>
      *
-     * @return utilisation ratio
+     * @return utilisation ratio, or {@code 0.0} when the total budget is unknown/absent
      */
     public double utilization() {
-        if (totalBytes == 0) {
+        if (totalBytes <= 0) {
             return 0.0;
         }
         return (double) allocatedBytes / totalBytes;
