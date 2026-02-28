@@ -31,10 +31,10 @@
  *                 └── FlowExecutionPlanFactory
  *
  *   exeris-kernel-community (hidden from SPI)
- *     └── HeapFlowProvider (priority=0)
+ *     └── Community FlowProvider  (priority=0,  heap-based)
  *
  *   exeris-kernel-enterprise (hidden from SPI)
- *     └── SlabFlowProvider (priority=100)
+ *     └── Enterprise FlowProvider (priority=100, slab/off-heap)
  * </pre>
  *
  * <h2>Context Propagation</h2>
