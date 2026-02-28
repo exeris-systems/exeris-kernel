@@ -27,8 +27,10 @@ package eu.exeris.kernel.spi.flow;
  *                               ordering (Enterprise only)
  * @param offHeapDescriptors     {@code true} if step and transition descriptors are stored
  *                               off-heap in slab pools (Enterprise only)
- * @param lockFreeScheduler      {@code true} if the scheduler uses lock-free ring buffer
- *                               with {@code @Contended} head/tail padding (Enterprise only)
+ * @param lockFreeScheduler      {@code true} if the scheduler uses a lock-free ring buffer
+ *                               whose {@code head} and {@code tail} counters are physically
+ *                               isolated on separate cache lines (≥ 128 bytes apart) to
+ *                               prevent false sharing (Enterprise only)
  * @param zeroGcAfterStart       {@code true} if zero heap allocations occur after
  *                               {@link FlowEngine#start()} (Enterprise only)
  * @param persistenceBacked      {@code true} if flow snapshot persistence is available

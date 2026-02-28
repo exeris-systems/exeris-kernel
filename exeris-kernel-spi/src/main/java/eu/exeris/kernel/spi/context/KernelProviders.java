@@ -289,9 +289,17 @@ public final class KernelProviders {
      * }</pre>
      *
      * <h2>Usage (engine / subsystem side)</h2>
+     * <p>Preferred — via the typed convenience accessor:
      * <pre>{@code
+     * // flowSnapshotStore() returns Optional<FlowSnapshotStore>
      * KernelProviders.flowSnapshotStore()
      *     .ifPresent(store -> store.save(snapshot));
+     * }</pre>
+     * <p>Alternative — via the slot API directly:
+     * <pre>{@code
+     * if (KernelProviders.FLOW_SNAPSHOT_STORE.isBound()) {
+     *     KernelProviders.FLOW_SNAPSHOT_STORE.get().save(snapshot);
+     * }
      * }</pre>
      *
      * @since 0.5.0
