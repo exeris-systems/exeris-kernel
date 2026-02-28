@@ -312,8 +312,12 @@ public interface ConfigProvider {
             if (url == null) {
                 return "[null]";
             }
-            // 1. Strip userinfo: scheme://user:pass@host → scheme://host
-            String stripped = url.replaceFirst("(\\w[\\w+\\-.]*://)[^@]+@", "$1");
+            // 1. Strip userinfo: //user:pass@host → //host
+            //    Pattern //[^@]*@ handles multi-part JDBC schemes (e.g. jdbc:postgresql://)
+            //    where the scheme component contains a colon — the simpler approach avoids
+            //    matching scheme-specific characters entirely and is consistent with
+            //    PersistenceConfig.sanitizeUrl() and PersistenceProviderException.sanitizeUrl().
+            String stripped = url.replaceAll("//[^@]*@", "//");
             // 2. Strip query string and fragment: anything from '?' or '#' onwards
             int queryIdx = stripped.indexOf('?');
             int fragIdx  = stripped.indexOf('#');
