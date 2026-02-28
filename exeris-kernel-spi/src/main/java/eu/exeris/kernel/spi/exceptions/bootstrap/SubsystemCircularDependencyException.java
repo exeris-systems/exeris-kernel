@@ -68,8 +68,11 @@ public final class SubsystemCircularDependencyException extends RuntimeException
     /**
      * Pre-allocated sentinel instance — thrown when no diagnostic detail is available.
      *
-     * <p>The JVM suppresses stack-trace filling for pre-allocated throwables unless
-     * {@code -XX:-OmitStackTraceInFastThrow} is set. The message is always present.
+     * <p>All {@code SubsystemCircularDependencyException} instances — including this sentinel —
+     * are constructed with {@code writableStackTrace=false} via
+     * {@code super(message, null, true, false)}, so no stack trace is ever captured,
+     * regardless of JVM flags (including {@code -XX:-OmitStackTraceInFastThrow}).
+     * The message is always present.
      */
     public static final SubsystemCircularDependencyException SENTINEL =
             new SubsystemCircularDependencyException(

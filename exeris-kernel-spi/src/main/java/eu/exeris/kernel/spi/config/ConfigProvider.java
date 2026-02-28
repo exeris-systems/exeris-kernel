@@ -7,6 +7,9 @@
  */
 package eu.exeris.kernel.spi.config;
 
+import eu.exeris.kernel.spi.exceptions.ExerisKernelException;
+import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
+
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
@@ -357,19 +360,87 @@ public interface ConfigProvider {
      * Thrown when the {@code ConfigProvider} cannot satisfy a required key or
      * encounters a fatal loading error during L0 bootstrap.
      *
-     * <p>Error codes follow the {@code EX-CFG-####} convention:
+     * <h2>Telemetry Contract</h2>
+     * <p>Extends {@link ExerisKernelException} — inherits the structured {@code errorCode}
+     * and {@code rawArgs} binary telemetry infrastructure. Use the typed factory methods
+     * to ensure correct {@link KernelErrorCodes} codes and a stable {@code rawArgs} layout.
+     *
+     * <h2>Error Codes</h2>
      * <ul>
-     *   <li>{@code EX-CFG-1001} — required property missing</li>
-     *   <li>{@code EX-CFG-1002} — type mismatch</li>
-     *   <li>{@code EX-CFG-1003} — hot-reload file read error</li>
+     *   <li>{@link KernelErrorCodes#EX_CFG_1001} — required property missing</li>
+     *   <li>{@link KernelErrorCodes#EX_CFG_1002} — type mismatch</li>
+     *   <li>{@link KernelErrorCodes#EX_CFG_1003} — hot-reload file read error</li>
      * </ul>
      */
-    class ConfigProviderException extends RuntimeException {
-        public ConfigProviderException(String message) {
-            super(message);
+    class ConfigProviderException extends ExerisKernelException {
+
+        /**
+         * General-purpose constructor for config failures not covered by the typed factory methods.
+         *
+         * <p>For new code, prefer the factory methods ({@link #missingProperty},
+         * {@link #typeMismatch}, {@link #hotReloadFailure}) to guarantee a stable
+         * {@code rawArgs} layout for Black-Box telemetry.
+         *
+         * @param errorCode a non-null {@code EX-CFG-*} code from {@link KernelErrorCodes}
+         * @param message   static message template — no runtime formatting
+         * @param cause     upstream throwable; may be {@code null}
+         * @param rawArgs   raw domain arguments for binary telemetry
+         */
+        public ConfigProviderException(String errorCode, String message, Throwable cause, Object... rawArgs) {
+            super(errorCode, message, cause, rawArgs);
         }
-        public ConfigProviderException(String message, Throwable cause) {
-            super(message, cause);
+
+        /**
+         * Required property missing — {@link KernelErrorCodes#EX_CFG_1001}.
+         *
+         * <p><b>rawArgs:</b> [0] missingKey, [1] providerName
+         *
+         * @param missingKey   dot-path key that was not found
+         * @param providerName name of the active {@code ConfigProvider}
+         * @return exception with error code {@code EX-CFG-1001}
+         */
+        public static ConfigProviderException missingProperty(String missingKey, String providerName) {
+            return new ConfigProviderException(
+                    KernelErrorCodes.EX_CFG_1001,
+                    "Required configuration property missing: " + missingKey,
+                    null,
+                    missingKey, providerName);
+        }
+
+        /**
+         * Type mismatch — {@link KernelErrorCodes#EX_CFG_1002}.
+         *
+         * <p><b>rawArgs:</b> [0] key, [1] expectedType, [2] actualValue (truncated)
+         *
+         * @param key          dot-path key
+         * @param expectedType simple class name of the requested target type
+         * @param actualValue  raw string value present in the config source
+         * @return exception with error code {@code EX-CFG-1002}
+         */
+        public static ConfigProviderException typeMismatch(String key, String expectedType, String actualValue) {
+            return new ConfigProviderException(
+                    KernelErrorCodes.EX_CFG_1002,
+                    "Configuration type mismatch for key: " + key,
+                    null,
+                    key, expectedType, actualValue);
+        }
+
+        /**
+         * Hot-reload file read error — {@link KernelErrorCodes#EX_CFG_1003}.
+         *
+         * <p><b>rawArgs:</b> [0] filename, [1] reason
+         *
+         * @param filename relative path to the config file that could not be read
+         * @param reason   static failure description
+         * @param cause    upstream I/O exception; may be {@code null}
+         * @return exception with error code {@code EX-CFG-1003}
+         */
+        public static ConfigProviderException hotReloadFailure(String filename, String reason, Throwable cause) {
+            return new ConfigProviderException(
+                    KernelErrorCodes.EX_CFG_1003,
+                    "Hot-reload file read error: " + filename,
+                    cause,
+                    filename, reason);
         }
     }
 }
