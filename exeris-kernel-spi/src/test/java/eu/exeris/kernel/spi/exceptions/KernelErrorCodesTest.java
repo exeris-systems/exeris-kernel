@@ -76,6 +76,12 @@ class KernelErrorCodesTest {
     class BootDomain {
 
         @Test
+        @DisplayName("EX_BOOT_0001 == 'EX-BOOT-0001' (circular dependency detected)")
+        void exBoot0001() {
+            assertThat(KernelErrorCodes.EX_BOOT_0001).isEqualTo("EX-BOOT-0001");
+        }
+
+        @Test
         @DisplayName("EX_BOOT_0002 == 'EX-BOOT-0002' (subsystem lifecycle failure)")
         void exBoot0002() {
             assertThat(KernelErrorCodes.EX_BOOT_0002).isEqualTo("EX-BOOT-0002");
@@ -341,6 +347,33 @@ class KernelErrorCodesTest {
     }
 
     // -----------------------------------------------------------------------
+    // EX-CFG domain — config subsystem
+    // -----------------------------------------------------------------------
+
+    @Nested
+    @DisplayName("EX-CFG domain (Config / Bootstrap)")
+    class CfgDomain {
+
+        @Test
+        @DisplayName("EX_CFG_1001 == 'EX-CFG-1001' (required property missing)")
+        void exCfg1001() {
+            assertThat(KernelErrorCodes.EX_CFG_1001).isEqualTo("EX-CFG-1001");
+        }
+
+        @Test
+        @DisplayName("EX_CFG_1002 == 'EX-CFG-1002' (config type mismatch)")
+        void exCfg1002() {
+            assertThat(KernelErrorCodes.EX_CFG_1002).isEqualTo("EX-CFG-1002");
+        }
+
+        @Test
+        @DisplayName("EX_CFG_1003 == 'EX-CFG-1003' (hot-reload file read error)")
+        void exCfg1003() {
+            assertThat(KernelErrorCodes.EX_CFG_1003).isEqualTo("EX-CFG-1003");
+        }
+    }
+
+    // -----------------------------------------------------------------------
     // EX-RUN domain — runtime / scheduler
     // -----------------------------------------------------------------------
 
@@ -368,7 +401,7 @@ class KernelErrorCodesTest {
         void allCodesNonBlank() {
             List<String> allCodes = List.of(
                     KernelErrorCodes.EX_MEM_1001, KernelErrorCodes.EX_MEM_1002, KernelErrorCodes.EX_MEM_1003,
-                    KernelErrorCodes.EX_BOOT_0002, KernelErrorCodes.EX_BOOT_0003,
+                    KernelErrorCodes.EX_BOOT_0001, KernelErrorCodes.EX_BOOT_0002, KernelErrorCodes.EX_BOOT_0003,
                     KernelErrorCodes.EX_BOOT_0004, KernelErrorCodes.EX_BOOT_3001,
                     KernelErrorCodes.EX_NET_2001, KernelErrorCodes.EX_NET_2002,
                     KernelErrorCodes.EX_NET_4001, KernelErrorCodes.EX_NET_4002,
@@ -384,6 +417,7 @@ class KernelErrorCodesTest {
                     KernelErrorCodes.EX_EVENT_6003, KernelErrorCodes.EX_EVENT_6004,
                     KernelErrorCodes.EX_FLOW_7001, KernelErrorCodes.EX_FLOW_7002,
                     KernelErrorCodes.EX_FLOW_7003, KernelErrorCodes.EX_FLOW_7004,
+                    KernelErrorCodes.EX_CFG_1001, KernelErrorCodes.EX_CFG_1002, KernelErrorCodes.EX_CFG_1003,
                     KernelErrorCodes.EX_RUN_3002
             );
             assertThat(allCodes).isNotEmpty().doesNotContain("").allSatisfy(code ->
