@@ -180,7 +180,15 @@ public interface ConfigProvider {
      * <p>Today: 3 references + 1 long ≈ 40 bytes on heap per instance.
      * With {@code value record} (JEP 401): inlined into parent, zero heap allocation.
      *
-     * @param profile        active kernel profile ({@code "dev"} / {@code "test"} / {@code "prod"})
+     * <h3>Strong Typing</h3>
+     * <p>{@code profile} is now a {@link KernelProfile} enum — JVM singletons, zero heap
+     * allocation on comparison, and JIT-constant-folded identity checks replace the former
+     * {@code String.equalsIgnoreCase} hot-path calls. This is idiomatic Project Valhalla
+     * preparation: enum references are effectively integer-width constants that the C2
+     * compiler scalarizes cleanly.
+     *
+     * @param profile        active kernel profile ({@link KernelProfile#DEV} /
+     *                       {@link KernelProfile#TEST} / {@link KernelProfile#PROD})
      * @param globalMemoryMb total off-heap budget in MB (set by {@code ExerisSmartLauncher})
      * @param network        network / transport settings
      * @param persistence    persistence / database settings
@@ -188,7 +196,7 @@ public interface ConfigProvider {
      */
     @ValueCandidate
     record KernelSettings(
-            String profile,
+            KernelProfile profile,
             long globalMemoryMb,
             NetworkSettings network,
             PersistenceSettings persistence,
@@ -197,7 +205,7 @@ public interface ConfigProvider {
         /** Creates minimal settings using defaults for all optional sections. */
         public static KernelSettings defaults() {
             return new KernelSettings(
-                    "prod",
+                    KernelProfile.PROD,
                     512L,
                     NetworkSettings.defaults(),
                     PersistenceSettings.defaults(),
@@ -205,16 +213,19 @@ public interface ConfigProvider {
             );
         }
 
+        /** @return {@code true} when running in the {@link KernelProfile#DEV} profile. */
         public boolean isDev() {
-            return "dev".equalsIgnoreCase(profile);
+            return profile.isDev();
         }
 
+        /** @return {@code true} when running in the {@link KernelProfile#PROD} profile. */
         public boolean isProd() {
-            return "prod".equalsIgnoreCase(profile);
+            return profile.isProd();
         }
 
+        /** @return {@code true} when running in the {@link KernelProfile#TEST} profile. */
         public boolean isTest() {
-            return "test".equalsIgnoreCase(profile);
+            return profile.isTest();
         }
     }
 
