@@ -278,7 +278,9 @@ public interface ConfigProvider {
          * <ul>
          *   <li>{@code password} — always {@code [REDACTED]}</li>
          *   <li>{@code username} — always {@code [REDACTED]}</li>
-         *   <li>{@code jdbcUrl}  — userinfo stripped; only {@code scheme://host:port/db} shown</li>
+         *   <li>{@code jdbcUrl}  — userinfo ({@code user:pass@}) stripped and query string
+         *       ({@code ?...}) removed; only {@code scheme://host:port/path} is shown,
+         *       preventing credential leakage via URL parameters (e.g., {@code ?password=xyz})</li>
          * </ul>
          *
          * @return safe string representation
@@ -295,17 +297,35 @@ public interface ConfigProvider {
         }
 
         /**
-         * Strips any embedded userinfo ({@code user:password@}) from a JDBC URL.
+         * Strips userinfo ({@code user:password@}) and query/fragment ({@code ?...}, {@code #...})
+         * from a JDBC URL to prevent credential leakage into logs and telemetry.
          *
-         * <p>Example: {@code jdbc:postgresql://user:secret@localhost:5432/db}
-         * → {@code jdbc:postgresql://localhost:5432/db}
+         * <p>Examples:
+         * <ul>
+         *   <li>{@code jdbc:postgresql://user:secret@localhost:5432/db}
+         *       → {@code jdbc:postgresql://localhost:5432/db}</li>
+         *   <li>{@code jdbc:postgresql://localhost:5432/db?password=xyz&sslcert=...}
+         *       → {@code jdbc:postgresql://localhost:5432/db}</li>
+         * </ul>
          */
         private static String sanitizeUrl(String url) {
             if (url == null) {
                 return "[null]";
             }
-            // Strip userinfo: scheme://user:pass@host → scheme://host
-            return url.replaceFirst("(\\w[\\w+\\-.]*://)[^@]+@", "$1");
+            // 1. Strip userinfo: scheme://user:pass@host → scheme://host
+            String stripped = url.replaceFirst("(\\w[\\w+\\-.]*://)[^@]+@", "$1");
+            // 2. Strip query string and fragment: anything from '?' or '#' onwards
+            int queryIdx = stripped.indexOf('?');
+            int fragIdx  = stripped.indexOf('#');
+            int cut;
+            if (queryIdx >= 0 && (fragIdx < 0 || queryIdx <= fragIdx)) {
+                cut = queryIdx;
+            } else if (fragIdx >= 0) {
+                cut = fragIdx;
+            } else {
+                cut = -1;
+            }
+            return cut >= 0 ? stripped.substring(0, cut) : stripped;
         }
     }
 
@@ -382,7 +402,9 @@ public interface ConfigProvider {
          * {@code rawArgs} layout for Black-Box telemetry.
          *
          * @param errorCode a non-null {@code EX-CFG-*} code from {@link KernelErrorCodes}
-         * @param message   static message template — no runtime formatting
+         * @param message   human-readable message; may include runtime details for console/log
+         *                  output during L0 boot failure — for stable machine-readable telemetry,
+         *                  rely on {@code errorCode} and {@code rawArgs} instead
          * @param cause     upstream throwable; may be {@code null}
          * @param rawArgs   raw domain arguments for binary telemetry
          */

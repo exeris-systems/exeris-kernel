@@ -30,7 +30,7 @@ import java.util.List;
  * {@code start()} before {@code initialize()} returns cleanly.
  *
  * <h2>Dependency Resolution</h2>
- * <p>{@link #dependsOn()} feeds the Kahn's BFS topological sort in
+ * <p>{@link #dependsOn()} feeds the Kahn's topological sort in
  * {@code SubsystemOrchestrator}. Cycles cause an immediate
  * {@link SubsystemCircularDependencyException} — no recovery attempted.
  *
@@ -63,15 +63,25 @@ public interface Subsystem {
     String name();
 
     /**
-     * Names of subsystems that must reach the {@code RUNNING} state (i.e., their
-     * {@link #start()} must complete cleanly) before this subsystem may initialize.
+     * Names of subsystems whose {@link #initialize()} must complete before this
+     * subsystem's own {@link #initialize()} is invoked, and whose {@link #start()}
+     * must complete before this subsystem's own {@link #start()} is invoked.
      *
-     * <p>The list feeds {@code SubsystemOrchestrator}'s Kahn's BFS topological sort.
+     * <p>In other words, the same dependency graph governs both phases:
+     * <ul>
+     *   <li>During {@link #initialize()}: dependencies must be in the
+     *       {@code INITIALIZED} state — they are not required to be {@code RUNNING} yet.</li>
+     *   <li>During {@link #start()}: dependencies must be in the {@code RUNNING}
+     *       state before this subsystem starts.</li>
+     * </ul>
+     *
+     * <p>The list feeds {@code SubsystemOrchestrator}'s Kahn's topological sort.
      * If a listed name is not present in the registry (because its provider is not
      * on the classpath), the orchestrator throws {@link SubsystemException} with
      * phase {@link SubsystemException.Phase#INITIALIZE}.
      *
-     * <p>Returning an empty list means "no dependencies" — may initialize first.
+     * <p>Returning an empty list means "no dependencies" — may be initialized and
+     * started without waiting for other subsystems.
      *
      * @return immutable ordered list of dependency names; never {@code null}
      */

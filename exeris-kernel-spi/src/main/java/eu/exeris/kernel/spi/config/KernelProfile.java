@@ -12,14 +12,21 @@ package eu.exeris.kernel.spi.config;
  *
  * <p>The profile is resolved once at L0 bootstrap by the active {@link ConfigProvider}
  * and propagated immutably via {@link ConfigProvider.KernelSettings#profile()}.
- * It controls:
+ * {@link ConfigProvider} implementations are the <em>single source of truth</em> —
+ * {@link #loadFromEnvironment()} is a resolution helper for those implementations,
+ * not an independent authority. Application code must always read the profile via
+ * {@link ConfigProvider.KernelSettings#profile()} (or {@code KernelProfile.fromName}
+ * inside a {@code ConfigProvider} implementation), never by calling
+ * {@link #loadFromEnvironment()} directly.
+ *
+ * <p>The profile controls:
  * <ul>
  *   <li>Whether graceful degradation of optional subsystems is permitted.</li>
  *   <li>Whether in-memory database backends are acceptable.</li>
  *   <li>Whether full exception details are surfaced to callers.</li>
  * </ul>
  *
- * <h2>Resolution Order</h2>
+ * <h2>Resolution Order (inside ConfigProvider implementations)</h2>
  * <ol>
  *   <li>{@code EXERIS_KERNEL_PROFILE} environment variable.</li>
  *   <li>{@code exeris.kernel.profile} system property.</li>
@@ -112,7 +119,16 @@ public enum KernelProfile {
     }
 
     /**
-     * Resolves the profile from the runtime environment:
+     * Default resolution helper for {@link ConfigProvider} implementations.
+     *
+     * <p><b>Usage restriction:</b> this method is intended to be called exclusively by
+     * {@code ConfigProvider} implementations during L0 bootstrap to resolve the active
+     * profile when no explicit profile is configured. Application and subsystem code
+     * must read the profile via {@link ConfigProvider.KernelSettings#profile()} from
+     * the {@code KernelProviders.CURRENT_CONFIG} scoped slot — not by calling this
+     * method directly.
+     *
+     * <p>Resolution order:
      * <ol>
      *   <li>{@code EXERIS_KERNEL_PROFILE} env var.</li>
      *   <li>{@code exeris.kernel.profile} system property.</li>

@@ -51,6 +51,7 @@ import java.util.Optional;
  * <h2>Binding (bootstrap side)</h2>
  * <pre>{@code
  * ScopedValue
+ *     .where(KernelProviders.CURRENT_CONFIG,   configProvider)   // L0 — bound first
  *     .where(KernelProviders.MEMORY_ALLOCATOR, allocator)
  *     .where(KernelProviders.MEMORY_PROVIDER,  provider)
  *     .where(KernelProviders.CARRIER_INDEX, 0)

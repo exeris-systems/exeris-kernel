@@ -8,6 +8,7 @@
 package eu.exeris.kernel.spi.bootstrap;
 
 import java.util.Arrays;
+import java.util.Locale;
 import java.util.Set;
 
 /**
@@ -86,11 +87,16 @@ public record BootstrapSelector(Set<String> requestedNames, boolean selectAll) {
      * <p>Example: {@code BootstrapSelector.forNames("persistence")} automatically
      * pulls in {@code memory} and {@code telemetry} via dependency closure.
      *
+     * <p>Each name is normalized: leading/trailing whitespace is stripped and the
+     * string is lowercased to match the {@link eu.exeris.kernel.spi.bootstrap.Subsystem#name()}
+     * contract (lowercase, hyphen-separated). Passing {@code " Persistence "} is
+     * therefore equivalent to passing {@code "persistence"}.
+     *
      * @param names one or more subsystem names (e.g., {@code "persistence"});
-     *              each entry must be non-null and non-blank
+     *              each entry must be non-null and non-blank after trimming
      * @return selective selector
      * @throws IllegalArgumentException if {@code names} is empty, or if any individual
-     *                                  name is {@code null} or blank
+     *                                  name is {@code null} or blank after trimming
      */
     public static BootstrapSelector forNames(String... names) {
         if (names == null || names.length == 0) {
@@ -98,19 +104,22 @@ public record BootstrapSelector(Set<String> requestedNames, boolean selectAll) {
                     "BootstrapSelector.forNames() requires at least one subsystem name. "
                     + "Use BootstrapSelector.all() to activate everything.");
         }
+        String[] normalized = new String[names.length];
         for (int i = 0; i < names.length; i++) {
             String name = names[i];
             if (name == null) {
                 throw new IllegalArgumentException(
                         "BootstrapSelector.forNames(): null subsystem name at index " + i + ".");
             }
-            if (name.isBlank()) {
+            String trimmed = name.trim().toLowerCase(Locale.ROOT);
+            if (trimmed.isEmpty()) {
                 throw new IllegalArgumentException(
                         "BootstrapSelector.forNames(): blank subsystem name at index " + i
                         + ". Subsystem names must be non-empty strings.");
             }
+            normalized[i] = trimmed;
         }
-        return new BootstrapSelector(Set.copyOf(Arrays.asList(names)), false);
+        return new BootstrapSelector(Set.copyOf(Arrays.asList(normalized)), false);
     }
 
     // -------------------------------------------------------------------------
