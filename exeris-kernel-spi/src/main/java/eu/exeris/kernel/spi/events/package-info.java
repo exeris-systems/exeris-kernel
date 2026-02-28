@@ -1,11 +1,10 @@
 /*
  * Copyright (C) 2025-2026 Exeris. All rights reserved.
  *
- * This code is part of the Exeris Platform.
+ * This code is part of the Exeris Systems.
  * Distributed under the proprietary Exeris Software License.
  * Unauthorized copying or distribution is prohibited.
  */
-
 /**
  * Exeris Kernel Events SPI — The "Invisible Wall" for event-driven subsystems.
  *

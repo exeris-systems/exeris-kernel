@@ -458,6 +458,67 @@ public final class KernelErrorCodes {
     public static final String EX_EVENT_6004 = "EX-EVENT-6004";
 
     // -----------------------------------------------------------------------
+    // EX-FLOW – Flow Engine / Saga Orchestration subsystem
+    // -----------------------------------------------------------------------
+
+    /**
+     * Flow provider engine creation failure: the {@code FlowProvider} could not create
+     * an engine from the given configuration.
+     *
+     * <p><b>rawArgs layout for Black-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} providerName</li>
+     *   <li>index 1 – {@code String} reason (static failure description)</li>
+     * </ul>
+     */
+    public static final String EX_FLOW_7001 = "EX-FLOW-7001";
+
+    /**
+     * Flow engine lifecycle failure: start, stop, compile, or scheduler operation failed.
+     *
+     * <p><b>rawArgs layout for Black-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} engineName</li>
+     *   <li>index 1 – {@code String} phase — one of: {@code "START"}, {@code "STOP"},
+     *       {@code "COMPILE"}, {@code "SCHEDULE"}</li>
+     *   <li>index 2 – {@code String} staticReasonCode — e.g. {@code "STARTUP_FAILED"},
+     *       {@code "COMPILE_FAILED"}, {@code "QUEUE_FULL"}</li>
+     *   <li>index 3 – {@code int}    contextValue — phase-specific numeric context
+     *       (queue depth for SCHEDULE); {@code -1} when not applicable</li>
+     * </ul>
+     */
+    public static final String EX_FLOW_7002 = "EX-FLOW-7002";
+
+    /**
+     * Flow step execution failure: a step returned FAIL or threw an unrecoverable exception.
+     *
+     * <p><b>rawArgs layout for Black-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} definitionName</li>
+     *   <li>index 1 – {@code long}   instanceIdMost</li>
+     *   <li>index 2 – {@code long}   instanceIdLeast</li>
+     *   <li>index 3 – {@code int}    stepIndex</li>
+     *   <li>index 4 – {@code String} staticReasonCode — e.g. {@code "STEP_FAILED"},
+     *       {@code "COMPENSATION_FAILED"}</li>
+     *   <li>index 5 – {@code String} causeType — {@code cause.getClass().getName()}
+     *       or {@code "none"}; class names are stable and not user-controlled</li>
+     * </ul>
+     */
+    public static final String EX_FLOW_7003 = "EX-FLOW-7003";
+
+    /**
+     * Flow registry conflict: a step or transition was registered with a duplicate or
+     * unknown identifier.
+     *
+     * <p><b>rawArgs layout for Black-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code int}    stepId</li>
+     *   <li>index 1 – {@code String} reason</li>
+     * </ul>
+     */
+    public static final String EX_FLOW_7004 = "EX-FLOW-7004";
+
+    // -----------------------------------------------------------------------
     // EX-RUN – Runtime / Scheduler
     // -----------------------------------------------------------------------
 

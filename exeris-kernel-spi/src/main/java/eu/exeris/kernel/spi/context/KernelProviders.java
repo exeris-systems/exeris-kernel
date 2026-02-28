@@ -12,6 +12,9 @@ import eu.exeris.kernel.spi.events.EventEngine;
 import eu.exeris.kernel.spi.events.EventProvider;
 import eu.exeris.kernel.spi.exceptions.security.PrincipalContextMissingException;
 import eu.exeris.kernel.spi.exceptions.security.StorageContextMissingException;
+import eu.exeris.kernel.spi.flow.FlowEngine;
+import eu.exeris.kernel.spi.flow.FlowProvider;
+import eu.exeris.kernel.spi.flow.model.FlowSnapshotStore;
 import eu.exeris.kernel.spi.graph.GraphEngine;
 import eu.exeris.kernel.spi.graph.GraphProvider;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
@@ -27,6 +30,7 @@ import eu.exeris.kernel.spi.transport.TransportEngine;
 import eu.exeris.kernel.spi.transport.TransportProvider;
 
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Central {@link ScopedValue} slots for all SPI providers resolved during bootstrap.
@@ -66,6 +70,7 @@ import java.util.List;
  * @since 0.5.0
  * @see <a href="../../../../../../docs/subsystems/memory.md">memory.md</a>
  */
+@SuppressWarnings("PMD.TooManyMethods") // Central ScopedValue slot registry — splitting would violate the SPI Wall.
 public final class KernelProviders {
 
     /**
@@ -225,6 +230,85 @@ public final class KernelProviders {
      * @see eu.exeris.kernel.spi.events.EventProvider
      */
     public static final ScopedValue<EventEngine> EVENT_ENGINE = ScopedValue.newInstance();
+
+    // =========================================================================
+    // Flow Slots (L4 Saga / Flow Orchestration)
+    // =========================================================================
+
+    /**
+     * The active {@link FlowProvider} factory (bound once during bootstrap).
+     *
+     * <p>Populated by the kernel bootstrapper after {@link java.util.ServiceLoader} resolution —
+     * the highest-priority {@link FlowProvider} discovered on the classpath is selected
+     * and bound here. Use this slot only in bootstrap code that needs to introspect or
+     * reconfigure the provider. Application code should use {@link #FLOW_ENGINE} directly.
+     *
+     * @since 0.5.0
+     */
+    public static final ScopedValue<FlowProvider> FLOW_PROVIDER = ScopedValue.newInstance();
+
+    /**
+     * The kernel-wide {@link FlowEngine} (created from the selected {@link FlowProvider}).
+     *
+     * <p>Bound once during bootstrap after {@link java.util.ServiceLoader} resolution.
+     * All subsystems that trigger or inspect flows read this slot.
+     * The slot is inherited automatically by every virtual thread spawned within the
+     * kernel scope — zero constructor coupling, zero static singletons.
+     *
+     * <h2>Usage (scheduling a flow)</h2>
+     * <pre>{@code
+     * FlowEngine engine = KernelProviders.FLOW_ENGINE.get();
+     * FlowExecutionPlan plan = engine.plans().compile(definition);
+     * engine.scheduler().schedule(plan, context);
+     * }</pre>
+     *
+     * @since 0.5.0
+     * @see FlowEngine
+     * @see FlowProvider
+     */
+    public static final ScopedValue<FlowEngine> FLOW_ENGINE = ScopedValue.newInstance();
+
+    /**
+     * The optional {@link FlowSnapshotStore} for persisting parked flow snapshots.
+     *
+     * <p>Bound by the bootstrapper <em>before</em> {@link FlowEngine#start()} is called,
+     * when {@link eu.exeris.kernel.spi.flow.FlowEngineConfig#persistenceEnabled()} is
+     * {@code true}. The {@link FlowEngine} reads this slot during {@code start()} and
+     * wires the store into the PARK / LRU-eviction path.
+     *
+     * <p>If {@code persistenceEnabled} is {@code true} but this slot is unbound,
+     * {@code FlowEngine.start()} MUST throw
+     * {@link eu.exeris.kernel.spi.exceptions.flow.FlowEngineException}.
+     * If {@code persistenceEnabled} is {@code false} this slot SHOULD be left unbound.
+     *
+     * <h2>Usage (bootstrapper side)</h2>
+     * <pre>{@code
+     * ScopedValue
+     *     .where(KernelProviders.FLOW_ENGINE,         engine)
+     *     .where(KernelProviders.FLOW_SNAPSHOT_STORE, myStore)
+     *     .run(engine::start);
+     * }</pre>
+     *
+     * <h2>Usage (engine / subsystem side)</h2>
+     * <p>Preferred — via the typed convenience accessor:
+     * <pre>{@code
+     * // flowSnapshotStore() returns Optional<FlowSnapshotStore>
+     * KernelProviders.flowSnapshotStore()
+     *     .ifPresent(store -> store.save(snapshot));
+     * }</pre>
+     * <p>Alternative — via the slot API directly:
+     * <pre>{@code
+     * if (KernelProviders.FLOW_SNAPSHOT_STORE.isBound()) {
+     *     KernelProviders.FLOW_SNAPSHOT_STORE.get().save(snapshot);
+     * }
+     * }</pre>
+     *
+     * @since 0.5.0
+     * @see FlowSnapshotStore
+     * @see #flowSnapshotStore()
+     * @see eu.exeris.kernel.spi.flow.FlowEngineConfig#persistenceEnabled()
+     */
+    public static final ScopedValue<FlowSnapshotStore> FLOW_SNAPSHOT_STORE = ScopedValue.newInstance();
 
     // =========================================================================
     // Transport Slots (L2 Native I/O)
@@ -424,6 +508,40 @@ public final class KernelProviders {
      */
     public static EventProvider eventProvider() {
         return EVENT_PROVIDER.get();
+    }
+
+    /**
+     * Returns the active {@link FlowEngine} from the current scope.
+     *
+     * @return flow engine bound by the kernel bootstrapper
+     * @throws java.util.NoSuchElementException if called outside the kernel scope
+     *         or if flow was not bootstrapped
+     */
+    public static FlowEngine flowEngine() {
+        return FLOW_ENGINE.get();
+    }
+
+    /**
+     * Returns the active {@link FlowProvider} from the current scope.
+     *
+     * @return flow provider bound by the kernel bootstrapper during ServiceLoader resolution
+     * @throws java.util.NoSuchElementException if called outside the kernel scope
+     *         or if flow was not bootstrapped
+     */
+    public static FlowProvider flowProvider() {
+        return FLOW_PROVIDER.get();
+    }
+
+    /**
+     * Returns the optional {@link FlowSnapshotStore} from the current scope.
+     *
+     * @return an {@link Optional} containing the store if persistence is enabled
+     *         and the slot was bound; empty otherwise
+     */
+    public static Optional<FlowSnapshotStore> flowSnapshotStore() {
+        return FLOW_SNAPSHOT_STORE.isBound()
+                ? Optional.of(FLOW_SNAPSHOT_STORE.get())
+                : Optional.empty();
     }
 
     /**
