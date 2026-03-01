@@ -108,13 +108,10 @@ public abstract class AbstractTlsEngineBenchmark extends AbstractExerisBenchmark
         ciphertext = allocator.allocate(AllocationHint.MEDIUM);
         decrypted  = allocator.allocate(AllocationHint.MEDIUM);
 
-        // Fill plaintext with synthetic data (repeating 0xAB pattern).
-        // Math.min() ensures CodeQL cannot treat the loop bound as a compile-time constant,
-        // while also guarding against a buffer smaller than PAYLOAD_BYTES.
-        int fillBytes = Math.min(PAYLOAD_BYTES, (int) plaintext.segment().byteSize());
-        for (int i = 0; i < fillBytes; i++) {
-            plaintext.segment().set(ValueLayout.JAVA_BYTE, i, (byte) 0xAB);
-        }
+        // Fill first PAYLOAD_BYTES of plaintext with 0xAB using bulk MemorySegment.fill().
+        // fill() operates on the entire segment — we slice to PAYLOAD_BYTES to stay within bounds
+        // and avoid any per-byte loop that could trigger CodeQL "Constant loop condition".
+        plaintext.segment().asSlice(0, PAYLOAD_BYTES).fill((byte) 0xAB);
 
         // Complete handshake (loopback self-test via beginHandshake)
         completeHandshake();

@@ -75,12 +75,12 @@ public abstract class AbstractSecurityProviderBenchmark extends AbstractExerisBe
 
         byte[] bytes = validTokenBytes();
         tokenBuffer  = allocator.allocate(AllocationHint.SMALL);
-        // Math.min() makes the loop bound non-constant for CodeQL analysis,
-        // while also guarding against a token longer than the allocated segment.
-        int len = Math.min(bytes.length, (int) tokenBuffer.segment().byteSize());
-        for (int i = 0; i < len; i++) {
-            tokenBuffer.segment().set(ValueLayout.JAVA_BYTE, i, bytes[i]);
-        }
+        // Bulk copy: MemorySegment.copyFrom avoids a per-byte loop and any
+        // "Constant loop condition" CodeQL warning. Slice guards against tokens
+        // longer than the allocated segment.
+        long copyLen = Math.min(bytes.length, tokenBuffer.segment().byteSize());
+        tokenBuffer.segment().asSlice(0, copyLen)
+                .copyFrom(java.lang.foreign.MemorySegment.ofArray(bytes).asSlice(0, copyLen));
         preAuthenticated = provider.authenticate(tokenBuffer);
     }
 

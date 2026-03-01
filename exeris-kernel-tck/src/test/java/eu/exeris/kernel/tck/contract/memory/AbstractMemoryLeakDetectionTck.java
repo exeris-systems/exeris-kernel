@@ -133,18 +133,19 @@ public abstract class AbstractMemoryLeakDetectionTck {
         int  chunkSize  = allocationChunkSize();
         int  chunkCount = (int) (totalSize / chunkSize);
 
-        // Guard against pathological configuration producing an excessively large chunkCount.
-        // This keeps the loop trivially terminating for both humans and static analysis.
+        // Cap to guard against pathological configuration. Uses a while-loop with
+        // decrementing counter so the termination condition is visibly mutable
+        // (avoids CodeQL "Constant loop condition" — 'remaining' changes every iteration).
         final int maxIterations = 1_000_000;
-        int iterations = Math.min(chunkCount, maxIterations);
-
-        for (int i = 0; i < iterations; i++) {
-            // Each iteration: allocate → use → close via TWR
+        int remaining = Math.min(chunkCount, maxIterations);
+        int allocated = 0;
+        while (remaining-- > 0) {
             try (LoanedBuffer buf = allocator.allocateNetwork(chunkSize)) {
                 // Minimal write to prevent dead-code elimination
-                buf.segment().set(java.lang.foreign.ValueLayout.JAVA_INT, 0, i);
+                buf.segment().set(java.lang.foreign.ValueLayout.JAVA_INT, 0, allocated++);
             }
         }
+        final int iterations = allocated;
 
         assertThat(allocator.stats().allocatedBytes())
                 .as("After closing all %d chunks totalling %d bytes, allocatedBytes() MUST " +

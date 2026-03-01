@@ -113,31 +113,38 @@ public abstract class AbstractSubsystemBootThroughputBenchmark extends AbstractE
      * Subclasses may override to use the real orchestrator.
      */
     protected List<Subsystem> topoSort(List<Subsystem> subsystems) {
-        // Inline reference Kahn BFS — no allocation of intermediate data structures
-        // beyond what is strictly needed (O(V+E) time, O(V) extra space).
-        java.util.Map<String, Subsystem> byName = new java.util.HashMap<>(subsystems.size() * 2);
-        java.util.Map<String, Integer>   inDeg  = new java.util.HashMap<>(subsystems.size() * 2);
+        // Kahn's BFS — true O(V+E): adjacency list built once, no per-node full scan.
+        java.util.Map<String, Subsystem> byName      = new java.util.HashMap<>(subsystems.size() * 2);
+        java.util.Map<String, Integer>   inDeg       = new java.util.HashMap<>(subsystems.size() * 2);
+        // reverseDeps[dep] = list of subsystems that depend ON dep.
+        java.util.Map<String, java.util.List<String>> reverseDeps =
+                new java.util.HashMap<>(subsystems.size() * 2);
+
         for (Subsystem s : subsystems) {
             byName.put(s.name(), s);
             inDeg.put(s.name(), 0);
+            reverseDeps.put(s.name(), new java.util.ArrayList<>());
         }
+        // Phase 1: compute in-degrees and build reverse adjacency list — O(V+E).
         for (Subsystem s : subsystems) {
             int depCount = s.dependsOn().size();
             if (depCount > 0) {
                 inDeg.merge(s.name(), depCount, Integer::sum);
+                for (String dep : s.dependsOn()) {
+                    reverseDeps.computeIfAbsent(dep, k -> new java.util.ArrayList<>()).add(s.name());
+                }
             }
         }
+        // Phase 2: BFS using pre-built adjacency list — O(V+E), no contains() scan.
         java.util.ArrayDeque<String> queue = new java.util.ArrayDeque<>();
         inDeg.forEach((name, deg) -> { if (deg == 0) queue.add(name); });
         java.util.List<Subsystem> result = new java.util.ArrayList<>(subsystems.size());
         while (!queue.isEmpty()) {
             String cur = queue.poll();
             result.add(byName.get(cur));
-            for (Subsystem s : subsystems) {
-                if (s.dependsOn().contains(cur)) {
-                    int nd = inDeg.merge(s.name(), -1, Integer::sum);
-                    if (nd == 0) queue.add(s.name());
-                }
+            for (String dependent : reverseDeps.getOrDefault(cur, java.util.List.of())) {
+                int nd = inDeg.merge(dependent, -1, Integer::sum);
+                if (nd == 0) queue.add(dependent);
             }
         }
         return result;
