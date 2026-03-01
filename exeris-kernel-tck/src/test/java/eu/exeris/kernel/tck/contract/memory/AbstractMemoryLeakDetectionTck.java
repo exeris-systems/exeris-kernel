@@ -147,12 +147,13 @@ public abstract class AbstractMemoryLeakDetectionTck {
         }
 
         final int iterations = allocated;
+        final long exercisedBytes = (long) iterations * (long) chunkSize;
 
         assertThat(allocator.stats().allocatedBytes())
                 .as("After closing all %d chunks totalling %d bytes, allocatedBytes() MUST " +
                     "return 0. A non-zero value means %d bytes are held by un-closed slabs — " +
                     "this is a memory leak. Use Arena.close() in LoanedBuffer.close().",
-                    iterations, totalSize, allocator.stats().allocatedBytes())
+                    iterations, exercisedBytes, allocator.stats().allocatedBytes())
                 .isZero();
 
         assertThat(allocator.stats().releaseCount())

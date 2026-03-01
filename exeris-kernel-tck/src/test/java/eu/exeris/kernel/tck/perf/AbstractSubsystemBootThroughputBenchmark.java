@@ -146,6 +146,11 @@ public abstract class AbstractSubsystemBootThroughputBenchmark extends AbstractE
                 if (nd == 0) queue.add(dependent);
             }
         }
+        if (result.size() != subsystems.size()) {
+            throw new IllegalStateException(
+                    "Invalid subsystem graph: cycles detected or missing dependencies. " +
+                    "Sorted " + result.size() + " of " + subsystems.size() + " subsystems.");
+        }
         return result;
     }
 }

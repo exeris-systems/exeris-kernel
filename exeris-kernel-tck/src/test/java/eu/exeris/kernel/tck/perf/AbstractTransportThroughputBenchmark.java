@@ -94,6 +94,9 @@ public abstract class AbstractTransportThroughputBenchmark extends AbstractExeri
     /** The pre-established hot stream — used for every benchmark iteration. */
     protected TransportStream activeStream;
 
+    /** The active connection backing {@link #activeStream} — closed explicitly in teardown. */
+    protected TransportConnection activeConnection;
+
     /** Memory allocator for zero-copy write buffers. */
     protected MemoryAllocator allocator;
 
@@ -170,18 +173,23 @@ public abstract class AbstractTransportThroughputBenchmark extends AbstractExeri
         // 3. Establish hot connection — connect() blocks the virtual thread during
         //    the handshake. No CompletableFuture in the SPI: the "1 VT per stream"
         //    model unmounts the carrier without pinning it.
-        TransportConnection connection = this.clientEngine.connect(LOOPBACK, BENCH_PORT);
-        this.activeStream = connection.openStream();
+        this.activeConnection = this.clientEngine.connect(LOOPBACK, BENCH_PORT);
+        this.activeStream = this.activeConnection.openStream();
     }
 
     /**
-     * Trial-level teardown: closes both engines and the allocator.
-     * {@link TransportEngine#close()} is idempotent and drains in-flight writes
-     * before releasing native resources. The allocator is closed last to ensure
-     * any in-flight echo buffers are fully released before the slab pool tears down.
+     * Trial-level teardown: closes the hot stream and connection first, then both engines,
+     * then the allocator. Explicit ordering guarantees child resources are released before
+     * their parent engines tear down native rings/buffers.
      */
     @TearDown(Level.Trial)
     public void tearDownTransport() {
+        if (activeStream != null) {
+            activeStream.close();
+        }
+        if (activeConnection != null) {
+            activeConnection.close();
+        }
         if (clientEngine != null) {
             clientEngine.close();
         }

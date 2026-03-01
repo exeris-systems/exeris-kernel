@@ -139,12 +139,11 @@ public abstract class GraphChurnRatioTck {
             }
         });
 
-        // Sum allocated bytes from all eu.exeris.* allocation events
+        // Sum allocated bytes from all eu.exeris.* allocation events.
+        // Direct getLong() call — fails fast if the JFR event schema changes or
+        // the "allocationSize" field is missing, preventing silent false negatives.
         long allocatedBytes = result.exerisAllocations().stream()
-                .mapToLong(e -> {
-                    try { return e.getLong("allocationSize"); }
-                    catch (Exception _) { return 0L; }
-                })
+                .mapToLong(e -> e.getLong("allocationSize"))
                 .sum();
         double actualRatio    = dataBytes > 0
                 ? (double) allocatedBytes / dataBytes

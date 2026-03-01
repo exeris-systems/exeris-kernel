@@ -149,14 +149,21 @@ public abstract class AbstractTransportStreamTck {
             // Ownership transfers to the transport — caller MUST NOT close
             streams.writer().queueWrite(buf, 1);
 
-            // Buffer ownership transferred to transport; no safe assertions can be made
-            // on buf.refCount() here. The SPI contract guarantees the transport either
-            // consumes the buffer immediately (refCount → 0) or retains it for async
-            // flush (refCount ≥ 1). Both are valid post-conditions — what matters is
-            // that queueWrite() did not throw, proving the ownership transfer succeeded.
-
-            // We cannot assert hasPendingData() here, as the carrier thread might flush
-            // it asynchronously before the assertion runs.
+            // Verify delivery: the sentinel byte MUST arrive on the reader side.
+            // This validates both ownership transfer AND that the transport did not
+            // silently drop the queued buffer.
+            try (LoanedBuffer recvBuf = allocator.allocate(AllocationHint.MICRO)) {
+                MemorySegment recvSeg = recvBuf.segment();
+                int bytesRead = streams.reader().read(recvSeg, 1);
+                assertThat(bytesRead)
+                        .as("queueWrite() MUST result in at least 1 byte delivered to the peer")
+                        .isGreaterThanOrEqualTo(1);
+                byte receivedByte = recvSeg.get(ValueLayout.JAVA_BYTE, 0);
+                assertThat(receivedByte)
+                        .as("Delivered byte MUST equal the sentinel 0xAB — transport must not " +
+                            "corrupt or drop the owned buffer's content")
+                        .isEqualTo((byte) 0xAB);
+            }
 
             // Verify the stream itself remains alive and well-formed after ownership transfer.
             assertThat(streams.writer().streamId())
