@@ -155,13 +155,14 @@ public abstract class AbstractTransportStreamTck {
             // flush (refCount ≥ 1). Both are valid post-conditions — what matters is
             // that queueWrite() did not throw, proving the ownership transfer succeeded.
 
-            // Verify the SPI contract: after queueWrite() the stream MUST report
-            // hasPendingData() == true — at least one byte has been queued but not
-            // yet flushed by the carrier loop.
-            assertThat(streams.writer().hasPendingData())
-                    .as("hasPendingData() MUST return true immediately after queueWrite() — "
-                            + "data is queued for async flush, not yet sent")
-                    .isTrue();
+            // We cannot assert hasPendingData() here, as the carrier thread might flush
+            // it asynchronously before the assertion runs.
+
+            // Verify the stream itself remains alive and well-formed after ownership transfer.
+            assertThat(streams.writer().streamId())
+                    .as("Stream MUST remain open (non-negative streamId) after queueWrite() — "
+                            + "ownership transfer must not corrupt the stream state")
+                    .isGreaterThanOrEqualTo(0L);
         }
     }
 

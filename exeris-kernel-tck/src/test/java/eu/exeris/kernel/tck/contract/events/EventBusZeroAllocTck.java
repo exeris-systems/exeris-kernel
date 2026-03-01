@@ -77,7 +77,7 @@ public abstract class EventBusZeroAllocTck extends AbstractSubsystemZeroAllocTck
         hotDescriptor = new EventDescriptor(
                 id.getMostSignificantBits(), id.getLeastSignificantBits(),
                 0L, 0L,
-                EVENT_ORDINAL, 0x02 /* ASYNC */, 0L /* timestamp filled by bus */);
+                EVENT_ORDINAL, EventDescriptor.FLAG_ASYNC, System.currentTimeMillis());
     }
 
     @Override

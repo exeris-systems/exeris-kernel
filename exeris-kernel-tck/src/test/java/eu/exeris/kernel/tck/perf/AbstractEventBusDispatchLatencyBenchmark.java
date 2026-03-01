@@ -84,7 +84,7 @@ public abstract class AbstractEventBusDispatchLatencyBenchmark extends AbstractE
         hotDescriptor = new EventDescriptor(
                 id.getMostSignificantBits(), id.getLeastSignificantBits(),
                 0L, 0L,
-                EVENT_ORDINAL, 0x02 /* ASYNC */, System.currentTimeMillis());
+                EVENT_ORDINAL, EventDescriptor.FLAG_ASYNC, System.currentTimeMillis());
     }
 
     @TearDown(Level.Trial)

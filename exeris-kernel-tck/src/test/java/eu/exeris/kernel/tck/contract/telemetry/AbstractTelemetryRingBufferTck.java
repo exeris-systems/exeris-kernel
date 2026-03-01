@@ -103,6 +103,7 @@ public abstract class AbstractTelemetryRingBufferTck {
         int total = emissionCount();
         int emitters = concurrentEmitters();
         int perThread = total / emitters;
+        int remainder = total % emitters;
         AtomicLong emitted = new AtomicLong(0L);
 
         assertThatCode(() -> {
@@ -110,8 +111,11 @@ public abstract class AbstractTelemetryRingBufferTck {
                     StructuredTaskScope.Joiner.<Void>awaitAllSuccessfulOrThrow())) {
 
                 for (int t = 0; t < emitters; t++) {
+                    // Distribute the remainder to the first thread so the test always
+                    // emits exactly emissionCount() events regardless of divisibility.
+                    int toEmit = perThread + (t == 0 ? remainder : 0);
                     scope.fork(() -> {
-                        for (int i = 0; i < perThread; i++) {
+                        for (int j = 0; j < toEmit; j++) {
                             sink.emit(hotEvent); // pre-built: zero allocation per emit
                             emitted.incrementAndGet();
                         }
@@ -127,7 +131,7 @@ public abstract class AbstractTelemetryRingBufferTck {
 
         assertThat(emitted.get())
                 .as("All %d emission calls MUST have reached the sink", total)
-                .isEqualTo((long) perThread * emitters);
+                .isEqualTo((long) total);
     }
 
     // =========================================================================

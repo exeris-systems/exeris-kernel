@@ -135,12 +135,13 @@ public abstract class AbstractMemoryLeakDetectionTck {
 
         // Cap to guard against pathological configuration. Iterate a bounded number of times
         // so that termination is trivially visible to static analysis and humans alike.
-        // remaining-- in the for-update clause makes the condition visibly non-constant
-        // (CodeQL sees 'remaining' mutated each iteration and can prove termination).
         final int maxIterations = 1_000_000;
         int remaining = Math.min(chunkCount, maxIterations);
         int allocated = 0;
-        for (int i = 0; i < remaining; remaining--, i++) {
+        // We effectively want about half of 'remaining' iterations; compute this explicitly
+        // so that the loop bound is a simple, constant value during iteration.
+        int plannedIterations = remaining / 2;
+        for (int i = 0; i < plannedIterations; i++) {
             try (LoanedBuffer buf = allocator.allocateNetwork(chunkSize)) {
                 // Minimal write to prevent dead-code elimination
                 buf.segment().set(java.lang.foreign.ValueLayout.JAVA_INT, 0, allocated++);
@@ -205,15 +206,15 @@ public abstract class AbstractMemoryLeakDetectionTck {
     }
 
     @Test
-    @DisplayName("Direct Arena.ofConfined / Arena.ofShared NOT present in implementation class name")
-    void implementationDoesNotExposeArenaDirectly() {
-        // The Wall: business logic MUST NOT call Arena.ofConfined() or Arena.ofShared() directly.
-        // All allocations go through MemoryAllocator.
-        // We verify this by checking the allocator's class package hierarchy.
+    @DisplayName("Allocator implementation lives in eu.exeris.* package (no raw Arena wrapper)")
+    void allocatorImplementationIsInExerisPackage() {
+        // The Wall: allocator implementations must live under the eu.exeris.* namespace so that
+        // architectural rules (including the ban on direct Arena.ofConfined()/ofShared() usage)
+        // can be centrally enforced. This test only verifies the package hierarchy, not bytecode.
         String pkg = allocator.getClass().getName();
         assertThat(pkg)
-                .as("MemoryAllocator implementation MUST be in an 'eu.exeris.*' package, " +
-                    "not a raw Arena wrapper. Direct Arena usage bypasses the pooling tier.")
+                .as("MemoryAllocator implementation MUST reside in an 'eu.exeris.*' package, " +
+                    "rather than being a raw external Arena wrapper that bypasses the pooling tier.")
                 .startsWith("eu.exeris.");
     }
 }
