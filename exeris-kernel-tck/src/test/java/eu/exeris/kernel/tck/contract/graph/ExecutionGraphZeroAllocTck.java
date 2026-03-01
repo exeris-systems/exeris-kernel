@@ -20,12 +20,19 @@ import java.util.UUID;
  * TCK: JFR Zero-Allocation monitor for the Execution Graph hot path.
  *
  * <h2>The Holy Grail (Enterprise)</h2>
- * <p>Building a dependency DAG, compiling to an ExecutionPlan, and running it
- * through the GraphScheduler MUST produce ZERO {@code eu.exeris.*} heap objects
- * in the steady-state phase. This is the Enterprise contract.
+ * <p>A pre-bootstrapped {@link GraphEngine} (with a simple Task/Step schema)
+ * repeatedly opens a {@link GraphSession}, invokes
+ * {@link GraphSession#findShortestPath(Object, Object) findShortestPath(src, tgt)}
+ * using fresh random {@link java.util.UUID} identifiers for {@code src} and
+ * {@code tgt}, and then closes the session. This
+ * {@code openSession() → findShortestPath() → close()} sequence MUST produce
+ * ZERO {@code eu.exeris.*} heap objects in the steady-state phase. This is the
+ * Enterprise contract for the graph shortest-path hot path.
  *
  * <h2>Community Contract</h2>
- * <p>Community allocations are bounded and proportional — no runaway churn.
+ * <p>For the same shortest-path hot path, Community implementations may allocate,
+ * but allocations MUST remain bounded and proportional to the query workload —
+ * no runaway churn or per-iteration allocation growth is allowed.
  *
  * @since 0.5.0
  */

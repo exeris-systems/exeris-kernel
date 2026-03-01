@@ -85,7 +85,7 @@ public abstract class AbstractRowCursorThroughputBenchmark extends AbstractExeri
      * without overwhelming the measurement window with I/O wait time.
      */
     private static final String BENCHMARK_QUERY =
-            "SELECT id, value, timestamp FROM benchmark_data";
+            "SELECT id, value, ts FROM benchmark_data";
 
     /** The engine under test — initialised once per trial. */
     protected PersistenceEngine engine;
@@ -142,7 +142,7 @@ public abstract class AbstractRowCursorThroughputBenchmark extends AbstractExeri
         // The connection is reused across all measurement iterations to isolate
         // query-execution overhead from pool-acquisition overhead.
         this.connection = engine.openConnection();
-        this.connection.beginTransaction();
+        this.connection.beginTransaction(eu.exeris.kernel.spi.persistence.TransactionIsolation.READ_COMMITTED, true);
     }
 
     /**

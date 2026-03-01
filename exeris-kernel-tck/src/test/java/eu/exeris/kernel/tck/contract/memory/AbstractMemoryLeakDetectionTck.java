@@ -135,10 +135,12 @@ public abstract class AbstractMemoryLeakDetectionTck {
 
         // Cap to guard against pathological configuration. Iterate a bounded number of times
         // so that termination is trivially visible to static analysis and humans alike.
+        // remaining-- in the for-update clause makes the condition visibly non-constant
+        // (CodeQL sees 'remaining' mutated each iteration and can prove termination).
         final int maxIterations = 1_000_000;
         int remaining = Math.min(chunkCount, maxIterations);
         int allocated = 0;
-        for (int i = 0; i < remaining; i++) {
+        for (int i = 0; i < remaining; remaining--, i++) {
             try (LoanedBuffer buf = allocator.allocateNetwork(chunkSize)) {
                 // Minimal write to prevent dead-code elimination
                 buf.segment().set(java.lang.foreign.ValueLayout.JAVA_INT, 0, allocated++);

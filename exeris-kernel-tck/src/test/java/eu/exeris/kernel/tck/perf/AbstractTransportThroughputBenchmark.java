@@ -75,12 +75,12 @@ public abstract class AbstractTransportThroughputBenchmark extends AbstractExeri
     private static final String LOOPBACK = "127.0.0.1";
 
     /**
-     * Port {@code 0} — delegates to the OS for a true ephemeral port assignment.
-     * This eliminates flakiness on shared CI hosts where a fixed port may already be in use.
-     * The actual bound port is retrieved after {@link TransportEngine#start()} via the engine's
-     * bound-address API and used for the client connect call.
+     * Fixed benchmark port — bound to loopback for deterministic throughput measurement.
+     * Using a fixed port ensures the server {@link TransportConfig} validation passes
+     * (SERVER mode requires port in range 1–65535). If this port is already in use on
+     * your host, override {@link #setupTransport()} to pick a free port.
      */
-    private static final int BENCH_PORT = 0;
+    private static final int BENCH_PORT = 19_999;
 
     /** Write payload size in bytes — 64 bytes targets a single cache line per write. */
     private static final int WRITE_BYTES = 64;
@@ -164,8 +164,10 @@ public abstract class AbstractTransportThroughputBenchmark extends AbstractExeri
     }
 
     /**
-     * Trial-level teardown: closes both engines. {@link TransportEngine#close()} is
-     * idempotent and drains in-flight writes before releasing native resources.
+     * Trial-level teardown: closes both engines and the allocator.
+     * {@link TransportEngine#close()} is idempotent and drains in-flight writes
+     * before releasing native resources. The allocator is closed last to ensure
+     * any in-flight echo buffers are fully released before the slab pool tears down.
      */
     @TearDown(Level.Trial)
     public void tearDownTransport() {
@@ -174,6 +176,9 @@ public abstract class AbstractTransportThroughputBenchmark extends AbstractExeri
         }
         if (serverEngine != null) {
             serverEngine.close();
+        }
+        if (allocator != null) {
+            allocator.close();
         }
     }
 

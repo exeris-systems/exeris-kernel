@@ -36,10 +36,10 @@ import org.openjdk.jmh.infra.Blackhole;
  * Enterprise path generates zero heap allocations in the steady state.
  *
  * <h2>Small-slab target</h2>
- * <p>256 bytes is deliberately chosen to target the smallest slab tier. Benchmarking
- * the small tier exercises the CAS-intensive pool path most aggressively because
- * acquisition frequency is highest at this size in real workloads (event descriptors,
- * small frame headers).
+ * <p>{@link AllocationHint#MICRO} (512 bytes) is deliberately chosen to target the smallest
+ * slab tier. Benchmarking the micro tier exercises the CAS-intensive pool path most
+ * aggressively because acquisition frequency is highest at this size in real workloads
+ * (event descriptors, small frame headers).
  *
  * <h2>Implementing this benchmark</h2>
  * <pre>{@code

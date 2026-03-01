@@ -26,7 +26,6 @@ import org.openjdk.jmh.annotations.TearDown;
 import org.openjdk.jmh.annotations.Warmup;
 import org.openjdk.jmh.infra.Blackhole;
 
-import java.lang.foreign.ValueLayout;
 import java.util.concurrent.TimeUnit;
 
 /**

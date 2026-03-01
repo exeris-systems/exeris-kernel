@@ -40,11 +40,10 @@ import java.util.concurrent.TimeUnit;
  * </ul>
  *
  * <h2>Measurement methodology</h2>
- * <p>The {@code @Group("dispatch")} + {@code @GroupThreads} annotation runs
- * producers and the single consumer in separate JMH thread groups. The producer
- * group calls {@link EventBus#publish} while a consumer handler (registered at
- * setup) processes events. JMH samples the latency of the producer call — since
- * dispatch is fire-and-forget, this measures the <em>enqueue</em> cost. Use
+ * <p>A single pre-registered handler processes every published event (registered at
+ * setup). JMH runs a single-threaded {@code SampleTime} benchmark calling
+ * {@link EventBus#publish} in a tight loop. This measures the <em>enqueue</em>
+ * cost — the latency from the caller's perspective. Use the
  * {@link EventBus#publishAndAwait} variant for full end-to-end measurement.
  *
  * @since 0.5.0

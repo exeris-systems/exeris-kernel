@@ -149,13 +149,19 @@ public abstract class AbstractTransportStreamTck {
             // Ownership transfers to the transport — caller MUST NOT close
             streams.writer().queueWrite(buf, 1);
 
-            // After queueWrite, the buffer is owned by the transport.
-            // We verify that the transport either consumed it (refCount dropped)
-            // or we simply don't crash. The key rule: caller does NOT close the buffer.
-            // If refCount is still > 0, transport holds it for async flush.
-            assertThat(buf.refCount())
-                    .as("queueWrite must either consume or retain the buffer")
-                    .isGreaterThanOrEqualTo(0);
+            // Buffer ownership transferred to transport; no safe assertions can be made
+            // on buf.refCount() here. The SPI contract guarantees the transport either
+            // consumes the buffer immediately (refCount → 0) or retains it for async
+            // flush (refCount ≥ 1). Both are valid post-conditions — what matters is
+            // that queueWrite() did not throw, proving the ownership transfer succeeded.
+
+            // Verify the SPI contract: after queueWrite() the stream MUST report
+            // hasPendingData() == true — at least one byte has been queued but not
+            // yet flushed by the carrier loop.
+            assertThat(streams.writer().hasPendingData())
+                    .as("hasPendingData() MUST return true immediately after queueWrite() — "
+                            + "data is queued for async flush, not yet sent")
+                    .isTrue();
         }
     }
 
