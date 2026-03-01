@@ -40,6 +40,7 @@
         <mockito.version>5.21.0</mockito.version>
         <testcontainers.version>1.21.4</testcontainers.version>
         <jmh.version>1.37</jmh.version>
+        <archunit.version>1.4.1</archunit.version>
     </properties>
 
     <dependencyManagement>
@@ -63,6 +64,14 @@
                 <groupId>eu.exeris</groupId>
                 <artifactId>exeris-kernel-tck</artifactId>
                 <version>${project.version}</version>
+                <scope>test</scope>
+            </dependency>
+            <dependency>
+                <groupId>eu.exeris</groupId>
+                <artifactId>exeris-kernel-tck</artifactId>
+                <version>${project.version}</version>
+                <classifier>tests</classifier>
+                <type>test-jar</type>
                 <scope>test</scope>
             </dependency>
 
@@ -196,6 +205,12 @@
                 <groupId>org.openjdk.jmh</groupId>
                 <artifactId>jmh-generator-annprocess</artifactId>
                 <version>${jmh.version}</version>
+                <scope>test</scope>
+            </dependency>
+            <dependency>
+                <groupId>com.tngtech.archunit</groupId>
+                <artifactId>archunit-junit5</artifactId>
+                <version>${archunit.version}</version>
                 <scope>test</scope>
             </dependency>
         </dependencies>

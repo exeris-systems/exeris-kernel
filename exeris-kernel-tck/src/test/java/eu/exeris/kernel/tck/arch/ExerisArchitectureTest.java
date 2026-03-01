@@ -1,0 +1,97 @@
+/*
+ * Copyright (C) 2025-2026 Exeris. All rights reserved.
+ *
+ * This code is part of the Exeris Systems.
+ * Distributed under the proprietary Exeris Software License.
+ * Unauthorized copying or distribution is prohibited.
+ */
+package eu.exeris.kernel.tck.arch;
+
+import com.tngtech.archunit.core.domain.JavaClasses;
+import com.tngtech.archunit.junit.AnalyzeClasses;
+import com.tngtech.archunit.junit.ArchIgnore;
+import com.tngtech.archunit.junit.ArchTest;
+import com.tngtech.archunit.lang.ArchRule;
+
+import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
+import static org.assertj.core.api.Assertions.assertThat;
+
+/**
+ * ArchUnit — The Static Judge.
+ */
+
+@ArchIgnore(reason = "ASM bytecode parser does not yet fully support JDK 26 (Classfile version 70). Re-enable once ArchUnit updates its ASM dependency.")
+@AnalyzeClasses(packages = "eu.exeris.kernel")
+public class ExerisArchitectureTest {
+
+    @ArchTest
+    static void verifyClassesArePresent(JavaClasses classes) {
+        long spiClassCount = classes.stream()
+                .filter(c -> c.getPackageName().startsWith("eu.exeris.kernel.spi"))
+                .count();
+
+        assertThat(spiClassCount)
+                .as("No Class Loaded")
+                .isGreaterThan(0);
+    }
+
+    @ArchTest
+    static final ArchRule noJavaIoInSpi = noClasses()
+            .that().resideInAPackage("eu.exeris.kernel.spi..")
+            .should().dependOnClassesThat().resideInAPackage("java.io..")
+            .allowEmptyShould(true)
+            .because("SPI must use java.nio or Panama FFM, never legacy java.io");
+
+    @ArchTest
+    static final ArchRule noExecutorsAnywhere = noClasses()
+            .that().resideInAPackage("eu.exeris.kernel..")
+            .should().dependOnClassesThat().haveFullyQualifiedName("java.util.concurrent.Executors")
+            .allowEmptyShould(true)
+            .because("All concurrency must use StructuredTaskScope (JEP 525).");
+
+    @ArchTest
+    static final ArchRule noCompletableFuture = noClasses()
+            .that().resideInAPackage("eu.exeris.kernel..")
+            .should().dependOnClassesThat().haveFullyQualifiedName("java.util.concurrent.CompletableFuture")
+            .allowEmptyShould(true)
+            .because("CompletableFuture is unstructured concurrency. Use StructuredTaskScope.");
+
+    @ArchTest
+    static final ArchRule noThreadLocal = noClasses()
+            .that().resideInAPackage("eu.exeris.kernel..")
+            .should().dependOnClassesThat().haveFullyQualifiedName("java.lang.ThreadLocal")
+            .allowEmptyShould(true)
+            .because("ThreadLocal causes memory leaks. Use ScopedValue.");
+
+    @ArchTest
+    static final ArchRule noImplLeaksInSpi = noClasses()
+            .that().resideInAPackage("eu.exeris.kernel.spi..")
+            .should().dependOnClassesThat().resideInAnyPackage(
+                    "io.netty..", "io.uring..", "org.openssl..", "com.zaxxer.hikari..", "java.sql.."
+            )
+            .allowEmptyShould(true)
+            .because("SPI must be implementation-blind (The Wall).");
+
+    @ArchTest
+    static final ArchRule noDiFrameworksInSpi = noClasses()
+            .that().resideInAPackage("eu.exeris.kernel.spi..")
+            .should().dependOnClassesThat().resideInAnyPackage(
+                    "org.springframework..", "com.google.inject..", "jakarta.inject.."
+            )
+            .allowEmptyShould(true)
+            .because("Zero-Magic DI: use pure constructors and ServiceLoader.");
+
+    @ArchTest
+    static final ArchRule noDirectArenaInSpi = noClasses()
+            .that().resideInAPackage("eu.exeris.kernel.spi..")
+            .should().dependOnClassesThat().haveFullyQualifiedName("java.lang.foreign.Arena")
+            .allowEmptyShould(true)
+            .because("All allocations must go through MemoryAllocator.");
+
+    @ArchTest
+    static final ArchRule noUnsafe = noClasses()
+            .that().resideInAPackage("eu.exeris.kernel..")
+            .should().dependOnClassesThat().haveFullyQualifiedName("sun.misc.Unsafe")
+            .allowEmptyShould(true)
+            .because("sun.misc.Unsafe is banned. Use FFM API.");
+}
