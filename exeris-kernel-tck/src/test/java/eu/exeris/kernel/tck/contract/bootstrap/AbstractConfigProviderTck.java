@@ -14,12 +14,13 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Modifier;
 import java.util.concurrent.StructuredTaskScope;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatCode;
 
 /**
  * TCK: Abstract base for {@link ConfigProvider} contract verification.
@@ -181,11 +182,12 @@ public abstract class AbstractConfigProviderTck {
 
     @Test
     @DisplayName("Implementation must be loadable without reflection — public no-arg constructor")
-    void publicNoArgConstructorExists() {
-        assertThatCode(() -> provider.getClass().getDeclaredConstructor())
+    void publicNoArgConstructorExists() throws NoSuchMethodException {
+        Constructor<?> ctor = provider.getClass().getConstructor();
+        assertThat(Modifier.isPublic(ctor.getModifiers()))
                 .as("ConfigProvider implementations MUST have a public no-arg constructor " +
                     "for ServiceLoader discovery (banned: reflection-based DI frameworks).")
-                .doesNotThrowAnyException();
+                .isTrue();
     }
 }
 

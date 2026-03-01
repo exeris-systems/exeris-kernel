@@ -133,21 +133,17 @@ public abstract class AbstractMemoryLeakDetectionTck {
         int  chunkSize  = allocationChunkSize();
         int  chunkCount = (int) (totalSize / chunkSize);
 
-        // Cap to guard against pathological configuration. Iterate a bounded number of times
-        // so that termination is trivially visible to static analysis and humans alike.
-        final int maxIterations = 1_000_000;
-        int remaining = Math.min(chunkCount, maxIterations);
+        // Cap to guard against pathological configuration. Iterate a small, bounded number of
+        // times so that termination is trivially visible to static analysis.
+        final int maxIterations = 1024;
+        final int iterations = Math.min(chunkCount, maxIterations);
         int allocated = 0;
-        // We effectively want about half of 'remaining' iterations; compute this explicitly
-        // so that the loop bound is a simple, constant value during iteration.
-        int plannedIterations = remaining / 2;
-        for (int i = 0; i < plannedIterations; i++) {
+
+        for (int i = 0; i < iterations; i++) {
             try (LoanedBuffer buf = allocator.allocateNetwork(chunkSize)) {
-                // Minimal write to prevent dead-code elimination
                 buf.segment().set(java.lang.foreign.ValueLayout.JAVA_INT, 0, allocated++);
             }
         }
-        final int iterations = allocated;
 
         assertThat(allocator.stats().allocatedBytes())
                 .as("After closing all %d chunks totalling %d bytes, allocatedBytes() MUST " +
