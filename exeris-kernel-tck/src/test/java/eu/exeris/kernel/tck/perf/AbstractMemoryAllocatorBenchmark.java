@@ -13,6 +13,7 @@ import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.Level;
 import org.openjdk.jmh.annotations.Setup;
+import org.openjdk.jmh.annotations.TearDown;
 import org.openjdk.jmh.infra.Blackhole;
 
 /**
@@ -86,6 +87,18 @@ public abstract class AbstractMemoryAllocatorBenchmark extends AbstractExerisBen
     @Setup(Level.Trial)
     public void setupAllocator() {
         this.allocator = createAllocator();
+    }
+
+    /**
+     * Trial-level teardown: closes the allocator to release native off-heap slabs
+     * and prevent resource leaks across JMH trials and forks. The null-check makes
+     * this safe even when a trial's {@link #setupAllocator()} threw before assignment.
+     */
+    @TearDown(Level.Trial)
+    public void tearDownAllocator() {
+        if (allocator != null) {
+            allocator.close();
+        }
     }
 
     /**

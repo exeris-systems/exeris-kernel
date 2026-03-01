@@ -16,9 +16,11 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -111,6 +113,7 @@ public abstract class AbstractTransportStreamTck {
 
         @Test
         @DisplayName("write() followed by read() returns identical data (zero-copy)")
+        @Timeout(value = 5, unit = TimeUnit.SECONDS)
         void roundTrip() {
             try (LoanedBuffer sendBuf = allocator.allocate(AllocationHint.SMALL)) {
                 // Write a sentinel pattern
@@ -142,6 +145,7 @@ public abstract class AbstractTransportStreamTck {
 
         @Test
         @DisplayName("queueWrite() takes ownership — buffer refCount decremented or transferred")
+        @Timeout(value = 5, unit = TimeUnit.SECONDS)
         void ownershipTransfer() {
             LoanedBuffer buf = allocator.allocate(AllocationHint.MICRO);
             buf.segment().set(ValueLayout.JAVA_BYTE, 0, (byte) 0xAB);
@@ -201,5 +205,3 @@ public abstract class AbstractTransportStreamTck {
         }
     }
 }
-
-

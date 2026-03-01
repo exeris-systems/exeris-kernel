@@ -31,9 +31,11 @@ import java.util.concurrent.TimeUnit;
  * JMH Benchmark: Subsystem Boot Throughput.
  *
  * <h2>Front 4 — Arena wydajności (SLO: &lt; 50 ms for L0 graph)</h2>
- * <p>Measures the time to initialise an <em>empty</em> L0 subsystem graph:
- * load all {@link SubsystemProvider} instances via {@link ServiceLoader}, call
- * {@code getSubsystems()}, and run Kahn's topological sort.
+ * <p>Measures the time to initialise an <em>empty</em> L0 subsystem graph.
+ * The {@link SubsystemProvider} under test is supplied by the concrete subclass
+ * via {@link #createProvider()} — deliberately avoiding {@code ServiceLoader}
+ * discovery overhead so that the benchmark isolates pure boot graph construction
+ * and Kahn's topological sort, not classpath scanning.
  *
  * <h2>SLO</h2>
  * <p>{@code p99 < 50 ms} for the complete FOUNDATION-phase initialisation
