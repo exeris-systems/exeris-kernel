@@ -74,8 +74,13 @@ public abstract class AbstractTransportThroughputBenchmark extends AbstractExeri
     /** Loopback address — avoids OS routing overhead in the measurement window. */
     private static final String LOOPBACK = "127.0.0.1";
 
-    /** Ephemeral port used by the loopback server for this benchmark. */
-    private static final int BENCH_PORT = 19_999;
+    /**
+     * Port {@code 0} — delegates to the OS for a true ephemeral port assignment.
+     * This eliminates flakiness on shared CI hosts where a fixed port may already be in use.
+     * The actual bound port is retrieved after {@link TransportEngine#start()} via the engine's
+     * bound-address API and used for the client connect call.
+     */
+    private static final int BENCH_PORT = 0;
 
     /** Write payload size in bytes — 64 bytes targets a single cache line per write. */
     private static final int WRITE_BYTES = 64;

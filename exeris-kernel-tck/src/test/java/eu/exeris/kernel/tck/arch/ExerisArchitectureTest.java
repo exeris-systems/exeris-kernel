@@ -20,7 +20,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * ArchUnit — The Static Judge.
  */
 
-@ArchIgnore(reason = "Waiting for ASM support for JDK 26 (Major Version 70)") // <-- UŻYJ TEGO
+@ArchIgnore(reason = "ASM bytecode parser does not yet fully support JDK 26 (Classfile version 70). Re-enable once ArchUnit updates its ASM dependency.")
 @AnalyzeClasses(packages = "eu.exeris.kernel")
 public class ExerisArchitectureTest {
 

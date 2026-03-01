@@ -74,6 +74,8 @@ public abstract class FlowZeroAllocTck extends AbstractSubsystemZeroAllocTck {
 
     private FlowEngine        engine;
     private FlowExecutionPlan plan;
+    /** Pre-allocated flyweight context — reused across all hot-path iterations. Zero-GC guarantee. */
+    private eu.exeris.kernel.spi.flow.model.FlowContext testCtx;
 
     @Override
     protected String subsystemName() {
@@ -97,18 +99,19 @@ public abstract class FlowZeroAllocTck extends AbstractSubsystemZeroAllocTck {
                 .transition(0, 1)
                 .build();
         plan = engine.plans().compile(def);
+
+        // Pre-allocate FlowContext ONCE — reused every iteration to avoid heap churn.
+        // The context is deterministic (constant ID), so UUID derivation runs only here.
+        testCtx = TestFlowContexts.create("zero-alloc-steady", "zero-alloc-flow");
     }
 
     @Override
     protected void runSingleIteration() {
-        // Simulate the hot path: schedule → park → wake for a single saga context.
-        // In Enterprise tier, all state is in pre-allocated off-heap slabs.
-        // The FlowContext is a Flyweight — no new object is created per dispatch.
-        var ctx = TestFlowContexts.create(
-                "zero-alloc-" + Thread.currentThread().threadId(), "zero-alloc-flow");
-        engine.scheduler().schedule(plan, ctx);
-        engine.scheduler().park(ctx);
-        engine.scheduler().wake(ctx);
+        // Hot-path: schedule → park → wake using the PRE-ALLOCATED flyweight context.
+        // No object construction allowed here — Enterprise: 0 eu.exeris.* allocations.
+        engine.scheduler().schedule(plan, testCtx);
+        engine.scheduler().park(testCtx);
+        engine.scheduler().wake(testCtx);
     }
 
     @Override

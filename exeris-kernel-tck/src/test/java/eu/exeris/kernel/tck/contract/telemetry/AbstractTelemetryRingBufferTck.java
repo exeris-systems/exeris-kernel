@@ -41,7 +41,6 @@ import static org.assertj.core.api.Assertions.assertThatCode;
  *       inside a {@code StructuredTaskScope} (virtual threads). No exception, no lost events.</li>
  *   <li><b>Flush latency &lt; 1ms P99</b> — after emitting a burst, close() must return
  *       within 100ms (includes final flush).</li>
- *   <li><b>Disabled fast-gate</b> — when {@code isEnabled()=false}, zero events are processed.</li>
  * </ol>
  *
  * @since 0.5.0

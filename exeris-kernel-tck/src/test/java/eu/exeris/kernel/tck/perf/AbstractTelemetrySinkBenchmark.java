@@ -32,7 +32,7 @@ import java.util.concurrent.TimeUnit;
  * <ol>
  *   <li><b>{@code emit()} throughput</b> — pre-built {@link KernelEvent} dispatched to a single sink.
  *       Isolates routing overhead from event construction overhead.</li>
- *   <li><b>isEnabled() fast-gate</b> — verifies that a disabled sink achieves near-zero cost
+ *   <li><b>No-op baseline</b> — verifies that a discard sink achieves near-zero cost
  *       (the fast-path branch prediction should eliminate all subsequent work).</li>
  * </ol>
  *
@@ -40,7 +40,7 @@ import java.util.concurrent.TimeUnit;
  * <ul>
  *   <li>JFR sink throughput: {@code ≥ 2 000 000 ops/s} (pre-built event).</li>
  *   <li>Enterprise binary ring-buffer sink: {@code ≥ 5 000 000 ops/s}, {@code 0 B/op}.</li>
- *   <li>Disabled sink (isEnabled=false): {@code ≥ 50 000 000 ops/s} (branch eliminated).</li>
+ *   <li>No-op discard sink: {@code ≥ 50 000 000 ops/s} (branch eliminated).</li>
  * </ul>
  *
  * <h2>Black-Box alignment (telemetry.md)</h2>

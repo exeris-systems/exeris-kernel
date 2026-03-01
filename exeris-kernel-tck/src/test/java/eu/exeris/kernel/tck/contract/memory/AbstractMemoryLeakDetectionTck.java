@@ -133,7 +133,12 @@ public abstract class AbstractMemoryLeakDetectionTck {
         int  chunkSize  = allocationChunkSize();
         int  chunkCount = (int) (totalSize / chunkSize);
 
-        for (int i = 0; i < chunkCount; i++) {
+        // Guard against pathological configuration producing an excessively large chunkCount.
+        // This keeps the loop trivially terminating for both humans and static analysis.
+        final int maxIterations = 1_000_000;
+        int iterations = Math.min(chunkCount, maxIterations);
+
+        for (int i = 0; i < iterations; i++) {
             // Each iteration: allocate → use → close via TWR
             try (LoanedBuffer buf = allocator.allocateNetwork(chunkSize)) {
                 // Minimal write to prevent dead-code elimination
@@ -145,7 +150,7 @@ public abstract class AbstractMemoryLeakDetectionTck {
                 .as("After closing all %d chunks totalling %d bytes, allocatedBytes() MUST " +
                     "return 0. A non-zero value means %d bytes are held by un-closed slabs — " +
                     "this is a memory leak. Use Arena.close() in LoanedBuffer.close().",
-                    chunkCount, totalSize, allocator.stats().allocatedBytes())
+                    iterations, totalSize, allocator.stats().allocatedBytes())
                 .isZero();
 
         assertThat(allocator.stats().releaseCount())

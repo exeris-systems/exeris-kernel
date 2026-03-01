@@ -122,8 +122,9 @@ public abstract class AbstractSubsystemBootThroughputBenchmark extends AbstractE
             inDeg.put(s.name(), 0);
         }
         for (Subsystem s : subsystems) {
-            for (var _ : s.dependsOn()) {
-                inDeg.merge(s.name(), 1, Integer::sum);
+            int depCount = s.dependsOn().size();
+            if (depCount > 0) {
+                inDeg.merge(s.name(), depCount, Integer::sum);
             }
         }
         java.util.ArrayDeque<String> queue = new java.util.ArrayDeque<>();
