@@ -138,10 +138,21 @@ public abstract class AbstractTransportThroughputBenchmark extends AbstractExeri
                 1_000, 10_000L
         );
         this.serverEngine = provider.createEngine(serverConfig);
-        // Echo handler: respond with a single small write to keep the protocol alive.
+        // Sink handler: continuously read and discard incoming data to keep the TCP window open
+        // and avoid backpressure. The stream is automatically closed via try-with-resources.
         this.serverEngine.setStreamHandler(stream -> {
-            try (LoanedBuffer echoBuffer = allocator.allocateNetwork(WRITE_BYTES)) {
-                stream.write(echoBuffer.segment(), WRITE_BYTES);
+            try (stream; LoanedBuffer sinkBuffer = allocator.allocateNetwork(8192)) {
+                // Drain the stream until the client closes it or an exception occurs
+                int bytesRead;
+                while ((bytesRead = stream.read(sinkBuffer.segment(), 8192)) >= 0) {
+                    // Consume the result to prevent dead-code elimination by the JIT
+                    // and suppress "empty body" warnings.
+                    if (bytesRead == 0) {
+                        Thread.onSpinWait(); // Hint to CPU if we are spinning on a non-blocking read
+                    }
+                }
+            } catch (Exception _) {
+                // Ignore exceptions (like connection resets) during benchmark teardown
             }
         });
         this.serverEngine.start();
