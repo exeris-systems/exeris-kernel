@@ -162,6 +162,7 @@ public abstract class AbstractSubsystemCarrierPinningTck {
         assertThat(done.await(60, TimeUnit.SECONDS))
                 .as("%s: %d VTs must complete within 60 s", subsystemName(), vtCount)
                 .isTrue();
+        org.assertj.core.api.Assertions.assertThat(errors.get()).as("VT batch exceptions").isZero();
     }
 }
 

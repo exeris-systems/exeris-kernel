@@ -30,25 +30,26 @@ public abstract class SecurityCarrierPinningTck extends AbstractSubsystemCarrier
     protected abstract LoanedBuffer createValidTokenBuffer();
 
     private SecurityProvider provider;
+    private LoanedBuffer     validToken;
 
     @Override protected String subsystemName()      { return "Security"; }
     @Override protected String hotPathDescription() { return "authenticate(token) → extract principalId → close buffer"; }
 
     @Override
     protected void bootstrapSubsystem() {
-        provider = createProvider();
+        provider   = createProvider();
+        validToken = createValidTokenBuffer();
     }
 
     @Override
     protected void runSingleIteration() {
-        try (LoanedBuffer token = createValidTokenBuffer()) {
-            var auth = provider.authenticate(token);
-            if (auth.principal().principalId() == null) throw new AssertionError("unreachable");
-        }
+        var auth = provider.authenticate(validToken);
+        if (auth.principal().principalId() == null) throw new AssertionError("unreachable");
     }
 
     @Override
     protected void tearDownSubsystem() {
+        if (validToken != null) validToken.close();
         // SecurityProvider is stateless — no close()
     }
 }

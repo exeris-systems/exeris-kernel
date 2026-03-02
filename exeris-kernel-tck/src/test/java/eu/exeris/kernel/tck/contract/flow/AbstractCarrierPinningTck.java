@@ -189,6 +189,7 @@ public abstract class AbstractCarrierPinningTck {
                     });
 
             JfrPinningMonitor.assertNoPinning(result, s.name());
+            org.assertj.core.api.Assertions.assertThat(errors.get()).as("Audit workload exceptions").isZero();
         }
     }
 
@@ -228,6 +229,7 @@ public abstract class AbstractCarrierPinningTck {
                                     .as("Native workload '%s': %d VTs must finish within 20 s",
                                             nw.label(), NATIVE_VT_COUNT)
                                     .isTrue();
+                            org.assertj.core.api.Assertions.assertThat(errors.get()).as("Native workload '%s' exceptions", nw.label()).isZero();
                         });
 
                 JfrPinningMonitor.assertNoPinning(result, "NativeWorkload-" + nw.label());

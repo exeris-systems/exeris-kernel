@@ -84,7 +84,7 @@ public abstract class AbstractBootstrapOrchestratorTck {
      * Used by default test cases; implementations may override {@link #runSort(List)} to
      * delegate to the real orchestrator instead.
      */
-    protected static List<Subsystem> kahn(List<Subsystem> subsystems) {
+    public static List<Subsystem> kahn(List<Subsystem> subsystems) {
         Map<String, Subsystem> byName = new HashMap<>();
         for (Subsystem sub : subsystems) {
             byName.put(sub.name(), sub);

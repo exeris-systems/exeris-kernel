@@ -7,9 +7,11 @@
  */
 package eu.exeris.kernel.tck.contract.persistence;
 
+import eu.exeris.kernel.spi.persistence.BulkInserter;
 import eu.exeris.kernel.spi.persistence.EngineStats;
 import eu.exeris.kernel.spi.persistence.PersistenceConnection;
 import eu.exeris.kernel.spi.persistence.PersistenceEngine;
+import eu.exeris.kernel.spi.persistence.PersistenceHealthStatus;
 import eu.exeris.kernel.spi.persistence.TransactionIsolation;
 import eu.exeris.kernel.spi.security.ImmutableStorageContext;
 import eu.exeris.kernel.spi.security.StorageContext;
@@ -163,7 +165,31 @@ public abstract class AbstractPersistenceEngineTck {
         @Test
         @DisplayName("healthCheck() returns true for a reachable database")
         void healthCheckReturnsTrue() {
-            assertThat(engine.healthCheck()).isTrue();
+            assertThat(engine.healthCheckDetailed().healthy()).isTrue();
+        }
+
+        @Test
+        @DisplayName("healthCheckDetailed() returns healthy=true for a reachable database")
+        void healthCheckDetailedReturnsHealthy() {
+            PersistenceHealthStatus status = engine.healthCheckDetailed();
+            assertThat(status).isNotNull();
+            assertThat(status.healthy()).isTrue();
+            assertThat(status.message()).isNotBlank();
+        }
+
+        @Test
+        @DisplayName("healthCheckDetailed() measures non-negative latency")
+        void healthCheckDetailedMeasuresLatency() {
+            PersistenceHealthStatus status = engine.healthCheckDetailed();
+            assertThat(status.latencyNanos()).isGreaterThanOrEqualTo(0L);
+        }
+
+        @Test
+        @DisplayName("healthCheckDetailed() after close() returns healthy=false")
+        void healthCheckDetailedAfterCloseReturnsFalse() {
+            engine.close();
+            PersistenceHealthStatus status = engine.healthCheckDetailed();
+            assertThat(status.healthy()).isFalse();
         }
 
         @Test
@@ -172,6 +198,41 @@ public abstract class AbstractPersistenceEngineTck {
             EngineStats stats = engine.stats();
             assertThat(stats).isNotNull();
             assertThat(stats.maxConnections()).isGreaterThan(0);
+        }
+    }
+
+    // =========================================================================
+    // BulkInserter capability (tier-gated)
+    // =========================================================================
+
+    @Nested
+    @DisplayName("BulkInserter capability contract")
+    class BulkInserterCapability {
+
+        @Test
+        @DisplayName("openBulkInserter() returns Optional (empty or present based on tier)")
+        void openBulkInserterReturnsOptional() {
+            try (PersistenceConnection conn = engine.openConnection()) {
+                java.util.Optional<BulkInserter> inserter = conn.openBulkInserter("tck_test");
+                // Both empty (Community) and present (Enterprise) are valid
+                assertThat(inserter).isNotNull();
+                inserter.ifPresent(BulkInserter::close);
+            }
+        }
+
+        @Test
+        @DisplayName("Enterprise tier openBulkInserter() is present iff nativeProtocol capability is true")
+        void bulkInserterTierConsistency() {
+            try (PersistenceConnection conn = engine.openConnection()) {
+                java.util.Optional<BulkInserter> inserter = conn.openBulkInserter("tck_test");
+                boolean hasNativeProtocol = engine.capabilities().supportsNativeProtocol();
+                if (hasNativeProtocol) {
+                    assertThat(inserter).isPresent();
+                    inserter.ifPresent(BulkInserter::close);
+                } else {
+                    assertThat(inserter).isEmpty();
+                }
+            }
         }
     }
 

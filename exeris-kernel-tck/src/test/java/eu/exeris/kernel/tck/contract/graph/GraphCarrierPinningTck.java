@@ -34,6 +34,8 @@ public abstract class GraphCarrierPinningTck extends AbstractSubsystemCarrierPin
     protected abstract GraphEngine createEngine();
 
     private GraphEngine engine;
+    private UUID        src;
+    private UUID        dst;
 
     @Override protected String subsystemName()      { return "Graph"; }
     @Override protected String hotPathDescription() { return "openSession() → findShortestPath(src, tgt) → close()"; }
@@ -49,12 +51,14 @@ public abstract class GraphCarrierPinningTck extends AbstractSubsystemCarrierPin
                 GraphEdgeDescriptor.create("Task", "DEPENDS_ON", "Task"),
                 GraphEdgeDescriptor.create("Task", "HAS_STEP", "Step")
         ));
+        src = UUID.randomUUID();
+        dst = UUID.randomUUID();
     }
 
     @Override
     protected void runSingleIteration() {
         try (GraphSession session = engine.openSession()) {
-            session.findShortestPath(UUID.randomUUID(), UUID.randomUUID());
+            session.findShortestPath(src, dst);
         }
     }
 

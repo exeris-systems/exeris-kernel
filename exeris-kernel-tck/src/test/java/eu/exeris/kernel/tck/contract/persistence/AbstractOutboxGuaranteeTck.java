@@ -149,7 +149,6 @@ public abstract class AbstractOutboxGuaranteeTck {
         List<OutboxEvent> batch;
         do {
             batch = store.pollPending(1_000);
-            batch.forEach(e -> store.markPublished(e.eventId()));
             total += batch.size();
         } while (!batch.isEmpty());
         conn.commit();

@@ -14,8 +14,8 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
-import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -47,18 +47,19 @@ import static org.assertj.core.api.Assertions.assertThat;
  * class CommunityGracefulShutdownTest extends AbstractGracefulShutdownTck {
  *     \@Override
  *     protected KernelHandle buildAndStartKernel() {
- *         var transport   = new CommunityTransportEngine(...);   transport.start();
- *         var persistence = new CommunityPersistenceEngine(...); persistence.start();
- *         var flow        = new CommunityFlowEngine(...);        flow.start();
- *         var events      = new CommunityEventEngine(...);       events.start();
+ *         var order       = new java.util.concurrent.CopyOnWriteArrayList<String>();
+ *         var transport   = new TrackedEngine("Transport",   new CommunityTransportEngine(...)).withObservedOrder(order);
+ *         var persistence = new TrackedEngine("Persistence", new CommunityPersistenceEngine(...)).withObservedOrder(order);
+ *         var flow        = new TrackedEngine("Flow",        new CommunityFlowEngine(...)).withObservedOrder(order);
+ *         var events      = new TrackedEngine("Events",      new CommunityEventEngine(...)).withObservedOrder(order);
+ *         transport.delegate().start(); persistence.delegate().start();
+ *         flow.delegate().start();      events.delegate().start();
  *         return new KernelHandle(
- *             new TrackedEngine("Transport",   transport),
- *             new TrackedEngine("Persistence", persistence),
- *             new TrackedEngine("Flow",        flow),
- *             new TrackedEngine("Events",      events),
- *             null, null,
- *             () -> transport.enqueue(TestPayloads.ping()),
- *             () -> persistence.eventStore(conn).pollPending(Integer.MAX_VALUE).size()
+ *             transport, persistence, flow, events, null, null,
+ *             () -> transport.delegate().enqueue(TestPayloads.ping()),
+ *             () -> persistence.delegate().eventStore(conn).pollPending(Integer.MAX_VALUE).size(),
+ *             () -> { transport.close(); persistence.close(); flow.close(); events.close(); },
+ *             order
  *         );
  *     }
  * }
@@ -99,14 +100,16 @@ public abstract class AbstractGracefulShutdownTck {
      * Wraps all running SPI engines and workload sources needed by the TCK.
      * Pass {@code null} for engines the implementation does not provide.
      *
-     * @param transport       wrapped Transport engine
-     * @param persistence     wrapped Persistence engine
-     * @param flow            wrapped Flow engine
-     * @param events          wrapped Events engine
-     * @param graph           wrapped Graph engine; {@code null} to skip
-     * @param memory          wrapped Memory layer; {@code null} to skip
-     * @param requestSender   fire-and-forget: sends one unit of work via Transport
-     * @param confirmedWrites returns count of durably-written items via Persistence
+     * @param transport              wrapped Transport engine
+     * @param persistence            wrapped Persistence engine
+     * @param flow                   wrapped Flow engine
+     * @param events                 wrapped Events engine
+     * @param graph                  wrapped Graph engine; {@code null} to skip
+     * @param memory                 wrapped Memory layer; {@code null} to skip
+     * @param requestSender          fire-and-forget: sends one unit of work via Transport
+     * @param confirmedWrites        returns count of durably-written items via Persistence
+     * @param orchestratorShutdown   calls the real orchestrator/kernel shutdown (e.g. kernel.shutdown())
+     * @param observedOrder          shared list populated by {@link TrackedEngine#close()} in invocation order
      */
     public record KernelHandle(
             TrackedEngine transport,
@@ -116,24 +119,18 @@ public abstract class AbstractGracefulShutdownTck {
             TrackedEngine graph,
             TrackedEngine memory,
             Runnable      requestSender,
-            IntSupplier   confirmedWrites
+            IntSupplier   confirmedWrites,
+            Runnable      orchestratorShutdown,
+            CopyOnWriteArrayList<String> observedOrder
     ) {
-        /** Closes all engines in canonical order; returns the observed close sequence. */
+        /**
+         * Triggers the real orchestrator shutdown and returns the observed close sequence.
+         * Each {@link TrackedEngine} appended its name to {@link #observedOrder} when
+         * its {@code close()} was invoked by the orchestrator.
+         */
         List<String> shutdownInCanonicalOrder() {
-            List<String> observed = new ArrayList<>();
-            closeOne(transport,   observed);
-            closeOne(persistence, observed);
-            closeOne(flow,        observed);
-            closeOne(events,      observed);
-            closeOne(graph,       observed);
-            closeOne(memory,      observed);
-            return observed;
-        }
-
-        private static void closeOne(TrackedEngine e, List<String> out) {
-            if (e == null) return;
-            e.close();
-            out.add(e.name());
+            orchestratorShutdown.run();
+            return List.copyOf(observedOrder);
         }
     }
 
@@ -145,11 +142,18 @@ public abstract class AbstractGracefulShutdownTck {
 
         private final String        name;
         private final AutoCloseable delegate;
-        private volatile boolean    closed = false;
+        private volatile boolean    closed        = false;
+        private CopyOnWriteArrayList<String> observedOrder = null;
 
         public TrackedEngine(String name, AutoCloseable delegate) {
             this.name     = name;
             this.delegate = delegate;
+        }
+
+        /** Binds the shared order list; call before shutdown is triggered. */
+        public TrackedEngine withObservedOrder(CopyOnWriteArrayList<String> list) {
+            this.observedOrder = list;
+            return this;
         }
 
         public String  name()     { return name; }
@@ -160,7 +164,10 @@ public abstract class AbstractGracefulShutdownTck {
             if (closed) return;
             try { if (delegate != null) delegate.close(); }
             catch (Exception _) { /* close must not throw in TCK context */ }
-            finally { closed = true; }
+            finally {
+                closed = true;
+                if (observedOrder != null) observedOrder.add(name);
+            }
         }
     }
 
@@ -227,7 +234,7 @@ public abstract class AbstractGracefulShutdownTck {
 
         @Test
         @Timeout(value = 120, unit = TimeUnit.SECONDS)
-        @DisplayName("Persistence drains all in-flight writes before Transport closes")
+        @DisplayName("Transport stops accepting new work before Persistence drains and closes")
         void noRequestsLostDuringShutdown() throws InterruptedException {
             AtomicInteger sent   = new AtomicInteger();
             CountDownLatch fired = new CountDownLatch(DRAINING_REQUEST_COUNT);

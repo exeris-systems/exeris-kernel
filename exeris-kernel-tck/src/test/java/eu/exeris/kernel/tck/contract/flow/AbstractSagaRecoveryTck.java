@@ -128,7 +128,7 @@ public abstract class AbstractSagaRecoveryTck {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(timeoutSeconds);
         while (System.nanoTime() < deadline) {
             if (condition.getAsBoolean()) return true;
-            Thread.onSpinWait();
+            java.util.concurrent.locks.LockSupport.parkNanos(1_000_000L);
         }
         return false;
     }
@@ -381,14 +381,13 @@ public abstract class AbstractSagaRecoveryTck {
             assertThat(failFired.await(5, TimeUnit.SECONDS)).isTrue();
             LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(200));
 
-            loadSnapshot(ctx).ifPresent(snap ->
-                assertThat(snap.state())
-                        .as(
-                            "After FAIL, FlowSnapshot state MUST be COMPENSATING or FAILED_ROLLEDBACK, " +
-                            "was: %s", snap.state()
-                        )
-                        .isIn(FlowState.COMPENSATING, FlowState.FAILED_ROLLEDBACK)
-            );
+            java.util.Optional<FlowSnapshot> snapshotOpt = loadSnapshot(ctx);
+            org.assertj.core.api.Assertions.assertThat(snapshotOpt)
+                    .as("After FAIL, FlowSnapshot MUST be persisted for context %s", ctx)
+                    .isPresent();
+            org.assertj.core.api.Assertions.assertThat(snapshotOpt.get().state())
+                    .as("After FAIL, FlowSnapshot state MUST be COMPENSATING or FAILED_ROLLEDBACK, was: %s", snapshotOpt.get().state())
+                    .isIn(FlowState.COMPENSATING, FlowState.FAILED_ROLLEDBACK);
 
             assertThat(awaitCondition(() -> false, 1)).isFalse(); // settle
         }
