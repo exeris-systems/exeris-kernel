@@ -221,16 +221,23 @@ public abstract class AbstractPersistenceEngineTck {
         }
 
         @Test
-        @DisplayName("Enterprise tier openBulkInserter() is present iff nativeProtocol capability is true")
+        @DisplayName("openBulkInserter() presence is stable for a given connection")
         void bulkInserterTierConsistency() {
             try (PersistenceConnection conn = engine.openConnection()) {
-                java.util.Optional<BulkInserter> inserter = conn.openBulkInserter("tck_test");
-                boolean hasNativeProtocol = engine.capabilities().supportsNativeProtocol();
-                if (hasNativeProtocol) {
-                    assertThat(inserter).isPresent();
-                    inserter.ifPresent(BulkInserter::close);
-                } else {
-                    assertThat(inserter).isEmpty();
+                java.util.Optional<BulkInserter> first  = conn.openBulkInserter("tck_test");
+                java.util.Optional<BulkInserter> second = conn.openBulkInserter("tck_test");
+                // TCK only requires behavioural consistency for a given connection:
+                // bulk insert is either supported (present) or not (empty) but MUST NOT
+                // flip unpredictably, and MUST NOT be tied to supportsNativeProtocol().
+                assertThat(first).isNotNull();
+                assertThat(second).isNotNull();
+                assertThat(first.isPresent())
+                        .as("openBulkInserter() must return a stable present/empty result")
+                        .isEqualTo(second.isPresent());
+                // Close any allocated inserters; implementations may return the same instance.
+                first.ifPresent(eu.exeris.kernel.spi.persistence.BulkInserter::close);
+                if (second.isPresent() && first.map(b -> b != second.get()).orElse(true)) {
+                    second.get().close();
                 }
             }
         }

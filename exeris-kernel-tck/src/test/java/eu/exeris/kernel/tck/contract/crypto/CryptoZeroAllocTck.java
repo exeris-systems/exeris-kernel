@@ -34,7 +34,10 @@ import java.util.List;
  * bounded allocation per record is acceptable (≤ 8 allocations/iteration).
  *
  * <h2>Enterprise Contract</h2>
- * <p>Zero {@code eu.exeris.*} allocations per wrap()/unwrap() call (0 B/op).
+ * <p>Enterprise implementations must override {@code supportsZeroGcHotPath()} (inherited
+ * from {@link eu.exeris.kernel.tck.contract.AbstractSubsystemZeroAllocTck}) to return
+ * {@code true}. The TCK will then enforce 0 {@code eu.exeris.*} allocations per
+ * {@code wrap()}/{@code unwrap()} call (0 B/op).
  *
  * @since 0.5.0
  */
@@ -49,12 +52,6 @@ public abstract class CryptoZeroAllocTck extends AbstractSubsystemZeroAllocTck {
 
     /** Creates the {@link MemoryAllocator} for off-heap cipher buffers. */
     protected abstract MemoryAllocator createAllocator();
-
-    /**
-     * Returns {@code true} if this is Enterprise-tier (zero-GC cipher path).
-     * Default: {@code false}.
-     */
-    protected boolean isEnterpriseTier() { return false; }
 
     // =========================================================================
     // State
@@ -74,12 +71,14 @@ public abstract class CryptoZeroAllocTck extends AbstractSubsystemZeroAllocTck {
     @Override protected int hotPathIterations()      { return 10_000; }
 
     /**
-     * Enterprise: 0 allocations (Panama FFM call — native pointer passthrough).
-     * Community: ≤ 8 (JSSE ByteBuffer wrappers, SSLEngineResult).
+     * Community boundary: ≤ 8 allocations per iteration (JSSE {@code ByteBuffer}
+     * wrappers, {@code SSLEngineResult}).
+     * <p>Enterprise implementations that override {@link #supportsZeroGcHotPath()}
+     * to return {@code true} will have this limit overridden to 0 by the base TCK.
      */
     @Override
     protected int maxExerisAllocationsPerIteration() {
-        return isEnterpriseTier() ? 0 : 8;
+        return 8;
     }
 
     @Override

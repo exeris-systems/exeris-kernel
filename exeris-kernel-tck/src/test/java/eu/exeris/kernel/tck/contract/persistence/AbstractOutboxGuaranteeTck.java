@@ -252,12 +252,14 @@ public abstract class AbstractOutboxGuaranteeTck {
             try (PersistenceConnection conn = engine.openConnection()) {
                 EventStore store = createEventStore(conn);
                 conn.beginTransaction();
-                List<OutboxEvent> batch;
-                do {
-                    batch = store.pollPending(200);
-                    batch.forEach(e -> foundIds.add(e.eventId()));
-                } while (!batch.isEmpty());
-                conn.rollback();
+                try {
+                    // Single large-batch poll — rollback to preserve store state.
+                    // A do-while loop here would infinite-loop: pollPending() re-returns
+                    // the same pending events until markPublished() is called.
+                    store.pollPending(Integer.MAX_VALUE).forEach(e -> foundIds.add(e.eventId()));
+                } finally {
+                    conn.rollback();
+                }
             }
 
             assertThat(foundIds)
@@ -311,12 +313,14 @@ public abstract class AbstractOutboxGuaranteeTck {
             try (PersistenceConnection conn = engine.openConnection()) {
                 EventStore store = createEventStore(conn);
                 conn.beginTransaction();
-                List<OutboxEvent> batch;
-                do {
-                    batch = store.pollPending(100);
-                    batch.forEach(e -> foundAfterRebuild.add(e.eventId()));
-                } while (!batch.isEmpty());
-                conn.rollback();
+                try {
+                    // Single large-batch poll — rollback to preserve store state.
+                    // A do-while loop here would infinite-loop: pollPending() re-returns
+                    // the same pending events until markPublished() is called.
+                    store.pollPending(Integer.MAX_VALUE).forEach(e -> foundAfterRebuild.add(e.eventId()));
+                } finally {
+                    conn.rollback();
+                }
             }
 
             assertThat(foundAfterRebuild)

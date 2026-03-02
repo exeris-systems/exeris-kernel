@@ -153,8 +153,7 @@ public abstract class ExerisKernelException extends RuntimeException {
      * Low-level constructor for zero-allocation Sentinel Exceptions.
      *
      * <p>Disables suppression and/or stack-trace generation to prevent heap allocations
-     * on hot-path network and protocol operations. The {@code reserved} parameter is
-     * reserved for future binary-layout extensions and is currently ignored.
+     * on hot-path network and protocol operations.
      *
      * <p><strong>Performance Contract:</strong> passing {@code writableStackTrace=false}
      * eliminates the {@link Throwable#fillInStackTrace()} allocation on the hot path —

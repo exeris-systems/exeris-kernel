@@ -92,6 +92,13 @@ public abstract class AbstractGracefulShutdownTck {
      */
     protected abstract KernelHandle buildAndStartKernel();
 
+    /**
+     * Returns the number of concurrent in-flight requests to fire during the
+     * zero-downtime draining test. Default: {@code 100,000}.
+     * <p>Override to reduce the workload on resource-constrained CI environments.
+     */
+    protected int drainingRequestCount() { return DRAINING_REQUEST_COUNT; }
+
     // =========================================================================
     // Handle / TrackedEngine
     // =========================================================================
@@ -270,14 +277,18 @@ public abstract class AbstractGracefulShutdownTck {
         @Timeout(value = 120, unit = TimeUnit.SECONDS)
         @DisplayName("Transport stops accepting new work before Persistence drains and closes")
         void noRequestsLostDuringShutdown() throws InterruptedException {
+            int           count  = drainingRequestCount();
             AtomicInteger sent   = new AtomicInteger();
-            CountDownLatch fired = new CountDownLatch(DRAINING_REQUEST_COUNT);
+            AtomicInteger errors = new AtomicInteger();
+            CountDownLatch fired = new CountDownLatch(count);
 
-            for (int i = 0; i < DRAINING_REQUEST_COUNT; i++) {
+            for (int i = 0; i < count; i++) {
                 Thread.ofVirtual().name("exeris-drain-", i).start(() -> {
                     try {
                         kernel.requestSender().run();
                         sent.incrementAndGet();
+                    } catch (Throwable _) {
+                        errors.incrementAndGet();
                     } finally {
                         fired.countDown();
                     }
@@ -285,8 +296,12 @@ public abstract class AbstractGracefulShutdownTck {
             }
 
             assertThat(fired.await(60, TimeUnit.SECONDS))
-                    .as("All %d requests must be submitted within 60 s", DRAINING_REQUEST_COUNT)
+                    .as("All %d requests must be submitted within 60 s", count)
                     .isTrue();
+
+            assertThat(errors.get())
+                    .as("Request submission errors must be zero before measuring drain count")
+                    .isZero();
 
             List<String> order = kernel.shutdownInCanonicalOrder();
             assertClosedBefore(order, "Transport", "Persistence");

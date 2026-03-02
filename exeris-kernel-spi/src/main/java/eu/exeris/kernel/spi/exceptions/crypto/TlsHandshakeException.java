@@ -59,7 +59,9 @@ public final class TlsHandshakeException extends ExerisKernelException {
 
     /**
      * True zero-allocation Sentinel constructor for L0/L1 hot-path pre-allocation.
-     * <p>Disables suppression and stack-trace generation. Uses a static pre-allocated
+     * <p>Hardcodes {@code enableSuppression=false} and {@code writableStackTrace=false}
+     * to prevent callers from accidentally enabling stack-trace generation and
+     * breaking the zero-allocation contract. Uses a static pre-allocated
      * {@link #SENTINEL_ARGS} array — <strong>no heap allocation occurs</strong>.
      * The {@code traceId} and {@code timestamp} fields are assigned JVM constants
      * (see {@code ExerisKernelException} Sentinel constructor contract).
@@ -67,20 +69,18 @@ public final class TlsHandshakeException extends ExerisKernelException {
      * <p><strong>Usage:</strong> pre-allocate once as a static final field and rethrow:
      * <pre>{@code
      * private static final TlsHandshakeException SENTINEL =
-     *         new TlsHandshakeException(false, false);
+     *         new TlsHandshakeException();
      * }</pre>
      */
-    public TlsHandshakeException(boolean enableSuppression, boolean writableStackTrace) {
-        super(KernelErrorCodes.EX_NET_2001, MESSAGE, null,
-                enableSuppression, writableStackTrace, SENTINEL_ARGS);
+    public TlsHandshakeException() {
+        super(KernelErrorCodes.EX_NET_2001, MESSAGE, null, false, false, SENTINEL_ARGS);
     }
 
     /**
      * Non-sentinel constructor with a dynamic detail string.
      * <p><strong>NOT zero-allocation</strong> — the {@code detail} String is captured
-     * inside a freshly allocated {@code Object[]} for binary telemetry. The Sentinel
-     * path ({@link #TlsHandshakeException(boolean, boolean)}) must be used instead
-     * when true zero-allocation is required.
+     * inside a freshly allocated {@code Object[]} for binary telemetry. Use the true
+     * Sentinel path ({@link #TlsHandshakeException()}) when zero-allocation is required.
      *
      * @param detail             static message fragment; never formatted at runtime
      * @param enableSuppression  whether suppression is enabled

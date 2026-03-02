@@ -80,12 +80,13 @@ public abstract class AbstractSagaRecoveryTck {
     // Template methods
     // =========================================================================
 
-    /** Creates and starts a fresh {@link FlowEngine} (first boot). */
+    /** Creates an unstarted fresh {@link FlowEngine} (first boot). The TCK calls {@code start()}. */
     protected abstract FlowEngine createEngine();
 
     /**
-     * Creates and starts a second {@link FlowEngine} backed by the <em>same</em>
+     * Creates an unstarted second {@link FlowEngine} backed by the <em>same</em>
      * {@link FlowSnapshotStore} — simulates JVM restart without snapshot loss.
+     * The TCK calls {@code start()} after this method returns.
      */
     protected abstract FlowEngine rebuildEngine();
 
