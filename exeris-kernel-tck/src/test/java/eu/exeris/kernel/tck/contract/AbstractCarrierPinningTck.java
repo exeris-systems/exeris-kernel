@@ -179,7 +179,7 @@ public abstract class AbstractCarrierPinningTck {
                         for (int i = 0; i < AUDIT_VT_COUNT; i++) {
                             Thread.ofVirtual().name("exeris-audit-" + s + "-", i).start(() -> {
                                 try { workload.run(); }
-                                catch (Exception _) { errors.incrementAndGet(); }
+                                catch (Throwable _) { errors.incrementAndGet(); }
                                 finally { done.countDown(); }
                             });
                         }
@@ -221,7 +221,7 @@ public abstract class AbstractCarrierPinningTck {
                                       .name("exeris-native-" + nw.label() + "-", i)
                                       .start(() -> {
                                           try { nw.workload().run(); }
-                                          catch (Exception _) { errors.incrementAndGet(); }
+                                          catch (Throwable _) { errors.incrementAndGet(); }
                                           finally { done.countDown(); }
                                       });
                             }

@@ -257,14 +257,24 @@ public abstract class AbstractOutboxGuaranteeTck {
             List<UUID> foundIds = new ArrayList<>();
             try (PersistenceConnection conn = engine.openConnection()) {
                 EventStore store = createEventStore(conn);
-                conn.beginTransaction();
-                try {
-                    // Single bounded-batch poll — rollback to preserve store state.
-                    // A do-while loop here would infinite-loop: pollPending() re-returns
-                    // the same pending events until markPublished() is called.
-                    store.pollPending(brokerEventCount()).forEach(e -> foundIds.add(e.eventId()));
-                } finally {
-                    conn.rollback();
+                // Poll in bounded batches and advance the cursor via markPublished() so that
+                // implementations which paginate results are handled correctly.
+                // A single large poll would silently miss events if the SPI returns fewer
+                // than maxBatchSize items per call (pagination is permitted by contract).
+                int remaining = writtenIds.size();
+                while (remaining > 0) {
+                    conn.beginTransaction();
+                    List<OutboxEvent> batch = store.pollPending(Math.min(remaining, 500));
+                    if (batch.isEmpty()) {
+                        conn.rollback();
+                        break; // Should not happen if durability holds — assertion below will fail
+                    }
+                    batch.forEach(e -> {
+                        foundIds.add(e.eventId());
+                        store.markPublished(e.eventId());
+                    });
+                    conn.commit();
+                    remaining -= batch.size();
                 }
             }
 
@@ -318,14 +328,24 @@ public abstract class AbstractOutboxGuaranteeTck {
             List<UUID> foundAfterRebuild = new ArrayList<>();
             try (PersistenceConnection conn = engine.openConnection()) {
                 EventStore store = createEventStore(conn);
-                conn.beginTransaction();
-                try {
-                    // Single bounded-batch poll — rollback to preserve store state.
-                    // A do-while loop here would infinite-loop: pollPending() re-returns
-                    // the same pending events until markPublished() is called.
-                    store.pollPending(total).forEach(e -> foundAfterRebuild.add(e.eventId()));
-                } finally {
-                    conn.rollback();
+                // Poll in bounded batches and advance the cursor via markPublished() so that
+                // implementations which paginate results are handled correctly.
+                // Never rollback here — we must advance the cursor to observe all events,
+                // otherwise a paginating implementation would return the same batch forever.
+                int remaining = pendingIds.size();
+                while (remaining > 0) {
+                    conn.beginTransaction();
+                    List<OutboxEvent> batch = store.pollPending(Math.min(remaining, 500));
+                    if (batch.isEmpty()) {
+                        conn.rollback();
+                        break; // All remaining pending events consumed (or durability violated)
+                    }
+                    batch.forEach(e -> {
+                        foundAfterRebuild.add(e.eventId());
+                        store.markPublished(e.eventId());
+                    });
+                    conn.commit();
+                    remaining -= batch.size();
                 }
             }
 

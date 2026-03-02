@@ -148,11 +148,13 @@ public abstract class BootstrapZeroAllocTck extends AbstractSubsystemZeroAllocTc
         for (int idx = 0; idx < size; idx++) {
             final String nodeName = "node-" + idx;
             final String depName  = idx == 0 ? null : "node-" + (idx - 1);
+            // Pre-allocate the dependency list once per node so that dependsOn() returns
+            // the same instance on every call — no per-iteration List.of() allocation
+            // during the BFS sort, keeping the zero-allocation signal clean.
+            final List<String> deps = depName == null ? List.of() : List.of(depName);
             chain.add(new Subsystem() {
                 @Override public String name()            { return nodeName; }
-                @Override public List<String> dependsOn() {
-                    return depName == null ? List.of() : List.of(depName);
-                }
+                @Override public List<String> dependsOn() { return deps; }
                 @Override public BootstrapPhase phase()  { return BootstrapPhase.FOUNDATION; }
                 @Override public void initialize() throws SubsystemException { /* no-op */ }
                 @Override public void start()      throws SubsystemException { /* no-op */ }

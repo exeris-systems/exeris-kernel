@@ -16,6 +16,7 @@ import eu.exeris.kernel.tck.contract.AbstractSubsystemCarrierPinningTck;
 import org.junit.jupiter.api.DisplayName;
 
 import java.lang.foreign.ValueLayout;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -69,12 +70,12 @@ public abstract class TransportCarrierPinningTck extends AbstractSubsystemCarrie
     // =========================================================================
 
     /**
-     * Number of pre-allocated per-VT slots — covers warm-up (200) + steady (1 000)
-     * phases with a large safety margin for implementation-level re-runs.
-     * Stored as an instance field (not a compile-time constant) to satisfy static
-     * analysis tools that flag {@code i < CONSTANT} as an always-true condition.
+     * Number of pre-allocated per-VT slots — set to exactly
+     * {@code warmupIterations() + hotPathIterations()} inside {@link #bootstrapSubsystem()}.
+     * Declared as a non-final instance field so that static analysis tools do not flag
+     * {@code i < vtSlotCount} as an always-true comparison.
      */
-    private final int vtSlotCount = 10_000;
+    private int vtSlotCount = 0;
 
     private TransportEngine  engine;
     private MemoryAllocator  allocator;
@@ -103,14 +104,27 @@ public abstract class TransportCarrierPinningTck extends AbstractSubsystemCarrie
         return "allocate(MICRO) → write sentinel → queueWrite(buf)";
     }
 
+    /**
+     * Returns the number of warm-up VT iterations (phase 1 — discarded).
+     * Matches {@code AbstractSubsystemCarrierPinningTck#WARMUP_VT_COUNT}.
+     */
+    protected int warmupIterations() { return 200; }
+
+    /**
+     * Returns the number of steady-state VT iterations (phase 2 — measured).
+     * Matches {@code AbstractSubsystemCarrierPinningTck#STEADY_VT_COUNT}.
+     */
+    protected int hotPathIterations() { return 1_000; }
+
     @Override
     protected void bootstrapSubsystem() {
-        engine    = createEngine();
-        allocator = createAllocator();
+        engine      = createEngine();
+        allocator   = createAllocator();
+        vtSlotCount = warmupIterations() + hotPathIterations();
 
         streams = new TransportStream[vtSlotCount];
         buffers = new LoanedBuffer[vtSlotCount];
-        for (int i = 0; i < streams.length; i++) {
+        for (int i = 0; i < vtSlotCount; i++) {
             streams[i] = createWritableStream();
             LoanedBuffer buf = allocator.allocate(AllocationHint.MICRO);
             buf.segment().set(ValueLayout.JAVA_LONG, 0, 0xCAFEL);
@@ -129,9 +143,32 @@ public abstract class TransportCarrierPinningTck extends AbstractSubsystemCarrie
 
     @Override
     protected void tearDownSubsystem() {
+        // Drain in-flight writes before closing streams to avoid Use-After-Free.
+        int usedSlots = vtIndex.get();
         if (streams != null) {
-            for (TransportStream s : streams) {
-                if (s != null) s.close();
+            for (int i = 0; i < streams.length; i++) {
+                TransportStream s = streams[i];
+                if (s == null) continue;
+                if (i < usedSlots) {
+                    // Slot was claimed — wait for pending data to drain before closing.
+                    long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+                    while (s.hasPendingData() && System.nanoTime() < deadline) {
+                        Thread.onSpinWait();
+                    }
+                } else {
+                    // Slot was never claimed — queueWrite() never transferred ownership,
+                    // so we still own the buffer and must close it to prevent an off-heap leak.
+                    LoanedBuffer buf = buffers[i];
+                    if (buf != null) buf.close();
+                }
+                s.close();
+            }
+        }
+        // Explicitly close any remaining buffer slots (safety net for the used range,
+        // in case queueWrite() semantics allow partial ownership transfer).
+        if (buffers != null) {
+            for (LoanedBuffer b : buffers) {
+                if (b != null) b.close();
             }
         }
         if (engine    != null) engine.close();

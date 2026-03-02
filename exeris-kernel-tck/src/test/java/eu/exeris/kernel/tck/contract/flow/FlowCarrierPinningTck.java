@@ -38,12 +38,12 @@ public abstract class FlowCarrierPinningTck extends AbstractSubsystemCarrierPinn
     // =========================================================================
 
     /**
-     * Number of pre-allocated per-VT slots — covers warm-up (200) + steady (1 000)
-     * phases with a large safety margin for implementation-level re-runs.
-     * Stored as an instance field (not a compile-time constant) to satisfy static
-     * analysis tools that flag {@code i < CONSTANT} as an always-true condition.
+     * Number of pre-allocated per-VT slots — set to exactly
+     * {@code warmupIterations() + hotPathIterations()} inside {@link #bootstrapSubsystem()}.
+     * Declared as a non-final instance field so that static analysis tools do not flag
+     * {@code i < vtSlotCount} as an always-true comparison.
      */
-    private final int vtSlotCount = 10_000;
+    private int vtSlotCount = 0;
 
     private FlowEngine engine;
     private FlowExecutionPlan plan;
@@ -57,9 +57,22 @@ public abstract class FlowCarrierPinningTck extends AbstractSubsystemCarrierPinn
     @Override protected String subsystemName()      { return "FlowEngine"; }
     @Override protected String hotPathDescription() { return "scheduler.schedule(plan, ctx) → park → wake"; }
 
+    /**
+     * Returns the number of warm-up VT iterations (phase 1 — discarded).
+     * Matches {@code AbstractSubsystemCarrierPinningTck#WARMUP_VT_COUNT}.
+     */
+    protected int warmupIterations() { return 200; }
+
+    /**
+     * Returns the number of steady-state VT iterations (phase 2 — measured).
+     * Matches {@code AbstractSubsystemCarrierPinningTck#STEADY_VT_COUNT}.
+     */
+    protected int hotPathIterations() { return 1_000; }
+
     @Override
     protected void bootstrapSubsystem() {
-        engine = createEngine();
+        engine      = createEngine();
+        vtSlotCount = warmupIterations() + hotPathIterations();
         engine.start();
 
         FlowStepAction noOp = _ -> FlowOutcome.CONTINUE;
@@ -71,7 +84,7 @@ public abstract class FlowCarrierPinningTck extends AbstractSubsystemCarrierPinn
         plan = engine.plans().compile(def);
 
         contexts = new eu.exeris.kernel.spi.flow.model.FlowContext[vtSlotCount];
-        for (int i = 0; i < contexts.length; i++) {
+        for (int i = 0; i < vtSlotCount; i++) {
             contexts[i] = TestFlowContexts.create("carrier-pin-" + i, "carrier-pin-flow");
         }
         vtIndex.set(0);

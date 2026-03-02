@@ -45,12 +45,12 @@ public abstract class CryptoCarrierPinningTck extends AbstractSubsystemCarrierPi
     // =========================================================================
 
     /**
-     * Number of pre-allocated per-VT slots — covers warm-up (200) + steady (1 000)
-     * phases with a large safety margin for implementation-level re-runs.
-     * Stored as an instance field (not a compile-time constant) to satisfy static
-     * analysis tools that flag {@code i < CONSTANT} as an always-true condition.
+     * Number of pre-allocated per-VT slots — set to exactly
+     * {@code warmupIterations() + hotPathIterations()} inside {@link #bootstrapSubsystem()}.
+     * Declared as a non-final instance field so that static analysis tools do not flag
+     * {@code i < vtSlotCount} as an always-true comparison.
      */
-    private final int vtSlotCount = 10_000;
+    private int vtSlotCount = 0;
 
     private MemoryAllocator allocator;
 
@@ -70,10 +70,23 @@ public abstract class CryptoCarrierPinningTck extends AbstractSubsystemCarrierPi
     // AbstractSubsystemCarrierPinningTck bindings
     // =========================================================================
 
+    /**
+     * Returns the number of warm-up VT iterations (phase 1 — discarded).
+     * Matches {@code AbstractSubsystemCarrierPinningTck#WARMUP_VT_COUNT}.
+     */
+    protected int warmupIterations() { return 200; }
+
+    /**
+     * Returns the number of steady-state VT iterations (phase 2 — measured).
+     * Matches {@code AbstractSubsystemCarrierPinningTck#STEADY_VT_COUNT}.
+     */
+    protected int hotPathIterations() { return 1_000; }
+
     @Override
     protected void bootstrapSubsystem() {
         KernelCryptoProvider provider = createProvider();
-        allocator   = createAllocator();
+        allocator    = createAllocator();
+        vtSlotCount  = warmupIterations() + hotPathIterations();
 
         CryptoProviderConfig tlsConfig = new CryptoProviderConfig(
                 CryptoProviderConfig.Protocol.TCP_TLS,
@@ -86,7 +99,7 @@ public abstract class CryptoCarrierPinningTck extends AbstractSubsystemCarrierPi
         plaintexts  = new LoanedBuffer[vtSlotCount];
         ciphertexts = new LoanedBuffer[vtSlotCount];
 
-        for (int i = 0; i < engines.length; i++) {
+        for (int i = 0; i < vtSlotCount; i++) {
             engines[i]     = provider.createTlsEngine(tlsConfig);
             plaintexts[i]  = allocator.allocate(AllocationHint.MEDIUM);
             ciphertexts[i] = allocator.allocate(AllocationHint.MEDIUM);
