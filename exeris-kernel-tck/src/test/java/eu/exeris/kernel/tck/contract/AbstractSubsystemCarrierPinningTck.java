@@ -76,6 +76,24 @@ public abstract class AbstractSubsystemCarrierPinningTck {
     /** Number of virtual threads in the steady-state (measured) phase. */
     private static final int STEADY_VT_COUNT  = 1_000;
 
+    /**
+     * Exposes the warm-up virtual-thread count to subclasses so that per-VT
+     * buffers/slots can be sized without duplicating the constant value.
+     * Using this accessor prevents {@link ArrayIndexOutOfBoundsException} if the
+     * base constant is ever changed.
+     *
+     * @return number of warm-up VTs (currently {@value #WARMUP_VT_COUNT})
+     */
+    protected final int warmupVtCount() { return WARMUP_VT_COUNT; }
+
+    /**
+     * Exposes the steady-state virtual-thread count to subclasses so that per-VT
+     * buffers/slots can be sized without duplicating the constant value.
+     *
+     * @return number of steady-state VTs (currently {@value #STEADY_VT_COUNT})
+     */
+    protected final int steadyVtCount() { return STEADY_VT_COUNT; }
+
     // =========================================================================
     // Template methods — MUST override
     // =========================================================================

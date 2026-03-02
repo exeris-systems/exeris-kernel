@@ -158,11 +158,55 @@ public final class JfrPinningMonitor {
         return sb.length() > 3 ? sb.substring(0, sb.length() - 3) : "<empty>";
     }
 
+    /**
+     * Sanitizes a free-form label into a filesystem-safe token for use in JFR filenames.
+     *
+     * <p>Rules applied in order:
+     * <ol>
+     *   <li>Null input is replaced with {@code "label"}.</li>
+     *   <li>Lowercased using {@link java.util.Locale#ROOT} (no Turkish-I surprises).</li>
+     *   <li>Any character outside {@code [a-z0-9\-_]} is mapped to {@code '-'}.</li>
+     *   <li>Consecutive {@code '-'} are collapsed to a single {@code '-'}.</li>
+     *   <li>Leading and trailing {@code '-'} are trimmed.</li>
+     *   <li>Result is capped at 64 characters.</li>
+     *   <li>If the result is empty after all transformations, falls back to {@code "label"}.</li>
+     * </ol>
+     *
+     * @param label raw label string; may be {@code null}
+     * @return a non-null, non-empty filesystem-safe token
+     */
+    private static String sanitizeLabel(String label) {
+        final int maxLength = 64;
+        String normalized = (label == null ? "label" : label).toLowerCase(java.util.Locale.ROOT);
+        StringBuilder sb = new StringBuilder(normalized.length());
+        char prev = 0;
+        for (int i = 0; i < normalized.length() && sb.length() < maxLength; i++) {
+            char c = normalized.charAt(i);
+            boolean allowed = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')
+                    || c == '-' || c == '_';
+            if (!allowed) {
+                c = '-';
+            }
+            if (c == '-' && prev == '-') {
+                continue; // collapse consecutive hyphens
+            }
+            sb.append(c);
+            prev = c;
+        }
+        // Trim leading/trailing '-'
+        int start = 0;
+        int end   = sb.length();
+        while (start < end && sb.charAt(start) == '-')  { start++; }
+        while (end > start && sb.charAt(end - 1) == '-') { end--;   }
+        return (start < end) ? sb.substring(start, end) : "label";
+    }
+
     private static Path buildJfrPath(String label) throws IOException {
         Path dir = Path.of("target", "jfr-reports", "pinning");
         Files.createDirectories(dir);
-        String ts = LocalDateTime.now().format(TS_FMT);
-        return dir.resolve("pin-" + label.toLowerCase(java.util.Locale.ROOT).replace(' ', '-') + "-" + ts + ".jfr");
+        String ts        = LocalDateTime.now().format(TS_FMT);
+        String safeLabel = sanitizeLabel(label);
+        return dir.resolve("pin-" + safeLabel + "-" + ts + ".jfr");
     }
 
     private static String pad(String s, int w) {

@@ -72,21 +72,21 @@ public abstract class CryptoCarrierPinningTck extends AbstractSubsystemCarrierPi
 
     /**
      * Returns the number of warm-up VT iterations (phase 1 — discarded).
-     * Matches {@code AbstractSubsystemCarrierPinningTck#WARMUP_VT_COUNT}.
+     * Delegates to the base-class accessor so this value stays in sync.
      */
-    protected int warmupIterations() { return 200; }
+    protected int warmupIterations() { return warmupVtCount(); }
 
     /**
      * Returns the number of steady-state VT iterations (phase 2 — measured).
-     * Matches {@code AbstractSubsystemCarrierPinningTck#STEADY_VT_COUNT}.
+     * Delegates to the base-class accessor so this value stays in sync.
      */
-    protected int hotPathIterations() { return 1_000; }
+    protected int hotPathIterations() { return steadyVtCount(); }
 
     @Override
     protected void bootstrapSubsystem() {
         KernelCryptoProvider provider = createProvider();
         allocator    = createAllocator();
-        vtSlotCount  = warmupIterations() + hotPathIterations();
+        vtSlotCount  = warmupVtCount() + steadyVtCount();
 
         CryptoProviderConfig tlsConfig = new CryptoProviderConfig(
                 CryptoProviderConfig.Protocol.TCP_TLS,

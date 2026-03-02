@@ -19,6 +19,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.LockSupport;
 import java.util.function.IntSupplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -171,7 +172,27 @@ public abstract class AbstractGracefulShutdownTck {
                 return List.copyOf(observedOrder);
             }
             orchestratorShutdown.run();
+
+            // Fence: Await all engines to close to support fully asynchronous
+            // orchestrator implementations before validating the recorded order.
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+            while (!allClosed() && System.nanoTime() < deadline) {
+                LockSupport.parkNanos(
+                        TimeUnit.MILLISECONDS.toNanos(10));
+            }
+
             return List.copyOf(observedOrder);
+        }
+
+        /** Returns {@code true} when every non-null {@link TrackedEngine} has been closed. */
+        private boolean allClosed() {
+            if (transport   != null && !transport.isClosed())   return false;
+            if (persistence != null && !persistence.isClosed()) return false;
+            if (flow        != null && !flow.isClosed())        return false;
+            if (events      != null && !events.isClosed())      return false;
+            if (graph       != null && !graph.isClosed())       return false;
+            if (memory      != null && !memory.isClosed())      return false;
+            return true;
         }
     }
 

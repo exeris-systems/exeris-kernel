@@ -107,21 +107,22 @@ public abstract class TransportCarrierPinningTck extends AbstractSubsystemCarrie
 
     /**
      * Returns the number of warm-up VT iterations (phase 1 — discarded).
-     * Matches {@code AbstractSubsystemCarrierPinningTck#WARMUP_VT_COUNT}.
+     * Delegates to the base-class accessor so this value stays in sync
+     * with the harness even if the constant changes.
      */
-    protected int warmupIterations() { return 200; }
+    protected int warmupIterations() { return warmupVtCount(); }
 
     /**
      * Returns the number of steady-state VT iterations (phase 2 — measured).
-     * Matches {@code AbstractSubsystemCarrierPinningTck#STEADY_VT_COUNT}.
+     * Delegates to the base-class accessor so this value stays in sync.
      */
-    protected int hotPathIterations() { return 1_000; }
+    protected int hotPathIterations() { return steadyVtCount(); }
 
     @Override
     protected void bootstrapSubsystem() {
         engine      = createEngine();
         allocator   = createAllocator();
-        vtSlotCount = warmupIterations() + hotPathIterations();
+        vtSlotCount = warmupVtCount() + steadyVtCount();
 
         streams = new TransportStream[vtSlotCount];
         buffers = new LoanedBuffer[vtSlotCount];
@@ -155,10 +156,17 @@ public abstract class TransportCarrierPinningTck extends AbstractSubsystemCarrie
                 if (s == null) continue;
                 if (i < usedSlots) {
                     // Slot was claimed — wait for pending data to drain before closing.
-                    // LockSupport.parkNanos yields the carrier thread rather than burning
-                    // CPU in a tight spin, keeping CI overhead negligible.
+                    // If the drain deadline is exceeded, fail the test explicitly: proceeding
+                    // to close a stream that still has pending data is a Use-After-Free on
+                    // the off-heap segment and would mask a real implementation defect.
                     long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
-                    while (s.hasPendingData() && System.nanoTime() < deadline) {
+                    while (s.hasPendingData()) {
+                        if (System.nanoTime() > deadline) {
+                            org.assertj.core.api.Assertions.fail(
+                                "Timeout waiting for TransportStream[" + i + "] pending data "
+                                + "to drain during TCK teardown. Implementation must complete "
+                                + "all queued writes within 5 seconds.");
+                        }
                         LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(10));
                     }
                 } else {
