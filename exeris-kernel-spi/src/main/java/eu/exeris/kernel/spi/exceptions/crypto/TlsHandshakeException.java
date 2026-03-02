@@ -49,4 +49,17 @@ public final class TlsHandshakeException extends ExerisKernelException {
     public TlsHandshakeException(String detail) {
         super(KernelErrorCodes.EX_NET_2001, MESSAGE, null, -1, detail);
     }
+
+    /**
+     * Internal L0/L1 constructor for creating zero-allocation Sentinels.
+     * <p>Disables suppression and stack-trace generation to avoid heap allocations
+     * during hot-path network operations.
+     *
+     * @param detail             static message fragment
+     * @param enableSuppression  whether suppression is enabled
+     * @param writableStackTrace whether the stack trace should be writable
+     */
+    public TlsHandshakeException(String detail, boolean enableSuppression, boolean writableStackTrace) {
+        super(KernelErrorCodes.EX_NET_2001, MESSAGE, null, enableSuppression, writableStackTrace, -1, detail);
+    }
 }

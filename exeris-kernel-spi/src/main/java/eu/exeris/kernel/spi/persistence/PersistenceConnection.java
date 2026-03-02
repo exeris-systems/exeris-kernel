@@ -156,6 +156,28 @@ public interface PersistenceConnection extends AutoCloseable {
     boolean inTransaction();
 
     // =========================================================================
+    // Bulk Insert (COPY protocol — optional, tier-gated)
+    // =========================================================================
+
+    /**
+     * Opens a bulk-insert session for the given table.
+     *
+     * <p>Enterprise tier: uses PostgreSQL {@code COPY ... FROM STDIN BINARY} for
+     * O(1) per-row overhead — off-heap, zero-copy framing.
+     * Community tier: default implementation returns {@link java.util.Optional#empty()}
+     * — callers should fall back to batched {@link #prepare(String)} inserts.
+     *
+     * <p>The returned {@link BulkInserter} MUST be closed via try-with-resources.
+     *
+     * @param table the target table name (unquoted, schema-prefixed if necessary)
+     * @return an {@link java.util.Optional} containing the bulk inserter, or empty if
+     *         this tier does not support the COPY protocol
+     */
+    default java.util.Optional<BulkInserter> openBulkInserter(String table) {
+        return java.util.Optional.empty(); // Community default: no COPY support
+    }
+
+    // =========================================================================
     // Lifecycle
     // =========================================================================
 
