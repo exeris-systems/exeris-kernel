@@ -155,7 +155,15 @@ public abstract class ExerisKernelException extends RuntimeException {
      * @param reserved           reserved for future binary-layout extensions; pass {@code -1}
      * @param rawArgs            zero or more domain-specific raw arguments
      */
-    @SuppressWarnings("java:S107") // Many params required by RuntimeException low-level constructor contract
+    @SuppressWarnings({
+        "java:S107",      // Many params required by RuntimeException low-level constructor contract
+        "PMD.UseVarargs"  // ARCH-DECISION: Object[] is intentional — NOT a varargs candidate.
+                          // Changing to Object... would create a compiler ambiguity with the
+                          // primary (String, String, Throwable, Object...) constructor, silently
+                          // routing Sentinel construction through the wrong call chain and
+                          // bypassing the enableSuppression/writableStackTrace zero-alloc contract.
+                          // See: docs/subsystems/exceptions.md § "Sentinel Pattern"
+    })
     protected ExerisKernelException(
             String errorCode,
             String message,
