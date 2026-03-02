@@ -34,7 +34,7 @@ import eu.exeris.kernel.spi.security.StorageContext;
  *   <tr><th>Method</th><th>Community</th><th>Enterprise</th></tr>
  *   <tr><td>{@link #openConnection()}</td><td>JDBC from HikariCP</td><td>PG wire protocol from slab pool</td></tr>
  *   <tr><td>{@link #openConnection(StorageContext)}</td><td>Per-tenant HikariCP</td><td>Per-tenant RLS pool</td></tr>
- *   <tr><td>{@link #healthCheck()}</td><td>JDBC ping</td><td>Native SELECT 1</td></tr>
+ *   <tr><td>{@link #healthCheckDetailed()}</td><td>JDBC ping</td><td>Native SELECT 1</td></tr>
  * </table>
  *
  * @since 0.5.0
@@ -75,12 +75,21 @@ public interface PersistenceEngine extends AutoCloseable {
      */
     PersistenceConnection openConnection(StorageContext storageContext);
 
+
     /**
-     * Performs a lightweight health check against the backing database.
+     * Performs a lightweight health check and returns a structured result.
      *
-     * @return {@code true} if the database is reachable and responsive
+     * <p>Measures the round-trip latency of a {@code SELECT 1} (or equivalent) query
+     * and emits a JFR health event. Returns a {@link PersistenceHealthStatus} record
+     * with {@code healthy}, {@code message}, and {@code latencyNanos} fields.
+     *
+     * <p>Implementations MUST override this method to provide accurate latency
+     * measurement via a {@code SELECT 1} (or equivalent) round-trip query.
+     *
+     * @return structured health status; never {@code null}
+     * @since 0.5.0
      */
-    boolean healthCheck();
+    PersistenceHealthStatus healthCheckDetailed();
 
     /**
      * Returns the immutable capability descriptor for this engine instance.

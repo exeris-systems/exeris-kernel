@@ -11,6 +11,7 @@ import eu.exeris.kernel.spi.exceptions.bootstrap.SubsystemCircularDependencyExce
 import eu.exeris.kernel.spi.exceptions.SubsystemException;
 
 import java.util.List;
+import java.util.function.UnaryOperator;
 
 /**
  * Lifecycle contract for a single kernel subsystem.
@@ -152,5 +153,59 @@ public interface Subsystem {
     default boolean isOptional() {
         return false;
     }
-}
 
+    /**
+     * Returns a function that enriches the kernel's {@link ScopedValue} carrier with
+     * this subsystem's provider bindings after {@link #initialize()} completes successfully.
+     *
+     * <h2>Purpose — solving the ScopedValue bootstrap problem</h2>
+     * <p>{@link #initialize()} executes inside an already open {@link ScopedValue} scope
+     * (the one opened for {@code CURRENT_CONFIG}). It cannot extend that scope from within.
+     * This method is the type-safe exit hatch: the {@code SubsystemOrchestrator} calls it
+     * <em>after</em> {@code initialize()} returns cleanly, composes all subsystem operators
+     * in topological order into a single {@link ScopedValue.Carrier}, then re-enters
+     * {@code start()} inside that enriched scope.
+     *
+     * <h2>Why {@code UnaryOperator} instead of {@code Map<ScopedValue<?>, Object>}</h2>
+     * <p>The functional approach gives the compiler full type visibility at each
+     * {@link ScopedValue.Carrier#where(ScopedValue, Object)} call site.
+     * When a subsystem writes:
+     * <pre>{@code
+     *   carrier.where(KernelProviders.MEMORY_ALLOCATOR, this.memoryAllocator)
+     * }</pre>
+     * the compiler knows {@code MEMORY_ALLOCATOR} is {@code ScopedValue<MemoryAllocator>}
+     * and rejects any value of the wrong type at compile time.
+     * The previous {@code Map<ScopedValue<?>, Object>} accepted any {@code Object} for any
+     * key — a type hole that required {@code @SuppressWarnings("unchecked")} in the
+     * orchestrator. That suppress is now entirely gone.
+     *
+     * <h2>Contract</h2>
+     * <ul>
+     *   <li>Called <strong>after</strong> {@link #initialize()} returns without throwing.</li>
+     *   <li>Never called if {@code initialize()} threw.</li>
+     *   <li>Must return a non-{@code null} operator; use the identity for no bindings.</li>
+     *   <li>The operator MUST be pure — no side effects, no I/O, no state mutation.</li>
+     * </ul>
+     *
+     * <h2>Default behaviour</h2>
+     * <p>Returns the identity function — subsystems that expose no SPI provider instances
+     * need not override this method.
+     *
+     * <h2>Example — memory subsystem</h2>
+     * <pre>{@code
+     * @Override
+     * public UnaryOperator<ScopedValue.Carrier> providerBindings() {
+     *     return carrier -> carrier
+     *         .where(KernelProviders.MEMORY_PROVIDER,  this.memoryProvider)
+     *         .where(KernelProviders.MEMORY_ALLOCATOR, this.memoryAllocator);
+     * }
+     * }</pre>
+     *
+     * @return a function that appends this subsystem's bindings to a carrier; never {@code null}
+     * @since 0.5.0
+     * @see eu.exeris.kernel.spi.context.KernelProviders
+     */
+    default UnaryOperator<ScopedValue.Carrier> providerBindings() {
+        return carrier -> carrier;
+    }
+}
