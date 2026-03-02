@@ -225,10 +225,25 @@ public abstract class AbstractGracefulShutdownTck {
         @Override
         public void close() {
             if (!closed.compareAndSet(false, true)) return;
-            try { if (delegate != null) delegate.close(); }
-            catch (Exception _) { /* close must not throw in TCK context */ }
+            Exception failure = null;
+            try {
+                if (delegate != null) {
+                    delegate.close();
+                }
+            }
+            catch (Exception ex) {
+                // Record the failure but defer throwing until after we have recorded close order.
+                failure = ex;
+            }
             finally {
-                if (observedOrder != null) observedOrder.add(name);
+                if (observedOrder != null) {
+                    observedOrder.add(name);
+                }
+            }
+            if (failure != null) {
+                throw new AssertionError(
+                        "TrackedEngine '" + name + "' delegate close failed", failure
+                );
             }
         }
     }
