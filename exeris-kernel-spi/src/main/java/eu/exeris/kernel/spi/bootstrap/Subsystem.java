@@ -11,6 +11,7 @@ import eu.exeris.kernel.spi.exceptions.bootstrap.SubsystemCircularDependencyExce
 import eu.exeris.kernel.spi.exceptions.SubsystemException;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * Lifecycle contract for a single kernel subsystem.
@@ -152,5 +153,54 @@ public interface Subsystem {
     default boolean isOptional() {
         return false;
     }
-}
 
+    /**
+     * Returns the {@link ScopedValue} bindings this subsystem wishes to publish into
+     * the kernel scope after its {@link #initialize()} completes successfully.
+     *
+     * <h2>Purpose — solving the ScopedValue bootstrap problem</h2>
+     * <p>{@link #initialize()} is {@code void} and executes <em>inside</em> an already
+     * open {@link ScopedValue} scope (the one opened for {@code CURRENT_CONFIG}).
+     * It cannot extend that scope from the inside. This method is the exit hatch:
+     * the {@code SubsystemOrchestrator} calls it <em>after</em> {@code initialize()}
+     * returns cleanly, collects every binding from every subsystem in topological order,
+     * builds a single {@link ScopedValue.Carrier} chain, and re-enters the
+     * {@link SubsystemOrchestrator#start(eu.exeris.kernel.spi.config.ConfigProvider)}
+     * phase <em>inside</em> that enriched scope.
+     *
+     * <h2>Contract</h2>
+     * <ul>
+     *   <li>Called <strong>after</strong> {@link #initialize()} returns without throwing.</li>
+     *   <li>Never called if {@code initialize()} threw — the orchestrator skips binding
+     *       collection for failed subsystems.</li>
+     *   <li>The returned map is consumed exactly once by the orchestrator; implementations
+     *       MUST return the same bindings on every call (effectively immutable).</li>
+     *   <li>Keys are {@link ScopedValue} instances from
+     *       {@link eu.exeris.kernel.spi.context.KernelProviders}.</li>
+     *   <li>Values MUST be non-{@code null}.</li>
+     * </ul>
+     *
+     * <h2>Default behaviour</h2>
+     * <p>Returns {@link Map#of()} — subsystems that produce no SPI provider instances
+     * (e.g., purely reactive subsystems) need not override this method.
+     *
+     * <h2>Example — memory subsystem</h2>
+     * <pre>{@code
+     * @Override
+     * public Map<ScopedValue<Object>, Object> providerBindings() {
+     *     return Map.of(
+     *         KernelProviders.MEMORY_PROVIDER,  this.memoryProvider,
+     *         KernelProviders.MEMORY_ALLOCATOR, this.memoryAllocator
+     *     );
+     * }
+     * }</pre>
+     *
+     * @return an immutable map of {@link ScopedValue} keys to their bound values;
+     *         never {@code null}; default is {@link Map#of()}
+     * @since 0.5.0
+     * @see eu.exeris.kernel.spi.context.KernelProviders
+     */
+    default Map<ScopedValue<Object>, Object> providerBindings() {
+        return Map.of();
+    }
+}
