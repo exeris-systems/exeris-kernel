@@ -7,7 +7,7 @@
  */
 package eu.exeris.kernel.tck.contract;
 
-import eu.exeris.kernel.tck.contract.JfrPinningMonitor;
+import eu.exeris.kernel.tck.contract.flow.AbstractFlowEngineTck;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;

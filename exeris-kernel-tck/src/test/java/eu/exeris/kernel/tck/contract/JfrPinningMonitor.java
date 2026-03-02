@@ -20,8 +20,6 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 
-import static org.assertj.core.api.Assertions.fail;
-
 /**
  * Reusable JFR Carrier Pinning monitor for all subsystem TCKs.
  *
@@ -129,7 +127,7 @@ public final class JfrPinningMonitor {
         sb.append("Per performance-contract.md: carrier blocked > ")
           .append(result.thresholdMs())
           .append(" ms is BANNED. Avoid synchronized, blocking I/O, non-VT-safe executors.");
-        fail(sb.toString());
+        throw new AssertionError(sb.toString());
     }
 
 
