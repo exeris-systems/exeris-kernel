@@ -145,14 +145,14 @@ public abstract class AbstractOutboxGuaranteeTck {
 
     private int drainPollPending(EventStore store, PersistenceConnection conn) {
         conn.beginTransaction();
-        int total = 0;
-        List<OutboxEvent> batch;
-        do {
-            batch = store.pollPending(1_000);
-            total += batch.size();
-        } while (!batch.isEmpty());
-        conn.commit();
-        return total;
+        try {
+            // Single large-batch poll for counting only; rollback to avoid mutating store state.
+            // A do-while loop would infinite-loop here because pollPending() re-returns the
+            // same pending events until markPublished() is called (EventStore contract).
+            return store.pollPending(Integer.MAX_VALUE).size();
+        } finally {
+            conn.rollback();
+        }
     }
 
     // =========================================================================

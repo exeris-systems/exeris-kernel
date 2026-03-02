@@ -32,6 +32,13 @@ public final class TlsHandshakeException extends ExerisKernelException {
 
     private static final String MESSAGE = "TLS handshake failed";
 
+    /**
+     * Pre-allocated rawArgs for the true zero-allocation Sentinel path.
+     * Layout: index 0 = nativeErrorCode (-1 sentinel), index 1 = null (no detail).
+     * This array is a static constant — never re-allocated on the hot path.
+     */
+    private static final Object[] SENTINEL_ARGS = {-1, null};
+
     public TlsHandshakeException(int nativeErrorCode, String detail) {
         super(KernelErrorCodes.EX_NET_2001, MESSAGE, null, nativeErrorCode, detail);
     }
@@ -51,16 +58,36 @@ public final class TlsHandshakeException extends ExerisKernelException {
     }
 
     /**
-     * Internal L0/L1 constructor for creating zero-allocation Sentinels.
-     * <p>Disables suppression and stack-trace generation to avoid heap allocations
-     * during hot-path network operations.
+     * True zero-allocation Sentinel constructor for L0/L1 hot-path pre-allocation.
+     * <p>Disables suppression and stack-trace generation. Uses a static pre-allocated
+     * {@link #SENTINEL_ARGS} array — <strong>no heap allocation occurs</strong>.
+     * The {@code traceId} and {@code timestamp} fields are assigned JVM constants
+     * (see {@code ExerisKernelException} Sentinel constructor contract).
      *
-     * @param detail             static message fragment
+     * <p><strong>Usage:</strong> pre-allocate once as a static final field and rethrow:
+     * <pre>{@code
+     * private static final TlsHandshakeException SENTINEL =
+     *         new TlsHandshakeException(false, false);
+     * }</pre>
+     */
+    public TlsHandshakeException(boolean enableSuppression, boolean writableStackTrace) {
+        super(KernelErrorCodes.EX_NET_2001, MESSAGE, null,
+                enableSuppression, writableStackTrace, SENTINEL_ARGS);
+    }
+
+    /**
+     * Non-sentinel constructor with a dynamic detail string.
+     * <p><strong>NOT zero-allocation</strong> — the {@code detail} String is captured
+     * inside a freshly allocated {@code Object[]} for binary telemetry. The Sentinel
+     * path ({@link #TlsHandshakeException(boolean, boolean)}) must be used instead
+     * when true zero-allocation is required.
+     *
+     * @param detail             static message fragment; never formatted at runtime
      * @param enableSuppression  whether suppression is enabled
      * @param writableStackTrace whether the stack trace should be writable
      */
     public TlsHandshakeException(String detail, boolean enableSuppression, boolean writableStackTrace) {
         super(KernelErrorCodes.EX_NET_2001, MESSAGE, null,
-                enableSuppression, writableStackTrace, -1, new Object[]{-1, detail});
+                enableSuppression, writableStackTrace, new Object[]{-1, detail});
     }
 }

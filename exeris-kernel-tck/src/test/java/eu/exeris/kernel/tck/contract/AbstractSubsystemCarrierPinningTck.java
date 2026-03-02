@@ -154,7 +154,7 @@ public abstract class AbstractSubsystemCarrierPinningTck {
                   .name("exeris-pin-" + subsystemName() + "-", i)
                   .start(() -> {
                       try { runSingleIteration(); }
-                      catch (Exception _) { errors.incrementAndGet(); }
+                      catch (Throwable _) { errors.incrementAndGet(); }
                       finally { done.countDown(); }
                   });
         }

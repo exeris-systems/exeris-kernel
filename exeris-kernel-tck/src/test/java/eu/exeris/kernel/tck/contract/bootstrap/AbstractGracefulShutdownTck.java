@@ -99,32 +99,58 @@ public abstract class AbstractGracefulShutdownTck {
     /**
      * Wraps all running SPI engines and workload sources needed by the TCK.
      * Pass {@code null} for engines the implementation does not provide.
-     *
-     * @param transport              wrapped Transport engine
-     * @param persistence            wrapped Persistence engine
-     * @param flow                   wrapped Flow engine
-     * @param events                 wrapped Events engine
-     * @param graph                  wrapped Graph engine; {@code null} to skip
-     * @param memory                 wrapped Memory layer; {@code null} to skip
-     * @param requestSender          fire-and-forget: sends one unit of work via Transport
-     * @param confirmedWrites        returns count of durably-written items via Persistence
-     * @param orchestratorShutdown   calls the real orchestrator/kernel shutdown (e.g. kernel.shutdown())
-     * @param observedOrder          shared list populated by {@link TrackedEngine#close()} in invocation order
+     * <p>Implemented as a {@code final class} (not a {@code record}) because it carries
+     * mutable shutdown state ({@link java.util.concurrent.atomic.AtomicBoolean}) that
+     * records cannot express as non-component fields.
      */
-    public record KernelHandle(
-            TrackedEngine transport,
-            TrackedEngine persistence,
-            TrackedEngine flow,
-            TrackedEngine events,
-            TrackedEngine graph,
-            TrackedEngine memory,
-            Runnable      requestSender,
-            IntSupplier   confirmedWrites,
-            Runnable      orchestratorShutdown,
-            CopyOnWriteArrayList<String> observedOrder
-    ) {
-        private static final java.util.concurrent.ConcurrentHashMap<KernelHandle, Boolean> SHUTDOWN_GUARD
-                = new java.util.concurrent.ConcurrentHashMap<>();
+    public static final class KernelHandle {
+
+        private final TrackedEngine transport;
+        private final TrackedEngine persistence;
+        private final TrackedEngine flow;
+        private final TrackedEngine events;
+        private final TrackedEngine graph;
+        private final TrackedEngine memory;
+        private final Runnable      requestSender;
+        private final IntSupplier   confirmedWrites;
+        private final Runnable      orchestratorShutdown;
+        private final CopyOnWriteArrayList<String> observedOrder;
+
+        private final java.util.concurrent.atomic.AtomicBoolean shutdownTriggered
+                = new java.util.concurrent.atomic.AtomicBoolean(false);
+
+        public KernelHandle(
+                TrackedEngine transport,
+                TrackedEngine persistence,
+                TrackedEngine flow,
+                TrackedEngine events,
+                TrackedEngine graph,
+                TrackedEngine memory,
+                Runnable      requestSender,
+                IntSupplier   confirmedWrites,
+                Runnable      orchestratorShutdown,
+                CopyOnWriteArrayList<String> observedOrder) {
+            this.transport           = transport;
+            this.persistence         = persistence;
+            this.flow                = flow;
+            this.events              = events;
+            this.graph               = graph;
+            this.memory              = memory;
+            this.requestSender       = requestSender;
+            this.confirmedWrites     = confirmedWrites;
+            this.orchestratorShutdown = orchestratorShutdown;
+            this.observedOrder       = observedOrder;
+        }
+
+        public TrackedEngine              transport()            { return transport; }
+        public TrackedEngine              persistence()          { return persistence; }
+        public TrackedEngine              flow()                 { return flow; }
+        public TrackedEngine              events()               { return events; }
+        public TrackedEngine              graph()                { return graph; }
+        public TrackedEngine              memory()               { return memory; }
+        public Runnable                   requestSender()        { return requestSender; }
+        public IntSupplier                confirmedWrites()      { return confirmedWrites; }
+        public CopyOnWriteArrayList<String> observedOrder()      { return observedOrder; }
 
         /**
          * Triggers the real orchestrator shutdown and returns the observed close sequence.
@@ -134,7 +160,7 @@ public abstract class AbstractGracefulShutdownTck {
          * triggering a second shutdown.
          */
         List<String> shutdownInCanonicalOrder() {
-            if (SHUTDOWN_GUARD.putIfAbsent(this, Boolean.TRUE) != null) {
+            if (!shutdownTriggered.compareAndSet(false, true)) {
                 return List.copyOf(observedOrder);
             }
             orchestratorShutdown.run();
@@ -150,7 +176,8 @@ public abstract class AbstractGracefulShutdownTck {
 
         private final String        name;
         private final AutoCloseable delegate;
-        private volatile boolean    closed        = false;
+        private final java.util.concurrent.atomic.AtomicBoolean closed
+                = new java.util.concurrent.atomic.AtomicBoolean(false);
         private CopyOnWriteArrayList<String> observedOrder = null;
 
         public TrackedEngine(String name, AutoCloseable delegate) {
@@ -165,15 +192,14 @@ public abstract class AbstractGracefulShutdownTck {
         }
 
         public String  name()     { return name; }
-        public boolean isClosed() { return closed; }
+        public boolean isClosed() { return closed.get(); }
 
         @Override
         public void close() {
-            if (closed) return;
+            if (!closed.compareAndSet(false, true)) return;
             try { if (delegate != null) delegate.close(); }
             catch (Exception _) { /* close must not throw in TCK context */ }
             finally {
-                closed = true;
                 if (observedOrder != null) observedOrder.add(name);
             }
         }

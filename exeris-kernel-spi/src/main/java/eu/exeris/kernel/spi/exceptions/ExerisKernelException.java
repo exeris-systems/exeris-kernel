@@ -56,6 +56,19 @@ public abstract class ExerisKernelException extends RuntimeException {
     private static final Object[] EMPTY_ARGS = new Object[0];
 
     /**
+     * Pre-allocated sentinel trace ID used by the zero-allocation Sentinel constructor.
+     * Sentinel exceptions must not call {@code UUID.randomUUID()} on the hot path.
+     * The all-zeros UUID is recognisable in crash logs as a non-distributed-trace event.
+     */
+    private static final UUID SENTINEL_TRACE_ID = new UUID(0L, 0L);
+
+    /**
+     * Pre-allocated sentinel timestamp used by the zero-allocation Sentinel constructor.
+     * {@code Instant.EPOCH} is a JVM constant — no heap allocation.
+     */
+    private static final Instant SENTINEL_TIMESTAMP = Instant.EPOCH;
+
+    /**
      * Structured error code in {@code EX-[DOMAIN]-[ID]} format.
      * Immutable; used by log scrapers and Black-Box binary serializers.
      */
@@ -146,14 +159,18 @@ public abstract class ExerisKernelException extends RuntimeException {
      * <p><strong>Performance Contract:</strong> passing {@code writableStackTrace=false}
      * eliminates the {@link Throwable#fillInStackTrace()} allocation on the hot path —
      * a key requirement for L0 Sentinel exception patterns.
+     * This constructor also substitutes {@link #SENTINEL_TRACE_ID} and
+     * {@link #SENTINEL_TIMESTAMP} for the normally-allocated {@code UUID} and
+     * {@code Instant}, ensuring <em>zero heap allocation</em> on every construction.
      *
      * @param errorCode          a non-null {@code EX-[DOMAIN]-[ID]} code
      * @param message            static message template — no runtime formatting
      * @param cause              optional chained throwable; may be {@code null}
      * @param enableSuppression  whether suppression is enabled or disabled
      * @param writableStackTrace whether the stack trace should be writable
-     * @param reserved           reserved for future binary-layout extensions; pass {@code -1}
-     * @param rawArgs            zero or more domain-specific raw arguments
+     * @param rawArgs            pre-allocated raw domain arguments; MUST be a static constant —
+     *                           never pass {@code new Object[]{...}} here or the zero-alloc
+     *                           contract is broken
      */
     @SuppressWarnings({
         "java:S107",      // Many params required by RuntimeException low-level constructor contract
@@ -170,13 +187,15 @@ public abstract class ExerisKernelException extends RuntimeException {
             Throwable cause,
             boolean enableSuppression,
             boolean writableStackTrace,
-            int reserved,
             Object[] rawArgs) {
         super(message, cause, enableSuppression, writableStackTrace);
         Objects.requireNonNull(errorCode, "errorCode must not be null – every kernel exception requires an EX- code");
         this.errorCode = errorCode;
-        this.traceId   = UUID.randomUUID();
-        this.timestamp = Instant.now();
+        // Zero-allocation: use pre-allocated sentinel constants instead of allocating
+        // UUID.randomUUID() + Instant.now(). The all-zeros UUID is recognisable in crash
+        // logs as a sentinel (non-distributed-trace) event.
+        this.traceId   = SENTINEL_TRACE_ID;
+        this.timestamp = SENTINEL_TIMESTAMP;
         this.rawArgs   = (rawArgs != null) ? rawArgs : EMPTY_ARGS;
     }
 

@@ -324,7 +324,8 @@ public abstract class AbstractTransactionOrchestratorTck {
         @Timeout(value = 10, unit = TimeUnit.SECONDS)
         void concurrentQueriesDoNotShareConnection() throws Exception {
             AtomicInteger completed = new AtomicInteger(0);
-            try (var scope = java.util.concurrent.StructuredTaskScope.open()) {
+            try (var scope = java.util.concurrent.StructuredTaskScope.open(
+                    java.util.concurrent.StructuredTaskScope.Joiner.awaitAllSuccessfulOrThrow())) {
                 for (int i = 0; i < 10; i++) {
                     scope.fork(() -> {
                         executor.query(conn -> {

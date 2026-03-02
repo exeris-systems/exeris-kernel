@@ -30,7 +30,7 @@ import java.lang.foreign.ValueLayout;
  * public class CommunityTransportCarrierPinningTest extends TransportCarrierPinningTck {
  *     \@Override protected TransportEngine createEngine()         { return new CommunityTransportEngine(...); }
  *     \@Override protected MemoryAllocator createAllocator()      { return new CommunityMemoryAllocator(...); }
- *     \@Override protected TransportStream createWritableStream() { return engine.openStream(loopback); }
+ *     \@Override protected TransportStream createWritableStream() { return engine().openStream(loopback); }
  * }
  * }</pre>
  *
@@ -39,7 +39,7 @@ import java.lang.foreign.ValueLayout;
  * public class EnterpriseTransportCarrierPinningTest extends TransportCarrierPinningTck {
  *     \@Override protected TransportEngine createEngine()         { return new EnterpriseTransportEngine(...); }
  *     \@Override protected MemoryAllocator createAllocator()      { return new EnterpriseMemoryAllocator(...); }
- *     \@Override protected TransportStream createWritableStream() { return engine.openStream(loopback); }
+ *     \@Override protected TransportStream createWritableStream() { return engine().openStream(loopback); }
  * }
  * }</pre>
  *
@@ -77,6 +77,9 @@ public abstract class TransportCarrierPinningTck extends AbstractSubsystemCarrie
 
     @Override
     protected String subsystemName() { return "Transport"; }
+
+    /** Returns the bootstrapped {@link TransportEngine} for use in {@link #createWritableStream()}. */
+    protected final TransportEngine engine() { return engine; }
 
     @Override
     protected String hotPathDescription() {
