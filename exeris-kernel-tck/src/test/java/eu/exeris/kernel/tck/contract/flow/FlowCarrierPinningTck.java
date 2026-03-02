@@ -37,8 +37,13 @@ public abstract class FlowCarrierPinningTck extends AbstractSubsystemCarrierPinn
     // State
     // =========================================================================
 
-    /** Maximum number of concurrent VTs across warm-up + steady phases. */
-    private static final int MAX_VT_SLOTS = 10_000;
+    /**
+     * Number of pre-allocated per-VT slots — covers warm-up (200) + steady (1 000)
+     * phases with a large safety margin for implementation-level re-runs.
+     * Stored as an instance field (not a compile-time constant) to satisfy static
+     * analysis tools that flag {@code i < CONSTANT} as an always-true condition.
+     */
+    private final int vtSlotCount = 10_000;
 
     private FlowEngine engine;
     private FlowExecutionPlan plan;
@@ -65,8 +70,8 @@ public abstract class FlowCarrierPinningTck extends AbstractSubsystemCarrierPinn
                 .build();
         plan = engine.plans().compile(def);
 
-        contexts = new eu.exeris.kernel.spi.flow.model.FlowContext[MAX_VT_SLOTS];
-        for (int i = 0; i < MAX_VT_SLOTS; i++) {
+        contexts = new eu.exeris.kernel.spi.flow.model.FlowContext[vtSlotCount];
+        for (int i = 0; i < contexts.length; i++) {
             contexts[i] = TestFlowContexts.create("carrier-pin-" + i, "carrier-pin-flow");
         }
         vtIndex.set(0);
