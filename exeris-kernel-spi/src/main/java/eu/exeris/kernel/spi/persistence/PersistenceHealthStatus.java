@@ -101,9 +101,18 @@ public record PersistenceHealthStatus(
      * @return an unhealthy {@link PersistenceHealthStatus}
      */
     public static PersistenceHealthStatus failed(Throwable cause) {
-        String reason = cause != null
-                ? cause.getClass().getSimpleName() + ": " + cause.getMessage()
-                : UNKNOWN_FAILURE;
+        final String reason;
+        if (cause == null) {
+            reason = UNKNOWN_FAILURE;
+        } else {
+            // Deliberately avoid cause.getMessage() to prevent leaking credentials,
+            // JDBC URLs, filesystem paths, or other environment details to health endpoints.
+            final Class<?> exceptionClass = cause.getClass();
+            final String simpleName = exceptionClass.getSimpleName();
+            reason = simpleName.isEmpty()
+                    ? exceptionClass.getName()
+                    : simpleName;
+        }
         return new PersistenceHealthStatus(false, reason, -1L);
     }
 

@@ -129,6 +129,7 @@ public abstract class AbstractTransactionOrchestratorTck {
         void queryReturnsResult() {
             Integer result = executor.query(conn -> {
                 try (QueryResult qr = conn.executeQuery(selectOneSql())) {
+                    org.assertj.core.api.Assertions.assertThat(qr.next()).isTrue();
                     return qr.row().getInt(0);
                 }
             });
@@ -142,12 +143,14 @@ public abstract class AbstractTransactionOrchestratorTck {
             for (int i = 0; i < 5; i++) {
                 executor.query(conn -> {
                     try (QueryResult qr = conn.executeQuery(selectOneSql())) {
+                        org.assertj.core.api.Assertions.assertThat(qr.next()).isTrue();
                         return qr.row().getInt(0);
                     }
                 });
             }
              Integer result = executor.query(conn -> {
                 try (QueryResult qr = conn.executeQuery(selectOneSql())) {
+                    org.assertj.core.api.Assertions.assertThat(qr.next()).isTrue();
                     return qr.row().getInt(0);
                 }
             });
@@ -173,6 +176,7 @@ public abstract class AbstractTransactionOrchestratorTck {
 
             Integer count = executor.query(conn -> {
                 try (QueryResult qr = conn.executeQuery(readSentinelCountSql())) {
+                    org.assertj.core.api.Assertions.assertThat(qr.next()).isTrue();
                     return qr.row().getInt(0);
                 }
             });
@@ -185,6 +189,7 @@ public abstract class AbstractTransactionOrchestratorTck {
         void rollbackOnException() {
             int countBefore = executor.query(conn -> {
                 try (QueryResult qr = conn.executeQuery(readSentinelCountSql())) {
+                    org.assertj.core.api.Assertions.assertThat(qr.next()).isTrue();
                     return qr.row().getInt(0);
                 }
             });
@@ -198,6 +203,7 @@ public abstract class AbstractTransactionOrchestratorTck {
 
             int countAfter = executor.query(conn -> {
                 try (QueryResult qr = conn.executeQuery(readSentinelCountSql())) {
+                    org.assertj.core.api.Assertions.assertThat(qr.next()).isTrue();
                     return qr.row().getInt(0);
                 }
             });

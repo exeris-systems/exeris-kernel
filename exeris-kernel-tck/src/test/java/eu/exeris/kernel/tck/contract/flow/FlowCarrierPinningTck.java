@@ -15,6 +15,8 @@ import eu.exeris.kernel.spi.flow.model.FlowStepAction;
 import eu.exeris.kernel.tck.contract.AbstractSubsystemCarrierPinningTck;
 import org.junit.jupiter.api.DisplayName;
 
+import java.util.concurrent.atomic.AtomicInteger;
+
 /**
  * TCK: Carrier pinning verifier for the Flow step-transition hot path.
  *
@@ -31,9 +33,21 @@ public abstract class FlowCarrierPinningTck extends AbstractSubsystemCarrierPinn
 
     protected abstract FlowEngine createEngine();
 
-    private FlowEngine        engine;
+    // =========================================================================
+    // State
+    // =========================================================================
+
+    /** Maximum number of concurrent VTs across warm-up + steady phases. */
+    private static final int MAX_VT_SLOTS = 10_000;
+
+    private FlowEngine engine;
     private FlowExecutionPlan plan;
-    private eu.exeris.kernel.spi.flow.model.FlowContext testCtx;
+
+    /** Pre-allocated per-VT FlowContexts — each VT owns exactly one slot. */
+    private eu.exeris.kernel.spi.flow.model.FlowContext[] contexts;
+
+    /** Monotonic slot counter — each executing VT claims the next available index. */
+    private final AtomicInteger vtIndex = new AtomicInteger(0);
 
     @Override protected String subsystemName()      { return "FlowEngine"; }
     @Override protected String hotPathDescription() { return "scheduler.schedule(plan, ctx) → park → wake"; }
@@ -49,15 +63,23 @@ public abstract class FlowCarrierPinningTck extends AbstractSubsystemCarrierPinn
                 .step("step-b", noOp, null)
                 .transition(0, 1)
                 .build();
-        plan    = engine.plans().compile(def);
-        testCtx = TestFlowContexts.create("carrier-pin-steady", "carrier-pin-flow");
+        plan = engine.plans().compile(def);
+
+        contexts = new eu.exeris.kernel.spi.flow.model.FlowContext[MAX_VT_SLOTS];
+        for (int i = 0; i < MAX_VT_SLOTS; i++) {
+            contexts[i] = TestFlowContexts.create("carrier-pin-" + i, "carrier-pin-flow");
+        }
+        vtIndex.set(0);
     }
 
     @Override
     protected void runSingleIteration() {
-        engine.scheduler().schedule(plan, testCtx);
-        engine.scheduler().park(testCtx);
-        engine.scheduler().wake(testCtx);
+        // Each VT claims its own pre-allocated FlowContext — zero allocations on the hot path.
+        int idx = vtIndex.getAndIncrement();
+        eu.exeris.kernel.spi.flow.model.FlowContext ctx = contexts[idx];
+        engine.scheduler().schedule(plan, ctx);
+        engine.scheduler().park(ctx);
+        engine.scheduler().wake(ctx);
     }
 
     @Override

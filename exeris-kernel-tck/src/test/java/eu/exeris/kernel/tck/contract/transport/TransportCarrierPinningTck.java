@@ -16,6 +16,7 @@ import eu.exeris.kernel.tck.contract.AbstractSubsystemCarrierPinningTck;
 import org.junit.jupiter.api.DisplayName;
 
 import java.lang.foreign.ValueLayout;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * TCK: Carrier pinning verifier for the Transport I/O hot path.
@@ -67,9 +68,20 @@ public abstract class TransportCarrierPinningTck extends AbstractSubsystemCarrie
     // State
     // =========================================================================
 
-    private TransportEngine engine;
-    private MemoryAllocator allocator;
-    private TransportStream stream;
+    /** Maximum number of concurrent VTs across warm-up + steady phases. */
+    private static final int MAX_VT_SLOTS = 10_000;
+
+    private TransportEngine  engine;
+    private MemoryAllocator  allocator;
+
+    /** Pre-allocated per-VT streams — each VT owns exactly one slot. */
+    private TransportStream[] streams;
+
+    /** Pre-allocated per-VT network buffers — each VT owns exactly one slot. */
+    private LoanedBuffer[]    buffers;
+
+    /** Monotonic slot counter — each executing VT claims the next available index. */
+    private final AtomicInteger vtIndex = new AtomicInteger(0);
 
     // =========================================================================
     // AbstractSubsystemCarrierPinningTck bindings
@@ -90,21 +102,33 @@ public abstract class TransportCarrierPinningTck extends AbstractSubsystemCarrie
     protected void bootstrapSubsystem() {
         engine    = createEngine();
         allocator = createAllocator();
-        stream    = createWritableStream();
+
+        streams = new TransportStream[MAX_VT_SLOTS];
+        buffers = new LoanedBuffer[MAX_VT_SLOTS];
+        for (int i = 0; i < MAX_VT_SLOTS; i++) {
+            streams[i] = createWritableStream();
+            LoanedBuffer buf = allocator.allocate(AllocationHint.MICRO);
+            buf.segment().set(ValueLayout.JAVA_LONG, 0, 0xCAFEL);
+            buffers[i] = buf;
+        }
+        vtIndex.set(0);
     }
 
     @Override
     protected void runSingleIteration() {
-        // allocate(MICRO) is slab-pool acquire — must NOT pin (no synchronized on pool path)
-        // queueWrite takes ownership of buf — caller does NOT close
-        LoanedBuffer buf = allocator.allocate(AllocationHint.MICRO);
-        buf.segment().set(ValueLayout.JAVA_LONG, 0, 0xCAFEL);
-        stream.queueWrite(buf, Long.BYTES);
+        // Each VT claims its own pre-allocated slot — zero allocations on the hot path.
+        // queueWrite takes ownership of buf — the buffer is NOT closed here.
+        int idx = vtIndex.getAndIncrement();
+        streams[idx].queueWrite(buffers[idx], Long.BYTES);
     }
 
     @Override
     protected void tearDownSubsystem() {
-        if (stream    != null) stream.close();
+        if (streams != null) {
+            for (TransportStream s : streams) {
+                if (s != null) s.close();
+            }
+        }
         if (engine    != null) engine.close();
         if (allocator != null) allocator.close();
     }

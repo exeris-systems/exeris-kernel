@@ -17,6 +17,7 @@ import eu.exeris.kernel.tck.contract.AbstractSubsystemCarrierPinningTck;
 import org.junit.jupiter.api.DisplayName;
 
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * TCK: Carrier pinning verifier for the TLS wrap/unwrap hot path.
@@ -36,41 +37,85 @@ public abstract class CryptoCarrierPinningTck extends AbstractSubsystemCarrierPi
     protected abstract KernelCryptoProvider createProvider();
     protected abstract MemoryAllocator createAllocator();
 
-    private MemoryAllocator      allocator;
-    private TlsEngine            engine;
-    private LoanedBuffer         plaintext;
-    private LoanedBuffer         ciphertext;
-
     @Override protected String subsystemName()      { return "Crypto"; }
     @Override protected String hotPathDescription() { return "TlsEngine.wrap(plaintext, ciphertext) — zero-copy cipher"; }
+
+    // =========================================================================
+    // State
+    // =========================================================================
+
+    /** Maximum number of concurrent VTs across warm-up + steady phases. */
+    private static final int MAX_VT_SLOTS = 10_000;
+
+    private MemoryAllocator allocator;
+
+    /** Pre-allocated per-VT TLS engines — each VT owns exactly one slot. */
+    private TlsEngine[]    engines;
+
+    /** Pre-allocated per-VT plaintext buffers. */
+    private LoanedBuffer[] plaintexts;
+
+    /** Pre-allocated per-VT ciphertext buffers. */
+    private LoanedBuffer[] ciphertexts;
+
+    /** Monotonic slot counter — each executing VT claims the next available index. */
+    private final AtomicInteger vtIndex = new AtomicInteger(0);
+
+    // =========================================================================
+    // AbstractSubsystemCarrierPinningTck bindings
+    // =========================================================================
 
     @Override
     protected void bootstrapSubsystem() {
         KernelCryptoProvider provider = createProvider();
-        allocator  = createAllocator();
-        engine     = provider.createTlsEngine(new CryptoProviderConfig(
+        allocator   = createAllocator();
+
+        CryptoProviderConfig tlsConfig = new CryptoProviderConfig(
                 CryptoProviderConfig.Protocol.TCP_TLS,
                 null, null,
                 List.of("h2"),
                 0, false,
-                CryptoProviderConfig.TLS_1_3));
-        plaintext  = allocator.allocate(AllocationHint.MEDIUM);
-        ciphertext = allocator.allocate(AllocationHint.MEDIUM);
-        plaintext.segment().fill((byte) 0xAB);
-        engine.beginHandshake(ciphertext);
+                CryptoProviderConfig.TLS_1_3);
+
+        engines     = new TlsEngine[MAX_VT_SLOTS];
+        plaintexts  = new LoanedBuffer[MAX_VT_SLOTS];
+        ciphertexts = new LoanedBuffer[MAX_VT_SLOTS];
+
+        for (int i = 0; i < MAX_VT_SLOTS; i++) {
+            engines[i]    = provider.createTlsEngine(tlsConfig);
+            plaintexts[i] = allocator.allocate(AllocationHint.MEDIUM);
+            ciphertexts[i] = allocator.allocate(AllocationHint.MEDIUM);
+            plaintexts[i].segment().fill((byte) 0xAB);
+            engines[i].beginHandshake(ciphertexts[i]);
+        }
+        vtIndex.set(0);
     }
 
     @Override
     protected void runSingleIteration() {
-        engine.wrap(plaintext, ciphertext);
+        // Each VT claims its own pre-allocated engine + buffer pair — zero allocations on the hot path.
+        int idx = vtIndex.getAndIncrement();
+        engines[idx].wrap(plaintexts[idx], ciphertexts[idx]);
     }
 
     @Override
     protected void tearDownSubsystem() {
-        if (engine     != null) engine.close();
-        if (plaintext  != null) plaintext.close();
-        if (ciphertext != null) ciphertext.close();
-        if (allocator  != null) allocator.close();
+        if (engines != null) {
+            for (TlsEngine e : engines) {
+                if (e != null) e.close();
+            }
+        }
+        if (plaintexts != null) {
+            for (LoanedBuffer b : plaintexts) {
+                if (b != null) b.close();
+            }
+        }
+        if (ciphertexts != null) {
+            for (LoanedBuffer b : ciphertexts) {
+                if (b != null) b.close();
+            }
+        }
+        if (allocator != null) allocator.close();
     }
 }
 
