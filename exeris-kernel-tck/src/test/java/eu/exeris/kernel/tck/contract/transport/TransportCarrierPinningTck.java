@@ -18,6 +18,7 @@ import org.junit.jupiter.api.DisplayName;
 import java.lang.foreign.ValueLayout;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.LockSupport;
 
 /**
  * TCK: Carrier pinning verifier for the Transport I/O hot path.
@@ -144,16 +145,21 @@ public abstract class TransportCarrierPinningTck extends AbstractSubsystemCarrie
     @Override
     protected void tearDownSubsystem() {
         // Drain in-flight writes before closing streams to avoid Use-After-Free.
+        // Guard on both arrays: streams and buffers are allocated together in
+        // bootstrapSubsystem(); if one is null the other is too, but CodeQL
+        // tracks null-guards independently so we check both explicitly.
         int usedSlots = vtIndex.get();
-        if (streams != null) {
+        if (streams != null && buffers != null) {
             for (int i = 0; i < streams.length; i++) {
                 TransportStream s = streams[i];
                 if (s == null) continue;
                 if (i < usedSlots) {
                     // Slot was claimed — wait for pending data to drain before closing.
+                    // LockSupport.parkNanos yields the carrier thread rather than burning
+                    // CPU in a tight spin, keeping CI overhead negligible.
                     long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
                     while (s.hasPendingData() && System.nanoTime() < deadline) {
-                        Thread.onSpinWait();
+                        LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(10));
                     }
                 } else {
                     // Slot was never claimed — queueWrite() never transferred ownership,
@@ -164,13 +170,9 @@ public abstract class TransportCarrierPinningTck extends AbstractSubsystemCarrie
                 s.close();
             }
         }
-        // Explicitly close any remaining buffer slots (safety net for the used range,
-        // in case queueWrite() semantics allow partial ownership transfer).
-        if (buffers != null) {
-            for (LoanedBuffer b : buffers) {
-                if (b != null) b.close();
-            }
-        }
+        // NOTE: No blanket buffers safety-net here. Buffers for slots i < usedSlots
+        // had their ownership transferred to the stream via queueWrite() and MUST NOT
+        // be closed again — doing so would be a Use-After-Free on the off-heap segment.
         if (engine    != null) engine.close();
         if (allocator != null) allocator.close();
     }

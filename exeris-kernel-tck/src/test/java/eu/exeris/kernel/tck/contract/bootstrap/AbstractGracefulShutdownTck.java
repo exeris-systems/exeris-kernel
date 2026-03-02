@@ -241,6 +241,20 @@ public abstract class AbstractGracefulShutdownTck {
         @DisplayName("Close order matches: Transport → Persistence → Flow → Events → Graph → Memory")
         void shutdownOrderIsCanonical() {
             List<String> observed = kernel.shutdownInCanonicalOrder();
+
+            // ── Presence assertion ────────────────────────────────────────────
+            // Every non-null TrackedEngine MUST appear in the observed close list.
+            // assertClosedBefore() returns early when a name is absent, so without
+            // this guard a silently-leaked (never-closed) engine would produce a
+            // false-pass on the pairwise ordering checks below.
+            if (kernel.transport()   != null) assertThat(observed).as("Transport engine must be closed during shutdown").contains("Transport");
+            if (kernel.persistence() != null) assertThat(observed).as("Persistence engine must be closed during shutdown").contains("Persistence");
+            if (kernel.flow()        != null) assertThat(observed).as("Flow engine must be closed during shutdown").contains("Flow");
+            if (kernel.events()      != null) assertThat(observed).as("Events engine must be closed during shutdown").contains("Events");
+            if (kernel.graph()       != null) assertThat(observed).as("Graph engine must be closed during shutdown").contains("Graph");
+            if (kernel.memory()      != null) assertThat(observed).as("Memory engine must be closed during shutdown").contains("Memory");
+
+            // ── Pairwise ordering checks ──────────────────────────────────────
             for (int i = 0; i < CANONICAL_ORDER.size() - 1; i++) {
                 assertClosedBefore(observed, CANONICAL_ORDER.get(i), CANONICAL_ORDER.get(i + 1));
             }

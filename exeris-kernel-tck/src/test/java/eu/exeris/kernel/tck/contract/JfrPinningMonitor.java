@@ -164,7 +164,7 @@ public final class JfrPinningMonitor {
         Path dir = Path.of("target", "jfr-reports", "pinning");
         Files.createDirectories(dir);
         String ts = LocalDateTime.now().format(TS_FMT);
-        return dir.resolve("pin-" + label.toLowerCase().replace(' ', '-') + "-" + ts + ".jfr");
+        return dir.resolve("pin-" + label.toLowerCase(java.util.Locale.ROOT).replace(' ', '-') + "-" + ts + ".jfr");
     }
 
     private static String pad(String s, int w) {

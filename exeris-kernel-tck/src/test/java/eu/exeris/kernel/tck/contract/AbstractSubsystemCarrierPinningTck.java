@@ -132,7 +132,7 @@ public abstract class AbstractSubsystemCarrierPinningTck {
         runVtBatch(WARMUP_VT_COUNT);
 
         // Phase 2 — steady-state under JFR
-        String label = subsystemName().toLowerCase().replace(' ', '-') + "-steady";
+        String label = subsystemName().toLowerCase(java.util.Locale.ROOT).replace(' ', '-') + "-steady";
         JfrPinningMonitor.Result result = JfrPinningMonitor.measure(
                 JfrPinningMonitor.Config.defaults(label),
                 () -> runVtBatch(STEADY_VT_COUNT));
