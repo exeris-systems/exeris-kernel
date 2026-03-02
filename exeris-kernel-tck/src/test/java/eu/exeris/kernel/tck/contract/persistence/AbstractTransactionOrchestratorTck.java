@@ -236,6 +236,7 @@ public abstract class AbstractTransactionOrchestratorTck {
 
             assertThatThrownBy(() ->
                     executor.execute(conn -> {
+                        conn.beginTransaction();
                         attempts.incrementAndGet();
                         throw PersistenceProviderException.queryFailed(
                                 "40001", "forced serialization failure", null);
@@ -256,6 +257,7 @@ public abstract class AbstractTransactionOrchestratorTck {
 
             assertThatThrownBy(() ->
                     retryExecutor.execute(conn -> {
+                        conn.beginTransaction();
                         attempts.incrementAndGet();
                         throw PersistenceProviderException.queryFailed(
                                 "40001", "forced serialization failure", null);
@@ -277,6 +279,7 @@ public abstract class AbstractTransactionOrchestratorTck {
 
             assertThatThrownBy(() ->
                     retryExecutor.execute(conn -> {
+                        conn.beginTransaction();
                         attempts.incrementAndGet();
                         throw PersistenceProviderException.queryFailed(
                                 "42601", "syntax error near 'BORK'", null);
@@ -298,11 +301,13 @@ public abstract class AbstractTransactionOrchestratorTck {
 
             // First attempt throws 40001, second succeeds
             retryExecutor.execute(conn -> {
+                conn.beginTransaction();
                 if (attempts.incrementAndGet() == 1) {
                     throw PersistenceProviderException.queryFailed(
                             "40001", "transient serialization failure", null);
                 }
-                // Second attempt: do nothing — success
+                // Second attempt: commit and succeed
+                conn.commit();
             });
 
             assertThat(attempts.get())

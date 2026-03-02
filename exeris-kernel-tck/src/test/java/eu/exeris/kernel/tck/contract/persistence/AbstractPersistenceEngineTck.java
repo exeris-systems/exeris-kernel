@@ -33,7 +33,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *   <li>{@code openConnection()} returns a valid, open connection</li>
  *   <li>{@code openConnection(StorageContext)} returns a tenant-scoped connection</li>
  *   <li>Connections correctly report {@link TransactionIsolation}</li>
- *   <li>{@code healthCheck()} returns true for a healthy database</li>
+ *   <li>{@code healthCheckDetailed()} returns a healthy status for a reachable database</li>
  *   <li>{@code stats()} returns valid metrics</li>
  *   <li>{@code close()} is idempotent</li>
  * </ul>

@@ -244,8 +244,9 @@ public abstract class AbstractSagaRecoveryTck {
                     )
                     .isEqualTo(1);
 
-            // give any spurious re-execution time to manifest
-            assertThat(awaitCondition(() -> false, 1)).isFalse(); // non-blocking 1s settle
+            // give any spurious re-execution time to manifest — park carrier instead of busy-spin
+            java.util.concurrent.locks.LockSupport.parkNanos(
+                    java.util.concurrent.TimeUnit.SECONDS.toNanos(1));
         }
 
         @Test
@@ -295,8 +296,9 @@ public abstract class AbstractSagaRecoveryTck {
                     )
                     .isEqualTo(1);
 
-            // settle
-            assertThat(awaitCondition(() -> false, 1)).isFalse();
+            // settle — park carrier instead of busy-spin
+            java.util.concurrent.locks.LockSupport.parkNanos(
+                    java.util.concurrent.TimeUnit.SECONDS.toNanos(1));
         }
     }
 
@@ -390,7 +392,9 @@ public abstract class AbstractSagaRecoveryTck {
                     .as("After FAIL, FlowSnapshot state MUST be COMPENSATING or FAILED_ROLLEDBACK, was: %s", snapshotOpt.get().state())
                     .isIn(FlowState.COMPENSATING, FlowState.FAILED_ROLLEDBACK);
 
-            assertThat(awaitCondition(() -> false, 1)).isFalse(); // settle
+            // settle — park carrier instead of busy-spin
+            java.util.concurrent.locks.LockSupport.parkNanos(
+                    java.util.concurrent.TimeUnit.SECONDS.toNanos(1));
         }
     }
 }

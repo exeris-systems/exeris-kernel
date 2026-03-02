@@ -77,7 +77,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 @DisplayName("Outbox Guarantee TCK")
 public abstract class AbstractOutboxGuaranteeTck {
 
-    private static final int BROKER_EVENT_COUNT = 10_000;
+    /**
+     * Total number of events enqueued in the broker outage and delivery tests.
+     * <p>Defaults to {@code 10,000}. Override to reduce the workload on constrained
+     * CI environments or slow JDBC-based implementations while still exercising the
+     * same failure-mode logic.
+     */
+    protected int brokerEventCount() { return 10_000; }
 
     // =========================================================================
     // Template methods
@@ -146,10 +152,10 @@ public abstract class AbstractOutboxGuaranteeTck {
     private int drainPollPending(EventStore store, PersistenceConnection conn) {
         conn.beginTransaction();
         try {
-            // Single large-batch poll for counting only; rollback to avoid mutating store state.
+            // Single bounded-batch poll for counting only; rollback to avoid mutating store state.
             // A do-while loop would infinite-loop here because pollPending() re-returns the
             // same pending events until markPublished() is called (EventStore contract).
-            return store.pollPending(Integer.MAX_VALUE).size();
+            return store.pollPending(brokerEventCount()).size();
         } finally {
             conn.rollback();
         }
@@ -171,7 +177,7 @@ public abstract class AbstractOutboxGuaranteeTck {
             try {
                 try (PersistenceConnection conn = engine.openConnection()) {
                     EventStore store = createEventStore(conn);
-                    for (int i = 0; i < BROKER_EVENT_COUNT; i++) {
+                    for (int i = 0; i < brokerEventCount(); i++) {
                         appendAndCommit(store, conn, event("order-" + i, "OrderPlaced"));
                     }
                     int found = drainPollPending(store, conn);
@@ -180,9 +186,9 @@ public abstract class AbstractOutboxGuaranteeTck {
                                 "AT-LEAST-ONCE VIOLATION: broker was offline, but only %d of %d " +
                                 "events were in pollPending().\n" +
                                 "Events MUST accumulate in EventStore when broker is unavailable.",
-                                found, BROKER_EVENT_COUNT
+                                found, brokerEventCount()
                             )
-                            .isGreaterThanOrEqualTo(BROKER_EVENT_COUNT);
+                            .isGreaterThanOrEqualTo(brokerEventCount());
                 }
             } finally {
                 simulateBrokerUp();
@@ -196,7 +202,7 @@ public abstract class AbstractOutboxGuaranteeTck {
             simulateBrokerDown();
             try (PersistenceConnection conn = engine.openConnection()) {
                 EventStore store = createEventStore(conn);
-                for (int i = 0; i < BROKER_EVENT_COUNT; i++) {
+                for (int i = 0; i < brokerEventCount(); i++) {
                     appendAndCommit(store, conn, event("order-" + i, "OrderPlaced"));
                 }
             }
@@ -208,7 +214,7 @@ public abstract class AbstractOutboxGuaranteeTck {
             long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
             while (System.nanoTime() < deadline) {
                 delivered = deliveredToBroker();
-                if (delivered >= BROKER_EVENT_COUNT) break;
+                if (delivered >= brokerEventCount()) break;
                 LockSupport.parkNanos(TimeUnit.SECONDS.toNanos(1));
             }
 
@@ -216,9 +222,9 @@ public abstract class AbstractOutboxGuaranteeTck {
                     .as(
                         "AT-LEAST-ONCE VIOLATION: after broker restore, only %d of %d events " +
                         "were confirmed delivered.",
-                        delivered, BROKER_EVENT_COUNT
+                        delivered, brokerEventCount()
                     )
-                    .isGreaterThanOrEqualTo(BROKER_EVENT_COUNT);
+                    .isGreaterThanOrEqualTo(brokerEventCount());
         }
     }
 
@@ -253,10 +259,10 @@ public abstract class AbstractOutboxGuaranteeTck {
                 EventStore store = createEventStore(conn);
                 conn.beginTransaction();
                 try {
-                    // Single large-batch poll — rollback to preserve store state.
+                    // Single bounded-batch poll — rollback to preserve store state.
                     // A do-while loop here would infinite-loop: pollPending() re-returns
                     // the same pending events until markPublished() is called.
-                    store.pollPending(Integer.MAX_VALUE).forEach(e -> foundIds.add(e.eventId()));
+                    store.pollPending(brokerEventCount()).forEach(e -> foundIds.add(e.eventId()));
                 } finally {
                     conn.rollback();
                 }
@@ -314,10 +320,10 @@ public abstract class AbstractOutboxGuaranteeTck {
                 EventStore store = createEventStore(conn);
                 conn.beginTransaction();
                 try {
-                    // Single large-batch poll — rollback to preserve store state.
+                    // Single bounded-batch poll — rollback to preserve store state.
                     // A do-while loop here would infinite-loop: pollPending() re-returns
                     // the same pending events until markPublished() is called.
-                    store.pollPending(Integer.MAX_VALUE).forEach(e -> foundAfterRebuild.add(e.eventId()));
+                    store.pollPending(total).forEach(e -> foundAfterRebuild.add(e.eventId()));
                 } finally {
                     conn.rollback();
                 }
