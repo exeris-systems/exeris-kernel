@@ -163,8 +163,8 @@ public abstract class AbstractPersistenceEngineTck {
     class HealthAndStats {
 
         @Test
-        @DisplayName("healthCheck() returns true for a reachable database")
-        void healthCheckReturnsTrue() {
+        @DisplayName("healthCheckDetailed() returns true for a reachable database")
+        void healthCheckDetailedReturnsTrue() {
             assertThat(engine.healthCheckDetailed().healthy()).isTrue();
         }
 
@@ -185,11 +185,11 @@ public abstract class AbstractPersistenceEngineTck {
         }
 
         @Test
-        @DisplayName("healthCheckDetailed() after close() returns healthy=false")
-        void healthCheckDetailedAfterCloseReturnsFalse() {
+        @DisplayName("healthCheckDetailed() after close() throws IllegalStateException")
+        void healthCheckDetailedAfterCloseThrowsIllegalState() {
             engine.close();
-            PersistenceHealthStatus status = engine.healthCheckDetailed();
-            assertThat(status.healthy()).isFalse();
+            assertThatThrownBy(() -> engine.healthCheckDetailed())
+                    .isInstanceOf(IllegalStateException.class);
         }
 
         @Test

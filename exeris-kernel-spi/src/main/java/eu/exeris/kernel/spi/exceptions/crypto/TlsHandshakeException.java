@@ -60,6 +60,7 @@ public final class TlsHandshakeException extends ExerisKernelException {
      * @param writableStackTrace whether the stack trace should be writable
      */
     public TlsHandshakeException(String detail, boolean enableSuppression, boolean writableStackTrace) {
-        super(KernelErrorCodes.EX_NET_2001, MESSAGE, null, enableSuppression, writableStackTrace, -1, detail);
+        super(KernelErrorCodes.EX_NET_2001, MESSAGE, null,
+                enableSuppression, writableStackTrace, -1, new Object[]{-1, detail});
     }
 }

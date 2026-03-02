@@ -27,7 +27,13 @@ import eu.exeris.kernel.spi.exceptions.persistence.PersistenceProviderException;
  *
  * <h2>Usage</h2>
  * <pre>{@code
- * try (BulkInserter bulk = conn.openBulkInserter("events")) {
+ * Optional<BulkInserter> maybeBulk = conn.openBulkInserter("events");
+ * if (maybeBulk.isEmpty()) {
+ *     // Community default: bulk inserter not available, fall back or skip
+ *     return;
+ * }
+ *
+ * try (BulkInserter bulk = maybeBulk.get()) {
  *     for (Event e : events) {
  *         PersistenceStatement row = bulk.row();
  *         row.bindString(0, e.id())

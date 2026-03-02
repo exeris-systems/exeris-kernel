@@ -123,12 +123,20 @@ public abstract class AbstractGracefulShutdownTck {
             Runnable      orchestratorShutdown,
             CopyOnWriteArrayList<String> observedOrder
     ) {
+        private static final java.util.concurrent.ConcurrentHashMap<KernelHandle, Boolean> SHUTDOWN_GUARD
+                = new java.util.concurrent.ConcurrentHashMap<>();
+
         /**
          * Triggers the real orchestrator shutdown and returns the observed close sequence.
          * Each {@link TrackedEngine} appended its name to {@link #observedOrder} when
          * its {@code close()} was invoked by the orchestrator.
+         * <p>Idempotent — subsequent calls return the already-observed order without
+         * triggering a second shutdown.
          */
         List<String> shutdownInCanonicalOrder() {
+            if (SHUTDOWN_GUARD.putIfAbsent(this, Boolean.TRUE) != null) {
+                return List.copyOf(observedOrder);
+            }
             orchestratorShutdown.run();
             return List.copyOf(observedOrder);
         }

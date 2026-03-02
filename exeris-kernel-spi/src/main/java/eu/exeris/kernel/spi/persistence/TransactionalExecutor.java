@@ -37,9 +37,11 @@ import java.util.function.Function;
  * });
  *
  * // Read — no transaction boundary, auto-closed connection
- * long count = tx.query(conn ->
- *     conn.executeQuery("SELECT count(*) FROM events")
- *         .row().getLong(0));
+ * long count = tx.query(conn -> {
+ *     try (QueryResult result = conn.executeQuery("SELECT count(*) FROM events")) {
+ *         return result.row().getLong(0);
+ *     }
+ * });
  * }</pre>
  *
  * <h2>Retry Semantics</h2>

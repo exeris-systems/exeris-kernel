@@ -33,7 +33,7 @@ public abstract class SecurityCarrierPinningTck extends AbstractSubsystemCarrier
     private LoanedBuffer     validToken;
 
     @Override protected String subsystemName()      { return "Security"; }
-    @Override protected String hotPathDescription() { return "authenticate(token) → extract principalId → close buffer"; }
+    @Override protected String hotPathDescription() { return "authenticate(token) → extract principalId"; }
 
     @Override
     protected void bootstrapSubsystem() {

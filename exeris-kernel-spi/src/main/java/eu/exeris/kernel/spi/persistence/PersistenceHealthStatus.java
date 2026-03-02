@@ -50,7 +50,7 @@ public record PersistenceHealthStatus(
      * check succeeds but the round-trip exceeds 100 ms.
      */
     public static final PersistenceHealthStatus DEGRADED_LATENCY =
-            new PersistenceHealthStatus(true, "WARNING: health-check latency > 100ms", -1L);
+            new PersistenceHealthStatus(true, "WARNING: health-check latency > 100ms", 100_000_001L);
 
     // =========================================================================
     // Pre-allocated sentinel constants

@@ -23,7 +23,7 @@ package eu.exeris.kernel.spi.persistence;
  * <h2>Usage</h2>
  * <pre>{@code
  * // In PersistenceProvider implementation:
- * public DatabaseDialect dialect() {
+ * public DatabaseDialect dialect(PersistenceConfig config) {
  *     return DatabaseDialect.POSTGRESQL;
  * }
  * }</pre>

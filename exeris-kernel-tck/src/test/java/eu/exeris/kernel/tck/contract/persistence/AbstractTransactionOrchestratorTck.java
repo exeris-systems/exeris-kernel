@@ -9,6 +9,7 @@ package eu.exeris.kernel.tck.contract.persistence;
 
 import eu.exeris.kernel.spi.exceptions.persistence.PersistenceProviderException;
 import eu.exeris.kernel.spi.persistence.PersistenceEngine;
+import eu.exeris.kernel.spi.persistence.QueryResult;
 import eu.exeris.kernel.spi.persistence.TransactionalExecutor;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -126,8 +127,11 @@ public abstract class AbstractTransactionOrchestratorTck {
         @DisplayName("query() returns a non-null result")
         @Timeout(value = 5, unit = TimeUnit.SECONDS)
         void queryReturnsResult() {
-            Integer result = executor.query(conn ->
-                    conn.executeQuery(selectOneSql()).row().getInt(0));
+            Integer result = executor.query(conn -> {
+                try (QueryResult qr = conn.executeQuery(selectOneSql())) {
+                    return qr.row().getInt(0);
+                }
+            });
             assertThat(result).isNotNull();
         }
 
@@ -136,10 +140,17 @@ public abstract class AbstractTransactionOrchestratorTck {
         @Timeout(value = 5, unit = TimeUnit.SECONDS)
         void queryReleasesConnection() {
             for (int i = 0; i < 5; i++) {
-                executor.query(conn -> conn.executeQuery(selectOneSql()).row().getInt(0));
+                executor.query(conn -> {
+                    try (QueryResult qr = conn.executeQuery(selectOneSql())) {
+                        return qr.row().getInt(0);
+                    }
+                });
             }
-             Integer result = executor.query(conn ->
-                    conn.executeQuery(selectOneSql()).row().getInt(0));
+             Integer result = executor.query(conn -> {
+                try (QueryResult qr = conn.executeQuery(selectOneSql())) {
+                    return qr.row().getInt(0);
+                }
+            });
             assertThat(result)
                     .as("connection must still be obtainable after 5 successive queries — pool not exhausted")
                     .isNotNull();
@@ -160,8 +171,11 @@ public abstract class AbstractTransactionOrchestratorTck {
         void commitOnSuccess() {
             executor.executeManaged(conn -> conn.executeUpdate(writeSentinelSql()));
 
-            Integer count = executor.query(conn ->
-                    conn.executeQuery(readSentinelCountSql()).row().getInt(0));
+            Integer count = executor.query(conn -> {
+                try (QueryResult qr = conn.executeQuery(readSentinelCountSql())) {
+                    return qr.row().getInt(0);
+                }
+            });
             assertThat(count).isGreaterThanOrEqualTo(1);
         }
 
@@ -169,8 +183,11 @@ public abstract class AbstractTransactionOrchestratorTck {
         @DisplayName("executeManaged() rolls back on exception — count unchanged")
         @Timeout(value = 5, unit = TimeUnit.SECONDS)
         void rollbackOnException() {
-            int countBefore = executor.query(conn ->
-                    conn.executeQuery(readSentinelCountSql()).row().getInt(0));
+            int countBefore = executor.query(conn -> {
+                try (QueryResult qr = conn.executeQuery(readSentinelCountSql())) {
+                    return qr.row().getInt(0);
+                }
+            });
 
             assertThatThrownBy(() ->
                     executor.executeManaged(conn -> {
@@ -179,8 +196,11 @@ public abstract class AbstractTransactionOrchestratorTck {
                     })
             ).isInstanceOf(TckForcedRollbackException.class);
 
-            int countAfter = executor.query(conn ->
-                    conn.executeQuery(readSentinelCountSql()).row().getInt(0));
+            int countAfter = executor.query(conn -> {
+                try (QueryResult qr = conn.executeQuery(readSentinelCountSql())) {
+                    return qr.row().getInt(0);
+                }
+            });
 
             assertThat(countAfter)
                     .as("count must not increase after rollback")

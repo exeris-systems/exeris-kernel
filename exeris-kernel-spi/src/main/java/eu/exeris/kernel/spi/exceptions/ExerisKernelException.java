@@ -136,6 +136,42 @@ public abstract class ExerisKernelException extends RuntimeException {
         this(errorCode, message, null, rawArgs);
     }
 
+    /**
+     * Low-level constructor for zero-allocation Sentinel Exceptions.
+     *
+     * <p>Disables suppression and/or stack-trace generation to prevent heap allocations
+     * on hot-path network and protocol operations. The {@code reserved} parameter is
+     * reserved for future binary-layout extensions and is currently ignored.
+     *
+     * <p><strong>Performance Contract:</strong> passing {@code writableStackTrace=false}
+     * eliminates the {@link Throwable#fillInStackTrace()} allocation on the hot path —
+     * a key requirement for L0 Sentinel exception patterns.
+     *
+     * @param errorCode          a non-null {@code EX-[DOMAIN]-[ID]} code
+     * @param message            static message template — no runtime formatting
+     * @param cause              optional chained throwable; may be {@code null}
+     * @param enableSuppression  whether suppression is enabled or disabled
+     * @param writableStackTrace whether the stack trace should be writable
+     * @param reserved           reserved for future binary-layout extensions; pass {@code -1}
+     * @param rawArgs            zero or more domain-specific raw arguments
+     */
+    @SuppressWarnings("java:S107") // Many params required by RuntimeException low-level constructor contract
+    protected ExerisKernelException(
+            String errorCode,
+            String message,
+            Throwable cause,
+            boolean enableSuppression,
+            boolean writableStackTrace,
+            int reserved,
+            Object[] rawArgs) {
+        super(message, cause, enableSuppression, writableStackTrace);
+        Objects.requireNonNull(errorCode, "errorCode must not be null – every kernel exception requires an EX- code");
+        this.errorCode = errorCode;
+        this.traceId   = UUID.randomUUID();
+        this.timestamp = Instant.now();
+        this.rawArgs   = (rawArgs != null) ? rawArgs : EMPTY_ARGS;
+    }
+
     // -----------------------------------------------------------------------
     // Accessors – read-only, zero-allocation
     // -----------------------------------------------------------------------
