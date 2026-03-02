@@ -15,7 +15,7 @@ import java.util.function.Function;
  * SPI: Pure contract for virtual-thread-native transaction lifecycle management.
  *
  * <h2>Why This Belongs in SPI</h2>
- * <p>The TCK Inquisition mandates that {@code AbstractTransactionOrchestratorTck}
+ * <p>The TCK Inquisition mandates that {@code AbstractTransactionalExecutorTck}
  * depends <b>only</b> on {@code exeris-kernel-spi}. A concrete class in Core
  * cannot be imported by the TCK without breaking The Wall. This interface is
  * the contract; {@code TransactionOrchestrator} in {@code exeris-kernel-core}

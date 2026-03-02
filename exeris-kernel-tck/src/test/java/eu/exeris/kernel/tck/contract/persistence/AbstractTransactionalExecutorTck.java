@@ -29,8 +29,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *
  * <h2>The Wall (SPI Compliance)</h2>
  * <p>This TCK depends <b>only</b> on {@code exeris-kernel-spi}. It has zero knowledge
- * of {@code TransactionOrchestrator}, {@code RetryPolicy}, or any Core/Community/Enterprise
- * class. Subclasses in {@code exeris-kernel-core} wire the concrete implementation.
+ * of any concrete Core, Community, or Enterprise implementation class.
+ * Subclasses in {@code exeris-kernel-core} wire the concrete implementation.
  *
  * <h2>Contract</h2>
  * <ul>
@@ -60,8 +60,8 @@ public abstract class AbstractTransactionalExecutorTck {
     /**
      * Creates a {@link TransactionalExecutor} with <b>no retry</b> (single attempt).
      *
-     * <p>Concrete implementations use {@code new TransactionOrchestrator(engine, RetryPolicy.NONE)}
-     * or equivalent. The TCK does not need to know the retry mechanism — only its behaviour.
+     * <p>The TCK does not need to know the concrete implementation class or retry
+     * mechanism — only its observable behaviour: a single attempt, no retry on failure.
      *
      * @param engine the engine to bind the executor to
      * @return executor with no retry
