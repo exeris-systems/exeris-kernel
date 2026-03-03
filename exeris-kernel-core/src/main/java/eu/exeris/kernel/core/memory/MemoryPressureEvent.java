@@ -80,7 +80,7 @@ import jdk.jfr.StackTrace;
             evt.allocatedBytes = allocatedBytes;
             evt.totalBytes = totalBytes;
             evt.utilizationPct = totalBytes > 0
-                    ? (int) (allocatedBytes * 100L / totalBytes)
+                    ? (int) Math.clamp((allocatedBytes * 100.0) / totalBytes, 0, 100)
                     : 0;
             evt.fromLevel = fromLevel.name();
             evt.toLevel = toLevel.name();

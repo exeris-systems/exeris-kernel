@@ -267,12 +267,14 @@ public final class MemoryMaintenanceTask implements AutoCloseable {
     private void runFullMaintenance() {
         long startNs = System.nanoTime();
         WatermarkLevel level = watermarkManager.currentLevel();
-        runQuietly(allocator::performMaintenance);
-        long durationUs = (System.nanoTime() - startNs) / 1_000L;
-        MemoryStats stats = allocator.stats();
-        MemoryMaintenanceEvents.CycleEvent.emit(level, durationUs,
-                stats.allocatedBytes(),
-                stats.totalBytes());
+        runQuietly(() -> {
+            allocator.performMaintenance();
+            long durationUs = (System.nanoTime() - startNs) / 1_000L;
+            MemoryStats stats = allocator.stats();
+            MemoryMaintenanceEvents.CycleEvent.emit(level, durationUs,
+                    stats.allocatedBytes(),
+                    stats.totalBytes());
+        });
     }
 
     private static void runQuietly(Runnable task) {
