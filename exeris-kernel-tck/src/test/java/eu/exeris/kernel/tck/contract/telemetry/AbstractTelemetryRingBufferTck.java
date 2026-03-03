@@ -64,24 +64,28 @@ public abstract class AbstractTelemetryRingBufferTck {
      * Default: 100_000.
      * Enterprise implementations may use a larger value (1_000_000).
      */
-    protected int emissionCount() { return 100_000; }
+    protected int emissionCount() {
+        return 100_000;
+    }
 
     /**
      * Number of concurrent VTs emitting events in the stress test.
      * Default: 16 (simulate typical thread pool width).
      */
-    protected int concurrentEmitters() { return 16; }
+    protected int concurrentEmitters() {
+        return 16;
+    }
 
     // =========================================================================
     // Fixtures
     // =========================================================================
 
-    private TelemetrySink  sink;
-    private KernelEvent    hotEvent;
+    private TelemetrySink sink;
+    private KernelEvent hotEvent;
 
     @BeforeEach
     final void setUp() {
-        sink     = createSink();
+        sink = createSink();
         hotEvent = KernelEvent.info("EX-TCK-RING-001", "RingBufferTck.hotEmission");
     }
 
@@ -111,12 +115,11 @@ public abstract class AbstractTelemetryRingBufferTck {
                     StructuredTaskScope.Joiner.<Void>awaitAllSuccessfulOrThrow())) {
 
                 for (int t = 0; t < emitters; t++) {
-                    // Distribute the remainder to the first thread so the test always
-                    // emits exactly emissionCount() events regardless of divisibility.
+
                     int toEmit = perThread + (t == 0 ? remainder : 0);
                     scope.fork(() -> {
                         for (int j = 0; j < toEmit; j++) {
-                            sink.emit(hotEvent); // pre-built: zero allocation per emit
+                            sink.emit(hotEvent);
                             emitted.incrementAndGet();
                         }
                         return null;
@@ -125,9 +128,9 @@ public abstract class AbstractTelemetryRingBufferTck {
                 scope.join();
             }
         }).as("Sink MUST NOT throw under %d concurrent emissions from %d VTs " +
-              "(telemetry.md: ring-buffer must not overflow at 100k events/s)",
-              total, emitters)
-          .doesNotThrowAnyException();
+                                "(telemetry.md: ring-buffer must not overflow at 100k events/s)",
+                        total, emitters)
+                .doesNotThrowAnyException();
 
         assertThat(emitted.get())
                 .as("All %d emission calls MUST have reached the sink", total)
@@ -142,7 +145,6 @@ public abstract class AbstractTelemetryRingBufferTck {
     @DisplayName("close() completes within 100ms after burst (flush latency SLO)")
     @Timeout(value = 5, unit = TimeUnit.SECONDS)
     void flushLatencyWithinSlo() {
-        // Emit a burst of events
         int burstSize = Math.min(emissionCount(), 10_000);
         for (int i = 0; i < burstSize; i++) {
             sink.emit(hotEvent);
@@ -152,15 +154,14 @@ public abstract class AbstractTelemetryRingBufferTck {
         sink.close();
         long flushMs = (System.nanoTime() - before) / 1_000_000L;
 
-        // Prevent double-close in tearDown
         sink = null;
 
         assertThat(flushMs)
                 .as("Sink.close() (final flush) MUST complete within 100ms after emitting %d events. " +
-                    "Actual: %d ms. " +
-                    "Enterprise BinaryBlackBoxSink: async flush via StructuredTaskScope background thread. " +
-                    "Community JFR sink: JFR framework handles flush on recording stop.",
-                    burstSize, flushMs)
+                                "Actual: %d ms. " +
+                                "Enterprise BinaryBlackBoxSink: async flush via StructuredTaskScope background thread. " +
+                                "Community JFR sink: JFR framework handles flush on recording stop.",
+                        burstSize, flushMs)
                 .isLessThanOrEqualTo(100L);
     }
 }

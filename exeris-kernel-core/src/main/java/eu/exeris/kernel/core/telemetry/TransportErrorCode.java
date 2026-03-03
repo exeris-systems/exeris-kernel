@@ -27,28 +27,44 @@ package eu.exeris.kernel.core.telemetry;
  */
 public enum TransportErrorCode {
 
-    /** Catch-all: an internal kernel error not covered by a specific category. */
+    /**
+     * Catch-all: an internal kernel error not covered by a specific category.
+     */
     INTERNAL_ERROR(0x00),
 
-    /** Off-heap memory exhausted — the kernel cannot service the request. */
+    /**
+     * Off-heap memory exhausted — the kernel cannot service the request.
+     */
     RESOURCE_EXHAUSTED(0x01),
 
-    /** Transport bind or handshake failure — service unavailable on this endpoint. */
+    /**
+     * Transport bind or handshake failure — service unavailable on this endpoint.
+     */
     BIND_FAILURE(0x02),
 
-    /** Send failed — the frame could not be delivered to the peer. */
+    /**
+     * Send failed — the frame could not be delivered to the peer.
+     */
     SEND_FAILURE(0x03),
 
-    /** Receive timeout — no data arrived within the deadline. */
+    /**
+     * Receive timeout — no data arrived within the deadline.
+     */
     RECEIVE_TIMEOUT(0x04),
 
-    /** Bootstrap failure — the subsystem failed to initialize. */
+    /**
+     * Bootstrap failure — the subsystem failed to initialize.
+     */
     BOOTSTRAP_FAILURE(0x05),
 
-    /** Security / principal context missing or token validation failed. */
+    /**
+     * Security / principal context missing or token validation failed.
+     */
     SECURITY_VIOLATION(0x06),
 
-    /** Persistence layer failure — query, connection, or auth error. */
+    /**
+     * Persistence layer failure — query, connection, or auth error.
+     */
     PERSISTENCE_FAILURE(0x07),
 
     /**

@@ -48,10 +48,14 @@ public final class ErrorMapperRegistry {
      * <p>The mapping is intentionally coarse — internal kernel domains are collapsed
      * into a small set of edge-visible categories to prevent information leakage.
      *
-     * @param exception the kernel exception to map; must not be {@code null}
+     * @param exception the kernel exception to map; {@code null} maps to
+     *                  {@link TransportErrorCode#INTERNAL_ERROR}
      * @return a non-null {@link TransportErrorCode}
      */
     public static TransportErrorCode map(ExerisKernelException exception) {
+        if (exception == null) {
+            return TransportErrorCode.INTERNAL_ERROR;
+        }
         return mapCode(exception.errorCode());
     }
 

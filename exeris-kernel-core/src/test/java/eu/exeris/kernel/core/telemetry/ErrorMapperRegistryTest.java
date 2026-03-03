@@ -253,5 +253,12 @@ class ErrorMapperRegistryTest {
                 assertThat(code.wireCode()).isGreaterThanOrEqualTo(0);
             }
         }
+
+        @Test
+        @DisplayName("map(null) → INTERNAL_ERROR without NPE")
+        void nullExceptionMapsToInternalError() {
+            assertThat(ErrorMapperRegistry.map(null))
+                    .isEqualTo(TransportErrorCode.INTERNAL_ERROR);
+        }
     }
 }

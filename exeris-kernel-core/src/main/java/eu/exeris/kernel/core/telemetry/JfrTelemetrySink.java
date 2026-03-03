@@ -81,6 +81,10 @@ public final class JfrTelemetrySink implements TelemetrySink {
 
     private void dispatchTyped(KernelEvent event, ExerisKernelException exception) {
         String code = event.code();
+        if (code == null || code.isEmpty()) {
+            emitLifecycle(event, safeMessage(exception));
+            return;
+        }
         if (code.startsWith("EX-MEM")) {
             emitMemoryExhaustion(event, exception, code);
         } else if (code.startsWith("EX-NET")) {
@@ -105,11 +109,11 @@ public final class JfrTelemetrySink implements TelemetrySink {
         if (!jfr.isEnabled()) {
             return;
         }
-        Object[] args      = exception.rawArgs();
-        jfr.errorCode      = code;
+        Object[] args = exception.rawArgs();
+        jfr.errorCode = code;
         jfr.requestedBytes = rawLong(args, 0);
         jfr.availableBytes = rawLong(args, 1);
-        jfr.component      = event.component();
+        jfr.component = event.component();
         jfr.commit();
     }
 
@@ -122,11 +126,11 @@ public final class JfrTelemetrySink implements TelemetrySink {
         if (!jfr.isEnabled()) {
             return;
         }
-        Object[] args     = exception.rawArgs();
-        jfr.errorCode     = code;
+        Object[] args = exception.rawArgs();
+        jfr.errorCode = code;
         jfr.transportName = rawString(args, 0);
-        jfr.port          = (int) rawLong(args, 1);
-        jfr.component     = event.component();
+        jfr.port = (int) rawLong(args, 1);
+        jfr.component = event.component();
         jfr.commit();
     }
 
@@ -139,11 +143,11 @@ public final class JfrTelemetrySink implements TelemetrySink {
         if (!jfr.isEnabled()) {
             return;
         }
-        Object[] args         = exception.rawArgs();
-        jfr.errorCode         = code;
-        jfr.blockTimeMs       = rawLong(args, 0);
+        Object[] args = exception.rawArgs();
+        jfr.errorCode = code;
+        jfr.blockTimeMs = rawLong(args, 0);
         jfr.carrierThreadName = rawString(args, 1);
-        jfr.component         = event.component();
+        jfr.component = event.component();
         jfr.commit();
     }
 
@@ -153,9 +157,9 @@ public final class JfrTelemetrySink implements TelemetrySink {
             return;
         }
         jfr.errorCode = event.code();
-        jfr.level     = event.level().name();
+        jfr.level = event.level().name();
         jfr.component = event.component();
-        jfr.message   = message;
+        jfr.message = message;
         jfr.commit();
     }
 
@@ -174,7 +178,7 @@ public final class JfrTelemetrySink implements TelemetrySink {
         }
         jfr.metricName = name;
         jfr.metricType = "COUNTER";
-        jfr.value      = delta;
+        jfr.value = delta;
         jfr.commit();
     }
 
@@ -189,7 +193,7 @@ public final class JfrTelemetrySink implements TelemetrySink {
         }
         jfr.metricName = name;
         jfr.metricType = "GAUGE";
-        jfr.value      = value;
+        jfr.value = value;
         jfr.commit();
     }
 
@@ -202,7 +206,7 @@ public final class JfrTelemetrySink implements TelemetrySink {
         if (!jfr.isEnabled()) {
             return;
         }
-        jfr.metricName  = name;
+        jfr.metricName = name;
         jfr.nanoseconds = nanoseconds;
         jfr.commit();
     }
@@ -235,11 +239,11 @@ public final class JfrTelemetrySink implements TelemetrySink {
             return -1L;
         }
         return switch (args[index]) {
-            case Long    longVal  -> longVal;
-            case Integer intVal   -> intVal;
-            case Short   shortVal -> shortVal;
-            case Byte    byteVal  -> byteVal;
-            default               -> -1L;
+            case Long longVal -> longVal;
+            case Integer intVal -> intVal;
+            case Short shortVal -> shortVal;
+            case Byte byteVal -> byteVal;
+            default -> -1L;
         };
     }
 

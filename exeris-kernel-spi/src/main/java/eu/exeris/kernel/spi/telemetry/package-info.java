@@ -55,4 +55,3 @@
  * @see <a href="../../../../../../docs/subsystems/telemetry.md">telemetry.md</a>
  */
 package eu.exeris.kernel.spi.telemetry;
-

@@ -20,7 +20,8 @@ import jdk.jfr.StackTrace;
 @SuppressWarnings("PMD.AvoidDuplicateLiterals")
 public final class TelemetryJfrEvents {
 
-    private TelemetryJfrEvents() {}
+    private TelemetryJfrEvents() {
+    }
 
     /**
      * Returns the canonical container class name for JFR event category grouping.
@@ -52,15 +53,21 @@ public final class TelemetryJfrEvents {
     @Category({"Exeris Kernel", "Telemetry"})
     @StackTrace(false)
     public static final class KernelLifecycleJfrEvent extends Event {
-        /** Structured {@code EX-[DOMAIN]-[ID]} error code. */
+        /**
+         * Structured {@code EX-[DOMAIN]-[ID]} error code.
+         */
         @Label("Error Code")
         public String errorCode;
 
-        /** Severity level name — {@code INFO}, {@code WARN}, {@code ERROR}, {@code FATAL}. */
+        /**
+         * Severity level name — {@code INFO}, {@code WARN}, {@code ERROR}, {@code FATAL}.
+         */
         @Label("Level")
         public String level;
 
-        /** Kernel component that emitted the event (compile-time constant on call site). */
+        /**
+         * Kernel component that emitted the event (compile-time constant on call site).
+         */
         @Label("Component")
         public String component;
 
@@ -96,7 +103,9 @@ public final class TelemetryJfrEvents {
         @Label("Transport Name")
         public String transportName;
 
-        /** Port number; {@code -1} if not applicable. */
+        /**
+         * Port number; {@code -1} if not applicable.
+         */
         @Label("Port")
         public int port;
 
@@ -184,7 +193,9 @@ public final class TelemetryJfrEvents {
         @Label("Metric Name")
         public String metricName;
 
-        /** {@code "COUNTER"} or {@code "GAUGE"}. */
+        /**
+         * {@code "COUNTER"} or {@code "GAUGE"}.
+         */
         @Label("Type")
         public String metricType;
 
@@ -212,5 +223,3 @@ public final class TelemetryJfrEvents {
         public long nanoseconds;
     }
 }
-
-

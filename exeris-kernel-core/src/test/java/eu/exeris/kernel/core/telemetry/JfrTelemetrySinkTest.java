@@ -10,6 +10,7 @@ package eu.exeris.kernel.core.telemetry;
 import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 import eu.exeris.kernel.spi.exceptions.memory.MemoryExhaustedException;
 import eu.exeris.kernel.spi.exceptions.transport.TransportException;
+import eu.exeris.kernel.spi.telemetry.EventLevel;
 import eu.exeris.kernel.spi.telemetry.KernelEvent;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -182,5 +183,32 @@ class JfrTelemetrySinkTest {
     void sinkNameNonBlank() {
         String name = sink.sinkName();
         assertThat(name).isNotBlank();
+    }
+
+    // =========================================================================
+    // Defensive routing — null/empty code guard
+    // =========================================================================
+
+    @Nested
+    @DisplayName("Defensive routing")
+    class DefensiveRouting {
+
+        @Test
+        @DisplayName("emit() with null code and non-null exception does not throw NPE")
+        void nullCodeWithException() {
+            KernelEvent event = new KernelEvent(
+                    null, EventLevel.ERROR, java.time.Instant.now(),
+                    new MemoryExhaustedException(1024L, 0L), "DefensiveTest");
+            assertThatCode(() -> sink.emit(event)).doesNotThrowAnyException();
+        }
+
+        @Test
+        @DisplayName("emit() with empty code and non-null exception does not throw NPE")
+        void emptyCodeWithException() {
+            KernelEvent event = new KernelEvent(
+                    "", EventLevel.ERROR, java.time.Instant.now(),
+                    new MemoryExhaustedException(1024L, 0L), "DefensiveTest");
+            assertThatCode(() -> sink.emit(event)).doesNotThrowAnyException();
+        }
     }
 }

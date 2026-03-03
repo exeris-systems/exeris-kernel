@@ -19,9 +19,9 @@ import org.junit.jupiter.api.DisplayName;
  * <p>{@code sink.emit(pre-built KernelEvent)} — telemetry emission must never
  * pin a carrier thread (no synchronized ring-buffer writes).
  *
- * @since 0.5.0
  * @see AbstractSubsystemCarrierPinningTck
  * @see TelemetryZeroAllocTck
+ * @since 0.5.0
  */
 @DisplayName("Telemetry carrier pinning TCK")
 public abstract class TelemetryCarrierPinningTck extends AbstractSubsystemCarrierPinningTck {
@@ -31,12 +31,19 @@ public abstract class TelemetryCarrierPinningTck extends AbstractSubsystemCarrie
     private TelemetrySink sink;
     private KernelEvent preBuiltEvent;
 
-    @Override protected String subsystemName()      { return "Telemetry"; }
-    @Override protected String hotPathDescription() { return "TelemetrySink.emit(pre-built KernelEvent)"; }
+    @Override
+    protected String subsystemName() {
+        return "Telemetry";
+    }
+
+    @Override
+    protected String hotPathDescription() {
+        return "TelemetrySink.emit(pre-built KernelEvent)";
+    }
 
     @Override
     protected void bootstrapSubsystem() {
-        sink          = createSink();
+        sink = createSink();
         preBuiltEvent = KernelEvent.info("EX-TCK-PIN-001", "TelemetryCarrierPinningTck");
     }
 

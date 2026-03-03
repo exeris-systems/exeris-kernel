@@ -17,10 +17,9 @@ package eu.exeris.kernel.spi.telemetry;
  *                             {@code 0} = disabled (Community mode).
  * @param maxEventQueueDepth   Maximum buffered events before backpressure/drop.
  *
- * <p>Valhalla readiness: candidate for {@code value record} once JEP&nbsp;401 is mainline.
- * All components are primitives or immutable references, making this record suitable for
- * header-less, flattenable representation in future runtimes.</p>
- *
+ *                             <p>Valhalla readiness: candidate for {@code value record} once JEP&nbsp;401 is mainline.
+ *                             All components are primitives or immutable references, making this record suitable for
+ *                             header-less, flattenable representation in future runtimes.</p>
  * @since 0.5.0
  */
 public record TelemetryConfig(
@@ -31,7 +30,7 @@ public record TelemetryConfig(
         int maxEventQueueDepth
 ) {
     private static final long MIN_OFF_HEAP_BYTES = 0L;
-    private static final int  MIN_EVENT_QUEUE_DEPTH = 1;
+    private static final int MIN_EVENT_QUEUE_DEPTH = 1;
 
     public TelemetryConfig {
         if (blackBoxOffHeapBytes < MIN_OFF_HEAP_BYTES) {
@@ -45,12 +44,16 @@ public record TelemetryConfig(
         }
     }
 
-    /** Default configuration for development / unit tests. */
+    /**
+     * Default configuration for development / unit tests.
+     */
     public static TelemetryConfig defaults() {
         return new TelemetryConfig(true, false, null, MIN_OFF_HEAP_BYTES, 4096);
     }
 
-    /** Production community configuration: console disabled, JFR enabled, file sink active. */
+    /**
+     * Production community configuration: console disabled, JFR enabled, file sink active.
+     */
     public static TelemetryConfig communityProduction(String logPath) {
         return new TelemetryConfig(false, true, logPath, MIN_OFF_HEAP_BYTES, 16_384);
     }
