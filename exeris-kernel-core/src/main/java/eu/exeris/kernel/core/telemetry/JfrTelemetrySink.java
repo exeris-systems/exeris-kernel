@@ -55,8 +55,7 @@ import eu.exeris.kernel.spi.telemetry.TelemetrySink;
 @SuppressWarnings({"PMD.TooManyMethods", "PMD.CyclomaticComplexity"})
 public final class JfrTelemetrySink implements TelemetrySink {
 
-    private static final String SINK_NAME            = "ExerisCore/JfrTelemetrySink";
-    private static final int    DOMAIN_PREFIX_LENGTH = 6;
+    private static final String SINK_NAME = "ExerisCore/JfrTelemetrySink";
 
     private volatile boolean closed;
 
@@ -78,16 +77,15 @@ public final class JfrTelemetrySink implements TelemetrySink {
     }
 
     private void dispatchTyped(KernelEvent event, ExerisKernelException exception) {
-        String code = exception.errorCode();
-        if (code.length() < DOMAIN_PREFIX_LENGTH) {
+        String code = event.code();
+        if (code.startsWith("EX-MEM")) {
+            emitMemoryExhaustion(event, exception, code);
+        } else if (code.startsWith("EX-NET")) {
+            emitTransportBind(event, exception, code);
+        } else if (code.startsWith("EX-RUN")) {
+            emitCarrierPinned(event, exception, code);
+        } else {
             emitLifecycle(event, safeMessage(exception));
-            return;
-        }
-        switch (code.substring(0, DOMAIN_PREFIX_LENGTH)) {
-            case "EX-MEM" -> emitMemoryExhaustion(event, exception, code);
-            case "EX-NET" -> emitTransportBind(event, exception, code);
-            case "EX-RUN" -> emitCarrierPinned(event, exception, code);
-            default       -> emitLifecycle(event, safeMessage(exception));
         }
     }
 

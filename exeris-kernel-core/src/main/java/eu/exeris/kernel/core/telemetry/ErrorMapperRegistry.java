@@ -15,10 +15,9 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  * values for the network edge.
  *
  * <h2>Design — O(1) Lookup</h2>
- * <p>Translation is performed via a {@code switch} expression on the 6-character
- * {@code EX-[DOMAIN]} prefix (e.g., {@code "EX-MEM"}, {@code "EX-NET"}).
- * String {@code switch} in the JVM compiles to a hash-dispatch — O(1) average case,
- * zero heap allocation beyond the prefix substring already paid by the JIT constant pool.
+ * <p>Translation is performed via an allocation-free {@code if-else if} chain using
+ * {@code String.startsWith()} — no {@code substring} allocation is incurred on the
+ * failure path.</p>
  *
  * <h2>The Wall</h2>
  * <p>This class depends only on {@code exeris-kernel-spi}. It never imports JDBC,
@@ -38,14 +37,6 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 @SuppressWarnings("PMD.CyclomaticComplexity")
 public final class ErrorMapperRegistry {
 
-    /**
-     * All known domain prefixes are exactly 6 characters: {@code "EX-MEM"}, {@code "EX-NET"},
-     * {@code "EX-SEC"}, {@code "EX-PER"} (covers {@code EX-PERS-*}),
-     * {@code "EX-GRP"} (covers {@code EX-GRPH-*}), {@code "EX-BOO"} (covers {@code EX-BOOT-*}),
-     * {@code "EX-RUN"}, {@code "EX-EVE"} (covers {@code EX-EVENT-*}),
-     * {@code "EX-FLO"} (covers {@code EX-FLOW-*}), {@code "EX-CFG"}.
-     */
-    private static final int PREFIX_LENGTH = 6;
 
     private ErrorMapperRegistry() {
     }
@@ -74,22 +65,37 @@ public final class ErrorMapperRegistry {
      */
     /* default */
     static TransportErrorCode mapCode(String errorCode) {
-        if (errorCode == null || errorCode.length() < PREFIX_LENGTH) {
+        if (errorCode == null || errorCode.isEmpty()) {
             return TransportErrorCode.INTERNAL_ERROR;
         }
-        String domain = errorCode.substring(0, PREFIX_LENGTH);
-        return switch (domain) {
-            case "EX-MEM" -> mapMemory(errorCode);
-            case "EX-NET" -> mapNetwork(errorCode);
-            case "EX-SEC" -> TransportErrorCode.SECURITY_VIOLATION;
-            case "EX-PER" -> TransportErrorCode.PERSISTENCE_FAILURE;
-            case "EX-BOO" -> mapBoot();
-            case "EX-RUN" -> mapRuntime(errorCode);
-            case "EX-EVE" -> TransportErrorCode.INTERNAL_ERROR;
-            case "EX-FLO" -> TransportErrorCode.INTERNAL_ERROR;
-            case "EX-CFG" -> TransportErrorCode.BOOTSTRAP_FAILURE;
-            default -> TransportErrorCode.INTERNAL_ERROR;
-        };
+        if (errorCode.startsWith("EX-MEM")) {
+            return mapMemory(errorCode);
+        }
+        if (errorCode.startsWith("EX-NET")) {
+            return mapNetwork(errorCode);
+        }
+        if (errorCode.startsWith("EX-SEC")) {
+            return TransportErrorCode.SECURITY_VIOLATION;
+        }
+        if (errorCode.startsWith("EX-PER")) {
+            return TransportErrorCode.PERSISTENCE_FAILURE;
+        }
+        if (errorCode.startsWith("EX-BOO")) {
+            return mapBoot();
+        }
+        if (errorCode.startsWith("EX-RUN")) {
+            return mapRuntime(errorCode);
+        }
+        if (errorCode.startsWith("EX-EVE")) {
+            return TransportErrorCode.INTERNAL_ERROR;
+        }
+        if (errorCode.startsWith("EX-FLO")) {
+            return TransportErrorCode.INTERNAL_ERROR;
+        }
+        if (errorCode.startsWith("EX-CFG")) {
+            return TransportErrorCode.BOOTSTRAP_FAILURE;
+        }
+        return TransportErrorCode.INTERNAL_ERROR;
     }
 
     private static TransportErrorCode mapMemory(String errorCode) {

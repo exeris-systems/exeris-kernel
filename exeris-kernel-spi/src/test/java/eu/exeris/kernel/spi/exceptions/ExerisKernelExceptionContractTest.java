@@ -14,6 +14,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import java.time.Instant;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -188,7 +190,7 @@ class ExerisKernelExceptionContractTest {
         @DisplayName("timestamp() is not in the future")
         void timestampNotInFuture() {
             ExerisKernelException ex = new MemoryExhaustedException(1L, 0L, null);
-            assertThat(ex.timestamp()).isBeforeOrEqualTo(java.time.Instant.now());
+            assertThat(ex.timestamp()).isBeforeOrEqualTo(Instant.now());
         }
     }
 
@@ -260,4 +262,3 @@ class ExerisKernelExceptionContractTest {
         }
     }
 }
-

@@ -36,6 +36,8 @@
         <!-- Default: benchmarks are skipped. Modules that contain @Benchmark classes
              must override this to false in their own pom.xml <properties>. -->
         <benchmark.skip>true</benchmark.skip>
+        <!-- Default empty; override in native-dependent modules or profiles. -->
+        <native.lib.dir/>
     </properties>
 
     <!-- =====================================================================
