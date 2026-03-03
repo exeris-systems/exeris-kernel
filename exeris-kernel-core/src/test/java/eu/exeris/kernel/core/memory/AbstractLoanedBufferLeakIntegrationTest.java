@@ -182,10 +182,9 @@ class AbstractLoanedBufferLeakIntegrationTest {
         @Test
         @DisplayName("null tracker throws IllegalArgumentException")
         void nullTrackerThrows() {
-            LeakTracker nullTracker = null;
             try (TestBuffer buf = allocate()) {
                 Assertions.assertThatThrownBy(
-                                () -> buf.enableLeakTracking(nullTracker))
+                                () -> buf.enableLeakTracking(null))
                         .isInstanceOf(IllegalArgumentException.class);
             }
         }
