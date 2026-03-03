@@ -60,7 +60,7 @@ public final class ErrorMapperRegistry {
      *
      * <p>Exposed as package-private for unit testing without constructing exception instances.
      *
-     * @param errorCode the structured error code; must not be {@code null}
+     * @param errorCode the structured error code; may be {@code null} or empty
      * @return a non-null {@link TransportErrorCode}
      */
     /* default */

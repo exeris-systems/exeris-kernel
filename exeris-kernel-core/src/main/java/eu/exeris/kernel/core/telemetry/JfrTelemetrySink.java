@@ -17,6 +17,7 @@ import eu.exeris.kernel.spi.exceptions.ExerisKernelException;
 import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 import eu.exeris.kernel.spi.telemetry.KernelEvent;
 import eu.exeris.kernel.spi.telemetry.TelemetrySink;
+import jdk.jfr.FlightRecorder;
 
 /**
  * Community: Strongly-typed JFR telemetry sink.
@@ -32,10 +33,12 @@ import eu.exeris.kernel.spi.telemetry.TelemetrySink;
  * thread-safe</strong> and must never be shared across threads. Each emission
  * allocates its own instance.
  *
- * <h2>Hot-path {@code isEnabled()} gate</h2>
- * <p>Every emit path opens with {@code jfr.isEnabled()}. When no recording is
- * active the JVM returns {@code false} in a single volatile read — the
- * field-population block is skipped entirely.
+ * <h2>Hot-path zero-alloc gate</h2>
+ * <p>Every emit/metric path opens with {@code FlightRecorder.isInitialized()} — a single
+ * static boolean read that returns {@code false} until the JFR subsystem is first activated.
+ * This prevents any {@code new Event()} allocation when JFR has never been started in the JVM.
+ * A secondary {@code jfr.isEnabled()} check guards individual event-type population once JFR
+ * is active but the specific event type is disabled by the active configuration.
  *
  * <h2>Tier boundary</h2>
  * <p>Zero-GC emission belongs to the Enterprise {@code BinaryBlackBoxSink} which
@@ -65,7 +68,7 @@ public final class JfrTelemetrySink implements TelemetrySink {
 
     @Override
     public void emit(KernelEvent event) {
-        if (closed) {
+        if (closed || !FlightRecorder.isInitialized()) {
             return;
         }
         ExerisKernelException exception = event.exception();
@@ -162,7 +165,7 @@ public final class JfrTelemetrySink implements TelemetrySink {
 
     @Override
     public void increment(String name, long delta) {
-        if (closed) {
+        if (closed || !FlightRecorder.isInitialized()) {
             return;
         }
         KernelMetricJfrEvent jfr = new KernelMetricJfrEvent();
@@ -177,7 +180,7 @@ public final class JfrTelemetrySink implements TelemetrySink {
 
     @Override
     public void gauge(String name, long value) {
-        if (closed) {
+        if (closed || !FlightRecorder.isInitialized()) {
             return;
         }
         KernelMetricJfrEvent jfr = new KernelMetricJfrEvent();
@@ -192,7 +195,7 @@ public final class JfrTelemetrySink implements TelemetrySink {
 
     @Override
     public void latency(String name, long nanoseconds) {
-        if (closed) {
+        if (closed || !FlightRecorder.isInitialized()) {
             return;
         }
         KernelLatencyJfrEvent jfr = new KernelLatencyJfrEvent();

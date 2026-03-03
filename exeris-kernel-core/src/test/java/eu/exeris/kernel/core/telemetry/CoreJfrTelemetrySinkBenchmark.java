@@ -11,6 +11,7 @@ import eu.exeris.kernel.spi.exceptions.memory.MemoryExhaustedException;
 import eu.exeris.kernel.spi.telemetry.KernelEvent;
 import eu.exeris.kernel.spi.telemetry.TelemetrySink;
 import eu.exeris.kernel.tck.perf.AbstractTelemetrySinkBenchmark;
+import jdk.jfr.Recording;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -18,6 +19,7 @@ import org.openjdk.jmh.annotations.Level;
 import org.openjdk.jmh.annotations.Mode;
 import org.openjdk.jmh.annotations.OutputTimeUnit;
 import org.openjdk.jmh.annotations.Setup;
+import org.openjdk.jmh.annotations.TearDown;
 import org.openjdk.jmh.infra.Blackhole;
 
 import java.util.concurrent.TimeUnit;
@@ -53,13 +55,12 @@ import java.util.concurrent.TimeUnit;
  *
  * @since 0.5.0
  */
-@Fork(value = 1, jvmArgsAppend = {
-        "-XX:StartFlightRecording=duration=60s,filename=jmh-recording.jfr,settings=profile"
-})
+@Fork(value = 1)
 public class CoreJfrTelemetrySinkBenchmark extends AbstractTelemetrySinkBenchmark {
 
     private KernelEvent hotMemExhaustEvent;
     private KernelEvent hotTransportBindEvent;
+    private Recording   recording;
 
     @Override
     protected TelemetrySink createSink() {
@@ -67,7 +68,7 @@ public class CoreJfrTelemetrySinkBenchmark extends AbstractTelemetrySinkBenchmar
     }
 
     @Setup(Level.Trial)
-    public void setUpTypedEvents() {
+    public void setUpRecording() {
         hotMemExhaustEvent = KernelEvent.error(
                 "EX-MEM-1001", "CoreJfrTelemetrySinkBenchmark.memExhaust",
                 new MemoryExhaustedException(8192L, 512L, null));
@@ -75,6 +76,18 @@ public class CoreJfrTelemetrySinkBenchmark extends AbstractTelemetrySinkBenchmar
                 "EX-NET-4001", "CoreJfrTelemetrySinkBenchmark.transportBind",
                 eu.exeris.kernel.spi.exceptions.transport.TransportException
                         .bindFailure("bench-transport", 8443, null));
+        recording = new Recording();
+        recording.enable("eu.exeris.kernel.telemetry.MemoryExhaustion").withoutStackTrace();
+        recording.enable("eu.exeris.kernel.telemetry.TransportBind").withoutStackTrace();
+        recording.enable("eu.exeris.kernel.telemetry.KernelLifecycle").withoutStackTrace();
+        recording.start();
+    }
+
+    @TearDown(Level.Trial)
+    public void tearDownRecording() {
+        if (recording != null) {
+            recording.close();
+        }
     }
 
     // =========================================================================

@@ -36,7 +36,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
  *   <li>Every {@link KernelEvent} with a typed exception routes to the correct strongly-typed
  *       JFR event class ({@code eu.exeris.kernel.telemetry.*}).</li>
  *   <li>{@code isEnabled() == false} results in zero observable JFR events — the fast-path
- *       gate is proven by the absence of events outside of an active {@link RecordingStream}.</li>
+ *       gate is proven by the absence of events outside of an active {@link Recording}.</li>
  *   <li>Structured {@code rawArgs} fields ({@code requestedBytes}, {@code port},
  *       {@code blockTimeMs}) are correctly populated — no {@code toString()} substitution.</li>
  *   <li>Sink is idempotently closeable and emits no events after {@code close()}.</li>
@@ -90,16 +90,19 @@ public abstract class AbstractJfrTelemetrySinkTck {
                 recording.stop();
                 recording.dump(tmp);
             }
-            List<RecordedEvent> events = RecordingFile.readAllEvents(tmp);
-            Files.deleteIfExists(tmp);
-            List<RecordedEvent> matched = events.stream()
-                    .filter(e -> e.getEventType().getName().equals("eu.exeris.kernel.telemetry.MemoryExhaustion"))
-                    .toList();
-            assertThat(matched).as("MemoryExhaustion JFR event must be emitted").isNotEmpty();
-            RecordedEvent jfr = matched.get(0);
-            assertThat(jfr.getLong("requestedBytes")).isEqualTo(8192L);
-            assertThat(jfr.getLong("availableBytes")).isEqualTo(512L);
-            assertThat(jfr.getString("component")).isEqualTo("MemoryAllocator");
+            try {
+                List<RecordedEvent> events = RecordingFile.readAllEvents(tmp);
+                List<RecordedEvent> matched = events.stream()
+                        .filter(e -> e.getEventType().getName().equals("eu.exeris.kernel.telemetry.MemoryExhaustion"))
+                        .toList();
+                assertThat(matched).as("MemoryExhaustion JFR event must be emitted").isNotEmpty();
+                RecordedEvent jfr = matched.get(0);
+                assertThat(jfr.getLong("requestedBytes")).isEqualTo(8192L);
+                assertThat(jfr.getLong("availableBytes")).isEqualTo(512L);
+                assertThat(jfr.getString("component")).isEqualTo("MemoryAllocator");
+            } finally {
+                Files.deleteIfExists(tmp);
+            }
         }
 
         @Test
@@ -117,16 +120,19 @@ public abstract class AbstractJfrTelemetrySinkTck {
                 recording.stop();
                 recording.dump(tmp);
             }
-            List<RecordedEvent> events = RecordingFile.readAllEvents(tmp);
-            Files.deleteIfExists(tmp);
-            List<RecordedEvent> matched = events.stream()
-                    .filter(e -> e.getEventType().getName().equals("eu.exeris.kernel.telemetry.TransportBind"))
-                    .toList();
-            assertThat(matched).as("TransportBind JFR event must be emitted").isNotEmpty();
-            RecordedEvent jfr = matched.get(0);
-            assertThat(jfr.getString("transportName")).isEqualTo("quic-edge");
-            assertThat(jfr.getInt("port")).isEqualTo(8443);
-            assertThat(jfr.getString("component")).isEqualTo("TransportEngine");
+            try {
+                List<RecordedEvent> events = RecordingFile.readAllEvents(tmp);
+                List<RecordedEvent> matched = events.stream()
+                        .filter(e -> e.getEventType().getName().equals("eu.exeris.kernel.telemetry.TransportBind"))
+                        .toList();
+                assertThat(matched).as("TransportBind JFR event must be emitted").isNotEmpty();
+                RecordedEvent jfr = matched.get(0);
+                assertThat(jfr.getString("transportName")).isEqualTo("quic-edge");
+                assertThat(jfr.getInt("port")).isEqualTo(8443);
+                assertThat(jfr.getString("component")).isEqualTo("TransportEngine");
+            } finally {
+                Files.deleteIfExists(tmp);
+            }
         }
 
         @Test
@@ -142,13 +148,16 @@ public abstract class AbstractJfrTelemetrySinkTck {
                 recording.stop();
                 recording.dump(tmp);
             }
-            List<RecordedEvent> events = RecordingFile.readAllEvents(tmp);
-            Files.deleteIfExists(tmp);
-            List<RecordedEvent> matched = events.stream()
-                    .filter(e -> e.getEventType().getName().equals("eu.exeris.kernel.telemetry.KernelLifecycle"))
-                    .toList();
-            assertThat(matched).as("KernelLifecycle fallback event must be emitted").isNotEmpty();
-            assertThat(matched.get(0).getString("errorCode")).isEqualTo("EX-TCK-0001");
+            try {
+                List<RecordedEvent> events = RecordingFile.readAllEvents(tmp);
+                List<RecordedEvent> matched = events.stream()
+                        .filter(e -> e.getEventType().getName().equals("eu.exeris.kernel.telemetry.KernelLifecycle"))
+                        .toList();
+                assertThat(matched).as("KernelLifecycle fallback event must be emitted").isNotEmpty();
+                assertThat(matched.get(0).getString("errorCode")).isEqualTo("EX-TCK-0001");
+            } finally {
+                Files.deleteIfExists(tmp);
+            }
         }
     }
 
@@ -203,15 +212,18 @@ public abstract class AbstractJfrTelemetrySinkTck {
                 recording.stop();
                 recording.dump(tmp);
             }
-            List<RecordedEvent> events = RecordingFile.readAllEvents(tmp);
-            Files.deleteIfExists(tmp);
-            List<RecordedEvent> matched = events.stream()
-                    .filter(e -> e.getEventType().getName().equals("eu.exeris.kernel.telemetry.MemoryExhaustion"))
-                    .toList();
-            assertThat(matched).isNotEmpty();
-            RecordedEvent jfr = matched.get(0);
-            assertThat(jfr.getLong("availableBytes")).isZero();
-            assertThat(jfr.getLong("requestedBytes")).isEqualTo(4096L);
+            try {
+                List<RecordedEvent> events = RecordingFile.readAllEvents(tmp);
+                List<RecordedEvent> matched = events.stream()
+                        .filter(e -> e.getEventType().getName().equals("eu.exeris.kernel.telemetry.MemoryExhaustion"))
+                        .toList();
+                assertThat(matched).isNotEmpty();
+                RecordedEvent jfr = matched.get(0);
+                assertThat(jfr.getLong("availableBytes")).isZero();
+                assertThat(jfr.getLong("requestedBytes")).isEqualTo(4096L);
+            } finally {
+                Files.deleteIfExists(tmp);
+            }
         }
 
         @Test
@@ -228,15 +240,18 @@ public abstract class AbstractJfrTelemetrySinkTck {
                 recording.stop();
                 recording.dump(tmp);
             }
-            List<RecordedEvent> events = RecordingFile.readAllEvents(tmp);
-            Files.deleteIfExists(tmp);
-            List<RecordedEvent> matched = events.stream()
-                    .filter(e -> e.getEventType().getName().equals("eu.exeris.kernel.telemetry.TransportBind"))
-                    .toList();
-            assertThat(matched).isNotEmpty();
-            RecordedEvent jfr = matched.get(0);
-            assertThat(jfr.getInt("port")).isEqualTo(9090);
-            assertThat(jfr.getString("transportName")).isEqualTo("tcp-edge");
+            try {
+                List<RecordedEvent> events = RecordingFile.readAllEvents(tmp);
+                List<RecordedEvent> matched = events.stream()
+                        .filter(e -> e.getEventType().getName().equals("eu.exeris.kernel.telemetry.TransportBind"))
+                        .toList();
+                assertThat(matched).isNotEmpty();
+                RecordedEvent jfr = matched.get(0);
+                assertThat(jfr.getInt("port")).isEqualTo(9090);
+                assertThat(jfr.getString("transportName")).isEqualTo("tcp-edge");
+            } finally {
+                Files.deleteIfExists(tmp);
+            }
         }
     }
 
@@ -286,16 +301,19 @@ public abstract class AbstractJfrTelemetrySinkTck {
                 recording.stop();
                 recording.dump(tmp);
             }
-            List<RecordedEvent> events = RecordingFile.readAllEvents(tmp);
-            Files.deleteIfExists(tmp);
-            List<RecordedEvent> matched = events.stream()
-                    .filter(e -> e.getEventType().getName().equals("eu.exeris.kernel.telemetry.KernelMetric"))
-                    .toList();
-            assertThat(matched).isNotEmpty();
-            RecordedEvent jfr = matched.get(0);
-            assertThat(jfr.getString("metricName")).isEqualTo("kernel.requests.total");
-            assertThat(jfr.getString("metricType")).isEqualTo("COUNTER");
-            assertThat(jfr.getLong("value")).isEqualTo(42L);
+            try {
+                List<RecordedEvent> events = RecordingFile.readAllEvents(tmp);
+                List<RecordedEvent> matched = events.stream()
+                        .filter(e -> e.getEventType().getName().equals("eu.exeris.kernel.telemetry.KernelMetric"))
+                        .toList();
+                assertThat(matched).isNotEmpty();
+                RecordedEvent jfr = matched.get(0);
+                assertThat(jfr.getString("metricName")).isEqualTo("kernel.requests.total");
+                assertThat(jfr.getString("metricType")).isEqualTo("COUNTER");
+                assertThat(jfr.getLong("value")).isEqualTo(42L);
+            } finally {
+                Files.deleteIfExists(tmp);
+            }
         }
 
         @Test
@@ -311,15 +329,18 @@ public abstract class AbstractJfrTelemetrySinkTck {
                 recording.stop();
                 recording.dump(tmp);
             }
-            List<RecordedEvent> events = RecordingFile.readAllEvents(tmp);
-            Files.deleteIfExists(tmp);
-            List<RecordedEvent> matched = events.stream()
-                    .filter(e -> e.getEventType().getName().equals("eu.exeris.kernel.telemetry.KernelMetric"))
-                    .toList();
-            assertThat(matched).isNotEmpty();
-            RecordedEvent jfr = matched.get(0);
-            assertThat(jfr.getString("metricType")).isEqualTo("GAUGE");
-            assertThat(jfr.getLong("value")).isEqualTo(8388608L);
+            try {
+                List<RecordedEvent> events = RecordingFile.readAllEvents(tmp);
+                List<RecordedEvent> matched = events.stream()
+                        .filter(e -> e.getEventType().getName().equals("eu.exeris.kernel.telemetry.KernelMetric"))
+                        .toList();
+                assertThat(matched).isNotEmpty();
+                RecordedEvent jfr = matched.get(0);
+                assertThat(jfr.getString("metricType")).isEqualTo("GAUGE");
+                assertThat(jfr.getLong("value")).isEqualTo(8388608L);
+            } finally {
+                Files.deleteIfExists(tmp);
+            }
         }
 
         @Test
@@ -335,15 +356,18 @@ public abstract class AbstractJfrTelemetrySinkTck {
                 recording.stop();
                 recording.dump(tmp);
             }
-            List<RecordedEvent> events = RecordingFile.readAllEvents(tmp);
-            Files.deleteIfExists(tmp);
-            List<RecordedEvent> matched = events.stream()
-                    .filter(e -> e.getEventType().getName().equals("eu.exeris.kernel.telemetry.KernelLatency"))
-                    .toList();
-            assertThat(matched).isNotEmpty();
-            RecordedEvent jfr = matched.get(0);
-            assertThat(jfr.getString("metricName")).isEqualTo("kernel.dispatch.ns");
-            assertThat(jfr.getLong("nanoseconds")).isEqualTo(750L);
+            try {
+                List<RecordedEvent> events = RecordingFile.readAllEvents(tmp);
+                List<RecordedEvent> matched = events.stream()
+                        .filter(e -> e.getEventType().getName().equals("eu.exeris.kernel.telemetry.KernelLatency"))
+                        .toList();
+                assertThat(matched).isNotEmpty();
+                RecordedEvent jfr = matched.get(0);
+                assertThat(jfr.getString("metricName")).isEqualTo("kernel.dispatch.ns");
+                assertThat(jfr.getLong("nanoseconds")).isEqualTo(750L);
+            } finally {
+                Files.deleteIfExists(tmp);
+            }
         }
     }
 }

@@ -17,6 +17,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 
 /**
@@ -179,9 +180,7 @@ class JfrTelemetrySinkTest {
     @Test
     @DisplayName("sinkName() returns non-blank canonical name")
     void sinkNameNonBlank() {
-        assertThatCode(() -> {
-            String name = sink.sinkName();
-            assert name != null && !name.isBlank() : "sinkName must be non-blank";
-        }).doesNotThrowAnyException();
+        String name = sink.sinkName();
+        assertThat(name).isNotBlank();
     }
 }
