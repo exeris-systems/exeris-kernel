@@ -48,7 +48,8 @@ import java.lang.invoke.VarHandle;
  *
  * <h2>Performance Contract</h2>
  * <p>{@link #decide(Context)} is O(1): one {@code System.nanoTime()} call + one
- * VarHandle acquire read + one conditional VarHandle CAS. No locks, no allocations.
+ * VarHandle acquire read, plus a conditional VarHandle setRelease on cache miss.
+ * No locks, no allocations.
  *
  * <h2>JFR-First</h2>
  * <p>Each cache-miss (re-evaluation) emits a {@link ResourceArbiterDecisionEvent}.
@@ -279,9 +280,9 @@ public final class ResourceArbiter {
      * Re-evaluates the action from the current {@link WatermarkLevel}, updates the
      * decision cache, and emits a {@link ResourceArbiterDecisionEvent}.
      *
-     * <p>The CAS on {@code cachedDecisionNs} is a "best effort" write — if two threads
+     * <p>The setRelease write on the cache fields is a "best effort" store — if two threads
      * race here, both compute the same action (watermark level is the same) so correctness
-     * is preserved regardless of who wins the CAS.
+     * is preserved regardless of who writes last.
      */
     private Action reEvaluate(Context context, long nowNs) {
         WatermarkLevel level = watermarkManager.currentLevel();

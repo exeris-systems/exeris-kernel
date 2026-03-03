@@ -160,6 +160,9 @@ public abstract class AbstractLoanedBuffer implements LoanedBuffer { //NOPMD Too
      */
     @Override
     public final void addCloseAction(Runnable action) {
+        if (action == null) {
+            throw new IllegalArgumentException("Close action must not be null");
+        }
         checkAlive();
         if (closeAction1 == null) {
             closeAction1 = action;

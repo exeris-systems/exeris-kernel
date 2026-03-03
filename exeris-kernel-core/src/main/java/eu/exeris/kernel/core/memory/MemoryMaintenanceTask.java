@@ -158,20 +158,25 @@ public final class MemoryMaintenanceTask implements AutoCloseable {
      *
      * <p>Idempotent — safe to call multiple times.
      */
+    @SuppressWarnings("java:S2142")
     public void stop() {
         RUNNING.setRelease(this, false);
         Thread mainThread = (Thread) MAINTENANCE_THREAD.getAndSet(this, null);
         if (mainThread != null && mainThread.isAlive()) {
             LockSupport.unpark(mainThread);
+            boolean interrupted = false;
             boolean joined = false;
             while (!joined) {
                 try {
                     mainThread.join();
                     joined = true;
                 } catch (InterruptedException _) {
-                    Thread.currentThread().interrupt();
+                    interrupted = true;
                     LockSupport.unpark(mainThread);
                 }
+            }
+            if (interrupted) {
+                Thread.currentThread().interrupt();
             }
         }
     }
