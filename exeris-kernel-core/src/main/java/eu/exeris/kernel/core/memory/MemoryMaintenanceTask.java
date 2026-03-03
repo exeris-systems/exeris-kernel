@@ -232,6 +232,7 @@ public final class MemoryMaintenanceTask implements AutoCloseable {
                 long nowNs = System.nanoTime();
                 lastWatermarkNs = maybeRefreshWatermark(nowNs, lastWatermarkNs, watermarkNs);
                 lastMaintenanceNs = maybeRunMaintenance(nowNs, lastMaintenanceNs, maintenanceNs);
+                nowNs = System.nanoTime();
                 parkUntilNextDeadline(nowNs, lastWatermarkNs, lastMaintenanceNs, watermarkNs, maintenanceNs);
             }
         } finally {

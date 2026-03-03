@@ -28,11 +28,14 @@ import java.lang.invoke.VarHandle;
  * {@code List}. This eliminates the heap allocation of {@code CopyOnWriteArrayList}
  * and its backing {@code Object[]} on every buffer creation — which was a confirmed
  * GC leak identified by the Zero-GC JFR Monitor TCK test.
- * Four slots cover all real-world use cases:
+ * <p>These four close-action slots are optional <em>auxiliary</em> callbacks that run
+ * when the buffer is closed. The mandatory resource release for the backing storage
+ * is implemented by subclasses in {@link #onRelease()}; any of the close-action slots
+ * may legitimately be {@code null}. Typical usage:
  * <ul>
- *   <li>Slot 1: arena/slab release (always present)</li>
- *   <li>Slot 2: telemetry callback (optional, set by allocator)</li>
- *   <li>Slot 3–4: reserved for Enterprise-tier extensions</li>
+ *   <li>Slot&nbsp;1: commonly used for arena/slab release callbacks by allocators (optional)</li>
+ *   <li>Slot&nbsp;2: telemetry callback (optional, set by allocator)</li>
+ *   <li>Slot&nbsp;3–4: reserved for Enterprise-tier extensions (optional)</li>
  * </ul>
  *
  * <h2>Method Count Note</h2>
