@@ -164,7 +164,7 @@ public final class MemoryMaintenanceTask implements AutoCloseable {
     public void stop() {
         RUNNING.setRelease(this, false);
         Thread mainThread = (Thread) MAINTENANCE_THREAD.getAndSet(this, null);
-        if (mainThread != null && mainThread.isAlive()) {
+        if (mainThread != null && mainThread.isAlive() && Thread.currentThread() != mainThread) {
             LockSupport.unpark(mainThread);
             boolean interrupted = false;
             boolean joined = false;
@@ -266,6 +266,8 @@ public final class MemoryMaintenanceTask implements AutoCloseable {
         long parkNs = nextDeadlineNs - nowNs;
         if (parkNs > 0 && (boolean) RUNNING.getAcquire(this)) {
             LockSupport.parkNanos(parkNs);
+        } else {
+            Thread.yield();
         }
     }
 

@@ -209,8 +209,14 @@ public final class MemoryEnvironmentProbe {
             if (totalMemoryBytes < 0) {
                 throw new IllegalArgumentException("totalMemoryBytes must be >= 0");
             }
+            if (jvmHeapMaxBytes < 0) {
+                throw new IllegalArgumentException("jvmHeapMaxBytes must be >= 0");
+            }
             if (recommendedOffHeapBytes < 0) {
                 throw new IllegalArgumentException("recommendedOffHeapBytes must be >= 0");
+            }
+            if (headroomBytes < 0) {
+                throw new IllegalArgumentException("headroomBytes must be >= 0");
             }
         }
     }
