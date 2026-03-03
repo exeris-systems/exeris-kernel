@@ -225,4 +225,3 @@ public abstract class AbstractTelemetryProviderTck {
         }
     }
 }
-

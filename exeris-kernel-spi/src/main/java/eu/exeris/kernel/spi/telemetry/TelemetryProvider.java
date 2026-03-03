@@ -50,4 +50,3 @@ public interface TelemetryProvider {
         return 0;
     }
 }
-

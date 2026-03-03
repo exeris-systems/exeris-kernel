@@ -103,6 +103,14 @@ public abstract class AbstractTelemetrySinkBenchmark extends AbstractExerisBench
         if (noOpSink != null) noOpSink.close();
     }
 
+    /**
+     * Returns the sink under test for use in subclass {@code @Benchmark} methods.
+     * Populated during {@link #setUpTrial()}.
+     */
+    protected final TelemetrySink getSink() {
+        return sink;
+    }
+
     // =========================================================================
     // Benchmark 1: emit(INFO) throughput
     // SLO: ≥ 2 000 000 ops/s (JFR) | ≥ 5 000 000 ops/s (Enterprise ring-buffer)
@@ -160,9 +168,3 @@ public abstract class AbstractTelemetrySinkBenchmark extends AbstractExerisBench
         bh.consume(hotInfoEvent);
     }
 }
-
-
-
-
-
-

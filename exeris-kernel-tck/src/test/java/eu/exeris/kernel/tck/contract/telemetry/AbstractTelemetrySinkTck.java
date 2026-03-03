@@ -138,8 +138,3 @@ public abstract class AbstractTelemetrySinkTck {
         assertThat(event.exception()).isSameAs(ex);
     }
 }
-
-
-
-
-

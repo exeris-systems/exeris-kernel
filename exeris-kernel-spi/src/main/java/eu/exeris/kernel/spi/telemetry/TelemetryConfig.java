@@ -55,4 +55,3 @@ public record TelemetryConfig(
         return new TelemetryConfig(false, true, logPath, MIN_OFF_HEAP_BYTES, 16_384);
     }
 }
-

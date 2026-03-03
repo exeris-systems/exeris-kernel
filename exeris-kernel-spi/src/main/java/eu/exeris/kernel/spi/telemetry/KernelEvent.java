@@ -83,4 +83,3 @@ public record KernelEvent(
         return new KernelEvent(code, EventLevel.FATAL, Instant.now(), exception, component);
     }
 }
-

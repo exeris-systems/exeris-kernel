@@ -22,4 +22,3 @@ public enum EventLevel {
     /** Unrecoverable failure — kernel shutdown imminent. */
     FATAL
 }
-

@@ -33,4 +33,3 @@ public final class TelemetryBootstrapException extends ExerisKernelException {
         super(KernelErrorCodes.EX_BOOT_3001, MESSAGE, cause, providerName, reason);
     }
 }
-

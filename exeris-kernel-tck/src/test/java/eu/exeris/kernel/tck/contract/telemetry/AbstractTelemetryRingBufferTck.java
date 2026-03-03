@@ -164,4 +164,3 @@ public abstract class AbstractTelemetryRingBufferTck {
                 .isLessThanOrEqualTo(100L);
     }
 }
-

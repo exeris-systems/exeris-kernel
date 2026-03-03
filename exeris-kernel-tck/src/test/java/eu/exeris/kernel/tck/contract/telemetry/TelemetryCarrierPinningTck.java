@@ -50,4 +50,3 @@ public abstract class TelemetryCarrierPinningTck extends AbstractSubsystemCarrie
         sink.close();
     }
 }
-

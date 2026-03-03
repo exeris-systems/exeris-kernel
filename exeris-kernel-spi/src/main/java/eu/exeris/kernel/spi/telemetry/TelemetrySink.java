@@ -72,4 +72,3 @@ public interface TelemetrySink extends AutoCloseable {
     @Override
     void close();
 }
-
