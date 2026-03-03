@@ -63,24 +63,26 @@ public final class MemoryMaintenanceTask implements AutoCloseable {
     public static final long DEFAULT_WATERMARK_INTERVAL_MS = 5_000L;
 
     private static final VarHandle RUNNING;
+    private static final VarHandle MAINTENANCE_THREAD;
 
     static {
         try {
-            RUNNING = MethodHandles.lookup()
-                    .findVarHandle(MemoryMaintenanceTask.class, "loopActive", boolean.class);
+            MethodHandles.Lookup lookup = MethodHandles.lookup();
+            RUNNING = lookup.findVarHandle(MemoryMaintenanceTask.class, "loopActive", boolean.class);
+            MAINTENANCE_THREAD = lookup.findVarHandle(MemoryMaintenanceTask.class, "maintenanceThread", Thread.class);
         } catch (NoSuchFieldException | IllegalAccessException e) {
             throw new ExceptionInInitializerError(e);
         }
     }
 
     /* default */ volatile boolean loopActive;
+    /* default */ Thread maintenanceThread;
 
     private final MemoryAllocator allocator;
     private final WatermarkManager watermarkManager;
     private final long maintenanceIntervalMs;
     private final long watermarkIntervalMs;
 
-    private Thread maintenanceThread;
 
     // =========================================================================
     // Constructor
@@ -138,14 +140,14 @@ public final class MemoryMaintenanceTask implements AutoCloseable {
      *
      * @throws IllegalStateException if the task has already been stopped
      */
-    public synchronized void start() {
-        if (maintenanceThread != null && maintenanceThread.isAlive()) {
-            return; // already running
+    public void start() {
+        if (!RUNNING.compareAndSet(this, false, true)) {
+            return;
         }
-        RUNNING.setRelease(this, true);
-        maintenanceThread = Thread.ofVirtual()
+        Thread thread = Thread.ofVirtual()
                 .name("exeris-memory-maintenance")
                 .start(this::maintenanceLoop);
+        MAINTENANCE_THREAD.setRelease(this, thread);
     }
 
     /**
@@ -153,9 +155,9 @@ public final class MemoryMaintenanceTask implements AutoCloseable {
      *
      * <p>Idempotent — safe to call multiple times.
      */
-    public synchronized void stop() {
+    public void stop() {
         RUNNING.setRelease(this, false);
-        Thread mainThread = maintenanceThread;
+        Thread mainThread = (Thread) MAINTENANCE_THREAD.getAcquire(this);
         if (mainThread != null && mainThread.isAlive()) {
             LockSupport.unpark(mainThread);
             try {

@@ -105,13 +105,9 @@ if they represent cross-cutting concerns.
 public static final ScopedValue<TenantContext> CURRENT_TENANT = ScopedValue.newInstance();
 
 // Usage:
-ScopedValue.
-
-where(CURRENT_TENANT, tenant).
-
-run(() ->{
-        // execute scoped logic
-        });
+ScopedValue.where(CURRENT_TENANT, tenant).run(() -> {
+    // execute scoped logic
+});
 ```
 
 ## 3. High-Density Memory Layout (Valhalla Readiness)
@@ -134,18 +130,12 @@ public record MemorySlab(long address, int capacity) {
 All parallel operations must use StructuredTaskScope to prevent orphan threads and ensure fail-fast semantics.
 
 ```Java
-try(var scope = StructuredTaskScope.open()){
+try(var scope = StructuredTaskScope.open()) {
 Subtask<L1State> l1 = scope.fork(this::initL1);
 Subtask<L2State> l2 = scope.fork(this::initL2);
-    scope.
-
-join(); // Short-circuits if any fails
-    return new
-
-BootResult(l1.get(),l2.
-
-get());
-        }
+    scope.join(); // Short-circuits if any fails
+    return new BootResult(l1.get(), l2.get());
+}
 ```
 
 ## 5. Early Construction (JEP 513)
