@@ -248,12 +248,12 @@ public final class ResourceArbiter {
         }
 
         boolean isTransport = context == Context.TRANSPORT_IO;
-        long lastDecisionNs = isTransport
-                ? (long) TRANSPORT_DECISION_NS.getAcquire(this)
-                : (long) LOGIC_DECISION_NS.getAcquire(this);
         int lastOrdinal = isTransport
                 ? (int) TRANSPORT_ACTION_ORDINAL.getAcquire(this)
                 : (int) LOGIC_ACTION_ORDINAL.getAcquire(this);
+        long lastDecisionNs = isTransport
+                ? (long) TRANSPORT_DECISION_NS.getAcquire(this)
+                : (long) LOGIC_DECISION_NS.getAcquire(this);
         boolean cacheValid = lastOrdinal != CACHE_UNINITIALIZED
                 && (nowNs - lastDecisionNs) < DECISION_CACHE_TTL_NS;
         if (cacheValid) {
@@ -291,11 +291,11 @@ public final class ResourceArbiter {
         int newOrdinal = action.ordinal();
 
         if (context == Context.TRANSPORT_IO) {
-            TRANSPORT_ACTION_ORDINAL.setRelease(this, newOrdinal);
             TRANSPORT_DECISION_NS.setRelease(this, nowNs);
+            TRANSPORT_ACTION_ORDINAL.setRelease(this, newOrdinal);
         } else {
-            LOGIC_ACTION_ORDINAL.setRelease(this, newOrdinal);
             LOGIC_DECISION_NS.setRelease(this, nowNs);
+            LOGIC_ACTION_ORDINAL.setRelease(this, newOrdinal);
         }
 
         int utilizationPct = -1;

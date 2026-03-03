@@ -192,7 +192,7 @@ public final class MemoryEnvironmentProbe {
      * Ready for {@code value record} migration.
      *
      * @param totalMemoryBytes        total physical or container-constrained memory
-     * @param jvmHeapMaxBytes         JVM max heap ({@code -Xmx}), or {@code Long.MAX_VALUE} if unlimited
+     * @param jvmHeapMaxBytes         JVM max heap in bytes as reported by the runtime
      * @param recommendedOffHeapBytes computed off-heap budget ({@code total - heap - headroom})
      * @param headroomBytes           headroom reservation used in this calculation
      */
