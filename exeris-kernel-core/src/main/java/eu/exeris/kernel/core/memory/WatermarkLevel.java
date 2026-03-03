@@ -87,7 +87,7 @@ public enum WatermarkLevel {
     /**
      * Returns the exclusive upper utilization bound for this level.
      *
-     * @return upper bound in (0.0, 1.01]
+     * @return the configured exclusive upper bound; {@link Double#POSITIVE_INFINITY} for {@link #SHEDDING}
      */
     public double upperBound() {
         return upperExclusive;
