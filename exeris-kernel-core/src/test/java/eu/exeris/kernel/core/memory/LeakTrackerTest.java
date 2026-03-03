@@ -98,7 +98,7 @@ class LeakTrackerTest {
         void trackReturnsNoop() {
             var tracker = new LeakTracker(LeakDetectionMode.DISABLED);
             Object referent = newReferent();
-            LeakTracker.LeakHandle handle = tracker.track(referent, 64, "test", "");
+            LeakTracker.LeakHandle handle = tracker.track(referent, 64, 0, "");
             assertThat(handle).isSameAs(LeakTracker.LeakHandle.NOOP);
         }
 
@@ -114,7 +114,7 @@ class LeakTrackerTest {
         @DisplayName("leakCount() stays 0 even when referent is GC'd without cancel")
         void leakCountStaysZeroWhenDisabled() {
             var tracker = new LeakTracker(LeakDetectionMode.DISABLED);
-            tracker.track(newReferent(), 64, "test", "");
+            tracker.track(newReferent(), 64, 0, "");
             System.gc();
             LockSupport.parkNanos(200_000_000L);
             assertThat(tracker.leakCount()).isZero();
@@ -130,7 +130,7 @@ class LeakTrackerTest {
         void cancelledHandleDoesNotLeak() {
             var tracker = new LeakTracker(LeakDetectionMode.PARANOID);
             Object referent = newReferent();
-            LeakTracker.LeakHandle handle = tracker.track(referent, 64, "test", "stack");
+            LeakTracker.LeakHandle handle = tracker.track(referent, 64, 0, "stack");
             handle.cancel();
             Reference.reachabilityFence(referent);
 
@@ -157,7 +157,7 @@ class LeakTrackerTest {
          */
         private static void trackAndDropWithoutCancel(LeakTracker tracker) {
             Object referent = new Object();
-            tracker.track(referent, 128, "leaked-buffer", "fake\n\tstack\n\ttrace");
+            tracker.track(referent, 128, 0xdeadbee, "fake\n\tstack\n\ttrace");
         }
 
         @Test
@@ -165,7 +165,7 @@ class LeakTrackerTest {
         void cancelIsIdempotent() {
             var tracker = new LeakTracker(LeakDetectionMode.PARANOID);
             Object referent = newReferent();
-            LeakTracker.LeakHandle handle = tracker.track(referent, 64, "test", "");
+            LeakTracker.LeakHandle handle = tracker.track(referent, 64, 0, "");
             handle.cancel();
             handle.cancel();
             Reference.reachabilityFence(referent);
@@ -187,7 +187,7 @@ class LeakTrackerTest {
 
         private static void trackNObjectsWithoutCancel(LeakTracker tracker, int n) {
             for (int i = 0; i < n; i++) {
-                tracker.track(new Object(), 64, "buf-" + i, "");
+                tracker.track(new Object(), 64, i, "");
             }
         }
     }
@@ -203,7 +203,7 @@ class LeakTrackerTest {
             int total = 512;
             int noops = 0;
             for (int i = 0; i < total; i++) {
-                LeakTracker.LeakHandle handle = tracker.track(new Object(), 64, "test", "");
+                LeakTracker.LeakHandle handle = tracker.track(new Object(), 64, i, "");
                 if (handle == LeakTracker.LeakHandle.NOOP) {
                     noops++;
                 } else {
@@ -220,7 +220,7 @@ class LeakTrackerTest {
             var tracker = new LeakTracker(LeakDetectionMode.SAMPLED);
             int nonNoops = 0;
             for (int i = 0; i < 512; i++) {
-                LeakTracker.LeakHandle handle = tracker.track(new Object(), 64, "test", "");
+                LeakTracker.LeakHandle handle = tracker.track(new Object(), 64, i, "");
                 if (handle != LeakTracker.LeakHandle.NOOP) {
                     nonNoops++;
                     handle.cancel();
@@ -247,7 +247,7 @@ class LeakTrackerTest {
                 for (int i = 0; i < 1_000; i++) {
                     scope.fork(() -> {
                         Object referent = new Object();
-                        LeakTracker.LeakHandle handle = tracker.track(referent, 64, "concurrent", "");
+                        LeakTracker.LeakHandle handle = tracker.track(referent, 64, 0, "");
                         handle.cancel();
                         Reference.reachabilityFence(referent);
                         return null;
