@@ -18,7 +18,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * <h2>How It Works</h2>
  * <p>When a buffer is created with {@link LeakDetectionMode#PARANOID} or
  * {@link LeakDetectionMode#SAMPLED}, the allocator calls
- * {@link #track(Object, long, String, String)} to register a phantom cleanup action.
+ * {@link #track(Object, long, int, String)} to register a phantom cleanup action.
  * If the JVM garbage-collects the buffer object <em>before</em> {@link ActiveLeakHandle#cancel()} is called,
  * the Cleaner thread fires {@link LeakDetectedEvent} and increments the {@link #leakCount()}.
  *
@@ -95,21 +95,18 @@ public final class LeakTracker {
      * @param referent        the buffer object to track (strongly typed to avoid accidental
      *                        inner-class captures that would prevent GC)
      * @param capacityBytes   byte capacity of the underlying segment (for the JFR event)
-     * @param bufferLabel     opaque label for the JFR event (typically hex address or class name)
-     * @param allocationStack stack trace string captured at allocation time; pass {@code ""}
+     * @param identityHash    raw identity hash code of the buffer; formatted to hex lazily only on leak
+     * @param allocationStack stack trace string captured at allocation time; pass {@code "<sampled>"}
      *                        for SAMPLED mode (no stack capture for performance)
      * @return a {@link LeakHandle} to cancel when the buffer is properly closed
      */
     @SuppressWarnings("PMD.CyclomaticComplexity")
     public LeakHandle track(Object referent,
                             long capacityBytes,
-                            String bufferLabel,
+                            int identityHash,
                             String allocationStack) {
         if (referent == null) {
             throw new IllegalArgumentException("referent must not be null");
-        }
-        if (bufferLabel == null) {
-            throw new IllegalArgumentException("bufferLabel must not be null");
         }
         if (allocationStack == null) {
             throw new IllegalArgumentException("allocationStack must not be null");
@@ -123,7 +120,7 @@ public final class LeakTracker {
                 return LeakHandle.NOOP;
             }
         }
-        LeakAction action = new LeakAction(leakCount, bufferLabel, allocationStack, capacityBytes);
+        LeakAction action = new LeakAction(leakCount, identityHash, allocationStack, capacityBytes);
         Cleaner.Cleanable cleanable = CLEANER.register(referent, action);
         return new ActiveLeakHandle(cleanable, action);
     }
@@ -226,17 +223,17 @@ public final class LeakTracker {
     /* default */ static final class LeakAction implements Runnable {
 
         private final AtomicLong leakCount;
-        private final String bufferLabel;
+        private final int identityHash;
         private final String allocationStack;
         private final long capacityBytes;
         private volatile boolean cancelled;
 
         /* default */ LeakAction(AtomicLong leakCount,
-                                 String bufferLabel,
+                                 int identityHash,
                                  String allocationStack,
                                  long capacityBytes) {
             this.leakCount = leakCount;
-            this.bufferLabel = bufferLabel;
+            this.identityHash = identityHash;
             this.allocationStack = allocationStack;
             this.capacityBytes = capacityBytes;
         }
@@ -254,6 +251,7 @@ public final class LeakTracker {
                 return;
             }
             leakCount.incrementAndGet();
+            String bufferLabel = Integer.toHexString(identityHash);
             LeakDetectedEvent.emit(bufferLabel, allocationStack, capacityBytes);
         }
     }

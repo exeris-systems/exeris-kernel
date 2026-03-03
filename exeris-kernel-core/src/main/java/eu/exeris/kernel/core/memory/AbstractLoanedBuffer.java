@@ -201,8 +201,8 @@ public abstract class AbstractLoanedBuffer implements LoanedBuffer { //NOPMD Too
         String stackTrace = tracker.mode() == LeakDetectionMode.PARANOID
                 ? captureAllocationStack()
                 : "<sampled>";
-        String bufferLabel = Integer.toHexString(System.identityHashCode(this));
-        leakHandle = tracker.track(this, capacity(), bufferLabel, stackTrace);
+        int identityHash = System.identityHashCode(this);
+        leakHandle = tracker.track(this, capacity(), identityHash, stackTrace);
     }
 
     // =========================================================================
