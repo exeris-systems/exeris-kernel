@@ -27,8 +27,8 @@ import java.nio.file.Path;
  * <ol>
  *   <li><b>cgroup v2</b> — reads {@code /sys/fs/cgroup/memory.max}</li>
  *   <li><b>cgroup v1</b> — reads {@code /sys/fs/cgroup/memory/memory.limit_in_bytes}</li>
- *   <li><b>JVM {@code -Xmx}</b> — {@code Runtime.getRuntime().maxMemory()}</li>
  *   <li><b>OS physical RAM</b> — {@code com.sun.management.OperatingSystemMXBean.getTotalMemorySize()}</li>
+ *   <li><b>JVM {@code -Xmx}</b> — {@code Runtime.getRuntime().maxMemory()}</li>
  * </ol>
  *
  * <h2>Off-Heap Budget Formula</h2>

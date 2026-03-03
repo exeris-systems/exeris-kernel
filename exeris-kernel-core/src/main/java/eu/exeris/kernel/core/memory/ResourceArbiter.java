@@ -22,10 +22,10 @@ import java.lang.invoke.VarHandle;
  * arbiter answers with an {@link Action} derived purely from memory pressure signals.
  *
  * <h2>Decision Cache (VarHandle — 1 ms TTL)</h2>
- * <p>To avoid calling {@link WatermarkManager#currentLevel()} on every single request
- * (which itself is O(1) but still a volatile read), the arbiter caches the last decision
- * for {@value #DECISION_CACHE_TTL_NS} nanoseconds. The cache is represented as two
- * per-context pairs of fields atomically updated via {@link VarHandle} setRelease:
+ * <p>To avoid evaluating the {@link WatermarkManager} logic on every single request,
+ * the arbiter caches the last decision locally for {@value #DECISION_CACHE_TTL_NS}
+ * nanoseconds. The cache is represented as two per-context pairs of fields atomically
+ * updated via {@link VarHandle} setRelease:
  * <ul>
  *   <li>{@code transportDecisionNs} / {@code transportActionOrdinal} — TRANSPORT_IO context</li>
  *   <li>{@code logicDecisionNs} / {@code logicActionOrdinal} — KERNEL_LOGIC context</li>
@@ -47,9 +47,9 @@ import java.lang.invoke.VarHandle;
  * throughput at the cost of background logic work.
  *
  * <h2>Performance Contract</h2>
- * <p>{@link #decide(Context)} is O(1): one {@code System.nanoTime()} call + one
- * VarHandle acquire read, plus a conditional VarHandle setRelease on cache miss.
- * No locks, no allocations.
+ * <p>{@link #decide(Context)} is O(1): one {@code System.nanoTime()} call +
+ * two VarHandle acquire reads (cached decision timestamp and action ordinal),
+ * plus conditional VarHandle {@code setRelease} writes on cache miss. No locks, no allocations.
  *
  * <h2>JFR-First</h2>
  * <p>Each cache-miss (re-evaluation) emits a {@link ResourceArbiterDecisionEvent}.

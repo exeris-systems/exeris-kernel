@@ -44,8 +44,10 @@ import java.util.concurrent.locks.LockSupport;
  * </pre>
  *
  * <h2>Thread Safety</h2>
- * <p>The {@code running} flag is a {@code volatile boolean} — sufficient for a single-reader
- * (the VT loop) / single-writer (stop()) pattern. No CAS required.
+ * <p>The {@code running} flag is a {@code volatile boolean} read by the VT loop and
+ * written by {@code stop()}, and it is also updated via a {@link VarHandle} compare-and-set
+ * in {@code start()} to enforce at-most-once startup. Volatile provides the required
+ * visibility; CAS is used solely for idempotent lifecycle control.</p>
  *
  * @see WatermarkManager
  * @see MemoryAllocator#performMaintenance()
