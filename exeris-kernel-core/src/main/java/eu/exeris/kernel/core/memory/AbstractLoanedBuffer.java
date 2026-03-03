@@ -209,8 +209,9 @@ public abstract class AbstractLoanedBuffer implements LoanedBuffer { //NOPMD Too
     @Override
     public final LoanedBuffer slice(long offset, long length) {
         checkAlive();
+        MemorySegment slice = backingSegment().asSlice(offset, length);
         retain();
-        return new SliceLoanedBuffer(backingSegment().asSlice(offset, length), length, this);
+        return new SliceLoanedBuffer(slice, length, this);
     }
 
     @Override
@@ -379,15 +380,17 @@ public abstract class AbstractLoanedBuffer implements LoanedBuffer { //NOPMD Too
         @Override
         public LoanedBuffer slice(long offset, long length) {
             parent.checkAlive();
+            MemorySegment slice = segment.asSlice(offset, length);
             parent.retain();
-            return new SliceLoanedBuffer(segment.asSlice(offset, length), length, parent);
+            return new SliceLoanedBuffer(slice, length, parent);
         }
 
         @Override
         public LoanedBuffer view() {
             parent.checkAlive();
+            MemorySegment readOnly = segment.asReadOnly();
             parent.retain();
-            return new SliceLoanedBuffer(segment.asReadOnly(), size, parent);
+            return new SliceLoanedBuffer(readOnly, size, parent);
         }
 
         @Override

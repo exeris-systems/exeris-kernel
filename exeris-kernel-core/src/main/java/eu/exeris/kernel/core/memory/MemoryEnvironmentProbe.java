@@ -112,6 +112,12 @@ public final class MemoryEnvironmentProbe {
     /**
      * Detects total available memory using the probe priority chain.
      *
+     * <p>OS and cgroup physical limits take strict priority: cgroup v2 is consulted
+     * first, then cgroup v1, then the OS physical RAM reported by
+     * {@link com.sun.management.OperatingSystemMXBean}. Only when none of those sources
+     * can supply a value does this method fall back to
+     * {@link Runtime#maxMemory() Runtime.getRuntime().maxMemory()}.
+     *
      * @return total memory in bytes; always {@code > 0}
      */
     private static long detectTotalMemory() {

@@ -297,10 +297,7 @@ public final class ResourceArbiter {
             LOGIC_DECISION_NS.setRelease(this, nowNs);
         }
 
-        int utilizationPct = 0;
-        if (level != WatermarkLevel.NORMAL) {
-            utilizationPct = (int) (level.lowerBound() * 100);
-        }
+        int utilizationPct = -1;
         ResourceArbiterDecisionEvent.emit(action, context.contextName(), utilizationPct, nowNs);
 
         return action;
