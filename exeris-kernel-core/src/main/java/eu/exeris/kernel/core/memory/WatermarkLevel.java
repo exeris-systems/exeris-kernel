@@ -59,7 +59,7 @@ public enum WatermarkLevel {
     /**
      * Utilization at or above shedding threshold — shed all new load (H3_EXCESSIVE_LOAD).
      */
-    SHEDDING(0.95, 1.01);
+    SHEDDING(0.95, Double.POSITIVE_INFINITY);
 
     /**
      * Inclusive lower bound of this level's utilization range.

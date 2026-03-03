@@ -290,10 +290,10 @@ public final class ResourceArbiter {
         int newOrdinal = action.ordinal();
 
         if (context == Context.TRANSPORT_IO) {
-            TRANSPORT_ACTION_ORDINAL.set(this, newOrdinal);
+            TRANSPORT_ACTION_ORDINAL.setRelease(this, newOrdinal);
             TRANSPORT_DECISION_NS.setRelease(this, nowNs);
         } else {
-            LOGIC_ACTION_ORDINAL.set(this, newOrdinal);
+            LOGIC_ACTION_ORDINAL.setRelease(this, newOrdinal);
             LOGIC_DECISION_NS.setRelease(this, nowNs);
         }
 
