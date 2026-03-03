@@ -22,9 +22,9 @@ import java.lang.foreign.ValueLayout;
  * <p>{@code allocator.allocate(MICRO) → write → close} — slab pool acquire/release
  * must never pin a carrier thread (no synchronized on the pool lock path).
  *
- * @since 0.5.0
  * @see AbstractSubsystemCarrierPinningTck
  * @see AbstractZeroGcJfrMonitorTck
+ * @since 0.5.0
  */
 @DisplayName("Memory carrier pinning TCK")
 public abstract class MemoryCarrierPinningTck extends AbstractSubsystemCarrierPinningTck {
@@ -34,13 +34,20 @@ public abstract class MemoryCarrierPinningTck extends AbstractSubsystemCarrierPi
     private MemoryAllocator allocator;
     private int counter;
 
-    @Override protected String subsystemName()      { return "Memory"; }
-    @Override protected String hotPathDescription() { return "MemoryAllocator.allocate(MICRO) → write → close"; }
+    @Override
+    protected String subsystemName() {
+        return "Memory";
+    }
+
+    @Override
+    protected String hotPathDescription() {
+        return "MemoryAllocator.allocate(MICRO) → write → close";
+    }
 
     @Override
     protected void bootstrapSubsystem() {
         allocator = createAllocator();
-        counter   = 0;
+        counter = 0;
     }
 
     @Override
@@ -55,4 +62,3 @@ public abstract class MemoryCarrierPinningTck extends AbstractSubsystemCarrierPi
         allocator.close();
     }
 }
-

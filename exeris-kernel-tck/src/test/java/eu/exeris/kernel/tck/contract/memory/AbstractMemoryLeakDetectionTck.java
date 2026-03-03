@@ -60,9 +60,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * }
  * }</pre>
  *
- * @since 0.5.0
  * @see AbstractMemoryAllocatorTck
  * @see LeakDetectionMode#PARANOID
+ * @since 0.5.0
  */
 public abstract class AbstractMemoryLeakDetectionTck {
 
@@ -70,7 +70,9 @@ public abstract class AbstractMemoryLeakDetectionTck {
     // Template methods
     // =========================================================================
 
-    /** Creates the {@link MemoryProvider} under test. */
+    /**
+     * Creates the {@link MemoryProvider} under test.
+     */
     protected abstract MemoryProvider createProvider();
 
     /**
@@ -82,7 +84,7 @@ public abstract class AbstractMemoryLeakDetectionTck {
      * Default: {@code 64 * 1024 * 1024} (64 MB).
      */
     protected long gigabyteAllocationSize() {
-        return 64L * 1024L * 1024L; // 64 MB default — safe for Community heap
+        return 64L * 1024L * 1024L;
     }
 
     /**
@@ -90,7 +92,7 @@ public abstract class AbstractMemoryLeakDetectionTck {
      * Default: 64 KB (AllocationHint.LARGE equivalent).
      */
     protected int allocationChunkSize() {
-        return 65_536; // 64 KB per chunk
+        return 65_536;
     }
 
     private MemoryAllocator allocator;
@@ -129,12 +131,10 @@ public abstract class AbstractMemoryLeakDetectionTck {
     @DisplayName("Allocate " + "N" + " chunks, close all → allocatedBytes() == 0 (no slab held hostage)")
     @Timeout(value = 60, unit = TimeUnit.SECONDS)
     void allocateAndCloseAllChunksYieldsZeroAllocatedBytes() {
-        long totalSize  = gigabyteAllocationSize();
-        int  chunkSize  = allocationChunkSize();
-        int  chunkCount = (int) (totalSize / chunkSize);
+        long totalSize = gigabyteAllocationSize();
+        int chunkSize = allocationChunkSize();
+        int chunkCount = (int) (totalSize / chunkSize);
 
-        // Cap to guard against pathological configuration. Loop is explicitly bounded by
-        // 'remaining', which is decremented each iteration so termination is guaranteed.
         final int maxIterations = 1024;
         int remaining = Math.min(chunkCount, maxIterations);
         int allocated = 0;
@@ -151,9 +151,9 @@ public abstract class AbstractMemoryLeakDetectionTck {
 
         assertThat(allocator.stats().allocatedBytes())
                 .as("After closing all %d chunks totalling %d bytes, allocatedBytes() MUST " +
-                    "return 0. A non-zero value means %d bytes are held by un-closed slabs — " +
-                    "this is a memory leak. Use Arena.close() in LoanedBuffer.close().",
-                    iterations, exercisedBytes, allocator.stats().allocatedBytes())
+                                "return 0. A non-zero value means %d bytes are held by un-closed slabs — " +
+                                "this is a memory leak. Use Arena.close() in LoanedBuffer.close().",
+                        iterations, exercisedBytes, allocator.stats().allocatedBytes())
                 .isZero();
 
         assertThat(allocator.stats().releaseCount())
@@ -164,17 +164,13 @@ public abstract class AbstractMemoryLeakDetectionTck {
     @Test
     @DisplayName("Deliberate un-closed buffer increments leakCount() after GC hint")
     @Timeout(value = 10, unit = TimeUnit.SECONDS)
-    @SuppressWarnings("PMD.CloseResource") // intentional leak — testing detection
+    @SuppressWarnings("PMD.CloseResource")
+        // intentional leak — testing detection
     void deliberateLeakIncreasesLeakCount() {
         long leaksBefore = allocator.stats().leakCount();
 
-        // Deliberately NOT closing this buffer — simulating application bug.
-        // Drop the reference immediately so GC can make it eligible for phantom-ref processing.
-        // PARANOID mode uses phantom references / WeakReferences to detect abandoned slabs.
         createLeakedBuffer();
 
-        // GC hint loop: hint GC to process phantom references.
-        // LockSupport.parkNanos() avoids banned Thread.sleep() while yielding scheduler time to GC.
         for (int i = 0; i < 5; i++) {
             System.gc();
             java.util.concurrent.locks.LockSupport.parkNanos(100_000_000L); // 100 ms park
@@ -182,15 +178,14 @@ public abstract class AbstractMemoryLeakDetectionTck {
 
         assertThat(allocator.stats().leakCount())
                 .as("PARANOID mode MUST detect an un-closed LoanedBuffer after GC. " +
-                    "The leak detector must increment leakCount() when the GC collects " +
-                    "a buffer whose refCount is still > 0. " +
-                    "Before: %d, after: %d", leaksBefore, allocator.stats().leakCount())
+                        "The leak detector must increment leakCount() when the GC collects " +
+                        "a buffer whose refCount is still > 0. " +
+                        "Before: %d, after: %d", leaksBefore, allocator.stats().leakCount())
                 .isGreaterThan(leaksBefore);
     }
 
     @SuppressWarnings("PMD.CloseResource") // intentional — helper for leak test
     private void createLeakedBuffer() {
-        // Allocate and immediately lose the reference — GC eligible
         allocator.allocate(AllocationHint.MICRO); // NOSONAR: intentional leak for test
     }
 
@@ -200,7 +195,7 @@ public abstract class AbstractMemoryLeakDetectionTck {
         allocator.close();
 
         org.assertj.core.api.Assertions.assertThatThrownBy(
-                () -> allocator.allocate(AllocationHint.MICRO))
+                        () -> allocator.allocate(AllocationHint.MICRO))
                 .as("allocate() after close() MUST throw IllegalStateException")
                 .isInstanceOf(IllegalStateException.class);
     }
@@ -208,14 +203,10 @@ public abstract class AbstractMemoryLeakDetectionTck {
     @Test
     @DisplayName("Allocator implementation lives in eu.exeris.* package (no raw Arena wrapper)")
     void allocatorImplementationIsInExerisPackage() {
-        // The Wall: allocator implementations must live under the eu.exeris.* namespace so that
-        // architectural rules (including the ban on direct Arena.ofConfined()/ofShared() usage)
-        // can be centrally enforced. This test only verifies the package hierarchy, not bytecode.
         String pkg = allocator.getClass().getName();
         assertThat(pkg)
                 .as("MemoryAllocator implementation MUST reside in an 'eu.exeris.*' package, " +
-                    "rather than being a raw external Arena wrapper that bypasses the pooling tier.")
+                        "rather than being a raw external Arena wrapper that bypasses the pooling tier.")
                 .startsWith("eu.exeris.");
     }
 }
-
