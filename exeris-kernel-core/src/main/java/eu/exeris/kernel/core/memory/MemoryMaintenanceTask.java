@@ -8,6 +8,7 @@
 package eu.exeris.kernel.core.memory;
 
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
+import eu.exeris.kernel.spi.memory.MemoryStats;
 
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
@@ -136,9 +137,9 @@ public final class MemoryMaintenanceTask implements AutoCloseable {
     /**
      * Starts the maintenance Virtual Thread.
      *
-     * <p>Idempotent — calling {@code start()} on an already-running task is a no-op.
-     *
-     * @throws IllegalStateException if the task has already been stopped
+     * <p>Idempotent — safe to call multiple times, including after {@link #stop()}.
+     * If the task is already running the call is a no-op. After a previous
+     * {@link #stop()}, calling {@code start()} again will launch a new maintenance thread.
      */
     public void start() {
         if (!RUNNING.compareAndSet(this, false, true)) {
@@ -254,9 +255,10 @@ public final class MemoryMaintenanceTask implements AutoCloseable {
         WatermarkLevel level = watermarkManager.currentLevel();
         runQuietly(allocator::performMaintenance);
         long durationUs = (System.nanoTime() - startNs) / 1_000L;
+        MemoryStats stats = allocator.stats();
         MemoryMaintenanceEvents.CycleEvent.emit(level, durationUs,
-                allocator.stats().allocatedBytes(),
-                allocator.stats().totalBytes());
+                stats.allocatedBytes(),
+                stats.totalBytes());
     }
 
     private static void runQuietly(Runnable task) {

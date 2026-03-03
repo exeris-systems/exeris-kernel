@@ -25,10 +25,10 @@ import java.lang.invoke.VarHandle;
  * <p>To avoid calling {@link WatermarkManager#currentLevel()} on every single request
  * (which itself is O(1) but still a volatile read), the arbiter caches the last decision
  * for {@value #DECISION_CACHE_TTL_NS} nanoseconds. The cache is represented as two
- * {@code long} fields atomically updated via {@link VarHandle} CAS:
+ * per-context pairs of fields atomically updated via {@link VarHandle} setRelease:
  * <ul>
- *   <li>{@code cachedDecisionNs} — nanos timestamp of the cached decision</li>
- *   <li>{@code cachedActionOrdinal} — ordinal of the cached {@link Action}</li>
+ *   <li>{@code transportDecisionNs} / {@code transportActionOrdinal} — TRANSPORT_IO context</li>
+ *   <li>{@code logicDecisionNs} / {@code logicActionOrdinal} — KERNEL_LOGIC context</li>
  * </ul>
  *
  * <h2>Startup Grace Period (30 s)</h2>
@@ -227,15 +227,19 @@ public final class ResourceArbiter {
      * <p>This is the <b>hot path</b> — called on every inbound request.
      * Implementation guarantees:
      * <ul>
-     *   <li>O(1): one {@code System.nanoTime()} + one VarHandle acquire + one optional CAS.</li>
+     *   <li>O(1): one {@code System.nanoTime()} + one VarHandle acquire read.</li>
      *   <li>Zero heap allocation.</li>
      *   <li>JFR event emitted only on cache miss (every ~1 ms), not on every call.</li>
      * </ul>
      *
-     * @param context the arbitration context (TRANSPORT_IO or KERNEL_LOGIC)
+     * @param context the arbitration context (TRANSPORT_IO or KERNEL_LOGIC); must not be {@code null}
      * @return the action to take; never {@code null}
+     * @throws IllegalArgumentException if {@code context} is {@code null}
      */
     public Action decide(Context context) {
+        if (context == null) {
+            throw new IllegalArgumentException("context must not be null");
+        }
         long nowNs = System.nanoTime();
 
         if (nowNs - startNs < GRACE_PERIOD_NS) {

@@ -100,10 +100,20 @@ public final class LeakTracker {
      *                        for SAMPLED mode (no stack capture for performance)
      * @return a {@link LeakHandle} to cancel when the buffer is properly closed
      */
+    @SuppressWarnings("PMD.CyclomaticComplexity")
     public LeakHandle track(Object referent,
                             long capacityBytes,
                             String bufferLabel,
                             String allocationStack) {
+        if (referent == null) {
+            throw new IllegalArgumentException("referent must not be null");
+        }
+        if (bufferLabel == null) {
+            throw new IllegalArgumentException("bufferLabel must not be null");
+        }
+        if (allocationStack == null) {
+            throw new IllegalArgumentException("allocationStack must not be null");
+        }
         if (mode == LeakDetectionMode.DISABLED) {
             return LeakHandle.NOOP;
         }

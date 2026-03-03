@@ -24,14 +24,15 @@ import java.lang.invoke.VarHandle;
  * same backing {@link MemorySegment} via {@code MemorySegment.asSlice()} — zero bytes copied.
  *
  * <h2>Close Actions — Flat Storage (Zero-GC)</h2>
- * <p>Close actions are stored as two plain {@code Runnable} fields instead of a
+ * <p>Close actions are stored as four plain {@code Runnable} fields instead of a
  * {@code List}. This eliminates the heap allocation of {@code CopyOnWriteArrayList}
  * and its backing {@code Object[]} on every buffer creation — which was a confirmed
  * GC leak identified by the Zero-GC JFR Monitor TCK test.
- * Two slots cover all real-world use cases:
+ * Four slots cover all real-world use cases:
  * <ul>
  *   <li>Slot 1: arena/slab release (always present)</li>
  *   <li>Slot 2: telemetry callback (optional, set by allocator)</li>
+ *   <li>Slot 3–4: reserved for Enterprise-tier extensions</li>
  * </ul>
  *
  * <h2>Method Count Note</h2>
@@ -152,11 +153,10 @@ public abstract class AbstractLoanedBuffer implements LoanedBuffer { //NOPMD Too
     /**
      * Registers a close action to execute (LIFO) when refCount reaches zero.
      *
-     * <p>Supports at most 2 actions per buffer. Slot 1 is typically the arena/slab
-     * release; Slot 2 is the optional telemetry callback. Exceeding the limit indicates
+     * <p>Supports at most 4 actions per buffer. Exceeding the limit indicates
      * a design error in the caller — fail fast with {@link IllegalStateException}.
      *
-     * @throws IllegalStateException if both slots are already occupied
+     * @throws IllegalStateException if all 4 slots are already occupied
      */
     @Override
     public final void addCloseAction(Runnable action) {

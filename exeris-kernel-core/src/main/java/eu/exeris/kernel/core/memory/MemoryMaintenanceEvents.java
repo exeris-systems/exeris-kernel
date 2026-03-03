@@ -10,6 +10,7 @@ package eu.exeris.kernel.core.memory;
 import jdk.jfr.Category;
 import jdk.jfr.Description;
 import jdk.jfr.Event;
+import jdk.jfr.FlightRecorder;
 import jdk.jfr.Label;
 import jdk.jfr.Name;
 import jdk.jfr.StackTrace;
@@ -55,12 +56,17 @@ final class MemoryMaintenanceEvents {
         /* default */
         static void emit(WatermarkLevel level, long durationUs,
                          long allocatedBytes, long totalBytes) {
+            if (!FlightRecorder.isInitialized()) {
+                return;
+            }
             CycleEvent evt = new CycleEvent();
-            evt.watermarkLevel = level.name();
-            evt.durationUs = durationUs;
-            evt.allocatedBytes = allocatedBytes;
-            evt.totalBytes = totalBytes;
-            evt.commit();
+            if (evt.isEnabled()) {
+                evt.watermarkLevel = level.name();
+                evt.durationUs = durationUs;
+                evt.allocatedBytes = allocatedBytes;
+                evt.totalBytes = totalBytes;
+                evt.commit();
+            }
         }
     }
 
@@ -83,10 +89,15 @@ final class MemoryMaintenanceEvents {
 
         /* default */
         static void emit(RuntimeException runtimeEx) {
+            if (!FlightRecorder.isInitialized()) {
+                return;
+            }
             FailureEvent evt = new FailureEvent();
-            evt.exceptionClass = runtimeEx.getClass().getName();
-            evt.exceptionMessage = runtimeEx.getMessage();
-            evt.commit();
+            if (evt.isEnabled()) {
+                evt.exceptionClass = runtimeEx.getClass().getName();
+                evt.exceptionMessage = runtimeEx.getMessage();
+                evt.commit();
+            }
         }
     }
 }

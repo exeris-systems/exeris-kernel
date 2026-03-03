@@ -10,6 +10,7 @@ package eu.exeris.kernel.core.memory;
 import jdk.jfr.Category;
 import jdk.jfr.Description;
 import jdk.jfr.Event;
+import jdk.jfr.FlightRecorder;
 import jdk.jfr.Label;
 import jdk.jfr.Name;
 import jdk.jfr.StackTrace;
@@ -69,6 +70,9 @@ import jdk.jfr.StackTrace;
                      String contextName,
                      int utilizationPct,
                      long decisionNs) {
+        if (!FlightRecorder.isInitialized()) {
+            return;
+        }
         ResourceArbiterDecisionEvent evt = new ResourceArbiterDecisionEvent();
         if (evt.isEnabled()) {
             evt.action = action.name();

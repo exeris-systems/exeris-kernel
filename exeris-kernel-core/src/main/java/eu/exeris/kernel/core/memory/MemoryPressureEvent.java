@@ -10,6 +10,7 @@ package eu.exeris.kernel.core.memory;
 import jdk.jfr.Category;
 import jdk.jfr.Description;
 import jdk.jfr.Event;
+import jdk.jfr.FlightRecorder;
 import jdk.jfr.Label;
 import jdk.jfr.Name;
 import jdk.jfr.StackTrace;
@@ -71,14 +72,19 @@ import jdk.jfr.StackTrace;
                      long totalBytes,
                      WatermarkLevel fromLevel,
                      WatermarkLevel toLevel) {
+        if (!FlightRecorder.isInitialized()) {
+            return;
+        }
         MemoryPressureEvent evt = new MemoryPressureEvent();
-        evt.allocatedBytes = allocatedBytes;
-        evt.totalBytes = totalBytes;
-        evt.utilizationPct = totalBytes > 0
-                ? (int) (allocatedBytes * 100L / totalBytes)
-                : 0;
-        evt.fromLevel = fromLevel.name();
-        evt.toLevel = toLevel.name();
-        evt.commit();
+        if (evt.isEnabled()) {
+            evt.allocatedBytes = allocatedBytes;
+            evt.totalBytes = totalBytes;
+            evt.utilizationPct = totalBytes > 0
+                    ? (int) (allocatedBytes * 100L / totalBytes)
+                    : 0;
+            evt.fromLevel = fromLevel.name();
+            evt.toLevel = toLevel.name();
+            evt.commit();
+        }
     }
 }
