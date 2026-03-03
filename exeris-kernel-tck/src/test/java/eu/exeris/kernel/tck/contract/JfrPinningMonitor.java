@@ -130,7 +130,7 @@ public final class JfrPinningMonitor {
         sb.append("╠══════════════════════════════════════════════════════╣\n");
         result.pinnedEvents().stream().limit(5).forEach(e ->
                 sb.append("  ▸ ").append(e.threadName())
-                        .append(" | ").append(String.format("%.2f", e.durationMs())).append(" ms\n")
+                        .append(" | ").append(String.format(java.util.Locale.ROOT, "%.2f", e.durationMs())).append(" ms\n")
                         .append("    ").append(e.stackTrace()).append("\n")
         );
         sb.append("╚══════════════════════════════════════════════════════╝\n");

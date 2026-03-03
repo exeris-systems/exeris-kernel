@@ -250,7 +250,9 @@ class MemoryOrchestrationIntegrationTest {
 
             try (MemoryMaintenanceTask task = new MemoryMaintenanceTask(alloc, mgr, 50L, 25L)) {
                 task.start();
-                awaitCondition(() -> alloc.maintenanceCalls() >= 1, 5_000);
+                assertThat(awaitCondition(() -> alloc.maintenanceCalls() >= 1, 5_000))
+                        .as("Timeout waiting for maintenance cycle")
+                        .isTrue();
             }
 
             assertThat(mgr.currentLevel())
@@ -278,11 +280,15 @@ class MemoryOrchestrationIntegrationTest {
 
             try (MemoryMaintenanceTask task = new MemoryMaintenanceTask(alloc, mgr, 40L, 20L)) {
                 task.start();
-                awaitCondition(() -> alloc.maintenanceCalls() >= 1, 3_000);
+                assertThat(awaitCondition(() -> alloc.maintenanceCalls() >= 1, 3_000))
+                        .as("Timeout waiting for first maintenance cycle")
+                        .isTrue();
 
                 alloc.setUtilization(0.97);
                 int callsBefore = alloc.maintenanceCalls();
-                awaitCondition(() -> alloc.maintenanceCalls() > callsBefore, 5_000);
+                assertThat(awaitCondition(() -> alloc.maintenanceCalls() > callsBefore, 5_000))
+                        .as("Timeout waiting for maintenance cycle after pressure spike")
+                        .isTrue();
 
                 forceCacheExpiry(arb);
                 capturedAction.set(arb.decide(ResourceArbiter.Context.TRANSPORT_IO));
