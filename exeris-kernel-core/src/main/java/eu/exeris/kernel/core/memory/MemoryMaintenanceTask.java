@@ -160,13 +160,18 @@ public final class MemoryMaintenanceTask implements AutoCloseable {
      */
     public void stop() {
         RUNNING.setRelease(this, false);
-        Thread mainThread = (Thread) MAINTENANCE_THREAD.getAcquire(this);
+        Thread mainThread = (Thread) MAINTENANCE_THREAD.getAndSet(this, null);
         if (mainThread != null && mainThread.isAlive()) {
             LockSupport.unpark(mainThread);
-            try {
-                mainThread.join(2_000L);
-            } catch (InterruptedException _) {
-                Thread.currentThread().interrupt();
+            boolean joined = false;
+            while (!joined) {
+                try {
+                    mainThread.join();
+                    joined = true;
+                } catch (InterruptedException _) {
+                    Thread.currentThread().interrupt();
+                    LockSupport.unpark(mainThread);
+                }
             }
         }
     }
