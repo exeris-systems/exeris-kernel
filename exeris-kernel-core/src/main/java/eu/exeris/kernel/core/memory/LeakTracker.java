@@ -100,7 +100,6 @@ public final class LeakTracker {
      *                        for SAMPLED mode (no stack capture for performance)
      * @return a {@link LeakHandle} to cancel when the buffer is properly closed
      */
-    @SuppressWarnings("PMD.CyclomaticComplexity")
     public LeakHandle track(Object referent,
                             long capacityBytes,
                             int identityHash,
