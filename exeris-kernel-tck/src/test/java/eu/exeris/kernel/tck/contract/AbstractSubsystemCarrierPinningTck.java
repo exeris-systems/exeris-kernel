@@ -7,12 +7,14 @@
  */
 package eu.exeris.kernel.tck.contract;
 
+import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
+import java.util.Locale;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -64,17 +66,21 @@ import static org.assertj.core.api.Assertions.assertThat;
  * }
  * }</pre>
  *
- * @since 0.5.0
  * @see AbstractSubsystemZeroAllocTck
  * @see JfrPinningMonitor
+ * @since 0.5.0
  */
 public abstract class AbstractSubsystemCarrierPinningTck {
 
-    /** Number of virtual threads in the warm-up phase (results discarded). */
-    private static final int WARMUP_VT_COUNT  = 200;
+    /**
+     * Number of virtual threads in the warm-up phase (results discarded).
+     */
+    private static final int WARMUP_VT_COUNT = 200;
 
-    /** Number of virtual threads in the steady-state (measured) phase. */
-    private static final int STEADY_VT_COUNT  = 1_000;
+    /**
+     * Number of virtual threads in the steady-state (measured) phase.
+     */
+    private static final int STEADY_VT_COUNT = 1_000;
 
     /**
      * Exposes the warm-up virtual-thread count to subclasses so that per-VT
@@ -84,7 +90,9 @@ public abstract class AbstractSubsystemCarrierPinningTck {
      *
      * @return number of warm-up VTs (currently {@value #WARMUP_VT_COUNT})
      */
-    protected final int warmupVtCount() { return WARMUP_VT_COUNT; }
+    protected final int warmupVtCount() {
+        return WARMUP_VT_COUNT;
+    }
 
     /**
      * Exposes the steady-state virtual-thread count to subclasses so that per-VT
@@ -92,16 +100,22 @@ public abstract class AbstractSubsystemCarrierPinningTck {
      *
      * @return number of steady-state VTs (currently {@value #STEADY_VT_COUNT})
      */
-    protected final int steadyVtCount() { return STEADY_VT_COUNT; }
+    protected final int steadyVtCount() {
+        return STEADY_VT_COUNT;
+    }
 
     // =========================================================================
     // Template methods — MUST override
     // =========================================================================
 
-    /** Human-readable subsystem name (e.g. {@code "TransportEngine"}, {@code "FlowEngine"}). */
+    /**
+     * Human-readable subsystem name (e.g. {@code "TransportEngine"}, {@code "FlowEngine"}).
+     */
     protected abstract String subsystemName();
 
-    /** Human-readable hot-path description for assertion messages. */
+    /**
+     * Human-readable hot-path description for assertion messages.
+     */
     protected abstract String hotPathDescription();
 
     /**
@@ -150,7 +164,7 @@ public abstract class AbstractSubsystemCarrierPinningTck {
         runVtBatch(WARMUP_VT_COUNT);
 
         // Phase 2 — steady-state under JFR
-        String label = subsystemName().toLowerCase(java.util.Locale.ROOT).replace(' ', '-') + "-steady";
+        String label = subsystemName().toLowerCase(Locale.ROOT).replace(' ', '-') + "-steady";
         JfrPinningMonitor.Result result = JfrPinningMonitor.measure(
                 JfrPinningMonitor.Config.defaults(label),
                 () -> runVtBatch(STEADY_VT_COUNT));
@@ -164,23 +178,26 @@ public abstract class AbstractSubsystemCarrierPinningTck {
     // =========================================================================
 
     private void runVtBatch(int vtCount) throws InterruptedException {
-        CountDownLatch done  = new CountDownLatch(vtCount);
+        CountDownLatch done = new CountDownLatch(vtCount);
         AtomicInteger errors = new AtomicInteger();
 
         for (int i = 0; i < vtCount; i++) {
             Thread.ofVirtual()
-                  .name("exeris-pin-" + subsystemName() + "-", i)
-                  .start(() -> {
-                      try { runSingleIteration(); }
-                      catch (Throwable _) { errors.incrementAndGet(); }
-                      finally { done.countDown(); }
-                  });
+                    .name("exeris-pin-" + subsystemName() + "-", i)
+                    .start(() -> {
+                        try {
+                            runSingleIteration();
+                        } catch (Throwable _) {
+                            errors.incrementAndGet();
+                        } finally {
+                            done.countDown();
+                        }
+                    });
         }
 
         assertThat(done.await(60, TimeUnit.SECONDS))
                 .as("%s: %d VTs must complete within 60 s", subsystemName(), vtCount)
                 .isTrue();
-        org.assertj.core.api.Assertions.assertThat(errors.get()).as("VT batch exceptions").isZero();
+        Assertions.assertThat(errors.get()).as("VT batch exceptions").isZero();
     }
 }
-

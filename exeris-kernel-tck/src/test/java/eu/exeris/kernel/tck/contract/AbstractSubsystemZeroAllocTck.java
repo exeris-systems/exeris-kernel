@@ -56,8 +56,8 @@ import java.io.IOException;
  * }
  * }</pre>
  *
- * @since 0.5.0
  * @see JfrAllocationMonitor
+ * @since 0.5.0
  */
 public abstract class AbstractSubsystemZeroAllocTck {
 
@@ -65,10 +65,14 @@ public abstract class AbstractSubsystemZeroAllocTck {
     // Template methods — MUST override
     // =========================================================================
 
-    /** Human-readable subsystem name (e.g. {@code "Transport"}, {@code "Graph"}). */
+    /**
+     * Human-readable subsystem name (e.g. {@code "Transport"}, {@code "Graph"}).
+     */
     protected abstract String subsystemName();
 
-    /** Human-readable hot-path description for assertion messages. */
+    /**
+     * Human-readable hot-path description for assertion messages.
+     */
     protected abstract String hotPathDescription();
 
     /**
@@ -115,12 +119,16 @@ public abstract class AbstractSubsystemZeroAllocTck {
         return 5;
     }
 
-    /** Warm-up iterations (discarded recording). Default: 1 000. */
+    /**
+     * Warm-up iterations (discarded recording). Default: 1 000.
+     */
     protected int warmupIterations() {
         return 1_000;
     }
 
-    /** Steady-state iterations (measured recording). Default: 10 000. */
+    /**
+     * Steady-state iterations (measured recording). Default: 10 000.
+     */
     protected int hotPathIterations() {
         return 10_000;
     }
@@ -175,4 +183,3 @@ public abstract class AbstractSubsystemZeroAllocTck {
         }
     }
 }
-

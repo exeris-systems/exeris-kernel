@@ -99,12 +99,16 @@ public final class JfrAllocationMonitor {
             }
         }
 
-        /** Default config: 1 000 warmup, 10 000 steady-state. */
+        /**
+         * Default config: 1 000 warmup, 10 000 steady-state.
+         */
         public static Config ofDefaults(String subsystemName, String testClassName) {
             return new Config(subsystemName, testClassName, 1_000, 10_000);
         }
 
-        /** High-density config for E2E integrity: 100 warmup, 1 000 000 steady-state. */
+        /**
+         * High-density config for E2E integrity: 100 warmup, 1 000 000 steady-state.
+         */
         public static Config ofHighDensity(String subsystemName, String testClassName) {
             return new Config(subsystemName, testClassName, 1_000, 1_000_000);
         }
@@ -120,7 +124,9 @@ public final class JfrAllocationMonitor {
             List<RecordedEvent> exerisAllocations,
             Path recordingFile
     ) {
-        /** Returns a human-readable summary of allocated class names and counts. */
+        /**
+         * Returns a human-readable summary of allocated class names and counts.
+         */
         public String summary() {
             return summariseClasses(exerisAllocations);
         }
@@ -187,10 +193,10 @@ public final class JfrAllocationMonitor {
     public static void assertZeroExerisAllocations(Result result, String hotPathDescription) {
         assertThat(result.exerisAllocations())
                 .as("Enterprise hot path (%s) must allocate zero eu.exeris.* heap objects. "
-                  + "Bootstrap allocations are excluded — recording started after createXxx(). "
-                  + "If this fails: check for autoboxing, String.format(), or new collection "
-                  + "instances on the hot path.\nDetected classes: %s",
-                    hotPathDescription, result.summary())
+                                + "Bootstrap allocations are excluded — recording started after createXxx(). "
+                                + "If this fails: check for autoboxing, String.format(), or new collection "
+                                + "instances on the hot path.\nDetected classes: %s",
+                        hotPathDescription, result.summary())
                 .isEmpty();
     }
 
@@ -204,17 +210,17 @@ public final class JfrAllocationMonitor {
      * @param hotPathDescription    human-readable description for assertion messages
      */
     public static void assertBoundedExerisAllocations(Result result, int iterations,
-                                                       int maxAllocsPerIteration,
-                                                       String hotPathDescription) {
+                                                      int maxAllocsPerIteration,
+                                                      String hotPathDescription) {
         long maxAllowed = (long) iterations * maxAllocsPerIteration;
         assertThat(result.exerisAllocations())
                 .as("Community hot path (%s) allocation count (%d) exceeded budget "
-                  + "(%d = %d iters × %d). Indicates runaway object churn. "
-                  + "Detected classes: %s",
-                    hotPathDescription,
-                    result.exerisAllocations().size(), maxAllowed,
-                    iterations, maxAllocsPerIteration,
-                    result.summary())
+                                + "(%d = %d iters × %d). Indicates runaway object churn. "
+                                + "Detected classes: %s",
+                        hotPathDescription,
+                        result.exerisAllocations().size(), maxAllowed,
+                        iterations, maxAllocsPerIteration,
+                        result.summary())
                 .hasSizeLessThanOrEqualTo((int) maxAllowed);
     }
 
@@ -252,7 +258,9 @@ public final class JfrAllocationMonitor {
         return result;
     }
 
-    /** Produces a concise class-name → count summary for assertion messages. */
+    /**
+     * Produces a concise class-name → count summary for assertion messages.
+     */
     static String summariseClasses(List<RecordedEvent> events) {
         if (events.isEmpty()) {
             return "(none)";
@@ -269,4 +277,3 @@ public final class JfrAllocationMonitor {
         return sb.toString().trim();
     }
 }
-

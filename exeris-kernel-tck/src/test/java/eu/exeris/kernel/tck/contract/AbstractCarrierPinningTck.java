@@ -8,6 +8,7 @@
 package eu.exeris.kernel.tck.contract;
 
 import eu.exeris.kernel.tck.contract.flow.AbstractFlowEngineTck;
+import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -51,15 +52,15 @@ import static org.assertj.core.api.Assertions.assertThat;
  * }
  * }</pre>
  *
- * @since 0.5.0
  * @see JfrPinningMonitor
  * @see AbstractFlowEngineTck
+ * @since 0.5.0
  */
 @DisplayName("Carrier Pinning TCK")
 public abstract class AbstractCarrierPinningTck {
 
-    private static final int VT_SPIKE_COUNT  = 10_000;
-    private static final int AUDIT_VT_COUNT  = 100;
+    private static final int VT_SPIKE_COUNT = 10_000;
+    private static final int AUDIT_VT_COUNT = 100;
     private static final int NATIVE_VT_COUNT = 50;
 
     // =========================================================================
@@ -98,10 +99,10 @@ public abstract class AbstractCarrierPinningTck {
         @Timeout(value = 60, unit = TimeUnit.SECONDS)
         @DisplayName("10 000 VTs produce zero carrier pinning events > 20 ms")
         void zeroPinningUnder10kVtSpike() throws Exception {
-            Runnable workload    = subsystemWorkload(SubsystemUnderTest.TRANSPORT);
+            Runnable workload = subsystemWorkload(SubsystemUnderTest.TRANSPORT);
             CountDownLatch ready = new CountDownLatch(VT_SPIKE_COUNT);
-            CountDownLatch go    = new CountDownLatch(1);
-            CountDownLatch done  = new CountDownLatch(VT_SPIKE_COUNT);
+            CountDownLatch go = new CountDownLatch(1);
+            CountDownLatch done = new CountDownLatch(VT_SPIKE_COUNT);
             AtomicInteger errors = new AtomicInteger();
 
             JfrPinningMonitor.Result result = JfrPinningMonitor.measure(
@@ -118,9 +119,13 @@ public abstract class AbstractCarrierPinningTck {
                                     done.countDown();
                                     return;
                                 }
-                                try { workload.run(); }
-                                catch (Exception _) { errors.incrementAndGet(); }
-                                finally { done.countDown(); }
+                                try {
+                                    workload.run();
+                                } catch (Exception _) {
+                                    errors.incrementAndGet();
+                                } finally {
+                                    done.countDown();
+                                }
                             });
                         }
                         assertThat(ready.await(30, TimeUnit.SECONDS)).isTrue();
@@ -141,36 +146,72 @@ public abstract class AbstractCarrierPinningTck {
     @DisplayName("Subsystem Pinning Audit — all nine subsystems")
     class SubsystemPinningAuditTest {
 
-        @Test @Timeout(30) @DisplayName("Memory: no carrier pinning")
-        void memory()      throws Exception { audit(SubsystemUnderTest.MEMORY); }
+        @Test
+        @Timeout(30)
+        @DisplayName("Memory: no carrier pinning")
+        void memory() throws Exception {
+            audit(SubsystemUnderTest.MEMORY);
+        }
 
-        @Test @Timeout(30) @DisplayName("Transport: no carrier pinning")
-        void transport()   throws Exception { audit(SubsystemUnderTest.TRANSPORT); }
+        @Test
+        @Timeout(30)
+        @DisplayName("Transport: no carrier pinning")
+        void transport() throws Exception {
+            audit(SubsystemUnderTest.TRANSPORT);
+        }
 
-        @Test @Timeout(30) @DisplayName("Security: no carrier pinning")
-        void security()    throws Exception { audit(SubsystemUnderTest.SECURITY); }
+        @Test
+        @Timeout(30)
+        @DisplayName("Security: no carrier pinning")
+        void security() throws Exception {
+            audit(SubsystemUnderTest.SECURITY);
+        }
 
-        @Test @Timeout(30) @DisplayName("Persistence: no carrier pinning")
-        void persistence() throws Exception { audit(SubsystemUnderTest.PERSISTENCE); }
+        @Test
+        @Timeout(30)
+        @DisplayName("Persistence: no carrier pinning")
+        void persistence() throws Exception {
+            audit(SubsystemUnderTest.PERSISTENCE);
+        }
 
-        @Test @Timeout(30) @DisplayName("Graph: no carrier pinning")
-        void graph()       throws Exception { audit(SubsystemUnderTest.GRAPH); }
+        @Test
+        @Timeout(30)
+        @DisplayName("Graph: no carrier pinning")
+        void graph() throws Exception {
+            audit(SubsystemUnderTest.GRAPH);
+        }
 
-        @Test @Timeout(30) @DisplayName("Events: no carrier pinning")
-        void events()      throws Exception { audit(SubsystemUnderTest.EVENTS); }
+        @Test
+        @Timeout(30)
+        @DisplayName("Events: no carrier pinning")
+        void events() throws Exception {
+            audit(SubsystemUnderTest.EVENTS);
+        }
 
-        @Test @Timeout(30) @DisplayName("Flow: no carrier pinning")
-        void flow()        throws Exception { audit(SubsystemUnderTest.FLOW); }
+        @Test
+        @Timeout(30)
+        @DisplayName("Flow: no carrier pinning")
+        void flow() throws Exception {
+            audit(SubsystemUnderTest.FLOW);
+        }
 
-        @Test @Timeout(30) @DisplayName("Bootstrap: no carrier pinning")
-        void bootstrap()   throws Exception { audit(SubsystemUnderTest.BOOTSTRAP); }
+        @Test
+        @Timeout(30)
+        @DisplayName("Bootstrap: no carrier pinning")
+        void bootstrap() throws Exception {
+            audit(SubsystemUnderTest.BOOTSTRAP);
+        }
 
-        @Test @Timeout(30) @DisplayName("Config: no carrier pinning")
-        void config()      throws Exception { audit(SubsystemUnderTest.CONFIG); }
+        @Test
+        @Timeout(30)
+        @DisplayName("Config: no carrier pinning")
+        void config() throws Exception {
+            audit(SubsystemUnderTest.CONFIG);
+        }
 
         private void audit(SubsystemUnderTest s) throws Exception {
-            Runnable workload    = subsystemWorkload(s);
-            CountDownLatch done  = new CountDownLatch(AUDIT_VT_COUNT);
+            Runnable workload = subsystemWorkload(s);
+            CountDownLatch done = new CountDownLatch(AUDIT_VT_COUNT);
             AtomicInteger errors = new AtomicInteger();
 
             JfrPinningMonitor.Result result = JfrPinningMonitor.measure(
@@ -178,9 +219,13 @@ public abstract class AbstractCarrierPinningTck {
                     () -> {
                         for (int i = 0; i < AUDIT_VT_COUNT; i++) {
                             Thread.ofVirtual().name("exeris-audit-" + s + "-", i).start(() -> {
-                                try { workload.run(); }
-                                catch (Throwable _) { errors.incrementAndGet(); }
-                                finally { done.countDown(); }
+                                try {
+                                    workload.run();
+                                } catch (Throwable _) {
+                                    errors.incrementAndGet();
+                                } finally {
+                                    done.countDown();
+                                }
                             });
                         }
                         assertThat(done.await(20, TimeUnit.SECONDS))
@@ -189,7 +234,7 @@ public abstract class AbstractCarrierPinningTck {
                     });
 
             JfrPinningMonitor.assertNoPinning(result, s.name());
-            org.assertj.core.api.Assertions.assertThat(errors.get()).as("Audit workload exceptions").isZero();
+            Assertions.assertThat(errors.get()).as("Audit workload exceptions").isZero();
         }
     }
 
@@ -209,7 +254,7 @@ public abstract class AbstractCarrierPinningTck {
             if (workloads.isEmpty()) return;
 
             for (NativeWorkload nw : workloads) {
-                CountDownLatch done  = new CountDownLatch(NATIVE_VT_COUNT);
+                CountDownLatch done = new CountDownLatch(NATIVE_VT_COUNT);
                 AtomicInteger errors = new AtomicInteger();
 
                 JfrPinningMonitor.Result result = JfrPinningMonitor.measure(
@@ -218,18 +263,22 @@ public abstract class AbstractCarrierPinningTck {
                         () -> {
                             for (int i = 0; i < NATIVE_VT_COUNT; i++) {
                                 Thread.ofVirtual()
-                                      .name("exeris-native-" + nw.label() + "-", i)
-                                      .start(() -> {
-                                          try { nw.workload().run(); }
-                                          catch (Throwable _) { errors.incrementAndGet(); }
-                                          finally { done.countDown(); }
-                                      });
+                                        .name("exeris-native-" + nw.label() + "-", i)
+                                        .start(() -> {
+                                            try {
+                                                nw.workload().run();
+                                            } catch (Throwable _) {
+                                                errors.incrementAndGet();
+                                            } finally {
+                                                done.countDown();
+                                            }
+                                        });
                             }
                             assertThat(done.await(20, TimeUnit.SECONDS))
                                     .as("Native workload '%s': %d VTs must finish within 20 s",
                                             nw.label(), NATIVE_VT_COUNT)
                                     .isTrue();
-                            org.assertj.core.api.Assertions.assertThat(errors.get()).as("Native workload '%s' exceptions", nw.label()).isZero();
+                            Assertions.assertThat(errors.get()).as("Native workload '%s' exceptions", nw.label()).isZero();
                         });
 
                 JfrPinningMonitor.assertNoPinning(result, "NativeWorkload-" + nw.label());
@@ -241,7 +290,9 @@ public abstract class AbstractCarrierPinningTck {
     // Types
     // =========================================================================
 
-    /** All nine Exeris Kernel subsystems covered by the pinning audit. */
+    /**
+     * All nine Exeris Kernel subsystems covered by the pinning audit.
+     */
     public enum SubsystemUnderTest {
         MEMORY, TRANSPORT, SECURITY, PERSISTENCE, GRAPH, EVENTS, FLOW, BOOTSTRAP, CONFIG
     }
@@ -256,6 +307,6 @@ public abstract class AbstractCarrierPinningTck {
      * @param label    human-readable name (e.g. {@code "TLS Handshake"})
      * @param workload one unit of native work executed per virtual thread
      */
-    public record NativeWorkload(String label, Runnable workload) {}
+    public record NativeWorkload(String label, Runnable workload) {
+    }
 }
-
