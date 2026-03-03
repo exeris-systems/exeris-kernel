@@ -37,7 +37,7 @@ final class MemoryMaintenanceEvents {
     @Name("eu.exeris.kernel.core.MemoryMaintenanceCycle")
     @Label("Memory Maintenance Cycle")
     @Category({"Exeris Kernel", "Memory"})
-    @Description("Emitted on each full maintenance cycle: performMaintenance() + watermark refresh.")
+    @Description("Emitted on each full maintenance cycle after performMaintenance(). Does not imply watermark refresh.")
     @StackTrace(false)
     /* default */ static final class CycleEvent extends Event {
 

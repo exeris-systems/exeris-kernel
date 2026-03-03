@@ -107,7 +107,7 @@ public final class JfrAllocationMonitor {
         }
 
         /**
-         * High-density config for E2E integrity: 100 warmup, 1 000 000 steady-state.
+         * High-density config for E2E integrity: 1 000 warmup, 1 000 000 steady-state.
          */
         public static Config ofHighDensity(String subsystemName, String testClassName) {
             return new Config(subsystemName, testClassName, 1_000, 1_000_000);

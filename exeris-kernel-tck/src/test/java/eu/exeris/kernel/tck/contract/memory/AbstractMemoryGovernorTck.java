@@ -98,7 +98,7 @@ public abstract class AbstractMemoryGovernorTck {
      * <p>Default: {@code false}.
      */
     @SuppressWarnings("PMD.BooleanGetMethodName")
-    protected boolean isFixedBudget() {
+    protected boolean hasFixedBudget() {
         return false;
     }
 
@@ -248,7 +248,7 @@ public abstract class AbstractMemoryGovernorTck {
         @Test
         @DisplayName("utilization() == 0.0 at idle — governor correctly classifies as NORMAL")
         void utilizationZeroAtIdle() {
-            if (!isFixedBudget()) {
+            if (!hasFixedBudget()) {
                 return;
             }
             assertThat(allocator.stats().utilization())
@@ -259,7 +259,7 @@ public abstract class AbstractMemoryGovernorTck {
         @Test
         @DisplayName("utilization() in (0.0, 1.0] while holding buffer — governor can enter WARNING zone")
         void utilizationPositiveWhileHolding() {
-            if (!isFixedBudget()) {
+            if (!hasFixedBudget()) {
                 return;
             }
             double u;
@@ -276,7 +276,7 @@ public abstract class AbstractMemoryGovernorTck {
         @DisplayName("utilization() never exceeds 1.0 under saturation — governor never panics on > 100%")
         @Timeout(value = 30, unit = TimeUnit.SECONDS)
         void utilizationNeverExceedsOneUnderSaturation() {
-            if (!isFixedBudget()) {
+            if (!hasFixedBudget()) {
                 return;
             }
             int count = warningZoneBufferCount();
@@ -301,7 +301,7 @@ public abstract class AbstractMemoryGovernorTck {
         @Test
         @DisplayName("allocatedBytes + freeBytes == totalBytes — governor arithmetic is exact")
         void budgetConsistencyArithmetic() {
-            if (!isFixedBudget()) {
+            if (!hasFixedBudget()) {
                 return;
             }
             MemoryStats stats = allocator.stats();
@@ -323,7 +323,7 @@ public abstract class AbstractMemoryGovernorTck {
         @Test
         @DisplayName("performMaintenance() does not alter allocatedBytes() — governor signal is stable after maintenance")
         @Timeout(value = 10, unit = TimeUnit.SECONDS)
-        void maintenanceDoesNotPerturballocatedBytes() {
+        void maintenanceDoesNotPerturbAllocatedBytes() {
             int count = warningZoneBufferCount();
             List<LoanedBuffer> held = new ArrayList<>(count);
             try {

@@ -25,7 +25,8 @@ import java.util.concurrent.locks.LockSupport;
  *   <li>Calls {@link WatermarkManager#refresh()} every
  *       {@link #watermarkIntervalMs()} ms — updates the pressure level consumed by
  *       {@link ResourceArbiter#decide(ResourceArbiter.Context)}.</li>
- *   <li>Emits a {@code MemoryMaintenanceCycleEvent} JFR event on each full cycle.</li>
+ *   <li>Emits a {@code MemoryMaintenanceCycleEvent} JFR event on each maintenance
+ *       iteration when {@link MemoryAllocator#performMaintenance()} runs.</li>
  * </ol>
  *
  * <h2>No {@code ScheduledExecutorService}</h2>

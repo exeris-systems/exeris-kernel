@@ -183,9 +183,9 @@ public abstract class AbstractLeakDetectionSampledTck {
     class SamplingDensity {
 
         @Test
-        @DisplayName("Over " + "N" + " allocations, not every one is tracked (overhead < PARANOID)")
+        @DisplayName("allocationCount() tracks all physical allocations regardless of sampling mode")
         @Timeout(value = 30, unit = TimeUnit.SECONDS)
-        void notEveryAllocationIsTracked() {
+        void allocationCountTracksAllPhysicalAllocations() {
             int count = samplingProbeCount();
             for (int i = 0; i < count; i++) {
                 allocator.allocate(AllocationHint.MICRO).close();

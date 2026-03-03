@@ -98,7 +98,7 @@ class AbstractLoanedBufferTest {
 
         @Test
         @DisplayName("close() decrements refCount and triggers release at 0")
-        void closeTriggesReleaseAtZero() {
+        void closeTriggersReleaseAtZero() {
             TestBuffer buf = allocate(64);
             assertThat(buf.released.get()).isFalse();
             buf.close();

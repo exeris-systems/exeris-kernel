@@ -123,16 +123,17 @@ public final class WatermarkManager {
         double utilization = stats.utilization();
         WatermarkLevel newLevel = WatermarkLevel.forUtilization(utilization);
 
-        int prevOrdinal = (int) LEVEL_ORDINAL.getAcquire(this);
         int newOrdinal = newLevel.ordinal();
-
-        if (prevOrdinal != newOrdinal
-                && LEVEL_ORDINAL.compareAndSet(this, prevOrdinal, newOrdinal)) {
-            WatermarkLevel prevLevel = LEVELS[prevOrdinal];
+        int prevOrdinal;
+        do {
+            prevOrdinal = (int) LEVEL_ORDINAL.getAcquire(this);
+        } while (prevOrdinal != newOrdinal
+                && !LEVEL_ORDINAL.compareAndSet(this, prevOrdinal, newOrdinal));
+        if (prevOrdinal != newOrdinal) {
             MemoryPressureEvent.emit(
                     stats.allocatedBytes(),
                     stats.totalBytes(),
-                    prevLevel,
+                    LEVELS[prevOrdinal],
                     newLevel);
         }
         return newLevel;
