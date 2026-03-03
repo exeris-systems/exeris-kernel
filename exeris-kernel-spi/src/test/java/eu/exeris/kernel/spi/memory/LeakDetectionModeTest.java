@@ -57,4 +57,3 @@ class LeakDetectionModeTest {
         assertThat(LeakDetectionMode.valueOf("PARANOID")).isEqualTo(LeakDetectionMode.PARANOID);
     }
 }
-

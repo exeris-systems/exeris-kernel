@@ -29,8 +29,8 @@ package eu.exeris.kernel.spi.memory;
  *   <tr><td>NETWORK_FRAME</td><td>64 KB</td><td>Maximum IP datagram / UDP payload size</td></tr>
  * </table>
  *
- * @since 0.5.0
  * @see MemoryAllocator#allocate(AllocationHint)
+ * @since 0.5.0
  */
 public enum AllocationHint {
 
@@ -95,4 +95,3 @@ public enum AllocationHint {
         return sizeBytes;
     }
 }
-

@@ -36,9 +36,9 @@ import eu.exeris.kernel.spi.exceptions.memory.MemoryExhaustedException;
  * <p>Created once by {@link MemoryProvider#createAllocator} during bootstrap.
  * After {@link #close()}, all allocation methods throw {@link IllegalStateException}.
  *
- * @since 0.5.0
  * @see MemoryProvider
  * @see LoanedBuffer
+ * @since 0.5.0
  */
 public interface MemoryAllocator extends AutoCloseable {
 
@@ -182,4 +182,3 @@ public interface MemoryAllocator extends AutoCloseable {
     @Override
     void close();
 }
-

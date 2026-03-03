@@ -34,9 +34,9 @@ import eu.exeris.kernel.spi.exceptions.memory.MemoryBootstrapException;
  * ScopedValue.where(KernelProviders.MEMORY_ALLOCATOR, allocator).run(kernel::start);
  * }</pre>
  *
- * @since 0.5.0
  * @see MemoryAllocator
  * @see MemoryProviderConfig
+ * @since 0.5.0
  */
 public interface MemoryProvider {
 
@@ -67,10 +67,9 @@ public interface MemoryProvider {
      * are on the classpath (e.g., enterprise overrides community).
      *
      * @return priority; community implementations should return {@code 0},
-     *         enterprise implementations {@code 100}
+     * enterprise implementations {@code 100}
      */
     default int priority() {
         return 0;
     }
 }
-

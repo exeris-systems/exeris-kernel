@@ -41,4 +41,3 @@
  * @see <a href="../../../../../../docs/subsystems/memory.md">memory.md</a>
  */
 package eu.exeris.kernel.spi.memory;
-
