@@ -247,9 +247,7 @@ class ResourceArbiterTest {
                     .isEqualTo(ResourceArbiter.Action.ALLOW);
 
             mgr.forceLevel(WatermarkLevel.SHEDDING);
-            // Expire the 1 ms decision cache without sleeping: shift the cached timestamp
-            // 2 ms into the past so the next decide() is guaranteed to be a cache miss.
-            arbiter.cachedDecisionNs = System.nanoTime() - 2_000_000L;
+            arbiter.transportDecisionNs = System.nanoTime() - 2_000_000L;
 
             assertThat(arbiter.decide(ResourceArbiter.Context.TRANSPORT_IO))
                     .isEqualTo(ResourceArbiter.Action.SHED_LOAD);

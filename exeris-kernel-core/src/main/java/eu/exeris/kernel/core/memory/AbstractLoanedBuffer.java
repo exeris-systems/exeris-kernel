@@ -8,6 +8,7 @@
 package eu.exeris.kernel.core.memory;
 
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
+import eu.exeris.kernel.spi.memory.LeakDetectionMode;
 
 import java.lang.foreign.MemorySegment;
 import java.lang.invoke.MethodHandles;
@@ -60,16 +61,10 @@ public abstract class AbstractLoanedBuffer implements LoanedBuffer { //NOPMD Too
     /* default */ volatile int refCount = INITIAL_REF_COUNT;
     private volatile long size;
 
-    /**
-     * First close action — arena/slab release. Stored as a plain field to avoid
-     * {@code CopyOnWriteArrayList} heap allocation on the hot path.
-     */
     private Runnable closeAction1;
-
-    /**
-     * Second close action — optional telemetry/stats callback. Plain field, no boxing.
-     */
     private Runnable closeAction2;
+    private Runnable closeAction3;
+    private Runnable closeAction4;
 
     /**
      * Leak tracker handle — cancelled in {@link #onRelease()} when the buffer is properly
@@ -147,6 +142,8 @@ public abstract class AbstractLoanedBuffer implements LoanedBuffer { //NOPMD Too
             }
         } while (!REF_COUNT.compareAndSet(this, prev, prev - 1));
 
+        leakHandle.cancel();
+
         if (isInitialCount(prev)) {
             fireCloseActions();
             onRelease();
@@ -169,10 +166,13 @@ public abstract class AbstractLoanedBuffer implements LoanedBuffer { //NOPMD Too
             closeAction1 = action;
         } else if (closeAction2 == null) {
             closeAction2 = action;
+        } else if (closeAction3 == null) {
+            closeAction3 = action;
+        } else if (closeAction4 == null) {
+            closeAction4 = action;
         } else {
             throw new IllegalStateException(
-                    "AbstractLoanedBuffer supports at most 2 close actions "
-                            + "(slot 1: arena/slab release, slot 2: telemetry). "
+                    "AbstractLoanedBuffer supports at most 4 close actions. "
                             + "Exceeding this limit indicates a design error.");
         }
     }
@@ -196,7 +196,9 @@ public abstract class AbstractLoanedBuffer implements LoanedBuffer { //NOPMD Too
         if (tracker == null) {
             throw new IllegalArgumentException("tracker must not be null");
         }
-        String stackTrace = captureAllocationStack();
+        String stackTrace = tracker.mode() == LeakDetectionMode.PARANOID
+                ? captureAllocationStack()
+                : "<sampled>";
         String bufferLabel = Integer.toHexString(System.identityHashCode(this));
         leakHandle = tracker.track(this, capacity(), bufferLabel, stackTrace);
     }
@@ -223,7 +225,7 @@ public abstract class AbstractLoanedBuffer implements LoanedBuffer { //NOPMD Too
     @Override
     public final LoanedBuffer peek(long offset, long length) {
         checkAlive();
-        return new SliceLoanedBuffer(backingSegment().asSlice(offset, length), length, null);
+        return new PeekLoanedBuffer(backingSegment().asSlice(offset, length), length, this);
     }
 
     // =========================================================================
@@ -246,6 +248,8 @@ public abstract class AbstractLoanedBuffer implements LoanedBuffer { //NOPMD Too
         this.size = 0;
         this.closeAction1 = null; //NOPMD NullAssignment
         this.closeAction2 = null; //NOPMD NullAssignment
+        this.closeAction3 = null; //NOPMD NullAssignment
+        this.closeAction4 = null; //NOPMD NullAssignment
         this.leakHandle = LeakTracker.LeakHandle.NOOP;
     }
 
@@ -259,7 +263,12 @@ public abstract class AbstractLoanedBuffer implements LoanedBuffer { //NOPMD Too
      * Neither failure propagates — kernel stability takes priority.
      */
     private void fireCloseActions() {
-        leakHandle.cancel();
+        if (closeAction4 != null) {
+            runQuietly(closeAction4);
+        }
+        if (closeAction3 != null) {
+            runQuietly(closeAction3);
+        }
         if (closeAction2 != null) {
             runQuietly(closeAction2);
         }
@@ -303,6 +312,89 @@ public abstract class AbstractLoanedBuffer implements LoanedBuffer { //NOPMD Too
             // Intentional: close-action failures must not crash the releasing thread.
             // Record via JFR so post-mortem analysis can detect leaked resources.
             CloseActionFailureEvent.emit(e);
+        }
+    }
+
+    // =========================================================================
+    // Inner: PeekLoanedBuffer — non-owning view, delegates lifecycle to parent
+    // =========================================================================
+
+    private static final class PeekLoanedBuffer implements LoanedBuffer {
+
+        private final MemorySegment segment;
+        private final long size;
+        private final AbstractLoanedBuffer parent;
+
+        /* default */ PeekLoanedBuffer(MemorySegment segment, long size, AbstractLoanedBuffer parent) {
+            this.segment = segment;
+            this.size = size;
+            this.parent = parent;
+        }
+
+        @Override
+        public MemorySegment segment() {
+            parent.checkAlive();
+            return segment;
+        }
+
+        @Override
+        public long size() {
+            return size;
+        }
+
+        @Override
+        public long capacity() {
+            return segment.byteSize();
+        }
+
+        @Override
+        public void setSize(long newSize) {
+            throw new UnsupportedOperationException("peek view is immutable");
+        }
+
+        @Override
+        public boolean isAlive() {
+            return parent.isAlive();
+        }
+
+        @Override
+        public int refCount() {
+            return parent.refCount();
+        }
+
+        @Override
+        public void retain() {
+            // non-owning: no-op
+        }
+
+        @Override
+        public void close() {
+            // non-owning: no-op
+        }
+
+        @Override
+        public void addCloseAction(Runnable action) {
+            throw new UnsupportedOperationException("peek view does not own resources");
+        }
+
+        @Override
+        public LoanedBuffer slice(long offset, long length) {
+            parent.checkAlive();
+            parent.retain();
+            return new SliceLoanedBuffer(segment.asSlice(offset, length), length, parent);
+        }
+
+        @Override
+        public LoanedBuffer view() {
+            parent.checkAlive();
+            parent.retain();
+            return new SliceLoanedBuffer(segment.asReadOnly(), size, parent);
+        }
+
+        @Override
+        public LoanedBuffer peek(long offset, long length) {
+            parent.checkAlive();
+            return new PeekLoanedBuffer(segment.asSlice(offset, length), length, parent);
         }
     }
 

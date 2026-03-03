@@ -59,7 +59,7 @@ public enum WatermarkLevel {
     /**
      * Utilization at or above shedding threshold — shed all new load (H3_EXCESSIVE_LOAD).
      */
-    SHEDDING(0.95, 1.01); // upper sentinel > 1.0 catches the full [0.95, 1.0] range
+    SHEDDING(0.95, 1.01);
 
     /**
      * Inclusive lower bound of this level's utilization range.
@@ -116,7 +116,6 @@ public enum WatermarkLevel {
      * @return the matching watermark level; never {@code null}
      */
     public static WatermarkLevel forUtilization(double utilization) {
-        // Ordered hot-to-cold: NORMAL is the expected common case.
         if (utilization < WARNING.lowerInclusive) {
             return NORMAL;
         }

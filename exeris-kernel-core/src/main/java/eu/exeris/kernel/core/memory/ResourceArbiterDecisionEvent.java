@@ -70,10 +70,12 @@ import jdk.jfr.StackTrace;
                      int utilizationPct,
                      long decisionNs) {
         ResourceArbiterDecisionEvent evt = new ResourceArbiterDecisionEvent();
-        evt.action = action.name();
-        evt.contextName = contextName;
-        evt.utilizationPct = utilizationPct;
-        evt.decisionNs = decisionNs;
-        evt.commit();
+        if (evt.isEnabled()) {
+            evt.action = action.name();
+            evt.contextName = contextName;
+            evt.utilizationPct = utilizationPct;
+            evt.decisionNs = decisionNs;
+            evt.commit();
+        }
     }
 }

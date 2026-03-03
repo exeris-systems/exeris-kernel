@@ -206,7 +206,7 @@ class WatermarkManagerTest {
         @DisplayName("100 concurrent refresh() calls converge to the correct level")
         @Timeout(10)
         void concurrentRefreshConverges() throws InterruptedException {
-            var stub = allocatorWith(850_000, 1_000_000); // 85% → CRITICAL
+            var stub = allocatorWith(850_000, 1_000_000);
             var mgr = new WatermarkManager(stub);
 
             try (var scope = StructuredTaskScope.open(

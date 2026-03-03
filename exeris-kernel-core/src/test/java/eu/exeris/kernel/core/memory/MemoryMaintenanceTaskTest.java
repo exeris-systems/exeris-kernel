@@ -93,7 +93,7 @@ class MemoryMaintenanceTaskTest {
             if (condition.getAsBoolean()) {
                 return true;
             }
-            LockSupport.parkNanos(100_000L); // 100 µs
+            LockSupport.parkNanos(100_000L);
         }
         return false;
     }
@@ -187,7 +187,7 @@ class MemoryMaintenanceTaskTest {
             MemoryMaintenanceTask task = new MemoryMaintenanceTask(alloc, mgr);
             task.start();
             assertThat(task.isRunning()).isTrue();
-            task.close(); // explicit close() — must stop the loop
+            task.close();
             assertThat(task.isRunning())
                     .as("close() must stop the loop — isRunning() must be false after close()")
                     .isFalse();
@@ -202,9 +202,9 @@ class MemoryMaintenanceTaskTest {
             WatermarkManager mgr = new WatermarkManager(alloc);
             try (MemoryMaintenanceTask task = new MemoryMaintenanceTask(alloc, mgr)) {
                 task.start();
-                task.start(); // second call must be a no-op — not spawn a second thread
+                task.start();
                 assertThat(task.isRunning()).isTrue();
-                // Verify we can stop normally — a duplicate thread would cause double-stop issues
+
                 task.stop();
                 assertThat(task.isRunning())
                         .as("Task must be stoppable after idempotent start()")
@@ -285,7 +285,7 @@ class MemoryMaintenanceTaskTest {
             try (MemoryMaintenanceTask task = new MemoryMaintenanceTask(
                     failingAlloc, mgr, 30L, 15L)) {
                 task.start();
-                // Await at least 2 maintenance calls — proves loop survived the first exception
+
                 awaitCondition(() -> callCount.get() >= 2, 3_000);
                 assertThat(task.isRunning())
                         .as("Loop MUST survive RuntimeException from performMaintenance()")

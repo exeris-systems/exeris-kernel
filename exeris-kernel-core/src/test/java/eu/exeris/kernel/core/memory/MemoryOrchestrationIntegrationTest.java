@@ -215,17 +215,15 @@ class MemoryOrchestrationIntegrationTest {
             long past = System.nanoTime() - TimeUnit.SECONDS.toNanos(31);
             ResourceArbiter arb = new ResourceArbiter(mgr, past);
 
-            // Step 1: push to SHEDDING
             alloc.setUtilization(0.97);
             mgr.refresh();
             forceCacheExpiry(arb);
             assertThat(arb.decide(ResourceArbiter.Context.TRANSPORT_IO))
                     .isEqualTo(ResourceArbiter.Action.SHED_LOAD);
 
-            // Step 2: recover to NORMAL — expire cache directly, no sleep required
             alloc.setUtilization(0.10);
             mgr.refresh();
-            // Expire the 1 ms decision cache without sleeping: shift cached timestamp 2 ms into past
+
             forceCacheExpiry(arb);
             assertThat(arb.decide(ResourceArbiter.Context.TRANSPORT_IO))
                     .as("After pressure recovery, arbiter must revert to ALLOW")
@@ -248,7 +246,7 @@ class MemoryOrchestrationIntegrationTest {
             ControllableAllocator alloc = new ControllableAllocator(1_000_000L);
             WatermarkManager mgr = new WatermarkManager(alloc);
 
-            alloc.setUtilization(0.97); // SHEDDING level
+            alloc.setUtilization(0.97);
 
             try (MemoryMaintenanceTask task = new MemoryMaintenanceTask(alloc, mgr, 50L, 25L)) {
                 task.start();
@@ -280,12 +278,10 @@ class MemoryOrchestrationIntegrationTest {
 
             try (MemoryMaintenanceTask task = new MemoryMaintenanceTask(alloc, mgr, 40L, 20L)) {
                 task.start();
-                // Await first cycle at NORMAL, then inject pressure spike
                 awaitCondition(() -> alloc.maintenanceCalls() >= 1, 3_000);
 
                 alloc.setUtilization(0.97);
                 int callsBefore = alloc.maintenanceCalls();
-                // Await at least one more cycle so watermark refresh picks up the new pressure
                 awaitCondition(() -> alloc.maintenanceCalls() > callsBefore, 5_000);
 
                 forceCacheExpiry(arb);
@@ -360,7 +356,9 @@ class MemoryOrchestrationIntegrationTest {
      * fields (same package — legal in tests collocated with the SUT).
      */
     private static void forceCacheExpiry(ResourceArbiter arbiter) {
-        arbiter.cachedDecisionNs = System.nanoTime() - 2_000_000L;
+        long expiredNs = System.nanoTime() - 2_000_000L;
+        arbiter.transportDecisionNs = expiredNs;
+        arbiter.logicDecisionNs = expiredNs;
     }
 
     /**
@@ -377,7 +375,7 @@ class MemoryOrchestrationIntegrationTest {
             if (condition.getAsBoolean()) {
                 return true;
             }
-            LockSupport.parkNanos(100_000); // Sleep for 100 microseconds
+            LockSupport.parkNanos(100_000);
         }
         return false;
     }

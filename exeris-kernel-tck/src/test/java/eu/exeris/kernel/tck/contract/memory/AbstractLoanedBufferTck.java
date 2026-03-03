@@ -341,7 +341,7 @@ public abstract class AbstractLoanedBufferTck {
                 int beforePeek = parent.refCount();
                 try (LoanedBuffer peekView = parent.peek(0, 8)) {
                     assertThat(parent.refCount()).isEqualTo(beforePeek);
-                    long _ = peekView.capacity();
+                    peekView.capacity();
                 }
                 assertThat(parent.refCount()).isEqualTo(beforePeek);
             }

@@ -147,6 +147,9 @@ public final class WatermarkManager {
      * @param level the level to force; must not be {@code null}
      */
     /* default */ void forceLevel(WatermarkLevel level) {
+        if (level == null) {
+            throw new IllegalArgumentException("level must not be null");
+        }
         LEVEL_ORDINAL.setRelease(this, level.ordinal());
     }
 }

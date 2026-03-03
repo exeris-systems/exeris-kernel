@@ -83,32 +83,31 @@ public final class ResourceArbiter {
      */
     private static final Action[] ACTIONS = Action.values();
 
-    private static final VarHandle CACHED_DECISION_NS;
-    private static final VarHandle CACHED_ACTION_ORDINAL;
+    private static final VarHandle TRANSPORT_DECISION_NS;
+    private static final VarHandle TRANSPORT_ACTION_ORDINAL;
+    private static final VarHandle LOGIC_DECISION_NS;
+    private static final VarHandle LOGIC_ACTION_ORDINAL;
 
     static {
         try {
             MethodHandles.Lookup lookup = MethodHandles.lookup();
-            CACHED_DECISION_NS = lookup.findVarHandle(
-                    ResourceArbiter.class, "cachedDecisionNs", long.class);
-            CACHED_ACTION_ORDINAL = lookup.findVarHandle(
-                    ResourceArbiter.class, "cachedActionOrdinal", int.class);
+            TRANSPORT_DECISION_NS = lookup.findVarHandle(
+                    ResourceArbiter.class, "transportDecisionNs", long.class);
+            TRANSPORT_ACTION_ORDINAL = lookup.findVarHandle(
+                    ResourceArbiter.class, "transportActionOrdinal", int.class);
+            LOGIC_DECISION_NS = lookup.findVarHandle(
+                    ResourceArbiter.class, "logicDecisionNs", long.class);
+            LOGIC_ACTION_ORDINAL = lookup.findVarHandle(
+                    ResourceArbiter.class, "logicActionOrdinal", int.class);
         } catch (NoSuchFieldException | IllegalAccessException e) {
             throw new ExceptionInInitializerError(e);
         }
     }
 
-    /**
-     * Nanosecond timestamp of the last cached decision.
-     * {@link #CACHE_UNINITIALIZED} (-1 cast to int as sentinel action ordinal) means no cache yet.
-     */
-    /* default */ volatile long cachedDecisionNs;
-
-    /**
-     * Ordinal of the last cached {@link Action}.
-     * {@value CACHE_UNINITIALIZED} = cache not yet populated.
-     */
-    /* default */ volatile int cachedActionOrdinal = CACHE_UNINITIALIZED;
+    /* default */ volatile long transportDecisionNs;
+    /* default */ volatile int transportActionOrdinal = CACHE_UNINITIALIZED;
+    /* default */ volatile long logicDecisionNs;
+    /* default */ volatile int logicActionOrdinal = CACHE_UNINITIALIZED;
 
     private final WatermarkManager watermarkManager;
     private final long startNs;
@@ -239,21 +238,23 @@ public final class ResourceArbiter {
     public Action decide(Context context) {
         long nowNs = System.nanoTime();
 
-        // Grace period: kernel is still warming up — always allow
         if (nowNs - startNs < GRACE_PERIOD_NS) {
             return Action.ALLOW;
         }
 
-        // Fast path: cache hit — return cached action without consulting WatermarkManager
-        long lastDecisionNs = (long) CACHED_DECISION_NS.getAcquire(this);
-        int lastOrdinal = (int) CACHED_ACTION_ORDINAL.getAcquire(this);
+        boolean isTransport = context == Context.TRANSPORT_IO;
+        long lastDecisionNs = isTransport
+                ? (long) TRANSPORT_DECISION_NS.getAcquire(this)
+                : (long) LOGIC_DECISION_NS.getAcquire(this);
+        int lastOrdinal = isTransport
+                ? (int) TRANSPORT_ACTION_ORDINAL.getAcquire(this)
+                : (int) LOGIC_ACTION_ORDINAL.getAcquire(this);
         boolean cacheValid = lastOrdinal != CACHE_UNINITIALIZED
                 && (nowNs - lastDecisionNs) < DECISION_CACHE_TTL_NS;
         if (cacheValid) {
             return ACTIONS[lastOrdinal];
         }
 
-        // Cache miss: re-evaluate from WatermarkManager
         return reEvaluate(context, nowNs);
     }
 
@@ -284,16 +285,16 @@ public final class ResourceArbiter {
 
         int newOrdinal = action.ordinal();
 
-        // Best-effort CAS: update cache timestamp and action ordinal.
-        // If two threads race here, both write the same action — idempotent.
-        CACHED_DECISION_NS.setRelease(this, nowNs);
-        CACHED_ACTION_ORDINAL.setRelease(this, newOrdinal);
+        if (context == Context.TRANSPORT_IO) {
+            TRANSPORT_ACTION_ORDINAL.set(this, newOrdinal);
+            TRANSPORT_DECISION_NS.setRelease(this, nowNs);
+        } else {
+            LOGIC_ACTION_ORDINAL.set(this, newOrdinal);
+            LOGIC_DECISION_NS.setRelease(this, nowNs);
+        }
 
-        // JFR event on every cache miss — acceptable (at most once per TTL = 1 ms)
         int utilizationPct = 0;
         if (level != WatermarkLevel.NORMAL) {
-            // Compute approximate percentage only for non-normal levels to avoid
-            // stats() call on the happy path.
             utilizationPct = (int) (level.lowerBound() * 100);
         }
         ResourceArbiterDecisionEvent.emit(action, context.contextName(), utilizationPct, nowNs);
@@ -315,7 +316,7 @@ public final class ResourceArbiter {
             case NORMAL -> Action.ALLOW;
             case WARNING -> Action.THROTTLE;
             case CRITICAL -> context == Context.KERNEL_LOGIC
-                    ? Action.SHED_LOAD   // shed background logic early to protect transport
+                    ? Action.SHED_LOAD
                     : Action.REJECT;
             case SHEDDING -> Action.SHED_LOAD;
         };
