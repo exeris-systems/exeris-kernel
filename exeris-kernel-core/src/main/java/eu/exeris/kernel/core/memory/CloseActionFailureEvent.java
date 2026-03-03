@@ -10,6 +10,7 @@ package eu.exeris.kernel.core.memory;
 import jdk.jfr.Category;
 import jdk.jfr.Description;
 import jdk.jfr.Event;
+import jdk.jfr.FlightRecorder;
 import jdk.jfr.Label;
 import jdk.jfr.Name;
 import jdk.jfr.StackTrace;
@@ -47,9 +48,14 @@ import jdk.jfr.StackTrace;
      */
     /* default */
     static void emit(RuntimeException thrown) {
+        if (!FlightRecorder.isInitialized()) {
+            return;
+        }
         CloseActionFailureEvent evt = new CloseActionFailureEvent();
-        evt.exceptionClass = thrown.getClass().getName();
-        evt.exceptionMessage = thrown.getMessage();
-        evt.commit();
+        if (evt.isEnabled()) {
+            evt.exceptionClass = thrown.getClass().getName();
+            evt.exceptionMessage = thrown.getMessage();
+            evt.commit();
+        }
     }
 }

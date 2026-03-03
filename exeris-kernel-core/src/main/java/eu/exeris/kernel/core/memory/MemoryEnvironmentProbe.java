@@ -245,14 +245,19 @@ public final class MemoryEnvironmentProbe {
         /* default */ boolean cgroupV1Present;
 
         private static void emit(MemoryBoundaries bounds) {
+            if (!jdk.jfr.FlightRecorder.isInitialized()) {
+                return;
+            }
             MemoryEnvironmentProbedEvent evt = new MemoryEnvironmentProbedEvent();
-            evt.totalMemoryBytes = bounds.totalMemoryBytes();
-            evt.jvmHeapMaxBytes = bounds.jvmHeapMaxBytes();
-            evt.recommendedOffHeapBytes = bounds.recommendedOffHeapBytes();
-            evt.headroomBytes = bounds.headroomBytes();
-            evt.cgroupV2Present = Files.exists(CGROUP_V2_MEMORY_MAX);
-            evt.cgroupV1Present = Files.exists(CGROUP_V1_MEMORY_LIMIT);
-            evt.commit();
+            if (evt.isEnabled()) {
+                evt.totalMemoryBytes = bounds.totalMemoryBytes();
+                evt.jvmHeapMaxBytes = bounds.jvmHeapMaxBytes();
+                evt.recommendedOffHeapBytes = bounds.recommendedOffHeapBytes();
+                evt.headroomBytes = bounds.headroomBytes();
+                evt.cgroupV2Present = Files.exists(CGROUP_V2_MEMORY_MAX);
+                evt.cgroupV1Present = Files.exists(CGROUP_V1_MEMORY_LIMIT);
+                evt.commit();
+            }
         }
     }
 }

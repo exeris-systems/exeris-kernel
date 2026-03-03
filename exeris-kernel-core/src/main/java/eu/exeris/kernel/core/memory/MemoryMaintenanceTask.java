@@ -148,8 +148,9 @@ public final class MemoryMaintenanceTask implements AutoCloseable {
         }
         Thread thread = Thread.ofVirtual()
                 .name("exeris-memory-maintenance")
-                .start(this::maintenanceLoop);
+                .unstarted(this::maintenanceLoop);
         MAINTENANCE_THREAD.setRelease(this, thread);
+        thread.start();
     }
 
     /**

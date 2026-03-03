@@ -10,6 +10,7 @@ package eu.exeris.kernel.core.memory;
 import jdk.jfr.Category;
 import jdk.jfr.Description;
 import jdk.jfr.Event;
+import jdk.jfr.FlightRecorder;
 import jdk.jfr.Label;
 import jdk.jfr.Name;
 import jdk.jfr.StackTrace;
@@ -63,10 +64,15 @@ import jdk.jfr.StackTrace;
      */
     /* default */
     static void emit(String bufferLabel, String allocationStack, long capacityBytes) {
+        if (!FlightRecorder.isInitialized()) {
+            return;
+        }
         LeakDetectedEvent evt = new LeakDetectedEvent();
-        evt.bufferLabel = bufferLabel;
-        evt.allocationStack = allocationStack;
-        evt.capacityBytes = capacityBytes;
-        evt.commit();
+        if (evt.isEnabled()) {
+            evt.bufferLabel = bufferLabel;
+            evt.allocationStack = allocationStack;
+            evt.capacityBytes = capacityBytes;
+            evt.commit();
+        }
     }
 }

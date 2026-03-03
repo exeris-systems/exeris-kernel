@@ -52,6 +52,8 @@ import jdk.jfr.StackTrace;
     /* default */ String contextName;
 
     @Label("Memory Utilization (%)")
+    @Description("Memory utilization in percent [0..100], " +
+            "or -1 if the exact utilization is currently unknown/uncached.")
     /* default */ int utilizationPct;
 
     @Label("Decision Cache Timestamp (ns)")
@@ -62,7 +64,7 @@ import jdk.jfr.StackTrace;
      *
      * @param action         the arbitration action taken
      * @param contextName    the context name (e.g. TRANSPORT_IO)
-     * @param utilizationPct memory utilisation in percent [0..100]
+     * @param utilizationPct memory utilization in percent [0..100], or {@code -1} if unknown/uncached
      * @param decisionNs     nanos timestamp of the cached decision
      */
     /* default */
