@@ -48,8 +48,8 @@ import java.lang.foreign.MemorySegment;
  * }
  * }</pre>
  *
- * @since 0.5.0
  * @see MemoryAllocator
+ * @since 0.5.0
  */
 public interface LoanedBuffer extends AutoCloseable {
 
@@ -215,4 +215,3 @@ public interface LoanedBuffer extends AutoCloseable {
      */
     void addCloseAction(Runnable action);
 }
-

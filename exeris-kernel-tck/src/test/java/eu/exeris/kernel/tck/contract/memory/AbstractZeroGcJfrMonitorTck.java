@@ -38,15 +38,28 @@ import java.lang.foreign.ValueLayout;
  */
 public abstract class AbstractZeroGcJfrMonitorTck extends AbstractSubsystemZeroAllocTck {
 
-    /** Subclass supplies the allocator under test. */
+    /**
+     * Subclass supplies the allocator under test.
+     */
     protected abstract MemoryAllocator createAllocator();
 
     private MemoryAllocator allocator;
     private int iterationCounter;
 
-    @Override protected String subsystemName()      { return "Memory"; }
-    @Override protected String hotPathDescription()  { return "MemoryAllocator.allocate(MICRO) → write → close"; }
-    @Override protected int maxExerisAllocationsPerIteration() { return 3; }
+    @Override
+    protected String subsystemName() {
+        return "Memory";
+    }
+
+    @Override
+    protected String hotPathDescription() {
+        return "MemoryAllocator.allocate(MICRO) → write → close";
+    }
+
+    @Override
+    protected int maxExerisAllocationsPerIteration() {
+        return 3;
+    }
 
     @Override
     protected void bootstrapSubsystem() {

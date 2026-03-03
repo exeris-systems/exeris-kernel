@@ -7,6 +7,8 @@
  */
 package eu.exeris.kernel.spi.memory;
 
+import java.util.Objects;
+
 /**
  * Immutable snapshot of {@link MemoryAllocator} diagnostics.
  *
@@ -21,22 +23,21 @@ package eu.exeris.kernel.spi.memory;
  * It is intentionally <em>not</em> on the hot allocation path, so the record allocation
  * per call is acceptable (diagnostics are low-frequency).
  *
- * @param totalBytes          Total off-heap budget configured for this allocator (bytes).
- * @param allocatedBytes      Bytes currently in use (live loaned buffers).
- * @param freeBytes           Bytes available for new allocations.
- * @param allocationCount     Cumulative count of all {@code allocate*} calls since start.
- * @param releaseCount        Cumulative count of buffers returned to the pool (refCount → 0).
- * @param peakAllocatedBytes  Historical maximum of {@code allocatedBytes} observed.
- * @param carrierPoolCount    Number of carrier-affine slab pools active (0 if carrier-slabs are
- *                            not supported by this allocator).
- * @param leakCount           Cumulative count of {@link LoanedBuffer} instances detected as leaked
- *                            (abandoned without close()) since start. Non-zero only when
- *                            {@link #leakDetectionMode()} is {@link LeakDetectionMode#SAMPLED}
- *                            or {@link LeakDetectionMode#PARANOID}.
- * @param leakDetectionMode   The active leak detection mode for this allocator instance.
- *
- * @since 0.5.0
+ * @param totalBytes         Total off-heap budget configured for this allocator (bytes).
+ * @param allocatedBytes     Bytes currently in use (live loaned buffers).
+ * @param freeBytes          Bytes available for new allocations.
+ * @param allocationCount    Cumulative count of all {@code allocate*} calls since start.
+ * @param releaseCount       Cumulative count of buffers returned to the pool (refCount → 0).
+ * @param peakAllocatedBytes Historical maximum of {@code allocatedBytes} observed.
+ * @param carrierPoolCount   Number of carrier-affine slab pools active (0 if carrier-slabs are
+ *                           not supported by this allocator).
+ * @param leakCount          Cumulative count of {@link LoanedBuffer} instances detected as leaked
+ *                           (abandoned without close()) since start. Non-zero only when
+ *                           {@link #leakDetectionMode()} is {@link LeakDetectionMode#SAMPLED}
+ *                           or {@link LeakDetectionMode#PARANOID}.
+ * @param leakDetectionMode  The active leak detection mode for this allocator instance.
  * @see MemoryAllocator#stats()
+ * @since 0.5.0
  */
 public record MemoryStats(
         long totalBytes,
@@ -45,12 +46,14 @@ public record MemoryStats(
         long allocationCount,
         long releaseCount,
         long peakAllocatedBytes,
-        int  carrierPoolCount,
+        int carrierPoolCount,
         long leakCount,
         LeakDetectionMode leakDetectionMode
 ) {
 
-    /** Compact canonical constructor with basic consistency validation. */
+    /**
+     * Compact canonical constructor with basic consistency validation.
+     */
     public MemoryStats {
         if (allocatedBytes < 0 || freeBytes < 0 || peakAllocatedBytes < 0) {
             throw new IllegalArgumentException("Memory stats byte counts must be non-negative");
@@ -62,7 +65,7 @@ public record MemoryStats(
         if (totalBytes > 0 && allocatedBytes > totalBytes) {
             throw new IllegalArgumentException(
                     "allocatedBytes (" + allocatedBytes + ") must not exceed totalBytes ("
-                    + totalBytes + "); utilization() contract requires a ratio in [0.0, 1.0]");
+                            + totalBytes + "); utilization() contract requires a ratio in [0.0, 1.0]");
         }
         if (carrierPoolCount < 0) {
             throw new IllegalArgumentException(
@@ -72,7 +75,7 @@ public record MemoryStats(
             throw new IllegalArgumentException(
                     "leakCount must be non-negative, got: " + leakCount);
         }
-        java.util.Objects.requireNonNull(leakDetectionMode, "leakDetectionMode must not be null");
+        Objects.requireNonNull(leakDetectionMode, "leakDetectionMode must not be null");
     }
 
     /**
@@ -102,5 +105,3 @@ public record MemoryStats(
         return new MemoryStats(0L, 0L, 0L, 0L, 0L, 0L, 0, 0L, LeakDetectionMode.DISABLED);
     }
 }
-
-

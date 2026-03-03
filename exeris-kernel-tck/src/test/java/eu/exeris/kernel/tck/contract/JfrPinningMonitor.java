@@ -19,6 +19,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * Reusable JFR Carrier Pinning monitor for all subsystem TCKs.
@@ -32,18 +33,19 @@ import java.util.List;
  * <p>Threshold default: {@value #DEFAULT_THRESHOLD_MS} ms — tighter than the
  * performance contract kill threshold (50 ms), acting as an early-warning fence.
  *
- * @since 0.5.0
  * @see JfrAllocationMonitor
  * @see AbstractSubsystemZeroAllocTck
+ * @since 0.5.0
  */
 public final class JfrPinningMonitor {
 
-    private static final String VT_PINNED_EVENT      = "jdk.VirtualThreadPinned";
-    public  static final long   DEFAULT_THRESHOLD_MS = 20L;
-    private static final DateTimeFormatter TS_FMT    =
+    private static final String VT_PINNED_EVENT = "jdk.VirtualThreadPinned";
+    public static final long DEFAULT_THRESHOLD_MS = 20L;
+    private static final DateTimeFormatter TS_FMT =
             DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
 
-    private JfrPinningMonitor() {}
+    private JfrPinningMonitor() {
+    }
 
     // =========================================================================
     // Config / Result / Event — Valhalla-ready records
@@ -64,7 +66,8 @@ public final class JfrPinningMonitor {
      * @param threadName virtual thread that caused the pin
      * @param stackTrace top-10 frames formatted as {@code "Class.method() | ..."}
      */
-    public record PinnedEvent(double durationMs, String threadName, String stackTrace) {}
+    public record PinnedEvent(double durationMs, String threadName, String stackTrace) {
+    }
 
     /**
      * @param pinnedEvents events exceeding the threshold
@@ -72,11 +75,18 @@ public final class JfrPinningMonitor {
      * @param thresholdMs  threshold used during capture
      */
     public record Result(List<PinnedEvent> pinnedEvents, Path jfrPath, long thresholdMs) {
-        public boolean hasPinning()  { return !pinnedEvents.isEmpty(); }
-        public int     pinnedCount() { return pinnedEvents.size(); }
+        public boolean hasPinning() {
+            return !pinnedEvents.isEmpty();
+        }
+
+        public int pinnedCount() {
+            return pinnedEvents.size();
+        }
     }
 
-    /** Workload executed inside the JFR recording window. */
+    /**
+     * Workload executed inside the JFR recording window.
+     */
     @FunctionalInterface
     public interface Workload {
         void execute() throws Exception;
@@ -94,8 +104,8 @@ public final class JfrPinningMonitor {
         Path jfrFile = buildJfrPath(config.label());
         try (Recording rec = new Recording()) {
             rec.enable(VT_PINNED_EVENT)
-               .withThreshold(Duration.ofMillis(config.thresholdMs()))
-               .withStackTrace();
+                    .withThreshold(Duration.ofMillis(config.thresholdMs()))
+                    .withStackTrace();
             rec.setDestination(jfrFile);
             rec.start();
             workload.execute();
@@ -111,22 +121,22 @@ public final class JfrPinningMonitor {
         if (!result.hasPinning()) return;
         StringBuilder sb = new StringBuilder(512);
         sb.append("\n╔══════════════════════════════════════════════════════╗\n");
-        sb.append(  "║  CARRIER PINNING TCK — VERDICT: GUILTY               ║\n");
-        sb.append(  "╠══════════════════════════════════════════════════════╣\n");
-        sb.append(  "║  Label        : ").append(pad(label, 38)).append(" ║\n");
-        sb.append(  "║  Threshold    : ").append(pad(result.thresholdMs() + " ms", 38)).append(" ║\n");
-        sb.append(  "║  Pinned Count : ").append(pad(String.valueOf(result.pinnedCount()), 38)).append(" ║\n");
-        sb.append(  "║  JFR File     : ").append(pad(result.jfrPath().getFileName().toString(), 38)).append(" ║\n");
-        sb.append(  "╠══════════════════════════════════════════════════════╣\n");
+        sb.append("║  CARRIER PINNING TCK — VERDICT: GUILTY               ║\n");
+        sb.append("╠══════════════════════════════════════════════════════╣\n");
+        sb.append("║  Label        : ").append(pad(label, 38)).append(" ║\n");
+        sb.append("║  Threshold    : ").append(pad(result.thresholdMs() + " ms", 38)).append(" ║\n");
+        sb.append("║  Pinned Count : ").append(pad(String.valueOf(result.pinnedCount()), 38)).append(" ║\n");
+        sb.append("║  JFR File     : ").append(pad(result.jfrPath().getFileName().toString(), 38)).append(" ║\n");
+        sb.append("╠══════════════════════════════════════════════════════╣\n");
         result.pinnedEvents().stream().limit(5).forEach(e ->
-            sb.append("  ▸ ").append(e.threadName())
-              .append(" | ").append(String.format("%.2f", e.durationMs())).append(" ms\n")
-              .append("    ").append(e.stackTrace()).append("\n")
+                sb.append("  ▸ ").append(e.threadName())
+                        .append(" | ").append(String.format(java.util.Locale.ROOT, "%.2f", e.durationMs())).append(" ms\n")
+                        .append("    ").append(e.stackTrace()).append("\n")
         );
         sb.append("╚══════════════════════════════════════════════════════╝\n");
         sb.append("Per performance-contract.md: carrier blocked > ")
-          .append(result.thresholdMs())
-          .append(" ms is BANNED. Avoid synchronized, blocking I/O, non-VT-safe executors.");
+                .append(result.thresholdMs())
+                .append(" ms is BANNED. Avoid synchronized, blocking I/O, non-VT-safe executors.");
         throw new AssertionError(sb.toString());
     }
 
@@ -152,8 +162,8 @@ public final class JfrPinningMonitor {
         if (ev.getStackTrace() == null) return "<no stack>";
         StringBuilder sb = new StringBuilder();
         ev.getStackTrace().getFrames().stream().limit(10).forEach(f ->
-            sb.append(f.getMethod().getType().getName())
-              .append(".").append(f.getMethod().getName()).append("() | ")
+                sb.append(f.getMethod().getType().getName())
+                        .append(".").append(f.getMethod().getName()).append("() | ")
         );
         return sb.length() > 3 ? sb.substring(0, sb.length() - 3) : "<empty>";
     }
@@ -164,7 +174,7 @@ public final class JfrPinningMonitor {
      * <p>Rules applied in order:
      * <ol>
      *   <li>Null input is replaced with {@code "label"}.</li>
-     *   <li>Lowercased using {@link java.util.Locale#ROOT} (no Turkish-I surprises).</li>
+     *   <li>Lowercased using {@link Locale#ROOT} (no Turkish-I surprises).</li>
      *   <li>Any character outside {@code [a-z0-9\-_]} is mapped to {@code '-'}.</li>
      *   <li>Consecutive {@code '-'} are collapsed to a single {@code '-'}.</li>
      *   <li>Leading and trailing {@code '-'} are trimmed.</li>
@@ -177,7 +187,7 @@ public final class JfrPinningMonitor {
      */
     private static String sanitizeLabel(String label) {
         final int maxLength = 64;
-        String normalized = (label == null ? "label" : label).toLowerCase(java.util.Locale.ROOT);
+        String normalized = (label == null ? "label" : label).toLowerCase(Locale.ROOT);
         StringBuilder sb = new StringBuilder(normalized.length());
         char prev = 0;
         for (int i = 0; i < normalized.length() && sb.length() < maxLength; i++) {
@@ -188,23 +198,26 @@ public final class JfrPinningMonitor {
                 c = '-';
             }
             if (c == '-' && prev == '-') {
-                continue; // collapse consecutive hyphens
+                continue;
             }
             sb.append(c);
             prev = c;
         }
-        // Trim leading/trailing '-'
         int start = 0;
-        int end   = sb.length();
-        while (start < end && sb.charAt(start) == '-')  { start++; }
-        while (end > start && sb.charAt(end - 1) == '-') { end--;   }
+        int end = sb.length();
+        while (start < end && sb.charAt(start) == '-') {
+            start++;
+        }
+        while (end > start && sb.charAt(end - 1) == '-') {
+            end--;
+        }
         return (start < end) ? sb.substring(start, end) : "label";
     }
 
     private static Path buildJfrPath(String label) throws IOException {
         Path dir = Path.of("target", "jfr-reports", "pinning");
         Files.createDirectories(dir);
-        String ts        = LocalDateTime.now().format(TS_FMT);
+        String ts = LocalDateTime.now().format(TS_FMT);
         String safeLabel = sanitizeLabel(label);
         return dir.resolve("pin-" + safeLabel + "-" + ts + ".jfr");
     }
@@ -213,4 +226,3 @@ public final class JfrPinningMonitor {
         return s.length() >= w ? s.substring(0, w) : s + " ".repeat(w - s.length());
     }
 }
-

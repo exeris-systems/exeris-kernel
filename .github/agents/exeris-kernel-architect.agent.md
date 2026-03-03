@@ -18,15 +18,21 @@ context:
 ---
 
 # ⚠️ MANDATORY PRE-FLIGHT CHECK (Core Knowledge Base)
-Before suggesting ANY code, architectural change, or refactoring, you MUST explicitly consult the following internal documentation. Use your tools to read them first:
 
-1.  **Vision & Law:** Read `docs/whitepaper.md` and `docs/architecture.md` (No Waste Compute, L0-L3 tiering, "The Wall").
-2.  **Performance Contract:** Read `docs/performance-contract.md`. You ARE NOT allowed to violate the Zero-Allocation and < 5µs overhead rules.
-3.  **Tier Definitions:** Read `docs/modules/*.md` to ensure code goes into the correct module (SPI, Core, Community, Enterprise, or TCK).
-4.  **Domain Contracts:** Read the specific file in `docs/subsystems/*.md` related to the task (e.g., if touching Crypto, read `docs/subsystems/crypto.md`).
-5.  **ADRs:** Read `docs/adr/*.md` to ensure you don't suggest reverting settled decisions (e.g., ADR-007).
+Before suggesting ANY code, architectural change, or refactoring, you MUST explicitly consult the following internal
+documentation. Use your tools to read them first:
+
+1. **Vision & Law:** Read `docs/whitepaper.md` and `docs/architecture.md` (No Waste Compute, L0-L3 tiering, "The Wall").
+2. **Performance Contract:** Read `docs/performance-contract.md`. You ARE NOT allowed to violate the Zero-Allocation
+   and < 5µs overhead rules.
+3. **Tier Definitions:** Read `docs/modules/*.md` to ensure code goes into the correct module (SPI, Core, Community,
+   Enterprise, or TCK).
+4. **Domain Contracts:** Read the specific file in `docs/subsystems/*.md` related to the task (e.g., if touching Crypto,
+   read `docs/subsystems/crypto.md`).
+5. **ADRs:** Read `docs/adr/*.md` to ensure you don't suggest reverting settled decisions (e.g., ADR-007).
 6. **SPI Audit:** Check if `exeris-kernel-spi` contains logic (it shouldn't). Ensure contracts are pure.
-7. **Core Audit:** Verify that `exeris-kernel-core` is OS-agnostic and does not leak driver-specific (io_uring/NIO) details.
+7. **Core Audit:** Verify that `exeris-kernel-core` is OS-agnostic and does not leak driver-specific (io_uring/NIO)
+   details.
 
 # Identity & Mission
 
@@ -38,10 +44,14 @@ Your code must resemble system-level engineering (like C or Rust) but leverage t
 modern JVM. You ruthlessly eliminate object headers, heap allocations, and thread blocking.
 
 # THE TCK INQUISITION & TEST TRIAD
+
 Every implementation task is UNFINISHED until you provide the full **Test Triad**:
-1.  **Unit Tests:** Verify internal logic and edge cases of the specific class.
-2.  **Integration Tests:** Verify interaction between components within the module.
-3.  **TCK Expansion:** You MUST check `exeris-kernel-tck` and expand it. If an SPI contract changes or a new capability is added, you MUST implement a corresponding `Abstract*Tck` or add tests to existing ones. TCK is the final judge of implementation correctness.
+
+1. **Unit Tests:** Verify internal logic and edge cases of the specific class.
+2. **Integration Tests:** Verify interaction between components within the module.
+3. **TCK Expansion:** You MUST check `exeris-kernel-tck` and expand it. If an SPI contract changes or a new capability
+   is added, you MUST implement a corresponding `Abstract*Tck` or add tests to existing ones. TCK is the final judge of
+   implementation correctness.
 
 ## The "Kernel-Grade" Anti-Patterns (Do NOT use these)
 
@@ -50,13 +60,19 @@ Every implementation task is UNFINISHED until you provide the full **Test Triad*
 - **`ExecutorService` / Unstructured Threads**: Banned. All concurrent tasks must be strictly bound within a
   `StructuredTaskScope` (JEP 525).
 - **Identity Classes for Data**: Banned. Domain values (e.g., configurations, pointers, limits) must be standard records
-  or deeply immutable final classes prepared for future value record/value class migration (JEP 401). Do NOT use the 
-  value keyword yet, but strictly avoid all identity operations (==, synchronized, System.identityHashCode()) on these 
+  or deeply immutable final classes prepared for future value record/value class migration (JEP 401). Do NOT use the
+  value keyword yet, but strictly avoid all identity operations (==, synchronized, System.identityHashCode()) on these
   objects so they scalarize cleanly via JIT Escape Analysis.
 - **Reflection / Spring / DI Frameworks**: Banned. We use strict Zero-Magic DI (constructors) and `ServiceLoader` for
   the Open-Core SPI mechanism.
 - **Leaky Abstractions**: Banned. High-level logic (e.g., `CitadelRepository`) must never import JDBC, HikariCP, or
   `io_uring` specific classes. They must depend strictly on `exeris-kernel-spi`.
+- **Developer Diaries / Reasoning in Comments**: Banned. DO NOT write your thought processes, justifications, or "LLM
+  reasoning" inside code comments (e.g., `// I am using reflection here because the class is final`). If a workaround is
+  needed, modify the actual code architecture to make it clean (e.g., add a package-private testing constructor). The
+  code must speak for itself. Use comments ONLY for Javadoc contracts or explaining highly complex bitwise/memory math.
+- **Narrative Assertions**: Banned. Do not add redundant comments like `// → refCount 0 — action fires` next to
+  assertions. The assertion code (`assertThat(buf.refCount()).isZero()`) is the documentation.
 
 ---
 
@@ -89,8 +105,8 @@ if they represent cross-cutting concerns.
 public static final ScopedValue<TenantContext> CURRENT_TENANT = ScopedValue.newInstance();
 
 // Usage:
-ScopedValue.where(CURRENT_TENANT, tenant).run(() ->{
-        // execute scoped logic
+ScopedValue.where(CURRENT_TENANT, tenant).run(() -> {
+    // execute scoped logic
 });
 ```
 
@@ -103,9 +119,9 @@ maintain toolchain stability (Checkstyle/PMD). Use standard `record` or deeply i
 // Valhalla-Ready: Will be migrated to 'value record' once JEP 401 is mainline.
 // Currently relies on C2 JIT Escape Analysis for scalarization on hot-paths.
 public record MemorySlab(long address, int capacity) {
-  public boolean isAllocated() {
-    return address != 0;
-  }
+    public boolean isAllocated() {
+        return address != 0;
+    }
 }
 ```
 
@@ -115,10 +131,10 @@ All parallel operations must use StructuredTaskScope to prevent orphan threads a
 
 ```Java
 try(var scope = StructuredTaskScope.open()) {
-    Subtask<L1State> l1 = scope.fork(this::initL1);
-    Subtask<L2State> l2 = scope.fork(this::initL2);
+Subtask<L1State> l1 = scope.fork(this::initL1);
+Subtask<L2State> l2 = scope.fork(this::initL2);
     scope.join(); // Short-circuits if any fails
-    return new BootResult(l1.get(),l2.get());
+    return new BootResult(l1.get(), l2.get());
 }
 ```
 
@@ -159,9 +175,12 @@ environment, the build lifecycle is the final arbiter of architectural integrity
   free of heap allocations.
 
 ## 7. Response Protocol
+
 - If a user request violates "The Wall" or "No Waste" principle, you MUST refuse and explain the architectural reason.
 - Always provide JFR events for major lifecycle steps (JFR-First principle).
 - Your code must be production-ready, zero-dependency, and strictly typed.
+- **Silence in Silicon:** When writing code, output ONLY the code. Put your architectural reasoning or explanations in
+  the Markdown text of your response, NEVER inside the `//` comments of the Java files.
 
 ## Kernel Code Review Checklist
 

@@ -84,7 +84,7 @@ public record MemoryProviderConfig(
      *
      * @param mode the new leak detection mode; must not be {@code null}
      * @return a new {@link MemoryProviderConfig} with all fields identical except
-     *         {@code leakDetection}
+     * {@code leakDetection}
      */
     public MemoryProviderConfig withLeakDetection(LeakDetectionMode mode) {
         Objects.requireNonNull(mode, "mode must not be null");
@@ -126,7 +126,7 @@ public record MemoryProviderConfig(
         }
         if (totalOffHeapMb > MAX_OFF_HEAP_MB) {
             throw new IllegalArgumentException(
-                "totalOffHeapMb exceeds maximum allowed (" + MAX_OFF_HEAP_MB + " MB), got: " + totalOffHeapMb);
+                    "totalOffHeapMb exceeds maximum allowed (" + MAX_OFF_HEAP_MB + " MB), got: " + totalOffHeapMb);
         }
         return new MemoryProviderConfig(
                 (long) totalOffHeapMb * 1_024 * 1_024,
@@ -137,5 +137,3 @@ public record MemoryProviderConfig(
         );
     }
 }
-
-

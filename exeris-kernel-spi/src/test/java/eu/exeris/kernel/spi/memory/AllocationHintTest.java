@@ -120,4 +120,3 @@ class AllocationHintTest {
         assertThat(AllocationHint.valueOf("JUMBO")).isEqualTo(AllocationHint.JUMBO);
     }
 }
-

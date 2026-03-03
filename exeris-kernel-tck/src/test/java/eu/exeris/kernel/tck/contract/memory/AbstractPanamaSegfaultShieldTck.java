@@ -46,7 +46,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  */
 public abstract class AbstractPanamaSegfaultShieldTck {
 
-    /** Subclass supplies the allocator under test. */
+    /**
+     * Subclass supplies the allocator under test.
+     */
     protected abstract MemoryAllocator createAllocator();
 
     private MemoryAllocator allocator;
@@ -70,14 +72,12 @@ public abstract class AbstractPanamaSegfaultShieldTck {
     void nativeMemorySurvivesUntilLastSliceCloses() {
         LoanedBuffer parent = allocator.allocate(AllocationHint.MEDIUM);
 
-        LoanedBuffer slice1 = parent.slice(0,              4 * 1024);
-        LoanedBuffer slice2 = parent.slice(4 * 1024,       4 * 1024);
-        LoanedBuffer slice3 = parent.slice(8 * 1024,       4 * 1024);
+        LoanedBuffer slice1 = parent.slice(0, 4 * 1024);
+        LoanedBuffer slice2 = parent.slice(4 * 1024, 4 * 1024);
+        LoanedBuffer slice3 = parent.slice(8 * 1024, 4 * 1024);
 
-        // Close parent — slices still hold references
         parent.close();
 
-        // Slices must still be writable
         slice1.segment().set(ValueLayout.JAVA_INT, 0, 0xAAAA);
         slice2.segment().set(ValueLayout.JAVA_INT, 0, 0xBBBB);
         slice3.segment().set(ValueLayout.JAVA_INT, 0, 0xCCCC);
@@ -86,15 +86,12 @@ public abstract class AbstractPanamaSegfaultShieldTck {
         assertThat(slice2.segment().get(ValueLayout.JAVA_INT, 0)).isEqualTo(0xBBBB);
         assertThat(slice3.segment().get(ValueLayout.JAVA_INT, 0)).isEqualTo(0xCCCC);
 
-        // Close one by one
         slice1.close();
-        // slice2 + slice3 still live — segment accessible
         assertThat(slice2.isAlive()).isTrue();
 
         slice2.close();
         assertThat(slice3.isAlive()).isTrue();
 
-        // Last slice — triggers final release
         slice3.close();
         assertThat(slice3.isAlive()).isFalse();
     }
@@ -115,7 +112,6 @@ public abstract class AbstractPanamaSegfaultShieldTck {
     void outOfBoundsWriteThrowsNotSegfault() {
         try (LoanedBuffer buf = allocator.allocate(AllocationHint.MICRO)) {
             long capacity = buf.capacity();
-            // JAVA_LONG requires 8 bytes; write at (capacity - 4) overflows
             var seg = buf.segment();
             long offset = capacity - 4;
             assertThatThrownBy(() -> seg.set(ValueLayout.JAVA_LONG, offset, 0xDEADL))
@@ -127,13 +123,13 @@ public abstract class AbstractPanamaSegfaultShieldTck {
     @DisplayName("retain() prevents release; release after matching close()")
     void retainPreventsRelease() {
         LoanedBuffer buf = allocator.allocate(AllocationHint.MICRO);
-        buf.retain(); // refCount → 2
+        buf.retain();
         assertThat(buf.refCount()).isEqualTo(2);
 
-        buf.close(); // refCount → 1 — must not release yet
+        buf.close();
         assertThat(buf.isAlive()).isTrue();
 
-        buf.close(); // refCount → 0 — release
+        buf.close();
         assertThat(buf.isAlive()).isFalse();
     }
 
@@ -141,19 +137,16 @@ public abstract class AbstractPanamaSegfaultShieldTck {
     @DisplayName("Nested slices: grandchild holds grandparent alive")
     void nestedSlicesChainRefCounts() {
         LoanedBuffer parent = allocator.allocate(AllocationHint.MEDIUM);
-        LoanedBuffer child  = parent.slice(0, 4 * 1024);
-        LoanedBuffer grand  = child.slice(0, 1024);
+        LoanedBuffer child = parent.slice(0, 4 * 1024);
+        LoanedBuffer grand = child.slice(0, 1024);
 
         parent.close();
-        // parent's own reference dropped, but child + grand still hold it — must stay alive
         assertThat(parent.isAlive()).isTrue();
 
         child.close();
-        assertThat(grand.isAlive()).isTrue(); // grand still holds root alive
+        assertThat(grand.isAlive()).isTrue();
 
-        grand.close(); // last reference — triggers release
+        grand.close();
         assertThat(grand.isAlive()).isFalse();
     }
 }
-
-

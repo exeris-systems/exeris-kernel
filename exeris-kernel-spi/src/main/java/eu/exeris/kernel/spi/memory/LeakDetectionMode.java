@@ -13,8 +13,8 @@ package eu.exeris.kernel.spi.memory;
  * <h2>Valhalla Readiness</h2>
  * <p>Enum constants are JVM singletons — no heap allocation on comparison.
  *
- * @since 0.5.0
  * @see MemoryProviderConfig#leakDetection()
+ * @since 0.5.0
  */
 public enum LeakDetectionMode {
 
@@ -37,4 +37,3 @@ public enum LeakDetectionMode {
      */
     PARANOID
 }
-

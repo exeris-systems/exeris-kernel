@@ -54,7 +54,9 @@ public abstract class AbstractMemoryAllocatorTck {
 
     private static final int DEFAULT_AVALANCHE_THREADS = 100_000;
 
-    /** Subclass supplies the allocator under test. Called once before each test. */
+    /**
+     * Subclass supplies the allocator under test. Called once before each test.
+     */
     protected abstract MemoryAllocator createAllocator();
 
     /**
@@ -150,7 +152,7 @@ public abstract class AbstractMemoryAllocatorTck {
                  LoanedBuffer b = allocator.allocate(AllocationHint.MICRO)) {
                 a.segment().set(ValueLayout.JAVA_INT, 0, 0xAAAA);
                 b.segment().set(ValueLayout.JAVA_INT, 0, 0xBBBB);
-                // Isolation: writing to B must not corrupt A
+
                 assertThat(a.segment().get(ValueLayout.JAVA_INT, 0)).isEqualTo(0xAAAA);
                 assertThat(b.segment().get(ValueLayout.JAVA_INT, 0)).isEqualTo(0xBBBB);
             }
@@ -257,8 +259,6 @@ public abstract class AbstractMemoryAllocatorTck {
         void mixedHints() throws InterruptedException {
             AllocationHint[] hints = {AllocationHint.MICRO, AllocationHint.SMALL, AllocationHint.MEDIUM};
 
-            // Use the tier-specific thread count — Enterprise has a fixed slab budget
-            // and the old hardcoded 30_000 would exhaust the pool.
             int total = avalancheThreadCount();
             AtomicLong errors = new AtomicLong(0);
 
@@ -299,7 +299,7 @@ public abstract class AbstractMemoryAllocatorTck {
         @DisplayName("Enterprise: exhausting fixed slab budget throws MemoryExhaustedException")
         void oomBehaviourIsExhaustion() {
             if (!hasFixedSlabBudget()) {
-                return; // Community: no hard limit — test is not applicable, skip silently
+                return;
             }
 
             int slabs = fixedSlabCount();
@@ -308,9 +308,8 @@ public abstract class AbstractMemoryAllocatorTck {
                 for (int i = 0; i < slabs; i++) {
                     held[i] = allocator.allocate(AllocationHint.MICRO);
                 }
-                // Next allocation must exhaust the partition
                 org.assertj.core.api.Assertions.assertThatThrownBy(
-                        () -> allocator.allocate(AllocationHint.MICRO))
+                                () -> allocator.allocate(AllocationHint.MICRO))
                         .isInstanceOf(MemoryExhaustedException.class);
             } finally {
                 for (LoanedBuffer b : held) {
@@ -322,6 +321,3 @@ public abstract class AbstractMemoryAllocatorTck {
         }
     }
 }
-
-
-
