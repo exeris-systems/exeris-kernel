@@ -13,6 +13,7 @@ import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.transport.TransportEngine;
 import eu.exeris.kernel.spi.transport.TransportStream;
 import eu.exeris.kernel.tck.contract.AbstractSubsystemCarrierPinningTck;
+import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.DisplayName;
 
 import java.lang.foreign.ValueLayout;
@@ -46,9 +47,9 @@ import java.util.concurrent.locks.LockSupport;
  * }
  * }</pre>
  *
- * @since 0.5.0
  * @see AbstractSubsystemCarrierPinningTck
  * @see TransportZeroAllocTck
+ * @since 0.5.0
  */
 @DisplayName("Transport carrier pinning TCK")
 public abstract class TransportCarrierPinningTck extends AbstractSubsystemCarrierPinningTck {
@@ -57,13 +58,19 @@ public abstract class TransportCarrierPinningTck extends AbstractSubsystemCarrie
     // Template methods
     // =========================================================================
 
-    /** Creates and starts the {@link TransportEngine} under test (loopback binding). */
+    /**
+     * Creates and starts the {@link TransportEngine} under test (loopback binding).
+     */
     protected abstract TransportEngine createEngine();
 
-    /** Creates the {@link MemoryAllocator} used to allocate network buffers. */
+    /**
+     * Creates the {@link MemoryAllocator} used to allocate network buffers.
+     */
     protected abstract MemoryAllocator createAllocator();
 
-    /** Creates a writable {@link TransportStream} connected to the running engine. */
+    /**
+     * Creates a writable {@link TransportStream} connected to the running engine.
+     */
     protected abstract TransportStream createWritableStream();
 
     // =========================================================================
@@ -78,16 +85,22 @@ public abstract class TransportCarrierPinningTck extends AbstractSubsystemCarrie
      */
     private int vtSlotCount = 0;
 
-    private TransportEngine  engine;
-    private MemoryAllocator  allocator;
+    private TransportEngine engine;
+    private MemoryAllocator allocator;
 
-    /** Pre-allocated per-VT streams — each VT owns exactly one slot. */
+    /**
+     * Pre-allocated per-VT streams — each VT owns exactly one slot.
+     */
     private TransportStream[] streams;
 
-    /** Pre-allocated per-VT network buffers — each VT owns exactly one slot. */
-    private LoanedBuffer[]    buffers;
+    /**
+     * Pre-allocated per-VT network buffers — each VT owns exactly one slot.
+     */
+    private LoanedBuffer[] buffers;
 
-    /** Monotonic slot counter — each executing VT claims the next available index. */
+    /**
+     * Monotonic slot counter — each executing VT claims the next available index.
+     */
     private final AtomicInteger vtIndex = new AtomicInteger(0);
 
     // =========================================================================
@@ -95,10 +108,16 @@ public abstract class TransportCarrierPinningTck extends AbstractSubsystemCarrie
     // =========================================================================
 
     @Override
-    protected String subsystemName() { return "Transport"; }
+    protected String subsystemName() {
+        return "Transport";
+    }
 
-    /** Returns the bootstrapped {@link TransportEngine} for use in {@link #createWritableStream()}. */
-    protected final TransportEngine engine() { return engine; }
+    /**
+     * Returns the bootstrapped {@link TransportEngine} for use in {@link #createWritableStream()}.
+     */
+    protected final TransportEngine engine() {
+        return engine;
+    }
 
     @Override
     protected String hotPathDescription() {
@@ -110,18 +129,22 @@ public abstract class TransportCarrierPinningTck extends AbstractSubsystemCarrie
      * Delegates to the base-class accessor so this value stays in sync
      * with the harness even if the constant changes.
      */
-    protected int warmupIterations() { return warmupVtCount(); }
+    protected int warmupIterations() {
+        return warmupVtCount();
+    }
 
     /**
      * Returns the number of steady-state VT iterations (phase 2 — measured).
      * Delegates to the base-class accessor so this value stays in sync.
      */
-    protected int hotPathIterations() { return steadyVtCount(); }
+    protected int hotPathIterations() {
+        return steadyVtCount();
+    }
 
     @Override
     protected void bootstrapSubsystem() {
-        engine      = createEngine();
-        allocator   = createAllocator();
+        engine = createEngine();
+        allocator = createAllocator();
         vtSlotCount = warmupVtCount() + steadyVtCount();
 
         streams = new TransportStream[vtSlotCount];
@@ -137,52 +160,36 @@ public abstract class TransportCarrierPinningTck extends AbstractSubsystemCarrie
 
     @Override
     protected void runSingleIteration() {
-        // Each VT claims its own pre-allocated slot — zero allocations on the hot path.
-        // queueWrite takes ownership of buf — the buffer is NOT closed here.
         int idx = vtIndex.getAndIncrement();
         streams[idx].queueWrite(buffers[idx], Long.BYTES);
     }
 
     @Override
     protected void tearDownSubsystem() {
-        // Drain in-flight writes before closing streams to avoid Use-After-Free.
-        // Guard on both arrays: streams and buffers are allocated together in
-        // bootstrapSubsystem(); if one is null the other is too, but CodeQL
-        // tracks null-guards independently so we check both explicitly.
         int usedSlots = vtIndex.get();
         if (streams != null && buffers != null) {
             for (int i = 0; i < streams.length; i++) {
                 TransportStream s = streams[i];
                 if (s == null) continue;
                 if (i < usedSlots) {
-                    // Slot was claimed — wait for pending data to drain before closing.
-                    // If the drain deadline is exceeded, fail the test explicitly: proceeding
-                    // to close a stream that still has pending data is a Use-After-Free on
-                    // the off-heap segment and would mask a real implementation defect.
                     long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
                     while (s.hasPendingData()) {
                         if (System.nanoTime() > deadline) {
-                            org.assertj.core.api.Assertions.fail(
-                                "Timeout waiting for TransportStream[" + i + "] pending data "
-                                + "to drain during TCK teardown. Implementation must complete "
-                                + "all queued writes within 5 seconds.");
+                            Assertions.fail(
+                                    "Timeout waiting for TransportStream[" + i + "] pending data "
+                                            + "to drain during TCK teardown. Implementation must complete "
+                                            + "all queued writes within 5 seconds.");
                         }
                         LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(10));
                     }
                 } else {
-                    // Slot was never claimed — queueWrite() never transferred ownership,
-                    // so we still own the buffer and must close it to prevent an off-heap leak.
                     LoanedBuffer buf = buffers[i];
                     if (buf != null) buf.close();
                 }
                 s.close();
             }
         }
-        // NOTE: No blanket buffers safety-net here. Buffers for slots i < usedSlots
-        // had their ownership transferred to the stream via queueWrite() and MUST NOT
-        // be closed again — doing so would be a Use-After-Free on the off-heap segment.
-        if (engine    != null) engine.close();
+        if (engine != null) engine.close();
         if (allocator != null) allocator.close();
     }
 }
-

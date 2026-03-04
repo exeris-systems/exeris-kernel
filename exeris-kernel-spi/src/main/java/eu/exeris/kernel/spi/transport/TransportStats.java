@@ -21,16 +21,16 @@ package eu.exeris.kernel.spi.transport;
  * populate the same fields. Tier-specific metrics (e.g., ring depth, loss rate)
  * are emitted as custom JFR events, not through this record.
  *
- * @param activeConnections  number of currently open connections
- * @param activeStreams       number of currently open streams across all connections
- *                           ({@code long} — can exceed {@code Integer.MAX_VALUE} on
- *                           high-throughput multiplexed transports)
- * @param totalAccepted      cumulative number of connections accepted since engine start
- * @param totalRejected      cumulative number of connections/streams rejected (load shedding)
- * @param rttP50Micros       median RTT in microseconds (0 if no samples)
- * @param rttP95Micros       95th percentile RTT in microseconds (0 if no samples)
- * @since 0.5.0
+ * @param activeConnections number of currently open connections
+ * @param activeStreams     number of currently open streams across all connections
+ *                          ({@code long} — can exceed {@code Integer.MAX_VALUE} on
+ *                          high-throughput multiplexed transports)
+ * @param totalAccepted     cumulative number of connections accepted since engine start
+ * @param totalRejected     cumulative number of connections/streams rejected (load shedding)
+ * @param rttP50Micros      median RTT in microseconds (0 if no samples)
+ * @param rttP95Micros      95th percentile RTT in microseconds (0 if no samples)
  * @see TransportEngine#stats()
+ * @since 0.5.0
  */
 public record TransportStats(
         int activeConnections,
@@ -41,7 +41,8 @@ public record TransportStats(
         long rttP95Micros
 ) {
 
-    /** Empty stats — returned when the engine has not started yet. */
+    /**
+     * Empty stats — returned when the engine has not started yet.
+     */
     public static final TransportStats EMPTY = new TransportStats(0, 0, 0, 0, 0, 0);
 }
-

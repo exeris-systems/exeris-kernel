@@ -39,4 +39,3 @@
  * SPI surface (types, method signatures, thrown exceptions).
  */
 package eu.exeris.kernel.spi.transport;
-

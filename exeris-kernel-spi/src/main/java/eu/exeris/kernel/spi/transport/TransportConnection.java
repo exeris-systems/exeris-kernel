@@ -31,9 +31,9 @@ package eu.exeris.kernel.spi.transport;
  * protocol-agnostic slot for higher-layer state (e.g., HTTP/3 session resources,
  * QPACK tables). The transport layer never inspects the attachment — it is opaque.
  *
- * @since 0.5.0
  * @see TransportStream
  * @see TransportEngine
+ * @since 0.5.0
  */
 public interface TransportConnection extends AutoCloseable {
 
@@ -60,6 +60,7 @@ public interface TransportConnection extends AutoCloseable {
      * <p>Enterprise (QUIC) creates a locally initiated unidirectional stream
      * (RFC 9000 §2.1). Typically used for HTTP/3 control streams and QPACK,
      * regardless of whether the caller is a client or server endpoint.
+     *
      * @return a new unidirectional stream
      * @throws UnsupportedOperationException if not supported (Community/TCP)
      * @throws eu.exeris.kernel.spi.exceptions.transport.TransportException on failure
@@ -82,7 +83,7 @@ public interface TransportConnection extends AutoCloseable {
      * transports).
      *
      * @return the remote peer's port number; semantics for special cases are
-     *         implementation-specific
+     * implementation-specific
      */
     int remotePort();
 
@@ -141,4 +142,3 @@ public interface TransportConnection extends AutoCloseable {
     @Override
     void close();
 }
-

@@ -22,9 +22,9 @@ package eu.exeris.kernel.spi.transport;
  * with a standard listener socket; the Enterprise tier may use native asynchronous I/O
  * mechanisms. Business logic sees only {@code TransportMode}.
  *
- * @since 0.5.0
  * @see TransportConfig
  * @see TransportEngine
+ * @since 0.5.0
  */
 public enum TransportMode {
 
@@ -60,4 +60,3 @@ public enum TransportMode {
      */
     DISABLED
 }
-

@@ -41,8 +41,11 @@ public abstract class AbstractTransportConnectionTck {
      */
     protected abstract ConnectionPair createConnectionPair();
 
-    /** Connection pair for testing — server side is the SUT. */
-    protected record ConnectionPair(TransportConnection server, TransportConnection client) {}
+    /**
+     * Connection pair for testing — server side is the SUT.
+     */
+    protected record ConnectionPair(TransportConnection server, TransportConnection client) {
+    }
 
     private ConnectionPair pair;
 
@@ -157,4 +160,3 @@ public abstract class AbstractTransportConnectionTck {
         }
     }
 }
-

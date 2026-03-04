@@ -39,9 +39,9 @@ import java.lang.foreign.MemorySegment;
  * on this interface. Future migration to a value-class-backed inline representation
  * is planned for hot-path stream metadata.
  *
- * @since 0.5.0
  * @see TransportConnection
  * @see StreamHandler
+ * @since 0.5.0
  */
 public interface TransportStream extends AutoCloseable {
 
@@ -62,7 +62,7 @@ public interface TransportStream extends AutoCloseable {
      * @param maxBytes maximum number of bytes to read (must be ≤ {@code target.byteSize()})
      * @return number of bytes read, or {@code -1} on EOF
      * @throws eu.exeris.kernel.spi.exceptions.transport.TransportException on I/O failure
-     * @throws IllegalStateException if this stream has been closed
+     * @throws IllegalStateException                                        if this stream has been closed
      */
     int read(MemorySegment target, int maxBytes);
 
@@ -79,7 +79,7 @@ public interface TransportStream extends AutoCloseable {
      * @param source off-heap segment containing data to send
      * @param length number of bytes to write (must be ≤ {@code source.byteSize()})
      * @throws eu.exeris.kernel.spi.exceptions.transport.TransportException on I/O failure
-     * @throws IllegalStateException if this stream has been closed
+     * @throws IllegalStateException                                        if this stream has been closed
      */
     void write(MemorySegment source, int length);
 
@@ -97,7 +97,7 @@ public interface TransportStream extends AutoCloseable {
      * @param buffer loaned buffer to send (ownership transferred)
      * @param length number of valid bytes in the buffer (from offset 0)
      * @throws eu.exeris.kernel.spi.exceptions.transport.TransportException on failure
-     * @throws IllegalStateException if this stream has been closed
+     * @throws IllegalStateException                                        if this stream has been closed
      */
     void queueWrite(LoanedBuffer buffer, int length);
 
@@ -162,4 +162,3 @@ public interface TransportStream extends AutoCloseable {
     @Override
     void close();
 }
-

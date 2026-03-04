@@ -41,10 +41,10 @@ package eu.exeris.kernel.spi.transport;
  * partitions) and releases them in {@link #close()}. Implementations MUST
  * make {@code close()} idempotent.
  *
- * @since 0.5.0
  * @see TransportProvider
  * @see TransportConnection
  * @see TransportStream
+ * @since 0.5.0
  */
 public interface TransportEngine extends AutoCloseable {
 
@@ -160,4 +160,3 @@ public interface TransportEngine extends AutoCloseable {
     @Override
     void close();
 }
-
