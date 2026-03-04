@@ -90,10 +90,10 @@ public final class ErrorMapperRegistry {
         if (errorCode.startsWith("EX-RUN-")) {
             return mapRuntime(errorCode);
         }
-        if (errorCode.startsWith("EX-EVE-")) {
+        if (errorCode.startsWith("EX-EVENT-")) {
             return TransportErrorCode.INTERNAL_ERROR;
         }
-        if (errorCode.startsWith("EX-FLO-")) {
+        if (errorCode.startsWith("EX-FLOW-")) {
             return TransportErrorCode.INTERNAL_ERROR;
         }
         if (errorCode.startsWith("EX-CFG-")) {

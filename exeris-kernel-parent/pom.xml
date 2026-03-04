@@ -81,7 +81,6 @@
                                         <argument>-XX:+UnlockExperimentalVMOptions</argument>
                                         <argument>-XX:+UseZGC</argument>
                                         <argument>--enable-native-access=ALL-UNNAMED</argument>
-                                        <argument>-Djava.library.path=${native.lib.dir}</argument>
                                         <argument>-classpath</argument>
                                         <classpath/>
                                         <argument>org.openjdk.jmh.Main</argument>
