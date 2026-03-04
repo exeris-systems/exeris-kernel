@@ -43,15 +43,18 @@ import java.util.concurrent.TimeUnit;
  *
  * <h2>SLO (from telemetry.md)</h2>
  * <ul>
- *   <li>INFO path (isEnabled() = false, no active recording): {@code ≥ 20 000 000 ops/s}.</li>
- *   <li>INFO path (isEnabled() = true, active recording): {@code ≥ 2 000 000 ops/s}.</li>
+ *   <li>INFO path ({@code isEnabled() == false}, event type disabled under an active recording): {@code ≥ 20 000 000 ops/s}.</li>
+ *   <li>INFO path ({@code isEnabled() == true}, active recording with event type enabled): {@code ≥ 2 000 000 ops/s}.</li>
  *   <li>Typed EX-MEM path: {@code ≥ 1 500 000 ops/s}.</li>
  * </ul>
  *
  * <h2>isEnabled() gate behaviour</h2>
- * <p>When JMH forks a new JVM with no active recording, {@code jdk.jfr.Event.isEnabled()}
- * returns {@code false} — the entire field-population block is skipped. This measures
- * the pure gate cost, which represents the production steady-state (no-recording) SLO.
+ * <p>Each JMH fork starts a single long-lived {@link jdk.jfr.Recording} in {@code @Setup}, and all
+ * benchmark methods run under this active recording. Whether {@code jdk.jfr.Event.isEnabled()}
+ * returns {@code true} or {@code false} is controlled by the JFR configuration for the
+ * corresponding event type. The gate-only measurement is taken with the event type disabled
+ * ({@code isEnabled() == false}), so the entire field-population block is skipped; this
+ * represents the production steady-state SLO for the disabled/steady-state path.
  *
  * @since 0.5.0
  */
