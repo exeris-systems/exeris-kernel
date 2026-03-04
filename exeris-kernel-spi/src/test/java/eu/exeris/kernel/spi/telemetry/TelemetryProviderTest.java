@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (C) 2025-2026 Exeris. All rights reserved.
  *
  * This code is part of the Exeris Systems.
@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+
 /**
  * Unit: {@link TelemetryProvider} default contract.
  *
@@ -20,6 +21,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 @DisplayName("TelemetryProvider — default contract")
 class TelemetryProviderTest {
+
     @Test
     @DisplayName("default priority() == 0 (Community baseline)")
     void defaultPriorityIsZero() {
@@ -28,11 +30,13 @@ class TelemetryProviderTest {
             public List<TelemetrySink> createSinks(TelemetryConfig config) {
                 return List.of();
             }
+
             @Override
             public String providerName() {
                 return "TestProvider";
             }
         };
+
         assertThat(provider.priority()).isZero();
     }
 }
