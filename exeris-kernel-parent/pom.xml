@@ -21,10 +21,6 @@
     </description>
 
     <properties>
-        <!-- JMH version — mirrored here from BOM so annotationProcessorPaths
-             in child modules can reference ${jmh.version} without the BOM
-             properties scope limitation. -->
-        <jmh.version>1.37</jmh.version>
         <exec.maven.plugin.version>3.5.0</exec.maven.plugin.version>
 
         <!-- Benchmark parameters — all overridable on CLI with -D -->
