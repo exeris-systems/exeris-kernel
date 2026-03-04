@@ -37,6 +37,7 @@
             -XX:-ZUncommit
             --enable-preview
             --enable-native-access=ALL-UNNAMED
+            -Djava.library.path=${native.lib.dir}
             -XX:StartFlightRecording=disk=true,filename=target/recording-${maven.build.timestamp}.jfr,maxsize=0,settings=default
         </test.jvm.args>
         <maven.build.timestamp.format>yyyyMMdd-HHmmss</maven.build.timestamp.format>

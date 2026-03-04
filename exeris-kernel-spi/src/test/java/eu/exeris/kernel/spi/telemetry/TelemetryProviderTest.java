@@ -28,7 +28,14 @@ class TelemetryProviderTest {
         TelemetryProvider provider = new TelemetryProvider() {
             @Override
             public List<TelemetrySink> createSinks(TelemetryConfig config) {
-                return List.of();
+                return List.of(new TelemetrySink() {
+                    @Override public void emit(KernelEvent e) { /* no-op */ }
+                    @Override public void increment(String n, long d) { /* no-op */ }
+                    @Override public void gauge(String n, long v) { /* no-op */ }
+                    @Override public void latency(String n, long ns) { /* no-op */ }
+                    @Override public String sinkName() { return "mock"; }
+                    @Override public void close() { /* no-op */ }
+                });
             }
 
             @Override

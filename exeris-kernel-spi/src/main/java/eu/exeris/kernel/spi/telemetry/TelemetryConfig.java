@@ -42,6 +42,11 @@ public record TelemetryConfig(
         if (fileSinkPath != null && fileSinkPath.isBlank()) {
             throw new IllegalArgumentException("fileSinkPath must be non-empty when provided");
         }
+        if (!consoleSinkEnabled && !jfrSinkEnabled
+                && (fileSinkPath == null || fileSinkPath.isBlank())
+                && blackBoxOffHeapBytes == 0L) {
+            throw new IllegalArgumentException("At least one telemetry sink must be enabled");
+        }
     }
 
     /**

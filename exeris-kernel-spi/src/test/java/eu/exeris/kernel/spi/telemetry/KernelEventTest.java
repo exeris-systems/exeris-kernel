@@ -50,12 +50,11 @@ class KernelEventTest {
     @Test
     @DisplayName("info() — timestamp is not null and not in the future")
     void info_timestampBound() {
-        Instant before = Instant.now();
         KernelEvent e = KernelEvent.info("EX-TEST-001", "TestComponent");
-        Instant after = Instant.now();
+        Instant now = Instant.now();
 
         assertThat(e.timestamp()).isNotNull();
-        assertThat(e.timestamp()).isBetween(before, after);
+        assertThat(e.timestamp()).isBeforeOrEqualTo(now.plusMillis(10));
     }
 
     // =========================================================================

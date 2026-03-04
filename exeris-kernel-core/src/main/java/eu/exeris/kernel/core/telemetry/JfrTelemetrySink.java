@@ -85,11 +85,11 @@ public final class JfrTelemetrySink implements TelemetrySink {
             emitLifecycle(event, safeMessage(exception));
             return;
         }
-        if (code.startsWith("EX-MEM")) {
+        if (code.startsWith("EX-MEM-")) {
             emitMemoryExhaustion(event, exception, code);
-        } else if (code.startsWith("EX-NET")) {
+        } else if (code.startsWith("EX-NET-")) {
             emitTransportBind(event, exception, code);
-        } else if (code.startsWith("EX-RUN")) {
+        } else if (code.startsWith("EX-RUN-")) {
             emitCarrierPinned(event, exception, code);
         } else {
             emitLifecycle(event, safeMessage(exception));

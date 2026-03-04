@@ -72,31 +72,31 @@ public final class ErrorMapperRegistry {
         if (errorCode == null || errorCode.isEmpty()) {
             return TransportErrorCode.INTERNAL_ERROR;
         }
-        if (errorCode.startsWith("EX-MEM")) {
+        if (errorCode.startsWith("EX-MEM-")) {
             return mapMemory(errorCode);
         }
-        if (errorCode.startsWith("EX-NET")) {
+        if (errorCode.startsWith("EX-NET-")) {
             return mapNetwork(errorCode);
         }
-        if (errorCode.startsWith("EX-SEC")) {
+        if (errorCode.startsWith("EX-SEC-")) {
             return TransportErrorCode.SECURITY_VIOLATION;
         }
-        if (errorCode.startsWith("EX-PER")) {
+        if (errorCode.startsWith("EX-PERS-")) {
             return TransportErrorCode.PERSISTENCE_FAILURE;
         }
-        if (errorCode.startsWith("EX-BOO")) {
+        if (errorCode.startsWith("EX-BOOT-")) {
             return mapBoot();
         }
-        if (errorCode.startsWith("EX-RUN")) {
+        if (errorCode.startsWith("EX-RUN-")) {
             return mapRuntime(errorCode);
         }
-        if (errorCode.startsWith("EX-EVE")) {
+        if (errorCode.startsWith("EX-EVE-")) {
             return TransportErrorCode.INTERNAL_ERROR;
         }
-        if (errorCode.startsWith("EX-FLO")) {
+        if (errorCode.startsWith("EX-FLO-")) {
             return TransportErrorCode.INTERNAL_ERROR;
         }
-        if (errorCode.startsWith("EX-CFG")) {
+        if (errorCode.startsWith("EX-CFG-")) {
             return TransportErrorCode.BOOTSTRAP_FAILURE;
         }
         return TransportErrorCode.INTERNAL_ERROR;
