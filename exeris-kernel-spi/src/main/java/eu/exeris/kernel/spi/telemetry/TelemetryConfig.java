@@ -55,6 +55,9 @@ public record TelemetryConfig(
      * Production community configuration: console disabled, JFR enabled, file sink active.
      */
     public static TelemetryConfig communityProduction(String logPath) {
+        if (logPath == null || logPath.isBlank()) {
+            throw new IllegalArgumentException("logPath must not be null or blank for community production configuration");
+        }
         return new TelemetryConfig(false, true, logPath, MIN_OFF_HEAP_BYTES, 16_384);
     }
 }
