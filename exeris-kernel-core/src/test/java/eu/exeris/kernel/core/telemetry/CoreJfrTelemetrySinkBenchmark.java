@@ -82,7 +82,6 @@ public class CoreJfrTelemetrySinkBenchmark extends AbstractTelemetrySinkBenchmar
         recording = new Recording();
         recording.enable("eu.exeris.kernel.telemetry.MemoryExhaustion").withoutStackTrace();
         recording.enable("eu.exeris.kernel.telemetry.TransportBind").withoutStackTrace();
-        recording.enable("eu.exeris.kernel.telemetry.KernelLifecycle").withoutStackTrace();
         recording.start();
     }
 

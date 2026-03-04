@@ -115,7 +115,8 @@ public abstract class AbstractTelemetryRingBufferTck {
                     StructuredTaskScope.Joiner.<Void>awaitAllSuccessfulOrThrow())) {
 
                 for (int t = 0; t < emitters; t++) {
-
+                    // Distribute the remainder to the first thread so the test always
+                    // emits exactly emissionCount() events regardless of divisibility.
                     int toEmit = perThread + (t == 0 ? remainder : 0);
                     scope.fork(() -> {
                         for (int j = 0; j < toEmit; j++) {
