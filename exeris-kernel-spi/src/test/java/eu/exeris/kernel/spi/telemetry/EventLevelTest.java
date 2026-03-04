@@ -75,4 +75,3 @@ class EventLevelTest {
         assertThat(EventLevel.valueOf("FATAL")).isEqualTo(EventLevel.FATAL);
     }
 }
-

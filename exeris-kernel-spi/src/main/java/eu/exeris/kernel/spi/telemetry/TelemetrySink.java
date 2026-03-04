@@ -23,8 +23,8 @@ package eu.exeris.kernel.spi.telemetry;
  *       Zero String allocation on the critical path.</li>
  * </ul>
  *
- * @since 0.5.0
  * @see TelemetryProvider
+ * @since 0.5.0
  */
 public interface TelemetrySink extends AutoCloseable {
 
@@ -61,15 +61,16 @@ public interface TelemetrySink extends AutoCloseable {
     /**
      * Records a latency sample in nanoseconds.
      *
-     * @param name         metric name
-     * @param nanoseconds  latency sample
+     * @param name        metric name
+     * @param nanoseconds latency sample
      */
     void latency(String name, long nanoseconds);
 
-    /** Returns the unique name of this sink (used in bootstrap diagnostics). */
+    /**
+     * Returns the unique name of this sink (used in bootstrap diagnostics).
+     */
     String sinkName();
 
     @Override
     void close();
 }
-

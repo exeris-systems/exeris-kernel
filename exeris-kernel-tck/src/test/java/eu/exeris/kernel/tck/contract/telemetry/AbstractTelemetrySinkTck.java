@@ -42,7 +42,9 @@ import static org.assertj.core.api.Assertions.assertThatCode;
  */
 public abstract class AbstractTelemetrySinkTck {
 
-    /** Subclass supplies the sink under test. Called once before each test. */
+    /**
+     * Subclass supplies the sink under test. Called once before each test.
+     */
     protected abstract TelemetrySink createSink();
 
     private TelemetrySink sink;
@@ -138,8 +140,3 @@ public abstract class AbstractTelemetrySinkTck {
         assertThat(event.exception()).isSameAs(ex);
     }
 }
-
-
-
-
-

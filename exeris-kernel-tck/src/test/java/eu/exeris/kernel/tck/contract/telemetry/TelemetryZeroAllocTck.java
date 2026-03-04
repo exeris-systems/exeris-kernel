@@ -23,16 +23,33 @@ import eu.exeris.kernel.tck.contract.AbstractSubsystemZeroAllocTck;
  */
 public abstract class TelemetryZeroAllocTck extends AbstractSubsystemZeroAllocTck {
 
-    /** Creates the {@link TelemetrySink} under test. */
+    /**
+     * Creates the {@link TelemetrySink} under test.
+     */
     protected abstract TelemetrySink createSink();
 
     private TelemetrySink sink;
     private KernelEvent preBuiltEvent;
 
-    @Override protected String subsystemName()      { return "Telemetry"; }
-    @Override protected String hotPathDescription()  { return "TelemetrySink.emit(pre-built KernelEvent)"; }
-    @Override protected int hotPathIterations()      { return 100_000; }
-    @Override protected int maxExerisAllocationsPerIteration() { return 2; }
+    @Override
+    protected String subsystemName() {
+        return "Telemetry";
+    }
+
+    @Override
+    protected String hotPathDescription() {
+        return "TelemetrySink.emit(pre-built KernelEvent)";
+    }
+
+    @Override
+    protected int hotPathIterations() {
+        return 100_000;
+    }
+
+    @Override
+    protected int maxExerisAllocationsPerIteration() {
+        return 2;
+    }
 
     @Override
     protected void bootstrapSubsystem() {

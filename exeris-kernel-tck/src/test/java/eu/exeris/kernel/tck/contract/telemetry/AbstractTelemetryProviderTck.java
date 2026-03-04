@@ -50,7 +50,9 @@ import static org.assertj.core.api.Assertions.assertThatCode;
  */
 public abstract class AbstractTelemetryProviderTck {
 
-    /** Creates the {@link TelemetryProvider} under test. */
+    /**
+     * Creates the {@link TelemetryProvider} under test.
+     */
     protected abstract TelemetryProvider createProvider();
 
     /**
@@ -225,4 +227,3 @@ public abstract class AbstractTelemetryProviderTck {
         }
     }
 }
-

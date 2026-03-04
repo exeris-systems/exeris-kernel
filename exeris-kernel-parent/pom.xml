@@ -20,6 +20,91 @@
         Imports the BOM and enforces strict Code Quality gates (Checkstyle, PMD).
     </description>
 
+    <properties>
+        <exec.maven.plugin.version>3.5.0</exec.maven.plugin.version>
+
+        <!-- Benchmark parameters — all overridable on CLI with -D -->
+        <benchmark.includes>.*</benchmark.includes>
+        <benchmark.forks>1</benchmark.forks>
+        <benchmark.warmup>3</benchmark.warmup>
+        <benchmark.iterations>5</benchmark.iterations>
+        <benchmark.output>${project.build.directory}/jmh-results.json</benchmark.output>
+        <!-- Default: benchmarks are skipped. Modules that contain @Benchmark classes
+             must override this to false in their own pom.xml <properties>. -->
+        <benchmark.skip>true</benchmark.skip>
+    </properties>
+
+    <!-- =====================================================================
+         benchmarks profile — runs JMH microbenchmarks in the activated module.
+
+         Usage (single module):
+           mvn verify -P benchmarks -pl exeris-kernel-core
+           mvn verify -P benchmarks -pl exeris-kernel-community
+
+         Usage (all modules at once):
+           mvn verify -P benchmarks
+
+         Filtering (regex matched against JMH benchmark name):
+           mvn verify -P benchmarks -pl exeris-kernel-core "-Dbenchmark.includes=CoreJfrTelemetry"
+           mvn verify -P benchmarks -pl exeris-kernel-core "-Dbenchmark.includes=emitMemory"
+
+         Tuning:
+           -Dbenchmark.forks=2       JVM forks per benchmark (default: 1)
+           -Dbenchmark.warmup=5      warmup iterations       (default: 3)
+           -Dbenchmark.iterations=10 measurement iterations  (default: 5)
+
+         CI note:
+           NOT bound to the default lifecycle — only runs with explicit -P benchmarks.
+           Results are written to target/jmh-results.json for CI ingestion.
+         ===================================================================== -->
+    <profiles>
+        <profile>
+            <id>benchmarks</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>run-benchmarks</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>exec</goal>
+                                </goals>
+                                <configuration>
+                                    <skip>${benchmark.skip}</skip>
+                                    <executable>java</executable>
+                                    <classpathScope>test</classpathScope>
+                                    <arguments>
+                                        <argument>--enable-preview</argument>
+                                        <argument>-XX:+UnlockExperimentalVMOptions</argument>
+                                        <argument>-XX:+UseZGC</argument>
+                                        <argument>--enable-native-access=ALL-UNNAMED</argument>
+                                        <argument>-classpath</argument>
+                                        <classpath/>
+                                        <argument>org.openjdk.jmh.Main</argument>
+                                        <argument>${benchmark.includes}</argument>
+                                        <argument>-f</argument>
+                                        <argument>${benchmark.forks}</argument>
+                                        <argument>-wi</argument>
+                                        <argument>${benchmark.warmup}</argument>
+                                        <argument>-i</argument>
+                                        <argument>${benchmark.iterations}</argument>
+                                        <argument>-rf</argument>
+                                        <argument>json</argument>
+                                        <argument>-rff</argument>
+                                        <argument>${benchmark.output}</argument>
+                                    </arguments>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+
     <dependencyManagement>
         <dependencies>
             <dependency>
@@ -33,6 +118,15 @@
     </dependencyManagement>
 
     <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.codehaus.mojo</groupId>
+                    <artifactId>exec-maven-plugin</artifactId>
+                    <version>${exec.maven.plugin.version}</version>
+                </plugin>
+            </plugins>
+        </pluginManagement>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>

@@ -26,13 +26,12 @@ import java.time.Instant;
  * {@code record} with reference components ({@link String}, {@link Instant},
  * {@link ExerisKernelException}).</p>
  *
- * @param code       structured error/event code (e.g. {@code "EX-MEM-1001"})
- * @param level      severity level
- * @param timestamp  wall-clock capture time ({@link java.time.Instant#now()} semantics;
- *                   precision is platform-dependent and not guaranteed to be nanosecond-resolution)
- * @param exception  optional attached exception (may be {@code null})
- * @param component  kernel component name (compile-time constant on call site)
- *
+ * @param code      structured error/event code (e.g. {@code "EX-MEM-1001"})
+ * @param level     severity level
+ * @param timestamp wall-clock capture time ({@link java.time.Instant#now()} semantics;
+ *                  precision is platform-dependent and not guaranteed to be nanosecond-resolution)
+ * @param exception optional attached exception (may be {@code null})
+ * @param component kernel component name (compile-time constant on call site)
  * @since 0.5.0
  */
 public record KernelEvent(
@@ -83,4 +82,3 @@ public record KernelEvent(
         return new KernelEvent(code, EventLevel.FATAL, Instant.now(), exception, component);
     }
 }
-

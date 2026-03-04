@@ -7,6 +7,7 @@
  */
 package eu.exeris.kernel.spi.telemetry;
 
+import eu.exeris.kernel.spi.exceptions.telemetry.TelemetryBootstrapException;
 
 import java.util.List;
 
@@ -24,8 +25,8 @@ import java.util.List;
  * <p>Loaded via {@link java.util.ServiceLoader}. Enterprise returns {@link #priority()} = 100;
  * Community returns 0. Higher value wins.
  *
- * @since 0.5.0
  * @see TelemetrySink
+ * @since 0.5.0
  */
 public interface TelemetryProvider {
 
@@ -37,17 +38,19 @@ public interface TelemetryProvider {
      *
      * @param config telemetry configuration
      * @return immutable list of active sinks; never empty
-     * @throws eu.exeris.kernel.spi.exceptions.telemetry.TelemetryBootstrapException
-     *         if a required sink cannot be initialised
+     * @throws TelemetryBootstrapException if a required sink cannot be initialized
      */
     List<TelemetrySink> createSinks(TelemetryConfig config);
 
-    /** Display name used in bootstrap JFR events (e.g., {@code "ExerisEnterprise/BlackBox"}). */
+    /**
+     * Display name used in bootstrap JFR events (e.g., {@code "ExerisEnterprise/BlackBox"}).
+     */
     String providerName();
 
-    /** Higher value wins; Community = 0, Enterprise = 100. */
+    /**
+     * Higher value wins; Community = 0, Enterprise = 100.
+     */
     default int priority() {
         return 0;
     }
 }
-
