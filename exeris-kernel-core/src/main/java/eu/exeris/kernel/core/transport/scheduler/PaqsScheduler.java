@@ -158,10 +158,9 @@ public final class PaqsScheduler {
             spawnStreamThread(stream, priority);
         } catch (Exception ex) { //NOPMD AvoidCatchingGenericException — rollback on VT spawn failure
             admissionController.onStreamCompleted();
-            try {
-                loadShedder.shed(stream, priority, decision, admissionController.activeStreamCount());
-            } catch (Exception _) { //NOPMD AvoidCatchingGenericException — shed best-effort on broken state
-            }
+            LOG.log(System.Logger.Level.ERROR,
+                    "Virtual Thread spawn failed; stream admission rolled back without shed telemetry",
+                    ex);
             throw ex;
         }
     }
@@ -236,7 +235,7 @@ public final class PaqsScheduler {
         } catch (Exception _) { //NOPMD AvoidCatchingGenericException — VT stream boundary isolation
             outcome = StreamLifecycleEvent.OUTCOME_ERROR;
             if (LOG.isLoggable(System.Logger.Level.WARNING)) {
-                LOG.log(System.Logger.Level.WARNING, "Stream handler failed: streamId={0}", streamId);
+                LOG.log(System.Logger.Level.WARNING, "Stream handler failed internally (VT boundary isolation)");
             }
             stream.close();
         } finally {

@@ -24,8 +24,7 @@ import static java.lang.foreign.ValueLayout.JAVA_LONG;
  * Core: Bootstrap loader that resolves Berkeley socket symbols via Project Panama FFM.
  *
  * <h2>Design — No State, No Arena Policy</h2>
- * <p>Mirrors the design of {@link eu.exeris.kernel.core.crypto.openssl.CoreOpenSslLoader}:
- * this class owns <strong>no arena</strong> and enforces <strong>no memory policy</strong>.
+ * <p>This class owns <strong>no arena</strong> and enforces <strong>no memory policy</strong>.
  * The caller decides where native symbols live:
  * <ul>
  *   <li><b>Community:</b> pass {@link Arena#global()} — symbols live for the JVM lifetime.</li>
@@ -88,6 +87,9 @@ public final class CoreSyscallLoader {
      * — the 408-byte cost is a one-time bootstrap overhead, not a hot-path allocation.
      *
      * @param arena arena whose scope governs the lifetime of the loaded symbols
+     *              (Windows only: used for {@code Ws2_32.dll} library lookup and
+     *              {@code WSADATA} scratch allocation; ignored on POSIX as standard
+     *              socket libraries are globally resident)
      * @return immutable {@link SyscallHandles} record containing all resolved handles
      * @throws IllegalStateException if a required symbol is missing or WSAStartup fails
      */

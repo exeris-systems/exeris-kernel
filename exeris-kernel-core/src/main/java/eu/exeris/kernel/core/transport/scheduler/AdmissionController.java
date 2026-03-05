@@ -37,13 +37,14 @@ import java.lang.invoke.VarHandle;
  * </pre>
  *
  * <h2>Performance Contract</h2>
- * <p>O(1): one VarHandle acquire read (active stream count) + one {@link ResourceArbiter#decide}
- * call (which is itself O(1) with a 1-ms cached decision). No locks, no allocations.
+ * <p>Hot path: one {@link ResourceArbiter#decide} call (O(1), 1-ms cached) plus an
+ * amortised O(1) CAS loop for capacity reservation. No locks, no allocations.
  *
  * <h2>Active Stream Counter (VarHandle CAS)</h2>
  * <p>The {@code activeStreamCount} field tracks the current number of in-flight
- * Virtual Thread-per-stream handlers. The counter is incremented atomically on admit
- * and decremented on stream completion (called by {@link PaqsScheduler} upon VT exit).
+ * Virtual Thread-per-stream handlers. The slot is atomically reserved inside
+ * {@link #admit(StreamPriority)} and released on stream completion
+ * (called by {@link PaqsScheduler} upon VT exit).
  * This count feeds the JFR {@link eu.exeris.kernel.core.transport.jfr.StreamShedEvent}
  * for observability.
  *
@@ -96,31 +97,46 @@ public final class AdmissionController {
      * Returns the {@link Decision} for a new incoming stream with the given priority.
      *
      * <p>This is the <b>hot path</b> — called for every inbound stream before a
-     * Virtual Thread is spawned. It must be O(1) and allocation-free.
+     * Virtual Thread is spawned. It must be allocation-free.
+     *
+     * <p>For admitting decisions this method also atomically reserves one slot in the
+     * active stream counter, enforcing {@link #MAX_ACTIVE_STREAMS} as a hard cap under
+     * concurrency. If capacity is exhausted at reservation time the decision is
+     * overridden to {@link Decision#SHED_CAPACITY}, regardless of memory pressure.
      *
      * @param priority the stream's business priority; must not be {@code null}
      * @return admission decision; never {@code null}
      */
     public Decision admit(StreamPriority priority) {
         StreamPriority effective = (priority == null) ? StreamPriority.NORMAL : priority;
-        int current = (int) ACTIVE_COUNT.getAcquire(this);
-        if (current >= MAX_ACTIVE_STREAMS) {
-            return Decision.SHED_CAPACITY;
-        }
 
         Action arbiterAction = arbiter.decide(ResourceArbiter.Context.TRANSPORT_IO);
-        return mapToDecision(arbiterAction, effective);
+        Decision decision = mapToDecision(arbiterAction, effective);
+
+        if (!decision.isAdmit()) {
+            return decision;
+        }
+
+        for (;;) {
+            int current = (int) ACTIVE_COUNT.getAcquire(this);
+            if (current >= MAX_ACTIVE_STREAMS) {
+                return Decision.SHED_CAPACITY;
+            }
+            if (ACTIVE_COUNT.compareAndSet(this, current, current + 1)) {
+                return decision;
+            }
+        }
     }
 
     /**
-     * Atomically increments the active stream counter.
+     * No-op — kept for binary compatibility.
      *
-     * <p>Called by {@link PaqsScheduler} immediately after an {@link Decision#isAdmit()} decision
-     * and before spawning the Virtual Thread — ensuring the counter is accurate when the
-     * next admission check runs.
+     * <p>The active stream slot is now atomically reserved inside
+     * {@link #admit(StreamPriority)}. Callers may continue to invoke this method;
+     * it no longer mutates state.
      */
     public void onStreamAdmitted() {
-        ACTIVE_COUNT.getAndAdd(this, 1);
+        // No-op: slot reserved atomically in admit().
     }
 
     /**
