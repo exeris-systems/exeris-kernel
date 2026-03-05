@@ -23,8 +23,8 @@ A design philosophy centered on total transparency. Exeris exposes every interna
 allocation, and lifecycle phase via high-precision **JFR (Java Flight Recorder)** events with
 sub-1% CPU overhead when enabled and zero overhead when disabled.
 
-> **Glass-Box vs. Glass-Box are complementary, not contradictory:** Glass-Box (JFR) is the
-> *real-time observability* strategy for healthy systems. Glass-Box (binary crash dumps) is the
+> **Glass-Box vs. Black-Box are complementary, not contradictory:** Glass-Box (JFR) is the
+> *real-time observability* strategy for healthy systems. Black-Box (binary crash dumps) is the
 > *forensic* strategy for failures. Together they cover every operational scenario without
 > allocating `String` objects on any path.
 
