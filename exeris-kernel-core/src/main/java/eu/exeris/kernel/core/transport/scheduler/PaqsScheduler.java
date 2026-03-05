@@ -81,6 +81,7 @@ import java.util.function.Function;
 public final class PaqsScheduler implements AutoCloseable {
 
     private static final System.Logger LOG = System.getLogger(PaqsScheduler.class.getName());
+    private static final long SPIN_THRESHOLD = 10_000L;
 
     private final AdmissionController admissionController;
     private final StreamLoadShedder loadShedder;
@@ -198,12 +199,13 @@ public final class PaqsScheduler implements AutoCloseable {
                 int remaining = admissionController.activeStreamCount();
                 if (remaining > 0) {
                     LOG.log(System.Logger.Level.WARNING,
-                            "PaqsScheduler.close() timed out waiting for {0} active streams to complete; proceeding with shutdown",
+                            "PaqsScheduler.close() timed out waiting for {0} active streams"
+                                    + " to complete; proceeding with shutdown",
                             remaining);
                 }
                 break;
             }
-            if (spins < 10_000L) {
+            if (spins < SPIN_THRESHOLD) {
                 Thread.onSpinWait();
                 spins++;
             } else {
@@ -268,21 +270,19 @@ public final class PaqsScheduler implements AutoCloseable {
                     .where(TransportScopes.STREAM_ID, streamId)
                     .where(TransportScopes.ENGINE_NAME, engineName)
                     .run(() -> handler.handle(stream));
-        } catch (Throwable t) { //NOPMD AvoidCatchingGenericException,AvoidCatchingThrowable — VT stream boundary isolation
+        } catch (Error error) { //NOPMD AvoidCatchingGenericException — outcome must be set before rethrow
             outcome = StreamLifecycleEvent.OUTCOME_ERROR;
-            if (t instanceof VirtualMachineError vme) {
-                throw vme;
-            }
-            if (LOG.isLoggable(System.Logger.Level.WARNING)) {
-                LOG.log(System.Logger.Level.WARNING, "Stream handler failed internally (VT boundary isolation)");
-            }
+            throw error;
+        } catch (Throwable t) { //NOPMD AvoidCatchingGenericException,AvoidCatchingThrowable
+            // VT stream boundary isolation
+            outcome = StreamLifecycleEvent.OUTCOME_ERROR;
             try {
                 stream.close();
             } catch (Throwable closeError) { //NOPMD AvoidCatchingThrowable — best-effort close on error path
                 t.addSuppressed(closeError);
             }
-            if (t instanceof Error e) {
-                throw e;
+            if (LOG.isLoggable(System.Logger.Level.WARNING)) {
+                LOG.log(System.Logger.Level.WARNING, "Stream handler failed internally (VT boundary isolation)");
             }
         } finally {
             admissionController.onStreamCompleted();

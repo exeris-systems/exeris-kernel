@@ -95,7 +95,8 @@ public final class StreamLoadShedder {
 
         try {
             stream.close();
-        } catch (RuntimeException _) { //NOPMD AvoidCatchingGenericException — best-effort close on carrier-thread hot path
+        } catch (RuntimeException _) { //NOPMD AvoidCatchingGenericException
+            // best-effort close on carrier-thread hot path
         } finally {
             StreamShedEvent.emit(
                     stream.streamId(),
