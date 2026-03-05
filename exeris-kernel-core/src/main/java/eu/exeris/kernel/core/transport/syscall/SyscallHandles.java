@@ -53,6 +53,8 @@ import java.lang.invoke.MethodHandle;
  * @param recv        {@code ssize_t recv(int sockfd, void*, size_t, int)}
  * @param fcntl       {@code int fcntl(int fd, int cmd, ...)} — POSIX only; {@code null} on Windows
  * @param ioctlsocket {@code int ioctlsocket(SOCKET, long, u_long*)} — Windows only; {@code null} on POSIX
+ * @param wsaCleanup  {@code int WSACleanup(void)} — Windows only; {@code null} on POSIX.
+ *                    Must be invoked to pair with {@code WSAStartup} before the owning arena is closed.
  * @since 0.5.0
  */
 public record SyscallHandles(
@@ -65,7 +67,8 @@ public record SyscallHandles(
         MethodHandle send,
         MethodHandle recv,
         MethodHandle fcntl,
-        MethodHandle ioctlsocket
+        MethodHandle ioctlsocket,
+        MethodHandle wsaCleanup
 ) {
 
     /**
@@ -86,5 +89,15 @@ public record SyscallHandles(
      */
     public boolean hasIoctlsocket() {
         return ioctlsocket != null;
+    }
+
+    /**
+     * Returns {@code true} if the Windows {@code WSACleanup} handle is available.
+     * Must be invoked before the owning arena is closed to release Winsock resources.
+     *
+     * @return {@code true} when {@link #wsaCleanup()} is non-null
+     */
+    public boolean hasWsaCleanup() {
+        return wsaCleanup != null;
     }
 }

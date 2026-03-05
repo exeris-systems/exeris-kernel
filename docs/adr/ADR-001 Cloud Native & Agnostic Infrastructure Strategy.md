@@ -10,36 +10,39 @@
 
 ## Context and Problem Statement
 
-Building Exeris on proprietary cloud PaaS solutions (e.g., AWS Lambda, DynamoDB, Azure Functions) creates "Vendor
-Lock-in." This forces a hard dependency on a specific cloud provider's API. This makes the **"Code Detachment"**
-business model impossible to execute, as clients cannot "take the code" and run it on their own infrastructure if it is
-entangled with closed-source cloud services.
+Building Exeris on top of closed, proprietary Cloud PaaS solutions (e.g., AWS Lambda, DynamoDB, Azure Functions)
+creates **"Vendor Lock-in"**. This forces a hard dependency on a specific cloud provider's API. As a result, our
+**"Code Detachment"** business model becomes impossible to execute, because clients cannot "take the code" and run
+it on their own infrastructure without carrying along the entire cloud service stack.
 
-We need an infrastructure strategy that guarantees portability between AWS, Azure, GCP, and Bare Metal (On-Premise).
+We require an infrastructure strategy that guarantees **100% portability** across AWS, Azure, GCP, and Bare Metal
+(On-Premise) servers.
 
 ## 🏁 The Decision
 
-We adopt the **CNCF (Cloud Native Computing Foundation)** landscape as our strict baseline. We reject proprietary PaaS
-in favor of open, portable standards defined as Code (IaC).
+We adopt the **CNCF (Cloud Native Computing Foundation)** landscape as our strict baseline. We reject proprietary
+PaaS in favor of open, portable standards defined as Code (IaC).
 
 **Selected Components:**
 
-* **Compute:** Kubernetes (K8s) is the universal runtime.
+* **Compute:** Kubernetes (K8s) is the universal runtime environment.
 * **State:** PostgreSQL & Redis (Dockerized/Helm) replace dependencies on RDS/Aurora/ElastiCache.
 * **Storage:** S3-compatible API (MinIO for on-prem/local, generic S3 for cloud).
 
-## Positive Outcomes
+## Consequences
 
-* **100% Portability:** The platform can run on any major cloud or bare metal servers.
-* **Enablement of Code Detachment:** Clients can legally and technically inherit the infrastructure definitions.
-* **Unified Developer Experience:** "It works on my machine" (via Docker/Minikube) is identical to production.
+### ✅ Positive Outcomes
 
-## Trade-offs / Risks
+* **[+] 100% Portability:** The platform can run on any major cloud or bare metal servers.
+* **[+] Code Detachment:** Clients can legally and technically inherit the infrastructure definitions.
+* **[+] Unified Developer Experience:** `docker compose up` is identical to production (via Minikube).
 
-* **Higher Maintenance Overhead:** We are responsible for managing the DB/Redis lifecycle (or using operators) rather
-  than relying on fully managed cloud wrappers.
-* **Performance Tuning:** Requires internal expertise to tune K8s/Postgres on bare metal, whereas Cloud PaaS handles
-  this automatically.
+### ⚠️ Trade-offs
+
+* **[-] Maintenance Overhead:** We take on responsibility for the DB/Redis lifecycle (or use K8s operators),
+  rather than relying on fully managed cloud wrappers.
+* **[-] Performance Tuning:** Requires internal expertise to tune K8s/Postgres on bare metal, whereas Cloud PaaS
+  handles this automatically.
 
 ## Engineering Protocol
 

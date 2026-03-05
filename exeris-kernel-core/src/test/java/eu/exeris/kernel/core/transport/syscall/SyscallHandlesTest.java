@@ -57,12 +57,12 @@ class SyscallHandlesTest {
 
     private static SyscallHandles posixHandles() {
         MethodHandle h = stubHandle();
-        return new SyscallHandles(h, h, h, h, h, h, h, h, h, null);
+        return new SyscallHandles(h, h, h, h, h, h, h, h, h, null, null);
     }
 
     private static SyscallHandles windowsHandles() {
         MethodHandle h = stubHandle();
-        return new SyscallHandles(h, h, h, h, h, h, h, h, null, h);
+        return new SyscallHandles(h, h, h, h, h, h, h, h, null, h, h);
     }
 
     // =========================================================================
@@ -187,8 +187,8 @@ class SyscallHandlesTest {
         @DisplayName("Two SyscallHandles with identical fields are equal (value semantics)")
         void equalByValue() {
             MethodHandle h = stubHandle();
-            SyscallHandles p1 = new SyscallHandles(h, h, h, h, h, h, h, h, h, null);
-            SyscallHandles p2 = new SyscallHandles(h, h, h, h, h, h, h, h, h, null);
+            SyscallHandles p1 = new SyscallHandles(h, h, h, h, h, h, h, h, h, null, null);
+            SyscallHandles p2 = new SyscallHandles(h, h, h, h, h, h, h, h, h, null, null);
             assertThat(p1).isEqualTo(p2).hasSameHashCodeAs(p2);
         }
 

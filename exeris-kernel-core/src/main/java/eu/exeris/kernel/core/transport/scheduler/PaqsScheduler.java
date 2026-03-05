@@ -42,11 +42,18 @@ import java.util.function.Function;
  *
  * <h2>Virtual Thread-per-Stream Model</h2>
  * <p>For every admitted stream, the PAQS spawns exactly one Virtual Thread using
- * {@link Thread#ofVirtual()}. The thread is <em>unstructured</em> in isolation (it is
- * not part of a parent {@link java.util.concurrent.StructuredTaskScope}) because streams
- * are fire-and-forget from the carrier's perspective. The {@link AdmissionController}'s
- * {@code activeStreamCount} acts as the bounded resource governor that prevents unbounded VT
- * proliferation.
+ * {@link Thread#ofVirtual()}. The {@link AdmissionController}'s {@code activeStreamCount}
+ * is the bounded resource governor that prevents unbounded VT proliferation.
+ *
+ * <h2>Concurrency Model — Deliberate Exception to StructuredTaskScope</h2>
+ * <p>{@code StructuredTaskScope.fork()} requires that all {@code fork()} calls originate
+ * from the thread that opened the scope (JDK 26: {@code WrongThreadException} otherwise).
+ * PAQS {@link #schedule(TransportStream)} is called concurrently by multiple carrier threads
+ * (NIO selectors, io_uring rings) — none of which own a shared scope. A long-lived STS is
+ * therefore architecturally incompatible with the multi-carrier ingress model.
+ * {@code Thread.ofVirtual().start()} is the sole deliberate exception to the STS mandate.
+ * All concurrent operations <em>within</em> {@code runStream()} MUST use
+ * {@code StructuredTaskScope}.
  *
  * <h2>ScopedValue Bindings (JEP 506)</h2>
  * <p>Before invoking the {@link StreamHandler}, the PAQS binds:
@@ -71,7 +78,7 @@ import java.util.function.Function;
  * @see TransportScopes
  * @since 0.5.0
  */
-public final class PaqsScheduler {
+public final class PaqsScheduler implements AutoCloseable {
 
     private static final System.Logger LOG = System.getLogger(PaqsScheduler.class.getName());
 
@@ -153,14 +160,9 @@ public final class PaqsScheduler {
             return;
         }
 
-        try {
+        try (SpawnGuard guard = new SpawnGuard(stream, admissionController)) {
             spawnStreamThread(stream, priority);
-        } catch (Exception ex) { //NOPMD AvoidCatchingGenericException — rollback on VT spawn failure
-            admissionController.onStreamCompleted();
-            LOG.log(System.Logger.Level.ERROR,
-                    "Virtual Thread spawn failed; stream admission rolled back without shed telemetry",
-                    ex);
-            throw ex;
+            guard.markSpawned();
         }
     }
 
@@ -180,6 +182,20 @@ public final class PaqsScheduler {
      */
     public StreamLoadShedder loadShedder() {
         return loadShedder;
+    }
+
+    /**
+     * Waits for all in-flight Virtual Threads to complete, then returns.
+     *
+     * <p>Spins with {@link Thread#onSpinWait()} until the {@link AdmissionController}'s
+     * active stream count reaches zero. Called by the transport engine during ordered
+     * kernel shutdown after the carrier loop has stopped accepting new connections.
+     */
+    @Override
+    public void close() {
+        while (admissionController.activeStreamCount() > 0) {
+            Thread.onSpinWait();
+        }
     }
 
     // =========================================================================
@@ -204,6 +220,12 @@ public final class PaqsScheduler {
 
         StreamAcceptedEvent.emit(streamId, priorityName, engineName, threadName);
 
+        // ARCHITECTURE NOTE: This is the SOLE deliberate exception to the StructuredTaskScope mandate.
+        // PAQS bridges a continuous, unbounded stream of events from concurrent carrier threads
+        // (NIO selectors, io_uring rings). JDK 26 STS.fork() enforces WrongThreadException for any
+        // caller that did not open the scope — making a shared long-lived STS incompatible with the
+        // multi-carrier ingress model. This unstructured VT acts as the Root of the Request Tree.
+        // All subsequent concurrent operations within runStream() MUST use StructuredTaskScope.
         Thread.ofVirtual()
                 .name(threadName)
                 .start(() -> runStream(stream, priority, streamId, priorityName));
@@ -258,5 +280,36 @@ public final class PaqsScheduler {
      */
     private String buildThreadName(StreamPriority priority, long streamId) {
         return "paqs/" + engineName + "/" + priority.name() + "/" + streamId;
+    }
+
+    /**
+     * Admission rollback guard for the VT spawn critical section.
+     *
+     * <p>Closed automatically by try-with-resources. On failure path ({@link #markSpawned()}
+     * not called), closes the stream and decrements the admission counter. On success path,
+     * both operations are skipped — the spawned Virtual Thread owns the stream lifecycle.
+     */
+    private static final class SpawnGuard implements AutoCloseable {
+
+        private final TransportStream stream;
+        private final AdmissionController admissionController;
+        private boolean spawned;
+
+        /* default */ SpawnGuard(TransportStream stream, AdmissionController admissionController) {
+            this.stream = stream;
+            this.admissionController = admissionController;
+        }
+
+        /* default */ void markSpawned() {
+            spawned = true;
+        }
+
+        @Override
+        public void close() {
+            if (!spawned) {
+                stream.close();
+                admissionController.onStreamCompleted();
+            }
+        }
     }
 }

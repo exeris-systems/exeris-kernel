@@ -143,7 +143,8 @@ public final class CoreSyscallLoader {
                 socket, bind, listen, accept, connect, close,
                 send, recv,
                 fcntl,  // POSIX non-blocking control
-                null);  // ioctlsocket — Windows only
+                null,   // ioctlsocket — Windows only
+                null);  // wsaCleanup — Windows only
     }
 
     // =========================================================================
@@ -194,6 +195,9 @@ public final class CoreSyscallLoader {
         MethodHandle ioctlsocket = req(linker, ws2, "ioctlsocket",
                 FunctionDescriptor.of(JAVA_INT, JAVA_LONG, JAVA_LONG, JAVA_LONG));
 
+        MethodHandle wsaCleanup = req(linker, ws2, "WSACleanup",
+                FunctionDescriptor.of(JAVA_INT));
+
         LOG.log(System.Logger.Level.INFO,
                 "[CoreSyscallLoader] Winsock2 handles resolved successfully");
 
@@ -201,7 +205,8 @@ public final class CoreSyscallLoader {
                 socket, bind, listen, accept, connect, close,
                 send, recv,
                 null,          // fcntl — POSIX only
-                ioctlsocket);  // Windows non-blocking control
+                ioctlsocket,   // Windows non-blocking control
+                wsaCleanup);   // Windows Winsock lifecycle
     }
 
     // =========================================================================

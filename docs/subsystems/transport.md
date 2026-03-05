@@ -92,7 +92,13 @@ No intermediate `byte[]`, no `ByteBuffer.allocate()`, no heap serialization.
 
 1. Implement the **PAQS Scheduler** and global Load Shedding logic.
 2. Coordinate with `ResourceArbiter` to monitor `SlabPool` exhaustion and trigger backpressure.
-3. Manage Virtual Thread lifecycle (one per incoming stream) via `StructuredTaskScope`.
+3. Manage Virtual Thread lifecycle (one per incoming stream). The PAQS spawns per-stream virtual threads
+   via `Thread.ofVirtual().start()` — the sole deliberate exception to the `StructuredTaskScope` mandate.
+   `StructuredTaskScope.fork()` enforces `WrongThreadException` for any caller that did not open the scope;
+   since `schedule()` is called concurrently by multiple carrier threads (NIO selectors, io_uring rings),
+   a shared long-lived STS is architecturally incompatible with the multi-carrier ingress model. These
+   unstructured VTs act as roots of the Request Tree. All subsequent concurrent operations within
+   the stream handler MUST use `StructuredTaskScope`.
 
 ---
 
@@ -112,7 +118,7 @@ No intermediate `byte[]`, no `ByteBuffer.allocate()`, no heap serialization.
 
 **Operational note for `EX-NET-4006`:** This is a deliberate, non-fatal policy decision — not a hardware
 failure. No connection state or heap object is allocated for the shed stream. It MUST emit a JFR event
-(`PaqsSheddingEvent`) but must not increment error counters used for alerting.
+(`eu.exeris.kernel.core.transport.jfr.StreamShedEvent`) but must not increment error counters used for alerting.
 
 **Operational note for `EX-NET-4007`:** When thrown, the Transport Core MUST immediately signal
 `ResourceArbiter.onBufferExhaustion()` to trigger L0 backpressure. New streams are refused until at least
