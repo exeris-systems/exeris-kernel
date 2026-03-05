@@ -243,6 +243,9 @@ class PaqsSchedulerTest {
             assertThat(counterZero.await(TIMEOUT_MS, TimeUnit.MILLISECONDS)).isTrue();
             assertThat(controller.activeStreamCount()).isZero();
         }
+
+        @Test
+        @DisplayName("ScopedValues are bound in stream handler")
         @Timeout(value = TIMEOUT_MS, unit = TimeUnit.MILLISECONDS)
         void scopedValuesBoundInHandler() throws InterruptedException {
             CountDownLatch latch = new CountDownLatch(1);

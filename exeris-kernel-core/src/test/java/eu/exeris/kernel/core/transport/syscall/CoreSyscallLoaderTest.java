@@ -29,6 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * @since 0.5.0
  */
 @DisplayName("L1 Smoke: CoreSyscallLoader — load(Arena) and platform invariants")
+@EnabledOnOs({OS.LINUX, OS.MAC, OS.WINDOWS})
 class CoreSyscallLoaderTest {
 
     private static SyscallHandles handles;

@@ -38,9 +38,15 @@ and `Formatter` entirely.
 
 ## The Black-Box Pattern
 
-### Problem
+### Safety Contract (Non-Negotiable)
 
-Legacy code performed formatting at throw-site:
+`String.formatted()`, `String.valueOf()`, and `StringBuilder` are **strictly banned** inside
+`ExerisKernelException` constructors. This is not a style preference — it is a **Safety Contract**.
+When the system is under memory pressure (the most likely moment to throw `MemoryExhaustedException`),
+a `StringBuilder` allocation on the exception-construction path would add GC pressure to an already
+stressed allocator. The failure path must never worsen the failure.
+
+### The Problem (Legacy Pattern)
 
 ```java
 // ❌ BANNED — allocates StringBuilder + String on every exception construction:
@@ -48,8 +54,6 @@ throw new RuntimeException(
     "Memory exhausted: requested %d bytes, available %d bytes"
             .formatted(requestedBytes, availableBytes));
 ```
-
-This causes GC pressure precisely when the system is under memory stress — the worst possible moment.
 
 ### Solution: rawArgs Binary Layout
 
@@ -88,21 +92,38 @@ Reading side (crash-log analyser or APM agent) interprets the binary struct dire
 ## Error Code Registry
 
 Every `ExerisKernelException` subclass MUST declare its `rawArgs` binary layout in a Javadoc comment
-**and** register its error code in `KernelErrorCodes`.
+**and** register its error code in `KernelErrorCodes`. The table below is the human-readable index —
+`KernelErrorCodes.java` is the source of truth for the binary decoder.
 
 ```
-EX-MEM-1001  Off-heap exhausted          rawArgs[0]=long requestedBytes, [1]=long availableBytes
-EX-MEM-1002  Arena leak detected         rawArgs[0]=long segmentAddress, [1]=long segmentByteSize
-EX-MEM-1003  AllocationHint conflict     (no rawArgs)
-EX-BOOT-0002 Bootstrap failure           rawArgs[0]=String subsystemName, [1]=SubsystemException.Phase phase, [2]=String detail
-EX-BOOT-0003 Bootstrap deadline exceeded rawArgs[0]=String subsystemName, [1]=long deadlineMs
-EX-BOOT-0004 Memory provider bootstrap   rawArgs[0]=String providerName, [1]=long requestedBytes
-EX-NET-4001  Transport bind/handshake    rawArgs[0]=String transportName, [1]=int port
-EX-NET-4002  Transport send failure      rawArgs[0]=String transportName, [1]=long bytesSent
-EX-NET-4003  Transport receive timeout   rawArgs[0]=String transportName, [1]=long timeoutMs
-EX-SEC-2001  PrincipalContext missing     (no rawArgs)
-EX-SEC-2002  Token validation failure    rawArgs[0]=String tokenType
-EX-RUN-3002  Carrier pinned              rawArgs[0]=long blockTimeMs,    [1]=String carrierName
+EX-MEM-1001  Off-heap exhausted             rawArgs[0]=long requestedBytes,    [1]=long availableBytes
+EX-MEM-1002  Arena leak detected            rawArgs[0]=long segmentAddress,     [1]=long segmentByteSize
+EX-MEM-1003  AllocationHint conflict        (no rawArgs)
+EX-BOOT-0001 DAG cycle detected             rawArgs[0]=String[] cycleMembers    ← emitted by orchestrator (pre-telemetry panic)
+EX-BOOT-0002 Bootstrap failure              rawArgs — opaque (variable arity per pathway; Black-Box consumers MUST NOT rely on layout)
+EX-BOOT-0003 Bootstrap deadline exceeded    rawArgs[0]=String subsystemName,    [1]=long deadlineMs
+EX-BOOT-0004 Memory provider bootstrap      rawArgs[0]=String providerName,     [1]=long requestedBytes
+EX-BOOT-3001 Telemetry provider failure     rawArgs[0]=String providerName,     [1]=String reason
+EX-NET-2001  TLS operation failure          rawArgs[0]=int nativeErrorCode,     [1]=String detail
+EX-NET-2002  Crypto provider bootstrap      rawArgs[0]=String providerName,     [1]=String reason
+EX-NET-4001  Transport bind/handshake       rawArgs[0]=String transportName,    [1]=int port
+EX-NET-4002  Transport send failure         rawArgs[0]=String transportName,    [1]=long bytesSent
+EX-NET-4003  Transport receive timeout      rawArgs[0]=String transportName,    [1]=long timeoutMs
+EX-NET-4004  Transport engine bootstrap     rawArgs[0]=String transportName,    [1]=String reason
+EX-NET-4005  Transport engine start         rawArgs[0]=String transportName,    [1]=int port
+EX-NET-4006  PAQS load shedding             rawArgs[0]=String transportName,    [1]=int streamPriority,    [2]=int thresholdPriority
+EX-NET-4007  Buffer exhaustion              rawArgs[0]=String transportName,    [1]=int poolCapacity,      [2]=int activeSlabs
+EX-SEC-2001  PrincipalContext missing        (no rawArgs)
+EX-SEC-2002  Token validation failure       rawArgs[0]=String tokenType,        [1]=String failureReason
+EX-RUN-3002  Carrier pinned                 rawArgs[0]=long blockTimeMs,        [1]=String carrierName
+EX-EVENT-6001 Generic event failure         rawArgs[0]=String message
+EX-EVENT-6002 Bus publish failure           rawArgs[0]=String eventType,        [1]=long queueDepth,        [2]=long queueCapacity
+EX-EVENT-6003 Registry conflict             rawArgs[0]=String eventType,        [1]=int ordinal
+EX-EVENT-6004 Provider boot failure         rawArgs[0]=String providerName,     [1]=String reason
+EX-FLOW-7001 Provider boot failure          rawArgs[0]=String providerName,     [1]=String reason
+EX-FLOW-7002 Lifecycle / schedule fail      rawArgs[0]=String engineName,       [1]=String phase,           [2]=String staticReasonCode, [3]=int contextVal
+EX-FLOW-7003 Step execution failure         rawArgs[0]=String defName,          [1]=long idMost,            [2]=long idLeast,            [3]=int stepIdx, [4]=String reason, [5]=String causeType
+EX-FLOW-7004 Registry conflict              rawArgs[0]=int stepId,              [1]=String reason
 ```
 
 ---

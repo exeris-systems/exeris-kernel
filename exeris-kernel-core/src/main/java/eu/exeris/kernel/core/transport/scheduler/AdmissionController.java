@@ -128,16 +128,6 @@ public final class AdmissionController {
         }
     }
 
-    /**
-     * No-op — kept for binary compatibility.
-     *
-     * <p>The active stream slot is now atomically reserved inside
-     * {@link #admit(StreamPriority)}. Callers may continue to invoke this method;
-     * it no longer mutates state.
-     */
-    public void onStreamAdmitted() {
-        // No-op: slot reserved atomically in admit().
-    }
 
     /**
      * Atomically decrements the active stream counter.

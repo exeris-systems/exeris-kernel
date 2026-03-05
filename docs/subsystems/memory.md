@@ -5,8 +5,9 @@
 - SPI: `eu.exeris.kernel.spi.memory.*` (Allocators, Clusters, LoanedBuffer)
 - Core: `eu.exeris.kernel.core.memory.*` (Watermarks, ResourceArbiter, AbstractLoanedBuffer)
 - Drivers: `exeris-kernel-community` / `exeris-kernel-enterprise`
-  **Layer:** L0 (Foundation)  
-  **Status:** Validated Architectural Prototype (TRL-3)
+
+**Layer:** L0 (Foundation)
+**Status:** Validated Architectural Prototype (TRL-3)
 
 ---
 
@@ -23,14 +24,17 @@ model. It provides:
 - **Paranoid Leak Detector:** Integrated `java.lang.ref.Cleaner` to detect unclosed Off-Heap segments.
 - **Watermark & Resource Arbiter:** Core intelligence that monitors memory exhaustion and triggers load shedding.
 
-### Core Philosophy
+### Core Philosophy: "No Waste Compute"
 
-**"No Waste Compute"** — every byte allocated must serve a purpose:
+Every byte allocated must serve a purpose:
 
-- **Zero GC Churn:** No object allocations in the hot path. I/O must use `LoanedBuffer`.
-- **Zero Copy:** Data is never copied to `byte[]` on the Heap unless interacting with legacy systems.
-- **Implementation Blindness:** The Kernel (Core) must never know if it's using a basic `PanamaArenaAllocator` or an HPC
-  `io_uring` allocator.
+- **Zero GC Churn:** No object allocations on the I/O hot-path. Data flows via `LoanedBuffer` references.
+- **Zero Copy:** Data is never copied to the JVM Heap unless interacting with legacy Java systems.
+- **Deterministic Lifecycle:** Reference counting via `VarHandle` atomics ensures memory is returned to native pools
+  immediately after use.
+- **Implementation Blindness:** Core operates exclusively on the `MemoryAllocator` interface injected via
+  `ServiceLoader`. It must never know whether it is backed by a `PanamaArenaAllocator` (Community) or a
+  `GlobalMemoryArbiter` `mmap` ring (Enterprise).
 
 ---
 
@@ -53,84 +57,121 @@ model. It provides:
 
 ## Error Codes (Black Box Telemetry)
 
-| Code          | Meaning                       | Action                                    |
-|:--------------|:------------------------------|:------------------------------------------|
-| `EX-MEM-1001` | Off-Heap Memory Leak Detected | Logged in PARANOID mode with stack trace. |
-| `EX-MEM-1002` | Memory Exhausted (OOM)        | Trigger `H3_EXCESSIVE_LOAD` backpressure. |
-| `EX-MEM-1003` | Invalid Buffer Size/Offset    | Halt current operation (prevent SIGSEGV). |
+> **Source of truth:** `docs/subsystems/telemetry.md`. The `rawArgs` binary layout is defined there and must not
+> diverge from this table.
+
+| Code          | Meaning                | Action                                              |
+|:--------------|:-----------------------|:----------------------------------------------------|
+| `EX-MEM-1001` | Off-heap Exhausted     | Trigger `H3_EXCESSIVE_LOAD` backpressure.           |
+| `EX-MEM-1002` | Arena Leak Detected    | Log in `PARANOID` mode with native stack trace.     |
+| `EX-MEM-1003` | Invalid Buffer Bounds  | Halt current operation to prevent native `SIGSEGV`. |
+
+---
+
+## The Loan Pattern (RAII)
+
+Exeris replaces `byte[]` with `LoanedBuffer`. Applications must use the `try-with-resources` pattern to ensure
+deterministic cleanup. Applications interact only with the SPI — the underlying allocator is invisible.
+
+```java
+try (LoanedBuffer buffer = allocator.allocate(AllocationHint.MEDIUM)) {
+    buffer.writeBytes(payload, 0, payload.length);
+    transport.send(buffer);
+}
+```
+
+### Async Ownership Transfer (StructuredTaskScope)
+
+When passing a `LoanedBuffer` to a subtask forked inside a `StructuredTaskScope`, you **MUST** explicitly retain
+ownership before forking. The scope's `join()` barrier does not manage buffer lifetimes.
+
+```java
+try (var scope = StructuredTaskScope.open(Joiner.awaitAllSuccessfulOrThrow())) {
+    try (LoanedBuffer buffer = networkCluster.allocate()) {
+        buffer.retain();
+
+        scope.fork(() -> {
+            try {
+                return processAsync(buffer);
+            } finally {
+                buffer.close();
+            }
+        });
+
+        scope.join();
+    }
+}
+```
+
+> If a subtask outlives its parent scope (advanced orchestration only), `retain()` is mandatory to prevent a
+> use-after-free on the native segment.
+
+---
+
+## Multi-Tier Memory Strategy
+
+| Tier           | Allocator                    | GC Handshakes on hot-path | Use Case                          |
+|:---------------|:-----------------------------|:--------------------------|:----------------------------------|
+| **Community**  | `Arena.ofShared()` (bounded) | Low (JVM thread-local)    | Standard TCP, JDBC persistence    |
+| **Enterprise** | `GlobalMemoryArbiter` `mmap` | **Zero**                  | `io_uring`, native DB driver, HFT |
 
 ---
 
 ## Code Examples
 
-### 1. The Loan Pattern (Application Code)
+### 1. Subsystem Registration via ServiceLoader
 
-Applications interact only with the SPI, using `try-with-resources` to guarantee deterministic cleanup.
+Core never directly instantiates an allocator. It receives it through the SPI discovery chain.
 
 ```java
-import eu.exeris.kernel.spi.memory.AllocationHint;
-import eu.exeris.kernel.spi.memory.LoanedBuffer;
-import eu.exeris.kernel.spi.memory.MemoryAllocator;
+MemoryAllocator allocator = ServiceLoader.load(MemoryAllocator.class)
+        .findFirst()
+        .orElseThrow(() -> new KernelBootstrapException(KernelErrorCodes.EX_BOOT_0002));
+```
 
-public class RequestHandler {
+### 2. WatermarkManager Integration
 
-    public void process(MemoryAllocator allocator, byte[] payload) {
-        // Rent a buffer from the pool (Zero-Allocation)
-        try (LoanedBuffer buffer = allocator.allocate(AllocationHint.MEDIUM)) {
+```java
+public class ResourceArbiter {
 
-            // Write directly to Off-Heap (Zero-Allocation bulk copy)
-            buffer.writeBytes(payload, 0, payload.length);
+    private final WatermarkManager watermark;
+    private final MemoryAllocator allocator;
 
-            // Pass to transport layer (Zero-Copy)
-            transport.send(buffer);
-
-        } // AutoCloseable calls buffer.close() -> refCount--, returns to pool
+    public LoanedBuffer tryAllocate(AllocationHint hint) {
+        if (watermark.isHighWatermarkBreached()) {
+            throw new MemoryExhaustedException(hint.bytes(), watermark.availableBytes());
+        }
+        return allocator.allocate(hint);
     }
 }
 ```
 
-### 2. Retaining Ownership across Threads
-
-```java
-try (LoanedBuffer buffer = networkCluster.allocate()) {
-    buffer.retain(); // refCount = 2
-    
-    Thread.startVirtualThread(() -> {
-        try {
-            processAsync(buffer);
-        } finally {
-                buffer.close(); // refCount = 1
-        }
-    });
-} // refCount = 0 -> returned to pool
-```
+---
 
 ## Testing Strategy
 
 ### Unit Tests
 
-Reference counting (retain/close logic in AbstractLoanedBuffer).
-
-VarHandle thread-safety under concurrent modifications.
-
-FFM memory bounds checking (preventing out-of-bounds reads/writes).
+- Reference counting (`retain`/`close` logic in `AbstractLoanedBuffer`).
+- `VarHandle` thread-safety under concurrent modifications.
+- FFM memory bounds checking (preventing out-of-bounds reads/writes).
 
 ### Integration Tests (TCK)
 
-Multiple Virtual Threads allocating/deallocating concurrently.
-
-Arena exhaustion (graceful MemoryExhaustedException).
-
-LeakTracker correctly identifying dropped buffers in PARANOID mode.
+- Multiple Virtual Threads allocating/deallocating concurrently.
+- Arena exhaustion (graceful `MemoryExhaustedException` with correct `EX-MEM-1001` code).
+- `LeakTracker` correctly identifying dropped buffers in `PARANOID` mode (`EX-MEM-1002`).
 
 ### Load Tests
 
-100k allocate/close cycles per second with < 1ms P99 latency.
+- 100k allocate/close cycles per second with < 1ms P99 latency.
+- GC pressure baseline verified via JFR (must remain near 0 B/req).
 
-GC pressure baseline verified via JFR (must remain near 0 B/req).
+---
 
 ## Summary
 
-The Memory subsystem provides the foundation for hyper-density execution. By enforcing the LoanedBuffer pattern through
-SPI, it guarantees that Exeris can scale to millions of concurrent connections without triggering stop-the-world Garbage
-Collection pauses.
+The Memory subsystem provides the foundation for hyper-density execution. By enforcing the `LoanedBuffer` pattern
+through SPI and resolving allocator implementations via `ServiceLoader`, it guarantees that Exeris can scale to millions
+of concurrent connections without triggering stop-the-world Garbage Collection pauses — regardless of which driver tier
+is active.

@@ -153,7 +153,6 @@ public final class PaqsScheduler {
             return;
         }
 
-        admissionController.onStreamAdmitted();
         try {
             spawnStreamThread(stream, priority);
         } catch (Exception ex) { //NOPMD AvoidCatchingGenericException — rollback on VT spawn failure

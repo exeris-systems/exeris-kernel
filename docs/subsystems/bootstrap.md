@@ -22,6 +22,11 @@ The **Bootstrap subsystem** is the central orchestrator of the Exeris Kernel.
 It manages the strictly ordered initialization sequence of all subsystems, ensuring that foundational layers (Config,
 Memory) are fully operational before higher‑level logic (Transport, Flow) is activated.
 
+> **L0 / L1 Boundary:** L0 Foundation subsystems (Config, Memory, Exceptions) initialize in total silence — no
+> telemetry infrastructure is yet available. Telemetry (L1) is the first system to attach after L0 is READY,
+> providing the **"Glass Box"** visibility for all subsequent layers (L1–L4). Any failure during L0 is recorded
+> via the pre-allocated Black-Box buffer only — JFR events are unavailable until Telemetry completes its own init.
+
 ### Key Characteristics
 
 - **Dependency‑Ordered Init**  
@@ -123,16 +128,24 @@ public class PersistenceSubsystem implements KernelSubsystem {
 
 ---
 
-### 2. Parallel Boot Strategy (Core Concept)
+### 2. Parallel Boot Strategy (Core — JDK 25 Joiner API)
+
+Exeris leverages JDK 25 Joiner-based scopes. Parallel layers (L1/L2) are joined using
+`awaitAllSuccessfulOrThrow`, ensuring that a single failure in any native module triggers an immediate,
+safe cancellation of the entire boot sequence.
 
 ```java
-try (var scope = new StructuredTaskScope.ShutdownOnFailure()) {
-        // Parallel init for layers that don't depend on each other
-        scope.fork(() -> security.start());
-        scope.fork(() -> persistence.start());
+import java.util.concurrent.StructuredTaskScope;
+import java.util.concurrent.StructuredTaskScope.Joiner;
 
-        scope.join();
-    scope.throwIfFailed();
+try (var scope = StructuredTaskScope.open(Joiner.awaitAllSuccessfulOrThrow())) {
+    scope.fork(() -> security.start());
+    scope.fork(() -> persistence.start());
+
+    scope.join();
+
+} catch (StructuredTaskScope.FailedException e) {
+    throw new KernelBootstrapException(KernelErrorCodes.EX_BOOT_0002, e.getCause());
 }
 ```
 
@@ -156,6 +169,6 @@ try (var scope = new StructuredTaskScope.ShutdownOnFailure()) {
 ## Summary
 
 The Bootstrap subsystem is the guardian of the Kernel's lifecycle. By enforcing a strict, dependency-aware boot sequence
-and using Java 26's structured concurrency, it ensures that the Exeris Kernel starts fast, fails safely, and shuts
-down gracefully, maintaining system integrity at all times.
+and using JDK 25 Joiner-based `StructuredTaskScope`, it ensures that the Exeris Kernel starts fast, fails safely,
+and shuts down gracefully, maintaining system integrity at all times.
 
