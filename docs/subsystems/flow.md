@@ -1,4 +1,4 @@
-# Kernel Subsystem: Flow / Sagas (L4 Orchestration)
+﻿# Kernel Subsystem: Flow / Sagas (L4 Orchestration)
 
 **Physical Layout:**
 
@@ -95,11 +95,11 @@ concern, not a latency tax.
 
 ---
 
-## Error Codes (Black Box Telemetry)
+## Error Codes
 
 > **Source of truth:** `KernelErrorCodes.java` in `exeris-kernel-spi`.
 
-| Code           | Meaning                  | Black-Box Payload (`rawArgs`)                                                             |
+| Code           | Meaning                  | Glass-Box Payload (`rawArgs`)                                                             |
 |:---------------|:-------------------------|:------------------------------------------------------------------------------------------|
 | `EX-FLOW-7001` | Provider Boot Failure    | `[0] String providerName, [1] String reason`                                              |
 | `EX-FLOW-7002` | Lifecycle / Schedule Fail| `[0] String engineName, [1] String phase, [2] String staticReasonCode, [3] int contextVal`|
@@ -107,14 +107,14 @@ concern, not a latency tax.
 | `EX-FLOW-7004` | Registry Conflict        | `[0] int stepId, [1] String reason`                                                       |
 
 **Forensics note for `EX-FLOW-7003`:** The `idMost` + `idLeast` pair encodes the `UUID` of the failing
-Saga instance as two `long` primitives — autoboxed to `Long` per the Black-Box contract, but decoded by
-the Enterprise Black-Box Decoder as a single `UUID` for instance tracing. The `causeType` is
+Saga instance as two `long` primitives — autoboxed to `Long` per the Glass-Box contract, but decoded by
+the Enterprise Glass-Box Decoder as a single `UUID` for instance tracing. The `causeType` is
 `cause.getClass().getName()` or `"none"` — class names are stable and never user-controlled, making
 them safe for binary telemetry.
 
 **Lifecycle note for `EX-FLOW-7002`:** The `phase` field is one of the static constants `"START"`,
 `"STOP"`, `"COMPILE"`, `"SCHEDULE"`. The `contextVal` carries a phase-specific integer (`-1` when
-not applicable; queue depth for `"SCHEDULE"`). Black-Box consumers MUST use the `phase` field to
+not applicable; queue depth for `"SCHEDULE"`). Glass-Box consumers MUST use the `phase` field to
 select the correct interpretation of `contextVal`.
 
 ---

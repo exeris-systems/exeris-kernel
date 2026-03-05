@@ -1,4 +1,4 @@
-# Kernel Subsystem: Transport (L2 Native I/O)
+﻿# Kernel Subsystem: Transport (L2 Native I/O)
 
 **Physical Layout:**
 
@@ -102,11 +102,11 @@ No intermediate `byte[]`, no `ByteBuffer.allocate()`, no heap serialization.
 
 ---
 
-## Error Codes (Black Box Telemetry)
+## Error Codes
 
 > **Source of truth:** `KernelErrorCodes.java` in `exeris-kernel-spi`.
 
-| Code          | Meaning                  | Black-Box Payload (`rawArgs`)                                               |
+| Code          | Meaning                  | Glass-Box Payload (`rawArgs`)                                               |
 |:--------------|:-------------------------|:----------------------------------------------------------------------------|
 | `EX-NET-4001` | Bind / Handshake Failure | `[0] String transportName, [1] int port`                                    |
 | `EX-NET-4002` | Send Failure             | `[0] String transportName, [1] long bytesSent`                              |

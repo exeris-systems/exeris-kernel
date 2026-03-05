@@ -1,4 +1,4 @@
-# The Performance Contract (Hyper-Density Spec)
+﻿# The Performance Contract (Hyper-Density Spec)
 
 This document defines the efficiency targets for Exeris Kernel. Targets are **strictly divided**
 into the current development baseline (TRL-3) and the final Enterprise goals.
@@ -34,7 +34,7 @@ This is where Exeris implements the **"No Waste Compute"** philosophy.
 
 | Metric (SLI)            | Target (SLO)    | Breach Threshold | Rationale                               |
 |:------------------------|:----------------|:-----------------|:----------------------------------------|
-| **Telemetry Overhead**  | > 10M ops/s     | < 5M ops/s       | `BinaryBlackBox` JMH validation         |
+| **Telemetry Overhead**  | > 10M ops/s     | < 5M ops/s       | `BinaryGlassBox` JMH validation         |
 | **Kernel Overhead**     | < 500 µs        | > 1 ms           | Read to Virtual Thread Mount latency    |
 | **GC Pause (P99)**      | < 1 ms          | > 5 ms           | ZGC Generational validation             |
 | **Allocation Rate**     | **0 B / req**   | > 65 B / req     | Strict zero-allocation on hot path      |

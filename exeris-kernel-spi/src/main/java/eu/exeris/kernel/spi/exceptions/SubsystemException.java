@@ -24,7 +24,7 @@ package eu.exeris.kernel.spi.exceptions;
  *       subsystemName, phase, message);
  * }</pre>
  *
- * <h2>rawArgs Binary Layout (Enterprise Black-Box)</h2>
+ * <h2>rawArgs Binary Layout (Enterprise Glass-Box)</h2>
  * <pre>
  * index 0 → String  subsystemName   (logical name of the failing subsystem)
  * index 1 → Phase   phase           (INITIALIZE | START | STOP)

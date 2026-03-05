@@ -1,4 +1,4 @@
-# Kernel Subsystem: Crypto (L1 Citadel Extension)
+﻿# Kernel Subsystem: Crypto (L1 Citadel Extension)
 
 **Physical Layout:**
 
@@ -61,7 +61,7 @@ it is an enforced architectural constraint.
 | Feature          | Standard Panama (JSSE/Netty)  | Exeris Off-Heap TLS                            |
 |:-----------------|:------------------------------|:-----------------------------------------------|
 | Lifecycle        | Manual / Cleaner-based        | RAII (`LoanedBuffer` ref-count)                |
-| Leak Tracking    | Black-box (OS level)          | Glass-Box (JFR + `LeakTracker`)                |
+| Leak Tracking    | Glass-Box (OS level)          | Glass-Box (JFR + `LeakTracker`)                |
 | Memory Pressure  | Unbounded                     | Arbiter-aware (backpressure at L0)             |
 
 ---
@@ -248,11 +248,11 @@ public OffHeapTlsEngine(MemoryAllocator allocator, CoreSslHandles handles) {
 
 ---
 
-## Error Codes (Black Box Telemetry)
+## Error Codes
 
 > **Source of truth:** `KernelErrorCodes.java` in `exeris-kernel-spi`.
 
-| Code          | Meaning                       | Black-Box Payload (`rawArgs`)                        |
+| Code          | Meaning                       | Glass-Box Payload (`rawArgs`)                        |
 |:--------------|:------------------------------|:-----------------------------------------------------|
 | `EX-NET-2001` | TLS Operation Failure         | `[0] int nativeErrorCode, [1] String detail`         |
 | `EX-NET-2002` | Crypto Provider Bootstrap     | `[0] String providerName, [1] String reason`         |

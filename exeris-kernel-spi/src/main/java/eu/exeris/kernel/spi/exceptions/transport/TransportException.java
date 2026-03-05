@@ -21,7 +21,7 @@ import java.util.Objects;
  * <ul>
  *   <li>carries a typed {@code EX-NET-*} error code</li>
  *   <li>stores transport name and port (or byte count) in {@link #rawArgs()} for
- *       binary Black-Box serialization</li>
+ *       binary Glass-Box serialization</li>
  *   <li>extends {@code RuntimeException} – transport failures are fatal in kernel context</li>
  * </ul>
  *
@@ -42,7 +42,7 @@ import java.util.Objects;
  * <p>Direct construction via the general constructor is also permitted when the above
  * factory methods do not cover the specific operation.
  *
- * <h2>rawArgs Binary Layout (Enterprise Black-Box)</h2>
+ * <h2>rawArgs Binary Layout (Enterprise Glass-Box)</h2>
  * <p>Layout depends on the {@code EX-NET-*} code stored in {@link #errorCode()}:
  * <pre>
  * EX-NET-4001 (bind failure):
@@ -74,11 +74,11 @@ public final class TransportException extends ExerisKernelException {
     // Static message templates – JVM constants, never re-allocated
     // -----------------------------------------------------------------------
 
-    private static final String MSG_BIND    = "Transport bind failure";
-    private static final String MSG_SEND    = "Transport send failure";
+    private static final String MSG_BIND = "Transport bind failure";
+    private static final String MSG_SEND = "Transport send failure";
     private static final String MSG_TIMEOUT = "Transport receive timeout";
     private static final String MSG_BOOTSTRAP = "Transport engine bootstrap failure";
-    private static final String MSG_START     = "Transport engine start failure";
+    private static final String MSG_START = "Transport engine start failure";
     private static final String ERR_TRANSPORT_NAME_NULL = "transportName must not be null";
 
     // -----------------------------------------------------------------------
@@ -230,7 +230,7 @@ public final class TransportException extends ExerisKernelException {
         Object[] args = rawArgs();
         if (args == null || args.length < 1) {
             throw new IllegalStateException(
-                "transportName() requires rawArgs[0]; use factory methods to construct TransportException");
+                    "transportName() requires rawArgs[0]; use factory methods to construct TransportException");
         }
         return (String) args[0];
     }
@@ -271,5 +271,3 @@ public final class TransportException extends ExerisKernelException {
                 "numericContext() requires a numeric rawArgs[1] (int/long); got: " + arg.getClass().getName());
     }
 }
-
-

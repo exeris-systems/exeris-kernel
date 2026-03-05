@@ -1,4 +1,4 @@
-# Kernel Subsystem: Persistence (L1 Data & Integrity)
+﻿# Kernel Subsystem: Persistence (L1 Data & Integrity)
 
 **Physical Layout:**
 
@@ -86,12 +86,12 @@ Exeris supports three levels of physical isolation, resolved transparently throu
 
 ---
 
-## Error Codes (Black Box Telemetry)
+## Error Codes
 
 > **Source of truth:** `KernelErrorCodes.java` in `exeris-kernel-spi`. The `rawArgs` binary layout is defined
 > in the Javadoc of each constant and must not diverge from this table.
 
-| Code           | Meaning                          | Black-Box Payload (`rawArgs`)                                     |
+| Code           | Meaning                          | Glass-Box Payload (`rawArgs`)                                     |
 |:---------------|:---------------------------------|:------------------------------------------------------------------|
 | `EX-PERS-5001` | Provider Bootstrap Failure       | `[0] String providerName, [1] String sanitizedConnectionUrl`      |
 | `EX-PERS-5002` | Connection Pool Exhausted        | `[0] String providerName, [1] long timeoutMs, [2] int activeConns`|

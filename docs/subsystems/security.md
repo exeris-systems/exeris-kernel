@@ -1,4 +1,4 @@
-# Kernel Subsystem: Security (L1 Citadel)
+﻿# Kernel Subsystem: Security (L1 Citadel)
 
 **Physical Layout:**
 
@@ -57,11 +57,11 @@ zero-leak, hyper-density concurrency with immutable identity at every layer. It 
 
 ---
 
-## Error Codes (Black Box Telemetry)
+## Error Codes
 
 > **Source of truth:** `KernelErrorCodes.java` in `exeris-kernel-spi`.
 
-| Code          | Meaning                    | Action                                              | Black-Box Payload                                    |
+| Code          | Meaning                    | Action                                              | Glass-Box Payload                                    |
 |:--------------|:---------------------------|:----------------------------------------------------|:-----------------------------------------------------|
 | `EX-SEC-2001` | PrincipalContext Missing   | Silent drop at security boundary                    | *(no rawArgs)*                                       |
 | `EX-SEC-2002` | Token Invalid/Expired      | Immediate authentication failure at transport edge  | `[0] String tokenType, [1] String failureReason`     |
@@ -101,12 +101,20 @@ The `ScopedValue` bound here is automatically inherited by every child task fork
 `StructuredTaskScope`. There is no need to pass `PrincipalContext` as a method parameter — it flows
 invisibly into all subtasks for the lifetime of the scope.
 
+> **Citadel Contract:** `runInContext` does **not** accept a `StorageContext` parameter from the caller.
+> The Citadel derives the database identity itself, cryptographically, from the verified `PrincipalContext`
+> (e.g., JWT claims). Never trust upper layers with storage routing — doing so opens a
+> Privilege Escalation / Cross-Tenant Data Leak vector where a developer in L3 could couple a token
+> from tenant A with the database of tenant B.
+
 ```java
 package eu.exeris.kernel.core.security;
 
 public class SecurityInterceptor {
 
-    public void runInContext(PrincipalContext principal, StorageContext storage, Runnable task) {
+    public void runInContext(PrincipalContext principal, Runnable task) {
+        StorageContext storage = CitadelClaims.deriveStorageContext(principal);
+
         ScopedValue.where(KernelProviders.PRINCIPAL_CONTEXT, principal)
                    .where(KernelProviders.STORAGE_CONTEXT, storage)
                    .run(task);
@@ -129,8 +137,10 @@ public class TokenValidator {
 }
 ```
 
-> If `validateOrDrop` throws, the dispatching Virtual Thread is terminated before any subsystem below L1 is
-> ever reached. No business logic, no DB connection, no CPU waste.
+> If `validateOrDrop` throws, the dispatching Virtual Thread is terminated immediately via controlled
+> exception bubbling. This ensures deterministic socket teardown and memory release in the core PAQS
+> `finally` block, preventing Slowloris DoS attacks. The native `close()` on the socket descriptor is
+> **always** reached — the exception never escapes the transport boundary unhandled.
 
 ---
 

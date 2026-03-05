@@ -1,4 +1,4 @@
-# Glossary of Terms
+﻿# Glossary of Terms
 
 This document defines the core terminology used within the **Exeris Kernel** ecosystem. A precise
 understanding of these terms is mandatory to maintain the "No Waste Compute" performance standards
@@ -23,8 +23,8 @@ A design philosophy centered on total transparency. Exeris exposes every interna
 allocation, and lifecycle phase via high-precision **JFR (Java Flight Recorder)** events with
 sub-1% CPU overhead when enabled and zero overhead when disabled.
 
-> **Glass-Box vs. Black-Box are complementary, not contradictory:** Glass-Box (JFR) is the
-> *real-time observability* strategy for healthy systems. Black-Box (binary crash dumps) is the
+> **Glass-Box vs. Glass-Box are complementary, not contradictory:** Glass-Box (JFR) is the
+> *real-time observability* strategy for healthy systems. Glass-Box (binary crash dumps) is the
 > *forensic* strategy for failures. Together they cover every operational scenario without
 > allocating `String` objects on any path.
 
@@ -91,7 +91,7 @@ scalarize cleanly via JIT Escape Analysis and will migrate to `value record` wit
 A critical performance degradation where a Virtual Thread blocks its underlying OS **Carrier Thread**
 (e.g., via `synchronized` blocks or blocking native calls). This prevents the CPU core from
 processing other Virtual Threads, effectively eliminating Loom's scalability advantage. Tracked via
-`CarrierPinnedEvent` (JFR) with `EX-RUN-3002` in the Black-Box telemetry stream.
+`CarrierPinnedEvent` (JFR) with `EX-RUN-3002` in the Glass-Box telemetry stream.
 
 ### Watermark (Resource Management)
 A monitoring threshold for resource utilization managed by `WatermarkManager`. When consumption
@@ -103,11 +103,11 @@ acceptance.
 
 ## 🚨 Telemetry & Diagnostics (L0 / L1)
 
-### Black-Box Pattern
+### Glass-Box Pattern
 An error-reporting architecture where `ExerisKernelException` subclasses **never allocate `String`
 messages** in their constructors. Instead, they capture raw primitives (`long`, `int`, `Enum`) in
 an `Object[] rawArgs` array. The Enterprise tier serializes these directly into a binary off-heap
-ring buffer as fixed-width structs — readable by the Black-Box Decoder without `toString()`,
+ring buffer as fixed-width structs — readable by the Glass-Box Decoder without `toString()`,
 `ObjectOutputStream`, or JSON.
 
 > The only permitted allocation is autoboxing of primitives to `Long`/`Integer` for `rawArgs[]`,

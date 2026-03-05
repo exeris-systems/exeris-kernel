@@ -54,10 +54,11 @@ It initializes before any other subsystem (including Memory) and provides:
 A file change triggers an atomic state reload in Core without a JVM restart — but **only** for keys annotated
 `@Dynamic`. Keys annotated `@Immutable` are validated once at T-minus 0 and sealed for the lifetime of the process.
 
-### JEP 513 Validation (Early Construction)
-Type validation is performed via Early Construction before the config object is observable by any other subsystem.
-If the file contains `"abc"` instead of a port integer, the Kernel aborts with `EX-CFG-1002` (Type Mismatch) and
-the `actualValue` field in `rawArgs` is caller-redacted before emission.
+### JEP 513 Validation (Flexible Constructor Bodies)
+Type validation is performed via JEP 513 Flexible Constructor Bodies — environment and Vault state is validated
+**before** the `super()` call reaches the base `Object` constructor. If a `REQUIRED` key is absent or malformed,
+the Kernel aborts with `EX-CFG-1001` / `EX-CFG-1002` before allocating anything deeper in the object graph.
+The secret never reaches a constructor argument if the precondition fails.
 
 ---
 
@@ -78,7 +79,7 @@ the `actualValue` field in `rawArgs` is caller-redacted before emission.
 
 ---
 
-## Error Codes (Black Box Telemetry)
+## Error Codes (Glass-Box Telemetry)
 
 > **Source of truth:** `KernelErrorCodes.java` in `exeris-kernel-spi`.
 
@@ -123,7 +124,9 @@ public int getNetworkPort() {
 ### 3. Lock-Free Dynamic Reloading (Core)
 
 Instead of `Map` lookups, Core uses `VarHandle` slots for direct field access. The `WatchService` thread updates the
-`volatile` field on a reload event; every Virtual Thread reader gets O(1) performance with zero contention.
+field via `setRelease` on a reload event; every Virtual Thread reader uses `getAcquire` — an Acquire/Release barrier
+is cheaper than a full `volatile` load-load/store-store fence, eliminating the redundant `volatile` modifier while
+preserving the exact visibility guarantee required for a single-writer/multi-reader hot-path.
 
 ```java
 package eu.exeris.kernel.core.config;
@@ -131,7 +134,7 @@ package eu.exeris.kernel.core.config;
 public class KernelConfigRegistry {
 
     @Dynamic(key = "exeris.transport.timeout-ms")
-    private volatile int connectionTimeoutMs = 5000;
+    private int connectionTimeoutMs = 5000;           // plain int — VarHandle owns the barrier
 
     private static final VarHandle TIMEOUT_HANDLE;
 
@@ -144,24 +147,37 @@ public class KernelConfigRegistry {
         }
     }
 
+    /** O(1) read — Acquire barrier only (no full fence). Called by millions of Virtual Threads. */
     public int getConnectionTimeout() {
-        return (int) TIMEOUT_HANDLE.getVolatile(this);
+        return (int) TIMEOUT_HANDLE.getAcquire(this);
+    }
+
+    /** Single-writer: WatchService thread only. Release barrier pairs with every getAcquire above. */
+    void reloadConnectionTimeout(int newValue) {
+        TIMEOUT_HANDLE.setRelease(this, newValue);
     }
 }
 ```
 
-### 4. No Classpath Secrets — Vault Injection via ScopedValue
+### 4. No Classpath Secrets — Vault Injection via ScopedValue (Explicit Zeroing)
 
 ```java
-public static final ScopedValue<VaultToken> VAULT_TOKEN = ScopedValue.newInstance();
+public static final ScopedValue<byte[]> VAULT_TOKEN = ScopedValue.newInstance();
 
-ScopedValue.where(VAULT_TOKEN, vault.acquire()).run(() -> {
-    config.loadSecrets(VAULT_TOKEN.get());
-});
+byte[] vaultToken = VaultClient.fetchToken();
+try {
+    ScopedValue.where(VAULT_TOKEN, vaultToken).run(() -> {
+        config.loadSecrets(VAULT_TOKEN.get());
+    });
+} finally {
+    Arrays.fill(vaultToken, (byte) 0);   // Explicit Zeroing — Mechanical Sympathy for secrets
+}
 ```
 
-> The `VaultToken` reference is bound to the structured scope lifetime. When the scope exits, the reference becomes
-> unreachable and is eligible for GC — the secret never persists beyond the bootstrap phase.
+> We do not trust Garbage Collectors with security. A reference that is merely *eligible for GC* is still plaintext
+> in physical RAM — visible to `jmap -dump`, a core dump, or a cold-boot memory attack. In Exeris, cryptographic
+> buffers are **explicitly zeroed** (`Arrays.fill`) immediately after the `ScopedValue` scope exits. The secret
+> never persists beyond the bootstrap phase as recoverable data.
 
 ---
 

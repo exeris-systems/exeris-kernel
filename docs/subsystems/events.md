@@ -1,4 +1,4 @@
-# Kernel Subsystem: Events (L3 Logic Engines)
+﻿# Kernel Subsystem: Events (L3 Logic Engines)
 
 **Physical Layout:**
 
@@ -108,11 +108,11 @@ inserts or Kafka `ProducerRecord` objects.
 
 ---
 
-## Error Codes (Black Box Telemetry)
+## Error Codes 
 
 > **Source of truth:** `KernelErrorCodes.java` in `exeris-kernel-spi`.
 
-| Code            | Meaning               | Black-Box Payload (`rawArgs`)                                          |
+| Code            | Meaning               | Glass-Box Payload (`rawArgs`)                                          |
 |:----------------|:----------------------|:-----------------------------------------------------------------------|
 | `EX-EVENT-6001` | Generic Engine Failure| `[0] String message`                                                   |
 | `EX-EVENT-6002` | Bus Publish Failure   | `[0] String eventType, [1] long queueDepth, [2] long queueCapacity`    |

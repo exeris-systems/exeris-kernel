@@ -3,8 +3,8 @@
 **Physical Layout:**
 
 - SPI (planned, not yet implemented in this repo): `eu.exeris.kernel.spi.telemetry.*` (`TelemetryRouter`, `TelemetrySink`, `TelemetryEvent`)
-- Core: `eu.exeris.kernel.core.telemetry.*` (`JfrTelemetrySink`, `BinaryBlackBox`, `BlackBoxSerializer`)
-- Enterprise: Binary crash-log sink, structured JFR streaming over off-heap ring buffer
+- Core: `eu.exeris.kernel.core.telemetry.*` (`JfrTelemetrySink`, `BinaryGlassBox`, `GlassBoxSerializer`)
+- Enterprise: Binary deterministic sink, structured JFR streaming over off-heap ring buffer
 
 **Layer:** L1 (Observability)  
 **Status:** Validated Architectural Prototype (TRL-3)
@@ -17,10 +17,16 @@ The **Telemetry subsystem** is the **Zero-Allocation Observability Pipeline** fo
 It is designed around a single invariant: **no `String` concatenation and no heap allocation may occur
 on the event-emission hot-path**.
 
-The core mechanism is the **Black-Box Pattern**: every `ExerisKernelException` subclass carries
-a `rawArgs: Object[]` payload that encodes domain context as **raw primitives** (`long`, `int`, `Enum`).
-These are serialised directly into a binary crash-log struct — bypassing `toString()`, `StringBuilder`,
-and `Formatter` entirely.
+The core mechanism is the **Glass-Box Observability Pattern**: every `ExerisKernelException` subclass
+carries a `rawArgs: Object[]` payload that encodes domain context as **raw primitives** (`long`, `int`,
+`Enum`). These are serialised directly into a deterministic binary frame — bypassing `toString()`,
+`StringBuilder`, and `Formatter` entirely.
+
+> **Why "Glass-Box"?** Traditional observability hides system state behind gigabytes of string-formatted
+> logs where GC pauses distort timings and `StringBuilder` allocations corrupt the failure path.
+> Exeris builds systems from glass and steel: every allocation, every `rawArg`, every byte entering the
+> ring buffer is **visible, deterministic, and measurable in nanoseconds**. Nothing is hidden under the
+> Garbage Collector's carpet.
 
 ---
 
@@ -36,7 +42,7 @@ and `Formatter` entirely.
 
 ---
 
-## The Black-Box Pattern
+## The Glass-Box Observability Pattern
 
 ### Safety Contract (Non-Negotiable)
 
@@ -46,7 +52,7 @@ When the system is under memory pressure (the most likely moment to throw `Memor
 a `StringBuilder` allocation on the exception-construction path would add GC pressure to an already
 stressed allocator. The failure path must never worsen the failure.
 
-### The Problem (Legacy Pattern)
+### The Problem (Legacy "Muddy Water" Pattern)
 
 ```java
 // ❌ BANNED — allocates StringBuilder + String on every exception construction:
@@ -69,9 +75,9 @@ The `Object[]` varargs boxing (autobox of `long` → `Long`) is the only permitt
 per throw, because exceptions are **never thrown on the allocation hot-path** — they represent
 exceptional failure states, not normal operation.
 
-### Binary Struct Mapping (Enterprise Black-Box)
+### Binary Struct Mapping (Enterprise Glass-Box)
 
-The Enterprise `BlackBoxSerializer` maps `rawArgs` to a fixed-width binary struct written
+The Enterprise `GlassBoxSerializer` maps `rawArgs` to a fixed-width binary struct written
 directly into an off-heap ring buffer via `MemorySegment.set(ValueLayout, offset, value)`:
 
 ```
@@ -100,7 +106,7 @@ EX-MEM-1001  Off-heap exhausted             rawArgs[0]=long requestedBytes,    [
 EX-MEM-1002  Arena leak detected            rawArgs[0]=long segmentAddress,     [1]=long segmentByteSize
 EX-MEM-1003  AllocationHint conflict        (no rawArgs)
 EX-BOOT-0001 DAG cycle detected             rawArgs[0]=String[] cycleMembers    ← emitted by orchestrator (pre-telemetry panic)
-EX-BOOT-0002 Bootstrap failure              rawArgs — opaque (variable arity per pathway; Black-Box consumers MUST NOT rely on layout)
+EX-BOOT-0002 Bootstrap failure              rawArgs — opaque (variable arity per pathway; Glass-Box consumers MUST NOT rely on layout)
 EX-BOOT-0003 Bootstrap deadline exceeded    rawArgs[0]=String subsystemName,    [1]=long deadlineMs
 EX-BOOT-0004 Memory provider bootstrap      rawArgs[0]=String providerName,     [1]=long requestedBytes
 EX-BOOT-3001 Telemetry provider failure     rawArgs[0]=String providerName,     [1]=String reason
@@ -186,9 +192,9 @@ TelemetryRouter (SPI interface)
   └─ emitSpan(Span)       → distributed trace span dispatch
 
 TelemetrySink (SPI interface) — implemented by:
-  ├─ [Community] JfrTelemetrySink       → writes to JFR event stream
-  ├─ [Community] Slf4jTelemetrySink     → fallback structured logging
-  └─ [Enterprise] BinaryBlackBoxSink    → writes to off-heap ring buffer (zero GC)
+  ├─ [Community] JfrTelemetrySink          → writes to JFR event stream
+  ├─ [Community] Slf4jTelemetrySink        → fallback structured logging
+  └─ [Enterprise] DeterministicBinarySink  → writes to off-heap ring buffer (zero GC)
 ```
 
 ### ScopedValue Propagation
@@ -215,12 +221,14 @@ TelemetryRouter.emitMetric(metric);
 
 ### Enterprise (Secret Sauce — lives in `exeris-kernel-enterprise`)
 
-- `BinaryBlackBoxSink` — writes crash-log structs to an **off-heap ring buffer** (`MemorySegment`)
-  backed by a memory-mapped file. Buffer rotation is O(1). A background `StructuredTaskScope` flushes
-  to disk without blocking the emission path.
+- `DeterministicBinarySink` — writes deterministic binary frames to an **off-heap ring buffer**
+  (`MemorySegment`) backed by a memory-mapped file. Buffer rotation is O(1). A background
+  `StructuredTaskScope` flushes to disk without blocking the emission path. This is the Glass-Box
+  principle at the hardware boundary: every kernel state transition is permanently recorded as a
+  fixed-width, nanosecond-stamped binary frame — no string formatting, no GC interference, no data loss.
 - **Schema:** fixed-width binary frames (see Binary Struct Mapping above). Compatible with
   `perf`/`ftrace`-style offline analysis tools.
-- **SPI isolation:** `BinaryBlackBoxSink` imports only `exeris-kernel-spi` types.
+- **SPI isolation:** `DeterministicBinarySink` imports only `exeris-kernel-spi` types.
   It never imports `MemoryManager`, `GlobalMemoryArbiter`, or any `kernel-legacy` class.
 
 ---
@@ -247,7 +255,7 @@ TelemetryRouter.emitMetric(metric);
 ### Integration Tests (TCK)
 
 - `JfrTelemetrySink` correctly writes and the events are readable via `RecordingStream`.
-- `BinaryBlackBoxSink` (Enterprise): ring-buffer does not overflow under 100k events/s; flush latency < 1 ms P99.
+- `DeterministicBinarySink` (Enterprise): ring-buffer does not overflow under 100k events/s; flush latency < 1 ms P99.
 
 ### Load Tests
 

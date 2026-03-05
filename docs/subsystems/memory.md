@@ -55,16 +55,16 @@ Every byte allocated must serve a purpose:
 
 ---
 
-## Error Codes (Black Box Telemetry)
+## Error Codes (Glass-Box Telemetry)
 
-> **Source of truth:** `docs/subsystems/telemetry.md`. The `rawArgs` binary layout is defined there and must not
-> diverge from this table.
+> **Source of truth:** `KernelErrorCodes.java` in `exeris-kernel-spi`. The `rawArgs` binary layout is defined
+> in the Javadoc of each constant and must not diverge from this table.
 
-| Code          | Meaning                | Action                                              |
-|:--------------|:-----------------------|:----------------------------------------------------|
-| `EX-MEM-1001` | Off-heap Exhausted     | Trigger `H3_EXCESSIVE_LOAD` backpressure.           |
-| `EX-MEM-1002` | Arena Leak Detected    | Log in `PARANOID` mode with native stack trace.     |
-| `EX-MEM-1003` | Invalid Buffer Bounds  | Halt current operation to prevent native `SIGSEGV`. |
+| Code          | Meaning                  | Action                                          | Glass-Box Payload (`rawArgs`)                        |
+|:--------------|:-------------------------|:------------------------------------------------|:-----------------------------------------------------|
+| `EX-MEM-1001` | Off-heap Exhausted       | Trigger `H3_EXCESSIVE_LOAD` backpressure.       | `[0] long requestedBytes, [1] long availableBytes`   |
+| `EX-MEM-1002` | Arena Leak Detected      | Log in `PARANOID` mode with native stack trace. | `[0] long segmentAddress, [1] long segmentByteSize`  |
+| `EX-MEM-1003` | AllocationHint Conflict  | Reject allocation request (fallback or fail).   | *(no rawArgs)*                                       |
 
 ---
 

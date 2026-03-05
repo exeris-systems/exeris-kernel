@@ -1,8 +1,8 @@
-# Kernel Subsystem: Exceptions (L0 Foundation)
+﻿# Kernel Subsystem: Exceptions (L0 Foundation)
 
 **Physical Layout:**
 
-- SPI: `eu.exeris.kernel.spi.exceptions.*` (Domain exceptions, Error codes, BlackBox support)
+- SPI: `eu.exeris.kernel.spi.exceptions.*` (Domain exceptions, Error codes, GlassBox support)
 - Core: `eu.exeris.kernel.core.exceptions.*` (Error mappers, Registry)
 
 **Layer:** L0 (Foundation)
@@ -17,7 +17,7 @@ environments. It introduces **Zero-Allocation Telemetry** capabilities by captur
 formatting. It implements:
 
 - **Standardized Error Codes:** All exceptions enforce the `EX-[DOMAIN]-[ID]` format (e.g., `EX-MEM-1001`).
-- **Black Box Telemetry Support:** Base exceptions capture a `rawArgs: Object[]` payload of raw primitives (`long`,
+- **Glass Box Telemetry Support:** Base exceptions capture a `rawArgs: Object[]` payload of raw primitives (`long`,
   `int`, `Enum`) instead of concatenated Strings, enabling the Enterprise tier to dump binary crash logs in nanoseconds.
 - **Centralized Error Mapper Registry:** Translates internal Kernel states to **Abstract Transport Codes**, which
   drivers later translate into protocol-specific responses (e.g., HTTP 503 or HTTP/3 `H3_EXCESSIVE_LOAD`).
@@ -28,7 +28,7 @@ formatting. It implements:
 
 ## Core Philosophy: Every Exception is a Data Frame
 
-- **Black Box Pattern:** We store raw primitives (`long`, `int`, `Enum`) in `rawArgs[]`. Binary crash logs are dumped
+- **Glass Box Pattern:** We store raw primitives (`long`, `int`, `Enum`) in `rawArgs[]`. Binary crash logs are dumped
   in nanoseconds by the Enterprise tier — `StringBuilder` and `String.formatted()` are strictly banned in constructors.
 - **Autoboxing on the Exception Path:** `rawArgs: Object[]` requires autoboxing primitives (e.g., `long` → `Long`).
   This is the **only** place in the Kernel where autoboxing is permitted, because exceptions are exceptional states —
@@ -49,7 +49,7 @@ formatting. It implements:
 
 1. Define `ExerisKernelException` base class and all domain exception subclasses.
 2. Enforce the presence of an `EX-` error code constant (from `KernelErrorCodes`) and `traceId` on every instance.
-3. Define the `rawArgs: Object[]` structure — the binary contract between throw-site and Black-Box decoder.
+3. Define the `rawArgs: Object[]` structure — the binary contract between throw-site and Glass-Box decoder.
 
 **What Exceptions Core DOES:**
 
@@ -65,7 +65,7 @@ formatting. It implements:
 
 ### Memory (`EX-MEM-`)
 
-| Code          | Description             | Black-Box Payload                               |
+| Code          | Description             | Glass-Box Payload                               |
 |:--------------|:------------------------|:------------------------------------------------|
 | `EX-MEM-1001` | Off-heap Exhausted      | `[0] long reqBytes, [1] long availBytes`        |
 | `EX-MEM-1002` | Arena Leak Detected     | `[0] long segAddr, [1] long segSize`            |
@@ -73,7 +73,7 @@ formatting. It implements:
 
 ### Bootstrap (`EX-BOOT-`)
 
-| Code           | Description                  | Black-Box Payload                                |
+| Code           | Description                  | Glass-Box Payload                                |
 |:---------------|:-----------------------------|:-------------------------------------------------|
 | `EX-BOOT-0001` | DAG Cycle Detected           | `[0] String[] cycleMembers`                      |
 | `EX-BOOT-0002` | Subsystem Init Failure       | *(opaque — variable arity per pathway)*          |
@@ -83,13 +83,13 @@ formatting. It implements:
 
 ### Runtime (`EX-RUN-`)
 
-| Code          | Description             | Black-Box Payload                                    |
+| Code          | Description             | Glass-Box Payload                                    |
 |:--------------|:------------------------|:-----------------------------------------------------|
 | `EX-RUN-3002` | Carrier Thread Pinning  | `[0] long blockMs, [1] String carrierThreadName`     |
 
 ### Network / Transport (`EX-NET-`)
 
-| Code          | Description                 | Black-Box Payload                                     |
+| Code          | Description                 | Glass-Box Payload                                     |
 |:--------------|:----------------------------|:------------------------------------------------------|
 | `EX-NET-2001` | TLS Operation Failure       | `[0] int nativeCode, [1] String detail`               |
 | `EX-NET-2002` | Crypto Provider Init Failure| `[0] String providerName, [1] String reason`          |
@@ -103,7 +103,7 @@ formatting. It implements:
 
 ### Security (`EX-SEC-`)
 
-| Code          | Description                  | Black-Box Payload                                           |
+| Code          | Description                  | Glass-Box Payload                                           |
 |:--------------|:-----------------------------|:------------------------------------------------------------|
 | `EX-SEC-2001` | PrincipalContext Missing      | *(no rawArgs)*                                              |
 | `EX-SEC-2002` | Token Validation Failed       | `[0] String tokenType, [1] String failureReason`            |
@@ -112,7 +112,7 @@ formatting. It implements:
 
 ### Persistence (`EX-PERS-`)
 
-| Code           | Description                    | Black-Box Payload                                                    |
+| Code           | Description                    | Glass-Box Payload                                                    |
 |:---------------|:-------------------------------|:---------------------------------------------------------------------|
 | `EX-PERS-5001` | Provider Bootstrap Failure     | `[0] String providerName, [1] String sanitizedConnectionUrl`         |
 | `EX-PERS-5002` | Connection Pool Exhausted      | `[0] String providerName, [1] long timeoutMs, [2] int activeConns`   |
@@ -124,17 +124,17 @@ formatting. It implements:
 
 ### Graph (`EX-GRPH-`)
 
-| Code           | Description                | Black-Box Payload                                                |
+| Code           | Description                | Glass-Box Payload                                                |
 |:---------------|:---------------------------|:-----------------------------------------------------------------|
 | `EX-GRPH-5001` | Engine Bootstrap Failure   | `[0] String providerName, [1] String reason`                     |
 | `EX-GRPH-5002` | Query Execution Failure    | `[0] String queryType, [1] String detail`                        |
 | `EX-GRPH-5003` | Dual-Write Sync Failure    | `[0] String edgeType, [1] String detail`                         |
-| `EX-GRPH-5004` | Path Not Found             | `[0] UUID sourceNodeId, [1] UUID targetNodeId`                   |
+| `EX-GRPH-5004` | Path Not Found             | `[0] long sourceMost, [1] long sourceLeast, [2] long targetMost, [3] long targetLeast` |
 | `EX-GRPH-5005` | Excessive Allocation       | `[0] String driverName, [1] long bytesAllocated, [2] long xfer`  |
 
 ### Events (`EX-EVENT-`)
 
-| Code            | Description              | Black-Box Payload                                               |
+| Code            | Description              | Glass-Box Payload                                               |
 |:----------------|:-------------------------|:----------------------------------------------------------------|
 | `EX-EVENT-6001` | Generic Engine Failure   | `[0] String message`                                            |
 | `EX-EVENT-6002` | Queue Overflow           | `[0] String eventType, [1] long depth, [2] long capacity`       |
@@ -143,7 +143,7 @@ formatting. It implements:
 
 ### Flow / Saga (`EX-FLOW-`)
 
-| Code           | Description               | Black-Box Payload                                                               |
+| Code           | Description               | Glass-Box Payload                                                               |
 |:---------------|:--------------------------|:--------------------------------------------------------------------------------|
 | `EX-FLOW-7001` | Provider Engine Failure   | `[0] String providerName, [1] String reason`                                    |
 | `EX-FLOW-7002` | Engine Lifecycle Failure  | `[0] String engineName, [1] String phase, [2] String reasonCode, [3] int ctx`   |
@@ -152,7 +152,7 @@ formatting. It implements:
 
 ### Config (`EX-CFG-`)
 
-| Code          | Description              | Black-Box Payload                                                             |
+| Code          | Description              | Glass-Box Payload                                                             |
 |:--------------|:-------------------------|:------------------------------------------------------------------------------|
 | `EX-CFG-1001` | Missing Property         | `[0] String missingKey, [1] String providerName`                              |
 | `EX-CFG-1002` | Type Mismatch            | `[0] String key, [1] String expectedType, [2] String actualValue` ⚠️ redact  |
@@ -162,7 +162,7 @@ formatting. It implements:
 
 ## Code Examples
 
-### 1. The Black-Box Ready Exception (SPI)
+### 1. The Glass-Box Ready Exception (SPI)
 
 ```java
 package eu.exeris.kernel.spi.exceptions;
@@ -209,7 +209,7 @@ public class ErrorMapperRegistry {
 
 - Full exception flow: throw → `ErrorMapperRegistry.map()` → respond via active Transport Driver.
 - Environment-aware disclosure: DEV exposes stack trace, PROD returns opaque error code only.
-- Binary Black-Box round-trip: `rawArgs[]` serialized → deserialized → fields match source primitives.
+- Binary Glass-Box round-trip: `rawArgs[]` serialized → deserialized → fields match source primitives.
 
 ---
 

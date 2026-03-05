@@ -1,4 +1,4 @@
-# Kernel Subsystem: Graph (L2 Data Synthesis)
+﻿# Kernel Subsystem: Graph (L2 Data Synthesis)
 
 **Physical Layout:**
 
@@ -105,16 +105,16 @@ synchronized with the L1 `StorageContext`:
 
 ---
 
-## Error Codes (Black Box Telemetry)
+## Error Codes
 
 > **Source of truth:** `KernelErrorCodes.java` in `exeris-kernel-spi`.
 
-| Code           | Meaning                   | Black-Box Payload (`rawArgs`)                                        |
+| Code           | Meaning                   | Glass-Box Payload (`rawArgs`)                                        |
 |:---------------|:--------------------------|:---------------------------------------------------------------------|
 | `EX-GRPH-5001` | Engine Bootstrap Failure  | `[0] String providerName, [1] String reason`                         |
 | `EX-GRPH-5002` | Query Execution Failure   | `[0] String queryType, [1] String detail`                            |
 | `EX-GRPH-5003` | Dual-Write Sync Failure   | `[0] String edgeType, [1] String detail`                             |
-| `EX-GRPH-5004` | Path Not Found            | `[0] UUID sourceNodeId, [1] UUID targetNodeId`                       |
+| `EX-GRPH-5004` | Path Not Found            | `[0] long sourceMost, [1] long sourceLeast, [2] long targetMost, [3] long targetLeast` |
 | `EX-GRPH-5005` | Excessive Allocation      | `[0] String driverName, [1] long bytesAllocated, [2] long bytesXfer` |
 
 **TCK enforcement for `EX-GRPH-5005`:** When running with `LeakDetectionMode.PARANOID`, the TCK measures the
