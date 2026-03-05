@@ -8,30 +8,17 @@
 package eu.exeris.kernel.spi.transport;
 
 /**
- * SPI: Priority classification for incoming {@link TransportStream} objects.
+ * The vocabulary for stream priority across the transport layer.
  *
  * <h2>Protocol Blindness (The Wall)</h2>
- * <p>This enum is the vocabulary of the Core's Priority-Aware Queue Scheduler (PAQS).
- * It carries business context into the network edge without exposing any knowledge of the
- * underlying protocol (TCP, QUIC, io_uring). The transport driver assigns a {@code StreamPriority}
- * based on protocol headers (e.g. HTTP/3 urgency field per RFC 9218, or a proprietary
- * request-type header). The Core PAQS reads the priority and makes shed/admit decisions.
+ * <p>This enum carries business context into the network edge without exposing knowledge
+ * of the underlying protocol. Transport drivers assign a {@code StreamPriority} based on
+ * incoming connection criteria, allowing the kernel to make deterministic admission and
+ * load-shedding decisions.
  *
  * <h2>Ordinal Contract (Stable Binary Layout)</h2>
- * <p>The ordinal of each constant maps directly to the C2-optimised priority switch table
- * in {@code PaqsScheduler}. Do NOT reorder these constants.
- * <pre>
- *   Ordinal 0 → CRITICAL (highest — never shed unless SHEDDING watermark)
- *   Ordinal 1 → HIGH     (e.g., payment API, auth, settlement)
- *   Ordinal 2 → NORMAL   (standard business API calls)
- *   Ordinal 3 → LOW      (analytics, non-urgent reporting)
- *   Ordinal 4 → TELEMETRY (internal metrics / heartbeats — first to be shed)
- * </pre>
- *
- * <h2>Valhalla Readiness</h2>
- * <p>Enum constants are JVM singletons. Use {@code ==} for comparisons — they are
- * identity-safe and scalarize correctly under C2 JIT. No boxing occurs on
- * switch-expression dispatch (C2 generates a jump table over ordinals).
+ * <p>The ordinal of each constant is stable and guaranteed for binary serialization
+ * and fast array-based routing. Do NOT reorder these constants.
  *
  * @since 0.5.0
  */

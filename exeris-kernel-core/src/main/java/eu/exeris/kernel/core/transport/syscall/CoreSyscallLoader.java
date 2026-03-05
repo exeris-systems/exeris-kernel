@@ -188,14 +188,14 @@ public final class CoreSyscallLoader {
                 FunctionDescriptor.of(JAVA_INT, JAVA_LONG));
 
         java.lang.invoke.MethodType sendRecvType = java.lang.invoke.MethodType.methodType(
-                long.class, int.class, MemorySegment.class, int.class, int.class);
+                long.class, long.class, MemorySegment.class, int.class, int.class);
 
         MethodHandle sendRaw = req(linker, ws2, "send",
-                FunctionDescriptor.of(JAVA_INT, JAVA_INT, ADDRESS, JAVA_INT, JAVA_INT));
+                FunctionDescriptor.of(JAVA_INT, JAVA_LONG, ADDRESS, JAVA_INT, JAVA_INT));
         MethodHandle send = java.lang.invoke.MethodHandles.explicitCastArguments(sendRaw, sendRecvType);
 
         MethodHandle recvRaw = req(linker, ws2, "recv",
-                FunctionDescriptor.of(JAVA_INT, JAVA_INT, ADDRESS, JAVA_INT, JAVA_INT));
+                FunctionDescriptor.of(JAVA_INT, JAVA_LONG, ADDRESS, JAVA_INT, JAVA_INT));
         MethodHandle recv = java.lang.invoke.MethodHandles.explicitCastArguments(recvRaw, sendRecvType);
 
         MethodHandle ioctlsocket = req(linker, ws2, "ioctlsocket",

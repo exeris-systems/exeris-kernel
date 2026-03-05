@@ -21,7 +21,7 @@ import jdk.jfr.StackTrace;
  *
  * <h2>Error Code Mapping (Black-Box Telemetry)</h2>
  * <pre>
- *   EX-NET-4003 — stream rejected because the PAQS queue has reached the saturated threshold
+ *   EX-NET-4006 — stream rejected because the PAQS queue has reached the saturated threshold
  * </pre>
  *
  * <h2>JFR-First Principle</h2>
