@@ -243,11 +243,11 @@ class AdmissionControllerTest {
         }
 
         @Test
-        @DisplayName("onStreamAdmitted increments; onStreamCompleted decrements")
+        @DisplayName("admit() reserves slot; onStreamCompleted decrements")
         void incrementAndDecrement() {
             AdmissionController controller = controllerAtLevel(WatermarkLevel.NORMAL);
-            controller.onStreamAdmitted();
-            controller.onStreamAdmitted();
+            controller.admit(StreamPriority.NORMAL);
+            controller.admit(StreamPriority.NORMAL);
             assertThat(controller.activeStreamCount()).isEqualTo(2);
             controller.onStreamCompleted();
             assertThat(controller.activeStreamCount()).isEqualTo(1);
@@ -270,7 +270,7 @@ class AdmissionControllerTest {
             AdmissionController controller = controllerAtLevel(WatermarkLevel.NORMAL);
             int maxStreams = 5_000;
             for (int i = 0; i < maxStreams; i++) {
-                controller.onStreamAdmitted();
+                assertThat(controller.admit(StreamPriority.NORMAL)).isEqualTo(Decision.ADMIT);
             }
             assertThat(controller.activeStreamCount()).isEqualTo(maxStreams);
             assertThat(controller.admit(StreamPriority.CRITICAL)).isEqualTo(Decision.SHED_CAPACITY);
