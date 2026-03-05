@@ -13,6 +13,7 @@ import eu.exeris.kernel.spi.transport.TransportStream;
 
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
+import java.util.Objects;
 
 /**
  * Core: Transport-edge load shedder — closes incoming streams that have been rejected
@@ -91,6 +92,10 @@ public final class StreamLoadShedder {
                      StreamPriority priority,
                      AdmissionController.Decision decision,
                      int activeStreamCount) {
+        Objects.requireNonNull(stream, "stream must not be null");
+        Objects.requireNonNull(decision, "decision must not be null");
+        StreamPriority effectivePriority = (priority == null) ? StreamPriority.NORMAL : priority;
+
         SHED_COUNT.getAndAdd(this, 1L);
 
         try {
@@ -100,7 +105,7 @@ public final class StreamLoadShedder {
         } finally {
             StreamShedEvent.emit(
                     stream.streamId(),
-                    priority.name(),
+                    effectivePriority.name(),
                     decision.name(),
                     engineName,
                     activeStreamCount

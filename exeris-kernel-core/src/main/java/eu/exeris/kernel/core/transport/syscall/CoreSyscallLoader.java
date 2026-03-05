@@ -17,6 +17,7 @@ import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
 
+import static java.lang.foreign.ValueLayout.ADDRESS;
 import static java.lang.foreign.ValueLayout.JAVA_INT;
 import static java.lang.foreign.ValueLayout.JAVA_LONG;
 
@@ -186,11 +187,16 @@ public final class CoreSyscallLoader {
         MethodHandle close = req(linker, ws2, "closesocket",
                 FunctionDescriptor.of(JAVA_INT, JAVA_LONG));
 
-        MethodHandle send = req(linker, ws2, "send",
-                FunctionDescriptor.of(JAVA_INT, JAVA_LONG, JAVA_LONG, JAVA_INT, JAVA_INT));
+        java.lang.invoke.MethodType sendRecvType = java.lang.invoke.MethodType.methodType(
+                long.class, int.class, MemorySegment.class, int.class, int.class);
 
-        MethodHandle recv = req(linker, ws2, "recv",
-                FunctionDescriptor.of(JAVA_INT, JAVA_LONG, JAVA_LONG, JAVA_INT, JAVA_INT));
+        MethodHandle sendRaw = req(linker, ws2, "send",
+                FunctionDescriptor.of(JAVA_INT, JAVA_INT, ADDRESS, JAVA_INT, JAVA_INT));
+        MethodHandle send = java.lang.invoke.MethodHandles.explicitCastArguments(sendRaw, sendRecvType);
+
+        MethodHandle recvRaw = req(linker, ws2, "recv",
+                FunctionDescriptor.of(JAVA_INT, JAVA_INT, ADDRESS, JAVA_INT, JAVA_INT));
+        MethodHandle recv = java.lang.invoke.MethodHandles.explicitCastArguments(recvRaw, sendRecvType);
 
         MethodHandle ioctlsocket = req(linker, ws2, "ioctlsocket",
                 FunctionDescriptor.of(JAVA_INT, JAVA_LONG, JAVA_LONG, JAVA_LONG));

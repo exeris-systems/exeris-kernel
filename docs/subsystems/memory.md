@@ -110,10 +110,10 @@ try (var scope = StructuredTaskScope.open(Joiner.awaitAllSuccessfulOrThrow())) {
 
 ## Multi-Tier Memory Strategy
 
-| Tier           | Allocator                    | GC Handshakes on hot-path | Use Case                          |
-|:---------------|:-----------------------------|:--------------------------|:----------------------------------|
-| **Community**  | `Arena.ofShared()` (bounded) | Low (JVM thread-local)    | Standard TCP, JDBC persistence    |
-| **Enterprise** | `GlobalMemoryArbiter` `mmap` | **Zero**                  | `io_uring`, native DB driver, HFT |
+| Tier           | Allocator                                                                     | GC Handshakes on hot-path | Use Case                          |
+|:---------------|:------------------------------------------------------------------------------|:--------------------------|:----------------------------------|
+| **Community**  | `MemoryAllocator` via `KernelProviders.MEMORY_ALLOCATOR` (shared, bounded)   | Low (JVM thread-local)    | Standard TCP, JDBC persistence    |
+| **Enterprise** | `GlobalMemoryArbiter` `mmap`                                                  | **Zero**                  | `io_uring`, native DB driver, HFT |
 
 ---
 
