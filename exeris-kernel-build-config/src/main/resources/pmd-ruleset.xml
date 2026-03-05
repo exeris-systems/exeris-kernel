@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="UTF-8"?>
+﻿<?xml version="1.0" encoding="UTF-8"?>
 <ruleset name="Exeris PMD Ruleset"
     xmlns="http://pmd.sourceforge.net/ruleset/2.0.0"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -13,11 +13,11 @@
     <!-- Best Practices -->
     <rule ref="category/java/bestpractices.xml">
         <!--
-            ARCH-DECISION: Zero-Copy Black-Box Contract.
+            ARCH-DECISION: Zero-Copy Glass-Box Contract.
             ExerisKernelException.rawArgs() deliberately returns the internal array
             by reference to guarantee zero allocation on the telemetry hot-path.
             A defensive copy would violate the "No Waste Compute" mandate.
-            See: docs/subsystems/telemetry.md § "The Black-Box Pattern"
+            See: docs/subsystems/telemetry.md § "The Glass-Box Pattern"
         -->
         <exclude name="MethodReturnsInternalArray"/>
     </rule>
@@ -60,7 +60,7 @@
             ARCH-DECISION: Constant registries and value carriers are intentional.
             KernelErrorCodes is a pure constant registry (by design, WOC=0).
             ExerisKernelException is a structured value carrier for binary telemetry —
-            accessor methods are part of the Black-Box contract, not a sign of missing
+            accessor methods are part of the Glass-Box contract, not a sign of missing
             behaviour. The DataClass rule was designed to flag anemic domain models in
             business logic, not SPI-layer telemetry infrastructure.
         -->
@@ -70,8 +70,8 @@
     <!-- Error Prone -->
     <rule ref="category/java/errorprone.xml">
         <!--
-            ARCH-DECISION: Binary Black-Box serialization replaces Java Serializable.
-            Exeris kernel exceptions are serialised via the off-heap binary Black-Box
+            ARCH-DECISION: Binary Glass-Box serialization replaces Java Serializable.
+            Exeris kernel exceptions are serialised via the off-heap binary Glass-Box
             format (MemorySegment structs), never via java.io.ObjectOutputStream.
             Adding serialVersionUID would be pure ceremony with no runtime benefit.
             See: docs/subsystems/telemetry.md § "Binary Struct Mapping"

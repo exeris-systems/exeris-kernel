@@ -42,9 +42,9 @@ import static java.lang.foreign.ValueLayout.JAVA_LONG;
  *  socklen_t     JAVA_INT      typedef unsigned int
  *  size_t        JAVA_LONG     64-bit ABI (LP64 / LLP64)
  *  ssize_t       JAVA_LONG
- *  void*         JAVA_LONG     raw address, zero-copy
- *  sockaddr*     JAVA_LONG     raw address, zero-copy
- *  socklen_t*    JAVA_LONG     raw address, zero-copy
+ *  void*         ADDRESS       Panama lifetime + bounds safety
+ *  sockaddr*     ADDRESS       Panama lifetime + bounds safety
+ *  socklen_t*    ADDRESS       Panama lifetime + bounds safety
  *  SOCKET(Win)   JAVA_LONG     UINT_PTR = 64-bit on Win64
  *  u_long*       JAVA_LONG     raw address (ioctlsocket arg)
  * </pre>
@@ -114,25 +114,25 @@ public final class CoreSyscallLoader {
                 FunctionDescriptor.of(JAVA_INT, JAVA_INT, JAVA_INT, JAVA_INT));
 
         MethodHandle bind = req(linker, lookup, "bind",
-                FunctionDescriptor.of(JAVA_INT, JAVA_INT, JAVA_LONG, JAVA_INT));
+                FunctionDescriptor.of(JAVA_INT, JAVA_INT, ADDRESS, JAVA_INT));
 
         MethodHandle listen = req(linker, lookup, "listen",
                 FunctionDescriptor.of(JAVA_INT, JAVA_INT, JAVA_INT));
 
         MethodHandle accept = req(linker, lookup, "accept",
-                FunctionDescriptor.of(JAVA_INT, JAVA_INT, JAVA_LONG, JAVA_LONG));
+                FunctionDescriptor.of(JAVA_INT, JAVA_INT, ADDRESS, ADDRESS));
 
         MethodHandle connect = req(linker, lookup, "connect",
-                FunctionDescriptor.of(JAVA_INT, JAVA_INT, JAVA_LONG, JAVA_INT));
+                FunctionDescriptor.of(JAVA_INT, JAVA_INT, ADDRESS, JAVA_INT));
 
         MethodHandle close = req(linker, lookup, "close",
                 FunctionDescriptor.of(JAVA_INT, JAVA_INT));
 
         MethodHandle send = req(linker, lookup, "send",
-                FunctionDescriptor.of(JAVA_LONG, JAVA_INT, JAVA_LONG, JAVA_LONG, JAVA_INT));
+                FunctionDescriptor.of(JAVA_LONG, JAVA_INT, ADDRESS, JAVA_LONG, JAVA_INT));
 
         MethodHandle recv = req(linker, lookup, "recv",
-                FunctionDescriptor.of(JAVA_LONG, JAVA_INT, JAVA_LONG, JAVA_LONG, JAVA_INT));
+                FunctionDescriptor.of(JAVA_LONG, JAVA_INT, ADDRESS, JAVA_LONG, JAVA_INT));
 
         MethodHandle fcntl = req(linker, lookup, "fcntl",
                 FunctionDescriptor.of(JAVA_INT, JAVA_INT, JAVA_INT, JAVA_LONG));

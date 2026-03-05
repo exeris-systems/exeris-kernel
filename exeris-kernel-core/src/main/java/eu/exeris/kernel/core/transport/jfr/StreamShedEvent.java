@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (C) 2025-2026 Exeris. All rights reserved.
  *
  * This code is part of the Exeris Systems.
@@ -19,7 +19,7 @@ import jdk.jfr.StackTrace;
  * JFR event emitted by the PAQS Scheduler when an incoming stream is shed at the
  * transport edge due to memory pressure or thread capacity exhaustion.
  *
- * <h2>Error Code Mapping (Black-Box Telemetry)</h2>
+ * <h2>Error Code Mapping (Glass-Box Telemetry)</h2>
  * <pre>
  *   EX-NET-4006 — stream rejected because the PAQS queue has reached the saturated threshold
  * </pre>
@@ -73,13 +73,14 @@ public final class StreamShedEvent extends Event {
             return;
         }
         StreamShedEvent evt = new StreamShedEvent();
-        if (evt.isEnabled()) {
-            evt.streamId = streamId;
-            evt.priority = priority;
-            evt.shedReason = shedReason;
-            evt.engineName = engineName;
-            evt.activeStreamCount = activeStreamCount;
-            evt.commit();
+        if (!evt.isEnabled()) {
+            return;
         }
+        evt.streamId = streamId;
+        evt.priority = priority;
+        evt.shedReason = shedReason;
+        evt.engineName = engineName;
+        evt.activeStreamCount = activeStreamCount;
+        evt.commit();
     }
 }

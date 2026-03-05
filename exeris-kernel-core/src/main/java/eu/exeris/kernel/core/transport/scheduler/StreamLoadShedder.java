@@ -62,7 +62,7 @@ public final class StreamLoadShedder {
     /**
      * Creates a {@code StreamLoadShedder} associated with the given transport engine.
      *
-     * @param engineName the engine name for JFR event fields; must not be {@code null}
+     * @param engineName the engine name for JFR event fields; must not be {@code null} or blank
      */
     public StreamLoadShedder(String engineName) {
         if (engineName == null || engineName.isBlank()) {
@@ -98,13 +98,14 @@ public final class StreamLoadShedder {
 
         SHED_COUNT.getAndAdd(this, 1L);
 
+        long capturedStreamId = stream.streamId();
         try {
             stream.close();
         } catch (RuntimeException _) { //NOPMD AvoidCatchingGenericException
             // best-effort close on carrier-thread hot path
         } finally {
             StreamShedEvent.emit(
-                    stream.streamId(),
+                    capturedStreamId,
                     effectivePriority.name(),
                     decision.name(),
                     engineName,
