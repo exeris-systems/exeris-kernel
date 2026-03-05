@@ -1,5 +1,5 @@
 # Exeris Kernel: Architecture Overview
-**Version:** 0.5.0-SNAPSHOT 
+**Version:** 0.5.0-SNAPSHOT  
 **Last Updated:** February 2026  
 **Status:** Validated Architectural Prototype (TRL‑3)
 
@@ -10,31 +10,32 @@
 The **Exeris Kernel** is a next‑generation, zero‑copy runtime for cloud‑native, high‑performance applications.  
 Built on **Java 26**, it leverages:
 
-- **Virtual Threads** (Project Loom) for 1:1 request‑to‑thread mapping without event loops
-- **Panama FFM** for zero‑copy I/O and off‑heap memory management
-- **Scoped Values** (JEP 506) for Virtual Thread‑safe context propagation
-- **SQL/PGQ** (PostgreSQL 18) for native graph queries
-- **Event Sourcing** with optimistic concurrency control
-- **Saga Orchestration** for distributed transactions
+- **Virtual Threads** (Project Loom) for 1:1 request‑to‑thread mapping.
+- **Panama FFM** for zero‑copy I/O and deterministic off‑heap memory management.
+- **Scoped Values** (JEP 506) for strict, ThreadLocal-free context propagation.
 
 **No Waste Compute** is the core principle:
 > Every byte allocated must serve a purpose. Every CPU cycle must add value.
 
 ---
 
-## 🏗️ Physical Architecture (“The Wall”)
+## 🏗️ Physical Architecture ("The Wall")
 
 The Kernel enforces strict **vertical separation of concerns** at the Maven module level.  
-Modules are not divided by domain (e.g., `kernel-memory`, `kernel-security`) but by **tier**.
+Modules are not divided by domain, but by **trust and execution tier**.
 
 ```
 exeris-kernel-parent
-├── exeris-kernel-spi        (The Constitution: Pure interfaces, Value Records)
-├── exeris-kernel-core       (The Brain: Orchestration, Watermarks, Load Shedding)
-├── exeris-kernel-community  (The Muscle: Standard Java 26 FFM adapters)
-├── exeris-kernel-enterprise (The Heavy Muscle: io_uring, QUIC, C-Interop - External / Closed Source)
+├── exeris-kernel-spi        (The Constitution: Pure contracts, Value Records)
+├── exeris-kernel-core       (The Brain: Orchestration, Bootstrap, Context)
+├── exeris-kernel-community  (The Engine: Standard Java 26 FFM adapters)
+├── exeris-kernel-enterprise (The Accelerator: Off-Heap drivers, io_uring, QUIC)
 └── exeris-kernel-tck        (The Judge: Technology Compatibility Kit)
 ```
+
+### The "Mix & Match" Rule (Opt-In Architecture)
+
+Exeris is an **À la carte** execution engine. Subsystems are loaded dynamically via the SPI. You can mix providers across tiers. For example, you can use the free **Community Transport** (TCP/NIO) while plugging in the **Enterprise Persistence** driver (`io_uring` DB), or disable higher-level features entirely.
 
 ### Rules
 1. **core**, **community**, and **enterprise** depend **only** on **spi**.
@@ -46,25 +47,26 @@ exeris-kernel-parent
 ## 🧠 Logical Subsystems (L0–L4)
 
 Physical structure is tiered, but logical features are organized into **Subsystem Layers**.  
-Contracts live in **spi**, orchestration in **core**, execution in the **drivers**.
+Contracts live in **spi**, orchestration in **core**, and execution in the **drivers**.
 
-### L4 — Orchestration (Flow / Sagas)
+**L3 and L4 are strictly OPTIONAL.** You use them only if your architecture requires them.
+
+### L4 — Orchestration `[OPTIONAL]`
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│  L4: Orchestration (Flow - Sagas)                            │
+│  L4: Flow (Sagas & Workflows)                                │
 │  - Saga Engine & Step Actions (compensating transactions)    │
-│  - Dead Letter Queue (failed steps)                          │
+│  - Off-Heap State Machine Cache (Enterprise)                 │
 └──────────────────────────────────────────────────────────────┘
 ```
 
-### L3 — Logic Engines (Events)
+### L3 — Logic Engines `[OPTIONAL]`
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│  L3: Logic Engines (Events)                                  │
-│  - Event Sourcing (append-only log)                          │
-│  - Partitioned Event Store (monthly, 50k writes/sec)         │
+│  L3: Events (Streaming & Messaging)                          │
+│  - Event Sourcing (append-only log) & Projections            │
 │  - Transactional Outbox (at-least-once delivery)             │
 └──────────────────────────────────────────────────────────────┘
 ```
@@ -73,12 +75,11 @@ Contracts live in **spi**, orchestration in **core**, execution in the **drivers
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│  L2: Data Synthesis (Graph, Transport)                       │
+│  L2: Data Synthesis                                          │
 │  ┌────────────────────┐ ┌──────────────────────────────────┐ │
-│  │  Graph Service     │ │  Transport (QUIC/HTTP/3)         │ │
-│  │  - SQL/PGQ         │ │  - RFC 9000 / RFC 9114           │ │
-│  │  - Path Finding    │ │  - Virtual Threads per stream    │ │
-│  │  - Dual-write      │ │  - Priority-Aware Scheduler      │ │
+│  │  Graph Service     │ │  Transport (I/O)                 │ │
+│  │  - Path Finding    │ │  - Protocol-Agnostic SPI         │ │
+│  │  - Native Queries  │ │  - Priority-Aware Scheduler      │ │
 │  └────────────────────┘ └──────────────────────────────────┘ │
 └──────────────────────────────────────────────────────────────┘
 ```
@@ -87,12 +88,11 @@ Contracts live in **spi**, orchestration in **core**, execution in the **drivers
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│  L1: Data & Integrity (Security, Persistence)                │
+│  L1: Data & Integrity                                        │
 │  ┌─────────────────────┐ ┌────────────────────────────────┐  │
 │  │  Security (Citadel) │ │  Persistence (Repositories)    │  │
-│  │  - JWT extraction   │ │  - RLS enforcement             │  │
-│  │  - ScopedValues     │ │  - Optimistic concurrency      │  │
-│  │  - Role checking    │ │  - Entity serialization        │  │
+│  │  - ScopedValues     │ │  - Zero-Copy DB Handover       │  │
+│  │  - Role checking    │ │  - Optimistic concurrency      │  │
 │  └─────────────────────┘ └────────────────────────────────┘  │
 └──────────────────────────────────────────────────────────────┘
 ```
@@ -101,12 +101,12 @@ Contracts live in **spi**, orchestration in **core**, execution in the **drivers
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│  L0: Foundation (Config, Memory, Telemetry)                  │
+│  L0: Foundation                                              │
 │  ┌────────────────┐ ┌──────────────┐ ┌──────────────────┐    │
 │  │  Config        │ │  Memory      │ │  Telemetry       │    │
-│  │  - Hot-reload  │ │  - Loan      │ │  - JFR Events    │    │
-│  │  - VarHandle   │ │    pattern   │ │  - Trace ID      │    │
-│  │  - No deps     │ │  - Arenas    │ │  - RFC 9114 Err  │    │
+│  │  - Hot-reload  │ │  - Loan      │ │  - JFR Native    │    │
+│  │  - Dynamic SPI │ │    pattern   │ │  - Sub-1% Tax    │    │
+│  │  - No deps     │ │  - Arenas    │ │  - Trace ID      │    │
 │  └────────────────┘ └──────────────┘ └──────────────────┘    │
 └──────────────────────────────────────────────────────────────┘
 ```
@@ -118,43 +118,47 @@ Contracts live in **spi**, orchestration in **core**, execution in the **drivers
 ### 1. Virtual Threads (JEP 444/491)
 - Lightweight, scheduler‑managed threads
 - Memory cost: ~100 bytes (vs ~1 MB for OS threads)
-- Enables **1 thread per request**, no pools, no callbacks
+- Enables **1 thread per request** on Carrier Threads
+- Managed within `StructuredTaskScope` — never spawned unstructured
+
+### 5. Structured Concurrency (JEP 525 / JDK 25 Joiner API)
+- All parallel operations use `StructuredTaskScope.open(Joiner)` — never raw `ExecutorService`
+- `Joiner.awaitAllSuccessfulOrThrow()` for bootstrap: one failure cancels the entire scope
+- `Joiner.anySuccessfulResultOrThrow()` for competitive I/O: first result wins, rest cancelled immediately
+- `join()` returns a typed result `R` — zero-cast `LoanedBuffer` handover between subtasks
 
 ### 2. Panama FFM (JEP 454)
 - Safe native interop
-- Used for QUIC parsing, OpenSSL TLS, zero‑copy operations
-- Eliminates JNI overhead
+- Used for zero‑copy operations, OpenSSL TLS, and eliminating JNI overhead
 
 ### 3. Scoped Values (JEP 506)
 - Immutable, inherited context
 - Used for tenant, security, trace ID
-- Safe for Virtual Threads, unlike ThreadLocal
+- Safe for Virtual Threads, strictly bypassing ThreadLocal leaks
 
-### 4. Row‑Level Security (Tenant Isolation)
-- Enforced at PostgreSQL storage layer
-- Automatic tenant filtering via `SET LOCAL exeris.tenant_id`
-- Immune to application‑side query bugs
+### 4. LoanedBuffer Pattern
+- Data never copies, it **loans**
+- Buffers are leased from the `GlobalMemoryArbiter` and passed by reference directly from the NIC to the Database
 
 ---
 
-## 🔄 Request Flow (End‑to‑End)
+## 🔄 Request Flow (End‑to‑End Zero-Copy)
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  1. Packet Arrives -> Carrier Thread parses (Panama FFM)    │
-│     - Zero-copy via MemorySegment slices (LoanedBuffer)     │
+│  1. Packet Arrives -> Transport parses into Arena (Panama)  │
 ├─────────────────────────────────────────────────────────────┤
-│  2. Dispatcher Creates Virtual Thread (1 per stream)        │
+│  2. Dispatcher opens StructuredTaskScope with Joiner (1/stream)│
 ├─────────────────────────────────────────────────────────────┤
 │  3. Priority-Aware Scheduler applies load-shedding          │
 ├─────────────────────────────────────────────────────────────┤
-│  4. HTTP/3 Handler Binds ScopedValue (TenantContext)        │
+│  4. Security Handler Binds ScopedValue (TenantContext)      │
 ├─────────────────────────────────────────────────────────────┤
 │  5. Business Logic executes via Kernel Providers (SPI)      │
 ├─────────────────────────────────────────────────────────────┤
-│  6. Database Query executes (RLS automatically enforced)    │
+│  6. Database Query executes via PersistenceProvider         │
 ├─────────────────────────────────────────────────────────────┤
-│  7. Event Appended + Transactional Outbox triggered         │
+│  7. [Optional] Event Appended + Transactional Outbox fired  │
 ├─────────────────────────────────────────────────────────────┤
 │  8. Response Sent (LoanedBuffer ref-count reaches 0 -> pool)│
 └─────────────────────────────────────────────────────────────┘
@@ -165,14 +169,14 @@ Contracts live in **spi**, orchestration in **core**, execution in the **drivers
 ## 🛡️ Observability & Failure Handling
 
 ### Graceful Degradation & Backpressure
-- High Watermark breach → **H3_EXCESSIVE_LOAD**
+- High Watermark breach → **ExcessiveLoad** exceptions
 - Prevents crashes, enforces fairness
-- Virtual Thread pinning >50ms → logged as `EX-RUN-3002`
+- Virtual Thread pinning >50ms → logged and isolated
 
-### JFR‑First Telemetry (“Glass Box”)
+### JFR‑First Telemetry ("Glass Box")
 - No heavy agents
-- Every major kernel operation emits a **JFR event**
-- Nanosecond precision, minimal overhead
+- Every major kernel operation emits a **strongly-typed JFR event**
+- Microsecond precision, minimal overhead
 
 ---
 

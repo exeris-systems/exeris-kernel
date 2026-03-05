@@ -1,53 +1,93 @@
-# Kernel Subsystem: Events (L3 Logic Engines)
+﻿# Kernel Subsystem: Events (L3 Logic Engines)
 
 **Physical Layout:**
 
-- SPI: `eu.exeris.kernel.spi.events.*` (Event definitions, Stream contracts, Append/Read API)
-- Core: `eu.exeris.kernel.core.events.*` (Event Bus, Outbox Orchestrator, Projections)
-- Drivers: `exeris-kernel-community` (PostgreSQL Event Store) / `exeris-kernel-enterprise` (Native Kafka / Redpanda
-  Integration)
-  **Layer:** L3 (Logic Engines)  
-  **Status:** Validated Architectural Prototype (TRL-3)
+- SPI: `eu.exeris.kernel.spi.events.*` (`EventEngine`, `EventBus`, `EventDescriptor`, `EventPayload`)
+- Core: `eu.exeris.kernel.core.events.*` (Outbox Orchestrator, Projections)
+- Drivers:
+    - **`community`**: Standard Heap/NIO (PostgreSQL Event Store, JVM-heap Pub/Sub)
+    - **`enterprise`**: Off-Heap Slab Pools + `io_uring` + Native Kafka / Redpanda Integration
+
+**Layer:** L3 (Logic Engines)
+**Status:** Validated Architectural Prototype (TRL-3)
 
 ---
 
 ## Overview
 
-The **Events subsystem** provides the immutable backbone for state changes and inter-service communication. It
-implements a unified **Event Stream SPI**, allowing the Kernel to operate seamlessly across different streaming
-backends (SQL or Log-based).
+The **Events subsystem** is the nervous system of the Exeris Kernel. It acts as the **"Invisible Wall"** for
+event-driven communication — the engine is completely **implementation-blind**: it does not know whether it
+operates on local memory, a PostgreSQL partition, or a Kafka cluster.
 
-- **Unified Stream SPI:** Business logic appends events to a `Stream`, oblivious to whether it maps to a Postgres
-  partition or a Kafka topic.
-- **Transactional Outbox:** Guarantees "At-Least-Once" delivery by atomically binding event publication to database
-  transactions (when using SQL-based persistence).
-- **Off-Heap Native Flow:** Leverages the Zero-Copy capabilities of both the Kernel (Panama FFM) and the transport (
-  Kafka sendfile/page cache) to minimize latency.
-- **Ordered Aggregates:** Enforces strict ordering and versioning per Aggregate Root, preventing race conditions in
-  high-concurrency Virtual Thread environments.
+- **Unified Stream SPI:** Business logic appends events to a `Stream` oblivious to whether it maps to a
+  Postgres partition, a Kafka topic, or an off-heap ring buffer.
+- **Transactional Outbox:** Guarantees at-least-once delivery by atomically binding event publication to
+  database transactions (SQL-based persistence).
+- **Zero-Copy Native Flow:** In the Enterprise tier, the engine exchanges data directly with Kafka/Redpanda,
+  bypassing the JVM heap entirely via Panama FFM and `LoanedBuffer` handover to the broker socket.
+- **Ordered Aggregates:** Enforces strict ordering and versioning per Aggregate Root, preventing race
+  conditions in high-concurrency Virtual Thread environments.
 
 ---
 
-## Core Philosophy
+## Core Philosophy: "Routing vs. Payload Separation"
 
-### 1. "Facts are Immutable"
+### 1. Valhalla-Ready Routing (`EventDescriptor`)
 
-Once an event is appended to the stream, it can never be changed or deleted. This provides a perfect audit trail and the
-ability to reconstruct system state at any point in time.
+Event routing metadata is encapsulated in `EventDescriptor` — a structure composed exclusively of primitive
+types (`long`, `int`). This allows the JIT to fully scalarize it, prepares it for `value record` migration
+(JEP 401), and guarantees **zero object allocation per routing decision**.
 
-### 2. Backend Agnosticism
+### 2. RAII Payload Lifecycle (`EventPayload`)
 
-The Kernel does not dictate the storage for events.
+The actual event bytes live off-heap. When the `EventBus` broadcasts to N subscribers, it increments the
+`EventPayload` reference count to N before dispatch. Each handler receives a live slice; the last handler to
+`close()` returns the slab to the `MemoryAllocator` pool. If N == 0 (no subscribers), the bus releases
+the payload immediately — eliminating silent leaks from dead events.
 
-- **Postgres Driver (Standard):** Uses `PARTITION BY RANGE` for monthly chunks, ideal for ACID-heavy event sourcing
-  within a single database.
-- **Kafka Driver (HPC):** Directly streams events to distributed logs, leveraging Kafka's native off-heap performance
-  for global-scale messaging.
+### 3. Zero-Copy Native Flow
 
-### 3. Decoupled Persistence
+In the Enterprise tier, bytes travel:
+```
+Producer LoanedBuffer → EventBus → io_uring SQE → Kafka sendfile/page cache
+```
+No `byte[]` copy, no `ByteBuffer.allocate()`, no heap serialization between the producer and the broker.
 
-Events can exist independently of the Persistence subsystem. In a pure "Streaming" mode, the Kernel can act as a
-stateless event processor (Log Aggregator, IoT Gateway) without ever touching a relational database.
+### 4. Backpressure by Design
+
+`EventQueue` enforces Backpressure semantics. When the queue is full, publishers receive `EX-EVENT-6002`
+instead of silently blocking a Carrier Thread or triggering unbounded heap growth.
+
+---
+
+## SPI Architecture (The Composite Façade)
+
+`EventEngine` is the single entry point. It integrates four orthogonal components:
+
+| Component         | Responsibility                                                                          |
+|:------------------|:----------------------------------------------------------------------------------------|
+| **`EventBus`**    | Pub/Sub. Manages subscriptions (returns `SubscriptionToken`), publishes fire-and-forget |
+| **`EventQueue`**  | Durable backpressure buffer. Enterprise: lock-free off-heap ring buffer                 |
+| **`EventLoop`**   | Drains the queue. Community: `StructuredTaskScope` (VTs). Enterprise: single-threaded lock-free |
+| **`EventRegistry`** | Type system. Maps event names → `int` ordinals for O(1) hot-path routing            |
+
+`EventRegistry` is the critical performance gate: ordinal-based routing eliminates `String` comparison on
+the hot-path entirely. `registry.ordinalOf("OrderConfirmed")` is an O(1) lookup; the returned `int` fits
+in the `EventDescriptor` primitive layout.
+
+---
+
+## Multi-Provider Strategy
+
+| Backend              | Best For             | Technical Advantage                                           |
+|:---------------------|:---------------------|:--------------------------------------------------------------|
+| **PostgreSQL**       | Local Event Sourcing | ACID-compliant atomic commits with entities                   |
+| **Kafka / Redpanda** | Distributed Systems  | Native Off-Heap Page Cache, Zero-Copy streaming               |
+| **In-Memory**        | Testing / Ephemeral  | Zero latency, non-persistent                                  |
+
+**Batch Flush (Enterprise):** `EventLoop` supports `EventBatchProcessor` registration. At 10,000 events/s,
+the engine batches them into a single flush — one `io_uring` SQE submission instead of 10,000 individual
+inserts or Kafka `ProducerRecord` objects.
 
 ---
 
@@ -55,97 +95,115 @@ stateless event processor (Log Aggregator, IoT Gateway) without ever touching a 
 
 **What Events SPI DOES:**
 
-1. Define the `Event` base record and `StreamId` abstractions.
+1. Define `EventDescriptor` (primitive-only routing metadata) and `EventPayload` (ref-counted off-heap bytes).
 2. Provide `EventStreamReader` and `EventStreamAppender` interfaces.
-3. Define conflict resolution contracts (Optimistic Concurrency).
+3. Define `EventRegistry` ordinal contract for O(1) type routing.
+4. Define conflict-resolution contracts (Optimistic Concurrency via version field in `EventDescriptor`).
 
 **What Events Core DOES:**
 
-1. Orchestrate the **Event Bus** for in-memory distribution to local subscribers.
-2. Manage the **Transactional Outbox** state machine to prevent "Dual Writes" problems.
-3. Handle event serialization/deserialization using the Kernel's binary formats.
+1. Orchestrate the **Event Bus** for in-memory distribution with RAII ref-count lifecycle.
+2. Manage the **Transactional Outbox** state machine to prevent Dual-Write problems.
+3. Handle event serialization/deserialization using the Kernel's binary formats (no JSON on hot-path).
 
 ---
 
-## Multi-Provider Strategy
+## Error Codes 
 
-The subsystem selects the driver based on the `EventStreamConfiguration`:
+> **Source of truth:** `KernelErrorCodes.java` in `exeris-kernel-spi`.
 
-| Backend              | Best For             | Technical Advantage                              |
-|:---------------------|:---------------------|:-------------------------------------------------|
-| **PostgreSQL**       | Local Event Sourcing | ACID-compliant atomic commits with entities.     |
-| **Kafka / Redpanda** | Distributed Systems  | Native Off-Heap Page Cache, Zero-Copy streaming. |
-| **In-Memory**        | Testing / Ephemeral  | Zero latency, non-persistent.                    |
+| Code            | Meaning               | Glass-Box Payload (`rawArgs`)                                          |
+|:----------------|:----------------------|:-----------------------------------------------------------------------|
+| `EX-EVENT-6001` | Generic Engine Failure| `[0] String message`                                                   |
+| `EX-EVENT-6002` | Bus Publish Failure   | `[0] String eventType, [1] long queueDepth, [2] long queueCapacity`    |
+| `EX-EVENT-6003` | Registry Conflict     | `[0] String eventType, [1] int ordinal`                                |
+| `EX-EVENT-6004` | Provider Boot Failure | `[0] String providerName, [1] String reason`                           |
 
----
-
-## Error Codes (Black Box Telemetry)
-
-| Code           | Meaning                    | Action                                        |
-|:---------------|:---------------------------|:----------------------------------------------|
-| `EX-EVNT-3001` | Concurrent Append Conflict | Version mismatch; trigger retry or fail-fast. |
-| `EX-EVNT-3002` | Stream Not Found           | Invalid aggregate ID or topic name.           |
-| `EX-EVNT-3003` | Outbox Delivery Failure    | Retry backoff initiated, log at WARN level.   |
-| `EX-EVNT-3004` | Event Serialization Error  | Possible schema mismatch; halt processing.    |
+**Backpressure note for `EX-EVENT-6002`:** When thrown, the publisher MUST NOT retry inline. The
+`EventBus` must propagate this exception to the caller's `StructuredTaskScope` boundary, allowing
+the Joiner policy to decide whether to fail-fast or shed the event.
 
 ---
 
 ## Code Examples
 
-### 1. Agnostic Event Append (SPI)
+### 1. Zero-Allocation Event Handler (SPI — RAII Contract)
 
-Business logic remains "clean" and protocol-blind.
+Every handler that receives an `EventPayload` MUST close it. `try-with-resources` is the canonical pattern.
 
 ```java
-package eu.exeris.kernel.core.logic;
+public class PaymentProcessor implements EventHandler {
 
-import eu.exeris.kernel.spi.events.EventStreamAppender;
-import eu.exeris.kernel.spi.events.StreamId;
-
-public class OrderAggregate {
-    public void confirm(EventStreamAppender appender) {
-        OrderConfirmed event = new OrderConfirmed(orderId, Instant.now());
-
-        // Appender could be Postgres-backed or Kafka-backed.
-        // Core ensures transactional integrity.
-        appender.append(StreamId.of("orders", orderId), event);
+    @Override
+    public void handle(EventDescriptor descriptor, EventPayload payload) {
+        try (payload) {
+            MemorySegment bytes = payload.segment();
+            // process zero-copy bytes directly from off-heap slab
+        }
+        // auto-close decrements refCount; last handler returns slab to pool
     }
 }
 ```
 
-### 2. Transactional Outbox Bridge (Core Logic)
+### 2. O(1) Routing via `EventDescriptor` (SPI)
 
-Ensures that if we are using a DB, the event is only "visible" to Kafka after the DB commit.
+`EventDescriptor` primitives are passed by value — no object headers, no GC pressure on the routing path.
 
 ```java
+EventDescriptor descriptor = EventDescriptor.of(
+        eventUuidHigh, eventUuidLow,
+        streamUuidHigh, streamUuidLow,
+        registry.ordinalOf("OrderConfirmed"),
+        EventDescriptor.FLAG_PERSISTENT | EventDescriptor.FLAG_ASYNC,
+        System.currentTimeMillis()
+);
 
+engine.bus().publish(descriptor, payload);
+```
+
+> Ownership of `payload` is strictly transferred to the `EventBus` on `publish()`. The caller MUST NOT
+> call `payload.close()` after this point — the bus manages the ref-count lifecycle.
+
+### 3. Transactional Outbox Bridge (Core)
+
+```java
 @Transactional
 public void saveAndPublish(Entity entity, Event event) {
     persistence.save(entity);
-    // This goes to a local 'outbox' table first (if using SQL driver)
     events.append(event);
 }
-// After commit, the Outbox Poller sends the event to the physical Broker.
+// After commit, Outbox Poller delivers to the physical broker.
 ```
+
+---
 
 ## Testing Strategy
 
 ### Unit Tests
 
-Event serialization/deserialization speed.
-
-Version-based conflict detection logic.
+- `EventDescriptor` scalarization: verify no heap objects are created during descriptor construction.
+- `EventPayload` ref-count correctness: N subscribers → ref-count N; last `close()` → pool return.
+- `EventRegistry` ordinal conflicts: `EX-EVENT-6003` thrown on duplicate registration.
+- Backpressure: `EX-EVENT-6002` thrown with correct `rawArgs` when queue is at capacity.
 
 ### Integration Tests (TCK)
 
-Outbox Guarantee: Pull the plug on the Broker and verify events are not lost in the DB.
+- **Outbox Guarantee:** Disconnect the broker mid-flight; verify events are not lost in the DB outbox.
+- **Provider Switching:** Run the same TCK suite against PostgreSQL and then against a Kafka container.
+- **Order Integrity:** Verify events for the same `StreamId` are processed in strict sequence.
+- **Zero Subscriber Fast-Free:** Publish to a bus with zero subscribers; verify `payload.refCount() == 0`
+  and slab is immediately returned to the pool (no silent leak).
+- **Batch Flush (Enterprise):** Register `EventBatchProcessor`; verify 10,000 events produce a single
+  `io_uring` SQE submission, not 10,000 individual calls.
 
-Provider Switching: Run the same TCK suite against Postgres and then against a Kafka container.
-
-Order Integrity: Verify that events for the same StreamId are processed in strict sequence.
+---
 
 ## Summary
 
-The Events subsystem is the nervous system of the Exeris Kernel. By providing a protocol-agnostic SPI that supports both
-SQL-based Event Sourcing and native Off-Heap streaming via Kafka, it ensures the platform can scale from a single-node
-application to a globally distributed event-driven mesh without changing a single line of domain logic.
+The Events subsystem is the nervous system of the Exeris Kernel. The `EventDescriptor` / `EventPayload`
+separation is the architectural core: primitive routing metadata enables O(1) dispatch and Valhalla
+scalarization, while RAII `EventPayload` ref-counting guarantees that off-heap memory is reclaimed
+deterministically — regardless of how many subscribers fan out or how deep the retry chain goes. Together
+with the Transactional Outbox and Native Kafka Zero-Copy path, it scales from a single-node application to a
+globally distributed event-driven mesh without changing a single line of domain logic.
+

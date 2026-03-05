@@ -66,12 +66,14 @@ import org.openjdk.jmh.infra.Blackhole;
  * }
  * }</pre>
  *
- * @since 0.5.0
  * @see AbstractExerisBenchmark
+ * @since 0.5.0
  */
 public abstract class AbstractTransportThroughputBenchmark extends AbstractExerisBenchmark {
 
-    /** Loopback address — avoids OS routing overhead in the measurement window. */
+    /**
+     * Loopback address — avoids OS routing overhead in the measurement window.
+     */
     private static final String LOOPBACK = "127.0.0.1";
 
     /**
@@ -82,22 +84,34 @@ public abstract class AbstractTransportThroughputBenchmark extends AbstractExeri
      */
     private static final int BENCH_PORT = 19_999;
 
-    /** Write payload size in bytes — 64 bytes targets a single cache line per write. */
+    /**
+     * Write payload size in bytes — 64 bytes targets a single cache line per write.
+     */
     private static final int WRITE_BYTES = 64;
 
-    /** Server-side engine — bound to {@value BENCH_PORT} on loopback. */
+    /**
+     * Server-side engine — bound to {@value BENCH_PORT} on loopback.
+     */
     protected TransportEngine serverEngine;
 
-    /** Client-side engine — initiates the outbound connection. */
+    /**
+     * Client-side engine — initiates the outbound connection.
+     */
     protected TransportEngine clientEngine;
 
-    /** The pre-established hot stream — used for every benchmark iteration. */
+    /**
+     * The pre-established hot stream — used for every benchmark iteration.
+     */
     protected TransportStream activeStream;
 
-    /** The active connection backing {@link #activeStream} — closed explicitly in teardown. */
+    /**
+     * The active connection backing {@link #activeStream} — closed explicitly in teardown.
+     */
     protected TransportConnection activeConnection;
 
-    /** Memory allocator for zero-copy write buffers. */
+    /**
+     * Memory allocator for zero-copy write buffers.
+     */
     protected MemoryAllocator allocator;
 
     /**
@@ -133,34 +147,29 @@ public abstract class AbstractTransportThroughputBenchmark extends AbstractExeri
         this.allocator = getAllocator();
         TransportProvider provider = getProvider();
 
-        // 1. Start server — binds to loopback:BENCH_PORT, minimal reactor count.
         TransportConfig serverConfig = new TransportConfig(
                 TransportMode.SERVER, LOOPBACK, BENCH_PORT,
-                1,           // single reactor is sufficient for a loopback echo server
-                null, null,  // no TLS — plaintext loopback avoids crypto overhead in measurement
+                1,
+                null, null,
                 1_000, 10_000L
         );
         this.serverEngine = provider.createEngine(serverConfig);
-        // Sink handler: continuously read and discard incoming data to keep the TCP window open
-        // and avoid backpressure. The stream is automatically closed via try-with-resources.
+
         this.serverEngine.setStreamHandler(stream -> {
             try (stream; LoanedBuffer sinkBuffer = allocator.allocateNetwork(8192)) {
-                // Drain the stream until the client closes it or an exception occurs
                 int bytesRead;
                 while ((bytesRead = stream.read(sinkBuffer.segment(), 8192)) >= 0) {
-                    // Consume the result to prevent dead-code elimination by the JIT
-                    // and suppress "empty body" warnings.
+
                     if (bytesRead == 0) {
-                        Thread.onSpinWait(); // Hint to CPU if we are spinning on a non-blocking read
+                        Thread.onSpinWait();
                     }
                 }
             } catch (Exception _) {
-                // Ignore exceptions (like connection resets) during benchmark teardown
+                // Ignore exceptions during benchmark teardown
             }
         });
         this.serverEngine.start();
 
-        // 2. Start client — CLIENT mode; port 0 is the sentinel for "not used".
         TransportConfig clientConfig = new TransportConfig(
                 TransportMode.CLIENT, null, 0,
                 1,
@@ -170,9 +179,6 @@ public abstract class AbstractTransportThroughputBenchmark extends AbstractExeri
         this.clientEngine = provider.createEngine(clientConfig);
         this.clientEngine.start();
 
-        // 3. Establish hot connection — connect() blocks the virtual thread during
-        //    the handshake. No CompletableFuture in the SPI: the "1 VT per stream"
-        //    model unmounts the carrier without pinning it.
         this.activeConnection = this.clientEngine.connect(LOOPBACK, BENCH_PORT);
         this.activeStream = this.activeConnection.openStream();
     }
@@ -216,14 +222,9 @@ public abstract class AbstractTransportThroughputBenchmark extends AbstractExeri
     @Benchmark
     public void streamWriteOverhead(Blackhole bh) {
         try (LoanedBuffer buffer = allocator.allocateNetwork(WRITE_BYTES)) {
-            // Write the segment directly — zero-copy path:
-            // Enterprise: submits SQE to io_uring without copying between heap and off-heap.
-            // Community: writes to NIO channel from the MemorySegment backing array.
+
             activeStream.write(buffer.segment(), WRITE_BYTES);
             bh.consume(buffer.segment());
         }
     }
 }
-
-
-

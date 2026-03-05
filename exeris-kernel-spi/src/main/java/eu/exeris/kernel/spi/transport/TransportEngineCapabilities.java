@@ -36,9 +36,8 @@ package eu.exeris.kernel.spi.transport;
  *                             and diagnostics (e.g. {@code "StandardTCP"}, {@code "NativeQUIC"})
  * @param providerId           stable identifier of the provider that created this engine
  *                             (e.g. {@code "community"}, {@code "enterprise"})
- *
- * @since 0.5.0
  * @see TransportEngine#capabilities()
+ * @since 0.5.0
  */
 public record TransportEngineCapabilities(
         boolean supportsMultiplexing,
@@ -126,4 +125,3 @@ public record TransportEngineCapabilities(
         );
     }
 }
-

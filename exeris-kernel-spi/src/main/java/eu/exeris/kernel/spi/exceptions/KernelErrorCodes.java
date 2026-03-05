@@ -14,7 +14,7 @@ package eu.exeris.kernel.spi.exceptions;
  * <p>Codes are exposed as {@code public static final String} constants so that:
  * <ol>
  *   <li>The JIT can inline them as compile-time constants (no field lookup).</li>
- *   <li>Log-scrapers and the Black-Box binary serializer can pattern-match against a
+ *   <li>Log-scrapers and the Glass-Box binary serializer can pattern-match against a
  *       fixed, well-known string pool.</li>
  *   <li>There is a single source of truth – no duplicated string literals in subclasses.</li>
  * </ol>
@@ -43,7 +43,7 @@ public final class KernelErrorCodes {
      * Off-heap allocator exhausted: the requested byte count exceeds the
      * remaining capacity of the {@code MemoryAllocator} tier.
      *
-     * <p><b>rawArgs layout for Black-Box:</b>
+     * <p><b>rawArgs layout for Glass-Box:</b>
      * <ul>
      *   <li>index 0 – {@code long} requestedBytes</li>
      *   <li>index 1 – {@code long} availableBytes</li>
@@ -55,7 +55,7 @@ public final class KernelErrorCodes {
      * Off-heap arena leak detected: a {@code MemorySegment} was not returned
      * to its parent arena before the arena's lifecycle ended.
      *
-     * <p><b>rawArgs layout for Black-Box:</b>
+     * <p><b>rawArgs layout for Glass-Box:</b>
      * <ul>
      *   <li>index 0 – {@code long} segmentAddress</li>
      *   <li>index 1 – {@code long} segmentByteSize</li>
@@ -85,9 +85,9 @@ public final class KernelErrorCodes {
      * {@link eu.exeris.kernel.spi.exceptions.bootstrap.SubsystemCircularDependencyException}:
      * because that exception is a pure pre-telemetry panic type (plain {@code RuntimeException},
      * no {@code rawArgs}), the bootstrap orchestrator catches it and translates the failure
-     * into Black-Box telemetry using this error code.
+     * into Glass-Box telemetry using this error code.
      *
-     * <p><b>rawArgs layout for Black-Box</b> (emitted by the orchestrator, not by the exception):
+     * <p><b>rawArgs layout for Glass-Box</b> (emitted by the orchestrator, not by the exception):
      * <ul>
      *   <li>index 0 – {@code String[]} cycleMembers — ordered subsystem names forming the cycle,
      *       typically derived from
@@ -99,11 +99,11 @@ public final class KernelErrorCodes {
     /**
      * Subsystem initialization or startup failure.
      *
-     * <p><b>rawArgs layout for Black-Box:</b>
+     * <p><b>rawArgs layout for Glass-Box:</b>
      * <p>This code is shared across multiple bootstrap pathways and therefore
-     * does not expose a stable {@code rawArgs} layout for Black-Box decoding.
+     * does not expose a stable {@code rawArgs} layout for Glass-Box decoding.
      * Callers may attach implementation-specific {@code rawArgs}, but
-     * Black-Box consumers must treat them as opaque and must not rely on a
+     * Glass-Box consumers must treat them as opaque and must not rely on a
      * particular arity or field order.</p>
      */
     public static final String EX_BOOT_0002 = "EX-BOOT-0002";
@@ -112,7 +112,7 @@ public final class KernelErrorCodes {
      * Kernel bootstrap sequence aborted: a mandatory subsystem did not
      * complete initialization within the deadline.
      *
-     * <p><b>rawArgs layout for Black-Box:</b>
+     * <p><b>rawArgs layout for Glass-Box:</b>
      * <ul>
      *   <li>index 0 – {@code String} subsystemName</li>
      *   <li>index 1 – {@code long} deadlineMs</li>
@@ -127,9 +127,9 @@ public final class KernelErrorCodes {
      *
      * <p>This code is intentionally separate from {@link #EX_BOOT_0002} to guarantee
      * a stable, single rawArgs schema per error code – a hard requirement of the
-     * binary Black-Box telemetry contract.
+     * binary Glass-Box telemetry contract.
      *
-     * <p><b>rawArgs layout for Black-Box:</b>
+     * <p><b>rawArgs layout for Glass-Box:</b>
      * <ul>
      *   <li>index 0 – {@code String} providerName (e.g. {@code "ExerisEnterprise/GlobalArbiter"})</li>
      *   <li>index 1 – {@code long}   requestedBytes ({@code -1} if unknown)</li>
@@ -144,7 +144,7 @@ public final class KernelErrorCodes {
     /**
      * Telemetry provider failed to initialise one or more sinks.
      *
-     * <p><b>rawArgs layout for Black-Box:</b>
+     * <p><b>rawArgs layout for Glass-Box:</b>
      * <ul>
      *   <li>index 0 – {@code String} providerName</li>
      *   <li>index 1 – {@code String} reason</li>
@@ -159,7 +159,7 @@ public final class KernelErrorCodes {
     /**
      * TLS/Crypto operation failure (handshake, wrap, unwrap, or shutdown).
      *
-     * <p><b>rawArgs layout for Black-Box:</b>
+     * <p><b>rawArgs layout for Glass-Box:</b>
      * <ul>
      *   <li>index 0 – {@code int}    nativeErrorCode (provider-specific error code; -1 if N/A)</li>
      *   <li>index 1 – {@code String} detail</li>
@@ -172,7 +172,7 @@ public final class KernelErrorCodes {
      * initialise its engine (e.g., missing native cryptographic library, invalid certificate,
      * or insufficient off-heap budget).
      *
-     * <p><b>rawArgs layout for Black-Box:</b>
+     * <p><b>rawArgs layout for Glass-Box:</b>
      * <ul>
      *   <li>index 0 – {@code String} providerName (which provider failed to initialise)</li>
      *   <li>index 1 – {@code String} reason       (failure cause — static constant, never formatted)</li>
@@ -183,7 +183,7 @@ public final class KernelErrorCodes {
     /**
      * Transport-level protocol handshake or bind failure.
      *
-     * <p><b>rawArgs layout for Black-Box:</b>
+     * <p><b>rawArgs layout for Glass-Box:</b>
      * <ul>
      *   <li>index 0 – {@code String} transportName</li>
      *   <li>index 1 – {@code int}    port (or -1 if unknown)</li>
@@ -194,7 +194,7 @@ public final class KernelErrorCodes {
     /**
      * Transport send failure: a frame or datagram could not be delivered.
      *
-     * <p><b>rawArgs layout for Black-Box:</b>
+     * <p><b>rawArgs layout for Glass-Box:</b>
      * <ul>
      *   <li>index 0 – {@code String} transportName</li>
      *   <li>index 1 – {@code long}   bytesSent</li>
@@ -205,7 +205,7 @@ public final class KernelErrorCodes {
     /**
      * Transport receive timeout: no bytes arrived within the deadline.
      *
-     * <p><b>rawArgs layout for Black-Box:</b>
+     * <p><b>rawArgs layout for Glass-Box:</b>
      * <ul>
      *   <li>index 0 – {@code String} transportName</li>
      *   <li>index 1 – {@code long}   timeoutMs</li>
@@ -218,7 +218,7 @@ public final class KernelErrorCodes {
      * create a {@code TransportEngine} (e.g., missing native library, socket allocation
      * failure, insufficient off-heap budget for slab pools).
      *
-     * <p><b>rawArgs layout for Black-Box:</b>
+     * <p><b>rawArgs layout for Glass-Box:</b>
      * <ul>
      *   <li>index 0 – {@code String} transportName (which transport failed)</li>
      *   <li>index 1 – {@code String} reason        (static failure description)</li>
@@ -231,13 +231,43 @@ public final class KernelErrorCodes {
      * (e.g., port already in use, carrier loop thread creation failed, io_uring ring
      * setup returned an error).
      *
-     * <p><b>rawArgs layout for Black-Box:</b>
+     * <p><b>rawArgs layout for Glass-Box:</b>
      * <ul>
      *   <li>index 0 – {@code String} transportName (which engine failed to start)</li>
      *   <li>index 1 – {@code int}    port          (port that could not be bound; -1 if N/A)</li>
      * </ul>
      */
     public static final String EX_NET_4005 = "EX-NET-4005";
+
+    /**
+     * PAQS (Priority-Aware Queue Scheduler) load-shedding: an incoming stream was
+     * rejected at the network edge because its priority was below the current
+     * load-shedding threshold.
+     *
+     * <p>This is a deliberate, non-fatal policy decision — not a hardware failure.
+     * No connection state is allocated for the shed stream.
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} transportName</li>
+     *   <li>index 1 – {@code int}    streamPriority  (priority ordinal of the shed stream)</li>
+     *   <li>index 2 – {@code int}    thresholdPriority (active PAQS threshold at shed time)</li>
+     * </ul>
+     */
+    public static final String EX_NET_4006 = "EX-NET-4006";
+
+    /**
+     * Transport buffer exhaustion: no available {@code LoanedBuffer} segments remain
+     * in the ingress {@code SlabPool}. Backpressure must be initiated.
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} transportName</li>
+     *   <li>index 1 – {@code int}    poolCapacity  (total slab slots in the pool)</li>
+     *   <li>index 2 – {@code int}    activeSlabs   (slabs currently in use)</li>
+     * </ul>
+     */
+    public static final String EX_NET_4007 = "EX-NET-4007";
 
     // -----------------------------------------------------------------------
     // EX-PERS – Persistence subsystem
@@ -248,7 +278,7 @@ public final class KernelErrorCodes {
      * initialise its engine (e.g., connection refused, authentication failed, or
      * missing native driver library).
      *
-     * <p><b>rawArgs layout for Black-Box:</b>
+     * <p><b>rawArgs layout for Glass-Box:</b>
      * <ul>
      *   <li>index 0 – {@code String} providerName (e.g. {@code "ExerisEnterprise/PgNative"})</li>
      *   <li>index 1 – {@code String} sanitizedConnectionUrl — userinfo ({@code user:password@})
@@ -260,7 +290,7 @@ public final class KernelErrorCodes {
     /**
      * Persistence connection acquisition failure: pool exhausted or timeout.
      *
-     * <p><b>rawArgs layout for Black-Box:</b>
+     * <p><b>rawArgs layout for Glass-Box:</b>
      * <ul>
      *   <li>index 0 – {@code String} providerName</li>
      *   <li>index 1 – {@code long}   timeoutMs</li>
@@ -272,7 +302,7 @@ public final class KernelErrorCodes {
     /**
      * Persistence query execution failure: protocol error, SQL error, or I/O.
      *
-     * <p><b>rawArgs layout for Black-Box:</b>
+     * <p><b>rawArgs layout for Glass-Box:</b>
      * <ul>
      *   <li>index 0 – {@code String} sqlState (PostgreSQL SQLSTATE code)</li>
      *   <li>index 1 – {@code String} detail</li>
@@ -283,7 +313,7 @@ public final class KernelErrorCodes {
     /**
      * Persistence authentication failure: SCRAM/MD5/cleartext auth rejected.
      *
-     * <p><b>rawArgs layout for Black-Box:</b>
+     * <p><b>rawArgs layout for Glass-Box:</b>
      * <ul>
      *   <li>index 0 – {@code String} authMechanism</li>
      *   <li>index 1 – {@code String} serverMessage</li>
@@ -294,7 +324,7 @@ public final class KernelErrorCodes {
     /**
      * Persistence transport failure: socket I/O error during read/write.
      *
-     * <p><b>rawArgs layout for Black-Box:</b>
+     * <p><b>rawArgs layout for Glass-Box:</b>
      * <ul>
      *   <li>index 0 – {@code String} transportName</li>
      *   <li>index 1 – {@code long}   fileDescriptor</li>
@@ -311,7 +341,7 @@ public final class KernelErrorCodes {
      * <p>The engine discards the connection on this error — it MUST NOT be
      * returned to the pool.
      *
-     * <p><b>rawArgs layout for Black-Box:</b>
+     * <p><b>rawArgs layout for Glass-Box:</b>
      * <ul>
      *   <li>index 0 – {@code String} interceptorClass (simple class name of the failing interceptor)</li>
      *   <li>index 1 – {@code String} isolationKey (value from {@code StorageContext.isolationKey()},
@@ -326,7 +356,7 @@ public final class KernelErrorCodes {
      * <p>Kernel start is aborted. Add {@code exeris-kernel-community} or
      * {@code exeris-kernel-enterprise} to the runtime dependencies.
      *
-     * <p><b>rawArgs layout for Black-Box:</b>
+     * <p><b>rawArgs layout for Glass-Box:</b>
      * <ul>
      *   <li>index 0 – {@code String} message (human-readable diagnostic)</li>
      * </ul>
@@ -345,7 +375,7 @@ public final class KernelErrorCodes {
     /**
      * Token validation failed (expired, malformed, or revoked).
      *
-     * <p><b>rawArgs layout for Black-Box:</b>
+     * <p><b>rawArgs layout for Glass-Box:</b>
      * <ul>
      *   <li>index 0 – {@code String} tokenType (e.g. "JWT", "OPAQUE")</li>
      *   <li>index 1 – {@code String} failureReason (e.g. "expired", "malformed", "revoked")</li>
@@ -356,7 +386,7 @@ public final class KernelErrorCodes {
     /**
      * Insufficient privileges (RBAC): principal lacks required role(s).
      *
-     * <p><b>rawArgs layout for Black-Box:</b>
+     * <p><b>rawArgs layout for Glass-Box:</b>
      * <ul>
      *   <li>index 0 – {@code String} requiredRole</li>
      * </ul>
@@ -377,7 +407,7 @@ public final class KernelErrorCodes {
      * initialise its engine (e.g., missing backend driver, connection refused,
      * or insufficient off-heap budget for slab pools).
      *
-     * <p><b>rawArgs layout for Black-Box:</b>
+     * <p><b>rawArgs layout for Glass-Box:</b>
      * <ul>
      *   <li>index 0 – {@code String} providerName (e.g. {@code "ExerisCommunity/JdbcGraph"})</li>
      *   <li>index 1 – {@code String} reason       (static failure description)</li>
@@ -388,7 +418,7 @@ public final class KernelErrorCodes {
     /**
      * Graph query execution failure: traversal, MATCH, or CRUD operation failed.
      *
-     * <p><b>rawArgs layout for Black-Box:</b>
+     * <p><b>rawArgs layout for Glass-Box:</b>
      * <ul>
      *   <li>index 0 – {@code String} queryType (e.g. "BFS", "MATCH", "SHORTEST_PATH")</li>
      *   <li>index 1 – {@code String} detail    (static failure description)</li>
@@ -400,7 +430,7 @@ public final class KernelErrorCodes {
      * Graph dual-write sync failure: relational change could not be reflected
      * in the graph structure.
      *
-     * <p><b>rawArgs layout for Black-Box:</b>
+     * <p><b>rawArgs layout for Glass-Box:</b>
      * <ul>
      *   <li>index 0 – {@code String} edgeType (e.g. "FOLLOWS", "SIMILAR_TO")</li>
      *   <li>index 1 – {@code String} detail   (static failure description)</li>
@@ -411,10 +441,12 @@ public final class KernelErrorCodes {
     /**
      * Path not found: shortest-path algorithm failed to reach target node.
      *
-     * <p><b>rawArgs layout for Black-Box:</b>
+     * <p><b>rawArgs layout for Glass-Box:</b>
      * <ul>
-     *   <li>index 0 – {@code java.util.UUID} sourceNodeId</li>
-     *   <li>index 1 – {@code java.util.UUID} targetNodeId</li>
+     *   <li>index 0 – {@code long} sourceMost   (UUID.getMostSignificantBits())</li>
+     *   <li>index 1 – {@code long} sourceLeast  (UUID.getLeastSignificantBits())</li>
+     *   <li>index 2 – {@code long} targetMost   (UUID.getMostSignificantBits())</li>
+     *   <li>index 3 – {@code long} targetLeast  (UUID.getLeastSignificantBits())</li>
      * </ul>
      */
     public static final String EX_GRPH_5004 = "EX-GRPH-5004";
@@ -422,7 +454,7 @@ public final class KernelErrorCodes {
     /**
      * Excessive allocation detected: graph driver exceeded pre-defined churn threshold.
      *
-     * <p><b>rawArgs layout for Black-Box:</b>
+     * <p><b>rawArgs layout for Glass-Box:</b>
      * <ul>
      *   <li>index 0 – {@code String} driverName</li>
      *   <li>index 1 – {@code long}   bytesAllocated</li>
@@ -438,7 +470,7 @@ public final class KernelErrorCodes {
     /**
      * Generic event engine failure (no specific category).
      *
-     * <p><b>rawArgs layout for Black-Box:</b>
+     * <p><b>rawArgs layout for Glass-Box:</b>
      * <ul>
      *   <li>index 0 – {@code String} message (human-readable diagnostic)</li>
      * </ul>
@@ -448,7 +480,7 @@ public final class KernelErrorCodes {
     /**
      * Event bus publish failure: queue is full and the implementation cannot accept the event.
      *
-     * <p><b>rawArgs layout for Black-Box:</b>
+     * <p><b>rawArgs layout for Glass-Box:</b>
      * <ul>
      *   <li>index 0 – {@code String} eventType   (event type name)</li>
      *   <li>index 1 – {@code long}   queueDepth  (current depth when overflow occurred)</li>
@@ -460,7 +492,7 @@ public final class KernelErrorCodes {
     /**
      * Event registry conflict: an event type was registered twice with different settings.
      *
-     * <p><b>rawArgs layout for Black-Box:</b>
+     * <p><b>rawArgs layout for Glass-Box:</b>
      * <ul>
      *   <li>index 0 – {@code String} eventType  (conflicting type name)</li>
      *   <li>index 1 – {@code int}    ordinal     (ordinal that is already in use)</li>
@@ -472,7 +504,7 @@ public final class KernelErrorCodes {
      * Event provider creation failure: the {@code EventProvider} could not create an engine
      * from the given configuration.
      *
-     * <p><b>rawArgs layout for Black-Box:</b>
+     * <p><b>rawArgs layout for Glass-Box:</b>
      * <ul>
      *   <li>index 0 – {@code String} providerName</li>
      *   <li>index 1 – {@code String} reason (static failure description)</li>
@@ -488,7 +520,7 @@ public final class KernelErrorCodes {
      * Flow provider engine creation failure: the {@code FlowProvider} could not create
      * an engine from the given configuration.
      *
-     * <p><b>rawArgs layout for Black-Box:</b>
+     * <p><b>rawArgs layout for Glass-Box:</b>
      * <ul>
      *   <li>index 0 – {@code String} providerName</li>
      *   <li>index 1 – {@code String} reason (static failure description)</li>
@@ -499,7 +531,7 @@ public final class KernelErrorCodes {
     /**
      * Flow engine lifecycle failure: start, stop, compile, or scheduler operation failed.
      *
-     * <p><b>rawArgs layout for Black-Box:</b>
+     * <p><b>rawArgs layout for Glass-Box:</b>
      * <ul>
      *   <li>index 0 – {@code String} engineName</li>
      *   <li>index 1 – {@code String} phase — one of: {@code "START"}, {@code "STOP"},
@@ -515,7 +547,7 @@ public final class KernelErrorCodes {
     /**
      * Flow step execution failure: a step returned FAIL or threw an unrecoverable exception.
      *
-     * <p><b>rawArgs layout for Black-Box:</b>
+     * <p><b>rawArgs layout for Glass-Box:</b>
      * <ul>
      *   <li>index 0 – {@code String} definitionName</li>
      *   <li>index 1 – {@code long}   instanceIdMost</li>
@@ -533,7 +565,7 @@ public final class KernelErrorCodes {
      * Flow registry conflict: a step or transition was registered with a duplicate or
      * unknown identifier.
      *
-     * <p><b>rawArgs layout for Black-Box:</b>
+     * <p><b>rawArgs layout for Glass-Box:</b>
      * <ul>
      *   <li>index 0 – {@code int}    stepId</li>
      *   <li>index 1 – {@code String} reason</li>
@@ -549,7 +581,7 @@ public final class KernelErrorCodes {
      * Required configuration property missing: a mandatory key was not found in any
      * source (environment variable, file, Vault) during L0 bootstrap.
      *
-     * <p><b>rawArgs layout for Black-Box:</b>
+     * <p><b>rawArgs layout for Glass-Box:</b>
      * <ul>
      *   <li>index 0 – {@code String} missingKey (dot-path key, e.g. {@code "network.port"})</li>
      *   <li>index 1 – {@code String} providerName (which ConfigProvider was active)</li>
@@ -561,7 +593,7 @@ public final class KernelErrorCodes {
      * Configuration type mismatch: a property value exists but cannot be deserialized
      * into the requested target type.
      *
-     * <p><b>rawArgs layout for Black-Box:</b>
+     * <p><b>rawArgs layout for Glass-Box:</b>
      * <ul>
      *   <li>index 0 – {@code String} key          (dot-path key)</li>
      *   <li>index 1 – {@code String} expectedType (simple class name of the target type)</li>
@@ -571,7 +603,7 @@ public final class KernelErrorCodes {
      *       sensitive material. Emitting a raw config value verbatim constitutes a
      *       CWE-532 (Information Exposure Through Log Files) violation against the
      *       Exeris Security Contract. Any truncation or redaction is performed by the
-     *       caller before emitting {@code rawArgs} to the Black-Box telemetry sink.)</li>
+     *       caller before emitting {@code rawArgs} to the Glass-Box telemetry sink.)</li>
      * </ul>
      */
     public static final String EX_CFG_1002 = "EX-CFG-1002";
@@ -580,7 +612,7 @@ public final class KernelErrorCodes {
      * Hot-reload file read error: the {@code NIO WatchService} watcher failed to read
      * or re-parse the configuration file on a change notification.
      *
-     * <p><b>rawArgs layout for Black-Box:</b>
+     * <p><b>rawArgs layout for Glass-Box:</b>
      * <ul>
      *   <li>index 0 – {@code String} filename (relative path under the config directory)</li>
      *   <li>index 1 – {@code String} reason   (static failure description)</li>
@@ -596,7 +628,7 @@ public final class KernelErrorCodes {
      * Virtual Thread pinned the carrier: a blocking call inside a virtual thread
      * has prevented the carrier from being reused.
      *
-     * <p><b>rawArgs layout for Black-Box:</b>
+     * <p><b>rawArgs layout for Glass-Box:</b>
      * <ul>
      *   <li>index 0 – {@code long}   blockTimeMs</li>
      *   <li>index 1 – {@code String} carrierThreadName</li>

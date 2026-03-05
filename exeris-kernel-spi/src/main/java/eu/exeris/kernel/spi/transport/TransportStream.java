@@ -39,9 +39,9 @@ import java.lang.foreign.MemorySegment;
  * on this interface. Future migration to a value-class-backed inline representation
  * is planned for hot-path stream metadata.
  *
- * @since 0.5.0
  * @see TransportConnection
  * @see StreamHandler
+ * @since 0.5.0
  */
 public interface TransportStream extends AutoCloseable {
 
@@ -162,4 +162,3 @@ public interface TransportStream extends AutoCloseable {
     @Override
     void close();
 }
-

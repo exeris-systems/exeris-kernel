@@ -1,37 +1,43 @@
-# Kernel Subsystem: Security (L1 Citadel)
+﻿# Kernel Subsystem: Security (L1 Citadel)
 
 **Physical Layout:**
 
 - SPI: `eu.exeris.kernel.spi.security.*` (PrincipalContext, Role Enums, Annotations)
 - Core: `eu.exeris.kernel.core.security.*` (Token Extractors, ScopedValue Orchestration)
-  **Layer:** L1 (Data & Integrity)  
-  **Status:** Validated Architectural Prototype (TRL-3)
+
+**Layer:** L1 (Data & Integrity)
+**Status:** Validated Architectural Prototype (TRL-3)
 
 ---
 
 ## Overview
 
 The **Security subsystem** implements mandatory, invisible security enforcement using **JEP 506 ScopedValues** for
-Virtual Thread-safe context propagation. It abandons legacy `ThreadLocal` patterns entirely to ensure zero-leak,
-hyper-density concurrency. It provides:
+Virtual Thread-safe context propagation. By abandoning legacy `ThreadLocal` patterns entirely, Exeris ensures
+zero-leak, hyper-density concurrency with immutable identity at every layer. It provides:
 
-- **Virtual Thread-Safe Context:** Extreme concurrency support without `ThreadLocal` memory overhead or thread-pinning
-  risks.
-- **Protocol Agnostic Auth:** Extracts identity from transport-level tokens (JWT/Opaque) regardless of the protocol (
-  TCP, HTTP/2, QUIC).
-- **Immutable Identity:** Uses the `PrincipalContext` SPI for a flexible, type-safe identity representation.
-- **Tenant Isolation (RLS):** Physical separation at the storage level via automatic connection state injection.
+- **Virtual Thread-Safe Context:** Extreme concurrency without `ThreadLocal` memory overhead or thread-pinning risks.
+  With millions of Virtual Threads, a `ThreadLocal`-based approach would trigger massive GC churn on cleanup — `ScopedValue` eliminates this entirely.
+- **Protocol-Agnostic Auth:** Extracts identity from transport-level tokens (JWT/Opaque) regardless of protocol
+  (TCP, HTTP/2, QUIC).
+- **Immutable Identity:** `PrincipalContext` is bound once via `ScopedValue.where(...)` and cannot be mutated or
+  intercepted by any downstream code.
+- **Tenant Isolation (RLS):** Physical separation at the storage level via automatic `StorageContext` injection — no
+  `WHERE tenant_id = ?` required in business logic.
 
-### Core Philosophy: "The Invisible Wall & Clean Domain"
+---
 
-1. **Clean Domain (No Context Pollution):** Domain Entities do NOT contain security metadata. Context is propagated
-   immutably via `ScopedValues`.
-2. **Invisible Enforcement:** Developers do not manually filter by tenant; the Kernel injects the context directly into
-   the Persistence layer (RLS).
-3. **Fail-Closed:** If a security context cannot be established, the Kernel drops the request immediately at the
-   transport edge.
-4. **Framework Ready:** The `PrincipalContext` is an interface, allowing seamless integration with external frameworks
-   like Spring Security via adapters.
+## Core Philosophy: "The Invisible Wall"
+
+1. **Immutable Identity:** Every request carries a `PrincipalContext` bound via `ScopedValue`. It cannot be altered
+   or bypassed once the request enters the Kernel.
+2. **Clean Domain (No Context Pollution):** Domain Entities do NOT contain security metadata. Context is propagated
+   invisibly to the Persistence layer to enforce Row-Level Security (RLS).
+3. **Fail-Closed Architecture:** If a security context cannot be established at the transport edge, the Virtual Thread
+   is terminated immediately — before any business logic executes. This prevents wasted CPU cycles on unauthorized
+   work and is the Kernel's first line of defense.
+4. **Framework Ready:** `PrincipalContext` is an interface, allowing seamless integration with external frameworks via
+   adapters (e.g., Spring Security) without leaking framework types into the SPI.
 
 ---
 
@@ -40,24 +46,32 @@ hyper-density concurrency. It provides:
 **What Security SPI DOES:**
 
 1. Define the `PrincipalContext` interface and `Role` enums.
-2. Provide the `KernelProviders.PRINCIPAL_CONTEXT` ScopedValue placeholder.
-3. Expose `@RequiresRole` annotations for declarative security.
+2. Provide the `KernelProviders.PRINCIPAL_CONTEXT` and `KernelProviders.STORAGE_CONTEXT` ScopedValue slots.
+3. Expose `@RequiresRole` annotations for declarative RBAC.
 
 **What Security Core DOES:**
 
 1. Extract and verify identity tokens from the incoming transport stream.
-2. Bind the `PrincipalContext` via `ScopedValue.where(...)` for the duration of the request.
+2. Bind `PrincipalContext` and `StorageContext` via `ScopedValue.where(...)` for the duration of the request.
 3. Coordinate with the Persistence subsystem to enforce Row-Level Security (RLS).
 
 ---
 
-## Error Codes (Black Box Telemetry)
+## Error Codes
 
-| Code          | Meaning                        | Action                                           |
-|:--------------|:-------------------------------|:-------------------------------------------------|
-| `EX-SEC-2001` | Principal Context Missing      | Request dropped silently (Security boundary).    |
-| `EX-SEC-2002` | Invalid/Expired Security Token | Transport layer returns an authentication error. |
-| `EX-SEC-2003` | Insufficient Privileges (RBAC) | Request rejected before reaching business logic. |
+> **Source of truth:** `KernelErrorCodes.java` in `exeris-kernel-spi`.
+
+| Code          | Meaning                    | Action                                              | Glass-Box Payload                                    |
+|:--------------|:---------------------------|:----------------------------------------------------|:-----------------------------------------------------|
+| `EX-SEC-2001` | PrincipalContext Missing   | Silent drop at security boundary                    | *(no rawArgs)*                                       |
+| `EX-SEC-2002` | Token Invalid/Expired      | Immediate authentication failure at transport edge  | `[0] String tokenType, [1] String failureReason`     |
+| `EX-SEC-2003` | Insufficient Privileges    | Request rejected before reaching business logic     | `[0] String requiredRole`                            |
+| `EX-SEC-2004` | StorageContext Missing     | Prevent DB access to avoid RLS leakage              | *(no rawArgs)*                                       |
+
+**RLS integrity note for `EX-SEC-2004`:** The `StorageContext` ScopedValue carries the tenant identifier injected
+into the DB connection state. If it is absent when the Persistence layer is reached, the Kernel must abort the
+query immediately — a missing `StorageContext` is equivalent to a missing `WHERE tenant_id = ?`, which would
+expose cross-tenant data.
 
 ---
 
@@ -70,15 +84,9 @@ Designed for both standalone Exeris usage and Spring Security integration.
 ```java
 package eu.exeris.kernel.spi.security;
 
-import java.util.Optional;
-import java.util.Set;
-import java.util.UUID;
-
 public interface PrincipalContext {
     UUID principalId();
-
     Optional<UUID> tenantId();
-
     Set<Role> roles();
 
     default boolean hasRole(Role role) {
@@ -87,41 +95,79 @@ public interface PrincipalContext {
 }
 ```
 
-### 2. Context Binding (Core)
+### 2. Context Binding with Scope Inheritance (Core)
+
+The `ScopedValue` bound here is automatically inherited by every child task forked within a
+`StructuredTaskScope`. There is no need to pass `PrincipalContext` as a method parameter — it flows
+invisibly into all subtasks for the lifetime of the scope.
+
+> **Citadel Contract:** `runInContext` does **not** accept a `StorageContext` parameter from the caller.
+> The Citadel derives the database identity itself, cryptographically, from the verified `PrincipalContext`
+> (e.g., JWT claims). Never trust upper layers with storage routing — doing so opens a
+> Privilege Escalation / Cross-Tenant Data Leak vector where a developer in L3 could couple a token
+> from tenant A with the database of tenant B.
 
 ```java
 package eu.exeris.kernel.core.security;
 
-import eu.exeris.kernel.spi.context.KernelProviders;
-import eu.exeris.kernel.spi.security.PrincipalContext;
-
 public class SecurityInterceptor {
 
-    public void runInContext(PrincipalContext context, Runnable task) {
-        // Bind the context to the current Virtual Thread (and its children)
-        ScopedValue.where(KernelProviders.PRINCIPAL_CONTEXT, context).run(task);
+    public void runInContext(PrincipalContext principal, Runnable task) {
+        StorageContext storage = CitadelClaims.deriveStorageContext(principal);
+
+        ScopedValue.where(KernelProviders.PRINCIPAL_CONTEXT, principal)
+                   .where(KernelProviders.STORAGE_CONTEXT, storage)
+                   .run(task);
     }
 }
 ```
+
+### 3. Fail-Closed Enforcement at Transport Edge
+
+```java
+package eu.exeris.kernel.core.security;
+
+public class TokenValidator {
+
+    public PrincipalContext validateOrDrop(String rawToken) {
+        return tokenExtractor.extract(rawToken)
+                .orElseThrow(() -> new PrincipalContextMissingException(
+                        KernelErrorCodes.EX_SEC_2001));
+    }
+}
+```
+
+> If `validateOrDrop` throws, the dispatching Virtual Thread is terminated immediately via controlled
+> exception bubbling. This ensures deterministic socket teardown and memory release in the core PAQS
+> `finally` block, preventing Slowloris DoS attacks. The native `close()` on the socket descriptor is
+> **always** reached — the exception never escapes the transport boundary unhandled.
+
+---
 
 ## Testing Strategy
 
 ### Unit Tests
 
-PrincipalContext implementations (Record-based vs Adapter-based).
-
-RBAC logic (role matching and hierarchy).
+- `PrincipalContext` implementations (record-based vs adapter-based).
+- RBAC logic: role matching, hierarchy, and `@RequiresRole` annotation processor.
+- `EX-SEC-2004` is thrown when `STORAGE_CONTEXT` slot is empty at Persistence handover.
 
 ### Integration Tests
 
-Token extraction from different transport drivers (Community vs Enterprise).
+- Token extraction from different transport drivers (Community TCP vs Enterprise QUIC).
+- `ScopedValue` inheritance during parallel processing: verify `PrincipalContext` is accessible
+  in all subtasks forked within a `StructuredTaskScope` without explicit parameter passing.
+- RLS enforcement: DB queries are physically restricted to the bound tenant — verified by attempting
+  cross-tenant access and asserting row count is zero.
+- Fail-Closed: invalid token at transport edge results in `EX-SEC-2001` and zero downstream calls.
 
-ScopedValue inheritance during complex parallel processing (StructuredTaskScope).
-
-RLS enforcement verification (ensuring DB queries are physically restricted).
+---
 
 ## Summary
 
-The Security subsystem acts as the impenetrable "Citadel" of the Exeris Kernel. By utilizing JEP 506 ScopedValues and an
-extensible SPI, it guarantees that every Virtual Thread operates strictly within its boundaries—be it in a standalone
-high-performance environment or a complex enterprise Spring integration.
+The Security subsystem is the impenetrable "Citadel" of the Exeris Kernel. By replacing `ThreadLocal` with JEP 506
+`ScopedValues`, it eliminates both the GC churn of thread-local cleanup and the risk of context leakage between
+Virtual Threads. The Fail-Closed architecture guarantees that unauthorized requests are terminated at the transport
+edge — before they consume a single CPU cycle of business logic — and the dual `ScopedValue` binding
+(`PrincipalContext` + `StorageContext`) ensures that Row-Level Security is enforced automatically at the database
+tier, regardless of whether the developer remembered to filter manually.

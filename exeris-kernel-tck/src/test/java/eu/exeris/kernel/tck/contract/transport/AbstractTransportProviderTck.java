@@ -33,7 +33,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 public abstract class AbstractTransportProviderTck {
 
-    /** Creates the {@link TransportProvider} under test. */
+    /**
+     * Creates the {@link TransportProvider} under test.
+     */
     protected abstract TransportProvider createProvider();
 
     private TransportProvider provider;
@@ -91,4 +93,3 @@ public abstract class AbstractTransportProviderTck {
         }
     }
 }
-

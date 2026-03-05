@@ -7,9 +7,9 @@
  */
 package eu.exeris.kernel.tck.contract.transport;
 
+import eu.exeris.kernel.spi.memory.AllocationHint;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
-import eu.exeris.kernel.spi.memory.AllocationHint;
 import eu.exeris.kernel.spi.transport.TransportStream;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -53,11 +53,16 @@ public abstract class AbstractTransportStreamTck {
      */
     protected abstract StreamPair createStreamPair();
 
-    /** Provides a {@link MemoryAllocator} for buffer creation in tests. */
+    /**
+     * Provides a {@link MemoryAllocator} for buffer creation in tests.
+     */
     protected abstract MemoryAllocator createAllocator();
 
-    /** Stream pair for loopback testing. */
-    protected record StreamPair(TransportStream writer, TransportStream reader) {}
+    /**
+     * Stream pair for loopback testing.
+     */
+    protected record StreamPair(TransportStream writer, TransportStream reader) {
+    }
 
     private StreamPair streams;
     private MemoryAllocator allocator;
@@ -98,7 +103,6 @@ public abstract class AbstractTransportStreamTck {
         @Test
         @DisplayName("isBidirectional() returns a boolean (no NPE)")
         void isBidirectional() {
-            // Simply assert no exception — TCP always returns true, QUIC depends on stream type
             assertThatCode(() -> streams.writer().isBidirectional()).doesNotThrowAnyException();
         }
     }
@@ -116,14 +120,12 @@ public abstract class AbstractTransportStreamTck {
         @Timeout(value = 5, unit = TimeUnit.SECONDS)
         void roundTrip() {
             try (LoanedBuffer sendBuf = allocator.allocate(AllocationHint.SMALL)) {
-                // Write a sentinel pattern
                 MemorySegment seg = sendBuf.segment();
                 seg.set(ValueLayout.JAVA_LONG, 0, 0xDEADCAFE_BABE1234L);
                 int length = Long.BYTES;
 
                 streams.writer().write(seg, length);
 
-                // Read on the other side
                 try (LoanedBuffer recvBuf = allocator.allocate(AllocationHint.SMALL)) {
                     MemorySegment recvSeg = recvBuf.segment();
                     int bytesRead = streams.reader().read(recvSeg, length);
@@ -150,12 +152,8 @@ public abstract class AbstractTransportStreamTck {
             LoanedBuffer buf = allocator.allocate(AllocationHint.MICRO);
             buf.segment().set(ValueLayout.JAVA_BYTE, 0, (byte) 0xAB);
 
-            // Ownership transfers to the transport — caller MUST NOT close
             streams.writer().queueWrite(buf, 1);
 
-            // Verify delivery: the sentinel byte MUST arrive on the reader side.
-            // This validates both ownership transfer AND that the transport did not
-            // silently drop the queued buffer.
             try (LoanedBuffer recvBuf = allocator.allocate(AllocationHint.MICRO)) {
                 MemorySegment recvSeg = recvBuf.segment();
                 int bytesRead = streams.reader().read(recvSeg, 1);
@@ -165,11 +163,10 @@ public abstract class AbstractTransportStreamTck {
                 byte receivedByte = recvSeg.get(ValueLayout.JAVA_BYTE, 0);
                 assertThat(receivedByte)
                         .as("Delivered byte MUST equal the sentinel 0xAB — transport must not " +
-                            "corrupt or drop the owned buffer's content")
+                                "corrupt or drop the owned buffer's content")
                         .isEqualTo((byte) 0xAB);
             }
 
-            // Verify the stream itself remains alive and well-formed after ownership transfer.
             assertThat(streams.writer().streamId())
                     .as("Stream MUST remain open (non-negative streamId) after queueWrite() — "
                             + "ownership transfer must not corrupt the stream state")

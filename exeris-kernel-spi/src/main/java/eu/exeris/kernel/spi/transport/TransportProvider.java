@@ -48,9 +48,9 @@ package eu.exeris.kernel.spi.transport;
  * receive them as method parameters. This ensures clean SPI isolation and is
  * consistent with {@code PersistenceProvider} and {@code GraphProvider}.
  *
- * @since 0.5.0
  * @see TransportEngine
  * @see TransportConfig
+ * @since 0.5.0
  */
 public interface TransportProvider {
 
@@ -71,8 +71,8 @@ public interface TransportProvider {
      *
      * @param config transport-layer configuration (mode, port, reactor count)
      * @return a fully initialised, but <em>not yet started</em>, transport engine
-     * @throws eu.exeris.kernel.spi.exceptions.transport.TransportException if the engine
-     *         cannot be created (missing native lib, bind failure, etc.)
+     * @throws eu.exeris.kernel.spi.exceptions.transport.TransportException
+     * if the engine cannot be created (missing native lib, bind failure, etc.)
      */
     TransportEngine createEngine(TransportConfig config);
 
@@ -116,4 +116,3 @@ public interface TransportProvider {
         return 0;
     }
 }
-

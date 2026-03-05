@@ -43,7 +43,9 @@ public abstract class AbstractTransportEngineTck {
      */
     protected abstract TransportEngine createEngine();
 
-    /** Returns the expected {@link TransportMode} of the engine created by {@link #createEngine()}. */
+    /**
+     * Returns the expected {@link TransportMode} of the engine created by {@link #createEngine()}.
+     */
     protected TransportMode expectedMode() {
         return TransportMode.SERVER;
     }
@@ -153,4 +155,3 @@ public abstract class AbstractTransportEngineTck {
         }
     }
 }
-

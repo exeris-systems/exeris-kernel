@@ -1,43 +1,68 @@
-# Kernel Subsystem: Crypto (L1 Security)
+﻿# Kernel Subsystem: Crypto (L1 Citadel Extension)
 
 **Physical Layout:**
 
-- SPI (planned, not yet implemented in this repo): `eu.exeris.kernel.spi.crypto.*` (`KernelCryptoProvider`, `TlsEngineFactory`, `TlsEngine`, `TlsSession`)
-- Core: `eu.exeris.kernel.core.crypto.*` (`OpenSslLinker`, `NativeCipherContext`, `TlsHandshakeOrchestrator`)
-- Community: JSSE-backed TLS engine (no native dependency)
-- Enterprise: OpenSSL 3.x via Panama FFM — zero object allocation per encrypt/decrypt cycle
+- SPI: `eu.exeris.kernel.spi.crypto.*` (`KernelCryptoProvider`, `TlsEngine`, `TlsStatus`)
+- Core: `eu.exeris.kernel.core.crypto.*` (`CoreOpenSslLoader`, `NativeCipherContext`, `TlsStateMachine`)
+- Community: Portable Off-Heap TLS (OpenSSL 3.x via Panama FFM on standard TCP)
+- Enterprise: Hyper-Density TLS (OpenSSL 3.x via Panama FFM + `io_uring` + QUIC)
 
-**Layer:** L1 (Security)  
+**Layer:** L1 (Data & Integrity)  
 **Status:** Validated Architectural Prototype (TRL-3)
 
 ---
 
 ## Overview
 
-The **Crypto subsystem** provides **zero-allocation TLS and symmetric cipher operations** for all
+The **Crypto subsystem** delivers **zero-allocation TLS and symmetric cipher operations** for all
 transport pipelines. The central design constraint is:
 
 > **Every packet encryption/decryption cycle must produce zero heap objects.**
 
-Legacy approaches (JSSE `SSLEngine`, Bouncy Castle `Cipher`) allocate wrapper objects, `ByteBuffer`
-views, and intermediate `byte[]` arrays on every call. Under 100k packets/second this creates
-sustained GC pressure that conflicts with the Exeris "No Waste Compute" philosophy.
+Standard approaches (`javax.net.ssl.SSLEngine`) generate enormous GC pressure through continuous
+`ByteBuffer` wrapper creation and `byte[]` array allocation per record. Under 100k packets/second
+this sustained churn conflicts with the "No Waste Compute" philosophy.
 
-The Enterprise implementation solves this by calling **OpenSSL 3.x directly via Panama FFM**,
-writing plaintext and reading ciphertext through pre-allocated `MemorySegment` slabs managed by
-`MemoryAllocator`. No Java wrapper object is created between the `LoanedBuffer` and the native call.
+Exeris eliminates this overhead by sending **raw `long` memory addresses** from `LoanedBuffer`
+directly to native OpenSSL functions via Panama FFM. No Java wrapper object is created between the
+`LoanedBuffer` and the native call — in both Community and Enterprise tiers.
 
 ---
 
 ## Design Principles
 
-| Principle                  | Implementation                                                                      |
-|:---------------------------|:------------------------------------------------------------------------------------|
-| Zero objects per cipher op | `MemorySegment` passed directly to OpenSSL FFM call handle                          |
-| Zero-Copy                  | Ciphertext written into the transport's `LoanedBuffer` in-place                     |
-| SPI Isolation (The Wall)   | `KernelCryptoProvider` SPI has zero knowledge of OpenSSL, JSSE, or Panama internals |
-| Context pre-allocation     | `SSL_CTX` and `SSL` structs allocated once at session start; reused per record      |
-| JFR-First                  | TLS handshake start/end and cipher errors emit typed JFR events                     |
+| Principle                  | Implementation                                                                       |
+|:---------------------------|:-------------------------------------------------------------------------------------|
+| Zero objects per cipher op | `MemorySegment` address passed directly to OpenSSL FFM call handle                   |
+| Zero-Copy Handover         | Ciphertext written directly into transport's `LoanedBuffer` — no intermediate copies |
+| SPI Isolation (The Wall)   | `KernelCryptoProvider` SPI has zero knowledge of OpenSSL, Panama, or `io_uring`      |
+| Static Handle Inlining     | All `MethodHandle` instances are `static final` — JIT constant-folds them on hot-path|
+| Session-Level Contexts     | `SSL*` and BIO structs allocated once per session via `NativeCipherContext`           |
+| JFR-First                  | Handshake start/end and cipher errors emit typed JFR events                          |
+
+---
+
+## Zero-Arena Policy (Architectural Constraint)
+
+Crypto (L1) has a **total ban on direct native Arena management**. This is not a style guideline —
+it is an enforced architectural constraint.
+
+| Risk                       | Why raw `Arena` is banned                                                             |
+|:---------------------------|:--------------------------------------------------------------------------------------|
+| **Invisible Leaks**        | A raw `Arena` does not report to Telemetry (L1). Leaks are invisible to JFR until OOM |
+| **Watermark Bypass**       | Direct allocation bypasses `WatermarkManager` and `ResourceArbiter` — the Kernel      |
+|                            | cannot detect that Crypto is exhausting memory and cannot shed load (`EX-MEM-1001`)   |
+| **Thread-Local Penalty**   | `Arena.ofShared().close()` forces a global JVM thread-local handshake. `NativeCipherContext` |
+|                            | avoids this entirely via `VarHandle`-based reference counting                         |
+
+**The contract:** `OffHeapTlsEngine` obtains all native memory from the injected `MemoryAllocator`.
+`NativeCipherContext` owns the session segment via `LoanedBuffer.retain()` / `LoanedBuffer.close()`.
+
+| Feature          | Standard Panama (JSSE/Netty)  | Exeris Off-Heap TLS                            |
+|:-----------------|:------------------------------|:-----------------------------------------------|
+| Lifecycle        | Manual / Cleaner-based        | RAII (`LoanedBuffer` ref-count)                |
+| Leak Tracking    | Glass-Box (OS level)          | Glass-Box (JFR + `LeakTracker`)                |
+| Memory Pressure  | Unbounded                     | Arbiter-aware (backpressure at L0)             |
 
 ---
 
@@ -47,19 +72,17 @@ writing plaintext and reading ciphertext through pre-allocated `MemorySegment` s
 
 | Aspect              | JNI                               | Panama FFM                                           |
 |:--------------------|:----------------------------------|:-----------------------------------------------------|
-| Allocation per call | `jbyteArray` copy into JVM heap   | Zero — `MemorySegment` is a direct pointer           |
+| Allocation per call | `jbyteArray` copy into JVM heap   | Zero — `MemorySegment` is a direct native pointer    |
 | Safety              | Unchecked C pointer, SIGSEGV risk | Arena-bound; JVM validates access                    |
 | Overhead            | `GetPrimitiveArrayCritical` pin   | Zero pin — off-heap segment is already native memory |
 | Valhalla-readiness  | No                                | `MemorySegment` value-typed layout compatible        |
 
-### Linker Bootstrap (Enterprise — `OpenSslLinker`)
+### Linker Bootstrap (Core — `CoreOpenSslLoader`)
 
 ```java
-// One-time setup during KernelBootstrap — NOT per-call:
 Linker linker = Linker.nativeLinker();
 SymbolLookup ssl = SymbolLookup.libraryLookup("libssl.so.3", Arena.global());
 
-// Pre-resolve function handles at bootstrap time → JIT inlines them as constants:
 static final MethodHandle SSL_CTX_NEW =
         linker.downcallHandle(ssl.find("SSL_CTX_new").orElseThrow(),
                 FunctionDescriptor.of(ADDRESS, ADDRESS));
@@ -91,22 +114,18 @@ Transport layer calls:
 ```
 
 ```java
-// Enterprise implementation sketch (simplified):
-public void wrap(LoanedBuffer plaintext, LoanedBuffer ciphertext) throws CryptoException {
-    // Both segments are off-heap — addresses are stable native pointers:
-    long plaintextAddr = plaintext.segment().address();
-    long ciphertextAddr = ciphertext.segment().address();
-    int plaintextLen = (int) plaintext.size();
+public void wrap(LoanedBuffer plaintext, LoanedBuffer ciphertext) {
+    long srcAddr = plaintext.segment().address();
+    long dstAddr = ciphertext.segment().address();
 
-    // Direct FFM call — no ByteBuffer, no byte[], no object allocation:
     int written;
     try {
-        written = (int) SSL_write.invokeExact(sslPtr, plaintextAddr, plaintextLen);
+        written = (int) SSL_write.invokeExact(sslPtr, srcAddr, (int) plaintext.size());
     } catch (Throwable t) {
-        throw new CryptoException(KernelErrorCodes.EX_SEC_2001, "SSL_write failed", t);
+        throw new CryptoException(KernelErrorCodes.EX_NET_2001, "SSL_write failed", t);
     }
     if (written <= 0) {
-        throw new CryptoException(KernelErrorCodes.EX_SEC_2001, "SSL_write returned <= 0");
+        throw new CryptoException(KernelErrorCodes.EX_NET_2001, "SSL_write returned <= 0");
     }
     ciphertext.setSize(written);
 }
@@ -115,7 +134,7 @@ public void wrap(LoanedBuffer plaintext, LoanedBuffer ciphertext) throws CryptoE
 ### Per-Packet Decrypt Path (Zero Allocation)
 
 ```java
-public void unwrap(LoanedBuffer ciphertext, LoanedBuffer plaintext) throws CryptoException {
+public void unwrap(LoanedBuffer ciphertext, LoanedBuffer plaintext) {
     int read;
     try {
         read = (int) SSL_read.invokeExact(
@@ -123,10 +142,10 @@ public void unwrap(LoanedBuffer ciphertext, LoanedBuffer plaintext) throws Crypt
                 plaintext.segment().address(),
                 (int) plaintext.capacity());
     } catch (Throwable t) {
-        throw new CryptoException(KernelErrorCodes.EX_SEC_2001, "SSL_read failed", t);
+        throw new CryptoException(KernelErrorCodes.EX_NET_2001, "SSL_read failed", t);
     }
     if (read <= 0) {
-        throw new CryptoException(KernelErrorCodes.EX_SEC_2001, "SSL_read returned <= 0");
+        throw new CryptoException(KernelErrorCodes.EX_NET_2001, "SSL_read returned <= 0");
     }
     plaintext.setSize(read);
 }
@@ -137,50 +156,46 @@ public void unwrap(LoanedBuffer ciphertext, LoanedBuffer plaintext) throws Crypt
 ## NativeCipherContext Lifecycle
 
 The `NativeCipherContext` wraps a single `SSL*` struct and its associated `BIO` pair.
-It is allocated **once per TLS session** — not per record.
+It is allocated **once per TLS session** — not per record. Memory is obtained from the injected
+`MemoryAllocator`, never from a directly opened `Arena`.
 
 ```
 Session Start:
-  SSL_CTX_new()   → ssl_ctx_ptr  (shared per provider, Arena.global())
-  SSL_new()       → ssl_ptr      (per-session, Arena.ofShared())
-  BIO_new_pair()  → rbio, wbio   (per-session, same Arena as ssl_ptr)
-  SSL_set_bio()   → attach BIOs
+  allocator.allocate(AllocationHint.SESSION) → sessionBuffer (LoanedBuffer, tracked by MemoryAllocator)
+  SSL_CTX_new()  → ssl_ctx_ptr  (shared per provider, Arena.global() in CoreOpenSslLoader)
+  SSL_new()      → ssl_ptr      (per-session, backed by sessionBuffer.segment())
+  BIO_new_pair() → rbio, wbio   (per-session, same segment)
+  SSL_set_bio()  → attach BIOs
+  sessionBuffer.retain()        → ref-count: 2 (held by NativeCipherContext)
 
 Per-Record: wrap() / unwrap() calls above — ZERO allocation
 
 Session End:
-  SSL_free(ssl_ptr)  → releases ssl + BIOs (OpenSSL owns BIOs after SSL_set_bio)
-  Arena.close()      → releases MemorySegment backing ssl_ptr
+  NativeCipherContext.close()   → ref-count: 1
+  sessionBuffer.close()         → ref-count: 0 → returned to MemoryAllocator pool
 ```
 
-### Arena Discipline (The Wall)
+### Arena Discipline
 
-| Object                    | Arena                            | Owner                                             |
-|:--------------------------|:---------------------------------|:--------------------------------------------------|
-| `SSL_CTX`                 | `Arena.global()`                 | `OpenSslLinker` (bootstrap, lives until JVM exit) |
-| `SSL*` per session        | `Arena.ofShared()`               | `NativeCipherContext` (closed on session end)     |
-| Plaintext `LoanedBuffer`  | `MemoryAllocator` (carrier slab) | Transport pipeline (RAII)                         |
-| Ciphertext `LoanedBuffer` | `MemoryAllocator` (network slab) | Transport pipeline (RAII)                         |
+| Object                    | Memory Owner                         | Lifecycle Authority                                    |
+|:--------------------------|:-------------------------------------|:-------------------------------------------------------|
+| `SSL_CTX`                 | `Arena.global()`                     | `CoreOpenSslLoader` (bootstrap, lives until JVM exit)  |
+| `SSL*` per session        | `MemoryAllocator` (SESSION hint)     | `NativeCipherContext` via `LoanedBuffer` ref-count     |
+| Plaintext `LoanedBuffer`  | `MemoryAllocator` (carrier slab)     | Transport pipeline (RAII)                              |
+| Ciphertext `LoanedBuffer` | `MemoryAllocator` (network slab)     | Transport pipeline (RAII)                              |
 
-**Rule:** Business logic code (handlers, repositories) MUST NEVER hold a reference to a
-`NativeCipherContext` or any `MemorySegment` beyond the scope of a single `wrap()`/`unwrap()` call.
+**Rule:** Business logic code MUST NEVER hold a reference to a `NativeCipherContext` or any
+`MemorySegment` beyond the scope of a single `wrap()`/`unwrap()` call.
 
 ---
 
 ## SPI Contract (The Wall)
 
-The `KernelCryptoProvider` SPI and all interfaces in `eu.exeris.kernel.spi.crypto.*`
-are **completely blind** to OpenSSL, JSSE, BouncyCastle, or Panama internals.
-
 ```java
-// SPI — knows nothing about SSL_write, MethodHandle, or Arena:
 public interface TlsEngine extends AutoCloseable {
     void wrap(LoanedBuffer plaintext, LoanedBuffer ciphertext) throws CryptoException;
-
     void unwrap(LoanedBuffer ciphertext, LoanedBuffer plaintext) throws CryptoException;
-
     TlsHandshakeResult handshake() throws CryptoException;
-
     TlsSession session();
 
     @Override
@@ -188,29 +203,59 @@ public interface TlsEngine extends AutoCloseable {
 }
 ```
 
-The Enterprise `OffHeapTlsEngine` implementing this interface lives exclusively in
-`exeris-kernel-enterprise`. It is discovered via `ServiceLoader` — the SPI module never
-imports it.
+The SPI has zero knowledge of OpenSSL, JSSE, BouncyCastle, or Panama internals.
+Both `CommunityTlsEngine` and `OffHeapTlsEngine` implementing this interface are discovered
+via `ServiceLoader` — the SPI module never imports either.
 
 ---
 
 ## Community vs Enterprise Implementations
 
-### Community (Free Tier)
+### Community (Free Tier — Portable Off-Heap TLS)
 
-- `JsseTlsEngine` — wraps `javax.net.ssl.SSLEngine`.
-- Allocates `ByteBuffer` wrappers per record (acceptable for low-throughput deployments).
-- **Does not** require native libraries; works on all JDK 26+ distributions out of the box.
+- `CommunityTlsEngine` — OpenSSL 3.x via Panama FFM on standard TCP/POSIX networking
+  (`epoll`/`kqueue`).
+- Same `CoreOpenSslLoader` and `NativeCipherContext` as Enterprise — zero `ByteBuffer` wrappers,
+  zero `byte[]` arrays per record.
+- Memory BIOs (`BIO_s_mem()`) with standard TCP `FileDescriptor` handoff.
+- **Does not** use `io_uring` or QUIC — those are reserved for the Enterprise tier.
+- Heap boundary: JDBC/persistence interactions may still generate bounded allocations.
 
 ### Enterprise (Secret Sauce — lives in `exeris-kernel-enterprise`)
 
-- `OffHeapTlsEngine` — OpenSSL 3.x via Panama FFM as described above.
-- Pre-allocates `SSL*` context via `NativeCipherContext` at session start.
+- `OffHeapTlsEngine` — OpenSSL 3.x via Panama FFM + `io_uring` ring + QUIC Memory BIOs.
+- Eliminates Head-of-Line Blocking via QUIC (UDP-based multiplexing).
+- Zero JVM thread-local handshakes: `io_uring` batches syscalls, bypassing `epoll` overhead.
+- TLS 1.3 session resumption via `SSL_SESSION` caching in a dedicated `MemoryAllocator`
+  partition (`"crypto"` in `GlobalMemoryArbiter`).
 - `wrap()`/`unwrap()` produce **zero heap objects**.
-- TLS 1.3 session resumption via `SSL_SESSION` caching in a dedicated `MemoryAllocator` partition
-  (partition name `"crypto"` in `GlobalMemoryArbiter`).
-- **SPI isolation enforced:** `OffHeapTlsEngine` imports only `eu.exeris.kernel.spi.*` types.
-  Zero imports from `kernel-legacy`, `sun.*`, or `javax.net.ssl.*`.
+- **SPI isolation enforced:** zero imports from `kernel-legacy`, `sun.*`, or `javax.net.ssl.*`.
+
+### Code Example: Session Context via MemoryAllocator
+
+```java
+public OffHeapTlsEngine(MemoryAllocator allocator, CoreSslHandles handles) {
+    LoanedBuffer sessionCtx = allocator.allocate(AllocationHint.SESSION);
+    this.context = new NativeCipherContext(handles, sessionCtx.segment().address());
+    this.context.retain();
+    sessionCtx.close();
+}
+```
+
+> `allocator.allocate()` is tracked by `WatermarkManager`. If the off-heap budget is exhausted,
+> it throws `MemoryExhaustedException(EX-MEM-1001)` before any native memory is touched —
+> this is the backpressure integration point between Crypto (L1) and Memory (L0).
+
+---
+
+## Error Codes
+
+> **Source of truth:** `KernelErrorCodes.java` in `exeris-kernel-spi`.
+
+| Code          | Meaning                       | Glass-Box Payload (`rawArgs`)                        |
+|:--------------|:------------------------------|:-----------------------------------------------------|
+| `EX-NET-2001` | TLS Operation Failure         | `[0] int nativeErrorCode, [1] String detail`         |
+| `EX-NET-2002` | Crypto Provider Bootstrap     | `[0] String providerName, [1] String reason`         |
 
 ---
 
@@ -220,44 +265,22 @@ imports it.
 |:---------------------------|:--------------------------------------|:---------------------------------------------------|
 | `TlsHandshakeEvent`        | Start and completion of TLS handshake | `sessionId`, `protocol`, `cipher`, `durationNanos` |
 | `TlsHandshakeFailureEvent` | Handshake exception                   | `errorCode`, `peerAddress`, `failureReason`        |
-| `CryptoContextAllocEvent`  | `NativeCipherContext` creation        | `arenaName`, `sizeBytes`, `providerName`           |
+| `CryptoContextAllocEvent`  | `NativeCipherContext` creation        | `allocatorName`, `sizeBytes`, `providerName`       |
 
 **Rule:** `wrap()` and `unwrap()` on the cipher hot-path MUST NOT emit JFR events per-call.
-Use JFR's built-in `MethodProfiling` instead for cipher throughput analysis.
-
----
-
-## Error Handling
-
-Crypto errors follow the Black-Box pattern (see [Telemetry](./telemetry.md)).
-No `String.formatted()`, no `e.getMessage()` concatenation at throw sites.
-
-```java
-// ✅ CORRECT — static message, raw args:
-public CryptoException(String errorCode, String staticMessage, Throwable cause) {
-    super(errorCode, staticMessage, cause);
-}
-
-// Called as:
-throw new
-
-CryptoException(KernelErrorCodes.EX_SEC_2001, "SSL_write failed",cause);
-```
-
-A future `EX-SEC-2003` code will be registered for OpenSSL-specific errors with
-`rawArgs[0] = int opensslErrorCode` (the raw `ERR_get_error()` return value — no string formatting).
+Use JFR's built-in `MethodProfiling` for cipher throughput analysis.
 
 ---
 
 ## Banned Patterns
 
-| Pattern                                                                   | Reason                            | Replacement                                                   |
-|:--------------------------------------------------------------------------|:----------------------------------|:--------------------------------------------------------------|
-| `javax.net.ssl.SSLEngine` in Enterprise path                              | Allocates `ByteBuffer` per record | `OffHeapTlsEngine` via Panama FFM                             |
-| `new byte[n]` for encrypt/decrypt buffer                                  | GC pressure on cipher hot-path    | Pre-allocated `LoanedBuffer` from `MemoryAllocator`           |
-| `ByteBuffer.wrap(segment.toArray())`                                      | Copies off-heap → heap            | `MemorySegment` address passed directly to `SSL_write`        |
-| `Arena.ofConfined()` inside `wrap()`/`unwrap()`                           | Creates/destroys arena per record | Session-level `Arena.ofShared()` in `NativeCipherContext`     |
-| Catching `Throwable` from `MethodHandle.invokeExact()` without rethrowing | Swallows `VirtualMachineError`    | Always rethrow `Error` and `StructuredTaskScope` cancellation |
+| Pattern                                                          | Reason                               | Replacement                                              |
+|:-----------------------------------------------------------------|:-------------------------------------|:---------------------------------------------------------|
+| `javax.net.ssl.SSLEngine` in any tier                            | Allocates `ByteBuffer` per record    | `CommunityTlsEngine` or `OffHeapTlsEngine` via FFM      |
+| `new byte[n]` for encrypt/decrypt buffer                         | Sustained GC pressure on hot-path    | Pre-allocated `LoanedBuffer` from `MemoryAllocator`      |
+| `ByteBuffer.wrap(segment.toArray())`                             | Copies off-heap → heap               | `MemorySegment` address passed directly to `SSL_write`   |
+| `Arena.ofConfined()` or `Arena.ofShared()` in Crypto logic       | Bypasses `WatermarkManager`          | `MemoryAllocator.allocate(AllocationHint.SESSION)`       |
+| Catching `Throwable` from `invokeExact()` without rethrowing     | Swallows `VirtualMachineError`       | Always rethrow `Error` and `StructuredTaskScope` signals |
 
 ---
 
@@ -265,15 +288,17 @@ A future `EX-SEC-2003` code will be registered for OpenSSL-specific errors with
 
 ### Unit Tests
 
-- `JsseTlsEngine` handshake over loopback (Community path, no native libs).
+- `CommunityTlsEngine` handshake over loopback — no `io_uring`, no QUIC, pure TCP.
 - `wrap()`/`unwrap()` round-trip with known plaintext/ciphertext vectors.
+- `NativeCipherContext` ref-count: `retain()` increments, `close()` decrements, segment freed at zero.
 
 ### Integration Tests (TCK)
 
-- `OffHeapTlsEngine` (Enterprise): verify zero heap allocations during 1000 `wrap()` calls
+- Both Community and Enterprise: verify zero heap allocations during 1000 `wrap()` calls
   (JFR GC allocation profiler baseline must show 0 B/op).
-- `NativeCipherContext` lifecycle: `SSL*` pointer freed when session arena is closed
-  (verified via `MemorySegment.isNative()` check after `close()`).
+- `MemoryExhaustedException(EX-MEM-1001)` is thrown before native allocation when
+  `WatermarkManager` reports high watermark breach.
+- `NativeCipherContext` lifecycle: `SSL*` pointer freed when `LoanedBuffer` ref-count reaches zero.
 
 ### Load Tests
 

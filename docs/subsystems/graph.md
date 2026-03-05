@@ -1,32 +1,32 @@
-# Kernel Subsystem: Graph (L2 Data Synthesis)
+﻿# Kernel Subsystem: Graph (L2 Data Synthesis)
 
 **Physical Layout:**
 
 - SPI: `eu.exeris.kernel.spi.graph.*` (MATCH DSL, Dialect SPI, Session Contracts)
 - Core: `eu.exeris.kernel.core.graph.*` (Query Transpiler, Metadata Engine, Algo-Orchestrator)
 - Drivers:
-    - `community`: Standard JDBC (Postgres) / Bolt (Neo4j/Memgraph)
-    - `enterprise`: Native `io_uring` (PostgreSQL) / FFM-Native Bolt (Planned)
-      **Layer:** L2 (Data Synthesis)
-      **Status:** Validated Architectural Prototype (TRL-3)
+    - `community`: Standard JDBC (PostgreSQL PGQ) / Bolt (Neo4j / Memgraph)
+    - `enterprise`: Native Wire (`io_uring` + PostgreSQL) / FFM-Native Bolt (Planned)
+
+**Layer:** L2 (Data Synthesis)
+**Status:** Validated Architectural Prototype (TRL-3)
 
 ---
 
 ## Overview
 
-The **Graph subsystem** is a semantic synthesis engine. Its primary goal is to transform structured data from L1
-Persistence into traversable relationships using a unified **MATCH DSL**. It explicitly acknowledges the efficiency gap
-between standard JVM drivers and native I/O, providing a migration path from high-allocation prototypes to zero-copy
-production environments.
+The **Graph subsystem** is a semantic synthesis engine. It transforms structured data from L1 Persistence into
+traversable relationships using a unified **MATCH DSL**, bridging the gap between relational storage and graph
+logic.
 
-- **The Allocation Gap:** Standard Bolt/Netty drivers exhibit high **Object Churn** (measured at ~15x allocation-to-data
-  ratio). The subsystem allows utilizing these drivers in the Community tier while providing the SPI for "Clean" (
-  Off-heap) Enterprise drivers.
-- **Transpilation Engine:** Converts abstract MATCH patterns into target-specific dialects:
-    - **SQL:2023 PGQ** for PostgreSQL 18.
-    - **Cypher** for Bolt-compatible backends (Neo4j, Memgraph, FalkorDB).
-- **Protocol-Blind SPI:** Business logic is decoupled from the driver's memory management policy or specific network
-  protocol.
+- **The Allocation Gap Mitigation:** Standard Bolt/JDBC drivers exhibit a ~15x allocation-to-data ratio (30 GB
+  allocated to process 2 GB of graph data). Exeris Community supports these drivers as a documented baseline.
+  Enterprise drivers target a **< 1x ratio** via Panama FFM and `LoanedBuffer` slabs.
+- **Unified MATCH DSL:** A protocol-blind query builder that transpiles to SQL:2023 PGQ (PostgreSQL 18) or Cypher
+  (Neo4j / Memgraph / FalkorDB) based on the active driver — the same business code works on both.
+- **No-Arena Enforcement:** All graph-related native memory is carved exclusively from L0 `MemoryAllocator` slabs.
+  Drivers are prohibited from opening independent FFM `Arena` instances, ensuring full visibility to
+  `GlobalMemoryArbiter` and JFR Telemetry.
 
 ---
 
@@ -34,29 +34,57 @@ production environments.
 
 ### 1. Intent over Implementation
 
-We use the **MATCH** pattern to express relationship intent. The Kernel is responsible for finding the most efficient
-way to execute this intent on the active driver (e.g., JSON push-down for Postgres or native GDS for Neo4j).
+We use the **MATCH** pattern to express relationship intent. The Kernel is responsible for finding the most
+efficient way to execute this intent on the active driver (SQL/PGQ push-down for PostgreSQL or native GDS for
+Neo4j) — business code never changes when the driver is swapped.
 
-### 2. Zero-BS Performance Metrics
+### 2. Metric Transparency (Churn-to-Data Ratio)
 
-We do not mask the cost of abstraction. If a driver allocates 30GB to process 2GB of data, it is documented as a
-baseline. Success is defined by the reduction of this ratio toward 1:1 using Panama FFM and `io_uring`.
+Exeris does not mask the cost of its abstraction. In TCK mode, every driver emits a **Churn-to-Data Ratio**:
+bytes allocated per byte of graph data transferred. If a Community driver reports ~15x, that is the documented
+baseline. If an Enterprise driver exceeds a ratio of **1.0**, the TCK fails with `EX-GRPH-5005` — this is the
+binary enforcement point of the Performance Contract for L2.
 
-### 3. Dual-Write Consistency
+### 3. No-Arena Policy (L0 Enforcement at L2)
 
-The subsystem provides built-in orchestration (`GraphSyncService`) to ensure that relational state changes in L1 are
-reflected in the L2 graph structure.
+Graph Drivers are prohibited from creating independent FFM `Arena` instances. They must request all memory
+segments exclusively through the `MemoryAllocator` SPI. This ensures that graph-related off-heap usage is:
+
+- **Visible** to `GlobalMemoryArbiter` (enabling backpressure and load-shedding).
+- **Tracked** by `LeakTracker` and `WatermarkManager` (preventing silent OOM).
+- **Auditable** via JFR Telemetry (`CryptoContextAllocEvent` equivalent for graph slabs).
+
+### 4. Dual-Write Consistency
+
+Built-in `GraphSyncService` orchestration ensures that relational state changes in L1 are atomically reflected
+in L2 graph structure — or rolled back together on failure (`EX-GRPH-5003`).
 
 ---
 
-## Performance Tiering (The Reality Check)
+## Performance Tiering
 
-| Metric               | Community (Standard)       | Enterprise (Native)               |
-|:---------------------|:---------------------------|:----------------------------------|
-| **I/O Strategy**     | Standard Sockets / NIO.2   | **`io_uring` / Panama FFM**       |
-| **Memory Policy**    | JVM Heap (High Churn)      | **Off-heap (`LoanedBuffer`)**     |
-| **Allocation Ratio** | ~15x (Baseline)            | **< 1x (Target)**                 |
-| **Thread Model**     | Virtual Threads (blocking) | **Virtual Threads (Non-pinning)** |
+| Metric               | Community (Standard)          | Enterprise (Native)                   |
+|:---------------------|:------------------------------|:--------------------------------------|
+| **I/O Strategy**     | Standard Sockets / JDBC       | `io_uring` / Native Wire              |
+| **Memory Policy**    | JVM Heap (High Churn)         | Off-Heap (`LoanedBuffer`)             |
+| **Allocation Ratio** | ~15x (Documented Baseline)    | **< 1x (TCK-enforced Target)**        |
+| **Thread Model**     | Virtual Threads (blocking)    | Virtual Threads (non-pinning)         |
+| **Isolation**        | Logical (app-level filtering) | Physical (`StorageContext` RLS)       |
+
+---
+
+## Enterprise Driver Architecture (Secret Sauce)
+
+Enterprise graph drivers utilize **Static Slab Traversal** and **Native Dialect Push-down**. This bypasses
+the Object-Relational Impedance Mismatch by processing relationships directly in memory-mapped regions,
+synchronized with the L1 `StorageContext`:
+
+- **Static Slab Traversal:** Node and edge records are laid out in contiguous `MemoryAllocator` slabs.
+  Traversal is pointer arithmetic — no object instantiation per record.
+- **Native Dialect Push-down:** Complex MATCH patterns are compiled to a single SQL/PGQ or Cypher statement
+  executed entirely server-side, eliminating Java-side row-by-row hydration.
+- **Direct-to-NIC Binary Stream:** Results are written from the database wire buffer directly into a
+  `LoanedBuffer` transport slot — no intermediate `ResultSet` object, no `String` column extraction.
 
 ---
 
@@ -65,80 +93,109 @@ reflected in the L2 graph structure.
 **What Graph SPI DOES:**
 
 1. Define `GraphSession` and `GraphBackend` lifecycle contracts.
-2. Provide the fluent `MATCH` Query Builder and `GraphDialect` extension points.
+2. Provide the fluent `MATCH` query builder and `GraphDialect` extension points.
 3. Define metadata structures for Nodes and Edges based on domain annotations.
 
 **What Graph Core DOES:**
 
-1. Discover graph metadata and transpile DSL queries into native SQL/Cypher strings.
+1. Discover graph metadata and transpile DSL queries into native SQL/PGQ or Cypher strings.
 2. Manage the `GraphSyncService` for cross-subsystem consistency.
 3. Execute algorithmic traversals (Dijkstra, BFS) via pluggable `PathFinders`.
-4. Provide `GraphQueryCache` for distributed result caching using Redis.
+4. Enforce the No-Arena Policy by verifying all driver allocations go through `MemoryAllocator`.
+
+---
+
+## Error Codes
+
+> **Source of truth:** `KernelErrorCodes.java` in `exeris-kernel-spi`.
+
+| Code           | Meaning                   | Glass-Box Payload (`rawArgs`)                                        |
+|:---------------|:--------------------------|:---------------------------------------------------------------------|
+| `EX-GRPH-5001` | Engine Bootstrap Failure  | `[0] String providerName, [1] String reason`                         |
+| `EX-GRPH-5002` | Query Execution Failure   | `[0] String queryType, [1] String detail`                            |
+| `EX-GRPH-5003` | Dual-Write Sync Failure   | `[0] String edgeType, [1] String detail`                             |
+| `EX-GRPH-5004` | Path Not Found            | `[0] long sourceMost, [1] long sourceLeast, [2] long targetMost, [3] long targetLeast` |
+| `EX-GRPH-5005` | Excessive Allocation      | `[0] String driverName, [1] long bytesAllocated, [2] long bytesXfer` |
+
+**TCK enforcement for `EX-GRPH-5005`:** When running with `LeakDetectionMode.PARANOID`, the TCK measures the
+Churn-to-Data Ratio after each traversal benchmark. A ratio exceeding **1.0** in any Enterprise driver causes
+the test suite to emit `EX-GRPH-5005` and fail — this is the binary Performance Contract gate for L2.
 
 ---
 
 ## Code Examples
 
-### 1. Agnostic MATCH Pattern (SPI)
+### 1. Protocol-Blind MATCH Traversal (SPI)
 
-The same code is used regardless of the underlying driver or dialect.
+The same code runs unchanged on PostgreSQL 18 (SQL/PGQ) and Neo4j (Cypher).
 
 ```java
 GraphQuery query = GraphQueryBuilder.match()
         .node("u", "User").where("id", userId)
         .outgoing("FOLLOWS").node("friend", "User")
-        .returning("friend.id", "friend.handle")
+        .returning("friend.handle")
         .build();
 
-// Executor chooses the most efficient driver-specific implementation
-TraversalResult results = graphService.execute(query);
+graphService.streamBfsJson(query, transportOutput);
 ```
 
-### 2. Zero-Copy JSON Streaming (Core)
+> `streamBfsJson` writes results directly into the transport `LoanedBuffer` — no intermediate `List<User>`,
+> no heap serialization. Data flows: DB wire buffer → Off-Heap slab → NIC.
 
-Eliminates Java-side serialization overhead by utilizing database-native JSON aggregation.
+### 2. GraphDialect Extension Point (SPI)
 
 ```java
-// Inside a Virtual Thread / Request Handler
-graphService.streamBfsJson(request, outputStream);
-// Result: Data flows NIC -> Off-Heap -> NIC with minimal GC pressure
+package eu.exeris.kernel.spi.graph;
+
+public interface GraphDialect {
+    String transpile(GraphQuery query);
+    boolean supportsNativePathAlgorithms();
+}
 ```
 
-## Error Codes (Black Box Telemetry)
+### 3. No-Arena Policy — Correct Slab Allocation (Driver)
 
-| Code           | Meaning               | Action                                         |
-|:---------------|:----------------------|:-----------------------------------------------|
-| `EX-GRPH-5001` | Transpilation Failure | Mismatch between DSL and Dialect capabilities. |
-| `EX-GRPH-5002` | Path Not Found        | Algorithm failed to reach target node.         |
-| `EX-GRPH-5003` | Sync Inconsistency    | Relational change failed to reflect in Graph.  |
-| `EX-GRPH-5005` | Excessive Allocation  | Driver exceeded pre-defined churn thresholds.  |
+```java
+public class NativeGraphDriver implements GraphBackend {
+    private final MemoryAllocator allocator;
+
+    public LoanedBuffer allocateResultSlab(int expectedRows) {
+        return allocator.allocate(AllocationHint.LARGE);
+    }
+}
+```
+
+---
 
 ## Testing Strategy
 
 ### Unit Tests
 
-Dialect parity: Ensure identical DSL produces correct SQL and Cypher.
+- Dialect parity: verify identical DSL produces correct SQL/PGQ and Cypher.
+- Metadata discovery: verify extraction from annotated `record` nodes/edges.
+- Pathfinding: validate Dijkstra and BFS logic on mock datasets.
 
-Metadata discovery: Verify extraction from annotated records.
+### Integration Tests (TCK)
 
-Pathfinding: Validate algorithm logic (Dijkstra, BFS) on mock datasets.
+- **Sync Integrity:** L1 Persistence changes trigger correct L2 Graph updates (`EX-GRPH-5003` on failure).
+- **Isolation Leak Test:** `StorageContext` correctly restricts traversals to the bound tenant.
+- **Dialect Consistency:** Bit-identical `TraversalResult` across PostgreSQL and Neo4j backends.
+- **No-Arena Compliance:** Driver allocations are verified to flow through `MemoryAllocator` — direct
+  `Arena` instantiation detected and rejected.
 
-### Integration Tests
+### Load Tests
 
-Sync Integrity: Verify that L1 Persistence changes trigger correct L2 Graph updates.
+- **Churn-to-Data Ratio:** TCK measures bytes allocated per byte transferred. Enterprise target: < 1x.
+  Failure emits `EX-GRPH-5005` with `bytesAllocated` and `bytesTransferred` in `rawArgs`.
+- **Carrier Pinning:** JFR-based validation that driver I/O does not stall Virtual Threads
+  (`CarrierPinnedEvent` must not fire during standard traversal).
 
-Isolation Leak Test: Ensure StorageContext (or PrincipalContext) correctly restricts traversals.
-
-Dialect Consistency: Verify bit-identical TraversalResult across different backends.
-
-### Lab & Load Tests
-
-Carrier Pinning: JFR-based validation that driver synchronization doesn't stall Virtual Threads.
-
-Churn-to-Data Ratio: Measure bytes allocated per byte transferred for performance profiling.
+---
 
 ## Summary
 
-The Graph subsystem acts as a semantic bridge between raw data and relationship synthesis. By enforcing a protocol-blind
-SPI, it allows the Exeris Kernel to evolve from standard Java drivers to specialized, kernel-bypass implementations
-while maintaining a strict discipline of TRL-3 readiness.
+The Graph subsystem acts as the semantic bridge between raw relational data (L1) and graph-native reasoning (L2).
+By enforcing the No-Arena Policy, it extends the L0 Memory Contract to L2 — every off-heap byte consumed by a
+graph driver is visible to `GlobalMemoryArbiter`, auditable via JFR, and subject to backpressure. The unified
+MATCH DSL decouples business intent from backend implementation, enabling seamless migration from high-allocation
+Community drivers to zero-copy Enterprise engines without changing a single line of business code.

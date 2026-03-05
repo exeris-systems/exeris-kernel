@@ -28,23 +28,44 @@ import java.lang.foreign.ValueLayout;
  */
 public abstract class TransportZeroAllocTck extends AbstractSubsystemZeroAllocTck {
 
-    /** Creates a started {@link TransportEngine} with loopback binding. */
+    /**
+     * Creates a started {@link TransportEngine} with loopback binding.
+     */
     protected abstract TransportEngine createEngine();
 
-    /** Creates a {@link MemoryAllocator} for buffer allocation. */
+    /**
+     * Creates a {@link MemoryAllocator} for buffer allocation.
+     */
     protected abstract MemoryAllocator createAllocator();
 
-    /** Creates a writable {@link TransportStream} connected to the engine. */
+    /**
+     * Creates a writable {@link TransportStream} connected to the engine.
+     */
     protected abstract TransportStream createWritableStream();
 
     private TransportEngine engine;
     private MemoryAllocator allocator;
     private TransportStream stream;
 
-    @Override protected String subsystemName()     { return "Transport"; }
-    @Override protected String hotPathDescription() { return "allocate(MICRO) → write sentinel → queueWrite(buf)"; }
-    @Override protected int warmupIterations()      { return 100; }
-    @Override protected int hotPathIterations()     { return 1_000; }
+    @Override
+    protected String subsystemName() {
+        return "Transport";
+    }
+
+    @Override
+    protected String hotPathDescription() {
+        return "allocate(MICRO) → write sentinel → queueWrite(buf)";
+    }
+
+    @Override
+    protected int warmupIterations() {
+        return 100;
+    }
+
+    @Override
+    protected int hotPathIterations() {
+        return 1_000;
+    }
 
     @Override
     protected void bootstrapSubsystem() {
@@ -57,7 +78,6 @@ public abstract class TransportZeroAllocTck extends AbstractSubsystemZeroAllocTc
     protected void runSingleIteration() {
         LoanedBuffer buf = allocator.allocate(AllocationHint.MICRO);
         buf.segment().set(ValueLayout.JAVA_LONG, 0, 0xCAFEL);
-        // queueWrite takes ownership — caller does NOT close
         stream.queueWrite(buf, Long.BYTES);
     }
 

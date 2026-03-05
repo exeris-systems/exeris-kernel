@@ -36,9 +36,9 @@ package eu.exeris.kernel.spi.transport;
  *                          ignored and not validated when mode is {@link TransportMode#DISABLED}
  * @param idleTimeoutMillis connection idle timeout in milliseconds (0 = no timeout);
  *                          ignored and not validated when mode is {@link TransportMode#DISABLED}
- * @since 0.5.0
  * @see TransportProvider
  * @see TransportEngine
+ * @since 0.5.0
  */
 public record TransportConfig(
         TransportMode mode,
@@ -51,26 +51,40 @@ public record TransportConfig(
         long idleTimeoutMillis
 ) {
 
-    /** Default bind address: all interfaces. */
+    /**
+     * Default bind address: all interfaces.
+     */
     @SuppressWarnings("PMD.AvoidUsingHardCodedIP") // Wildcard address is intentional SPI constant
     public static final String DEFAULT_BIND_ADDRESS = "0.0.0.0";
 
-    /** Minimum allowed reactor count. */
+    /**
+     * Minimum allowed reactor count.
+     */
     private static final int MIN_REACTOR_COUNT = 1;
 
-    /** Maximum default reactor count (capped for container environments). */
+    /**
+     * Maximum default reactor count (capped for container environments).
+     */
     private static final int MAX_DEFAULT_REACTORS = 4;
 
-    /** Minimum allowed connection count. */
+    /**
+     * Minimum allowed connection count.
+     */
     private static final int MIN_CONNECTIONS = 1;
 
-    /** Minimum valid port number. */
+    /**
+     * Minimum valid port number.
+     */
     private static final int MIN_PORT = 1;
 
-    /** Maximum valid port number. */
+    /**
+     * Maximum valid port number.
+     */
     private static final int MAX_PORT = 65_535;
 
-    /** Default reactor count: number of available processors, capped at 4. */
+    /**
+     * Default reactor count: number of available processors, capped at 4.
+     */
     public static final int DEFAULT_REACTOR_COUNT =
             Math.clamp(Runtime.getRuntime().availableProcessors(), MIN_REACTOR_COUNT, MAX_DEFAULT_REACTORS);
 
@@ -106,8 +120,6 @@ public record TransportConfig(
      */
     private static void validatePort(TransportMode mode, int port) {
         if (mode == TransportMode.CLIENT) {
-            // CLIENT mode: 0 is the canonical sentinel; valid port numbers are also accepted
-            // (e.g., when the same config object is reused for both client and server roles).
             if (port != 0 && (port < MIN_PORT || port > MAX_PORT)) {
                 throw new IllegalArgumentException(
                         "port must be 0 (not used) or 1–65535 for CLIENT mode, got: " + port);
@@ -203,6 +215,3 @@ public record TransportConfig(
         );
     }
 }
-
-
-
