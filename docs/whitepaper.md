@@ -83,7 +83,7 @@ Logical subsystems span four layers (L0–L4), each strictly optional above L0:
 
 ### 3.2 "Glass Box" (Auditability)
 
-Unlike "Glass Box" frameworks that hide performance degradation, Exeris provides total transparency via
+Unlike "Black Box" frameworks that hide performance degradation, Exeris provides total transparency via
 **Java Flight Recorder (JFR)**. Every off-heap allocation, bootstrap phase, and transport event is traceable with
 **nanosecond-resolution** at a sub-1% CPU overhead tax.
 
