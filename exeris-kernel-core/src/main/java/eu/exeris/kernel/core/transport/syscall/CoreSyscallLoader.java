@@ -173,16 +173,16 @@ public final class CoreSyscallLoader {
                 FunctionDescriptor.of(JAVA_LONG, JAVA_INT, JAVA_INT, JAVA_INT));
 
         MethodHandle bind = req(linker, ws2, "bind",
-                FunctionDescriptor.of(JAVA_INT, JAVA_LONG, JAVA_LONG, JAVA_INT));
+                FunctionDescriptor.of(JAVA_INT, JAVA_LONG, ADDRESS, JAVA_INT));
 
         MethodHandle listen = req(linker, ws2, "listen",
                 FunctionDescriptor.of(JAVA_INT, JAVA_LONG, JAVA_INT));
 
         MethodHandle accept = req(linker, ws2, "accept",
-                FunctionDescriptor.of(JAVA_LONG, JAVA_LONG, JAVA_LONG, JAVA_LONG));
+                FunctionDescriptor.of(JAVA_LONG, JAVA_LONG, ADDRESS, ADDRESS));
 
         MethodHandle connect = req(linker, ws2, "connect",
-                FunctionDescriptor.of(JAVA_INT, JAVA_LONG, JAVA_LONG, JAVA_INT));
+                FunctionDescriptor.of(JAVA_INT, JAVA_LONG, ADDRESS, JAVA_INT));
 
         MethodHandle close = req(linker, ws2, "closesocket",
                 FunctionDescriptor.of(JAVA_INT, JAVA_LONG));

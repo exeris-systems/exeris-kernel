@@ -10,7 +10,9 @@ package eu.exeris.kernel.core.memory;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Package-private test helper: exposes the {@link ResourceArbiter} testing constructor
+ * Public test helper for cross-package {@link ResourceArbiter} testing.
+ *
+ * <p>Exposes the {@link ResourceArbiter} testing constructor
  * (which takes a custom {@code startNs}) to test code in other packages within the
  * {@code exeris-kernel-core} test-jar.
  *

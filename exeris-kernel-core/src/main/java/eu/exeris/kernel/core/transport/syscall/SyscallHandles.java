@@ -21,15 +21,17 @@ import java.lang.invoke.MethodHandle;
  *
  * <h2>C-type to ValueLayout mapping</h2>
  * <pre>
- *  C type          Java type     ValueLayout
- *  ─────────────────────────────────────────
- *  int             int           JAVA_INT
- *  size_t          long          JAVA_LONG    (64-bit ABI)
- *  ssize_t         long          JAVA_LONG
- *  socklen_t       int           JAVA_INT
- *  sockaddr *      long          JAVA_LONG    (raw pointer as long — zero-copy)
- *  void *          long          JAVA_LONG    (raw pointer as long — zero-copy)
- *  SOCKET (Win32)  long          JAVA_LONG    (UINT_PTR = 64-bit on Win64)
+ *  C type          Java type       ValueLayout
+ *  ───────────────────────────────────────────────────────────────
+ *  int             int             JAVA_INT
+ *  size_t          long            JAVA_LONG    (64-bit ABI)
+ *  ssize_t         long            JAVA_LONG
+ *  socklen_t       int             JAVA_INT
+ *  sockaddr *      MemorySegment   ADDRESS      (Panama lifetime + bounds safety)
+ *  void *          MemorySegment   ADDRESS      (Panama lifetime + bounds safety)
+ *  socklen_t *     MemorySegment   ADDRESS      (Panama lifetime + bounds safety)
+ *  SOCKET (Win32)  long            JAVA_LONG    (UINT_PTR = 64-bit on Win64)
+ *  u_long *        long            JAVA_LONG    (raw address — ioctlsocket arg)
  * </pre>
  *
  * <h2>The Wall (SPI Compliance)</h2>
