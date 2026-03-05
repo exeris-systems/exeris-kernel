@@ -232,7 +232,7 @@ public final class CoreSyscallLoader {
 
         // 408 bytes covers all known Win32/Win64 WSADATA struct sizes.
         // Allocated via the caller-supplied arena — memory policy is the caller's concern.
-        MemorySegment wsaData = arena.allocate(408);
+        MemorySegment wsaData = arena.allocate(408, 8);
 
         int result = wsaStartupCall(wsaStartup, wsaData);
         if (result != 0) {

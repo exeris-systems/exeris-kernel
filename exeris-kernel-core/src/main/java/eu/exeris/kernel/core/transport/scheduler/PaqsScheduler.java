@@ -185,16 +185,30 @@ public final class PaqsScheduler implements AutoCloseable {
     }
 
     /**
-     * Waits for all in-flight Virtual Threads to complete, then returns.
-     *
-     * <p>Spins with {@link Thread#onSpinWait()} until the {@link AdmissionController}'s
-     * active stream count reaches zero. Called by the transport engine during ordered
-     * kernel shutdown after the carrier loop has stopped accepting new connections.
+     * Waits until the {@link AdmissionController}'s active stream count reaches zero,
+     * applying a spin-then-yield backoff strategy to avoid burning CPU, and enforcing
+     * a hard timeout to keep shutdown operationally safe even if a handler misbehaves.
      */
     @Override
     public void close() {
+        final long deadlineNanos = System.nanoTime() + 60_000_000_000L;
+        long spins = 0L;
         while (admissionController.activeStreamCount() > 0) {
-            Thread.onSpinWait();
+            if (System.nanoTime() >= deadlineNanos) {
+                int remaining = admissionController.activeStreamCount();
+                if (remaining > 0) {
+                    LOG.log(System.Logger.Level.WARNING,
+                            "PaqsScheduler.close() timed out waiting for {0} active streams to complete; proceeding with shutdown",
+                            remaining);
+                }
+                break;
+            }
+            if (spins < 10_000L) {
+                Thread.onSpinWait();
+                spins++;
+            } else {
+                Thread.yield();
+            }
         }
     }
 
@@ -244,6 +258,7 @@ public final class PaqsScheduler implements AutoCloseable {
      * @param streamId     the stream ID (pre-captured to avoid re-reading on VT exit)
      * @param priorityName the priority name string (pre-captured to avoid enum.name() on exit path)
      */
+    @SuppressWarnings("java:S1181") // Mandatory for L0 VT Boundary Resource Safety
     private void runStream(TransportStream stream, StreamPriority priority, long streamId, String priorityName) {
         long startNs = System.nanoTime();
         String outcome = StreamLifecycleEvent.OUTCOME_COMPLETE;
@@ -253,12 +268,22 @@ public final class PaqsScheduler implements AutoCloseable {
                     .where(TransportScopes.STREAM_ID, streamId)
                     .where(TransportScopes.ENGINE_NAME, engineName)
                     .run(() -> handler.handle(stream));
-        } catch (Exception _) { //NOPMD AvoidCatchingGenericException — VT stream boundary isolation
+        } catch (Throwable t) { //NOPMD AvoidCatchingGenericException,AvoidCatchingThrowable — VT stream boundary isolation
             outcome = StreamLifecycleEvent.OUTCOME_ERROR;
+            if (t instanceof VirtualMachineError vme) {
+                throw vme;
+            }
             if (LOG.isLoggable(System.Logger.Level.WARNING)) {
                 LOG.log(System.Logger.Level.WARNING, "Stream handler failed internally (VT boundary isolation)");
             }
-            stream.close();
+            try {
+                stream.close();
+            } catch (Throwable closeError) { //NOPMD AvoidCatchingThrowable — best-effort close on error path
+                t.addSuppressed(closeError);
+            }
+            if (t instanceof Error e) {
+                throw e;
+            }
         } finally {
             admissionController.onStreamCompleted();
             StreamLifecycleEvent.emit(streamId, priorityName, outcome, System.nanoTime() - startNs);
@@ -307,8 +332,11 @@ public final class PaqsScheduler implements AutoCloseable {
         @Override
         public void close() {
             if (!spawned) {
-                stream.close();
-                admissionController.onStreamCompleted();
+                try {
+                    stream.close();
+                } finally {
+                    admissionController.onStreamCompleted();
+                }
             }
         }
     }

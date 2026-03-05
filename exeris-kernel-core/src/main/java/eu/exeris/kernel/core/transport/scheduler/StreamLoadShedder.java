@@ -93,15 +93,18 @@ public final class StreamLoadShedder {
                      int activeStreamCount) {
         SHED_COUNT.getAndAdd(this, 1L);
 
-        stream.close();
-
-        StreamShedEvent.emit(
-                stream.streamId(),
-                priority.name(),
-                decision.name(),
-                engineName,
-                activeStreamCount
-        );
+        try {
+            stream.close();
+        } catch (RuntimeException _) { //NOPMD AvoidCatchingGenericException — best-effort close on carrier-thread hot path
+        } finally {
+            StreamShedEvent.emit(
+                    stream.streamId(),
+                    priority.name(),
+                    decision.name(),
+                    engineName,
+                    activeStreamCount
+            );
+        }
     }
 
     /**
