@@ -35,7 +35,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * L2 Integration Tests: PAQS Scheduler � priority differentiation, counter invariants,
+ * L2 Integration Tests: PAQS Scheduler — priority differentiation, counter invariants,
  * and live watermark transition behaviour.
  *
  * @since 0.5.0

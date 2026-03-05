@@ -102,13 +102,14 @@ public final class AdmissionController {
      * @return admission decision; never {@code null}
      */
     public Decision admit(StreamPriority priority) {
+        StreamPriority effective = (priority == null) ? StreamPriority.NORMAL : priority;
         int current = (int) ACTIVE_COUNT.getAcquire(this);
         if (current >= MAX_ACTIVE_STREAMS) {
             return Decision.SHED_CAPACITY;
         }
 
         Action arbiterAction = arbiter.decide(ResourceArbiter.Context.TRANSPORT_IO);
-        return mapToDecision(arbiterAction, priority);
+        return mapToDecision(arbiterAction, effective);
     }
 
     /**

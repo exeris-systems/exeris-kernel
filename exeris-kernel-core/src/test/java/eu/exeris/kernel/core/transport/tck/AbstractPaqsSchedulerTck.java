@@ -50,7 +50,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>Subclasses implement {@link #createDynamicAllocator(AtomicLong, long)} to provide
  * a {@link MemoryAllocator} whose {@code stats()} reads from the live {@code allocated}
  * reference. Tests call {@link #setPressure(WatermarkLevel)} to update the allocated
- * value and call {@link WatermarkManager#refresh()} � this avoids the package-private
+ * value and call {@link WatermarkManager#refresh()} — this avoids the package-private
  * {@code forceLevel} method.
  *
  * <h2>Packaging Note (The Wall)</h2>

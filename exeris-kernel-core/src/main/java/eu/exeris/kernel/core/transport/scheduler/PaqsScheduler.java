@@ -136,8 +136,13 @@ public final class PaqsScheduler {
     public void schedule(TransportStream stream) {
         Objects.requireNonNull(stream, "stream must not be null");
 
-        StreamPriority priority = priorityExtractor.apply(stream);
-        if (priority == null) {
+        StreamPriority priority;
+        try {
+            priority = priorityExtractor.apply(stream);
+            if (priority == null) {
+                priority = StreamPriority.NORMAL;
+            }
+        } catch (Exception _) { //NOPMD AvoidCatchingGenericException — carrier thread boundary isolation
             priority = StreamPriority.NORMAL;
         }
 
@@ -149,7 +154,16 @@ public final class PaqsScheduler {
         }
 
         admissionController.onStreamAdmitted();
-        spawnStreamThread(stream, priority);
+        try {
+            spawnStreamThread(stream, priority);
+        } catch (Exception ex) { //NOPMD AvoidCatchingGenericException — rollback on VT spawn failure
+            admissionController.onStreamCompleted();
+            try {
+                loadShedder.shed(stream, priority, decision, admissionController.activeStreamCount());
+            } catch (Exception _) { //NOPMD AvoidCatchingGenericException — shed best-effort on broken state
+            }
+            throw ex;
+        }
     }
 
     /**

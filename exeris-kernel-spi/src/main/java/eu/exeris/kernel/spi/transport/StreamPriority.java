@@ -19,8 +19,7 @@ package eu.exeris.kernel.spi.transport;
  *
  * <h2>Ordinal Contract (Stable Binary Layout)</h2>
  * <p>The ordinal of each constant maps directly to the C2-optimised priority switch table
- * in {@code PaqsScheduler}. Do NOT reorder these constants — the ordinal is used in the
- * off-heap {@code AdmissionResultLayout} for binary telemetry.
+ * in {@code PaqsScheduler}. Do NOT reorder these constants.
  * <pre>
  *   Ordinal 0 → CRITICAL (highest — never shed unless SHEDDING watermark)
  *   Ordinal 1 → HIGH     (e.g., payment API, auth, settlement)
@@ -70,8 +69,7 @@ public enum StreamPriority {
 
     /**
      * Pre-computed values array — avoids defensive {@code values()} copy allocation on
-     * every hot-path lookup. Indexed by ordinal from the off-heap
-     * {@code AdmissionResultLayout}.
+     * every hot-path lookup. Indexed by ordinal.
      */
     private static final StreamPriority[] INDEXED = values();
 

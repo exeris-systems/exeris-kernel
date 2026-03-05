@@ -14,6 +14,7 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.SymbolLookup;
 import java.lang.invoke.MethodHandle;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.Optional;
 
 import static java.lang.foreign.ValueLayout.JAVA_INT;
@@ -64,7 +65,7 @@ public final class CoreSyscallLoader {
      * OS detection — computed once, constant-folded by JIT.
      */
     private static final boolean IS_WINDOWS =
-            System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win");
+            System.getProperty("os.name", "").toLowerCase(Locale.ROOT).startsWith("windows");
 
     /**
      * Winsock2 version word: MAKEWORD(2, 2) = 0x0202.
@@ -91,6 +92,7 @@ public final class CoreSyscallLoader {
      * @throws IllegalStateException if a required symbol is missing or WSAStartup fails
      */
     public static SyscallHandles load(Arena arena) {
+        Objects.requireNonNull(arena, "arena must not be null");
         return IS_WINDOWS ? loadWindows(arena) : loadPosix();
     }
 

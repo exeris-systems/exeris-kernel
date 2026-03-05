@@ -27,7 +27,7 @@ import jdk.jfr.StackTrace;
  * <h2>JFR-First Principle</h2>
  * <p>Load-shedding at the transport edge is a system health signal, not an application error.
  * Emitting this as a JFR event instead of a log gives sub-microsecond overhead and direct
- * correlation to {@link eu.exeris.kernel.core.memory.ResourceArbiterDecisionEvent} on the timeline.
+ * correlation to the {@code ResourceArbiterDecisionEvent} on the timeline.
  *
  * @since 0.5.0
  */
@@ -45,7 +45,7 @@ public final class StreamShedEvent extends Event {
     public String priority;
 
     @Label("Shed Reason")
-    @Description("The ResourceArbiter action that triggered shedding: THROTTLE, REJECT, or SHED_LOAD")
+    @Description("The AdmissionController Decision that triggered shedding: SHED_CAPACITY, SHED_MEMORY, etc.")
     public String shedReason;
 
     @Label("Engine Name")
@@ -60,7 +60,7 @@ public final class StreamShedEvent extends Event {
      *
      * @param streamId          the SPI stream identifier
      * @param priority          the {@link eu.exeris.kernel.spi.transport.StreamPriority} name
-     * @param shedReason        the {@link eu.exeris.kernel.core.memory.ResourceArbiter.Action} name
+     * @param shedReason        the {@link eu.exeris.kernel.core.transport.scheduler.AdmissionController.Decision} name
      * @param engineName        the engine name
      * @param activeStreamCount number of concurrently active streams at shed time
      */
