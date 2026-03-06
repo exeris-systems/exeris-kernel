@@ -187,24 +187,26 @@ public class ResourceArbiter {
 `WatermarkManager` monitors off-heap utilisation and exposes three threshold levels that drive PAQS
 load shedding and `ResourceArbiter` decisions.
 
-| Level        | Default Threshold | PAQS Response                                       | `ResourceArbiter` Action                         |
-|:-------------|:-----------------:|:----------------------------------------------------|:-------------------------------------------------|
-| `NORMAL`     | < 60%             | All `StreamPriority` admitted                       | Allocations proceed unrestricted                 |
-| `HIGH`       | 60–85%            | `LOW` and `BACKGROUND` streams shed (`EX-NET-4006`) | New `AllocationHint.LARGE` requests rejected     |
-| `CRITICAL`   | > 85%             | All streams shed except `CRITICAL` priority         | All new allocations rejected; `EX-MEM-1001` thrown |
+| Level        | Default Threshold | PAQS Response                                                  | `ResourceArbiter` Action                         |
+|:-------------|:-----------------:|:---------------------------------------------------------------|:-------------------------------------------------|
+| `NORMAL`     | < 70%             | All `StreamPriority` admitted                                  | `ALLOW` — allocations proceed unrestricted       |
+| `WARNING`    | 70–85%            | `LOW` and `TELEMETRY` streams shed (`EX-NET-4006`)             | `THROTTLE` — new `AllocationHint.LARGE` requests rejected |
+| `CRITICAL`   | 85–95%            | All streams shed except `CRITICAL` priority                    | `REJECT` — all new non-essential allocations rejected |
+| `SHEDDING`   | ≥ 95%             | All streams shed regardless of priority (`H3_EXCESSIVE_LOAD`) | `SHED_LOAD` — new allocations refused; `EX-MEM-1001` thrown |
 
-**Configuration keys:**
+**Configuration keys** (API format — prefix `exeris.` for system properties, e.g. `-Dexeris.memory.watermarkPollIntervalMs=50`):
 
 ```
-exeris.memory.watermark.high-threshold=0.60      # fraction of total off-heap budget
-exeris.memory.watermark.critical-threshold=0.85
-exeris.memory.watermark.poll-interval-ms=50      # sampling interval (JFR MemoryAllocationEvent 1% sample)
+network.paqs.warningThreshold=0.70    # fraction of total off-heap budget
+network.paqs.criticalThreshold=0.85
+network.paqs.sheddingThreshold=0.95
+memory.watermarkPollIntervalMs=50     # sampling interval
 ```
 
-> **Sampling note:** `MemoryAllocationEvent` is emitted at a 1% sampling rate (configurable via
-> `exeris.memory.telemetry.allocation-sample-rate=0.01`). This rate is not hardcoded — operators
-> running JFR-based heap analysis may set it to `1.0` temporarily at the cost of higher telemetry
-> overhead. The default 1% rate ensures < 50 µs/req overhead as verified by the TCK.
+> **Sampling note:** Allocation sampling is configurable via `telemetry.allocationSampleRate=0.01`.
+> This rate is not hardcoded — operators running JFR-based heap analysis may set it to `1.0`
+> temporarily at the cost of higher telemetry overhead. The default 1% rate ensures < 50 µs/req
+> overhead as verified by the TCK.
 
 ---
 

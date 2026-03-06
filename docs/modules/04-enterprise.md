@@ -1,9 +1,15 @@
 # Physical Tier: Enterprise (The Accelerator)
 
 **Module:** `exeris-kernel-enterprise` (Proprietary / Closed Source Extension)
-**Dependencies:**
-- `compile`: `exeris-kernel-core`
-- `test`: `exeris-kernel-tck`
+**Repository:** **Not present in this repository.** Enterprise is a closed-source module distributed
+separately under a commercial license. This Maven reactor (`pom.xml`) contains only:
+`exeris-kernel-build-config`, `exeris-kernel-bom`, `exeris-kernel-parent`, `exeris-kernel-spi`,
+`exeris-kernel-tck`, `exeris-kernel-core`, and `exeris-kernel-community`.
+
+> **Intended Dependencies (when built from the Enterprise distribution):**
+> - `compile`: `exeris-kernel-spi` (SPI contracts — The Wall)
+> - `compile`: `exeris-kernel-core` (shared TLS/memory infrastructure)
+> - `test`: `exeris-kernel-tck`
 
 ## 🗺️ Request Flow: Kernel-Bypass + Zero-Heap Pipeline
 

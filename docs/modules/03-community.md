@@ -2,8 +2,15 @@
 
 **Module:** `exeris-kernel-community`
 **Dependencies:**
-- `compile`: `exeris-kernel-core` (for shared TLS infrastructure and SPI)
+- `compile`: `exeris-kernel-spi` (SPI contracts — The Wall)
+- `compile`: `exeris-kernel-core` (shared infrastructure: `CoreOpenSslLoader`, `TlsStateMachine`, `AbstractLoanedBuffer`)
 - `test`: `exeris-kernel-tck`
+
+> **⚠️ Implementation Status (TRL-3):** `exeris-kernel-community` is an active module in this
+> repository. It currently ships: `CommunityTelemetryProvider` (Console/JFR/File sinks),
+> `CommunityKernelCryptoProvider` (OpenSSL 3.x / TCP, no QUIC), and `CommunityMemoryProvider`
+> (Arena-based off-heap allocator). The Network transport driver (Off-Heap TCP carrier + PAQS) is
+> **planned (TRL-4)**. See the request-flow diagram below for the target architecture.
 
 ## 🗺️ Request Flow: Standard POSIX + JDBC Stack
 
@@ -16,9 +23,9 @@ flowchart TD
 
     A["① TCP accept()\n<b>POSIX syscall — epoll/kqueue</b>\nFile Descriptor acquired\n<i>[OS Kernel → JVM boundary]</i>"]
 
-    B["② LoanedBuffer.allocate()\n<b>Off-Heap Arena (PanamaArenaAllocator)</b>\nRaw bytes written to MemorySegment\nref-count = 1\n<i>[OFF-HEAP]</i>"]
+    B["② LoanedBuffer.allocate()\n<b>Off-Heap Arena (PanamaArenaAllocator)</b>\nRaw bytes written to MemorySegment\nref-count = 1\n<i>[OFF-HEAP]</i>\n<i>(conceptual placeholder — TRL-4)</i>"]
 
-    C["③ TLS unwrap\n<b>OpenSSL via Panama FFM</b>\nSSL_read() downcall · plaintext → LoanedBuffer slice\nNo ByteBuffer · No heap copy\n<i>[OFF-HEAP → OFF-HEAP]</i>"]
+    C["③ TLS unwrap\n<b>OpenSSL via Panama FFM</b>\nSSL_read() downcall · plaintext → LoanedBuffer slice\nNo ByteBuffer · No heap copy\n<i>[OFF-HEAP → OFF-HEAP]</i>\n<i>(conceptual placeholder — TRL-4)</i>"]
 
     D{"④ PAQS Scheduler\n<b>Decision Gate</b>\nPriority queue · Watermark check\nLoad-shed if WM ceiling breached"}
 
@@ -30,7 +37,7 @@ flowchart TD
 
     H["⑧ Response serialisation\n<b>Off-Heap write-back</b>\nLoanedBuffer filled · TLS wrap (SSL_write)\n<i>[OFF-HEAP]</i>"]
 
-    I["⑨ TCP send() + Slab release\n<b>POSIX syscall</b>\nLoanedBuffer.release() → ref-count 0\nSlab returned to PanamaArenaAllocator pool\n<i>[POOL]</i>"]
+    I["⑨ TCP send() + Slab release\n<b>POSIX syscall</b>\nLoanedBuffer.release() → ref-count 0\nSlab returned to PanamaArenaAllocator pool\n<i>[POOL]</i>\n<i>(conceptual placeholder — TRL-4)</i>"]
 
     NIC --> A --> B --> C --> D
     D -->|"ADMIT"| E --> F --> G --> H --> I

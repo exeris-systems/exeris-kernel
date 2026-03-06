@@ -15,25 +15,28 @@ against both implementations in CI — **both must pass, or neither ships**.
 
 ```mermaid
 graph TD
-    subgraph "exeris-kernel-tck (Abstract Suites)"
-        PAQS_TCK["AbstractPaqsSchedulerTck\n─────────────────\ntestAdmitUnderWatermark()\ntestLoadShedAboveCeiling()\ntestPriorityOrdering()\ntestRefCountOnShed()"]
+    subgraph "exeris-kernel-tck (Abstract Suites — SPI-only)"
         TLS_TCK["AbstractCryptoEngineTck + CryptoZeroAllocTck\n─────────────────\ntestHandshakeCompletes()\ntestZeroAllocBoundedOnCommunity()\ntestSessionResumption()\ntestDoubleFreeDetection()"]
         MEM_TCK["AbstractMemoryAllocatorTck\n─────────────────\ntestAllocateAndRelease()\ntestSlabPoolExhaustion()\ntestLeakDetectionParanoid()\ntestNUMALocalAlloc()"]
         REPO_TCK["AbstractPersistenceEngineTck\n─────────────────\ntestSaveAndLoad()\ntestTransactionRollback()\ntestConcurrentWriters()"]
     end
 
-    subgraph "Community Implementations (OSS)"
-        C_PAQS["CommunityPaqsScheduler"]
-        C_TLS["CommunityTlsEngine\n(OffHeapTlsEngine)"]
-        C_MEM["PanamaArenaAllocator"]
-        C_REPO["JdbcPersistenceEngine"]
+    subgraph "exeris-kernel-core (Test Orchestration Suites — test-jar)"
+        PAQS_TCK["AbstractPaqsSchedulerTck\n─────────────────\ntestAdmitUnderWatermark()\ntestLoadShedAboveCeiling()\ntestPriorityOrdering()\ntestRefCountOnShed()\n<i>(eu.exeris.kernel.core.transport.tck)</i>"]
     end
 
-    subgraph "Enterprise Implementations (Proprietary)"
-        E_PAQS["EnterprisePaqsScheduler"]
-        E_TLS["EnterpriseTlsEngine\n(OffHeapTlsEngine)"]
-        E_MEM["GlobalMemoryArbiter"]
-        E_REPO["NativePersistenceEngine"]
+    subgraph "Community Implementations (OSS)"
+        C_PAQS["CommunityPaqsScheduler\n(conceptual placeholder — TRL-4)"]
+        C_TLS["CommunityTlsEngine / OffHeapTlsEngine\n(conceptual placeholder — TRL-4)"]
+        C_MEM["PanamaArenaAllocator\n(conceptual placeholder — TRL-4)"]
+        C_REPO["JdbcPersistenceEngine\n(conceptual placeholder — TRL-4)"]
+    end
+
+    subgraph "Enterprise Implementations (Proprietary — out-of-repo)"
+        E_PAQS["EnterprisePaqsScheduler\n(conceptual placeholder)"]
+        E_TLS["EnterpriseTlsEngine / OffHeapTlsEngine\n(conceptual placeholder)"]
+        E_MEM["GlobalMemoryArbiter\n(conceptual placeholder)"]
+        E_REPO["NativePersistenceEngine\n(conceptual placeholder)"]
     end
 
     PAQS_TCK -->|"executed against"| C_PAQS & E_PAQS

@@ -21,9 +21,10 @@
 > - `TelemetryProvider` is discoverable via `ServiceLoader` from L1+ code running behind `KernelBootstrap`.
 >   New sink implementations belong in `exeris-kernel-community` or `exeris-kernel-enterprise`, guarded
 >   by the existing TCKs.
-> - The `KernelProviders.TELEMETRY_PROVIDER` `ScopedValue` slot is an **active, bootstrap-bound slot**.
->   Code that runs after `KernelBootstrap` may assume it is bound. Accessing it before bootstrap completes
->   is a programming error and will surface as `NoSuchElementException` in tests.
+> - The `KernelProviders.TELEMETRY_PROVIDER` `ScopedValue` slot holds the factory (bound once at bootstrap).
+>   The pre-built sink list is available via `KernelProviders.TELEMETRY_SINKS`. Hot-path code should use
+>   `TELEMETRY_SINKS` to emit — iterating the pre-built list incurs no factory calls. Accessing either
+>   slot before bootstrap completes is a programming error and will surface as `NoSuchElementException`.
 > - Note: there is **no** `TelemetryRouter` or `TelemetryEvent` type in the telemetry SPI. The SPI
 >   entry points are `TelemetryProvider` (factory) and `TelemetrySink` (emit/increment/gauge/latency),
 >   and the canonical event envelope is `KernelEvent`. Any `TelemetryRouter` mentioned later in this
@@ -281,7 +282,7 @@ Stack trace capture is O(depth) allocation — it is reserved for `LeakTracker` 
 ```
 TelemetryProvider (SPI interface — factory)
   │
-  └─ create() → TelemetrySink
+  └─ createSinks(TelemetryConfig) → List<TelemetrySink>   // never empty; immutable list
 
 TelemetrySink (SPI interface) — implemented by:
   ├─ [Community] JfrTelemetrySink          → writes to JFR event stream
@@ -289,18 +290,24 @@ TelemetrySink (SPI interface) — implemented by:
   └─ [Enterprise] DeterministicBinarySink  → writes to off-heap ring buffer (zero GC)
 ```
 
+> **Why `List<TelemetrySink>` not a single sink?** `TelemetryProvider.createSinks()` returns a
+> list to support fan-out (e.g., JFR + File simultaneously in Community). The list is built once at
+> bootstrap and bound to `KernelProviders.TELEMETRY_SINKS`. Hot-path code iterates the pre-built
+> list — zero factory calls, zero object creation per emission.
+
 ### ScopedValue Propagation
 
-`TelemetryProvider` is propagated via `ScopedValue` (see `KernelProviders`).
+Both `TELEMETRY_PROVIDER` (the factory) and `TELEMETRY_SINKS` (the pre-built, ready-to-use list) are
+bound as `ScopedValue` slots by `KernelBootstrap`. Hot-path subsystems use `TELEMETRY_SINKS` directly.
 **No static router singleton** — any static `TelemetryRouter.isEnabled()` method is banned.
 
-> **Core-internal note:** `exeris-kernel-core` may use an internal `TelemetryRouter` helper class
-> to fan out events to multiple sinks, but this is **not** an SPI type and is invisible to consumers
-> of the public API.
+> **Core-internal note:** `exeris-kernel-core` may use an internal fan-out helper to iterate over
+> `TELEMETRY_SINKS`, but this is **not** an SPI type and is invisible to consumers of the public API.
 
 ```java
-// ✅ CORRECT:
-KernelProviders.TELEMETRY_PROVIDER.get().emit(event);
+// ✅ CORRECT — emit to all configured sinks:
+KernelProviders.TELEMETRY_SINKS.get()
+        .forEach(sink -> sink.emit(event));
 
 // ❌ BANNED (static singleton — violates The Wall):
 TelemetryRouter.emitMetric(metric);
