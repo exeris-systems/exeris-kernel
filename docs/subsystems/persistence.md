@@ -1,4 +1,4 @@
-﻿﻿# Kernel Subsystem: Persistence (L1 Data & Integrity)
+# Kernel Subsystem: Persistence (L1 Data & Integrity)
 
 **Physical Layout:**
 

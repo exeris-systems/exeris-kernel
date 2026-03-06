@@ -147,7 +147,7 @@ decisions. **It is currently an incubating component at TRL-2.** The `ResourceAr
 
 > **Technical Debt:** Full integration of `ScalingContext` with `ResourceArbiter` (multi-tenant SLA-aware shedding)
 > is planned for **v0.6.0**. Do NOT use `ScalingContext` on production hot paths until this integration is complete.
-> See `ScalingContext` Javadoc (`@status INCUBATING`) for details.
+> See `ScalingContext` Javadoc for details.
 
 ---
 

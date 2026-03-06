@@ -50,7 +50,7 @@ graph TD
 | `*.spi.memory`             | `MemoryAllocator`, `LoanedBuffer`, `MemorySlab`    | `PanamaArenaAllocator`, `SlabPool`          |
 | `*.spi.persistence`        | `CitadelRepository`, `StorageContext`              | `JdbcTemplate`, `HikariCP`, FFM handles     |
 | `*.spi.crypto`             | `TlsEngine`, `TlsHandshakeResult`, `TlsPhase`      | `SSL_CTX*` pointers, OpenSSL symbol names   |
-| `*.spi.exception`          | `ExerisKernelException` hierarchy                  | Checked exceptions on hot paths             |
+| `*.spi.exceptions`         | `ExerisKernelException` hierarchy                  | Checked exceptions on hot paths             |
 
 ## 🛡️ Architectural Rules (L0 Enforcement)
 

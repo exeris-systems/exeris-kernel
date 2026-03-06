@@ -34,7 +34,7 @@ flowchart TD
 
     NIC --> A --> B --> C --> D
     D -->|"ADMIT"| E --> F --> G --> H --> I
-    D -->|"SHED"| SHED(["🚫 Load Shed\nHTTP 503 / EX-TRANSPORT-OVERLOAD\nNo Virtual Thread spawned"])
+    D -->|"SHED"| SHED(["🚫 Load Shed\nHTTP 503 / EX-NET-4006\nNo Virtual Thread spawned"])
 
     style A fill:#0f3460,color:#e0e0ff,stroke:#4a90d9
     style B fill:#0f3460,color:#e0e0ff,stroke:#2ecc71

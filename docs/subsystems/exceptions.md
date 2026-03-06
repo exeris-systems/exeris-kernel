@@ -1,4 +1,4 @@
-﻿﻿# Kernel Subsystem: Exceptions (L0 Foundation)
+# Kernel Subsystem: Exceptions (L0 Foundation)
 
 **Physical Layout:**
 

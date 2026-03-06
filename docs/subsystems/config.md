@@ -236,7 +236,7 @@ Exeris bootstrap from wasting retry cycles:
 ```yaml
 initContainers:
   - name: vault-check
-    image: curlimages/curl
+    image: curlimages/curl:8.6.0
     command: ["sh", "-c", "until curl -fs http://vault:8200/v1/sys/health; do sleep 2; done"]
 ```
 

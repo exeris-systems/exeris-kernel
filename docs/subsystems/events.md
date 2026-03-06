@@ -1,4 +1,4 @@
-﻿﻿# Kernel Subsystem: Events (L3 Logic Engines)
+# Kernel Subsystem: Events (L3 Logic Engines)
 
 **Physical Layout:**
 

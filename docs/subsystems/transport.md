@@ -1,4 +1,4 @@
-﻿﻿# Kernel Subsystem: Transport (L2 Native I/O)
+# Kernel Subsystem: Transport (L2 Native I/O)
 
 **Physical Layout:**
 

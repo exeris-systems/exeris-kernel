@@ -1,4 +1,4 @@
-﻿# Kernel Subsystem: Graph (L2 Data Synthesis)
+﻿﻿# Kernel Subsystem: Graph (L2 Data Synthesis)
 
 **Physical Layout:**
 
@@ -252,8 +252,8 @@ The ~15x allocation-to-data ratio claimed for the Community Bolt driver was meas
 | **Metric**              | Bytes allocated on JVM heap per byte of graph data returned           |
 
 These figures are not independently verified benchmarks — they are internal profiling results from
-TRL-3 prototype testing. Independent reproduction is encouraged. The TCK `AbstractGraphBackendTck`
-includes the benchmark harness under `src/test/jmh/` for reproducibility.
+TRL-3 prototype testing. Independent reproduction is encouraged. The TCK `AbstractGraphEngineTck`
+exposes the benchmark harness under the `eu.exeris.kernel.tck.perf.*` package for reproducibility.
 
 ---
 

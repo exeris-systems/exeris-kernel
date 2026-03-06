@@ -99,6 +99,8 @@ graph TD
    pool internals (e.g., `SlabPool` slab reclamation, `SegmentPool` free-list management) where CAS sequences are
    susceptible to ABA problems. It is **categorically banned** around FFM `downcall` invocations or any blocking I/O —
    violations cause Virtual Thread Pinning. See ADR-007 for the full rationale.
-6. **Lazy Constants (JEP 526):** Singleton config caches and expensive one-time initialisations in Core MUST use
-   `LazyConstant.of(...)` instead of double-checked locking or `volatile` fields. This enables JVM constant-folding
-   optimisations and eliminates manual synchronisation in the init path.
+6. **Lazy Constants (JEP 526 Semantics):** Singleton config caches and expensive one-time initialisations in Core MUST
+   use a lazy, single-initialisation, same-instance mechanism (no double-checked locking, no ad-hoc `volatile` fields).
+   The SPI currently models this via `Supplier<KernelSettings>` (see `ConfigProvider`); Core code must follow the same
+   "compute once, then reuse without additional locking" contract to enable JVM optimisations and eliminate manual
+   synchronisation in the init path.

@@ -1,4 +1,4 @@
-﻿﻿# Kernel Subsystem: Crypto (L1 Citadel Extension)
+# Kernel Subsystem: Crypto (L1 Citadel Extension)
 
 **Physical Layout:**
 
@@ -257,7 +257,7 @@ via `ServiceLoader` — the SPI module never imports either.
 - TLS 1.3 session resumption via `SSL_SESSION` caching in a dedicated `MemoryAllocator`
   partition (`"crypto"` in `GlobalMemoryArbiter`).
 - `wrap()`/`unwrap()` produce **zero heap objects**.
-- **SPI isolation enforced:** zero imports from `kernel-legacy`, `sun.*`, or `javax.net.ssl.*`.
+- **SPI isolation enforced:** zero imports from `sun.*` or `javax.net.ssl.*`.
 
 ### Code Example: Session Context via MemoryAllocator
 

@@ -1,11 +1,11 @@
-﻿﻿# Kernel Subsystem: Flow / Sagas (L4 Orchestration)
+# Kernel Subsystem: Flow / Sagas (L4 Orchestration)
 
 **Physical Layout:**
 
 - **SPI:** `eu.exeris.kernel.spi.flow.*`
   (`Saga`, `SagaStep`, `Compensation`, `FlowContext`)
 - **Core:** `eu.exeris.kernel.core.flow.*`
-  (`SagaEngine`, `StateMachine`, `IdempotencyGuard`)
+  (`FlowEngine`, `StateMachine`, `IdempotencyGuard`)
 - **State Storage:**
     - **`community`:** PostgreSQL-backed state persistence
     - **`enterprise`:** Linear Probing Off-Heap Cache (lock-free) + Async DB Write-Behind
@@ -81,7 +81,7 @@ concern, not a latency tax.
 **What Flow SPI DOES:**
 
 1. Define `Saga<T>` and `SagaStep` lifecycle contracts.
-2. Provide `SagaBuilder` fluent API for compensation chain definition.
+2. Provide `FlowDefinitionBuilder` fluent API for compensation chain definition.
 3. Define `FlowContext` for passing business data through steps.
 4. Define the `Compensatable` contract for rollback logic.
 
@@ -129,7 +129,7 @@ Imperative logic mapping to a rigid State Machine. No annotation-based disk dump
 public class OrderSaga implements Saga<OrderData> {
 
     @Override
-    public void configure(SagaBuilder<OrderData> builder) {
+    public void configure(FlowDefinitionBuilder<OrderData> builder) {
         builder
                 .step("ReserveStock",   stockService::reserve,          stockService::compensate)
                 .step("ProcessPayment", paymentService::charge,         paymentService::refund)
@@ -175,8 +175,8 @@ A Virtual Thread parked waiting for an external event MUST have a configurable m
 | Scope               | Default          | Config Key                                               |
 |:--------------------|:----------------:|:---------------------------------------------------------|
 | **Global timeout**  | 30 minutes       | `exeris.flow.saga.global-park-timeout-ms`                |
-| **Per-step timeout**| Inherited        | `SagaBuilder.step(...).timeout(Duration)` (SPI method)   |
-| **On timeout action** | COMPENSATE    | `SagaBuilder.onTimeout(CompensationPolicy)` (default: COMPENSATE_ALL) |
+| **Per-step timeout**| Inherited        | Flow definition per-step timeout API in `FlowDefinitionBuilder` (replaces legacy `SagaBuilder.step(...).timeout(Duration)`) |
+| **On timeout action** | COMPENSATE    | Flow definition timeout policy API in `FlowDefinitionBuilder` (replaces legacy `SagaBuilder.onTimeout(CompensationPolicy)`, default: COMPENSATE_ALL) |
 
 When the park timeout fires:
 
@@ -194,15 +194,15 @@ while older instances are still executing. The following versioning contract app
 
 | Scenario                                           | Kernel Behaviour                                                                                         |
 |:---------------------------------------------------|:---------------------------------------------------------------------------------------------------------|
-| **New deployment adds a step** to a Saga           | Existing in-flight Sagas (persisted in `exeris_saga_state`) continue on the **old definition**. New Sagas use the new definition. The `SagaRegistry` stores the definition snapshot at submission time. |
+| **New deployment adds a step** to a Saga           | Existing in-flight Sagas (persisted in `exeris_saga_state`) continue on the **old definition**. New Sagas use the new definition. The `FlowRegistry` stores the definition snapshot at submission time. |
 | **New deployment removes a step**                  | If an in-flight Saga was parked on the removed step: on wake, the engine detects the missing step via the persisted `stepIdx`. `EX-FLOW-7002` with `phase="SCHEMA_MISMATCH"` is thrown and manual intervention is required. |
 | **New deployment reorders steps**                  | Treated as removal + addition — highest risk scenario. Avoid during active Saga execution. Use blue/green deployment with Saga drain before switching. |
-| **Safe migration pattern**                         | Increment `@SagaVersion` annotation on the `Saga` class. The `SagaEngine` routes Saga instances to the correct definition version based on the version stored in `exeris_saga_state.definition_version`. Multiple definition versions coexist in the `SagaRegistry` until all old instances complete. |
+| **Safe migration pattern (current)**               | Perform blue/green deployment with Saga drain before switching traffic. Avoid changing step order while Sagas are in-flight. The engine currently maintains a single active definition per Saga type; fine-grained, version-aware routing is **planned** but not yet available in the public Flow SPI/Core. |
 
-```java
-@SagaVersion(2)
-public class OrderSaga implements Saga<OrderData> { ... }
-```
+> **Planned feature:** Future Flow engine iterations may introduce explicit Saga definition versioning
+> (for example, via annotations and version-aware routing in the Saga registry/engine) to allow multiple
+> definition versions to coexist until all old instances complete. This capability is *not implemented*
+> in the current codebase and MUST NOT be relied upon until the corresponding SPI/Core APIs exist.
 
 ---
 
@@ -221,7 +221,7 @@ COMPENSATING → COMPENSATION_FAILED (terminal — manual intervention required)
 
 **Operator recovery:** Query `SELECT * FROM exeris_saga_state WHERE status = 'COMPENSATION_FAILED'`.
 Each record contains the Saga UUID (`idMost` + `idLeast`), the failed step index, and the failure reason.
-Use `SagaEngine.forceCompensate(sagaId, fromStepIdx)` to re-trigger compensation from a specific step
+Use `FlowEngine` (planned: `forceCompensate(sagaId, fromStepIdx)`) to re-trigger compensation from a specific step
 after the root cause is resolved.
 
 > There is no automatic retry beyond attempt 3. This is deliberate — a compensation that fails repeatedly
@@ -259,7 +259,7 @@ SRE visibility into running Sagas is provided via JFR events and a diagnostic qu
 | Parked Sagas (waiting for event)   | JFR `SagaLifecycleEvent` — `status=PARKED` count                           |
 | Compensating Sagas                 | JFR `SagaLifecycleEvent` — `status=COMPENSATING` count                     |
 | Failed / Stuck Sagas               | `SELECT COUNT(*) FROM exeris_saga_state WHERE status IN ('FAILED', 'COMPENSATION_FAILED')` |
-| P99 step execution latency         | JMH `SagaEngineBenchmark` (TCK) — `EX-FLOW-7002` latency histogram         |
+| P99 step execution latency         | JMH `AbstractFlowParkWakeBenchmark` (TCK) — `EX-FLOW-7002` latency histogram         |
 
 **JFR event:**
 

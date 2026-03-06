@@ -1,4 +1,4 @@
-﻿﻿# Kernel Subsystem: Security (L1 Citadel)
+# Kernel Subsystem: Security (L1 Citadel)
 
 **Physical Layout:**
 
@@ -173,20 +173,25 @@ token lifetime. The following contract governs token lifecycle in the Kernel:
 | Token expires while VT is **parked** (saga wait)  | The `PrincipalContext` ScopedValue retains the last-validated principal until the Saga step completes. Re-validation is triggered only at the **next transport boundary** (next incoming stream), not during park/wake cycles. |
 | Token expires during **active execution**         | The security layer does NOT interrupt in-flight requests. The token was valid at admission — the Kernel honours admission-time decisions. |
 | Token is **revoked** (not merely expired)         | Revocation is enforced only at the next request admission boundary. There is no in-flight revocation mechanism — this is a deliberate trade-off between latency and strict revocation semantics. Operators requiring strict revocation must use short-lived tokens (≤ 60 s) combined with PAQS watermark-driven shedding to limit the revocation window. |
-| Vault dynamic secret **rotation** during boot     | Config's `@Dynamic`-annotated secret fields participate in hot-reload. When Vault rotates a secret, the `ConfigWatcher` (using `inotify`/`WatchService`) invalidates the cached `VarHandle` value. New tokens signed with the rotated signing key are validated against the updated JWKS — no restart required. |
+| Vault dynamic secret **rotation** during boot     | Config's `@Dynamic`-annotated secret fields participate in hot-reload. When Vault rotates a secret, the configuration hot-reload watcher (using `inotify`/`WatchService`) invalidates the cached `VarHandle` value. New tokens signed with the rotated signing key are validated against the updated JWKS — no restart required. |
 | Vault is **down during boot**                     | `FAIL_FAST` mode (default): the Config subsystem throws `EX-CFG-1001` and the Boot DAG halts. `DEGRADE` mode: last-known configuration is used; this mode is reserved for local development and MUST NOT be deployed to production. The `exeris.config.vault.timeout-ms` key controls the connection timeout before fail-fast fires. |
 
 > **Saga Parking Security Contract:** A Saga's `PrincipalContext` is captured at the point the Saga is
 > **admitted** through the PAQS gate. The `ScopedValue` is re-bound at `state.wake(event)` using the
 > **same admitted principal** — not re-extracted from an incoming event. This means the Saga's security
 > context is immutable for its entire lifetime. If a revocation must apply to a parked Saga, the operator
-> must use the `SagaEngine.cancel(sagaId)` API which forces compensation and drops the Saga.
+> must use a saga cancellation API (planned for the `FlowEngine` SPI) which will force compensation and drop the Saga.
 
 ---
 
 ## `@RequiresRole` Processing — No Reflection on Hot Path
 
-`@RequiresRole` annotations are **NOT processed via runtime reflection**. The mechanism is:
+> **Status: Planned — not yet implemented in this repo.** The `@RequiresRole` annotation and the
+> `RoleCheckRegistry` APT-generated class do not exist in the current SPI or `exeris-kernel-build-config`.
+> The description below is the target design. Do not reference these types until the corresponding
+> SPI/APT implementation lands.
+
+`@RequiresRole` annotations are **NOT processed via runtime reflection**. The target mechanism is:
 
 1. **Compile-time annotation processor (APT):** An annotation processor in `exeris-kernel-build-config`
    generates a static `RoleCheckRegistry` class at compile time. For each annotated method, a `long` bitmask
@@ -242,11 +247,12 @@ extension. Community tier supports TLS 1.3 server authentication only (single-di
 | SPIFFE/SVID certificate identity     | ❌ Not supported     | 🚧 Planned (TRL-4)                        |
 | TLS certificate hot-reload (no restart) | ❌ Not supported  | ✅ `SSL_CTX_use_certificate_file()` hot-swap on SIGUSR1 |
 
-**Certificate rotation (Enterprise):** When a new TLS certificate is available, the operator sends `SIGUSR1`
-to the Exeris process. The signal handler calls `SSL_CTX_use_certificate_file()` and
-`SSL_CTX_use_PrivateKey_file()` on the existing `SSL_CTX*` (held in `Arena.global()` in `CoreOpenSslLoader`).
-New connections use the updated certificate immediately. In-flight connections continue with the old certificate
-until they close naturally — there is no forced connection teardown.
+**Certificate rotation (Enterprise, out-of-repo implementation):** When a new TLS certificate is available,
+the operator sends `SIGUSR1` to the Exeris process. In the Enterprise distribution, the native TLS engine
+calls `SSL_CTX_use_certificate_file()` and `SSL_CTX_use_PrivateKey_file()` on the existing `SSL_CTX*` to
+update the active server certificate in place. New connections use the updated certificate immediately.
+In-flight connections continue with the old certificate until they close naturally — there is no forced
+connection teardown.
 
 ---
 

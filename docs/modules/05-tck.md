@@ -67,8 +67,8 @@ the Performance Contract and must not be merged, regardless of functional correc
 | **LoanedBuffer Leak**           | `LeakDetectionMode.PARANOID`    | 0 unreleased segments     | 0 unreleased segments     | `LeakDetectedError`  |
 | **PAQS Load-Shed Latency**      | Nanosecond timer in TCK         | ≤ 5 µs decision           | ≤ 5 µs decision           | `AssertionError`     |
 | **MemoryAllocator O(1)**        | JMH + allocation counter        | O(1) per alloc/release    | O(1) per alloc/release    | PMD rule violation   |
-| **ABI Symbol Resolution**       | `AbstractOpenSslSymbolTck`      | All symbols present       | All symbols present       | `UnsatisfiedLinkError` |
-| **Bootstrap Latency**           | JFR `KernelBootstrapEvent`      | ≤ 500 ms cold start       | ≤ 500 ms cold start       | `AssertionError`     |
+| **ABI Symbol Resolution**       | Planned: ABI symbol TCK (OpenSSL/FFM) | All symbols present       | All symbols present       | `UnsatisfiedLinkError` |
+| **Bootstrap Latency**           | JFR `KernelBootstrapEvent`      | ≤ 500 ms cold start       | ≤ 800 ms cold start       | `AssertionError`     |
 
 > **Adding a new SPI contract?** You MUST implement a corresponding `Abstract*Tck` class in `exeris-kernel-tck`
 > before the PR is mergeable. A contract without a TCK suite is an unverified contract.

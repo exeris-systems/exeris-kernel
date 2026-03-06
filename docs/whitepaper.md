@@ -1,4 +1,4 @@
-﻿﻿# Exeris Kernel: The Vision & Whitepaper
+﻿# Exeris Kernel: The Vision & Whitepaper
 
 **Author:** Arkadiusz Przychocki, Founder & Lead Architect  
 **Status:** TRL-3 (Validated Architectural Prototype)  
@@ -138,14 +138,14 @@ Community and Enterprise tiers are measured separately. All limits are enforced 
 | **PAQS shed decision latency**      | ≤ 5 µs                   | ≤ 5 µs                     | Nanosecond timer in TCK             |
 | **MemoryAllocator complexity**      | O(1)                     | O(1)                       | JMH + PMD rule verification         |
 | **Bootstrap cold start P99**        | ≤ 500 ms                 | ≤ 800 ms                   | JFR `KernelBootstrapEvent`          |
-| **Saga state transition P99**       | ≤ 5 ms (DB-bound)        | ≤ 1 µs (memory-bound)      | JMH `SagaEngineBenchmark`           |
-| **OpenSSL ABI symbol resolution**   | 100% (all bound symbols) | 100% (all bound symbols)   | `AbstractOpenSslSymbolTck`          |
+| **Saga state transition P99**       | ≤ 5 ms (DB-bound)        | ≤ 1 µs (memory-bound)      | JMH `AbstractFlowParkWakeBenchmark`         |
+| **OpenSSL ABI symbol resolution**   | 100% (all bound symbols) | 100% (all bound symbols)   | Planned: ABI symbol TCK (OpenSSL/FFM)       |
 | **Throughput (reference HW)**       | ~2,800 RPS/vCPU          | ~8,500 RPS/vCPU            | JMH + flame graph analysis          |
 
 > **Measurement context for throughput:** "RPS/vCPU" measured with synthetic HTTP/1.1 workload,
 > no persistence (in-memory mock), 10k concurrent connections. Persistence-bound workloads will
-> be lower (Community: JDBC-limited; Enterprise: native driver dependent). See
-> `flamegraphs/` in the repository root for recorded flame graphs per tier.
+> be lower (Community: JDBC-limited; Enterprise: native driver dependent). Flame graph–based
+> profiling was used to validate tier-specific hotspots and throughput characteristics.
 
 ---
 

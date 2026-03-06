@@ -226,7 +226,7 @@ Kubernetes environments, the following strategy applies:
 | Observability Layer     | Mechanism                                   | Status         |
 |:------------------------|:--------------------------------------------|:---------------|
 | **In-process events**   | JFR (`Exeris/*` event categories)           | ✅ TRL-3       |
-| **Crash diagnostics**   | Glass-Box binary crash buffer + `exeris-decoder` | ✅ TRL-3  |
+| **Crash diagnostics**   | Glass-Box binary crash buffer + `exeris-decoder` | 🚧 TRL-4 planned |
 | **Metrics (Prometheus)**| `DeterministicBinarySink` → OTLP exporter   | 🚧 TRL-4 planned |
 | **Distributed tracing** | `traceId` in `ExerisKernelException.rawArgs`; OTLP span export | 🚧 TRL-4 planned |
 | **Log aggregation**     | `Slf4jTelemetrySink` → structured JSON → Loki/Fluent Bit | ✅ Community tier |

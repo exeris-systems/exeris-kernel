@@ -2,7 +2,7 @@
 
 **Physical Layout:**
 
-- SPI (planned, not yet implemented in this repo): `eu.exeris.kernel.spi.telemetry.*` (`TelemetryRouter`, `TelemetrySink`, `TelemetryEvent`)
+- SPI: `eu.exeris.kernel.spi.telemetry.*` (`TelemetryProvider`, `TelemetrySink`, `KernelEvent`, `TelemetryConfig`)
 - Core: `eu.exeris.kernel.core.telemetry.*` (`JfrTelemetrySink`, `BinaryGlassBox`, `GlassBoxSerializer`)
 - Enterprise: Binary deterministic sink, structured JFR streaming over off-heap ring buffer
 
@@ -11,18 +11,21 @@
 
 ---
 
-> **🚧 Implementation Note — SPI Not Yet Extracted:**  
-> The `TelemetryRouter` and `TelemetrySink` interfaces listed above under `eu.exeris.kernel.spi.telemetry.*`
-> are **planned but not yet present in `exeris-kernel-spi`**. Currently, `JfrTelemetrySink` and
-> `BinaryGlassBox` reside directly in `exeris-kernel-core` without a backing SPI abstraction layer.  
+> **ℹ️ Implementation Note — Telemetry SPI Status:**
+> The telemetry contracts (`TelemetryProvider`, `TelemetrySink`, `KernelEvent`, `TelemetryConfig`) are
+> defined under `eu.exeris.kernel.spi.telemetry.*` and are covered by `exeris-kernel-tck`
+> (including `AbstractTelemetrySinkTck`, `AbstractTelemetryProviderTck`).
+> `JfrTelemetrySink` and `BinaryGlassBox` are the reference implementations in `exeris-kernel-core`.
+>
 > Implications for contributors:
-> - Do **not** attempt to reference `TelemetryRouter` via `ServiceLoader` — it will fail at runtime.
-> - Do **not** add new sink implementations to `exeris-kernel-community` or `exeris-kernel-enterprise`
->   until the SPI extraction is complete and tracked in the project backlog.
-> - The `KernelProviders.TELEMETRY_PROVIDER` `ScopedValue` slot is reserved but unbound in the current
->   bootstrap sequence. Code paths that call `.get()` on it will throw `NoSuchElementException`.  
-> This note will be removed once the SPI extraction lands and `exeris-kernel-tck` contains a passing
-> `AbstractTelemetrySinkTck`.
+> - `TelemetryProvider` is discoverable via `ServiceLoader` from L1+ code running behind `KernelBootstrap`.
+>   New sink implementations belong in `exeris-kernel-community` or `exeris-kernel-enterprise`, guarded
+>   by the existing TCKs.
+> - The `KernelProviders.TELEMETRY_PROVIDER` `ScopedValue` slot is an **active, bootstrap-bound slot**.
+>   Code that runs after `KernelBootstrap` may assume it is bound. Accessing it before bootstrap completes
+>   is a programming error and will surface as `NoSuchElementException` in tests.
+> - Note: `TelemetryRouter` and `TelemetryEvent` do **not** exist in the SPI — use `TelemetryProvider`
+>   and `KernelEvent` respectively.
 
 ---
 
@@ -315,7 +318,6 @@ TelemetryRouter.emitMetric(metric);
 - **Schema:** fixed-width binary frames (see Binary Struct Mapping above). Compatible with
   `perf`/`ftrace`-style offline analysis tools.
 - **SPI isolation:** `DeterministicBinarySink` imports only `exeris-kernel-spi` types.
-  It never imports `MemoryManager`, `GlobalMemoryArbiter`, or any `kernel-legacy` class.
 
 ---
 
