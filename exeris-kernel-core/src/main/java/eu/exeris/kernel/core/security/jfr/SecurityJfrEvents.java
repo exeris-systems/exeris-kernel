@@ -88,12 +88,12 @@ public final class SecurityJfrEvents {
     }
 
     // =========================================================================
-    // Event: SecurityContextMissing (EX-SEC-2001)
+    // Event: SecurityContextMissing
     // =========================================================================
 
     /**
      * Emitted when a request is dropped because no security context can be established.
-     * Maps to error code {@code EX-SEC-2001} — the Fail-Closed Gate activation.
+     * Carries a canonical {@code EX-SEC-*} error code for the fail-closed gate activation.
      */
     @Name("eu.exeris.kernel.security.SecurityContextMissing")
     @Label("Security Context Missing")
