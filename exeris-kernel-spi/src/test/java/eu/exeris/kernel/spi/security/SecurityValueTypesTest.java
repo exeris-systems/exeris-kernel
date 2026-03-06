@@ -316,7 +316,7 @@ class SecurityValueTypesTest {
 
         @Test
         @DisplayName("shared(long, long) zero-alloc bits factory produces correct canonical UUID hex")
-        void shared_long_long_createsCorrectHex() {
+        void sharedFromLongBitsCreatesCorrectHex() {
             UUID id = UUID.fromString("123e4567-e89b-12d3-a456-426614174000");
 
             ImmutableStorageContext ctx = ImmutableStorageContext.shared(

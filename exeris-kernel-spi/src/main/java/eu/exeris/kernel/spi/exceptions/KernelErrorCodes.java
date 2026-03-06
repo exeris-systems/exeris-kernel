@@ -157,15 +157,15 @@ public final class KernelErrorCodes {
     // -----------------------------------------------------------------------
 
     /**
-     * TLS encryption (wrap) path failure: {@code SSL_write} returned a non-positive value or
-     * threw an unexpected exception during the per-packet encrypt cycle.
+     * TLS encryption (wrap) path failure: the underlying native TLS engine returned a non-positive
+     * value or threw an unexpected exception during the per-packet encrypt cycle.
      *
-     * <p>Covers: {@code SSL_write} error, BIO flush failure, and any unexpected {@code Throwable}
-     * surfaced from the Panama FFM {@code invokeExact} call on the encrypt path.
+     * <p>Covers: native write errors, flush failures, and any unexpected {@code Throwable}
+     * surfaced from the native invocation on the encrypt path.
      *
      * <p><b>rawArgs layout for Glass-Box:</b>
      * <ul>
-     *   <li>index 0 – {@code int}    nativeErrorCode (OpenSSL {@code SSL_get_error()} result; -1 if N/A)</li>
+     *   <li>index 0 – {@code int}    nativeErrorCode (provider-specific error code; -1 if N/A)</li>
      *   <li>index 1 – {@code String} detail          (static, non-formatted constant)</li>
      * </ul>
      */
@@ -185,21 +185,20 @@ public final class KernelErrorCodes {
     public static final String EX_NET_2002 = "EX-NET-2002";
 
     /**
-     * TLS decryption (unwrap) path failure: {@code SSL_read} returned a non-positive value or
-     * threw an unexpected exception during the per-packet decrypt cycle.
+     * TLS decryption (unwrap) path failure: the underlying native TLS engine returned a non-positive
+     * value or threw an unexpected exception during the per-packet decrypt cycle.
      *
      * <p>Intentionally separate from {@link #EX_NET_2001} (encrypt path) so that Glass-Box decoders
      * can distinguish a send-side cipher failure from a receive-side cipher failure without parsing
      * the {@code detail} string. This preserves the one-code-one-schema invariant required by the
      * binary telemetry contract.
      *
-     * <p>Covers: {@code SSL_read} error, record-layer alert received from peer, unexpected BIO
-     * drain failure, and any unexpected {@code Throwable} from the Panama FFM {@code invokeExact}
-     * call on the decrypt path.
+     * <p>Covers: native read errors, record-layer alerts received from the peer, and any unexpected
+     * {@code Throwable} from the native invocation on the decrypt path.
      *
      * <p><b>rawArgs layout for Glass-Box:</b>
      * <ul>
-     *   <li>index 0 – {@code int}    nativeErrorCode (OpenSSL {@code SSL_get_error()} result; -1 if N/A)</li>
+     *   <li>index 0 – {@code int}    nativeErrorCode (provider-specific error code; -1 if N/A)</li>
      *   <li>index 1 – {@code String} detail          (static, non-formatted constant)</li>
      * </ul>
      */

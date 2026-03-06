@@ -39,7 +39,7 @@ public final class SecurityJfrEvents {
      */
     @Name("eu.exeris.kernel.security.PrincipalBound")
     @Label("Principal Bound")
-    @Category({"Exeris", "Security"})
+    @Category({"Exeris Kernel", "Security"})
     @Description("Emitted when PrincipalContext and StorageContext are bound for the current request scope")
     @StackTrace(false)
     public static final class PrincipalBoundEvent extends Event {
@@ -97,7 +97,7 @@ public final class SecurityJfrEvents {
      */
     @Name("eu.exeris.kernel.security.SecurityContextMissing")
     @Label("Security Context Missing")
-    @Category({"Exeris", "Security"})
+    @Category({"Exeris Kernel", "Security"})
     @Description("Emitted when a request is dropped at the L1 boundary — no security context could be established")
     @StackTrace(false)
     public static final class SecurityContextMissingEvent extends Event {
@@ -141,7 +141,7 @@ public final class SecurityJfrEvents {
      */
     @Name("eu.exeris.kernel.security.InsufficientPrivileges")
     @Label("Insufficient Privileges")
-    @Category({"Exeris", "Security"})
+    @Category({"Exeris Kernel", "Security"})
     @Description("Emitted when a principal is rejected due to missing required role (RBAC gate)")
     @StackTrace(false)
     public static final class InsufficientPrivilegesEvent extends Event {
@@ -184,7 +184,7 @@ public final class SecurityJfrEvents {
      */
     @Name("eu.exeris.kernel.security.StorageContextDerived")
     @Label("Storage Context Derived")
-    @Category({"Exeris", "Security"})
+    @Category({"Exeris Kernel", "Security"})
     @Description("Emitted when StorageContextBridge derives a StorageContext from the active PrincipalContext")
     @StackTrace(false)
     public static final class StorageContextDerivedEvent extends Event {
