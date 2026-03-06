@@ -208,7 +208,7 @@ sequenceDiagram
             RA-->>PAQS: ResourceArbiter.Action (THROTTLE — slot granted)
             PAQS->>VT: Thread.ofVirtual().start(streamHandler)
         else priority insufficient
-            PAQS->>NIC: stream.close()<br/>[FIN — graceful RST on QUIC]
+            PAQS->>NIC: stream.close()<br/>[TCP FIN (graceful close) / QUIC CONNECTION_CLOSE]
             PAQS->>PAQS: emit StreamShedEvent (JFR, @StackTrace false)
             Note over PAQS: EX-NET-4006 thrown — no VT spawned,<br/>no heap allocation, no log.
         end

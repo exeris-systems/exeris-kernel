@@ -38,12 +38,15 @@ exeris-kernel-parent
 
 ### The "Mix & Match" Rule (Opt-In Architecture)
 
-Exeris is an **À la carte** execution engine. Subsystems are loaded dynamically via the SPI. You can mix providers across tiers. For example, you can use the free **Community Transport** (TCP/NIO) while plugging in the **Enterprise Persistence** driver (`io_uring` DB), or disable higher-level features entirely.
+Exeris is an **À la carte** execution engine. Subsystems are loaded dynamically via the SPI. You can mix providers across tiers. For example, you can use the free **Community Transport** (TCP — planned TRL-4) while plugging in the **Enterprise Persistence** driver (`io_uring` DB), or disable higher-level features entirely.
 
 ### Rules
-1. **core**, **community**, and **enterprise** depend **only** on **spi**.
-2. **community** and **enterprise** never depend on each other.
-3. Applications depend on **core** and **one** selected driver (community *or* enterprise).
+1. **spi** has zero Exeris dependencies — it is the immutable foundation.
+2. **core** depends only on **spi**.
+3. **community** depends on **spi** and **core** (for shared TLS/memory infrastructure — `AbstractLoanedBuffer`, `CoreOpenSslLoader`, `TlsStateMachine`).
+4. **enterprise** depends on **spi** and **core** (same shared infrastructure).
+5. **community** and **enterprise** never depend on each other.
+6. Applications depend on **core** and **one** selected driver (community *or* enterprise).
 
 ---
 
@@ -229,7 +232,7 @@ Kubernetes environments, the following strategy applies:
 | **Crash diagnostics**   | Glass-Box binary crash buffer + `exeris-decoder` | 🚧 TRL-4 planned |
 | **Metrics (Prometheus)**| `DeterministicBinarySink` → OTLP exporter   | 🚧 TRL-4 planned |
 | **Distributed tracing** | `traceId` in `ExerisKernelException.rawArgs`; OTLP span export | 🚧 TRL-4 planned |
-| **Log aggregation**     | `Slf4jTelemetrySink` → structured JSON → Loki/Fluent Bit | ✅ Community tier |
+| **Log aggregation**     | `Slf4jTelemetrySink` → structured JSON → Loki/Fluent Bit | 🚧 TRL-4 planned |
 
 > **TRL-4 obligation:** A `PrometheusOtlpTelemetrySink` implementing the `TelemetrySink` SPI must be
 > delivered in `exeris-kernel-community` before TRL-4 certification. It must export the standard

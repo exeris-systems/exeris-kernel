@@ -6,11 +6,14 @@
 - `compile`: `exeris-kernel-core` (shared infrastructure: `CoreOpenSslLoader`, `TlsStateMachine`, `AbstractLoanedBuffer`)
 - `test`: `exeris-kernel-tck`
 
-> **⚠️ Implementation Status (TRL-3):** `exeris-kernel-community` is an active module in this
-> repository. It currently ships: `CommunityTelemetryProvider` (Console/JFR/File sinks),
-> `CommunityKernelCryptoProvider` (OpenSSL 3.x / TCP, no QUIC), and `CommunityMemoryProvider`
-> (Arena-based off-heap allocator). The Network transport driver (Off-Heap TCP carrier + PAQS) is
-> **planned (TRL-4)**. See the request-flow diagram below for the target architecture.
+> **⚠️ Implementation Status (TRL-3):** `exeris-kernel-community` is an **active module** in this
+> repository with sources and a working Maven build. It currently ships:
+> `CommunityTelemetryProvider` (Console/JFR/File sinks),
+> `CommunityKernelCryptoProvider` (OpenSSL 3.x via Panama FFM, TCP-only — no QUIC),
+> `CommunityMemoryProvider` (Arena-based off-heap allocator + `CommunityAllocationEvent` JFR),
+> `CommunityPersistenceProvider` (JDBC-based), and `CommunityGraphProvider` (SQL/Bolt-based).
+> The **Network transport driver** (Off-Heap TCP carrier + PAQS scheduler) is **planned (TRL-4)**.
+> See the request-flow diagram below for the target architecture.
 
 ## 🗺️ Request Flow: Standard POSIX + JDBC Stack
 

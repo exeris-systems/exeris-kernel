@@ -134,27 +134,27 @@ package eu.exeris.kernel.core.config;
 public class KernelConfigRegistry {
 
     @Dynamic(key = "network.idleTimeoutMillis")
-    private int connectionTimeoutMs = 30_000;          // plain int — VarHandle owns the barrier
+    private long idleTimeoutMillis = 30_000L;          // plain long — VarHandle owns the barrier
 
-    private static final VarHandle TIMEOUT_HANDLE;
+    private static final VarHandle IDLE_TIMEOUT_HANDLE;
 
     static {
         try {
-            TIMEOUT_HANDLE = MethodHandles.lookup()
-                    .findVarHandle(KernelConfigRegistry.class, "connectionTimeoutMs", int.class);
+            IDLE_TIMEOUT_HANDLE = MethodHandles.lookup()
+                    .findVarHandle(KernelConfigRegistry.class, "idleTimeoutMillis", long.class);
         } catch (ReflectiveOperationException e) {
             throw new ExceptionInInitializerError(e);
         }
     }
 
     /** O(1) read — Acquire barrier only (no full fence). Called by millions of Virtual Threads. */
-    public int getConnectionTimeout() {
-        return (int) TIMEOUT_HANDLE.getAcquire(this);
+    public long getIdleTimeoutMillis() {
+        return (long) IDLE_TIMEOUT_HANDLE.getAcquire(this);
     }
 
     /** Single-writer: WatchService thread only. Release barrier pairs with every getAcquire above. */
-    void reloadConnectionTimeout(int newValue) {
-        TIMEOUT_HANDLE.setRelease(this, newValue);
+    void reloadIdleTimeoutMillis(long newValue) {
+        IDLE_TIMEOUT_HANDLE.setRelease(this, newValue);
     }
 }
 ```

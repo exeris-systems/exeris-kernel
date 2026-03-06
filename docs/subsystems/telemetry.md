@@ -229,14 +229,15 @@ Every critical lifecycle transition MUST emit a typed JFR event. No `Logger.info
 
 | Event Class             | When Emitted                                    | Key Fields                                            |
 |:------------------------|:------------------------------------------------|:------------------------------------------------------|
-| `BootstrapJfrEvents.SubsystemInitializedEvent` | Start and end of each subsystem init | `subsystemName`, `durationMs`, `phase` |
-| `CommunityAllocationEvent` *(community module)* | Community-tier buffer allocation (when `jfrEnabled=true`) | `sizeBytes`, `hint`, `tierName` |
-| `TelemetryJfrEvents.MemoryExhaustionJfrEvent` | On every `MemoryExhaustedException` (EX-MEM-1001) | `errorCode`, `requestedBytes`, `availableBytes`, `component` |
-| `LeakDetectedEvent`     | `LeakTracker` detection (PARANOID/SAMPLED mode) | `segmentAddress`, `segmentByteSize`                   |
-| `TelemetryJfrEvents.TransportBindJfrEvent` | On transport bind / engine-start lifecycle (EX-NET-4001/4005) | `errorCode`, `transportName`, `port`, `component` |
+| `TelemetryJfrEvents.KernelLifecycleJfrEvent` *(eu.exeris.kernel.core.telemetry.jfr)* | Kernel bootstrap, subsystem lifecycle, warnings, and errors | `errorCode`, `level`, `component`, `message` |
+| `BootstrapJfrEvents.SubsystemInitializedEvent` *(eu.exeris.kernel.core.bootstrap.jfr)* | Completion of each subsystem `initialize()` | `subsystemName`, `durationMs`, `profile`, `phase` |
+| `CommunityAllocationEvent` *(eu.exeris.kernel.community.memory)* | Community-tier buffer allocation (when `jfrEnabled=true`) | `sizeBytes`, `hint`, `tierName` |
+| `TelemetryJfrEvents.MemoryExhaustionJfrEvent` *(eu.exeris.kernel.core.telemetry.jfr)* | On every `MemoryExhaustedException` (EX-MEM-1001) | `errorCode`, `requestedBytes`, `availableBytes`, `component` |
+| `LeakDetectedEvent` *(eu.exeris.kernel.core.memory)* | `LeakTracker` detection (PARANOID/SAMPLED mode) | `segmentAddress`, `segmentByteSize`                   |
+| `TelemetryJfrEvents.TransportBindJfrEvent` *(eu.exeris.kernel.core.telemetry.jfr)* | On transport bind / engine-start lifecycle (EX-NET-4001/4005) | `errorCode`, `transportName`, `port`, `component` |
 | `StreamShedEvent` *(eu.exeris.kernel.core.transport.jfr)* | On every PAQS load-shed | `streamId`, `priority`, `shedReason`, `engineName`, `activeStreamCount` |
-| `TelemetryJfrEvents.CarrierPinnedJfrEvent` | Virtual thread pins carrier > threshold (EX-RUN-3002) | `errorCode`, `blockTimeMs`, `component` |
-| `CommunityTlsHandshakeEvent` *(community module)* | Each `SSL_do_handshake` invocation | `complete`, `opensslError` |
+| `TelemetryJfrEvents.CarrierPinnedJfrEvent` *(eu.exeris.kernel.core.telemetry.jfr)* | Virtual thread pins carrier > threshold (EX-RUN-3002) | `errorCode`, `blockTimeMs`, `component` |
+| `CommunityTlsHandshakeEvent` *(eu.exeris.kernel.community.crypto)* | Each `SSL_do_handshake` invocation | `complete`, `opensslError` |
 | `TlsPhaseTransitionEvent` *(eu.exeris.kernel.core.crypto.tls)* | Every `TlsStateMachine` phase transition | `sslPtr`, `fromPhase`, `toPhase` |
 | `TlsEngineCloseEvent` *(eu.exeris.kernel.core.crypto.tls)* | `OffHeapTlsEngine` → CLOSED | `sslPtr`, `graceful`, `finalPhase` |
 | `TlsHandshakeEvent` *(planned, TRL‑4 target; not yet implemented)* | Start and end of TLS handshake (cross-tier) | `sessionId`, `protocol`, `cipher`, `durationNanos` |

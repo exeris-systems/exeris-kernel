@@ -366,7 +366,7 @@ startupProbe:
   periodSeconds: 5           # 30 × 5s = 150s budget before K8s kills the pod
 ```
 
-> **Port override:** The health port is configurable via `exeris.bootstrap.health-port` (default `9090`).
+> **Port override:** The health port is configurable via `exeris.bootstrap.healthPort` (default `9090`).
 > The data-plane transport port is configured separately — never share ports between health and data traffic.
 
 ---
