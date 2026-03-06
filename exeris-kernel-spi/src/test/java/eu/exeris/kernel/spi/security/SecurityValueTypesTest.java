@@ -11,6 +11,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Optional;
@@ -314,6 +315,17 @@ class SecurityValueTypesTest {
         }
 
         @Test
+        @DisplayName("shared(long, long) zero-alloc bits factory produces correct canonical UUID hex")
+        void sharedFromLongBitsCreatesCorrectHex() {
+            UUID id = UUID.fromString("123e4567-e89b-12d3-a456-426614174000");
+
+            ImmutableStorageContext ctx = ImmutableStorageContext.shared(
+                    id.getMostSignificantBits(), id.getLeastSignificantBits());
+
+            assertThat(ctx.isolationKey()).isPresent().contains("123e4567-e89b-12d3-a456-426614174000");
+        }
+
+        @Test
         @DisplayName("Different tenantId yields inequality")
         void differentTenantIdNotEqual() {
             assertThat(ImmutableStorageContext.shared("tenant-a"))
@@ -323,7 +335,7 @@ class SecurityValueTypesTest {
         @Test
         @DisplayName("shared() with attributes: attributes are propagated and copied defensively")
         void sharedWithAttributesDefensiveCopy() {
-            Map<String, String> original = new java.util.HashMap<>();
+            Map<String, String> original = new HashMap<>();
             original.put("trace", "abc123");
             ImmutableStorageContext s = ImmutableStorageContext.shared("tenant", original);
             original.put("extra", "should-not-appear");

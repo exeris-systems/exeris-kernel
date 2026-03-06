@@ -157,12 +157,16 @@ public final class KernelErrorCodes {
     // -----------------------------------------------------------------------
 
     /**
-     * TLS/Crypto operation failure (handshake, wrap, unwrap, or shutdown).
+     * TLS encryption (wrap) path failure: the underlying native TLS engine returned a non-positive
+     * value or threw an unexpected exception during the per-packet encrypt cycle.
+     *
+     * <p>Covers: native write errors, flush failures, and any unexpected {@code Throwable}
+     * surfaced from the native invocation on the encrypt path.
      *
      * <p><b>rawArgs layout for Glass-Box:</b>
      * <ul>
      *   <li>index 0 – {@code int}    nativeErrorCode (provider-specific error code; -1 if N/A)</li>
-     *   <li>index 1 – {@code String} detail</li>
+     *   <li>index 1 – {@code String} detail          (static, non-formatted constant)</li>
      * </ul>
      */
     public static final String EX_NET_2001 = "EX-NET-2001";
@@ -179,6 +183,26 @@ public final class KernelErrorCodes {
      * </ul>
      */
     public static final String EX_NET_2002 = "EX-NET-2002";
+
+    /**
+     * TLS decryption (unwrap) path failure: the underlying native TLS engine returned a non-positive
+     * value or threw an unexpected exception during the per-packet decrypt cycle.
+     *
+     * <p>Intentionally separate from {@link #EX_NET_2001} (encrypt path) so that Glass-Box decoders
+     * can distinguish a send-side cipher failure from a receive-side cipher failure without parsing
+     * the {@code detail} string. This preserves the one-code-one-schema invariant required by the
+     * binary telemetry contract.
+     *
+     * <p>Covers: native read errors, record-layer alerts received from the peer, and any unexpected
+     * {@code Throwable} from the native invocation on the decrypt path.
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code int}    nativeErrorCode (provider-specific error code; -1 if N/A)</li>
+     *   <li>index 1 – {@code String} detail          (static, non-formatted constant)</li>
+     * </ul>
+     */
+    public static final String EX_NET_2003 = "EX-NET-2003";
 
     /**
      * Transport-level protocol handshake or bind failure.
