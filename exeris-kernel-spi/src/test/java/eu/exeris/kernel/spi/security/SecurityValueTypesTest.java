@@ -11,6 +11,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Optional;
@@ -323,7 +324,7 @@ class SecurityValueTypesTest {
         @Test
         @DisplayName("shared() with attributes: attributes are propagated and copied defensively")
         void sharedWithAttributesDefensiveCopy() {
-            Map<String, String> original = new java.util.HashMap<>();
+            Map<String, String> original = new HashMap<>();
             original.put("trace", "abc123");
             ImmutableStorageContext s = ImmutableStorageContext.shared("tenant", original);
             original.put("extra", "should-not-appear");

@@ -17,7 +17,7 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  * <h2>Error Code</h2>
  * <p>{@link KernelErrorCodes#EX_SEC_2004} — context missing.
  *
- * <h2>rawArgs layout (Black-Box Telemetry)</h2>
+ * <h2>rawArgs layout (Glass-Box Telemetry)</h2>
  * <p>No raw args — this is a pure "missing context" signal.
  *
  * @since 0.5.0

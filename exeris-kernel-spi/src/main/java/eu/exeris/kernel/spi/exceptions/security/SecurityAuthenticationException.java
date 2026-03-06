@@ -16,7 +16,7 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  * <h2>Error Code</h2>
  * <p>{@link KernelErrorCodes#EX_SEC_2002} — token validation failure.
  *
- * <h2>rawArgs layout (Black-Box Telemetry)</h2>
+ * <h2>rawArgs layout (Glass-Box Telemetry)</h2>
  * <ul>
  *   <li>index 0 – {@code String} tokenType (e.g. "JWT", "OPAQUE")</li>
  *   <li>index 1 – {@code String} failureReason (e.g. "expired", "malformed", "revoked")</li>

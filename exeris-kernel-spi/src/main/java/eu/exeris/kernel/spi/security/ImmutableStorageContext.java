@@ -60,6 +60,8 @@ public record ImmutableStorageContext(
                     Optional.empty(),
                     Map.of());
 
+    private static final char[] HEX_DIGITS = "0123456789abcdef".toCharArray();
+
     /**
      * Compact constructor — fail-fast validation with full strategy-exclusive rules.
      *
@@ -127,6 +129,60 @@ public record ImmutableStorageContext(
                 Optional.empty(),
                 Optional.empty(),
                 Map.of());
+    }
+
+    /**
+     * Factory for the default SHARED/RLS mode from raw UUID bits — zero {@code UUID.toString()} allocation.
+     *
+     * <p>Produces an isolation key in canonical UUID string format
+     * ({@code xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}) by encoding the two
+     * {@code long} components directly via {@link Long#toHexString} with zero-padding,
+     * without creating an intermediate {@link java.util.UUID} object.
+     *
+     * @param idMost  {@link java.util.UUID#getMostSignificantBits()}
+     * @param idLeast {@link java.util.UUID#getLeastSignificantBits()}
+     * @return shared-mode storage context; never {@code null}
+     */
+    public static ImmutableStorageContext shared(long idMost, long idLeast) {
+        String isolationKey = uuidBitsToString(idMost, idLeast);
+        return new ImmutableStorageContext(
+                Optional.of(isolationKey),
+                IsolationStrategy.SHARED,
+                Optional.empty(),
+                Optional.empty(),
+                Map.of());
+    }
+
+    /**
+     * Encodes two {@code long} UUID components into canonical UUID string format
+     * without allocating a {@link java.util.UUID} object.
+     *
+     * <p>Format: {@code xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx} (RFC 4122, lowercase hex, zero-padded).
+     *
+     * @param msb most-significant bits
+     * @param lsb least-significant bits
+     * @return canonical UUID string; never {@code null}
+     */
+    private static String uuidBitsToString(long msb, long lsb) {
+        char[] buf = new char[36];
+        formatHex(buf, 0,  msb >>> 32, 8);
+        buf[8] = '-';
+        formatHex(buf, 9,  (msb >>> 16) & 0xFFFFL, 4);
+        buf[13] = '-';
+        formatHex(buf, 14, msb & 0xFFFFL, 4);
+        buf[18] = '-';
+        formatHex(buf, 19, (lsb >>> 48) & 0xFFFFL, 4);
+        buf[23] = '-';
+        formatHex(buf, 24, lsb & 0xFFFFFFFFFFFFL, 12);
+        return new String(buf);
+    }
+
+    private static void formatHex(char[] buf, int offset, long value, int digits) {
+        long remaining = value;
+        for (int i = digits - 1; i >= 0; i--) {
+            buf[offset + i] = HEX_DIGITS[(int) (remaining & 0xF)];
+            remaining >>>= 4;
+        }
     }
 
     /**
