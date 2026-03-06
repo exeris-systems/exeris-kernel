@@ -19,7 +19,7 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  *
  * <h2>Sentinel Pattern</h2>
  * <p>On the hot path, code SHOULD NOT allocate a new instance per rejected request.
- * Use {@link eu.exeris.kernel.core.security.CitadelGuard} which holds pre-allocated
+ * Use {@code CitadelGuard} which holds pre-allocated
  * Sentinel instances (stack-trace disabled) to honour the zero-allocation contract.
  *
  * <h2>rawArgs layout (Glass-Box Telemetry)</h2>
@@ -44,9 +44,8 @@ public final class InsufficientPrivilegesException extends ExerisKernelException
                 requiredRole);
     }
 
-    @SuppressWarnings({"PMD.UseVarargs", "PMD.UnusedFormalParameter"})
-    private InsufficientPrivilegesException(String requiredRole,
-                                            boolean enableSuppression,
+    @SuppressWarnings({"PMD.UseVarargs"})
+    private InsufficientPrivilegesException(boolean enableSuppression,
                                             boolean writableStackTrace,
                                             Object[] rawArgs) {
         super(KernelErrorCodes.EX_SEC_2003,
@@ -70,7 +69,7 @@ public final class InsufficientPrivilegesException extends ExerisKernelException
      */
     public static InsufficientPrivilegesException sentinel(String requiredRole) {
         return new InsufficientPrivilegesException(
-                requiredRole, false, false, new Object[]{requiredRole});
+                false, false, new Object[]{requiredRole});
     }
 }
 

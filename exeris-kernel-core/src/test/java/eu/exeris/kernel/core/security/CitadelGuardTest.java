@@ -119,66 +119,41 @@ class CitadelGuardTest {
         @Test
         @DisplayName("thrown exception carries EX-SEC-2003 error code")
         void thrownExceptionHasCorrectCode() {
-            try {
-                ScopedValue.where(KernelProviders.PRINCIPAL_CONTEXT, USER_PRINCIPAL)
-                        .where(KernelProviders.STORAGE_CONTEXT, ImmutableStorageContext.GLOBAL)
-                        .run(() -> guard.requireRole("ROLE_ADMIN"));
-            } catch (InsufficientPrivilegesException ex) {
-                assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_SEC_2003);
-            }
+            ScopedValue.Carrier carrier = ScopedValue
+                    .where(KernelProviders.PRINCIPAL_CONTEXT, USER_PRINCIPAL)
+                    .where(KernelProviders.STORAGE_CONTEXT, ImmutableStorageContext.GLOBAL);
+            assertThatThrownBy(() -> carrier.run(() -> guard.requireRole("ROLE_ADMIN")))
+                    .isInstanceOf(InsufficientPrivilegesException.class)
+                    .satisfies(ex -> assertThat(((InsufficientPrivilegesException) ex).errorCode())
+                            .isEqualTo(KernelErrorCodes.EX_SEC_2003));
         }
 
         @Test
         @DisplayName("Sentinel instance is thrown for pre-allocated roles (same object reference)")
         void sentinelIsThrownForPreAllocatedRole() {
             guard.preAllocate("ROLE_ADMIN");
+            ScopedValue.Carrier carrier = ScopedValue
+                    .where(KernelProviders.PRINCIPAL_CONTEXT, USER_PRINCIPAL)
+                    .where(KernelProviders.STORAGE_CONTEXT, ImmutableStorageContext.GLOBAL);
 
-            InsufficientPrivilegesException[] caught = new InsufficientPrivilegesException[1];
-            try {
-                ScopedValue.where(KernelProviders.PRINCIPAL_CONTEXT, USER_PRINCIPAL)
-                        .where(KernelProviders.STORAGE_CONTEXT, ImmutableStorageContext.GLOBAL)
-                        .run(() -> guard.requireRole("ROLE_ADMIN"));
-            } catch (InsufficientPrivilegesException ex) {
-                caught[0] = ex;
-            }
+            InsufficientPrivilegesException first  = catchRejection(carrier, "ROLE_ADMIN");
+            InsufficientPrivilegesException second = catchRejection(carrier, "ROLE_ADMIN");
 
-            assertThat(caught[0]).isNotNull();
-
-            InsufficientPrivilegesException[] caught2 = new InsufficientPrivilegesException[1];
-            try {
-                ScopedValue.where(KernelProviders.PRINCIPAL_CONTEXT, USER_PRINCIPAL)
-                        .where(KernelProviders.STORAGE_CONTEXT, ImmutableStorageContext.GLOBAL)
-                        .run(() -> guard.requireRole("ROLE_ADMIN"));
-            } catch (InsufficientPrivilegesException ex) {
-                caught2[0] = ex;
-            }
-
-            assertThat(caught2[0]).isSameAs(caught[0]);
+            assertThat(first).isNotNull();
+            assertThat(second).isSameAs(first);
         }
 
         @Test
         @DisplayName("non-pre-allocated role throws a new instance each time")
         void nonPreAllocatedThrowsNewInstance() {
-            InsufficientPrivilegesException[] caught1 = new InsufficientPrivilegesException[1];
-            InsufficientPrivilegesException[] caught2 = new InsufficientPrivilegesException[1];
+            ScopedValue.Carrier carrier = ScopedValue
+                    .where(KernelProviders.PRINCIPAL_CONTEXT, USER_PRINCIPAL)
+                    .where(KernelProviders.STORAGE_CONTEXT, ImmutableStorageContext.GLOBAL);
 
-            try {
-                ScopedValue.where(KernelProviders.PRINCIPAL_CONTEXT, USER_PRINCIPAL)
-                        .where(KernelProviders.STORAGE_CONTEXT, ImmutableStorageContext.GLOBAL)
-                        .run(() -> guard.requireRole("ROLE_ADMIN"));
-            } catch (InsufficientPrivilegesException ex) {
-                caught1[0] = ex;
-            }
+            InsufficientPrivilegesException first  = catchRejection(carrier, "ROLE_ADMIN");
+            InsufficientPrivilegesException second = catchRejection(carrier, "ROLE_ADMIN");
 
-            try {
-                ScopedValue.where(KernelProviders.PRINCIPAL_CONTEXT, USER_PRINCIPAL)
-                        .where(KernelProviders.STORAGE_CONTEXT, ImmutableStorageContext.GLOBAL)
-                        .run(() -> guard.requireRole("ROLE_ADMIN"));
-            } catch (InsufficientPrivilegesException ex) {
-                caught2[0] = ex;
-            }
-
-            assertThat(caught1[0]).isNotSameAs(caught2[0]);
+            assertThat(first).isNotSameAs(second);
         }
     }
 
@@ -263,16 +238,11 @@ class CitadelGuardTest {
         void requireRoleWorksAfterSeal() {
             guard.preAllocate("ROLE_ADMIN");
             guard.seal();
+            ScopedValue.Carrier carrier = ScopedValue
+                    .where(KernelProviders.PRINCIPAL_CONTEXT, USER_PRINCIPAL)
+                    .where(KernelProviders.STORAGE_CONTEXT, ImmutableStorageContext.GLOBAL);
 
-            InsufficientPrivilegesException[] caught = new InsufficientPrivilegesException[1];
-            try {
-                ScopedValue.where(KernelProviders.PRINCIPAL_CONTEXT, USER_PRINCIPAL)
-                        .where(KernelProviders.STORAGE_CONTEXT, ImmutableStorageContext.GLOBAL)
-                        .run(() -> guard.requireRole("ROLE_ADMIN"));
-            } catch (InsufficientPrivilegesException ex) {
-                caught[0] = ex;
-            }
-            assertThat(caught[0]).isNotNull();
+            assertThat(catchRejection(carrier, "ROLE_ADMIN")).isNotNull();
         }
     }
 
@@ -298,5 +268,17 @@ class CitadelGuardTest {
                     .isInstanceOf(PrincipalContextMissingException.class);
         }
     }
-}
 
+    // =========================================================================
+    // helpers
+    // =========================================================================
+
+    private InsufficientPrivilegesException catchRejection(ScopedValue.Carrier carrier, String role) {
+        try {
+            carrier.run(() -> guard.requireRole(role));
+            return null;
+        } catch (InsufficientPrivilegesException ex) {
+            return ex;
+        }
+    }
+}

@@ -157,12 +157,16 @@ public final class KernelErrorCodes {
     // -----------------------------------------------------------------------
 
     /**
-     * TLS/Crypto operation failure (handshake, wrap, unwrap, or shutdown).
+     * TLS encryption (wrap) path failure: {@code SSL_write} returned a non-positive value or
+     * threw an unexpected exception during the per-packet encrypt cycle.
+     *
+     * <p>Covers: {@code SSL_write} error, BIO flush failure, and any unexpected {@code Throwable}
+     * surfaced from the Panama FFM {@code invokeExact} call on the encrypt path.
      *
      * <p><b>rawArgs layout for Glass-Box:</b>
      * <ul>
-     *   <li>index 0 – {@code int}    nativeErrorCode (provider-specific error code; -1 if N/A)</li>
-     *   <li>index 1 – {@code String} detail</li>
+     *   <li>index 0 – {@code int}    nativeErrorCode (OpenSSL {@code SSL_get_error()} result; -1 if N/A)</li>
+     *   <li>index 1 – {@code String} detail          (static, non-formatted constant)</li>
      * </ul>
      */
     public static final String EX_NET_2001 = "EX-NET-2001";
@@ -179,6 +183,27 @@ public final class KernelErrorCodes {
      * </ul>
      */
     public static final String EX_NET_2002 = "EX-NET-2002";
+
+    /**
+     * TLS decryption (unwrap) path failure: {@code SSL_read} returned a non-positive value or
+     * threw an unexpected exception during the per-packet decrypt cycle.
+     *
+     * <p>Intentionally separate from {@link #EX_NET_2001} (encrypt path) so that Glass-Box decoders
+     * can distinguish a send-side cipher failure from a receive-side cipher failure without parsing
+     * the {@code detail} string. This preserves the one-code-one-schema invariant required by the
+     * binary telemetry contract.
+     *
+     * <p>Covers: {@code SSL_read} error, record-layer alert received from peer, unexpected BIO
+     * drain failure, and any unexpected {@code Throwable} from the Panama FFM {@code invokeExact}
+     * call on the decrypt path.
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code int}    nativeErrorCode (OpenSSL {@code SSL_get_error()} result; -1 if N/A)</li>
+     *   <li>index 1 – {@code String} detail          (static, non-formatted constant)</li>
+     * </ul>
+     */
+    public static final String EX_NET_2003 = "EX-NET-2003";
 
     /**
      * Transport-level protocol handshake or bind failure.

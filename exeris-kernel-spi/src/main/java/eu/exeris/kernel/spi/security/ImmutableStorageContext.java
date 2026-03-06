@@ -136,8 +136,9 @@ public record ImmutableStorageContext(
      *
      * <p>Produces an isolation key in canonical UUID string format
      * ({@code xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}) by encoding the two
-     * {@code long} components directly via {@link Long#toHexString} with zero-padding,
-     * without creating an intermediate {@link java.util.UUID} object.
+     * {@code long} components via {@link #uuidBitsToString(long, long)} using manual
+     * nibble extraction into a pre-allocated {@code char[]} backed by the {@code HEX_DIGITS}
+     * lookup table, without creating an intermediate {@link java.util.UUID} object.
      *
      * @param idMost  {@link java.util.UUID#getMostSignificantBits()}
      * @param idLeast {@link java.util.UUID#getLeastSignificantBits()}

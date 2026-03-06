@@ -63,7 +63,7 @@ public final class StorageContextBridge {
      *
      * <h2>Derivation logic</h2>
      * <ul>
-     *   <li>Tenant present → {@link ImmutableStorageContext#shared(String)}</li>
+     *   <li>Tenant present → {@link ImmutableStorageContext#shared(long, long)}</li>
      *   <li>No tenant     → {@link ImmutableStorageContext#GLOBAL} (singleton, zero-alloc)</li>
      * </ul>
      *
