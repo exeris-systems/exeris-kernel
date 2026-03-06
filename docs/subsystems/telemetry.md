@@ -231,9 +231,9 @@ Every critical lifecycle transition MUST emit a typed JFR event. No `Logger.info
 | `CarrierPinnedEvent`    | Virtual thread pins carrier > threshold         | `blockTimeMs`, `carrierThreadName`, `stackTrace`      |
 | `TlsHandshakeEvent`     | Start and end of TLS handshake                  | `sessionId`, `protocol`, `cipher`, `durationNanos`    |
 | `TlsHandshakeFailureEvent` | Handshake exception                          | `errorCode`, `peerAddress`, `failureReason`           |
-| `ConfigHotReloadEvent`  | `@Dynamic` config key updated                   | `configKey`, `providerName`, `succeeded`              |
-| `OutboxDlqTransferEvent`| Outbox record moved to DLQ after max retries    | `eventType`, `outboxRecordId`, `attempt`              |
-| `SagaLifecycleEvent`    | Saga state transition                           | `sagaType`, `status`, `durationNanos`, `stepIndex`    |
+| `ConfigHotReloadEvent` *(planned, TRL‑4 target; not yet implemented JFR event)* | `@Dynamic` config key updated | `configKey`, `providerName`, `succeeded` |
+| `OutboxDlqTransferEvent` *(planned, TRL‑4 target; not yet implemented JFR event)* | Outbox record moved to DLQ after max retries | `eventType`, `outboxRecordId`, `attempt` |
+| `SagaLifecycleEvent` *(planned, TRL‑4 target; not yet implemented JFR event)* | Saga state transition | `sagaType`, `status`, `durationNanos`, `stepIndex` |
 
 ### JFR Event Pattern (Zero-Allocation)
 
@@ -338,12 +338,17 @@ memory-mapped file. Full contract is defined in `docs/subsystems/bootstrap.md#l0
 
 ## `exeris-decoder` CLI — Crash Buffer Analysis Tool
 
+> **Status: Planned, Not Yet Wired Into This Repo**
+> The `exeris-decoder` tool and its Maven plugin goal are part of the TRL-4 roadmap.
+> Neither the standalone JAR nor the `exeris-kernel-build-config:decode` plugin goal exist in the
+> current codebase. Do not attempt to reference them in build pipelines until the TRL-4 implementation lands.
+
 `exeris-decoder` decodes Glass-Box binary crash buffer files (`kernel-<pid>.bin`) into human-readable
 error reports using the `rawArgs` binary layout defined in the Error Code Registry above.
 
 ### Distribution
 
-`exeris-decoder` is distributed as:
+`exeris-decoder` is planned to be distributed as:
 - A **standalone executable JAR** bundled in `exeris-kernel-core` → `target/exeris-decoder.jar`
 - A **Maven plugin goal** (`exeris-kernel-build-config:decode`) for integration with build pipelines
 
@@ -381,7 +386,7 @@ java -jar exeris-decoder.jar --jfr boot.jfr
 [0000001840ns] EX-NET-4006 [WARN] PAQS load shedding
                rawArgs[0]: transportName=CommunityTcpTransport
                rawArgs[1]: streamPriority=3 (LOW)
-               rawArgs[2]: thresholdPriority=2 (STANDARD)
+               rawArgs[2]: thresholdPriority=2 (NORMAL)
 ```
 
 ---

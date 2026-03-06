@@ -2,7 +2,7 @@
 
 **Module:** `exeris-kernel-community`
 **Dependencies:**
-- `compile`: `exeris-kernel-core` (dla współdzielonej infrastruktury TLS i SPI)
+- `compile`: `exeris-kernel-core` (for shared TLS infrastructure and SPI)
 - `test`: `exeris-kernel-tck`
 
 ## 🗺️ Request Flow: Standard POSIX + JDBC Stack
@@ -55,10 +55,12 @@ flowchart TD
 
 1. **Panama-Powered TCP:** This tier provides a custom, high-performance Off-Heap TCP network stack. It leverages
    JEP 454 (FFM) to bind directly to OS sockets and OpenSSL, completely bypassing standard Java NIO buffers.
-2. **Zero-Allocation Network Path (Hard Guarantee):** The TLS + transport pipeline (steps ①–③ and ⑧–⑨ in the
-   Request Flow diagram) guarantees **zero JVM heap allocation**. Plaintext and ciphertext reside exclusively in
-   `LoanedBuffer` instances backed by Panama `MemorySegment`. This is a hard contract verified by the TCK
-   (`AbstractTlsEngineTck.testZeroHeapOnHotPath()`), not a best-effort target.
+2. **Zero-Allocation Network Path (Best-Effort):** The TLS + transport pipeline (steps ①–③ and ⑧–⑨ in the
+   Request Flow diagram) targets **zero JVM heap allocation** on the network hot-path. Plaintext and ciphertext
+   reside exclusively in `LoanedBuffer` instances backed by Panama `MemorySegment`. Allocation behaviour is
+   verified by `CryptoZeroAllocTck`, which allows small bounded allocations in the Community tier (e.g., JFR
+   event objects). A strict zero-byte guarantee across the full path, including telemetry, is an Enterprise-only
+   contract.
 3. **The Heap Boundary (JDBC):** The heap boundary begins at the business logic layer (step ⑥). JDBC persistence
    (step ⑦) allocates `ResultSet`, DTO, and `String` objects on the JVM heap. The Garbage Collector may trigger
    here. The network and TLS layers are completely exempt from GC.
@@ -73,7 +75,7 @@ flowchart TD
 | Feature               | Community (Zero-GC Network, Heap Persistence) | Enterprise (Zero-GC End-to-End)               |
 |-----------------------|-----------------------------------------------|-----------------------------------------------|
 | **Network I/O**       | **Zero-Alloc** (Off-Heap TCP + OpenSSL/FFM) ✅ | Zero-Alloc + Kernel-Bypass (`io_uring`)       |
-| **TLS Hot Path**      | **Zero-Alloc** (TCK-verified hard guarantee) ✅ | Zero-Alloc (same Core TLS engine)             |
+| **TLS Hot Path**      | **Zero-Alloc (Best-Effort)** (`CryptoZeroAllocTck` — bounded allocs permitted) ✅ | Zero-Alloc hard guarantee (same Core TLS engine) |
 | **Telemetry**         | Bounded (~65 bytes / JFR event)               | Strict Zero (Binary Ring-Buffer off-heap)     |
 | **Persistence**       | JDBC overhead (heap-bound) ⚠️                  | Strict Zero (Native DB driver)                |
 | **Context**           | `ScopedValue` (low overhead)                  | `ScopedValue` + Off-Heap Arena                |

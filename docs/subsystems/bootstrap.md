@@ -454,11 +454,22 @@ kernel guarantees durability of written bytes even on a hard JVM crash.
 | **Lifecycle**    | Created at L0 init, closed (and optionally renamed to `kernel-<pid>-<timestamp>.bin`) on graceful shutdown. Survives JVM crash. |
 | **Permissions**  | Owner read/write only (`0600`). File is not rotated — a new PID gets a new file.                  |
 
-### OS Guarantee
+### Durability Contract
 
-The operating system (Linux: `msync(MS_ASYNC)`; Windows: `FlushViewOfFile`) ensures that any frame written
-to the mapped buffer is flushed to the filesystem's page cache before the JVM is terminated by the OS signal
-handler, even in the absence of a `finally` block.
+Exeris does **not** call `msync` on the hot write path. Maintaining Zero-Syscall semantics on L0 is a
+non-negotiable invariant (see `performance-contract.md`). Instead, each frame is written with
+`VarHandle.releaseFence()` after the final field to enforce JVM-level store ordering.
+
+The OS page-dirty mechanism then handles asynchronous persistence of dirty pages to the filesystem
+cache. **This does not constitute a hard durability guarantee.** On a sudden power failure or hard
+kernel panic before the OS has flushed dirty pages, frames written after the last OS-driven page flush
+may be lost. Operators requiring power-loss durability must ensure OS-level journaling or use a UPS.
+
+For graceful JVM crashes (`SIGSEGV`, uncaught exception), the OS signal handler will typically flush
+dirty pages before process termination — but this is a best-effort OS behaviour, not a contract.
+
+The operator recovery tool (`exeris-decoder`) is designed to tolerate partial frames at the end of the
+crash buffer (ring-wrap corruption) and skip undecodable frames silently.
 
 ### Operator Recovery
 

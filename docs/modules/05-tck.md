@@ -1,7 +1,11 @@
 # Physical Tier: TCK (The Judge)
 
 **Module:** `exeris-kernel-tck` (Technology Compatibility Kit)
-**Dependencies:** `exeris-kernel-spi`, `exeris-kernel-core` (for shared testing abstractions)
+**Dependencies:** `exeris-kernel-spi` (compile)
+
+> **Dependency direction:** `exeris-kernel-tck` depends **only** on `exeris-kernel-spi`.
+> It is `exeris-kernel-core`, `exeris-kernel-community`, and `exeris-kernel-enterprise` that
+> each consume `exeris-kernel-tck` as a `test-jar` dependency — not the other way around.
 
 ## 🗺️ Contract Verification Architecture: One Suite, Two Implementations
 
@@ -13,23 +17,23 @@ against both implementations in CI — **both must pass, or neither ships**.
 graph TD
     subgraph "exeris-kernel-tck (Abstract Suites)"
         PAQS_TCK["AbstractPaqsSchedulerTck\n─────────────────\ntestAdmitUnderWatermark()\ntestLoadShedAboveCeiling()\ntestPriorityOrdering()\ntestRefCountOnShed()"]
-        TLS_TCK["AbstractTlsEngineTck\n─────────────────\ntestHandshakeCompletes()\ntestZeroHeapOnHotPath()\ntestSessionResumption()\ntestDoubleFreeDetection()"]
+        TLS_TCK["AbstractCryptoEngineTck + CryptoZeroAllocTck\n─────────────────\ntestHandshakeCompletes()\ntestZeroAllocBoundedOnCommunity()\ntestSessionResumption()\ntestDoubleFreeDetection()"]
         MEM_TCK["AbstractMemoryAllocatorTck\n─────────────────\ntestAllocateAndRelease()\ntestSlabPoolExhaustion()\ntestLeakDetectionParanoid()\ntestNUMALocalAlloc()"]
-        REPO_TCK["AbstractCitadelRepositoryTck\n─────────────────\ntestSaveAndLoad()\ntestTransactionRollback()\ntestConcurrentWriters()"]
+        REPO_TCK["AbstractPersistenceEngineTck\n─────────────────\ntestSaveAndLoad()\ntestTransactionRollback()\ntestConcurrentWriters()"]
     end
 
     subgraph "Community Implementations (OSS)"
         C_PAQS["CommunityPaqsScheduler"]
-        C_TLS["CommunityTlsEngine"]
+        C_TLS["CommunityTlsEngine\n(OffHeapTlsEngine)"]
         C_MEM["PanamaArenaAllocator"]
-        C_REPO["JdbcCitadelRepository"]
+        C_REPO["JdbcPersistenceEngine"]
     end
 
     subgraph "Enterprise Implementations (Proprietary)"
         E_PAQS["EnterprisePaqsScheduler"]
-        E_TLS["EnterpriseTlsEngine"]
+        E_TLS["EnterpriseTlsEngine\n(OffHeapTlsEngine)"]
         E_MEM["GlobalMemoryArbiter"]
-        E_REPO["NativeCitadelRepository"]
+        E_REPO["NativePersistenceEngine"]
     end
 
     PAQS_TCK -->|"executed against"| C_PAQS & E_PAQS
@@ -58,7 +62,7 @@ the Performance Contract and must not be merged, regardless of functional correc
 
 | Contract                        | Measurement Method              | Community Limit           | Enterprise Limit          | Failure Mode         |
 |:--------------------------------|:--------------------------------|:--------------------------|:--------------------------|:---------------------|
-| **Zero-Heap on TLS Hot Path**   | JFR allocation profiler         | 0 bytes (network path)    | 0 bytes (full path)       | `AssertionError`     |
+| **Zero-Heap on TLS Hot Path**   | JFR allocation profiler (`CryptoZeroAllocTck`) | 0 bytes (network path) — best-effort bounded | 0 bytes (full path) — hard guarantee | `AssertionError`     |
 | **Request Latency P99**         | JMH `@Benchmark` + histogram    | ≤ 200 µs                  | ≤ 50 µs                   | `AssertionError`     |
 | **LoanedBuffer Leak**           | `LeakDetectionMode.PARANOID`    | 0 unreleased segments     | 0 unreleased segments     | `LeakDetectedError`  |
 | **PAQS Load-Shed Latency**      | Nanosecond timer in TCK         | ≤ 5 µs decision           | ≤ 5 µs decision           | `AssertionError`     |

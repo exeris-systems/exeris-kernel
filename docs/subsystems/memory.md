@@ -119,17 +119,16 @@ sequenceDiagram
     A->>A: allocate() → buf (refCount=1)
     A->>A: buf.retain() → refCount=2
     A->>A: buf.addCloseAction(cleanup)
-    Note over A: VarHandle.fullFence() ← Release fence<br/>(action slot write is visible to all threads)
     A->>B: hand off buf reference
     B->>B: buf.close() → refCount=1  (no-op)
     B->>B: buf.close() → refCount=0
-    Note over B: VarHandle.fullFence() ← Acquire fence<br/>(reads action slots written by Thread A)
     B->>B: fireCloseActions() → cleanup.run()
 ```
 
-> **JMM Contract:** The `fullFence()` in `addCloseAction()` (Release) and `fireCloseActions()` (Acquire) form a
-> symmetric happens-before pair. Thread B is guaranteed to observe every `closeAction` slot written by Thread A,
-> regardless of CPU store-buffer reordering or C2 JIT recompilation.
+> **JMM Contract:** Visibility of `closeAction` slots across threads is guaranteed by standard Java
+> safe publication semantics — e.g., passing the `LoanedBuffer` reference via `StructuredTaskScope`
+> or a concurrent queue — rather than explicit memory fences. Thread B is guaranteed to observe every
+> `closeAction` slot written by Thread A as long as the buffer reference itself is published safely.
 
 ---
 

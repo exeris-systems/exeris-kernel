@@ -1,4 +1,4 @@
-﻿# Kernel Subsystem: Transport (L2 Native I/O)
+﻿﻿# Kernel Subsystem: Transport (L2 Native I/O)
 
 **Physical Layout:**
 
@@ -229,9 +229,9 @@ edge based on verifiable attributes. The priority assignment chain:
 | Source                             | Mechanism                                                                                         | Trust Level        |
 |:-----------------------------------|:--------------------------------------------------------------------------------------------------|:-------------------|
 | **JWT claim `x-exeris-priority`**  | Extracted from the validated token by `SecurityInterceptor` before PAQS admission. Cannot be forged — the JWT is cryptographically verified. | High (verified) |
-| **HTTP/QUIC stream header `x-priority`** | Mapped to `StreamPriority` enum by transport carrier. Treated as **untrusted input** — capped at `STANDARD` unless the JWT claim overrides. | Low (untrusted) |
+| **HTTP/QUIC stream header `x-priority`** | Mapped to `StreamPriority` enum by transport carrier. Treated as **untrusted input** — capped at `NORMAL` unless the JWT claim overrides. | Low (untrusted) |
 | **Endpoint configuration**         | Static mapping via `exeris.transport.paqs.endpoint-priority.<path>` config key. Overrides header. | High (operator) |
-| **Default (no source)**            | `StreamPriority.STANDARD`                                                                         | N/A               |
+| **Default (no source)**            | `StreamPriority.NORMAL`                                                                         | N/A               |
 
 **Priority enum (SPI):**
 
@@ -239,7 +239,7 @@ edge based on verifiable attributes. The priority assignment chain:
 StreamPriority {
     CRITICAL(0),   // payments, health checks, ops — never shed except at CRITICAL watermark
     HIGH(1),       // premium tier, authenticated business flows
-    STANDARD(2),   // default — most application traffic
+    NORMAL(2),     // default — most application traffic
     LOW(3),        // telemetry, batch jobs, analytics
     BACKGROUND(4)  // best-effort only
 }

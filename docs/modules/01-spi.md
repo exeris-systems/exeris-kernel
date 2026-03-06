@@ -26,12 +26,11 @@ graph TD
 
     %% TCK dependencies
     TCK -->|"compile"| SPI
-    TCK -.->|"compile (test utils)"| CORE
 
-    %% Test-time execution
-    CORE -.->|"test"| TCK
-    COMM -.->|"test"| TCK
-    ENT  -.->|"test"| TCK
+    %% Test-time execution: Core/Comm/Ent consume TCK as a test-jar
+    CORE -.->|"test (test-jar)"| TCK
+    COMM -.->|"test (test-jar)"| TCK
+    ENT  -.->|"test (test-jar)"| TCK
 
     style SPI fill:#1a1a2e,color:#e0e0ff,stroke:#7c7cff,stroke-width:2px
     style CORE fill:#16213e,color:#e0e0ff,stroke:#4a90d9,stroke-width:2px
