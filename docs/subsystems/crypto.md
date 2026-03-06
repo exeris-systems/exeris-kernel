@@ -1,4 +1,4 @@
-﻿# Kernel Subsystem: Crypto (L1 Citadel Extension)
+﻿﻿# Kernel Subsystem: Crypto (L1 Citadel Extension)
 
 **Physical Layout:**
 
@@ -83,7 +83,7 @@ it is an enforced architectural constraint.
 Linker linker = Linker.nativeLinker();
 SymbolLookup ssl = SymbolLookup.libraryLookup("libssl.so.3", Arena.global());
 
-static final MethodHandle SSL_CTX_NEW =
+static final MethodHandle SSL_CTX_new =
         linker.downcallHandle(ssl.find("SSL_CTX_new").orElseThrow(),
                 FunctionDescriptor.of(ADDRESS, ADDRESS));
 
@@ -142,10 +142,10 @@ public void unwrap(LoanedBuffer ciphertext, LoanedBuffer plaintext) {
                 plaintext.segment().address(),
                 (int) plaintext.capacity());
     } catch (Throwable t) {
-        throw new CryptoException(KernelErrorCodes.EX_NET_2001, "SSL_read failed", t);
+        throw new CryptoException(KernelErrorCodes.EX_NET_2003, "SSL_read failed", t);
     }
     if (read <= 0) {
-        throw new CryptoException(KernelErrorCodes.EX_NET_2001, "SSL_read returned <= 0");
+        throw new CryptoException(KernelErrorCodes.EX_NET_2003, "SSL_read returned <= 0");
     }
     plaintext.setSize(read);
 }
@@ -158,6 +158,34 @@ public void unwrap(LoanedBuffer ciphertext, LoanedBuffer plaintext) {
 The `NativeCipherContext` wraps a single `SSL*` struct and its associated `BIO` pair.
 It is allocated **once per TLS session** — not per record. Memory is obtained from the injected
 `MemoryAllocator`, never from a directly opened `Arena`.
+
+The diagram below illustrates the full RAII + ref-count lifecycle from session start to pool reclaim:
+
+```mermaid
+sequenceDiagram
+    participant Alloc as MemoryAllocator
+    participant NCC as NativeCipherContext
+    participant Trans as Transport (Hot Path)
+
+    Note over Alloc,NCC: Session Start
+    Alloc->>NCC: allocate(SESSION)<br/>returns LoanedBuffer (ref=1)
+    NCC->>NCC: SSL_CTX_new() · SSL_new() · BIO_new_pair()<br/>structs written into sessionBuffer.segment()
+    NCC->>NCC: retain()<br/>(ref=2, NativeCipherContext holds one count)
+
+    Note over NCC,Trans: Per-Packet Loop (Zero Allocation)
+    loop N times — wrap() / unwrap()
+        Trans->>NCC: wrap(plaintext, ciphertext)<br/>SSL_write() downcall → EX-NET-2001 on failure
+        Trans->>NCC: unwrap(ciphertext, plaintext)<br/>SSL_read() downcall → EX-NET-2003 on failure
+    end
+
+    Note over Alloc,NCC: Session End
+    Trans->>NCC: close() — session teardown
+    NCC->>NCC: SSL_free() · BIO_free_all()<br/>release() → ref-count: 1
+    NCC->>Alloc: LoanedBuffer.close()<br/>ref-count: 0 → slab returned to pool
+```
+
+> **RAII Invariant:** `NativeCipherContext` is the **sole** ref-count authority for the session slab.
+> Transport code calls `wrap()`/`unwrap()` without ever retaining the buffer — it borrows, not owns.
 
 ```
 Session Start:
@@ -252,10 +280,15 @@ public OffHeapTlsEngine(MemoryAllocator allocator, CoreSslHandles handles) {
 
 > **Source of truth:** `KernelErrorCodes.java` in `exeris-kernel-spi`.
 
-| Code          | Meaning                       | Glass-Box Payload (`rawArgs`)                        |
-|:--------------|:------------------------------|:-----------------------------------------------------|
-| `EX-NET-2001` | TLS Operation Failure         | `[0] int nativeErrorCode, [1] String detail`         |
-| `EX-NET-2002` | Crypto Provider Bootstrap     | `[0] String providerName, [1] String reason`         |
+| Code          | Path          | Meaning                            | Glass-Box Payload (`rawArgs`)                        |
+|:--------------|:--------------|:-----------------------------------|:-----------------------------------------------------|
+| `EX-NET-2001` | **wrap** (encrypt) | `SSL_write` failure / BIO error | `[0] int nativeErrorCode, [1] String detail`    |
+| `EX-NET-2002` | Bootstrap     | Crypto Provider init failure       | `[0] String providerName, [1] String reason`         |
+| `EX-NET-2003` | **unwrap** (decrypt) | `SSL_read` failure / alert received | `[0] int nativeErrorCode, [1] String detail` |
+
+The split between `EX-NET-2001` and `EX-NET-2003` preserves the **one-code-one-schema invariant**
+required by the binary Glass-Box telemetry contract: decoders can distinguish encrypt-side from
+decrypt-side failures without parsing the `detail` string.
 
 ---
 
@@ -302,6 +335,7 @@ Use JFR's built-in `MethodProfiling` for cipher throughput analysis.
 
 ### Load Tests
 
-- 100k TLS records/second with < 5 µs P99 `wrap()` latency.
+- 100k TLS records/second with < 5 µs P99 `wrap()` latency *(target, not yet measured — baseline
+  JMH benchmark pending TRL-4 milestone; current manual profiling shows < 12 µs P99 on loopback)*.
 - GC pause frequency: < 1 minor GC per 10 seconds under sustained cipher load.
 

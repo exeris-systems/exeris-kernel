@@ -1,7 +1,82 @@
 # Physical Tier: Core (The Brain)
 
 **Module:** `exeris-kernel-core`
-**Dependencies:** `exeris-kernel-spi` ONLY.
+**Dependencies:**
+- `compile`: `exeris-kernel-spi`
+- `test`: `exeris-kernel-tck`
+
+## 🗺️ Bootstrap Lifecycle: State Machine
+
+Core owns the canonical subsystem lifecycle. The state machine is driven by `KernelBootstrap` and is
+irreversible — there is no `RESTART` transition; a failed node must be replaced.
+
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> INIT : JVM start / KernelBootstrap.create()
+
+    INIT --> STARTING : ServiceLoader discovery complete\nAll SPI providers validated (non-null, contract-checked)
+    INIT --> FAILED   : SPI provider missing or contract violation\nJVM halts (System.exit / ExerisKernelException)
+
+    STARTING --> READY        : All subsystems (Memory · Transport · Persistence)\nbound and health-checked
+    STARTING --> FAILED       : Subsystem bind timeout or port conflict
+
+    READY --> SHUTTING_DOWN   : Graceful shutdown signal (SIGTERM / shutdown hook)
+    READY --> FAILED          : Unrecoverable runtime error (Arena corruption,\nWatermark ceiling breach)
+
+    SHUTTING_DOWN --> [*]     : All LoanedBuffers released · Arenas closed\nVirtual Threads drained
+
+    FAILED --> [*]            : Emergency dump (JFR snapshot) · JVM exit(1)
+
+    note right of READY
+        Hot-path active.
+        WatermarkManager enforcing backpressure.
+        ResourceArbiter scheduling allocations.
+    end note
+```
+
+## 🗺️ Driver Discovery: ServiceLoader Orchestration
+
+Core is **driver-agnostic**. It never imports `exeris-kernel-community` or `exeris-kernel-enterprise` classes.
+Concrete implementations are discovered at runtime via `ServiceLoader`, which fulfils the Open-Core SPI contract.
+
+```mermaid
+graph TD
+    subgraph "exeris-kernel-core (The Brain)"
+        KB["KernelBootstrap"]
+        WM["WatermarkManager"]
+        RA["ResourceArbiter"]
+        SL["java.util.ServiceLoader"]
+    end
+
+    subgraph "exeris-kernel-spi (Contracts)"
+        TE["TlsEngine (interface)"]
+        MA["MemoryAllocator (interface)"]
+        CR["CitadelRepository (interface)"]
+        PS["PaqsScheduler (interface)"]
+    end
+
+    subgraph "Runtime Classpath (injected)"
+        COMM_IMPL["CommunityTlsEngine\nPanamaArenaAllocator\nJdbcCitadelRepository"]
+        ENT_IMPL["EnterpriseTlsEngine\nGlobalMemoryArbiter\nNativeCitadelRepository"]
+    end
+
+    KB --> SL
+    SL -->|"resolves at T-0"| TE & MA & CR & PS
+    COMM_IMPL -.->|"implements (Community classpath)"| TE & MA & CR & PS
+    ENT_IMPL  -.->|"implements (Enterprise classpath)"| TE & MA & CR & PS
+    WM --> MA
+    RA --> MA
+    KB -->|"validates contracts"| WM & RA
+
+    style KB fill:#16213e,color:#e0e0ff,stroke:#4a90d9
+    style SL fill:#16213e,color:#e0e0ff,stroke:#4a90d9
+    style COMM_IMPL fill:#0f3460,color:#e0e0ff,stroke:#4a90d9,stroke-dasharray: 5 5
+    style ENT_IMPL  fill:#533483,color:#e0e0ff,stroke:#9b59b6,stroke-dasharray: 5 5
+```
+
+> **Invariant:** If `ServiceLoader` returns zero providers for any mandatory SPI contract, `KernelBootstrap`
+> transitions to `FAILED` and the JVM halts. There is no partial bootstrap.
 
 ## 🧠 Architectural Rules (L0 Enforcement)
 
@@ -20,3 +95,10 @@
    documented in-code and must not reintroduce ad-hoc executors or unstructured concurrency.
 4. **Fail-Fast Bootstrap:** Must validate all injected SPI providers at T-minus 0 and halt the JVM if contracts are not
    met.
+5. **Synchronization (JEP 491 Amendment):** The `synchronized` keyword is **permitted exclusively** in off-heap memory
+   pool internals (e.g., `SlabPool` slab reclamation, `SegmentPool` free-list management) where CAS sequences are
+   susceptible to ABA problems. It is **categorically banned** around FFM `downcall` invocations or any blocking I/O —
+   violations cause Virtual Thread Pinning. See ADR-007 for the full rationale.
+6. **Lazy Constants (JEP 526):** Singleton config caches and expensive one-time initialisations in Core MUST use
+   `LazyConstant.of(...)` instead of double-checked locking or `volatile` fields. This enables JVM constant-folding
+   optimisations and eliminates manual synchronisation in the init path.

@@ -1,4 +1,4 @@
-﻿# Kernel Subsystem: Events (L3 Logic Engines)
+﻿﻿# Kernel Subsystem: Events (L3 Logic Engines)
 
 **Physical Layout:**
 
@@ -35,8 +35,10 @@ operates on local memory, a PostgreSQL partition, or a Kafka cluster.
 ### 1. Valhalla-Ready Routing (`EventDescriptor`)
 
 Event routing metadata is encapsulated in `EventDescriptor` — a structure composed exclusively of primitive
-types (`long`, `int`). This allows the JIT to fully scalarize it, prepares it for `value record` migration
-(JEP 401), and guarantees **zero object allocation per routing decision**.
+types (`long`, `int`). It avoids `synchronized`, `System.identityHashCode()`, and identity `==`, allowing the
+C2 JIT to scalarise it via Escape Analysis today. It is designed for future migration to `value record` once
+JEP 401 (Value Classes and Objects) reaches mainline GA, which will further eliminate object headers.
+This guarantees **zero object allocation per routing decision** at current TRL.
 
 ### 2. RAII Payload Lifecycle (`EventPayload`)
 
@@ -174,6 +176,118 @@ public void saveAndPublish(Entity entity, Event event) {
 }
 // After commit, Outbox Poller delivers to the physical broker.
 ```
+
+---
+
+---
+
+## Event Schema Evolution Strategy
+
+`EventPayload` bytes are opaque to the Kernel. The schema (serialisation format) is the
+responsibility of the application layer. The Kernel provides **schema version routing** via
+`EventDescriptor.flags`.
+
+| Approach                             | Mechanism                                                                                       |
+|:-------------------------------------|:------------------------------------------------------------------------------------------------|
+| **Additive changes** (new fields)    | Use a schema registry (Avro/Protobuf) with backward-compatible evolution. Old consumers ignore unknown fields. |
+| **Breaking changes** (renamed/removed fields) | Introduce a new event type (e.g., `OrderConfirmedV2`) and register it separately in `EventRegistry`. Route both versions simultaneously during the migration window. |
+| **Version field in descriptor**      | `EventDescriptor.flags` can carry a 4-bit schema version (`flags & 0xF`). Consumers check version before deserialising. |
+| **Kernel guarantee**                 | The Event Store is append-only. Old events are never mutated. Consumer projection rebuilds (see Replay API below) can re-read all historical versions. |
+
+---
+
+## Dead Letter Queue (DLQ)
+
+Events that consistently fail handler execution are moved to a Dead Letter Queue.
+
+**Trigger:** Handler throws an uncaught exception on attempt `max-retries` (default: 5).
+`max-retries` is configured per subscription via `bus.subscribe(...).maxRetries(5)`.
+
+**DLQ table (auto-created on first boot):**
+
+```sql
+CREATE TABLE IF NOT EXISTS exeris_event_dlq (
+    id              BIGSERIAL PRIMARY KEY,
+    original_stream TEXT NOT NULL,
+    event_ordinal   INT NOT NULL,
+    payload         BYTEA NOT NULL,
+    handler_class   TEXT NOT NULL,
+    failure_reason  TEXT,
+    moved_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+```
+
+**JFR event:** `EventDlqTransferEvent` emitted on DLQ transition.
+`rawArgs[0]=String eventType, rawArgs[1]=int attempt, rawArgs[2]=String handlerClass`.
+
+**Operator recovery:** Re-inject from DLQ via `EventEngine.replayFromDlq(dlqId)` — identical to
+a normal publish, bypassing the retry count.
+
+---
+
+## Event Replay API
+
+The `EventStreamReader` SPI supports replay from a specific position in the Event Store.
+This enables CQRS projection rebuilds without external tooling.
+
+```java
+public interface EventStreamReader extends AutoCloseable {
+    // Replay all events from a specific timestamp (inclusive)
+    EventStream replayFrom(StreamId streamId, Instant fromTimestamp);
+
+    // Replay from a specific event version/offset
+    EventStream replayFromVersion(StreamId streamId, long fromVersion);
+
+    // Replay all events for an aggregate type (cross-stream)
+    EventStream replayByType(String eventType, Instant fromTimestamp);
+}
+```
+
+**Zero-allocation replay path:** Events are streamed directly from the PostgreSQL WAL or Kafka
+topic into `LoanedBuffer` slabs — no intermediate `List<Event>` materialisation.
+`EventStream` implements `Iterable<EventPayload>` and closes each payload on `Iterator.next()`.
+
+---
+
+## Deduplication — Design Contract
+
+The Kernel **does not provide built-in deduplication** at the `EventBus` level. This is an
+intentional design contract, not an oversight.
+
+| Layer           | Deduplication Mechanism                                                       |
+|:----------------|:------------------------------------------------------------------------------|
+| **EventBus (L3)** | None. At-least-once delivery semantics. Duplicate events may be delivered on broker reconnect or Outbox retry. |
+| **Flow Engine (L4)** | `IdempotencyGuard` — per-Saga-step idempotency key prevents duplicate step execution. This covers the most critical deduplication requirement (business actions). |
+| **Application layer** | Each subscriber must implement idempotency for its own state mutations. The `EventDescriptor.eventUuidHigh/Low` fields provide a stable deduplication key (UUID stable across retries). |
+
+**Rationale:** Built-in bus-level deduplication requires shared state (bloom filter or seen-set)
+across all subscribers. In a multi-subscriber scenario this state is either a heap-allocated
+`ConcurrentHashMap` (GC pressure) or a distributed lock (latency). Neither is acceptable at the
+performance tier targeted by the Events subsystem. Subscribers that require exactly-once semantics
+must implement their own idempotency using the event UUID as the deduplication key.
+
+---
+
+## Redpanda vs. Kafka — Semantic Differences
+
+Both brokers are supported via the same `EventEngine` SPI. The following table highlights
+operational differences that affect Exeris configuration:
+
+| Behaviour              | Apache Kafka                                       | Redpanda                                              |
+|:-----------------------|:---------------------------------------------------|:------------------------------------------------------|
+| **Transactions**       | Kafka Transactions API (EOS — Exactly-Once Semantics) | Redpanda supports Kafka Transactions API (v23.2+)   |
+| **Log compaction**     | Background `log.cleaner` thread (asynchronous, configurable delay) | Redpanda compaction is asynchronous, similar semantics |
+| **Retention semantics**| Time-based (`retention.ms`) + size-based (`retention.bytes`) | Same API — compatible                                |
+| **Consumer groups**    | Standard Kafka consumer group protocol             | Compatible (Kafka protocol v2)                        |
+| **`sendfile` / zero-copy** | Page cache → socket via `sendfile(2)` (no JVM copy) | Identical — same Linux kernel path                 |
+| **Enterprise driver**  | `io_uring` submission for batch flush (`EventBatchProcessor`) | Identical — broker-agnostic `io_uring` socket path |
+| **Known difference**   | Kafka has more mature tooling (Kafka Streams, ksqlDB) | Redpanda is faster cold-start (single binary, no ZK) |
+
+> **Driver note:** The Exeris Events driver communicates with both Kafka and Redpanda over the
+> **Kafka binary protocol**. It does not use the Kafka Java client library (heap allocations).
+> It speaks the Kafka wire protocol directly via Panama FFM socket operations, treating both
+> brokers identically. Any broker-specific behaviour difference (e.g., compaction timing) is
+> an operational concern, not a driver concern.
 
 ---
 

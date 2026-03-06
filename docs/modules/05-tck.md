@@ -1,7 +1,73 @@
 # Physical Tier: TCK (The Judge)
 
 **Module:** `exeris-kernel-tck` (Technology Compatibility Kit)
-**Dependencies:** `exeris-kernel-spi`
+**Dependencies:** `exeris-kernel-spi`, `exeris-kernel-core` (for shared testing abstractions)
+
+## 🗺️ Contract Verification Architecture: One Suite, Two Implementations
+
+The TCK enforces that every SPI contract produces identical observable results, regardless of whether
+the underlying implementation is Community or Enterprise. A single abstract test class is executed
+against both implementations in CI — **both must pass, or neither ships**.
+
+```mermaid
+graph TD
+    subgraph "exeris-kernel-tck (Abstract Suites)"
+        PAQS_TCK["AbstractPaqsSchedulerTck\n─────────────────\ntestAdmitUnderWatermark()\ntestLoadShedAboveCeiling()\ntestPriorityOrdering()\ntestRefCountOnShed()"]
+        TLS_TCK["AbstractTlsEngineTck\n─────────────────\ntestHandshakeCompletes()\ntestZeroHeapOnHotPath()\ntestSessionResumption()\ntestDoubleFreeDetection()"]
+        MEM_TCK["AbstractMemoryAllocatorTck\n─────────────────\ntestAllocateAndRelease()\ntestSlabPoolExhaustion()\ntestLeakDetectionParanoid()\ntestNUMALocalAlloc()"]
+        REPO_TCK["AbstractCitadelRepositoryTck\n─────────────────\ntestSaveAndLoad()\ntestTransactionRollback()\ntestConcurrentWriters()"]
+    end
+
+    subgraph "Community Implementations (OSS)"
+        C_PAQS["CommunityPaqsScheduler"]
+        C_TLS["CommunityTlsEngine"]
+        C_MEM["PanamaArenaAllocator"]
+        C_REPO["JdbcCitadelRepository"]
+    end
+
+    subgraph "Enterprise Implementations (Proprietary)"
+        E_PAQS["EnterprisePaqsScheduler"]
+        E_TLS["EnterpriseTlsEngine"]
+        E_MEM["GlobalMemoryArbiter"]
+        E_REPO["NativeCitadelRepository"]
+    end
+
+    PAQS_TCK -->|"executed against"| C_PAQS & E_PAQS
+    TLS_TCK  -->|"executed against"| C_TLS  & E_TLS
+    MEM_TCK  -->|"executed against"| C_MEM  & E_MEM
+    REPO_TCK -->|"executed against"| C_REPO & E_REPO
+
+    style PAQS_TCK fill:#1a3a2a,color:#e0e0ff,stroke:#2ecc71
+    style TLS_TCK  fill:#1a3a2a,color:#e0e0ff,stroke:#2ecc71
+    style MEM_TCK  fill:#1a3a2a,color:#e0e0ff,stroke:#2ecc71
+    style REPO_TCK fill:#1a3a2a,color:#e0e0ff,stroke:#2ecc71
+    style C_PAQS fill:#0f3460,color:#e0e0ff,stroke:#4a90d9
+    style C_TLS  fill:#0f3460,color:#e0e0ff,stroke:#4a90d9
+    style C_MEM  fill:#0f3460,color:#e0e0ff,stroke:#4a90d9
+    style C_REPO fill:#0f3460,color:#e0e0ff,stroke:#4a90d9
+    style E_PAQS fill:#2a1a4a,color:#e0e0ff,stroke:#9b59b6
+    style E_TLS  fill:#2a1a4a,color:#e0e0ff,stroke:#9b59b6
+    style E_MEM  fill:#2a1a4a,color:#e0e0ff,stroke:#9b59b6
+    style E_REPO fill:#2a1a4a,color:#e0e0ff,stroke:#9b59b6
+```
+
+## 📊 SLO Enforcement Matrix
+
+The following limits are **hard gates** in the TCK. A test failure means the implementation violates
+the Performance Contract and must not be merged, regardless of functional correctness.
+
+| Contract                        | Measurement Method              | Community Limit           | Enterprise Limit          | Failure Mode         |
+|:--------------------------------|:--------------------------------|:--------------------------|:--------------------------|:---------------------|
+| **Zero-Heap on TLS Hot Path**   | JFR allocation profiler         | 0 bytes (network path)    | 0 bytes (full path)       | `AssertionError`     |
+| **Request Latency P99**         | JMH `@Benchmark` + histogram    | ≤ 200 µs                  | ≤ 50 µs                   | `AssertionError`     |
+| **LoanedBuffer Leak**           | `LeakDetectionMode.PARANOID`    | 0 unreleased segments     | 0 unreleased segments     | `LeakDetectedError`  |
+| **PAQS Load-Shed Latency**      | Nanosecond timer in TCK         | ≤ 5 µs decision           | ≤ 5 µs decision           | `AssertionError`     |
+| **MemoryAllocator O(1)**        | JMH + allocation counter        | O(1) per alloc/release    | O(1) per alloc/release    | PMD rule violation   |
+| **ABI Symbol Resolution**       | `AbstractOpenSslSymbolTck`      | All symbols present       | All symbols present       | `UnsatisfiedLinkError` |
+| **Bootstrap Latency**           | JFR `KernelBootstrapEvent`      | ≤ 500 ms cold start       | ≤ 500 ms cold start       | `AssertionError`     |
+
+> **Adding a new SPI contract?** You MUST implement a corresponding `Abstract*Tck` class in `exeris-kernel-tck`
+> before the PR is mergeable. A contract without a TCK suite is an unverified contract.
 
 ## ⚖️ Architectural Rules
 

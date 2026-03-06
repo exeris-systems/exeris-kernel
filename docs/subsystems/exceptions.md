@@ -1,4 +1,4 @@
-﻿# Kernel Subsystem: Exceptions (L0 Foundation)
+﻿﻿# Kernel Subsystem: Exceptions (L0 Foundation)
 
 **Physical Layout:**
 
@@ -91,8 +91,9 @@ formatting. It implements:
 
 | Code          | Description                 | Glass-Box Payload                                     |
 |:--------------|:----------------------------|:------------------------------------------------------|
-| `EX-NET-2001` | TLS Operation Failure       | `[0] int nativeCode, [1] String detail`               |
+| `EX-NET-2001` | TLS wrap (encrypt) failure  | `[0] int nativeCode, [1] String detail` — `SSL_write` path |
 | `EX-NET-2002` | Crypto Provider Init Failure| `[0] String providerName, [1] String reason`          |
+| `EX-NET-2003` | TLS unwrap (decrypt) failure| `[0] int nativeCode, [1] String detail` — `SSL_read` path |
 | `EX-NET-4001` | Transport Handshake/Bind    | `[0] String transportName, [1] int port`              |
 | `EX-NET-4002` | Transport Send Failure      | `[0] String transportName, [1] long bytesSent`        |
 | `EX-NET-4003` | Transport Receive Timeout   | `[0] String transportName, [1] long timeoutMs`        |

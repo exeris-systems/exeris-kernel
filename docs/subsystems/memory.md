@@ -106,6 +106,31 @@ try (var scope = StructuredTaskScope.open(Joiner.awaitAllSuccessfulOrThrow())) {
 > If a subtask outlives its parent scope (advanced orchestration only), `retain()` is mandatory to prevent a
 > use-after-free on the native segment.
 
+#### Ownership Transfer Timing Diagram
+
+The following diagram shows the exact point at which ownership is transferred and the JMM happens-before chain
+that makes close actions visible across threads:
+
+```mermaid
+sequenceDiagram
+    participant A as Thread A (Allocator)
+    participant B as Thread B (Releaser)
+
+    A->>A: allocate() → buf (refCount=1)
+    A->>A: buf.retain() → refCount=2
+    A->>A: buf.addCloseAction(cleanup)
+    Note over A: VarHandle.fullFence() ← Release fence<br/>(action slot write is visible to all threads)
+    A->>B: hand off buf reference
+    B->>B: buf.close() → refCount=1  (no-op)
+    B->>B: buf.close() → refCount=0
+    Note over B: VarHandle.fullFence() ← Acquire fence<br/>(reads action slots written by Thread A)
+    B->>B: fireCloseActions() → cleanup.run()
+```
+
+> **JMM Contract:** The `fullFence()` in `addCloseAction()` (Release) and `fireCloseActions()` (Acquire) form a
+> symmetric happens-before pair. Thread B is guaranteed to observe every `closeAction` slot written by Thread A,
+> regardless of CPU store-buffer reordering or C2 JIT recompilation.
+
 ---
 
 ## Multi-Tier Memory Strategy
@@ -114,6 +139,16 @@ try (var scope = StructuredTaskScope.open(Joiner.awaitAllSuccessfulOrThrow())) {
 |:---------------|:------------------------------------------------------------------------------|:--------------------------|:----------------------------------|
 | **Community**  | `MemoryAllocator` via `KernelProviders.MEMORY_ALLOCATOR` (shared, bounded)   | Low (JVM thread-local)    | Standard TCP, JDBC persistence    |
 | **Enterprise** | `GlobalMemoryArbiter` `mmap`                                                  | **Zero**                  | `io_uring`, native DB driver, HFT |
+
+### ScalingContext — Multi-Tenant SLA Shedding (INCUBATING — TRL-2)
+
+`ScalingContext` defines per-tier shedding thresholds (`premium`, `standard`, `free`) with O(1) `actionFor(utilization)`
+decisions. **It is currently an incubating component at TRL-2.** The `ResourceArbiter` does not yet consume
+`ScalingContext` — it operates on hardcoded `WatermarkLevel` boundaries.
+
+> **Technical Debt:** Full integration of `ScalingContext` with `ResourceArbiter` (multi-tenant SLA-aware shedding)
+> is planned for **v0.6.0**. Do NOT use `ScalingContext` on production hot paths until this integration is complete.
+> See `ScalingContext` Javadoc (`@status INCUBATING`) for details.
 
 ---
 
@@ -144,6 +179,155 @@ public class ResourceArbiter {
         return allocator.allocate(hint);
     }
 }
+```
+
+---
+
+## WatermarkManager — Levels and Configuration
+
+`WatermarkManager` monitors off-heap utilisation and exposes three threshold levels that drive PAQS
+load shedding and `ResourceArbiter` decisions.
+
+| Level        | Default Threshold | PAQS Response                                       | `ResourceArbiter` Action                         |
+|:-------------|:-----------------:|:----------------------------------------------------|:-------------------------------------------------|
+| `NORMAL`     | < 60%             | All `StreamPriority` admitted                       | Allocations proceed unrestricted                 |
+| `HIGH`       | 60–85%            | `LOW` and `BACKGROUND` streams shed (`EX-NET-4006`) | New `AllocationHint.LARGE` requests rejected     |
+| `CRITICAL`   | > 85%             | All streams shed except `CRITICAL` priority         | All new allocations rejected; `EX-MEM-1001` thrown |
+
+**Configuration keys:**
+
+```
+exeris.memory.watermark.high-threshold=0.60      # fraction of total off-heap budget
+exeris.memory.watermark.critical-threshold=0.85
+exeris.memory.watermark.poll-interval-ms=50      # sampling interval (JFR MemoryAllocationEvent 1% sample)
+```
+
+> **Sampling note:** `MemoryAllocationEvent` is emitted at a 1% sampling rate (configurable via
+> `exeris.memory.telemetry.allocation-sample-rate=0.01`). This rate is not hardcoded — operators
+> running JFR-based heap analysis may set it to `1.0` temporarily at the cost of higher telemetry
+> overhead. The default 1% rate ensures < 50 µs/req overhead as verified by the TCK.
+
+---
+
+## PartitionedPool
+
+`PartitionedPool` is an `AllocationHint` variant that allows the `MemoryAllocator` to segregate
+slabs by domain. It prevents one subsystem's allocation burst from exhausting the buffers of another.
+
+| Partition Name   | Default Budget | Primary Consumer                          |
+|:-----------------|:-------------:|:------------------------------------------|
+| `"network"`      | 40%           | Transport ingress/egress slabs            |
+| `"crypto"`       | 15%           | `NativeCipherContext` session segments    |
+| `"persistence"`  | 20%           | JDBC result staging (Community)           |
+| `"graph"`        | 15%           | BFS traversal result buffers              |
+| `"system"`       | 10%           | Bootstrap, Telemetry, Misc                |
+
+Partitions are configured via `exeris.memory.partitions.<name>.budget-fraction`.
+If a partition exhausts its budget, `EX-MEM-1003` (AllocationHint conflict) is thrown.
+The `SYSTEM` partition cannot go below 5% — it is reserved for bootstrap and emergency telemetry.
+
+---
+
+## NUMA Awareness and Huge Pages (Enterprise)
+
+**Status:** Enterprise tier (`GlobalMemoryArbiter`) only. Not available in Community tier.
+
+### NUMA-Local Slab Allocation
+
+In multi-socket servers, memory access latency depends on whether the CPU accessing the memory
+is on the same NUMA node as the physical DIMM. `GlobalMemoryArbiter` pre-allocates `mmap` regions
+using `libnuma` (`mbind(MPOL_BIND)`) to ensure that each carrier thread's slab pool is allocated
+on its local NUMA node.
+
+| Requirement              | Detail                                                                                     |
+|:-------------------------|:-------------------------------------------------------------------------------------------|
+| **Linux requirement**    | `libnuma.so.1` must be present. Detected at bootstrap by `EnterpriseNativeLoader`. If absent: NUMA-local allocation is disabled with a `KernelBootstrapEvent` WARNING in JFR. |
+| **macOS**                | Not supported — macOS does not expose NUMA topology via `libnuma`.                         |
+| **Windows**              | Not supported — `GlobalMemoryArbiter` is Linux-only.                                       |
+| **K8s consideration**    | In Kubernetes, set `topologyManager.policy=single-numa-node` and use CPU Manager to ensure pods are pinned to a single NUMA node. Cross-NUMA pod scheduling eliminates the benefit of NUMA-local allocation. |
+
+### Huge Pages (2 MB mmap)
+
+`GlobalMemoryArbiter` uses `MAP_HUGETLB` on Linux to reduce TLB pressure for large off-heap regions.
+
+| Requirement              | Detail                                                                                     |
+|:-------------------------|:-------------------------------------------------------------------------------------------|
+| **Kernel pre-allocation**| `vm.nr_hugepages` must be pre-configured: `sysctl -w vm.nr_hugepages=512` (for 1 GB huge page budget). If insufficient huge pages are available, `mmap(MAP_HUGETLB)` falls back to standard pages with a `KernelBootstrapEvent` WARNING. |
+| **K8s resource request** | Add `hugepages-2Mi: 1Gi` to the pod resource limits. Requires `HugePages` feature gate enabled in the cluster. |
+| **macOS**                | Superpage allocation (`VM_FLAGS_SUPERPAGE_SIZE_2MB`) is supported in limited form but not verified by the TCK. |
+| **Windows**              | Not supported.                                                                             |
+
+---
+
+## Graceful Shutdown — In-Flight LoanedBuffers
+
+When the Kernel receives `SIGTERM`, the `BootstrapSequencer` initiates a controlled drain sequence.
+The contract for in-flight `LoanedBuffer` instances:
+
+```mermaid
+sequenceDiagram
+    participant OS as OS (SIGTERM)
+    participant BS as BootstrapSequencer
+    participant TP as Transport (PAQS)
+    participant LB as In-Flight LoanedBuffers
+    participant MA as MemoryAllocator
+
+    OS->>BS: SIGTERM
+    BS->>TP: closeIngress() — no new streams admitted
+    BS->>BS: startHardTimeout(60s)
+
+    Note over TP,LB: Existing VTs complete their work
+    loop until all VTs finish or timeout
+        LB->>LB: Business logic executes
+        LB->>MA: LoanedBuffer.close() [ref-count → 0]
+        MA->>MA: slab returned to pool
+    end
+
+    alt all buffers released before timeout
+        BS->>MA: releaseArenas() — GlobalMemoryArbiter.close()
+        Note over MA: All slabs returned. mmap regions unmapped.
+    else timeout fires (60s hard limit)
+        BS->>BS: emit EX-BOOT-0003 (Glass-Box)
+        BS->>MA: forceReleaseArenas()
+        Note over MA: ⚠️ Force-release. Any VT still holding a LoanedBuffer<br/>will encounter SIGSEGV on next segment access.<br/>This is acceptable — the hard timeout implies<br/>the JVM is about to exit(1).
+    end
+```
+
+> **Operator implication:** Set `terminationGracePeriodSeconds: 75` in K8s pod spec (60 s drain + 15 s
+> buffer). If Sagas (L4) are parked with active `LoanedBuffer` references at shutdown, they will be
+> force-released. Use `SagaEngine.cancel(sagaId)` proactively during `SHUTTING_DOWN` if guaranteed
+> compensation is required before JVM exit.
+
+---
+
+## LoanedBuffer — Full Lifecycle Diagram
+
+```mermaid
+flowchart TD
+    A(["allocate(AllocationHint)\nref-count = 1"])
+    B["retain()\nref-count +1"]
+    C["writeBytes() / segment().address()\nZero-copy operations — no copy"]
+    D["close()\nref-count -1"]
+    E{"ref-count == 0?"}
+    F["fireCloseActions()\nMemoryAllocator notified"]
+    G(["Slab returned to PartitionedPool\nWatermarkManager updated"])
+    LEAK["LeakTracker fires\nEX-MEM-1002 (PARANOID mode)\nArenaLeakEvent (JFR)"]
+
+    A --> B
+    A --> C
+    B --> C
+    C --> D
+    D --> E
+    E -->|"No (still held)"| D
+    E -->|"Yes"| F
+    F --> G
+
+    A -.->|"GC without close()"| LEAK
+
+    style A fill:#1a3a2a,color:#b3ffcc,stroke:#2ecc71
+    style G fill:#1a3a2a,color:#b3ffcc,stroke:#2ecc71
+    style LEAK fill:#3a1a1a,color:#ffb3b3,stroke:#e74c3c,stroke-width:2px
+    style E fill:#1a1a2e,color:#ffe066,stroke:#ffe066,stroke-width:2px
 ```
 
 ---

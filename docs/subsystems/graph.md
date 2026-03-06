@@ -167,6 +167,96 @@ public class NativeGraphDriver implements GraphBackend {
 
 ---
 
+## Driver Roadmap and Production Readiness
+
+| Driver                          | Tier        | Status      | Production Ready? | Notes                                                    |
+|:--------------------------------|:------------|:-----------:|:-----------------:|:---------------------------------------------------------|
+| PostgreSQL JDBC (PGQ)           | Community   | ✅ TRL-3    | ✅ Yes             | Standard JDBC, full VT-compatible                        |
+| Neo4j Bolt (Java driver)        | Community   | ✅ TRL-3    | ✅ Yes             | Standard Bolt driver, heap allocating (~15x churn documented) |
+| Memgraph Bolt                   | Community   | ✅ TRL-3    | ✅ Yes             | Same driver as Neo4j Bolt (Bolt protocol compatible)    |
+| PostgreSQL `io_uring` native    | Enterprise  | 🚧 TRL-4    | ❌ Not yet         | Wire protocol implementation over `io_uring` + Panama FFM |
+| FFM-Native Bolt (Neo4j/Memgraph)| Enterprise  | 🚧 TRL-4    | ❌ Not yet         | Binary Bolt v5 over Panama FFM socket + `LoanedBuffer` result streaming. Eliminates `org.neo4j:neo4j-java-driver` heap allocations entirely. |
+
+**FFM-Native Bolt — what it means when available:** The Community Bolt driver (`org.neo4j:neo4j-java-driver`)
+allocates Java objects for every record in `ResultSet`: `Value` wrappers, `Record` instances, property `Map`s.
+Under sustained graph traversal this produces the ~15x churn documented in the Performance Tiering table.
+The Enterprise FFM-Native Bolt driver will speak the Bolt binary protocol directly over a Panama FFM socket,
+writing results from the Neo4j wire stream directly into `LoanedBuffer` slabs — eliminating record wrappers
+entirely. Target churn ratio: < 1x.
+
+**Until TRL-4:** For applications requiring near-zero allocation on graph hot-paths today, prefer the
+PostgreSQL PGQ backend with `io_uring` transport (Community tier uses standard JDBC but avoids the
+Bolt object wrapper tax). PGQ is a first-class graph query language in PostgreSQL 18 and produces
+comparable traversal results to Cypher for standard relationship patterns.
+
+---
+
+## BFS Traversal — Pagination and Cycle Detection
+
+### Result Pagination / Cursor API
+
+`streamBfsJson` writes results directly into a `LoanedBuffer` slab. If the slab is smaller than the
+traversal result, the Kernel does NOT buffer the remainder in heap — it streams using a cursor:
+
+```java
+public interface GraphCursor extends AutoCloseable {
+    boolean hasNext();
+    void writeNextBatch(LoanedBuffer target);   // zero-copy batch write
+    long totalEstimatedRows();                  // hint only — may be -1 (unbounded)
+}
+
+// Usage in transport layer:
+try (GraphCursor cursor = graphService.bfsCursor(query)) {
+    while (cursor.hasNext()) {
+        try (LoanedBuffer slab = allocator.allocate(AllocationHint.LARGE)) {
+            cursor.writeNextBatch(slab);
+            transport.send(slab);
+        }
+    }
+}
+```
+
+> If a traversal result fits in a single slab, `streamBfsJson` is the zero-allocation fast path.
+> For unbounded graph traversals, use `bfsCursor()` to prevent `EX-GRPH-5005` (slab overflow).
+
+### Cycle Detection
+
+BFS on graphs with cycles without a visited set is an infinite loop. Exeris BFS enforces:
+
+| Control                       | Config Key / SPI Method                          | Default    |
+|:------------------------------|:-------------------------------------------------|:----------:|
+| **Max traversal depth**       | `GraphQueryBuilder.maxDepth(int)` or `exeris.graph.bfs.max-depth` | 10 |
+| **Max visited nodes**         | `GraphQueryBuilder.maxNodes(long)` or `exeris.graph.bfs.max-nodes` | 100 000 |
+| **Visited set implementation**| Off-heap bitset (Community: heap `HashSet`)      | Off-heap (Enterprise) |
+
+When `maxDepth` or `maxNodes` is exceeded, the traversal terminates immediately and returns the
+partial result accumulated up to that point. `EX-GRPH-5002` is emitted with
+`rawArgs[0]="BFS_LIMIT_EXCEEDED"` and `rawArgs[1]=detail`.
+
+**Operators must explicitly set `maxDepth`** for user-driven graph traversals (e.g., "find all
+connections of user X"). Leaving it at the default 10 prevents runaway traversals on dense graphs.
+
+---
+
+## Benchmark Claim Context — ~15x Allocation Ratio
+
+The ~15x allocation-to-data ratio claimed for the Community Bolt driver was measured under:
+
+| Parameter               | Value                                                                 |
+|:------------------------|:----------------------------------------------------------------------|
+| **Hardware**            | AWS `c6i.4xlarge` (16 vCPU, 32 GB RAM), Linux 5.15, Java 26          |
+| **Graph size**          | 10M nodes, 50M edges (social graph topology)                         |
+| **Query pattern**       | BFS depth-3 from 1000 random source nodes (avg 847 results/query)     |
+| **Driver version**      | `org.neo4j:neo4j-java-driver:5.26`                                    |
+| **Measurement tool**    | JFR GC allocation profiler + `Instrumentation.getObjectSize()`        |
+| **Metric**              | Bytes allocated on JVM heap per byte of graph data returned           |
+
+These figures are not independently verified benchmarks — they are internal profiling results from
+TRL-3 prototype testing. Independent reproduction is encouraged. The TCK `AbstractGraphBackendTck`
+includes the benchmark harness under `src/test/jmh/` for reproducibility.
+
+---
+
 ## Testing Strategy
 
 ### Unit Tests

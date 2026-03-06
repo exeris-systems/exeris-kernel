@@ -10,9 +10,12 @@
 The **Exeris Kernel** is a next‑generation, zero‑copy runtime for cloud‑native, high‑performance applications.  
 Built on **Java 26**, it leverages:
 
-- **Virtual Threads** (Project Loom) for 1:1 request‑to‑thread mapping.
-- **Panama FFM** for zero‑copy I/O and deterministic off‑heap memory management.
+- **Virtual Threads** (Project Loom, JEP 444) for 1:1 request‑to‑thread mapping.
+- **Panama FFM** (JEP 454) for zero‑copy I/O and deterministic off‑heap memory management.
 - **Scoped Values** (JEP 506) for strict, ThreadLocal-free context propagation.
+- **Flexible Constructor Bodies** (JEP 513, Closed/Delivered in JDK 25) for pre-initialising fields before `super()` in value-ready types.
+- **Lazy Constants** (JEP 526, Closed/Delivered in JDK 26) for JVM constant-folding of singleton config caches.
+- **Valhalla Readiness (JEP 401):** All data carriers (`record`, `final class`) avoid `synchronized`, `System.identityHashCode()`, and identity `==` so they scalarise via C2 JIT Escape Analysis today. Migration to `value record`/`value class` will be performed once JEP 401 reaches mainline GA.
 
 **No Waste Compute** is the core principle:
 > Every byte allocated must serve a purpose. Every CPU cycle must add value.
@@ -84,7 +87,7 @@ Contracts live in **spi**, orchestration in **core**, and execution in the **dri
 └──────────────────────────────────────────────────────────────┘
 ```
 
-### L1 — Data & Integrity (Security, Persistence)
+### L1 — Data & Integrity (Security, Persistence, Crypto)
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -94,6 +97,12 @@ Contracts live in **spi**, orchestration in **core**, and execution in the **dri
 │  │  - ScopedValues     │ │  - Zero-Copy DB Handover       │  │
 │  │  - Role checking    │ │  - Optimistic concurrency      │  │
 │  └─────────────────────┘ └────────────────────────────────┘  │
+│  ┌────────────────────────────────────────────────────────┐   │
+│  │  Crypto (TLS Engine — shared Core/Community/Enterprise)│   │
+│  │  - Zero-Alloc TLS 1.3 (OpenSSL via Panama FFM)        │   │
+│  │  - NativeCipherContext RAII lifecycle (LoanedBuffer)   │   │
+│  │  - Shared by both tiers via exeris-kernel-core         │   │
+│  └────────────────────────────────────────────────────────┘   │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -180,6 +189,65 @@ Contracts live in **spi**, orchestration in **core**, and execution in the **dri
 
 ---
 
+## 🖥️ Platform Support Matrix
+
+Not all kernel capabilities are available on all operating systems. The table below defines the
+**supported feature set per platform** as of TRL-3. Capabilities marked `[Enterprise only]` require
+the closed-source `exeris-kernel-enterprise` module.
+
+| Capability                              | Linux (x86-64 / ARM64) | macOS (ARM64 / x86-64) | Windows (x86-64)       |
+|:----------------------------------------|:----------------------:|:----------------------:|:----------------------:|
+| **Virtual Threads (Loom)**              | ✅ Full                | ✅ Full                | ✅ Full                |
+| **Panama FFM / OpenSSL TLS**            | ✅ `libssl.so.3`       | ✅ `libssl.3.dylib`    | ✅ `libssl-3-x64.dll`  |
+| **Community TCP transport (epoll)**     | ✅ `epoll`             | ✅ `kqueue`            | ✅ `WSAPoll` (fallback)|
+| **`io_uring` kernel-bypass** `[Ent.]`  | ✅ kernel ≥ 5.11       | ❌ Not available       | ❌ Not available       |
+| **QUIC / UDP transport** `[Ent.]`       | ✅                     | ✅                     | ⚠️ Partial (no io_uring)|
+| **L0 Glass-Box crash buffer**           | `/tmp/exeris-crash/`   | `/tmp/exeris-crash/`   | `%TEMP%\exeris-crash\` |
+| **NUMA-aware slab allocation** `[Ent.]` | ✅ libnuma             | ❌ Not available       | ❌ Not available       |
+| **Huge Pages (mmap)** `[Ent.]`          | ✅ `MAP_HUGETLB`       | ⚠️ Superpage (limited) | ❌ Not available       |
+| **TCK full suite (FFM tests)**          | ✅                     | ✅                     | ⚠️ FFM tests skipped   |
+
+> **Production recommendation:** Linux x86-64 or ARM64 is the only fully-supported production target
+> for the Enterprise tier. macOS is the primary development platform. Windows support is limited to
+> the Community tier and development builds.
+
+> **`io_uring` minimum kernel version:** 5.11 (for `IORING_OP_PROVIDE_BUFFERS` and multishot RECVMSG).
+> Kernels below 5.11 will fall back to `epoll`-based transport at boot and emit a `KernelBootstrapEvent`
+> warning in JFR.
+
+---
+
+## 🌐 Cloud Native Observability (OpenTelemetry)
+
+The Exeris Kernel is designed for CNCF-native deployment (ADR-001). The JFR-First telemetry
+mandate covers in-process observability. For cross-service, cluster-level observability in
+Kubernetes environments, the following strategy applies:
+
+| Observability Layer     | Mechanism                                   | Status         |
+|:------------------------|:--------------------------------------------|:---------------|
+| **In-process events**   | JFR (`Exeris/*` event categories)           | ✅ TRL-3       |
+| **Crash diagnostics**   | Glass-Box binary crash buffer + `exeris-decoder` | ✅ TRL-3  |
+| **Metrics (Prometheus)**| `DeterministicBinarySink` → OTLP exporter   | 🚧 TRL-4 planned |
+| **Distributed tracing** | `traceId` in `ExerisKernelException.rawArgs`; OTLP span export | 🚧 TRL-4 planned |
+| **Log aggregation**     | `Slf4jTelemetrySink` → structured JSON → Loki/Fluent Bit | ✅ Community tier |
+
+> **TRL-4 obligation:** A `PrometheusOtlpTelemetrySink` implementing the `TelemetrySink` SPI must be
+> delivered in `exeris-kernel-community` before TRL-4 certification. It must export the standard
+> `exeris_kernel_*` metric namespace in OTLP format without allocating on the emission hot-path.
+
+---
+
+## 🚀 Deployment Topology
+
+Exeris Kernel is a **library embedded in your application JVM process** — not a sidecar, not a standalone
+server. The Kernel bootstraps within your JVM, owns the network socket, and exposes the data-plane port.
+A separate lightweight HTTP endpoint on port `9090` serves K8s health probes.
+
+For the complete deployment diagram, infrastructure requirements, and SLA/SLO baseline table, see:
+→ **[Whitepaper](whitepaper.md)** — Sections 4 (Deployment Topology) and 5 (SLA/SLO Baseline Table)
+
+---
+
 ## 📚 Related Documentation
 
 To understand how these concepts map to actual code, read the subsystem definitions:
@@ -194,6 +262,7 @@ To understand how these concepts map to actual code, read the subsystem definiti
 **Logical Subsystems:**
 - [Bootstrap](subsystems/bootstrap.md) | [Config](subsystems/config.md) | [Memory](subsystems/memory.md) | [Security](subsystems/security.md)
 - [Transport](subsystems/transport.md) | [Persistence](subsystems/persistence.md) | [Graph](subsystems/graph.md) | [Flow](subsystems/flow.md)
+- [Crypto](subsystems/crypto.md) | [Telemetry](subsystems/telemetry.md) | [Events](subsystems/events.md)
 
 ---
 

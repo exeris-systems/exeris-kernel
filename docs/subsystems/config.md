@@ -54,7 +54,7 @@ It initializes before any other subsystem (including Memory) and provides:
 A file change triggers an atomic state reload in Core without a JVM restart — but **only** for keys annotated
 `@Dynamic`. Keys annotated `@Immutable` are validated once at T-minus 0 and sealed for the lifetime of the process.
 
-### JEP 513 Validation (Flexible Constructor Bodies)
+### JEP 513 Validation (Flexible Constructor Bodies — Closed/Delivered in JDK 25)
 Type validation is performed via JEP 513 Flexible Constructor Bodies — environment and Vault state is validated
 **before** the `super()` call reaches the base `Object` constructor. If a `REQUIRED` key is absent or malformed,
 the Kernel aborts with `EX-CFG-1001` / `EX-CFG-1002` before allocating anything deeper in the object graph.
@@ -178,6 +178,103 @@ try {
 > in physical RAM — visible to `jmap -dump`, a core dump, or a cold-boot memory attack. In Exeris, cryptographic
 > buffers are **explicitly zeroed** (`Arrays.fill`) immediately after the `ScopedValue` scope exits. The secret
 > never persists beyond the bootstrap phase as recoverable data.
+
+---
+
+## Kernel Configuration Reference
+
+The table below lists all configuration keys consumed **internally** by the Exeris Kernel itself.
+Application-level keys are defined by the application layer and not listed here.
+
+| Key                                                | Type      | Default           | Reload    | Description                                              |
+|:---------------------------------------------------|:----------|:-----------------:|:---------:|:---------------------------------------------------------|
+| `exeris.bootstrap.health-port`                     | `int`     | `9090`            | ❌ IMMUTABLE | HTTP health probe port                                |
+| `exeris.bootstrap.fail-fast`                       | `boolean` | `true`            | ❌ IMMUTABLE | FAIL_FAST vs DEGRADE on subsystem init failure         |
+| `exeris.transport.port`                            | `int`     | `8080`            | ❌ IMMUTABLE | Data-plane TCP/QUIC port                              |
+| `exeris.transport.timeout-ms`                      | `int`     | `5000`            | ✅ DYNAMIC   | Connection timeout (ms)                               |
+| `exeris.transport.proxy-protocol.enabled`          | `boolean` | `false`           | ❌ IMMUTABLE | Enable Proxy Protocol v2 parsing                      |
+| `exeris.transport.proxy-protocol.required`         | `boolean` | `false`           | ❌ IMMUTABLE | Reject connections without PP2 header                 |
+| `exeris.transport.paqs.high-threshold`             | `float`   | `0.60`            | ✅ DYNAMIC   | WM HIGH level (fraction of off-heap budget)           |
+| `exeris.transport.paqs.critical-threshold`         | `float`   | `0.85`            | ✅ DYNAMIC   | WM CRITICAL level (fraction of off-heap budget)       |
+| `exeris.transport.paqs.endpoint-priority.<path>`   | `string`  | `STANDARD`        | ✅ DYNAMIC   | Static StreamPriority for path prefix                 |
+| `exeris.memory.global-bytes`                       | `long`    | auto (50% RAM)    | ❌ IMMUTABLE | Total off-heap arena budget                           |
+| `exeris.memory.watermark.poll-interval-ms`         | `int`     | `50`              | ✅ DYNAMIC   | WatermarkManager sampling interval                    |
+| `exeris.memory.telemetry.allocation-sample-rate`   | `double`  | `0.01`            | ✅ DYNAMIC   | JFR MemoryAllocationEvent sampling rate (0.0–1.0)     |
+| `exeris.memory.partitions.<name>.budget-fraction`  | `double`  | see PartitionedPool | ✅ DYNAMIC | Off-heap budget fraction per partition              |
+| `exeris.memory.leak-detection`                     | `string`  | `SAMPLED`         | ❌ IMMUTABLE | `DISABLED`, `SAMPLED`, `PARANOID`                     |
+| `exeris.crypto.tls.min-version`                    | `string`  | `TLSv1.3`         | ❌ IMMUTABLE | Minimum TLS version accepted                          |
+| `exeris.persistence.pool.max-size`                 | `int`     | `20`              | ❌ IMMUTABLE | JDBC connection pool max connections                  |
+| `exeris.persistence.pool.connection-timeout-ms`    | `int`     | `5000`            | ✅ DYNAMIC   | JDBC pool acquisition timeout                         |
+| `exeris.persistence.pool.idle-timeout-ms`          | `int`     | `600000`          | ✅ DYNAMIC   | JDBC pool idle connection timeout                     |
+| `exeris.persistence.pool.keepalive-ms`             | `int`     | `30000`           | ✅ DYNAMIC   | JDBC pool keepalive heartbeat interval                |
+| `exeris.persistence.outbox.max-retries`            | `int`     | `10`              | ✅ DYNAMIC   | Max Outbox delivery retries before DLQ               |
+| `exeris.persistence.outbox.backoff-base-ms`        | `int`     | `100`             | ✅ DYNAMIC   | Outbox retry base backoff (ms)                       |
+| `exeris.config.vault.timeout-ms`                   | `int`     | `3000`            | ❌ IMMUTABLE | Vault connection timeout during bootstrap             |
+| `exeris.config.vault.retry-count`                  | `int`     | `3`               | ❌ IMMUTABLE | Vault connection retry attempts before FAIL_FAST      |
+| `exeris.flow.saga.global-park-timeout-ms`          | `long`    | `1800000` (30 min)| ✅ DYNAMIC   | Max Saga park duration before timeout compensation    |
+| `exeris.crash-dir`                                 | `string`  | platform default  | ❌ IMMUTABLE | Override for Glass-Box crash buffer directory (also: `EXERIS_CRASH_DIR` ENV) |
+
+> **Auto-detection:** `exeris.memory.global-bytes` defaults to 50% of available JVM process RAM
+> (`Runtime.getRuntime().maxMemory() * 0.5`). Override explicitly in production for predictable
+> behaviour under K8s memory limits.
+
+---
+
+## Vault Down-at-Boot Strategy
+
+When Vault is unavailable during the bootstrap phase (`exeris.config.vault.timeout-ms` exceeded):
+
+| Mode              | Behaviour                                                                                         |
+|:------------------|:--------------------------------------------------------------------------------------------------|
+| `FAIL_FAST` (default) | `EX-CFG-1001` thrown after `vault.retry-count` attempts × `vault.timeout-ms` deadline. Kernel halts. K8s liveness probe returns `503` → pod is replaced. |
+| `DEGRADE`         | Last-known configuration (from file/classpath) is used for secrets. A `KernelBootstrapEvent` WARNING is emitted in JFR. **NEVER deploy DEGRADE mode to production** — it means the application starts with potentially stale or empty secrets. |
+
+**Recommended K8s pattern:**
+Use `initContainer` to validate Vault connectivity before the main container starts. This prevents the
+Exeris bootstrap from wasting retry cycles:
+
+```yaml
+initContainers:
+  - name: vault-check
+    image: curlimages/curl
+    command: ["sh", "-c", "until curl -fs http://vault:8200/v1/sys/health; do sleep 2; done"]
+```
+
+---
+
+## Hot-Reload — Performance Contract and Audit Log
+
+### Latency SLO
+
+| Event                              | Maximum latency (P99)   | Measurement                                    |
+|:-----------------------------------|:-----------------------:|:-----------------------------------------------|
+| File change detected (`inotify`)   | ≤ 50 ms                | OS `inotify` → `WatchService` event            |
+| Config value updated (`VarHandle`) | ≤ 1 µs                 | `TIMEOUT_HANDLE.setRelease()` — single CAS     |
+| End-to-end reload visible          | ≤ 100 ms               | From filesystem write to `getAcquire()` read   |
+
+> **`inotify` note:** On Linux, `WatchService` uses `inotify` — kernel-level file system change
+> notification. Latency is typically < 10 ms on a locally mounted filesystem. NFS-mounted ConfigMaps
+> in Kubernetes may have higher latency depending on mount options and poll intervals.
+
+### Audit Log — JFR Event
+
+Every hot-reload of a `@Dynamic` key emits a JFR event. This satisfies audit requirements in
+regulated environments (fintech, healthcare) without logging raw values.
+
+```java
+@jdk.jfr.Label("Config Hot-Reload")
+@jdk.jfr.Category({"Exeris", "Config"})
+@jdk.jfr.StackTrace(false)
+public final class ConfigHotReloadEvent extends jdk.jfr.Event {
+    String configKey;
+    String providerName;   // "file", "env", "vault"
+    boolean succeeded;
+    // NOTE: old/new values are NEVER included — CWE-532 contract
+}
+```
+
+The event records **which key changed** and **which provider delivered the new value**, but never
+the old or new value itself. In regulated environments, this event stream is the config audit log.
 
 ---
 

@@ -1,4 +1,4 @@
-﻿# Kernel Subsystem: Persistence (L1 Data & Integrity)
+﻿﻿# Kernel Subsystem: Persistence (L1 Data & Integrity)
 
 **Physical Layout:**
 
@@ -163,6 +163,84 @@ PersistenceProvider provider = ServiceLoader.load(PersistenceProvider.class)
                 KernelErrorCodes.EX_PERS_5007,
                 "No PersistenceProvider found — add exeris-kernel-community or exeris-kernel-enterprise"));
 ```
+
+---
+
+---
+
+## Connection Pool Sizing — Loom-First Guidance
+
+Virtual Threads decouple concurrency from OS threads, but JDBC connection pools must remain
+**physically bounded** — a connection represents a server-side resource on PostgreSQL, not a JVM
+thread. The following guidance applies:
+
+| Factor                         | Recommendation                                                                                                 |
+|:-------------------------------|:---------------------------------------------------------------------------------------------------------------|
+| **Pool size formula**          | `cores × 2 + effective_spindle_count` (PgBouncer rule). For NVMe-backed PostgreSQL: `cores × 2`. Ignore VT count entirely — pool size is a DB resource limit, not a thread limit. |
+| **Typical range**              | 10–50 connections per JVM instance. Do NOT scale pool size proportionally to VT count (millions of VTs with 50 connections = correct; 1M connections = PostgreSQL crash). |
+| **Overflow behaviour**         | When pool is exhausted, the JDBC driver blocks the VT (parking, not pinning — see VT Pinning Check below). If the acquisition timeout fires, `EX-PERS-5002` is thrown with `rawArgs[1]=timeoutMs`. |
+| **HikariCP minimum config**    | `maximumPoolSize`: bounded (see formula); `connectionTimeout`: 5 000 ms; `idleTimeout`: 600 000 ms; `keepaliveTime`: 30 000 ms; `validationTimeout`: 5 000 ms. |
+| **Connection validation**      | Stale connections (idle timeout, PostgreSQL failover, `tcp_keepalive_time` breach) are detected via HikariCP's `keepaliveTime` heartbeat. A new connection is acquired transparently. If validation fails at acquisition time, the pool discards the stale connection and retries up to `initializationFailTimeout`. On repeated failure: `EX-PERS-5003` (sqlState `08006` = connection failure). |
+
+> **Anti-pattern:** `maximumPoolSize=1000` in a 10-core Kubernetes pod. This creates 1000 PostgreSQL
+> backend processes, each consuming ~5 MB RAM. On a 3-replica deployment that is 3000 backends —
+> PostgreSQL will reject connections before any query runs. Always size the pool to the DB server,
+> not to the concurrency level of the application.
+
+---
+
+## Database Schema Management — Migration Strategy
+
+The Exeris Kernel **does not manage database schemas**. Schema creation, versioning, and migration
+are the responsibility of the application layer or a dedicated migration tool.
+
+| Concern                             | Recommendation                                                                                           |
+|:------------------------------------|:---------------------------------------------------------------------------------------------------------|
+| **Initial schema creation**         | Use Flyway or Liquibase, executed before the Exeris Kernel boots (K8s `initContainer` pattern).          |
+| **Zero-downtime migrations**        | Expand/contract pattern: add columns as nullable, back-fill, add constraints in a subsequent deployment. |
+| **Exeris-internal tables**          | The Transactional Outbox table (`exeris_outbox`) and Saga state table (`exeris_saga_state`) are created by the Kernel's bootstrap interceptor (`PersistenceInitializer`) on first boot, using `CREATE TABLE IF NOT EXISTS`. This is the **only** DDL the Kernel executes autonomously. |
+| **Multi-tenant schema migrations**  | For `Dedicated Schema` isolation strategy: migrations must be applied per-tenant schema. The Kernel does not orchestrate this. Use a Flyway multi-schema configuration or a custom migration runner. |
+
+---
+
+## Transactional Outbox — Poison Message Handling
+
+The Transactional Outbox guarantees at-least-once delivery. "Poison messages" — events that consistently
+fail delivery to the broker regardless of retries — must be handled explicitly.
+
+### Retry Policy
+
+| Attempt | Delay (exponential backoff)  | Action                                                   |
+|:--------|:-----------------------------|:---------------------------------------------------------|
+| 1       | 0 ms (immediate)             | First delivery attempt                                   |
+| 2–5     | `2^n × 100 ms` (capped 16 s) | Retry with exponential backoff                           |
+| 6–10    | 16 s (fixed)                 | Extended retry                                           |
+| > 10    | DLQ transition               | Record moved to `exeris_outbox_dlq` table                |
+
+### Dead Letter Queue (DLQ)
+
+After `exeris.persistence.outbox.max-retries` (default: 10) failed delivery attempts, the record
+is moved atomically to the `exeris_outbox_dlq` table and removed from the main outbox. A `JFR` event
+(`OutboxDlqEvent`) is emitted with `rawArgs[0]=String eventType, rawArgs[1]=long outboxRecordId`.
+
+**DLQ schema (auto-created on first boot):**
+
+```sql
+CREATE TABLE IF NOT EXISTS exeris_outbox_dlq (
+    id            BIGSERIAL PRIMARY KEY,
+    original_id   BIGINT NOT NULL,
+    event_type    TEXT NOT NULL,
+    payload       BYTEA NOT NULL,
+    failure_reason TEXT,
+    moved_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    tenant_id     TEXT
+);
+```
+
+**Operator recovery:** Inspect `exeris_outbox_dlq` and either re-queue records manually
+(`INSERT INTO exeris_outbox SELECT ... FROM exeris_outbox_dlq WHERE id = ?`) or discard them after
+root cause analysis. There is no automatic re-queue from DLQ — this is intentional to prevent
+infinite retry storms.
 
 ---
 

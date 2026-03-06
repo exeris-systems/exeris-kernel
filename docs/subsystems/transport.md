@@ -174,6 +174,136 @@ public interface StreamHandler {
 
 ---
 
+---
+
+## PAQS Decision Flow (Full Sequence)
+
+The diagram below shows the complete path of an incoming stream through the PAQS admission gate —
+from NIC arrival through the WatermarkManager check to either Virtual Thread fork or shed.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant NIC   as NIC / Transport Carrier
+    participant PAQS  as PAQS Scheduler (Core)
+    participant WM    as WatermarkManager (L0)
+    participant RA    as ResourceArbiter (L0)
+    participant VT    as Virtual Thread (Loom)
+
+    NIC->>PAQS: onStreamArrival(stream, rawHeaders)
+    PAQS->>PAQS: extractStreamPriority(stream)<br/>HTTP header / JWT claim / config default
+
+    PAQS->>WM: currentWatermarkLevel()
+    WM-->>PAQS: NORMAL | HIGH | CRITICAL
+
+    alt NORMAL watermark
+        PAQS->>RA: reserveSlabSlot()
+        RA-->>PAQS: slot granted
+        PAQS->>VT: Thread.ofVirtual().start(streamHandler)
+        Note over VT: Request processed imperatively.<br/>ScopedValues bound. StructuredTaskScope used downstream.
+    else HIGH watermark — priority gate active
+        PAQS->>PAQS: streamPriority.ordinal() >= threshold?
+        alt priority sufficient
+            PAQS->>RA: reserveSlabSlot()
+            RA-->>PAQS: slot granted
+            PAQS->>VT: Thread.ofVirtual().start(streamHandler)
+        else priority insufficient
+            PAQS->>NIC: stream.close()<br/>[FIN — graceful RST on QUIC]
+            PAQS->>PAQS: emit StreamShedEvent (JFR, @StackTrace false)
+            Note over PAQS: EX-NET-4006 thrown — no VT spawned,<br/>no heap allocation, no log.
+        end
+    else CRITICAL watermark — shed all
+        PAQS->>NIC: stream.close()
+        PAQS->>PAQS: emit StreamShedEvent (JFR)
+        Note over PAQS: All streams shed regardless of priority.
+    end
+```
+
+---
+
+## `StreamPriority` — Origin and Assignment
+
+`StreamPriority` is not self-declared by the client. It is **assigned by the Kernel** at the transport
+edge based on verifiable attributes. The priority assignment chain:
+
+| Source                             | Mechanism                                                                                         | Trust Level        |
+|:-----------------------------------|:--------------------------------------------------------------------------------------------------|:-------------------|
+| **JWT claim `x-exeris-priority`**  | Extracted from the validated token by `SecurityInterceptor` before PAQS admission. Cannot be forged — the JWT is cryptographically verified. | High (verified) |
+| **HTTP/QUIC stream header `x-priority`** | Mapped to `StreamPriority` enum by transport carrier. Treated as **untrusted input** — capped at `STANDARD` unless the JWT claim overrides. | Low (untrusted) |
+| **Endpoint configuration**         | Static mapping via `exeris.transport.paqs.endpoint-priority.<path>` config key. Overrides header. | High (operator) |
+| **Default (no source)**            | `StreamPriority.STANDARD`                                                                         | N/A               |
+
+**Priority enum (SPI):**
+
+```
+StreamPriority {
+    CRITICAL(0),   // payments, health checks, ops — never shed except at CRITICAL watermark
+    HIGH(1),       // premium tier, authenticated business flows
+    STANDARD(2),   // default — most application traffic
+    LOW(3),        // telemetry, batch jobs, analytics
+    BACKGROUND(4)  // best-effort only
+}
+```
+
+> **PAQS invariant:** Priority is evaluated **once** at stream admission. It cannot change mid-stream.
+> This ensures O(1) shed decisions with zero re-evaluation overhead.
+
+---
+
+## Connection Draining Policy
+
+When PAQS sheds a stream or the Kernel initiates graceful shutdown:
+
+| Scenario               | TCP (Community)                                     | QUIC (Enterprise)                                        |
+|:-----------------------|:----------------------------------------------------|:---------------------------------------------------------|
+| **PAQS load shed**     | `FIN` (graceful close) — client receives `HTTP 503` | `CONNECTION_CLOSE` frame (QUIC error `0x00`) — no RST   |
+| **Graceful shutdown**  | `FIN` after drain timeout — no forced `RST`         | `GOAWAY` frame issued to drain existing streams          |
+| **Hard shutdown timeout** | `RST` after 60 s hard timeout                   | `CONNECTION_CLOSE` with application error code `0x01`   |
+
+> **Why `FIN` not `RST` for load shedding?** `RST` causes immediate connection teardown on the client
+> side, which may interrupt in-flight retries and force the client to reconnect. `FIN` allows the client
+> to receive the `HTTP 503` response body, which is machine-readable and enables intelligent backoff.
+> `RST` is reserved for hard timeout scenarios only.
+
+---
+
+## WebSocket / SSE — Design Stance
+
+**WebSocket and Server-Sent Events (SSE) are not supported at TRL-3.** This is a deliberate scope
+constraint, not an oversight.
+
+| Protocol     | Status      | Rationale                                                                                              |
+|:-------------|:------------|:-------------------------------------------------------------------------------------------------------|
+| **WebSocket** | 🚧 Planned TRL-5 | Requires long-lived, upgradeable TCP connections. Community TCP carrier needs HTTP Upgrade handling. Will be implemented as a `StreamHandler` variant. |
+| **SSE**       | 🚧 Planned TRL-5 | Requires one-directional streaming via HTTP/1.1 chunked transfer or HTTP/2 push. Follows WebSocket implementation. |
+| **HTTP/2 Push** | 🚧 Planned TRL-5 | Enterprise QUIC/HTTP3 transport is the target carrier for push semantics. |
+| **gRPC streaming** | 🚧 Planned TRL-5 | Modelled as HTTP/2 streams — follows transport carrier maturity. |
+
+For real-time push requirements at TRL-3, use the **Events subsystem (L3)** with a Kafka/Redpanda
+backend and a polling client. The PAQS scheduler handles priority-based delivery.
+
+---
+
+## Proxy Protocol v2 — Client IP Preservation
+
+Exeris Community and Enterprise transport drivers support **Proxy Protocol v2** (HAProxy specification)
+for client IP preservation behind load balancers (HAProxy, NGINX, AWS NLB, GCP LB).
+
+| Feature                        | Community       | Enterprise      |
+|:-------------------------------|:---------------:|:---------------:|
+| Proxy Protocol v2 parsing      | ✅              | ✅              |
+| Real client IP in `StreamHeaders` | ✅ `remoteAddress()` | ✅ `remoteAddress()` |
+| TLV extension support           | 🚧 Planned TRL-4 | 🚧 Planned TRL-4 |
+
+Enable via: `exeris.transport.proxy-protocol.enabled=true` (default: `false`).
+
+> When Proxy Protocol is enabled, the transport carrier reads the PP2 header before any TLS handshake
+> attempt. The real client IP is extracted and stored in the `Stream` metadata. If the PP2 header is
+> malformed or absent (and `proxy-protocol.required=true`), the connection is dropped immediately with
+> `EX-NET-4001`. This prevents forged client IPs when Proxy Protocol is required by the network topology.
+
+---
+
 ## Testing Strategy
 
 ### Unit Tests
