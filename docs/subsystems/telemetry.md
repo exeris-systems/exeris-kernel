@@ -24,8 +24,11 @@
 > - The `KernelProviders.TELEMETRY_PROVIDER` `ScopedValue` slot is an **active, bootstrap-bound slot**.
 >   Code that runs after `KernelBootstrap` may assume it is bound. Accessing it before bootstrap completes
 >   is a programming error and will surface as `NoSuchElementException` in tests.
-> - Note: `TelemetryRouter` and `TelemetryEvent` do **not** exist in the SPI — use `TelemetryProvider`
->   and `KernelEvent` respectively.
+> - Note: there is **no** `TelemetryRouter` or `TelemetryEvent` type in the telemetry SPI. The SPI
+>   entry points are `TelemetryProvider` (factory) and `TelemetrySink` (emit/increment/gauge/latency),
+>   and the canonical event envelope is `KernelEvent`. Any `TelemetryRouter` mentioned later in this
+>   document or in diagrams is a Core-only routing/orchestration helper built on top of `TelemetrySink`,
+>   not an SPI interface.
 
 ---
 
@@ -55,7 +58,7 @@ carries a `rawArgs: Object[]` payload that encodes domain context as **raw primi
 | Zero string formatting on hot-path | `rawArgs[]` are never concatenated inside `ExerisKernelException`                  |
 | JFR-First                          | Every critical lifecycle event emits a typed `@jdk.jfr.Event` subclass             |
 | Pluggable sinks                    | `TelemetrySink` SPI — Community gets JFR/SLF4J, Enterprise gets binary ring-buffer |
-| Async dispatch                     | `TelemetryRouter` dispatches to sinks off the caller's critical path               |
+| Async dispatch                     | Core-internal dispatcher fans out to registered `TelemetrySink` instances off the caller's critical path |
 | Structured error codes             | `EX-[DOMAIN]-[ID]` format enables log-scraper pattern matching without regex       |
 
 ---
@@ -180,11 +183,11 @@ flowchart LR
 
     B["rawArgs array\n<b>primitives only, zero alloc</b>\nlong · int · Enum · String constants\nNo StringBuilder · No toString()"]
 
-    C{"<b>TelemetryRouter</b>\n.emitEvent()\n<i>(ScopedValue slot)</i>"}
+    C{"<b>KernelProviders</b>\nTELEMETRY_PROVIDER\n<i>(ScopedValue slot)</i>"}
 
     D["<b>JfrTelemetrySink</b>\nTyped jdk.jfr.Event\ncommit() → JFR stream\n<i>[Community]</i>"]
 
-    E["<b>Slf4jTelemetrySink</b>\nStructured JSON line\nMDC fields from rawArgs\n<i>[Community — fallback]</i>"]
+    E["<b>Slf4jTelemetrySink</b>\nStructured JSON line\nMDC fields from rawArgs\n<i>[Community — planned]</i>"]
 
     F["<b>DeterministicBinarySink</b>\nFixed-width binary frame\nMemorySegment.set() direct write\n<i>[Enterprise]</i>"]
 
@@ -225,18 +228,21 @@ Every critical lifecycle transition MUST emit a typed JFR event. No `Logger.info
 
 | Event Class             | When Emitted                                    | Key Fields                                            |
 |:------------------------|:------------------------------------------------|:------------------------------------------------------|
-| `KernelBootstrapEvent`  | Start and end of each subsystem init            | `subsystemName`, `durationNanos`, `phase`             |
-| `MemoryAllocationEvent` | Sampling path (configurable rate, default 1%)   | `sizeBytes`, `hint`, `tierName`, `latencyNanos`       |
-| `MemoryExhaustionEvent` | On every `MemoryExhaustedException` throw       | `requestedBytes`, `availableBytes`, `allocatorName`   |
-| `ArenaLeakEvent`        | `LeakTracker` detection (PARANOID/SAMPLED mode) | `segmentAddress`, `sizeBytes`, `allocationStackTrace` |
-| `TransportBindEvent`    | On `Transport#bind()`                           | `transportName`, `port`, `protocol`                   |
-| `StreamShedEvent`       | On every PAQS load-shed (`EX-NET-4006`)         | `transportName`, `streamPriority`, `thresholdPriority`, `watermarkLevel` |
-| `CarrierPinnedEvent`    | Virtual thread pins carrier > threshold         | `blockTimeMs`, `carrierThreadName`, `stackTrace`      |
-| `TlsHandshakeEvent`     | Start and end of TLS handshake                  | `sessionId`, `protocol`, `cipher`, `durationNanos`    |
-| `TlsHandshakeFailureEvent` | Handshake exception                          | `errorCode`, `peerAddress`, `failureReason`           |
-| `ConfigHotReloadEvent` *(planned, TRL‑4 target; not yet implemented JFR event)* | `@Dynamic` config key updated | `configKey`, `providerName`, `succeeded` |
-| `OutboxDlqTransferEvent` *(planned, TRL‑4 target; not yet implemented JFR event)* | Outbox record moved to DLQ after max retries | `eventType`, `outboxRecordId`, `attempt` |
-| `SagaLifecycleEvent` *(planned, TRL‑4 target; not yet implemented JFR event)* | Saga state transition | `sagaType`, `status`, `durationNanos`, `stepIndex` |
+| `BootstrapJfrEvents.SubsystemInitializedEvent` | Start and end of each subsystem init | `subsystemName`, `durationMs`, `phase` |
+| `CommunityAllocationEvent` *(community module)* | Community-tier buffer allocation (when `jfrEnabled=true`) | `sizeBytes`, `hint`, `tierName` |
+| `TelemetryJfrEvents.MemoryExhaustionJfrEvent` | On every `MemoryExhaustedException` (EX-MEM-1001) | `errorCode`, `requestedBytes`, `availableBytes`, `component` |
+| `LeakDetectedEvent`     | `LeakTracker` detection (PARANOID/SAMPLED mode) | `segmentAddress`, `segmentByteSize`                   |
+| `TelemetryJfrEvents.TransportBindJfrEvent` | On transport bind / engine-start lifecycle (EX-NET-4001/4005) | `errorCode`, `transportName`, `port`, `component` |
+| `StreamShedEvent` *(eu.exeris.kernel.core.transport.jfr)* | On every PAQS load-shed | `streamId`, `priority`, `shedReason`, `engineName`, `activeStreamCount` |
+| `TelemetryJfrEvents.CarrierPinnedJfrEvent` | Virtual thread pins carrier > threshold (EX-RUN-3002) | `errorCode`, `blockTimeMs`, `component` |
+| `CommunityTlsHandshakeEvent` *(community module)* | Each `SSL_do_handshake` invocation | `complete`, `opensslError` |
+| `TlsPhaseTransitionEvent` *(eu.exeris.kernel.core.crypto.tls)* | Every `TlsStateMachine` phase transition | `sslPtr`, `fromPhase`, `toPhase` |
+| `TlsEngineCloseEvent` *(eu.exeris.kernel.core.crypto.tls)* | `OffHeapTlsEngine` → CLOSED | `sslPtr`, `graceful`, `finalPhase` |
+| `TlsHandshakeEvent` *(planned, TRL‑4 target; not yet implemented)* | Start and end of TLS handshake (cross-tier) | `sessionId`, `protocol`, `cipher`, `durationNanos` |
+| `TlsHandshakeFailureEvent` *(planned, TRL‑4 target; not yet implemented)* | Handshake exception | `errorCode`, `peerAddress`, `failureReason` |
+| `ConfigHotReloadEvent` *(planned, TRL‑4 target; not yet implemented)* | `@Dynamic` config key updated | `configKey`, `providerName`, `succeeded` |
+| `OutboxDlqTransferEvent` *(planned, TRL‑4 target; not yet implemented)* | Outbox record moved to DLQ after max retries | `eventType`, `outboxRecordId`, `attempt` |
+| `SagaLifecycleEvent` *(planned, TRL‑4 target; not yet implemented)* | Saga state transition | `sagaType`, `status`, `durationNanos`, `stepIndex` |
 
 ### JFR Event Pattern (Zero-Allocation)
 
@@ -273,27 +279,28 @@ Stack trace capture is O(depth) allocation — it is reserved for `LeakTracker` 
 ## SPI Architecture
 
 ```
-TelemetryRouter (SPI interface)
+TelemetryProvider (SPI interface — factory)
   │
-  ├─ isEnabled()          → fast-path gate: if false, all emitXxx() are no-ops
-  ├─ emitEvent(Event)     → async dispatch to registered sinks
-  ├─ emitMetric(Metric)   → gauge/counter dispatch
-  └─ emitSpan(Span)       → distributed trace span dispatch
+  └─ create() → TelemetrySink
 
 TelemetrySink (SPI interface) — implemented by:
   ├─ [Community] JfrTelemetrySink          → writes to JFR event stream
-  ├─ [Community] Slf4jTelemetrySink        → fallback structured logging
+  ├─ [Community] Slf4jTelemetrySink        → planned fallback (not yet implemented)
   └─ [Enterprise] DeterministicBinarySink  → writes to off-heap ring buffer (zero GC)
 ```
 
 ### ScopedValue Propagation
 
-`TelemetryRouter` is propagated via `ScopedValue` (see `KernelProviders`).
-**No static router singleton** — legacy `TelemetryRouter.isEnabled()` static method is banned.
+`TelemetryProvider` is propagated via `ScopedValue` (see `KernelProviders`).
+**No static router singleton** — any static `TelemetryRouter.isEnabled()` method is banned.
+
+> **Core-internal note:** `exeris-kernel-core` may use an internal `TelemetryRouter` helper class
+> to fan out events to multiple sinks, but this is **not** an SPI type and is invisible to consumers
+> of the public API.
 
 ```java
 // ✅ CORRECT:
-KernelProviders.TELEMETRY_PROVIDER.get().emitEvent(event);
+KernelProviders.TELEMETRY_PROVIDER.get().emit(event);
 
 // ❌ BANNED (static singleton — violates The Wall):
 TelemetryRouter.emitMetric(metric);
@@ -306,7 +313,7 @@ TelemetryRouter.emitMetric(metric);
 ### Community (Free Tier)
 
 - `JfrTelemetrySink` — writes typed JFR events. Zero external dependencies. Works with `jcmd` and JDK Mission Control.
-- `Slf4jTelemetrySink` — fallback for environments without JFR. Emits structured JSON lines via SLF4J MDC.
+- `Slf4jTelemetrySink` — **planned** fallback for environments without JFR. Not yet implemented in this repository. `exeris-kernel-community` currently declares no SLF4J dependencies.
 
 ### Enterprise (Secret Sauce — lives in `exeris-kernel-enterprise`)
 
@@ -393,31 +400,32 @@ java -jar exeris-decoder.jar --jfr boot.jfr
 
 ---
 
-## `Slf4jTelemetrySink` — SLF4J Binding Details
+## Planned `Slf4jTelemetrySink` — SLF4J Binding (Not Yet Implemented)
 
-`Slf4jTelemetrySink` is the fallback sink for environments without JFR (e.g., some container runtimes
-with restricted JVM flags). It requires an SLF4J binding on the classpath.
+`Slf4jTelemetrySink` is a **planned** fallback sink for environments without JFR (e.g., some container
+runtimes with restricted JVM flags). It is **not yet implemented** in this repository and is **not**
+available in current builds of `exeris-kernel-community`.
 
-| Requirement               | Detail                                                                                   |
+| Aspect                    | Detail                                                                                   |
 |:--------------------------|:----------------------------------------------------------------------------------------|
-| **SLF4J version**         | SLF4J API 2.x (required for MDC fluent API). SLF4J 1.x is not supported.               |
-| **Recommended binding**   | Logback Classic 1.5+ (supports structured JSON via `logstash-logback-encoder`)          |
-| **Alternative binding**   | Log4j2 2.23+ SLF4J bridge                                                               |
-| **Transitive dependency** | `exeris-kernel-community` declares `slf4j-api:2.x` as `provided` scope — the application must supply the binding. If no binding is on the classpath, SLF4J will print a warning and `Slf4jTelemetrySink` becomes a no-op. |
-| **Structured JSON output**| MDC fields populated: `errorCode`, `traceId`, `subsystem`, `rawArgs.*`. Use `%mdc` in Logback pattern or `logstash-logback-encoder` for full structured output. |
+| **Status**                | Planned / Not yet implemented in this repo                                              |
+| **Intended role**         | Fallback sink when `JfrTelemetrySink` cannot be used (e.g., JFR disabled/unavailable)   |
+| **Intended SLF4J version**| SLF4J API 2.x (for MDC fluent API). SLF4J 1.x would not be supported.                   |
+| **Dependency model**      | To be defined. `exeris-kernel-community` currently declares **no** SLF4J dependencies; applications must configure logging independently. |
+| **Planned JSON semantics**| When implemented, MDC fields such as `errorCode`, `traceId`, `subsystem`, `rawArgs.*` are expected to be populated for structured logging. |
 
 ---
 
-## TelemetryRouter — Lifecycle and L0 Integration
+## Telemetry Lifecycle and L0 Integration
 
-`TelemetryRouter` is initialised as part of the **L1 boot layer** — after L0 (Config, Memory, Exceptions)
-completes. This creates a deliberate gap: L0 subsystems cannot emit JFR events through `TelemetryRouter`.
+The telemetry subsystem is initialised as part of the **L1 boot layer** — after L0 (Config, Memory, Exceptions)
+completes. This creates a deliberate gap: L0 subsystems cannot emit JFR events through the telemetry pipeline.
 
 | Phase               | Telemetry Available                                    | Mechanism                                      |
 |:--------------------|:-------------------------------------------------------|:-----------------------------------------------|
 | **L0 boot (pre-JFR)** | ❌ JFR sink not yet bound                            | Glass-Box pre-allocated in-RAM buffer (L0-only) |
-| **L1 boot**         | ✅ JFR sink bound; `TelemetryRouter` active            | `KernelProviders.TELEMETRY_PROVIDER` ScopedValue populated |
-| **READY**           | ✅ Full — JFR + `Slf4jTelemetrySink` + Binary sink     | Normal operation                                |
+| **L1 boot**         | ✅ JFR sink bound; `KernelProviders.TELEMETRY_PROVIDER` populated | `ScopedValue` slot bound by `KernelBootstrap` |
+| **READY**           | ✅ Full — `JfrTelemetrySink` + planned `Slf4jTelemetrySink` + Binary sink | Normal operation |
 | **SHUTTING_DOWN**   | ✅ Until `releaseArenas()` call                         | Events after Arena release are lost             |
 
 **L0 failure observability:** Any `ExerisKernelException` thrown during L0 (Config, Memory, Exceptions init)

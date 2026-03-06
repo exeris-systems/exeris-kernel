@@ -194,25 +194,25 @@ sequenceDiagram
     PAQS->>PAQS: extractStreamPriority(stream)<br/>HTTP header / JWT claim / config default
 
     PAQS->>WM: currentWatermarkLevel()
-    WM-->>PAQS: NORMAL | HIGH | CRITICAL
+    WM-->>PAQS: NORMAL | WARNING | CRITICAL | SHEDDING
 
     alt NORMAL watermark
         PAQS->>RA: reserveSlabSlot()
-        RA-->>PAQS: slot granted
+        RA-->>PAQS: ResourceArbiter.Action (ALLOW — slot granted)
         PAQS->>VT: Thread.ofVirtual().start(streamHandler)
         Note over VT: Request processed imperatively.<br/>ScopedValues bound. StructuredTaskScope used downstream.
-    else HIGH watermark — priority gate active
+    else WARNING watermark — priority gate active
         PAQS->>PAQS: streamPriority.ordinal() >= threshold?
         alt priority sufficient
             PAQS->>RA: reserveSlabSlot()
-            RA-->>PAQS: slot granted
+            RA-->>PAQS: ResourceArbiter.Action (THROTTLE — slot granted)
             PAQS->>VT: Thread.ofVirtual().start(streamHandler)
         else priority insufficient
             PAQS->>NIC: stream.close()<br/>[FIN — graceful RST on QUIC]
             PAQS->>PAQS: emit StreamShedEvent (JFR, @StackTrace false)
             Note over PAQS: EX-NET-4006 thrown — no VT spawned,<br/>no heap allocation, no log.
         end
-    else CRITICAL watermark — shed all
+    else CRITICAL or SHEDDING watermark — shed all
         PAQS->>NIC: stream.close()
         PAQS->>PAQS: emit StreamShedEvent (JFR)
         Note over PAQS: All streams shed regardless of priority.
@@ -236,12 +236,12 @@ edge based on verifiable attributes. The priority assignment chain:
 **Priority enum (SPI):**
 
 ```
-StreamPriority {
-    CRITICAL(0),   // payments, health checks, ops — never shed except at CRITICAL watermark
-    HIGH(1),       // premium tier, authenticated business flows
-    NORMAL(2),     // default — most application traffic
-    LOW(3),        // telemetry, batch jobs, analytics
-    BACKGROUND(4)  // best-effort only
+enum StreamPriority {
+    CRITICAL,   // payments, health checks, ops — never shed except at SHEDDING watermark
+    HIGH,       // premium tier, authenticated business flows
+    NORMAL,     // default — most application traffic
+    LOW,        // lower-value application traffic, batch jobs, analytics
+    TELEMETRY   // observability-only streams, fire-and-forget metrics/logs
 }
 ```
 
