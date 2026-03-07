@@ -174,8 +174,6 @@ public interface StreamHandler {
 
 ---
 
----
-
 ## PAQS Decision Flow (Full Sequence)
 
 The diagram below shows the complete path of an incoming stream through the PAQS admission gate —
@@ -228,9 +226,9 @@ edge based on verifiable attributes. The priority assignment chain:
 
 | Source                             | Mechanism                                                                                         | Trust Level        |
 |:-----------------------------------|:--------------------------------------------------------------------------------------------------|:-------------------|
-| **JWT claim `x-exeris-priority`**  | Extracted from the validated token by `SecurityInterceptor` before PAQS admission. Cannot be forged — the JWT is cryptographically verified. | High (verified) |
-| **HTTP/QUIC stream header `x-priority`** | Mapped to `StreamPriority` enum by transport carrier. Treated as **untrusted input** — capped at `NORMAL` unless the JWT claim overrides. | Low (untrusted) |
-| **Endpoint configuration**         | Static mapping via `exeris.transport.paqs.endpoint-priority.<path>` config key. Overrides header. | High (operator) |
+| **Authenticated principal attribute** | Derived from the validated `PrincipalContext` provided by `SecurityProvider` before PAQS admission (for example, from a token claim or directory attribute). Cannot be client-forged once authentication succeeds. | High (verified) |
+| **HTTP/QUIC stream header `x-priority`** | Mapped to `StreamPriority` enum by transport carrier. Treated as **untrusted input** — capped at `NORMAL` unless an authenticated principal attribute (see above) overrides. | Low (untrusted) |
+| **Endpoint configuration**         | Static mapping via `network.paqs.endpointPriority.<path>` config key. Overrides header. | High (operator) |
 | **Default (no source)**            | `StreamPriority.NORMAL`                                                                         | N/A               |
 
 **Priority enum (SPI):**

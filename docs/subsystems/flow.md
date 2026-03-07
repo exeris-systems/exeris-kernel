@@ -3,9 +3,10 @@
 **Physical Layout:**
 
 - **SPI:** `eu.exeris.kernel.spi.flow.*`
-  (`Saga`, `SagaStep`, `Compensation`, `FlowContext`)
+  (`FlowEngine`, `FlowProvider`, `FlowDefinitionBuilder`, `FlowExecutionPlanFactory`,
+  `FlowRegistry`, `FlowScheduler`, `FlowEngineConfig`, `FlowEngineStats`, `FlowEngineCapabilities`)
 - **Core:** `eu.exeris.kernel.core.flow.*`
-  (`FlowEngine`, `StateMachine`, `IdempotencyGuard`)
+  (`StateMachine`, `IdempotencyGuard` — *(planned, TRL-4; not yet present in this repo)*)
 - **State Storage:**
     - **`community`:** PostgreSQL-backed state persistence
     - **`enterprise`:** Linear Probing Off-Heap Cache (lock-free) + Async DB Write-Behind
@@ -80,10 +81,11 @@ concern, not a latency tax.
 
 **What Flow SPI DOES:**
 
-1. Define `Saga<T>` and `SagaStep` lifecycle contracts.
-2. Provide `FlowDefinitionBuilder` fluent API for compensation chain definition.
-3. Define `FlowContext` for passing business data through steps.
-4. Define the `Compensatable` contract for rollback logic.
+1. Define `FlowEngine` as the central runtime facade for all flow orchestration operations.
+2. Provide `FlowDefinitionBuilder` fluent API for compensation chain definition (accessed via `FlowEngine.plans().newDefinition(...)`).
+3. Define `FlowExecutionPlanFactory` for compiling definitions into executable plans.
+4. Define `FlowRegistry` and `FlowScheduler` for plan registration and execution scheduling.
+5. Define `FlowEngineConfig`, `FlowEngineStats`, and `FlowEngineCapabilities` for configuration and observability.
 
 **What Flow Core DOES:**
 
@@ -121,21 +123,20 @@ select the correct interpretation of `contextVal`.
 
 ## Code Examples
 
-### 1. Defining a Compensatable Saga (SPI)
+### 1. Defining a Compensatable Flow (SPI)
 
 Imperative logic mapping to a rigid State Machine. No annotation-based disk dumps mid-method.
 
 ```java
-public class OrderSaga implements Saga<OrderData> {
-
-    @Override
-    public void configure(FlowDefinitionBuilder<OrderData> builder) {
-        builder
-                .step("ReserveStock",   stockService::reserve,          stockService::compensate)
-                .step("ProcessPayment", paymentService::charge,         paymentService::refund)
-                .step("ShipOrder",      shippingService::requestShipment);
-    }
-}
+FlowDefinition orderFulfillment = flowEngine.plans()
+        .newDefinition("order-fulfillment")
+        .step("reserve-stock",   stockService::reserve,          stockService::compensate)
+        .step("charge-payment",  paymentService::charge,         paymentService::refund)
+        .step("dispatch-order",  shippingService::requestShipment, null)
+        .transition(0, 1)
+        .transition(1, 2)
+        .maxRetries(3)
+        .build();
 ```
 
 ### 2. Async Park/Wake (Core — Virtual Thread Parking)
@@ -154,11 +155,11 @@ public void onExternalEvent(String correlationId, Event event) {
 ### 3. Idempotency Guard (Core — Enterprise)
 
 ```java
-public StepResult executeStep(SagaStep step, FlowContext ctx) {
+public FlowStepResult executeStep(FlowStepAction action, FlowContext ctx) {
     if (idempotencyGuard.isAlreadyExecuted(ctx.idempotencyKey())) {
         return idempotencyGuard.getPreviousResult(ctx.idempotencyKey());
     }
-    StepResult result = step.execute(ctx);
+    FlowStepResult result = action.execute(ctx);
     idempotencyGuard.record(ctx.idempotencyKey(), result);
     return result;
 }
@@ -174,7 +175,7 @@ A Virtual Thread parked waiting for an external event MUST have a configurable m
 
 | Scope               | Default          | Config Key                                               |
 |:--------------------|:----------------:|:---------------------------------------------------------|
-| **Global timeout**  | 30 minutes       | `exeris.flow.saga.global-park-timeout-ms`                |
+| **Global timeout**  | 30 minutes       | `flow.saga.globalParkTimeoutMs`                |
 | **Per-step timeout**| Inherited        | Flow definition per-step timeout API in `FlowDefinitionBuilder` (replaces legacy `SagaBuilder.step(...).timeout(Duration)`) |
 | **On timeout action** | COMPENSATE    | Flow definition timeout policy API in `FlowDefinitionBuilder` (replaces legacy `SagaBuilder.onTimeout(CompensationPolicy)`, default: COMPENSATE_ALL) |
 

@@ -116,7 +116,7 @@ not a middleware server. Your application code links against `exeris-kernel-core
 │  └───────────────────────────────────┘                      │
 └─────────────────────────────────────────────────────────────┘
          ▲ TCP/QUIC port (data plane)
-         ▲ HTTP port 9090 (K8s health probes)
+         ▲ [Planned, TRL-4] HTTP port 9090 (K8s health probes; not available in TRL-3 prototype)
 ```
 
 **No sidecar required.** Observability (JFR events) is in-process. Secret injection (Vault) is at bootstrap.

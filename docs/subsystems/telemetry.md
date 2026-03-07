@@ -184,7 +184,7 @@ flowchart LR
 
     B["rawArgs array\n<b>primitives only, zero alloc</b>\nlong · int · Enum · String constants\nNo StringBuilder · No toString()"]
 
-    C{"<b>KernelProviders</b>\nTELEMETRY_PROVIDER\n<i>(ScopedValue slot)</i>"}
+    C{"<b>KernelProviders</b>\nTELEMETRY_SINKS\n<i>(pre-built sinks list · ScopedValue slot)</i>"}
 
     D["<b>JfrTelemetrySink</b>\nTyped jdk.jfr.Event\ncommit() → JFR stream\n<i>[Community]</i>"]
 
@@ -214,10 +214,11 @@ flowchart LR
     style H fill:#1a3a2a,color:#b3ffcc,stroke:#2ecc71,stroke-dasharray: 4 4
 ```
 
-> **Key invariant:** The path `Exception → rawArgs → emitEvent()` produces **zero heap allocations**
-> beyond the autoboxed `Object[]` varargs in the exception constructor — which is acceptable because
-> exceptions are never thrown on the allocation hot-path. The ring buffer write in the Enterprise path
-> is a single `MemorySegment.set()` call — O(1), no GC.
+> **Key invariant (hot path):** The path `Exception → rawArgs → emitEvent()` performs **no String
+> formatting and no transient per-emit heap allocations beyond construction of the `KernelEvent`
+> carrier (and, when JFR is enabled, the corresponding JFR `Event` inside `JfrTelemetrySink`)**.
+> The ring buffer write in the Enterprise path is a single `MemorySegment.set()` call on a
+> pre-allocated segment — O(1), with no additional GC pressure from the write itself.
 
 ---
 
