@@ -52,19 +52,22 @@ graph TD
     subgraph "exeris-kernel-spi (Contracts)"
         TE["TlsEngine (interface)"]
         MA["MemoryAllocator (interface)"]
-        CR["CitadelRepository (interface)"]
-        PS["PaqsScheduler (interface)"]
+        SP["SecurityProvider (interface)"]
+        PP["PersistenceProvider (interface)"]
+        PE["PersistenceEngine (interface)"]
+        TP["TransportProvider (interface)"]
+        TR["TransportEngine (interface)"]
     end
 
-    subgraph "Runtime Classpath (injected)"
-        COMM_IMPL["CommunityTlsEngine\nPanamaArenaAllocator\nJdbcCitadelRepository"]
-        ENT_IMPL["EnterpriseTlsEngine\nGlobalMemoryArbiter\nNativeCitadelRepository"]
+    subgraph "Runtime Classpath (injected — conceptual placeholders)"
+        COMM_IMPL["CommunityTlsEngine\nCommunityMemoryAllocator\nDefaultSecurityProvider\nJdbcPersistenceProvider\nJdbcPersistenceEngine\nNioTransportProvider\nNioTransportEngine"]
+        ENT_IMPL["EnterpriseTlsEngine\nGlobalMemoryArbiter\nFipsSecurityProvider\nNativePersistenceProvider\nNativePersistenceEngine\nQuicTransportProvider\nQuicTransportEngine"]
     end
 
     KB --> SL
-    SL -->|"resolves at T-0"| TE & MA & CR & PS
-    COMM_IMPL -.->|"implements (Community classpath)"| TE & MA & CR & PS
-    ENT_IMPL  -.->|"implements (Enterprise classpath)"| TE & MA & CR & PS
+    SL -->|"resolves at T-0"| TE & MA & SP & PP & PE & TP & TR
+    COMM_IMPL -.->|"implements (Community classpath)"| TE & MA & SP & PP & PE & TP & TR
+    ENT_IMPL  -.->|"implements (Enterprise classpath)"| TE & MA & SP & PP & PE & TP & TR
     WM --> MA
     RA --> MA
     KB -->|"validates contracts"| WM & RA

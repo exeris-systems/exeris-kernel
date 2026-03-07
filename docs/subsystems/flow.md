@@ -256,7 +256,7 @@ SRE visibility into running Sagas is provided via JFR events and a diagnostic qu
 
 | Metric                             | Access Method                                                               |
 |:-----------------------------------|:----------------------------------------------------------------------------|
-| Active Sagas (RUNNING)             | JFR `SagaLifecycleEvent` (category: `Exeris/Flow`) — `status=RUNNING` count|
+| Active Sagas (RUNNING)             | JFR `SagaLifecycleEvent` (category: `{"Exeris Kernel", "Flow"}`) — `status=RUNNING` count|
 | Parked Sagas (waiting for event)   | JFR `SagaLifecycleEvent` — `status=PARKED` count                           |
 | Compensating Sagas                 | JFR `SagaLifecycleEvent` — `status=COMPENSATING` count                     |
 | Failed / Stuck Sagas               | `SELECT COUNT(*) FROM exeris_saga_state WHERE status IN ('FAILED', 'COMPENSATION_FAILED')` |

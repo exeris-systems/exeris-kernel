@@ -59,7 +59,7 @@ carries a `rawArgs: Object[]` payload that encodes domain context as **raw primi
 | Zero string formatting on hot-path | `rawArgs[]` are never concatenated inside `ExerisKernelException`                  |
 | JFR-First                          | Every critical lifecycle event emits a typed `@jdk.jfr.Event` subclass             |
 | Pluggable sinks                    | `TelemetrySink` SPI — Community gets JFR/SLF4J, Enterprise gets binary ring-buffer |
-| Async dispatch                     | Core-internal dispatcher fans out to registered `TelemetrySink` instances off the caller's critical path |
+| Async dispatch *(planned)*         | Planned Core-internal dispatcher will fan out to registered `TelemetrySink` instances off the caller's critical path while preserving the zero-allocation contract via pre-allocated routing structures; the current reference sink (`JfrTelemetrySink`) emits synchronously on the caller thread. |
 | Structured error codes             | `EX-[DOMAIN]-[ID]` format enables log-scraper pattern matching without regex       |
 
 ---

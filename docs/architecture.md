@@ -230,7 +230,7 @@ Kubernetes environments, the following strategy applies:
 
 | Observability Layer     | Mechanism                                   | Status         |
 |:------------------------|:--------------------------------------------|:---------------|
-| **In-process events**   | JFR (`Exeris/*` event categories)           | ✅ TRL-3       |
+| **In-process events**   | JFR (`Exeris Kernel/*` event categories)    | ✅ TRL-3       |
 | **Crash diagnostics**   | Glass-Box binary crash buffer + `exeris-decoder` | 🚧 TRL-4 planned |
 | **Metrics (Prometheus)**| `DeterministicBinarySink` → OTLP exporter   | 🚧 TRL-4 planned |
 | **Distributed tracing** | `traceId` in `ExerisKernelException.rawArgs`; OTLP span export | 🚧 TRL-4 planned |
@@ -246,7 +246,9 @@ Kubernetes environments, the following strategy applies:
 
 Exeris Kernel is a **library embedded in your application JVM process** — not a sidecar, not a standalone
 server. The Kernel bootstraps within your JVM, owns the network socket, and exposes the data-plane port.
-A separate lightweight HTTP endpoint on port `9090` serves K8s health probes.
+In the current TRL-3 prototype, Kubernetes liveness/readiness probes MUST target your host application's own
+HTTP health endpoint or an external sidecar. An embedded lightweight HTTP endpoint on port `9090` for
+Kernel-centric health probes is **planned for TRL-4** (see [Bootstrap subsystem](subsystems/bootstrap.md)).
 
 For the complete deployment diagram, infrastructure requirements, and SLA/SLO baseline table, see:
 → **[Whitepaper](whitepaper.md)** — Sections 4 (Deployment Topology) and 5 (SLA/SLO Baseline Table)
