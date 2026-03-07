@@ -172,20 +172,20 @@ java -XX:StartFlightRecording=name=boot,settings=profile,filename=boot.jfr \
 ### Locating Exeris Events in JMC
 
 1. Open `debug.jfr` in **JDK Mission Control (JMC)**.
-2. Navigate to **Event Browser** → expand **Exeris**.
+2. Navigate to **Event Browser** → expand **Exeris Kernel**.
 3. Key event categories:
 
-| JFR Category           | Event Class                  | What it tells you                               |
-|:-----------------------|:-----------------------------|:------------------------------------------------|
-| `Exeris / Memory`      | `MemoryAllocationEvent`      | Off-heap allocation sample (1% rate)            |
-| `Exeris / Memory`      | `MemoryExhaustionEvent`      | Pool exhausted — trigger for load shedding      |
-| `Exeris / Memory`      | `ArenaLeakEvent`             | Unclosed `LoanedBuffer` — always a bug          |
-| `Exeris / Security`    | `PrincipalBoundEvent`        | Successful auth + scope bind                    |
-| `Exeris / Security`    | `SecurityContextMissing`     | Gate drop — token invalid or no provider        |
-| `Exeris / Transport`   | `TransportBindEvent`         | Transport successfully bound on port            |
-| `Exeris / Bootstrap`   | `KernelBootstrapEvent`       | Per-subsystem init duration                     |
-| `Exeris / Crypto`      | `TlsHandshakeEvent`          | Handshake duration + cipher suite               |
-| `Exeris / Crypto`      | `TlsHandshakeFailureEvent`   | Handshake failure + peer address                |
+| JFR Category                  | Event Class                                  | What it tells you                               |
+|:------------------------------|:---------------------------------------------|:------------------------------------------------|
+| `Exeris Kernel / Memory`      | `MemoryAllocationEvent`                      | Off-heap allocation sample (1% rate)            |
+| `Exeris Kernel / Memory`      | `TelemetryJfrEvents.MemoryExhaustionJfrEvent`| Pool exhausted — trigger for load shedding      |
+| `Exeris Kernel / Memory`      | `LeakDetectedEvent`                          | Unclosed `LoanedBuffer` — always a bug          |
+| `Exeris Kernel / Security`    | `PrincipalBoundEvent`                        | Successful auth + scope bind                    |
+| `Exeris Kernel / Security`    | `SecurityContextMissing`                     | Gate drop — token invalid or no provider        |
+| `Exeris Kernel / Transport`   | `TransportBindEvent`                         | Transport successfully bound on port            |
+| `Exeris Kernel / Bootstrap`   | `KernelBootstrapEvent`                       | Per-subsystem init duration                     |
+| `Exeris Kernel / Crypto`      | `TlsHandshakeEvent`                          | Handshake duration + cipher suite               |
+| `Exeris Kernel / Crypto`      | `TlsHandshakeFailureEvent`                   | Handshake failure + peer address                |
 
 ### Checking for Heap Allocations on the Hot Path
 
@@ -199,8 +199,14 @@ java -XX:StartFlightRecording=settings=profile \
 ```
 
 In JMC, open **Memory** → **Allocation by Thread**. The `wrap()`/`unwrap()` Virtual Thread should
-show **0 B/op**. Any allocation in `eu.exeris.kernel.core.crypto.*` or `eu.exeris.kernel.community.*`
-on the cipher hot path is a regression.
+show **0 B/op** on the TLS cipher path — this applies to **both Community and Enterprise** tiers,
+because both share the same Core Panama FFM / OpenSSL engine (`CoreOpenSslLoader`, `NativeCipherContext`)
+per ADR-008. Any allocation in `eu.exeris.kernel.core.crypto.*` or `eu.exeris.kernel.community.*`
+on the TLS cipher hot path is a regression in both tiers.
+
+The remaining heap allocation in Community occurs at the **JDBC layer** (`eu.exeris.kernel.community.persistence.*`)
+and is expected — `ResultSet`, DTO, and `String` objects are heap-bound by the JDBC contract.
+Enterprise eliminates this via native off-heap DB drivers.
 
 ---
 

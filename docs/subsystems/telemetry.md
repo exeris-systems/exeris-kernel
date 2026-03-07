@@ -306,7 +306,12 @@ bound as `ScopedValue` slots by `KernelBootstrap`. Hot-path subsystems use `TELE
 > `TELEMETRY_SINKS`, but this is **not** an SPI type and is invisible to consumers of the public API.
 
 ```java
-// ✅ CORRECT — emit to all configured sinks:
+// ✅ CORRECT — emit to all configured sinks (no per-emission allocations):
+for (TelemetrySink sink : KernelProviders.TELEMETRY_SINKS.get()) {
+    sink.emit(event);
+}
+
+// ❌ BANNED (lambda captures `event` → allocates a new instance per call on some JVMs):
 KernelProviders.TELEMETRY_SINKS.get()
         .forEach(sink -> sink.emit(event));
 

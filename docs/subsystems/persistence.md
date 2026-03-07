@@ -166,7 +166,6 @@ PersistenceProvider provider = ServiceLoader.load(PersistenceProvider.class)
 
 ---
 
----
 
 ## Connection Pool Sizing — Loom-First Guidance
 
