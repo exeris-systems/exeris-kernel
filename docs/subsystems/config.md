@@ -233,12 +233,14 @@ Application-level keys are defined by the application layer and not listed here.
 
 ## Vault Down-at-Boot Strategy
 
-When Vault is unavailable during the bootstrap phase (`exeris.config.vault.timeout-ms` exceeded):
+When Vault is unavailable during the bootstrap phase (`config.vault.timeoutMs` exceeded; system property: `exeris.config.vault.timeoutMs`):
 
 | Mode              | Behaviour                                                                                         |
 |:------------------|:--------------------------------------------------------------------------------------------------|
-| `FAIL_FAST` (default) | `EX-CFG-1001` thrown after `vault.retry-count` attempts × `vault.timeout-ms` deadline. Kernel halts. K8s liveness probe returns `503` → pod is replaced. |
+| `FAIL_FAST` (default) | `EX-CFG-1001` thrown after `config.vault.retryCount` attempts × `config.vault.timeoutMs` deadline. Kernel halts. K8s liveness probe returns `503` → pod is replaced. |
 | `DEGRADE`         | Last-known configuration (from file/classpath) is used for secrets. A `KernelBootstrapEvent` WARNING is emitted in JFR. **NEVER deploy DEGRADE mode to production** — it means the application starts with potentially stale or empty secrets. |
+
+System properties mirror the canonical keys with an `exeris.` prefix (for example, `exeris.config.vault.timeoutMs` → `config.vault.timeoutMs`).
 
 **Recommended K8s pattern:**
 Use `initContainer` to validate Vault connectivity before the main container starts. This prevents the
@@ -260,7 +262,7 @@ initContainers:
 | Event                              | Maximum latency (P99)   | Measurement                                    |
 |:-----------------------------------|:-----------------------:|:-----------------------------------------------|
 | File change detected (`inotify`)   | ≤ 50 ms                | OS `inotify` → `WatchService` event            |
-| Config value updated (`VarHandle`) | ≤ 1 µs                 | `TIMEOUT_HANDLE.setRelease()` — single CAS     |
+| Config value updated (`VarHandle`) | ≤ 1 µs                 | `IDLE_TIMEOUT_HANDLE.setRelease()` — single CAS     |
 | End-to-end reload visible          | ≤ 100 ms               | From filesystem write to `getAcquire()` read   |
 
 > **`inotify` note:** On Linux, `WatchService` uses `inotify` — kernel-level file system change
@@ -274,7 +276,7 @@ regulated environments (fintech, healthcare) without logging raw values.
 
 ```java
 @jdk.jfr.Label("Config Hot-Reload")
-@jdk.jfr.Category({"Exeris", "Config"})
+@jdk.jfr.Category({"Exeris Kernel", "Config"})
 @jdk.jfr.StackTrace(false)
 public final class ConfigHotReloadEvent extends jdk.jfr.Event {
     String configKey;

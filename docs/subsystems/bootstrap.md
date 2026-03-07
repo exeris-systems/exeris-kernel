@@ -330,8 +330,12 @@ at all times.
 
 ## Kubernetes Health Probes
 
-Bootstrap registers an embedded HTTP health server on a dedicated, non-data-plane port. The server binds before
-the Boot DAG executes — K8s can observe lifecycle state from the very first millisecond.
+> **Status: 🚧 Planned (TRL-4 target). No embedded HTTP health server exists in the current TRL-3 prototype.**
+> The design below describes the target behavior. Operators deploying TRL-3 builds should rely on process-level
+> liveness checks (e.g., `exec` probes or TCP socket probes) until the health server is implemented.
+
+Bootstrap will register an embedded HTTP health server on a dedicated, non-data-plane port. The server will bind
+before the Boot DAG executes — K8s can observe lifecycle state from the very first millisecond.
 
 | Probe            | Path            | Port (default) | Behaviour                                                                                                          |
 |:-----------------|:----------------|:--------------:|:-------------------------------------------------------------------------------------------------------------------|
@@ -373,10 +377,14 @@ startupProbe:
 
 ## Boot SLO (Cold Start Latency Contract)
 
-| Tier              | Target P99 Cold Start | JFR Measurement                              | K8s `readinessProbe` failureThreshold |
-|:------------------|:---------------------:|:---------------------------------------------|:-------------------------------------:|
-| **Community**     | ≤ 500 ms              | `KernelBootstrapEvent.durationNanos` (total) | 60 × 2 s = 120 s budget              |
-| **Enterprise**    | ≤ 800 ms              | Same (includes native `io_uring` ring init)  | 60 × 2 s = 120 s budget              |
+| Tier              | Target P99 Cold Start | JFR Measurement                                                             | K8s `readinessProbe` failureThreshold |
+|:------------------|:---------------------:|:----------------------------------------------------------------------------|:-------------------------------------:|
+| **Community**     | ≤ 500 ms              | `TelemetryJfrEvents.KernelLifecycleJfrEvent.durationNanos`                  | 60 × 2 s = 120 s budget              |
+| **Enterprise**    | ≤ 800 ms              | `TelemetryJfrEvents.KernelLifecycleJfrEvent.durationNanos` *(includes native `io_uring` ring init)* | 60 × 2 s = 120 s budget |
+
+> **Planned simplification:** a dedicated `KernelBootstrapEvent` JFR type exposing `durationNanos` will wrap
+> the bootstrap sequence once implemented. Until then, the Boot SLO MUST be computed from
+> `TelemetryJfrEvents.KernelLifecycleJfrEvent.durationNanos` as documented above.
 
 The 500 ms / 800 ms figures include:
 - L0 foundation init (Config → Memory → Exceptions)

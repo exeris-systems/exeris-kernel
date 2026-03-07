@@ -286,21 +286,22 @@ backend and a polling client. The PAQS scheduler handles priority-based delivery
 
 ## Proxy Protocol v2 — Client IP Preservation
 
-Exeris Community and Enterprise transport drivers support **Proxy Protocol v2** (HAProxy specification)
+**Status:** 🚧 Planned (no runtime support in current TRL-3 prototype). Configuration keys are defined in `docs/subsystems/config.md` (`network.proxyProtocolEnabled`, `network.proxyProtocolRequired`). This section describes the **target behavior**.
+
+Exeris Community and Enterprise transport drivers will support **Proxy Protocol v2** (HAProxy specification)
 for client IP preservation behind load balancers (HAProxy, NGINX, AWS NLB, GCP LB).
 
-| Feature                        | Community       | Enterprise      |
-|:-------------------------------|:---------------:|:---------------:|
-| Proxy Protocol v2 parsing      | ✅              | ✅              |
-| Real client IP in `StreamHeaders` | ✅ `remoteAddress()` | ✅ `remoteAddress()` |
-| TLV extension support           | 🚧 Planned TRL-4 | 🚧 Planned TRL-4 |
+| Feature                            | Community                           | Enterprise                          |
+|:-----------------------------------|:-----------------------------------:|:-----------------------------------:|
+| Proxy Protocol v2 parsing          | 🚧 Planned TRL-4                    | 🚧 Planned TRL-4                    |
+| Real client IP in `StreamHeaders`  | 🚧 Planned via `remoteAddress()`    | 🚧 Planned via `remoteAddress()`    |
+| TLV extension support              | 🚧 Planned TRL-4                    | 🚧 Planned TRL-4                    |
 
-Enable via: `exeris.transport.proxy-protocol.enabled=true` (default: `false`).
-
-> When Proxy Protocol is enabled, the transport carrier reads the PP2 header before any TLS handshake
-> attempt. The real client IP is extracted and stored in the `Stream` metadata. If the PP2 header is
-> malformed or absent (and `proxy-protocol.required=true`), the connection is dropped immediately with
-> `EX-NET-4001`. This prevents forged client IPs when Proxy Protocol is required by the network topology.
+> **Target behavior:** when Proxy Protocol is enabled (`network.proxyProtocolEnabled=true`), the transport carrier
+> reads the PPv2 header before any TLS handshake attempt. The real client IP is extracted and stored in the
+> `Stream` metadata. If the PPv2 header is malformed or absent while `network.proxyProtocolRequired=true`, the
+> connection is dropped immediately with `EX-NET-4001` to prevent forged client IPs when Proxy Protocol is
+> required by the network topology.
 
 ---
 

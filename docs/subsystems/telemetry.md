@@ -229,8 +229,7 @@ Every critical lifecycle transition MUST emit a typed JFR event. No `Logger.info
 
 | Event Class             | When Emitted                                    | Key Fields                                            |
 |:------------------------|:------------------------------------------------|:------------------------------------------------------|
-| `TelemetryJfrEvents.KernelLifecycleJfrEvent` *(eu.exeris.kernel.core.telemetry.jfr)* | Kernel bootstrap, subsystem lifecycle, warnings, and errors | `errorCode`, `level`, `component`, `message` |
-| `TelemetryJfrEvents.KernelLifecycleJfrEvent` *(eu.exeris.kernel.core.telemetry.jfr)* | Completion of each subsystem `initialize()` | `errorCode`, `level`, `component`, `message` |
+| `TelemetryJfrEvents.KernelLifecycleJfrEvent` *(eu.exeris.kernel.core.telemetry.jfr)* | Kernel bootstrap, subsystem lifecycle (including completion of each subsystem `initialize()`), warnings, and errors | `errorCode`, `level`, `component`, `message` |
 | `CommunityAllocationEvent` *(planned, community module; not present in this repo)* | Community-tier buffer allocation (when `jfrEnabled=true`) | `sizeBytes`, `hint`, `tierName` |
 | `TelemetryJfrEvents.MemoryExhaustionJfrEvent` *(eu.exeris.kernel.core.telemetry.jfr)* | On every `MemoryExhaustedException` (EX-MEM-1001) | `errorCode`, `requestedBytes`, `availableBytes`, `component` |
 | `LeakDetectedEvent` *(eu.exeris.kernel.core.memory)* | `LeakTracker` detection (PARANOID/SAMPLED mode) | `segmentAddress`, `segmentByteSize`                   |
@@ -238,8 +237,8 @@ Every critical lifecycle transition MUST emit a typed JFR event. No `Logger.info
 | `StreamShedEvent` *(eu.exeris.kernel.core.transport.jfr)* | On every PAQS load-shed | `streamId`, `priority`, `shedReason`, `engineName`, `activeStreamCount` |
 | `TelemetryJfrEvents.CarrierPinnedJfrEvent` *(eu.exeris.kernel.core.telemetry.jfr)* | Virtual thread pins carrier > threshold (EX-RUN-3002) | `errorCode`, `blockTimeMs`, `component` |
 | `CommunityTlsHandshakeEvent` *(planned, community module; not present in this repo)* | Each `SSL_do_handshake` invocation | `complete`, `opensslError` |
-| `TlsPhaseTransitionEvent` *(eu.exeris.kernel.core.crypto.tls)* | Every `TlsStateMachine` phase transition | `sslPtr`, `fromPhase`, `toPhase` |
-| `TlsEngineCloseEvent` *(eu.exeris.kernel.core.crypto.tls)* | `OffHeapTlsEngine` → CLOSED | `sslPtr`, `graceful`, `finalPhase` |
+| `TlsPhaseTransitionEvent` *(planned, TRL‑4 target; not yet implemented)* | Every `TlsStateMachine` phase transition | `sslPtr`, `fromPhase`, `toPhase` |
+| `TlsEngineCloseEvent` *(planned, TRL‑4 target; not yet implemented)* | `OffHeapTlsEngine` → CLOSED | `sslPtr`, `graceful`, `finalPhase` |
 | `TlsHandshakeEvent` *(planned, TRL‑4 target; not yet implemented)* | Start and end of TLS handshake (cross-tier) | `sessionId`, `protocol`, `cipher`, `durationNanos` |
 | `TlsHandshakeFailureEvent` *(planned, TRL‑4 target; not yet implemented)* | Handshake exception | `errorCode`, `peerAddress`, `failureReason` |
 | `ConfigHotReloadEvent` *(planned, TRL‑4 target; not yet implemented)* | `@Dynamic` config key updated | `configKey`, `providerName`, `succeeded` |
@@ -253,7 +252,7 @@ Every critical lifecycle transition MUST emit a typed JFR event. No `Logger.info
 // Exceptions are never on the hot-path; the single allocation here is acceptable.
 // Do NOT share event instances across threads (JFR events are not thread-safe).
 @jdk.jfr.Label("Memory Exhaustion")
-@jdk.jfr.Category({"Exeris", "Memory"})
+@jdk.jfr.Category({"Exeris Kernel", "Memory"})
 @jdk.jfr.StackTrace(false)  // suppress: stack trace = O(n) allocation
 public final class MemoryExhaustionEvent extends jdk.jfr.Event {
     @jdk.jfr.Label("Requested Bytes")

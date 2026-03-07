@@ -265,7 +265,7 @@ SRE visibility into running Sagas is provided via JFR events and a diagnostic qu
 
 ```java
 @jdk.jfr.Label("Saga Lifecycle")
-@jdk.jfr.Category({"Exeris", "Flow"})
+@jdk.jfr.Category({"Exeris Kernel", "Flow"})
 @jdk.jfr.StackTrace(false)
 public final class SagaLifecycleEvent extends jdk.jfr.Event {
     String sagaType;
