@@ -83,15 +83,15 @@ it is an enforced architectural constraint.
 Linker linker = Linker.nativeLinker();
 SymbolLookup ssl = SymbolLookup.libraryLookup("libssl.so.3", Arena.global());
 
-static final MethodHandle SSL_CTX_new =
+static final MethodHandle sslCtxNew =
         linker.downcallHandle(ssl.find("SSL_CTX_new").orElseThrow(),
                 FunctionDescriptor.of(ADDRESS, ADDRESS));
 
-static final MethodHandle SSL_write =
+static final MethodHandle sslWrite =
         linker.downcallHandle(ssl.find("SSL_write").orElseThrow(),
                 FunctionDescriptor.of(JAVA_INT, ADDRESS, ADDRESS, JAVA_INT));
 
-static final MethodHandle SSL_read =
+static final MethodHandle sslRead =
         linker.downcallHandle(ssl.find("SSL_read").orElseThrow(),
                 FunctionDescriptor.of(JAVA_INT, ADDRESS, ADDRESS, JAVA_INT));
 ```
