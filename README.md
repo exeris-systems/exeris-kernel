@@ -1,6 +1,6 @@
 # Exeris Kernel
 
-> **Drop-in runtime replacement for Tomcat/Netty in Spring Boot** — same programming model, up to **10× lower heap usage** and **3× higher throughput** via zero-copy, off-heap I/O and Virtual Threads.
+> **Drop-in Spring Boot starter that replaces Tomcat/Netty with a native transport layer** — same annotations, measurably less memory, higher throughput. Numbers available at v0.5 release.
 
 Exeris Kernel is a **Java 26 native runtime** that sits beneath your application stack. Instead of blocking a thread per request (Tomcat) or allocating event-loop objects (Netty), Exeris uses **Panama FFM** and off-heap memory to move bytes between the kernel and your business logic with zero heap copies and zero context-switch overhead. The Enterprise edition additionally accelerates I/O with **io_uring** and QUIC.
 
