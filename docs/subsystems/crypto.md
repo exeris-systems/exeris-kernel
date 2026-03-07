@@ -338,4 +338,3 @@ Use JFR's built-in `MethodProfiling` for cipher throughput analysis.
 - 100k TLS records/second with < 5 µs P99 `wrap()` latency *(target, not yet measured — baseline
   JMH benchmark pending TRL-4 milestone; current manual profiling shows < 12 µs P99 on loopback)*.
 - GC pause frequency: < 1 minor GC per 10 seconds under sustained cipher load.
-
