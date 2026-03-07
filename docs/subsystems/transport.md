@@ -200,7 +200,7 @@ sequenceDiagram
         PAQS->>VT: Thread.ofVirtual().start(streamHandler)
         Note over VT: Request processed imperatively.<br/>ScopedValues bound. StructuredTaskScope used downstream.
     else WARNING watermark — priority gate active
-        PAQS->>PAQS: streamPriority.ordinal() >= threshold?
+        PAQS->>PAQS: streamPriority.ordinal() <= threshold?
         alt priority sufficient
             PAQS->>RA: reserveSlabSlot()
             RA-->>PAQS: ResourceArbiter.Action (THROTTLE — slot granted)

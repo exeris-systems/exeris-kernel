@@ -128,7 +128,13 @@ field via `setRelease` on a reload event; every Virtual Thread reader uses `getA
 is cheaper than a full `volatile` load-load/store-store fence, eliminating the redundant `volatile` modifier while
 preserving the exact visibility guarantee required for a single-writer/multi-reader hot-path.
 
+> **Note:** The class below is **planned pseudocode** illustrating the target VarHandle pattern.
+> `KernelConfigRegistry` does not exist in `exeris-kernel-core` today. The `network.idleTimeoutMillis`
+> key is defined in the config reference table; its VarHandle wiring will be implemented as part of
+> `feat(core-bootstrap)` (#30).
+
 ```java
+// PLANNED — illustrative pseudocode for the target VarHandle hot-reload pattern
 package eu.exeris.kernel.core.config;
 
 public class KernelConfigRegistry {

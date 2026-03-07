@@ -83,7 +83,7 @@ it is an enforced architectural constraint.
 Linker linker = Linker.nativeLinker();
 SymbolLookup ssl = SymbolLookup.libraryLookup("libssl.so.3", Arena.global());
 
-static final MethodHandle SSL_CTX_new =
+static final MethodHandle SSL_CTX_NEW =
         linker.downcallHandle(ssl.find("SSL_CTX_new").orElseThrow(),
                 FunctionDescriptor.of(ADDRESS, ADDRESS));
 

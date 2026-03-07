@@ -89,7 +89,7 @@ flowchart TD
 ## Diagram 1b — Subsystem State Machine
 
 Each subsystem registered in the Boot DAG transitions through this state machine independently.
-Core's `BootstrapSequencer` drives transitions; transitions are irreversible — there is no `RESTART`.
+Core's `SubsystemOrchestrator` drives transitions; transitions are irreversible — there is no `RESTART`.
 
 ```mermaid
 stateDiagram-v2

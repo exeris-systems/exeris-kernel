@@ -91,9 +91,10 @@ This is the **only** command that counts. `mvn clean compile` is not sufficient 
 [INFO] exeris-kernel-core ......................... SUCCESS
 [INFO] exeris-kernel-community .................... SUCCESS
 [INFO] exeris-kernel-tck .......................... SUCCESS
-[INFO] exeris-kernel-enterprise ................... SUCCESS (proprietary, may skip)
 [INFO] BUILD SUCCESS
 ```
+> `exeris-kernel-enterprise` is not part of this open-source reactor. It ships as a separate
+> closed-source distribution. Running `mvn clean install` here will not build or require it.
 
 ### Running a Single Module
 
@@ -153,7 +154,7 @@ Data is ephemeral by default (no named volume mounts). Each `up` starts with a c
 
 ## JFR Inspection
 
-Exeris emits custom JFR events under the `Exeris` category. They are the primary observability
+Exeris emits custom JFR events under the `Exeris Kernel` category. They are the primary observability
 mechanism — not log files.
 
 ### Starting a JFR Recording
@@ -327,15 +328,26 @@ The debugging workflow for native failures:
 
 ---
 
-## LazyConstant Pattern (JEP 526)
+## Compute-Once Config Pattern (Supplier + CAS)
 
-For singleton config caches and expensive one-time initialisations, use `LazyConstant.of(...)`.
+For singleton config caches and expensive one-time initialisations, use `Supplier<T>` combined with
+`AtomicReference` CAS — the same pattern modelled in the `ConfigProvider` SPI/TCK.
 Do NOT use double-checked locking (`volatile` + `if (field == null)`) — it is banned.
 
 ```java
-// ✅ CORRECT: JVM constant-folding eligible
-private static final LazyConstant<KernelSettings> SETTINGS =
-        LazyConstant.of(() -> KernelSettings.load());
+// ✅ CORRECT: SPI-aligned "compute once" cache using Supplier + CAS
+private static final AtomicReference<KernelSettings> SETTINGS_REF = new AtomicReference<>();
+
+public static KernelSettings settings() {
+    KernelSettings current = SETTINGS_REF.get();
+    if (current != null) {
+        return current;
+    }
+    KernelSettings computed = KernelSettings.load();
+    return SETTINGS_REF.compareAndExchange(null, computed) == null
+            ? computed
+            : SETTINGS_REF.get();
+}
 
 // ❌ BANNED: manual DCL, volatility, synchronization noise
 private static volatile KernelSettings settings;
