@@ -183,8 +183,10 @@ try {
 
 ## Kernel Configuration Reference
 
-The table below lists all configuration keys consumed **internally** by the Exeris Kernel itself.
-Application-level keys are defined by the application layer and not listed here.
+The table below lists the configuration keys consumed **internally** by the Exeris Kernel, scoped to
+keys that are either present in `ConfigProvider.KernelSettings` today or explicitly committed to in an
+accepted ADR. Keys not yet wired to a `KernelSettings` constant are marked ***(planned)***. Application-level
+keys are defined by the application layer and not listed here.
 
 > **Key name convention:** Keys are specified in the `ConfigProvider` API format (e.g. `network.port`).
 > A typical community configuration provider maps these to system properties by prepending `exeris.` (e.g.

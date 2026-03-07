@@ -1,4 +1,4 @@
-﻿﻿# Exeris Kernel: The Vision & Whitepaper
+﻿# Exeris Kernel: The Vision & Whitepaper
 
 **Author:** Arkadiusz Przychocki, Founder & Lead Architect  
 **Status:** TRL-3 (Validated Architectural Prototype)  

@@ -60,28 +60,31 @@ flowchart TD
     style SHED fill:#3a1a1a,color:#ffb3b3,stroke:#e74c3c
 ```
 
-> **Key Insight:** The GC only fires in steps ⑥ and ⑦. The TLS and network layers are entirely
-> off-heap — Community uses the same Panama FFM / OpenSSL 3.x engine as Enterprise (shared via
-> `exeris-kernel-core`, per ADR-008). The remaining GC cost is the **JDBC Tax** (steps ⑥–⑦).
-> For applications that are not persistence-bound, Community eliminates GC pauses entirely.
-> The Enterprise differentiator is **kernel-bypass I/O** (`io_uring`) and **native off-heap DB drivers**
-> — not TLS, which is already zero-alloc in both tiers.
+> **Key Insight (target architecture per ADR-008):** Once `CommunityTlsEngine` is implemented
+> (sources pending — `exeris-kernel-community` is a placeholder at TRL-3), the GC will only fire
+> in steps ⑥ and ⑦. The TLS and network layers will be entirely off-heap — Community will share
+> the same Core Panama FFM / OpenSSL 3.x engine as Enterprise (`CoreOpenSslLoader`,
+> `NativeCipherContext`), per ADR-008. The remaining GC cost is the **JDBC Tax** (steps ⑥–⑦).
+> For applications that are not persistence-bound, Community will eliminate GC pauses entirely.
+> The Enterprise differentiator is **kernel-bypass I/O** (`io_uring`) and **native off-heap DB
+> drivers** — not TLS, which is a Community baseline in the ADR-008 architecture.
 
 ## 💪 Architectural Rules (L0 Enforcement)
 
-1. **Panama-Powered TCP *(Planned, TRL-4)*:** The target architecture for this tier is a custom, high-performance
-   Off-Heap TCP network stack leveraging JEP 454 (FFM) to bind directly to OS sockets and OpenSSL, completely
-   bypassing standard Java NIO buffers. This is **not yet implemented** — current TRL-3 prototype uses JSSE/SSLEngine.
-2. **Zero-Allocation Network Path *(Planned, TRL-4)*:** The TLS + transport pipeline (steps ①–③ and ⑧–⑨ in the
-   Request Flow diagram) targets **zero JVM heap allocation** on the network hot-path once the Panama TCP stack is
-   implemented. Until then, the current JSSE-based path allows bounded, predictable allocations monitored by
-   `CryptoZeroAllocTck`. A strict zero-byte guarantee across the full path, including telemetry, is an
-   Enterprise-only contract.
-3. **The Heap Boundary (JDBC):** The heap boundary begins at the business logic layer (step ⑥). JDBC persistence
-   (step ⑦) allocates `ResultSet`, DTO, and `String` objects on the JVM heap. The Garbage Collector may trigger
-   here. The network and TLS layers are **completely exempt from GC** — Community uses the Core Panama FFM /
-   OpenSSL 3.x engine (`CoreOpenSslLoader`, `NativeCipherContext`) shared with Enterprise (ADR-008).
-   Zero-alloc TLS is not an Enterprise privilege; it is the Community baseline.
+1. **Panama-Powered TCP *(Target — ADR-008, implementation pending)*:** Community owns the TCP File
+   Descriptor (`CommunityTlsEngine`), drives TLS 1.3 over a Berkeley socket using `CoreOpenSslLoader`
+   handles from `exeris-kernel-core`. No QUIC, no `io_uring` BIO pairs. `exeris-kernel-community`
+   currently has no sources — this is the accepted ADR-008 target architecture.
+2. **Zero-Allocation Network Path *(Target — ADR-008, implementation pending)*:** The TLS + transport
+   pipeline (steps ①–③ and ⑧–⑨) targets **zero JVM heap allocation** on the hot path. Plaintext and
+   ciphertext reside exclusively in `LoanedBuffer` instances backed by Panama `MemorySegment`.
+   A strict zero-byte guarantee across the full path, including telemetry, requires the
+   `DeterministicBinarySink` and is an Enterprise-only contract.
+3. **The Heap Boundary (JDBC):** The heap boundary begins at the business logic layer (step ⑥). JDBC
+   persistence (step ⑦) allocates `ResultSet`, DTO, and `String` objects on the JVM heap. The Garbage
+   Collector may trigger here. The network and TLS layers are **exempt from GC in the ADR-008 target
+   architecture** (`CoreOpenSslLoader` + `NativeCipherContext` shared with Enterprise). This is the
+   Community baseline, not an Enterprise privilege.
 4. **No Kernel-Bypass:** Uses standard POSIX networking (`epoll`/`kqueue`/`WSAPoll`). Advanced kernel-bypass
    techniques (`io_uring`, strictly off-heap custom DB drivers) are reserved for the Enterprise module.
 5. **Controlled Core Access (ADR-008):** Community drivers depend on `exeris-kernel-core` to utilize shared
@@ -92,8 +95,8 @@ flowchart TD
 
 | Feature               | Community (Zero-GC Network, Heap Persistence) | Enterprise (Zero-GC End-to-End)               |
 |-----------------------|-----------------------------------------------|-----------------------------------------------|
-| **Network I/O**       | **Zero-Alloc** — Off-Heap TCP + OpenSSL/FFM via `CoreOpenSslLoader` (ADR-008) | Zero-Alloc + Kernel-Bypass (`io_uring`) |
-| **TLS Hot Path**      | **Zero-Alloc hard guarantee** — `LoanedBuffer` + Panama FFM, same Core engine as Enterprise | Zero-Alloc hard guarantee (identical Core TLS engine) |
+| **Network I/O**       | **Zero-Alloc** *(Target — ADR-008, impl pending)* Off-Heap TCP + OpenSSL/FFM via `CoreOpenSslLoader` | Zero-Alloc + Kernel-Bypass (`io_uring`) |
+| **TLS Hot Path**      | **Zero-Alloc** *(Target — ADR-008, impl pending)* `LoanedBuffer` + Panama FFM, same Core engine as Enterprise | Zero-Alloc hard guarantee (identical Core TLS engine) |
 | **Telemetry**         | Bounded (~65 bytes / JFR event)               | Strict Zero (Binary Ring-Buffer off-heap)     |
 | **Persistence**       | JDBC overhead (heap-bound) ⚠️                  | Strict Zero (Native DB driver)                |
 | **Context**           | `ScopedValue` (low overhead)                  | `ScopedValue` + Off-Heap Arena                |

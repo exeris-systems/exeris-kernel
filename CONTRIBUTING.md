@@ -139,8 +139,7 @@ The `docker-compose.yml` at the repository root provisions:
 - **PostgreSQL 16** on `localhost:5432` (used by `JdbcCitadelRepository` in Community tier)
 - **Redis 7** on `localhost:6379` (session/distributed cache, used by Security subsystem)
 
-Default credentials match the test fixtures in `src/test/resources/application-test.properties`.
-Do not change them without updating all test fixtures.
+Default credentials are aligned with the repository's test fixtures. Do not change them without updating the corresponding test fixtures.
 
 ### Stopping the Stack
 
@@ -177,7 +176,7 @@ java -XX:StartFlightRecording=name=boot,settings=profile,filename=boot.jfr \
 
 | JFR Category                  | Event Class                                  | What it tells you                               |
 |:------------------------------|:---------------------------------------------|:------------------------------------------------|
-| `Exeris Kernel / Memory`      | `MemoryAllocationEvent`                      | Off-heap allocation sample (1% rate)            |
+| `Exeris Kernel / Memory`      | `TelemetryJfrEvents.*`                       | Off-heap allocation sample (1% rate)            |
 | `Exeris Kernel / Memory`      | `TelemetryJfrEvents.MemoryExhaustionJfrEvent`| Pool exhausted — trigger for load shedding      |
 | `Exeris Kernel / Memory`      | `LeakDetectedEvent`                          | Unclosed `LoanedBuffer` — always a bug          |
 | `Exeris Kernel / Security`    | `PrincipalBoundEvent`                        | Successful auth + scope bind                    |

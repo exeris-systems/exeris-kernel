@@ -1,6 +1,8 @@
 # Exeris Kernel
 
-> **Drop-in Spring Boot starter that replaces Tomcat/Netty with a native transport layer** — same annotations, measurably less memory, higher throughput. Numbers available at v0.5 release.
+> **Planned for v0.5:** Drop-in Spring Boot starter that replaces Tomcat/Netty with a native transport layer — same annotations, measurably less memory, higher throughput. Numbers available at v0.5 release.
+>
+> The current repository delivers the **standalone Java 26 runtime kernel and transport SPI**. Spring Boot auto-configuration will be published in a future milestone.
 
 **Licence in one sentence:** SPI, Core, Community, and TCK are free for any use (including production); only the Enterprise acceleration layer (io_uring, QUIC, native DB drivers) requires a commercial licence — the same Open-Core boundary used by MongoDB and HashiCorp.
 
@@ -71,10 +73,16 @@ Key principles (see [`docs/architecture.md`](docs/architecture.md)):
 - **`exeris-kernel-enterprise`** — Native C drivers: `io_uring` ring management, `QuicBioMultiplexer`, off-heap OpenSSL.
 - **`exeris-kernel-tck`** — Inquisition suite; any third-party driver must pass all TCK tests before integration.
 
-## 🚀 Quick Start (Spring Boot)
+## 🚀 Quick Start (Spring Boot) — Planned
+
+> Spring Boot auto-configuration is **planned for v0.5.0**. The coordinates below reflect the target
+> module structure; the Spring Boot starter artifact will be published alongside the v0.5 release notes.
+> The current repository exposes the Exeris Kernel as a standalone Java 26 runtime and low-level
+> transport SPI.
 
 ```xml
-<!-- pom.xml — swap the embedded server -->
+<!-- pom.xml — planned Spring Boot integration (not yet available) -->
+<!-- A dedicated Spring Boot starter / auto-configuration module will be added in a future release. -->
 <dependency>
     <groupId>io.exeris</groupId>
     <artifactId>exeris-kernel-core</artifactId>
