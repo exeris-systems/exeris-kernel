@@ -41,9 +41,12 @@ exeris-kernel-parent
 Exeris is an **À la carte** execution engine. Subsystems are loaded dynamically via the SPI. You can mix providers across tiers. For example, you can use the free **Community Transport** (TCP — planned TRL-4) while plugging in the **Enterprise Persistence** driver (`io_uring` DB), or disable higher-level features entirely.
 
 ### Rules
+
+> **Note:** The rules below describe the **target architecture**. The current `0.5.0-SNAPSHOT` release may be a partial implementation of this structure.
+
 1. **spi** has zero Exeris dependencies — it is the immutable foundation.
 2. **core** depends only on **spi**.
-3. **community** depends on **spi** and **core** (for shared TLS/memory infrastructure — `AbstractLoanedBuffer`, `CoreOpenSslLoader`, `TlsStateMachine`).
+3. **community** depends on **spi** and **core** (for shared TLS/memory infrastructure — `AbstractLoanedBuffer`, `CoreOpenSslLoader`, `TlsStateMachine`). **Currently, `exeris-kernel-community` is a minimal placeholder module with no declared Maven dependencies.**
 4. **enterprise** depends on **spi** and **core** (same shared infrastructure).
 5. **community** and **enterprise** never depend on each other.
 6. Applications depend on **core** and **one** selected driver (community *or* enterprise).
@@ -202,7 +205,7 @@ the closed-source `exeris-kernel-enterprise` module.
 |:----------------------------------------|:----------------------:|:----------------------:|:----------------------:|
 | **Virtual Threads (Loom)**              | ✅ Full                | ✅ Full                | ✅ Full                |
 | **Panama FFM / OpenSSL TLS**            | ✅ `libssl.so.3`       | ✅ `libssl.3.dylib`    | ✅ `libssl-3-x64.dll`  |
-| **Community TCP transport (epoll)**     | ✅ `epoll`             | ✅ `kqueue`            | ✅ `WSAPoll` (fallback)|
+| **Community TCP transport (epoll/kqueue/WSAPoll)** *(planned / not yet implemented in this repository)* | 🔸 Planned | 🔸 Planned | 🔸 Planned |
 | **`io_uring` kernel-bypass** `[Ent.]`  | ✅ kernel ≥ 5.11       | ❌ Not available       | ❌ Not available       |
 | **QUIC / UDP transport** `[Ent.]`       | ✅                     | ✅                     | ⚠️ Partial (no io_uring)|
 | **L0 Glass-Box crash buffer**           | `/tmp/exeris-crash/`   | `/tmp/exeris-crash/`   | `%TEMP%\exeris-crash\` |
@@ -215,8 +218,7 @@ the closed-source `exeris-kernel-enterprise` module.
 > the Community tier and development builds.
 
 > **`io_uring` minimum kernel version:** 5.11 (for `IORING_OP_PROVIDE_BUFFERS` and multishot RECVMSG).
-> Kernels below 5.11 will fall back to `epoll`-based transport at boot and emit a `KernelBootstrapEvent`
-> warning in JFR.
+> Kernels below 5.11 will fall back to `epoll`-based transport at boot and emit a JFR warning during kernel bootstrap (concrete event type is implementation-specific and may live outside `exeris-kernel-core`).
 
 ---
 

@@ -1,4 +1,4 @@
-﻿# Exeris Kernel: The Vision & Whitepaper
+﻿﻿# Exeris Kernel: The Vision & Whitepaper
 
 **Author:** Arkadiusz Przychocki, Founder & Lead Architect  
 **Status:** TRL-3 (Validated Architectural Prototype)  
@@ -102,6 +102,8 @@ Exeris Kernel is a **library embedded in your application JVM process** — not 
 not a middleware server. Your application code links against `exeris-kernel-core` and one driver module
 (`community` or `enterprise`). The Kernel bootstraps within your JVM and owns the network socket.
 
+> **Note:** The Community driver module (`exeris-kernel-community`) is **not yet implemented** in this repository — it is an active placeholder. Full Community driver implementations will be available in future releases.
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │  Your Application JVM (single process)                      │
@@ -133,7 +135,7 @@ Community and Enterprise tiers are measured separately. All limits are enforced 
 | Metric                              | Community Limit          | Enterprise Limit          | TCK Enforcement                     |
 |:------------------------------------|:------------------------:|:-------------------------:|:------------------------------------|
 | **Request latency P99**             | ≤ 200 µs                 | ≤ 50 µs                   | JMH + histogram, `AssertionError`   |
-| **TLS hot path heap allocation**    | 0 bytes                  | 0 bytes (full path)        | JFR GC profiler, `AssertionError`   |
+| **TLS hot path heap allocation**    | Bounded (per Community contract; best-effort zero) | 0 bytes (full path)        | CryptoZeroAllocTck + JFR GC profiler, `AssertionError`   |
 | **LoanedBuffer leak**               | 0 unreleased             | 0 unreleased               | `LeakDetectionMode.PARANOID`        |
 | **PAQS shed decision latency**      | ≤ 5 µs                   | ≤ 5 µs                     | Nanosecond timer in TCK             |
 | **MemoryAllocator complexity**      | O(1)                     | O(1)                       | JMH + PMD rule verification         |

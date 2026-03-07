@@ -1,4 +1,4 @@
-﻿# Kernel Subsystem: Graph (L2 Data Synthesis)
+# Kernel Subsystem: Graph (L2 Data Synthesis)
 
 **Physical Layout:**
 

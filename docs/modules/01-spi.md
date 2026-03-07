@@ -21,7 +21,9 @@ graph TD
 
     %% Compile-time dependencies
     CORE -->|"compile"| SPI
+    %% NOTE: exeris-kernel-community is currently a placeholder module with no declared Maven dependencies.
     COMM -->|"compile"| CORE
+    %% NOTE: exeris-kernel-enterprise is not present in this repository (closed-source, distributed separately).
     ENT  -->|"compile"| CORE
 
     %% TCK dependencies

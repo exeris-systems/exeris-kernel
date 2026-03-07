@@ -1,17 +1,19 @@
 # Physical Tier: Community (The Muscle)
 
 **Module:** `exeris-kernel-community`
-**Dependencies:**
+**Dependencies (Planned — not yet declared in `exeris-kernel-community/pom.xml`):**
 - `compile`: `exeris-kernel-spi` (SPI contracts — The Wall)
 - `compile`: `exeris-kernel-core` (shared infrastructure: `CoreOpenSslLoader`, `TlsStateMachine`, `AbstractLoanedBuffer`)
 - `test`: `exeris-kernel-tck`
 
-> **⚠️ Implementation Status (TRL-3):** `exeris-kernel-community` is an **active module** in this
-> repository with sources and a working Maven build. It currently ships:
-> `CommunityTelemetryProvider` (Console/JFR/File sinks),
-> `CommunityKernelCryptoProvider` (OpenSSL 3.x via Panama FFM, TCP-only — no QUIC),
-> `CommunityMemoryProvider` (Arena-based off-heap allocator + `CommunityAllocationEvent` JFR),
-> `CommunityPersistenceProvider` (JDBC-based), and `CommunityGraphProvider` (SQL/Bolt-based).
+> **Note:** The current `exeris-kernel-community/pom.xml` declares **no** Maven dependencies and the module has **no** `src/` tree in this repository. The dependency list above reflects the **intended target architecture**. This module is an **active placeholder** — implementations will be added in future pull requests.
+
+> **⚠️ Implementation Status (TRL-3):** `exeris-kernel-community` is currently a **placeholder module** in this
+> repository with **no sources** and **no Maven build output**. When complete, it will ship:
+> `CommunityTelemetryProvider` *(planned)* (Console/JFR/File sinks),
+> `CommunityKernelCryptoProvider` *(planned)* (OpenSSL 3.x via Panama FFM, TCP-only — no QUIC),
+> `CommunityMemoryProvider` *(planned)* (Arena-based off-heap allocator + `CommunityAllocationEvent` JFR),
+> `CommunityPersistenceProvider` *(planned)* (JDBC-based), and `CommunityGraphProvider` *(planned)* (SQL/Bolt-based).
 > The **Network transport driver** (Off-Heap TCP carrier + PAQS scheduler) is **planned (TRL-4)**.
 > See the request-flow diagram below for the target architecture.
 
@@ -26,9 +28,9 @@ flowchart TD
 
     A["① TCP accept()\n<b>POSIX syscall — epoll/kqueue</b>\nFile Descriptor acquired\n<i>[OS Kernel → JVM boundary]</i>"]
 
-    B["② LoanedBuffer.allocate()\n<b>Off-Heap Arena (PanamaArenaAllocator)</b>\nRaw bytes written to MemorySegment\nref-count = 1\n<i>[OFF-HEAP]</i>\n<i>(conceptual placeholder — TRL-4)</i>"]
+    B["② LoanedBuffer.allocate()\n<b>Off-Heap Arena (PanamaArenaAllocator)\n(conceptual placeholder)</b>\nRaw bytes written to MemorySegment\nref-count = 1\n<i>[OFF-HEAP]</i>\n<i>(conceptual placeholder — TRL-4)</i>"]
 
-    C["③ TLS unwrap\n<b>OpenSSL via Panama FFM</b>\nSSL_read() downcall · plaintext → LoanedBuffer slice\nNo ByteBuffer · No heap copy\n<i>[OFF-HEAP → OFF-HEAP]</i>\n<i>(conceptual placeholder — TRL-4)</i>"]
+    C["③ TLS unwrap\n<b>OpenSSL via Panama FFM</b>\n(planned — current community uses JSSE/SSLEngine)\nSSL_read() downcall · plaintext → LoanedBuffer slice\nNo ByteBuffer · No heap copy\n<i>[OFF-HEAP → OFF-HEAP]</i>\n<i>(conceptual placeholder — TRL-4)</i>"]
 
     D{"④ PAQS Scheduler\n<b>Decision Gate</b>\nPriority queue · Watermark check\nLoad-shed if WM ceiling breached"}
 
@@ -40,7 +42,7 @@ flowchart TD
 
     H["⑧ Response serialisation\n<b>Off-Heap write-back</b>\nLoanedBuffer filled · TLS wrap (SSL_write)\n<i>[OFF-HEAP]</i>"]
 
-    I["⑨ TCP send() + Slab release\n<b>POSIX syscall</b>\nLoanedBuffer.release() → ref-count 0\nSlab returned to PanamaArenaAllocator pool\n<i>[POOL]</i>\n<i>(conceptual placeholder — TRL-4)</i>"]
+    I["⑨ TCP send() + Slab release\n<b>POSIX syscall</b>\nLoanedBuffer.release() → ref-count 0\nSlab returned to PanamaArenaAllocator pool\n(conceptual placeholder)\n<i>[POOL]</i>\n<i>(conceptual placeholder — TRL-4)</i>"]
 
     NIC --> A --> B --> C --> D
     D -->|"ADMIT"| E --> F --> G --> H --> I

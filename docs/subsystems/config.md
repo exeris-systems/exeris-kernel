@@ -187,7 +187,7 @@ The table below lists all configuration keys consumed **internally** by the Exer
 Application-level keys are defined by the application layer and not listed here.
 
 > **Key name convention:** Keys are specified in the `ConfigProvider` API format (e.g. `network.port`).
-> `CommunityConfigProvider` maps these to system properties by prepending `exeris.` (e.g.
+> A typical community configuration provider maps these to system properties by prepending `exeris.` (e.g.
 > `-Dexeris.network.port=9090`) and to environment variables by converting to
 > `EXERIS_NETWORK_PORT` (uppercase, dots replaced with underscores). Enterprise implementations
 > may also load these from Vault or ConfigMap mounts.
@@ -196,11 +196,11 @@ Application-level keys are defined by the application layer and not listed here.
 |:---------------------------------------------------|:----------|:-------------------:|:---------:|:---------------------------------------------------------|
 | `bootstrap.healthPort`                             | `int`     | `9090`              | ❌ IMMUTABLE | HTTP health probe port                                |
 | `bootstrap.failFast`                               | `boolean` | `true`              | ❌ IMMUTABLE | FAIL_FAST vs DEGRADE on subsystem init failure        |
-| `network.port`                                     | `int`     | `8080`              | ❌ IMMUTABLE | Data-plane TCP/QUIC port                              |
+| `network.port`                                     | `int`     | `8443`              | ❌ IMMUTABLE | Data-plane TCP/QUIC port                              |
 | `network.idleTimeoutMillis`                        | `long`    | `30000`             | ✅ DYNAMIC   | Connection idle timeout (ms)                          |
-| `network.nativeTransportPreferred`                 | `boolean` | `false`             | ❌ IMMUTABLE | Hint to prefer native async I/O transport             |
+| `network.nativeTransportPreferred`                 | `boolean` | `true`              | ❌ IMMUTABLE | Hint to prefer native async I/O transport             |
 | `network.reactorCount`                             | `int`     | auto (≤ 4 CPUs)     | ❌ IMMUTABLE | Number of carrier reactor threads                     |
-| `network.quicEnabled`                              | `boolean` | `false`             | ❌ IMMUTABLE | Enable QUIC/HTTP3 (Enterprise only)                   |
+| `network.quicEnabled`                              | `boolean` | `true`              | ❌ IMMUTABLE | Enable QUIC/HTTP3 (Enterprise only)                   |
 | `network.proxyProtocolEnabled`                     | `boolean` | `false`             | ❌ IMMUTABLE | Enable Proxy Protocol v2 parsing                      |
 | `network.proxyProtocolRequired`                    | `boolean` | `false`             | ❌ IMMUTABLE | Reject connections without PP2 header                 |
 | `network.paqs.warningThreshold`                    | `float`   | `0.70`              | ✅ DYNAMIC   | WM `WARNING` level (fraction of off-heap budget)      |
