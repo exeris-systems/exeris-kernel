@@ -262,13 +262,13 @@ on its local NUMA node.
 
 ## Graceful Shutdown — In-Flight LoanedBuffers
 
-When the Kernel receives `SIGTERM`, the `BootstrapSequencer` initiates a controlled drain sequence.
+When the Kernel receives `SIGTERM`, `KernelBootstrap` (via `SubsystemOrchestrator`) initiates a controlled drain sequence.
 The contract for in-flight `LoanedBuffer` instances:
 
 ```mermaid
 sequenceDiagram
     participant OS as OS (SIGTERM)
-    participant BS as BootstrapSequencer
+    participant BS as KernelBootstrap / SubsystemOrchestrator
     participant TP as Transport (PAQS)
     participant LB as In-Flight LoanedBuffers
     participant MA as MemoryAllocator

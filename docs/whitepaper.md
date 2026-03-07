@@ -83,7 +83,7 @@ Logical subsystems span four layers (L0–L4), each strictly optional above L0:
 | Layer | Name | Responsibility |
 |-------|------|----------------|
 | **L0** | Foundation | Config, Memory (`LoanedBuffer`, Arenas), Telemetry (JFR) |
-| **L1** | Data & Integrity | Security (Citadel, `ScopedValue`), Persistence (Zero-Copy DB), **Crypto (Zero-Alloc TLS via OpenSSL/Panama FFM — shared Core)** |
+| **L1** | Data & Integrity | Security (Citadel, `ScopedValue`), Persistence (Zero-Copy DB), **Crypto (Zero-Alloc TLS via OpenSSL/Panama FFM — Core `OffHeapTlsEngine`; zero-alloc Community contract is best-effort, full zero-alloc TCK-enforced on Enterprise path)** |
 | **L2** | Data Synthesis | Transport (I/O, Priority Scheduler), Graph (PGQ DSL) |
 | **L3** | Logic Engines | Events (Sourcing, Outbox), optional |
 | **L4** | Orchestration | Flow (Sagas, Off-Heap State Machine), optional |
@@ -135,7 +135,7 @@ Community and Enterprise tiers are measured separately. All limits are enforced 
 | Metric                              | Community Limit          | Enterprise Limit          | TCK Enforcement                     |
 |:------------------------------------|:------------------------:|:-------------------------:|:------------------------------------|
 | **Request latency P99**             | ≤ 200 µs                 | ≤ 50 µs                   | JMH + histogram, `AssertionError`   |
-| **TLS hot path heap allocation**    | Bounded (per Community contract; best-effort zero) | 0 bytes (full path)        | CryptoZeroAllocTck + JFR GC profiler, `AssertionError`   |
+| **TLS hot path heap allocation**    | Bounded (Community `OffHeapTlsEngine` wraps OpenSSL via Core; best-effort off-heap, no hard TCK zero-alloc gate on Community path) | 0 bytes (full path)        | CryptoZeroAllocTck + JFR GC profiler, `AssertionError`   |
 | **LoanedBuffer leak**               | 0 unreleased             | 0 unreleased               | `LeakDetectionMode.PARANOID`        |
 | **PAQS shed decision latency**      | ≤ 5 µs                   | ≤ 5 µs                     | Nanosecond timer in TCK             |
 | **MemoryAllocator complexity**      | O(1)                     | O(1)                       | JMH + PMD rule verification         |

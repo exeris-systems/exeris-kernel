@@ -3,8 +3,8 @@
 **Physical Layout:**
 
 - SPI: `eu.exeris.kernel.spi.telemetry.*` (`TelemetryProvider`, `TelemetrySink`, `KernelEvent`, `TelemetryConfig`)
-- Core: `eu.exeris.kernel.core.telemetry.*` (`JfrTelemetrySink`, `BinaryGlassBox`, `GlassBoxSerializer`)
-- Enterprise: Binary deterministic sink, structured JFR streaming over off-heap ring buffer
+- Core: `eu.exeris.kernel.core.telemetry.*` (`JfrTelemetrySink`, `ErrorMapperRegistry`, `TelemetryJfrEvents`)
+- Enterprise: Binary deterministic sink, structured JFR streaming over off-heap ring buffer *(planned — `BinaryGlassBox` / `GlassBoxSerializer` are target TRL-4 types, not yet implemented)*
 
 **Layer:** L1 (Observability)  
 **Status:** Validated Architectural Prototype (TRL-3)

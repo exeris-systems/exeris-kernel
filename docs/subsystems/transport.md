@@ -208,12 +208,12 @@ sequenceDiagram
         else priority insufficient
             PAQS->>NIC: stream.close()<br/>[TCP FIN (graceful close) / QUIC CONNECTION_CLOSE]
             PAQS->>PAQS: emit StreamShedEvent (JFR, @StackTrace false)
-            Note over PAQS: EX-NET-4006 thrown — no VT spawned,<br/>no heap allocation, no log.
+            Note over PAQS: Stream shed via close() + StreamShedEvent.<br/>No exception thrown back to carrier VT.<br/>No VT spawned, no heap allocation, no log.
         end
     else CRITICAL or SHEDDING watermark — shed all
         PAQS->>NIC: stream.close()
         PAQS->>PAQS: emit StreamShedEvent (JFR)
-        Note over PAQS: All streams shed regardless of priority.
+        Note over PAQS: All streams shed (close + StreamShedEvent),<br/>no exception propagated to the carrier VT.
     end
 ```
 

@@ -189,10 +189,11 @@ try {
 
 ## Kernel Configuration Reference
 
-The table below lists the configuration keys consumed **internally** by the Exeris Kernel, scoped to
-keys that are either present in `ConfigProvider.KernelSettings` today or explicitly committed to in an
-accepted ADR. Keys not yet wired to a `KernelSettings` constant are marked ***(planned)***. Application-level
-keys are defined by the application layer and not listed here.
+The table below lists the configuration keys consumed **internally** by the Exeris Kernel.
+The **Status** column indicates whether the key is wired to a `ConfigProvider.KernelSettings`
+constant today (`✅ WIRED`) or is a committed design target not yet represented by a record
+field (`🔲 planned`). Application-level keys are defined by the application layer and are
+not listed here.
 
 > **Key name convention:** Keys are specified in the `ConfigProvider` API format (e.g. `network.port`).
 > A typical community configuration provider maps these to system properties by prepending `exeris.` (e.g.
@@ -200,38 +201,47 @@ keys are defined by the application layer and not listed here.
 > `EXERIS_NETWORK_PORT` (uppercase, dots replaced with underscores). Enterprise implementations
 > may also load these from Vault or ConfigMap mounts.
 
-| Key                                                | Type      | Default             | Reload    | Description                                              |
-|:---------------------------------------------------|:----------|:-------------------:|:---------:|:---------------------------------------------------------|
-| `bootstrap.healthPort`                             | `int`     | `9090`              | ❌ IMMUTABLE | HTTP health probe port                                |
-| `bootstrap.failFast`                               | `boolean` | `true`              | ❌ IMMUTABLE | FAIL_FAST vs DEGRADE on subsystem init failure        |
-| `network.port`                                     | `int`     | `8443`              | ❌ IMMUTABLE | Data-plane TCP/QUIC port                              |
-| `network.idleTimeoutMillis`                        | `long`    | `30000`             | ✅ DYNAMIC   | Connection idle timeout (ms)                          |
-| `network.nativeTransportPreferred`                 | `boolean` | `true`              | ❌ IMMUTABLE | Hint to prefer native async I/O transport             |
-| `network.reactorCount`                             | `int`     | auto (≤ 4 CPUs)     | ❌ IMMUTABLE | Number of carrier reactor threads                     |
-| `network.quicEnabled`                              | `boolean` | `true`              | ❌ IMMUTABLE | Enable QUIC/HTTP3 (Enterprise only)                   |
-| `network.proxyProtocolEnabled`                     | `boolean` | `false`             | ❌ IMMUTABLE | Enable Proxy Protocol v2 parsing                      |
-| `network.proxyProtocolRequired`                    | `boolean` | `false`             | ❌ IMMUTABLE | Reject connections without PP2 header                 |
-| `network.paqs.warningThreshold`                    | `float`   | `0.70`              | ✅ DYNAMIC   | WM `WARNING` level (fraction of off-heap budget)      |
-| `network.paqs.criticalThreshold`                   | `float`   | `0.85`              | ✅ DYNAMIC   | WM `CRITICAL` level (fraction of off-heap budget)     |
-| `network.paqs.sheddingThreshold`                   | `float`   | `0.95`              | ✅ DYNAMIC   | WM `SHEDDING` level (fraction of off-heap budget)     |
-| `network.paqs.endpointPriority.<path>`             | `string`  | `NORMAL`            | ✅ DYNAMIC   | Static `StreamPriority` for path prefix               |
-| `globalMemoryMb`                                   | `long`    | auto (50% RAM in MB)| ❌ IMMUTABLE | Total off-heap arena budget                           |
-| `memory.watermarkPollIntervalMs`                   | `int`     | `50`               | ✅ DYNAMIC   | `WatermarkManager` sampling interval                  |
-| `telemetry.jfrEnabled`                             | `boolean` | `true`              | ❌ IMMUTABLE | Enable JFR telemetry sink                             |
-| `telemetry.allocationSampleRate`                   | `double`  | `0.01`              | ✅ DYNAMIC   | JFR allocation event sampling rate (0.0–1.0)          |
-| `telemetry.consoleSinkEnabled`                     | `boolean` | `false`             | ❌ IMMUTABLE | Enable Console telemetry sink                         |
-| `memory.leakDetection`                             | `string`  | `SAMPLED`           | ❌ IMMUTABLE | `DISABLED`, `SAMPLED`, `PARANOID`                     |
-| `crypto.tls.minVersion`                            | `string`  | `TLSv1.3`           | ❌ IMMUTABLE | Minimum TLS version accepted                          |
-| `persistence.pool.maxSize`                         | `int`     | `20`                | ❌ IMMUTABLE | JDBC connection pool max connections                  |
-| `persistence.pool.connectionTimeoutMs`             | `int`     | `5000`              | ✅ DYNAMIC   | JDBC pool acquisition timeout                         |
-| `persistence.pool.idleTimeoutMs`                   | `int`     | `600000`            | ✅ DYNAMIC   | JDBC pool idle connection timeout                     |
-| `persistence.pool.keepaliveMs`                     | `int`     | `30000`             | ✅ DYNAMIC   | JDBC pool keepalive heartbeat interval                |
-| `persistence.outbox.maxRetries`                    | `int`     | `10`                | ✅ DYNAMIC   | Max Outbox delivery retries before DLQ               |
-| `persistence.outbox.backoffBaseMs`                 | `int`     | `100`               | ✅ DYNAMIC   | Outbox retry base backoff (ms)                       |
-| `config.vault.timeoutMs`                           | `int`     | `3000`              | ❌ IMMUTABLE | Vault connection timeout during bootstrap             |
-| `config.vault.retryCount`                          | `int`     | `3`                 | ❌ IMMUTABLE | Vault connection retry attempts before FAIL_FAST      |
-| `flow.saga.globalParkTimeoutMs`                    | `long`    | `1800000` (30 min)  | ✅ DYNAMIC   | Max Saga park duration before timeout compensation    |
-| `crashDir`                                         | `string`  | platform default    | ❌ IMMUTABLE | Glass-Box crash buffer directory (also: `EXERIS_CRASH_DIR` ENV) |
+| Key                                                | Type      | Default             | Reload       | Status      | Description                                              |
+|:---------------------------------------------------|:----------|:-------------------:|:------------:|:-----------:|:---------------------------------------------------------|
+| `globalMemoryMb`                                   | `long`    | auto (50% RAM in MB)| ❌ IMMUTABLE | ✅ WIRED    | Total off-heap arena budget (`KernelSettings.globalMemoryMb`) |
+| `network.port`                                     | `int`     | `8443`              | ❌ IMMUTABLE | ✅ WIRED    | Data-plane TCP/QUIC port (`NetworkSettings.port`)        |
+| `network.bufferSize`                               | `int`     | `65536`             | ❌ IMMUTABLE | ✅ WIRED    | Per-connection off-heap buffer size in bytes (`NetworkSettings.bufferSize`) |
+| `network.nativeTransportPreferred`                 | `boolean` | `true`              | ❌ IMMUTABLE | ✅ WIRED    | Hint to prefer native async I/O transport (`NetworkSettings.nativeTransportPreferred`) |
+| `network.reactorCount`                             | `int`     | `0` (auto)          | ❌ IMMUTABLE | ✅ WIRED    | Number of carrier reactor threads; 0 = auto from CPU topology (`NetworkSettings.reactorCount`) |
+| `network.quicEnabled`                              | `boolean` | `true`              | ❌ IMMUTABLE | ✅ WIRED    | Enable QUIC/HTTP3 — Enterprise only (`NetworkSettings.quicEnabled`) |
+| `persistence.jdbcUrl`                              | `string`  | `jdbc:postgresql://localhost:5432/exeris` | ❌ IMMUTABLE | ✅ WIRED | JDBC connection URL (`PersistenceSettings.jdbcUrl`) |
+| `persistence.username`                             | `string`  | `exeris`            | ❌ IMMUTABLE | ✅ WIRED    | Database user — **SECRET**, redacted in telemetry        |
+| `persistence.password`                             | `string`  | `""`                | ❌ IMMUTABLE | ✅ WIRED    | Database password — **SECRET**, redacted in telemetry    |
+| `persistence.maxPoolSize`                          | `int`     | `20`                | ❌ IMMUTABLE | ✅ WIRED    | JDBC connection pool max connections (`PersistenceSettings.maxPoolSize`) |
+| `persistence.runMigrations`                        | `boolean` | `false`             | ❌ IMMUTABLE | ✅ WIRED    | Run schema migrations on startup (`PersistenceSettings.runMigrations`) |
+| `telemetry.jfrEnabled`                             | `boolean` | `true`              | ❌ IMMUTABLE | ✅ WIRED    | Enable JFR telemetry sink (`TelemetrySettings.jfrEnabled`) |
+| `telemetry.metricsEnabled`                         | `boolean` | `true`              | ❌ IMMUTABLE | ✅ WIRED    | Enable Prometheus metrics endpoint (`TelemetrySettings.metricsEnabled`) |
+| `telemetry.tracingEnabled`                         | `boolean` | `false`             | ❌ IMMUTABLE | ✅ WIRED    | Enable distributed tracing / OTEL (`TelemetrySettings.tracingEnabled`) |
+| `telemetry.nodeId`                                 | `string`  | `local`             | ❌ IMMUTABLE | ✅ WIRED    | Unique kernel instance identifier (`TelemetrySettings.nodeId`) |
+| `telemetry.region`                                 | `string`  | `default`           | ❌ IMMUTABLE | ✅ WIRED    | Deployment region for distributed tracing (`TelemetrySettings.region`) |
+| `bootstrap.healthPort`                             | `int`     | `9090`              | ❌ IMMUTABLE | 🔲 planned  | HTTP health probe port — not yet in `KernelSettings`     |
+| `bootstrap.failFast`                               | `boolean` | `true`              | ❌ IMMUTABLE | 🔲 planned  | FAIL_FAST vs DEGRADE on subsystem init failure           |
+| `network.idleTimeoutMillis`                        | `long`    | `30000`             | ✅ DYNAMIC   | 🔲 planned  | Connection idle timeout (ms)                             |
+| `network.proxyProtocolEnabled`                     | `boolean` | `false`             | ❌ IMMUTABLE | 🔲 planned  | Enable Proxy Protocol v2 parsing                         |
+| `network.proxyProtocolRequired`                    | `boolean` | `false`             | ❌ IMMUTABLE | 🔲 planned  | Reject connections without PP2 header                    |
+| `network.paqs.warningThreshold`                    | `float`   | `0.70`              | ✅ DYNAMIC   | 🔲 planned  | WM `WARNING` level (fraction of off-heap budget)         |
+| `network.paqs.criticalThreshold`                   | `float`   | `0.85`              | ✅ DYNAMIC   | 🔲 planned  | WM `CRITICAL` level (fraction of off-heap budget)        |
+| `network.paqs.sheddingThreshold`                   | `float`   | `0.95`              | ✅ DYNAMIC   | 🔲 planned  | WM `SHEDDING` level (fraction of off-heap budget)        |
+| `network.paqs.endpointPriority.<path>`             | `string`  | `NORMAL`            | ✅ DYNAMIC   | 🔲 planned  | Static `StreamPriority` for path prefix                  |
+| `memory.watermarkPollIntervalMs`                   | `int`     | `50`                | ✅ DYNAMIC   | 🔲 planned  | `WatermarkManager` sampling interval                     |
+| `memory.leakDetection`                             | `string`  | `SAMPLED`           | ❌ IMMUTABLE | 🔲 planned  | `DISABLED`, `SAMPLED`, `PARANOID`                        |
+| `telemetry.allocationSampleRate`                   | `double`  | `0.01`              | ✅ DYNAMIC   | 🔲 planned  | JFR allocation event sampling rate (0.0–1.0)             |
+| `telemetry.consoleSinkEnabled`                     | `boolean` | `false`             | ❌ IMMUTABLE | 🔲 planned  | Enable Console telemetry sink                            |
+| `crypto.tls.minVersion`                            | `string`  | `TLSv1.3`           | ❌ IMMUTABLE | 🔲 planned  | Minimum TLS version accepted                             |
+| `persistence.pool.connectionTimeoutMs`             | `int`     | `5000`              | ✅ DYNAMIC   | 🔲 planned  | JDBC pool acquisition timeout                            |
+| `persistence.pool.idleTimeoutMs`                   | `int`     | `600000`            | ✅ DYNAMIC   | 🔲 planned  | JDBC pool idle connection timeout                        |
+| `persistence.pool.keepaliveMs`                     | `int`     | `30000`             | ✅ DYNAMIC   | 🔲 planned  | JDBC pool keepalive heartbeat interval                   |
+| `persistence.outbox.maxRetries`                    | `int`     | `10`                | ✅ DYNAMIC   | 🔲 planned  | Max Outbox delivery retries before DLQ                   |
+| `persistence.outbox.backoffBaseMs`                 | `int`     | `100`               | ✅ DYNAMIC   | 🔲 planned  | Outbox retry base backoff (ms)                           |
+| `config.vault.timeoutMs`                           | `int`     | `3000`              | ❌ IMMUTABLE | 🔲 planned  | Vault connection timeout during bootstrap                |
+| `config.vault.retryCount`                          | `int`     | `3`                 | ❌ IMMUTABLE | 🔲 planned  | Vault connection retry attempts before FAIL_FAST         |
+| `flow.saga.globalParkTimeoutMs`                    | `long`    | `1800000` (30 min)  | ✅ DYNAMIC   | 🔲 planned  | Max Saga park duration before timeout compensation       |
+| `crashDir`                                         | `string`  | platform default    | ❌ IMMUTABLE | 🔲 planned  | Glass-Box crash buffer directory (also: `EXERIS_CRASH_DIR` ENV) |
 
 > **Auto-detection:** `globalMemoryMb` defaults to 50% of available JVM process RAM
 > (`Runtime.getRuntime().maxMemory() / 1_048_576 * 0.5`). Override explicitly in production for

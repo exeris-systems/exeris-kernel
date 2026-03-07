@@ -236,27 +236,6 @@ partial result accumulated up to that point. `EX-GRPH-5002` is emitted with
 **Operators must explicitly set `maxDepth`** for user-driven graph traversals (e.g., "find all
 connections of user X"). Leaving it at the default 10 prevents runaway traversals on dense graphs.
 
----
-
-## Benchmark Claim Context — ~15x Allocation Ratio
-
-The ~15x allocation-to-data ratio claimed for the Community Bolt driver was measured under:
-
-| Parameter               | Value                                                                 |
-|:------------------------|:----------------------------------------------------------------------|
-| **Hardware**            | AWS `c6i.4xlarge` (16 vCPU, 32 GB RAM), Linux 5.15, Java 26          |
-| **Graph size**          | 10M nodes, 50M edges (social graph topology)                         |
-| **Query pattern**       | BFS depth-3 from 1000 random source nodes (avg 847 results/query)     |
-| **Driver version**      | `org.neo4j:neo4j-java-driver:5.26`                                    |
-| **Measurement tool**    | JFR GC allocation profiler + `Instrumentation.getObjectSize()`        |
-| **Metric**              | Bytes allocated on JVM heap per byte of graph data returned           |
-
-These figures are not independently verified benchmarks — they are internal profiling results from
-TRL-3 prototype testing. Independent reproduction is encouraged. The TCK `AbstractGraphEngineTck`
-exposes the benchmark harness under the `eu.exeris.kernel.tck.perf.*` package for reproducibility.
-
----
-
 ## Testing Strategy
 
 ### Unit Tests
