@@ -1,15 +1,36 @@
 EXERIS SOFTWARE LICENSE
 Version 1.0, 2025-2026
 Copyright (C) 2025-2026 Exeris. All rights reserved.
-PROPRIETARY AND CONFIDENTIAL
+
+OPEN-CORE MODEL
+This repository uses a two-tier licensing model, similar to MongoDB (SSPL) and
+HashiCorp (BSL). The goal is to protect the project from cloud-provider
+extraction while keeping the Community tier fully open for developers.
+
+  * Community modules (exeris-kernel-spi, exeris-kernel-core,
+    exeris-kernel-community, exeris-kernel-tck) are free to use, modify, and
+    distribute for any purpose, including production. See each module's
+    README for its specific licence terms.
+
+  * Enterprise modules (exeris-kernel-enterprise) are subject to the
+    commercial licence terms below. Contact legal@exeris.eu to obtain a
+    commercial licence.
+
+The terms below apply to the Enterprise modules and to any module not
+explicitly designated as Community in its README.
+
+---
+
 This software and its associated documentation files (the "Software") are the
 exclusive property of Exeris ("Licensor"). All rights not expressly granted
 herein are reserved by the Licensor.
+
 1. GRANT OF LICENSE
    Subject to the terms and conditions of this License, Licensor grants you a
    limited, non-exclusive, non-transferable, non-sublicensable license to use
    the Software solely for your internal evaluation and integration purposes
    with Exeris platform services.
+
 2. RESTRICTIONS
    You may NOT, without the prior written consent of Licensor:
    a) copy, reproduce, distribute, publish, or otherwise transfer the Software
