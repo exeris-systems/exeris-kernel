@@ -1,0 +1,126 @@
+/*
+ * Copyright (C) 2025-2026 Exeris Systems.
+ *
+ * Licensed under the Apache License, Version 2.0 with Commons Clause.
+ * You may use, modify, and distribute this file under those terms.
+ * Commercial resale of this software as a competing product is prohibited.
+ * See LICENSE-COMMUNITY in the repository root for the full text.
+ */
+package eu.exeris.kernel.core.persistence;
+
+import eu.exeris.kernel.spi.context.KernelProviders;
+import eu.exeris.kernel.spi.exceptions.persistence.PersistenceProviderException;
+import eu.exeris.kernel.spi.persistence.ConnectionInterceptor;
+import eu.exeris.kernel.spi.persistence.PersistenceConfig;
+import eu.exeris.kernel.spi.persistence.PersistenceEngine;
+import eu.exeris.kernel.spi.persistence.PersistenceProvider;
+
+import java.util.Comparator;
+import java.util.List;
+import java.util.ServiceLoader;
+
+/**
+ * Core: ServiceLoader-driven bootstrap for the Persistence subsystem.
+ *
+ * <h2>Responsibility (The Brain)</h2>
+ * <p>This class is the <b>only</b> place in the kernel that calls
+ * {@link ServiceLoader#load(Class)} for {@link PersistenceProvider}.
+ * It selects the highest-priority provider, creates the engine, registers
+ * pre-built interceptors, emits a JFR bootstrap event, and binds the result
+ * into {@link KernelProviders#PERSISTENCE_ENGINE} so every Virtual Thread
+ * inherits it via {@code ScopedValue}.
+ *
+ * <h2>Priority Rule</h2>
+ * <ul>
+ *   <li>Enterprise: priority = 100</li>
+ *   <li>Community: priority = 0</li>
+ * </ul>
+ * <p>If Enterprise is on the classpath, it wins. If only Community is present,
+ * Community wins. If neither is found → {@link PersistenceProviderException}
+ * with code {@code EX-PERS-0001} is thrown — kernel start aborts.
+ *
+ * <h2>ScopedValue Binding</h2>
+ * <p>The caller (typically {@code KernelBootstrap}) wraps its subsystem startup
+ * code in:
+ * <pre>{@code
+ * ScopedValue
+ *     .where(KernelProviders.PERSISTENCE_ENGINE, engine)
+ *     .run(kernel::startSubsystems);
+ * }</pre>
+ * {@code PersistenceBootstrap.load()} returns the {@link PersistenceEngine} ready
+ * for that binding — it does not bind it directly (that is {@code KernelBootstrap}'s job).
+ *
+ * <h2>The Wall (Open-Core)</h2>
+ * <p>This class imports only {@code exeris-kernel-spi}. It has zero knowledge of
+ * HikariCP, io_uring, pgjdbc, or any Community/Enterprise implementation class.
+ *
+ * @since 0.5.0
+ */
+public final class PersistenceBootstrap {
+
+    private static final String ERROR_NO_PROVIDER =
+            "No PersistenceProvider found on classpath. "
+            + "Add exeris-kernel-community or exeris-kernel-enterprise to your dependencies.";
+
+    private PersistenceBootstrap() {
+        // utility — no instances
+    }
+
+    /**
+     * Loads the best available {@link PersistenceProvider}, creates the engine,
+     * registers the supplied interceptors, and returns the ready {@link PersistenceEngine}.
+     *
+     * <p>This method is idempotent for the same {@code ClassLoader} and config.
+     * It MUST be called exactly once per kernel lifecycle, during bootstrap.
+     *
+     * @param config       immutable persistence configuration
+     * @param interceptors ordered list of interceptors to register (may be empty)
+     * @return a fully initialised {@link PersistenceEngine}
+     * @throws PersistenceProviderException if no provider is available
+     */
+    public static PersistenceEngine load(PersistenceConfig config,
+                                         List<ConnectionInterceptor> interceptors) {
+        // --- Phase 1: Discover all PersistenceProviders via ServiceLoader ---
+        PersistenceProvider provider = ServiceLoader.load(PersistenceProvider.class)
+                .stream()
+                .map(ServiceLoader.Provider::get)
+                .max(Comparator.comparingInt(PersistenceProvider::priority))
+                .orElseThrow(() -> PersistenceProviderException.noProviderAvailable(
+                        ERROR_NO_PROVIDER));
+
+        // --- Phase 2: Create the PersistenceEngine (bootstrap allocation permitted) ---
+        PersistenceEngine engine = provider.createEngine(config);
+
+        // --- Phase 3: Register interceptors (RLS, schema-switch, audit, etc.) ---
+        // Interceptors are registered in order — they will be called in that order
+        // on every connection checkout from openConnection(StorageContext).
+        for (ConnectionInterceptor interceptor : interceptors) {
+            engine.registerInterceptor(interceptor);
+        }
+
+        // --- Phase 4: JFR-First — emit bootstrap event ---
+        // PersistenceEngineBootstrapEvent.emit() is already called inside
+        // Community/EnterprisePersistenceEngine constructors (driver-level detail).
+        // Here we emit the higher-level "which provider was chosen" event.
+        PersistenceBootstrapSelectedEvent.emit(
+                provider.getClass().getName(),
+                provider.priority(),
+                engine.capabilities().providerId(),
+                interceptors.size()
+        );
+
+        return engine;
+    }
+
+    /**
+     * Convenience overload — no interceptors.
+     *
+     * @param config immutable persistence configuration
+     * @return a fully initialised {@link PersistenceEngine}
+     */
+    public static PersistenceEngine load(PersistenceConfig config) {
+        return load(config, List.of());
+    }
+}
+
+
