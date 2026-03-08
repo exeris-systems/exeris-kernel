@@ -3,6 +3,8 @@
 **Module:** `eu.exeris:exeris-kernel-community`  
 **Role:** L1 Java-Standard Implementations
 
+> ⚠️ Implementation in progress — see GitHub issue #31–#35.
+
 ## Overview
 The Community module provides standard, open-source implementations of the Kernel SPIs. It is designed for compatibility and ease of use in environments where native kernel-bypass is not required.
 

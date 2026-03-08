@@ -17,7 +17,7 @@ All data structures are implemented as `record` types annotated with `@ValueCand
 ## ⚖️ Licence
 
 This module is licensed under the **Apache License 2.0 with Commons Clause**.
-See the [LICENSE](LICENSE) file in this directory for the full text.
+See the [LICENSE-COMMUNITY](../LICENSE-COMMUNITY) file in the repository root for the full text.
 
 **In brief:** you may use, modify, fork, and redistribute this module in any
 product or service — including commercial production deployments — as long as

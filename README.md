@@ -101,7 +101,7 @@ Performance guarantees → [`docs/performance-contract.md`](docs/performance-con
 
 ## 📄 Licence
 
-The **SPI, Core, Community, and TCK** modules are distributed under the **Exeris Community Licence** (free for development and production use — see individual module READMEs).  
+The **SPI, Core, Community, and TCK** modules are distributed under **Apache License 2.0 + Commons Clause** ([LICENSE-COMMUNITY](LICENSE-COMMUNITY)) (free for development and production use — see individual module READMEs).  
 The **Enterprise** module is distributed under the **Exeris Commercial Licence** (contact [licensing@exeris.io](mailto:licensing@exeris.io)).
 
 Copyright © 2025–2026 Exeris. All rights reserved.
