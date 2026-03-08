@@ -46,9 +46,8 @@ import java.util.List;
  */
 public final class InterceptorRegistry {
 
-    private final List<ConnectionInterceptor> interceptors = new ArrayList<>(4);
+    private List<ConnectionInterceptor> interceptors = new ArrayList<>(4);
     private volatile boolean sealed;
-    private List<ConnectionInterceptor> immutableSnapshot;
 
     /**
      * Registers a new interceptor at the end of the chain.
@@ -77,11 +76,11 @@ public final class InterceptorRegistry {
      * @return ordered, immutable list of interceptors
      */
     public List<ConnectionInterceptor> seal() {
-        if (immutableSnapshot == null) {
-            immutableSnapshot = List.copyOf(interceptors);
+        if (!sealed) {
+            interceptors = List.copyOf(interceptors);
             sealed = true;
         }
-        return immutableSnapshot;
+        return interceptors;
     }
 
     /** Returns the number of registered interceptors. */
@@ -94,4 +93,3 @@ public final class InterceptorRegistry {
         return sealed;
     }
 }
-
