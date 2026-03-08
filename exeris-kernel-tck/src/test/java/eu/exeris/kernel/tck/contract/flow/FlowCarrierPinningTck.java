@@ -9,6 +9,7 @@
 package eu.exeris.kernel.tck.contract.flow;
 
 import eu.exeris.kernel.spi.flow.FlowEngine;
+import eu.exeris.kernel.spi.flow.model.FlowContext;
 import eu.exeris.kernel.spi.flow.model.FlowDefinition;
 import eu.exeris.kernel.spi.flow.model.FlowExecutionPlan;
 import eu.exeris.kernel.spi.flow.model.FlowOutcome;
@@ -50,7 +51,7 @@ public abstract class FlowCarrierPinningTck extends AbstractSubsystemCarrierPinn
     private FlowExecutionPlan plan;
 
     /** Pre-allocated per-VT FlowContexts — each VT owns exactly one slot. */
-    private eu.exeris.kernel.spi.flow.model.FlowContext[] contexts;
+    private FlowContext[] contexts;
 
     /** Monotonic slot counter — each executing VT claims the next available index. */
     private final AtomicInteger vtIndex = new AtomicInteger(0);
@@ -84,7 +85,7 @@ public abstract class FlowCarrierPinningTck extends AbstractSubsystemCarrierPinn
                 .build();
         plan = engine.plans().compile(def);
 
-        contexts = new eu.exeris.kernel.spi.flow.model.FlowContext[vtSlotCount];
+        contexts = new FlowContext[vtSlotCount];
         for (int i = 0; i < vtSlotCount; i++) {
             contexts[i] = TestFlowContexts.create("carrier-pin-" + i, "carrier-pin-flow");
         }
@@ -107,4 +108,3 @@ public abstract class FlowCarrierPinningTck extends AbstractSubsystemCarrierPinn
         if (engine != null) engine.close();
     }
 }
-

@@ -1,9 +1,10 @@
 /*
- * Copyright (C) 2025-2026 Exeris. All rights reserved.
+ * Copyright (C) 2025-2026 Exeris Systems.
  *
- * This code is part of the Exeris Systems.
- * Distributed under the proprietary Exeris Software License.
- * Unauthorized copying or distribution is prohibited.
+ * Licensed under the Apache License, Version 2.0 with Commons Clause.
+ * You may use, modify, and distribute this file under those terms.
+ * Commercial resale of this software as a competing product is prohibited.
+ * See LICENSE-COMMUNITY in the repository root for the full text.
  */
 package eu.exeris.kernel.core.memory;
 
@@ -42,7 +43,14 @@ import java.util.Objects;
  *                            (maps to performance contract: 5 000 = saturated)
  * @param maxRttMs            maximum acceptable RTT in milliseconds for this tier before
  *                            the arbiter considers the context degraded
+ *
+ * @implNote INCUBATING — Full integration with {@link ResourceArbiter} planned for v0.6.0.
+ *         Multi-tenant SLA shedding is currently at TRL-2. The {@code ResourceArbiter}
+ *         presently uses hardcoded {@link WatermarkLevel} boundaries and does not yet
+ *         consume {@code ScalingContext}. Do NOT use on production hot paths until
+ *         {@code ResourceArbiter} integration is complete.
  * @see ResourceArbiter
+ * @see <a href="../../../../docs/subsystems/memory.md">Memory Subsystem: ScalingContext</a>
  * @since 0.5.0
  */
 public record ScalingContext(

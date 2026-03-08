@@ -17,15 +17,16 @@ import java.util.UUID;
 /**
  * Thrown when a shortest-path algorithm fails to find a path between two nodes.
  *
- * <h2>rawArgs Binary Layout (Enterprise Black-Box)</h2>
+ * <h2>rawArgs Binary Layout (Enterprise Glass-Box)</h2>
  * <pre>
- * index 0 → UUID  sourceNodeId   (source node identifier, stored as-is for binary telemetry)
- * index 1 → UUID  targetNodeId   (target node identifier, stored as-is for binary telemetry)
+ * index 0 → long  sourceMost   (UUID.getMostSignificantBits())
+ * index 1 → long  sourceLeast  (UUID.getLeastSignificantBits())
+ * index 2 → long  targetMost   (UUID.getMostSignificantBits())
+ * index 3 → long  targetLeast  (UUID.getLeastSignificantBits())
  * </pre>
  *
- * <p>UUID objects are stored without eager {@code toString()} conversion, consistent with
- * the {@link eu.exeris.kernel.spi.exceptions.ExerisKernelException} contract that rawArgs
- * are captured as-is. The Enterprise Black-Box tier serialises them via its own codec.
+ * <p>UUID is decomposed into two {@code long} primitives per node, keeping {@code rawArgs}
+ * allocation-free and binary-serialisable by the Enterprise Glass-Box tier without a codec.
  *
  * <h2>Error Code</h2>
  * <p>{@value KernelErrorCodes#EX_GRPH_5004}
@@ -39,9 +40,10 @@ public final class PathNotFoundException extends ExerisKernelException {
     /**
      * Primary constructor.
      *
-     * <p>UUIDs are stored directly in {@code rawArgs} without eager {@code toString()}
-     * conversion, avoiding unnecessary heap allocation and preserving the binary
-     * telemetry contract of {@link eu.exeris.kernel.spi.exceptions.ExerisKernelException}.
+     * <p>Each UUID is decomposed into {@code getMostSignificantBits()} and
+     * {@code getLeastSignificantBits()}, storing four {@code long} primitives in
+     * {@code rawArgs}. This eliminates the {@code UUID} object header from the
+     * telemetry payload and keeps the binary layout fixed-width.
      *
      * @param sourceNodeId source node identifier; must not be {@code null}
      * @param targetNodeId target node identifier; must not be {@code null}
@@ -49,8 +51,10 @@ public final class PathNotFoundException extends ExerisKernelException {
      */
     public PathNotFoundException(UUID sourceNodeId, UUID targetNodeId) {
         super(KernelErrorCodes.EX_GRPH_5004, MESSAGE, null,
-                Objects.requireNonNull(sourceNodeId, "sourceNodeId"),
-                Objects.requireNonNull(targetNodeId, "targetNodeId"));
+                Objects.requireNonNull(sourceNodeId, "sourceNodeId").getMostSignificantBits(),
+                sourceNodeId.getLeastSignificantBits(),
+                Objects.requireNonNull(targetNodeId, "targetNodeId").getMostSignificantBits(),
+                targetNodeId.getLeastSignificantBits());
     }
 }
 

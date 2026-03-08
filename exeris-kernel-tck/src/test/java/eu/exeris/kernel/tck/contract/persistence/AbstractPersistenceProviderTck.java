@@ -34,7 +34,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 public abstract class AbstractPersistenceProviderTck {
 
-    /** Creates the {@link PersistenceProvider} under test. */
+    /**
+     * Creates the {@link PersistenceProvider} under test.
+     */
     protected abstract PersistenceProvider createProvider();
 
     private PersistenceProvider provider;

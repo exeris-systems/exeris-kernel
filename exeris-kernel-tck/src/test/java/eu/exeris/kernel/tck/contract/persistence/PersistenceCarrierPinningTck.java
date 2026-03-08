@@ -21,26 +21,34 @@ import org.junit.jupiter.api.DisplayName;
  * <p>{@code openConnection() → executeQuery() → next() → getInt(0) → close()}.
  * All I/O must be non-blocking and VT-safe — zero carrier pinning.
  *
- * @since 0.5.0
  * @see AbstractSubsystemCarrierPinningTck
  * @see PersistenceZeroAllocTck
+ * @since 0.5.0
  */
 @DisplayName("Persistence carrier pinning TCK")
 public abstract class PersistenceCarrierPinningTck extends AbstractSubsystemCarrierPinningTck {
 
     protected abstract PersistenceEngine createEngine();
+
     protected abstract String hotPathQuery();
 
     private PersistenceEngine engine;
     private String sql;
 
-    @Override protected String subsystemName()      { return "Persistence"; }
-    @Override protected String hotPathDescription() { return "openConnection() → executeQuery() → next() → getInt(0) → close()"; }
+    @Override
+    protected String subsystemName() {
+        return "Persistence";
+    }
+
+    @Override
+    protected String hotPathDescription() {
+        return "openConnection() → executeQuery() → next() → getInt(0) → close()";
+    }
 
     @Override
     protected void bootstrapSubsystem() {
         engine = createEngine();
-        sql    = hotPathQuery();
+        sql = hotPathQuery();
     }
 
     @Override

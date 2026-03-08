@@ -25,7 +25,9 @@ import eu.exeris.kernel.tck.contract.AbstractSubsystemZeroAllocTck;
  */
 public abstract class PersistenceZeroAllocTck extends AbstractSubsystemZeroAllocTck {
 
-    /** Creates a bootstrapped {@link PersistenceEngine} with connection pool warmed. */
+    /**
+     * Creates a bootstrapped {@link PersistenceEngine} with connection pool warmed.
+     */
     protected abstract PersistenceEngine createEngine();
 
     /**
@@ -38,11 +40,30 @@ public abstract class PersistenceZeroAllocTck extends AbstractSubsystemZeroAlloc
     private PersistenceEngine engine;
     private String sql;
 
-    @Override protected String subsystemName()      { return "Persistence"; }
-    @Override protected String hotPathDescription()  { return "openConnection() → executeQuery() → next() → getInt(0) → close()"; }
-    @Override protected int warmupIterations()       { return 100; }
-    @Override protected int hotPathIterations()      { return 1_000; }
-    @Override protected int maxExerisAllocationsPerIteration() { return 8; }
+    @Override
+    protected String subsystemName() {
+        return "Persistence";
+    }
+
+    @Override
+    protected String hotPathDescription() {
+        return "openConnection() → executeQuery() → next() → getInt(0) → close()";
+    }
+
+    @Override
+    protected int warmupIterations() {
+        return 100;
+    }
+
+    @Override
+    protected int hotPathIterations() {
+        return 1_000;
+    }
+
+    @Override
+    protected int maxExerisAllocationsPerIteration() {
+        return 8;
+    }
 
     @Override
     protected void bootstrapSubsystem() {

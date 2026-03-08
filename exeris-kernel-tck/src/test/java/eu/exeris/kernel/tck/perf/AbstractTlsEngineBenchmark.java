@@ -82,31 +82,35 @@ public abstract class AbstractTlsEngineBenchmark extends AbstractExerisBenchmark
     /**
      * Returns {@code true} if this is Enterprise-tier (zero-GC TLS path). Default: false.
      */
-    protected boolean isEnterpriseTier() { return false; }
+    protected boolean isEnterpriseTier() {
+        return false;
+    }
 
     // =========================================================================
     // State — pre-allocated buffers, re-used across ALL iterations (Enterprise: 0 B/op)
     // =========================================================================
 
-    private TlsEngine     tlsEngine;
+    private TlsEngine tlsEngine;
     private MemoryAllocator allocator;
-    private LoanedBuffer  plaintext;
-    private LoanedBuffer  ciphertext;
-    private LoanedBuffer  decrypted;
+    private LoanedBuffer plaintext;
+    private LoanedBuffer ciphertext;
+    private LoanedBuffer decrypted;
 
-    /** 1 KB of synthetic application data written once at setup. */
+    /**
+     * 1 KB of synthetic application data written once at setup.
+     */
     private static final int PAYLOAD_BYTES = 1024;
 
     @Setup(Level.Trial)
     public void setUpTrial() {
-        allocator  = createAllocator();
-        tlsEngine  = createCryptoProvider().createTlsEngine(buildTlsConfig());
+        allocator = createAllocator();
+        tlsEngine = createCryptoProvider().createTlsEngine(buildTlsConfig());
 
         // Pre-allocate three MEDIUM buffers (≥ 16 KB — large enough for TLS record overhead).
         // These are NOT re-allocated per iteration — Enterprise: 0 B/op after this point.
-        plaintext  = allocator.allocate(AllocationHint.MEDIUM);
+        plaintext = allocator.allocate(AllocationHint.MEDIUM);
         ciphertext = allocator.allocate(AllocationHint.MEDIUM);
-        decrypted  = allocator.allocate(AllocationHint.MEDIUM);
+        decrypted = allocator.allocate(AllocationHint.MEDIUM);
 
         // Fill first PAYLOAD_BYTES of plaintext with 0xAB using bulk MemorySegment.fill().
         // fill() operates on the entire segment — we slice to PAYLOAD_BYTES to stay within bounds
@@ -163,7 +167,7 @@ public abstract class AbstractTlsEngineBenchmark extends AbstractExerisBenchmark
     @BenchmarkMode(Mode.SampleTime)
     @OutputTimeUnit(TimeUnit.MICROSECONDS)
     public void wrapUnwrapRoundTrip(Blackhole bh) {
-        TlsStatus wrapStatus   = tlsEngine.wrap(plaintext, ciphertext);
+        TlsStatus wrapStatus = tlsEngine.wrap(plaintext, ciphertext);
         TlsStatus unwrapStatus = tlsEngine.unwrap(ciphertext, decrypted);
         bh.consume(wrapStatus);
         bh.consume(unwrapStatus);
@@ -198,7 +202,6 @@ public abstract class AbstractTlsEngineBenchmark extends AbstractExerisBenchmark
      * correctness is validated in {@code AbstractCryptoEngineTck}, not here.
      */
     private void completeHandshake() {
-        // Initiate the handshake (writes ClientHello or server-side waits).
         TlsStatus status = tlsEngine.beginHandshake(ciphertext);
 
         // Drive wrap/unwrap until the engine signals OK (handshake done) or

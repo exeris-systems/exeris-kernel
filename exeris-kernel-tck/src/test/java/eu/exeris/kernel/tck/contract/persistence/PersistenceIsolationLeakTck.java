@@ -59,7 +59,9 @@ public abstract class PersistenceIsolationLeakTck {
     // Template methods
     // =========================================================================
 
-    /** Creates a fully bootstrapped {@link PersistenceEngine} with an in-memory test schema. */
+    /**
+     * Creates a fully bootstrapped {@link PersistenceEngine} with an in-memory test schema.
+     */
     protected abstract PersistenceEngine createEngine();
 
     /**
@@ -67,14 +69,18 @@ public abstract class PersistenceIsolationLeakTck {
      * Must be distinct from {@link #isolationKeyB()}.
      * Default: {@code "tenant-alpha"}.
      */
-    protected String isolationKeyA() { return "tenant-alpha"; }
+    protected String isolationKeyA() {
+        return "tenant-alpha";
+    }
 
     /**
      * Returns the isolation key string for "Tenant B".
      * Must be distinct from {@link #isolationKeyA()}.
      * Default: {@code "tenant-beta"}.
      */
-    protected String isolationKeyB() { return "tenant-beta"; }
+    protected String isolationKeyB() {
+        return "tenant-beta";
+    }
 
     /**
      * The SQL to write a sentinel row bound to the given isolation key.
@@ -121,23 +127,20 @@ public abstract class PersistenceIsolationLeakTck {
     @Timeout(value = 15, unit = TimeUnit.SECONDS)
     void tenantACannotSeeTenantBData() {
         String sentinelA = "SENTINEL-ALPHA-" + System.nanoTime();
-        String sentinelB = "SENTINEL-BETA-"  + System.nanoTime();
+        String sentinelB = "SENTINEL-BETA-" + System.nanoTime();
 
-        // Write Tenant A's sentinel under Tenant A's context
         ScopedValue.where(KernelProviders.STORAGE_CONTEXT, contextFor(isolationKeyA())).run(() -> {
             try (PersistenceConnection conn = engine.openConnection(contextFor(isolationKeyA()))) {
                 writeSentinelRow(conn, sentinelA);
             }
         });
 
-        // Write Tenant B's sentinel under Tenant B's context
         ScopedValue.where(KernelProviders.STORAGE_CONTEXT, contextFor(isolationKeyB())).run(() -> {
             try (PersistenceConnection conn = engine.openConnection(contextFor(isolationKeyB()))) {
                 writeSentinelRow(conn, sentinelB);
             }
         });
 
-        // Read under Tenant A — must see A, must NOT see B
         List<String> visibleToA = new ArrayList<>();
         ScopedValue.where(KernelProviders.STORAGE_CONTEXT, contextFor(isolationKeyA())).run(() -> {
             try (PersistenceConnection conn = engine.openConnection(contextFor(isolationKeyA()))) {
@@ -147,8 +150,8 @@ public abstract class PersistenceIsolationLeakTck {
 
         assertThat(visibleToA)
                 .as("Tenant A MUST see its own sentinel row and MUST NOT see Tenant B's sentinel row. " +
-                    "ISOLATION BREACH: If this assertion fails, the RLS/schema isolation is not working — " +
-                    "Tenant A can read Tenant B's data. This is a critical security bug.")
+                        "ISOLATION BREACH: If this assertion fails, the RLS/schema isolation is not working — " +
+                        "Tenant A can read Tenant B's data. This is a critical security bug.")
                 .contains(sentinelA)
                 .doesNotContain(sentinelB);
     }
@@ -180,7 +183,7 @@ public abstract class PersistenceIsolationLeakTck {
 
         assertThat(visibleToB)
                 .as("Tenant B MUST see its own sentinel row. " +
-                    "ISOLATION BREACH: Tenant B MUST NOT see Tenant A's sentinel row.")
+                        "ISOLATION BREACH: Tenant B MUST NOT see Tenant A's sentinel row.")
                 .contains(sentinelB)
                 .doesNotContain(sentinelA);
     }
@@ -189,13 +192,9 @@ public abstract class PersistenceIsolationLeakTck {
     @DisplayName("CRITICAL: Concurrent VT queries — ScopedValue context not leaked between threads")
     @Timeout(value = 20, unit = TimeUnit.SECONDS)
     void scopedValueNotLeakedBetweenConcurrentVirtualThreads() throws Exception {
-        // Run Tenant A and Tenant B queries simultaneously in a StructuredTaskScope.
-        // Each VT inherits its own ScopedValue — no cross-contamination.
-
         String sentinelA = "VT-SENTINEL-A-" + System.nanoTime();
         String sentinelB = "VT-SENTINEL-B-" + System.nanoTime();
 
-        // Pre-write sentinels sequentially
         ScopedValue.where(KernelProviders.STORAGE_CONTEXT, contextFor(isolationKeyA())).run(() -> {
             try (PersistenceConnection c = engine.openConnection(contextFor(isolationKeyA()))) {
                 writeSentinelRow(c, sentinelA);
@@ -210,26 +209,25 @@ public abstract class PersistenceIsolationLeakTck {
         List<String> seenByA = new ArrayList<>();
         List<String> seenByB = new ArrayList<>();
 
-        // Fork two VTs with different ScopedValue bindings — must not bleed
         try (var scope = StructuredTaskScope.open(
                 StructuredTaskScope.Joiner.<Void>awaitAllSuccessfulOrThrow())) {
 
             scope.fork(() ->
-                ScopedValue.where(KernelProviders.STORAGE_CONTEXT, contextFor(isolationKeyA())).call(() -> {
-                    try (PersistenceConnection c = engine.openConnection(contextFor(isolationKeyA()))) {
-                        seenByA.addAll(readSentinelRows(c));
-                    }
-                    return null;
-                })
+                    ScopedValue.where(KernelProviders.STORAGE_CONTEXT, contextFor(isolationKeyA())).call(() -> {
+                        try (PersistenceConnection c = engine.openConnection(contextFor(isolationKeyA()))) {
+                            seenByA.addAll(readSentinelRows(c));
+                        }
+                        return null;
+                    })
             );
 
             scope.fork(() ->
-                ScopedValue.where(KernelProviders.STORAGE_CONTEXT, contextFor(isolationKeyB())).call(() -> {
-                    try (PersistenceConnection c = engine.openConnection(contextFor(isolationKeyB()))) {
-                        seenByB.addAll(readSentinelRows(c));
-                    }
-                    return null;
-                })
+                    ScopedValue.where(KernelProviders.STORAGE_CONTEXT, contextFor(isolationKeyB())).call(() -> {
+                        try (PersistenceConnection c = engine.openConnection(contextFor(isolationKeyB()))) {
+                            seenByB.addAll(readSentinelRows(c));
+                        }
+                        return null;
+                    })
             );
 
             scope.join();
@@ -237,8 +235,8 @@ public abstract class PersistenceIsolationLeakTck {
 
         assertThat(seenByA)
                 .as("Concurrent VT: Tenant A's context MUST isolate its query. " +
-                    "Seeing Tenant B's sentinel means ScopedValue bled across VTs " +
-                    "(banned ThreadLocal-style cross-contamination).")
+                        "Seeing Tenant B's sentinel means ScopedValue bled across VTs " +
+                        "(banned ThreadLocal-style cross-contamination).")
                 .doesNotContain(sentinelB);
 
         assertThat(seenByB)

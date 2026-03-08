@@ -53,13 +53,19 @@ public abstract class AbstractRowCursorTck {
      */
     protected abstract String testQuery();
 
-    /** Expected int value in column 0 of the test query result. */
+    /**
+     * Expected int value in column 0 of the test query result.
+     */
     protected abstract int expectedInt();
 
-    /** Expected long value in column 1 of the test query result. */
+    /**
+     * Expected long value in column 1 of the test query result.
+     */
     protected abstract long expectedLong();
 
-    /** Expected String value in column 2 of the test query result. */
+    /**
+     * Expected String value in column 2 of the test query result.
+     */
     protected abstract String expectedString();
 
     private PersistenceEngine engine;

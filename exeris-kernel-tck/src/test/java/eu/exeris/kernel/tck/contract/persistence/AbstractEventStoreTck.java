@@ -40,10 +40,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  */
 public abstract class AbstractEventStoreTck {
 
-    /** Creates a fully bootstrapped {@link PersistenceEngine}. */
+    /**
+     * Creates a fully bootstrapped {@link PersistenceEngine}.
+     */
     protected abstract PersistenceEngine createEngine();
 
-    /** Creates an {@link EventStore} bound to the given connection. */
+    /**
+     * Creates an {@link EventStore} bound to the given connection.
+     */
     protected abstract EventStore createEventStore(PersistenceConnection connection);
 
     private PersistenceEngine engine;
@@ -87,7 +91,6 @@ public abstract class AbstractEventStoreTck {
                 store.append(event);
                 conn.commit();
 
-                // Verify the event is now retrievable
                 conn.beginTransaction();
                 List<OutboxEvent> pending = store.pollPending(10);
                 assertThat(pending)
@@ -174,18 +177,15 @@ public abstract class AbstractEventStoreTck {
             try (PersistenceConnection conn = engine.openConnection()) {
                 EventStore store = createEventStore(conn);
 
-                // Insert
                 conn.beginTransaction();
                 OutboxEvent event = testEvent("ToPublish");
                 store.append(event);
                 conn.commit();
 
-                // Mark published
                 conn.beginTransaction();
                 store.markPublished(event.eventId());
                 conn.commit();
 
-                // Verify it's gone from pending
                 conn.beginTransaction();
                 List<OutboxEvent> pending = store.pollPending(100);
                 assertThat(pending)
@@ -235,7 +235,6 @@ public abstract class AbstractEventStoreTck {
                 store.append(event);
                 conn.rollback();
 
-                // Event must NOT be visible
                 conn.beginTransaction();
                 List<OutboxEvent> pending = store.pollPending(100);
                 assertThat(pending)

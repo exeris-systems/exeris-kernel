@@ -13,6 +13,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import java.util.Arrays;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -201,7 +203,7 @@ class FlowStateTest {
         @Test
         @DisplayName("Exactly 2 terminal states — adding more requires state machine graph review")
         void exactlyTwoTerminalStates() {
-            long terminalCount = java.util.Arrays.stream(FlowState.values())
+            long terminalCount = Arrays.stream(FlowState.values())
                     .filter(FlowState::isTerminal)
                     .count();
             assertThat(terminalCount).isEqualTo(2L);

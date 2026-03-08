@@ -1,9 +1,10 @@
 /*
- * Copyright (C) 2025-2026 Exeris. All rights reserved.
+ * Copyright (C) 2025-2026 Exeris Systems.
  *
- * This code is part of the Exeris Systems.
- * Distributed under the proprietary Exeris Software License.
- * Unauthorized copying or distribution is prohibited.
+ * Licensed under the Apache License, Version 2.0 with Commons Clause.
+ * You may use, modify, and distribute this file under those terms.
+ * Commercial resale of this software as a competing product is prohibited.
+ * See LICENSE-COMMUNITY in the repository root for the full text.
  */
 package eu.exeris.kernel.core.memory;
 
@@ -347,6 +348,40 @@ class MemoryOrchestrationIntegrationTest {
             assertThat(ScalingContext.standard().isQueueSaturated(5_000)).isFalse();
             assertThat(ScalingContext.premium().isQueueSaturated(8_001)).isTrue();
             assertThat(ScalingContext.premium().isQueueSaturated(8_000)).isFalse();
+        }
+
+        @Test
+        @DisplayName("decide(Context, ScalingContext) end-to-end: free sheds at 86% from live WatermarkManager")
+        void decideWithScalingContextEndToEnd() {
+            ControllableAllocator alloc = new ControllableAllocator(1_000_000L);
+            WatermarkManager mgr = new WatermarkManager(alloc);
+            long past = System.nanoTime() - TimeUnit.SECONDS.toNanos(31);
+            ResourceArbiter arb = new ResourceArbiter(mgr, past);
+
+            alloc.setUtilization(0.86);
+            mgr.refresh();
+
+            assertThat(arb.decide(ResourceArbiter.Context.TRANSPORT_IO, ScalingContext.free()))
+                    .as("Free tier must SHED_LOAD at 86%% utilization via live WatermarkManager")
+                    .isEqualTo(ResourceArbiter.Action.SHED_LOAD);
+
+            assertThat(arb.decide(ResourceArbiter.Context.TRANSPORT_IO, ScalingContext.premium()))
+                    .as("Premium tier must THROTTLE at 86%% utilization via live WatermarkManager")
+                    .isEqualTo(ResourceArbiter.Action.THROTTLE);
+        }
+
+        @Test
+        @DisplayName("decide(Context, ScalingContext) returns ALLOW during grace regardless of tier")
+        void decideWithScalingContextRespectsGracePeriod() {
+            ControllableAllocator alloc = new ControllableAllocator(1_000_000L);
+            WatermarkManager mgr = new WatermarkManager(alloc);
+            alloc.setUtilization(0.99);
+            mgr.refresh();
+
+            ResourceArbiter arb = new ResourceArbiter(mgr);
+            assertThat(arb.decide(ResourceArbiter.Context.TRANSPORT_IO, ScalingContext.free()))
+                    .as("Grace period must override even free tier SHED_LOAD at 99%%")
+                    .isEqualTo(ResourceArbiter.Action.ALLOW);
         }
     }
 

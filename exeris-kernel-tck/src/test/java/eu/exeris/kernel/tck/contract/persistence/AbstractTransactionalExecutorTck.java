@@ -12,6 +12,7 @@ import eu.exeris.kernel.spi.exceptions.persistence.PersistenceProviderException;
 import eu.exeris.kernel.spi.persistence.PersistenceEngine;
 import eu.exeris.kernel.spi.persistence.QueryResult;
 import eu.exeris.kernel.spi.persistence.TransactionalExecutor;
+import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -19,6 +20,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
+import java.util.concurrent.StructuredTaskScope;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -102,12 +104,12 @@ public abstract class AbstractTransactionalExecutorTck {
     // Fixtures
     // =========================================================================
 
-    private PersistenceEngine   engine;
+    private PersistenceEngine engine;
     private TransactionalExecutor executor;
 
     @BeforeEach
     final void setUp() {
-        engine   = createEngine();
+        engine = createEngine();
         executor = createExecutorNoRetry(engine);
     }
 
@@ -130,7 +132,7 @@ public abstract class AbstractTransactionalExecutorTck {
         void queryReturnsResult() {
             Integer result = executor.query(conn -> {
                 try (QueryResult qr = conn.executeQuery(selectOneSql())) {
-                    org.assertj.core.api.Assertions.assertThat(qr.next()).isTrue();
+                    Assertions.assertThat(qr.next()).isTrue();
                     return qr.row().getInt(0);
                 }
             });
@@ -144,7 +146,7 @@ public abstract class AbstractTransactionalExecutorTck {
             for (int i = 0; i < 5; i++) {
                 executor.query(conn -> {
                     try (QueryResult qr = conn.executeQuery(selectOneSql())) {
-                        org.assertj.core.api.Assertions.assertThat(qr.next()).isTrue();
+                        Assertions.assertThat(qr.next()).isTrue();
                         return qr.row().getInt(0);
                     }
                 });
@@ -177,7 +179,7 @@ public abstract class AbstractTransactionalExecutorTck {
 
             Integer count = executor.query(conn -> {
                 try (QueryResult qr = conn.executeQuery(readSentinelCountSql())) {
-                    org.assertj.core.api.Assertions.assertThat(qr.next()).isTrue();
+                    Assertions.assertThat(qr.next()).isTrue();
                     return qr.row().getInt(0);
                 }
             });
@@ -190,7 +192,7 @@ public abstract class AbstractTransactionalExecutorTck {
         void rollbackOnException() {
             int countBefore = executor.query(conn -> {
                 try (QueryResult qr = conn.executeQuery(readSentinelCountSql())) {
-                    org.assertj.core.api.Assertions.assertThat(qr.next()).isTrue();
+                    Assertions.assertThat(qr.next()).isTrue();
                     return qr.row().getInt(0);
                 }
             });
@@ -204,7 +206,7 @@ public abstract class AbstractTransactionalExecutorTck {
 
             int countAfter = executor.query(conn -> {
                 try (QueryResult qr = conn.executeQuery(readSentinelCountSql())) {
-                    org.assertj.core.api.Assertions.assertThat(qr.next()).isTrue();
+                    Assertions.assertThat(qr.next()).isTrue();
                     return qr.row().getInt(0);
                 }
             });
@@ -306,14 +308,12 @@ public abstract class AbstractTransactionalExecutorTck {
             TransactionalExecutor retryExecutor =
                     createExecutorWithRetry(engine, 3, 10L);
 
-            // First attempt throws 40001, second succeeds
             retryExecutor.execute(conn -> {
                 conn.beginTransaction();
                 if (attempts.incrementAndGet() == 1) {
                     throw PersistenceProviderException.queryFailed(
                             "40001", "transient serialization failure", null);
                 }
-                // Second attempt: commit and succeed
                 conn.commit();
             });
 
@@ -336,8 +336,8 @@ public abstract class AbstractTransactionalExecutorTck {
         @Timeout(value = 10, unit = TimeUnit.SECONDS)
         void concurrentQueriesDoNotShareConnection() throws Exception {
             AtomicInteger completed = new AtomicInteger(0);
-            try (var scope = java.util.concurrent.StructuredTaskScope.open(
-                    java.util.concurrent.StructuredTaskScope.Joiner.awaitAllSuccessfulOrThrow())) {
+            try (var scope = StructuredTaskScope.open(
+                    StructuredTaskScope.Joiner.awaitAllSuccessfulOrThrow())) {
                 for (int i = 0; i < 10; i++) {
                     scope.fork(() -> {
                         executor.query(conn -> {

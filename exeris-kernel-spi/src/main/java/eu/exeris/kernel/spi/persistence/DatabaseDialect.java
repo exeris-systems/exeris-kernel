@@ -8,6 +8,8 @@
  */
 package eu.exeris.kernel.spi.persistence;
 
+import java.util.Locale;
+
 /**
  * SPI: Database dialect capability declaration.
  *
@@ -33,9 +35,9 @@ package eu.exeris.kernel.spi.persistence;
  * <p>Implementations SHOULD be stateless constants (e.g., enum singletons or
  * pre-built records) to allow JIT constant-folding on dialect checks.
  *
- * @since 0.5.0
  * @see PersistenceProvider
  * @see PersistenceEngineCapabilities
+ * @since 0.5.0
  */
 public interface DatabaseDialect {
 
@@ -43,22 +45,30 @@ public interface DatabaseDialect {
     // Built-in pre-allocated constants — zero allocation at query time
     // =========================================================================
 
-    /** PostgreSQL dialect constant — covers both Community JDBC and Enterprise native. */
+    /**
+     * PostgreSQL dialect constant — covers both Community JDBC and Enterprise native.
+     */
     DatabaseDialect POSTGRESQL = new ImmutableDatabaseDialect(
             "postgresql", true, true, true, true
     );
 
-    /** MySQL dialect constant — Community JDBC path only. */
+    /**
+     * MySQL dialect constant — Community JDBC path only.
+     */
     DatabaseDialect MYSQL = new ImmutableDatabaseDialect(
             "mysql", true, false, false, false
     );
 
-    /** SQLite dialect constant — single-file embedded store, no RLS, no COPY. */
+    /**
+     * SQLite dialect constant — single-file embedded store, no RLS, no COPY.
+     */
     DatabaseDialect SQLITE = new ImmutableDatabaseDialect(
             "sqlite", false, false, false, false
     );
 
-    /** Generic JDBC catch-all for unknown dialects (Oracle, MSSQL, etc.). */
+    /**
+     * Generic JDBC catch-all for unknown dialects (Oracle, MSSQL, etc.).
+     */
     DatabaseDialect GENERIC_JDBC = new ImmutableDatabaseDialect(
             "jdbc-generic", true, false, false, false
     );
@@ -136,7 +146,7 @@ public interface DatabaseDialect {
         if (connectionUrl == null) {
             return GENERIC_JDBC;
         }
-        String lower = connectionUrl.toLowerCase(java.util.Locale.ROOT);
+        String lower = connectionUrl.toLowerCase(Locale.ROOT);
         if (lower.startsWith("postgresql://") || lower.startsWith("jdbc:postgresql")) {
             return POSTGRESQL;
         }

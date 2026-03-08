@@ -1,9 +1,10 @@
 /*
- * Copyright (C) 2025-2026 Exeris. All rights reserved.
+ * Copyright (C) 2025-2026 Exeris Systems.
  *
- * This code is part of the Exeris Systems.
- * Distributed under the proprietary Exeris Software License.
- * Unauthorized copying or distribution is prohibited.
+ * Licensed under the Apache License, Version 2.0 with Commons Clause.
+ * You may use, modify, and distribute this file under those terms.
+ * Commercial resale of this software as a competing product is prohibited.
+ * See LICENSE-COMMUNITY in the repository root for the full text.
  */
 package eu.exeris.kernel.core.memory;
 
@@ -41,7 +42,8 @@ class ResourceArbiterTest {
         return new MemoryAllocator() {
             @Override
             public MemoryStats stats() {
-                return new MemoryStats(total, allocated, total - allocated,
+                long free = total < 0 ? 0L : total - allocated;
+                return new MemoryStats(total, allocated, free,
                         0, 0, allocated, 0, 0, LeakDetectionMode.DISABLED);
             }
 
@@ -339,6 +341,135 @@ class ResourceArbiterTest {
                 scope.join();
             }
             assertThat(nonShed.get()).isZero();
+        }
+    }
+
+    // =========================================================================
+    // ScalingContext override — per-tenant SLA thresholds
+    // =========================================================================
+
+    @Nested
+    @DisplayName("decide(Context, ScalingContext) — per-tenant SLA override")
+    class ScalingContextDecide {
+
+        @Test
+        @DisplayName("null context throws IllegalArgumentException")
+        void nullContextThrows() {
+            WatermarkManager mgr = new WatermarkManager(stubAllocator(0, 1_000_000));
+            long past = System.nanoTime() - TimeUnit.SECONDS.toNanos(31);
+            ResourceArbiter arb = new ResourceArbiter(mgr, past);
+            assertThatThrownBy(() -> arb.decide(null, ScalingContext.standard()))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+
+        @Test
+        @DisplayName("null scalingContext throws IllegalArgumentException")
+        void nullScalingContextThrows() {
+            WatermarkManager mgr = new WatermarkManager(stubAllocator(0, 1_000_000));
+            long past = System.nanoTime() - TimeUnit.SECONDS.toNanos(31);
+            ResourceArbiter arb = new ResourceArbiter(mgr, past);
+            assertThatThrownBy(() -> arb.decide(ResourceArbiter.Context.TRANSPORT_IO, null))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+
+        @Test
+        @DisplayName("during grace period returns ALLOW regardless of utilization")
+        void gracePeriodReturnsAllow() {
+            WatermarkManager mgr = new WatermarkManager(stubAllocator(900_000, 1_000_000));
+            mgr.refresh();
+            ResourceArbiter arb = new ResourceArbiter(mgr);
+            assertThat(arb.decide(ResourceArbiter.Context.TRANSPORT_IO, ScalingContext.free()))
+                    .isEqualTo(ResourceArbiter.Action.ALLOW);
+        }
+
+        @Test
+        @DisplayName("free tier sheds at 86% utilization where premium still throttles")
+        void freeShedsBeforePremium() {
+            WatermarkManager mgr = new WatermarkManager(stubAllocator(860_000, 1_000_000));
+            mgr.refresh();
+            long past = System.nanoTime() - TimeUnit.SECONDS.toNanos(31);
+            ResourceArbiter arb = new ResourceArbiter(mgr, past);
+
+            assertThat(arb.decide(ResourceArbiter.Context.TRANSPORT_IO, ScalingContext.free()))
+                    .isEqualTo(ResourceArbiter.Action.SHED_LOAD);
+            assertThat(arb.decide(ResourceArbiter.Context.TRANSPORT_IO, ScalingContext.premium()))
+                    .isEqualTo(ResourceArbiter.Action.THROTTLE);
+        }
+
+        @Test
+        @DisplayName("standard tier at 72% utilization → THROTTLE")
+        void standardAt72PctThrottles() {
+            WatermarkManager mgr = new WatermarkManager(stubAllocator(720_000, 1_000_000));
+            mgr.refresh();
+            long past = System.nanoTime() - TimeUnit.SECONDS.toNanos(31);
+            ResourceArbiter arb = new ResourceArbiter(mgr, past);
+
+            assertThat(arb.decide(ResourceArbiter.Context.TRANSPORT_IO, ScalingContext.standard()))
+                    .isEqualTo(ResourceArbiter.Action.THROTTLE);
+        }
+
+        @Test
+        @DisplayName("standard tier at 0% utilization → ALLOW")
+        void standardAt0PctAllows() {
+            WatermarkManager mgr = new WatermarkManager(stubAllocator(0, 1_000_000));
+            mgr.refresh();
+            long past = System.nanoTime() - TimeUnit.SECONDS.toNanos(31);
+            ResourceArbiter arb = new ResourceArbiter(mgr, past);
+
+            assertThat(arb.decide(ResourceArbiter.Context.TRANSPORT_IO, ScalingContext.standard()))
+                    .isEqualTo(ResourceArbiter.Action.ALLOW);
+        }
+
+        @Test
+        @DisplayName("Community tier (total=0) → utilization 0% → ALLOW for all tiers")
+        void communityNoFixedBudgetAlwaysAllow() {
+            WatermarkManager mgr = new WatermarkManager(stubAllocator(500_000, -1));
+            mgr.refresh();
+            long past = System.nanoTime() - TimeUnit.SECONDS.toNanos(31);
+            ResourceArbiter arb = new ResourceArbiter(mgr, past);
+
+            assertThat(arb.decide(ResourceArbiter.Context.TRANSPORT_IO, ScalingContext.free()))
+                    .isEqualTo(ResourceArbiter.Action.ALLOW);
+        }
+    }
+
+    // =========================================================================
+    // Utilization % in JFR event — never -1 after refresh
+    // =========================================================================
+
+    @Nested
+    @DisplayName("utilizationPct — real value after WatermarkManager.refresh()")
+    class UtilizationPct {
+
+        @Test
+        @DisplayName("WatermarkManager.currentUtilizationPct() returns 0 before first refresh")
+        void utilizationPctZeroBeforeRefresh() {
+            WatermarkManager mgr = new WatermarkManager(stubAllocator(500_000, 1_000_000));
+            assertThat(mgr.currentUtilizationPct()).isZero();
+        }
+
+        @Test
+        @DisplayName("WatermarkManager.currentUtilizationPct() returns correct % after refresh")
+        void utilizationPctCorrectAfterRefresh() {
+            WatermarkManager mgr = new WatermarkManager(stubAllocator(720_000, 1_000_000));
+            mgr.refresh();
+            assertThat(mgr.currentUtilizationPct()).isEqualTo(72);
+        }
+
+        @Test
+        @DisplayName("WatermarkManager.currentUtilizationPct() returns 0 for Community (totalBytes=-1 sentinel)")
+        void utilizationPctZeroForCommunity() {
+            WatermarkManager mgr = new WatermarkManager(stubAllocator(999_999, -1));
+            mgr.refresh();
+            assertThat(mgr.currentUtilizationPct()).isZero();
+        }
+
+        @Test
+        @DisplayName("WatermarkManager.currentUtilizationPct() clamps to 100 on over-allocation")
+        void utilizationPctClampsAt100() {
+            WatermarkManager mgr = new WatermarkManager(stubAllocator(1_000_000, 1_000_000));
+            mgr.refresh();
+            assertThat(mgr.currentUtilizationPct()).isEqualTo(100);
         }
     }
 }

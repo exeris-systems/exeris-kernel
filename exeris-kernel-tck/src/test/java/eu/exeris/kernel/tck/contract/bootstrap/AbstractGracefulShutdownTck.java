@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.LockSupport;
 import java.util.function.IntSupplier;
@@ -109,7 +110,7 @@ public abstract class AbstractGracefulShutdownTck {
      * Wraps all running SPI engines and workload sources needed by the TCK.
      * Pass {@code null} for engines the implementation does not provide.
      * <p>Implemented as a {@code final class} (not a {@code record}) because it carries
-     * mutable shutdown state ({@link java.util.concurrent.atomic.AtomicBoolean}) that
+     * mutable shutdown state ({@link AtomicBoolean}) that
      * records cannot express as non-component fields.
      */
     public static final class KernelHandle {
@@ -125,8 +126,8 @@ public abstract class AbstractGracefulShutdownTck {
         private final Runnable      orchestratorShutdown;
         private final CopyOnWriteArrayList<String> observedOrder;
 
-        private final java.util.concurrent.atomic.AtomicBoolean shutdownTriggered
-                = new java.util.concurrent.atomic.AtomicBoolean(false);
+        private final AtomicBoolean shutdownTriggered
+                = new AtomicBoolean(false);
 
         public KernelHandle(
                 TrackedEngine transport,
@@ -205,8 +206,8 @@ public abstract class AbstractGracefulShutdownTck {
 
         private final String        name;
         private final AutoCloseable delegate;
-        private final java.util.concurrent.atomic.AtomicBoolean closed
-                = new java.util.concurrent.atomic.AtomicBoolean(false);
+        private final AtomicBoolean closed
+                = new AtomicBoolean(false);
         private CopyOnWriteArrayList<String> observedOrder = null;
 
         public TrackedEngine(String name, AutoCloseable delegate) {
