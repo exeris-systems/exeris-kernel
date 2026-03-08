@@ -49,7 +49,9 @@ import java.util.function.Function;
  *
  * <h2>Retry Semantics</h2>
  * <p>PostgreSQL {@code 40001} (serialization failure) and {@code 40P01} (deadlock)
- * are retried up to {@link TransactionRetryPolicy#maxAttempts()} times with exponential back-off.
+ * are retried up to {@link TransactionRetryPolicy#maxAttempts()} times with
+ * exponential back-off. The retry loop applies to both {@link #execute} and
+ * {@link #executeManaged} variants.
  *
  * <h2>ScopedValue Flow</h2>
  * <p>The {@link StorageContext} is read from {@link KernelProviders#STORAGE_CONTEXT}.
@@ -136,6 +138,8 @@ public final class TransactionOrchestrator implements TransactionalExecutor {
      *
      * <p>Wraps the work in a managed {@link TransactionIsolation#READ_COMMITTED}
      * transaction with {@code beginTransaction()} / {@code commit()} / {@code rollback()}.
+     * Retries on {@code 40001} / {@code 40P01} per the configured
+     * {@link TransactionRetryPolicy}.
      */
     @Override
     public void executeManaged(TransactionalWork work) {
@@ -150,17 +154,46 @@ public final class TransactionOrchestrator implements TransactionalExecutor {
         Objects.requireNonNull(isolation, "isolation must not be null");
         Objects.requireNonNull(work,      "work must not be null");
         StorageContext ctx = resolveStorageContext();
-        try (PersistenceConnection conn = engine.openConnection(ctx)) {
-            conn.beginTransaction(isolation, readOnly);
-            try {
-                work.run(conn);
-                conn.commit();
-                TransactionLifecycleEvent.recordCommit(1);
-            } catch (RuntimeException rte) {
-                safeRollback(conn, 1);
-                throw rte;
+        int attempt = 0;
+        PersistenceProviderException lastError = null;
+
+        while (attempt < retryPolicy.maxAttempts()) {
+            if (attempt > 0) {
+                sleepBackoff(retryPolicy.delayFor(attempt));
+            }
+            attempt++;
+
+            try (PersistenceConnection conn = engine.openConnection(ctx)) {
+                conn.beginTransaction(isolation, readOnly);
+                long startNs = System.nanoTime();
+                try {
+                    work.run(conn);
+                    long durationNs = System.nanoTime() - startNs;
+                    conn.commit();
+                    TransactionLifecycleEvent.recordCommit(attempt, durationNs);
+                    return;
+                } catch (PersistenceProviderException ppe) {
+                    safeRollback(conn, attempt);
+                    if (isRetryable(ppe)) {
+                        lastError = ppe;
+                        // loop continues if attempts remain
+                    } else {
+                        throw ppe;
+                    }
+                } catch (RuntimeException rte) {
+                    safeRollback(conn, attempt);
+                    throw PersistenceProviderException.queryFailed(
+                            "XX000",
+                            "Unexpected error in managed transactional work: " + rte.getMessage(),
+                            rte);
+                }
             }
         }
+
+        TransactionLifecycleEvent.recordRetryExhausted(attempt);
+        throw lastError != null ? lastError
+                : PersistenceProviderException.queryFailed(
+                        "40001", "Managed transaction retries exhausted after " + attempt + " attempts", null);
     }
 
     /** {@inheritDoc} */
@@ -184,9 +217,11 @@ public final class TransactionOrchestrator implements TransactionalExecutor {
     private PersistenceProviderException attemptWork(PersistenceConnection conn,
                                                       TransactionalWork work,
                                                       int attempt) {
+        long startNs = System.nanoTime();
         try {
             work.run(conn);
-            TransactionLifecycleEvent.recordCommit(attempt);
+            long durationNs = System.nanoTime() - startNs;
+            TransactionLifecycleEvent.recordCommit(attempt, durationNs);
             return null;
         } catch (PersistenceProviderException ppe) {
             safeRollback(conn, attempt);

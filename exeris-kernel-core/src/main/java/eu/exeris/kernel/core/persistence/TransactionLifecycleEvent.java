@@ -49,7 +49,11 @@ final class TransactionLifecycleEvent extends Event {
     @Description("true if all retry attempts were consumed without success")
     /* default */ boolean retryExhausted;
 
-    /* default */ static void recordCommit(int attempt) {
+    @Label("Duration (ns)")
+    @Description("Wall-clock duration of the transaction work in nanoseconds (0 for rollback/exhaustion)")
+    /* default */ long durationNs;
+
+    /* default */ static void recordCommit(int attempt, long durationNs) {
         if (!FlightRecorder.isInitialized()) {
             return;
         }
@@ -61,6 +65,7 @@ final class TransactionLifecycleEvent extends Event {
         evt.outcome        = "COMMIT";
         evt.attemptNumber  = attempt;
         evt.retryExhausted = false;
+        evt.durationNs     = durationNs;
         evt.commit();
     }
 

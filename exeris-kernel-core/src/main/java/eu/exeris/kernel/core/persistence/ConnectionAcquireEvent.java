@@ -62,6 +62,7 @@ public final class ConnectionAcquireEvent extends Event {
         if (!event.isEnabled()) {
             return;
         }
+        event.begin();
         event.providerId = providerId;
         event.tenantKey  = tenantKey;
         event.fromPool   = fromPool;

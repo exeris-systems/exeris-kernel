@@ -69,13 +69,14 @@ public final class PersistenceBootstrap {
      * Loads the best available {@link PersistenceProvider}, creates the engine,
      * registers the supplied interceptors, and returns the ready {@link PersistenceEngine}.
      *
-     * <p>This method is idempotent for the same {@code ClassLoader} and config.
-     * It MUST be called exactly once per kernel lifecycle, during bootstrap.
+     * <p>This method MUST be called exactly once per kernel lifecycle, during bootstrap.
+     * Calling it multiple times will perform redundant {@link ServiceLoader} scans and
+     * create additional engine instances — the caller is responsible for lifecycle control.
      *
      * @param config       immutable persistence configuration
      * @param interceptors ordered list of interceptors to register (may be empty)
      * @return a fully initialised {@link PersistenceEngine}
-     * @throws PersistenceProviderException if no provider is available
+     * @throws PersistenceProviderException with code {@code EX-PERS-5007} if no provider is available
      */
     public static PersistenceEngine load(PersistenceConfig config,
                                          List<ConnectionInterceptor> interceptors) {

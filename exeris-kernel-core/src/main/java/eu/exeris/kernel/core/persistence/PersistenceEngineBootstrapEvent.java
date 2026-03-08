@@ -87,6 +87,7 @@ public final class PersistenceEngineBootstrapEvent extends Event {
         if (!event.isEnabled()) {
             return;
         }
+        event.begin();
         event.providerId       = providerId;
         event.providerName     = providerName;
         event.maxPoolSize      = maxPoolSize;
