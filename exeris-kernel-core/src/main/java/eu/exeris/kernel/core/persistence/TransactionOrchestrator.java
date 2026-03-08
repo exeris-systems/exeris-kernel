@@ -70,58 +70,24 @@ public final class TransactionOrchestrator implements TransactionalExecutor {
     // Instance fields
     // =========================================================================
 
-    private final PersistenceEngine         engine;
-    private final RetryPolicy               retryPolicy;
-    private final TransactionLifecycleEvent lifecycleEvent;
-
-    // =========================================================================
-    // Retry policy (Core-only, not in SPI — callers use named constants here)
-    // =========================================================================
-
-    /**
-     * Valhalla-ready retry policy.
-     * No identity operations — scalarizes via JIT Escape Analysis on hot path.
-     *
-     * @param maxAttempts       maximum total attempts (1 = no retry)
-     * @param baseDelayMs       initial back-off delay in milliseconds
-     * @param backoffMultiplier exponential multiplier applied after each retry
-     */
-    public record RetryPolicy(int maxAttempts, long baseDelayMs, double backoffMultiplier) {
-
-        /** Default: 1 attempt, no retry. */
-        public static final RetryPolicy NONE = new RetryPolicy(1, 0L, 1.0);
-
-        /** Exponential back-off starting at {@code baseDelayMs}, doubling on each retry. */
-        public static RetryPolicy exponential(int maxAttempts, long baseDelayMs) {
-            return new RetryPolicy(maxAttempts, baseDelayMs, 2.0);
-        }
-
-        /** Computes delay for attempt {@code attempt} (0-indexed). */
-        public long delayFor(int attempt) {
-            if (attempt == 0 || baseDelayMs <= 0) {
-                return 0L;
-            }
-            double delay = baseDelayMs * Math.pow(backoffMultiplier, attempt - 1.0);
-            return (long) Math.min(delay, 30_000.0);
-        }
-    }
+    private final PersistenceEngine    engine;
+    private final TransactionRetryPolicy retryPolicy;
 
     // =========================================================================
     // Constructors
     // =========================================================================
 
     /**
-     * Creates an orchestrator bound to the given engine.
+     * Creates an orchestrator bound to the given engine and retry policy.
      */
-    public TransactionOrchestrator(PersistenceEngine engine, RetryPolicy retryPolicy) {
-        this.engine         = engine;
-        this.retryPolicy    = retryPolicy;
-        this.lifecycleEvent = new TransactionLifecycleEvent();
+    public TransactionOrchestrator(PersistenceEngine engine, TransactionRetryPolicy retryPolicy) {
+        this.engine      = engine;
+        this.retryPolicy = retryPolicy;
     }
 
-    /** Convenience constructor with {@link RetryPolicy#NONE}. */
+    /** Convenience constructor with {@link TransactionRetryPolicy#NONE}. */
     public TransactionOrchestrator(PersistenceEngine engine) {
-        this(engine, RetryPolicy.NONE);
+        this(engine, TransactionRetryPolicy.NONE);
     }
 
     // =========================================================================
@@ -152,12 +118,12 @@ public final class TransactionOrchestrator implements TransactionalExecutor {
                 if (lastError == null) {
                     return; // success
                 }
-                // retryable error — loop continues
+                // retryable error — loop continues if attempts remain
             }
         }
 
-        // All retries exhausted
-        lifecycleEvent.recordRetryExhausted(attempt);
+        // All retries exhausted — this path is now always reachable
+        TransactionLifecycleEvent.recordRetryExhausted(attempt);
         throw lastError != null ? lastError
                 : PersistenceProviderException.queryFailed(
                         "40001", "Transaction retries exhausted after " + attempt + " attempts", null);
@@ -185,9 +151,9 @@ public final class TransactionOrchestrator implements TransactionalExecutor {
             try {
                 work.run(conn);
                 conn.commit();
-                lifecycleEvent.recordCommit(1);
+                TransactionLifecycleEvent.recordCommit(1);
             } catch (RuntimeException rte) {
-                safeRollback(conn);
+                safeRollback(conn, 1);
                 throw rte;
             }
         }
@@ -215,16 +181,16 @@ public final class TransactionOrchestrator implements TransactionalExecutor {
                                                       int attempt) {
         try {
             work.run(conn);
-            lifecycleEvent.recordCommit(attempt);
+            TransactionLifecycleEvent.recordCommit(attempt);
             return null;
         } catch (PersistenceProviderException ppe) {
-            safeRollback(conn);
-            if (isRetryable(ppe) && attempt < retryPolicy.maxAttempts()) {
-                return ppe; // caller will retry
+            safeRollback(conn, attempt);
+            if (isRetryable(ppe)) {
+                return ppe; // caller will decide whether to retry or exhaust
             }
             throw ppe;
         } catch (RuntimeException unexpected) {
-            safeRollback(conn);
+            safeRollback(conn, attempt);
             throw PersistenceProviderException.queryFailed(
                     "XX000",
                     "Unexpected error in transactional work: " + unexpected.getMessage(),
@@ -239,10 +205,11 @@ public final class TransactionOrchestrator implements TransactionalExecutor {
         return ImmutableStorageContext.system();
     }
 
-    private static void safeRollback(PersistenceConnection conn) {
+    private static void safeRollback(PersistenceConnection conn, int attempt) {
         try {
             if (conn.inTransaction()) {
                 conn.rollback();
+                TransactionLifecycleEvent.recordRollback(attempt);
             }
         } catch (PersistenceProviderException _) {
             // Best-effort — original exception takes precedence

@@ -11,6 +11,7 @@ package eu.exeris.kernel.core.persistence;
 import jdk.jfr.Category;
 import jdk.jfr.Description;
 import jdk.jfr.Event;
+import jdk.jfr.FlightRecorder;
 import jdk.jfr.Label;
 import jdk.jfr.Name;
 import jdk.jfr.StackTrace;
@@ -22,13 +23,18 @@ import jdk.jfr.StackTrace;
  * <p>Every critical transaction lifecycle event MUST produce a JFR record.
  * SRE tooling watches for {@code retryExhausted=true} as an early deadlock/hotspot signal.
  *
+ * <h2>Virtual-Thread Safety</h2>
+ * <p>All emit methods are static and allocate a fresh {@code TransactionLifecycleEvent}
+ * instance per invocation, guarded by {@link FlightRecorder#isInitialized()}.
+ * No shared mutable state — safe under concurrent Virtual Thread execution.
+ *
  * @since 0.5.0
  */
 @Name("eu.exeris.kernel.persistence.TransactionLifecycle")
 @Label("Transaction Lifecycle")
 @Category({"Exeris Kernel", "Persistence"})
 @Description("Emitted when a managed transaction commits, rolls back, or exhausts retries.")
-@StackTrace(false) // hot path — stack trace too expensive
+@StackTrace(false)
 final class TransactionLifecycleEvent extends Event {
 
     @Label("Outcome")
@@ -43,36 +49,48 @@ final class TransactionLifecycleEvent extends Event {
     @Description("true if all retry attempts were consumed without success")
     /* default */ boolean retryExhausted;
 
-    /* default */ void recordCommit(int attempt) {
-        if (!isEnabled()) {
+    /* default */ static void recordCommit(int attempt) {
+        if (!FlightRecorder.isInitialized()) {
             return;
         }
-        begin();
-        this.outcome        = "COMMIT";
-        this.attemptNumber  = attempt;
-        this.retryExhausted = false;
-        commit();
+        TransactionLifecycleEvent evt = new TransactionLifecycleEvent();
+        if (!evt.isEnabled()) {
+            return;
+        }
+        evt.begin();
+        evt.outcome        = "COMMIT";
+        evt.attemptNumber  = attempt;
+        evt.retryExhausted = false;
+        evt.commit();
     }
 
-    /* default */ void recordRollback(int attempt) {
-        if (!isEnabled()) {
+    /* default */ static void recordRollback(int attempt) {
+        if (!FlightRecorder.isInitialized()) {
             return;
         }
-        begin();
-        this.outcome        = "ROLLBACK";
-        this.attemptNumber  = attempt;
-        this.retryExhausted = false;
-        commit();
+        TransactionLifecycleEvent evt = new TransactionLifecycleEvent();
+        if (!evt.isEnabled()) {
+            return;
+        }
+        evt.begin();
+        evt.outcome        = "ROLLBACK";
+        evt.attemptNumber  = attempt;
+        evt.retryExhausted = false;
+        evt.commit();
     }
 
-    /* default */ void recordRetryExhausted(int totalAttempts) {
-        if (!isEnabled()) {
+    /* default */ static void recordRetryExhausted(int totalAttempts) {
+        if (!FlightRecorder.isInitialized()) {
             return;
         }
-        begin();
-        this.outcome        = "RETRY_EXHAUSTED";
-        this.attemptNumber  = totalAttempts;
-        this.retryExhausted = true;
-        commit();
+        TransactionLifecycleEvent evt = new TransactionLifecycleEvent();
+        if (!evt.isEnabled()) {
+            return;
+        }
+        evt.begin();
+        evt.outcome        = "RETRY_EXHAUSTED";
+        evt.attemptNumber  = totalAttempts;
+        evt.retryExhausted = true;
+        evt.commit();
     }
 }

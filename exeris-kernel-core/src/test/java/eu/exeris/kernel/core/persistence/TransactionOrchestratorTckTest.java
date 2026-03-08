@@ -33,7 +33,7 @@ import java.util.concurrent.ConcurrentLinkedDeque;
  *
  * <h2>Responsibility</h2>
  * <p>This is the <b>only</b> class in the TCK chain that imports
- * {@link TransactionOrchestrator} and {@link TransactionOrchestrator.RetryPolicy}.
+ * {@link TransactionOrchestrator} and {@link TransactionRetryPolicy}.
  * The abstract TCK is kept clean (SPI-only). This class provides:
  * <ul>
  *   <li>An in-memory stub {@link PersistenceEngine} that tracks commits and rollbacks</li>
@@ -57,7 +57,7 @@ class TransactionOrchestratorTckTest extends AbstractTransactionalExecutorTck {
 
     @Override
     protected TransactionalExecutor createExecutorNoRetry(PersistenceEngine engine) {
-        return new TransactionOrchestrator(engine, TransactionOrchestrator.RetryPolicy.NONE);
+        return new TransactionOrchestrator(engine, TransactionRetryPolicy.NONE);
     }
 
     @Override
@@ -65,7 +65,7 @@ class TransactionOrchestratorTckTest extends AbstractTransactionalExecutorTck {
             PersistenceEngine engine, int maxAttempts, long baseDelayMs) {
         return new TransactionOrchestrator(
                 engine,
-                TransactionOrchestrator.RetryPolicy.exponential(maxAttempts, baseDelayMs));
+                TransactionRetryPolicy.exponential(maxAttempts, baseDelayMs));
     }
 
     @Override

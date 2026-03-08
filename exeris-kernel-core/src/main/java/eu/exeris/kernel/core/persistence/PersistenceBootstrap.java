@@ -36,8 +36,8 @@ import java.util.ServiceLoader;
  *   <li>Community: priority = 0</li>
  * </ul>
  * <p>If Enterprise is on the classpath, it wins. If only Community is present,
- * Community wins. If neither is found → {@link PersistenceProviderException}
- * with code {@code EX-PERS-0001} is thrown — kernel start aborts.
+ * Community wins. If neither is found → {@link PersistenceProviderException#noProviderAvailable(String)}
+ * is thrown (error code {@code EX-PERS-5007}) — kernel start aborts.
  *
  * <h2>ScopedValue Binding</h2>
  * <p>The caller (typically {@code KernelBootstrap}) wraps its subsystem startup
@@ -105,7 +105,7 @@ public final class PersistenceBootstrap {
         PersistenceBootstrapSelectedEvent.emit(
                 provider.getClass().getName(),
                 provider.priority(),
-                engine.capabilities().providerId(),
+                engine.capabilities().transportName(),
                 interceptors.size()
         );
 
@@ -122,5 +122,3 @@ public final class PersistenceBootstrap {
         return load(config, List.of());
     }
 }
-
-

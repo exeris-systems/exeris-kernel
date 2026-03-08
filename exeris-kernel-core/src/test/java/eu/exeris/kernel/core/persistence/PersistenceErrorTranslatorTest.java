@@ -137,11 +137,14 @@ class PersistenceErrorTranslatorTest {
         }
 
         @Test
-        @DisplayName("53300 TOO_MANY_CONNECTIONS → EX_PERS_5002 (connection exhausted)")
+        @DisplayName("53300 TOO_MANY_CONNECTIONS → EX_PERS_5003 (queryFailed) with cause preserved")
         void tooManyConnections() {
+            RuntimeException cause = new RuntimeException("pool exhausted");
             PersistenceProviderException ex =
-                    PersistenceErrorTranslator.translate("53300", "all slots in use", null);
-            assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_PERS_5002);
+                    PersistenceErrorTranslator.translate("53300", "all slots in use", cause);
+            assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_PERS_5003);
+            assertThat(ex.getCause()).isSameAs(cause);
+            assertThat(detail(ex)).contains("too many connections");
         }
 
         @Test

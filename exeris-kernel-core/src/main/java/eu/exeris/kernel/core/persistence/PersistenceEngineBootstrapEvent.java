@@ -11,6 +11,7 @@ package eu.exeris.kernel.core.persistence;
 import jdk.jfr.Category;
 import jdk.jfr.Description;
 import jdk.jfr.Event;
+import jdk.jfr.FlightRecorder;
 import jdk.jfr.Label;
 import jdk.jfr.Name;
 import jdk.jfr.StackTrace;
@@ -79,17 +80,21 @@ public final class PersistenceEngineBootstrapEvent extends Event {
                             boolean perTenantPooling,
                             boolean tlsEnabled,
                             String transport) {
-        PersistenceEngineBootstrapEvent event = new PersistenceEngineBootstrapEvent();
-        if (event.isEnabled()) {
-            event.providerId       = providerId;
-            event.providerName     = providerName;
-            event.maxPoolSize      = maxPoolSize;
-            event.rlsEnabled       = rlsEnabled;
-            event.perTenantPooling = perTenantPooling;
-            event.tlsEnabled       = tlsEnabled;
-            event.transport        = transport;
-            event.commit();
+        if (!FlightRecorder.isInitialized()) {
+            return;
         }
+        PersistenceEngineBootstrapEvent event = new PersistenceEngineBootstrapEvent();
+        if (!event.isEnabled()) {
+            return;
+        }
+        event.providerId       = providerId;
+        event.providerName     = providerName;
+        event.maxPoolSize      = maxPoolSize;
+        event.rlsEnabled       = rlsEnabled;
+        event.perTenantPooling = perTenantPooling;
+        event.tlsEnabled       = tlsEnabled;
+        event.transport        = transport;
+        event.commit();
     }
 }
 

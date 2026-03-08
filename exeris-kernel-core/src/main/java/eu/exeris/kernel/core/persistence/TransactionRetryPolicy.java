@@ -9,13 +9,14 @@
 package eu.exeris.kernel.core.persistence;
 
 /**
- * Valhalla-ready retry policy for {@link TransactionOrchestrator}.
+ * Valhalla-ready retry policy used by {@link TransactionOrchestrator} and
+ * related persistence components.
  *
  * <h2>Design</h2>
- * <p>Declared as a top-level {@code record} so that PMD
- * {@code FieldDeclarationsShouldBeAtStartOfClass} is satisfied in
- * {@link TransactionOrchestrator} (no inner class after fields).
- * No identity operations — scalarizes via JIT Escape Analysis on hot path.
+ * <p>Declared as a top-level {@code record} to provide a reusable, canonical
+ * retry-policy abstraction decoupled from any particular orchestrator
+ * implementation. No identity operations — scalarizes via JIT Escape Analysis
+ * on hot path.
  *
  * @param maxAttempts       maximum total attempts (1 = no retry)
  * @param baseDelayMs       initial back-off delay in milliseconds

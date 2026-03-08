@@ -35,9 +35,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * L1 Unit Tests: {@link TransactionOrchestrator} — lifecycle, retry, and rollback.
  *
  * <h2>Design</h2>
- * <p>Uses hand-crafted in-memory stubs. {@code TransactionOrchestrator} has an inner
- * {@code RetryPolicy} record — we use {@link TransactionOrchestrator.RetryPolicy},
- * not the top-level {@link TransactionRetryPolicy}.
+ * <p>Uses hand-crafted in-memory stubs. Retry policy is configured via the
+ * top-level {@link TransactionRetryPolicy} record.
  *
  * @since 0.5.0
  */
@@ -187,18 +186,13 @@ class TransactionOrchestratorTest {
         @Test
         @DisplayName("23505 is thrown after exactly 1 attempt (not retried)")
         void uniqueViolationThrowsOnce() {
-            AtomicInteger calls = new AtomicInteger(0);
             TransactionOrchestrator tx = new TransactionOrchestrator(engine,
-                    TransactionOrchestrator.RetryPolicy.exponential(3, 0L));
+                    TransactionRetryPolicy.exponential(3, 0L));
 
-            assertThatThrownBy(() ->
-                tx.execute(ignored -> {
-                    calls.incrementAndGet();
-                    throw PersistenceProviderException.queryFailed("23505", "unique", null);
-                })
-            ).isInstanceOf(PersistenceProviderException.class);
+            assertThatThrownBy(() -> tx.execute(ignored -> throwUnique()))
+                    .isInstanceOf(PersistenceProviderException.class);
 
-            assertThat(calls.get()).isEqualTo(1);
+            assertThat(engine.openCount.get()).isEqualTo(1);
         }
     }
 
@@ -215,13 +209,10 @@ class TransactionOrchestratorTest {
         void retriesUntilSuccess() {
             FailingEngine retryEngine = new FailingEngine(2);
             TransactionOrchestrator tx = new TransactionOrchestrator(retryEngine,
-                    TransactionOrchestrator.RetryPolicy.exponential(3, 0L));
+                    TransactionRetryPolicy.exponential(3, 0L));
 
             AtomicInteger workCalls = new AtomicInteger(0);
-            tx.execute(conn -> {
-                workCalls.incrementAndGet();
-                conn.commit(); // throws 40001 on calls 1+2; clean on call 3
-            });
+            tx.execute(conn -> incrementAndCommit(workCalls, conn));
 
             assertThat(workCalls.get()).isEqualTo(3);
             assertThat(retryEngine.openCount.get()).isEqualTo(3);
@@ -232,13 +223,17 @@ class TransactionOrchestratorTest {
         void retriesExhaustedThrows() {
             FailingEngine allFailEngine = new FailingEngine(100);
             TransactionOrchestrator tx = new TransactionOrchestrator(allFailEngine,
-                    TransactionOrchestrator.RetryPolicy.exponential(3, 0L));
+                    TransactionRetryPolicy.exponential(3, 0L));
 
-            assertThatThrownBy(() ->
-                tx.execute(conn -> conn.commit())
-            ).isInstanceOf(PersistenceProviderException.class);
+            assertThatThrownBy(() -> tx.execute(PersistenceConnection::commit))
+                    .isInstanceOf(PersistenceProviderException.class);
 
             assertThat(allFailEngine.openCount.get()).isEqualTo(3);
+        }
+
+        private static void incrementAndCommit(AtomicInteger counter, PersistenceConnection conn) {
+            counter.incrementAndGet();
+            conn.commit();
         }
     }
 
@@ -253,15 +248,15 @@ class TransactionOrchestratorTest {
         @Test
         @DisplayName("Unexpected RuntimeException in work lambda wrapped in PersistenceProviderException")
         void unexpectedRuntimeExceptionWrapped() {
-            assertThatThrownBy(() ->
-                new TransactionOrchestrator(engine).execute(
-                    ignored -> { throw new IllegalStateException("unexpected"); })
-            ).isInstanceOf(PersistenceProviderException.class)
-             .satisfies(t -> {
-                 Object[] args = ((PersistenceProviderException) t).rawArgs();
-                 String detail = args.length >= 2 ? String.valueOf(args[1]) : "";
-                 assertThat(detail).contains("Unexpected error");
-             });
+            TransactionOrchestrator tx = new TransactionOrchestrator(engine);
+
+            assertThatThrownBy(() -> tx.execute(ignored -> throwUnexpected()))
+                    .isInstanceOf(PersistenceProviderException.class)
+                    .satisfies(t -> {
+                        Object[] args = ((PersistenceProviderException) t).rawArgs();
+                        String detail = args.length >= 2 ? String.valueOf(args[1]) : "";
+                        assertThat(detail).contains("Unexpected error");
+                    });
         }
     }
 
@@ -277,19 +272,12 @@ class TransactionOrchestratorTest {
         @DisplayName("rollback() called when inTransaction()=true and work throws 23505")
         void rollbackCalledWhenInTransaction() {
             StubConnection conn = new StubConnection();
-            StubEngine singleConnEngine = new StubEngine() {
-                @Override StubConnection supplyConnection() {
-                    lastConnection = conn;
-                    return conn;
-                }
-            };
+            conn.inTransaction = true;
+            StubEngine singleConnEngine = engineReturning(conn);
+            TransactionOrchestrator tx = new TransactionOrchestrator(singleConnEngine);
 
-            assertThatThrownBy(() ->
-                new TransactionOrchestrator(singleConnEngine).execute(c -> {
-                    c.beginTransaction();
-                    throw PersistenceProviderException.queryFailed("23505", "unique", null);
-                })
-            ).isInstanceOf(PersistenceProviderException.class);
+            assertThatThrownBy(() -> tx.execute(ignored -> throwUnique()))
+                    .isInstanceOf(PersistenceProviderException.class);
 
             assertThat(conn.rollbackCalled).isTrue();
         }
@@ -298,19 +286,22 @@ class TransactionOrchestratorTest {
         @DisplayName("rollback() NOT called when inTransaction()=false")
         void rollbackNotCalledWhenNoTransaction() {
             StubConnection conn = new StubConnection();
-            StubEngine singleConnEngine = new StubEngine() {
+            StubEngine singleConnEngine = engineReturning(conn);
+            TransactionOrchestrator tx = new TransactionOrchestrator(singleConnEngine);
+
+            assertThatThrownBy(() -> tx.execute(ignored -> throwUnique()))
+                    .isInstanceOf(PersistenceProviderException.class);
+
+            assertThat(conn.rollbackCalled).isFalse();
+        }
+
+        private StubEngine engineReturning(StubConnection conn) {
+            return new StubEngine() {
                 @Override StubConnection supplyConnection() {
                     lastConnection = conn;
                     return conn;
                 }
             };
-
-            assertThatThrownBy(() ->
-                new TransactionOrchestrator(singleConnEngine).execute(
-                    ignored -> { throw PersistenceProviderException.queryFailed("23505", "unique", null); })
-            ).isInstanceOf(PersistenceProviderException.class);
-
-            assertThat(conn.rollbackCalled).isFalse();
         }
     }
 
@@ -335,16 +326,20 @@ class TransactionOrchestratorTest {
         void propagatesException() {
             StubConnection conn = new StubConnection();
             conn.queryThrow = PersistenceProviderException.queryFailed("42P01", "no table", null);
-            StubEngine failEngine = new StubEngine() {
+            StubEngine failEngine = engineReturning(conn);
+            TransactionOrchestrator tx = new TransactionOrchestrator(failEngine);
+
+            assertThatThrownBy(() -> tx.query(c -> c.executeQuery("SELECT 1")))
+                    .isInstanceOf(PersistenceProviderException.class);
+        }
+
+        private StubEngine engineReturning(StubConnection conn) {
+            return new StubEngine() {
                 @Override StubConnection supplyConnection() {
                     lastConnection = conn;
                     return conn;
                 }
             };
-
-            assertThatThrownBy(() ->
-                new TransactionOrchestrator(failEngine).query(c -> c.executeQuery("SELECT 1"))
-            ).isInstanceOf(PersistenceProviderException.class);
         }
     }
 
@@ -406,19 +401,31 @@ class TransactionOrchestratorTest {
     // =========================================================================
 
     @Nested
-    @DisplayName("Convenience constructor — RetryPolicy.NONE (1 attempt)")
+    @DisplayName("Convenience constructor — TransactionRetryPolicy.NONE (1 attempt)")
     class ConvenienceConstructor {
 
         @Test
         @DisplayName("Single-arg constructor: 40001 triggers only 1 attempt (NONE policy)")
         void noRetryByDefault() {
             FailingEngine failEngine = new FailingEngine(1);
-            assertThatThrownBy(() ->
-                new TransactionOrchestrator(failEngine).execute(conn -> conn.commit())
-            ).isInstanceOf(PersistenceProviderException.class);
+            TransactionOrchestrator tx = new TransactionOrchestrator(failEngine);
+
+            assertThatThrownBy(() -> tx.execute(PersistenceConnection::commit))
+                    .isInstanceOf(PersistenceProviderException.class);
 
             assertThat(failEngine.openCount.get()).isEqualTo(1);
         }
     }
-}
 
+    // =========================================================================
+    // Shared throw helpers — one invocation each, accessible across nested classes
+    // =========================================================================
+
+    private static void throwUnique() {
+        throw PersistenceProviderException.queryFailed("23505", "unique", null);
+    }
+
+    private static void throwUnexpected() {
+        throw new IllegalStateException("unexpected");
+    }
+}

@@ -49,6 +49,7 @@ public final class InterceptorRegistry {
 
     private final List<ConnectionInterceptor> interceptors = new ArrayList<>(4);
     private volatile boolean sealed;
+    private List<ConnectionInterceptor> sealedSnapshot;
 
     /**
      * Registers a new interceptor at the end of the chain.
@@ -72,13 +73,16 @@ public final class InterceptorRegistry {
      * Returns an immutable snapshot of the registered interceptors.
      *
      * <p>Seals the registry — no further registrations are allowed after this call.
-     * Subsequent calls return the same immutable list.
+     * Subsequent calls return the same immutable list instance (idempotent).
      *
      * @return ordered, immutable list of interceptors
      */
     public List<ConnectionInterceptor> seal() {
-        sealed = true;
-        return Collections.unmodifiableList(new ArrayList<>(interceptors));
+        if (sealedSnapshot == null) {
+            sealedSnapshot = Collections.unmodifiableList(new ArrayList<>(interceptors));
+            sealed = true;
+        }
+        return sealedSnapshot;
     }
 
     /** Returns the number of registered interceptors. */
