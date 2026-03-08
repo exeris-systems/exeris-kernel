@@ -28,14 +28,19 @@ public record TransactionRetryPolicy(int maxAttempts, long baseDelayMs, double b
     /** Default: 1 attempt, no retry. */
     public static final TransactionRetryPolicy NONE = new TransactionRetryPolicy(1, 0L, 1.0);
 
+    private static final int    MIN_ATTEMPTS    = 1;
+    private static final long   MIN_DELAY_MS    = 0L;
+    private static final double MIN_MULTIPLIER  = 0.0;
+    private static final long   MAX_DELAY_MS    = 30_000L;
+
     public TransactionRetryPolicy {
-        if (maxAttempts < 1) {
+        if (maxAttempts < MIN_ATTEMPTS) {
             throw new IllegalArgumentException("maxAttempts must be >= 1, got: " + maxAttempts);
         }
-        if (baseDelayMs < 0) {
+        if (baseDelayMs < MIN_DELAY_MS) {
             throw new IllegalArgumentException("baseDelayMs must be >= 0, got: " + baseDelayMs);
         }
-        if (backoffMultiplier <= 0) {
+        if (backoffMultiplier <= MIN_MULTIPLIER) {
             throw new IllegalArgumentException("backoffMultiplier must be > 0, got: " + backoffMultiplier);
         }
     }
@@ -53,11 +58,11 @@ public record TransactionRetryPolicy(int maxAttempts, long baseDelayMs, double b
      * Returns 0 for the first attempt and caps at 30 seconds.
      */
     public long delayFor(int attempt) {
-        if (attempt == 0 || baseDelayMs <= 0) {
-            return 0L;
+        if (attempt == MIN_DELAY_MS || baseDelayMs <= MIN_DELAY_MS) {
+            return MIN_DELAY_MS;
         }
         double delay = baseDelayMs * Math.pow(backoffMultiplier, attempt - 1.0);
-        return (long) Math.min(delay, 30_000.0);
+        return (long) Math.min(delay, MAX_DELAY_MS);
     }
 }
 
