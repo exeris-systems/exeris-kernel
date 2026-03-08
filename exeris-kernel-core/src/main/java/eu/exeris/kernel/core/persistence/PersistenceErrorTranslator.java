@@ -76,7 +76,6 @@ public final class PersistenceErrorTranslator {
     private static final String CLASS_SYSTEM_ERROR = "58";
     private static final String CLASS_PLPGSQL      = "P0";
 
-    private static final String UNKNOWN_TRANSPORT  = "[unknown-transport]";
 
     private PersistenceErrorTranslator() {
         // utility — no instances
@@ -152,8 +151,8 @@ public final class PersistenceErrorTranslator {
                     sqlState, "disk full — database I/O failure: " + detail, cause);
             case OUT_OF_MEMORY        -> PersistenceProviderException.queryFailed(
                     sqlState, "out of memory on database server: " + detail, cause);
-            case CONN_FAILURE, CONN_REFUSED -> PersistenceProviderException.transportFailure(
-                    UNKNOWN_TRANSPORT, -1L, 0, cause);
+            case CONN_FAILURE, CONN_REFUSED -> PersistenceProviderException.queryFailed(
+                    sqlState, "connection failure: " + detail, cause);
             default -> null; // fall through to class-level mapping
         };
     }
@@ -163,8 +162,8 @@ public final class PersistenceErrorTranslator {
                                                                    Throwable cause) {
         String clazz = sqlState.substring(0, 2);
         return switch (clazz) {
-            case CLASS_CONNECTION   -> PersistenceProviderException.transportFailure(
-                    UNKNOWN_TRANSPORT, -1L, 0, cause);
+            case CLASS_CONNECTION   -> PersistenceProviderException.queryFailed(
+                    sqlState, "connection failure: " + detail, cause);
             case CLASS_CONSTRAINT   -> constraint(sqlState, detail, cause, "constraint violated");
             case CLASS_TX_STATE     -> PersistenceProviderException.queryFailed(
                     sqlState, "invalid transaction state: " + detail, cause);
@@ -176,8 +175,8 @@ public final class PersistenceErrorTranslator {
                     sqlState, "insufficient server resources: " + detail, cause);
             case CLASS_OPERATOR     -> PersistenceProviderException.queryFailed(
                     sqlState, "operator intervention (cancel/shutdown): " + detail, cause);
-            case CLASS_SYSTEM_ERROR -> PersistenceProviderException.transportFailure(
-                    UNKNOWN_TRANSPORT, -1L, 0, cause);
+            case CLASS_SYSTEM_ERROR -> PersistenceProviderException.queryFailed(
+                    sqlState, "system I/O error: " + detail, cause);
             case CLASS_PLPGSQL      -> PersistenceProviderException.queryFailed(
                     sqlState, "PL/pgSQL error: " + detail, cause);
             default                 -> PersistenceProviderException.queryFailed(

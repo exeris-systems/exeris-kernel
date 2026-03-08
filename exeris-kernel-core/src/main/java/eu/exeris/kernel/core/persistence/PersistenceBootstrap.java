@@ -16,6 +16,7 @@ import eu.exeris.kernel.spi.persistence.PersistenceProvider;
 
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 import java.util.ServiceLoader;
 
 /**
@@ -69,17 +70,21 @@ public final class PersistenceBootstrap {
      * Loads the best available {@link PersistenceProvider}, creates the engine,
      * registers the supplied interceptors, and returns the ready {@link PersistenceEngine}.
      *
-     * <p>This method MUST be called exactly once per kernel lifecycle, during bootstrap.
-     * Calling it multiple times will perform redundant {@link ServiceLoader} scans and
-     * create additional engine instances — the caller is responsible for lifecycle control.
+     * <p>This method performs a fresh {@link ServiceLoader} scan and engine construction
+     * on every invocation. It is intended to be called exactly once per kernel lifecycle,
+     * during bootstrap. Multiple calls will produce independent engine instances and
+     * re-register interceptors — the caller is responsible for lifecycle control.
      *
-     * @param config       immutable persistence configuration
-     * @param interceptors ordered list of interceptors to register (may be empty)
+     * @param config       immutable persistence configuration; must not be {@code null}
+     * @param interceptors ordered list of interceptors to register; must not be {@code null} (may be empty)
      * @return a fully initialised {@link PersistenceEngine}
+     * @throws NullPointerException      if {@code config} or {@code interceptors} is {@code null}
      * @throws PersistenceProviderException with code {@code EX-PERS-5007} if no provider is available
      */
     public static PersistenceEngine load(PersistenceConfig config,
                                          List<ConnectionInterceptor> interceptors) {
+        Objects.requireNonNull(config,       "config must not be null");
+        Objects.requireNonNull(interceptors, "interceptors must not be null");
         // --- Phase 1: Discover all PersistenceProviders via ServiceLoader ---
         PersistenceProvider provider = ServiceLoader.load(PersistenceProvider.class)
                 .stream()

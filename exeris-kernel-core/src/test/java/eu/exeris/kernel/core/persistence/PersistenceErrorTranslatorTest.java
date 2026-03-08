@@ -23,8 +23,13 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <h2>Coverage Strategy</h2>
  * <p>The {@link PersistenceProviderException} message is a static constant ("Persistence query
- * execution failure"). All semantic context lives in {@code rawArgs}: {@code rawArgs[0]} is the
- * SQLSTATE code, {@code rawArgs[1]} is the formatted detail hint string.
+ * execution failure"). For SQLSTATE-driven failures created via the {@code queryFailed(...)}
+ * factory, the semantic context lives in {@code rawArgs}: {@code rawArgs[0]} is the SQLSTATE
+ * code, {@code rawArgs[1]} is the formatted detail hint string. Other factory methods define
+ * different {@code rawArgs} layouts (for example {@code transportFailure(...)} uses
+ * {@code [transportName, fileDescriptor, errno]}). This test class focuses on the SQLSTATE
+ * mapping contract and only assumes the SQLSTATE-oriented {@code rawArgs} shape where
+ * explicitly noted.
  *
  * @since 0.5.0
  */
@@ -166,19 +171,23 @@ class PersistenceErrorTranslatorTest {
         }
 
         @Test
-        @DisplayName("08006 CONN_FAILURE → EX_PERS_5005 (transport failure)")
+        @DisplayName("08006 CONN_FAILURE → EX_PERS_5003, rawArgs[0]=sqlState, detail contains 'connection failure'")
         void connectionFailure() {
             PersistenceProviderException ex =
                     PersistenceErrorTranslator.translate("08006", "connection dropped", null);
-            assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_PERS_5005);
+            assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_PERS_5003);
+            assertThat(ex.rawArgs()[0]).isEqualTo("08006");
+            assertThat(detail(ex)).contains("connection failure");
         }
 
         @Test
-        @DisplayName("08001 CONN_REFUSED → EX_PERS_5005 (transport failure)")
+        @DisplayName("08001 CONN_REFUSED → EX_PERS_5003, rawArgs[0]=sqlState, detail contains 'connection failure'")
         void connectionRefused() {
             PersistenceProviderException ex =
                     PersistenceErrorTranslator.translate("08001", "connection refused", null);
-            assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_PERS_5005);
+            assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_PERS_5003);
+            assertThat(ex.rawArgs()[0]).isEqualTo("08001");
+            assertThat(detail(ex)).contains("connection failure");
         }
     }
 
@@ -191,11 +200,13 @@ class PersistenceErrorTranslatorTest {
     class ClassLevelFallback {
 
         @Test
-        @DisplayName("Class 08 (unknown subcode) → EX_PERS_5005 transport failure")
+        @DisplayName("Class 08 (unknown subcode) → EX_PERS_5003, rawArgs[0]=sqlState, detail contains 'connection failure'")
         void class08Unknown() {
             PersistenceProviderException ex =
                     PersistenceErrorTranslator.translate("08999", "network error", null);
-            assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_PERS_5005);
+            assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_PERS_5003);
+            assertThat(ex.rawArgs()[0]).isEqualTo("08999");
+            assertThat(detail(ex)).contains("connection failure");
         }
 
         @Test
@@ -253,11 +264,13 @@ class PersistenceErrorTranslatorTest {
         }
 
         @Test
-        @DisplayName("Class 58 (system error) → EX_PERS_5005 transport failure")
+        @DisplayName("Class 58 (system error) → EX_PERS_5003, rawArgs[0]=sqlState, detail contains 'system I/O error'")
         void class58() {
             PersistenceProviderException ex =
                     PersistenceErrorTranslator.translate("58000", "I/O error", null);
-            assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_PERS_5005);
+            assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_PERS_5003);
+            assertThat(ex.rawArgs()[0]).isEqualTo("58000");
+            assertThat(detail(ex)).contains("system I/O error");
         }
 
         @Test

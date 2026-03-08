@@ -12,7 +12,6 @@ import eu.exeris.kernel.spi.persistence.ConnectionInterceptor;
 import eu.exeris.kernel.spi.persistence.PersistenceEngine;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 
 /**
@@ -79,7 +78,7 @@ public final class InterceptorRegistry {
      */
     public List<ConnectionInterceptor> seal() {
         if (immutableSnapshot == null) {
-            immutableSnapshot = Collections.unmodifiableList(new ArrayList<>(interceptors));
+            immutableSnapshot = List.copyOf(interceptors);
             sealed = true;
         }
         return immutableSnapshot;

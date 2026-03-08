@@ -41,9 +41,9 @@ final class PersistenceBootstrapSelectedEvent extends Event {
     @Description("ServiceLoader priority of the selected provider (100=Enterprise, 0=Community)")
     /* default */ int priority;
 
-    @Label("Capabilities")
+    @Label("Transport Name")
     @Description("PersistenceEngineCapabilities.transportName() of the created PersistenceEngine")
-    /* default */ String capabilities;
+    /* default */ String transportName;
 
     @Label("Interceptor Count")
     @Description("Number of ConnectionInterceptors registered at startup")
@@ -52,13 +52,13 @@ final class PersistenceBootstrapSelectedEvent extends Event {
     /**
      * Emits the bootstrap selected event.
      *
-     * @param providerClass  FQN of the selected {@link eu.exeris.kernel.spi.persistence.PersistenceProvider}
-     * @param priority       provider priority
-     * @param capabilities   capabilities name of the created engine
+     * @param providerClass   FQN of the selected {@link eu.exeris.kernel.spi.persistence.PersistenceProvider}
+     * @param priority        provider priority
+     * @param transportName   transport name reported by {@code PersistenceEngineCapabilities.transportName()}
      * @param interceptorCount number of registered interceptors
      */
     /* default */ static void emit(String providerClass, int priority,
-                     String capabilities, int interceptorCount) {
+                     String transportName, int interceptorCount) {
         if (!FlightRecorder.isInitialized()) {
             return;
         }
@@ -69,7 +69,7 @@ final class PersistenceBootstrapSelectedEvent extends Event {
         event.begin();
         event.providerClass     = providerClass;
         event.priority          = priority;
-        event.capabilities      = capabilities;
+        event.transportName     = transportName;
         event.interceptorCount  = interceptorCount;
         event.commit();
     }

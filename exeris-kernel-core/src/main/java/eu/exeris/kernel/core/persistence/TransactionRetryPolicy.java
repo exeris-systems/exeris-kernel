@@ -41,8 +41,8 @@ public record TransactionRetryPolicy(int maxAttempts, long baseDelayMs, double b
         if (baseDelayMs < MIN_DELAY_MS) {
             throw new IllegalArgumentException("baseDelayMs must be >= 0, got: " + baseDelayMs);
         }
-        if (backoffMultiplier <= MIN_MULTIPLIER) {
-            throw new IllegalArgumentException("backoffMultiplier must be > 0, got: " + backoffMultiplier);
+        if (backoffMultiplier <= MIN_MULTIPLIER || !Double.isFinite(backoffMultiplier)) {
+            throw new IllegalArgumentException("backoffMultiplier must be > 0 and finite, got: " + backoffMultiplier);
         }
     }
 
