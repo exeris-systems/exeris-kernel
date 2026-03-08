@@ -33,8 +33,9 @@ import java.util.UUID;
  * <h2>Stub engine design</h2>
  * <p>The {@link ZeroAllocSentinelEngine} is intentionally minimal — every method
  * returns pre-allocated singletons or primitive values to minimise allocation noise
- * from the stub itself. Only the orchestration code paths in
- * {@link TransactionOrchestrator} and its SPI delegation chain are measured.
+ * from the stub itself. The TCK exercises the {@link eu.exeris.kernel.spi.persistence.PersistenceEngine}
+ * SPI hot path directly via {@code PersistenceZeroAllocTck#runSingleIteration()};
+ * no additional orchestration layers are introduced in this test.
  *
  * <h2>JFR output</h2>
  * <p>After each test run a {@code .jfr} file is written to

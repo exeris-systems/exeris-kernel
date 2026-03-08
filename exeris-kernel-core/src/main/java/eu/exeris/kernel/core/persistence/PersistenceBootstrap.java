@@ -8,7 +8,6 @@
  */
 package eu.exeris.kernel.core.persistence;
 
-import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.exceptions.persistence.PersistenceProviderException;
 import eu.exeris.kernel.spi.persistence.ConnectionInterceptor;
 import eu.exeris.kernel.spi.persistence.PersistenceConfig;
@@ -27,7 +26,7 @@ import java.util.ServiceLoader;
  * {@link ServiceLoader#load(Class)} for {@link PersistenceProvider}.
  * It selects the highest-priority provider, creates the engine, registers
  * pre-built interceptors, emits a JFR bootstrap event, and binds the result
- * into {@link KernelProviders#PERSISTENCE_ENGINE} so every Virtual Thread
+ * into {@link eu.exeris.kernel.spi.context.KernelProviders#PERSISTENCE_ENGINE} so every Virtual Thread
  * inherits it via {@code ScopedValue}.
  *
  * <h2>Priority Rule</h2>

@@ -17,6 +17,7 @@ import eu.exeris.kernel.spi.persistence.TransactionalExecutor;
 import eu.exeris.kernel.spi.security.ImmutableStorageContext;
 import eu.exeris.kernel.spi.security.StorageContext;
 
+import java.util.Objects;
 import java.util.function.Function;
 
 /**
@@ -32,7 +33,7 @@ import java.util.function.Function;
  * <pre>{@code
  * TransactionOrchestrator tx = new TransactionOrchestrator(
  *     KernelProviders.PERSISTENCE_ENGINE.get(),
- *     RetryPolicy.exponential(3, 50L));
+ *     TransactionRetryPolicy.exponential(3, 50L));
  *
  * // Managed write — explicit bounds, auto commit/rollback
  * tx.executeManaged(conn -> {
@@ -48,7 +49,7 @@ import java.util.function.Function;
  *
  * <h2>Retry Semantics</h2>
  * <p>PostgreSQL {@code 40001} (serialization failure) and {@code 40P01} (deadlock)
- * are retried up to {@code RetryPolicy.maxAttempts()} times with exponential back-off.
+ * are retried up to {@link TransactionRetryPolicy#maxAttempts()} times with exponential back-off.
  *
  * <h2>ScopedValue Flow</h2>
  * <p>The {@link StorageContext} is read from {@link KernelProviders#STORAGE_CONTEXT}.
@@ -81,8 +82,8 @@ public final class TransactionOrchestrator implements TransactionalExecutor {
      * Creates an orchestrator bound to the given engine and retry policy.
      */
     public TransactionOrchestrator(PersistenceEngine engine, TransactionRetryPolicy retryPolicy) {
-        this.engine      = engine;
-        this.retryPolicy = retryPolicy;
+        this.engine      = Objects.requireNonNull(engine,      "engine must not be null");
+        this.retryPolicy = Objects.requireNonNull(retryPolicy, "retryPolicy must not be null");
     }
 
     /** Convenience constructor with {@link TransactionRetryPolicy#NONE}. */
@@ -97,12 +98,13 @@ public final class TransactionOrchestrator implements TransactionalExecutor {
     /**
      * {@inheritDoc}
      *
-     * <p>Retries on {@code 40001} / {@code 40P01} per the configured {@link RetryPolicy}.
+     * <p>Retries on {@code 40001} / {@code 40P01} per the configured {@link TransactionRetryPolicy}.
      * The {@code work} lambda is responsible for calling {@code beginTransaction()}
      * and {@code commit()} explicitly.
      */
     @Override
     public void execute(TransactionalWork work) {
+        Objects.requireNonNull(work, "work must not be null");
         StorageContext ctx = resolveStorageContext();
         int attempt = 0;
         PersistenceProviderException lastError = null;
@@ -145,6 +147,8 @@ public final class TransactionOrchestrator implements TransactionalExecutor {
     public void executeManaged(TransactionIsolation isolation,
                                 boolean readOnly,
                                 TransactionalWork work) {
+        Objects.requireNonNull(isolation, "isolation must not be null");
+        Objects.requireNonNull(work,      "work must not be null");
         StorageContext ctx = resolveStorageContext();
         try (PersistenceConnection conn = engine.openConnection(ctx)) {
             conn.beginTransaction(isolation, readOnly);
@@ -162,6 +166,7 @@ public final class TransactionOrchestrator implements TransactionalExecutor {
     /** {@inheritDoc} */
     @Override
     public <T> T query(Function<PersistenceConnection, T> query) {
+        Objects.requireNonNull(query, "query must not be null");
         StorageContext ctx = resolveStorageContext();
         try (PersistenceConnection conn = engine.openConnection(ctx)) {
             return query.apply(conn);

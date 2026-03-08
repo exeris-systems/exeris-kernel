@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * L1 Unit Tests: {@link TransactionRetryPolicy} — delay computation and factory semantics.
@@ -64,23 +65,11 @@ class TransactionRetryPolicyTest {
     class ExponentialFactory {
 
         @Test
-        @DisplayName("exponential(3, 50) creates policy with maxAttempts=3")
-        void correctMaxAttempts() {
+        @DisplayName("exponential(3, 50) creates policy with correct maxAttempts, baseDelayMs and backoffMultiplier")
+        void correctFields() {
             TransactionRetryPolicy policy = TransactionRetryPolicy.exponential(3, 50L);
             assertThat(policy.maxAttempts()).isEqualTo(3);
-        }
-
-        @Test
-        @DisplayName("exponential(3, 50) creates policy with baseDelayMs=50")
-        void correctBaseDelay() {
-            TransactionRetryPolicy policy = TransactionRetryPolicy.exponential(3, 50L);
             assertThat(policy.baseDelayMs()).isEqualTo(50L);
-        }
-
-        @Test
-        @DisplayName("exponential(3, 50) creates policy with backoffMultiplier=2.0")
-        void correctMultiplier() {
-            TransactionRetryPolicy policy = TransactionRetryPolicy.exponential(3, 50L);
             assertThat(policy.backoffMultiplier()).isEqualTo(2.0);
         }
     }
@@ -130,11 +119,11 @@ class TransactionRetryPolicyTest {
         }
 
         @Test
-        @DisplayName("delayFor with negative baseDelayMs always returns 0")
-        void negativeBaseDelayReturnsZero() {
-            TransactionRetryPolicy policy = new TransactionRetryPolicy(3, -1L, 2.0);
-            assertThat(policy.delayFor(1)).isZero();
-            assertThat(policy.delayFor(2)).isZero();
+        @DisplayName("negative baseDelayMs is rejected by the canonical constructor")
+        void negativeBaseDelayRejected() {
+            assertThatThrownBy(() -> new TransactionRetryPolicy(3, -1L, 2.0))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("baseDelayMs must be >= 0");
         }
     }
 
@@ -147,8 +136,7 @@ class TransactionRetryPolicyTest {
         void equalByValue() {
             TransactionRetryPolicy p1 = TransactionRetryPolicy.exponential(3, 50L);
             TransactionRetryPolicy p2 = TransactionRetryPolicy.exponential(3, 50L);
-            assertThat(p1).isEqualTo(p2);
-            assertThat(p1).hasSameHashCodeAs(p2);
+            assertThat(p1).isEqualTo(p2).hasSameHashCodeAs(p2);
         }
 
         @Test

@@ -8,7 +8,7 @@
     <version>0.5.0-SNAPSHOT</version>
     <packaging>pom</packaging>
 
-    <name>Exeris Kernel - Root</name>
+    <name>Exeris Kernel :: Root</name>
     <description>Cloud-Native, Zero-Copy Runtime Platform (Java 26+, FFM, Open-Core)</description>
     <inceptionYear>2026</inceptionYear>
 
@@ -37,7 +37,8 @@
             -XX:-ZUncommit
             --enable-preview
             --enable-native-access=ALL-UNNAMED
-            -XX:StartFlightRecording=disk=true,filename=target/recording-${maven.build.timestamp}.jfr,maxsize=0,settings=default
+            -XX:FlightRecorderOptions=stackdepth=256
+            -XX:StartFlightRecording=disk=true,filename=target/recording-${maven.build.timestamp}.jfr,maxsize=0,settings=profile
         </test.jvm.args>
         <maven.build.timestamp.format>yyyyMMdd-HHmmss</maven.build.timestamp.format>
     </properties>
@@ -67,4 +68,17 @@
             </plugins>
         </pluginManagement>
     </build>
+
+    <distributionManagement>
+        <repository>
+            <id>github-exeris-kernel</id>
+            <name>Exeris Kernel — GitHub Packages</name>
+            <url>https://maven.pkg.github.com/exeris-systems/exeris-kernel</url>
+        </repository>
+        <snapshotRepository>
+            <id>github-exeris-kernel</id>
+            <name>Exeris Kernel — GitHub Packages (Snapshots)</name>
+            <url>https://maven.pkg.github.com/exeris-systems/exeris-kernel</url>
+        </snapshotRepository>
+    </distributionManagement>
 </project>
