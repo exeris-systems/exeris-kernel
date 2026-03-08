@@ -182,10 +182,7 @@ public final class TransactionOrchestrator implements TransactionalExecutor {
                     }
                 } catch (RuntimeException rte) {
                     safeRollback(conn, attempt);
-                    throw PersistenceProviderException.queryFailed(
-                            "XX000",
-                            "Unexpected error in managed transactional work: " + rte.getMessage(),
-                            rte);
+                    throw rte;
                 }
             }
         }
