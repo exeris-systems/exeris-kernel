@@ -1,9 +1,10 @@
 /*
- * Copyright (C) 2025-2026 Exeris. All rights reserved.
+ * Copyright (C) 2025-2026 Exeris Systems.
  *
- * This code is part of the Exeris Systems.
- * Distributed under the proprietary Exeris Software License.
- * Unauthorized copying or distribution is prohibited.
+ * Licensed under the Apache License, Version 2.0 with Commons Clause.
+ * You may use, modify, and distribute this file under those terms.
+ * Commercial resale of this software as a competing product is prohibited.
+ * See LICENSE-COMMUNITY in the repository root for the full text.
  */
 package eu.exeris.kernel.spi.config;
 
@@ -418,7 +419,7 @@ public interface ConfigProvider {
          *
          * <p>For new code, prefer the factory methods ({@link #missingProperty},
          * {@link #typeMismatch}, {@link #hotReloadFailure}) to guarantee a stable
-         * {@code rawArgs} layout for Black-Box telemetry.
+         * {@code rawArgs} layout for Glass-Box telemetry.
          *
          * @param errorCode a non-null {@code EX-CFG-*} code from {@link KernelErrorCodes}
          * @param message   human-readable message; may include runtime details for console/log
@@ -483,7 +484,7 @@ public interface ConfigProvider {
         }
 
         /**
-         * Sanitizes a raw configuration value for safe inclusion in Black-Box telemetry.
+         * Sanitizes a raw configuration value for safe inclusion in Glass-Box telemetry.
          *
          * <p>Sensitive keys are fully redacted; all other values are truncated to
          * {@value #MAX_VALUE_PREVIEW_LENGTH} characters.

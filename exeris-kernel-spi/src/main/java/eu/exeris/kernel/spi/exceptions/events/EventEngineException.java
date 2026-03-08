@@ -1,9 +1,10 @@
 /*
- * Copyright (C) 2025-2026 Exeris. All rights reserved.
+ * Copyright (C) 2025-2026 Exeris Systems.
  *
- * This code is part of the Exeris Systems.
- * Distributed under the proprietary Exeris Software License.
- * Unauthorized copying or distribution is prohibited.
+ * Licensed under the Apache License, Version 2.0 with Commons Clause.
+ * You may use, modify, and distribute this file under those terms.
+ * Commercial resale of this software as a competing product is prohibited.
+ * See LICENSE-COMMUNITY in the repository root for the full text.
  */
 package eu.exeris.kernel.spi.exceptions.events;
 
@@ -15,7 +16,7 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  *
  * <h2>Zero-Allocation Telemetry Contract</h2>
  * <p>Extends {@link ExerisKernelException} — carries a structured {@code EX-EVENT-*}
- * error code and stores domain arguments in {@link #rawArgs()} for binary Black-Box
+ * error code and stores domain arguments in {@link #rawArgs()} for binary Glass-Box
  * serialization. No {@code String} formatting occurs on the hot-path.
  *
  * <h2>Error Code Variants</h2>
@@ -58,7 +59,7 @@ public class EventEngineException extends ExerisKernelException {
      *
      * @param errorCode an {@code EX-EVENT-*} code from {@link KernelErrorCodes}
      * @param message   static message template — no runtime formatting
-     * @param rawArgs   raw domain arguments for binary Black-Box serialization
+     * @param rawArgs   raw domain arguments for binary Glass-Box serialization
      */
     public EventEngineException(String errorCode, String message, Object... rawArgs) {
         super(errorCode, message, null, rawArgs);
@@ -70,7 +71,7 @@ public class EventEngineException extends ExerisKernelException {
      * @param errorCode an {@code EX-EVENT-*} code from {@link KernelErrorCodes}
      * @param message   static message template — no runtime formatting
      * @param cause     upstream throwable; may be {@code null}
-     * @param rawArgs   raw domain arguments for binary Black-Box serialization
+     * @param rawArgs   raw domain arguments for binary Glass-Box serialization
      */
     public EventEngineException(String errorCode, String message, Throwable cause, Object... rawArgs) {
         super(errorCode, message, cause, rawArgs);

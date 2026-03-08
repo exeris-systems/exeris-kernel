@@ -1,9 +1,10 @@
 /*
- * Copyright (C) 2025-2026 Exeris. All rights reserved.
+ * Copyright (C) 2025-2026 Exeris Systems.
  *
- * This code is part of the Exeris Systems.
- * Distributed under the proprietary Exeris Software License.
- * Unauthorized copying or distribution is prohibited.
+ * Licensed under the Apache License, Version 2.0 with Commons Clause.
+ * You may use, modify, and distribute this file under those terms.
+ * Commercial resale of this software as a competing product is prohibited.
+ * See LICENSE-COMMUNITY in the repository root for the full text.
  */
 package eu.exeris.kernel.spi.persistence;
 
@@ -45,10 +46,10 @@ import eu.exeris.kernel.spi.security.StorageContext;
  * {@code EX-PERS-5006} (Interceptor Initialization Error). The engine will then
  * discard the connection and propagate the exception to the caller.
  *
- * @since 0.5.0
  * @see PersistenceEngine#openConnection(StorageContext)
  * @see PersistenceConnection
  * @see StorageContext
+ * @since 0.5.0
  */
 @FunctionalInterface
 public interface ConnectionInterceptor {
@@ -71,7 +72,7 @@ public interface ConnectionInterceptor {
      * });
      * }</pre>
      *
-     * @param connection    the freshly acquired connection; MUST NOT be closed by the interceptor
+     * @param connection     the freshly acquired connection; MUST NOT be closed by the interceptor
      * @param storageContext the isolation descriptor for the current request scope;
      *                       MUST NOT be {@code null}
      * @throws PersistenceProviderException with {@code EX-PERS-5006} if the connection
@@ -79,4 +80,3 @@ public interface ConnectionInterceptor {
      */
     void onConnectionAcquired(PersistenceConnection connection, StorageContext storageContext);
 }
-

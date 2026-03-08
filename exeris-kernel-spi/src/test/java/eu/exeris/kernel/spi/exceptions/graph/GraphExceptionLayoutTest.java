@@ -1,9 +1,10 @@
 /*
- * Copyright (C) 2025-2026 Exeris. All rights reserved.
+ * Copyright (C) 2025-2026 Exeris Systems.
  *
- * This code is part of the Exeris Systems.
- * Distributed under the proprietary Exeris Software License.
- * Unauthorized copying or distribution is prohibited.
+ * Licensed under the Apache License, Version 2.0 with Commons Clause.
+ * You may use, modify, and distribute this file under those terms.
+ * Commercial resale of this software as a competing product is prohibited.
+ * See LICENSE-COMMUNITY in the repository root for the full text.
  */
 package eu.exeris.kernel.spi.exceptions.graph;
 
@@ -24,7 +25,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * <pre>
  * GraphBootstrapException (EX-GRPH-5001):      [String providerName, String reason]
  * ExcessiveAllocationException (EX-GRPH-5005): [String driverName, long bytesAllocated, long bytesTransferred]
- * PathNotFoundException (EX-GRPH-5004):        [UUID sourceNodeId, UUID targetNodeId]
+ * PathNotFoundException (EX-GRPH-5004):        [long sourceMost, long sourceLeast, long targetMost, long targetLeast]
  * </pre>
  *
  * @since 0.5.0
@@ -124,7 +125,7 @@ class GraphExceptionLayoutTest {
     class PathNotFound {
 
         @Test
-        @DisplayName("rawArgs[0]=sourceNodeId (UUID), rawArgs[1]=targetNodeId (UUID)")
+        @DisplayName("rawArgs[0..3] = sourceMost, sourceLeast, targetMost, targetLeast (4x long)")
         void rawArgsLayout() {
             UUID src = UUID.randomUUID();
             UUID tgt = UUID.randomUUID();
@@ -132,19 +133,43 @@ class GraphExceptionLayoutTest {
 
             assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_GRPH_5004);
             Object[] raw = ex.rawArgs();
-            assertThat(raw).hasSize(2);
-            assertThat(raw[0]).isSameAs(src);
-            assertThat(raw[1]).isSameAs(tgt);
+            assertThat(raw).hasSize(4);
+            assertThat(raw[0]).isEqualTo(src.getMostSignificantBits());
+            assertThat(raw[1]).isEqualTo(src.getLeastSignificantBits());
+            assertThat(raw[2]).isEqualTo(tgt.getMostSignificantBits());
+            assertThat(raw[3]).isEqualTo(tgt.getLeastSignificantBits());
         }
 
         @Test
-        @DisplayName("rawArgs types are UUID — NOT eagerly converted to String")
-        void rawArgTypesAreUuid() {
+        @DisplayName("rawArgs[0..3] are all Long — no UUID object in payload")
+        void rawArgTypesAreLong() {
             UUID src = UUID.randomUUID();
             UUID tgt = UUID.randomUUID();
             PathNotFoundException ex = new PathNotFoundException(src, tgt);
-            assertThat(ex.rawArgs()[0]).isInstanceOf(UUID.class);
-            assertThat(ex.rawArgs()[1]).isInstanceOf(UUID.class);
+            assertThat(ex.rawArgs()[0]).isInstanceOf(Long.class);
+            assertThat(ex.rawArgs()[1]).isInstanceOf(Long.class);
+            assertThat(ex.rawArgs()[2]).isInstanceOf(Long.class);
+            assertThat(ex.rawArgs()[3]).isInstanceOf(Long.class);
+        }
+
+        @Test
+        @DisplayName("UUID round-trip: longs reconstruct original source UUID")
+        void sourceUuidRoundTrip() {
+            UUID src = UUID.randomUUID();
+            UUID tgt = UUID.randomUUID();
+            PathNotFoundException ex = new PathNotFoundException(src, tgt);
+            UUID reconstructed = new UUID((long) ex.rawArgs()[0], (long) ex.rawArgs()[1]);
+            assertThat(reconstructed).isEqualTo(src);
+        }
+
+        @Test
+        @DisplayName("UUID round-trip: longs reconstruct original target UUID")
+        void targetUuidRoundTrip() {
+            UUID src = UUID.randomUUID();
+            UUID tgt = UUID.randomUUID();
+            PathNotFoundException ex = new PathNotFoundException(src, tgt);
+            UUID reconstructed = new UUID((long) ex.rawArgs()[2], (long) ex.rawArgs()[3]);
+            assertThat(reconstructed).isEqualTo(tgt);
         }
 
         @Test

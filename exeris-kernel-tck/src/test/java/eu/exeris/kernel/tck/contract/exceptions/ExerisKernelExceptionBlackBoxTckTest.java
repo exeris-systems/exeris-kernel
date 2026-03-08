@@ -1,9 +1,10 @@
 /*
- * Copyright (C) 2025-2026 Exeris. All rights reserved.
+ * Copyright (C) 2025-2026 Exeris Systems.
  *
- * This code is part of the Exeris Systems.
- * Distributed under the proprietary Exeris Software License.
- * Unauthorized copying or distribution is prohibited.
+ * Licensed under the Apache License, Version 2.0 with Commons Clause.
+ * You may use, modify, and distribute this file under those terms.
+ * Commercial resale of this software as a competing product is prohibited.
+ * See LICENSE-COMMUNITY in the repository root for the full text.
  */
 package eu.exeris.kernel.tck.contract.exceptions;
 
@@ -20,10 +21,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 
 /**
- * TCK: Black-Box rawArgs binary telemetry contract for {@link ExerisKernelException} hierarchy.
+ * TCK: Glass-Box rawArgs binary telemetry contract for {@link ExerisKernelException} hierarchy.
  *
  * <h2>What is verified</h2>
- * <p>The "Black-Box Pattern" (telemetry.md) requires that every {@link ExerisKernelException}
+ * <p>The "Glass-Box Pattern" (telemetry.md) requires that every {@link ExerisKernelException}
  * subclass stores raw primitive arguments in {@code rawArgs[]} instead of concatenating Strings.
  * This TCK validates the structural invariants that make binary crash-log serialisation possible:
  *
@@ -48,7 +49,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
  *
  * @since 0.5.0
  */
-@DisplayName("ExerisKernelException — Black-Box rawArgs binary contract")
+@DisplayName("ExerisKernelException — Glass-Box rawArgs binary contract")
 class ExerisKernelExceptionBlackBoxTckTest {
 
     // =========================================================================
@@ -129,7 +130,7 @@ class ExerisKernelExceptionBlackBoxTckTest {
     // =========================================================================
 
     @Nested
-    @DisplayName("rawArgs[] — binary struct layout (Black-Box contract)")
+    @DisplayName("rawArgs[] — binary struct layout (Glass-Box contract)")
     class RawArgsLayout {
 
         @Test
@@ -236,8 +237,3 @@ class ExerisKernelExceptionBlackBoxTckTest {
         }
     }
 }
-
-
-
-
-

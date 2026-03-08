@@ -1,9 +1,10 @@
 /*
- * Copyright (C) 2025-2026 Exeris. All rights reserved.
+ * Copyright (C) 2025-2026 Exeris Systems.
  *
- * This code is part of the Exeris Systems.
- * Distributed under the proprietary Exeris Software License.
- * Unauthorized copying or distribution is prohibited.
+ * Licensed under the Apache License, Version 2.0 with Commons Clause.
+ * You may use, modify, and distribute this file under those terms.
+ * Commercial resale of this software as a competing product is prohibited.
+ * See LICENSE-COMMUNITY in the repository root for the full text.
  */
 package eu.exeris.kernel.tck.perf;
 
@@ -43,7 +44,7 @@ import java.util.concurrent.TimeUnit;
  *   <li>No-op discard sink: {@code ≥ 50 000 000 ops/s} (branch eliminated).</li>
  * </ul>
  *
- * <h2>Black-Box alignment (telemetry.md)</h2>
+ * <h2>Glass-Box alignment (telemetry.md)</h2>
  * <p>The doc mandates: "Emission of 1M MemoryAllocationEvent samples adds &lt; 50 µs/req overhead."
  * This benchmark validates that SLO by extrapolation: at 2M ops/s, 1M samples cost &lt; 500 ms total,
  * meaning per-request overhead &lt; 50 µs at 1% sampling (1 sample per 100 requests).

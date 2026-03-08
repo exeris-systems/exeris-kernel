@@ -1,9 +1,10 @@
 /*
- * Copyright (C) 2025-2026 Exeris. All rights reserved.
+ * Copyright (C) 2025-2026 Exeris Systems.
  *
- * This code is part of the Exeris Systems.
- * Distributed under the proprietary Exeris Software License.
- * Unauthorized copying or distribution is prohibited.
+ * Licensed under the Apache License, Version 2.0 with Commons Clause.
+ * You may use, modify, and distribute this file under those terms.
+ * Commercial resale of this software as a competing product is prohibited.
+ * See LICENSE-COMMUNITY in the repository root for the full text.
  */
 package eu.exeris.kernel.spi.exceptions.persistence;
 
@@ -16,7 +17,7 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  * <h2>Zero-Allocation Telemetry Contract</h2>
  * <p>All domain context is passed as raw {@code Object[]} args to
  * {@link ExerisKernelException#rawArgs()} — no String formatting on the hot path.
- * The Enterprise Black-Box tier serialises these args directly to a binary struct.
+ * The Enterprise Glass-Box tier serialises these args directly to a binary struct.
  *
  * <h2>Error Codes</h2>
  * <ul>
@@ -57,7 +58,7 @@ public final class PersistenceProviderException extends ExerisKernelException {
      *
      * <p>The {@code connectionUrl} is sanitized before capture — any embedded
      * {@code user:password@} userinfo is stripped to prevent credential leakage
-     * into telemetry / Black-Box dumps.
+     * into telemetry / Glass-Box dumps.
      *
      * @param providerName  provider display name
      * @param connectionUrl database URL (sanitized before storage in rawArgs)

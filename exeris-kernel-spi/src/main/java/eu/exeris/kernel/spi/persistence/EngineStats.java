@@ -1,9 +1,10 @@
 /*
- * Copyright (C) 2025-2026 Exeris. All rights reserved.
+ * Copyright (C) 2025-2026 Exeris Systems.
  *
- * This code is part of the Exeris Systems.
- * Distributed under the proprietary Exeris Software License.
- * Unauthorized copying or distribution is prohibited.
+ * Licensed under the Apache License, Version 2.0 with Commons Clause.
+ * You may use, modify, and distribute this file under those terms.
+ * Commercial resale of this software as a competing product is prohibited.
+ * See LICENSE-COMMUNITY in the repository root for the full text.
  */
 package eu.exeris.kernel.spi.persistence;
 
@@ -18,17 +19,16 @@ package eu.exeris.kernel.spi.persistence;
  * <p>Instances are created on the monitoring path (every 5s), not the hot path.
  * The record is immutable and stack-allocatable — no GC pressure.
  *
- * @param activeConnections   Number of connections currently in use.
- * @param idleConnections     Number of connections idle in the pool.
- * @param maxConnections      Configured maximum pool size.
- * @param pendingAcquires     Number of virtual threads waiting for a connection.
- * @param totalBorrowed       Cumulative count of connections borrowed since bootstrap.
- * @param totalCreated        Cumulative count of connections physically created.
- * @param totalEvicted        Cumulative count of connections evicted (timeout/error).
- * @param tenantPoolCount     Number of active per-tenant pools (0 if per-tenant disabled).
- *
- * @since 0.5.0
+ * @param activeConnections Number of connections currently in use.
+ * @param idleConnections   Number of connections idle in the pool.
+ * @param maxConnections    Configured maximum pool size.
+ * @param pendingAcquires   Number of virtual threads waiting for a connection.
+ * @param totalBorrowed     Cumulative count of connections borrowed since bootstrap.
+ * @param totalCreated      Cumulative count of connections physically created.
+ * @param totalEvicted      Cumulative count of connections evicted (timeout/error).
+ * @param tenantPoolCount   Number of active per-tenant pools (0 if per-tenant disabled).
  * @see PersistenceEngine#stats()
+ * @since 0.5.0
  */
 public record EngineStats(
         int activeConnections,
@@ -67,4 +67,3 @@ public record EngineStats(
         return new EngineStats(0, 0, 0, 0, 0L, 0L, 0L, 0);
     }
 }
-
