@@ -31,6 +31,7 @@ public record TransactionRetryPolicy(int maxAttempts, long baseDelayMs, double b
     private static final int    MIN_ATTEMPTS    = 1;
     private static final long   MIN_DELAY_MS    = 0L;
     private static final double MIN_MULTIPLIER  = 0.0;
+    private static final int    FIRST_ATTEMPT   = 0;
     private static final long   MAX_DELAY_MS    = 30_000L;
 
     public TransactionRetryPolicy {
