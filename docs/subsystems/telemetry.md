@@ -4,7 +4,7 @@
 
 - SPI: `eu.exeris.kernel.spi.telemetry.*` (`TelemetryProvider`, `TelemetrySink`, `KernelEvent`, `TelemetryConfig`)
 - Core: `eu.exeris.kernel.core.telemetry.*` (`JfrTelemetrySink`, `ErrorMapperRegistry`, `TelemetryJfrEvents`)
-- Enterprise: Binary deterministic sink, structured JFR streaming over off-heap ring buffer *(planned — `BinaryGlassBox` / `GlassBoxSerializer` are target TRL-4 types, not yet implemented)*
+- Enterprise: `eu.exeris.kernel.enterprise.telemetry.*` (`BinaryGlassBoxSink`, `EnterpriseTelemetryProvider`) — binary deterministic sink over off-heap ring buffer; structured JFR streaming via `GlassBoxSerializer` is planned TRL-4
 
 **Layer:** L1 (Observability)  
 **Status:** Validated Architectural Prototype (TRL-3)
@@ -15,7 +15,11 @@
 > The telemetry contracts (`TelemetryProvider`, `TelemetrySink`, `KernelEvent`, `TelemetryConfig`) are
 > defined under `eu.exeris.kernel.spi.telemetry.*` and are covered by `exeris-kernel-tck`
 > (including `AbstractTelemetrySinkTck`, `AbstractTelemetryProviderTck`).
-> `JfrTelemetrySink` and `BinaryGlassBox` are the reference implementations in `exeris-kernel-core`.
+> `JfrTelemetrySink` is the reference implementation in `exeris-kernel-core`.
+> `BinaryGlassBoxSink` is the Enterprise-tier binary deterministic sink, located in
+> `exeris-kernel-enterprise` (`eu.exeris.kernel.enterprise.telemetry`), not in Core.
+> `GlassBoxSerializer` (structured JFR streaming over off-heap ring buffer) is a planned TRL-4
+> type — not yet implemented in this repository.
 >
 > Implications for contributors:
 > - In the planned KernelBootstrap-backed runtime, `TelemetryProvider` will be discoverable via `ServiceLoader` from L1+ code. In this repo, `exeris-kernel-core` does not yet provide a `KernelBootstrap` implementation; treat this discovery path as forward-looking.

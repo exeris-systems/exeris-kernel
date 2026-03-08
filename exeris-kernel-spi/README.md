@@ -13,3 +13,16 @@ The SPI (Service Provider Interface) defines the immutable laws of the Exeris Ke
 
 ## 🧬 Valhalla Readiness
 All data structures are implemented as `record` types annotated with `@ValueCandidate`. They are architecturally ready to be promoted to `value record` (JEP 401) for zero-object-header memory efficiency.
+
+## ⚖️ Licence
+
+This module is licensed under the **Apache License 2.0 with Commons Clause**.
+See the [LICENSE](LICENSE) file in this directory for the full text.
+
+**In brief:** you may use, modify, fork, and redistribute this module in any
+product or service — including commercial production deployments — as long as
+you are not selling the Exeris Community modules themselves as a standalone
+hosted runtime or competing distribution. Implementing your own SPI provider
+(including a QUIC transport) is explicitly permitted and encouraged.
+
+For questions: legal@exeris.eu
