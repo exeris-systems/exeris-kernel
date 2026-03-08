@@ -1,9 +1,10 @@
 /*
- * Copyright (C) 2025-2026 Exeris. All rights reserved.
+ * Copyright (C) 2025-2026 Exeris Systems.
  *
- * This code is part of the Exeris Systems.
- * Distributed under the proprietary Exeris Software License.
- * Unauthorized copying or distribution is prohibited.
+ * Licensed under the Apache License, Version 2.0 with Commons Clause.
+ * You may use, modify, and distribute this file under those terms.
+ * Commercial resale of this software as a competing product is prohibited.
+ * See LICENSE-COMMUNITY in the repository root for the full text.
  */
 package eu.exeris.kernel.tck.contract.persistence;
 
@@ -20,26 +21,34 @@ import org.junit.jupiter.api.DisplayName;
  * <p>{@code openConnection() → executeQuery() → next() → getInt(0) → close()}.
  * All I/O must be non-blocking and VT-safe — zero carrier pinning.
  *
- * @since 0.5.0
  * @see AbstractSubsystemCarrierPinningTck
  * @see PersistenceZeroAllocTck
+ * @since 0.5.0
  */
 @DisplayName("Persistence carrier pinning TCK")
 public abstract class PersistenceCarrierPinningTck extends AbstractSubsystemCarrierPinningTck {
 
     protected abstract PersistenceEngine createEngine();
+
     protected abstract String hotPathQuery();
 
     private PersistenceEngine engine;
     private String sql;
 
-    @Override protected String subsystemName()      { return "Persistence"; }
-    @Override protected String hotPathDescription() { return "openConnection() → executeQuery() → next() → getInt(0) → close()"; }
+    @Override
+    protected String subsystemName() {
+        return "Persistence";
+    }
+
+    @Override
+    protected String hotPathDescription() {
+        return "openConnection() → executeQuery() → next() → getInt(0) → close()";
+    }
 
     @Override
     protected void bootstrapSubsystem() {
         engine = createEngine();
-        sql    = hotPathQuery();
+        sql = hotPathQuery();
     }
 
     @Override
@@ -57,4 +66,3 @@ public abstract class PersistenceCarrierPinningTck extends AbstractSubsystemCarr
         engine.close();
     }
 }
-

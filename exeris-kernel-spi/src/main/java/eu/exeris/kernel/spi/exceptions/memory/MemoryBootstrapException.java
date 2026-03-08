@@ -1,9 +1,10 @@
 /*
- * Copyright (C) 2025-2026 Exeris. All rights reserved.
+ * Copyright (C) 2025-2026 Exeris Systems.
  *
- * This code is part of the Exeris Systems.
- * Distributed under the proprietary Exeris Software License.
- * Unauthorized copying or distribution is prohibited.
+ * Licensed under the Apache License, Version 2.0 with Commons Clause.
+ * You may use, modify, and distribute this file under those terms.
+ * Commercial resale of this software as a competing product is prohibited.
+ * See LICENSE-COMMUNITY in the repository root for the full text.
  */
 package eu.exeris.kernel.spi.exceptions.memory;
 
@@ -16,7 +17,7 @@ import eu.exeris.kernel.spi.memory.MemoryProvider;
  * off-heap region cannot be initialised (e.g., insufficient system memory,
  * missing native library, or mmap permission denied).
  *
- * <h2>rawArgs Binary Layout (Enterprise Black-Box)</h2>
+ * <h2>rawArgs Binary Layout (Enterprise Glass-Box)</h2>
  * <pre>
  * index 0 → String  providerName   (e.g. "ExerisEnterprise/GlobalArbiter")
  * index 1 → long    requestedBytes (total off-heap budget requested; -1 if unknown)

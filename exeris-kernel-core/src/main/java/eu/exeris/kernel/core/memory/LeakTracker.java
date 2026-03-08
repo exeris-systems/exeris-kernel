@@ -1,9 +1,10 @@
 /*
- * Copyright (C) 2025-2026 Exeris. All rights reserved.
+ * Copyright (C) 2025-2026 Exeris Systems.
  *
- * This code is part of the Exeris Systems.
- * Distributed under the proprietary Exeris Software License.
- * Unauthorized copying or distribution is prohibited.
+ * Licensed under the Apache License, Version 2.0 with Commons Clause.
+ * You may use, modify, and distribute this file under those terms.
+ * Commercial resale of this software as a competing product is prohibited.
+ * See LICENSE-COMMUNITY in the repository root for the full text.
  */
 package eu.exeris.kernel.core.memory;
 
@@ -39,9 +40,9 @@ import java.util.concurrent.atomic.AtomicLong;
  * <p>In SAMPLED mode, approximately 1/128 of all allocations are tracked. The sampling
  * is based on a simple counter modulo — no {@code Random} allocation, no {@code ThreadLocal}.
  *
- * <h2>Memory.md EX-MEM-1001 Compliance</h2>
+ * <h2>Memory.md EX-MEM-1002 Compliance</h2>
  * <p>Detected leaks are emitted as {@link LeakDetectedEvent} JFR events bearing
- * error code {@code EX-MEM-1001}. No {@code System.err} or logging framework is used.
+ * error code {@code EX-MEM-1002}. No {@code System.err} or logging framework is used.
  *
  * @see AbstractLoanedBuffer
  * @see LeakDetectedEvent

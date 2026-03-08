@@ -62,7 +62,9 @@ and exposes the result to the application layer via the SPI:
 - Zero heap allocation on the TLS hot path — plaintext and ciphertext reside exclusively
   in `LoanedBuffer` instances backed by Panama `MemorySegment`.
 
-**Community is now the fastest open-source Java TLS stack in existence.**
+**Community targets zero heap allocation on the TLS hot path** — a property not achievable by stacks
+based on standard `JSSE`/`SSLEngine`, which allocate `ByteBuffer` wrappers and `TLSPlaintext` records
+on the JVM heap for every TLS record processed.
 
 ### 3. Enterprise Tier — BIO QUIC & io_uring (`exeris-kernel-enterprise`)
 
@@ -133,9 +135,22 @@ by **Kernel-Bypass I/O and the QUIC protocol stack**:
 
 ### ⚠️ Trade-offs
 
-* **[-] Higher OSS Maintenance:** Panama FFM bindings to multiple OpenSSL versions
+* **[-] Higher OSS Maintenance & ABI Compatibility:** Panama FFM bindings to multiple OpenSSL versions
   (Linux `libssl.so.3`, macOS `libssl.3.dylib`, Windows `libssl-3-x64.dll`) are now public,
-  community-maintained surface. Upstream OpenSSL ABI changes require a public patch.
+  community-maintained surface. Upstream OpenSSL ABI changes require a public patch. Symbol
+  compatibility for each supported platform is validated automatically in the CI/CD pipeline via the
+  TCK `AbstractOpenSslSymbolTck` suite, which resolves and invokes every bound symbol at build time
+  against the target shared library. A build failure in this suite constitutes an ABI breakage and
+  blocks the release.
+
+* **[!] Security Patch Cadence (CVE Response Obligation):** Because the Panama FFM bindings to OpenSSL
+  reside in `exeris-kernel-core` and `exeris-kernel-community` — both publicly distributed modules —
+  any OpenSSL Security Advisory (CVE) that affects a bound symbol or protocol path becomes an immediate
+  public obligation for the Exeris project. **Public commitment:** The project MUST publish an ABI-compatible
+  patch release within **72 hours** of an OpenSSL Security Advisory being issued for a CVE with CVSS ≥ 7.0.
+  For CVSS ≥ 9.0 (Critical), the target is **24 hours**. Failure to meet this cadence constitutes a
+  breach of the Open-Core security contract and must be disclosed in the release notes.
+
 * **[!] Enterprise Upsell Shift:** The Enterprise sales motion must be precisely targeted.
   Community eliminates GC pressure at the ingress layer — but the **JDBC Tax** (DTO allocation,
   `ResultSet` wrapping, `String` materialisation) and the **Syscall Tax** (OS context-switch on

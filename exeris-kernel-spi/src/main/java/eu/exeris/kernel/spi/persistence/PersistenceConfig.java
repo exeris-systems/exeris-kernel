@@ -1,9 +1,10 @@
 /*
- * Copyright (C) 2025-2026 Exeris. All rights reserved.
+ * Copyright (C) 2025-2026 Exeris Systems.
  *
- * This code is part of the Exeris Systems.
- * Distributed under the proprietary Exeris Software License.
- * Unauthorized copying or distribution is prohibited.
+ * Licensed under the Apache License, Version 2.0 with Commons Clause.
+ * You may use, modify, and distribute this file under those terms.
+ * Commercial resale of this software as a competing product is prohibited.
+ * See LICENSE-COMMUNITY in the repository root for the full text.
  */
 package eu.exeris.kernel.spi.persistence;
 
@@ -32,27 +33,26 @@ import java.util.Objects;
  * Community implementations may pass these through to HikariCP data source properties.
  * The SPI layer treats this map as opaque — it never inspects its contents.
  *
- * @param connectionUrl        JDBC or URI-style connection URL (parsed by implementations for host/port/db).
- *                             Examples: {@code "jdbc:postgresql://localhost:5432/exeris"},
- *                             {@code "postgresql://localhost:5432/exeris"}
- * @param username             Database username.
- * @param password             Database password.
- *                             <b>SECRET — treat as a credential. Never log or expose this value.
- *                             {@link #toString()} deliberately redacts it.</b>
- * @param maxPoolSize          Maximum number of connections in the shared pool.
- * @param minIdleConnections   Minimum idle connections maintained.
- * @param connectionTimeoutMs  Maximum wait time for a connection from pool (ms).
- * @param idleTimeoutMs        Maximum idle time before connection is evicted (ms).
- * @param maxLifetimeMs        Maximum connection lifetime before forced recycle (ms).
- * @param rlsEnabled           Whether Row-Level Security is active.
- * @param perTenantPooling     Whether to create per-tenant connection pools.
- * @param useTls               Whether TLS is required for the connection.
- * @param maxTenantPools       Maximum number of per-tenant pools (if perTenantPooling=true).
- * @param properties           Opaque key-value properties for tier-specific native options.
- *                             Never {@code null} — use {@link Map#of()} for empty.
- *
- * @since 0.5.0
+ * @param connectionUrl       JDBC or URI-style connection URL (parsed by implementations for host/port/db).
+ *                            Examples: {@code "jdbc:postgresql://localhost:5432/exeris"},
+ *                            {@code "postgresql://localhost:5432/exeris"}
+ * @param username            Database username.
+ * @param password            Database password.
+ *                            <b>SECRET — treat as a credential. Never log or expose this value.
+ *                            {@link #toString()} deliberately redacts it.</b>
+ * @param maxPoolSize         Maximum number of connections in the shared pool.
+ * @param minIdleConnections  Minimum idle connections maintained.
+ * @param connectionTimeoutMs Maximum wait time for a connection from pool (ms).
+ * @param idleTimeoutMs       Maximum idle time before connection is evicted (ms).
+ * @param maxLifetimeMs       Maximum connection lifetime before forced recycle (ms).
+ * @param rlsEnabled          Whether Row-Level Security is active.
+ * @param perTenantPooling    Whether to create per-tenant connection pools.
+ * @param useTls              Whether TLS is required for the connection.
+ * @param maxTenantPools      Maximum number of per-tenant pools (if perTenantPooling=true).
+ * @param properties          Opaque key-value properties for tier-specific native options.
+ *                            Never {@code null} — use {@link Map#of()} for empty.
  * @see PersistenceProvider
+ * @since 0.5.0
  */
 public record PersistenceConfig(
         String connectionUrl,
@@ -175,16 +175,16 @@ public record PersistenceConfig(
     /**
      * Production configuration with RLS and TLS enabled.
      *
-     * @param url          connection URL
-     * @param username     database user
-     * @param password     database password
-     * @param maxPool      max pool size
-     * @param minIdle      min idle connections
-     * @param tenantPools  max per-tenant pools
+     * @param url         connection URL
+     * @param username    database user
+     * @param password    database password
+     * @param maxPool     max pool size
+     * @param minIdle     min idle connections
+     * @param tenantPools max per-tenant pools
      * @return production-ready configuration
      */
     public static PersistenceConfig production(String url, String username, String password,
-                                                int maxPool, int minIdle, int tenantPools) {
+                                               int maxPool, int minIdle, int tenantPools) {
         return new PersistenceConfig(
                 url, username, password,
                 maxPool, minIdle,
@@ -201,19 +201,19 @@ public record PersistenceConfig(
      * <p>Use this overload to pass tier-specific native options (e.g.,
      * {@code "exeris.iouring.sqe_size"} for Enterprise io_uring tuning).
      *
-     * @param url          connection URL
-     * @param username     database user
-     * @param password     database password
-     * @param maxPool      max pool size
-     * @param minIdle      min idle connections
-     * @param tenantPools  max per-tenant pools
-     * @param properties   opaque native options
+     * @param url         connection URL
+     * @param username    database user
+     * @param password    database password
+     * @param maxPool     max pool size
+     * @param minIdle     min idle connections
+     * @param tenantPools max per-tenant pools
+     * @param properties  opaque native options
      * @return production-ready configuration with native options
      * @since 0.5.0
      */
     public static PersistenceConfig production(String url, String username, String password,
-                                                int maxPool, int minIdle, int tenantPools,
-                                                Map<String, String> properties) {
+                                               int maxPool, int minIdle, int tenantPools,
+                                               Map<String, String> properties) {
         return new PersistenceConfig(
                 url, username, password,
                 maxPool, minIdle,
@@ -224,4 +224,3 @@ public record PersistenceConfig(
         );
     }
 }
-

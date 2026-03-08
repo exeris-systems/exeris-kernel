@@ -1,9 +1,10 @@
 /*
- * Copyright (C) 2025-2026 Exeris. All rights reserved.
+ * Copyright (C) 2025-2026 Exeris Systems.
  *
- * This code is part of the Exeris Systems.
- * Distributed under the proprietary Exeris Software License.
- * Unauthorized copying or distribution is prohibited.
+ * Licensed under the Apache License, Version 2.0 with Commons Clause.
+ * You may use, modify, and distribute this file under those terms.
+ * Commercial resale of this software as a competing product is prohibited.
+ * See LICENSE-COMMUNITY in the repository root for the full text.
  */
 package eu.exeris.kernel.tck.contract.persistence;
 
@@ -42,7 +43,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  */
 public abstract class AbstractPersistenceEngineTck {
 
-    /** Creates a fully bootstrapped {@link PersistenceEngine}. */
+    /**
+     * Creates a fully bootstrapped {@link PersistenceEngine}.
+     */
     protected abstract PersistenceEngine createEngine();
 
     private PersistenceEngine engine;
@@ -213,12 +216,10 @@ public abstract class AbstractPersistenceEngineTck {
         @DisplayName("openBulkInserter() returns Optional (empty or present based on tier)")
         void openBulkInserterReturnsOptional() {
             try (PersistenceConnection conn = engine.openConnection()) {
-                // Ensure the target table exists — implementations that prepare a COPY
-                // statement eagerly (native wire protocol) will throw if the table is absent.
                 conn.executeUpdate("CREATE TABLE IF NOT EXISTS tck_test (id INT)");
+
                 try {
                     java.util.Optional<BulkInserter> inserter = conn.openBulkInserter("tck_test");
-                    // Both empty (Community) and present (Enterprise) are valid
                     assertThat(inserter).isNotNull();
                     inserter.ifPresent(BulkInserter::close);
                 } finally {
@@ -231,20 +232,17 @@ public abstract class AbstractPersistenceEngineTck {
         @DisplayName("openBulkInserter() presence is stable for a given connection")
         void bulkInserterTierConsistency() {
             try (PersistenceConnection conn = engine.openConnection()) {
-                // Ensure the target table exists — same rationale as openBulkInserterReturnsOptional.
                 conn.executeUpdate("CREATE TABLE IF NOT EXISTS tck_test (id INT)");
                 try {
-                    java.util.Optional<BulkInserter> first  = conn.openBulkInserter("tck_test");
+                    java.util.Optional<BulkInserter> first = conn.openBulkInserter("tck_test");
                     java.util.Optional<BulkInserter> second = conn.openBulkInserter("tck_test");
-                    // TCK only requires behavioural consistency for a given connection:
-                    // bulk insert is either supported (present) or not (empty) but MUST NOT
-                    // flip unpredictably, and MUST NOT be tied to supportsNativeProtocol().
+
                     assertThat(first).isNotNull();
                     assertThat(second).isNotNull();
                     assertThat(first.isPresent())
                             .as("openBulkInserter() must return a stable present/empty result")
                             .isEqualTo(second.isPresent());
-                    // Close any allocated inserters; implementations may return the same instance.
+
                     first.ifPresent(eu.exeris.kernel.spi.persistence.BulkInserter::close);
                     if (second.isPresent() && first.map(b -> b != second.get()).orElse(true)) {
                         second.get().close();
@@ -280,4 +278,3 @@ public abstract class AbstractPersistenceEngineTck {
         }
     }
 }
-

@@ -1,13 +1,15 @@
 /*
- * Copyright (C) 2025-2026 Exeris. All rights reserved.
+ * Copyright (C) 2025-2026 Exeris Systems.
  *
- * This code is part of the Exeris Systems.
- * Distributed under the proprietary Exeris Software License.
- * Unauthorized copying or distribution is prohibited.
+ * Licensed under the Apache License, Version 2.0 with Commons Clause.
+ * You may use, modify, and distribute this file under those terms.
+ * Commercial resale of this software as a competing product is prohibited.
+ * See LICENSE-COMMUNITY in the repository root for the full text.
  */
 package eu.exeris.kernel.tck.contract.flow;
 
 import eu.exeris.kernel.spi.flow.FlowEngine;
+import eu.exeris.kernel.spi.flow.model.FlowContext;
 import eu.exeris.kernel.spi.flow.model.FlowDefinition;
 import eu.exeris.kernel.spi.flow.model.FlowExecutionPlan;
 import eu.exeris.kernel.spi.flow.model.FlowOutcome;
@@ -49,7 +51,7 @@ public abstract class FlowCarrierPinningTck extends AbstractSubsystemCarrierPinn
     private FlowExecutionPlan plan;
 
     /** Pre-allocated per-VT FlowContexts — each VT owns exactly one slot. */
-    private eu.exeris.kernel.spi.flow.model.FlowContext[] contexts;
+    private FlowContext[] contexts;
 
     /** Monotonic slot counter — each executing VT claims the next available index. */
     private final AtomicInteger vtIndex = new AtomicInteger(0);
@@ -83,7 +85,7 @@ public abstract class FlowCarrierPinningTck extends AbstractSubsystemCarrierPinn
                 .build();
         plan = engine.plans().compile(def);
 
-        contexts = new eu.exeris.kernel.spi.flow.model.FlowContext[vtSlotCount];
+        contexts = new FlowContext[vtSlotCount];
         for (int i = 0; i < vtSlotCount; i++) {
             contexts[i] = TestFlowContexts.create("carrier-pin-" + i, "carrier-pin-flow");
         }
@@ -106,4 +108,3 @@ public abstract class FlowCarrierPinningTck extends AbstractSubsystemCarrierPinn
         if (engine != null) engine.close();
     }
 }
-

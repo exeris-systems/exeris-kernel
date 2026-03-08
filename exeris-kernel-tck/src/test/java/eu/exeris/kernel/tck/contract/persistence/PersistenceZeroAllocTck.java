@@ -1,9 +1,10 @@
 /*
- * Copyright (C) 2025-2026 Exeris. All rights reserved.
+ * Copyright (C) 2025-2026 Exeris Systems.
  *
- * This code is part of the Exeris Systems.
- * Distributed under the proprietary Exeris Software License.
- * Unauthorized copying or distribution is prohibited.
+ * Licensed under the Apache License, Version 2.0 with Commons Clause.
+ * You may use, modify, and distribute this file under those terms.
+ * Commercial resale of this software as a competing product is prohibited.
+ * See LICENSE-COMMUNITY in the repository root for the full text.
  */
 package eu.exeris.kernel.tck.contract.persistence;
 
@@ -24,7 +25,9 @@ import eu.exeris.kernel.tck.contract.AbstractSubsystemZeroAllocTck;
  */
 public abstract class PersistenceZeroAllocTck extends AbstractSubsystemZeroAllocTck {
 
-    /** Creates a bootstrapped {@link PersistenceEngine} with connection pool warmed. */
+    /**
+     * Creates a bootstrapped {@link PersistenceEngine} with connection pool warmed.
+     */
     protected abstract PersistenceEngine createEngine();
 
     /**
@@ -37,11 +40,30 @@ public abstract class PersistenceZeroAllocTck extends AbstractSubsystemZeroAlloc
     private PersistenceEngine engine;
     private String sql;
 
-    @Override protected String subsystemName()      { return "Persistence"; }
-    @Override protected String hotPathDescription()  { return "openConnection() → executeQuery() → next() → getInt(0) → close()"; }
-    @Override protected int warmupIterations()       { return 100; }
-    @Override protected int hotPathIterations()      { return 1_000; }
-    @Override protected int maxExerisAllocationsPerIteration() { return 8; }
+    @Override
+    protected String subsystemName() {
+        return "Persistence";
+    }
+
+    @Override
+    protected String hotPathDescription() {
+        return "openConnection() → executeQuery() → next() → getInt(0) → close()";
+    }
+
+    @Override
+    protected int warmupIterations() {
+        return 100;
+    }
+
+    @Override
+    protected int hotPathIterations() {
+        return 1_000;
+    }
+
+    @Override
+    protected int maxExerisAllocationsPerIteration() {
+        return 8;
+    }
 
     @Override
     protected void bootstrapSubsystem() {

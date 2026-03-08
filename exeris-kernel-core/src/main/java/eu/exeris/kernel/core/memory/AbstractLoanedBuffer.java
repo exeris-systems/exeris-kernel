@@ -1,14 +1,15 @@
 /*
- * Copyright (C) 2025-2026 Exeris. All rights reserved.
+ * Copyright (C) 2025-2026 Exeris Systems.
  *
- * This code is part of the Exeris Systems.
- * Distributed under the proprietary Exeris Software License.
- * Unauthorized copying or distribution is prohibited.
+ * Licensed under the Apache License, Version 2.0 with Commons Clause.
+ * You may use, modify, and distribute this file under those terms.
+ * Commercial resale of this software as a competing product is prohibited.
+ * See LICENSE-COMMUNITY in the repository root for the full text.
  */
 package eu.exeris.kernel.core.memory;
 
-import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.LeakDetectionMode;
+import eu.exeris.kernel.spi.memory.LoanedBuffer;
 
 import java.lang.foreign.MemorySegment;
 import java.lang.invoke.MethodHandles;
@@ -159,6 +160,15 @@ public abstract class AbstractLoanedBuffer implements LoanedBuffer { //NOPMD Too
      * <p>Supports at most 4 actions per buffer. Exceeding the limit indicates
      * a design error in the caller — fail fast with {@link IllegalStateException}.
      *
+     * <h2>JMM Guarantee — Release Fence</h2>
+     * <p>A {@link VarHandle#fullFence()} is issued after writing the action slot.
+     * This establishes a <em>happens-before</em> edge between the registering thread
+     * and the releasing thread that reads the slot in {@link #fireCloseActions()}.
+     * Without this fence, a thread B executing {@code close()} could observe a stale
+     * {@code null} in the slot even after thread A's write, because a plain field write
+     * carries no visibility guarantee under the JMM (the {@code VarHandle} CAS on
+     * {@code refCount} only synchronises the count itself, not the action slots).
+     *
      * @throws IllegalStateException if all 4 slots are already occupied
      */
     @Override
@@ -180,6 +190,7 @@ public abstract class AbstractLoanedBuffer implements LoanedBuffer { //NOPMD Too
                     "AbstractLoanedBuffer supports at most 4 close actions. "
                             + "Exceeding this limit indicates a design error.");
         }
+        VarHandle.fullFence();
     }
 
     /**
@@ -264,11 +275,22 @@ public abstract class AbstractLoanedBuffer implements LoanedBuffer { //NOPMD Too
     }
 
     /**
-     * Fires close actions in LIFO order: action2 first (telemetry), then action1 (release).
-     * Cancels the leak tracker handle first to mark the buffer as properly closed.
+     * Fires close actions in LIFO order: action4 first, then action3, action2, action1.
      * Neither failure propagates — kernel stability takes priority.
+     *
+     * <h2>JMM Guarantee — Acquire Fence</h2>
+     * <p>A {@link VarHandle#fullFence()} is issued before reading any action slot.
+     * This is the matching Acquire side of the Release fence inserted by
+     * {@link #addCloseAction(Runnable)}, completing the happens-before chain:
+     * <pre>
+     *   Thread A: addCloseAction(action) → fullFence()
+     *   Thread B: fullFence() → fireCloseActions() reads action slots
+     * </pre>
+     * Without this fence, the C2 JIT or CPU store-buffer reordering could allow thread B
+     * to read a stale {@code null} from a slot that thread A has already written.
      */
     private void fireCloseActions() {
+        VarHandle.fullFence();
         if (closeAction4 != null) {
             runQuietly(closeAction4);
         }
@@ -370,7 +392,7 @@ public abstract class AbstractLoanedBuffer implements LoanedBuffer { //NOPMD Too
 
         @Override
         public void retain() {
-            // non-owning: no-op
+            PeekMisuseEvent.emit("retain");
         }
 
         @Override
@@ -380,6 +402,7 @@ public abstract class AbstractLoanedBuffer implements LoanedBuffer { //NOPMD Too
 
         @Override
         public void addCloseAction(Runnable action) {
+            PeekMisuseEvent.emit("addCloseAction");
             throw new UnsupportedOperationException("peek view does not own resources");
         }
 
@@ -410,6 +433,26 @@ public abstract class AbstractLoanedBuffer implements LoanedBuffer { //NOPMD Too
     // Inner: SliceLoanedBuffer — zero-copy view backed by parent refCount
     // =========================================================================
 
+    /**
+     * Zero-copy slice sharing the backing {@link MemorySegment} of a parent buffer.
+     *
+     * <h2>Independent Ownership Unit</h2>
+     * <p>A {@code SliceLoanedBuffer} is a <em>distinct</em> ownership unit with its own
+     * reference count (starts at 1) and its own close-action slots. It retains the parent
+     * once on construction and releases it exactly once in {@link #onRelease()}.
+     *
+     * <p><strong>Close-action isolation contract:</strong> Actions registered via
+     * {@link #addCloseAction(Runnable)} on a slice are triggered when <em>this slice's</em>
+     * reference count reaches zero — <strong>not</strong> when the parent is closed.
+     * Callers must never assume that a parent's close transitively fires actions registered
+     * on its slices.
+     *
+     * <pre>
+     *   parent.addCloseAction(parentCleanup);  // fires when parent refCount → 0
+     *   slice = parent.slice(0, 64);
+     *   slice.addCloseAction(sliceCleanup);    // fires when SLICE refCount → 0
+     * </pre>
+     */
     private static final class SliceLoanedBuffer extends AbstractLoanedBuffer {
 
         private final MemorySegment segment;

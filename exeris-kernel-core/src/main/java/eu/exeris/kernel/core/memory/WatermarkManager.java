@@ -1,9 +1,10 @@
 /*
- * Copyright (C) 2025-2026 Exeris. All rights reserved.
+ * Copyright (C) 2025-2026 Exeris Systems.
  *
- * This code is part of the Exeris Systems.
- * Distributed under the proprietary Exeris Software License.
- * Unauthorized copying or distribution is prohibited.
+ * Licensed under the Apache License, Version 2.0 with Commons Clause.
+ * You may use, modify, and distribute this file under those terms.
+ * Commercial resale of this software as a competing product is prohibited.
+ * See LICENSE-COMMUNITY in the repository root for the full text.
  */
 package eu.exeris.kernel.core.memory;
 
@@ -52,6 +53,15 @@ import java.lang.invoke.VarHandle;
 public final class WatermarkManager {
 
     private static final VarHandle LEVEL_ORDINAL;
+    private static final VarHandle LAST_ALLOCATED_BYTES;
+    private static final VarHandle LAST_TOTAL_BYTES;
+
+    /**
+     * Sentinel value for {@link eu.exeris.kernel.spi.memory.MemoryStats#totalBytes()} indicating
+     * that the allocator operates without a fixed off-heap budget (e.g., Community tier).
+     * Matches the {@code -1} sentinel defined in {@link eu.exeris.kernel.spi.memory.MemoryStats}.
+     */
+    private static final long NO_BUDGET_SENTINEL = 0L;
 
     /**
      * Pre-computed {@link WatermarkLevel} values array — avoids {@code WatermarkLevel.values()}
@@ -61,8 +71,10 @@ public final class WatermarkManager {
 
     static {
         try {
-            LEVEL_ORDINAL = MethodHandles.lookup()
-                    .findVarHandle(WatermarkManager.class, "levelOrdinal", int.class);
+            MethodHandles.Lookup lookup = MethodHandles.lookup();
+            LEVEL_ORDINAL = lookup.findVarHandle(WatermarkManager.class, "levelOrdinal", int.class);
+            LAST_ALLOCATED_BYTES = lookup.findVarHandle(WatermarkManager.class, "lastAllocatedBytes", long.class);
+            LAST_TOTAL_BYTES = lookup.findVarHandle(WatermarkManager.class, "lastTotalBytes", long.class);
         } catch (NoSuchFieldException | IllegalAccessException e) {
             throw new ExceptionInInitializerError(e);
         }
@@ -73,6 +85,16 @@ public final class WatermarkManager {
      * Declared package-private so PMD does not flag it as unused.
      */
     /* default */ volatile int levelOrdinal = WatermarkLevel.NORMAL.ordinal();
+
+    /**
+     * Last sampled allocation stats — written by {@link #refresh()}, read by
+     * {@link #currentUtilizationPct()}. VarHandle setRelease/getAcquire semantics
+     * ensure the two fields are always observed in a consistent state on the same
+     * thread that called {@link #refresh()}, and are visible to ResourceArbiter
+     * after a cache-miss read of {@link #currentLevel()}.
+     */
+    /* default */ volatile long lastAllocatedBytes;
+    /* default */ volatile long lastTotalBytes;
 
     private final MemoryAllocator allocator;
 
@@ -106,6 +128,25 @@ public final class WatermarkManager {
     }
 
     /**
+     * Returns the most recently sampled utilization as an integer percentage {@code [0..100]}.
+     *
+     * <p><b>Hot-path safe</b> — O(1), two VarHandle acquire reads, zero allocation.
+     * Derives utilization from the raw {@code allocatedBytes} and {@code totalBytes} last
+     * written by {@link #refresh()}. Returns {@code 0} if no budget is known
+     * ({@code totalBytes == 0}, i.e., Community tier with no fixed ceiling).
+     *
+     * @return memory utilization percentage in {@code [0..100]}
+     */
+    public int currentUtilizationPct() {
+        long allocated = (long) LAST_ALLOCATED_BYTES.getAcquire(this);
+        long total = (long) LAST_TOTAL_BYTES.getAcquire(this);
+        if (total <= NO_BUDGET_SENTINEL) {
+            return 0;
+        }
+        return (int) Math.clamp(allocated * 100L / total, 0L, 100L);
+    }
+
+    /**
      * Samples the allocator's {@link MemoryStats} and updates the cached
      * {@link WatermarkLevel} atomically.
      *
@@ -122,6 +163,9 @@ public final class WatermarkManager {
         MemoryStats stats = allocator.stats();
         double utilization = stats.utilization();
         WatermarkLevel newLevel = WatermarkLevel.forUtilization(utilization);
+
+        LAST_ALLOCATED_BYTES.setRelease(this, stats.allocatedBytes());
+        LAST_TOTAL_BYTES.setRelease(this, stats.totalBytes());
 
         int newOrdinal = newLevel.ordinal();
         int prevOrdinal;

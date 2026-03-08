@@ -1,9 +1,10 @@
 /*
- * Copyright (C) 2025-2026 Exeris. All rights reserved.
+ * Copyright (C) 2025-2026 Exeris Systems.
  *
- * This code is part of the Exeris Systems.
- * Distributed under the proprietary Exeris Software License.
- * Unauthorized copying or distribution is prohibited.
+ * Licensed under the Apache License, Version 2.0 with Commons Clause.
+ * You may use, modify, and distribute this file under those terms.
+ * Commercial resale of this software as a competing product is prohibited.
+ * See LICENSE-COMMUNITY in the repository root for the full text.
  */
 package eu.exeris.kernel.tck.contract.persistence;
 
@@ -71,8 +72,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * }
  * }</pre>
  *
- * @since 0.5.0
  * @see AbstractEventStoreTck
+ * @since 0.5.0
  */
 @DisplayName("Outbox Guarantee TCK")
 public abstract class AbstractOutboxGuaranteeTck {
@@ -83,13 +84,17 @@ public abstract class AbstractOutboxGuaranteeTck {
      * CI environments or slow JDBC-based implementations while still exercising the
      * same failure-mode logic.
      */
-    protected int brokerEventCount() { return 10_000; }
+    protected int brokerEventCount() {
+        return 10_000;
+    }
 
     // =========================================================================
     // Template methods
     // =========================================================================
 
-    /** Creates a fresh {@link PersistenceEngine} (first boot). */
+    /**
+     * Creates a fresh {@link PersistenceEngine} (first boot).
+     */
     protected abstract PersistenceEngine createEngine();
 
     /**
@@ -98,7 +103,9 @@ public abstract class AbstractOutboxGuaranteeTck {
      */
     protected abstract PersistenceEngine rebuildEngine();
 
-    /** Creates an {@link EventStore} bound to the given connection. */
+    /**
+     * Creates an {@link EventStore} bound to the given connection.
+     */
     protected abstract EventStore createEventStore(PersistenceConnection connection);
 
     /**
@@ -107,7 +114,9 @@ public abstract class AbstractOutboxGuaranteeTck {
      */
     protected abstract void simulateBrokerDown();
 
-    /** Restores the broker; the outbox publisher must resume delivery. */
+    /**
+     * Restores the broker; the outbox publisher must resume delivery.
+     */
     protected abstract void simulateBrokerUp();
 
     /**
@@ -152,9 +161,6 @@ public abstract class AbstractOutboxGuaranteeTck {
     private int drainPollPending(EventStore store, PersistenceConnection conn) {
         conn.beginTransaction();
         try {
-            // Single bounded-batch poll for counting only; rollback to avoid mutating store state.
-            // A do-while loop would infinite-loop here because pollPending() re-returns the
-            // same pending events until markPublished() is called (EventStore contract).
             return store.pollPending(brokerEventCount()).size();
         } finally {
             conn.rollback();
@@ -183,10 +189,10 @@ public abstract class AbstractOutboxGuaranteeTck {
                     int found = drainPollPending(store, conn);
                     assertThat(found)
                             .as(
-                                "AT-LEAST-ONCE VIOLATION: broker was offline, but only %d of %d " +
-                                "events were in pollPending().\n" +
-                                "Events MUST accumulate in EventStore when broker is unavailable.",
-                                found, brokerEventCount()
+                                    "AT-LEAST-ONCE VIOLATION: broker was offline, but only %d of %d " +
+                                            "events were in pollPending().\n" +
+                                            "Events MUST accumulate in EventStore when broker is unavailable.",
+                                    found, brokerEventCount()
                             )
                             .isGreaterThanOrEqualTo(brokerEventCount());
                 }
@@ -209,7 +215,6 @@ public abstract class AbstractOutboxGuaranteeTck {
 
             simulateBrokerUp();
 
-            // Poll until outbox poller delivers all pending events (max 30 s)
             int delivered = 0;
             long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
             while (System.nanoTime() < deadline) {
@@ -220,9 +225,9 @@ public abstract class AbstractOutboxGuaranteeTck {
 
             assertThat(delivered)
                     .as(
-                        "AT-LEAST-ONCE VIOLATION: after broker restore, only %d of %d events " +
-                        "were confirmed delivered.",
-                        delivered, brokerEventCount()
+                            "AT-LEAST-ONCE VIOLATION: after broker restore, only %d of %d events " +
+                                    "were confirmed delivered.",
+                            delivered, brokerEventCount()
                     )
                     .isGreaterThanOrEqualTo(brokerEventCount());
         }
@@ -257,17 +262,14 @@ public abstract class AbstractOutboxGuaranteeTck {
             List<UUID> foundIds = new ArrayList<>();
             try (PersistenceConnection conn = engine.openConnection()) {
                 EventStore store = createEventStore(conn);
-                // Poll in bounded batches and advance the cursor via markPublished() so that
-                // implementations which paginate results are handled correctly.
-                // A single large poll would silently miss events if the SPI returns fewer
-                // than maxBatchSize items per call (pagination is permitted by contract).
+
                 int remaining = writtenIds.size();
                 while (remaining > 0) {
                     conn.beginTransaction();
                     List<OutboxEvent> batch = store.pollPending(Math.min(remaining, 500));
                     if (batch.isEmpty()) {
                         conn.rollback();
-                        break; // Should not happen if durability holds — assertion below will fail
+                        break;
                     }
                     batch.forEach(e -> {
                         foundIds.add(e.eventId());
@@ -280,9 +282,9 @@ public abstract class AbstractOutboxGuaranteeTck {
 
             assertThat(foundIds)
                     .as(
-                        "DURABILITY VIOLATION: after engine rebuild, %d of %d committed events " +
-                        "are missing from pollPending().",
-                        writtenIds.size() - foundIds.size(), writtenIds.size()
+                            "DURABILITY VIOLATION: after engine rebuild, %d of %d committed events " +
+                                    "are missing from pollPending().",
+                            writtenIds.size() - foundIds.size(), writtenIds.size()
                     )
                     .containsAll(writtenIds);
         }
@@ -300,10 +302,10 @@ public abstract class AbstractOutboxGuaranteeTck {
         @Timeout(value = 60, unit = TimeUnit.SECONDS)
         @DisplayName("markPublished() events do NOT reappear in pollPending() after engine rebuild")
         void publishedEventsDoNotReappearAfterRebuild() {
-            int total  = 100;
+            int total = 100;
             int marked = 60;
             List<UUID> publishedIds = new ArrayList<>();
-            List<UUID> pendingIds   = new ArrayList<>();
+            List<UUID> pendingIds = new ArrayList<>();
 
             try (PersistenceConnection conn = engine.openConnection()) {
                 EventStore store = createEventStore(conn);
@@ -311,7 +313,7 @@ public abstract class AbstractOutboxGuaranteeTck {
                     OutboxEvent ev = event("idem-" + i, "IdempotentEvent");
                     appendAndCommit(store, conn, ev);
                     if (i < marked) publishedIds.add(ev.eventId());
-                    else            pendingIds.add(ev.eventId());
+                    else pendingIds.add(ev.eventId());
                 }
             }
 
@@ -328,17 +330,14 @@ public abstract class AbstractOutboxGuaranteeTck {
             List<UUID> foundAfterRebuild = new ArrayList<>();
             try (PersistenceConnection conn = engine.openConnection()) {
                 EventStore store = createEventStore(conn);
-                // Poll in bounded batches and advance the cursor via markPublished() so that
-                // implementations which paginate results are handled correctly.
-                // Never rollback here — we must advance the cursor to observe all events,
-                // otherwise a paginating implementation would return the same batch forever.
+
                 int remaining = pendingIds.size();
                 while (remaining > 0) {
                     conn.beginTransaction();
                     List<OutboxEvent> batch = store.pollPending(Math.min(remaining, 500));
                     if (batch.isEmpty()) {
                         conn.rollback();
-                        break; // All remaining pending events consumed (or durability violated)
+                        break;
                     }
                     batch.forEach(e -> {
                         foundAfterRebuild.add(e.eventId());
@@ -351,8 +350,8 @@ public abstract class AbstractOutboxGuaranteeTck {
 
             assertThat(foundAfterRebuild)
                     .as(
-                        "IDEMPOTENCY VIOLATION: markPublished() events reappeared in pollPending() "
-                        + "after engine rebuild. markPublished() MUST be durable."
+                            "IDEMPOTENCY VIOLATION: markPublished() events reappeared in pollPending() "
+                                    + "after engine rebuild. markPublished() MUST be durable."
                     )
                     .doesNotContainAnyElementsOf(publishedIds)
                     .as("All %d un-published events MUST still be in pollPending() after rebuild",
@@ -369,8 +368,8 @@ public abstract class AbstractOutboxGuaranteeTck {
                 appendAndCommit(createEventStore(conn), conn, ev);
             }
 
-            int concurrency     = 20;
-            CountDownLatch done  = new CountDownLatch(concurrency);
+            int concurrency = 20;
+            CountDownLatch done = new CountDownLatch(concurrency);
             AtomicInteger errors = new AtomicInteger();
 
             for (int i = 0; i < concurrency; i++) {
@@ -409,7 +408,3 @@ public abstract class AbstractOutboxGuaranteeTck {
         }
     }
 }
-
-
-
-

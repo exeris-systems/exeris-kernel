@@ -1,9 +1,10 @@
 /*
- * Copyright (C) 2025-2026 Exeris. All rights reserved.
+ * Copyright (C) 2025-2026 Exeris Systems.
  *
- * This code is part of the Exeris Systems.
- * Distributed under the proprietary Exeris Software License.
- * Unauthorized copying or distribution is prohibited.
+ * Licensed under the Apache License, Version 2.0 with Commons Clause.
+ * You may use, modify, and distribute this file under those terms.
+ * Commercial resale of this software as a competing product is prohibited.
+ * See LICENSE-COMMUNITY in the repository root for the full text.
  */
 package eu.exeris.kernel.core.memory;
 
@@ -19,9 +20,9 @@ import jdk.jfr.StackTrace;
  * JFR event emitted by {@link LeakTracker} when a {@link eu.exeris.kernel.spi.memory.LoanedBuffer}
  * is garbage-collected without having been closed (unclosed off-heap segment detected).
  *
- * <h2>EX-MEM-1001 Protocol</h2>
- * <p>Per {@code docs/subsystems/memory.md}, error code {@code EX-MEM-1001} is associated with
- * off-heap memory leaks. This JFR event is the sole observability mechanism for PARANOID mode
+ * <h2>EX-MEM-1002 Protocol</h2>
+ * <p>Per {@code docs/subsystems/memory.md}, error code {@code EX-MEM-1002} is associated with
+ * arena leak detection. This JFR event is the sole observability mechanism for PARANOID mode
  * leak detection — it carries the allocation stack trace captured at buffer creation time.
  *
  * <h2>JFR-First Principle</h2>
@@ -29,7 +30,7 @@ import jdk.jfr.StackTrace;
  * is stored as the {@code allocationStack} field, <em>not</em> the JFR stack-capture mechanism.
  * The JFR stack is enabled to capture the Cleaner callback context for correlation.
  *
- * <h2>rawArgs Binary Layout (Black-Box Telemetry)</h2>
+ * <h2>rawArgs Binary Layout (Glass-Box Telemetry)</h2>
  * <pre>
  *   bufferLabel       — String: opaque label assigned at creation (hex address or class name)
  *   allocationStack   — String: stack trace captured at allocation time (PARANOID mode only)
@@ -42,7 +43,7 @@ import jdk.jfr.StackTrace;
 @Name("eu.exeris.kernel.core.BufferLeak")
 @Label("LoanedBuffer Leak Detected")
 @Category({"Exeris Kernel", "Memory"})
-@Description("EX-MEM-1001: A LoanedBuffer was garbage-collected without being closed (off-heap segment leaked).")
+@Description("EX-MEM-1002: LoanedBuffer GC'd without close — arena leak, off-heap segment not returned to pool.")
 @StackTrace(true)
 /* default */ final class LeakDetectedEvent extends Event {
 

@@ -1,9 +1,10 @@
 /*
- * Copyright (C) 2025-2026 Exeris. All rights reserved.
+ * Copyright (C) 2025-2026 Exeris Systems.
  *
- * This code is part of the Exeris Systems.
- * Distributed under the proprietary Exeris Software License.
- * Unauthorized copying or distribution is prohibited.
+ * Licensed under the Apache License, Version 2.0 with Commons Clause.
+ * You may use, modify, and distribute this file under those terms.
+ * Commercial resale of this software as a competing product is prohibited.
+ * See LICENSE-COMMUNITY in the repository root for the full text.
  */
 package eu.exeris.kernel.tck.contract.flow;
 
@@ -16,6 +17,7 @@ import eu.exeris.kernel.spi.flow.model.FlowSnapshot;
 import eu.exeris.kernel.spi.flow.model.FlowSnapshotStore;
 import eu.exeris.kernel.spi.flow.model.FlowState;
 import eu.exeris.kernel.spi.flow.model.FlowStepAction;
+import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -30,6 +32,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.LockSupport;
+import java.util.function.BooleanSupplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -125,11 +128,11 @@ public abstract class AbstractSagaRecoveryTck {
         return snapshotStore().load(ctx.instanceIdMost(), ctx.instanceIdLeast());
     }
 
-    private boolean awaitCondition(java.util.function.BooleanSupplier condition, int timeoutSeconds) {
+    private boolean awaitCondition(BooleanSupplier condition, int timeoutSeconds) {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(timeoutSeconds);
         while (System.nanoTime() < deadline) {
             if (condition.getAsBoolean()) return true;
-            java.util.concurrent.locks.LockSupport.parkNanos(1_000_000L);
+            LockSupport.parkNanos(1_000_000L);
         }
         return false;
     }
@@ -245,8 +248,8 @@ public abstract class AbstractSagaRecoveryTck {
                     .isEqualTo(1);
 
             // give any spurious re-execution time to manifest — park carrier instead of busy-spin
-            java.util.concurrent.locks.LockSupport.parkNanos(
-                    java.util.concurrent.TimeUnit.SECONDS.toNanos(1));
+            LockSupport.parkNanos(
+                    TimeUnit.SECONDS.toNanos(1));
         }
 
         @Test
@@ -297,8 +300,8 @@ public abstract class AbstractSagaRecoveryTck {
                     .isEqualTo(1);
 
             // settle — park carrier instead of busy-spin
-            java.util.concurrent.locks.LockSupport.parkNanos(
-                    java.util.concurrent.TimeUnit.SECONDS.toNanos(1));
+            LockSupport.parkNanos(
+                    TimeUnit.SECONDS.toNanos(1));
         }
     }
 
@@ -384,18 +387,17 @@ public abstract class AbstractSagaRecoveryTck {
             assertThat(failFired.await(5, TimeUnit.SECONDS)).isTrue();
             LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(200));
 
-            java.util.Optional<FlowSnapshot> snapshotOpt = loadSnapshot(ctx);
-            org.assertj.core.api.Assertions.assertThat(snapshotOpt)
+            Optional<FlowSnapshot> snapshotOpt = loadSnapshot(ctx);
+            Assertions.assertThat(snapshotOpt)
                     .as("After FAIL, FlowSnapshot MUST be persisted for context %s", ctx)
                     .isPresent();
-            org.assertj.core.api.Assertions.assertThat(snapshotOpt.get().state())
+            Assertions.assertThat(snapshotOpt.get().state())
                     .as("After FAIL, FlowSnapshot state MUST be COMPENSATING or FAILED_ROLLEDBACK, was: %s", snapshotOpt.get().state())
                     .isIn(FlowState.COMPENSATING, FlowState.FAILED_ROLLEDBACK);
 
             // settle — park carrier instead of busy-spin
-            java.util.concurrent.locks.LockSupport.parkNanos(
-                    java.util.concurrent.TimeUnit.SECONDS.toNanos(1));
+            LockSupport.parkNanos(
+                    TimeUnit.SECONDS.toNanos(1));
         }
     }
 }
-

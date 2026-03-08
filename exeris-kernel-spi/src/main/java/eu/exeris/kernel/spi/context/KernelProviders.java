@@ -1,9 +1,10 @@
 /*
- * Copyright (C) 2025-2026 Exeris. All rights reserved.
+ * Copyright (C) 2025-2026 Exeris Systems.
  *
- * This code is part of the Exeris Systems.
- * Distributed under the proprietary Exeris Software License.
- * Unauthorized copying or distribution is prohibited.
+ * Licensed under the Apache License, Version 2.0 with Commons Clause.
+ * You may use, modify, and distribute this file under those terms.
+ * Commercial resale of this software as a competing product is prohibited.
+ * See LICENSE-COMMUNITY in the repository root for the full text.
  */
 package eu.exeris.kernel.spi.context;
 
@@ -163,10 +164,13 @@ public final class KernelProviders {
      * <h2>Why sinks and not the provider</h2>
      * <p>The provider is a factory — it has already done its job once {@code createSinks()} returned.
      * Subsystems (Transport, Persistence, Crypto) should never call {@code createSinks()} again.
-     * Binding the pre-built list means zero indirection and zero object creation on the emit path:
+     * Binding the pre-built list means zero indirection and zero object creation on the emit path.
+     * Use an explicit {@code for} loop on the hot path — a lambda passed to {@code forEach} may
+     * allocate a new instance per call on some JVM builds:
      * <pre>{@code
-     * KernelProviders.TELEMETRY_SINKS.get()
-     *     .forEach(sink -> sink.emit(event));
+     * for (TelemetrySink sink : KernelProviders.TELEMETRY_SINKS.get()) {
+     *     sink.emit(event);
+     * }
      * }</pre>
      *
      * <h2>Hot-path contract</h2>

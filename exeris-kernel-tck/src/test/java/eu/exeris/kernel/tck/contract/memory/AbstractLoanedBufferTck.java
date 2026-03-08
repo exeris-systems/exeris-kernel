@@ -1,9 +1,10 @@
 /*
- * Copyright (C) 2025-2026 Exeris. All rights reserved.
+ * Copyright (C) 2025-2026 Exeris Systems.
  *
- * This code is part of the Exeris Systems.
- * Distributed under the proprietary Exeris Software License.
- * Unauthorized copying or distribution is prohibited.
+ * Licensed under the Apache License, Version 2.0 with Commons Clause.
+ * You may use, modify, and distribute this file under those terms.
+ * Commercial resale of this software as a competing product is prohibited.
+ * See LICENSE-COMMUNITY in the repository root for the full text.
  */
 package eu.exeris.kernel.tck.contract.memory;
 
@@ -21,6 +22,9 @@ import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.TestMethodOrder;
 
 import java.lang.foreign.ValueLayout;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -441,5 +445,181 @@ public abstract class AbstractLoanedBufferTck {
             assertThat(buf.isAlive()).isFalse();
         }
     }
-}
 
+    // =========================================================================
+    // L8: JMM Visibility — happens-before guarantee on close-action slots
+    // =========================================================================
+
+    @Nested
+    @DisplayName("JMM Visibility — close-action happens-before")
+    @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
+    class JmmVisibility {
+
+        @Test
+        @Order(1)
+        @SuppressWarnings("PMD.CloseResource")
+        @DisplayName("Close action registered by thread A is visible to releasing thread B")
+        void closeActionCrossThreadVisibility() throws InterruptedException {
+            LoanedBuffer buf = allocator.allocate(AllocationHint.MICRO);
+            buf.retain();
+
+            CountDownLatch actionRegistered = new CountDownLatch(1);
+            CountDownLatch releaseDone = new CountDownLatch(1);
+            AtomicBoolean actionFired = new AtomicBoolean(false);
+            AtomicReference<Throwable> threadError = new AtomicReference<>();
+
+            Thread registrar = Thread.ofVirtual().start(() -> {
+                try {
+                    buf.addCloseAction(() -> actionFired.set(true));
+                    actionRegistered.countDown();
+                } catch (Throwable t) {
+                    threadError.set(t);
+                    actionRegistered.countDown();
+                }
+            });
+
+            Thread releaser = Thread.ofVirtual().start(() -> {
+                try {
+                    actionRegistered.await();
+                    buf.close();
+                    buf.close();
+                    releaseDone.countDown();
+                } catch (Throwable t) {
+                    threadError.set(t);
+                    releaseDone.countDown();
+                }
+            });
+
+            releaseDone.await();
+            registrar.join();
+            releaser.join();
+
+            assertThat(threadError.get()).isNull();
+            assertThat(actionFired.get()).isTrue();
+        }
+
+        @Test
+        @Order(2)
+        @SuppressWarnings("PMD.CloseResource")
+        @DisplayName("Multiple close-action slots registered cross-thread are all fired at release")
+        void multipleSlotsCrossThreadVisibility() throws InterruptedException {
+            LoanedBuffer buf = allocator.allocate(AllocationHint.MICRO);
+            buf.retain();
+
+            CountDownLatch allRegistered = new CountDownLatch(1);
+            int[] callCount = {0};
+
+            Thread registrar = Thread.ofVirtual().start(() -> {
+                buf.addCloseAction(() -> callCount[0]++);
+                buf.addCloseAction(() -> callCount[0]++);
+                allRegistered.countDown();
+            });
+
+            allRegistered.await();
+            buf.close();
+            buf.close();
+            registrar.join();
+
+            assertThat(callCount[0]).isEqualTo(2);
+        }
+    }
+
+    // =========================================================================
+    // L9: Peek View Misuse — EX-MEM-1003 contract
+    // =========================================================================
+
+    @Nested
+    @DisplayName("Peek View Misuse — EX-MEM-1003 contract")
+    @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
+    class PeekViewMisuseContract {
+
+        @Test
+        @Order(1)
+        @DisplayName("retain() on peek view does not change parent refCount")
+        void retainOnPeekIsRefCountNoop() {
+            try (LoanedBuffer parent = allocator.allocate(AllocationHint.SMALL)) {
+                try (LoanedBuffer peekView = parent.peek(0, 8)) {
+                    int before = parent.refCount();
+                    peekView.retain();
+                    assertThat(parent.refCount()).isEqualTo(before);
+                }
+            }
+        }
+
+        @Test
+        @Order(2)
+        @DisplayName("addCloseAction() on peek view throws UnsupportedOperationException")
+        void addCloseActionOnPeekViewThrows() {
+            try (LoanedBuffer parent = allocator.allocate(AllocationHint.SMALL)) {
+                try (LoanedBuffer peekView = parent.peek(0, 8)) {
+                    assertThatThrownBy(() -> peekView.addCloseAction(() -> {}))
+                            .isInstanceOf(UnsupportedOperationException.class);
+                }
+            }
+        }
+
+        @Test
+        @Order(3)
+        @DisplayName("close() on peek view does not release parent")
+        void closeOnPeekDoesNotReleaseParent() {
+            LoanedBuffer parent = allocator.allocate(AllocationHint.SMALL);
+            LoanedBuffer peekView = parent.peek(0, 8);
+            peekView.close();
+            assertThat(parent.isAlive()).isTrue();
+            assertThat(parent.refCount()).isEqualTo(1);
+            parent.close();
+            assertThat(parent.isAlive()).isFalse();
+        }
+    }
+
+    // =========================================================================
+    // L10: Slice Ownership Isolation — independent close-action slots
+    // =========================================================================
+
+    @Nested
+    @DisplayName("Slice Ownership Isolation")
+    @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
+    class SliceOwnershipIsolation {
+
+        @Test
+        @Order(1)
+        @SuppressWarnings("PMD.CloseResource")
+        @DisplayName("Close action on slice fires on slice-close, NOT on parent-close")
+        void sliceCloseActionIsIsolatedFromParent() {
+            LoanedBuffer parent = allocator.allocate(AllocationHint.SMALL);
+            AtomicBoolean sliceActionFired = new AtomicBoolean(false);
+            AtomicBoolean parentActionFired = new AtomicBoolean(false);
+
+            parent.addCloseAction(() -> parentActionFired.set(true));
+            LoanedBuffer slice = parent.slice(0, 8);
+            slice.addCloseAction(() -> sliceActionFired.set(true));
+
+            parent.close();
+            assertThat(parentActionFired.get()).isFalse();
+            assertThat(sliceActionFired.get()).isFalse();
+
+            slice.close();
+            assertThat(sliceActionFired.get()).isTrue();
+            assertThat(parentActionFired.get()).isTrue();
+        }
+
+        @Test
+        @Order(2)
+        @SuppressWarnings("PMD.CloseResource")
+        @DisplayName("Parent close action is blocked by a live slice")
+        void parentCloseActionBlockedByLiveSlice() {
+            LoanedBuffer parent = allocator.allocate(AllocationHint.SMALL);
+            AtomicBoolean parentActionFired = new AtomicBoolean(false);
+            parent.addCloseAction(() -> parentActionFired.set(true));
+
+            LoanedBuffer slice = parent.slice(0, 8);
+            parent.close();
+            assertThat(parentActionFired.get()).isFalse();
+            assertThat(parent.isAlive()).isTrue();
+
+            slice.close();
+            assertThat(parentActionFired.get()).isTrue();
+            assertThat(parent.isAlive()).isFalse();
+        }
+    }
+}

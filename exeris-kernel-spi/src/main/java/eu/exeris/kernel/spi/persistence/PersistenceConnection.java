@@ -1,9 +1,10 @@
 /*
- * Copyright (C) 2025-2026 Exeris. All rights reserved.
+ * Copyright (C) 2025-2026 Exeris Systems.
  *
- * This code is part of the Exeris Systems.
- * Distributed under the proprietary Exeris Software License.
- * Unauthorized copying or distribution is prohibited.
+ * Licensed under the Apache License, Version 2.0 with Commons Clause.
+ * You may use, modify, and distribute this file under those terms.
+ * Commercial resale of this software as a competing product is prohibited.
+ * See LICENSE-COMMUNITY in the repository root for the full text.
  */
 package eu.exeris.kernel.spi.persistence;
 
@@ -44,10 +45,10 @@ import eu.exeris.kernel.spi.exceptions.persistence.PersistenceProviderException;
  * <h2>Thread Safety</h2>
  * <p>NOT thread-safe. Each virtual thread MUST own its own connection.
  *
- * @since 0.5.0
  * @see PersistenceEngine
  * @see PersistenceStatement
  * @see QueryResult
+ * @since 0.5.0
  */
 public interface PersistenceConnection extends AutoCloseable {
 
@@ -171,7 +172,7 @@ public interface PersistenceConnection extends AutoCloseable {
      *
      * @param table the target table name (unquoted, schema-prefixed if necessary)
      * @return an {@link java.util.Optional} containing the bulk inserter, or empty if
-     *         this tier does not support the COPY protocol
+     * this tier does not support the COPY protocol
      */
     default java.util.Optional<BulkInserter> openBulkInserter(String table) {
         return java.util.Optional.empty(); // Community default: no COPY support
@@ -197,4 +198,3 @@ public interface PersistenceConnection extends AutoCloseable {
     @Override
     void close();
 }
-

@@ -54,7 +54,7 @@ It initializes before any other subsystem (including Memory) and provides:
 A file change triggers an atomic state reload in Core without a JVM restart — but **only** for keys annotated
 `@Dynamic`. Keys annotated `@Immutable` are validated once at T-minus 0 and sealed for the lifetime of the process.
 
-### JEP 513 Validation (Flexible Constructor Bodies)
+### JEP 513 Validation (Flexible Constructor Bodies — Closed/Delivered in JDK 25)
 Type validation is performed via JEP 513 Flexible Constructor Bodies — environment and Vault state is validated
 **before** the `super()` call reaches the base `Object` constructor. If a `REQUIRED` key is absent or malformed,
 the Kernel aborts with `EX-CFG-1001` / `EX-CFG-1002` before allocating anything deeper in the object graph.
@@ -128,33 +128,39 @@ field via `setRelease` on a reload event; every Virtual Thread reader uses `getA
 is cheaper than a full `volatile` load-load/store-store fence, eliminating the redundant `volatile` modifier while
 preserving the exact visibility guarantee required for a single-writer/multi-reader hot-path.
 
+> **Note:** The class below is **planned pseudocode** illustrating the target VarHandle pattern.
+> `KernelConfigRegistry` does not exist in `exeris-kernel-core` today. The `network.idleTimeoutMillis`
+> key is defined in the config reference table; its VarHandle wiring will be implemented as part of
+> `feat(core-bootstrap)` (#30).
+
 ```java
+// PLANNED — illustrative pseudocode for the target VarHandle hot-reload pattern
 package eu.exeris.kernel.core.config;
 
 public class KernelConfigRegistry {
 
-    @Dynamic(key = "exeris.transport.timeout-ms")
-    private int connectionTimeoutMs = 5000;           // plain int — VarHandle owns the barrier
+    @Dynamic(key = "network.idleTimeoutMillis")
+    private long idleTimeoutMillis = 30_000L;          // plain long — VarHandle owns the barrier
 
-    private static final VarHandle TIMEOUT_HANDLE;
+    private static final VarHandle IDLE_TIMEOUT_HANDLE;
 
     static {
         try {
-            TIMEOUT_HANDLE = MethodHandles.lookup()
-                    .findVarHandle(KernelConfigRegistry.class, "connectionTimeoutMs", int.class);
+            IDLE_TIMEOUT_HANDLE = MethodHandles.lookup()
+                    .findVarHandle(KernelConfigRegistry.class, "idleTimeoutMillis", long.class);
         } catch (ReflectiveOperationException e) {
             throw new ExceptionInInitializerError(e);
         }
     }
 
     /** O(1) read — Acquire barrier only (no full fence). Called by millions of Virtual Threads. */
-    public int getConnectionTimeout() {
-        return (int) TIMEOUT_HANDLE.getAcquire(this);
+    public long getIdleTimeoutMillis() {
+        return (long) IDLE_TIMEOUT_HANDLE.getAcquire(this);
     }
 
     /** Single-writer: WatchService thread only. Release barrier pairs with every getAcquire above. */
-    void reloadConnectionTimeout(int newValue) {
-        TIMEOUT_HANDLE.setRelease(this, newValue);
+    void reloadIdleTimeoutMillis(long newValue) {
+        IDLE_TIMEOUT_HANDLE.setRelease(this, newValue);
     }
 }
 ```
@@ -178,6 +184,128 @@ try {
 > in physical RAM — visible to `jmap -dump`, a core dump, or a cold-boot memory attack. In Exeris, cryptographic
 > buffers are **explicitly zeroed** (`Arrays.fill`) immediately after the `ScopedValue` scope exits. The secret
 > never persists beyond the bootstrap phase as recoverable data.
+
+---
+
+## Kernel Configuration Reference
+
+The table below lists the configuration keys consumed **internally** by the Exeris Kernel.
+The **Status** column indicates whether the key is wired to a `ConfigProvider.KernelSettings`
+constant today (`✅ WIRED`) or is a committed design target not yet represented by a record
+field (`🔲 planned`). Application-level keys are defined by the application layer and are
+not listed here.
+
+> **Key name convention:** Keys are specified in the `ConfigProvider` API format (e.g. `network.port`).
+> A typical community configuration provider maps these to system properties by prepending `exeris.` (e.g.
+> `-Dexeris.network.port=9090`) and to environment variables by converting to
+> `EXERIS_NETWORK_PORT` (uppercase, dots replaced with underscores). Enterprise implementations
+> may also load these from Vault or ConfigMap mounts.
+
+| Key                                                | Type      | Default             | Reload       | Status      | Description                                              |
+|:---------------------------------------------------|:----------|:-------------------:|:------------:|:-----------:|:---------------------------------------------------------|
+| `globalMemoryMb`                                   | `long`    | auto (50% RAM in MB)| ❌ IMMUTABLE | ✅ WIRED    | Total off-heap arena budget (`KernelSettings.globalMemoryMb`) |
+| `network.port`                                     | `int`     | `8443`              | ❌ IMMUTABLE | ✅ WIRED    | Data-plane TCP/QUIC port (`NetworkSettings.port`)        |
+| `network.bufferSize`                               | `int`     | `65536`             | ❌ IMMUTABLE | ✅ WIRED    | Per-connection off-heap buffer size in bytes (`NetworkSettings.bufferSize`) |
+| `network.nativeTransportPreferred`                 | `boolean` | `true`              | ❌ IMMUTABLE | ✅ WIRED    | Hint to prefer native async I/O transport (`NetworkSettings.nativeTransportPreferred`) |
+| `network.reactorCount`                             | `int`     | `0` (auto)          | ❌ IMMUTABLE | ✅ WIRED    | Number of carrier reactor threads; 0 = auto from CPU topology (`NetworkSettings.reactorCount`) |
+| `network.quicEnabled`                              | `boolean` | `true`              | ❌ IMMUTABLE | ✅ WIRED    | Enable QUIC/HTTP3 — Enterprise only (`NetworkSettings.quicEnabled`) |
+| `persistence.jdbcUrl`                              | `string`  | `jdbc:postgresql://localhost:5432/exeris` | ❌ IMMUTABLE | ✅ WIRED | JDBC connection URL (`PersistenceSettings.jdbcUrl`) |
+| `persistence.username`                             | `string`  | `exeris`            | ❌ IMMUTABLE | ✅ WIRED    | Database user — **SECRET**, redacted in telemetry        |
+| `persistence.password`                             | `string`  | `""`                | ❌ IMMUTABLE | ✅ WIRED    | Database password — **SECRET**, redacted in telemetry    |
+| `persistence.maxPoolSize`                          | `int`     | `20`                | ❌ IMMUTABLE | ✅ WIRED    | JDBC connection pool max connections (`PersistenceSettings.maxPoolSize`) |
+| `persistence.runMigrations`                        | `boolean` | `false`             | ❌ IMMUTABLE | ✅ WIRED    | Run schema migrations on startup (`PersistenceSettings.runMigrations`) |
+| `telemetry.jfrEnabled`                             | `boolean` | `true`              | ❌ IMMUTABLE | ✅ WIRED    | Enable JFR telemetry sink (`TelemetrySettings.jfrEnabled`) |
+| `telemetry.metricsEnabled`                         | `boolean` | `true`              | ❌ IMMUTABLE | ✅ WIRED    | Enable Prometheus metrics endpoint (`TelemetrySettings.metricsEnabled`) |
+| `telemetry.tracingEnabled`                         | `boolean` | `false`             | ❌ IMMUTABLE | ✅ WIRED    | Enable distributed tracing / OTEL (`TelemetrySettings.tracingEnabled`) |
+| `telemetry.nodeId`                                 | `string`  | `local`             | ❌ IMMUTABLE | ✅ WIRED    | Unique kernel instance identifier (`TelemetrySettings.nodeId`) |
+| `telemetry.region`                                 | `string`  | `default`           | ❌ IMMUTABLE | ✅ WIRED    | Deployment region for distributed tracing (`TelemetrySettings.region`) |
+| `bootstrap.healthPort`                             | `int`     | `9090`              | ❌ IMMUTABLE | 🔲 planned  | HTTP health probe port — not yet in `KernelSettings`     |
+| `bootstrap.failFast`                               | `boolean` | `true`              | ❌ IMMUTABLE | 🔲 planned  | FAIL_FAST vs DEGRADE on subsystem init failure           |
+| `network.idleTimeoutMillis`                        | `long`    | `30000`             | ✅ DYNAMIC   | 🔲 planned  | Connection idle timeout (ms)                             |
+| `network.proxyProtocolEnabled`                     | `boolean` | `false`             | ❌ IMMUTABLE | 🔲 planned  | Enable Proxy Protocol v2 parsing                         |
+| `network.proxyProtocolRequired`                    | `boolean` | `false`             | ❌ IMMUTABLE | 🔲 planned  | Reject connections without PP2 header                    |
+| `network.paqs.warningThreshold`                    | `float`   | `0.70`              | ✅ DYNAMIC   | 🔲 planned  | WM `WARNING` level (fraction of off-heap budget)         |
+| `network.paqs.criticalThreshold`                   | `float`   | `0.85`              | ✅ DYNAMIC   | 🔲 planned  | WM `CRITICAL` level (fraction of off-heap budget)        |
+| `network.paqs.sheddingThreshold`                   | `float`   | `0.95`              | ✅ DYNAMIC   | 🔲 planned  | WM `SHEDDING` level (fraction of off-heap budget)        |
+| `network.paqs.endpointPriority.<path>`             | `string`  | `NORMAL`            | ✅ DYNAMIC   | 🔲 planned  | Static `StreamPriority` for path prefix                  |
+| `memory.watermarkPollIntervalMs`                   | `int`     | `50`                | ✅ DYNAMIC   | 🔲 planned  | `WatermarkManager` sampling interval                     |
+| `memory.leakDetection`                             | `string`  | `SAMPLED`           | ❌ IMMUTABLE | 🔲 planned  | `DISABLED`, `SAMPLED`, `PARANOID`                        |
+| `telemetry.allocationSampleRate`                   | `double`  | `0.01`              | ✅ DYNAMIC   | 🔲 planned  | JFR allocation event sampling rate (0.0–1.0)             |
+| `telemetry.consoleSinkEnabled`                     | `boolean` | `false`             | ❌ IMMUTABLE | 🔲 planned  | Enable Console telemetry sink                            |
+| `crypto.tls.minVersion`                            | `string`  | `TLSv1.3`           | ❌ IMMUTABLE | 🔲 planned  | Minimum TLS version accepted                             |
+| `persistence.pool.connectionTimeoutMs`             | `int`     | `5000`              | ✅ DYNAMIC   | 🔲 planned  | JDBC pool acquisition timeout                            |
+| `persistence.pool.idleTimeoutMs`                   | `int`     | `600000`            | ✅ DYNAMIC   | 🔲 planned  | JDBC pool idle connection timeout                        |
+| `persistence.pool.keepaliveMs`                     | `int`     | `30000`             | ✅ DYNAMIC   | 🔲 planned  | JDBC pool keepalive heartbeat interval                   |
+| `persistence.outbox.maxRetries`                    | `int`     | `10`                | ✅ DYNAMIC   | 🔲 planned  | Max Outbox delivery retries before DLQ                   |
+| `persistence.outbox.backoffBaseMs`                 | `int`     | `100`               | ✅ DYNAMIC   | 🔲 planned  | Outbox retry base backoff (ms)                           |
+| `config.vault.timeoutMs`                           | `int`     | `3000`              | ❌ IMMUTABLE | 🔲 planned  | Vault connection timeout during bootstrap                |
+| `config.vault.retryCount`                          | `int`     | `3`                 | ❌ IMMUTABLE | 🔲 planned  | Vault connection retry attempts before FAIL_FAST         |
+| `flow.saga.globalParkTimeoutMs`                    | `long`    | `1800000` (30 min)  | ✅ DYNAMIC   | 🔲 planned  | Max Saga park duration before timeout compensation       |
+| `crashDir`                                         | `string`  | platform default    | ❌ IMMUTABLE | 🔲 planned  | Glass-Box crash buffer directory (also: `EXERIS_CRASH_DIR` ENV) |
+
+> **Auto-detection:** `globalMemoryMb` defaults to 50% of available JVM process RAM
+> (`Runtime.getRuntime().maxMemory() / 1_048_576 * 0.5`). Override explicitly in production for
+> predictable behaviour under K8s memory limits.
+
+---
+
+## Vault Down-at-Boot Strategy
+
+When Vault is unavailable during the bootstrap phase (`config.vault.timeoutMs` exceeded; system property: `exeris.config.vault.timeoutMs`):
+
+| Mode              | Behaviour                                                                                         |
+|:------------------|:--------------------------------------------------------------------------------------------------|
+| `FAIL_FAST` (default) | `EX-CFG-1001` thrown after `config.vault.retryCount` attempts × `config.vault.timeoutMs` deadline. Kernel halts. K8s liveness probe returns `503` → pod is replaced. |
+| `DEGRADE`         | Last-known configuration (from file/classpath) is used for secrets. A `KernelBootstrapEvent` WARNING is emitted in JFR. **NEVER deploy DEGRADE mode to production** — it means the application starts with potentially stale or empty secrets. |
+
+System properties mirror the canonical keys with an `exeris.` prefix (for example, `exeris.config.vault.timeoutMs` → `config.vault.timeoutMs`).
+
+**Recommended K8s pattern:**
+Use `initContainer` to validate Vault connectivity before the main container starts. This prevents the
+Exeris bootstrap from wasting retry cycles:
+
+```yaml
+initContainers:
+  - name: vault-check
+    image: curlimages/curl:8.6.0
+    command: ["sh", "-c", "until curl -fs http://vault:8200/v1/sys/health; do sleep 2; done"]
+```
+
+---
+
+## Hot-Reload — Performance Contract and Audit Log
+
+### Latency SLO
+
+| Event                              | Maximum latency (P99)   | Measurement                                    |
+|:-----------------------------------|:-----------------------:|:-----------------------------------------------|
+| File change detected (`inotify`)   | ≤ 50 ms                | OS `inotify` → `WatchService` event            |
+| Config value updated (`VarHandle`) | ≤ 1 µs                 | `IDLE_TIMEOUT_HANDLE.setRelease()` — single CAS     |
+| End-to-end reload visible          | ≤ 100 ms               | From filesystem write to `getAcquire()` read   |
+
+> **`inotify` note:** On Linux, `WatchService` uses `inotify` — kernel-level file system change
+> notification. Latency is typically < 10 ms on a locally mounted filesystem. NFS-mounted ConfigMaps
+> in Kubernetes may have higher latency depending on mount options and poll intervals.
+
+### Audit Log — JFR Event
+
+Every hot-reload of a `@Dynamic` key emits a JFR event. This satisfies audit requirements in
+regulated environments (fintech, healthcare) without logging raw values.
+
+```java
+@jdk.jfr.Label("Config Hot-Reload")
+@jdk.jfr.Category({"Exeris Kernel", "Config"})
+@jdk.jfr.StackTrace(false)
+public final class ConfigHotReloadEvent extends jdk.jfr.Event {
+    String configKey;
+    String providerName;   // "file", "env", "vault"
+    boolean succeeded;
+    // NOTE: old/new values are NEVER included — CWE-532 contract
+}
+```
+
+The event records **which key changed** and **which provider delivered the new value**, but never
+the old or new value itself. In regulated environments, this event stream is the config audit log.
 
 ---
 

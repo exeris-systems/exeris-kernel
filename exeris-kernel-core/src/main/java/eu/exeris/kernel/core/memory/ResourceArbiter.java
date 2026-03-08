@@ -1,9 +1,10 @@
 /*
- * Copyright (C) 2025-2026 Exeris. All rights reserved.
+ * Copyright (C) 2025-2026 Exeris Systems.
  *
- * This code is part of the Exeris Systems.
- * Distributed under the proprietary Exeris Software License.
- * Unauthorized copying or distribution is prohibited.
+ * Licensed under the Apache License, Version 2.0 with Commons Clause.
+ * You may use, modify, and distribute this file under those terms.
+ * Commercial resale of this software as a competing product is prohibited.
+ * See LICENSE-COMMUNITY in the repository root for the full text.
  */
 package eu.exeris.kernel.core.memory;
 
@@ -52,11 +53,19 @@ import java.lang.invoke.VarHandle;
  * plus conditional VarHandle {@code setRelease} writes on cache miss. No locks, no allocations.
  *
  * <h2>JFR-First</h2>
- * <p>Each cache-miss (re-evaluation) emits a {@link ResourceArbiterDecisionEvent}.
+ * <p>Each cache-miss (re-evaluation) emits a {@link ResourceArbiterDecisionEvent} with the
+ * real utilization percentage sourced from {@link WatermarkManager#currentUtilizationPct()}.
  * Cache hits are silent — zero JFR overhead per request on the steady state.
+ *
+ * <h2>Per-Tenant SLA Override (ScalingContext)</h2>
+ * <p>The overloaded {@link #decide(Context, ScalingContext)} method bypasses the fixed
+ * {@link WatermarkLevel} thresholds and applies tenant-specific SLA thresholds from a
+ * {@link ScalingContext} propagated via {@code ScopedValue}. The raw utilization ratio
+ * is derived from {@link WatermarkManager#currentUtilizationPct()} — zero allocation.
  *
  * @see WatermarkManager
  * @see WatermarkLevel
+ * @see ScalingContext
  * @see ResourceArbiterDecisionEvent
  * @since 0.5.0
  */
@@ -264,6 +273,42 @@ public final class ResourceArbiter {
     }
 
     /**
+     * Returns the load-shedding {@link Action} applying per-tenant SLA thresholds from
+     * the supplied {@link ScalingContext} instead of the fixed {@link WatermarkLevel} table.
+     *
+     * <p>Use this overload when the request carries a tenant-specific SLA tier propagated
+     * via {@code ScopedValue}. The raw utilization ratio is read from
+     * {@link WatermarkManager#currentUtilizationPct()} — O(1), zero allocation.
+     *
+     * <p>Unlike the single-argument {@link #decide(Context)}, this overload does NOT use
+     * the decision cache — each call performs a fresh threshold evaluation to respect the
+     * per-tenant thresholds. This is intentional: SLA overrides are expected to be rare
+     * (Enterprise tier only) and the call site is responsible for caching if needed.
+     *
+     * @param context        the arbitration context; must not be {@code null}
+     * @param scalingContext the tenant-specific SLA thresholds; must not be {@code null}
+     * @return the action to take; never {@code null}
+     * @throws IllegalArgumentException if either argument is {@code null}
+     */
+    public Action decide(Context context, ScalingContext scalingContext) {
+        if (context == null) {
+            throw new IllegalArgumentException("context must not be null");
+        }
+        if (scalingContext == null) {
+            throw new IllegalArgumentException("scalingContext must not be null");
+        }
+        long nowNs = System.nanoTime();
+        if (nowNs - startNs < GRACE_PERIOD_NS) {
+            return Action.ALLOW;
+        }
+        int utilizationPct = watermarkManager.currentUtilizationPct();
+        double utilization = utilizationPct / 100.0;
+        Action action = scalingContext.actionFor(utilization);
+        ResourceArbiterDecisionEvent.emit(action, context.contextName(), utilizationPct, nowNs);
+        return action;
+    }
+
+    /**
      * Returns {@code true} if the kernel is still within the startup grace period.
      *
      * @return {@code true} during the first 30 seconds after construction
@@ -298,7 +343,7 @@ public final class ResourceArbiter {
             LOGIC_ACTION_ORDINAL.setRelease(this, newOrdinal);
         }
 
-        int utilizationPct = -1;
+        int utilizationPct = watermarkManager.currentUtilizationPct();
         ResourceArbiterDecisionEvent.emit(action, context.contextName(), utilizationPct, nowNs);
 
         return action;

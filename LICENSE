@@ -1,64 +1,74 @@
-EXERIS SOFTWARE LICENSE
-Version 1.0, 2025-2026
+EXERIS SOFTWARE LICENSE — INDEX
+Version 1.1, 2025-2026
 Copyright (C) 2025-2026 Exeris. All rights reserved.
-PROPRIETARY AND CONFIDENTIAL
-This software and its associated documentation files (the "Software") are the
-exclusive property of Exeris ("Licensor"). All rights not expressly granted
-herein are reserved by the Licensor.
-1. GRANT OF LICENSE
-   Subject to the terms and conditions of this License, Licensor grants you a
-   limited, non-exclusive, non-transferable, non-sublicensable license to use
-   the Software solely for your internal evaluation and integration purposes
-   with Exeris platform services.
-2. RESTRICTIONS
-   You may NOT, without the prior written consent of Licensor:
-   a) copy, reproduce, distribute, publish, or otherwise transfer the Software
-      or any portion thereof to any third party;
-   b) modify, adapt, translate, reverse engineer, decompile, disassemble, or
-      create derivative works based on the Software;
-   c) remove, alter, or obscure any proprietary notices, labels, or marks on
-      the Software;
-   d) use the Software to provide services to third parties (including SaaS,
-      PaaS, or similar offerings) without a separate written agreement;
-   e) sublicense, rent, lease, or lend the Software.
-3. OPEN-CORE BOUNDARY
-   Certain modules of the Software are designated as "Community" modules and
-   may be subject to separate licensing terms as explicitly documented in the
-   respective module README files. All remaining modules -- including but not
-   limited to "Enterprise" modules and kernel internals -- are subject solely
-   to this License.
-4. INTELLECTUAL PROPERTY
-   The Software, including all source code, object code, documentation, and
-   any derivatives, remains the exclusive intellectual property of Licensor.
-   Nothing in this License transfers ownership of any intellectual property
-   rights to you.
-5. NO WARRANTY
-   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-   OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-   FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT. IN NO EVENT SHALL
-   LICENSOR BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN
-   AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR IN
-   CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-6. LIMITATION OF LIABILITY
-   TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, IN NO EVENT SHALL
-   LICENSOR BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-   CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-   SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-   INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-   CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-   ARISING FROM IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
-   OF THE POSSIBILITY OF SUCH DAMAGE.
-7. TERMINATION
-   This License is effective until terminated. It will terminate automatically
-   without notice from Licensor if you fail to comply with any provision of
-   this License. Upon termination, you must destroy all copies of the Software
-   in your possession or control.
-8. GOVERNING LAW
-   This License shall be governed by and construed in accordance with the laws
-   applicable to Licensor's jurisdiction of incorporation, without regard to
-   conflict of law principles.
-9. ENTIRE AGREEMENT
-   This License constitutes the entire agreement between you and Licensor
-   concerning the Software and supersedes all prior and contemporaneous
-   agreements, representations, and understandings.
-For licensing inquiries, contact: legal@exeris.eu
+
+================================================================================
+OPEN-CORE LICENSING MODEL
+================================================================================
+
+This repository uses a strict two-tier open-core model. Each tier has its own
+self-contained, unambiguous licence file. This file is an index; the
+tier-specific files are the authoritative legal texts.
+
+There is intentionally no "catch-all" proprietary clause in this index file.
+Every module is governed solely by its designated licence below.
+
+--------------------------------------------------------------------------------
+TIER 1 — COMMUNITY  (Apache License 2.0 + Commons Clause)
+--------------------------------------------------------------------------------
+
+Modules:
+  - exeris-kernel-spi
+  - exeris-kernel-core
+  - exeris-kernel-community
+  - exeris-kernel-tck
+
+Licence file: LICENSE-COMMUNITY (at the root of this repository)
+Each of the above modules is governed by LICENSE-COMMUNITY; they reference the
+single copy at the root of this repository.
+
+Summary of rights granted:
+  * Use in any project, including commercial production deployments — YES.
+  * Modify and create derivative works — YES.
+  * Redistribute (source or binary) — YES, with attribution and licence notice.
+  * Fork and publish your own implementation of the SPI — YES, this is the
+    intended ecosystem behaviour. Writing a competing QUIC implementation on
+    the published SPI is explicitly permitted and encouraged.
+  * Sell the Community modules themselves as a standalone hosted runtime,
+    managed kernel service, or competing distribution — NO (Commons Clause).
+
+The Commons Clause restriction targets cloud-provider extraction, not
+application developers or SPI implementors. If you are uncertain whether your
+use case is within scope, contact legal@exeris.eu before deployment.
+
+--------------------------------------------------------------------------------
+TIER 2 — ENTERPRISE  (Exeris Commercial License)
+--------------------------------------------------------------------------------
+
+Modules:
+  - exeris-kernel-enterprise
+
+Licence file: LICENSE-ENTERPRISE (distributed with the Enterprise edition,
+not at the root of this repository).
+In the Enterprise distribution, the exeris-kernel-enterprise module carries a
+copy of LICENSE-ENTERPRISE at its own module root.
+
+Summary: evaluation use only without a signed commercial agreement.
+Production use, SaaS/PaaS deployment, and redistribution require a separate
+written licence. Contact legal@exeris.eu.
+
+--------------------------------------------------------------------------------
+ARCHITECTURAL NOTE FOR IMPLEMENTORS
+--------------------------------------------------------------------------------
+
+The SPI module (exeris-kernel-spi) is the public contract surface. Any third
+party may implement the SPI — including implementing QUIC, io_uring drivers,
+or native transports — and distribute or sell those implementations under any
+licence compatible with Apache 2.0 + Commons Clause dependency terms. The
+Enterprise module is not required to use the SPI; it is one implementation of
+it. Exeris's commercial moat is the integrated io_uring + native slab allocator
++ support SLA stack, not the SPI contract itself.
+
+================================================================================
+For all licensing inquiries: legal@exeris.eu
+================================================================================

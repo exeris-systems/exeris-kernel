@@ -39,10 +39,37 @@ PaaS in favor of open, portable standards defined as Code (IaC).
 
 ### ⚠️ Trade-offs
 
-* **[-] Maintenance Overhead:** We take on responsibility for the DB/Redis lifecycle (or use K8s operators),
-  rather than relying on fully managed cloud wrappers.
+* **[-] Operational Debt (K8s Operators):** Replacing managed PaaS services (RDS, ElastiCache) with Kubernetes
+  operators (e.g., CloudNativePG, Redis Operator) transfers the operational lifecycle responsibility entirely to the
+  platform team. This includes backup orchestration, failover testing, certificate rotation, and storage class tuning.
+  This is a deliberate and accepted debt, not an oversight. The cost is bounded and predictable; vendor lock-in is not.
+
 * **[-] Performance Tuning:** Requires internal expertise to tune K8s/Postgres on bare metal, whereas Cloud PaaS
   handles this automatically.
+
+* **[-] Portability is IaC-Level, Not Zero-Cost:** The "100% Portability" claim is bounded to the level of IaC
+  definitions (Helm charts, Kubernetes manifests). Each target cloud environment carries provider-specific network
+  overhead (VPC routing latency, CNI plugin performance, cross-AZ bandwidth costs) that may require dedicated tuning
+  of the Transport Layer (L2) — specifically the PAQS backpressure thresholds and `io_uring` ring sizing parameters.
+  Portability does not imply identical performance across all environments.
+
+### 📋 Incremental Expertise Clause
+
+This decision is accepted with the explicit understanding that operational expertise in Kubernetes database operators
+(CloudNativePG, Redis Operator) will be acquired incrementally. This knowledge gap does **not** constitute a blocker
+for the **TRL-3 (Validated Architectural Prototype)** milestone. The initial prototype phase will operate on
+single-node Dockerized instances (`docker compose`) with Helm-based K8s graduation deferred to the TRL-5 milestone.
+
+### 🗄️ Redis: Role & Scope
+
+Redis is listed in the infrastructure stack, but its role relative to the Exeris Kernel must be precisely defined:
+
+| Question                                        | Answer                                                                                                                                                                                                                                                                                                        |
+|:------------------------------------------------|:--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **Is Redis an internal Kernel mechanism?**      | **No.** The Exeris Kernel (`exeris-kernel-*` modules) has zero runtime dependency on Redis. The kernel is a single-process runtime that manages its own off-heap memory and state via `MemoryAllocator` and `LoanedBuffer`. It does not use Redis for internal coordination.                                  |
+| **Is Saga/Flow coordination backed by Redis?**  | **No.** Flow Engine (L4) Saga state is persisted to the primary datastore (PostgreSQL) via the `CitadelRepository` SPI. Redis is not used for distributed Saga coordination at TRL-3/TRL-4.                                                                                                                   |
+| **What is Redis used for?**                     | Redis is a **recommended application-tier cache** for business logic built on top of the Kernel — e.g., session caches, rate-limit counters, and distributed locks for application-level workflows. It is an operational recommendation, not a kernel dependency.                                             |
+| **Will Redis ever become a Kernel dependency?** | Only if a future ADR explicitly introduces a `DistributedStateProvider` SPI with a Redis-backed implementation in `exeris-kernel-community`. No such ADR exists at this time. Any such change must pass The Wall audit (Redis client imports must not appear in `exeris-kernel-spi` or `exeris-kernel-core`). |
 
 ## Engineering Protocol
 
