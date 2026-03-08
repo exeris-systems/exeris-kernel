@@ -25,6 +25,9 @@ package eu.exeris.kernel.core.persistence;
  */
 public record TransactionRetryPolicy(int maxAttempts, long baseDelayMs, double backoffMultiplier) {
 
+    /** Default: 1 attempt, no retry. */
+    public static final TransactionRetryPolicy NONE = new TransactionRetryPolicy(1, 0L, 1.0);
+
     public TransactionRetryPolicy {
         if (maxAttempts < 1) {
             throw new IllegalArgumentException("maxAttempts must be >= 1, got: " + maxAttempts);
@@ -36,9 +39,6 @@ public record TransactionRetryPolicy(int maxAttempts, long baseDelayMs, double b
             throw new IllegalArgumentException("backoffMultiplier must be > 0, got: " + backoffMultiplier);
         }
     }
-
-    /** Default: 1 attempt, no retry. */
-    public static final TransactionRetryPolicy NONE = new TransactionRetryPolicy(1, 0L, 1.0);
 
     /**
      * Exponential back-off: {@code maxAttempts} total tries,
