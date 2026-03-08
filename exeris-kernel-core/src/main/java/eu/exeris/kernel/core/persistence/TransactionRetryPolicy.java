@@ -59,7 +59,7 @@ public record TransactionRetryPolicy(int maxAttempts, long baseDelayMs, double b
      * Returns 0 for the first attempt and caps at 30 seconds.
      */
     public long delayFor(int attempt) {
-        if (attempt == MIN_DELAY_MS || baseDelayMs <= MIN_DELAY_MS) {
+        if (attempt == FIRST_ATTEMPT || baseDelayMs <= MIN_DELAY_MS) {
             return MIN_DELAY_MS;
         }
         double delay = baseDelayMs * Math.pow(backoffMultiplier, attempt - 1.0);
