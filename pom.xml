@@ -67,4 +67,16 @@
             </plugins>
         </pluginManagement>
     </build>
+<distributionManagement>
+    <repository>
+        <id>github-exeris-kernel</id>
+        <name>Exeris Kernel — GitHub Packages</name>
+        <url>https://maven.pkg.github.com/exeris-systems/exeris-kernel</url>
+    </repository>
+    <snapshotRepository>
+        <id>github-exeris-kernel</id>
+        <name>Exeris Kernel — GitHub Packages (Snapshots)</name>
+        <url>https://maven.pkg.github.com/exeris-systems/exeris-kernel</url>
+    </snapshotRepository>
+</distributionManagement>
 </project>
