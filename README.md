@@ -68,7 +68,7 @@ Key principles (see [`docs/architecture.md`](docs/architecture.md)):
 ## 🧩 Key Components
 
 - **`exeris-kernel-spi`** — Identity-free data carriers (**Value Records**) and lifecycle contracts.
-- **`exeris-kernel-core`** — `CoreOrchestrator`, `KernelBootstrap`, `WatermarkManager`, sub-millisecond boot.
+- **`exeris-kernel-core`** — Core runtime: `SubsystemOrchestrator`, `WatermarkManager`, `ResourceArbiter`, off-heap TLS (`OffHeapTlsEngine`), PAQS transport scheduler. `CoreOrchestrator` and `KernelBootstrap` are planned v0.5+ entrypoints for full `ServiceLoader`-backed multi-provider boot.
 - **`exeris-kernel-community`** — Standard Java 26 FFM TCP/TLS adapters, accessible to all.
 - **`exeris-kernel-enterprise`** — Native C drivers: `io_uring` ring management, `QuicBioMultiplexer`, off-heap OpenSSL.
 - **`exeris-kernel-tck`** — Inquisition suite; any third-party driver must pass all TCK tests before integration.
