@@ -38,7 +38,7 @@
             --enable-preview
             --enable-native-access=ALL-UNNAMED
             -XX:FlightRecorderOptions=stackdepth=256
-            -XX:StartFlightRecording=disk=true,filename=target/recording-${maven.build.timestamp}.jfr,maxsize=0,settings=profile
+            -XX:StartFlightRecording=disk=true,filename=target/recording-${maven.build.timestamp}.jfr,maxsize=256m,maxage=10m,settings=profile
         </test.jvm.args>
         <maven.build.timestamp.format>yyyyMMdd-HHmmss</maven.build.timestamp.format>
     </properties>

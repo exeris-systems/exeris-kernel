@@ -228,10 +228,7 @@ public final class TransactionOrchestrator implements TransactionalExecutor {
             throw ppe;
         } catch (RuntimeException unexpected) {
             safeRollback(conn, attempt);
-            throw PersistenceProviderException.queryFailed(
-                    "XX000",
-                    "Unexpected error in transactional work: " + unexpected.getMessage(),
-                    unexpected);
+            throw unexpected;
         }
     }
 

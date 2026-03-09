@@ -242,21 +242,17 @@ class TransactionOrchestratorTest {
     // =========================================================================
 
     @Nested
-    @DisplayName("execute() — unexpected RuntimeException wrapping")
+    @DisplayName("execute() — unexpected RuntimeException propagation")
     class UnexpectedExceptionWrapping {
 
         @Test
-        @DisplayName("Unexpected RuntimeException in work lambda wrapped in PersistenceProviderException")
-        void unexpectedRuntimeExceptionWrapped() {
+        @DisplayName("Unexpected RuntimeException in work lambda is rethrown directly (consistent with executeManaged)")
+        void unexpectedRuntimeExceptionRethrown() {
             TransactionOrchestrator tx = new TransactionOrchestrator(engine);
 
             assertThatThrownBy(() -> tx.execute(ignored -> throwUnexpected()))
-                    .isInstanceOf(PersistenceProviderException.class)
-                    .satisfies(t -> {
-                        Object[] args = ((PersistenceProviderException) t).rawArgs();
-                        String detail = args.length >= 2 ? String.valueOf(args[1]) : "";
-                        assertThat(detail).contains("Unexpected error");
-                    });
+                    .isInstanceOf(IllegalStateException.class)
+                    .isNotInstanceOf(PersistenceProviderException.class);
         }
     }
 
