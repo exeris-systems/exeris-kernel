@@ -48,7 +48,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * @since 0.5.0
  * @see CommunityMemoryProvider
  */
-final class CommunityMemoryAllocator implements MemoryAllocator { //NOPMD TooManyMethods — full SPI contract
+final class CommunityMemoryAllocator implements MemoryAllocator {
 
     private static final long CACHE_LINE_ALIGNMENT = 64L;
 
@@ -106,11 +106,10 @@ final class CommunityMemoryAllocator implements MemoryAllocator { //NOPMD TooMan
         }
         // Infrastructure allocations always use shared arenas (they may cross thread boundaries).
         // CHECKSTYLE:OFF — Arena.ofShared() is legal here: this IS the allocator implementation.
-        Arena sharedArena = Arena.ofShared(); //NOPMD CloseResource — closed via buf.addCloseAction below
+        Arena sharedArena = Arena.ofShared(); //NOPMD CloseResource — ownership in CommunityLoanedBuffer.onRelease
         // CHECKSTYLE:ON
-        AbstractLoanedBuffer buf = CommunityLoanedBuffer.allocateFromSharedArena(
+        AbstractLoanedBuffer buf = CommunityLoanedBuffer.allocateOwned(
                 sizeBytes, CACHE_LINE_ALIGNMENT, sharedArena);
-        buf.addCloseAction(new ArenaReleaseAction(sharedArena));
         trackAllocation(sizeBytes);
         buf.addCloseAction(new ReleaseAction(sizeBytes));
         if (leakDetection != LeakDetectionMode.DISABLED) {
@@ -164,22 +163,15 @@ final class CommunityMemoryAllocator implements MemoryAllocator { //NOPMD TooMan
 
     private AbstractLoanedBuffer allocateShared(long capacityBytes) {
         // CHECKSTYLE:OFF — Arena.ofShared() is legal here: this IS the allocator implementation.
-        Arena shared = Arena.ofShared(); //NOPMD CloseResource — closed via buf.addCloseAction below
+        Arena shared = Arena.ofShared();
         // CHECKSTYLE:ON
-        AbstractLoanedBuffer buf = CommunityLoanedBuffer.allocateFromSharedArena(
-                capacityBytes, CACHE_LINE_ALIGNMENT, shared);
-        buf.addCloseAction(new ArenaReleaseAction(shared));
-        return buf;
+        return CommunityLoanedBuffer.allocateOwned(capacityBytes, CACHE_LINE_ALIGNMENT, shared);
     }
 
     private void trackAllocation(long bytes) {
         allocationCount.incrementAndGet();
         long current = allocatedBytes.addAndGet(bytes);
-        // Update peak without a lock — slight race is acceptable for diagnostics
-        long peak = peakAllocated.get();
-        if (current > peak) {
-            peakAllocated.compareAndSet(peak, current);
-        }
+        peakAllocated.getAndAccumulate(current, Math::max);
         if (jfrEnabled) {
             CommunityAllocationEvent.emit(bytes, allocationCount.get());
         }
@@ -215,30 +207,4 @@ final class CommunityMemoryAllocator implements MemoryAllocator { //NOPMD TooMan
             allocatedBytes.addAndGet(-bytes);
         }
     }
-
-    /**
-     * Zero-GC close action that closes a {@link Arena}.
-     *
-     * <p>Replaces the method reference {@code arena::close}, which allocates a new
-     * capturing object on every {@code allocateShared()} / {@code allocateInfrastructure()}
-     * call. This static-typed inner class holds the arena reference directly — one object,
-     * one field, no anonymous-class overhead on the allocation hot path.
-     */
-    private static final class ArenaReleaseAction implements Runnable {
-
-        private final Arena arena;
-
-        /* default */ ArenaReleaseAction(Arena arena) {
-            this.arena = arena;
-        }
-
-        @Override
-        public void run() {
-            arena.close();
-        }
-    }
 }
-
-
-
-

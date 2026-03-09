@@ -14,6 +14,7 @@ import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import java.lang.foreign.MemorySegment;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
+import java.lang.ref.Reference;
 
 /**
  * Core: Abstract base implementation of {@link LoanedBuffer} with reference-count
@@ -147,8 +148,9 @@ public abstract class AbstractLoanedBuffer implements LoanedBuffer { //NOPMD Too
             }
         } while (!REF_COUNT.compareAndSet(this, prev, prev - 1));
 
+        leakHandle.cancel();
+        Reference.reachabilityFence(this);
         if (isInitialCount(prev)) {
-            leakHandle.cancel();
             fireCloseActions();
             onRelease();
         }

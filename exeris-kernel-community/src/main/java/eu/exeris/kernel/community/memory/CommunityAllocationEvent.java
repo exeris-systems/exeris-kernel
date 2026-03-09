@@ -11,6 +11,7 @@ package eu.exeris.kernel.community.memory;
 import jdk.jfr.Category;
 import jdk.jfr.Description;
 import jdk.jfr.Event;
+import jdk.jfr.FlightRecorder;
 import jdk.jfr.Label;
 import jdk.jfr.Name;
 import jdk.jfr.StackTrace;
@@ -39,6 +40,9 @@ final class CommunityAllocationEvent extends Event {
     /* default */ long totalCount;
 
     /* default */ static void emit(long bytes, long count) {
+        if (!FlightRecorder.isInitialized()) {
+            return;
+        }
         CommunityAllocationEvent evt = new CommunityAllocationEvent();
         if (evt.isEnabled()) {
             evt.allocationBytes = bytes;
@@ -47,4 +51,3 @@ final class CommunityAllocationEvent extends Event {
         }
     }
 }
-

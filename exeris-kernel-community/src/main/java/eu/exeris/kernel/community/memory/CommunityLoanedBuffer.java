@@ -18,9 +18,10 @@ import java.lang.foreign.MemorySegment;
  * shared, per-buffer {@link Arena}.
  *
  * <h2>Memory Model (Community Tier)</h2>
- * <p>Each buffer owns its {@link Arena}. On {@link #onRelease()}, the arena is closed,
+ * <p>Each buffer owns the {@link Arena} it was allocated from via {@link #allocateOwned}.
+ * When the buffer's reference count drops to zero, {@link #onRelease()} closes the arena,
  * returning the off-heap memory to the OS. This is "syscall-based" allocation — no global
- * pool, no {@code GlobalMemoryArbiter}. Suitable for standard TCP/TLS workloads.
+ * pool.
  *
  * <h2>Zero-Copy</h2>
  * <p>The backing {@link MemorySegment} is never copied. Slices use
@@ -48,21 +49,19 @@ final class CommunityLoanedBuffer extends AbstractLoanedBuffer {
     // Static factory methods
     // =========================================================================
 
-
     /**
-     * Creates a buffer backed by a caller-supplied shared arena.
-     * Ownership of the arena is NOT transferred — the arena will NOT be closed on release.
+     * Creates a buffer that <em>owns</em> the supplied arena.
+     * {@link #onRelease()} will close the arena when the reference count reaches zero.
      *
      * @param capacityBytes capacity in bytes
      * @param alignment     byte alignment
-     * @param sharedArena   arena managed externally (e.g., connection-scoped)
+     * @param ownedArena    arena whose lifecycle is transferred to this buffer
      */
-    /* default */ static CommunityLoanedBuffer allocateFromSharedArena(
-            long capacityBytes, long alignment, Arena sharedArena) {
-        MemorySegment seg = sharedArena.allocate(capacityBytes, alignment);
-        return new CommunityLoanedBuffer(seg, null); // null = don't close arena on release
+    /* default */ static CommunityLoanedBuffer allocateOwned(
+            long capacityBytes, long alignment, Arena ownedArena) {
+        MemorySegment seg = ownedArena.allocate(capacityBytes, alignment);
+        return new CommunityLoanedBuffer(seg, ownedArena);
     }
-
 
     @Override
     protected MemorySegment backingSegment() {
@@ -71,13 +70,10 @@ final class CommunityLoanedBuffer extends AbstractLoanedBuffer {
 
     @Override
     protected void onRelease() {
-        if (arena != null) {
-            try {
-                arena.close();
-            } catch (IllegalStateException _) {
-                // Arena already closed (e.g., connection scope exited) — safe to ignore
-            }
+        try {
+            arena.close();
+        } catch (IllegalStateException _) {
+            // Arena already closed (e.g., connection scope exited) — safe to ignore
         }
     }
 }
-

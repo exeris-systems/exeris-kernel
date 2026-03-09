@@ -11,6 +11,7 @@ package eu.exeris.kernel.core.memory;
 import eu.exeris.kernel.spi.memory.LeakDetectionMode;
 
 import java.lang.ref.Cleaner;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -226,7 +227,7 @@ public final class LeakTracker {
         private final int identityHash;
         private final String allocationStack;
         private final long capacityBytes;
-        private volatile boolean cancelled;
+        private final AtomicBoolean fired = new AtomicBoolean(false);
 
         /* default */ LeakAction(AtomicLong leakCount,
                                  int identityHash,
@@ -242,12 +243,12 @@ public final class LeakTracker {
          * Marks this action as cancelled — called by {@link ActiveLeakHandle#cancel()}.
          */
         /* default */ void markCancelled() {
-            cancelled = true;
+            fired.set(true);
         }
 
         @Override
         public void run() {
-            if (cancelled) {
+            if (!fired.compareAndSet(false, true)) {
                 return;
             }
             leakCount.incrementAndGet();
