@@ -226,21 +226,24 @@ class CorePersistenceZeroAllocTckTest extends PersistenceZeroAllocTck {
 
     /** Pre-allocated {@link RowCursor} returning a constant {@code int} value. */
     private static final class ConstantCursor implements RowCursor {
-        private static final int SENTINEL_VALUE = 1;
+        private static final int    SENTINEL_INT    = 1;
+        private static final String SENTINEL_STRING = "1";
+        private static final byte[] SENTINEL_BYTES  = new byte[]{1};
+        private static final UUID   SENTINEL_UUID   = new UUID(0L, 1L);
 
-        @Override public int     getInt(int col)            { return SENTINEL_VALUE; }
-        @Override public long    getLong(int col)           { return SENTINEL_VALUE; }
-        @Override public short   getShort(int col)          { return (short) SENTINEL_VALUE; }
-        @Override public float   getFloat(int col)          { return SENTINEL_VALUE; }
-        @Override public double  getDouble(int col)         { return SENTINEL_VALUE; }
+        @Override public int     getInt(int col)            { return SENTINEL_INT; }
+        @Override public long    getLong(int col)           { return SENTINEL_INT; }
+        @Override public short   getShort(int col)          { return (short) SENTINEL_INT; }
+        @Override public float   getFloat(int col)          { return SENTINEL_INT; }
+        @Override public double  getDouble(int col)         { return SENTINEL_INT; }
         @Override public boolean getBoolean(int col)        { return true; }
         @Override public boolean isNull(int col)            { return false; }
         @Override public boolean isValid()                  { return true; }
-        @Override public MemorySegment getSegment(int col)  { return null; }
+        @Override public MemorySegment getSegment(int col)  { return MemorySegment.NULL; }
         @Override public int     getLength(int col)         { return Integer.BYTES; }
-        @Override public String  getString(int col)         { return null; }
-        @Override public byte[]  getBytes(int col)          { return null; }
-        @Override public UUID    getUuid(int col)           { return null; }
+        @Override public String  getString(int col)         { return SENTINEL_STRING; }
+        @Override public byte[]  getBytes(int col)          { return SENTINEL_BYTES; }
+        @Override public UUID    getUuid(int col)           { return SENTINEL_UUID; }
         @Override public int     columnCount()              { return 1; }
     }
 

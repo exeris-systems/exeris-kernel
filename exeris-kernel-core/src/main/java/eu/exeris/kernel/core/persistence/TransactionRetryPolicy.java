@@ -59,6 +59,9 @@ public record TransactionRetryPolicy(int maxAttempts, long baseDelayMs, double b
      * Returns 0 for the first attempt and caps at 30 seconds.
      */
     public long delayFor(int attempt) {
+        if (attempt < 0) {
+            throw new IllegalArgumentException("attempt must be >= 0, got: " + attempt);
+        }
         if (attempt == FIRST_ATTEMPT || baseDelayMs <= MIN_DELAY_MS) {
             return MIN_DELAY_MS;
         }

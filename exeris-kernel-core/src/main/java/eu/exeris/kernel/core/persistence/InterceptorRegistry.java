@@ -12,6 +12,7 @@ import eu.exeris.kernel.spi.persistence.ConnectionInterceptor;
 import eu.exeris.kernel.spi.persistence.PersistenceEngine;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -48,6 +49,7 @@ public final class InterceptorRegistry {
 
     private final List<ConnectionInterceptor> mutable = new ArrayList<>(4);
     private List<ConnectionInterceptor> sealed;
+    private List<ConnectionInterceptor> sealedView;
 
     /**
      * Registers a new interceptor at the end of the chain.
@@ -78,8 +80,9 @@ public final class InterceptorRegistry {
     public List<ConnectionInterceptor> seal() {
         if (sealed == null) {
             sealed = List.copyOf(mutable);
+            sealedView = Collections.unmodifiableList(sealed);
         }
-        return sealed;
+        return sealedView;
     }
 
     /** Returns the number of registered interceptors. */

@@ -128,9 +128,11 @@ public final class TransactionOrchestrator implements TransactionalExecutor {
 
         // All retries exhausted — this path is now always reachable
         TransactionLifecycleEvent.recordRetryExhausted(attempt);
-        throw lastError != null ? lastError
-                : PersistenceProviderException.queryFailed(
-                        "40001", "Transaction retries exhausted after " + attempt + " attempts", null);
+        if (lastError == null) {
+            throw new IllegalStateException(
+                    "Retry loop exhausted without recording a PersistenceProviderException");
+        }
+        throw lastError;
     }
 
     /**
@@ -188,9 +190,11 @@ public final class TransactionOrchestrator implements TransactionalExecutor {
         }
 
         TransactionLifecycleEvent.recordRetryExhausted(attempt);
-        throw lastError != null ? lastError
-                : PersistenceProviderException.queryFailed(
-                        "40001", "Managed transaction retries exhausted after " + attempt + " attempts", null);
+        if (lastError == null) {
+            throw new IllegalStateException(
+                    "Managed retry loop exhausted without recording a PersistenceProviderException");
+        }
+        throw lastError;
     }
 
     /** {@inheritDoc} */

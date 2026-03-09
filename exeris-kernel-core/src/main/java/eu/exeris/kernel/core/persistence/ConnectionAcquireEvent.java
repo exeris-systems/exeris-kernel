@@ -19,12 +19,19 @@ import jdk.jfr.StackTrace;
 /**
  * JFR event emitted each time a connection is acquired from the persistence pool.
  *
+ * <h2>Usage — two-phase API</h2>
+ * <pre>{@code
+ * ConnectionAcquireEvent evt = ConnectionAcquireEvent.beginAcquire();
+ * PersistenceConnection conn = engine.openConnection(ctx);   // ← measured region
+ * ConnectionAcquireEvent.endAcquire(evt, providerId, tenantKey, fromPool);
+ * }</pre>
+ *
  * <h2>Hot-Path Guard</h2>
- * <p>The emit method guards on {@link FlightRecorder#isInitialized()} before
- * allocating the event object — when JFR recording is inactive the cost is a
- * single branch miss with zero heap allocation.
- * The event is intentionally {@link StackTrace @StackTrace(false)} to eliminate
- * stack-walk overhead on the connection-acquire hot path.
+ * <p>Both phases guard on {@link FlightRecorder#isInitialized()} and
+ * {@link Event#isEnabled()} before allocating — when JFR recording is inactive
+ * the cost is a single branch miss with zero heap allocation.
+ * {@link StackTrace @StackTrace(false)} eliminates stack-walk overhead on the
+ * connection-acquire hot path.
  *
  * @since 0.5.0
  */
@@ -47,25 +54,54 @@ public final class ConnectionAcquireEvent extends Event {
     @Label("From Pool")
     public boolean fromPool;
 
+    /** Nanoseconds elapsed waiting for the connection to be handed out. */
+    @Label("Acquire Latency (ns)")
+    public long acquireLatencyNs;
+
     /**
-     * Emits the event if JFR recording is active. No-op otherwise.
+     * Begins measuring a connection-acquire event.
      *
-     * @param providerId  stable provider identifier
-     * @param tenantKey   tenant isolation key, or {@code "shared"}
-     * @param fromPool    {@code true} if connection was recycled from pool
+     * <p>Must be called <em>before</em> the blocking pool checkout.
+     * Returns {@code null} if JFR recording is inactive (zero allocation on cold path).
+     *
+     * @return active event instance, or {@code null} if JFR is inactive
      */
-    public static void emit(String providerId, String tenantKey, boolean fromPool) {
+    public static ConnectionAcquireEvent beginAcquire() {
         if (!FlightRecorder.isInitialized()) {
-            return;
+            return null;
         }
         ConnectionAcquireEvent event = new ConnectionAcquireEvent();
         if (!event.isEnabled()) {
-            return;
+            return null;
         }
         event.begin();
-        event.providerId = providerId;
-        event.tenantKey  = tenantKey;
-        event.fromPool   = fromPool;
+        return event;
+    }
+
+    /**
+     * Completes and commits the event with acquire metadata.
+     *
+     * <p>Must be called <em>after</em> the pool checkout returns.
+     * No-op if {@code event} is {@code null} (JFR was inactive at begin time).
+     *
+     * @param event       event started by {@link #beginAcquire()}, or {@code null}
+     * @param providerId  stable provider identifier
+     * @param tenantKey   tenant isolation key, or {@code "shared"}
+     * @param fromPool    {@code true} if connection was recycled from the pool
+     * @param startNs     {@link System#nanoTime()} captured before the checkout call
+     */
+    public static void endAcquire(ConnectionAcquireEvent event,
+                                   String providerId,
+                                   String tenantKey,
+                                   boolean fromPool,
+                                   long startNs) {
+        if (event == null) {
+            return;
+        }
+        event.providerId       = providerId;
+        event.tenantKey        = tenantKey;
+        event.fromPool         = fromPool;
+        event.acquireLatencyNs = System.nanoTime() - startNs;
         event.commit();
     }
 }
