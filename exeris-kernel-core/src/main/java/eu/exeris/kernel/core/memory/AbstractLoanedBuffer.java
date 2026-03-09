@@ -148,9 +148,9 @@ public abstract class AbstractLoanedBuffer implements LoanedBuffer { //NOPMD Too
             }
         } while (!REF_COUNT.compareAndSet(this, prev, prev - 1));
 
-        leakHandle.cancel();
-        Reference.reachabilityFence(this);
         if (isInitialCount(prev)) {
+            leakHandle.cancel();
+            Reference.reachabilityFence(this);
             fireCloseActions();
             onRelease();
         }

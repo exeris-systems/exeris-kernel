@@ -159,12 +159,13 @@ public abstract class AbstractLeakDetectionSampledTck {
         }
 
         @Test
-        @DisplayName("retain() + close() pair does not register as leak")
+        @DisplayName("retain() + matching close() pair does not register as leak")
         @Timeout(value = 10, unit = TimeUnit.SECONDS)
         void retainAndCloseDoesNotLeak() {
-            try (LoanedBuffer buf = allocator.allocate(AllocationHint.MICRO)) {
-                buf.retain();
-            }
+            LoanedBuffer buf = allocator.allocate(AllocationHint.MICRO);
+            buf.retain();
+            buf.close();
+            buf.close();
 
             for (int i = 0; i < 3; i++) {
                 System.gc();
