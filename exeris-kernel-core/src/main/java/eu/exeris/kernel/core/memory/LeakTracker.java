@@ -10,8 +10,9 @@ package eu.exeris.kernel.core.memory;
 
 import eu.exeris.kernel.spi.memory.LeakDetectionMode;
 
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.VarHandle;
 import java.lang.ref.Cleaner;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -223,32 +224,42 @@ public final class LeakTracker {
      */
     /* default */ static final class LeakAction implements Runnable {
 
+        private static final int NOT_FIRED = 0;
+        private static final int FIRED     = 1;
+        private static final VarHandle STATE;
+
+        static {
+            try {
+                STATE = MethodHandles.lookup()
+                        .findVarHandle(LeakAction.class, "firedState", int.class);
+            } catch (NoSuchFieldException | IllegalAccessException e) {
+                throw new ExceptionInInitializerError(e);
+            }
+        }
+
         private final AtomicLong leakCount;
         private final int identityHash;
         private final String allocationStack;
         private final long capacityBytes;
-        private final AtomicBoolean fired = new AtomicBoolean(false);
+        /* default */ volatile int firedState = NOT_FIRED;
 
         /* default */ LeakAction(AtomicLong leakCount,
                                  int identityHash,
                                  String allocationStack,
                                  long capacityBytes) {
-            this.leakCount = leakCount;
-            this.identityHash = identityHash;
+            this.leakCount       = leakCount;
+            this.identityHash    = identityHash;
             this.allocationStack = allocationStack;
-            this.capacityBytes = capacityBytes;
+            this.capacityBytes   = capacityBytes;
         }
 
-        /**
-         * Marks this action as cancelled — called by {@link ActiveLeakHandle#cancel()}.
-         */
         /* default */ void markCancelled() {
-            fired.set(true);
+            STATE.setRelease(this, FIRED);
         }
 
         @Override
         public void run() {
-            if (!fired.compareAndSet(false, true)) {
+            if (!STATE.compareAndSet(this, NOT_FIRED, FIRED)) {
                 return;
             }
             leakCount.incrementAndGet();

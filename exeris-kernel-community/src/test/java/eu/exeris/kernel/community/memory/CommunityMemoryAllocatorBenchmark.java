@@ -93,7 +93,7 @@ public class CommunityMemoryAllocatorBenchmark extends AbstractMemoryAllocatorBe
      *
      * <p>Unlike {@code acquireAndReleaseSmallBuffer} which targets the {@link AllocationHint#MICRO}
      * tier, this benchmark exercises the next slab size to reveal how allocation cost scales
-     * with buffer size in the Community {@code Arena.ofConfined()} implementation.
+     * with buffer size in the Community shared-arena ({@code Arena.ofShared()}) implementation.
      * The {@link Blackhole#consume} prevents the JIT from eliminating the entire
      * allocate/close pair as dead code.
      *

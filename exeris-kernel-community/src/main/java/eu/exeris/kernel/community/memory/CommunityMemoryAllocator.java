@@ -42,8 +42,9 @@ import java.util.concurrent.atomic.AtomicLong;
  * is accessed except the {@link java.util.concurrent.atomic.AtomicLong} telemetry counters.
  *
  * <h2>JFR Events</h2>
- * <p>When {@code jfrEnabled} is {@code true} in {@link MemoryProviderConfig}, allocation and
- * release events are emitted to the JFR subsystem for zero-overhead profiling.
+ * <p>When {@code jfrEnabled} is {@code true} in {@link MemoryProviderConfig}, allocation
+ * ({@link CommunityAllocationEvent}) and release ({@link CommunityReleaseEvent}) events are
+ * emitted to the JFR subsystem for zero-overhead profiling.
  *
  * @since 0.5.0
  * @see CommunityMemoryProvider
@@ -104,18 +105,23 @@ final class CommunityMemoryAllocator implements MemoryAllocator {
         if (sizeBytes <= 0) {
             throw new IllegalArgumentException("sizeBytes must be > 0, got: " + sizeBytes);
         }
-        // Infrastructure allocations always use shared arenas (they may cross thread boundaries).
-        // CHECKSTYLE:OFF — Arena.ofShared() is legal here: this IS the allocator implementation.
-        Arena sharedArena = Arena.ofShared(); //NOPMD CloseResource — ownership in CommunityLoanedBuffer.onRelease
-        // CHECKSTYLE:ON
-        AbstractLoanedBuffer buf = CommunityLoanedBuffer.allocateOwned(
-                sizeBytes, CACHE_LINE_ALIGNMENT, sharedArena);
-        trackAllocation(sizeBytes);
-        buf.addCloseAction(new ReleaseAction(sizeBytes));
-        if (leakDetection != LeakDetectionMode.DISABLED) {
-            buf.enableLeakTracking(leakTracker);
+        try {
+            // Infrastructure allocations always use shared arenas (they may cross thread boundaries).
+            // CHECKSTYLE:OFF — Arena.ofShared() is legal here: this IS the allocator implementation.
+            Arena sharedArena = Arena.ofShared(); //NOPMD CloseResource — ownership in CommunityLoanedBuffer.onRelease
+            // CHECKSTYLE:ON
+            AbstractLoanedBuffer buf = CommunityLoanedBuffer.allocateOwned(
+                    sizeBytes, CACHE_LINE_ALIGNMENT, sharedArena);
+            trackAllocation(sizeBytes);
+            buf.addCloseAction(new ReleaseAction(
+                    sizeBytes, releaseCount, allocatedBytes, jfrEnabled));
+            if (leakDetection != LeakDetectionMode.DISABLED) {
+                buf.enableLeakTracking(leakTracker);
+            }
+            return buf;
+        } catch (OutOfMemoryError oom) {
+            throw new MemoryExhaustedException(sizeBytes, allocatedBytes.get(), oom);
         }
-        return buf;
     }
 
     // =========================================================================
@@ -151,7 +157,8 @@ final class CommunityMemoryAllocator implements MemoryAllocator {
         try {
             AbstractLoanedBuffer buf = allocateShared(capacityBytes);
             trackAllocation(capacityBytes);
-            buf.addCloseAction(new ReleaseAction(capacityBytes));
+            buf.addCloseAction(new ReleaseAction(
+                    capacityBytes, releaseCount, allocatedBytes, jfrEnabled));
             if (leakDetection != LeakDetectionMode.DISABLED) {
                 buf.enableLeakTracking(leakTracker);
             }
@@ -177,7 +184,6 @@ final class CommunityMemoryAllocator implements MemoryAllocator {
         }
     }
 
-
     private void checkOpen() {
         if (closed.get()) {
             throw new IllegalStateException("CommunityMemoryAllocator has been closed");
@@ -187,24 +193,35 @@ final class CommunityMemoryAllocator implements MemoryAllocator {
     /**
      * Zero-GC close action that decrements telemetry counters on buffer release.
      *
-     * <p>Replaces the capturing lambda {@code () -> trackRelease(capacityBytes)}.
-     * A capturing lambda creates a new object on every {@code allocate()} call
-     * (confirmed by the Zero-GC JFR Monitor TCK). This inner class stores the
-     * {@code long} directly as a field — same object footprint, no anonymous class
-     * creation overhead beyond the single field.
+     * <p>Declared as a {@code static} nested class to eliminate the implicit reference to the
+     * enclosing {@link CommunityMemoryAllocator} that a non-static inner class would carry.
+     * The required allocator state is injected explicitly as constructor arguments so each
+     * instance holds exactly three references and one {@code long} — no hidden overhead.
      */
-    private final class ReleaseAction implements Runnable {
+    private static final class ReleaseAction implements Runnable {
 
         private final long bytes;
+        private final AtomicLong releaseCount;
+        private final AtomicLong allocatedBytes;
+        private final boolean jfrEnabled;
 
-        /* default */ ReleaseAction(long bytes) {
-            this.bytes = bytes;
+        /* default */ ReleaseAction(long bytes,
+                                    AtomicLong releaseCount,
+                                    AtomicLong allocatedBytes,
+                                    boolean jfrEnabled) {
+            this.bytes          = bytes;
+            this.releaseCount   = releaseCount;
+            this.allocatedBytes = allocatedBytes;
+            this.jfrEnabled     = jfrEnabled;
         }
 
         @Override
         public void run() {
-            releaseCount.incrementAndGet();
+            long count = releaseCount.incrementAndGet();
             allocatedBytes.addAndGet(-bytes);
+            if (jfrEnabled) {
+                CommunityReleaseEvent.emit(bytes, count);
+            }
         }
     }
 }
