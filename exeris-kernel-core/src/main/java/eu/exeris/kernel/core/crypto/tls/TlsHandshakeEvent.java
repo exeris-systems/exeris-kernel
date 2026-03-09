@@ -81,16 +81,18 @@ final class TlsHandshakeEvent extends Event {
     /**
      * Emits a handshake-completion event.
      *
-     * @param sslPtr          raw {@code SSL*} address
-     * @param server          {@code true} for server mode
-     * @param negotiatedAlpn  ALPN protocol negotiated (empty string if none)
-     * @param cipherName      TLS cipher suite name from {@code SSL_CIPHER_get_name}
-     *                        (empty string if unavailable)
-     * @param durationNanos   wall-clock duration of the handshake in nanoseconds
+     * @param sslPtr             raw {@code SSL*} address
+     * @param server             {@code true} for server mode
+     * @param negotiatedAlpn     ALPN protocol negotiated (empty string if none)
+     * @param cipherName         TLS cipher suite name from {@code SSL_CIPHER_get_name}
+     *                           (empty string if unavailable)
+     * @param durationNanos      wall-clock duration of the handshake in nanoseconds
+     * @param negotiatedVersion  TLS version string from {@code SSL_get_version}
+     *                           (e.g. {@code "TLSv1.3"}); empty string if the handle is not wired
      */
     /* default */ static void emitComplete(long sslPtr, boolean server,
                                            String negotiatedAlpn, String cipherName,
-                                           long durationNanos) {
+                                           long durationNanos, String negotiatedVersion) {
         if (!FlightRecorder.isInitialized()) {
             return;
         }
@@ -98,7 +100,7 @@ final class TlsHandshakeEvent extends Event {
         if (event.isEnabled()) {
             event.sslPtr         = sslPtr;
             event.mode           = server ? "SERVER" : "CLIENT";
-            event.protocol       = "TLSv1.3";
+            event.protocol       = negotiatedVersion != null ? negotiatedVersion : "";
             event.cipher         = cipherName != null ? cipherName : "";
             event.negotiatedAlpn = negotiatedAlpn != null ? negotiatedAlpn : "";
             event.durationNanos  = durationNanos;

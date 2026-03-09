@@ -37,7 +37,7 @@ import jdk.jfr.StackTrace;
 @Description("Emitted when NativeCipherContext allocates a native SSL* handle via SSL_new")
 @Category({"Exeris Kernel", "Crypto", "OpenSSL"})
 @StackTrace(false)
-public final class CryptoContextAllocEvent extends Event {
+final class CryptoContextAllocEvent extends Event {
 
     @Label("SSL Pointer")
     /* default */ long sslPtr;
@@ -59,7 +59,7 @@ public final class CryptoContextAllocEvent extends Event {
      * @param providerName logical name of the provider requesting the context
      * @param sizeBytes    estimated size of the native SSL session structure (informational)
      */
-    public static void emit(long sslPtr, long sslCtxPtr, String providerName, long sizeBytes) {
+    /* default */ static void emit(long sslPtr, long sslCtxPtr, String providerName, long sizeBytes) {
         if (!FlightRecorder.isInitialized()) {
             return;
         }

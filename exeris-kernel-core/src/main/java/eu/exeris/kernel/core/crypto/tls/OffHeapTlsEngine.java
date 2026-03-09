@@ -15,7 +15,6 @@ import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.crypto.TlsEngine;
 import eu.exeris.kernel.spi.crypto.TlsHandshakeResult;
 import eu.exeris.kernel.spi.crypto.TlsPhase;
-import eu.exeris.kernel.spi.crypto.TlsShutdownResult;
 import eu.exeris.kernel.spi.crypto.TlsStatus;
 import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 import eu.exeris.kernel.spi.exceptions.crypto.TlsDecryptException;
@@ -117,6 +116,13 @@ public final class OffHeapTlsEngine implements TlsEngine {
      * Named constant avoids PMD {@code AvoidLiteralsInIfCondition} violations.
      */
     private static final int SSL_SUCCESS = 1;
+
+    /**
+     * Sentinel written into {@code closedFlag} by the winning {@link #close()} CAS.
+     * Kept separate from {@link #SSL_SUCCESS} to avoid semantic confusion: this value
+     * represents a lifecycle state flag, not an OpenSSL ABI return code.
+     */
+    private static final int CLOSED_MARKER = 1;
 
     /**
      * L0: Pre-allocated sentinel for the wrap/handshake/close guard path (EX-NET-2001).
@@ -311,7 +317,7 @@ public final class OffHeapTlsEngine implements TlsEngine {
         stateMachine.transitionTo(TlsPhase.HANDSHAKE_COMPLETE, TlsPhase.ACTIVE);
         long durationNanos = System.nanoTime() - handshakeStartNanos;
         TlsHandshakeEvent.emitComplete(ptr, serverMode,
-                negotiatedAlpn != null ? negotiatedAlpn : "", cipherName, durationNanos);
+                negotiatedAlpn != null ? negotiatedAlpn : "", cipherName, durationNanos, "");
         return TlsStatus.FINISHED;
     }
 
@@ -429,13 +435,13 @@ public final class OffHeapTlsEngine implements TlsEngine {
     /**
      * {@inheritDoc}
      *
-     * <p>Calls {@code SSL_shutdown} once. OpenSSL's two-phase shutdown:
+     * <p>Calls {@code SSL_shutdown} once. OpenSSL's two-phase shutdown protocol:
      * <ul>
      *   <li>First call (result = 0): local {@code close_notify} was sent;
-     *       peer reply not yet received — returns {@link TlsShutdownResult#partial}.</li>
+     *       peer reply not yet received — state remains {@link TlsPhase#SHUTDOWN_INITIATED}.</li>
      *   <li>Second call (result = 1): peer {@code close_notify} also received —
-     *       returns {@link TlsShutdownResult#COMPLETE}.</li>
-     *   <li>Result = -1: fatal error — returns {@link TlsShutdownResult#ERROR}.</li>
+     *       state advances to {@link TlsPhase#SHUTDOWN_COMPLETE}.</li>
+     *   <li>Result = -1: fatal error — state forced to {@link TlsPhase#ERROR}.</li>
      * </ul>
      *
      * <p>State transitions:
@@ -532,7 +538,7 @@ public final class OffHeapTlsEngine implements TlsEngine {
      */
     @Override
     public void close() {
-        if (!CLOSED.compareAndSet(this, 0, SSL_SUCCESS)) {
+        if (!CLOSED.compareAndSet(this, 0, CLOSED_MARKER)) {
             return;
         }
         TlsPhase finalPhase = stateMachine.phase();
@@ -576,7 +582,7 @@ public final class OffHeapTlsEngine implements TlsEngine {
      * @throws TlsHandshakeException if {@code closedFlag} == 1
      */
     private void checkNotClosed() {
-        if ((int) CLOSED.getAcquire(this) == SSL_SUCCESS) {
+        if ((int) CLOSED.getAcquire(this) == CLOSED_MARKER) {
             throw HOT_PATH_WRAP_SENTINEL;
         }
     }
@@ -600,7 +606,7 @@ public final class OffHeapTlsEngine implements TlsEngine {
      * @throws TlsDecryptException if {@code closedFlag} == 1
      */
     private void checkNotClosedForDecrypt() {
-        if ((int) CLOSED.getAcquire(this) == SSL_SUCCESS) {
+        if ((int) CLOSED.getAcquire(this) == CLOSED_MARKER) {
             throw DECRYPT_CLOSED_SENTINEL;
         }
     }
