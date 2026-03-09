@@ -297,7 +297,8 @@ class CommunityMemoryAllocatorTest {
     void concurrentAllocationStatsConsistency() throws Exception {
         int threadCount = 1_000;
 
-        try (var scope = StructuredTaskScope.open()) {
+        try (var scope = StructuredTaskScope.open(
+                StructuredTaskScope.Joiner.<Void>awaitAllSuccessfulOrThrow())) {
             for (int i = 0; i < threadCount; i++) {
                 scope.fork(() -> {
                     try (var buf = allocator.allocate(AllocationHint.MICRO)) {
