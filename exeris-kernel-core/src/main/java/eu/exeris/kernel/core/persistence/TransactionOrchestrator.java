@@ -14,7 +14,6 @@ import eu.exeris.kernel.spi.persistence.PersistenceConnection;
 import eu.exeris.kernel.spi.persistence.PersistenceEngine;
 import eu.exeris.kernel.spi.persistence.TransactionIsolation;
 import eu.exeris.kernel.spi.persistence.TransactionalExecutor;
-import eu.exeris.kernel.spi.security.ImmutableStorageContext;
 import eu.exeris.kernel.spi.security.StorageContext;
 
 import java.util.Objects;
@@ -121,13 +120,11 @@ public final class TransactionOrchestrator implements TransactionalExecutor {
             try (PersistenceConnection conn = engine.openConnection(ctx)) {
                 lastError = attemptWork(conn, work, attemptNumber);
                 if (lastError == null) {
-                    return; // success
+                    return;
                 }
-                // retryable error — loop continues if attempts remain
             }
         }
 
-        // All retries exhausted — this path is now always reachable
         TransactionLifecycleEvent.recordRetryExhausted(attemptIndex);
         if (lastError == null) {
             throw new IllegalStateException(
@@ -181,7 +178,6 @@ public final class TransactionOrchestrator implements TransactionalExecutor {
                     safeRollback(conn, attemptNumber);
                     if (isRetryable(ppe)) {
                         lastError = ppe;
-                        // loop continues if attempts remain
                     } else {
                         throw ppe;
                     }
@@ -249,10 +245,7 @@ public final class TransactionOrchestrator implements TransactionalExecutor {
     }
 
     private static StorageContext resolveStorageContext() {
-        if (KernelProviders.STORAGE_CONTEXT.isBound()) {
-            return KernelProviders.STORAGE_CONTEXT.get();
-        }
-        return ImmutableStorageContext.system();
+        return KernelProviders.storageContextOrSystem();
     }
 
     private static void safeRollback(PersistenceConnection conn, int attempt) {
@@ -266,10 +259,20 @@ public final class TransactionOrchestrator implements TransactionalExecutor {
         }
     }
 
+    /**
+     * SPI-contract predicate: only {@code 40001} (serialization failure) and
+     * {@code 40P01} (deadlock detected) are retried by this orchestrator.
+     *
+     * <p>Note: {@link PersistenceErrorTranslator#isRetryable(String)} is intentionally
+     * broader (covers the entire class {@code 40}) for the purpose of adding
+     * {@code [RETRYABLE]} hints to translated exception messages. This method is
+     * the authoritative gate for the retry loop and must not be widened beyond
+     * the two codes specified in the {@link TransactionalExecutor} SPI contract.
+     */
     private static boolean isRetryable(PersistenceProviderException ppe) {
         Object[] args = ppe.rawArgs();
         if (args != null && args.length > 0 && args[0] instanceof String sqlState) {
-            return PersistenceErrorTranslator.isRetryable(sqlState);
+            return "40001".equals(sqlState) || "40P01".equals(sqlState);
         }
         return false;
     }

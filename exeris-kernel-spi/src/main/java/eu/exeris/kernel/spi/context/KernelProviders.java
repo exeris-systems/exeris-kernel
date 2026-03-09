@@ -23,6 +23,7 @@ import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.memory.MemoryProvider;
 import eu.exeris.kernel.spi.persistence.PersistenceEngine;
 import eu.exeris.kernel.spi.persistence.PersistenceProvider;
+import eu.exeris.kernel.spi.security.ImmutableStorageContext;
 import eu.exeris.kernel.spi.security.PrincipalContext;
 import eu.exeris.kernel.spi.security.SecurityProvider;
 import eu.exeris.kernel.spi.security.StorageContext;
@@ -595,6 +596,20 @@ public final class KernelProviders {
      */
     public static StorageContext storageContext() {
         return STORAGE_CONTEXT.orElseThrow(StorageContextMissingException::new);
+    }
+
+    /**
+     * Returns the active {@link StorageContext} from the current request scope,
+     * or the system-scope global context if the slot is not bound.
+     *
+     * <p>Use this accessor in subsystems (e.g. Persistence) that must function
+     * correctly in both request-scoped and bootstrap/system contexts without
+     * coupling to any concrete {@code StorageContext} implementation.
+     *
+     * @return bound storage context, or the system-scope fallback; never {@code null}
+     */
+    public static StorageContext storageContextOrSystem() {
+        return STORAGE_CONTEXT.orElse(ImmutableStorageContext.GLOBAL);
     }
 
     /**
