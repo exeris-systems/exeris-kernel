@@ -13,4 +13,183 @@
 
     <artifactId>exeris-kernel-community</artifactId>
 
+    <name>Exeris Kernel - Community</name>
+    <description>
+        Free-tier Community implementations: CommunityMemoryProvider (Arena-based),
+        CommunityKernelCryptoProvider (OpenSSL 3.x / TCP-only, no QUIC),
+        CommunityTelemetryProvider (Console, JFR, File sinks).
+    </description>
+
+    <properties>
+        <!-- Enable benchmark profile execution in this module -->
+        <benchmark.skip>false</benchmark.skip>
+    </properties>
+
+    <dependencies>
+        <!-- SPI contracts — The Wall -->
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-kernel-spi</artifactId>
+        </dependency>
+        <!-- AbstractLoanedBuffer lives in core -->
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-kernel-core</artifactId>
+        </dependency>
+        <!-- TCK abstract test classes -->
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-kernel-tck</artifactId>
+            <classifier>tests</classifier>
+            <type>test-jar</type>
+            <scope>test</scope>
+        </dependency>
+        <!-- JMH — required for JMH @State / @Benchmark annotations in benchmark classes -->
+        <dependency>
+            <groupId>org.openjdk.jmh</groupId>
+            <artifactId>jmh-core</artifactId>
+            <scope>test</scope>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.openjdk.jmh</groupId>
+            <artifactId>jmh-generator-annprocess</artifactId>
+            <scope>test</scope>
+            <optional>true</optional>
+        </dependency>
+        <!-- Test framework -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- Community persistence: HikariCP connection pool -->
+        <dependency>
+            <groupId>com.zaxxer</groupId>
+            <artifactId>HikariCP</artifactId>
+        </dependency>
+        <!-- Community persistence: PostgreSQL JDBC driver (optional runtime) -->
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <!-- Test: Mockito for persistence/crypto unit tests with mocked SPI -->
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.2.5</version>
+                <configuration>
+                    <argLine>
+                        --enable-preview
+                        --enable-native-access=ALL-UNNAMED
+                        -XX:+UnlockExperimentalVMOptions
+                        -XX:+UseZGC
+                        -XX:-ZUncommit
+                        -XX:FlightRecorderOptions=stackdepth=256
+                        -XX:StartFlightRecording=disk=true,filename=target/recording-${maven.build.timestamp}.jfr,maxsize=256m,maxage=10m,settings=profile
+                    </argLine>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+
+    <!-- =====================================================================
+         benchmarks profile — runs JMH against the Community memory/transport stack.
+
+          Usage:
+           mvn clean install -P benchmarks
+           mvn verify -P benchmarks "-Dbenchmark.includes=CommunityMemoryAllocatorBenchmark"
+
+          Results written to target/jmh-results.json.
+         NOT bound to the default lifecycle — only runs with explicit -P benchmarks.
+         ===================================================================== -->
+    <profiles>
+        <profile>
+            <id>benchmarks</id>
+            <properties>
+                <excludedGroups>flamegraph</excludedGroups>
+            </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-compiler-plugin</artifactId>
+                        <configuration>
+                            <release>${maven.compiler.release}</release>
+                            <compilerArgs>
+                                <arg>${jdk.preview.enable}</arg>
+                            </compilerArgs>
+                            <annotationProcessorPaths>
+                                <path>
+                                    <groupId>org.openjdk.jmh</groupId>
+                                    <artifactId>jmh-generator-annprocess</artifactId>
+                                    <version>${jmh.version}</version>
+                                </path>
+                            </annotationProcessorPaths>
+                        </configuration>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>run-benchmarks</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>exec</goal>
+                                </goals>
+                                <configuration>
+                                    <skip>${benchmark.skip}</skip>
+                                    <executable>java</executable>
+                                    <classpathScope>test</classpathScope>
+                                    <arguments>
+                                        <argument>--enable-preview</argument>
+                                        <argument>-XX:+UnlockExperimentalVMOptions</argument>
+                                        <argument>-XX:+UseZGC</argument>
+                                        <argument>--enable-native-access=ALL-UNNAMED</argument>
+                                        <argument>-Djava.library.path=${native.lib.dir}</argument>
+                                        <argument>-classpath</argument>
+                                        <classpath/>
+                                        <argument>org.openjdk.jmh.Main</argument>
+                                        <argument>${benchmark.includes}</argument>
+                                        <argument>-f</argument>
+                                        <argument>${benchmark.forks}</argument>
+                                        <argument>-wi</argument>
+                                        <argument>${benchmark.warmup}</argument>
+                                        <argument>-i</argument>
+                                        <argument>${benchmark.iterations}</argument>
+                                        <argument>-rf</argument>
+                                        <argument>json</argument>
+                                        <argument>-rff</argument>
+                                        <argument>${benchmark.output}</argument>
+                                    </arguments>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+
 </project>
