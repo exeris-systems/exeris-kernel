@@ -46,8 +46,8 @@ import java.util.List;
  */
 public final class InterceptorRegistry {
 
-    private List<ConnectionInterceptor> interceptors = new ArrayList<>(4);
-    private volatile boolean sealed;
+    private final List<ConnectionInterceptor> mutable = new ArrayList<>(4);
+    private List<ConnectionInterceptor> sealed;
 
     /**
      * Registers a new interceptor at the end of the chain.
@@ -57,14 +57,14 @@ public final class InterceptorRegistry {
      *                               (i.e., engine is live)
      */
     public void register(ConnectionInterceptor interceptor) {
-        if (sealed) {
+        if (sealed != null) {
             throw new IllegalStateException(
                     "InterceptorRegistry is sealed — registration must happen during bootstrap");
         }
         if (interceptor == null) {
             throw new IllegalArgumentException("interceptor must not be null");
         }
-        interceptors.add(interceptor);
+        mutable.add(interceptor);
     }
 
     /**
@@ -76,20 +76,19 @@ public final class InterceptorRegistry {
      * @return ordered, immutable list of interceptors
      */
     public List<ConnectionInterceptor> seal() {
-        if (!sealed) {
-            interceptors = List.copyOf(interceptors);
-            sealed = true;
+        if (sealed == null) {
+            sealed = List.copyOf(mutable);
         }
-        return List.copyOf(interceptors);
+        return sealed;
     }
 
     /** Returns the number of registered interceptors. */
     public int size() {
-        return interceptors.size();
+        return sealed != null ? sealed.size() : mutable.size();
     }
 
     /** {@code true} if the registry has been sealed by a {@link #seal()} call. */
     public boolean isSealed() {
-        return sealed;
+        return sealed != null;
     }
 }

@@ -96,23 +96,27 @@ public final class PersistenceBootstrap {
         // --- Phase 2: Create the PersistenceEngine (bootstrap allocation permitted) ---
         PersistenceEngine engine = provider.createEngine(config);
 
-        // --- Phase 3: Register interceptors (RLS, schema-switch, audit, etc.) ---
-        // Interceptors are registered in order — they will be called in that order
-        // on every connection checkout from openConnection(StorageContext).
-        for (ConnectionInterceptor interceptor : interceptors) {
-            engine.registerInterceptor(interceptor);
-        }
+        try {
+            // --- Phase 3: Register interceptors (RLS, schema-switch, audit, etc.) ---
+            for (ConnectionInterceptor interceptor : interceptors) {
+                engine.registerInterceptor(interceptor);
+            }
 
-        // --- Phase 4: JFR-First — emit bootstrap event ---
-        // PersistenceEngineBootstrapEvent.emit() is already called inside
-        // Community/EnterprisePersistenceEngine constructors (driver-level detail).
-        // Here we emit the higher-level "which provider was chosen" event.
-        PersistenceBootstrapSelectedEvent.emit(
-                provider.getClass().getName(),
-                provider.priority(),
-                engine.capabilities().transportName(),
-                interceptors.size()
-        );
+            // --- Phase 4: JFR-First — emit bootstrap event ---
+            PersistenceBootstrapSelectedEvent.emit(
+                    provider.getClass().getName(),
+                    provider.priority(),
+                    engine.capabilities().transportName(),
+                    interceptors.size()
+            );
+        } catch (RuntimeException ex) { //NOPMD AvoidCatchingGenericException — SPI may throw any RuntimeException
+            try {
+                engine.close();
+            } catch (Exception closeEx) { //NOPMD AvoidCatchingGenericException — close() declares Exception
+                ex.addSuppressed(closeEx);
+            }
+            throw ex;
+        }
 
         return engine;
     }
