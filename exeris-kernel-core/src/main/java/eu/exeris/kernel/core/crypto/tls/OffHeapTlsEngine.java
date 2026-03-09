@@ -522,7 +522,8 @@ public final class OffHeapTlsEngine implements TlsEngine {
      * <p>Idempotent — guarded by a {@link VarHandle} CAS on {@code closedFlag}.
      * The first call:
      * <ol>
-     *   <li>Forces the state machine to {@link TlsPhase#CLOSED} (from any phase).</li>
+     *   <li>Forces the state machine to the {@link TlsPhase#ERROR} terminal state
+     *       (from any non-terminal phase), preventing further I/O dispatch.</li>
      *   <li>Releases the {@link NativeCipherContext} base reference, triggering
      *       {@code SSL_free} when all in-flight retains complete.</li>
      *   <li>Emits {@link TlsEngineCloseEvent} (JFR-First).</li>

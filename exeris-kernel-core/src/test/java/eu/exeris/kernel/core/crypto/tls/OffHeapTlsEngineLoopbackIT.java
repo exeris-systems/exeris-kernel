@@ -362,7 +362,8 @@ class OffHeapTlsEngineLoopbackIT {
                                 .as("Decrypted byte count must equal original payload")
                                 .isEqualTo(payloadSize);
 
-                        for (int i = 0; i < payloadSize; i++) {
+                        int limit = (int) decrypted.size();
+                        for (int i = 0; i < limit; i++) {
                             assertThat(decrypted.segment().get(ValueLayout.JAVA_BYTE, i))
                                     .as("Decrypted byte at index " + i + " must be 0xAB")
                                     .isEqualTo((byte) 0xAB);

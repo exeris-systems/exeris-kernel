@@ -12,6 +12,7 @@ import eu.exeris.kernel.spi.crypto.TlsPhase;
 import jdk.jfr.Category;
 import jdk.jfr.Description;
 import jdk.jfr.Event;
+import jdk.jfr.FlightRecorder;
 import jdk.jfr.Label;
 import jdk.jfr.Name;
 import jdk.jfr.StackTrace;
@@ -36,6 +37,9 @@ final class TlsPhaseTransitionEvent extends Event {
     /* default */ @Label("To Phase")   String toPhase;
 
     /* default */ static void emit(TlsPhase from, TlsPhase targetPhase) {
+        if (!FlightRecorder.isInitialized()) {
+            return;
+        }
         TlsPhaseTransitionEvent event = new TlsPhaseTransitionEvent();
         if (event.isEnabled()) {
             event.fromPhase = from.name();

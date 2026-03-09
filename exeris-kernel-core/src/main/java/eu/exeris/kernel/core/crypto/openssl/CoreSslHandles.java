@@ -12,6 +12,7 @@ import eu.exeris.kernel.spi.exceptions.crypto.TlsDecryptException;
 import eu.exeris.kernel.spi.exceptions.crypto.TlsException;
 import eu.exeris.kernel.spi.exceptions.crypto.TlsHandshakeException;
 
+import java.lang.foreign.MemorySegment;
 import java.lang.invoke.MethodHandle;
 
 /**
@@ -167,7 +168,7 @@ public final class CoreSslHandles {
          */
         public void invokeCtxSetVerify(long ctxPtr, int mode) {
             try {
-                sslCtxSetVerify.invokeExact(ctxPtr, mode);
+                sslCtxSetVerify.invokeExact(ctxPtr, mode, MemorySegment.NULL);
             } catch (Throwable t) { //NOPMD AvoidCatchingGenericException — FFM invokeExact declares Throwable
                 throw new TlsException("SSL_CTX_set_verify failed", t);
             }

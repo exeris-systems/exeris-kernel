@@ -11,6 +11,7 @@ package eu.exeris.kernel.core.crypto.openssl;
 import jdk.jfr.Category;
 import jdk.jfr.Description;
 import jdk.jfr.Event;
+import jdk.jfr.FlightRecorder;
 import jdk.jfr.Label;
 import jdk.jfr.Name;
 import jdk.jfr.StackTrace;
@@ -55,8 +56,14 @@ import jdk.jfr.StackTrace;
      * @param thrown  the exception thrown by the native invocation
      */
     /* default */ static void emit(long sslPtr, Throwable thrown) {
+        if (!FlightRecorder.isInitialized()) {
+            return;
+        }
         NativeCipherContextFreeFailureEvent evt = new NativeCipherContextFreeFailureEvent();
-        evt.sslPtr       = sslPtr;
+        if (!evt.isEnabled()) {
+            return;
+        }
+        evt.sslPtr           = sslPtr;
         evt.exceptionClass   = thrown.getClass().getName();
         evt.exceptionMessage = thrown.getMessage();
         evt.commit();

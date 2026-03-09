@@ -89,12 +89,10 @@ final class CipherNameReader {
     private static String readCString(long nativeAddr) {
         MemorySegment raw = MemorySegment.ofAddress(nativeAddr).reinterpret(MAX_SCAN_BYTES);
         int length = 0;
-        while (length < MAX_SCAN_BYTES) {
-            byte byteVal = raw.get(ValueLayout.JAVA_BYTE, length);
-            if (byteVal == 0) {
+        for (; length < MAX_SCAN_BYTES; length++) {
+            if (raw.get(ValueLayout.JAVA_BYTE, length) == 0) {
                 break;
             }
-            length++;
         }
         if (length == 0) {
             return UNKNOWN;
