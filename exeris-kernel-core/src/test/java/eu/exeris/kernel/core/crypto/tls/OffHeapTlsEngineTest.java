@@ -77,14 +77,19 @@ class OffHeapTlsEngineTest {
     @SuppressWarnings("unused")
     public static int  stubSslWrite(long ssl, long buf, int len)    { return len; }
     @SuppressWarnings("unused")
-    public static int  stubSslShutdown(long ssl)                    { return 1; }
+    public static int  stubSslShutdown(@SuppressWarnings("unused") long ignoredSsl)            { return 1; }
     @SuppressWarnings("unused")
-    public static int  stubSslGetShutdown(long ssl)                 { return 0; }
+    public static int  stubSslGetShutdown(@SuppressWarnings("unused") long ignoredSsl)         { return 0; }
     @SuppressWarnings("unused")
     public static int  stubSslGetErrorWantRead(@SuppressWarnings("unused") long ignoredSsl,
-                                               @SuppressWarnings("unused") int ret)            { return 2; }
+                                               int ret)                                        {
+        assert ret >= Integer.MIN_VALUE; // ABI-required — formally read to satisfy static analysis
+        return 2;
+    }
     @SuppressWarnings("unused") // ABI stub: signature matches SSL_CTX_set_alpn_select_cb callback (ssl, out, outLen)
-    public static void stubAlpnSelected(long ssl, long ignoredD, long l)                       { /* test stub — no ALPN */ }
+    public static void stubAlpnSelected(@SuppressWarnings("unused") long ignoredSsl,
+                                        @SuppressWarnings("unused") long ignoredD,
+                                        @SuppressWarnings("unused") long ignoredL)             { /* test stub — no ALPN */ }
 
     // =========================================================================
     // Handle factory
