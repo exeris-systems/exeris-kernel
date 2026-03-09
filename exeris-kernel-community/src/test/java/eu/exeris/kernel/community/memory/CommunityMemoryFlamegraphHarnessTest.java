@@ -111,7 +111,7 @@ class CommunityMemoryFlamegraphHarnessTest extends AbstractZeroGcJfrMonitorTck {
         try (MemoryAllocator allocator = createAllocator()) {
 
             // ── warmup: flush JIT + class-loading before recording ───────────
-            for (int i = 0; i < 10_000; i++) {
+            for (int i = 0; i < warmupIterations(); i++) {
                 try (LoanedBuffer b = allocator.allocate(AllocationHint.MICRO)) {
                     b.segment().set(ValueLayout.JAVA_INT, 0, i);
                 }

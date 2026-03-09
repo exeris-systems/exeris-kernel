@@ -196,9 +196,9 @@ class CommunityMemoryAllocatorTest {
         }
 
         @Test
-        @DisplayName("stats() returns 0 as totalBudget (Community: unlimited)")
-        void totalBudgetIsZero() {
-            assertThat(allocator.stats().totalBytes()).isZero();
+        @DisplayName("stats() returns -1 as totalBudget (Community: no fixed off-heap budget)")
+        void totalBudgetIsUnbounded() {
+            assertThat(allocator.stats().totalBytes()).isEqualTo(-1L);
         }
     }
 

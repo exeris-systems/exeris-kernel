@@ -84,6 +84,9 @@ final class CommunityMemoryAllocator implements MemoryAllocator { //NOPMD TooMan
     @Override
     public LoanedBuffer allocateNetwork(int estimatedBytes) {
         checkOpen();
+        if (estimatedBytes <= 0) {
+            throw new IllegalArgumentException("estimatedBytes must be > 0, got: " + estimatedBytes);
+        }
         return doAllocate(estimatedBytes);
     }
 
@@ -124,9 +127,9 @@ final class CommunityMemoryAllocator implements MemoryAllocator { //NOPMD TooMan
     public MemoryStats stats() {
         long allocated = allocatedBytes.get();
         return new MemoryStats(
-                0L,          // Community: no fixed total budget
+                -1L,         // Community: no fixed total budget (sentinel: unknown/heap-only)
                 allocated,
-                0L,          // Community: no fixed free budget
+                0L,          // Community: no fixed free budget (not tracked; totalBytes == -1)
                 allocationCount.get(),
                 releaseCount.get(),
                 peakAllocated.get(),

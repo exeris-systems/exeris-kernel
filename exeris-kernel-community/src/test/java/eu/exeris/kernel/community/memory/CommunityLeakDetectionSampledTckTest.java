@@ -10,7 +10,6 @@ package eu.exeris.kernel.community.memory;
 
 import eu.exeris.kernel.spi.memory.MemoryProvider;
 import eu.exeris.kernel.tck.contract.memory.AbstractLeakDetectionSampledTck;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 
 /**
@@ -26,10 +25,15 @@ import org.junit.jupiter.api.DisplayName;
  *   <li>Remains correct under 10 000 concurrent Virtual Threads.</li>
  * </ul>
  *
+ * <h2>Implementation path</h2>
+ * <p>{@link CommunityMemoryAllocator} delegates to {@link eu.exeris.kernel.core.memory.LeakTracker}
+ * (1-in-128 sampling via atomic counter + {@link java.lang.ref.Cleaner} phantom reference).
+ * Properly-closed buffers call {@link eu.exeris.kernel.core.memory.LeakTracker.LeakHandle#cancel()}
+ * before the JVM can observe them as phantom-reachable — so {@code leakCount()} stays zero.
+ *
  * @since 0.5.0
  */
 @DisplayName("Community: LeakDetection SAMPLED TCK")
-@Disabled
 class CommunityLeakDetectionSampledTckTest extends AbstractLeakDetectionSampledTck {
 
     @Override

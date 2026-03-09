@@ -23,6 +23,12 @@
     <properties>
         <!-- Enable benchmark profile execution in this module -->
         <benchmark.skip>false</benchmark.skip>
+        <!--
+            Flamegraph harness tests run a 1M-VT avalanche and must never execute in CI
+            by default. They are excluded from all Surefire runs unless explicitly enabled
+            via: mvn test -DincludedGroups=flamegraph
+        -->
+        <excludedGroups>flamegraph</excludedGroups>
     </properties>
 
     <dependencies>
@@ -99,15 +105,13 @@
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.2.5</version>
                 <configuration>
-                    <argLine>
-                        --enable-preview
-                        --enable-native-access=ALL-UNNAMED
-                        -XX:+UnlockExperimentalVMOptions
-                        -XX:+UseZGC
-                        -XX:-ZUncommit
-                        -XX:FlightRecorderOptions=stackdepth=256
-                        -XX:StartFlightRecording=disk=true,filename=target/recording-${maven.build.timestamp}.jfr,maxsize=256m,maxage=10m,settings=profile
-                    </argLine>
+                    <!--
+                        Inherit common JVM flags from the parent POM (${test.jvm.args}) and
+                        append Community-specific ZGC + JFR flags only for this module.
+                    -->
+                    <argLine>${test.jvm.args}</argLine>
+                    <!-- Exclude @Tag("flamegraph") tests from regular CI runs -->
+                    <excludedGroups>${excludedGroups}</excludedGroups>
                 </configuration>
             </plugin>
         </plugins>
