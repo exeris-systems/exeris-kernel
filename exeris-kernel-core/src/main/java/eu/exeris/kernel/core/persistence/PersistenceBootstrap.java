@@ -89,7 +89,8 @@ public final class PersistenceBootstrap {
         PersistenceProvider provider = ServiceLoader.load(PersistenceProvider.class)
                 .stream()
                 .map(ServiceLoader.Provider::get)
-                .max(Comparator.comparingInt(PersistenceProvider::priority))
+                .max(Comparator.comparingInt(PersistenceProvider::priority)
+                        .thenComparing(p -> p.getClass().getName()))
                 .orElseThrow(() -> PersistenceProviderException.noProviderAvailable(
                         ERROR_NO_PROVIDER));
 

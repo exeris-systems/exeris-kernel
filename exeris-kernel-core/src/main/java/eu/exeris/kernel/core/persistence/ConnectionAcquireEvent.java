@@ -28,9 +28,11 @@ import jdk.jfr.StackTrace;
  * }</pre>
  *
  * <h2>Hot-Path Guard</h2>
- * <p>Both phases guard on {@link FlightRecorder#isInitialized()} and
+ * <p>The begin phase guards on {@link FlightRecorder#isInitialized()} and
  * {@link Event#isEnabled()} before allocating — when JFR recording is inactive
- * the cost is a single branch miss with zero heap allocation.
+ * {@link #beginAcquire()} returns {@code null} with zero heap allocation.
+ * The end phase is a no-op when {@code event} is {@code null}, so no additional
+ * guards are needed there.
  * {@link StackTrace @StackTrace(false)} eliminates stack-walk overhead on the
  * connection-acquire hot path.
  *
