@@ -106,13 +106,19 @@ public final class PersistenceErrorTranslator {
 
     /**
      * Returns {@code true} if the given {@code SQLSTATE} represents a transient error
-     * that the caller SHOULD retry (serialization failure or deadlock).
+     * that the caller SHOULD retry.
+     *
+     * <p>Any code in class {@code 40} (Transaction Rollback) is considered retryable,
+     * including {@code 40001} (serialization failure), {@code 40P01} (deadlock detected),
+     * {@code 40002} (transaction integrity constraint violation), and
+     * {@code 40003} (statement completion unknown). This is consistent with the
+     * {@code [RETRYABLE]} hint emitted by {@link #translate} for the same class.
      *
      * @param sqlState 5-character PostgreSQL SQLSTATE
      * @return {@code true} if the operation is safely retryable
      */
     public static boolean isRetryable(String sqlState) {
-        return SERIALIZATION_FAILURE.equals(sqlState) || DEADLOCK_DETECTED.equals(sqlState);
+        return sqlState != null && sqlState.startsWith(CLASS_TX_ROLLBACK);
     }
 
     /**

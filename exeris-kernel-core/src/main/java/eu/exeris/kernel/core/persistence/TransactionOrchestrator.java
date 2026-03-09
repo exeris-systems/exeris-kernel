@@ -108,17 +108,18 @@ public final class TransactionOrchestrator implements TransactionalExecutor {
     public void execute(TransactionalWork work) {
         Objects.requireNonNull(work, "work must not be null");
         StorageContext ctx = resolveStorageContext();
-        int attempt = 0;
+        int attemptIndex = 0;
         PersistenceProviderException lastError = null;
 
-        while (attempt < retryPolicy.maxAttempts()) {
-            if (attempt > 0) {
-                sleepBackoff(retryPolicy.delayFor(attempt));
+        while (attemptIndex < retryPolicy.maxAttempts()) {
+            if (attemptIndex > 0) {
+                sleepBackoff(retryPolicy.delayFor(attemptIndex));
             }
-            attempt++;
+            int attemptNumber = attemptIndex + 1;
+            attemptIndex++;
 
             try (PersistenceConnection conn = engine.openConnection(ctx)) {
-                lastError = attemptWork(conn, work, attempt);
+                lastError = attemptWork(conn, work, attemptNumber);
                 if (lastError == null) {
                     return; // success
                 }
@@ -127,7 +128,7 @@ public final class TransactionOrchestrator implements TransactionalExecutor {
         }
 
         // All retries exhausted — this path is now always reachable
-        TransactionLifecycleEvent.recordRetryExhausted(attempt);
+        TransactionLifecycleEvent.recordRetryExhausted(attemptIndex);
         if (lastError == null) {
             throw new IllegalStateException(
                     "Retry loop exhausted without recording a PersistenceProviderException");
@@ -156,27 +157,28 @@ public final class TransactionOrchestrator implements TransactionalExecutor {
         Objects.requireNonNull(isolation, "isolation must not be null");
         Objects.requireNonNull(work,      "work must not be null");
         StorageContext ctx = resolveStorageContext();
-        int attempt = 0;
+        int attemptIndex = 0;
         PersistenceProviderException lastError = null;
 
-        while (attempt < retryPolicy.maxAttempts()) {
-            if (attempt > 0) {
-                sleepBackoff(retryPolicy.delayFor(attempt));
+        while (attemptIndex < retryPolicy.maxAttempts()) {
+            if (attemptIndex > 0) {
+                sleepBackoff(retryPolicy.delayFor(attemptIndex));
             }
-            attempt++;
+            int attemptNumber = attemptIndex + 1;
+            attemptIndex++;
 
             try (PersistenceConnection conn = engine.openConnection(ctx)) {
-                conn.beginTransaction(isolation, readOnly);
-                TransactionLifecycleEvent.recordBegin(attempt);
-                long startNs = System.nanoTime();
                 try {
+                    conn.beginTransaction(isolation, readOnly);
+                    TransactionLifecycleEvent.recordBegin(attemptNumber);
+                    long startNs = System.nanoTime();
                     work.run(conn);
                     long durationNs = System.nanoTime() - startNs;
                     conn.commit();
-                    TransactionLifecycleEvent.recordCommit(attempt, durationNs);
+                    TransactionLifecycleEvent.recordCommit(attemptNumber, durationNs);
                     return;
                 } catch (PersistenceProviderException ppe) {
-                    safeRollback(conn, attempt);
+                    safeRollback(conn, attemptNumber);
                     if (isRetryable(ppe)) {
                         lastError = ppe;
                         // loop continues if attempts remain
@@ -184,13 +186,13 @@ public final class TransactionOrchestrator implements TransactionalExecutor {
                         throw ppe;
                     }
                 } catch (RuntimeException rte) {
-                    safeRollback(conn, attempt);
+                    safeRollback(conn, attemptNumber);
                     throw rte;
                 }
             }
         }
 
-        TransactionLifecycleEvent.recordRetryExhausted(attempt);
+        TransactionLifecycleEvent.recordRetryExhausted(attemptIndex);
         if (lastError == null) {
             throw new IllegalStateException(
                     "Managed retry loop exhausted without recording a PersistenceProviderException");
