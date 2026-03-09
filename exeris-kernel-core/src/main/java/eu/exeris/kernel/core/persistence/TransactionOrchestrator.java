@@ -12,6 +12,7 @@ import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.exceptions.persistence.PersistenceProviderException;
 import eu.exeris.kernel.spi.persistence.PersistenceConnection;
 import eu.exeris.kernel.spi.persistence.PersistenceEngine;
+import eu.exeris.kernel.spi.persistence.PersistenceEngineCapabilities;
 import eu.exeris.kernel.spi.persistence.TransactionIsolation;
 import eu.exeris.kernel.spi.persistence.TransactionalExecutor;
 import eu.exeris.kernel.spi.security.ImmutableStorageContext;
@@ -202,7 +203,14 @@ public final class TransactionOrchestrator implements TransactionalExecutor {
     public <T> T query(Function<PersistenceConnection, T> query) {
         Objects.requireNonNull(query, "query must not be null");
         StorageContext ctx = resolveStorageContext();
+        long startNs = System.nanoTime();
+        ConnectionAcquireEvent acquireEvt = ConnectionAcquireEvent.beginAcquire();
         try (PersistenceConnection conn = engine.openConnection(ctx)) {
+            PersistenceEngineCapabilities caps = engine.capabilities();
+            ConnectionAcquireEvent.endAcquire(acquireEvt,
+                    caps != null ? caps.providerId() : "unknown",
+                    ctx.isolationKey().orElse("shared"),
+                    true, startNs);
             return query.apply(conn);
         }
     }
@@ -221,19 +229,28 @@ public final class TransactionOrchestrator implements TransactionalExecutor {
         long startNs = System.nanoTime();
         try {
             work.run(conn);
-            long durationNs = System.nanoTime() - startNs;
-            TransactionLifecycleEvent.recordCommit(attempt, durationNs);
-            return null;
         } catch (PersistenceProviderException ppe) {
             safeRollback(conn, attempt);
             if (isRetryable(ppe)) {
-                return ppe; // caller will decide whether to retry or exhaust
+                return ppe;
             }
             throw ppe;
         } catch (RuntimeException unexpected) {
             safeRollback(conn, attempt);
             throw unexpected;
         }
+
+        if (conn.inTransaction()) {
+            safeRollback(conn, attempt);
+            throw PersistenceProviderException.queryFailed(
+                    "2D000",
+                    "execute() work lambda returned without committing the transaction",
+                    null);
+        }
+
+        long durationNs = System.nanoTime() - startNs;
+        TransactionLifecycleEvent.recordCommit(attempt, durationNs);
+        return null;
     }
 
     private static StorageContext resolveStorageContext() {
@@ -249,8 +266,8 @@ public final class TransactionOrchestrator implements TransactionalExecutor {
                 conn.rollback();
                 TransactionLifecycleEvent.recordRollback(attempt);
             }
-        } catch (PersistenceProviderException _) {
-            // Best-effort — original exception takes precedence
+        } catch (RuntimeException _) {
+            // Ignored
         }
     }
 

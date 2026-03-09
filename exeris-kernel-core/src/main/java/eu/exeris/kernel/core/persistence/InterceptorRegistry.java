@@ -71,7 +71,8 @@ public final class InterceptorRegistry {
      * Returns an immutable snapshot of the registered interceptors.
      *
      * <p>Seals the registry — no further registrations are allowed after this call.
-     * Subsequent calls return the same immutable list instance (idempotent, zero allocation).
+     * Subsequent calls return an equal immutable snapshot (idempotent content).
+     * Intended for bootstrap use only — not a hot-path operation.
      *
      * @return ordered, immutable list of interceptors
      */
@@ -79,7 +80,7 @@ public final class InterceptorRegistry {
         if (sealed == null) {
             sealed = List.copyOf(mutable);
         }
-        return sealed;
+        return List.copyOf(sealed);
     }
 
     /** Returns the number of registered interceptors. */

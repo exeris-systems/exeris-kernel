@@ -102,7 +102,16 @@ public final class PersistenceBootstrap {
                 engine.registerInterceptor(interceptor);
             }
 
-            // --- Phase 4: JFR-First — emit bootstrap event ---
+            // --- Phase 4: JFR-First — emit bootstrap events ---
+            PersistenceEngineBootstrapEvent.emit(
+                    engine.capabilities().providerId(),
+                    provider.getClass().getName(),
+                    config.maxPoolSize(),
+                    config.rlsEnabled(),
+                    config.perTenantPooling(),
+                    config.useTls(),
+                    engine.capabilities().transportName()
+            );
             PersistenceBootstrapSelectedEvent.emit(
                     provider.getClass().getName(),
                     provider.priority(),
