@@ -21,9 +21,10 @@ import jdk.jfr.StackTrace;
  *
  * <h2>Usage — two-phase API</h2>
  * <pre>{@code
+ * long startNs = System.nanoTime();
  * ConnectionAcquireEvent evt = ConnectionAcquireEvent.beginAcquire();
  * PersistenceConnection conn = engine.openConnection(ctx);   // ← measured region
- * ConnectionAcquireEvent.endAcquire(evt, providerId, tenantKey, fromPool);
+ * ConnectionAcquireEvent.endAcquire(evt, providerId, tenantKey, fromPool, startNs);
  * }</pre>
  *
  * <h2>Hot-Path Guard</h2>
