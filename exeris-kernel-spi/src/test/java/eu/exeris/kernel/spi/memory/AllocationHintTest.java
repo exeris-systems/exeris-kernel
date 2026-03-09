@@ -69,7 +69,7 @@ class AllocationHintTest {
 
     @Test
     @DisplayName("SESSION sizeBytes() == 4096")
-    void sessionIs131072() {
+    void sessionIs4096() {
         assertThat(AllocationHint.SESSION.sizeBytes()).isEqualTo(4 * 1024);
     }
 
@@ -109,7 +109,7 @@ class AllocationHintTest {
     // -----------------------------------------------------------------------
 
     @Test
-    @DisplayName("Total AllocationHint count == 6 — new hints require pool table review")
+    @DisplayName("Total AllocationHint count == 7 — new hints require pool table review")
     void totalHintCount() {
         assertThat(AllocationHint.values()).hasSize(7);
     }
