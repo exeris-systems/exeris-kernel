@@ -121,7 +121,7 @@ public final class PersistenceBootstrap {
         } catch (RuntimeException ex) { //NOPMD AvoidCatchingGenericException — SPI may throw any RuntimeException
             try {
                 engine.close();
-            } catch (Exception closeEx) { //NOPMD AvoidCatchingGenericException — close() declares Exception
+            } catch (RuntimeException closeEx) { //NOPMD AvoidCatchingGenericException — untrusted SPI boundary
                 ex.addSuppressed(closeEx);
             }
             throw ex;

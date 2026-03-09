@@ -71,16 +71,17 @@ public final class InterceptorRegistry {
      * Returns an immutable snapshot of the registered interceptors.
      *
      * <p>Seals the registry — no further registrations are allowed after this call.
-     * Subsequent calls return an equal immutable snapshot (idempotent content).
+     * Each call returns a fresh defensive copy of the sealed snapshot so that the
+     * caller cannot obtain a reference to the internal field.
      * Intended for bootstrap use only — not a hot-path operation.
      *
-     * @return ordered, immutable list of interceptors
+     * @return ordered, immutable defensive copy of the interceptor list
      */
     public List<ConnectionInterceptor> seal() {
         if (sealed == null) {
             sealed = List.copyOf(mutable);
         }
-        return sealed;
+        return List.copyOf(sealed);
     }
 
     /** Returns the number of registered interceptors. */

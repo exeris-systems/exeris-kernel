@@ -167,6 +167,7 @@ public final class TransactionOrchestrator implements TransactionalExecutor {
 
             try (PersistenceConnection conn = engine.openConnection(ctx)) {
                 conn.beginTransaction(isolation, readOnly);
+                TransactionLifecycleEvent.recordBegin(attempt);
                 long startNs = System.nanoTime();
                 try {
                     work.run(conn);

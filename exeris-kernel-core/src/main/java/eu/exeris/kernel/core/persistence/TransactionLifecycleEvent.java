@@ -17,11 +17,13 @@ import jdk.jfr.Name;
 import jdk.jfr.StackTrace;
 
 /**
- * JFR event emitted by {@link TransactionOrchestrator} on commit, rollback, or retry exhaustion.
+ * JFR event emitted by {@link TransactionOrchestrator} on begin, commit, rollback, or retry exhaustion.
  *
  * <h2>JFR-First Contract</h2>
  * <p>Every critical transaction lifecycle event MUST produce a JFR record.
  * SRE tooling watches for {@code retryExhausted=true} as an early deadlock/hotspot signal.
+ * The full observable sequence for a managed transaction is:
+ * {@code BEGIN → COMMIT | ROLLBACK}, and {@code RETRY_EXHAUSTED} if all attempts fail.
  *
  * <h2>Virtual-Thread Safety</h2>
  * <p>All emit methods are static and allocate a fresh {@code TransactionLifecycleEvent}
@@ -33,12 +35,12 @@ import jdk.jfr.StackTrace;
 @Name("eu.exeris.kernel.persistence.TransactionLifecycle")
 @Label("Transaction Lifecycle")
 @Category({"Exeris Kernel", "Persistence"})
-@Description("Emitted when a managed transaction commits, rolls back, or exhausts retries.")
+@Description("Emitted on each transaction lifecycle boundary: BEGIN, COMMIT, WORK_COMPLETE, ROLLBACK, RETRY_EXHAUSTED.")
 @StackTrace(false)
 final class TransactionLifecycleEvent extends Event {
 
     @Label("Outcome")
-    @Description("COMMIT, WORK_COMPLETE, ROLLBACK, or RETRY_EXHAUSTED")
+    @Description("BEGIN, COMMIT, WORK_COMPLETE, ROLLBACK, or RETRY_EXHAUSTED")
     /* default */ String outcome;
 
     @Label("Attempt Number")
@@ -52,6 +54,22 @@ final class TransactionLifecycleEvent extends Event {
     @Label("Duration (ns)")
     @Description("Wall-clock duration of the transaction work in nanoseconds (0 for rollback/exhaustion)")
     /* default */ long durationNs;
+
+    /* default */ static void recordBegin(int attempt) {
+        if (!FlightRecorder.isInitialized()) {
+            return;
+        }
+        TransactionLifecycleEvent evt = new TransactionLifecycleEvent();
+        if (!evt.isEnabled()) {
+            return;
+        }
+        evt.begin();
+        evt.outcome        = "BEGIN";
+        evt.attemptNumber  = attempt;
+        evt.retryExhausted = false;
+        evt.durationNs     = 0L;
+        evt.commit();
+    }
 
     /* default */ static void recordCommit(int attempt, long durationNs) {
         if (!FlightRecorder.isInitialized()) {
