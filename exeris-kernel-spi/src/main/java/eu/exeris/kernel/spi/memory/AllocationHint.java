@@ -75,7 +75,18 @@ public enum AllocationHint {
      * <p>Bulk data import/export, large binary blobs.
      * Always off-heap; sourced from the GlobalArbiter slab pool in Enterprise tier.
      */
-    JUMBO(128 * 1_024);
+    JUMBO(128 * 1_024),
+
+    /**
+     * Session: 4 096 bytes.
+     * <p>Per-TLS-session native context (one {@code SSL*} struct + BIO pair per connection).
+     * Must always be allocated via {@link MemoryAllocator} to ensure {@code WatermarkManager}
+     * tracking and {@code EX-MEM-1001} backpressure for Crypto (L1) session memory.
+     *
+     * <p><strong>Contract:</strong> {@code NativeCipherContext} MUST use this hint —
+     * never {@code Arena.ofConfined()} or {@code Arena.ofShared()} directly.
+     */
+    SESSION(4 * 1_024);
 
     private final int sizeBytes;
 

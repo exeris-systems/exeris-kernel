@@ -67,6 +67,12 @@ class AllocationHintTest {
         assertThat(AllocationHint.JUMBO.sizeBytes()).isEqualTo(128 * 1024);
     }
 
+    @Test
+    @DisplayName("SESSION sizeBytes() == 4096")
+    void sessionIs131072() {
+        assertThat(AllocationHint.SESSION.sizeBytes()).isEqualTo(4 * 1024);
+    }
+
     // -----------------------------------------------------------------------
     // Ordering invariants — sizes must be positive
     // -----------------------------------------------------------------------
@@ -94,6 +100,8 @@ class AllocationHintTest {
                 .isLessThan(AllocationHint.NETWORK_FRAME.sizeBytes());
         assertThat(AllocationHint.NETWORK_FRAME.sizeBytes())
                 .isLessThan(AllocationHint.JUMBO.sizeBytes());
+        assertThat(AllocationHint.JUMBO.sizeBytes())
+                .isGreaterThan(AllocationHint.SESSION.sizeBytes());
     }
 
     // -----------------------------------------------------------------------
@@ -103,7 +111,7 @@ class AllocationHintTest {
     @Test
     @DisplayName("Total AllocationHint count == 6 — new hints require pool table review")
     void totalHintCount() {
-        assertThat(AllocationHint.values()).hasSize(6);
+        assertThat(AllocationHint.values()).hasSize(7);
     }
 
     // -----------------------------------------------------------------------
@@ -119,5 +127,6 @@ class AllocationHintTest {
         assertThat(AllocationHint.valueOf("NETWORK_FRAME")).isEqualTo(AllocationHint.NETWORK_FRAME);
         assertThat(AllocationHint.valueOf("STREAMING_CHUNK")).isEqualTo(AllocationHint.STREAMING_CHUNK);
         assertThat(AllocationHint.valueOf("JUMBO")).isEqualTo(AllocationHint.JUMBO);
+        assertThat(AllocationHint.valueOf("SESSION")).isEqualTo(AllocationHint.SESSION);
     }
 }

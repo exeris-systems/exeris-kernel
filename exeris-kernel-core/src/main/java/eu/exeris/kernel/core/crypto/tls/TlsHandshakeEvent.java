@@ -1,0 +1,101 @@
+/*
+ * Copyright (C) 2025-2026 Exeris Systems.
+ *
+ * Licensed under the Apache License, Version 2.0 with Commons Clause.
+ * You may use, modify, and distribute this file under those terms.
+ * Commercial resale of this software as a competing product is prohibited.
+ * See LICENSE-COMMUNITY in the repository root for the full text.
+ */
+package eu.exeris.kernel.core.crypto.tls;
+
+import jdk.jfr.Category;
+import jdk.jfr.Description;
+import jdk.jfr.Event;
+import jdk.jfr.Label;
+import jdk.jfr.Name;
+import jdk.jfr.StackTrace;
+
+/**
+ * JFR event emitted at the start and successful completion of a TLS handshake
+ * performed by {@link OffHeapTlsEngine}.
+ *
+ * <h2>JFR-First Contract</h2>
+ * <p>Zero overhead when JFR is not recording ({@link #isEnabled()} guard prevents
+ * allocation of the event object). Emitted exactly twice per session:
+ * once at handshake start ({@code durationNanos == 0}) and once at completion
+ * ({@code durationNanos} holds the wall-clock duration).
+ *
+ * <h2>Cardinality</h2>
+ * <p>One event pair per TLS session — never emitted on the cipher hot path.
+ *
+ * @since 0.5.0
+ */
+@Name("eu.exeris.kernel.tls.Handshake")
+@Label("TLS Handshake")
+@Description("Emitted at TLS handshake start and completion by OffHeapTlsEngine")
+@Category({"Exeris Kernel", "TLS"})
+@StackTrace(false)
+final class TlsHandshakeEvent extends Event {
+
+    @Label("SSL Pointer")
+    /* default */ long sslPtr;
+
+    @Label("Mode")
+    /* default */ String mode; // "SERVER" or "CLIENT"
+
+    @Label("Protocol")
+    /* default */ String protocol; // e.g. "TLSv1.3"
+
+    @Label("Cipher")
+    /* default */ String cipher; // e.g. "TLS_AES_256_GCM_SHA384"
+
+    @Label("Negotiated ALPN")
+    /* default */ String negotiatedAlpn; // e.g. "h2", "" if none
+
+    @Label("Duration Nanos")
+    /* default */ long durationNanos;
+
+    /**
+     * Emits a handshake-start event.
+     *
+     * @param sslPtr raw {@code SSL*} address
+     * @param server {@code true} for server mode, {@code false} for client
+     */
+    /* default */ static void emitStart(long sslPtr, boolean server) {
+        TlsHandshakeEvent event = new TlsHandshakeEvent();
+        if (event.isEnabled()) {
+            event.sslPtr        = sslPtr;
+            event.mode          = server ? "SERVER" : "CLIENT";
+            event.protocol      = "";
+            event.cipher        = "";
+            event.negotiatedAlpn = "";
+            event.durationNanos = 0L;
+            event.commit();
+        }
+    }
+
+    /**
+     * Emits a handshake-completion event.
+     *
+     * @param sslPtr          raw {@code SSL*} address
+     * @param server          {@code true} for server mode
+     * @param negotiatedAlpn  ALPN protocol negotiated (empty string if none)
+     * @param cipherName      TLS cipher suite name from {@code SSL_CIPHER_get_name}
+     *                        (empty string if unavailable)
+     * @param durationNanos   wall-clock duration of the handshake in nanoseconds
+     */
+    /* default */ static void emitComplete(long sslPtr, boolean server,
+                                           String negotiatedAlpn, String cipherName,
+                                           long durationNanos) {
+        TlsHandshakeEvent event = new TlsHandshakeEvent();
+        if (event.isEnabled()) {
+            event.sslPtr         = sslPtr;
+            event.mode           = server ? "SERVER" : "CLIENT";
+            event.protocol       = "TLSv1.3";
+            event.cipher         = cipherName != null ? cipherName : "";
+            event.negotiatedAlpn = negotiatedAlpn != null ? negotiatedAlpn : "";
+            event.durationNanos  = durationNanos;
+            event.commit();
+        }
+    }
+}
