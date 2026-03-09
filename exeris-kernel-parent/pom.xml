@@ -25,9 +25,9 @@
 
         <!-- Benchmark parameters — all overridable on CLI with -D -->
         <benchmark.includes>.*</benchmark.includes>
-        <benchmark.forks>1</benchmark.forks>
-        <benchmark.warmup>3</benchmark.warmup>
-        <benchmark.iterations>5</benchmark.iterations>
+        <benchmark.forks>3</benchmark.forks>
+        <benchmark.warmup>5</benchmark.warmup>
+        <benchmark.iterations>10</benchmark.iterations>
         <benchmark.output>${project.build.directory}/jmh-results.json</benchmark.output>
         <!-- Default: benchmarks are skipped. Modules that contain @Benchmark classes
              must override this to false in their own pom.xml <properties>. -->
@@ -49,9 +49,9 @@
            mvn verify -P benchmarks -pl exeris-kernel-core "-Dbenchmark.includes=emitMemory"
 
          Tuning:
-           -Dbenchmark.forks=2       JVM forks per benchmark (default: 1)
-           -Dbenchmark.warmup=5      warmup iterations       (default: 3)
-           -Dbenchmark.iterations=10 measurement iterations  (default: 5)
+           -Dbenchmark.forks=2       JVM forks per benchmark (default: 3)
+           -Dbenchmark.warmup=3      warmup iterations       (default: 5)
+           -Dbenchmark.iterations=5  measurement iterations  (default: 10)
 
          CI note:
            NOT bound to the default lifecycle — only runs with explicit -P benchmarks.
