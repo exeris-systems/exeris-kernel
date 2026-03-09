@@ -176,11 +176,11 @@ final class CommunityMemoryAllocator implements MemoryAllocator {
     }
 
     private void trackAllocation(long bytes) {
-        allocationCount.incrementAndGet();
+        long count = allocationCount.incrementAndGet();
         long current = allocatedBytes.addAndGet(bytes);
         peakAllocated.getAndAccumulate(current, Math::max);
         if (jfrEnabled) {
-            CommunityAllocationEvent.emit(bytes, allocationCount.get());
+            CommunityAllocationEvent.emit(bytes, count);
         }
     }
 

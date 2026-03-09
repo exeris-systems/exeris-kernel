@@ -164,8 +164,11 @@ public abstract class AbstractLeakDetectionSampledTck {
         void retainAndCloseDoesNotLeak() {
             LoanedBuffer buf = allocator.allocate(AllocationHint.MICRO);
             buf.retain();
-            buf.close();
-            buf.close();
+            try {
+                buf.close();
+            } finally {
+                buf.close();
+            }
 
             for (int i = 0; i < 3; i++) {
                 System.gc();

@@ -28,8 +28,8 @@ import org.openjdk.jmh.infra.Blackhole;
  *       no GC guarantee, establishes the floor for any allocator comparison.</li>
  *   <li><b>{@code acquireAndReleaseSmallBuffer}</b> (inherited) — {@link AllocationHint#MICRO}
  *       RAII loop through the SUT allocator (the allocator under test).</li>
-  *   <li><b>{@code communityAllocatorBaseline}</b> — {@link AllocationHint#SMALL} (4 096 bytes)
- *       RAII loop through a dedicated Community allocator instance. Isolates the cost of the
+ *   <li><b>{@code communityAllocatorBaseline}</b> — {@link AllocationHint#SMALL} (4 096 bytes)
+ *       RAII loop through a dedicated Community allocator instance.
  *       Community {@code Arena.ofShared()} path at the next slab tier above MICRO.</li>
  * </ol>
  *
