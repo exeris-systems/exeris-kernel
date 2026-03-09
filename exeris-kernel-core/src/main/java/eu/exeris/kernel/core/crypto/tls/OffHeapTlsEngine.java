@@ -563,7 +563,7 @@ public final class OffHeapTlsEngine implements TlsEngine {
     /**
      * Maps an {@code SSL_get_error} result code to a {@link TlsStatus}.
      *
-     * <p>Only the three "retry" codes ({@code SSL_ERROR_WANT_READ},
+     * <p>Only the two "retry" codes ({@code SSL_ERROR_WANT_READ},
      * {@code SSL_ERROR_WANT_WRITE}) are mapped to non-error statuses.
      * All other codes are treated as requiring a handshake retry or are considered
      * transient during the handshake phase and return {@link TlsStatus#NEED_HANDSHAKE}.
