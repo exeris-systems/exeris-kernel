@@ -205,13 +205,26 @@ public final class TransactionOrchestrator implements TransactionalExecutor {
         StorageContext ctx = resolveStorageContext();
         long startNs = System.nanoTime();
         ConnectionAcquireEvent acquireEvt = ConnectionAcquireEvent.beginAcquire();
-        try (PersistenceConnection conn = engine.openConnection(ctx)) {
+
+        String providerId   = "unknown";
+        String isolationKey = ctx.isolationKey().orElse("shared");
+        PersistenceConnection conn = null;
+        try { //NOPMD UseTryWithResources
             PersistenceEngineCapabilities caps = engine.capabilities();
-            ConnectionAcquireEvent.endAcquire(acquireEvt,
-                    caps != null ? caps.providerId() : "unknown",
-                    ctx.isolationKey().orElse("shared"),
-                    true, startNs);
+            if (caps != null) {
+                providerId = caps.providerId();
+            }
+            conn = engine.openConnection(ctx);
             return query.apply(conn);
+        } finally {
+            ConnectionAcquireEvent.endAcquire(acquireEvt, providerId, isolationKey, false, startNs);
+            if (conn != null) {
+                try {
+                    conn.close();
+                } catch (RuntimeException _) {
+                    // connection-close failures must not shadow the query result or original exception
+                }
+            }
         }
     }
 
@@ -249,7 +262,7 @@ public final class TransactionOrchestrator implements TransactionalExecutor {
         }
 
         long durationNs = System.nanoTime() - startNs;
-        TransactionLifecycleEvent.recordCommit(attempt, durationNs);
+        TransactionLifecycleEvent.recordWorkComplete(attempt, durationNs);
         return null;
     }
 

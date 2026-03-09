@@ -25,9 +25,9 @@
 
         <!-- Benchmark parameters — all overridable on CLI with -D -->
         <benchmark.includes>.*</benchmark.includes>
-        <benchmark.forks>1</benchmark.forks>
-        <benchmark.warmup>3</benchmark.warmup>
-        <benchmark.iterations>5</benchmark.iterations>
+        <benchmark.forks>3</benchmark.forks>
+        <benchmark.warmup>5</benchmark.warmup>
+        <benchmark.iterations>10</benchmark.iterations>
         <benchmark.output>${project.build.directory}/jmh-results.json</benchmark.output>
         <!-- Default: benchmarks are skipped. Modules that contain @Benchmark classes
              must override this to false in their own pom.xml <properties>. -->

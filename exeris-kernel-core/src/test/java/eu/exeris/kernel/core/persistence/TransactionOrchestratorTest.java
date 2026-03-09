@@ -173,6 +173,26 @@ class TransactionOrchestratorTest {
             new TransactionOrchestrator(engine).execute(ignored -> { /* empty — tests connection close */ });
             assertThat(engine.lastConnection.isOpen()).isFalse();
         }
+
+        @Test
+        @DisplayName("execute() work without beginTransaction() completes without throwing")
+        void workWithoutTransactionCompletes() {
+            AtomicBoolean ran = new AtomicBoolean(false);
+            new TransactionOrchestrator(engine).execute(ignored -> ran.set(true));
+            assertThat(ran.get()).isTrue();
+            assertThat(engine.lastConnection.inTransaction).isFalse();
+        }
+
+        @Test
+        @DisplayName("execute() throws 2D000 when work leaves an open transaction (no commit/rollback)")
+        void danglingTransactionThrows2D000() {
+            TransactionOrchestrator tx = new TransactionOrchestrator(engine);
+
+            assertThatThrownBy(() -> tx.execute(PersistenceConnection::beginTransaction))
+                    .isInstanceOf(PersistenceProviderException.class)
+                    .satisfies(ex -> assertThat(((PersistenceProviderException) ex).rawArgs()[0])
+                            .isEqualTo("2D000"));
+        }
     }
 
     // =========================================================================
@@ -318,6 +338,19 @@ class TransactionOrchestratorTest {
         }
 
         @Test
+        @DisplayName("query() closes connection when work lambda throws")
+        void connectionClosedWhenLambdaThrows() {
+            StubConnection conn = new StubConnection();
+            StubEngine failEngine = engineReturning(conn);
+            TransactionOrchestrator tx = new TransactionOrchestrator(failEngine);
+
+            assertThatThrownBy(() -> tx.query(ignored -> { throw new IllegalStateException("boom"); }))
+                    .isInstanceOf(IllegalStateException.class);
+
+            assertThat(conn.isOpen()).isFalse();
+        }
+
+        @Test
         @DisplayName("query() propagates PersistenceProviderException from work lambda")
         void propagatesException() {
             StubConnection conn = new StubConnection();
@@ -326,6 +359,21 @@ class TransactionOrchestratorTest {
             TransactionOrchestrator tx = new TransactionOrchestrator(failEngine);
 
             assertThatThrownBy(() -> tx.query(c -> c.executeQuery("SELECT 1")))
+                    .isInstanceOf(PersistenceProviderException.class);
+        }
+
+        @Test
+        @DisplayName("query() propagates exception from openConnection() without leaving a dangling acquire window")
+        void openConnectionFailurePropagates() {
+            StubEngine throwingEngine = new StubEngine() {
+                @Override
+                StubConnection supplyConnection() {
+                    throw PersistenceProviderException.queryFailed("08001", "connection refused", null);
+                }
+            };
+            TransactionOrchestrator tx = new TransactionOrchestrator(throwingEngine);
+
+            assertThatThrownBy(() -> tx.query(ignored -> "should not reach"))
                     .isInstanceOf(PersistenceProviderException.class);
         }
 

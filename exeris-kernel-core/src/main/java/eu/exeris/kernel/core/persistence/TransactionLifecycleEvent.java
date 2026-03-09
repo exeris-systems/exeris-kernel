@@ -38,7 +38,7 @@ import jdk.jfr.StackTrace;
 final class TransactionLifecycleEvent extends Event {
 
     @Label("Outcome")
-    @Description("COMMIT, ROLLBACK, or RETRY_EXHAUSTED")
+    @Description("COMMIT, WORK_COMPLETE, ROLLBACK, or RETRY_EXHAUSTED")
     /* default */ String outcome;
 
     @Label("Attempt Number")
@@ -63,6 +63,32 @@ final class TransactionLifecycleEvent extends Event {
         }
         evt.begin();
         evt.outcome        = "COMMIT";
+        evt.attemptNumber  = attempt;
+        evt.retryExhausted = false;
+        evt.durationNs     = durationNs;
+        evt.commit();
+    }
+
+    /**
+     * Emitted by {@link TransactionOrchestrator#execute} (manual-transaction mode) when
+     * the work lambda returns without leaving an open transaction.
+     *
+     * <p>Core cannot claim a {@code COMMIT} here because the work lambda owns
+     * {@code beginTransaction()} and {@code commit()} — Core only enforces the
+     * "no dangling transaction" post-condition. The outcome is recorded as
+     * {@code WORK_COMPLETE} to avoid conflating manual-mode success with a
+     * managed {@code COMMIT}.
+     */
+    /* default */ static void recordWorkComplete(int attempt, long durationNs) {
+        if (!FlightRecorder.isInitialized()) {
+            return;
+        }
+        TransactionLifecycleEvent evt = new TransactionLifecycleEvent();
+        if (!evt.isEnabled()) {
+            return;
+        }
+        evt.begin();
+        evt.outcome        = "WORK_COMPLETE";
         evt.attemptNumber  = attempt;
         evt.retryExhausted = false;
         evt.durationNs     = durationNs;
