@@ -14,6 +14,7 @@ import eu.exeris.kernel.spi.persistence.PersistenceConnection;
 import eu.exeris.kernel.spi.persistence.PersistenceEngine;
 import eu.exeris.kernel.spi.persistence.TransactionIsolation;
 import eu.exeris.kernel.spi.persistence.TransactionalExecutor;
+import eu.exeris.kernel.spi.security.ImmutableStorageContext;
 import eu.exeris.kernel.spi.security.StorageContext;
 
 import java.util.Objects;
@@ -72,24 +73,47 @@ public final class TransactionOrchestrator implements TransactionalExecutor {
     // Instance fields
     // =========================================================================
 
-    private final PersistenceEngine    engine;
+    private final PersistenceEngine      engine;
     private final TransactionRetryPolicy retryPolicy;
+    private final StorageContext         systemContext;
 
     // =========================================================================
     // Constructors
     // =========================================================================
 
     /**
+     * Creates an orchestrator with an explicit system-scope fallback context.
+     *
+     * <p>Use this constructor in bootstrap or maintenance tasks that run outside
+     * a tenant request scope and require a specific non-default {@link StorageContext}.
+     *
+     * @param engine        persistence engine; must not be {@code null}
+     * @param retryPolicy   retry policy; must not be {@code null}
+     * @param systemContext fallback context when {@link KernelProviders#STORAGE_CONTEXT}
+     *                      is unbound; must not be {@code null}
+     */
+    public TransactionOrchestrator(PersistenceEngine engine,
+                                    TransactionRetryPolicy retryPolicy,
+                                    StorageContext systemContext) {
+        this.engine        = Objects.requireNonNull(engine,        "engine must not be null");
+        this.retryPolicy   = Objects.requireNonNull(retryPolicy,   "retryPolicy must not be null");
+        this.systemContext = Objects.requireNonNull(systemContext,  "systemContext must not be null");
+    }
+
+    /**
      * Creates an orchestrator bound to the given engine and retry policy.
+     *
+     * <p>Falls back to {@link ImmutableStorageContext#GLOBAL} (system scope, no tenant
+     * isolation) when {@link KernelProviders#STORAGE_CONTEXT} is unbound. Use the
+     * three-argument constructor if a different fallback is required.
      */
     public TransactionOrchestrator(PersistenceEngine engine, TransactionRetryPolicy retryPolicy) {
-        this.engine      = Objects.requireNonNull(engine,      "engine must not be null");
-        this.retryPolicy = Objects.requireNonNull(retryPolicy, "retryPolicy must not be null");
+        this(engine, retryPolicy, ImmutableStorageContext.GLOBAL);
     }
 
     /** Convenience constructor with {@link TransactionRetryPolicy#NONE}. */
     public TransactionOrchestrator(PersistenceEngine engine) {
-        this(engine, TransactionRetryPolicy.NONE);
+        this(engine, TransactionRetryPolicy.NONE, ImmutableStorageContext.GLOBAL);
     }
 
     // =========================================================================
@@ -244,8 +268,10 @@ public final class TransactionOrchestrator implements TransactionalExecutor {
         return null;
     }
 
-    private static StorageContext resolveStorageContext() {
-        return KernelProviders.storageContextOrSystem();
+    private StorageContext resolveStorageContext() {
+        return KernelProviders.STORAGE_CONTEXT.isBound()
+                ? KernelProviders.STORAGE_CONTEXT.get()
+                : systemContext;
     }
 
     private static void safeRollback(PersistenceConnection conn, int attempt) {

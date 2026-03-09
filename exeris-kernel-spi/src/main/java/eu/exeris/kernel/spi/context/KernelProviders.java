@@ -600,13 +600,22 @@ public final class KernelProviders {
 
     /**
      * Returns the active {@link StorageContext} from the current request scope,
-     * or the system-scope global context if the slot is not bound.
+     * or the system-scope global context ({@link ImmutableStorageContext#GLOBAL}) if
+     * the slot is not bound.
      *
-     * <p>Use this accessor in subsystems (e.g. Persistence) that must function
-     * correctly in both request-scoped and bootstrap/system contexts without
-     * coupling to any concrete {@code StorageContext} implementation.
+     * <p>This method is intended <strong>exclusively</strong> for system-level and
+     * bootstrap tasks (e.g., migrations, internal maintenance jobs) that legitimately
+     * run outside a tenant request scope. It must <strong>never</strong> be used in
+     * a request-handling path — doing so will silently disable tenant isolation and
+     * bypass Row-Level Security, potentially leaking cross-tenant data.
      *
-     * @return bound storage context, or the system-scope fallback; never {@code null}
+     * <p>Request-scoped code must use {@link #storageContext()}, which throws
+     * {@link eu.exeris.kernel.spi.exceptions.security.StorageContextMissingException}
+     * if the slot is unbound, making misconfiguration explicit and fail-fast.
+     *
+     * @return bound storage context, or {@link ImmutableStorageContext#GLOBAL}; never {@code null}
+     * @apiNote Bootstrap / system tasks only. Do NOT call from request handlers or
+     *          {@link eu.exeris.kernel.spi.persistence.ConnectionInterceptor} implementations.
      */
     public static StorageContext storageContextOrSystem() {
         return STORAGE_CONTEXT.orElse(ImmutableStorageContext.GLOBAL);
