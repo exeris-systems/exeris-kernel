@@ -11,6 +11,7 @@ package eu.exeris.kernel.core.crypto.tls;
 import jdk.jfr.Category;
 import jdk.jfr.Description;
 import jdk.jfr.Event;
+import jdk.jfr.FlightRecorder;
 import jdk.jfr.Label;
 import jdk.jfr.Name;
 import jdk.jfr.StackTrace;
@@ -42,6 +43,9 @@ final class TlsEngineCloseEvent extends Event {
     /* default */ String finalPhase;
 
     /* default */ static void emit(long sslPtr, boolean graceful, String finalPhase) {
+        if (!FlightRecorder.isInitialized()) {
+            return;
+        }
         TlsEngineCloseEvent event = new TlsEngineCloseEvent();
         if (event.isEnabled()) {
             event.sslPtr   = sslPtr;

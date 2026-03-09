@@ -27,7 +27,6 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
-import java.lang.foreign.ValueLayout;
 import java.net.InetSocketAddress;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
@@ -362,12 +361,11 @@ class OffHeapTlsEngineLoopbackIT {
                                 .as("Decrypted byte count must equal original payload")
                                 .isEqualTo(payloadSize);
 
-                        int limit = (int) decrypted.size();
-                        for (int i = 0; i < limit; i++) {
-                            assertThat(decrypted.segment().get(ValueLayout.JAVA_BYTE, i))
-                                    .as("Decrypted byte at index " + i + " must be 0xAB")
-                                    .isEqualTo((byte) 0xAB);
-                        }
+                        MemorySegment actual   = decrypted.segment().asSlice(0, decrypted.size());
+                        MemorySegment pattern  = Arena.ofAuto().allocate(decrypted.size()).fill((byte) 0xAB);
+                        assertThat(actual.mismatch(pattern))
+                                .as("All decrypted bytes must equal 0xAB — mismatch offset (−1 = none)")
+                                .isEqualTo(-1L);
                     });
                 }
             }

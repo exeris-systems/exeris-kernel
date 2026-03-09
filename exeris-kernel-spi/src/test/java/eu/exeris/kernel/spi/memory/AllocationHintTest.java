@@ -88,7 +88,7 @@ class AllocationHintTest {
     }
 
     @Test
-    @DisplayName("MICRO < SMALL < MEDIUM < STREAMING_CHUNK < NETWORK_FRAME < JUMBO")
+    @DisplayName("MICRO < SMALL < MEDIUM < STREAMING_CHUNK < NETWORK_FRAME < JUMBO; SESSION == SMALL (special-purpose, not in ordered chain)")
     void sizesAreStrictlyIncreasing() {
         assertThat(AllocationHint.MICRO.sizeBytes())
                 .isLessThan(AllocationHint.SMALL.sizeBytes());
@@ -100,8 +100,9 @@ class AllocationHintTest {
                 .isLessThan(AllocationHint.NETWORK_FRAME.sizeBytes());
         assertThat(AllocationHint.NETWORK_FRAME.sizeBytes())
                 .isLessThan(AllocationHint.JUMBO.sizeBytes());
-        assertThat(AllocationHint.JUMBO.sizeBytes())
-                .isGreaterThan(AllocationHint.SESSION.sizeBytes());
+        assertThat(AllocationHint.SESSION.sizeBytes())
+                .as("SESSION is a special-purpose hint sized equal to SMALL — not part of the ordered chain")
+                .isEqualTo(AllocationHint.SMALL.sizeBytes());
     }
 
     // -----------------------------------------------------------------------

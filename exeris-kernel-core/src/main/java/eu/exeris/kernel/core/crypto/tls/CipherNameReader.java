@@ -94,9 +94,6 @@ final class CipherNameReader {
                 break;
             }
         }
-        if (length == 0) {
-            return UNKNOWN;
-        }
         byte[] bytes = raw.asSlice(0, length).toArray(ValueLayout.JAVA_BYTE);
         return new String(bytes, StandardCharsets.UTF_8);
     }

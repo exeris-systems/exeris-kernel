@@ -69,7 +69,7 @@ class NativeCipherContextTest {
      * the null-pointer guard in {@link NativeCipherContext}.
      */
     @SuppressWarnings("unused") // ABI stub: parameter matches OpenSSL SSL_new(SSL_CTX*) signature
-    public static long dummySslNew(long ignoredCtx) {
+    public static long dummySslNew(@SuppressWarnings("unused") long ignoredCtx) {
         ALLOCATIONS.incrementAndGet();
         return 0xDEADBEEFL; // Fake C pointer — distinguishable from NULL_PTR=0
     }
@@ -81,7 +81,7 @@ class NativeCipherContextTest {
      * Must be called exactly once per {@link NativeCipherContext} lifetime.
      */
     @SuppressWarnings("unused") // ABI stub: parameter matches OpenSSL SSL_free(SSL*) signature
-    public static void dummySslFree(long ignoredPtr) {
+    public static void dummySslFree(@SuppressWarnings("unused") long ignoredPtr) {
         FREES.incrementAndGet();
     }
 
@@ -305,7 +305,7 @@ class NativeCipherContextTest {
     // =========================================================================
 
     @SuppressWarnings("unused")
-    public static long nullSslNew(long ignoredCtx) {
+    public static long nullSslNew(@SuppressWarnings("unused") long ignoredCtx) {
         return 0L; // NULL — triggers guard in NativeCipherContext constructor
     }
 }

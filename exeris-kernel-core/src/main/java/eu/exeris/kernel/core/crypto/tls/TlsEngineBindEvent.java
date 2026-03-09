@@ -11,6 +11,7 @@ package eu.exeris.kernel.core.crypto.tls;
 import jdk.jfr.Category;
 import jdk.jfr.Description;
 import jdk.jfr.Event;
+import jdk.jfr.FlightRecorder;
 import jdk.jfr.Label;
 import jdk.jfr.Name;
 import jdk.jfr.StackTrace;
@@ -55,6 +56,9 @@ final class TlsEngineBindEvent extends Event {
      * @param server         {@code true} for server mode, {@code false} for client
      */
     /* default */ static void emit(long sslPtr, int fileDescriptor, boolean server) {
+        if (!FlightRecorder.isInitialized()) {
+            return;
+        }
         TlsEngineBindEvent event = new TlsEngineBindEvent();
         if (event.isEnabled()) {
             event.sslPtr          = sslPtr;

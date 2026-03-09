@@ -81,9 +81,9 @@ class OffHeapTlsEngineTest {
     @SuppressWarnings("unused")
     public static int  stubSslGetShutdown(long ssl)                 { return 0; }
     @SuppressWarnings("unused")
-    public static int  stubSslGetErrorWantRead(long ignoredSsl, int ret)   { return 2; }
+    public static int  stubSslGetErrorWantRead(@SuppressWarnings("unused") long ignoredSsl, int ret)   { return 2; }
     @SuppressWarnings("unused")
-    public static void stubAlpnSelected(long ssl, long ignoredD, long l)   { /* test stub — no ALPN */ }
+    public static void stubAlpnSelected(long ssl, @SuppressWarnings("unused") long ignoredD, @SuppressWarnings("unused") long l)   { /* test stub — no ALPN */ }
 
     // =========================================================================
     // Handle factory

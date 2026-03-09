@@ -11,6 +11,7 @@ package eu.exeris.kernel.core.crypto.tls;
 import jdk.jfr.Category;
 import jdk.jfr.Description;
 import jdk.jfr.Event;
+import jdk.jfr.FlightRecorder;
 import jdk.jfr.Label;
 import jdk.jfr.Name;
 import jdk.jfr.StackTrace;
@@ -62,6 +63,9 @@ final class TlsHandshakeEvent extends Event {
      * @param server {@code true} for server mode, {@code false} for client
      */
     /* default */ static void emitStart(long sslPtr, boolean server) {
+        if (!FlightRecorder.isInitialized()) {
+            return;
+        }
         TlsHandshakeEvent event = new TlsHandshakeEvent();
         if (event.isEnabled()) {
             event.sslPtr        = sslPtr;
@@ -87,6 +91,9 @@ final class TlsHandshakeEvent extends Event {
     /* default */ static void emitComplete(long sslPtr, boolean server,
                                            String negotiatedAlpn, String cipherName,
                                            long durationNanos) {
+        if (!FlightRecorder.isInitialized()) {
+            return;
+        }
         TlsHandshakeEvent event = new TlsHandshakeEvent();
         if (event.isEnabled()) {
             event.sslPtr         = sslPtr;

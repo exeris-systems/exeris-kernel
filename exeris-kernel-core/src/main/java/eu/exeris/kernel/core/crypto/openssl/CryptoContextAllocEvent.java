@@ -11,6 +11,7 @@ package eu.exeris.kernel.core.crypto.openssl;
 import jdk.jfr.Category;
 import jdk.jfr.Description;
 import jdk.jfr.Event;
+import jdk.jfr.FlightRecorder;
 import jdk.jfr.Label;
 import jdk.jfr.Name;
 import jdk.jfr.StackTrace;
@@ -59,6 +60,9 @@ public final class CryptoContextAllocEvent extends Event {
      * @param sizeBytes    estimated size of the native SSL session structure (informational)
      */
     public static void emit(long sslPtr, long sslCtxPtr, String providerName, long sizeBytes) {
+        if (!FlightRecorder.isInitialized()) {
+            return;
+        }
         CryptoContextAllocEvent event = new CryptoContextAllocEvent();
         if (event.isEnabled()) {
             event.sslPtr       = sslPtr;

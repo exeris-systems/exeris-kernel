@@ -382,7 +382,7 @@ class AlpnReaderTest {
         }
 
         @Test
-        @DisplayName("'h2x' — same length as 'h2' but different bytes → slow path, correct value")
+        @DisplayName("'h3' — same length as 'h2' but different bytes → slow path, correct value")
         void h2LengthButDifferentBytes() {
             long addr = allocAlpnString("h3"); // length 2, same as h2 — but bytes differ
             MemoryAllocator allocator = new PrefilledAllocator(addr, 2);
