@@ -80,7 +80,7 @@ public final class InterceptorRegistry {
         if (sealed == null) {
             sealed = List.copyOf(mutable);
         }
-        return List.copyOf(sealed);
+        return sealed;
     }
 
     /** Returns the number of registered interceptors. */

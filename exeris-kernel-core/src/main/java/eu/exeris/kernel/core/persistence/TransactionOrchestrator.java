@@ -12,7 +12,6 @@ import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.exceptions.persistence.PersistenceProviderException;
 import eu.exeris.kernel.spi.persistence.PersistenceConnection;
 import eu.exeris.kernel.spi.persistence.PersistenceEngine;
-import eu.exeris.kernel.spi.persistence.PersistenceEngineCapabilities;
 import eu.exeris.kernel.spi.persistence.TransactionIsolation;
 import eu.exeris.kernel.spi.persistence.TransactionalExecutor;
 import eu.exeris.kernel.spi.security.ImmutableStorageContext;
@@ -203,28 +202,8 @@ public final class TransactionOrchestrator implements TransactionalExecutor {
     public <T> T query(Function<PersistenceConnection, T> query) {
         Objects.requireNonNull(query, "query must not be null");
         StorageContext ctx = resolveStorageContext();
-        long startNs = System.nanoTime();
-        ConnectionAcquireEvent acquireEvt = ConnectionAcquireEvent.beginAcquire();
-
-        String providerId   = "unknown";
-        String isolationKey = ctx.isolationKey().orElse("shared");
-        PersistenceConnection conn = null;
-        try { //NOPMD UseTryWithResources
-            PersistenceEngineCapabilities caps = engine.capabilities();
-            if (caps != null) {
-                providerId = caps.providerId();
-            }
-            conn = engine.openConnection(ctx);
+        try (PersistenceConnection conn = engine.openConnection(ctx)) {
             return query.apply(conn);
-        } finally {
-            ConnectionAcquireEvent.endAcquire(acquireEvt, providerId, isolationKey, false, startNs);
-            if (conn != null) {
-                try {
-                    conn.close();
-                } catch (RuntimeException _) {
-                    // connection-close failures must not shadow the query result or original exception
-                }
-            }
         }
     }
 

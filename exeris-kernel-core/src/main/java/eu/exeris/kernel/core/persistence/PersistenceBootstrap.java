@@ -26,9 +26,9 @@ import java.util.ServiceLoader;
  * <p>This class is the <b>only</b> place in the kernel that calls
  * {@link ServiceLoader#load(Class)} for {@link PersistenceProvider}.
  * It selects the highest-priority provider, creates the engine, registers
- * pre-built interceptors, emits a JFR bootstrap event, and binds the result
- * into {@link eu.exeris.kernel.spi.context.KernelProviders#PERSISTENCE_ENGINE} so every Virtual Thread
- * inherits it via {@code ScopedValue}.
+ * pre-built interceptors, and emits JFR bootstrap events.
+ * The resulting {@link PersistenceEngine} is returned to the caller ready
+ * for {@link eu.exeris.kernel.spi.context.KernelProviders#PERSISTENCE_ENGINE} binding.
  *
  * <h2>Priority Rule</h2>
  * <ul>
