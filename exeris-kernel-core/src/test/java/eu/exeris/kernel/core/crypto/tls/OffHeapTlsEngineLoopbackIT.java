@@ -126,15 +126,41 @@ class OffHeapTlsEngineLoopbackIT {
     // =========================================================================
 
     /**
+     * Resolved absolute path to the {@code openssl} binary, or {@code null} if not found.
+     * Prefers {@code /usr/bin/openssl} (standard Linux location), then searches {@code PATH}.
+     */
+    private static final String OPENSSL_CMD = resolveOpenSslCmd();
+
+    private static String resolveOpenSslCmd() {
+        java.nio.file.Path fixed = java.nio.file.Paths.get("/usr/bin/openssl");
+        if (java.nio.file.Files.isExecutable(fixed)) {
+            return fixed.toString();
+        }
+        String path = System.getenv("PATH");
+        if (path != null) {
+            for (String dir : path.split(java.io.File.pathSeparator)) {
+                java.nio.file.Path candidate = java.nio.file.Paths.get(dir, "openssl");
+                if (java.nio.file.Files.isExecutable(candidate)) {
+                    return candidate.toString();
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
      * Generates a self-signed certificate and private key using the {@code openssl} CLI.
      * Returns {@code null} if the {@code openssl} binary is not available.
      */
     private static CertPair generateSelfSignedCert(Path dir) throws Exception {
+        if (OPENSSL_CMD == null) {
+            return null;
+        }
         Path certFile = dir.resolve("server.crt");
         Path keyFile  = dir.resolve("server.key");
 
         ProcessBuilder pb = new ProcessBuilder(
-                "openssl", "req", "-x509", "-newkey", "rsa:2048",
+                OPENSSL_CMD, "req", "-x509", "-newkey", "rsa:2048",
                 "-keyout", keyFile.toString(),
                 "-out", certFile.toString(),
                 "-days", "1",

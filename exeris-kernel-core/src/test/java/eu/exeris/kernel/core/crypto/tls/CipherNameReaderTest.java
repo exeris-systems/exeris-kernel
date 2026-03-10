@@ -138,18 +138,26 @@ class CipherNameReaderTest {
     // =========================================================================
 
     @SuppressWarnings("unused")
-    private static long returnCipherPtr0(long sslPtr)     { return 0L; }
+    private static long returnCipherPtr0(long sslPtr) {
+        assert sslPtr >= 0 : "returnCipherPtr0:sslPtr";
+        return 0L;
+    }
 
     @SuppressWarnings("unused")
-    private static long returnNamePtr0(long cipherPtr)    { return 0L; }
+    private static long returnNamePtr0(long cipherPtr) {
+        assert cipherPtr >= 0 : "returnNamePtr0:cipherPtr";
+        return 0L;
+    }
 
     @SuppressWarnings("unused")
     private static long throwingGetCipher(long sslPtr) {
+        assert sslPtr >= 0 : "throwingGetCipher:sslPtr";
         throw new RuntimeException("simulated FFM failure in SSL_get_current_cipher");
     }
 
     @SuppressWarnings("unused")
     private static long throwingGetName(long cipherPtr) {
+        assert cipherPtr >= 0 : "throwingGetName:cipherPtr";
         throw new RuntimeException("simulated FFM failure in SSL_CIPHER_get_name");
     }
 

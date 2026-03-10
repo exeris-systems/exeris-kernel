@@ -57,7 +57,10 @@ class OffHeapTlsEngineTest {
     private static final long FAKE_SSL_PTR = 0xCAFEBABEL;
 
     @SuppressWarnings("unused")
-    public static long stubSslNew(long ctx)                         { return FAKE_SSL_PTR; }
+    public static long stubSslNew(long ctx)                         {
+        assert ctx >= 0 : "stubSslNew:ctx";
+        return FAKE_SSL_PTR;
+    }
     @SuppressWarnings("unused")
     public static void stubSslFree(long ssl)                        {
         assert ssl >= 0 : "stubSslFree";
@@ -488,8 +491,8 @@ class OffHeapTlsEngineTest {
                 engine.initiateShutdown(outbound);
                 engine.close();
                 assertThat(engine.phase())
-                        .as("After close(), engine must be in a terminal phase")
-                        .isIn(TlsPhase.CLOSED, TlsPhase.SHUTDOWN_COMPLETE, TlsPhase.ERROR);
+                        .as("After graceful shutdown + close(), engine must be in CLOSED")
+                        .isEqualTo(TlsPhase.CLOSED);
             });
         }
     }

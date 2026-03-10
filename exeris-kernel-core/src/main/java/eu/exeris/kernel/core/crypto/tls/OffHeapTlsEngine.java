@@ -556,15 +556,18 @@ public final class OffHeapTlsEngine implements TlsEngine {
         }
         TlsPhase phaseAtEntry = stateMachine.phase();
 
-        // Force terminal state before releasing SSL*
-        // (prevents any concurrent I/O that somehow holds a retain from re-entering active logic)
-        if (phaseAtEntry != TlsPhase.CLOSED && phaseAtEntry != TlsPhase.ERROR) {
+        // Transition to the appropriate terminal state before releasing SSL*.
+        // SHUTDOWN_COMPLETE → CLOSED (graceful path defined in the transition table).
+        // All other non-terminal phases → ERROR (forced, prevents re-entry).
+        if (phaseAtEntry == TlsPhase.SHUTDOWN_COMPLETE) {
+            stateMachine.transitionTo(TlsPhase.SHUTDOWN_COMPLETE, TlsPhase.CLOSED);
+        } else if (phaseAtEntry != TlsPhase.CLOSED && phaseAtEntry != TlsPhase.ERROR) {
             stateMachine.forceError();
         }
 
         long ptr = cipherCtx.sslPointer(); // diagnostic only — no retain
-        boolean graceful  = phaseAtEntry == TlsPhase.SHUTDOWN_COMPLETE;
-        TlsPhase finalPhase = stateMachine.phase(); // read after forceError() — reflects actual terminal state
+        boolean graceful    = phaseAtEntry == TlsPhase.SHUTDOWN_COMPLETE;
+        TlsPhase finalPhase = stateMachine.phase(); // read after transition — reflects actual terminal state
 
         cipherCtx.close(); // drops base reference → SSL_free when refCount hits 0
         TlsEngineCloseEvent.emit(ptr, graceful, finalPhase.name());

@@ -169,16 +169,34 @@ class AlpnReaderTest {
     @SuppressWarnings("unused")
     private static void noopAlpn(long sslPtr, long dataPtrAddr, long lenPtrAddr) {
         // no-op — scratch is pre-filled by PrefilledAllocator before AlpnReader reads it
+        assert sslPtr     >= 0 : "noopAlpn:sslPtr";
+        assert dataPtrAddr >= 0 : "noopAlpn:dataPtrAddr";
+        assert lenPtrAddr  >= 0 : "noopAlpn:lenPtrAddr";
     }
 
     @SuppressWarnings("unused")
     private static void throwingAlpn(long sslPtr, long dataPtrAddr, long lenPtrAddr) {
+        assert sslPtr     >= 0 : "throwingAlpn:sslPtr";
+        assert dataPtrAddr >= 0 : "throwingAlpn:dataPtrAddr";
+        assert lenPtrAddr  >= 0 : "throwingAlpn:lenPtrAddr";
         throw new RuntimeException("simulated FFM failure");
     }
 
-    @SuppressWarnings("unused") private static int noop3(long a, long b, int c)  { return 0; }
-    @SuppressWarnings("unused") private static int noop1(long a)                 { return 0; }
-    @SuppressWarnings("unused") private static int noop2(long a, int b)          { return 0; }
+    @SuppressWarnings("unused") private static int noop3(long a, long b, int c) {
+        assert a >= 0 : "noop3:a";
+        assert b >= 0 : "noop3:b";
+        assert c >= 0 : "noop3:c";
+        return 0;
+    }
+    @SuppressWarnings("unused") private static int noop1(long a) {
+        assert a >= 0 : "noop1:a";
+        return 0;
+    }
+    @SuppressWarnings("unused") private static int noop2(long a, int b) {
+        assert a >= 0 : "noop2:a";
+        assert b >= 0 : "noop2:b";
+        return 0;
+    }
 
     private static MethodHandle buildVoidHandle(String name) {
         try {
