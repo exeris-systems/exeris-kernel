@@ -185,8 +185,9 @@ public final class OffHeapTlsEngine implements TlsEngine {
      * Creates a new {@code OffHeapTlsEngine}.
      *
      * <p>The {@code SSL*} handle is allocated immediately via {@code SSL_new(ctxPtr)}.
-     * BIO wiring is the caller's responsibility — call {@link #notifyBound()} after
-     * attaching the appropriate BIO to advance the engine to
+     * The engine is left in {@link TlsPhase#UNINITIALIZED} — BIO wiring is the
+     * caller's responsibility. Call {@link #notifyBound()} after attaching the
+     * appropriate BIO to advance the engine to
      * {@link TlsPhase#HANDSHAKE_IN_PROGRESS}.
      *
      * @param handles    pre-resolved FFM handles from {@link CoreOpenSslLoader#load(java.lang.foreign.Arena)}
@@ -316,8 +317,14 @@ public final class OffHeapTlsEngine implements TlsEngine {
      * @return {@link TlsStatus#FINISHED}
      */
     private TlsStatus completeHandshake(long ptr) {
-        negotiatedAlpn = AlpnReader.read(ptr, handles.ioHandles(),
-                KernelProviders.MEMORY_ALLOCATOR.get());
+        final MemoryAllocator allocator;
+        try {
+            allocator = KernelProviders.MEMORY_ALLOCATOR.get();
+        } catch (IllegalStateException e) {
+            throw new TlsHandshakeException(
+                    "MemoryAllocator ScopedValue is not bound during TLS handshake completion", e);
+        }
+        negotiatedAlpn = AlpnReader.read(ptr, handles.ioHandles(), allocator);
         String cipherName = CipherNameReader.read(ptr, handles.ioHandles());
         stateMachine.transitionTo(TlsPhase.HANDSHAKE_IN_PROGRESS, TlsPhase.HANDSHAKE_COMPLETE);
         stateMachine.transitionTo(TlsPhase.HANDSHAKE_COMPLETE, TlsPhase.ACTIVE);

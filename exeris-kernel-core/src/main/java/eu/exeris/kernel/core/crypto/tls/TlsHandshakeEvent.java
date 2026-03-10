@@ -21,8 +21,11 @@ import jdk.jfr.StackTrace;
  * performed by {@link OffHeapTlsEngine}.
  *
  * <h2>JFR-First Contract</h2>
- * <p>Zero overhead when JFR is not recording ({@link #isEnabled()} guard prevents
- * allocation of the event object). Emitted exactly twice per session:
+ * <p>Zero overhead when JFR is not initialized — the early
+ * {@link FlightRecorder#isInitialized()} guard returns before any allocation.
+ * When Flight Recorder is initialized, a single {@code TlsHandshakeEvent} instance
+ * is allocated; fields are populated and the event is committed only when
+ * {@link #isEnabled()} returns {@code true}. Emitted exactly twice per session:
  * once at handshake start ({@code durationNanos == 0}) and once at completion
  * ({@code durationNanos} holds the wall-clock duration).
  *

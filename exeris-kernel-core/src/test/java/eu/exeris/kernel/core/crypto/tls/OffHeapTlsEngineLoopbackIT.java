@@ -147,7 +147,7 @@ class OffHeapTlsEngineLoopbackIT {
 
     @AfterAll
     static void closeAllocArena() {
-        ALLOC_ARENA.close();
+        ALLOC.close();
     }
 
     // =========================================================================
