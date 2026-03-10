@@ -201,36 +201,46 @@ class OffHeapTlsEngineLoopbackIT {
     // SSL_CTX construction helpers
     // =========================================================================
 
-    private long buildServerCtx(String certPath, String keyPath) {
+    private SslCtxHandle buildServerCtx(String certPath, String keyPath) {
         long methodPtr = handles.ctx().invokeServerMethod();
         long ctxPtr    = handles.ctx().invokeCtxNew(methodPtr);
         assumeTrue(ctxPtr != 0L, "SSL_CTX_new returned NULL — OpenSSL init failed");
 
+        SslCtxHandle ctx = new SslCtxHandle(handles, ctxPtr);
         try (Arena arena = Arena.ofConfined()) { //NOPMD DirectArena — cert path strings only, not session memory
             MemorySegment certSeg = arena.allocateFrom(certPath);
             MemorySegment keySeg  = arena.allocateFrom(keyPath);
 
             int certResult = handles.ctx().invokeCtxUseCertFile(
                     ctxPtr, certSeg.address(), CoreOpenSslLoader.SSL_FILETYPE_PEM);
-            assumeTrue(certResult == 1, "SSL_CTX_use_certificate_file failed (result=" + certResult + ")");
+            if (certResult != 1) {
+                ctx.close();
+                assumeTrue(false, "SSL_CTX_use_certificate_file failed (result=" + certResult + ")");
+            }
 
             int keyResult = handles.ctx().invokeCtxUseKeyFile(
                     ctxPtr, keySeg.address(), CoreOpenSslLoader.SSL_FILETYPE_PEM);
-            assumeTrue(keyResult == 1, "SSL_CTX_use_PrivateKey_file failed (result=" + keyResult + ")");
+            if (keyResult != 1) {
+                ctx.close();
+                assumeTrue(false, "SSL_CTX_use_PrivateKey_file failed (result=" + keyResult + ")");
+            }
 
             int checkResult = handles.ctx().invokeCtxCheckKey(ctxPtr);
-            assumeTrue(checkResult == 1, "SSL_CTX_check_private_key mismatch");
+            if (checkResult != 1) {
+                ctx.close();
+                assumeTrue(false, "SSL_CTX_check_private_key mismatch");
+            }
         }
         handles.ctx().invokeCtxSetVerify(ctxPtr, CoreOpenSslLoader.SSL_VERIFY_NONE);
-        return ctxPtr;
+        return ctx;
     }
 
-    private long buildClientCtx() {
+    private SslCtxHandle buildClientCtx() {
         long methodPtr = handles.ctx().invokeClientMethod();
         long ctxPtr    = handles.ctx().invokeCtxNew(methodPtr);
         assumeTrue(ctxPtr != 0L, "SSL_CTX_new (client) returned NULL");
         handles.ctx().invokeCtxSetVerify(ctxPtr, CoreOpenSslLoader.SSL_VERIFY_NONE);
-        return ctxPtr;
+        return new SslCtxHandle(handles, ctxPtr);
     }
 
     // =========================================================================
@@ -243,16 +253,10 @@ class OffHeapTlsEngineLoopbackIT {
         CertPair cert = generateSelfSignedCert(tempDir);
         assumeTrue(cert != null, "openssl CLI not available — skipping loopback IT");
 
-        long serverCtxPtr = buildServerCtx(cert.certPath(), cert.keyPath());
-        long clientCtxPtr = buildClientCtx();
-
-        try (SslCtxHandle serverCtx = new SslCtxHandle(handles, serverCtxPtr);
-             SslCtxHandle clientCtx = new SslCtxHandle(handles, clientCtxPtr);
+        try (SslCtxHandle serverCtx = buildServerCtx(cert.certPath(), cert.keyPath());
+             SslCtxHandle clientCtx = buildClientCtx();
              ServerSocketChannel serverSock = ServerSocketChannel.open();
              SocketChannel clientSock       = SocketChannel.open()) {
-
-            assertThat(serverCtx.ptr()).isEqualTo(serverCtxPtr); // keep in scope
-            assertThat(clientCtx.ptr()).isEqualTo(clientCtxPtr); // keep in scope
 
             serverSock.configureBlocking(true);
             serverSock.bind(new InetSocketAddress("127.0.0.1", 0));
@@ -268,8 +272,8 @@ class OffHeapTlsEngineLoopbackIT {
                 assumeTrue(serverFd > 0 && clientFd > 0,
                         "Could not extract socket FDs via getFDVal — skipping loopback IT");
 
-                try (OffHeapTlsEngine serverEngine = new OffHeapTlsEngine(handles, serverCtxPtr, true, ALLOC);
-                     OffHeapTlsEngine clientEngine = new OffHeapTlsEngine(handles, clientCtxPtr, false, ALLOC);
+                try (OffHeapTlsEngine serverEngine = new OffHeapTlsEngine(handles, serverCtx.ptr(), true, ALLOC);
+                     OffHeapTlsEngine clientEngine = new OffHeapTlsEngine(handles, clientCtx.ptr(), false, ALLOC);
                      LoanedBuffer serverOut = ALLOC.allocate(AllocationHint.MEDIUM);
                      LoanedBuffer clientOut = ALLOC.allocate(AllocationHint.MEDIUM)) {
 
@@ -306,18 +310,12 @@ class OffHeapTlsEngineLoopbackIT {
         CertPair cert = generateSelfSignedCert(tempDir);
         assumeTrue(cert != null, "openssl CLI not available — skipping loopback IT");
 
-        long serverCtxPtr = buildServerCtx(cert.certPath(), cert.keyPath());
-        long clientCtxPtr = buildClientCtx();
-
         final int payloadSize = 512;
 
-        try (SslCtxHandle serverCtx = new SslCtxHandle(handles, serverCtxPtr);
-             SslCtxHandle clientCtx = new SslCtxHandle(handles, clientCtxPtr);
+        try (SslCtxHandle serverCtx = buildServerCtx(cert.certPath(), cert.keyPath());
+             SslCtxHandle clientCtx = buildClientCtx();
              ServerSocketChannel serverSock = ServerSocketChannel.open();
              SocketChannel clientSock       = SocketChannel.open()) {
-
-            assertThat(serverCtx.ptr()).isEqualTo(serverCtxPtr); // keep in scope
-            assertThat(clientCtx.ptr()).isEqualTo(clientCtxPtr); // keep in scope
 
             serverSock.configureBlocking(true);
             serverSock.bind(new InetSocketAddress("127.0.0.1", 0));
@@ -333,8 +331,8 @@ class OffHeapTlsEngineLoopbackIT {
                 assumeTrue(serverFd > 0 && clientFd > 0,
                         "Could not extract socket FDs — skipping loopback IT");
 
-                try (OffHeapTlsEngine serverEngine = new OffHeapTlsEngine(handles, serverCtxPtr, true, ALLOC);
-                     OffHeapTlsEngine clientEngine = new OffHeapTlsEngine(handles, clientCtxPtr, false, ALLOC);
+                try (OffHeapTlsEngine serverEngine = new OffHeapTlsEngine(handles, serverCtx.ptr(), true, ALLOC);
+                     OffHeapTlsEngine clientEngine = new OffHeapTlsEngine(handles, clientCtx.ptr(), false, ALLOC);
                      LoanedBuffer serverOut   = ALLOC.allocate(AllocationHint.MEDIUM);
                      LoanedBuffer clientOut   = ALLOC.allocate(AllocationHint.MEDIUM);
                      LoanedBuffer plaintext   = ALLOC.allocate(AllocationHint.MEDIUM);
@@ -382,17 +380,15 @@ class OffHeapTlsEngineLoopbackIT {
         CertPair cert = generateSelfSignedCert(tempDir);
         assumeTrue(cert != null, "openssl CLI not available — skipping loopback IT");
 
-        final long serverCtxPtr = buildServerCtx(cert.certPath(), cert.keyPath());
         final boolean[] sessionAllocCalled = {false};
 
-        try (Arena trackArena          = Arena.ofShared(); //CHECKSTYLE:OFF — test harness
-             MemoryAllocator tracking  = buildTrackingAllocator(trackArena, sessionAllocCalled);
-             OffHeapTlsEngine engine   = new OffHeapTlsEngine(handles, serverCtxPtr, true, tracking);
-             SslCtxHandle ctx          = new SslCtxHandle(handles, serverCtxPtr)) {
+        try (SslCtxHandle ctx            = buildServerCtx(cert.certPath(), cert.keyPath());
+             Arena trackArena            = Arena.ofShared(); //CHECKSTYLE:OFF — test harness
+             MemoryAllocator tracking    = buildTrackingAllocator(trackArena, sessionAllocCalled);
+             OffHeapTlsEngine engine     = new OffHeapTlsEngine(handles, ctx.ptr(), true, tracking)) {
             assertThat(engine.sslPointerForDiagnostics())
                     .as("SSL* pointer must be non-zero after construction")
                     .isNotZero();
-            assertThat(ctx.ptr()).isEqualTo(serverCtxPtr); // keep ctx in scope
         }
 
         assertThat(sessionAllocCalled[0])

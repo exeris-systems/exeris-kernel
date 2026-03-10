@@ -120,6 +120,7 @@ class CoreOffHeapTlsEngineZeroAllocTckTest extends CryptoZeroAllocTck {
 
     @Override
     protected void bootstrapSubsystem() {
+        slabOffset = 0L;
         ScopedValue.where(KernelProviders.MEMORY_ALLOCATOR, STUB_ALLOCATOR).run(() -> {
             ownEngine = createProvider().createTlsEngine(new CryptoProviderConfig(
                     CryptoProviderConfig.Protocol.TCP_TLS, null, null, List.of("h2"), 0, false, CryptoProviderConfig.TLS_1_3));

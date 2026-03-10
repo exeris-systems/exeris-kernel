@@ -286,6 +286,19 @@ class CipherNameReaderTest {
 
             assertThat(CipherNameReader.read(0xCAFEL, handles)).isEqualTo(name);
         }
+
+        @Test
+        @DisplayName("Cipher name filling MAX_SCAN_BYTES (128 chars, no null terminator) → UNKNOWN")
+        void exactlyMaxScanBytesWithNoNullTerminatorReturnsUnknown() {
+            byte[] bytes = "B".repeat(128).getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            MemorySegment seg = testArena.allocate(bytes.length);
+            MemorySegment.copy(MemorySegment.ofArray(bytes), 0, seg, 0, bytes.length);
+            long namePtr = seg.address();
+            long fakeCipherPtr = 0x3L;
+            CoreSslHandles.IoHandles handles = handlesReturning(fakeCipherPtr, namePtr);
+
+            assertThat(CipherNameReader.read(0xCAFEL, handles)).isSameAs(CipherNameReader.UNKNOWN);
+        }
     }
 
     // =========================================================================

@@ -199,13 +199,22 @@ public final class TlsStateMachine implements TlsSessionState {
     }
 
     /**
-     * Convenience: transitions from current phase to {@code target} if legal.
+     * Convenience: transitions from the current phase to {@code target} if legal.
      *
-     * <p>Reads current phase atomically and attempts CAS in one operation.
-     * Suitable for single-threaded session drivers (e.g., one Virtual Thread per connection).
+     * <p>Reads the current phase via {@link #phase()}, then delegates to
+     * {@link #transitionTo(TlsPhase, TlsPhase)}. This introduces a TOCTOU window:
+     * another thread may change the phase between the read and the CAS. The CAS will
+     * correctly reject the stale transition, but the resulting {@link TlsHandshakeException}
+     * will report the phase that was observed at read time, not the phase that caused
+     * the CAS failure — the error message may therefore be misleading in concurrent contexts.
+     *
+     * <p><strong>Threading contract:</strong> safe only when exactly one Virtual Thread
+     * drives the session state machine (one connection = one carrier). If multiple threads
+     * may race on the same session, call {@link #transitionTo(TlsPhase, TlsPhase)} directly
+     * with the expected phase from a stable local snapshot.
      *
      * @param target the desired next phase
-     * @throws TlsHandshakeException if current→target is not a legal transition
+     * @throws TlsHandshakeException if current→target is not a legal transition or CAS failed
      */
     public void transitionTo(TlsPhase target) {
         transitionTo(phase(), target);

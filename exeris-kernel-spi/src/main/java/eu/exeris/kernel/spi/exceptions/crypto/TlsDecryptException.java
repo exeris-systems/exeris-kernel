@@ -16,9 +16,9 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  *
  * <h2>One-Code-One-Schema Invariant</h2>
  * <p>Carries {@link KernelErrorCodes#EX_NET_2003} — intentionally separate from
- * {@link TlsException} ({@code EX-NET-2001}, encrypt path) so that Glass-Box
- * binary decoders can distinguish a send-side cipher failure from a receive-side
- * cipher failure without parsing the {@code detail} string.
+ * {@link TlsHandshakeException} ({@code EX-NET-2001}, wrap/handshake path) so that
+ * Glass-Box binary decoders can distinguish a send-side cipher failure from a
+ * receive-side cipher failure without parsing the {@code detail} string.
  *
  * <h2>rawArgs Binary Layout</h2>
  * <pre>
