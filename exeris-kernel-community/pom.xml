@@ -105,10 +105,7 @@
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.2.5</version>
                 <configuration>
-                    <!--
-                        Inherit common JVM flags from the parent POM (${test.jvm.args}) and
-                        append Community-specific ZGC + JFR flags only for this module.
-                    -->
+                    <!-- Inherit common JVM flags (ZGC + JFR + preview) from the parent POM. -->
                     <argLine>${test.jvm.args}</argLine>
                     <!-- Exclude @Tag("flamegraph") tests from regular CI runs -->
                     <excludedGroups>${excludedGroups}</excludedGroups>
