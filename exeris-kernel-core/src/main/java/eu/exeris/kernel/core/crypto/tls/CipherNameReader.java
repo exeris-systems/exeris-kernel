@@ -112,13 +112,13 @@ final class CipherNameReader {
      * @return index of the first {@code NUL} byte, or {@code -1} if none found
      */
     private static int scanForNull(MemorySegment seg) {
-        int i     = 0;
-        int limit = (int) Math.min(seg.byteSize(), MAX_SCAN_BYTES);
-        while (i < limit) {
-            if (seg.get(ValueLayout.JAVA_BYTE, i) == 0) {
-                return i;
+        int byteIdx = 0;
+        int limit   = (int) Math.min(seg.byteSize(), MAX_SCAN_BYTES);
+        while (byteIdx < limit) {
+            if (seg.get(ValueLayout.JAVA_BYTE, byteIdx) == 0) {
+                return byteIdx;
             }
-            i++;
+            byteIdx++;
         }
         return -1;
     }

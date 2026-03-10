@@ -317,6 +317,9 @@ public final class OffHeapTlsEngine implements TlsEngine {
      * @return {@link TlsStatus#FINISHED}
      */
     private TlsStatus completeHandshake(long ptr) {
+        // PMD.CloseResource: MemoryAllocator is a ScopedValue-bound reference whose lifecycle
+        // is owned by the caller scope — closing it here would destroy the caller's allocator.
+        @SuppressWarnings("PMD.CloseResource")
         final MemoryAllocator allocator;
         try {
             allocator = KernelProviders.MEMORY_ALLOCATOR.get();
