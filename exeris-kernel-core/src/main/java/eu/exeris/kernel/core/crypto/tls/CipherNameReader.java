@@ -88,17 +88,25 @@ final class CipherNameReader {
      */
     private static String readCString(long nativeAddr) {
         MemorySegment raw = MemorySegment.ofAddress(nativeAddr).reinterpret(MAX_SCAN_BYTES);
-        int length = 0;
-        for (; length < MAX_SCAN_BYTES; length++) {
-            if (raw.get(ValueLayout.JAVA_BYTE, length) == 0) {
-                break;
-            }
-        }
-        if (length == MAX_SCAN_BYTES) {
+        int nullIdx = indexOfNull(raw);
+        if (nullIdx < 0) {
             return UNKNOWN;
         }
-        byte[] bytes = raw.asSlice(0, length).toArray(ValueLayout.JAVA_BYTE);
+        byte[] bytes = raw.asSlice(0, nullIdx).toArray(ValueLayout.JAVA_BYTE);
         return new String(bytes, StandardCharsets.UTF_8);
+    }
+
+    /**
+     * Returns the index of the first {@code NUL} byte within {@code seg}, or {@code -1}
+     * if no {@code NUL} is found within {@link #MAX_SCAN_BYTES}.
+     */
+    private static int indexOfNull(MemorySegment seg) {
+        for (int i = 0; i < MAX_SCAN_BYTES; i++) {
+            if (seg.get(ValueLayout.JAVA_BYTE, i) == 0) {
+                return i;
+            }
+        }
+        return -1;
     }
 }
 

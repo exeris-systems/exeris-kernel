@@ -13,7 +13,6 @@ import eu.exeris.kernel.core.crypto.openssl.CoreSslHandles;
 import eu.exeris.kernel.core.crypto.openssl.NativeCipherContext;
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.crypto.TlsEngine;
-import eu.exeris.kernel.spi.crypto.TlsHandshakeResult;
 import eu.exeris.kernel.spi.crypto.TlsPhase;
 import eu.exeris.kernel.spi.crypto.TlsStatus;
 import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
@@ -48,8 +47,8 @@ import java.lang.invoke.VarHandle;
  * <ul>
  *   <li>{@link #unwrap} and {@link #wrap} pass raw {@code long} addresses to
  *       {@code SSL_read}/{@code SSL_write} — no {@code MemorySegment} wrapper object created.</li>
- *   <li>All pre-allocated singleton results ({@link TlsHandshakeResult#COMPLETE},
- *       {@link TlsHandshakeResult#NEED_UNWRAP}, {@link TlsHandshakeResult#NEED_WRAP}) are
+ *   <li>All pre-allocated singleton results ({@link TlsStatus#FINISHED},
+ *       {@link TlsStatus#NEED_UNWRAP}, {@link TlsStatus#NEED_WRAP}) are
  *       returned by reference — zero heap allocation on the handshake hot path.</li>
  *   <li>ALPN string is read once at handshake completion and cached as a {@code String}
  *       field — {@link #negotiatedProtocol()} is O(1), allocation-free after first call.</li>
@@ -328,6 +327,11 @@ public final class OffHeapTlsEngine implements TlsEngine {
     /**
      * {@inheritDoc}
      *
+     * <p><b>fd-based deviation:</b> the {@code ciphertext} parameter is ignored.
+     * {@code SSL_read} reads encrypted data directly from the kernel socket buffer
+     * via the BIO installed by {@link #bindToFileDescriptor}; there is no
+     * application-layer ciphertext handoff in this transport mode.
+     *
      * <p><b>Zero-Allocation Hot Path:</b>
      * {@code SSL_read} receives the raw {@code long} address from
      * {@link LoanedBuffer#segment()}{@code .address()} — no {@code MemorySegment}
@@ -339,6 +343,8 @@ public final class OffHeapTlsEngine implements TlsEngine {
     public TlsStatus unwrap(LoanedBuffer ciphertext, LoanedBuffer plaintext) {
         checkNotClosedForDecrypt();
         checkActiveForDecrypt();
+        // fd-based mode: SSL_read pulls ciphertext directly from the kernel socket
+        // buffer via the BIO set by SSL_set_fd — the ciphertext LoanedBuffer is unused.
 
         long sslPtr  = cipherCtx.retainSslPointer();
         try {
@@ -372,6 +378,11 @@ public final class OffHeapTlsEngine implements TlsEngine {
     /**
      * {@inheritDoc}
      *
+     * <p><b>fd-based deviation:</b> the {@code ciphertext} parameter is ignored.
+     * {@code SSL_write} delivers encrypted data directly into the kernel socket buffer
+     * via the BIO installed by {@link #bindToFileDescriptor}; there is no
+     * application-layer ciphertext handoff in this transport mode.
+     *
      * <p><b>Zero-Allocation Hot Path:</b>
      * The raw address of {@code plaintext.segment()} is passed directly to
      * {@code SSL_write} — no heap wrapper allocated per call.
@@ -380,6 +391,8 @@ public final class OffHeapTlsEngine implements TlsEngine {
     public TlsStatus wrap(LoanedBuffer plaintext, LoanedBuffer ciphertext) {
         checkNotClosed();
         checkActive();
+        // fd-based mode: SSL_write pushes encrypted bytes directly to the kernel socket
+        // buffer via the BIO set by SSL_set_fd — the ciphertext LoanedBuffer is unused.
 
         long sslPtr  = cipherCtx.retainSslPointer();
         try {
