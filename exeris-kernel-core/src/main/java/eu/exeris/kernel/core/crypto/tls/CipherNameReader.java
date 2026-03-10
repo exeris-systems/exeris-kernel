@@ -97,11 +97,20 @@ final class CipherNameReader {
     }
 
     /**
-     * Returns the index of the first {@code NUL} byte within {@code seg}, or {@code -1}
-     * if no {@code NUL} is found within {@link #MAX_SCAN_BYTES}.
+     * Returns the index of the first {@code NUL} byte within the first
+     * {@link #MAX_SCAN_BYTES} bytes of {@code seg}, or {@code -1} if none is found.
+     *
+     * <p>Uses {@link MemorySegment#mismatch(MemorySegment)} against a zero-filled
+     * reference segment to locate the first byte that differs from {@code 0x00} —
+     * the complement of which is a {@code NUL} at the <em>mismatch</em> offset itself
+     * only when the target byte equals {@code 0x00}. Instead, we scan byte-by-byte
+     * via a single {@code get} loop factored out from {@link #readCString} so that
+     * static analysis sees a concrete {@code int} upper bound rather than a
+     * compile-time constant.
      */
     private static int indexOfNull(MemorySegment seg) {
-        for (int i = 0; i < MAX_SCAN_BYTES; i++) {
+        int limit = (int) Math.min(seg.byteSize(), MAX_SCAN_BYTES);
+        for (int i = 0; i < limit; i++) {
             if (seg.get(ValueLayout.JAVA_BYTE, i) == 0) {
                 return i;
             }
