@@ -39,11 +39,13 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <h2>Test Strategy</h2>
  * <p>AlpnReader reads from a scratch LoanedBuffer that is filled by the
  * {@code SSL_get0_alpn_selected} MethodHandle. We simulate this by providing a
- * {@link AlpnReaderTest#scriptedAlpn(long, long, long)} — a static method acting as a synthetic ALPN handle
+ * {@code scriptedAlpn} bridge method — a static method acting as a synthetic ALPN handle
  * that writes {@code dataAddr} and {@code alpnLen} through the provided pointer
- * arguments, exactly as OpenSSL does. This accurately tests the
- * zeroing-before-invoke contract introduced to prevent JVM crashes when the
- * symbol is absent and the backing segment contains uninitialized memory.
+ * arguments, exactly as OpenSSL does. The first {@code long} argument mirrors the
+ * FFM signature ({@code SSL*} pointer) and is intentionally ignored by the bridge.
+ * This accurately tests the zeroing-before-invoke contract introduced to prevent
+ * JVM crashes when the symbol is absent and the backing segment contains
+ * uninitialized memory.
  *
  * @since 0.5.0
  */
@@ -104,7 +106,7 @@ class AlpnReaderTest {
     private static int  scriptedAlpnLen;
 
     @SuppressWarnings("unused")
-    private static void scriptedAlpn(long sslPtr, long dataPtrAddr, long lenPtrAddr) {
+    private static void scriptedAlpn(long ignoredSslPtr, long dataPtrAddr, long lenPtrAddr) {
         MemorySegment.ofAddress(dataPtrAddr).reinterpret(Long.BYTES)
                 .set(JAVA_LONG, 0, scriptedDataAddr);
         MemorySegment.ofAddress(lenPtrAddr).reinterpret(Integer.BYTES)
@@ -112,7 +114,7 @@ class AlpnReaderTest {
     }
 
     @SuppressWarnings("unused")
-    private static void throwingAlpn(long sslPtr, long dataPtrAddr, long lenPtrAddr) {
+    private static void throwingAlpn(long ignoredSslPtr, long dataPtrAddr, long lenPtrAddr) {
         throw new RuntimeException("simulated FFM failure");
     }
 

@@ -81,29 +81,38 @@ final class CipherNameReader {
      * Reads a null-terminated C string from the given native address.
      *
      * <p>Scans up to {@link #MAX_SCAN_BYTES} bytes for the null terminator directly
-     * on the {@link MemorySegment}, then allocates an exact-length {@code byte[]} and
-     * constructs a Java {@link String} — one allocation instead of two.
+     * on the {@link MemorySegment}, then copies an exact-length slice into a
+     * {@code byte[]} for {@link String} construction — one allocation instead of two.
      *
      * @param nativeAddr native address of the null-terminated C string (OpenSSL-owned)
-     * @return decoded UTF-8 string, or {@link #UNKNOWN} if scanning fails
+     * @return decoded UTF-8 string, or {@link #UNKNOWN} if scanning fails or name is empty
      */
     private static String readCString(long nativeAddr) {
         MemorySegment raw = MemorySegment.ofAddress(nativeAddr).reinterpret(MAX_SCAN_BYTES);
-        int length = -1;
-        for (int i = 0; i < MAX_SCAN_BYTES; i++) {
-            if (raw.get(ValueLayout.JAVA_BYTE, i) == 0) {
-                length = i;
-                break;
-            }
+        int length = scanForNull(raw);
+        if (length < 0) {
+            return UNKNOWN;
         }
-        if (length <= 0) {
+        if (length == 0) {
             return UNKNOWN;
         }
         byte[] bytes = new byte[length];
-        for (int i = 0; i < length; i++) {
-            bytes[i] = raw.get(ValueLayout.JAVA_BYTE, i);
-        }
+        MemorySegment.copy(raw, ValueLayout.JAVA_BYTE, 0, bytes, 0, length);
         return new String(bytes, StandardCharsets.UTF_8);
+    }
+
+    /**
+     * Scans up to {@link #MAX_SCAN_BYTES} bytes for a {@code NUL} terminator.
+     *
+     * @return index of the first {@code NUL} byte, or {@code -1} if none found
+     */
+    private static int scanForNull(MemorySegment seg) {
+        for (int i = 0; i < MAX_SCAN_BYTES; i++) {
+            if (seg.get(ValueLayout.JAVA_BYTE, i) == 0) {
+                return i;
+            }
+        }
+        return -1;
     }
 }
 

@@ -307,6 +307,17 @@ class CipherNameReaderTest {
 
             assertThat(CipherNameReader.read(0xCAFEL, handles)).isSameAs(CipherNameReader.UNKNOWN);
         }
+
+        @Test
+        @DisplayName("Empty C string (null terminator at offset 0) → UNKNOWN per failure policy")
+        void emptyCStringReturnsUnknown() {
+            MemorySegment seg = testArena.allocate(1L);
+            seg.set(ValueLayout.JAVA_BYTE, 0, (byte) 0);
+            long fakeCipherPtr = 0x4L;
+            CoreSslHandles.IoHandles handles = handlesReturning(fakeCipherPtr, seg.address());
+
+            assertThat(CipherNameReader.read(0xCAFEL, handles)).isSameAs(CipherNameReader.UNKNOWN);
+        }
     }
 
     // =========================================================================
