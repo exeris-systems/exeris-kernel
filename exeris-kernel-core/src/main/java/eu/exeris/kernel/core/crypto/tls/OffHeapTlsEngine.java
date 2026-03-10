@@ -28,7 +28,7 @@ import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 
 /**
- * Core: Zero-allocation TLS engine for plain TCP connections (TLS 1.3 over file descriptor).
+ * Core: Zero-allocation, protocol-agnostic TLS engine (TLS 1.3 record layer).
  *
  * <h2>Responsibility</h2>
  * <p>Orchestrates three CORE components to implement the {@link TlsEngine} SPI contract:
@@ -38,10 +38,18 @@ import java.lang.invoke.VarHandle;
  *   <li>{@link TlsStateMachine} — lock-free CAS-based session phase tracking</li>
  * </ul>
  *
- * <h2>The Wall (CORE Compliance)</h2>
- * <p>This class contains <strong>zero</strong> knowledge of QUIC, io_uring, or any
- * Enterprise-tier transport. The only I/O model supported is TLS over a POSIX file
- * descriptor ({@code SSL_set_fd} + {@code SSL_accept}/{@code SSL_connect}).
+ * <h2>Protocol Agnosticism (The Wall — CORE Compliance)</h2>
+ * <p>This class has <strong>zero</strong> knowledge of BIO wiring, file descriptors,
+ * {@code io_uring}, QUIC, or any transport-specific I/O model.
+ * The caller (Community or Enterprise tier) is responsible for:
+ * <ol>
+ *   <li>Creating the {@code SSL*} via {@code SSL_new(ctxPtr)}.</li>
+ *   <li>Attaching the appropriate BIO — either via {@code SSL_set_fd} (Community / TCP fd-owner)
+ *       or via {@code BIO_new(BIO_s_mem())} + {@code SSL_set_bio} (Enterprise / Memory-BIO for
+ *       TCP and QUIC/DTLS).</li>
+ *   <li>Constructing this engine — the constructor advances the state machine directly to
+ *       {@link TlsPhase#HANDSHAKE_IN_PROGRESS}. No separate bind step is required.</li>
+ * </ol>
  *
  * <h2>Zero-Allocation Hot Path</h2>
  * <ul>
@@ -61,7 +69,7 @@ import java.lang.invoke.VarHandle;
  *
  * <h2>JFR-First</h2>
  * <ul>
- *   <li>{@link TlsEngineBindEvent} — emitted once at {@link #bindToFileDescriptor}</li>
+ *   <li>{@link TlsEngineBindEvent} — emitted once at construction (BIO ready)</li>
  *   <li>{@link TlsPhaseTransitionEvent} — emitted by {@link TlsStateMachine} on each transition</li>
  *   <li>{@link TlsEngineCloseEvent} — emitted once at {@link #close()}</li>
  * </ul>
@@ -77,16 +85,8 @@ import java.lang.invoke.VarHandle;
  * @see NativeCipherContext
  * @see TlsStateMachine
  */
-// PMD.CyclomaticComplexity: This class is a direct implementation of the TlsEngine SPI
-// contract (10 interface methods) plus mandatory bind/diagnostic/close lifecycle helpers.
-// The cumulative CC is an inherent property of faithfully mapping the OpenSSL state machine
-// (SSL_accept, SSL_connect, SSL_read, SSL_write, SSL_shutdown, SSL_set_fd, SSL_get_error)
-// — not a sign of accidental complexity. Splitting would create artificial,
-// non-cohesive helper classes that violate single-responsibility more than the CC rule.
-//
-// PMD.TooManyMethods: Same rationale — TlsEngine has 10 SPI methods; adding the required
-// bind/diagnostic/close surface brings the total to 12 public + 5 private helpers.
-// This is the minimum viable surface for a production-grade TLS engine.
+// PMD.CyclomaticComplexity: TlsEngine has 10 SPI methods plus mandatory lifecycle helpers.
+// PMD.TooManyMethods: Same rationale — minimum viable surface for a production-grade TLS engine.
 @SuppressWarnings({"PMD.CyclomaticComplexity", "PMD.TooManyMethods"})
 public final class OffHeapTlsEngine implements TlsEngine {
 
@@ -168,8 +168,8 @@ public final class OffHeapTlsEngine implements TlsEngine {
     private volatile String negotiatedAlpn; // null until handshake complete
 
     /**
-     * Wall-clock nanosecond timestamp captured at the start of the TLS handshake
-     * ({@link #bindToFileDescriptor}) for JFR {@link TlsHandshakeEvent} duration reporting.
+     * Wall-clock nanosecond timestamp captured at {@link #notifyBound()} for JFR
+     * {@link TlsHandshakeEvent} duration reporting.
      * Not volatile — written once by the binding thread before any concurrent I/O begins.
      */
     private long handshakeStartNanos;
@@ -179,18 +179,18 @@ public final class OffHeapTlsEngine implements TlsEngine {
     // =========================================================================
 
     /**
-     * Creates a new {@code OffHeapTlsEngine} for TLS over TCP.
+     * Creates a new {@code OffHeapTlsEngine}.
      *
-     * <p>The SSL* handle is allocated immediately via {@code SSL_new(ctxPtr)}.
-     * Binding to a file descriptor is deferred to {@link #bindToFileDescriptor(int)}.
+     * <p>The {@code SSL*} handle is allocated immediately via {@code SSL_new(ctxPtr)}.
+     * BIO wiring is the caller's responsibility — call {@link #notifyBound()} after
+     * attaching the appropriate BIO to advance the engine to
+     * {@link TlsPhase#HANDSHAKE_IN_PROGRESS}.
      *
      * @param handles    pre-resolved FFM handles from {@link CoreOpenSslLoader#load(java.lang.foreign.Arena)}
      * @param ctxPointer raw {@code SSL_CTX*} address (read-only shared context; caller retains ownership)
      * @param serverMode {@code true} for server role ({@code SSL_accept}),
      *                   {@code false} for client ({@code SSL_connect})
-     * @param allocator  {@link MemoryAllocator} used for {@link AllocationHint#SESSION} tracking;
-     *                   must be the allocator bound to the current {@code KernelProviders.MEMORY_ALLOCATOR}
-     *                   scoped value so that {@code WatermarkManager} can apply backpressure
+     * @param allocator  {@link MemoryAllocator} used for {@link AllocationHint#SESSION} tracking
      * @throws TlsException if {@code SSL_new} returns NULL or the SESSION slab cannot be allocated
      */
     public OffHeapTlsEngine(CoreSslHandles handles, long ctxPointer, boolean serverMode,
@@ -202,40 +202,44 @@ public final class OffHeapTlsEngine implements TlsEngine {
     }
 
     // =========================================================================
-    // Bind — one-time connection wiring
+    // Bind notification — transport-agnostic BIO readiness signal
     // =========================================================================
 
     /**
-     * Binds this engine's {@code SSL*} handle to the given POSIX file descriptor
-     * via {@code SSL_set_fd}, then transitions the state machine to
-     * {@link TlsPhase#HANDSHAKE_IN_PROGRESS}.
+     * Notifies this engine that the caller has finished BIO wiring and the TLS
+     * handshake may begin.
      *
-     * <p>Must be called <em>before</em> {@link #beginHandshake(LoanedBuffer)}.
-     * Emits {@link TlsEngineBindEvent} (JFR-First).
+     * <p>The caller (Community or Enterprise tier) is responsible for attaching
+     * the appropriate BIO to the {@code SSL*} handle <em>before</em> calling this
+     * method:
+     * <ul>
+     *   <li><b>Community (TCP fd-owner):</b> {@code SSL_set_fd(sslPtr, socketFd)}</li>
+     *   <li><b>Enterprise (Memory-BIO):</b> {@code BIO_new_pair} + {@code SSL_set_bio}
+     *       for both plain TCP and QUIC/DTLS streams.</li>
+     * </ul>
      *
-     * @param fileDescriptor POSIX file descriptor of the accepted or connected TCP socket
-     * @throws TlsException          if {@code SSL_set_fd} returns an error
-     * @throws TlsHandshakeException if the state machine is not in
-     *                               {@link TlsPhase#UNINITIALIZED}
+     * <p>Transitions the state machine from {@link TlsPhase#UNINITIALIZED} to
+     * {@link TlsPhase#HANDSHAKE_IN_PROGRESS} and emits {@link TlsEngineBindEvent}
+     * (JFR-First).
+     *
+     * @throws TlsHandshakeException if the engine is not in {@link TlsPhase#UNINITIALIZED}
+     *                               or has already been closed
      */
-    public void bindToFileDescriptor(int fileDescriptor) {
+    public void notifyBound() {
         checkNotClosed();
-        long ptr = cipherCtx.retainSslPointer();
         try {
-            int result = handles.handshake().invokeSslSetFd(ptr, fileDescriptor);
-            if (result != SSL_SUCCESS) {
-                stateMachine.forceError();
-                throw new TlsException(
-                        "SSL_set_fd failed (result=" + result + ") for SSL 0x"
-                        + Long.toHexString(ptr) + ", fd=" + fileDescriptor);
-            }
             stateMachine.transitionTo(TlsPhase.UNINITIALIZED, TlsPhase.HANDSHAKE_IN_PROGRESS);
-            handshakeStartNanos = System.nanoTime();
-            TlsEngineBindEvent.emit(ptr, fileDescriptor, serverMode);
-            TlsHandshakeEvent.emitStart(ptr, serverMode);
-        } finally {
-            cipherCtx.release();
+        } catch (TlsHandshakeException e) {
+            // Illegal bind attempt (e.g. called twice) — poison the session so that
+            // subsequent beginHandshake() calls correctly see a terminal ERROR phase.
+            stateMachine.forceError();
+            throw e;
         }
+        handshakeStartNanos = System.nanoTime();
+
+        long ptr = cipherCtx.sslPointer();
+        TlsEngineBindEvent.emit(ptr, serverMode);
+        TlsHandshakeEvent.emitStart(ptr, serverMode);
     }
 
     // =========================================================================
@@ -327,24 +331,21 @@ public final class OffHeapTlsEngine implements TlsEngine {
     /**
      * {@inheritDoc}
      *
-     * <p><b>fd-based deviation:</b> the {@code ciphertext} parameter is ignored.
-     * {@code SSL_read} reads encrypted data directly from the kernel socket buffer
-     * via the BIO installed by {@link #bindToFileDescriptor}; there is no
-     * application-layer ciphertext handoff in this transport mode.
-     *
      * <p><b>Zero-Allocation Hot Path:</b>
      * {@code SSL_read} receives the raw {@code long} address from
      * {@link LoanedBuffer#segment()}{@code .address()} — no {@code MemorySegment}
-     * wrapper is constructed on this path (identical to the fix applied in
-     * {@code OpenSSLProvider.read()} that eliminated {@code NativeMemorySegmentImpl}
-     * from the JFR allocation profile).
+     * wrapper is constructed on this path.
+     *
+     * <p><b>Transport note:</b> the {@code ciphertext} parameter role depends on the
+     * BIO wired by the caller tier before constructing this engine. With a fd-owner BIO
+     * (Community), {@code SSL_read} pulls from the kernel socket buffer and the
+     * {@code ciphertext} buffer is unused. With a Memory-BIO (Enterprise), the caller
+     * must have pre-filled the read-BIO before invoking this method.
      */
     @Override
     public TlsStatus unwrap(LoanedBuffer ciphertext, LoanedBuffer plaintext) {
         checkNotClosedForDecrypt();
         checkActiveForDecrypt();
-        // fd-based mode: SSL_read pulls ciphertext directly from the kernel socket
-        // buffer via the BIO set by SSL_set_fd — the ciphertext LoanedBuffer is unused.
 
         long sslPtr  = cipherCtx.retainSslPointer();
         try {
@@ -352,7 +353,6 @@ public final class OffHeapTlsEngine implements TlsEngine {
             long dstAddr      = dst.address();
             int  maxLen       = (int) Math.min(dst.byteSize(), Integer.MAX_VALUE);
 
-            // Zero-alloc: raw long address — no NativeMemorySegmentImpl wrapper
             int bytesRead = handles.ioHandles().invokeRead(sslPtr, dstAddr, maxLen);
 
             if (bytesRead > 0) {
@@ -363,7 +363,6 @@ public final class OffHeapTlsEngine implements TlsEngine {
             int sslErr = handles.ioHandles().invokeGetError(sslPtr, bytesRead);
 
             if (sslErr == CoreOpenSslLoader.SSL_ERROR_ZERO_RETURN) {
-                // Peer sent close_notify
                 stateMachine.transitionTo(TlsPhase.ACTIVE, TlsPhase.SHUTDOWN_INITIATED);
                 return TlsStatus.CLOSED;
             }
@@ -378,21 +377,20 @@ public final class OffHeapTlsEngine implements TlsEngine {
     /**
      * {@inheritDoc}
      *
-     * <p><b>fd-based deviation:</b> the {@code ciphertext} parameter is ignored.
-     * {@code SSL_write} delivers encrypted data directly into the kernel socket buffer
-     * via the BIO installed by {@link #bindToFileDescriptor}; there is no
-     * application-layer ciphertext handoff in this transport mode.
-     *
      * <p><b>Zero-Allocation Hot Path:</b>
      * The raw address of {@code plaintext.segment()} is passed directly to
      * {@code SSL_write} — no heap wrapper allocated per call.
+     *
+     * <p><b>Transport note:</b> the {@code ciphertext} parameter role depends on the
+     * BIO wired by the caller tier before constructing this engine. With a fd-owner BIO
+     * (Community), {@code SSL_write} pushes to the kernel socket buffer and the
+     * {@code ciphertext} buffer is unused. With a Memory-BIO (Enterprise), ciphertext
+     * is drained from the write-BIO by the caller after this method returns.
      */
     @Override
     public TlsStatus wrap(LoanedBuffer plaintext, LoanedBuffer ciphertext) {
         checkNotClosed();
         checkActive();
-        // fd-based mode: SSL_write pushes encrypted bytes directly to the kernel socket
-        // buffer via the BIO set by SSL_set_fd — the ciphertext LoanedBuffer is unused.
 
         long sslPtr  = cipherCtx.retainSslPointer();
         try {
@@ -400,7 +398,6 @@ public final class OffHeapTlsEngine implements TlsEngine {
             long srcAddr       = src.address();
             int  len           = (int) Math.min(plaintext.size(), Integer.MAX_VALUE);
 
-            // Zero-alloc: raw long address
             int bytesWritten = handles.ioHandles().invokeWrite(sslPtr, srcAddr, len);
 
             if (bytesWritten > 0) {
@@ -468,9 +465,7 @@ public final class OffHeapTlsEngine implements TlsEngine {
         checkNotClosed();
         TlsPhase current = stateMachine.phase();
 
-        // Guard: only meaningful to initiate shutdown from ACTIVE or SHUTDOWN_INITIATED
         if (current != TlsPhase.ACTIVE && current != TlsPhase.SHUTDOWN_INITIATED) {
-            // Already shut down or in error — no-op
             return;
         }
 
@@ -498,7 +493,6 @@ public final class OffHeapTlsEngine implements TlsEngine {
         } else if (result < 0) {
             stateMachine.forceError();
         }
-        // result == 0: close_notify sent, awaiting peer — stay in SHUTDOWN_INITIATED
     }
 
 
@@ -556,20 +550,17 @@ public final class OffHeapTlsEngine implements TlsEngine {
         }
         TlsPhase phaseAtEntry = stateMachine.phase();
 
-        // Transition to the appropriate terminal state before releasing SSL*.
-        // SHUTDOWN_COMPLETE → CLOSED (graceful path defined in the transition table).
-        // All other non-terminal phases → ERROR (forced, prevents re-entry).
         if (phaseAtEntry == TlsPhase.SHUTDOWN_COMPLETE) {
             stateMachine.transitionTo(TlsPhase.SHUTDOWN_COMPLETE, TlsPhase.CLOSED);
         } else if (phaseAtEntry != TlsPhase.CLOSED && phaseAtEntry != TlsPhase.ERROR) {
             stateMachine.forceError();
         }
 
-        long ptr = cipherCtx.sslPointer(); // diagnostic only — no retain
+        long ptr = cipherCtx.sslPointer();
         boolean graceful    = phaseAtEntry == TlsPhase.SHUTDOWN_COMPLETE;
-        TlsPhase finalPhase = stateMachine.phase(); // read after transition — reflects actual terminal state
 
-        cipherCtx.close(); // drops base reference → SSL_free when refCount hits 0
+        TlsPhase finalPhase = stateMachine.phase();
+        cipherCtx.close();
         TlsEngineCloseEvent.emit(ptr, graceful, finalPhase.name());
     }
 

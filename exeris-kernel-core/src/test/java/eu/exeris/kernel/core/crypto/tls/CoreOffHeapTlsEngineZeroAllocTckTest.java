@@ -136,7 +136,7 @@ class CoreOffHeapTlsEngineZeroAllocTckTest extends CryptoZeroAllocTck {
             ownPlaintext.setSize(ownPlaintext.capacity());
 
             // THE REAL TCP BINDING - fd-based, Core tier only.
-            ((OffHeapTlsEngine) ownEngine).bindToFileDescriptor(100);
+            ((OffHeapTlsEngine) ownEngine).notifyBound();
 
             try {
                 ownEngine.beginHandshake(ownCiphertext);

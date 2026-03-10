@@ -8,6 +8,7 @@
  */
 package eu.exeris.kernel.core.crypto.openssl;
 
+import eu.exeris.kernel.core.crypto.ArenaLoanedBuffer;
 import eu.exeris.kernel.spi.exceptions.crypto.TlsException;
 import eu.exeris.kernel.spi.memory.AllocationHint;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
@@ -19,8 +20,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-import java.lang.foreign.Arena;
-import java.lang.foreign.MemorySegment;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
@@ -94,27 +93,7 @@ class NativeCipherContextTest {
     private static final MemoryAllocator STUB_ALLOC = new MemoryAllocator() {
         @Override
         public LoanedBuffer allocate(AllocationHint hint) {
-            int bytes = Math.max(hint.sizeBytes(), 64);
-            // Arena lifecycle is delegated to the returned LoanedBuffer:
-            // LoanedBuffer.close() calls arena.close(), so Arena is properly released.
-            Arena arena = Arena.ofShared(); // CHECKSTYLE:OFF — test harness only
-            MemorySegment seg = arena.allocate(bytes, 8L);
-            return new LoanedBuffer() {
-                private long sz = bytes;
-                private final java.util.List<Runnable> closeActions = new java.util.ArrayList<>();
-                @Override public MemorySegment segment()          { return seg; }
-                @Override public long           size()            { return sz; }
-                @Override public long           capacity()        { return bytes; }
-                @Override public void           setSize(long s)   { sz = s; }
-                @Override public void           close()           { closeActions.forEach(Runnable::run); arena.close(); }
-                @Override public void           retain()          { /* test stub — NativeCipherContext manages ref-count externally */ }
-                @Override public int            refCount()        { return 1; }
-                @Override public boolean        isAlive()         { return true; }
-                @Override public void           addCloseAction(Runnable r) { closeActions.add(r); }
-                @Override public LoanedBuffer   slice(long o, long l) { return this; }
-                @Override public LoanedBuffer   view()            { return this; }
-                @Override public LoanedBuffer   peek(long o, long l) { return this; }
-            };
+            return ArenaLoanedBuffer.allocateOwning(hint, 64);
         }
         @Override public LoanedBuffer allocateNetwork(int b)        { return allocate(AllocationHint.MEDIUM); }
         @Override public LoanedBuffer allocateCarrierSlab(int i)    { return allocate(AllocationHint.MEDIUM); }
@@ -146,7 +125,7 @@ class NativeCipherContextTest {
                 "dummySslFree",
                 MethodType.methodType(void.class, long.class));
 
-        return new CoreSslHandles.HandshakeHandles(sslNew, sslFree, null, null, null, null);
+        return new CoreSslHandles.HandshakeHandles(sslNew, sslFree, null, null, null);
     }
 
     // =========================================================================
@@ -249,7 +228,7 @@ class NativeCipherContextTest {
                     MethodType.methodType(void.class, long.class));
 
             CoreSslHandles.HandshakeHandles handles = new CoreSslHandles.HandshakeHandles(
-                    nullSslNew, sslFree, null, null, null, null);
+                    nullSslNew, sslFree, null, null, null);
 
             assertThatThrownBy(() -> new NativeCipherContext(handles, 0x1234L, STUB_ALLOC))
                     .isInstanceOf(TlsException.class);

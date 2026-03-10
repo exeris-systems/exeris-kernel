@@ -8,13 +8,13 @@
  */
 package eu.exeris.kernel.core.crypto.tls;
 
+import eu.exeris.kernel.core.crypto.ArenaLoanedBuffer;
 import eu.exeris.kernel.core.crypto.openssl.CoreSslHandles;
 import eu.exeris.kernel.core.crypto.openssl.CoreSslHandlesTestFactory;
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.crypto.TlsPhase;
 import eu.exeris.kernel.spi.crypto.TlsStatus;
 import eu.exeris.kernel.spi.exceptions.crypto.TlsDecryptException;
-import eu.exeris.kernel.spi.exceptions.crypto.TlsException;
 import eu.exeris.kernel.spi.exceptions.crypto.TlsHandshakeException;
 import eu.exeris.kernel.spi.memory.AllocationHint;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
@@ -26,8 +26,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-import java.lang.foreign.Arena;
-import java.lang.foreign.MemorySegment;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
@@ -64,18 +62,6 @@ class OffHeapTlsEngineTest {
     @SuppressWarnings("unused")
     public static void stubSslFree(long ssl)                        {
         assert ssl >= 0 : "stubSslFree";
-    }
-    @SuppressWarnings("unused")
-    public static int  stubSslSetFdOk(long ssl, int fd)             {
-        assert ssl >= 0 : "stubSslSetFdOk:ssl";
-        assert fd  >= 0 : "stubSslSetFdOk:fd";
-        return 1;
-    }
-    @SuppressWarnings("unused")
-    public static int  stubSslSetFdFail(long ssl, int fd)           {
-        assert ssl >= 0 : "stubSslSetFdFail:ssl";
-        assert fd  >= 0 : "stubSslSetFdFail:fd";
-        return 0;
     }
     @SuppressWarnings("unused")
     public static int  stubSslAcceptOk(long ssl)                    {
@@ -146,13 +132,12 @@ class OffHeapTlsEngineTest {
         }
     }
 
-    private CoreSslHandles buildHandles(String setFdStub, String acceptStub) {
+    private CoreSslHandles buildHandles(String acceptStub) {
         CoreSslHandles.CtxHandles ctx = new CoreSslHandles.CtxHandles(
                 null, null, null, null, null, null, null, null, null);
         CoreSslHandles.HandshakeHandles hs = new CoreSslHandles.HandshakeHandles(
                 mh("stubSslNew",         long.class, long.class),
                 mh("stubSslFree",        void.class, long.class),
-                mh(setFdStub,            int.class,  long.class, int.class),
                 mh(acceptStub,           int.class,  long.class),
                 mh("stubSslConnectOk",   int.class,  long.class),
                 mh("stubSslDoHandshake", int.class,  long.class));
@@ -176,27 +161,7 @@ class OffHeapTlsEngineTest {
     private static final MemoryAllocator STUB_ALLOC = new MemoryAllocator() {
         @Override
         public LoanedBuffer allocate(AllocationHint hint) {
-            int bytes = Math.max(hint.sizeBytes(), 64);
-            // Arena lifecycle is delegated to the returned LoanedBuffer:
-            // LoanedBuffer.close() calls arena.close() — RAII, no try-with-resources needed here.
-            Arena arena = Arena.ofShared(); // CHECKSTYLE:OFF — test harness only
-            MemorySegment seg = arena.allocate(bytes, 8L);
-            return new LoanedBuffer() {
-                private long sz = bytes;
-                private final java.util.List<Runnable> closeActions = new java.util.ArrayList<>();
-                @Override public MemorySegment segment()          { return seg; }
-                @Override public long           size()            { return sz; }
-                @Override public long           capacity()        { return bytes; }
-                @Override public void           setSize(long s)   { sz = s; }
-                @Override public void           close()           { closeActions.forEach(Runnable::run); arena.close(); }
-                @Override public void           retain()          { /* test stub — no ref-count */ }
-                @Override public int            refCount()        { return 1; }
-                @Override public boolean        isAlive()         { return true; }
-                @Override public void           addCloseAction(Runnable r) { closeActions.add(r); }
-                @Override public LoanedBuffer   slice(long o, long l) { return this; }
-                @Override public LoanedBuffer   view()            { return this; }
-                @Override public LoanedBuffer   peek(long o, long l) { return this; }
-            };
+            return ArenaLoanedBuffer.allocateOwning(hint, 64);
         }
         @Override public LoanedBuffer allocateNetwork(int b)        { return allocate(AllocationHint.MEDIUM); }
         @Override public LoanedBuffer allocateCarrierSlab(int i)    { return allocate(AllocationHint.MEDIUM); }
@@ -222,7 +187,7 @@ class OffHeapTlsEngineTest {
     }
 
     private OffHeapTlsEngine serverEngine() {
-        return new OffHeapTlsEngine(buildHandles("stubSslSetFdOk", "stubSslAcceptOk"), 0x1234L, true, STUB_ALLOC);
+        return new OffHeapTlsEngine(buildHandles("stubSslAcceptOk"), 0x1234L, true, STUB_ALLOC);
     }
 
     // =========================================================================
@@ -267,30 +232,38 @@ class OffHeapTlsEngineTest {
     }
 
     // =========================================================================
-    // Nested: bindToFileDescriptor
+    // Nested: notifyBound
     // =========================================================================
 
     @Nested
-    @DisplayName("bindToFileDescriptor()")
-    class Bind {
+    @DisplayName("notifyBound()")
+    class NotifyBound {
 
         @Test
-        @DisplayName("Successful bind transitions to HANDSHAKE_IN_PROGRESS")
-        void successfulBindTransitionsState() {
+        @DisplayName("notifyBound() transitions UNINITIALIZED → HANDSHAKE_IN_PROGRESS")
+        void notifyBoundTransitionsState() {
             try (OffHeapTlsEngine engine = serverEngine()) {
-                engine.bindToFileDescriptor(42);
+                engine.notifyBound();
                 assertThat(engine.phase()).isEqualTo(TlsPhase.HANDSHAKE_IN_PROGRESS);
             }
         }
 
         @Test
-        @DisplayName("SSL_set_fd failure forces ERROR and throws TlsException")
-        void setFdFailureForcesError() {
-            try (OffHeapTlsEngine engine = new OffHeapTlsEngine(
-                    buildHandles("stubSslSetFdFail", "stubSslAcceptOk"), 0x1234L, true, STUB_ALLOC)) {
-                assertThatThrownBy(() -> engine.bindToFileDescriptor(42))
-                        .isInstanceOf(TlsException.class);
-                assertThat(engine.phase()).isEqualTo(TlsPhase.ERROR);
+        @DisplayName("notifyBound() twice throws TlsHandshakeException")
+        void notifyBoundTwiceThrows() {
+            try (OffHeapTlsEngine engine = serverEngine()) {
+                engine.notifyBound();
+                assertThatThrownBy(engine::notifyBound)
+                        .isInstanceOf(TlsHandshakeException.class);
+            }
+        }
+
+        @Test
+        @DisplayName("beginHandshake() before notifyBound() throws TlsHandshakeException")
+        void beginHandshakeBeforeNotifyBoundThrows() {
+            try (OffHeapTlsEngine engine = serverEngine()) {
+                assertThatThrownBy(() -> engine.beginHandshake(outbound))
+                        .isInstanceOf(TlsHandshakeException.class);
             }
         }
     }
@@ -308,7 +281,7 @@ class OffHeapTlsEngineTest {
         void successfulAcceptReturnsFinished() {
             ScopedValue.where(KernelProviders.MEMORY_ALLOCATOR, STUB_ALLOC).run(() -> {
                 try (OffHeapTlsEngine engine = serverEngine()) {
-                    engine.bindToFileDescriptor(42);
+                    engine.notifyBound();
                     TlsStatus status = engine.beginHandshake(outbound);
                     assertThat(status).isEqualTo(TlsStatus.FINISHED);
                     assertThat(engine.phase()).isEqualTo(TlsPhase.ACTIVE);
@@ -322,8 +295,8 @@ class OffHeapTlsEngineTest {
         void wantReadReturnsNeedUnwrap() {
             ScopedValue.where(KernelProviders.MEMORY_ALLOCATOR, STUB_ALLOC).run(() -> {
                 try (OffHeapTlsEngine engine = new OffHeapTlsEngine(
-                        buildHandles("stubSslSetFdOk", "stubSslAcceptWantRead"), 0x1234L, true, STUB_ALLOC)) {
-                    engine.bindToFileDescriptor(42);
+                        buildHandles("stubSslAcceptWantRead"), 0x1234L, true, STUB_ALLOC)) {
+                    engine.notifyBound();
                     TlsStatus status = engine.beginHandshake(outbound);
                     assertThat(status).isEqualTo(TlsStatus.NEED_UNWRAP);
                     assertThat(engine.phase()).isEqualTo(TlsPhase.HANDSHAKE_IN_PROGRESS);
@@ -332,8 +305,8 @@ class OffHeapTlsEngineTest {
         }
 
         @Test
-        @DisplayName("beginHandshake() called before bind throws TlsHandshakeException")
-        void handshakeBeforeBindThrows() {
+        @DisplayName("beginHandshake() called before notifyBound() throws TlsHandshakeException")
+        void handshakeBeforeNotifyBoundThrows() {
             try (OffHeapTlsEngine engine = serverEngine()) {
                 assertThatThrownBy(() -> engine.beginHandshake(outbound))
                         .isInstanceOf(TlsHandshakeException.class);
@@ -341,12 +314,13 @@ class OffHeapTlsEngineTest {
         }
 
         @Test
-        @DisplayName("beginHandshake() on ERROR phase throws (closed/invalid sentinel)")
+        @DisplayName("beginHandshake() on ERROR phase throws")
         void handshakeAfterErrorThrows() {
             ScopedValue.where(KernelProviders.MEMORY_ALLOCATOR, STUB_ALLOC).run(() -> {
-                try (OffHeapTlsEngine engine = new OffHeapTlsEngine(
-                        buildHandles("stubSslSetFdFail", "stubSslAcceptOk"), 0x1234L, true, STUB_ALLOC)) {
-                    try { engine.bindToFileDescriptor(42); } catch (TlsException _) { /* forced error */ }
+                try (OffHeapTlsEngine engine = serverEngine()) {
+                    engine.notifyBound();
+                    // Force ERROR by calling notifyBound() again — illegal transition
+                    try { engine.notifyBound(); } catch (TlsHandshakeException _) { /* expected */ }
                     assertThatThrownBy(() -> engine.beginHandshake(outbound))
                             .isInstanceOf(RuntimeException.class);
                 }
@@ -391,7 +365,7 @@ class OffHeapTlsEngineTest {
                 try (LoanedBuffer plain = STUB_ALLOC.allocate(AllocationHint.SMALL);
                      LoanedBuffer cipher = STUB_ALLOC.allocate(AllocationHint.MEDIUM)) {
                     OffHeapTlsEngine engine = serverEngine();
-                    engine.bindToFileDescriptor(42);
+                    engine.notifyBound();
                     engine.beginHandshake(outbound);
                     engine.close();
                     assertThatThrownBy(() -> engine.wrap(plain, cipher))
@@ -407,7 +381,7 @@ class OffHeapTlsEngineTest {
                 try (LoanedBuffer cipher = STUB_ALLOC.allocate(AllocationHint.MEDIUM);
                      LoanedBuffer plain = STUB_ALLOC.allocate(AllocationHint.MEDIUM)) {
                     OffHeapTlsEngine engine = serverEngine();
-                    engine.bindToFileDescriptor(42);
+                    engine.notifyBound();
                     engine.beginHandshake(outbound);
                     engine.close();
                     assertThatThrownBy(() -> engine.unwrap(cipher, plain))
@@ -423,7 +397,7 @@ class OffHeapTlsEngineTest {
                 try (OffHeapTlsEngine engine = serverEngine();
                      LoanedBuffer plain = STUB_ALLOC.allocate(AllocationHint.SMALL);
                      LoanedBuffer cipher = STUB_ALLOC.allocate(AllocationHint.MEDIUM)) {
-                    engine.bindToFileDescriptor(42);
+                    engine.notifyBound();
                     engine.beginHandshake(outbound);
                     plain.segment().fill((byte) 0xAB);
                     plain.setSize(plain.capacity());
@@ -446,7 +420,7 @@ class OffHeapTlsEngineTest {
         void shutdownCompletesGracefully() {
             ScopedValue.where(KernelProviders.MEMORY_ALLOCATOR, STUB_ALLOC).run(() -> {
                 try (OffHeapTlsEngine engine = serverEngine()) {
-                    engine.bindToFileDescriptor(42);
+                    engine.notifyBound();
                     engine.beginHandshake(outbound);
                     engine.initiateShutdown(outbound);
                     assertThat(engine.phase()).isEqualTo(TlsPhase.SHUTDOWN_COMPLETE);
@@ -486,7 +460,7 @@ class OffHeapTlsEngineTest {
         void closeAfterFullLifecycle() {
             ScopedValue.where(KernelProviders.MEMORY_ALLOCATOR, STUB_ALLOC).run(() -> {
                 OffHeapTlsEngine engine = serverEngine();
-                engine.bindToFileDescriptor(42);
+                engine.notifyBound();
                 engine.beginHandshake(outbound);
                 engine.initiateShutdown(outbound);
                 engine.close();

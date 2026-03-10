@@ -181,14 +181,19 @@ public final class CoreSslHandles {
 
     /**
      * Handles for SSL session setup — {@code SSL_new}, {@code SSL_free},
-     * {@code SSL_set_fd}, {@code SSL_accept}, {@code SSL_connect}, {@code SSL_do_handshake}.
+     * {@code SSL_accept}, {@code SSL_connect}, {@code SSL_do_handshake}.
+     *
+     * <h2>BIO wiring is NOT here</h2>
+     * <p>{@code SSL_set_fd} (Community) and {@code BIO_new_pair}/{@code SSL_set_bio}
+     * (Enterprise) are transport-specific concerns. Community and Enterprise tiers
+     * add their own handles via tier-specific handle carriers — Core has zero
+     * knowledge of how the BIO is wired.
      *
      * @since 0.5.0
      */
     public record HandshakeHandles(
             MethodHandle sslNew,
             MethodHandle sslFree,
-            MethodHandle sslSetFd,
             MethodHandle sslAccept,
             MethodHandle sslConnect,
             MethodHandle sslDoHandshake) {
@@ -214,16 +219,6 @@ public final class CoreSslHandles {
             }
         }
 
-        /**
-         * {@code SSL_set_fd(sslPtr, fd)} → 1 on success.
-         */
-        public int invokeSslSetFd(long sslPtr, int fileDescriptor) {
-            try {
-                return (int) sslSetFd.invokeExact(sslPtr, fileDescriptor);
-            } catch (Throwable t) { //NOPMD AvoidCatchingGenericException — FFM invokeExact declares Throwable
-                throw new TlsException("SSL_set_fd failed", t);
-            }
-        }
 
         /**
          * {@code SSL_accept(sslPtr)} → 1 on success.

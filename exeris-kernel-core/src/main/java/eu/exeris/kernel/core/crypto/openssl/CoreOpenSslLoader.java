@@ -156,8 +156,6 @@ public final class CoreOpenSslLoader {
                         FunctionDescriptor.of(JAVA_LONG, JAVA_LONG)),
                 req(linker, lookup, "SSL_free",
                         FunctionDescriptor.ofVoid(JAVA_LONG)),
-                req(linker, lookup, "SSL_set_fd",
-                        FunctionDescriptor.of(JAVA_INT, JAVA_LONG, JAVA_INT)),
                 req(linker, lookup, "SSL_accept",
                         FunctionDescriptor.of(JAVA_INT, JAVA_LONG)),
                 req(linker, lookup, "SSL_connect",

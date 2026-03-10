@@ -8,6 +8,7 @@
  */
 package eu.exeris.kernel.core.crypto.tls;
 
+import eu.exeris.kernel.core.crypto.ArenaLoanedBuffer;
 import eu.exeris.kernel.core.crypto.openssl.CoreOpenSslLoader;
 import eu.exeris.kernel.core.crypto.openssl.CoreSslHandles;
 import eu.exeris.kernel.spi.context.KernelProviders;
@@ -17,6 +18,7 @@ import eu.exeris.kernel.spi.memory.AllocationHint;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.memory.MemoryStats;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -77,49 +79,76 @@ class OffHeapTlsEngineLoopbackIT {
 
     private static CoreSslHandles handles;
 
+    /**
+     * Community-tier handle for {@code SSL_set_fd(SSL*, int)} — resolved separately
+     * from {@link CoreSslHandles} because Core is BIO-agnostic.
+     *
+     * <p>In production Community code, this handle would live in a
+     * {@code CommunityTlsHandles} carrier. Here it is resolved inline to
+     * simulate the Community tier's "attach fd-owner BIO, then notifyBound()" pattern.
+     */
+    private static java.lang.invoke.MethodHandle sslSetFdHandle;
+
     @BeforeAll
     static void loadOpenSsl() {
         try {
             handles = CoreOpenSslLoader.load(Arena.global());
+            // Resolve SSL_set_fd separately — Community-tier concern only
+            java.lang.foreign.Linker linker = java.lang.foreign.Linker.nativeLinker();
+            java.lang.foreign.SymbolLookup lookup = java.lang.foreign.SymbolLookup.loaderLookup()
+                    .or(java.lang.foreign.SymbolLookup.libraryLookup("libssl.so.3", Arena.global()));
+            sslSetFdHandle = linker.downcallHandle(
+                    lookup.find("SSL_set_fd").orElseThrow(),
+                    java.lang.foreign.FunctionDescriptor.of(
+                            java.lang.foreign.ValueLayout.JAVA_INT,
+                            java.lang.foreign.ValueLayout.JAVA_LONG,
+                            java.lang.foreign.ValueLayout.JAVA_INT));
         } catch (Exception e) {
             assumeTrue(false, "OpenSSL not available — skipping loopback IT: " + e.getMessage());
         }
+    }
+
+    /**
+     * Simulates Community-tier BIO wiring: calls {@code SSL_set_fd(sslPtr, fd)}
+     * via the Community-owned handle, then signals the Core engine that the BIO
+     * is ready via {@link OffHeapTlsEngine#notifyBound()}.
+     *
+     * <p>This is the exact pattern a {@code CommunityTlsEngine} would use —
+     * {@link OffHeapTlsEngine} has zero knowledge of the fd or {@code SSL_set_fd}.
+     */
+    private static void communityBind(OffHeapTlsEngine engine, int fd) {
+        long sslPtr = engine.sslPointerForDiagnostics();
+        try {
+            int result = (int) sslSetFdHandle.invokeExact(sslPtr, fd);
+            assumeTrue(result == 1, "SSL_set_fd failed (result=" + result + ")");
+        } catch (Throwable t) {
+            throw new org.opentest4j.TestAbortedException("SSL_set_fd threw: " + t.getMessage());
+        }
+        engine.notifyBound();
     }
 
     // =========================================================================
     // Shared stub allocator (test scope — not production hot path)
     // =========================================================================
 
-    private static final MemoryAllocator ALLOC = new MemoryAllocator() {
-        private final Arena arena = Arena.ofShared(); // CHECKSTYLE:OFF — test harness only
+    private static final Arena ALLOC_ARENA = Arena.ofShared(); //NOPMD DirectArena — test harness only
 
+    private static final MemoryAllocator ALLOC = new MemoryAllocator() {
         @Override
         public LoanedBuffer allocate(AllocationHint hint) {
-            int bytes = Math.max(hint.sizeBytes(), 16_384);
-            MemorySegment seg = arena.allocate(bytes, 8L);
-            return new LoanedBuffer() {
-                private long sz = 0;
-                private final java.util.List<Runnable> closeActions = new java.util.ArrayList<>();
-                @Override public MemorySegment segment()               { return seg; }
-                @Override public long           size()                 { return sz; }
-                @Override public long           capacity()             { return bytes; }
-                @Override public void           setSize(long s)        { sz = s; }
-                @Override public void           close()                { closeActions.forEach(Runnable::run); }
-                @Override public void           retain()               { /* test stub — no ref-count in harness */ }
-                @Override public int            refCount()             { return 1; }
-                @Override public boolean        isAlive()              { return true; }
-                @Override public void           addCloseAction(Runnable r) { closeActions.add(r); }
-                @Override public LoanedBuffer   slice(long o, long l)  { return this; }
-                @Override public LoanedBuffer   view()                 { return this; }
-                @Override public LoanedBuffer   peek(long o, long l)   { return this; }
-            };
+            return ArenaLoanedBuffer.allocate(ALLOC_ARENA, hint, 16_384);
         }
         @Override public LoanedBuffer allocateNetwork(int b)         { return allocate(AllocationHint.MEDIUM); }
         @Override public LoanedBuffer allocateCarrierSlab(int i)     { return allocate(AllocationHint.MEDIUM); }
         @Override public LoanedBuffer allocateInfrastructure(long b) { return allocate(AllocationHint.MEDIUM); }
         @Override public MemoryStats  stats()                        { return MemoryStats.zero(); }
-        @Override public void         close()                        { arena.close(); }
+        @Override public void         close()                        { ALLOC_ARENA.close(); }
     };
+
+    @AfterAll
+    static void closeAllocArena() {
+        ALLOC_ARENA.close();
+    }
 
     // =========================================================================
     // Self-signed certificate generation helpers
@@ -167,7 +196,8 @@ class OffHeapTlsEngineLoopbackIT {
                 "-nodes",
                 "-subj", "/CN=localhost"
         );
-        pb.redirectErrorStream(true);
+        pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
+        pb.redirectError(ProcessBuilder.Redirect.DISCARD);
         try (ManagedProcess proc = new ManagedProcess(pb.start())) {
             int exitCode = proc.waitFor();
             if (exitCode != 0) {
@@ -307,8 +337,8 @@ class OffHeapTlsEngineLoopbackIT {
                      LoanedBuffer clientOut = ALLOC.allocate(AllocationHint.MEDIUM)) {
 
                     ScopedValue.where(KernelProviders.MEMORY_ALLOCATOR, ALLOC).run(() -> {
-                        serverEngine.bindToFileDescriptor(serverFd);
-                        clientEngine.bindToFileDescriptor(clientFd);
+                        communityBind(serverEngine, serverFd);
+                        communityBind(clientEngine, clientFd);
 
                         driveHandshake(serverEngine, serverOut, clientEngine, clientOut);
 
@@ -368,8 +398,8 @@ class OffHeapTlsEngineLoopbackIT {
                      LoanedBuffer decrypted   = ALLOC.allocate(AllocationHint.MEDIUM)) {
 
                     ScopedValue.where(KernelProviders.MEMORY_ALLOCATOR, ALLOC).run(() -> {
-                        serverEngine.bindToFileDescriptor(serverFd);
-                        clientEngine.bindToFileDescriptor(clientFd);
+                        communityBind(serverEngine, serverFd);
+                        communityBind(clientEngine, clientFd);
                         driveHandshake(serverEngine, serverOut, clientEngine, clientOut);
 
                         plaintext.segment().asSlice(0, payloadSize).fill((byte) 0xAB);
@@ -437,24 +467,7 @@ class OffHeapTlsEngineLoopbackIT {
                 if (hint == AllocationHint.SESSION) {
                     sessionAllocCalled[0] = true;
                 }
-                int bytes = Math.max(hint.sizeBytes(), 16_384);
-                MemorySegment seg = trackArena.allocate(bytes, 8L);
-                return new LoanedBuffer() {
-                    private long sz = 0;
-                    private final java.util.List<Runnable> closeActions = new java.util.ArrayList<>();
-                    @Override public MemorySegment segment()               { return seg; }
-                    @Override public long           size()                 { return sz; }
-                    @Override public long           capacity()             { return bytes; }
-                    @Override public void           setSize(long s)        { sz = s; }
-                    @Override public void           close()                { closeActions.forEach(Runnable::run); }
-                    @Override public void           retain()               { /* test stub — no ref-count */ }
-                    @Override public int            refCount()             { return 1; }
-                    @Override public boolean        isAlive()              { return true; }
-                    @Override public void           addCloseAction(Runnable r) { closeActions.add(r); }
-                    @Override public LoanedBuffer   slice(long o, long l)  { return this; }
-                    @Override public LoanedBuffer   view()                 { return this; }
-                    @Override public LoanedBuffer   peek(long o, long l)   { return this; }
-                };
+                return ArenaLoanedBuffer.allocate(trackArena, hint, 16_384);
             }
             @Override public LoanedBuffer allocateNetwork(int b)         { return allocate(AllocationHint.MEDIUM); }
             @Override public LoanedBuffer allocateCarrierSlab(int i)     { return allocate(AllocationHint.MEDIUM); }
