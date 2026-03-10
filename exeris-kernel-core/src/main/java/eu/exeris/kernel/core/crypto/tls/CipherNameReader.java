@@ -104,20 +104,22 @@ final class CipherNameReader {
     /**
      * Scans up to {@link #MAX_SCAN_BYTES} bytes for a {@code NUL} terminator.
      *
-     * <p>Uses {@code Math.min(seg.byteSize(), MAX_SCAN_BYTES)} as the loop bound so
-     * the condition depends on {@code seg}'s runtime size rather than a compile-time
-     * constant — this is also correct when a smaller segment is passed by future callers.
+     * <p>The scan limit is derived at runtime from the segment's actual byte size
+     * (capped at {@link #MAX_SCAN_BYTES}) so the method is also correct when a smaller
+     * segment is passed by future callers.
      *
+     * @param seg segment to scan (must have byte size &gt;= 1)
      * @return index of the first {@code NUL} byte, or {@code -1} if none found
      */
     private static int scanForNull(MemorySegment seg) {
+        int i     = 0;
         int limit = (int) Math.min(seg.byteSize(), MAX_SCAN_BYTES);
-        for (int i = 0; i < limit; i++) {
+        while (i < limit) {
             if (seg.get(ValueLayout.JAVA_BYTE, i) == 0) {
                 return i;
             }
+            i++;
         }
         return -1;
     }
 }
-
