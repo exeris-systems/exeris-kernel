@@ -107,6 +107,7 @@ class AlpnReaderTest {
 
     @SuppressWarnings("unused")
     private static void scriptedAlpn(long ignoredSslPtr, long dataPtrAddr, long lenPtrAddr) {
+        assert ignoredSslPtr >= 0; // signature required by FFM bridge; value unused
         MemorySegment.ofAddress(dataPtrAddr).reinterpret(Long.BYTES)
                 .set(JAVA_LONG, 0, scriptedDataAddr);
         MemorySegment.ofAddress(lenPtrAddr).reinterpret(Integer.BYTES)
@@ -115,12 +116,15 @@ class AlpnReaderTest {
 
     @SuppressWarnings("unused")
     private static void throwingAlpn(long ignoredSslPtr, long dataPtrAddr, long lenPtrAddr) {
+        assert ignoredSslPtr >= 0; // signature required by FFM bridge; value unused
+        assert dataPtrAddr >= 0;
+        assert lenPtrAddr >= 0;
         throw new RuntimeException("simulated FFM failure");
     }
 
-    @SuppressWarnings("unused") private static int noop3(long a, long b, int c) { return 0; }
-    @SuppressWarnings("unused") private static int noop1(long a)                 { return 0; }
-    @SuppressWarnings("unused") private static int noop2(long a, int b)          { return 0; }
+    @SuppressWarnings("unused") private static int noop3(long a, long b, int c) { assert a >= 0 && b >= 0 && c >= 0; return 0; }
+    @SuppressWarnings("unused") private static int noop1(long a)                 { assert a >= 0; return 0; }
+    @SuppressWarnings("unused") private static int noop2(long a, int b)          { assert a >= 0 && b >= 0; return 0; }
 
     private static MethodHandle buildVoidHandle(String name) {
         try {

@@ -27,10 +27,23 @@ import java.lang.foreign.MemorySegment;
 import java.util.List;
 
 /**
- * TCK: Proves that the REAL {@link OffHeapTlsEngine} happy/error-path cipher loop
- * allocates <strong>zero</strong> {@code eu.exeris.*} heap objects per iteration.
+ * TCK: Proves that the {@link OffHeapTlsEngine} guard/sentinel path allocates
+ * <strong>zero</strong> {@code eu.exeris.*} heap objects per iteration.
+ *
+ * <h2>What is measured</h2>
+ * <p>The iteration calls {@code wrap()} on an engine whose BIO has no real file descriptor
+ * ({@code FD 100} does not exist). The call fails at the OpenSSL layer, the pre-allocated
+ * {@link eu.exeris.kernel.spi.exceptions.crypto.TlsHandshakeException} Sentinel is thrown
+ * and caught — <strong>without allocating any {@code eu.exeris.*} heap objects</strong>.
+ * This validates the zero-allocation contract for the error/guard path, which is the
+ * primary hot-path protection mechanism in the Kernel.
+ *
+ * <h2>What is NOT measured</h2>
+ * <p>The steady-state cipher hot path ({@code SSL_write} completing successfully) requires
+ * a real TLS session with a wired BIO. That path is covered by
+ * {@code OffHeapTlsEngineLoopbackIT} and the Community/Enterprise integration tests.
  */
-@DisplayName("L0/L1: OffHeapTlsEngine Zero-Allocation JFR TCK")
+@DisplayName("L0: OffHeapTlsEngine Sentinel/Guard-Path Zero-Allocation JFR TCK")
 class CoreOffHeapTlsEngineZeroAllocTckTest extends CryptoZeroAllocTck {
 
     /**
@@ -82,14 +95,22 @@ class CoreOffHeapTlsEngineZeroAllocTckTest extends CryptoZeroAllocTck {
                 @Override public int            refCount()         { return 1; }
                 @Override public boolean        isAlive()          { return true; }
                 @Override public void           addCloseAction(Runnable r) {
-                    // Zero-alloc slab: no deferred list — close() is a no-op (GLOBAL_ARENA lifetime).
-                    // Actions fire immediately; acceptable because NativeCipherContext does not
-                    // register close actions on this path and the slab is never individually released.
-                    r.run();
+                    throw new UnsupportedOperationException(
+                            "Zero-alloc TCK stub: addCloseAction is not supported. "
+                            + "NativeCipherContext must not register close actions on this path.");
                 }
-                @Override public LoanedBuffer   slice(long off, long len) { return allocate(AllocationHint.MICRO); }
-                @Override public LoanedBuffer   view()             { return this; }
-                @Override public LoanedBuffer   peek(long off, long len)  { return this; }
+                @Override public LoanedBuffer   slice(long off, long len) {
+                    throw new UnsupportedOperationException(
+                            "Zero-alloc TCK stub: slice() is not supported.");
+                }
+                @Override public LoanedBuffer   view() {
+                    throw new UnsupportedOperationException(
+                            "Zero-alloc TCK stub: view() is not supported.");
+                }
+                @Override public LoanedBuffer   peek(long off, long len)  {
+                    throw new UnsupportedOperationException(
+                            "Zero-alloc TCK stub: peek() is not supported.");
+                }
             };
         }
         @Override public LoanedBuffer allocateNetwork(int b)         { return allocate(AllocationHint.MEDIUM); }

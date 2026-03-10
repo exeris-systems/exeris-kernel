@@ -23,7 +23,7 @@ import java.util.List;
  * <p>Eliminates verbatim duplication of a 12-method anonymous {@code LoanedBuffer}
  * across {@code OffHeapTlsEngineTest}, {@code OffHeapTlsEngineLoopbackIT}, and
  * {@code NativeCipherContextTest}. Each test allocates via
- * {@link #allocate(Arena, AllocationHint)} and the buffer's {@link #close()} fires
+ * {@link #allocate(Arena, AllocationHint, int)} and the buffer's {@link #close()} fires
  * registered close-actions (deferred semantics matching the production contract).
  *
  * <h2>Lifecycle</h2>
@@ -85,9 +85,21 @@ public final class ArenaLoanedBuffer implements LoanedBuffer {
     @Override public int            refCount()                    { return 1; }
     @Override public boolean        isAlive()                     { return true; }
     @Override public void           addCloseAction(Runnable r)    { closeActions.add(r); }
-    @Override public LoanedBuffer   slice(long o, long l)         { return this; }
-    @Override public LoanedBuffer   view()                        { return this; }
-    @Override public LoanedBuffer   peek(long o, long l)          { return this; }
+
+    @Override
+    public LoanedBuffer slice(long offset, long len) {
+        throw new UnsupportedOperationException("ArenaLoanedBuffer test stub does not implement slice()");
+    }
+
+    @Override
+    public LoanedBuffer view() {
+        throw new UnsupportedOperationException("ArenaLoanedBuffer test stub does not implement view()");
+    }
+
+    @Override
+    public LoanedBuffer peek(long offset, long len) {
+        throw new UnsupportedOperationException("ArenaLoanedBuffer test stub does not implement peek()");
+    }
 
     @Override
     public void close() {
