@@ -107,6 +107,13 @@ final class AlpnReader {
             // Scratch layout (12 bytes):
             //   [0..7]  → *data  (pointer written by SSL_get0_alpn_selected)
             //   [8..11] → *len   (int    written by SSL_get0_alpn_selected)
+            //
+            // MemoryAllocator may use deferred-zeroing; explicit zeroing here
+            // guarantees deterministic NONE return when the symbol is absent
+            // (invokeGetAlpnSelected is a no-op when sslGet0AlpnSelected == null).
+            seg.set(JAVA_LONG, 0, 0L);
+            seg.set(JAVA_INT, Long.BYTES, 0);
+
             long dataPtrAddr = seg.address();
             long lenPtrAddr = seg.address() + Long.BYTES;
 

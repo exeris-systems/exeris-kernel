@@ -80,33 +80,30 @@ final class CipherNameReader {
     /**
      * Reads a null-terminated C string from the given native address.
      *
-     * <p>Scans up to {@link #MAX_SCAN_BYTES} bytes for the null terminator, then
-     * constructs a Java {@link String} from the found bytes.
+     * <p>Scans up to {@link #MAX_SCAN_BYTES} bytes for the null terminator directly
+     * on the {@link MemorySegment}, then allocates an exact-length {@code byte[]} and
+     * constructs a Java {@link String} — one allocation instead of two.
      *
      * @param nativeAddr native address of the null-terminated C string (OpenSSL-owned)
      * @return decoded UTF-8 string, or {@link #UNKNOWN} if scanning fails
      */
     private static String readCString(long nativeAddr) {
         MemorySegment raw = MemorySegment.ofAddress(nativeAddr).reinterpret(MAX_SCAN_BYTES);
-        byte[] scan = raw.toArray(ValueLayout.JAVA_BYTE);
-        int nullIdx = indexOfNull(scan);
-        if (nullIdx < 0) {
-            return UNKNOWN;
-        }
-        return new String(scan, 0, nullIdx, StandardCharsets.UTF_8);
-    }
-
-    /**
-     * Returns the index of the first {@code NUL} ({@code 0x00}) byte in {@code bytes},
-     * or {@code -1} if none is found.
-     */
-    private static int indexOfNull(byte[] bytes) {
-        for (int i = 0; i < bytes.length; i++) {
-            if (bytes[i] == 0) {
-                return i;
+        int length = -1;
+        for (int i = 0; i < MAX_SCAN_BYTES; i++) {
+            if (raw.get(ValueLayout.JAVA_BYTE, i) == 0) {
+                length = i;
+                break;
             }
         }
-        return -1;
+        if (length <= 0) {
+            return UNKNOWN;
+        }
+        byte[] bytes = new byte[length];
+        for (int i = 0; i < length; i++) {
+            bytes[i] = raw.get(ValueLayout.JAVA_BYTE, i);
+        }
+        return new String(bytes, StandardCharsets.UTF_8);
     }
 }
 

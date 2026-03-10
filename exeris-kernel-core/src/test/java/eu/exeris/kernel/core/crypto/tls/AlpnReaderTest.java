@@ -39,14 +39,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <h2>Test Strategy</h2>
  * <p>AlpnReader reads from a scratch LoanedBuffer that is filled by the
  * {@code SSL_get0_alpn_selected} MethodHandle. We simulate this by providing a
- * {@link PrefilledAllocator} — an allocator whose scratch buffer is pre-populated
- * with the scripted {@code dataAddr} and {@code alpnLen} values <em>before</em>
- * AlpnReader tries to read them. The ALPN MethodHandle is a no-op that does nothing
- * (simulating a handle that has already written into the segment, which is true
- * because we pre-fill).
- *
- * <p>This approach avoids the fragility of writing to raw {@code long} addresses
- * (ZGC colored pointers, restricted native access scoping).
+ * {@link AlpnReaderTest#scriptedAlpn(long, long, long)} — a static method acting as a synthetic ALPN handle
+ * that writes {@code dataAddr} and {@code alpnLen} through the provided pointer
+ * arguments, exactly as OpenSSL does. This accurately tests the
+ * zeroing-before-invoke contract introduced to prevent JVM crashes when the
+ * symbol is absent and the backing segment contains uninitialized memory.
  *
  * @since 0.5.0
  */
@@ -63,7 +60,7 @@ class AlpnReaderTest {
 
         TestLoanedBuffer(long bytes) {
             super();
-            this.arena = Arena.ofShared(); // CHECKSTYLE:OFF — test harness arena only
+            this.arena = Arena.ofShared(); //NOPMD DirectArena — test harness only
             this.seg   = arena.allocate(bytes);
             setSize(bytes);
         }
@@ -73,13 +70,10 @@ class AlpnReaderTest {
     }
 
     // =========================================================================
-    // Infrastructure: SimpleAllocator (for NONE sentinel tests — scratch is clean)
+    // Infrastructure: SimpleAllocator (scratch starts zeroed — matches
+    // deferred-zeroing guarantee after AlpnReader's explicit zero-fill)
     // =========================================================================
 
-    /**
-     * Standard allocator — scratch segment starts zeroed.
-     * Used for NONE-sentinel tests where dataAddr=0 and alpnLen=0 is the expected state.
-     */
     private static final class SimpleAllocator implements MemoryAllocator {
         @Override public LoanedBuffer allocate(AllocationHint hint) {
             return new TestLoanedBuffer(Math.max(hint.sizeBytes(), 12L));
@@ -92,111 +86,39 @@ class AlpnReaderTest {
     }
 
     // =========================================================================
-    // Infrastructure: PrefilledAllocator
+    // Infrastructure: ScriptedAlpnHandle
     // =========================================================================
 
     /**
-     * Allocator that pre-fills the scratch segment with scripted {@code dataAddr}
-     * and {@code alpnLen} values. AlpnReader will read these values after the
-     * ALPN no-op handle "returns" — simulating what OpenSSL would have written.
+     * Static state used to script what the synthetic ALPN handle writes through
+     * the {@code dataPtrAddr} and {@code lenPtrAddr} pointer arguments.
      *
-     * <p>Layout (mirrors AlpnReader internal scratch layout):
-     * <pre>
-     *   [0..7]  → dataAddr (long)
-     *   [8..11] → alpnLen  (int)
-     * </pre>
+     * <p>Tests set {@link #scriptedDataAddr} and {@link #scriptedAlpnLen} before
+     * calling {@link AlpnReader#read}. The static bridge method {@link #scriptedAlpn}
+     * receives the pointer addresses from AlpnReader and writes through them —
+     * exactly as {@code SSL_get0_alpn_selected} does in native code.
+     *
+     * <p>Single-threaded test execution guarantees no race on these fields.
      */
-    private static final class PrefilledAllocator implements MemoryAllocator {
-        private final long scriptedDataAddr;
-        private final int  scriptedAlpnLen;
-
-        PrefilledAllocator(long scriptedDataAddr, int scriptedAlpnLen) {
-            this.scriptedDataAddr = scriptedDataAddr;
-            this.scriptedAlpnLen  = scriptedAlpnLen;
-        }
-
-        @Override
-        public LoanedBuffer allocate(AllocationHint hint) {
-            TestLoanedBuffer buf = new TestLoanedBuffer(Math.max(hint.sizeBytes(), 12L));
-            // Pre-fill scratch to match what SSL_get0_alpn_selected would have written
-            buf.segment().set(JAVA_LONG, 0,           scriptedDataAddr);
-            buf.segment().set(JAVA_INT,  Long.BYTES,  scriptedAlpnLen);
-            return buf;
-        }
-        @Override public LoanedBuffer allocateNetwork(int n)        { return allocate(AllocationHint.MICRO); }
-        @Override public LoanedBuffer allocateCarrierSlab(int i)    { return allocate(AllocationHint.MICRO); }
-        @Override public LoanedBuffer allocateInfrastructure(long b){ return allocate(AllocationHint.MICRO); }
-        @Override public MemoryStats stats()                        { return null; }
-        @Override public void close()                               { /* empty — test stub */ }
-    }
-
-    // =========================================================================
-    // Infrastructure: no-op and throwing IoHandles
-    // =========================================================================
-
-    /** Returns an {@link CoreSslHandles.IoHandles} where the ALPN handle is a no-op. */
-    private static CoreSslHandles.IoHandles noopIoHandles() {
-        return new CoreSslHandles.IoHandles(
-                buildNoop3Handle(),
-                buildNoop3Handle(),
-                buildNoop1Handle(),
-                buildNoop1Handle(),
-                buildNoop2Handle(),
-                buildVoidHandle("noopAlpn"),
-                null, // sslGetCurrentCipher — not needed for ALPN tests
-                null  // sslCipherGetName    — not needed for ALPN tests
-        );
-    }
-
-    /** Returns an {@link CoreSslHandles.IoHandles} where the ALPN handle throws. */
-    private static CoreSslHandles.IoHandles throwingIoHandles() {
-        return new CoreSslHandles.IoHandles(
-                buildNoop3Handle(),
-                buildNoop3Handle(),
-                buildNoop1Handle(),
-                buildNoop1Handle(),
-                buildNoop2Handle(),
-                buildVoidHandle("throwingAlpn"),
-                null, // sslGetCurrentCipher — not needed for ALPN tests
-                null  // sslCipherGetName    — not needed for ALPN tests
-        );
-    }
-
-    // =========================================================================
-    // Static bridge methods — no raw address writes needed
-    // =========================================================================
+    private static long scriptedDataAddr;
+    private static int  scriptedAlpnLen;
 
     @SuppressWarnings("unused")
-    private static void noopAlpn(long sslPtr, long dataPtrAddr, long lenPtrAddr) {
-        // no-op — scratch is pre-filled by PrefilledAllocator before AlpnReader reads it
-        assert sslPtr     >= 0 : "noopAlpn:sslPtr";
-        assert dataPtrAddr >= 0 : "noopAlpn:dataPtrAddr";
-        assert lenPtrAddr  >= 0 : "noopAlpn:lenPtrAddr";
+    private static void scriptedAlpn(long sslPtr, long dataPtrAddr, long lenPtrAddr) {
+        MemorySegment.ofAddress(dataPtrAddr).reinterpret(Long.BYTES)
+                .set(JAVA_LONG, 0, scriptedDataAddr);
+        MemorySegment.ofAddress(lenPtrAddr).reinterpret(Integer.BYTES)
+                .set(JAVA_INT, 0, scriptedAlpnLen);
     }
 
     @SuppressWarnings("unused")
     private static void throwingAlpn(long sslPtr, long dataPtrAddr, long lenPtrAddr) {
-        assert sslPtr     >= 0 : "throwingAlpn:sslPtr";
-        assert dataPtrAddr >= 0 : "throwingAlpn:dataPtrAddr";
-        assert lenPtrAddr  >= 0 : "throwingAlpn:lenPtrAddr";
         throw new RuntimeException("simulated FFM failure");
     }
 
-    @SuppressWarnings("unused") private static int noop3(long a, long b, int c) {
-        assert a >= 0 : "noop3:a";
-        assert b >= 0 : "noop3:b";
-        assert c >= 0 : "noop3:c";
-        return 0;
-    }
-    @SuppressWarnings("unused") private static int noop1(long a) {
-        assert a >= 0 : "noop1:a";
-        return 0;
-    }
-    @SuppressWarnings("unused") private static int noop2(long a, int b) {
-        assert a >= 0 : "noop2:a";
-        assert b >= 0 : "noop2:b";
-        return 0;
-    }
+    @SuppressWarnings("unused") private static int noop3(long a, long b, int c) { return 0; }
+    @SuppressWarnings("unused") private static int noop1(long a)                 { return 0; }
+    @SuppressWarnings("unused") private static int noop2(long a, int b)          { return 0; }
 
     private static MethodHandle buildVoidHandle(String name) {
         try {
@@ -238,6 +160,48 @@ class AlpnReaderTest {
         }
     }
 
+    /** IoHandles whose ALPN bridge writes scripted values through the pointer args. */
+    private static CoreSslHandles.IoHandles scriptedIoHandles() {
+        return new CoreSslHandles.IoHandles(
+                buildNoop3Handle(),
+                buildNoop3Handle(),
+                buildNoop1Handle(),
+                buildNoop1Handle(),
+                buildNoop2Handle(),
+                buildVoidHandle("scriptedAlpn"),
+                null,
+                null
+        );
+    }
+
+    /** IoHandles whose ALPN bridge throws — simulates FFM failure. */
+    private static CoreSslHandles.IoHandles throwingIoHandles() {
+        return new CoreSslHandles.IoHandles(
+                buildNoop3Handle(),
+                buildNoop3Handle(),
+                buildNoop1Handle(),
+                buildNoop1Handle(),
+                buildNoop2Handle(),
+                buildVoidHandle("throwingAlpn"),
+                null,
+                null
+        );
+    }
+
+    /** IoHandles with a null ALPN handle — simulates symbol absent from OpenSSL build. */
+    private static CoreSslHandles.IoHandles nullAlpnIoHandles() {
+        return new CoreSslHandles.IoHandles(
+                buildNoop3Handle(),
+                buildNoop3Handle(),
+                buildNoop1Handle(),
+                buildNoop1Handle(),
+                buildNoop2Handle(),
+                null,
+                null,
+                null
+        );
+    }
+
     // =========================================================================
     // Fixtures
     // =========================================================================
@@ -246,7 +210,7 @@ class AlpnReaderTest {
 
     @BeforeEach
     void setUp() {
-        testArena = Arena.ofShared(); // CHECKSTYLE:OFF — test harness arena
+        testArena = Arena.ofShared(); //NOPMD DirectArena — test harness only
     }
 
     @AfterEach
@@ -270,46 +234,52 @@ class AlpnReaderTest {
     class NoneSentinel {
 
         @Test
-        @DisplayName("dataAddr=0 (scratch pre-filled with 0) → returns NONE sentinel")
+        @DisplayName("null ALPN handle (symbol absent) → scratch zeroed → returns NONE sentinel")
+        void nullHandleReturnsNone() {
+            String result = AlpnReader.read(0L, nullAlpnIoHandles(), new SimpleAllocator());
+            assertThat(result).isSameAs(AlpnReader.NONE);
+        }
+
+        @Test
+        @DisplayName("dataAddr=0 written by handle → returns NONE sentinel")
         void zeroDataAddrReturnsNone() {
-            // PrefilledAllocator with dataAddr=0 → AlpnReader sees dataAddr==0 → NONE
-            MemoryAllocator allocator = new PrefilledAllocator(0L, 2);
-            String result = AlpnReader.read(0L, noopIoHandles(), allocator);
+            scriptedDataAddr = 0L;
+            scriptedAlpnLen  = 2;
+            String result = AlpnReader.read(0L, scriptedIoHandles(), new SimpleAllocator());
             assertThat(result).isSameAs(AlpnReader.NONE);
         }
 
         @Test
-        @DisplayName("alpnLen=0 → returns NONE sentinel")
+        @DisplayName("alpnLen=0 written by handle → returns NONE sentinel")
         void zeroLenReturnsNone() {
-            long fakeAddr = allocAlpnString("h2");
-            MemoryAllocator allocator = new PrefilledAllocator(fakeAddr, 0);
-            String result = AlpnReader.read(0L, noopIoHandles(), allocator);
+            scriptedDataAddr = allocAlpnString("h2");
+            scriptedAlpnLen  = 0;
+            String result = AlpnReader.read(0L, scriptedIoHandles(), new SimpleAllocator());
             assertThat(result).isSameAs(AlpnReader.NONE);
         }
 
         @Test
-        @DisplayName("alpnLen < 0 → returns NONE sentinel")
+        @DisplayName("alpnLen < 0 written by handle → returns NONE sentinel")
         void negativeLenReturnsNone() {
-            long fakeAddr = allocAlpnString("h2");
-            MemoryAllocator allocator = new PrefilledAllocator(fakeAddr, -1);
-            String result = AlpnReader.read(0L, noopIoHandles(), allocator);
+            scriptedDataAddr = allocAlpnString("h2");
+            scriptedAlpnLen  = -1;
+            String result = AlpnReader.read(0L, scriptedIoHandles(), new SimpleAllocator());
             assertThat(result).isSameAs(AlpnReader.NONE);
         }
 
         @Test
         @DisplayName("alpnLen > 255 (RFC 7301 violation) → returns NONE sentinel")
         void tooLongReturnsNone() {
-            long fakeAddr = allocAlpnString("x");
-            MemoryAllocator allocator = new PrefilledAllocator(fakeAddr, 256);
-            String result = AlpnReader.read(0L, noopIoHandles(), allocator);
+            scriptedDataAddr = allocAlpnString("x");
+            scriptedAlpnLen  = 256;
+            String result = AlpnReader.read(0L, scriptedIoHandles(), new SimpleAllocator());
             assertThat(result).isSameAs(AlpnReader.NONE);
         }
 
         @Test
         @DisplayName("FFM exception in invokeGetAlpnSelected → returns NONE, no crash")
         void ffmExceptionReturnsNone() {
-            MemoryAllocator allocator = new SimpleAllocator();
-            String result = AlpnReader.read(0L, throwingIoHandles(), allocator);
+            String result = AlpnReader.read(0L, throwingIoHandles(), new SimpleAllocator());
             assertThat(result).isSameAs(AlpnReader.NONE);
         }
     }
@@ -326,9 +296,9 @@ class AlpnReaderTest {
         @ValueSource(strings = {"h2", "http/1.1", "x"})
         @DisplayName("Standard ALPN protocol names decoded to correct Java String")
         void standardProtocolsDecoded(String protocol) {
-            long addr = allocAlpnString(protocol);
-            MemoryAllocator allocator = new PrefilledAllocator(addr, protocol.length());
-            String result = AlpnReader.read(0L, noopIoHandles(), allocator);
+            scriptedDataAddr = allocAlpnString(protocol);
+            scriptedAlpnLen  = protocol.length();
+            String result = AlpnReader.read(0L, scriptedIoHandles(), new SimpleAllocator());
             assertThat(result).isEqualTo(protocol);
         }
 
@@ -336,9 +306,9 @@ class AlpnReaderTest {
         @DisplayName("Max length (255 bytes) ALPN string → correctly decoded")
         void maxLengthProtocol() {
             String protocol = "a".repeat(255);
-            long addr = allocAlpnString(protocol);
-            MemoryAllocator allocator = new PrefilledAllocator(addr, 255);
-            String result = AlpnReader.read(0L, noopIoHandles(), allocator);
+            scriptedDataAddr = allocAlpnString(protocol);
+            scriptedAlpnLen  = 255;
+            String result = AlpnReader.read(0L, scriptedIoHandles(), new SimpleAllocator());
             assertThat(result).isEqualTo(protocol);
         }
     }
@@ -361,37 +331,36 @@ class AlpnReaderTest {
         @Test
         @DisplayName("'h2' → returns pre-interned ALPN_H2 constant (isSameAs, no new String)")
         void h2ReturnsSameInstance() {
-            long addr = allocAlpnString("h2");
-            MemoryAllocator allocator = new PrefilledAllocator(addr, 2);
-            String result = AlpnReader.read(0L, noopIoHandles(), allocator);
-            // isSameAs verifies reference identity — proves zero allocation on fast path
+            scriptedDataAddr = allocAlpnString("h2");
+            scriptedAlpnLen  = 2;
+            String result = AlpnReader.read(0L, scriptedIoHandles(), new SimpleAllocator());
             assertThat(result).isSameAs(AlpnReader.ALPN_H2);
         }
 
         @Test
         @DisplayName("'http/1.1' → returns pre-interned ALPN_HTTP_1_1 constant (isSameAs)")
         void http11ReturnsSameInstance() {
-            long addr = allocAlpnString("http/1.1");
-            MemoryAllocator allocator = new PrefilledAllocator(addr, 8);
-            String result = AlpnReader.read(0L, noopIoHandles(), allocator);
+            scriptedDataAddr = allocAlpnString("http/1.1");
+            scriptedAlpnLen  = 8;
+            String result = AlpnReader.read(0L, scriptedIoHandles(), new SimpleAllocator());
             assertThat(result).isSameAs(AlpnReader.ALPN_HTTP_1_1);
         }
 
         @Test
         @DisplayName("'h3' → returns pre-interned ALPN_H3 constant (isSameAs)")
         void h3ReturnsSameInstance() {
-            long addr = allocAlpnString("h3");
-            MemoryAllocator allocator = new PrefilledAllocator(addr, 2);
-            String result = AlpnReader.read(0L, noopIoHandles(), allocator);
+            scriptedDataAddr = allocAlpnString("h3");
+            scriptedAlpnLen  = 2;
+            String result = AlpnReader.read(0L, scriptedIoHandles(), new SimpleAllocator());
             assertThat(result).isSameAs(AlpnReader.ALPN_H3);
         }
 
         @Test
         @DisplayName("'x' (unknown) → falls through to slow path, returns correct value")
         void unknownProtocolSlowPath() {
-            long addr = allocAlpnString("x");
-            MemoryAllocator allocator = new PrefilledAllocator(addr, 1);
-            String result = AlpnReader.read(0L, noopIoHandles(), allocator);
+            scriptedDataAddr = allocAlpnString("x");
+            scriptedAlpnLen  = 1;
+            String result = AlpnReader.read(0L, scriptedIoHandles(), new SimpleAllocator());
             assertThat(result)
                     .isEqualTo("x")
                     .isNotSameAs(AlpnReader.ALPN_H2)
@@ -402,9 +371,9 @@ class AlpnReaderTest {
         @Test
         @DisplayName("'h3' — same length as 'h2' but different bytes → slow path, correct value")
         void h2LengthButDifferentBytes() {
-            long addr = allocAlpnString("h3"); // length 2, same as h2 — but bytes differ
-            MemoryAllocator allocator = new PrefilledAllocator(addr, 2);
-            String result = AlpnReader.read(0L, noopIoHandles(), allocator);
+            scriptedDataAddr = allocAlpnString("h3");
+            scriptedAlpnLen  = 2;
+            String result = AlpnReader.read(0L, scriptedIoHandles(), new SimpleAllocator());
             assertThat(result)
                     .isNotSameAs(AlpnReader.ALPN_H2)
                     .isEqualTo("h3");

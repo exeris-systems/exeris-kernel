@@ -210,11 +210,11 @@ class OffHeapTlsEngineLoopbackIT {
     private record CertPair(String certPath, String keyPath) {}
 
     /**
-     * {@link AutoCloseable} wrapper for {@link Process} — {@code Process} does not
-     * implement {@code AutoCloseable} on this JDK build, so this adapter enables
-     * try-with-resources and satisfies SonarQube S2093.
-     * {@link Process#destroyForcibly()} is called on {@link #close()} to ensure
-     * the OS process is reaped even if {@link Process#waitFor()} throws.
+     * {@link AutoCloseable} wrapper for {@link Process} that enforces
+     * {@link Process#destroyForcibly()} on {@link #close()}, guaranteeing the OS
+     * process is reaped even if {@link Process#waitFor()} throws or is not called
+     * in all execution paths. Using this adapter makes the explicit teardown intent
+     * visible to static analysis tools (e.g. SonarQube S2093).
      */
     private record ManagedProcess(Process process) implements AutoCloseable {
         int waitFor() throws InterruptedException {

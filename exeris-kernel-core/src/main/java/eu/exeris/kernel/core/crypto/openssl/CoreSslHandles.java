@@ -210,12 +210,20 @@ public final class CoreSslHandles {
         }
 
         /**
-         * {@code SSL_free(sslPtr)} — best effort.
+         * {@code SSL_free(sslPtr)}.
+         *
+         * <p>Propagates any {@link Throwable} thrown by the FFM invocation so that
+         * {@code NativeCipherContext.release()} can absorb it and emit
+         * {@link NativeCipherContextFreeFailureEvent}. Failure absorption belongs at
+         * the destructor call-site, not here, to prevent silent native-heap leaks.
+         *
+         * @throws TlsException wrapping any FFM-layer throwable
          */
         public void invokeSslFree(long sslPtr) {
             try {
                 sslFree.invokeExact(sslPtr);
-            } catch (Throwable _) { //NOPMD AvoidCatchingGenericException — SSL_free best-effort
+            } catch (Throwable t) { //NOPMD AvoidCatchingGenericException — FFM invokeExact declares Throwable
+                throw new TlsException("SSL_free failed", t);
             }
         }
 

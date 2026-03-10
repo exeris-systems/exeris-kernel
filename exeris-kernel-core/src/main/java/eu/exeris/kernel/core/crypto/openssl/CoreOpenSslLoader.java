@@ -110,22 +110,28 @@ public final class CoreOpenSslLoader {
      * {@code GlobalMemoryArbiter.INFRASTRUCTURE} — ensuring symbols stay inside the
      * single pre-allocated memory block.
      *
+     * <h2>Library Discovery Order</h2>
+     * <ol>
+     *   <li>{@code EXERIS_OPENSSL_CRYPTO_PATH} → explicit path for {@code libcrypto}.</li>
+     *   <li>{@code EXERIS_OPENSSL_PATH} → legacy override; controls {@code libcrypto}
+     *       for backward compatibility.</li>
+     *   <li>{@code EXERIS_OPENSSL_SSL_PATH} → explicit path for {@code libssl}.</li>
+     *   <li>Built-in OS candidate lists for both libraries.</li>
+     * </ol>
+     *
      * @param arena the arena whose scope governs the lifetime of the loaded symbols
      * @return immutable {@link CoreSslHandles} record containing all resolved handles
      * @throws CryptoBootstrapException if libssl cannot be found or a required symbol is missing
      */
     public static CoreSslHandles load(Arena arena) {
-        String custom = System.getenv("EXERIS_OPENSSL_PATH");
-        SymbolLookup crypto = (custom != null && !custom.isBlank())
-                ? tryLoad(custom, arena) : null;
-        if (crypto == null) {
-            crypto = tryLoadAll(CRYPTO_CANDIDATES, arena);
-        }
-        SymbolLookup ssl = tryLoadAll(SSL_CANDIDATES, arena);
+        SymbolLookup crypto = resolveCrypto(arena);
+        SymbolLookup ssl    = resolveSsl(arena);
 
         if (crypto == null || ssl == null) {
             throw new CryptoBootstrapException(PROVIDER,
-                    "OpenSSL 3.x not found. Set EXERIS_OPENSSL_PATH or install libssl3.");
+                    "OpenSSL 3.x not found. Set EXERIS_OPENSSL_SSL_PATH and "
+                    + "EXERIS_OPENSSL_CRYPTO_PATH (or EXERIS_OPENSSL_PATH for libcrypto) "
+                    + "or install libssl3.");
         }
 
         SymbolLookup lookup = ssl.or(crypto);
@@ -187,6 +193,43 @@ public final class CoreOpenSslLoader {
     // =========================================================================
     // Library resolution helpers
     // =========================================================================
+
+    /**
+     * Resolves {@code libcrypto} using environment overrides with OS candidate fallback.
+     *
+     * <p>Discovery order:
+     * <ol>
+     *   <li>{@code EXERIS_OPENSSL_CRYPTO_PATH} — explicit path.</li>
+     *   <li>{@code EXERIS_OPENSSL_PATH} — legacy single-lib override (backward compat).</li>
+     *   <li>Built-in {@link #CRYPTO_CANDIDATES} list.</li>
+     * </ol>
+     */
+    private static SymbolLookup resolveCrypto(Arena arena) {
+        SymbolLookup lookup = tryLoadFromEnv("EXERIS_OPENSSL_CRYPTO_PATH", arena);
+        if (lookup == null) {
+            lookup = tryLoadFromEnv("EXERIS_OPENSSL_PATH", arena);
+        }
+        return lookup != null ? lookup : tryLoadAll(CRYPTO_CANDIDATES, arena);
+    }
+
+    /**
+     * Resolves {@code libssl} using an environment override with OS candidate fallback.
+     *
+     * <p>Discovery order:
+     * <ol>
+     *   <li>{@code EXERIS_OPENSSL_SSL_PATH} — explicit path.</li>
+     *   <li>Built-in {@link #SSL_CANDIDATES} list.</li>
+     * </ol>
+     */
+    private static SymbolLookup resolveSsl(Arena arena) {
+        SymbolLookup lookup = tryLoadFromEnv("EXERIS_OPENSSL_SSL_PATH", arena);
+        return lookup != null ? lookup : tryLoadAll(SSL_CANDIDATES, arena);
+    }
+
+    private static SymbolLookup tryLoadFromEnv(String envVar, Arena arena) {
+        String path = System.getenv(envVar);
+        return (path != null && !path.isBlank()) ? tryLoad(path, arena) : null;
+    }
 
     private static SymbolLookup tryLoadAll(String[] candidates, Arena arena) {
         for (String candidate : candidates) {
