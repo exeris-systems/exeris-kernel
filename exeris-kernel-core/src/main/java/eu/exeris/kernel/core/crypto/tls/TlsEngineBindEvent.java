@@ -21,9 +21,12 @@ import jdk.jfr.StackTrace;
  * enters {@code HANDSHAKE_IN_PROGRESS} (BIO already wired by the caller).
  *
  * <h2>JFR-First Contract</h2>
- * <p>Zero overhead when JFR is not recording ({@link #isEnabled()} guard prevents
- * allocation of the event object). Never emitted on the I/O hot path — only at
- * the one-time engine construction during connection setup.
+ * <p>When {@link FlightRecorder} is not initialized, {@link #emit(long, boolean)}
+ * returns immediately without allocating an event instance. When Flight Recorder
+ * is initialized, a single {@code TlsEngineBindEvent} instance is allocated and
+ * only populated and committed if {@link #isEnabled()} returns {@code true}.
+ * Never emitted on the I/O hot path — only at the one-time engine bind during
+ * connection setup.
  *
  * <h2>Diagnostic Value</h2>
  * <p>Correlates a raw {@code SSL*} pointer (visible in native crash dumps and

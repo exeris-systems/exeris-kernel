@@ -47,8 +47,11 @@ import java.lang.invoke.VarHandle;
  *   <li>Attaching the appropriate BIO — either via {@code SSL_set_fd} (Community / TCP fd-owner)
  *       or via {@code BIO_new(BIO_s_mem())} + {@code SSL_set_bio} (Enterprise / Memory-BIO for
  *       TCP and QUIC/DTLS).</li>
- *   <li>Constructing this engine — the constructor advances the state machine directly to
- *       {@link TlsPhase#HANDSHAKE_IN_PROGRESS}. No separate bind step is required.</li>
+ *   <li>Constructing this engine — the constructor allocates the {@code SSL*} handle
+ *       via {@code SSL_new(ctxPtr)} but leaves the engine in
+ *       {@link TlsPhase#UNINITIALIZED}.</li>
+ *   <li>Calling {@link #notifyBound()} after BIO wiring is complete — this advances
+ *       the state machine to {@link TlsPhase#HANDSHAKE_IN_PROGRESS}.</li>
  * </ol>
  *
  * <h2>Zero-Allocation Hot Path</h2>
