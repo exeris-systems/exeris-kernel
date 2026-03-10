@@ -59,43 +59,76 @@ class OffHeapTlsEngineTest {
     @SuppressWarnings("unused")
     public static long stubSslNew(long ctx)                         { return FAKE_SSL_PTR; }
     @SuppressWarnings("unused")
-    public static void stubSslFree(long ssl)                        { /* test stub — no native call */ }
+    public static void stubSslFree(long ssl)                        {
+        assert ssl >= 0 : "stubSslFree";
+    }
     @SuppressWarnings("unused")
-    public static int  stubSslSetFdOk(long ssl, int fd)             { return 1; }
+    public static int  stubSslSetFdOk(long ssl, int fd)             {
+        assert ssl >= 0 : "stubSslSetFdOk:ssl";
+        assert fd  >= 0 : "stubSslSetFdOk:fd";
+        return 1;
+    }
     @SuppressWarnings("unused")
-    public static int  stubSslSetFdFail(long ssl, int fd)           { return 0; }
+    public static int  stubSslSetFdFail(long ssl, int fd)           {
+        assert ssl >= 0 : "stubSslSetFdFail:ssl";
+        assert fd  >= 0 : "stubSslSetFdFail:fd";
+        return 0;
+    }
     @SuppressWarnings("unused")
-    public static int  stubSslAcceptOk(long ssl)                    { return 1; }
+    public static int  stubSslAcceptOk(long ssl)                    {
+        assert ssl >= 0 : "stubSslAcceptOk";
+        return 1;
+    }
     @SuppressWarnings("unused")
-    public static int  stubSslAcceptWantRead(long ssl)              { return -1; }
+    public static int  stubSslAcceptWantRead(long ssl)              {
+        assert ssl >= 0 : "stubSslAcceptWantRead";
+        return -1;
+    }
     @SuppressWarnings("unused")
-    public static int  stubSslConnectOk(long ssl)                   { return 1; }
+    public static int  stubSslConnectOk(long ssl)                   {
+        assert ssl >= 0 : "stubSslConnectOk";
+        return 1;
+    }
     @SuppressWarnings("unused")
-    public static int  stubSslDoHandshake(long ssl)                 { return 1; }
+    public static int  stubSslDoHandshake(long ssl)                 {
+        assert ssl >= 0 : "stubSslDoHandshake";
+        return 1;
+    }
     @SuppressWarnings("unused")
     public static int  stubSslRead(long ssl, long buf, int len)     {
-        assert buf >= 0; // ABI-required — formally read to satisfy static analysis
+        assert ssl >= 0 : "stubSslRead:ssl";
+        assert buf >= 0 : "stubSslRead:buf";
+        assert len >= 0 : "stubSslRead:len";
         return -1;
     }
     @SuppressWarnings("unused")
     public static int  stubSslWrite(long ssl, long buf, int len)    {
-        assert buf >= 0; // ABI-required — formally read to satisfy static analysis
+        assert ssl >= 0 : "stubSslWrite:ssl";
+        assert buf >= 0 : "stubSslWrite:buf";
         return len;
     }
     @SuppressWarnings("unused")
-    public static int  stubSslShutdown(@SuppressWarnings("unused") long ignoredSsl)            { return 1; }
+    public static int  stubSslShutdown(long ignoredSsl)             {
+        assert ignoredSsl >= 0 : "stubSslShutdown";
+        return 1;
+    }
     @SuppressWarnings("unused")
-    public static int  stubSslGetShutdown(@SuppressWarnings("unused") long ignoredSsl)         { return 0; }
+    public static int  stubSslGetShutdown(long ignoredSsl)          {
+        assert ignoredSsl >= 0 : "stubSslGetShutdown";
+        return 0;
+    }
     @SuppressWarnings("unused")
-    public static int  stubSslGetErrorWantRead(@SuppressWarnings("unused") long ignoredSsl,
-                                               int ret)                                        {
-        assert ret >= Integer.MIN_VALUE; // ABI-required — formally read to satisfy static analysis
+    public static int  stubSslGetErrorWantRead(long ignoredSsl, int ret) {
+        assert ignoredSsl >= 0          : "stubSslGetErrorWantRead:ssl";
+        assert ret >= Integer.MIN_VALUE : "stubSslGetErrorWantRead:ret";
         return 2;
     }
     @SuppressWarnings("unused") // ABI stub: signature matches SSL_CTX_set_alpn_select_cb callback (ssl, out, outLen)
-    public static void stubAlpnSelected(@SuppressWarnings("unused") long ignoredSsl,
-                                        @SuppressWarnings("unused") long ignoredD,
-                                        @SuppressWarnings("unused") long ignoredL)             { /* test stub — no ALPN */ }
+    public static void stubAlpnSelected(long ignoredSsl, long ignoredD, long ignoredL) {
+        assert ignoredSsl >= Long.MIN_VALUE : "stubAlpnSelected:ssl";
+        assert ignoredD   >= Long.MIN_VALUE : "stubAlpnSelected:out";
+        assert ignoredL   >= Long.MIN_VALUE : "stubAlpnSelected:outLen";
+    }
 
     // =========================================================================
     // Handle factory
@@ -147,15 +180,16 @@ class OffHeapTlsEngineTest {
             MemorySegment seg = arena.allocate(bytes, 8L);
             return new LoanedBuffer() {
                 private long sz = bytes;
+                private final java.util.List<Runnable> closeActions = new java.util.ArrayList<>();
                 @Override public MemorySegment segment()          { return seg; }
                 @Override public long           size()            { return sz; }
                 @Override public long           capacity()        { return bytes; }
                 @Override public void           setSize(long s)   { sz = s; }
-                @Override public void           close()           { arena.close(); }
+                @Override public void           close()           { closeActions.forEach(Runnable::run); arena.close(); }
                 @Override public void           retain()          { /* test stub — no ref-count */ }
                 @Override public int            refCount()        { return 1; }
                 @Override public boolean        isAlive()         { return true; }
-                @Override public void           addCloseAction(Runnable r) { r.run(); }
+                @Override public void           addCloseAction(Runnable r) { closeActions.add(r); }
                 @Override public LoanedBuffer   slice(long o, long l) { return this; }
                 @Override public LoanedBuffer   view()            { return this; }
                 @Override public LoanedBuffer   peek(long o, long l) { return this; }

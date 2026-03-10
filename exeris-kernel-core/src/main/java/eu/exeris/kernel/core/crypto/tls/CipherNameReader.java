@@ -88,30 +88,21 @@ final class CipherNameReader {
      */
     private static String readCString(long nativeAddr) {
         MemorySegment raw = MemorySegment.ofAddress(nativeAddr).reinterpret(MAX_SCAN_BYTES);
-        int nullIdx = indexOfNull(raw);
+        byte[] scan = raw.toArray(ValueLayout.JAVA_BYTE);
+        int nullIdx = indexOfNull(scan);
         if (nullIdx < 0) {
             return UNKNOWN;
         }
-        byte[] bytes = raw.asSlice(0, nullIdx).toArray(ValueLayout.JAVA_BYTE);
-        return new String(bytes, StandardCharsets.UTF_8);
+        return new String(scan, 0, nullIdx, StandardCharsets.UTF_8);
     }
 
     /**
-     * Returns the index of the first {@code NUL} byte within the first
-     * {@link #MAX_SCAN_BYTES} bytes of {@code seg}, or {@code -1} if none is found.
-     *
-     * <p>Uses {@link MemorySegment#mismatch(MemorySegment)} against a zero-filled
-     * reference segment to locate the first byte that differs from {@code 0x00} —
-     * the complement of which is a {@code NUL} at the <em>mismatch</em> offset itself
-     * only when the target byte equals {@code 0x00}. Instead, we scan byte-by-byte
-     * via a single {@code get} loop factored out from {@link #readCString} so that
-     * static analysis sees a concrete {@code int} upper bound rather than a
-     * compile-time constant.
+     * Returns the index of the first {@code NUL} ({@code 0x00}) byte in {@code bytes},
+     * or {@code -1} if none is found.
      */
-    private static int indexOfNull(MemorySegment seg) {
-        int limit = (int) Math.min(seg.byteSize(), MAX_SCAN_BYTES);
-        for (int i = 0; i < limit; i++) {
-            if (seg.get(ValueLayout.JAVA_BYTE, i) == 0) {
+    private static int indexOfNull(byte[] bytes) {
+        for (int i = 0; i < bytes.length; i++) {
+            if (bytes[i] == 0) {
                 return i;
             }
         }

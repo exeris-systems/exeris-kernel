@@ -101,15 +101,16 @@ class NativeCipherContextTest {
             MemorySegment seg = arena.allocate(bytes, 8L);
             return new LoanedBuffer() {
                 private long sz = bytes;
+                private final java.util.List<Runnable> closeActions = new java.util.ArrayList<>();
                 @Override public MemorySegment segment()          { return seg; }
                 @Override public long           size()            { return sz; }
                 @Override public long           capacity()        { return bytes; }
                 @Override public void           setSize(long s)   { sz = s; }
-                @Override public void           close()           { arena.close(); }
+                @Override public void           close()           { closeActions.forEach(Runnable::run); arena.close(); }
                 @Override public void           retain()          { /* test stub — NativeCipherContext manages ref-count externally */ }
                 @Override public int            refCount()        { return 1; }
                 @Override public boolean        isAlive()         { return true; }
-                @Override public void           addCloseAction(Runnable r) { r.run(); }
+                @Override public void           addCloseAction(Runnable r) { closeActions.add(r); }
                 @Override public LoanedBuffer   slice(long o, long l) { return this; }
                 @Override public LoanedBuffer   view()            { return this; }
                 @Override public LoanedBuffer   peek(long o, long l) { return this; }

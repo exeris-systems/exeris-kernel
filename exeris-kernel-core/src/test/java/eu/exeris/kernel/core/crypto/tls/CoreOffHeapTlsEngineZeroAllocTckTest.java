@@ -34,9 +34,9 @@ import java.util.List;
 class CoreOffHeapTlsEngineZeroAllocTckTest extends CryptoZeroAllocTck {
 
     /**
-     * Returns {@code true} — Enterprise tier guarantees zero {@code eu.exeris.*}
-     * allocations on the steady-state hot path via slab-pool CAS on primitive
-     * {@code long} fields only.
+     * Returns {@code true} — Core tier {@link OffHeapTlsEngine} guarantees zero
+     * {@code eu.exeris.*} allocations on the steady-state hot path via FFM raw
+     * {@code long} address passing and pre-allocated Sentinel exceptions only.
      */
     @Override
     protected boolean supportsZeroGcHotPath() {
@@ -81,7 +81,12 @@ class CoreOffHeapTlsEngineZeroAllocTckTest extends CryptoZeroAllocTck {
                 @Override public void           retain()           { /* zero-alloc slab: no ref-counting — single-threaded benchmark harness */ }
                 @Override public int            refCount()         { return 1; }
                 @Override public boolean        isAlive()          { return true; }
-                @Override public void           addCloseAction(Runnable r) { r.run(); }
+                @Override public void           addCloseAction(Runnable r) {
+                    // Zero-alloc slab: no deferred list — close() is a no-op (GLOBAL_ARENA lifetime).
+                    // Actions fire immediately; acceptable because NativeCipherContext does not
+                    // register close actions on this path and the slab is never individually released.
+                    r.run();
+                }
                 @Override public LoanedBuffer   slice(long off, long len) { return allocate(AllocationHint.MICRO); }
                 @Override public LoanedBuffer   view()             { return this; }
                 @Override public LoanedBuffer   peek(long off, long len)  { return this; }

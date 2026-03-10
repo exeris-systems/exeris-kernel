@@ -99,15 +99,16 @@ class OffHeapTlsEngineLoopbackIT {
             MemorySegment seg = arena.allocate(bytes, 8L);
             return new LoanedBuffer() {
                 private long sz = 0;
+                private final java.util.List<Runnable> closeActions = new java.util.ArrayList<>();
                 @Override public MemorySegment segment()               { return seg; }
                 @Override public long           size()                 { return sz; }
                 @Override public long           capacity()             { return bytes; }
                 @Override public void           setSize(long s)        { sz = s; }
-                @Override public void           close()                { /* test stub — slab lifetime managed by arena */ }
+                @Override public void           close()                { closeActions.forEach(Runnable::run); }
                 @Override public void           retain()               { /* test stub — no ref-count in harness */ }
                 @Override public int            refCount()             { return 1; }
                 @Override public boolean        isAlive()              { return true; }
-                @Override public void           addCloseAction(Runnable r) { r.run(); }
+                @Override public void           addCloseAction(Runnable r) { closeActions.add(r); }
                 @Override public LoanedBuffer   slice(long o, long l)  { return this; }
                 @Override public LoanedBuffer   view()                 { return this; }
                 @Override public LoanedBuffer   peek(long o, long l)   { return this; }
@@ -215,20 +216,22 @@ class OffHeapTlsEngineLoopbackIT {
                     ctxPtr, certSeg.address(), CoreOpenSslLoader.SSL_FILETYPE_PEM);
             if (certResult != 1) {
                 ctx.close();
-                assumeTrue(false, "SSL_CTX_use_certificate_file failed (result=" + certResult + ")");
+                throw new org.opentest4j.TestAbortedException(
+                        "SSL_CTX_use_certificate_file failed (result=" + certResult + ")");
             }
 
             int keyResult = handles.ctx().invokeCtxUseKeyFile(
                     ctxPtr, keySeg.address(), CoreOpenSslLoader.SSL_FILETYPE_PEM);
             if (keyResult != 1) {
                 ctx.close();
-                assumeTrue(false, "SSL_CTX_use_PrivateKey_file failed (result=" + keyResult + ")");
+                throw new org.opentest4j.TestAbortedException(
+                        "SSL_CTX_use_PrivateKey_file failed (result=" + keyResult + ")");
             }
 
             int checkResult = handles.ctx().invokeCtxCheckKey(ctxPtr);
             if (checkResult != 1) {
                 ctx.close();
-                assumeTrue(false, "SSL_CTX_check_private_key mismatch");
+                throw new org.opentest4j.TestAbortedException("SSL_CTX_check_private_key mismatch");
             }
         }
         handles.ctx().invokeCtxSetVerify(ctxPtr, CoreOpenSslLoader.SSL_VERIFY_NONE);
@@ -359,11 +362,14 @@ class OffHeapTlsEngineLoopbackIT {
                                 .as("Decrypted byte count must equal original payload")
                                 .isEqualTo(payloadSize);
 
-                        MemorySegment actual   = decrypted.segment().asSlice(0, decrypted.size());
-                        MemorySegment pattern  = Arena.ofAuto().allocate(decrypted.size()).fill((byte) 0xAB);
-                        assertThat(actual.mismatch(pattern))
-                                .as("All decrypted bytes must equal 0xAB — mismatch offset (−1 = none)")
-                                .isEqualTo(-1L);
+                        MemorySegment actual = decrypted.segment().asSlice(0, decrypted.size());
+                        try (LoanedBuffer patternBuf = ALLOC.allocate(AllocationHint.MEDIUM)) {
+                            patternBuf.segment().asSlice(0, decrypted.size()).fill((byte) 0xAB);
+                            MemorySegment pattern = patternBuf.segment().asSlice(0, decrypted.size());
+                            assertThat(actual.mismatch(pattern))
+                                    .as("All decrypted bytes must equal 0xAB — mismatch offset (−1 = none)")
+                                    .isEqualTo(-1L);
+                        }
                     });
                 }
             }
@@ -409,15 +415,16 @@ class OffHeapTlsEngineLoopbackIT {
                 MemorySegment seg = trackArena.allocate(bytes, 8L);
                 return new LoanedBuffer() {
                     private long sz = 0;
+                    private final java.util.List<Runnable> closeActions = new java.util.ArrayList<>();
                     @Override public MemorySegment segment()               { return seg; }
                     @Override public long           size()                 { return sz; }
                     @Override public long           capacity()             { return bytes; }
                     @Override public void           setSize(long s)        { sz = s; }
-                    @Override public void           close()                { /* test stub — arena-managed */ }
+                    @Override public void           close()                { closeActions.forEach(Runnable::run); }
                     @Override public void           retain()               { /* test stub — no ref-count */ }
                     @Override public int            refCount()             { return 1; }
                     @Override public boolean        isAlive()              { return true; }
-                    @Override public void           addCloseAction(Runnable r) { r.run(); }
+                    @Override public void           addCloseAction(Runnable r) { closeActions.add(r); }
                     @Override public LoanedBuffer   slice(long o, long l)  { return this; }
                     @Override public LoanedBuffer   view()                 { return this; }
                     @Override public LoanedBuffer   peek(long o, long l)   { return this; }
@@ -454,5 +461,10 @@ class OffHeapTlsEngineLoopbackIT {
                 client.beginHandshake(clientBuf);
             }
         }
+
+        assertThat(server.phase() == TlsPhase.ACTIVE && client.phase() == TlsPhase.ACTIVE)
+                .as("TLS handshake did not complete within %d steps — server=%s, client=%s",
+                    maxSteps, server.phase(), client.phase())
+                .isTrue();
     }
 }
