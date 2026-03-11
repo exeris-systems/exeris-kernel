@@ -93,6 +93,7 @@ public final class CoreSslHandles {
             try {
                 return (long) sslServerMethod.invokeExact();
             } catch (Throwable t) { //NOPMD AvoidCatchingGenericException — FFM invokeExact declares Throwable
+                FfmErrors.rethrowIfError(t);
                 throw new TlsException("TLS_server_method failed", t);
             }
         }
@@ -105,6 +106,7 @@ public final class CoreSslHandles {
             try {
                 return (long) sslClientMethod.invokeExact();
             } catch (Throwable t) { //NOPMD AvoidCatchingGenericException — FFM invokeExact declares Throwable
+                FfmErrors.rethrowIfError(t);
                 throw new TlsException("TLS_client_method failed", t);
             }
         }
@@ -116,6 +118,7 @@ public final class CoreSslHandles {
             try {
                 return (long) sslCtxNew.invokeExact(methodPtr);
             } catch (Throwable t) { //NOPMD AvoidCatchingGenericException — FFM invokeExact declares Throwable
+                FfmErrors.rethrowIfError(t);
                 throw new TlsException("SSL_CTX_new failed", t);
             }
         }
@@ -137,6 +140,7 @@ public final class CoreSslHandles {
             try {
                 return (int) sslCtxUseCertificateFile.invokeExact(ctxPtr, pathAddr, fileType);
             } catch (Throwable t) { //NOPMD AvoidCatchingGenericException — FFM invokeExact declares Throwable
+                FfmErrors.rethrowIfError(t);
                 throw new TlsException("SSL_CTX_use_certificate_file failed", t);
             }
         }
@@ -148,6 +152,7 @@ public final class CoreSslHandles {
             try {
                 return (int) sslCtxUsePrivateKeyFile.invokeExact(ctxPtr, pathAddr, fileType);
             } catch (Throwable t) { //NOPMD AvoidCatchingGenericException — FFM invokeExact declares Throwable
+                FfmErrors.rethrowIfError(t);
                 throw new TlsException("SSL_CTX_use_PrivateKey_file failed", t);
             }
         }
@@ -159,6 +164,7 @@ public final class CoreSslHandles {
             try {
                 return (int) sslCtxCheckPrivateKey.invokeExact(ctxPtr);
             } catch (Throwable t) { //NOPMD AvoidCatchingGenericException — FFM invokeExact declares Throwable
+                FfmErrors.rethrowIfError(t);
                 throw new TlsException("SSL_CTX_check_private_key failed", t);
             }
         }
@@ -170,6 +176,7 @@ public final class CoreSslHandles {
             try {
                 sslCtxSetVerify.invokeExact(ctxPtr, mode, MemorySegment.NULL);
             } catch (Throwable t) { //NOPMD AvoidCatchingGenericException — FFM invokeExact declares Throwable
+                FfmErrors.rethrowIfError(t);
                 throw new TlsException("SSL_CTX_set_verify failed", t);
             }
         }
@@ -205,6 +212,7 @@ public final class CoreSslHandles {
             try {
                 return (long) sslNew.invokeExact(ctxPtr);
             } catch (Throwable t) { //NOPMD AvoidCatchingGenericException — FFM invokeExact declares Throwable
+                FfmErrors.rethrowIfError(t);
                 throw new TlsException("SSL_new failed", t);
             }
         }
@@ -213,7 +221,7 @@ public final class CoreSslHandles {
          * {@code SSL_free(sslPtr)}.
          *
          * <p>Propagates any {@link Throwable} thrown by the FFM invocation so that
-         * {@code NativeCipherContext.release()} can absorb it and emit
+         * {@code NativeCipherContext.release()} can absorb
          * {@link NativeCipherContextFreeFailureEvent}. Failure absorption belongs at
          * the destructor call-site, not here, to prevent silent native-heap leaks.
          *
@@ -223,6 +231,7 @@ public final class CoreSslHandles {
             try {
                 sslFree.invokeExact(sslPtr);
             } catch (Throwable t) { //NOPMD AvoidCatchingGenericException — FFM invokeExact declares Throwable
+                FfmErrors.rethrowIfError(t);
                 throw new TlsException("SSL_free failed", t);
             }
         }
@@ -235,6 +244,7 @@ public final class CoreSslHandles {
             try {
                 return (int) sslAccept.invokeExact(sslPtr);
             } catch (Throwable t) { //NOPMD AvoidCatchingGenericException — FFM invokeExact declares Throwable
+                FfmErrors.rethrowIfError(t);
                 throw new TlsHandshakeException("SSL_accept failed", t);
             }
         }
@@ -246,6 +256,7 @@ public final class CoreSslHandles {
             try {
                 return (int) sslConnect.invokeExact(sslPtr);
             } catch (Throwable t) { //NOPMD AvoidCatchingGenericException — FFM invokeExact declares Throwable
+                FfmErrors.rethrowIfError(t);
                 throw new TlsHandshakeException("SSL_connect failed", t);
             }
         }
@@ -257,6 +268,7 @@ public final class CoreSslHandles {
             try {
                 return (int) sslDoHandshake.invokeExact(sslPtr);
             } catch (Throwable t) { //NOPMD AvoidCatchingGenericException — FFM invokeExact declares Throwable
+                FfmErrors.rethrowIfError(t);
                 throw new TlsHandshakeException("SSL_do_handshake failed", t);
             }
         }
@@ -293,6 +305,7 @@ public final class CoreSslHandles {
             try {
                 return (int) sslRead.invokeExact(sslPtr, bufAddr, len);
             } catch (Throwable t) { //NOPMD AvoidCatchingGenericException — FFM invokeExact declares Throwable
+                FfmErrors.rethrowIfError(t);
                 throw new TlsDecryptException("SSL_read failed", t);
             }
         }
@@ -304,6 +317,7 @@ public final class CoreSslHandles {
             try {
                 return (int) sslWrite.invokeExact(sslPtr, bufAddr, len);
             } catch (Throwable t) { //NOPMD AvoidCatchingGenericException — FFM invokeExact declares Throwable
+                FfmErrors.rethrowIfError(t);
                 throw new TlsException("SSL_write failed", t);
             }
         }
@@ -315,6 +329,7 @@ public final class CoreSslHandles {
             try {
                 return (int) sslShutdown.invokeExact(sslPtr);
             } catch (Throwable t) { //NOPMD AvoidCatchingGenericException — FFM invokeExact declares Throwable
+                FfmErrors.rethrowIfError(t);
                 throw new TlsException("SSL_shutdown failed", t);
             }
         }
@@ -326,6 +341,7 @@ public final class CoreSslHandles {
             try {
                 return (int) sslGetShutdown.invokeExact(sslPtr);
             } catch (Throwable t) { //NOPMD AvoidCatchingGenericException — FFM invokeExact declares Throwable
+                FfmErrors.rethrowIfError(t);
                 throw new TlsException("SSL_get_shutdown failed", t);
             }
         }
@@ -337,6 +353,7 @@ public final class CoreSslHandles {
             try {
                 return (int) sslGetError.invokeExact(sslPtr, retCode);
             } catch (Throwable t) { //NOPMD AvoidCatchingGenericException — FFM invokeExact declares Throwable
+                FfmErrors.rethrowIfError(t);
                 throw new TlsException("SSL_get_error failed", t);
             }
         }
@@ -352,6 +369,7 @@ public final class CoreSslHandles {
             try {
                 sslGet0AlpnSelected.invokeExact(sslPtr, dataAddr, lenAddr);
             } catch (Throwable t) { //NOPMD AvoidCatchingGenericException — FFM invokeExact declares Throwable
+                FfmErrors.rethrowIfError(t);
                 throw new TlsException("SSL_get0_alpn_selected failed", t);
             }
         }
@@ -367,6 +385,7 @@ public final class CoreSslHandles {
             try {
                 return (long) sslGetCurrentCipher.invokeExact(sslPtr);
             } catch (Throwable t) { //NOPMD AvoidCatchingGenericException — FFM invokeExact declares Throwable
+                FfmErrors.rethrowIfError(t);
                 throw new TlsException("SSL_get_current_cipher failed", t);
             }
         }
@@ -385,6 +404,7 @@ public final class CoreSslHandles {
             try {
                 return (long) sslCipherGetName.invokeExact(cipherPtr);
             } catch (Throwable t) { //NOPMD AvoidCatchingGenericException — FFM invokeExact declares Throwable
+                FfmErrors.rethrowIfError(t);
                 throw new TlsException("SSL_CIPHER_get_name failed", t);
             }
         }

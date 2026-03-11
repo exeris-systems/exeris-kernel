@@ -72,7 +72,9 @@ import java.lang.invoke.VarHandle;
  *
  * <h2>JFR-First</h2>
  * <ul>
- *   <li>{@link TlsEngineBindEvent} — emitted once at construction (BIO ready)</li>
+ *   <li>{@link TlsEngineBindEvent} — emitted once from {@link #notifyBound()} after BIO wiring
+ *       completes (transition from {@link TlsPhase#UNINITIALIZED} to
+ *       {@link TlsPhase#HANDSHAKE_IN_PROGRESS})</li>
  *   <li>{@link TlsPhaseTransitionEvent} — emitted by {@link TlsStateMachine} on each transition</li>
  *   <li>{@link TlsEngineCloseEvent} — emitted once at {@link #close()}</li>
  * </ul>
@@ -195,7 +197,11 @@ public final class OffHeapTlsEngine implements TlsEngine {
      * @param serverMode {@code true} for server role ({@code SSL_accept}),
      *                   {@code false} for client ({@code SSL_connect})
      * @param allocator  {@link MemoryAllocator} used for {@link AllocationHint#SESSION} tracking
-     * @throws TlsException if {@code SSL_new} returns NULL or the SESSION slab cannot be allocated
+     * @throws TlsException if {@code SSL_new} returns {@code NULL}
+     * @throws eu.exeris.kernel.spi.exceptions.memory.MemoryExhaustedException
+     *         ({@code EX-MEM-1001}) if the {@link AllocationHint#SESSION} slab cannot be
+     *         satisfied by the {@code WatermarkManager}
+     * @throws IllegalStateException if the provided {@link MemoryAllocator} has been closed
      */
     public OffHeapTlsEngine(CoreSslHandles handles, long ctxPointer, boolean serverMode,
                             MemoryAllocator allocator) {

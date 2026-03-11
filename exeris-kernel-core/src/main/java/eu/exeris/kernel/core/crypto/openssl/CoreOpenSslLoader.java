@@ -61,6 +61,9 @@ public final class CoreOpenSslLoader {
 
     private static final String PROVIDER = "CoreOpenSslLoader";
 
+    /** Minimum OPENSSL_VERSION_NUMBER for OpenSSL 3.0.0 ({@code 0x30000000L}). */
+    private static final long OPENSSL_3_MIN_VERSION = 0x30000000L;
+
     private static final boolean IS_WINDOWS =
             System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win");
 
@@ -69,28 +72,24 @@ public final class CoreOpenSslLoader {
         "/opt/openssl-3.5/lib/libssl.so.3",
         "/usr/local/lib/libssl.so.3",
         "/usr/lib/x86_64-linux-gnu/libssl.so.3",
-        "libssl.so.3",
-        "ssl"
+        "libssl.so.3"
     };
     private static final String[] CRYPTO_CANDIDATES_LINUX = {
         "/opt/openssl-3.5/lib64/libcrypto.so.3",
         "/opt/openssl-3.5/lib/libcrypto.so.3",
         "/usr/local/lib/libcrypto.so.3",
         "/usr/lib/x86_64-linux-gnu/libcrypto.so.3",
-        "libcrypto.so.3",
-        "crypto"
+        "libcrypto.so.3"
     };
     private static final String[] SSL_CANDIDATES_WINDOWS = {
         "libssl-3-x64.dll",
         "libssl-3.dll",
-        "ssleay64.dll",
-        "ssl"
+        "ssleay64.dll"
     };
     private static final String[] CRYPTO_CANDIDATES_WINDOWS = {
         "libcrypto-3-x64.dll",
         "libcrypto-3.dll",
-        "libeay64.dll",
-        "crypto"
+        "libeay64.dll"
     };
 
     private static final String[] SSL_CANDIDATES =
@@ -136,6 +135,8 @@ public final class CoreOpenSslLoader {
 
         SymbolLookup lookup = ssl.or(crypto);
         Linker linker       = Linker.nativeLinker();
+
+        verifyOpenSslVersion(linker, lookup);
 
         CoreSslHandles.CtxHandles ctx = new CoreSslHandles.CtxHandles(
                 req(linker, lookup, "TLS_server_method",
@@ -188,6 +189,45 @@ public final class CoreOpenSslLoader {
                         FunctionDescriptor.of(JAVA_LONG, JAVA_LONG)));
 
         return new CoreSslHandles(ctx, handshake, ioHandles);
+    }
+
+    // =========================================================================
+    // Version gate — rejects OpenSSL < 3.0.0
+    // =========================================================================
+
+    /**
+     * Resolves {@code OpenSSL_version_num()} and asserts the loaded library is
+     * OpenSSL 3.x ({@code OPENSSL_VERSION_NUMBER >= 0x30000000L}).
+     *
+     * <p>This guard catches the case where an unversioned system name (e.g. resolved
+     * via {@code EXERIS_OPENSSL_CRYPTO_PATH} pointing at an old path) inadvertently
+     * loads OpenSSL 1.1.x, whose ABI differs in struct layouts and function signatures.
+     *
+     * @throws CryptoBootstrapException if {@code OpenSSL_version_num} cannot be resolved
+     *                                  or the version is older than 3.0.0
+     */
+    private static void verifyOpenSslVersion(Linker linker, SymbolLookup lookup) {
+        MethodHandle versionNum = opt(linker, lookup, "OpenSSL_version_num",
+                FunctionDescriptor.of(JAVA_LONG));
+        if (versionNum == null) {
+            throw new CryptoBootstrapException(PROVIDER,
+                    "OpenSSL_version_num symbol not found — library may not be OpenSSL 3.x.");
+        }
+        long version;
+        try {
+            version = (long) versionNum.invokeExact();
+        } catch (Throwable throwable) { //NOPMD AvoidCatchingGenericException — FFM invokeExact declares Throwable
+            FfmErrors.rethrowIfError(throwable);
+            throw new CryptoBootstrapException(PROVIDER,
+                    "OpenSSL_version_num invocation failed", throwable);
+        }
+        if (version < OPENSSL_3_MIN_VERSION) {
+            throw new CryptoBootstrapException(PROVIDER,
+                    "OpenSSL 3.x required (OPENSSL_VERSION_NUMBER >= 0x30000000), "
+                    + "but found: 0x" + Long.toHexString(version)
+                    + ". Set EXERIS_OPENSSL_SSL_PATH / EXERIS_OPENSSL_CRYPTO_PATH "
+                    + "to point at an OpenSSL 3.x installation.");
+        }
     }
 
     // =========================================================================

@@ -110,7 +110,12 @@ public final class NativeCipherContext implements AutoCloseable {
      * @param handles       pre-resolved FFM method handles for session lifecycle
      * @param sslCtxPointer raw address of the shared {@code SSL_CTX*}
      * @param allocator     allocator used for the session slab tracking; must be non-null
-     * @throws TlsException if {@code SSL_new} returns a NULL pointer or throws
+     * @throws eu.exeris.kernel.spi.exceptions.memory.MemoryExhaustedException
+     *         ({@code EX-MEM-1001}) if the {@link AllocationHint#SESSION} slab cannot be
+     *         satisfied — thrown by {@link MemoryAllocator#allocate(AllocationHint)} before
+     *         any native memory is touched, enabling backpressure via {@code WatermarkManager}
+     * @throws IllegalStateException if the provided {@link MemoryAllocator} has been closed
+     * @throws TlsException if {@code SSL_new} returns a {@code NULL} pointer
      */
     public NativeCipherContext(CoreSslHandles.HandshakeHandles handles,
                                long sslCtxPointer,
