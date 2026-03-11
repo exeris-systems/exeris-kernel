@@ -173,16 +173,26 @@ public class CoreTlsStateMachineBenchmark extends AbstractExerisBenchmark {
     // =========================================================================
 
     /**
-     * Fresh state machine reset between invocations — transition table state.
-     * Declared {@code package-private volatile} so JMH can write it between iterations.
+     * Per-invocation state for {@link #handshakeCompleteToActiveCas}.
+     *
+     * <p>Declared as a separate {@code @State(Scope.Thread)} class so that
+     * its {@link Level#Invocation} setup runs <em>only</em> for benchmark methods
+     * that declare this class as a parameter. The trial-scoped steady-state
+     * benchmarks ({@link #phaseRead}, {@link #activeGuardCheck},
+     * {@link #canTransitionToShutdownCheck}) are therefore unaffected by the
+     * per-invocation allocation and CAS transitions.
      */
-    /* default */ volatile TlsStateMachine freshMachine;
+    @State(Scope.Thread)
+    public static class FreshMachineState {
+        /** State machine pre-advanced to {@code HANDSHAKE_COMPLETE}; JMH writes this field. */
+        public volatile TlsStateMachine machine;
 
-    @Setup(Level.Invocation)
-    public void resetFreshMachine() {
-        freshMachine = new TlsStateMachine();
-        freshMachine.transitionTo(TlsPhase.UNINITIALIZED,         TlsPhase.HANDSHAKE_IN_PROGRESS);
-        freshMachine.transitionTo(TlsPhase.HANDSHAKE_IN_PROGRESS, TlsPhase.HANDSHAKE_COMPLETE);
+        @Setup(Level.Invocation)
+        public void reset() {
+            machine = new TlsStateMachine();
+            machine.transitionTo(TlsPhase.UNINITIALIZED,         TlsPhase.HANDSHAKE_IN_PROGRESS);
+            machine.transitionTo(TlsPhase.HANDSHAKE_IN_PROGRESS, TlsPhase.HANDSHAKE_COMPLETE);
+        }
     }
 
     /**
@@ -197,15 +207,15 @@ public class CoreTlsStateMachineBenchmark extends AbstractExerisBenchmark {
      * <p><b>Note on {@code Level.Invocation} setup:</b> {@link Level#Invocation}
      * adds call overhead (object allocation + 2 prior CAS transitions) that is NOT
      * included in the measurement timing. JMH begins timing after
-     * {@link #resetFreshMachine()} returns. Use {@code Mode.SampleTime} to account
+     * {@link FreshMachineState#reset()} returns. Use {@code Mode.SampleTime} to account
      * for per-invocation variance rather than {@code Throughput}.
      */
     @Benchmark
     @BenchmarkMode(Mode.SampleTime)
     @OutputTimeUnit(TimeUnit.NANOSECONDS)
-    public TlsPhase handshakeCompleteToActiveCas(Blackhole bh) {
-        freshMachine.transitionTo(TlsPhase.HANDSHAKE_COMPLETE, TlsPhase.ACTIVE);
-        TlsPhase result = freshMachine.phase();
+    public TlsPhase handshakeCompleteToActiveCas(FreshMachineState freshState, Blackhole bh) {
+        freshState.machine.transitionTo(TlsPhase.HANDSHAKE_COMPLETE, TlsPhase.ACTIVE);
+        TlsPhase result = freshState.machine.phase();
         bh.consume(result);
         return result;
     }
@@ -216,14 +226,22 @@ public class CoreTlsStateMachineBenchmark extends AbstractExerisBenchmark {
     // =========================================================================
 
     /**
-     * Fresh {@link TlsPhase#UNINITIALIZED} state machine per invocation — full lifecycle reset.
-     * Declared {@code package-private volatile} so JMH can write it between iterations.
+     * Per-invocation state for {@link #fullLifecycleUninitToActive}.
+     *
+     * <p>Declared as a separate {@code @State(Scope.Thread)} class for the same
+     * isolation reason as {@link FreshMachineState}: its {@link Level#Invocation}
+     * setup must not bleed into steady-state benchmarks that share this
+     * {@code @State(Scope.Benchmark)} host.
      */
-    /* default */ volatile TlsStateMachine uninitMachine;
+    @State(Scope.Thread)
+    public static class UninitMachineState {
+        /** Fresh {@code UNINITIALIZED} state machine; JMH writes this field. */
+        public volatile TlsStateMachine machine;
 
-    @Setup(Level.Invocation)
-    public void resetUninitMachine() {
-        uninitMachine = new TlsStateMachine();
+        @Setup(Level.Invocation)
+        public void reset() {
+            machine = new TlsStateMachine();
+        }
     }
 
     /**
@@ -246,10 +264,10 @@ public class CoreTlsStateMachineBenchmark extends AbstractExerisBenchmark {
     @Benchmark
     @BenchmarkMode({Mode.Throughput, Mode.SampleTime})
     @OutputTimeUnit(TimeUnit.NANOSECONDS)
-    public TlsPhase fullLifecycleUninitToActive() {
-        uninitMachine.transitionTo(TlsPhase.UNINITIALIZED,         TlsPhase.HANDSHAKE_IN_PROGRESS);
-        uninitMachine.transitionTo(TlsPhase.HANDSHAKE_IN_PROGRESS, TlsPhase.HANDSHAKE_COMPLETE);
-        uninitMachine.transitionTo(TlsPhase.HANDSHAKE_COMPLETE,    TlsPhase.ACTIVE);
-        return uninitMachine.phase();
+    public TlsPhase fullLifecycleUninitToActive(UninitMachineState uninitState) {
+        uninitState.machine.transitionTo(TlsPhase.UNINITIALIZED,         TlsPhase.HANDSHAKE_IN_PROGRESS);
+        uninitState.machine.transitionTo(TlsPhase.HANDSHAKE_IN_PROGRESS, TlsPhase.HANDSHAKE_COMPLETE);
+        uninitState.machine.transitionTo(TlsPhase.HANDSHAKE_COMPLETE,    TlsPhase.ACTIVE);
+        return uninitState.machine.phase();
     }
 }

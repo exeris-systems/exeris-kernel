@@ -103,13 +103,15 @@ public abstract class AbstractCryptoEngineTck {
      * Returns {@code true} if the provider under test supports in-memory I/O
      * (wrap/unwrap) without a real fd-based network socket.
      *
-     * <p>Default: {@code true} — suitable for JSSE-backed Community providers
-     * and any Memory-BIO Enterprise engine where wrap/unwrap work independently
-     * of a kernel file descriptor.
+     * <p>Default: {@code true} — suitable for Memory-BIO engines whose
+     * {@code wrap}/{@code unwrap} operations work entirely on off-heap
+     * {@link eu.exeris.kernel.spi.memory.LoanedBuffer} slabs, independently
+     * of any kernel file descriptor.
      *
-     * <p>Override to return {@code false} for fd-owner BIO engines (Core/Community
-     * OpenSSL {@code SSL_set_fd} path) whose wrap/unwrap hot path requires an active
-     * TCP socket. Those engines are covered by {@code OffHeapTlsEngineLoopbackIT}.
+     * <p>Override to return {@code false} for fd-owner BIO engines (e.g., the
+     * Core OpenSSL {@code SSL_set_fd} path) whose wrap/unwrap hot path requires
+     * an active TCP socket bound to a real file descriptor. Those engines are
+     * covered end-to-end by {@code OffHeapTlsEngineLoopbackIT}.
      * When {@code false}, the three I/O tests that need an {@code ACTIVE} session
      * are skipped via {@link org.junit.jupiter.api.Assumptions#assumeTrue}.
      *
