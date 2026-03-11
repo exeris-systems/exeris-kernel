@@ -122,18 +122,18 @@ public final class NativeCipherContext implements AutoCloseable {
                                MemoryAllocator allocator) {
         this.handles     = handles;
         this.sessionSlab = allocator.allocate(AllocationHint.SESSION);
+        final long ptr;
         try {
-            this.sslPtr = handles.invokeSslNew(sslCtxPointer);
-            if (this.sslPtr == NULL_PTR) {
-                throw new TlsException("OpenSSL SSL_new returned NULL pointer. Native allocation failed.");
-            }
-        } catch (TlsException t) {
-            sessionSlab.close();
-            throw t;
+            ptr = handles.invokeSslNew(sslCtxPointer);
         } catch (Exception t) { //NOPMD AvoidCatchingGenericException — constructor must not leak larval state
             sessionSlab.close();
             throw new TlsException("Fatal error allocating native SSL pointer", t);
         }
+        if (ptr == NULL_PTR) {
+            sessionSlab.close();
+            throw new TlsException("OpenSSL SSL_new returned NULL pointer. Native allocation failed.");
+        }
+        this.sslPtr = ptr;
         CryptoContextAllocEvent.emit(this.sslPtr, sslCtxPointer, "NativeCipherContext",
                 AllocationHint.SESSION.sizeBytes());
     }
