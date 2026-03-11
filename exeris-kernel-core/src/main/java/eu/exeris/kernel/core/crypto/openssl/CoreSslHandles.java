@@ -132,7 +132,7 @@ public final class CoreSslHandles {
             } catch (Throwable t) { //NOPMD AvoidCatchingGenericException — best-effort cleanup
                 FfmErrors.rethrowIfError(t);
                 if (t instanceof RuntimeException rte) {
-                    throw rte;
+                    throw rte; //NOPMD PreserveStackTrace — rte is t via pattern match; identical object and stack trace
                 }
             }
         }

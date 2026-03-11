@@ -23,6 +23,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.condition.EnabledOnOs;
 import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
@@ -33,6 +34,8 @@ import java.net.InetSocketAddress;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
 import java.nio.file.Path;
+import java.util.concurrent.StructuredTaskScope;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
@@ -70,6 +73,7 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  */
 @Tag("integration")
 @EnabledOnOs(OS.LINUX)
+@Timeout(value = 30, unit = TimeUnit.SECONDS)
 @DisplayName("IT: OffHeapTlsEngine — TLS 1.3 loopback handshake + round-trip")
 class OffHeapTlsEngineLoopbackIT {
 
@@ -478,32 +482,55 @@ class OffHeapTlsEngineLoopbackIT {
     }
 
     // =========================================================================
-    // Handshake driver — interleaves server/client steps until both reach ACTIVE
+    // Handshake driver — server and client run concurrently on virtual threads
     // =========================================================================
 
     /**
-     * Drives the TLS handshake by alternating {@link OffHeapTlsEngine#beginHandshake}
-     * calls between server and client until both engines reach {@link TlsPhase#ACTIVE}
-     * or a maximum step limit is exceeded (guard against infinite loops in test failure paths).
+     * Drives the TLS 1.3 handshake by running server and client on two concurrent
+     * virtual threads inside a {@link StructuredTaskScope}.
+     *
+     * <p>The previous single-threaded loop deadlocked on blocking sockets:
+     * {@code SSL_accept} blocks waiting for a ClientHello that can never arrive
+     * because {@code SSL_connect} is only called after {@code SSL_accept} returns.
+     * With two virtual threads the kernel socket buffer mediates the exchange and
+     * each blocking call resolves naturally.
      */
     private static void driveHandshake(OffHeapTlsEngine server, LoanedBuffer serverBuf,
                                        OffHeapTlsEngine client, LoanedBuffer clientBuf) {
-        final int maxSteps = 64;
-        int steps = 0;
+        try (var scope = StructuredTaskScope.open()) {
+            StructuredTaskScope.Subtask<Void> serverTask =
+                    scope.fork(() -> { driveSingleEngine(server, serverBuf); return null; });
+            StructuredTaskScope.Subtask<Void> clientTask =
+                    scope.fork(() -> { driveSingleEngine(client, clientBuf); return null; });
 
-        while ((server.phase() != TlsPhase.ACTIVE || client.phase() != TlsPhase.ACTIVE)
-                && steps++ < maxSteps) {
-            if (server.phase() != TlsPhase.ACTIVE) {
-                server.beginHandshake(serverBuf);
+            scope.join();
+
+            if (serverTask.state() == StructuredTaskScope.Subtask.State.FAILED) {
+                throw new AssertionError("Server handshake thread failed", serverTask.exception());
             }
-            if (client.phase() != TlsPhase.ACTIVE) {
-                client.beginHandshake(clientBuf);
+            if (clientTask.state() == StructuredTaskScope.Subtask.State.FAILED) {
+                throw new AssertionError("Client handshake thread failed", clientTask.exception());
             }
+        } catch (InterruptedException _) {
+            Thread.currentThread().interrupt();
+            throw new org.opentest4j.TestAbortedException("driveHandshake interrupted");
         }
 
         assertThat(server.phase() == TlsPhase.ACTIVE && client.phase() == TlsPhase.ACTIVE)
-                .as("TLS handshake did not complete within %d steps — server=%s, client=%s",
-                    maxSteps, server.phase(), client.phase())
+                .as("TLS handshake did not complete — server=%s, client=%s",
+                    server.phase(), client.phase())
                 .isTrue();
+    }
+
+    /**
+     * Drives a single engine's handshake loop until it reaches {@link TlsPhase#ACTIVE}.
+     * With blocking {@code SSL_set_fd} sockets, a single {@code beginHandshake()} call
+     * completes the entire TLS 1.3 flight; the loop is a safety net only.
+     */
+    private static void driveSingleEngine(OffHeapTlsEngine engine, LoanedBuffer buf) {
+        final int maxSteps = 64;
+        for (int i = 0; i < maxSteps && engine.phase() != TlsPhase.ACTIVE; i++) {
+            engine.beginHandshake(buf);
+        }
     }
 }
