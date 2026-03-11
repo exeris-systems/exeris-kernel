@@ -31,8 +31,11 @@ package eu.exeris.kernel.http.hpack;
 @SuppressWarnings({"PMD.TooManyMethods", "PMD.CyclomaticComplexity"})
 public final class HpackDynamicTable {
 
-    private static final int ENTRY_OVERHEAD = 32;
+    private static final int ENTRY_OVERHEAD   = 32;
     private static final int INITIAL_CAPACITY = 64;
+    private static final int UTF8_1BYTE_MAX   = 0x007F;
+    private static final int UTF8_2BYTE_MAX   = 0x07FF;
+    private static final int UTF8_3BYTE_MAX   = 0xFFFF;
 
     private Entry[] entries;
     private int head;
@@ -46,9 +49,8 @@ public final class HpackDynamicTable {
      */
     private record Entry(String name, String value) {
         /* package */ long byteSize() {
-
-            return HpackDynamicTable.utf8ByteLength(name)
-                    + HpackDynamicTable.utf8ByteLength(value)
+            return utf8ByteLength(name)
+                    + utf8ByteLength(value)
                     + (long) ENTRY_OVERHEAD;
         }
     }
@@ -240,24 +242,22 @@ public final class HpackDynamicTable {
         }
     }
 
-    private static int utf8ByteLength(String s) {
+    private static int utf8ByteLength(String str) {
         int count = 0;
-        final int len = s.length();
-        int i = 0;
-        while (i < len) {
-            char c = s.charAt(i);
-            if (c <= 0x7F) {
+        final int len = str.length();
+        int idx = 0;
+        while (idx < len) {
+            int codePoint = str.codePointAt(idx);
+            if (codePoint <= UTF8_1BYTE_MAX) {
                 count++;
-            } else if (c <= 0x7FF) {
+            } else if (codePoint <= UTF8_2BYTE_MAX) {
                 count += 2;
-            } else if (Character.isHighSurrogate(c) && i + 1 < len
-                    && Character.isLowSurrogate(s.charAt(i + 1))) {
-                count += 4;
-                i++;
-            } else {
+            } else if (codePoint <= UTF8_3BYTE_MAX) {
                 count += 3;
+            } else {
+                count += 4;
             }
-            i++;
+            idx += Character.charCount(codePoint);
         }
         return count;
     }

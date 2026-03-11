@@ -60,20 +60,13 @@ public final class Http2FrameEncoder {
      */
     public static long writeSettings(MemorySegment seg, long offset, int streamId,
                                      boolean ack, int... params) {
-        if (streamId != 0) {
-            throw new IllegalArgumentException("SETTINGS frame must use stream 0");
-        }
-        if (!ack && params.length % 2 != 0) {
-            throw new IllegalArgumentException(
-                    "SETTINGS params must be pairs of [id, value]; odd length: " + params.length);
-        }
+        validateSettingsArgs(streamId, ack, params);
         int flags = ack ? 0x01 : 0x00;
         int payloadLen = ack ? 0 : params.length / 2 * 6;
         writeHeader(seg, offset, payloadLen, Http2FrameType.SETTINGS.code(), flags, streamId);
         long pos = offset + Http2FrameParser.FRAME_HEADER_SIZE;
         if (!ack) {
-            int idx = 0;
-            while (idx < params.length) {
+            for (int idx = 0; idx < params.length; idx += 2) {
                 seg.set(ValueLayout.JAVA_BYTE, pos, (byte) ((params[idx] >> 8) & 0xFF));
                 seg.set(ValueLayout.JAVA_BYTE, pos + 1, (byte) (params[idx] & 0xFF));
                 int val = params[idx + 1];
@@ -82,10 +75,19 @@ public final class Http2FrameEncoder {
                 seg.set(ValueLayout.JAVA_BYTE, pos + 4, (byte) ((val >> 8) & 0xFF));
                 seg.set(ValueLayout.JAVA_BYTE, pos + 5, (byte) (val & 0xFF));
                 pos += 6;
-                idx += 2;
             }
         }
         return pos - offset;
+    }
+
+    private static void validateSettingsArgs(int streamId, boolean ack, int... params) {
+        if (streamId != 0) {
+            throw new IllegalArgumentException("SETTINGS frame must use stream 0");
+        }
+        if (!ack && params.length % 2 != 0) {
+            throw new IllegalArgumentException(
+                    "SETTINGS params must be pairs of [id, value]; odd length: " + params.length);
+        }
     }
 
     /**

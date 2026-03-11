@@ -209,10 +209,10 @@ public final class Http1Codec {
         final int len = headerValue.length();
         while (start < len) {
             int comma = headerValue.indexOf(',', start);
-            String t = (comma == -1
+            String candidate = (comma == -1
                     ? headerValue.substring(start)
                     : headerValue.substring(start, comma)).strip();
-            if (token.equalsIgnoreCase(t)) {
+            if (token.equalsIgnoreCase(candidate)) {
                 return true;
             }
             if (comma == -1) {
@@ -267,12 +267,12 @@ public final class Http1Codec {
     }
 
     private static final class H2cDetectionContext {
-        boolean upgrade;
-        boolean settings;
-        boolean connectionUpgrade;
-        boolean connectionSettings;
+        private boolean upgrade;
+        private boolean settings;
+        private boolean connectionUpgrade;
+        private boolean connectionSettings;
 
-        boolean isValidUpgrade() {
+        private boolean isValidUpgrade() {
             return upgrade && settings && connectionUpgrade && connectionSettings;
         }
     }

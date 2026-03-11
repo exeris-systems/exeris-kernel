@@ -52,6 +52,10 @@ public final class HpackDecoder {
     private static final int SIZE_UPDATE_MASK = 0xE0;
     private static final int SIZE_UPDATE_PATTERN = 0x20;
 
+    private static final int UTF8_1BYTE_MAX = 0x007F;
+    private static final int UTF8_2BYTE_MAX = 0x07FF;
+    private static final int UTF8_3BYTE_MAX = 0xFFFF;
+
     private final HpackDynamicTable dynamicTable;
     private final MemoryAllocator allocator;
     private final long maxHeaderListSize;
@@ -334,23 +338,22 @@ public final class HpackDecoder {
         return size;
     }
 
-    private static int utf8ByteLength(String s) {
+    private static int utf8ByteLength(String str) {
         int count = 0;
-        final int len = s.length();
-        int i = 0;
-        while (i < len) {
-            char c = s.charAt(i);
-            if (c <= 0x7F) {
+        final int len = str.length();
+        int idx = 0;
+        while (idx < len) {
+            int codePoint = str.codePointAt(idx);
+            if (codePoint <= UTF8_1BYTE_MAX) {
                 count++;
-            } else if (c <= 0x7FF) {
+            } else if (codePoint <= UTF8_2BYTE_MAX) {
                 count += 2;
-            } else if (Character.isHighSurrogate(c) && i + 1 < len && Character.isLowSurrogate(s.charAt(i + 1))) {
-                count += 4;
-                i++;
-            } else {
+            } else if (codePoint <= UTF8_3BYTE_MAX) {
                 count += 3;
+            } else {
+                count += 4;
             }
-            i++;
+            idx += Character.charCount(codePoint);
         }
         return count;
     }
