@@ -96,11 +96,11 @@ class CoreOffHeapTlsEngineTckTest extends AbstractCryptoEngineTck {
     // =========================================================================
 
     /**
-     * Per-test allocator reference. Populated by {@link #createAllocator()} before
-     * the TCK calls {@link KernelCryptoProvider#createTlsEngine(CryptoProviderConfig)},
-     * so the engine constructor receives a live allocator.
+     * Typed provider reference. {@code AbstractCryptoEngineTck#setUp()} calls
+     * {@code createProvider()} before {@code createAllocator()}, so the allocator
+     * is injected into {@link TckProvider#allocator} after construction.
      */
-    private MemoryAllocator currentAllocator;
+    private TckProvider tckProvider;
 
     // =========================================================================
     // AbstractCryptoEngineTck template methods
@@ -108,30 +108,16 @@ class CoreOffHeapTlsEngineTckTest extends AbstractCryptoEngineTck {
 
     @Override
     protected KernelCryptoProvider createProvider() {
-        return new KernelCryptoProvider() {
-            @Override public String  providerName() { return "CoreOffHeapTls/OpenSSL3-TCK"; }
-            @Override public int     priority()     { return 100; }
-            @Override public boolean supportsQuic() { return false; }
-
-            @Override
-            public TlsEngine createTlsEngine(CryptoProviderConfig config) {
-                if (config != null && config.protocol() == CryptoProviderConfig.Protocol.QUIC) {
-                    throw new CryptoBootstrapException(providerName(),
-                            "QUIC requires Enterprise Memory-BIO tier — fd-owner Core does not support QUIC");
-                }
-                OffHeapTlsEngine engine = new OffHeapTlsEngine(
-                        handles, serverCtxPtr, true, currentAllocator);
-                engine.notifyBound();
-                return engine;
-            }
-        };
+        tckProvider = new TckProvider();
+        return tckProvider;
     }
 
     @Override
     protected MemoryAllocator createAllocator() {
         Arena arena = Arena.ofShared(); //NOPMD DirectArena — test harness only
-        currentAllocator = sharedArenaAllocator(arena);
-        return currentAllocator;
+        MemoryAllocator alloc = sharedArenaAllocator(arena);
+        tckProvider.allocator = alloc;
+        return alloc;
     }
 
     @Override
@@ -147,6 +133,45 @@ class CoreOffHeapTlsEngineTckTest extends AbstractCryptoEngineTck {
     @Override
     protected boolean isIoReady() {
         return false;
+    }
+
+    // =========================================================================
+    // Named provider — satisfies ServiceLoader public no-arg constructor contract
+    // =========================================================================
+
+    /**
+     * Named static class so that {@code provider.getClass().getDeclaredConstructor()}
+     * succeeds (TCK {@code ProviderMetadata.publicNoArgConstructorExists}).
+     *
+     * <p>Static nested classes in Java can access {@code private} members of the
+     * enclosing class ({@code handles}, {@code serverCtxPtr}). The {@code allocator}
+     * field is injected by {@link CoreOffHeapTlsEngineTckTest#createAllocator()} via
+     * direct package-private field write after this instance is constructed.
+     */
+    static final class TckProvider implements KernelCryptoProvider {
+
+        /** Injected by {@link CoreOffHeapTlsEngineTckTest#createAllocator()} before first engine creation. */
+        MemoryAllocator allocator;
+
+        /** Public no-arg constructor — satisfies {@code ServiceLoader} discovery contract. */
+        public TckProvider() {
+            // No-op — fields are set by the test harness after construction.
+        }
+
+        @Override public String  providerName() { return "CoreOffHeapTls/OpenSSL3-TCK"; }
+        @Override public int     priority()     { return 100; }
+        @Override public boolean supportsQuic() { return false; }
+
+        @Override
+        public TlsEngine createTlsEngine(CryptoProviderConfig config) {
+            if (config != null && config.protocol() == CryptoProviderConfig.Protocol.QUIC) {
+                throw new CryptoBootstrapException(providerName(),
+                        "QUIC requires Enterprise Memory-BIO tier — fd-owner Core does not support QUIC");
+            }
+            OffHeapTlsEngine engine = new OffHeapTlsEngine(handles, serverCtxPtr, true, allocator);
+            engine.notifyBound();
+            return engine;
+        }
     }
 
     // =========================================================================
@@ -167,5 +192,3 @@ class CoreOffHeapTlsEngineTckTest extends AbstractCryptoEngineTck {
         };
     }
 }
-
-

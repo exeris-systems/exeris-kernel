@@ -28,6 +28,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
  * TCK: Abstract base for {@link KernelCryptoProvider} and {@link TlsEngine} contract
@@ -95,6 +96,27 @@ public abstract class AbstractCryptoEngineTck {
      * Default: {@code true}.
      */
     protected boolean isCommunityTier() {
+        return true;
+    }
+
+    /**
+     * Returns {@code true} if the provider under test supports in-memory I/O
+     * (wrap/unwrap) without a real fd-based network socket.
+     *
+     * <p>Default: {@code true} — suitable for JSSE-backed Community providers
+     * and any Memory-BIO Enterprise engine where wrap/unwrap work independently
+     * of a kernel file descriptor.
+     *
+     * <p>Override to return {@code false} for fd-owner BIO engines (Core/Community
+     * OpenSSL {@code SSL_set_fd} path) whose wrap/unwrap hot path requires an active
+     * TCP socket. Those engines are covered by {@code OffHeapTlsEngineLoopbackIT}.
+     * When {@code false}, the three I/O tests that need an {@code ACTIVE} session
+     * are skipped via {@link org.junit.jupiter.api.Assumptions#assumeTrue}.
+     *
+     * @return {@code true} if wrap/unwrap can be exercised without a real socket
+     * @since 0.5.0
+     */
+    protected boolean isIoReady() {
         return true;
     }
 
@@ -265,6 +287,9 @@ public abstract class AbstractCryptoEngineTck {
         @Test
         @DisplayName("wrap() with off-heap LoanedBuffer returns a valid status")
         void wrapWithOffHeapBufferReturnsValidStatus() {
+            assumeTrue(isIoReady(),
+                    "Skipped: this engine requires fd-based BIO wiring before wrap() " +
+                            "— covered by OffHeapTlsEngineLoopbackIT");
             try (TlsEngine engine = provider.createTlsEngine(tcpTlsConfig());
                  LoanedBuffer plaintext = allocator.allocate(AllocationHint.SMALL);
                  LoanedBuffer ciphertext = allocator.allocate(AllocationHint.MEDIUM)) {
@@ -285,6 +310,9 @@ public abstract class AbstractCryptoEngineTck {
         @Test
         @DisplayName("unwrap() with off-heap LoanedBuffer returns a valid status")
         void unwrapWithOffHeapBufferReturnsValidStatus() {
+            assumeTrue(isIoReady(),
+                    "Skipped: this engine requires fd-based BIO wiring before unwrap() " +
+                            "— covered by OffHeapTlsEngineLoopbackIT");
             try (TlsEngine engine = provider.createTlsEngine(tcpTlsConfig());
                  LoanedBuffer ciphertext = allocator.allocate(AllocationHint.MEDIUM);
                  LoanedBuffer plaintext = allocator.allocate(AllocationHint.MEDIUM)) {
@@ -317,6 +345,9 @@ public abstract class AbstractCryptoEngineTck {
         @Test
         @DisplayName("wrap() input address is preserved — no silent heap copy")
         void wrapDoesNotCopyToHeap() {
+            assumeTrue(isIoReady(),
+                    "Skipped: this engine requires an ACTIVE session for wrap() address preservation " +
+                            "— covered by OffHeapTlsEngineLoopbackIT");
             try (TlsEngine engine = provider.createTlsEngine(tcpTlsConfig());
                  LoanedBuffer plaintext = allocator.allocate(AllocationHint.SMALL);
                  LoanedBuffer ciphertext = allocator.allocate(AllocationHint.MEDIUM)) {
