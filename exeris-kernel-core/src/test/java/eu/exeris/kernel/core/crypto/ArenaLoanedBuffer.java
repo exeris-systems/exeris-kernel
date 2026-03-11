@@ -6,7 +6,7 @@
  * Commercial resale of this software as a competing product is prohibited.
  * See LICENSE-COMMUNITY in the repository root for the full text.
  */
- package eu.exeris.kernel.core.crypto;
+package eu.exeris.kernel.core.crypto;
 
 import eu.exeris.kernel.spi.memory.AllocationHint;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;

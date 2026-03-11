@@ -11,7 +11,6 @@ package eu.exeris.kernel.core.crypto.tls;
 import eu.exeris.kernel.core.crypto.openssl.CoreSslHandles;
 
 import java.lang.foreign.MemorySegment;
-import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
 
 /**
@@ -21,9 +20,10 @@ import java.nio.charset.StandardCharsets;
  * <h2>Zero-Copy Contract</h2>
  * <p>The C string returned by {@code SSL_CIPHER_get_name} is owned by OpenSSL for the
  * library lifetime. This reader reinterprets the native pointer as a bounded
- * {@link MemorySegment} via a null-scan, copies the bytes once into a Java
- * {@link String}, then releases the view — no {@link java.nio.ByteBuffer} wrapper,
- * no intermediate {@code byte[]} beyond the final string construction.
+ * {@link MemorySegment} and calls {@link MemorySegment#getString(long, java.nio.charset.Charset)}
+ * to decode the null-terminated name directly into a Java {@link String} — no intermediate
+ * {@code byte[]} allocation, no {@link java.nio.ByteBuffer} wrapper. The single
+ * {@link String} allocation is unavoidable on the cold path (once per completed handshake).
  *
  * <h2>Failure Policy</h2>
  * <p>Any failure (null cipher pointer, null name pointer, FFM exception) returns an
@@ -80,44 +80,17 @@ final class CipherNameReader {
     /**
      * Reads a null-terminated C string from the given native address.
      *
-     * <p>Scans up to {@link #MAX_SCAN_BYTES} bytes for the null terminator directly
-     * on the {@link MemorySegment}, then copies an exact-length slice into a
-     * {@code byte[]} for {@link String} construction — one allocation instead of two.
+     * <p>Creates a bounded {@link MemorySegment} of {@link #MAX_SCAN_BYTES} bytes and
+     * delegates to {@link MemorySegment#getString(long, java.nio.charset.Charset)} which
+     * scans for the {@code NUL} terminator and constructs the {@link String} in one step,
+     * without an intermediate {@code byte[]}.
      *
      * @param nativeAddr native address of the null-terminated C string (OpenSSL-owned)
      * @return decoded UTF-8 string, or {@link #UNKNOWN} if scanning fails or name is empty
      */
     private static String readCString(long nativeAddr) {
         MemorySegment raw = MemorySegment.ofAddress(nativeAddr).reinterpret(MAX_SCAN_BYTES);
-        int length = scanForNull(raw);
-        if (length < 0) {
-            return UNKNOWN;
-        }
-        if (length == 0) {
-            return UNKNOWN;
-        }
-        byte[] bytes = new byte[length];
-        MemorySegment.copy(raw, ValueLayout.JAVA_BYTE, 0, bytes, 0, length);
-        return new String(bytes, StandardCharsets.UTF_8);
-    }
-
-    /**
-     * Scans up to {@link #MAX_SCAN_BYTES} bytes for a {@code NUL} terminator.
-     *
-     * <p>The scan limit is derived at runtime from the segment's actual byte size
-     * (capped at {@link #MAX_SCAN_BYTES}) so the method is also correct when a smaller
-     * segment is passed by future callers.
-     *
-     * @param seg segment to scan (must have byte size &gt;= 1)
-     * @return index of the first {@code NUL} byte, or {@code -1} if none found
-     */
-    private static int scanForNull(MemorySegment seg) {
-        int limit = (int) Math.min(seg.byteSize(), MAX_SCAN_BYTES);
-        for (int byteIdx = 0; byteIdx < limit; byteIdx++) {
-            if (seg.get(ValueLayout.JAVA_BYTE, byteIdx) == 0) {
-                return byteIdx;
-            }
-        }
-        return -1;
+        String name = raw.getString(0, StandardCharsets.UTF_8);
+        return name.isEmpty() ? UNKNOWN : name;
     }
 }

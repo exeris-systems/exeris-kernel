@@ -261,7 +261,7 @@ public final class CoreOpenSslLoader {
      *   <li>Built-in {@link #SSL_CANDIDATES} list.</li>
      * </ol>
      */
-    private static SymbolLookup resolveSsl(Arena arena) {
+    /* default */ static SymbolLookup resolveSsl(Arena arena) {
         SymbolLookup lookup = tryLoadFromEnv("EXERIS_OPENSSL_SSL_PATH", arena);
         return lookup != null ? lookup : tryLoadAll(SSL_CANDIDATES, arena);
     }

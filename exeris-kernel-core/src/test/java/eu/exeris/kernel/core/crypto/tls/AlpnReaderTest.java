@@ -83,7 +83,7 @@ class AlpnReaderTest {
         @Override public LoanedBuffer allocateNetwork(int n) { return new TestLoanedBuffer(n); }
         @Override public LoanedBuffer allocateCarrierSlab(int i) { return new TestLoanedBuffer(12); }
         @Override public LoanedBuffer allocateInfrastructure(long b) { return new TestLoanedBuffer(b); }
-        @Override public MemoryStats stats()  { return null; }
+        @Override public MemoryStats stats()  { return MemoryStats.zero(); }
         @Override public void close()         { /* empty — test stub */ }
     }
 

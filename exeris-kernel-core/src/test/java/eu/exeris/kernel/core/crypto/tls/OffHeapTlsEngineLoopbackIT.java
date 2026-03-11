@@ -10,6 +10,7 @@ package eu.exeris.kernel.core.crypto.tls;
 
 import eu.exeris.kernel.core.crypto.ArenaLoanedBuffer;
 import eu.exeris.kernel.core.crypto.openssl.CoreOpenSslLoader;
+import eu.exeris.kernel.core.crypto.openssl.CoreOpenSslLoaderTestHelper;
 import eu.exeris.kernel.core.crypto.openssl.CoreSslHandles;
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.crypto.TlsPhase;
@@ -99,16 +100,12 @@ class OffHeapTlsEngineLoopbackIT {
     static void loadOpenSsl() {
         try {
             handles = CoreOpenSslLoader.load(Arena.global());
-            // Resolve SSL_set_fd separately — Community-tier concern only
-            java.lang.foreign.Linker linker = java.lang.foreign.Linker.nativeLinker();
-            java.lang.foreign.SymbolLookup lookup = java.lang.foreign.SymbolLookup.loaderLookup()
-                    .or(java.lang.foreign.SymbolLookup.libraryLookup("libssl.so.3", Arena.global()));
-            sslSetFdHandle = linker.downcallHandle(
-                    lookup.find("SSL_set_fd").orElseThrow(),
-                    java.lang.foreign.FunctionDescriptor.of(
-                            java.lang.foreign.ValueLayout.JAVA_INT,
-                            java.lang.foreign.ValueLayout.JAVA_LONG,
-                            java.lang.foreign.ValueLayout.JAVA_INT));
+            // Resolve SSL_set_fd from the exact same libssl instance that CoreOpenSslLoader
+            // selected (env override → candidate list). Using a separate libraryLookup("libssl.so.3")
+            // could resolve a different system libssl and cause an ABI mismatch.
+            sslSetFdHandle = CoreOpenSslLoaderTestHelper.resolveSslSetFd(Arena.global());
+            assumeTrue(sslSetFdHandle != null,
+                    "SSL_set_fd not found in the loaded libssl — skipping loopback IT");
         } catch (Throwable t) { //NOPMD AvoidCatchingThrowable — FFM libraryLookup may throw UnsatisfiedLinkError (Error, not Exception)
             assumeTrue(false, "OpenSSL not available — skipping loopback IT: " + t.getMessage());
         }

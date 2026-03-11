@@ -125,10 +125,10 @@ public final class NativeCipherContext implements AutoCloseable {
         try {
             this.sslPtr = handles.invokeSslNew(sslCtxPointer);
             if (this.sslPtr == NULL_PTR) {
-                sessionSlab.close();
                 throw new TlsException("OpenSSL SSL_new returned NULL pointer. Native allocation failed.");
             }
         } catch (TlsException t) {
+            sessionSlab.close();
             throw t;
         } catch (Exception t) { //NOPMD AvoidCatchingGenericException — constructor must not leak larval state
             sessionSlab.close();

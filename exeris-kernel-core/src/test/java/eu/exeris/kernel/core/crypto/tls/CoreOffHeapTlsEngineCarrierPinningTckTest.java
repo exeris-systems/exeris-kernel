@@ -230,6 +230,3 @@ class CoreOffHeapTlsEngineCarrierPinningTckTest extends CryptoCarrierPinningTck 
 }
 
 
-
-
-
