@@ -34,6 +34,8 @@ import java.net.InetSocketAddress;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
 import java.nio.file.Path;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.concurrent.StructuredTaskScope;
 import java.util.concurrent.TimeUnit;
 
@@ -107,8 +109,8 @@ class OffHeapTlsEngineLoopbackIT {
                             java.lang.foreign.ValueLayout.JAVA_INT,
                             java.lang.foreign.ValueLayout.JAVA_LONG,
                             java.lang.foreign.ValueLayout.JAVA_INT));
-        } catch (Exception e) {
-            assumeTrue(false, "OpenSSL not available — skipping loopback IT: " + e.getMessage());
+        } catch (Throwable t) { //NOPMD AvoidCatchingThrowable — FFM libraryLookup may throw UnsatisfiedLinkError (Error, not Exception)
+            assumeTrue(false, "OpenSSL not available — skipping loopback IT: " + t.getMessage());
         }
     }
 
@@ -487,17 +489,31 @@ class OffHeapTlsEngineLoopbackIT {
 
     /**
      * Drives the TLS 1.3 handshake by running server and client on two concurrent
-     * virtual threads inside a {@link StructuredTaskScope}.
+     * platform threads inside a {@link StructuredTaskScope}.
      *
-     * <p>The previous single-threaded loop deadlocked on blocking sockets:
-     * {@code SSL_accept} blocks waiting for a ClientHello that can never arrive
-     * because {@code SSL_connect} is only called after {@code SSL_accept} returns.
-     * With two virtual threads the kernel socket buffer mediates the exchange and
-     * each blocking call resolves naturally.
+     * <h2>Why platform threads</h2>
+     * <p>OpenSSL's {@code SSL_accept} and {@code SSL_connect} are blocking FFM (Panama)
+     * downcalls. Unlike Java NIO I/O, FFM calls block the carrier thread and prevent the
+     * JVM from unmounting the virtual thread. On single-CPU CI runners, two virtual threads
+     * sharing one carrier would deadlock: {@code SSL_accept} occupies the carrier while
+     * {@code SSL_connect} can never run. Platform threads are preempted by the OS scheduler
+     * independently, so both blocking calls complete.
+     *
+     * <h2>Deadlock guard</h2>
+     * <p>{@code withTimeout(Duration.ofSeconds(15))} cancels the scope after 15 s and sends
+     * {@link Thread#interrupt()} to both platform threads. On Linux, interrupting a thread
+     * blocked in {@code read()} delivers {@code EINTR} to the syscall, which causes OpenSSL
+     * to return {@code SSL_ERROR_SYSCALL}. This converts a pipeline hang into a test abort.
      */
     private static void driveHandshake(OffHeapTlsEngine server, LoanedBuffer serverBuf,
                                        OffHeapTlsEngine client, LoanedBuffer clientBuf) {
-        try (var scope = StructuredTaskScope.open()) {
+        Instant deadline = Instant.now().plusSeconds(15);
+        try (var scope = StructuredTaskScope.open(
+                StructuredTaskScope.Joiner.awaitAll(),
+                config -> config
+                        .withThreadFactory(Thread.ofPlatform().daemon(true).factory())
+                        .withTimeout(Duration.ofSeconds(15)))) {
+
             StructuredTaskScope.Subtask<Void> serverTask =
                     scope.fork(() -> { driveSingleEngine(server, serverBuf); return null; });
             StructuredTaskScope.Subtask<Void> clientTask =
@@ -505,6 +521,10 @@ class OffHeapTlsEngineLoopbackIT {
 
             scope.join();
 
+            if (Instant.now().isAfter(deadline) || scope.isCancelled()) {
+                throw new org.opentest4j.TestAbortedException(
+                        "driveHandshake timed out after 15 s — SSL_accept/SSL_connect deadlock suspected");
+            }
             if (serverTask.state() == StructuredTaskScope.Subtask.State.FAILED) {
                 throw new AssertionError("Server handshake thread failed", serverTask.exception());
             }

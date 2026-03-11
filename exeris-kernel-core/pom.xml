@@ -19,11 +19,6 @@
         WatermarkManager, ResourceArbiter. Depends only on exeris-kernel-spi.
     </description>
 
-    <properties>
-        <!-- Enable benchmark profile execution in this module -->
-        <benchmark.skip>false</benchmark.skip>
-    </properties>
-
     <dependencies>
         <!-- SPI contracts — The Wall -->
         <dependency>
@@ -98,4 +93,73 @@
             </plugin>
         </plugins>
     </build>
+    <profiles>
+        <profile>
+            <id>benchmarks</id>
+            <properties>
+                <benchmark.skip>false</benchmark.skip>
+                <excludedGroups/>
+            </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-compiler-plugin</artifactId>
+                        <configuration>
+                            <release>${maven.compiler.release}</release>
+                            <compilerArgs>
+                                <arg>${jdk.preview.enable}</arg>
+                            </compilerArgs>
+                            <annotationProcessorPaths>
+                                <path>
+                                    <groupId>org.openjdk.jmh</groupId>
+                                    <artifactId>jmh-generator-annprocess</artifactId>
+                                    <version>${jmh.version}</version>
+                                </path>
+                            </annotationProcessorPaths>
+                        </configuration>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>run-benchmarks</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>exec</goal>
+                                </goals>
+                                <configuration>
+                                    <skip>${benchmark.skip}</skip>
+                                    <executable>java</executable>
+                                    <classpathScope>test</classpathScope>
+                                    <arguments>
+                                        <argument>--enable-preview</argument>
+                                        <argument>-XX:+UnlockExperimentalVMOptions</argument>
+                                        <argument>-XX:+UseZGC</argument>
+                                        <argument>--enable-native-access=ALL-UNNAMED</argument>
+                                        <argument>-Djava.library.path=${native.lib.dir}</argument>
+                                        <argument>-classpath</argument>
+                                        <classpath/>
+                                        <argument>org.openjdk.jmh.Main</argument>
+                                        <argument>${benchmark.includes}</argument>
+                                        <argument>-f</argument>
+                                        <argument>${benchmark.forks}</argument>
+                                        <argument>-wi</argument>
+                                        <argument>${benchmark.warmup}</argument>
+                                        <argument>-i</argument>
+                                        <argument>${benchmark.iterations}</argument>
+                                        <argument>-rf</argument>
+                                        <argument>json</argument>
+                                        <argument>-rff</argument>
+                                        <argument>${benchmark.output}</argument>
+                                    </arguments>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>

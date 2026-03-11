@@ -32,6 +32,8 @@
         <!-- Default: benchmarks are skipped. Modules that contain @Benchmark classes
              must override this to false in their own pom.xml <properties>. -->
         <benchmark.skip>true</benchmark.skip>
+        <native.lib.dir>${project.basedir}/../native-libs/windows-x86_64</native.lib.dir>
+        <jmh.version>1.37</jmh.version>
     </properties>
 
     <!-- =====================================================================
