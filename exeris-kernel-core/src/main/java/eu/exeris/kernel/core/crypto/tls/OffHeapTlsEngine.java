@@ -11,7 +11,6 @@ package eu.exeris.kernel.core.crypto.tls;
 import eu.exeris.kernel.core.crypto.openssl.CoreOpenSslLoader;
 import eu.exeris.kernel.core.crypto.openssl.CoreSslHandles;
 import eu.exeris.kernel.core.crypto.openssl.NativeCipherContext;
-import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.crypto.TlsEngine;
 import eu.exeris.kernel.spi.crypto.TlsPhase;
 import eu.exeris.kernel.spi.crypto.TlsStatus;
@@ -162,6 +161,7 @@ public final class OffHeapTlsEngine implements TlsEngine {
     private final NativeCipherContext cipherCtx;
     private final TlsStateMachine stateMachine;
     private final boolean serverMode;
+    private final MemoryAllocator allocator;
 
     /**
      * Negotiated ALPN protocol string — populated lazily at handshake completion,
@@ -209,6 +209,7 @@ public final class OffHeapTlsEngine implements TlsEngine {
         this.cipherCtx    = new NativeCipherContext(handles.handshake(), ctxPointer, allocator);
         this.stateMachine = new TlsStateMachine();
         this.serverMode   = serverMode;
+        this.allocator    = allocator;
     }
 
     // =========================================================================
@@ -264,8 +265,7 @@ public final class OffHeapTlsEngine implements TlsEngine {
      *   <li>Server mode: calls {@code SSL_accept}; one call may not complete the handshake.
      *       Returns {@link TlsStatus#NEED_UNWRAP} when more client data is needed,
      *       {@link TlsStatus#NEED_WRAP} when a flight must be flushed first.</li>
-     *   <li>Client mode: calls {@code SSL_connect} and writes the initial
-     *       {@code ClientHello} into {@code outbound}.</li>
+     *   <li>Client mode: calls {@code SSL_connect}.</li>
      *   <li>Both modes: when {@code SSL_get_error} returns {@code SSL_ERROR_WANT_READ},
      *       returns {@link TlsStatus#NEED_UNWRAP}. On {@code SSL_ERROR_WANT_WRITE},
      *       returns {@link TlsStatus#NEED_WRAP}.</li>
@@ -274,10 +274,19 @@ public final class OffHeapTlsEngine implements TlsEngine {
      *       {@link TlsPhase#ACTIVE}, and returns {@link TlsStatus#FINISHED}.</li>
      * </ul>
      *
-     * <p>The {@code outbound} parameter is reserved for future use — in fd-based sessions
-     * outbound handshake bytes are sent directly by the kernel via {@code SSL_set_fd}.
+     * <p><b>outbound buffer semantics — BIO mode contract:</b>
+     * <ul>
+     *   <li><b>fd-owner BIO (Community tier):</b> {@code SSL_accept}/{@code SSL_connect}
+     *       writes handshake bytes directly to the kernel socket buffer via the fd BIO.
+     *       {@code outbound} is always left empty ({@code size = 0}) on return.
+     *       The transport does not need to transmit anything extra.</li>
+     *   <li><b>Memory-BIO (Enterprise tier):</b> after this method returns, the Enterprise
+     *       tier drains the write-BIO into {@code outbound} using its own
+     *       {@code BIO_read} handle, then transmits the contents.
+     *       This class has zero knowledge of that BIO drain step.</li>
+     * </ul>
      *
-     * @param outbound buffer for outbound handshake bytes (unused in fd-based sessions)
+     * @param outbound buffer for outbound handshake bytes; always empty in fd-owner BIO mode
      * @return {@link TlsStatus#FINISHED} on complete, {@link TlsStatus#NEED_UNWRAP} or
      *         {@link TlsStatus#NEED_WRAP} if more steps required
      */
@@ -325,16 +334,6 @@ public final class OffHeapTlsEngine implements TlsEngine {
      * @return {@link TlsStatus#FINISHED}
      */
     private TlsStatus completeHandshake(long ptr) {
-        // PMD.CloseResource: MemoryAllocator is a ScopedValue-bound reference whose lifecycle
-        // is owned by the caller scope — closing it here would destroy the caller's allocator.
-        @SuppressWarnings("PMD.CloseResource")
-        final MemoryAllocator allocator;
-        try {
-            allocator = KernelProviders.MEMORY_ALLOCATOR.get();
-        } catch (IllegalStateException e) {
-            throw new TlsHandshakeException(
-                    "MemoryAllocator ScopedValue is not bound during TLS handshake completion", e);
-        }
         negotiatedAlpn = AlpnReader.read(ptr, handles.ioHandles(), allocator);
         String cipherName = CipherNameReader.read(ptr, handles.ioHandles());
         stateMachine.transitionTo(TlsPhase.HANDSHAKE_IN_PROGRESS, TlsPhase.HANDSHAKE_COMPLETE);
@@ -357,11 +356,18 @@ public final class OffHeapTlsEngine implements TlsEngine {
      * {@link LoanedBuffer#segment()}{@code .address()} — no {@code MemorySegment}
      * wrapper is constructed on this path.
      *
-     * <p><b>Transport note:</b> the {@code ciphertext} parameter role depends on the
-     * BIO wired by the caller tier before constructing this engine. With a fd-owner BIO
-     * (Community), {@code SSL_read} pulls from the kernel socket buffer and the
-     * {@code ciphertext} buffer is unused. With a Memory-BIO (Enterprise), the caller
-     * must have pre-filled the read-BIO before invoking this method.
+     * <p><b>ciphertext buffer semantics — BIO mode contract:</b>
+     * <ul>
+     *   <li><b>fd-owner BIO (Community tier):</b> {@code SSL_read} pulls ciphertext
+     *       directly from the kernel socket buffer via the fd BIO.
+     *       The {@code ciphertext} parameter is not read and may be empty.
+     *       Decrypted application bytes are written into {@code plaintext}.</li>
+     *   <li><b>Memory-BIO (Enterprise tier):</b> the Enterprise tier pre-fills the
+     *       read-BIO from {@code ciphertext} using its own {@code BIO_write} handle
+     *       <em>before</em> calling this method. This class has zero knowledge of
+     *       that BIO-fill step; it only calls {@code SSL_read} and writes into
+     *       {@code plaintext}.</li>
+     * </ul>
      */
     @Override
     public TlsStatus unwrap(LoanedBuffer ciphertext, LoanedBuffer plaintext) {
@@ -402,11 +408,17 @@ public final class OffHeapTlsEngine implements TlsEngine {
      * The raw address of {@code plaintext.segment()} is passed directly to
      * {@code SSL_write} — no heap wrapper allocated per call.
      *
-     * <p><b>Transport note:</b> the {@code ciphertext} parameter role depends on the
-     * BIO wired by the caller tier before constructing this engine. With a fd-owner BIO
-     * (Community), {@code SSL_write} pushes to the kernel socket buffer and the
-     * {@code ciphertext} buffer is unused. With a Memory-BIO (Enterprise), ciphertext
-     * is drained from the write-BIO by the caller after this method returns.
+     * <p><b>ciphertext buffer semantics — BIO mode contract:</b>
+     * <ul>
+     *   <li><b>fd-owner BIO (Community tier):</b> {@code SSL_write} pushes encrypted
+     *       bytes directly into the kernel socket buffer via the fd BIO.
+     *       The {@code ciphertext} parameter is not written and remains empty ({@code size = 0}).
+     *       The transport does not need to drain anything extra.</li>
+     *   <li><b>Memory-BIO (Enterprise tier):</b> after this method returns, the
+     *       Enterprise tier drains the write-BIO into {@code ciphertext} using its
+     *       own {@code BIO_read} handle, then transmits the contents.
+     *       This class has zero knowledge of that BIO drain step.</li>
+     * </ul>
      */
     @Override
     public TlsStatus wrap(LoanedBuffer plaintext, LoanedBuffer ciphertext) {
@@ -480,6 +492,19 @@ public final class OffHeapTlsEngine implements TlsEngine {
      *   <li>{@code ACTIVE} → {@code SHUTDOWN_INITIATED} on first call.</li>
      *   <li>{@code SHUTDOWN_INITIATED} → {@code SHUTDOWN_COMPLETE} when both alerts exchanged.</li>
      * </ul>
+     *
+     * <p><b>outbound buffer semantics — BIO mode contract:</b>
+     * <ul>
+     *   <li><b>fd-owner BIO (Community tier):</b> {@code SSL_shutdown} writes the
+     *       {@code close_notify} alert directly to the kernel socket buffer via the
+     *       fd BIO. {@code outbound} is always left empty ({@code size = 0}) on return.</li>
+     *   <li><b>Memory-BIO (Enterprise tier):</b> after this method returns, the
+     *       Enterprise tier drains the write-BIO into {@code outbound} using its own
+     *       {@code BIO_read} handle, then transmits the alert bytes.
+     *       This class has zero knowledge of that BIO drain step.</li>
+     * </ul>
+     *
+     * @param outbound buffer for the {@code close_notify} alert; always empty in fd-owner BIO mode
      */
     @Override
     public void initiateShutdown(LoanedBuffer outbound) {

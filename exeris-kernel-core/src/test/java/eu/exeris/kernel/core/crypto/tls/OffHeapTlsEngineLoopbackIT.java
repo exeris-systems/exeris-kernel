@@ -412,6 +412,15 @@ class OffHeapTlsEngineLoopbackIT {
                         assertThat(wrapStatus)
                                 .as("Server wrap() must succeed")
                                 .isEqualTo(TlsStatus.OK);
+                        assertThat(serverOut.size())
+                                .as("fd-owner BIO: SSL_write pushes ciphertext directly to the " +
+                                    "socket BIO — serverOut must remain empty (size=0)")
+                                .isZero();
+
+                        assertThat(clientOut.size())
+                                .as("fd-owner BIO: clientOut was not pre-filled — " +
+                                    "SSL_read will pull ciphertext from the socket BIO directly")
+                                .isZero();
 
                         TlsStatus unwrapStatus = clientEngine.unwrap(clientOut, decrypted);
                         assertThat(unwrapStatus)
