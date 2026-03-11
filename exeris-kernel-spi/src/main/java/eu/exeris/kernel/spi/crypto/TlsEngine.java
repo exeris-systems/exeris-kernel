@@ -28,21 +28,20 @@ import eu.exeris.kernel.spi.memory.LoanedBuffer;
  *  engine.close()             → send close_notify, release native TLS session handle
  * </pre>
  *
- * <h2>Buffer Semantics — BIO Mode Contract</h2>
+ * <h2>Buffer Semantics — I/O Ownership Contract</h2>
  * <p>The role of the {@code outbound} and {@code ciphertext} buffer parameters depends
- * on the BIO wired by the caller tier before the first handshake step:
+ * on the I/O ownership mode configured by the provider implementation:
  * <ul>
- *   <li><b>fd-owner BIO (Community tier — {@code SSL_set_fd}):</b> OpenSSL communicates
- *       directly with the kernel socket buffer. Outbound and ciphertext parameters are
- *       not populated by the engine on return; the transport does not need to transmit
- *       them. Inbound ciphertext is read directly from the socket, so the
- *       {@code ciphertext} parameter to {@link #unwrap} is also not consumed.</li>
- *   <li><b>Memory-BIO (Enterprise tier — {@code BIO_new_pair} + {@code SSL_set_bio}):</b>
- *       The engine has no I/O channel of its own. After each call the Enterprise tier
- *       must drain the write-BIO into the output buffer ({@link #wrap},
- *       {@link #beginHandshake}, {@link #initiateShutdown}) and pre-fill the read-BIO
- *       from the input buffer ({@link #unwrap}) using tier-specific BIO handles.
- *       The engine itself has zero knowledge of this drain/fill step.</li>
+ *   <li><b>Socket-owner mode:</b> The engine reads and writes directly to the underlying
+ *       transport channel. Outbound and ciphertext output parameters are not populated by
+ *       the engine on return; the caller does not need to transmit them separately. The
+ *       {@code ciphertext} input parameter to {@link #unwrap} is also not consumed.</li>
+ *   <li><b>Buffer-owner mode:</b> The engine has no direct I/O channel. After each call
+ *       the transport layer must drain outbound encrypted bytes from the engine's internal
+ *       write buffer into the output parameter ({@link #wrap}, {@link #beginHandshake},
+ *       {@link #initiateShutdown}), and must pre-fill the engine's internal read buffer
+ *       from the input parameter before calling {@link #unwrap}. The engine itself has
+ *       zero knowledge of this drain/fill step.</li>
  * </ul>
  *
  * <h2>Thread Safety</h2>
@@ -61,12 +60,12 @@ public interface TlsEngine extends AutoCloseable {
      * <p>Server mode: awaits the {@code ClientHello} from the peer.
      * Client mode: generates the initial {@code ClientHello}.
      *
-     * <p>In fd-owner BIO mode (Community), handshake bytes are transmitted directly
-     * by OpenSSL via the wired fd; {@code outbound} is always left empty ({@code size = 0})
-     * on return. In Memory-BIO mode (Enterprise), the calling tier drains the
-     * write-BIO into {@code outbound} after this method returns.
+     * <p>In socket-owner mode, handshake bytes are transmitted directly by the engine
+     * via the wired transport; {@code outbound} is always left empty ({@code size = 0})
+     * on return. In buffer-owner mode, the calling tier drains outbound bytes from the
+     * engine's write buffer into {@code outbound} after this method returns.
      *
-     * @param outbound buffer for outbound handshake bytes; always empty in fd-owner BIO mode
+     * @param outbound buffer for outbound handshake bytes; always empty in socket-owner mode
      * @return status after this call ({@code NEED_UNWRAP}, {@code NEED_WRAP}, {@code FINISHED})
      * @throws TlsHandshakeException if handshake cannot be initiated
      */
@@ -75,12 +74,12 @@ public interface TlsEngine extends AutoCloseable {
     /**
      * Decrypts inbound ciphertext into {@code plaintext} (zero-copy).
      *
-     * <p>In fd-owner BIO mode (Community), {@code SSL_read} pulls ciphertext directly
-     * from the kernel socket buffer; the {@code ciphertext} parameter is not consumed
-     * and may be empty. In Memory-BIO mode (Enterprise), the calling tier pre-fills
-     * the read-BIO from {@code ciphertext} before invoking this method.
+     * <p>In socket-owner mode, the engine reads ciphertext directly from the transport
+     * channel; the {@code ciphertext} parameter is not consumed and may be empty. In
+     * buffer-owner mode, the calling tier pre-fills the engine's read buffer from
+     * {@code ciphertext} before invoking this method.
      *
-     * @param ciphertext inbound encrypted bytes; not consumed in fd-owner BIO mode
+     * @param ciphertext inbound encrypted bytes; not consumed in socket-owner mode
      * @param plaintext  output buffer for decrypted application data
      * @return operation status ({@code OK}, {@code NEED_HANDSHAKE}, {@code CLOSED})
      */
@@ -89,13 +88,14 @@ public interface TlsEngine extends AutoCloseable {
     /**
      * Encrypts outbound {@code plaintext} into {@code ciphertext} (zero-copy).
      *
-     * <p>In fd-owner BIO mode (Community), {@code SSL_write} pushes ciphertext directly
-     * into the kernel socket buffer; the {@code ciphertext} parameter is not populated
-     * and remains empty ({@code size = 0}) on return. In Memory-BIO mode (Enterprise),
-     * the calling tier drains the write-BIO into {@code ciphertext} after this method returns.
+     * <p>In socket-owner mode, the engine pushes encrypted bytes directly into the
+     * transport channel; the {@code ciphertext} parameter is not populated and remains
+     * empty ({@code size = 0}) on return. In buffer-owner mode, the calling tier drains
+     * outbound bytes from the engine's write buffer into {@code ciphertext} after this
+     * method returns.
      *
      * @param plaintext  application data to encrypt
-     * @param ciphertext output buffer for encrypted bytes; always empty in fd-owner BIO mode
+     * @param ciphertext output buffer for encrypted bytes; always empty in socket-owner mode
      * @return operation status ({@code OK}, {@code NEED_HANDSHAKE}, {@code CLOSED})
      */
     TlsStatus wrap(LoanedBuffer plaintext, LoanedBuffer ciphertext);
@@ -115,13 +115,13 @@ public interface TlsEngine extends AutoCloseable {
     /**
      * Initiates a graceful TLS shutdown (sends {@code close_notify}).
      *
-     * <p>In fd-owner BIO mode (Community), {@code SSL_shutdown} writes the alert
-     * directly to the kernel socket buffer; {@code outbound} is always left empty
-     * ({@code size = 0}) on return. In Memory-BIO mode (Enterprise), the calling tier
-     * drains the write-BIO into {@code outbound} after this method returns, then
-     * transmits the alert bytes.
+     * <p>In socket-owner mode, the shutdown alert is written directly to the transport
+     * channel; {@code outbound} is always left empty ({@code size = 0}) on return.
+     * In buffer-owner mode, the calling tier drains outbound bytes from the engine's
+     * write buffer into {@code outbound} after this method returns, then transmits
+     * the alert bytes.
      *
-     * @param outbound buffer for the {@code close_notify} alert bytes; always empty in fd-owner BIO mode
+     * @param outbound buffer for the {@code close_notify} alert bytes; always empty in socket-owner mode
      * @throws TlsException if the shutdown alert cannot be generated
      */
     void initiateShutdown(LoanedBuffer outbound);

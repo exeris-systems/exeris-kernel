@@ -284,7 +284,7 @@ public final class CoreOpenSslLoader {
     private static SymbolLookup tryLoad(String path, Arena arena) {
         try {
             return SymbolLookup.libraryLookup(path, arena);
-        } catch (IllegalArgumentException _) {
+        } catch (IllegalArgumentException | LinkageError _) {
             return null;
         }
     }

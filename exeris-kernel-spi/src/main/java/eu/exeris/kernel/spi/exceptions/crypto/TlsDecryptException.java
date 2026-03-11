@@ -12,7 +12,7 @@ import eu.exeris.kernel.spi.exceptions.ExerisKernelException;
 import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 
 /**
- * Thrown when the native TLS decryption path ({@code SSL_read}) fails.
+ * Thrown when the TLS decryption (receive) path fails.
  *
  * <h2>One-Code-One-Schema Invariant</h2>
  * <p>Carries {@link KernelErrorCodes#EX_NET_2003} — intentionally separate from
@@ -45,9 +45,9 @@ public final class TlsDecryptException extends ExerisKernelException {
     private static final Object[] SENTINEL_ARGS = {-1, null};
 
     /**
-     * Constructs a decrypt failure with a provider-specific native error code and detail.
+     * Constructs a decrypt failure with a provider-specific error code and detail.
      *
-     * @param nativeErrorCode provider-specific SSL error code (e.g. from {@code SSL_get_error}); -1 if N/A
+     * @param nativeErrorCode provider-specific error code; -1 if not applicable
      * @param detail          static message fragment, never formatted at runtime
      */
     public TlsDecryptException(int nativeErrorCode, String detail) {

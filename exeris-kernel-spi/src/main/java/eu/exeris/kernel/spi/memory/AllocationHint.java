@@ -79,12 +79,14 @@ public enum AllocationHint {
 
     /**
      * Session: 4 096 bytes.
-     * <p>Per-TLS-session native context (one {@code SSL*} struct + BIO pair per connection).
-     * Must always be allocated via {@link MemoryAllocator} to ensure {@code WatermarkManager}
-     * tracking and {@code EX-MEM-1001} backpressure for Crypto (L1) session memory.
+     * <p>Per-session cryptographic context (one session handle per active connection).
+     * MUST always be allocated via {@link MemoryAllocator} so that the runtime can
+     * track session memory budgets and apply backpressure ({@code EX-MEM-1001})
+     * when session memory pressure is detected.
      *
-     * <p><strong>Contract:</strong> {@code NativeCipherContext} MUST use this hint —
-     * never {@code Arena.ofConfined()} or {@code Arena.ofShared()} directly.
+     * <p><strong>Contract:</strong> provider implementations MUST use this hint for
+     * per-session native context allocations — never obtain an off-heap region directly
+     * from a platform-specific API, bypassing the allocator.
      */
     SESSION(4 * 1_024);
 
