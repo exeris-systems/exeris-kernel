@@ -62,6 +62,11 @@
             </dependency>
             <dependency>
                 <groupId>eu.exeris</groupId>
+                <artifactId>exeris-kernel-http</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>eu.exeris</groupId>
                 <artifactId>exeris-kernel-tck</artifactId>
                 <version>${project.version}</version>
                 <scope>test</scope>

@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>eu.exeris</groupId>
+        <artifactId>exeris-kernel-parent</artifactId>
+        <version>0.5.0-SNAPSHOT</version>
+        <relativePath>../exeris-kernel-parent/pom.xml</relativePath>
+    </parent>
+
+    <artifactId>exeris-kernel-http</artifactId>
+
+    <name>Exeris Kernel :: HTTP</name>
+    <description>
+        Protocol-layer infrastructure for HTTP/1.1 (RFC 9112), HTTP/2 (RFC 7540),
+        and HPACK header compression (RFC 7541). Pure Java, zero external dependencies,
+        zero banned patterns. Shared by Community (TCP) and Enterprise (QUIC) tiers.
+    </description>
+
+    <dependencies>
+        <!-- SPI contracts — The Wall -->
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-kernel-spi</artifactId>
+        </dependency>
+
+        <!-- Test framework -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>
+

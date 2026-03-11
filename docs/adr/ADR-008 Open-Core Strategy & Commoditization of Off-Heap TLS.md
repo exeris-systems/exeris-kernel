@@ -147,8 +147,8 @@ by **Kernel-Bypass I/O and the QUIC protocol stack**:
   reside in `exeris-kernel-core` and `exeris-kernel-community` — both publicly distributed modules —
   any OpenSSL Security Advisory (CVE) that affects a bound symbol or protocol path becomes an immediate
   public obligation for the Exeris project. **Public commitment:** The project MUST publish an ABI-compatible
-  patch release within **72 hours** of an OpenSSL Security Advisory being issued for a CVE with CVSS ≥ 7.0.
-  For CVSS ≥ 9.0 (Critical), the target is **24 hours**. Failure to meet this cadence constitutes a
+  patch release within **144 hours** of an OpenSSL Security Advisory being issued for a CVE with CVSS ≥ 7.0.
+  For CVSS ≥ 9.0 (Critical), the target is **72 hours**. Failure to meet this cadence constitutes a
   breach of the Open-Core security contract and must be disclosed in the release notes.
 
 * **[!] Enterprise Upsell Shift:** The Enterprise sales motion must be precisely targeted.
@@ -168,5 +168,3 @@ Any future capability that introduces new OpenSSL symbols for TCP must land in `
 (`CoreOpenSslLoader` / `CoreSslHandles`). Any capability specific to QUIC BIO or `io_uring` ring
 management must land in `exeris-kernel-enterprise`. Violations of this boundary are a Wall breach
 and must be rejected in code review.
-
-

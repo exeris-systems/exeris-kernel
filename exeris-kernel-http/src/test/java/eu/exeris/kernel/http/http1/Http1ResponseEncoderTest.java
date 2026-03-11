@@ -1,0 +1,128 @@
+/*
+ * Copyright (C) 2025-2026 Exeris Systems.
+ *
+ * Licensed under the Apache License, Version 2.0 with Commons Clause.
+ * You may use, modify, and distribute this file under those terms.
+ * Commercial resale of this software as a competing product is prohibited.
+ * See LICENSE-COMMUNITY in the repository root for the full text.
+ */
+package eu.exeris.kernel.http.http1;
+
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
+
+import java.lang.foreign.Arena;
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
+import java.nio.charset.StandardCharsets;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+@DisplayName("L0: Http1ResponseEncoder — RFC 9112 §4 Wire Format")
+class Http1ResponseEncoderTest {
+
+    @Nested
+    @DisplayName("writeStatusLine()")
+    class StatusLine {
+
+        @Test
+        @DisplayName("201 Created")
+        void status201() {
+            assertStatusLine(201, "Created", "HTTP/1.1 201 Created\r\n");
+        }
+
+        @Test
+        @DisplayName("400 Bad Request")
+        void status400() {
+            assertStatusLine(400, "Bad Request", "HTTP/1.1 400 Bad Request\r\n");
+        }
+
+        @Test
+        @DisplayName("500 Internal Server Error")
+        void status500() {
+            assertStatusLine(500, "Internal Server Error",
+                    "HTTP/1.1 500 Internal Server Error\r\n");
+        }
+
+        @Test
+        @DisplayName("101 Switching Protocols")
+        void status101() {
+            assertStatusLine(101, "Switching Protocols",
+                    "HTTP/1.1 101 Switching Protocols\r\n");
+        }
+
+        private void assertStatusLine(int code, String reason, String expected) {
+            try (Arena arena = Arena.ofConfined()) {
+                MemorySegment buf = arena.allocate(256);
+                long pos = Http1ResponseEncoder.writeStatusLine(buf, 0, code, reason);
+                assertThat(readAscii(buf, 0, pos)).isEqualTo(expected);
+            }
+        }
+    }
+
+    @Nested
+    @DisplayName("writeHeader()")
+    class Headers {
+
+        @Test
+        @DisplayName("Content-Type header")
+        void contentTypeHeader() {
+            try (Arena arena = Arena.ofConfined()) {
+                MemorySegment buf = arena.allocate(256);
+                long pos = Http1ResponseEncoder.writeHeader(
+                        buf, 0, "Content-Type", "application/json");
+                assertThat(readAscii(buf, 0, pos))
+                        .isEqualTo("Content-Type: application/json\r\n");
+            }
+        }
+
+        @Test
+        @DisplayName("Multiple headers accumulate correctly")
+        void multipleHeaders() {
+            try (Arena arena = Arena.ofConfined()) {
+                MemorySegment buf = arena.allocate(512);
+                long pos = 0;
+                pos = Http1ResponseEncoder.writeStatusLine(buf, pos, 200, "OK");
+                pos = Http1ResponseEncoder.writeHeader(buf, pos, "Content-Length", "5");
+                pos = Http1ResponseEncoder.writeHeader(buf, pos, "Connection", "close");
+                pos = Http1ResponseEncoder.writeHeaderEnd(buf, pos);
+                String result = readAscii(buf, 0, pos);
+                assertThat(result).isEqualTo("""
+                        HTTP/1.1 200 OK\r
+                        Content-Length: 5\r
+                        Connection: close\r
+                        \r
+                        """);
+            }
+        }
+    }
+
+    @Nested
+    @DisplayName("writeHeaderEnd()")
+    class HeaderEnd {
+
+        @Test
+        @DisplayName("Writes exactly CRLF")
+        void writesCrlf() {
+            try (Arena arena = Arena.ofConfined()) {
+                MemorySegment buf = arena.allocate(4);
+                long pos = Http1ResponseEncoder.writeHeaderEnd(buf, 0);
+                assertThat(pos).isEqualTo(2);
+                assertThat(buf.get(ValueLayout.JAVA_BYTE, 0)).isEqualTo((byte) '\r');
+                assertThat(buf.get(ValueLayout.JAVA_BYTE, 1)).isEqualTo((byte) '\n');
+            }
+        }
+    }
+
+    // =========================================================================
+    // Helpers
+    // =========================================================================
+
+    private static String readAscii(MemorySegment seg, long start, long end) {
+        int len = (int) (end - start);
+        byte[] bytes = new byte[len];
+        MemorySegment.copy(seg, ValueLayout.JAVA_BYTE, start, bytes, 0, len);
+        return new String(bytes, StandardCharsets.US_ASCII);
+    }
+}
