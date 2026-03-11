@@ -325,13 +325,34 @@ public final class HpackDecoder {
     }
 
     private long checkHeaderListSize(long current, String name, String value) {
-        long size = current + name.length() + value.length() + 32;
+        long size = current + utf8ByteLength(name) + utf8ByteLength(value) + 32;
         if (size > maxHeaderListSize) {
             throw new HpackDecodingException(
                     "HPACK: header list size exceeds limit ("
                             + size + " > " + maxHeaderListSize + ")");
         }
         return size;
+    }
+
+    private static int utf8ByteLength(String s) {
+        int count = 0;
+        final int len = s.length();
+        int i = 0;
+        while (i < len) {
+            char c = s.charAt(i);
+            if (c <= 0x7F) {
+                count++;
+            } else if (c <= 0x7FF) {
+                count += 2;
+            } else if (Character.isHighSurrogate(c) && i + 1 < len && Character.isLowSurrogate(s.charAt(i + 1))) {
+                count += 4;
+                i++;
+            } else {
+                count += 3;
+            }
+            i++;
+        }
+        return count;
     }
 
     /**

@@ -16,9 +16,10 @@ import java.nio.charset.StandardCharsets;
  * RFC 9112 — HTTP/1.1 Request Parser.
  *
  * <h2>Contract</h2>
- * <p>Parses HTTP/1.1 request-line and header fields from a {@link MemorySegment}.
- * Operates directly on off-heap data — no intermediate String allocation until
- * the caller requests decoded header values.
+ * <p>Parses HTTP/1.1 request-line and header fields from a {@link MemorySegment},
+ * operating directly on off-heap data. Request-line components (method, target,
+ * version) and header names/values are decoded into {@link String} instances during
+ * parsing; callers should treat these as the primary decoded representations.
  *
  * <h2>DoS Limits</h2>
  * <p>Use {@link #parseHeaders(MemorySegment, long, long, int, int, HeaderVisitor)}
@@ -193,20 +194,24 @@ public final class Http1RequestParser {
 
     private static long findCrLf(MemorySegment seg, long offset, long length) {
         long end = offset + length - 1;
-        for (long pos = offset; pos < end; pos++) {
+        long pos = offset;
+        while (pos < end) {
             if (seg.get(ValueLayout.JAVA_BYTE, pos) == CARRIAGE_RETURN
                     && seg.get(ValueLayout.JAVA_BYTE, pos + 1) == LINE_FEED) {
                 return pos;
             }
+            pos++;
         }
         return -1;
     }
 
     private static long findByte(MemorySegment seg, long start, long end, byte target) {
-        for (long pos = start; pos < end; pos++) {
+        long pos = start;
+        while (pos < end) {
             if (seg.get(ValueLayout.JAVA_BYTE, pos) == target) {
                 return pos;
             }
+            pos++;
         }
         return -1;
     }

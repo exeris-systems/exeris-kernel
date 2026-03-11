@@ -64,6 +64,9 @@ public final class Http2FlowController {
      *         would be violated (window remains unchanged in this case)
      */
     public boolean consume(int bytes) {
+        if (bytes < 0) {
+            return false;
+        }
         if (bytes > windowSize) {
             return false;
         }

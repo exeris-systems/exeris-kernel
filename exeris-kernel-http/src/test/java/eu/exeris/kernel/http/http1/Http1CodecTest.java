@@ -335,9 +335,12 @@ class Http1CodecTest {
             try (Arena arena = Arena.ofConfined()) {
                 Http1Codec codec = new Http1Codec();
                 String settings = "AAMAAABkAAQAAP__";
-                String headers = "upgrade: h2c\r\n"
-                        + "connection: Upgrade, HTTP2-Settings\r\n"
-                        + "http2-settings: " + settings + "\r\n\r\n";
+                String headers = """
+                        upgrade: h2c\r
+                        connection: Upgrade, HTTP2-Settings\r
+                        http2-settings: %s\r
+                        \r
+                        """.formatted(settings);
                 codec.parseHeaders(toSegment(arena, headers), 0, headers.length());
 
                 assertThat(codec.upgradeState()).isEqualTo(Http1Codec.UpgradeState.H2C_REQUESTED);
@@ -352,7 +355,7 @@ class Http1CodecTest {
                 Http1Codec codec = new Http1Codec();
                 String headers = """
                         upgrade: h2c\r
-                        connection: Upgrade\r
+                        connection: Upgrade, HTTP2-Settings\r
                         http2-settings: \r
                         \r
                         """;
@@ -370,6 +373,7 @@ class Http1CodecTest {
                 Http1Codec codec = new Http1Codec();
                 String headers = """
                         Upgrade: h2c\r
+                        connection: Upgrade, HTTP2-Settings\r
                         HTTP2-Settings: AAA\r
                         \r
                         """;
@@ -384,7 +388,12 @@ class Http1CodecTest {
             try (Arena arena = Arena.ofConfined()) {
                 Http1Codec codec = new Http1Codec();
 
-                String upgradeRequest = "upgrade: h2c\r\nhttp2-settings: AAA\r\n\r\n";
+                String upgradeRequest = """
+                        upgrade: h2c\r
+                        connection: Upgrade, HTTP2-Settings\r
+                        http2-settings: AAA\r
+                        \r
+                        """;
                 codec.parseHeaders(toSegment(arena, upgradeRequest), 0, upgradeRequest.length());
                 assertThat(codec.upgradeState()).isEqualTo(Http1Codec.UpgradeState.H2C_REQUESTED);
 

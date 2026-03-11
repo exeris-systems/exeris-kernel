@@ -156,37 +156,71 @@ public final class Http1Codec {
      * @param length  available bytes
      * @return byte position after the terminal CRLF CRLF, or {@code -1} if incomplete
      */
-    @SuppressWarnings({"PMD.UnusedAssignment", "PMD.NullAssignment"})
+    @SuppressWarnings("PMD.NullAssignment")
     public long parseHeaders(MemorySegment seg, long offset, long length) {
         pendingContentLength = NO_BODY;
         upgradeState = UpgradeState.NONE;
         h2cSettingsPayload = null;
+        keepAlive = true;
 
-        boolean[] upgradeH2c = {false};
-        boolean[] h2cSettingsFound = {false};
+        H2cDetectionContext ctx = new H2cDetectionContext();
+        long end = Http1RequestParser.parseHeaders(seg, offset, length,
+                (name, value) -> processHeader(name.strip(), value.strip(), ctx));
 
-        long end = Http1RequestParser.parseHeaders(seg, offset, length, (name, value) -> {
-            String nameLower = name.strip();
-            String valueStripped = value.strip();
-            if (HEADER_CONTENT_LENGTH.equalsIgnoreCase(nameLower)) {
-                pendingContentLength = Long.parseLong(valueStripped);
-            } else if (HEADER_CONNECTION.equalsIgnoreCase(nameLower)) {
-                keepAlive = !CONNECTION_CLOSE.equalsIgnoreCase(valueStripped);
-            } else if (HEADER_UPGRADE.equalsIgnoreCase(nameLower)) {
-                if (UPGRADE_H2C.equalsIgnoreCase(valueStripped)) {
-                    upgradeH2c[0] = true;
-                }
-            } else if (HEADER_HTTP2_SETTINGS.equalsIgnoreCase(nameLower)) {
-                h2cSettingsFound[0] = true;
-                h2cSettingsPayload = valueStripped;
-            }
-        });
-
-        if (upgradeH2c[0] && h2cSettingsFound[0]) {
+        if (ctx.isValidUpgrade()) {
             upgradeState = UpgradeState.H2C_REQUESTED;
         }
-
         return end;
+    }
+
+    private void processHeader(String name, String value, H2cDetectionContext ctx) {
+        if (HEADER_CONTENT_LENGTH.equalsIgnoreCase(name)) {
+            try {
+                pendingContentLength = Long.parseLong(value);
+            } catch (NumberFormatException _) {
+                pendingContentLength = NO_BODY;
+            }
+        } else if (HEADER_CONNECTION.equalsIgnoreCase(name)) {
+            processConnectionHeader(value, ctx);
+        } else if (HEADER_UPGRADE.equalsIgnoreCase(name)) {
+            if (headerHasToken(value, UPGRADE_H2C)) {
+                ctx.upgrade = true;
+            }
+        } else if (HEADER_HTTP2_SETTINGS.equalsIgnoreCase(name)) {
+            ctx.settings = true;
+            h2cSettingsPayload = value;
+        }
+    }
+
+    private void processConnectionHeader(String value, H2cDetectionContext ctx) {
+        if (headerHasToken(value, CONNECTION_CLOSE)) {
+            keepAlive = false;
+        }
+        if (headerHasToken(value, HEADER_UPGRADE)) {
+            ctx.connectionUpgrade = true;
+        }
+        if (headerHasToken(value, HEADER_HTTP2_SETTINGS)) {
+            ctx.connectionSettings = true;
+        }
+    }
+
+    private static boolean headerHasToken(String headerValue, String token) {
+        int start = 0;
+        final int len = headerValue.length();
+        while (start < len) {
+            int comma = headerValue.indexOf(',', start);
+            String t = (comma == -1
+                    ? headerValue.substring(start)
+                    : headerValue.substring(start, comma)).strip();
+            if (token.equalsIgnoreCase(t)) {
+                return true;
+            }
+            if (comma == -1) {
+                break;
+            }
+            start = comma + 1;
+        }
+        return false;
     }
 
     /**
@@ -230,5 +264,16 @@ public final class Http1Codec {
         pos = Http1ResponseEncoder.writeHeader(output, pos, "Connection", "Upgrade");
         pos = Http1ResponseEncoder.writeHeader(output, pos, "Upgrade", "h2c");
         return Http1ResponseEncoder.writeHeaderEnd(output, pos);
+    }
+
+    private static final class H2cDetectionContext {
+        boolean upgrade;
+        boolean settings;
+        boolean connectionUpgrade;
+        boolean connectionSettings;
+
+        boolean isValidUpgrade() {
+            return upgrade && settings && connectionUpgrade && connectionSettings;
+        }
     }
 }

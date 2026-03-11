@@ -88,7 +88,7 @@ public final class Http2HeaderBlockAssembler {
      * @return {@code true} if END_HEADERS has been seen for the current header block
      */
     public boolean isComplete() {
-        return !awaitingContinuation && written > 0;
+        return !awaitingContinuation && continuationStreamId != 0;
     }
 
     /**
@@ -119,6 +119,10 @@ public final class Http2HeaderBlockAssembler {
             throw new ContinuationViolationException(
                     "HTTP/2 PROTOCOL_ERROR: received HEADERS while awaiting CONTINUATION "
                             + "on stream " + continuationStreamId);
+        }
+        if (header.streamId() <= 0) {
+            throw new ContinuationViolationException(
+                    "HTTP/2 PROTOCOL_ERROR: HEADERS frame on stream 0");
         }
         reset();
         continuationStreamId = header.streamId();
@@ -199,7 +203,7 @@ public final class Http2HeaderBlockAssembler {
      * @throws IllegalStateException if the block is not yet complete
      */
     public MemorySegment completeBlock() {
-        if (awaitingContinuation || written == 0) {
+        if (awaitingContinuation || continuationStreamId == 0) {
             throw new IllegalStateException(
                     "HPACK header block is not yet complete");
         }

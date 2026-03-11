@@ -46,7 +46,10 @@ public final class HpackDynamicTable {
      */
     private record Entry(String name, String value) {
         /* package */ long byteSize() {
-            return name.length() + value.length() + (long) ENTRY_OVERHEAD;
+
+            return HpackDynamicTable.utf8ByteLength(name)
+                    + HpackDynamicTable.utf8ByteLength(value)
+                    + (long) ENTRY_OVERHEAD;
         }
     }
 
@@ -55,7 +58,6 @@ public final class HpackDynamicTable {
      *
      * @param maxTableSize maximum size in bytes (per SETTINGS_HEADER_TABLE_SIZE)
      */
-    @SuppressWarnings("unchecked")
     public HpackDynamicTable(long maxTableSize) {
         this.maxSize = maxTableSize;
         this.entries = new Entry[INITIAL_CAPACITY];
@@ -217,7 +219,6 @@ public final class HpackDynamicTable {
         count--;
     }
 
-    @SuppressWarnings("unchecked")
     private void grow() {
         int newCapacity = entries.length * 2;
         Entry[] newEntries = new Entry[newCapacity];
@@ -237,5 +238,27 @@ public final class HpackDynamicTable {
             throw new IndexOutOfBoundsException(
                     "HPACK dynamic table index " + index + " out of range [0, " + count + ")");
         }
+    }
+
+    private static int utf8ByteLength(String s) {
+        int count = 0;
+        final int len = s.length();
+        int i = 0;
+        while (i < len) {
+            char c = s.charAt(i);
+            if (c <= 0x7F) {
+                count++;
+            } else if (c <= 0x7FF) {
+                count += 2;
+            } else if (Character.isHighSurrogate(c) && i + 1 < len
+                    && Character.isLowSurrogate(s.charAt(i + 1))) {
+                count += 4;
+                i++;
+            } else {
+                count += 3;
+            }
+            i++;
+        }
+        return count;
     }
 }
