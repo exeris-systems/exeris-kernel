@@ -32,34 +32,68 @@
         <!-- Default: benchmarks are skipped. Modules that contain @Benchmark classes
              must override this to false in their own pom.xml <properties>. -->
         <benchmark.skip>true</benchmark.skip>
-        <native.lib.dir>${project.basedir}/../native-libs/windows-x86_64</native.lib.dir>
+        <!-- Default: empty — overridden by the os-windows / os-linux / os-macos profiles below. -->
+        <native.lib.dir/>
         <jmh.version>1.37</jmh.version>
     </properties>
 
     <!-- =====================================================================
-         benchmarks profile — runs JMH microbenchmarks in the activated module.
-
-         Usage (single module):
-           mvn verify -P benchmarks -pl exeris-kernel-core
-           mvn verify -P benchmarks -pl exeris-kernel-community
-
-         Usage (all modules at once):
-           mvn verify -P benchmarks
-
-         Filtering (regex matched against JMH benchmark name):
-           mvn verify -P benchmarks -pl exeris-kernel-core "-Dbenchmark.includes=CoreJfrTelemetry"
-           mvn verify -P benchmarks -pl exeris-kernel-core "-Dbenchmark.includes=emitMemory"
-
-         Tuning:
-           -Dbenchmark.forks=2       JVM forks per benchmark (default: 3)
-           -Dbenchmark.warmup=3      warmup iterations       (default: 5)
-           -Dbenchmark.iterations=5  measurement iterations  (default: 10)
-
-         CI note:
-           NOT bound to the default lifecycle — only runs with explicit -P benchmarks.
-           Results are written to target/jmh-results.json for CI ingestion.
+         OS-specific profiles — resolve native.lib.dir for the current host.
+         Each profile is auto-activated; the benchmarks profile may be combined
+         with -P benchmarks to pick up the correct native library directory.
          ===================================================================== -->
     <profiles>
+        <profile>
+            <id>os-windows</id>
+            <activation>
+                <os><family>windows</family></os>
+            </activation>
+            <properties>
+                <native.lib.dir>${project.basedir}/../native-libs/windows-x86_64</native.lib.dir>
+            </properties>
+        </profile>
+        <profile>
+            <id>os-linux</id>
+            <activation>
+                <os><name>Linux</name></os>
+            </activation>
+            <properties>
+                <native.lib.dir>${project.basedir}/../native-libs/linux-x86_64</native.lib.dir>
+            </properties>
+        </profile>
+        <profile>
+            <id>os-macos</id>
+            <activation>
+                <os><family>mac</family></os>
+            </activation>
+            <properties>
+                <native.lib.dir>${project.basedir}/../native-libs/macos-aarch64</native.lib.dir>
+            </properties>
+        </profile>
+
+        <!-- =================================================================
+             benchmarks profile — runs JMH microbenchmarks in the activated module.
+
+             Usage (single module):
+               mvn verify -P benchmarks -pl exeris-kernel-core
+               mvn verify -P benchmarks -pl exeris-kernel-community
+
+             Usage (all modules at once):
+               mvn verify -P benchmarks
+
+             Filtering (regex matched against JMH benchmark name):
+               mvn verify -P benchmarks -pl exeris-kernel-core "-Dbenchmark.includes=CoreJfrTelemetry"
+               mvn verify -P benchmarks -pl exeris-kernel-core "-Dbenchmark.includes=emitMemory"
+
+             Tuning:
+               -Dbenchmark.forks=2       JVM forks per benchmark (default: 3)
+               -Dbenchmark.warmup=3      warmup iterations       (default: 5)
+               -Dbenchmark.iterations=5  measurement iterations  (default: 10)
+
+             CI note:
+               NOT bound to the default lifecycle — only runs with explicit -P benchmarks.
+               Results are written to target/jmh-results.json for CI ingestion.
+             ================================================================= -->
         <profile>
             <id>benchmarks</id>
             <build>
