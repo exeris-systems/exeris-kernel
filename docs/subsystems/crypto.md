@@ -221,10 +221,12 @@ Session End:
 
 ```java
 public interface TlsEngine extends AutoCloseable {
-    void wrap(LoanedBuffer plaintext, LoanedBuffer ciphertext) throws CryptoException;
-    void unwrap(LoanedBuffer ciphertext, LoanedBuffer plaintext) throws CryptoException;
-    TlsHandshakeResult handshake() throws CryptoException;
-    TlsSession session();
+    TlsStatus beginHandshake(LoanedBuffer outbound);
+    TlsStatus unwrap(LoanedBuffer ciphertext, LoanedBuffer plaintext);
+    TlsStatus wrap(LoanedBuffer plaintext, LoanedBuffer ciphertext);
+    boolean isHandshakeComplete();
+    String negotiatedProtocol();
+    void initiateShutdown(LoanedBuffer outbound);
 
     @Override
     void close();
@@ -240,11 +242,12 @@ via `ServiceLoader` — the SPI module never imports either.
 ### Code Example: Session Context via MemoryAllocator
 
 ```java
-public OffHeapTlsEngine(MemoryAllocator allocator, CoreSslHandles handles) {
-    LoanedBuffer sessionCtx = allocator.allocate(AllocationHint.SESSION);
-    this.context = new NativeCipherContext(handles, sessionCtx.segment().address());
-    this.context.retain();
-    sessionCtx.close();
+public OffHeapTlsEngine(CoreSslHandles handles, long ctxPointer,
+                        boolean serverMode, MemoryAllocator allocator) {
+    // MemoryExhaustedException (EX-MEM-1001) propagates to caller if budget exceeded
+    this.cipherCtx = new NativeCipherContext(handles.handshake(), ctxPointer, allocator);
+    this.stateMachine = new TlsStateMachine();
+    this.serverMode = serverMode;
 }
 ```
 
@@ -308,6 +311,10 @@ Use JFR's built-in `MethodProfiling` for cipher throughput analysis.
 - `wrap()`/`unwrap()` round-trip with known plaintext/ciphertext vectors.
 
 ### Integration Tests
+
+`*IT` classes are executed by `maven-failsafe-plugin` (bound to `integration-test` + `verify` phases
+in `exeris-kernel-core/pom.xml`) — they are NOT picked up by Surefire. Run with `mvn verify`
+or `mvn install`. OpenSSL 3.x must be present on the CI host for Linux targets.
 
 - `OffHeapTlsEngineLoopbackIT` (`@Tag("integration")`, `@EnabledOnOs(OS.LINUX)`):
   - Simulates Community tier: `SSL_set_fd` resolved as a separate Community-owned handle,
