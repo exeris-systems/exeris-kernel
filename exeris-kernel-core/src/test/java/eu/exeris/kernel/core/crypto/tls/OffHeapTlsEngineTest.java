@@ -112,7 +112,7 @@ class OffHeapTlsEngineTest {
         assert ret >= Integer.MIN_VALUE : "stubSslGetErrorWantRead:ret";
         return 2;
     }
-    @SuppressWarnings("unused") // ABI stub: signature matches SSL_CTX_set_alpn_select_cb callback (ssl, out, outLen)
+    @SuppressWarnings("unused") // ABI stub: signature matches SSL_get0_alpn_selected (ssl, dataOut, lenOut)
     public static void stubAlpnSelected(long ignoredSsl, long ignoredD, long ignoredL) {
         assert ignoredSsl >= Long.MIN_VALUE : "stubAlpnSelected:ssl";
         assert ignoredD   >= Long.MIN_VALUE : "stubAlpnSelected:out";

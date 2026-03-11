@@ -20,11 +20,14 @@ import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.memory.MemoryStats;
 import eu.exeris.kernel.tck.contract.crypto.CryptoZeroAllocTck;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.util.List;
+
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
  * TCK: Proves that the {@link OffHeapTlsEngine} guard/sentinel path allocates
@@ -57,17 +60,25 @@ class CoreOffHeapTlsEngineZeroAllocTckTest extends CryptoZeroAllocTck {
     }
 
     private static final Arena GLOBAL_ARENA = Arena.global();
-    private static final CoreSslHandles HANDLES;
-    private static final long SSL_CTX_PTR;
+    private static CoreSslHandles handles;
+    private static long sslCtxPtr;
+    private static Throwable loadError;
 
     static {
-        HANDLES = CoreOpenSslLoader.load(GLOBAL_ARENA);
         try {
-            long methodPtr = HANDLES.ctx().invokeServerMethod();
-            SSL_CTX_PTR = HANDLES.ctx().invokeCtxNew(methodPtr);
+            handles = CoreOpenSslLoader.load(GLOBAL_ARENA);
+            long methodPtr = handles.ctx().invokeServerMethod();
+            sslCtxPtr = handles.ctx().invokeCtxNew(methodPtr);
         } catch (Throwable t) {
-            throw new ExceptionInInitializerError(t);
+            loadError = t;
         }
+    }
+
+    @BeforeAll
+    static void requireOpenSsl() {
+        assumeTrue(loadError == null,
+                "OpenSSL 3.x is not available on this host — skipping TCK: "
+                + (loadError != null ? loadError.getMessage() : ""));
     }
 
     private static final MemorySegment SLAB = GLOBAL_ARENA.allocate(256 * 1024L, 8L);
@@ -134,7 +145,7 @@ class CoreOffHeapTlsEngineZeroAllocTckTest extends CryptoZeroAllocTck {
             @Override
             public TlsEngine createTlsEngine(CryptoProviderConfig config) {
                 // THE REAL ENGINE. No mocks. No SPI stubs.
-                return new OffHeapTlsEngine(HANDLES, SSL_CTX_PTR, true, STUB_ALLOCATOR);
+                return new OffHeapTlsEngine(handles, sslCtxPtr, true, STUB_ALLOCATOR);
             }
         };
     }

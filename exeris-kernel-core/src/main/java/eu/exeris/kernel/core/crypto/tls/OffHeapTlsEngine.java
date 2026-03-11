@@ -290,6 +290,8 @@ public final class OffHeapTlsEngine implements TlsEngine {
                     "beginHandshake called in wrong state: " + current);
         }
 
+        outbound.setSize(0);
+
         long ptr = cipherCtx.retainSslPointer();
         try {
             int ret = serverMode
@@ -487,6 +489,8 @@ public final class OffHeapTlsEngine implements TlsEngine {
         if (current != TlsPhase.ACTIVE && current != TlsPhase.SHUTDOWN_INITIATED) {
             return;
         }
+
+        outbound.setSize(0);
 
         long ptr = cipherCtx.retainSslPointer();
         try {

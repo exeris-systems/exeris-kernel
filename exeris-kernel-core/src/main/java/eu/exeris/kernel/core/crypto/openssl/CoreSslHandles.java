@@ -129,7 +129,11 @@ public final class CoreSslHandles {
         public void invokeCtxFree(long ctxPtr) {
             try {
                 sslCtxFree.invokeExact(ctxPtr);
-            } catch (Throwable _) { //NOPMD AvoidCatchingGenericException — best-effort cleanup
+            } catch (Throwable t) { //NOPMD AvoidCatchingGenericException — best-effort cleanup
+                FfmErrors.rethrowIfError(t);
+                if (t instanceof RuntimeException rte) {
+                    throw rte;
+                }
             }
         }
 

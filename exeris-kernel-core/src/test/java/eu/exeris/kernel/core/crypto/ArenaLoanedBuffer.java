@@ -32,8 +32,10 @@ import java.util.List;
  * {@link #allocateOwning(AllocationHint, int)} when the buffer should own and close
  * its own {@code Arena.ofShared()} instance.
  *
- * <p>This class is intentionally package-private — it is a test utility,
- * not part of the production SPI.
+ * <p>This class is {@code public} for test-scope cross-package access
+ * (e.g. {@code eu.exeris.kernel.core.crypto.tls}, {@code .openssl}).
+ * It is <strong>not</strong> part of the production SPI and must never be
+ * referenced from main source sets.
  */
 public final class ArenaLoanedBuffer implements LoanedBuffer {
 
