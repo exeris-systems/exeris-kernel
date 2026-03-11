@@ -189,20 +189,22 @@ public final class NativeCipherContext implements AutoCloseable {
      * Decrements the reference count.
      *
      * <p>When the count transitions from {@code 1} to {@code 0}, {@code SSL_free} is
-     * invoked. Any failure from {@code SSL_free} is recorded via
-     * {@link NativeCipherContextFreeFailureEvent} and does not propagate — kernel
+     * invoked. Any failure from {@code SSL_free} — including {@link Error} subclasses
+     * thrown by the FFM layer — is recorded via
+     * {@link NativeCipherContextFreeFailureEvent} and does not propagate. Kernel
      * stability takes priority over individual cleanup failures.
      *
      * @throws IllegalStateException if called more times than {@link #retainSslPointer()}
      *                               plus the initial base reference (double-release guard)
      */
+    @SuppressWarnings("java:S1181") // AvoidCatchingThrowable — destructor paths must never throw, even Errors
     public void release() {
         int prev = (int) REF_COUNT.getAndAdd(this, -1);
         if (prev == BASE_REF_COUNT) {
             // Transitioned 1 → 0: we hold the last reference — safe to free.
             try { //NOPMD UseTryWithResources — sessionSlab.close() must run even if SSL_free throws
                 handles.invokeSslFree(sslPtr);
-            } catch (Exception t) { //NOPMD AvoidCatchingGenericException — SSL_free destructor path
+            } catch (Throwable t) { //NOPMD AvoidCatchingThrowable — SSL_free destructor path; Errors must not escape
                 // Do NOT propagate: destructor paths must never throw.
                 // Record the failure in JFR for flight-recorder diagnostics.
                 NativeCipherContextFreeFailureEvent.emit(sslPtr, t);
