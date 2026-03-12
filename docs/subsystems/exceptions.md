@@ -102,6 +102,17 @@ formatting. It implements:
 | `EX-NET-4006` | PAQS Load Shedding          | `[0] String transportName, [1] int streamPriority, [2] int thresholdPriority` |
 | `EX-NET-4007` | Buffer Exhaustion           | `[0] String transportName, [1] int poolCapacity, [2] int activeSlabs`         |
 
+### HTTP Codec (`EX-HTTP-`)
+
+| Code           | Description                                  | Glass-Box Payload                      |
+|:---------------|:---------------------------------------------|:---------------------------------------|
+| `EX-HTTP-4001` | Huffman Decode/Encode Violation              | `[0] String detail`                    |
+| `EX-HTTP-4002` | HPACK Decode Violation                       | `[0] String detail`                    |
+| `EX-HTTP-4003` | HTTP/2 SETTINGS Validation                   | `[0] String settingName, [1] long actualValue, ...` |
+| `EX-HTTP-4004` | HTTP/1.1 Parse Violation (malformed/DoS)     | `[0] String detail`                    |
+| `EX-HTTP-4005` | HTTP/2 CONTINUATION Sequence Violation       | `[0] String detail`                    |
+| `EX-HTTP-4006` | HTTP/2 Frame Encoding Violation              | `[0] String detail`                    |
+
 ### Security (`EX-SEC-`)
 
 | Code          | Description                  | Glass-Box Payload                                           |
