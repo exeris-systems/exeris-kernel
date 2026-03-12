@@ -37,4 +37,3 @@ you are not selling the Exeris Community modules themselves as a standalone
 hosted runtime or competing distribution.
 
 For questions: legal@exeris.eu
-
