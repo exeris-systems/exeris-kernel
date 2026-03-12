@@ -114,6 +114,10 @@ public final class HpackDecoder {
      * @param newProtocolMax new SETTINGS_HEADER_TABLE_SIZE value
      */
     public void setProtocolMaxTableSize(long newProtocolMax) {
+        if (newProtocolMax < 0L || newProtocolMax > 0xFFFF_FFFFL) {
+            throw new IllegalArgumentException(
+                    "SETTINGS_HEADER_TABLE_SIZE must be in [0, 2^32-1], got: " + newProtocolMax);
+        }
         this.protocolMaxTableSize = newProtocolMax;
     }
 

@@ -80,14 +80,14 @@ public final class Http2FrameCodec {
      * @param seg    source segment
      * @param offset byte offset
      * @return parsed frame header
-     * @throws IllegalStateException if the frame length exceeds the negotiated max
+     * @throws Http2FrameEncoder.FrameEncodingException if the frame length exceeds the negotiated max
      */
     public Http2FrameParser.FrameHeader parseAndValidate(MemorySegment seg, long offset) {
         Http2FrameParser.FrameHeader header = Http2FrameParser.parseHeaderBigEndian(seg, offset);
         if (header.length() > maxFrameSize) {
-            throw new IllegalStateException(
-                    "HTTP/2 FRAME_SIZE_ERROR: payload length " + header.length()
-                            + " exceeds maximum " + maxFrameSize);
+            throw new Http2FrameEncoder.FrameEncodingException(
+                    "FRAME_SIZE_ERROR: payload length " + header.length()
+                            + " exceeds negotiated maximum " + maxFrameSize);
         }
         return header;
     }

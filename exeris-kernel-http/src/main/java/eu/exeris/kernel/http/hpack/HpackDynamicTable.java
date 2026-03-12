@@ -123,12 +123,13 @@ public final class HpackDynamicTable {
      */
     public void add(String name, String value) {
         Entry entry = new Entry(name, value);
+        long entrySize = entry.byteSize();
 
-        while (currentSize + entry.byteSize() > maxSize && count > 0) {
+        while (currentSize + entrySize > maxSize && count > 0) {
             evictOldest();
         }
 
-        if (entry.byteSize() > maxSize) {
+        if (entrySize > maxSize) {
             clear();
             return;
         }
@@ -140,7 +141,7 @@ public final class HpackDynamicTable {
         head = (head - 1 + entries.length) % entries.length;
         entries[head] = entry;
         count++;
-        currentSize += entry.byteSize();
+        currentSize += entrySize;
     }
 
     /**

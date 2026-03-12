@@ -36,6 +36,7 @@ import java.nio.charset.StandardCharsets;
  * @since 0.5.0
  * @see <a href="https://www.rfc-editor.org/rfc/rfc9112">RFC 9112</a>
  */
+@SuppressWarnings("PMD.CyclomaticComplexity")
 public final class Http1RequestParser {
 
     /** Default maximum number of header fields per request. */
@@ -133,7 +134,6 @@ public final class Http1RequestParser {
      * @return byte position after the terminal CRLF CRLF, or {@code -1} if incomplete
      * @throws Http1ParseException if {@code maxHeaders} or {@code maxHeaderSize} is exceeded
      */
-    @SuppressWarnings("PMD.CyclomaticComplexity")
     public static long parseHeaders(MemorySegment seg, long offset, long length,
                                     int maxHeaders, int maxHeaderSize,
                                     HeaderVisitor visitor) {
@@ -155,8 +155,7 @@ public final class Http1RequestParser {
 
             long colonPos = findByte(seg, pos, lineEnd, COLON);
             if (colonPos < 0) {
-                pos = lineEnd + 2;
-                continue;
+                rejectMalformedHeaderLine(lineEnd - pos, maxHeaderSize);
             }
 
             long fieldSize = lineEnd - pos;
@@ -199,15 +198,22 @@ public final class Http1RequestParser {
     // Internal
     // =========================================================================
 
+    private static void rejectMalformedHeaderLine(long fieldSize, int maxHeaderSize) {
+        if (fieldSize > maxHeaderSize) {
+            throw new Http1ParseException(
+                    "HTTP/1.1: header field exceeds size limit (" + fieldSize
+                            + " > " + maxHeaderSize + ")");
+        }
+        throw new Http1ParseException("HTTP/1.1: malformed header field (missing ':')");
+    }
+
     private static long findCrLf(MemorySegment seg, long offset, long length) {
         long end = offset + length;
-        long pos = offset;
-        while (pos + 1 < end) {
+        for (long pos = offset; pos + 1 < end; pos++) {
             if (seg.get(ValueLayout.JAVA_BYTE, pos) == CARRIAGE_RETURN
                     && seg.get(ValueLayout.JAVA_BYTE, pos + 1) == LINE_FEED) {
                 return pos;
             }
-            pos++;
         }
         return -1;
     }
@@ -218,12 +224,10 @@ public final class Http1RequestParser {
             throw new Http1ParseException(
                     "findByte range out of bounds: start=" + start + ", end=" + end + ", size=" + size);
         }
-        long pos = start;
-        while (pos < end) {
+        for (long pos = start; pos < end; pos++) {
             if (seg.get(ValueLayout.JAVA_BYTE, pos) == target) {
                 return pos;
             }
-            pos++;
         }
         return -1;
     }

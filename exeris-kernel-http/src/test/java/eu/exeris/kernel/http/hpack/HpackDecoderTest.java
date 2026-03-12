@@ -23,6 +23,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @DisplayName("L0: HpackDecoder — RFC 7541 §3 Decoding Contract")
@@ -259,6 +260,32 @@ class HpackDecoderTest {
 
             decoder.decode(block, 0, 2, (n, v, s) -> {});
             assertThat(table.maxSize()).isEqualTo(128);
+        }
+
+        @Test
+        @DisplayName("setProtocolMaxTableSize rejects negative value")
+        void setProtocolMaxTableSizeRejectsNegative() {
+            HpackDecoder decoder = new HpackDecoder(new HpackDynamicTable(4096), allocator, 65_536);
+            assertThatThrownBy(() -> decoder.setProtocolMaxTableSize(-1L))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("SETTINGS_HEADER_TABLE_SIZE");
+        }
+
+        @Test
+        @DisplayName("setProtocolMaxTableSize rejects value exceeding 2^32-1")
+        void setProtocolMaxTableSizeRejectsAboveUint32Max() {
+            HpackDecoder decoder = new HpackDecoder(new HpackDynamicTable(4096), allocator, 65_536);
+            assertThatThrownBy(() -> decoder.setProtocolMaxTableSize(0x1_0000_0000L))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("SETTINGS_HEADER_TABLE_SIZE");
+        }
+
+        @Test
+        @DisplayName("setProtocolMaxTableSize accepts boundary value 0xFFFF_FFFFL")
+        void setProtocolMaxTableSizeAcceptsUint32Max() {
+            HpackDecoder decoder = new HpackDecoder(new HpackDynamicTable(4096), allocator, 65_536);
+            assertThatCode(() -> decoder.setProtocolMaxTableSize(0xFFFF_FFFFL))
+                    .doesNotThrowAnyException();
         }
     }
 

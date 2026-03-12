@@ -137,12 +137,18 @@ class Http1RequestParserTest {
         }
 
         @Test
-        @DisplayName("Line without colon is silently skipped")
-        void lineWithoutColonSkipped() {
+        @DisplayName("Line without colon throws EX_HTTP_4004 parse violation")
+        void lineWithoutColonThrowsParseViolation() {
             String raw = "InvalidLine\r\nValid: yes\r\n\r\n";
-            List<String[]> headers = parseHeaders(raw);
-            assertThat(headers).hasSize(1);
-            assertThat(headers.getFirst()).containsExactly("Valid", "yes");
+            try (Arena arena = Arena.ofConfined()) {
+                MemorySegment seg = toSegment(arena, raw);
+                assertThatThrownBy(() -> Http1RequestParser.parseHeaders(
+                        seg, 0, seg.byteSize(), (_, _) -> {}))
+                        .isInstanceOf(Http1RequestParser.Http1ParseException.class)
+                        .satisfies(ex -> assertThat(
+                                ((Http1RequestParser.Http1ParseException) ex).errorCode())
+                                .isEqualTo(KernelErrorCodes.EX_HTTP_4004));
+            }
         }
 
         @Test

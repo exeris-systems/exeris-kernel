@@ -200,8 +200,8 @@ class Http2FrameCodecTest {
 
                 Http2FrameCodec codec = new Http2FrameCodec(16_384);
                 assertThatThrownBy(() -> codec.parseAndValidate(buf, 0))
-                        .isInstanceOf(IllegalStateException.class)
-                        .hasMessageContaining("FRAME_SIZE_ERROR");
+                        .isInstanceOf(Http2FrameEncoder.FrameEncodingException.class)
+                        .hasMessageContaining("HTTP/2 frame encoding violation");
             }
         }
 
