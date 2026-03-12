@@ -26,12 +26,12 @@ class Http2SupplementaryTest {
     // =========================================================================
 
     @Nested
-    @DisplayName("Http2FrameParser.parseHeader() — native-endian")
-    class FrameParserNativeEndian {
+    @DisplayName("Http2FrameParser.parseHeaderBigEndian() — big-endian")
+    class FrameParserBigEndian {
 
         @Test
-        @DisplayName("DATA frame via parseHeader round-trip")
-        void dataFrameNativeEndian() {
+        @DisplayName("DATA frame via parseHeaderBigEndian round-trip")
+        void dataFrameBigEndian() {
             try (Arena arena = Arena.ofConfined()) {
                 MemorySegment buf = arena.allocate(9);
                 Http2FrameEncoder.writeHeader(buf, 0, 512,

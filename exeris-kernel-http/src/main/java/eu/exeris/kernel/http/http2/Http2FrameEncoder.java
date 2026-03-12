@@ -66,7 +66,8 @@ public final class Http2FrameEncoder {
         writeHeader(seg, offset, payloadLen, Http2FrameType.SETTINGS.code(), flags, streamId);
         long pos = offset + Http2FrameParser.FRAME_HEADER_SIZE;
         if (!ack) {
-            for (int idx = 0; idx < params.length; idx += 2) {
+            int idx = 0;
+            while (idx < params.length) {
                 seg.set(ValueLayout.JAVA_BYTE, pos, (byte) ((params[idx] >> 8) & 0xFF));
                 seg.set(ValueLayout.JAVA_BYTE, pos + 1, (byte) (params[idx] & 0xFF));
                 int val = params[idx + 1];
@@ -75,6 +76,7 @@ public final class Http2FrameEncoder {
                 seg.set(ValueLayout.JAVA_BYTE, pos + 4, (byte) ((val >> 8) & 0xFF));
                 seg.set(ValueLayout.JAVA_BYTE, pos + 5, (byte) (val & 0xFF));
                 pos += 6;
+                idx += 2;
             }
         }
         return pos - offset;
@@ -101,6 +103,10 @@ public final class Http2FrameEncoder {
      */
     public static long writeWindowUpdate(MemorySegment seg, long offset,
                                          int streamId, int windowIncrement) {
+        if (windowIncrement <= 0 || windowIncrement > 0x7FFFFFFF) {
+            throw new IllegalArgumentException(
+                    "WINDOW_UPDATE increment must be in [1, 2^31-1], got: " + windowIncrement);
+        }
         writeHeader(seg, offset, 4, Http2FrameType.WINDOW_UPDATE.code(), 0, streamId);
         long pos = offset + Http2FrameParser.FRAME_HEADER_SIZE;
         seg.set(ValueLayout.JAVA_BYTE, pos, (byte) ((windowIncrement >> 24) & 0x7F));

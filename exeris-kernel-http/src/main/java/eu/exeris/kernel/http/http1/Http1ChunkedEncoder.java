@@ -44,6 +44,9 @@ public final class Http1ChunkedEncoder {
      */
     @SuppressWarnings("PMD.AssignmentInOperand")
     public static long writeChunkHeader(MemorySegment seg, long offset, int size) {
+        if (size < 0) {
+            throw new IllegalArgumentException("Chunk size must be non-negative, got: " + size);
+        }
         byte[] hex = Integer.toHexString(size).getBytes(StandardCharsets.US_ASCII);
         long pos = offset;
         MemorySegment.copy(MemorySegment.ofArray(hex), ValueLayout.JAVA_BYTE, 0,
@@ -89,7 +92,12 @@ public final class Http1ChunkedEncoder {
      * @return new byte position after the complete chunk
      */
     public static long writeChunk(MemorySegment seg, long offset, MemorySegment data) {
-        int size = (int) data.byteSize();
+        long dataSize = data.byteSize();
+        if (dataSize > Integer.MAX_VALUE) {
+            throw new IllegalArgumentException(
+                    "Chunk data exceeds maximum allowed size (" + dataSize + " > " + Integer.MAX_VALUE + ")");
+        }
+        int size = (int) dataSize;
         long pos = writeChunkHeader(seg, offset, size);
         MemorySegment.copy(data, 0, seg, pos, size);
         pos += size;

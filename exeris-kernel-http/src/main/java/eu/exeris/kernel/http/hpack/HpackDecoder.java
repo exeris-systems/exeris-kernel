@@ -61,6 +61,12 @@ public final class HpackDecoder {
     private final long maxHeaderListSize;
     private long protocolMaxTableSize;
 
+    /** Transient decode position — valid only within a {@link #decode} invocation. */
+    private long decodePos;
+
+    /** Transient header-list size accumulator — valid only within a {@link #decode} invocation. */
+    private long decodeHeaderListSize;
+
     /**
      * Callback interface for decoded header fields.
      */
@@ -122,30 +128,31 @@ public final class HpackDecoder {
     public void decode(MemorySegment block, long offset, long length,
                        HeaderListener listener) {
         long end = offset + length;
-        long[] cursor = {offset, 0};
+        this.decodePos = offset;
+        this.decodeHeaderListSize = 0;
         boolean sizeUpdateAllowed = true;
 
-        while (cursor[0] < end) {
-            int firstByte = block.get(ValueLayout.JAVA_BYTE, cursor[0]) & 0xFF;
+        while (decodePos < end) {
+            int firstByte = block.get(ValueLayout.JAVA_BYTE, decodePos) & 0xFF;
 
             if ((firstByte & INDEXED_MASK) == INDEXED_MASK) {
                 sizeUpdateAllowed = false;
-                decodeIndexed(block, cursor, end, listener);
+                decodeIndexed(block, end, listener);
             } else if ((firstByte & LITERAL_INCREMENTAL_MASK) == LITERAL_INCREMENTAL_PATTERN) {
                 sizeUpdateAllowed = false;
-                decodeLiteralIncremental(block, cursor, end, listener);
+                decodeLiteralIncremental(block, end, listener);
             } else if ((firstByte & LITERAL_NO_INDEX_MASK) == LITERAL_NEVER_INDEXED_PATTERN) {
                 sizeUpdateAllowed = false;
-                decodeLiteralNeverIndexed(block, cursor, end, listener);
+                decodeLiteralNeverIndexed(block, end, listener);
             } else if ((firstByte & SIZE_UPDATE_MASK) == SIZE_UPDATE_PATTERN) {
                 if (!sizeUpdateAllowed) {
                     throw new HpackDecodingException(
                             "HPACK: dynamic table size update after header field representation");
                 }
-                decodeSizeUpdate(block, cursor, end);
+                decodeSizeUpdate(block, end);
             } else if ((firstByte & LITERAL_NO_INDEX_MASK) == 0) {
                 sizeUpdateAllowed = false;
-                decodeLiteralNoIndex(block, cursor, end, listener);
+                decodeLiteralNoIndex(block, end, listener);
             } else {
                 throw new HpackDecodingException(
                         "HPACK: unknown header field representation");
@@ -157,48 +164,44 @@ public final class HpackDecoder {
     // Representation decoders
     // =========================================================================
 
-    private void decodeIndexed(MemorySegment block, long[] cursor,
-                               long end, HeaderListener listener) {
-        int index = readInteger(block, cursor, end, 7);
+    private void decodeIndexed(MemorySegment block, long end, HeaderListener listener) {
+        int index = readInteger(block, end, 7);
         if (index == 0) {
             throw new HpackDecodingException("HPACK: indexed field with index 0");
         }
         String name = lookupName(index);
         String value = lookupValue(index);
-        cursor[1] = checkHeaderListSize(cursor[1], name, value);
+        checkHeaderListSize(name, value);
         listener.onHeader(name, value, false);
     }
 
-    private void decodeLiteralIncremental(MemorySegment block, long[] cursor,
-                                          long end, HeaderListener listener) {
-        int nameIndex = readInteger(block, cursor, end, 6);
-        String name = resolveName(block, cursor, end, nameIndex);
-        String value = readStringLiteral(block, cursor, end);
+    private void decodeLiteralIncremental(MemorySegment block, long end, HeaderListener listener) {
+        int nameIndex = readInteger(block, end, 6);
+        String name = resolveName(block, end, nameIndex);
+        String value = readStringLiteral(block, end);
         dynamicTable.add(name, value);
-        cursor[1] = checkHeaderListSize(cursor[1], name, value);
+        checkHeaderListSize(name, value);
         listener.onHeader(name, value, false);
     }
 
-    private void decodeLiteralNoIndex(MemorySegment block, long[] cursor,
-                                      long end, HeaderListener listener) {
-        int nameIndex = readInteger(block, cursor, end, 4);
-        String name = resolveName(block, cursor, end, nameIndex);
-        String value = readStringLiteral(block, cursor, end);
-        cursor[1] = checkHeaderListSize(cursor[1], name, value);
+    private void decodeLiteralNoIndex(MemorySegment block, long end, HeaderListener listener) {
+        int nameIndex = readInteger(block, end, 4);
+        String name = resolveName(block, end, nameIndex);
+        String value = readStringLiteral(block, end);
+        checkHeaderListSize(name, value);
         listener.onHeader(name, value, false);
     }
 
-    private void decodeLiteralNeverIndexed(MemorySegment block, long[] cursor,
-                                           long end, HeaderListener listener) {
-        int nameIndex = readInteger(block, cursor, end, 4);
-        String name = resolveName(block, cursor, end, nameIndex);
-        String value = readStringLiteral(block, cursor, end);
-        cursor[1] = checkHeaderListSize(cursor[1], name, value);
+    private void decodeLiteralNeverIndexed(MemorySegment block, long end, HeaderListener listener) {
+        int nameIndex = readInteger(block, end, 4);
+        String name = resolveName(block, end, nameIndex);
+        String value = readStringLiteral(block, end);
+        checkHeaderListSize(name, value);
         listener.onHeader(name, value, true);
     }
 
-    private void decodeSizeUpdate(MemorySegment block, long[] cursor, long end) {
-        int newMaxSize = readInteger(block, cursor, end, 5);
+    private void decodeSizeUpdate(MemorySegment block, long end) {
+        int newMaxSize = readInteger(block, end, 5);
         if (newMaxSize > protocolMaxTableSize) {
             throw new HpackDecodingException(
                     "HPACK: dynamic table size update (" + newMaxSize
@@ -207,10 +210,9 @@ public final class HpackDecoder {
         dynamicTable.setMaxSize(newMaxSize);
     }
 
-    private String resolveName(MemorySegment block, long[] cursor,
-                               long end, int nameIndex) {
+    private String resolveName(MemorySegment block, long end, int nameIndex) {
         if (nameIndex == 0) {
-            return readStringLiteral(block, cursor, end);
+            return readStringLiteral(block, end);
         }
         return lookupName(nameIndex);
     }
@@ -219,34 +221,33 @@ public final class HpackDecoder {
     // Integer decoding — RFC 7541 §5.1
     // =========================================================================
 
-    private static int readInteger(MemorySegment seg, long[] cursor, long end,
-                                   int prefixBits) {
-        long pos = cursor[0];
-        if (pos >= end) {
+    private int readInteger(MemorySegment seg, long end, int prefixBits) {
+        if (decodePos >= end) {
             throw new HpackDecodingException(
                     "HPACK: unexpected end of block in integer");
         }
         int mask = (1 << prefixBits) - 1;
-        int value = seg.get(ValueLayout.JAVA_BYTE, pos) & 0xFF & mask;
-        pos++;
+        long value = seg.get(ValueLayout.JAVA_BYTE, decodePos) & 0xFF & mask;
+        decodePos++;
 
         if (value < mask) {
-            cursor[0] = pos;
-            return value;
+            return (int) value;
         }
 
         int shift = 0;
-        while (pos < end) {
-            int octet = seg.get(ValueLayout.JAVA_BYTE, pos) & 0xFF;
-            pos++;
-            value += (octet & 0x7F) << shift;
+        while (decodePos < end) {
+            int octet = seg.get(ValueLayout.JAVA_BYTE, decodePos) & 0xFF;
+            decodePos++;
+            value += (long) (octet & 0x7F) << shift;
             shift += 7;
             if (shift > MAX_INTEGER_SHIFT) {
                 throw new HpackDecodingException("HPACK: integer overflow");
             }
             if ((octet & 0x80) == 0) {
-                cursor[0] = pos;
-                return value;
+                if (value > Integer.MAX_VALUE) {
+                    throw new HpackDecodingException("HPACK: integer overflow");
+                }
+                return (int) value;
             }
         }
         throw new HpackDecodingException(
@@ -257,23 +258,22 @@ public final class HpackDecoder {
     // String literal decoding — RFC 7541 §5.2
     // =========================================================================
 
-    private String readStringLiteral(MemorySegment seg, long[] cursor, long end) {
-        long pos = cursor[0];
-        if (pos >= end) {
+    private String readStringLiteral(MemorySegment seg, long end) {
+        if (decodePos >= end) {
             throw new HpackDecodingException(
                     "HPACK: unexpected end of block in string");
         }
-        int firstByte = seg.get(ValueLayout.JAVA_BYTE, pos) & 0xFF;
+        int firstByte = seg.get(ValueLayout.JAVA_BYTE, decodePos) & 0xFF;
         boolean huffmanEncoded = (firstByte & 0x80) != 0;
 
-        int strLen = readInteger(seg, cursor, end, 7);
+        int strLen = readInteger(seg, end, 7);
 
         if (strLen > MAX_STRING_LITERAL) {
             throw new HpackDecodingException(
                     "HPACK: string literal too long: " + strLen);
         }
 
-        long strStart = cursor[0];
+        long strStart = decodePos;
 
         if (strStart + strLen > end) {
             throw new HpackDecodingException(
@@ -290,7 +290,7 @@ public final class HpackDecoder {
             value = new String(bytes, StandardCharsets.UTF_8);
         }
 
-        cursor[0] = strStart + strLen;
+        decodePos = strStart + strLen;
         return value;
     }
 
@@ -328,14 +328,13 @@ public final class HpackDecoder {
         return nameOnly ? dynamicTable.getName(dynIndex) : dynamicTable.getValue(dynIndex);
     }
 
-    private long checkHeaderListSize(long current, String name, String value) {
-        long size = current + utf8ByteLength(name) + utf8ByteLength(value) + 32;
-        if (size > maxHeaderListSize) {
+    private void checkHeaderListSize(String name, String value) {
+        decodeHeaderListSize += utf8ByteLength(name) + utf8ByteLength(value) + 32;
+        if (decodeHeaderListSize > maxHeaderListSize) {
             throw new HpackDecodingException(
                     "HPACK: header list size exceeds limit ("
-                            + size + " > " + maxHeaderListSize + ")");
+                            + decodeHeaderListSize + " > " + maxHeaderListSize + ")");
         }
-        return size;
     }
 
     private static int utf8ByteLength(String str) {
