@@ -20,6 +20,7 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @DisplayName("L0: HpackEncoder — RFC 7541 §6 Encoding Strategy")
 class HpackEncoderTest {
@@ -292,6 +293,36 @@ class HpackEncoderTest {
             encoder.encodeSizeUpdate(buf, 0, 0);
             assertThat(table.size()).isZero();
             assertThat(table.maxSize()).isZero();
+        }
+
+        @Test
+        @DisplayName("encodeSizeUpdate supports uint32 max and emits multi-byte integer")
+        void sizeUpdateSupportsUint32Max() {
+            HpackDynamicTable table = new HpackDynamicTable(4096);
+            HpackEncoder encoder = new HpackEncoder(table, allocator, false);
+            MemorySegment buf = testArena.allocate(16);
+
+            long len = encoder.encodeSizeUpdate(buf, 0, 0xFFFF_FFFFL);
+
+            assertThat(len).isEqualTo(6);
+            assertThat(buf.get(ValueLayout.JAVA_BYTE, 0) & 0xFF).isEqualTo(0x3F);
+            assertThat(buf.get(ValueLayout.JAVA_BYTE, 1) & 0xFF).isEqualTo(0xE0);
+            assertThat(buf.get(ValueLayout.JAVA_BYTE, 2) & 0xFF).isEqualTo(0xFF);
+            assertThat(buf.get(ValueLayout.JAVA_BYTE, 3) & 0xFF).isEqualTo(0xFF);
+            assertThat(buf.get(ValueLayout.JAVA_BYTE, 4) & 0xFF).isEqualTo(0xFF);
+            assertThat(buf.get(ValueLayout.JAVA_BYTE, 5) & 0xFF).isEqualTo(0x0F);
+            assertThat(table.maxSize()).isEqualTo(0xFFFF_FFFFL);
+        }
+
+        @Test
+        @DisplayName("encodeSizeUpdate rejects value greater than uint32")
+        void sizeUpdateRejectsGreaterThanUint32() {
+            HpackEncoder encoder = encoder(false);
+            MemorySegment buf = testArena.allocate(8);
+
+            assertThatThrownBy(() -> encoder.encodeSizeUpdate(buf, 0, 0x1_0000_0000L))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("2^32-1");
         }
     }
 

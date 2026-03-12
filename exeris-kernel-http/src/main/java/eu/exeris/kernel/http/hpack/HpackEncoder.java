@@ -14,7 +14,6 @@ import eu.exeris.kernel.spi.memory.MemoryAllocator;
 
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
-import java.nio.charset.StandardCharsets;
 
 /**
  * RFC 7541 — HPACK Header Block Encoder.
@@ -42,6 +41,9 @@ import java.nio.charset.StandardCharsets;
  * @since 0.5.0
  */
 public final class HpackEncoder {
+
+    private static final long MIN_DYNAMIC_TABLE_SIZE = 0L;
+    private static final long MAX_UINT32 = 0xFFFF_FFFFL;
 
     private final HpackDynamicTable dynamicTable;
     private final MemoryAllocator allocator;
@@ -107,10 +109,14 @@ public final class HpackEncoder {
      * @param newSize new maximum table size
      * @return new byte position
      */
-    public long encodeSizeUpdate(MemorySegment output, long pos, int newSize) {
-        if (newSize < 0) {
+    public long encodeSizeUpdate(MemorySegment output, long pos, long newSize) {
+        if (newSize < MIN_DYNAMIC_TABLE_SIZE) {
             throw new IllegalArgumentException(
                     "HPACK dynamic table size must be non-negative, got: " + newSize);
+        }
+        if (newSize > MAX_UINT32) {
+            throw new IllegalArgumentException(
+                    "HPACK dynamic table size must be <= 2^32-1, got: " + newSize);
         }
         dynamicTable.setMaxSize(newSize);
         return encodeInteger(output, pos, 0x20, 5, newSize);
@@ -142,38 +148,33 @@ public final class HpackEncoder {
     }
 
     private long encodeString(MemorySegment output, long pos, String str) {
-        byte[] raw = str.getBytes(StandardCharsets.UTF_8);
+        int rawLength = HpackUtf8.byteLength(str);
         if (!useHuffman) {
-            long cursor = encodeInteger(output, pos, 0x00, 7, raw.length);
-            MemorySegment.copy(MemorySegment.ofArray(raw),
-                    ValueLayout.JAVA_BYTE, 0,
-                    output, ValueLayout.JAVA_BYTE, cursor, raw.length);
-            return cursor + raw.length;
+            long cursor = encodeInteger(output, pos, 0x00, 7, rawLength);
+            HpackUtf8.writeToSegment(str, output, cursor);
+            return cursor + rawLength;
         }
 
-        try (LoanedBuffer scratch = allocator.allocateNetwork(raw.length * 2 + 8)) {
+        try (LoanedBuffer scratch = allocator.allocateNetwork(rawLength * 2 + 8)) {
             MemorySegment scratchSeg = scratch.segment();
-            MemorySegment rawSeg = scratchSeg.asSlice(0, raw.length);
-            MemorySegment.copy(MemorySegment.ofArray(raw),
-                    ValueLayout.JAVA_BYTE, 0,
-                    rawSeg, ValueLayout.JAVA_BYTE, 0, raw.length);
+            MemorySegment rawSeg = scratchSeg.asSlice(0, rawLength);
+            HpackUtf8.writeToSegment(str, rawSeg, 0);
             long huffLen = Huffman.encodedLength(rawSeg);
 
-            if (huffLen < raw.length) {
-                MemorySegment huffBuf = scratchSeg.asSlice(raw.length, huffLen + 8);
+            if (huffLen < rawLength) {
+                MemorySegment huffBuf = scratchSeg.asSlice(rawLength, huffLen + 8);
                 long actualLen = Huffman.encode(rawSeg, huffBuf);
-                long cursor = encodeInteger(output, pos, 0x80, 7, (int) actualLen);
+                long cursor = encodeInteger(output, pos, 0x80, 7, actualLen);
                 MemorySegment.copy(huffBuf, ValueLayout.JAVA_BYTE, 0,
                         output, ValueLayout.JAVA_BYTE, cursor, actualLen);
                 return cursor + actualLen;
             }
-        }
 
-        long cursor = encodeInteger(output, pos, 0x00, 7, raw.length);
-        MemorySegment.copy(MemorySegment.ofArray(raw),
-                ValueLayout.JAVA_BYTE, 0,
-                output, ValueLayout.JAVA_BYTE, cursor, raw.length);
-        return cursor + raw.length;
+            long cursor = encodeInteger(output, pos, 0x00, 7, rawLength);
+            MemorySegment.copy(rawSeg, ValueLayout.JAVA_BYTE, 0,
+                    output, ValueLayout.JAVA_BYTE, cursor, rawLength);
+            return cursor + rawLength;
+        }
     }
 
     /**
@@ -181,20 +182,20 @@ public final class HpackEncoder {
      */
     @SuppressWarnings("PMD.AssignmentInOperand")
     private static long encodeInteger(MemorySegment output, long pos, int prefix, int prefixBits,
-                                      int value) {
+                                      long value) {
         int mask = (1 << prefixBits) - 1;
         if (value < mask) {
-            output.set(ValueLayout.JAVA_BYTE, pos, (byte) (prefix | value));
+            output.set(ValueLayout.JAVA_BYTE, pos, (byte) (prefix | (int) value));
             return pos + 1;
         }
         long cursor = pos;
         output.set(ValueLayout.JAVA_BYTE, cursor++, (byte) (prefix | mask));
-        int remaining = value - mask;
+        long remaining = value - mask;
         while (remaining >= 128) {
-            output.set(ValueLayout.JAVA_BYTE, cursor++, (byte) ((remaining & 0x7F) | 0x80));
+            output.set(ValueLayout.JAVA_BYTE, cursor++, (byte) (((int) remaining & 0x7F) | 0x80));
             remaining >>>= 7;
         }
-        output.set(ValueLayout.JAVA_BYTE, cursor++, (byte) remaining);
+        output.set(ValueLayout.JAVA_BYTE, cursor++, (byte) (int) remaining);
         return cursor;
     }
 }

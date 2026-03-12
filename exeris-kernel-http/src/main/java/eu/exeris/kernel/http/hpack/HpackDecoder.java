@@ -44,6 +44,7 @@ public final class HpackDecoder {
 
     private static final int MAX_STRING_LITERAL = 65_536;
     private static final int MAX_INTEGER_SHIFT = 28;
+    private static final long MAX_UINT32 = 0xFFFF_FFFFL;
 
     private static final int INDEXED_MASK = 0x80;
     private static final int LITERAL_INCREMENTAL_MASK = 0xC0;
@@ -206,7 +207,7 @@ public final class HpackDecoder {
     }
 
     private void decodeSizeUpdate(MemorySegment block, long end) {
-        int newMaxSize = readInteger(block, end, 5);
+        long newMaxSize = readInteger(block, end, 5, MAX_UINT32);
         if (newMaxSize > protocolMaxTableSize) {
             throw new HpackDecodingException(
                     "HPACK: dynamic table size update (" + newMaxSize
@@ -227,6 +228,10 @@ public final class HpackDecoder {
     // =========================================================================
 
     private int readInteger(MemorySegment seg, long end, int prefixBits) {
+        return (int) readInteger(seg, end, prefixBits, Integer.MAX_VALUE);
+    }
+
+    private long readInteger(MemorySegment seg, long end, int prefixBits, long maxValue) {
         if (decodePos >= end) {
             throw new HpackDecodingException(
                     "HPACK: unexpected end of block in integer");
@@ -236,24 +241,27 @@ public final class HpackDecoder {
         decodePos++;
 
         if (value < mask) {
-            return (int) value;
+            if (value > maxValue) {
+                throw new HpackDecodingException("HPACK: integer overflow");
+            }
+            return value;
         }
 
         int shift = 0;
         while (decodePos < end) {
             int octet = seg.get(ValueLayout.JAVA_BYTE, decodePos) & 0xFF;
             decodePos++;
-            value += (long) (octet & 0x7F) << shift;
-            shift += 7;
             if (shift > MAX_INTEGER_SHIFT) {
                 throw new HpackDecodingException("HPACK: integer overflow");
             }
-            if ((octet & 0x80) == 0) {
-                if (value > Integer.MAX_VALUE) {
-                    throw new HpackDecodingException("HPACK: integer overflow");
-                }
-                return (int) value;
+            value += (long) (octet & 0x7F) << shift;
+            if (value > maxValue) {
+                throw new HpackDecodingException("HPACK: integer overflow");
             }
+            if ((octet & 0x80) == 0) {
+                return value;
+            }
+            shift += 7;
         }
         throw new HpackDecodingException(
                 "HPACK: unexpected end of block in integer continuation");

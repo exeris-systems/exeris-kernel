@@ -287,6 +287,46 @@ class HpackDecoderTest {
             assertThatCode(() -> decoder.setProtocolMaxTableSize(0xFFFF_FFFFL))
                     .doesNotThrowAnyException();
         }
+
+        @Test
+        @DisplayName("§6.3 size update accepts uint32 max value")
+        void sizeUpdateAcceptsUint32Max() {
+            HpackDynamicTable table = new HpackDynamicTable(4096);
+            HpackDecoder decoder = new HpackDecoder(table, allocator, 65_536);
+            decoder.setProtocolMaxTableSize(0xFFFF_FFFFL);
+
+            MemorySegment block = testArena.allocate(8);
+            block.set(ValueLayout.JAVA_BYTE, 0, (byte) 0x3F);
+            block.set(ValueLayout.JAVA_BYTE, 1, (byte) 0xE0);
+            block.set(ValueLayout.JAVA_BYTE, 2, (byte) 0xFF);
+            block.set(ValueLayout.JAVA_BYTE, 3, (byte) 0xFF);
+            block.set(ValueLayout.JAVA_BYTE, 4, (byte) 0xFF);
+            block.set(ValueLayout.JAVA_BYTE, 5, (byte) 0x0F);
+
+            decoder.decode(block, 0, 6, (n, v, s) -> {});
+
+            assertThat(table.maxSize()).isEqualTo(0xFFFF_FFFFL);
+        }
+
+        @Test
+        @DisplayName("§6.3 size update rejects value above uint32")
+        void sizeUpdateRejectsAboveUint32() {
+            HpackDynamicTable table = new HpackDynamicTable(4096);
+            HpackDecoder decoder = new HpackDecoder(table, allocator, 65_536);
+            decoder.setProtocolMaxTableSize(0xFFFF_FFFFL);
+
+            MemorySegment block = testArena.allocate(8);
+            block.set(ValueLayout.JAVA_BYTE, 0, (byte) 0x3F);
+            block.set(ValueLayout.JAVA_BYTE, 1, (byte) 0xE1);
+            block.set(ValueLayout.JAVA_BYTE, 2, (byte) 0xFF);
+            block.set(ValueLayout.JAVA_BYTE, 3, (byte) 0xFF);
+            block.set(ValueLayout.JAVA_BYTE, 4, (byte) 0xFF);
+            block.set(ValueLayout.JAVA_BYTE, 5, (byte) 0x0F);
+
+            assertThatThrownBy(() -> decoder.decode(block, 0, 6, (n, v, s) -> {}))
+                    .isInstanceOf(HpackDecoder.HpackDecodingException.class)
+                    .hasMessageContaining("integer overflow");
+        }
     }
 
     // =========================================================================
