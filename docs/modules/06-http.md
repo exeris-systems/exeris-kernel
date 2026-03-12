@@ -59,8 +59,8 @@ flowchart LR
         direction TB
         P["Http2FrameCodec\n.parseAndValidate()\n→ FrameHeader record\n[ZERO ALLOC]"]
         FC["Http2FlowController\n.consume(length)\n[ZERO ALLOC]"]
-        D["HpackDecoder\n.decode(block, offset, len, listener)\n[ZERO ALLOC — raw literals]\n[1× allocateNetwork — Huffman]"]
-        DT["HpackDynamicTable\n.add() on incremental\n[ring-buffer eviction]"]
+        D["HpackDecoder\n.decode(block, offset, len, listener)\n[alloc — header name/value Strings]\n[1× allocateNetwork — Huffman]"]
+        DT["HpackDynamicTable\n.add() on incremental\n[alloc — dynamic entry storage · ring-buffer eviction]"]
     end
 
     subgraph App["Application (caller)"]
@@ -86,8 +86,8 @@ flowchart LR
 
     subgraph HTTP["exeris-kernel-http"]
         direction TB
-        E["HpackEncoder\n.encodeHeader()\n[ZERO ALLOC — indexed]\n[1× allocateNetwork — Huffman]"]
-        ET["HpackDynamicTable\n.add() / .find()\n[dynamic-preference name match]"]
+        E["HpackEncoder\n.encodeHeader()\n[alloc — literal name/value Strings]\n[1× allocateNetwork — Huffman]"]
+        ET["HpackDynamicTable\n.add() / .find()\n[alloc — dynamic entry storage · dynamic-preference name match]"]
         FE["Http2FrameCodec\n.writeHeadersHeader()\n→ 9-byte frame header\n[ZERO ALLOC]"]
     end
 
