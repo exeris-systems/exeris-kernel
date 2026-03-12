@@ -8,6 +8,9 @@
  */
 package eu.exeris.kernel.http.http1;
 
+import eu.exeris.kernel.spi.exceptions.ExerisKernelException;
+import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
+
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
@@ -183,9 +186,12 @@ public final class Http1RequestParser {
      *
      * @since 0.5.0
      */
-    public static final class Http1ParseException extends RuntimeException {
+    public static final class Http1ParseException extends ExerisKernelException {
+
+        private static final String ERROR_CODE = KernelErrorCodes.EX_HTTP_4004;
+
         public Http1ParseException(String message) {
-            super(message);
+            super(ERROR_CODE, message, message);
         }
     }
 

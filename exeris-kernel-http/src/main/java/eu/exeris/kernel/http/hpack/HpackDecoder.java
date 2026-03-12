@@ -10,6 +10,7 @@ package eu.exeris.kernel.http.hpack;
 
 import eu.exeris.kernel.http.hpack.huffman.Huffman;
 import eu.exeris.kernel.spi.exceptions.ExerisKernelException;
+import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 
@@ -367,7 +368,7 @@ public final class HpackDecoder {
      */
     public static final class HpackDecodingException extends ExerisKernelException {
 
-        private static final String ERROR_CODE = "EX-HTTP-4002";
+        private static final String ERROR_CODE = KernelErrorCodes.EX_HTTP_4002;
 
         public HpackDecodingException(String message) {
             super(ERROR_CODE, message, message);

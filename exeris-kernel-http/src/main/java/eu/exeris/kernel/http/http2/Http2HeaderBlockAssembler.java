@@ -8,6 +8,8 @@
  */
 package eu.exeris.kernel.http.http2;
 
+import eu.exeris.kernel.spi.exceptions.ExerisKernelException;
+import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 
@@ -282,9 +284,12 @@ public final class Http2HeaderBlockAssembler {
      *
      * @since 0.5.0
      */
-    public static final class ContinuationViolationException extends RuntimeException {
+    public static final class ContinuationViolationException extends ExerisKernelException {
+
+        private static final String ERROR_CODE = KernelErrorCodes.EX_HTTP_4005;
+
         public ContinuationViolationException(String message) {
-            super(message);
+            super(ERROR_CODE, message, message);
         }
     }
 }

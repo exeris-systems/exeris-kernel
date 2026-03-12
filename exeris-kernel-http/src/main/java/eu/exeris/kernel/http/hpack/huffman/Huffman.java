@@ -9,6 +9,7 @@
 package eu.exeris.kernel.http.hpack.huffman;
 
 import eu.exeris.kernel.spi.exceptions.ExerisKernelException;
+import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
@@ -200,7 +201,7 @@ public final class Huffman {
      */
     public static final class HuffmanDecodingException extends ExerisKernelException {
 
-        private static final String ERROR_CODE = "EX-HTTP-4001";
+        private static final String ERROR_CODE = KernelErrorCodes.EX_HTTP_4001;
 
         public HuffmanDecodingException(String message) {
             super(ERROR_CODE, message, message);

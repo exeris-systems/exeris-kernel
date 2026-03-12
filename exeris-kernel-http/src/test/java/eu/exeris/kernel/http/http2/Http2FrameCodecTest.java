@@ -131,7 +131,7 @@ class Http2FrameCodecTest {
         @Test
         @DisplayName("DEFAULTS has RFC 7540 values")
         void defaults() {
-            assertThat(Http2Settings.DEFAULTS.headerTableSize()).isEqualTo(4096);
+            assertThat(Http2Settings.DEFAULTS.headerTableSize()).isEqualTo(4096L);
             assertThat(Http2Settings.DEFAULTS.enablePush()).isTrue();
             assertThat(Http2Settings.DEFAULTS.initialWindowSize()).isEqualTo(65_535);
             assertThat(Http2Settings.DEFAULTS.maxFrameSize()).isEqualTo(16_384);
@@ -142,8 +142,8 @@ class Http2FrameCodecTest {
         void withSettingImmutable() {
             Http2Settings updated = Http2Settings.DEFAULTS.withSetting(
                     Http2Settings.ID_HEADER_TABLE_SIZE, 8192);
-            assertThat(updated.headerTableSize()).isEqualTo(8192);
-            assertThat(Http2Settings.DEFAULTS.headerTableSize()).isEqualTo(4096);
+            assertThat(updated.headerTableSize()).isEqualTo(8192L);
+            assertThat(Http2Settings.DEFAULTS.headerTableSize()).isEqualTo(4096L);
         }
     }
 
@@ -224,7 +224,7 @@ class Http2FrameCodecTest {
         void setMaxFrameSizeRejectsBelowMin() {
             Http2FrameCodec codec = new Http2FrameCodec();
             assertThatThrownBy(() -> codec.setMaxFrameSize(8_192))
-                    .isInstanceOf(IllegalArgumentException.class);
+                    .isInstanceOf(Http2FrameCodec.FrameEncodingException.class);
         }
 
         @Test
@@ -232,14 +232,14 @@ class Http2FrameCodecTest {
         void setMaxFrameSizeRejectsAboveMax() {
             Http2FrameCodec codec = new Http2FrameCodec();
             assertThatThrownBy(() -> codec.setMaxFrameSize(16_777_216))
-                    .isInstanceOf(IllegalArgumentException.class);
+                    .isInstanceOf(Http2FrameCodec.FrameEncodingException.class);
         }
 
         @Test
         @DisplayName("Constructor rejects out-of-range maxFrameSize")
         void constructorRejectsOutOfRange() {
             assertThatThrownBy(() -> new Http2FrameCodec(1024))
-                    .isInstanceOf(IllegalArgumentException.class);
+                    .isInstanceOf(Http2FrameCodec.FrameEncodingException.class);
         }
     }
 
@@ -299,7 +299,7 @@ class Http2FrameCodecTest {
             try (Arena arena = Arena.ofConfined()) {
                 MemorySegment seg = arena.allocate(16);
                 assertThatThrownBy(() -> Http2FrameEncoder.writeContinuation(seg, 0, 0, 50, true))
-                        .isInstanceOf(IllegalArgumentException.class)
+                        .isInstanceOf(Http2FrameEncoder.FrameEncodingException.class)
                         .hasMessageContaining("stream 0");
             }
         }
@@ -319,7 +319,7 @@ class Http2FrameCodecTest {
             try (Arena arena = Arena.ofConfined()) {
                 MemorySegment seg = arena.allocate(16);
                 assertThatThrownBy(() -> Http2FrameCodec.writeDataHeader(seg, 0, 0, 100, false))
-                        .isInstanceOf(IllegalArgumentException.class)
+                        .isInstanceOf(Http2FrameCodec.FrameEncodingException.class)
                         .hasMessageContaining("stream 0");
             }
         }
@@ -330,7 +330,7 @@ class Http2FrameCodecTest {
             try (Arena arena = Arena.ofConfined()) {
                 MemorySegment seg = arena.allocate(16);
                 assertThatThrownBy(() -> Http2FrameCodec.writeDataHeader(seg, 0, -1, 100, false))
-                        .isInstanceOf(IllegalArgumentException.class);
+                        .isInstanceOf(Http2FrameCodec.FrameEncodingException.class);
             }
         }
 
@@ -340,7 +340,7 @@ class Http2FrameCodecTest {
             try (Arena arena = Arena.ofConfined()) {
                 MemorySegment seg = arena.allocate(16);
                 assertThatThrownBy(() -> Http2FrameCodec.writeHeadersHeader(seg, 0, 0, 50, false, true))
-                        .isInstanceOf(IllegalArgumentException.class)
+                        .isInstanceOf(Http2FrameCodec.FrameEncodingException.class)
                         .hasMessageContaining("stream 0");
             }
         }
@@ -384,7 +384,7 @@ class Http2FrameCodecTest {
                 MemorySegment seg = arena.allocate(32);
                 int noErrorCode = Http2ErrorCode.NO_ERROR.code();
                 assertThatThrownBy(() -> Http2FrameEncoder.writeGoAway(seg, 0, -1, noErrorCode))
-                        .isInstanceOf(IllegalArgumentException.class)
+                        .isInstanceOf(Http2FrameEncoder.FrameEncodingException.class)
                         .hasMessageContaining("0x7FFFFFFF");
             }
         }
@@ -399,6 +399,51 @@ class Http2FrameCodecTest {
                 assertThat(h.frameType()).isEqualTo(Http2FrameType.GOAWAY);
                 assertThat(h.streamId()).isZero();
                 assertThat(h.length()).isEqualTo(8);
+            }
+        }
+    }
+
+    // =========================================================================
+    // Exception Contract — EX-HTTP-4006
+    // =========================================================================
+
+    @Nested
+    @DisplayName("FrameEncodingException — EX-HTTP-4006")
+    class FrameEncodingExceptionContract {
+
+        @Test
+        @DisplayName("FrameEncodingException carries EX-HTTP-4006 error code")
+        void frameEncodingExceptionCarriesErrorCode() {
+            try (Arena arena = Arena.ofConfined()) {
+                MemorySegment seg = arena.allocate(16);
+                assertThatThrownBy(() -> Http2FrameCodec.writeDataHeader(seg, 0, 0, 100, false))
+                        .isInstanceOf(Http2FrameCodec.FrameEncodingException.class)
+                        .extracting("errorCode")
+                        .isEqualTo("EX-HTTP-4006");
+            }
+        }
+
+        @Test
+        @DisplayName("Http2FrameEncoder.FrameEncodingException also carries EX-HTTP-4006")
+        void frameEncoderExceptionCarriesErrorCode() {
+            try (Arena arena = Arena.ofConfined()) {
+                MemorySegment seg = arena.allocate(16);
+                assertThatThrownBy(() -> Http2FrameEncoder.writeSettings(seg, 0, 1, true))
+                        .isInstanceOf(Http2FrameEncoder.FrameEncodingException.class)
+                        .extracting("errorCode")
+                        .isEqualTo("EX-HTTP-4006");
+            }
+        }
+
+        @Test
+        @DisplayName("FrameEncodingException message captures detail")
+        void frameEncodingExceptionMessageCapture() {
+            try (Arena arena = Arena.ofConfined()) {
+                MemorySegment seg = arena.allocate(16);
+                assertThatThrownBy(() -> Http2FrameCodec.writeDataHeader(seg, 0, 0, 100, false))
+                        .isInstanceOf(Http2FrameCodec.FrameEncodingException.class)
+                        .hasMessageContaining("stream 0")
+                        .hasMessageContaining("DATA");
             }
         }
     }

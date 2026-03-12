@@ -8,6 +8,7 @@
  */
 package eu.exeris.kernel.http.http1;
 
+import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -24,6 +25,7 @@ import java.util.List;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @DisplayName("L0: Http1RequestParser — RFC 9112 Contract")
 class Http1RequestParserTest {
@@ -141,6 +143,20 @@ class Http1RequestParserTest {
             List<String[]> headers = parseHeaders(raw);
             assertThat(headers).hasSize(1);
             assertThat(headers.getFirst()).containsExactly("Valid", "yes");
+        }
+
+        @Test
+        @DisplayName("DoS header-count violation exposes EX_HTTP_4004")
+        void tooManyHeadersExposesHttpErrorCode() {
+            String raw = "A: 1\r\nB: 2\r\n\r\n";
+            try (Arena arena = Arena.ofConfined()) {
+                MemorySegment seg = toSegment(arena, raw);
+                assertThatThrownBy(() -> Http1RequestParser.parseHeaders(
+                        seg, 0, seg.byteSize(), 1, Http1RequestParser.DEFAULT_MAX_HEADER_SIZE, (_, _) -> {}))
+                        .isInstanceOf(Http1RequestParser.Http1ParseException.class)
+                        .satisfies(ex -> assertThat(((Http1RequestParser.Http1ParseException) ex).errorCode())
+                                .isEqualTo(KernelErrorCodes.EX_HTTP_4004));
+            }
         }
 
         private List<String[]> parseHeaders(String raw) {

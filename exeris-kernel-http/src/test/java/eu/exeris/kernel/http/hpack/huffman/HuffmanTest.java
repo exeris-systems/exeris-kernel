@@ -8,6 +8,7 @@
  */
 package eu.exeris.kernel.http.hpack.huffman;
 
+import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -120,7 +121,9 @@ class HuffmanTest {
 
                 MemorySegment out = arena.allocate(16);
                 assertThatThrownBy(() -> Huffman.decode(bad, 0, 3, out))
-                        .isInstanceOf(Huffman.HuffmanDecodingException.class);
+                        .isInstanceOf(Huffman.HuffmanDecodingException.class)
+                        .satisfies(ex -> assertThat(((Huffman.HuffmanDecodingException) ex).errorCode())
+                                .isEqualTo(KernelErrorCodes.EX_HTTP_4001));
             }
         }
 

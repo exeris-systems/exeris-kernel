@@ -8,6 +8,7 @@
  */
 package eu.exeris.kernel.http.hpack;
 
+import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -67,7 +68,9 @@ class HpackDecoderTest {
             block.set(ValueLayout.JAVA_BYTE, 0, (byte) 0x80);
 
             assertThatThrownBy(() -> decode(block, 0, 1))
-                    .isInstanceOf(HpackDecoder.HpackDecodingException.class);
+                    .isInstanceOf(HpackDecoder.HpackDecodingException.class)
+                    .satisfies(ex -> assertThat(((HpackDecoder.HpackDecodingException) ex).errorCode())
+                            .isEqualTo(KernelErrorCodes.EX_HTTP_4002));
         }
 
         @Test

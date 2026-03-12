@@ -8,6 +8,7 @@
  */
 package eu.exeris.kernel.http.http2;
 
+import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -270,7 +271,15 @@ class Http2SupplementaryTest {
         void maxConcurrentStreams() {
             Http2Settings s = Http2Settings.DEFAULTS.withSetting(
                     Http2Settings.ID_MAX_CONCURRENT_STREAMS, 100);
-            assertThat(s.maxConcurrentStreams()).isEqualTo(100);
+            assertThat(s.maxConcurrentStreams()).isEqualTo(100L);
+        }
+
+        @Test
+        @DisplayName("ID_MAX_CONCURRENT_STREAMS supports full unsigned 32-bit max")
+        void maxConcurrentStreamsUnsigned32Max() {
+            Http2Settings s = Http2Settings.DEFAULTS.withSetting(
+                    Http2Settings.ID_MAX_CONCURRENT_STREAMS, 0xFFFF_FFFFL);
+            assertThat(s.maxConcurrentStreams()).isEqualTo(0xFFFF_FFFFL);
         }
 
         @Test
@@ -291,8 +300,27 @@ class Http2SupplementaryTest {
         @Test
         @DisplayName("DEFAULTS maxConcurrentStreams and maxHeaderListSize are -1")
         void defaultsUnlimited() {
-            assertThat(Http2Settings.DEFAULTS.maxConcurrentStreams()).isEqualTo(-1);
+            assertThat(Http2Settings.DEFAULTS.maxConcurrentStreams()).isEqualTo(-1L);
             assertThat(Http2Settings.DEFAULTS.maxHeaderListSize()).isEqualTo(-1L);
+        }
+
+        @Test
+        @DisplayName("ID_ENABLE_PUSH rejects values other than 0 or 1")
+        void enablePushRejectsInvalidValue() {
+            assertThatThrownBy(() -> Http2Settings.DEFAULTS.withSetting(Http2Settings.ID_ENABLE_PUSH, 2L))
+                    .isInstanceOf(Http2Settings.Http2SettingsException.class)
+                    .satisfies(ex -> assertThat(((Http2Settings.Http2SettingsException) ex).errorCode())
+                            .isEqualTo(KernelErrorCodes.EX_HTTP_4003))
+                    .hasMessage("HTTP/2 setting has invalid value");
+        }
+
+        @Test
+        @DisplayName("SETTINGS_MAX_CONCURRENT_STREAMS rejects values above unsigned 32-bit")
+        void maxConcurrentStreamsRejectsAboveUnsigned32() {
+            assertThatThrownBy(() -> Http2Settings.DEFAULTS.withSetting(
+                    Http2Settings.ID_MAX_CONCURRENT_STREAMS, 0x1_0000_0000L))
+                    .isInstanceOf(Http2Settings.Http2SettingsException.class)
+                    .hasMessage("HTTP/2 setting out of range");
         }
     }
 

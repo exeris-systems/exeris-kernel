@@ -295,6 +295,74 @@ public final class KernelErrorCodes {
     public static final String EX_NET_4007 = "EX-NET-4007";
 
     // -----------------------------------------------------------------------
+    // EX-HTTP – HTTP codec subsystem (HTTP/1.1, HTTP/2, HPACK, Huffman)
+    // -----------------------------------------------------------------------
+
+    /**
+     * Huffman decoding/encoding violation in HPACK string literal processing.
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} detail message</li>
+     * </ul>
+     */
+    public static final String EX_HTTP_4001 = "EX-HTTP-4001";
+
+    /**
+     * HPACK decoding violation (RFC 7541 §3 / §4 / §6).
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} detail message</li>
+     * </ul>
+     */
+    public static final String EX_HTTP_4002 = "EX-HTTP-4002";
+
+    /**
+     * HTTP/2 SETTINGS validation violation (RFC 7540 §6.5.2).
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} settingName</li>
+     *   <li>index 1 – {@code long} actualValue</li>
+     *   <li>index 2+ – expected bounds or expected literal contract</li>
+     * </ul>
+     */
+    public static final String EX_HTTP_4003 = "EX-HTTP-4003";
+
+    /**
+     * HTTP/1.1 parse violation (malformed framing or DoS guard breach).
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} detail message</li>
+     * </ul>
+     */
+    public static final String EX_HTTP_4004 = "EX-HTTP-4004";
+
+    /**
+     * HTTP/2 CONTINUATION sequencing violation (RFC 7540 §6.10).
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} detail message</li>
+     * </ul>
+     */
+    public static final String EX_HTTP_4005 = "EX-HTTP-4005";
+
+    /**
+     * HTTP/2 Frame encoding/construction violation (RFC 7540 §4 / §6).
+     * Raised when frame type, stream ID, payload size, or frame structure violates
+     * protocol constraints during encoding or codec construction.
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} detail message</li>
+     * </ul>
+     */
+    public static final String EX_HTTP_4006 = "EX-HTTP-4006";
+
+    // -----------------------------------------------------------------------
     // EX-PERS – Persistence subsystem
     // -----------------------------------------------------------------------
 

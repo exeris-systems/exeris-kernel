@@ -9,6 +9,7 @@
 package eu.exeris.kernel.http.http2;
 
 import eu.exeris.kernel.http.hpack.TestAllocator;
+import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
@@ -236,6 +237,9 @@ class Http2HeaderBlockAssemblerTest {
 
             assertThatThrownBy(() -> asm.validateContinuationMode(dataFrame))
                     .isInstanceOf(Http2HeaderBlockAssembler.ContinuationViolationException.class)
+                    .satisfies(ex -> assertThat(
+                            ((Http2HeaderBlockAssembler.ContinuationViolationException) ex).errorCode())
+                            .isEqualTo(KernelErrorCodes.EX_HTTP_4005))
                     .hasMessageContaining("PROTOCOL_ERROR");
 
             asm.reset();

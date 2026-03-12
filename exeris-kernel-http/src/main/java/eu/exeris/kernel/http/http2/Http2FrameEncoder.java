@@ -8,6 +8,9 @@
  */
 package eu.exeris.kernel.http.http2;
 
+import eu.exeris.kernel.spi.exceptions.ExerisKernelException;
+import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
+
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 
@@ -39,11 +42,11 @@ public final class Http2FrameEncoder {
     public static void writeHeader(MemorySegment seg, long offset,
                                    int length, int type, int flags, int streamId) {
         if (length < 0 || length > 0x00FF_FFFF) {
-            throw new IllegalArgumentException(
+            throw new FrameEncodingException(
                     "Frame payload length must be in [0, 0x00FFFFFF], got: " + length);
         }
         if (streamId < 0) {
-            throw new IllegalArgumentException(
+            throw new FrameEncodingException(
                     "Stream ID must be in [0, 0x7FFFFFFF], got: " + streamId);
         }
         seg.set(ValueLayout.JAVA_BYTE, offset, (byte) ((length >> 16) & 0xFF));
@@ -93,14 +96,14 @@ public final class Http2FrameEncoder {
 
     private static void validateSettingsArgs(int streamId, boolean ack, int... params) {
         if (streamId != 0) {
-            throw new IllegalArgumentException("SETTINGS frame must use stream 0");
+            throw new FrameEncodingException("SETTINGS frame must use stream 0");
         }
         if (ack && params.length != 0) {
-            throw new IllegalArgumentException(
+            throw new FrameEncodingException(
                     "SETTINGS ACK frame must carry no parameters; got: " + params.length);
         }
         if (!ack && params.length % 2 != 0) {
-            throw new IllegalArgumentException(
+            throw new FrameEncodingException(
                     "SETTINGS params must be pairs of [id, value]; odd length: " + params.length);
         }
     }
@@ -117,7 +120,7 @@ public final class Http2FrameEncoder {
     public static long writeWindowUpdate(MemorySegment seg, long offset,
                                          int streamId, int windowIncrement) {
         if (windowIncrement <= 0 || windowIncrement > 0x7FFFFFFF) {
-            throw new IllegalArgumentException(
+            throw new FrameEncodingException(
                     "WINDOW_UPDATE increment must be in [1, 2^31-1], got: " + windowIncrement);
         }
         writeHeader(seg, offset, 4, Http2FrameType.WINDOW_UPDATE.code(), 0, streamId);
@@ -144,7 +147,7 @@ public final class Http2FrameEncoder {
     public static long writeRstStream(MemorySegment seg, long offset,
                                       int streamId, int errorCode) {
         if (streamId <= 0) {
-            throw new IllegalArgumentException(
+            throw new FrameEncodingException(
                     "RST_STREAM stream ID must be > 0, got: " + streamId);
         }
         writeHeader(seg, offset, 4, Http2FrameType.RST_STREAM.code(), 0, streamId);
@@ -172,7 +175,7 @@ public final class Http2FrameEncoder {
     public static long writeGoAway(MemorySegment seg, long offset,
                                    int lastStreamId, int errorCode) {
         if (lastStreamId < 0) {
-            throw new IllegalArgumentException(
+            throw new FrameEncodingException(
                     "GOAWAY lastStreamId must be in [0, 0x7FFFFFFF], got: " + lastStreamId);
         }
         writeHeader(seg, offset, 8, Http2FrameType.GOAWAY.code(), 0, 0);
@@ -208,11 +211,25 @@ public final class Http2FrameEncoder {
     public static long writeContinuation(MemorySegment seg, long offset,
                                          int streamId, int length, boolean endHeaders) {
         if (streamId <= 0) {
-            throw new IllegalArgumentException(
+            throw new FrameEncodingException(
                     "CONTINUATION frames are invalid on stream 0; streamId must be > 0, got: " + streamId);
         }
         int flags = endHeaders ? 0x04 : 0x00;
         writeHeader(seg, offset, length, Http2FrameType.CONTINUATION.code(), flags, streamId);
         return Http2FrameParser.FRAME_HEADER_SIZE;
+    }
+
+    /**
+     * Unchecked exception for HTTP/2 Frame encoding violations (RFC 7540 §4 / §6).
+     *
+     * @since 0.5.0
+     */
+    public static final class FrameEncodingException extends ExerisKernelException {
+
+        private static final String ERROR_CODE = KernelErrorCodes.EX_HTTP_4006;
+
+        public FrameEncodingException(String message) {
+            super(ERROR_CODE, message, message);
+        }
     }
 }

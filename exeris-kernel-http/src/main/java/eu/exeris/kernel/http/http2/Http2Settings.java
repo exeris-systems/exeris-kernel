@@ -8,6 +8,9 @@
  */
 package eu.exeris.kernel.http.http2;
 
+import eu.exeris.kernel.spi.exceptions.ExerisKernelException;
+import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
+
 /**
  * RFC 7540 §6.5 — HTTP/2 Settings parameters.
  *
@@ -30,9 +33,9 @@ package eu.exeris.kernel.http.http2;
  * @see <a href="https://www.rfc-editor.org/rfc/rfc7540#section-6.5">RFC 7540 §6.5</a>
  */
 public record Http2Settings(
-        int headerTableSize,
+        long headerTableSize,
         boolean enablePush,
-        int maxConcurrentStreams,
+        long maxConcurrentStreams,
         int initialWindowSize,
         int maxFrameSize,
         long maxHeaderListSize
@@ -40,7 +43,7 @@ public record Http2Settings(
 
     /** RFC 7540 §6.5.2 — default settings values. */
     public static final Http2Settings DEFAULTS = new Http2Settings(
-            4096, true, -1, 65_535, 16_384, -1L);
+            4096L, true, -1L, 65_535, 16_384, -1L);
 
     /** SETTINGS_HEADER_TABLE_SIZE identifier (0x01). */
     public static final int ID_HEADER_TABLE_SIZE = 0x01;
@@ -64,39 +67,38 @@ public record Http2Settings(
      * @param identifier settings parameter identifier (0x01–0x06)
      * @param value      parameter value as an unsigned 32-bit quantity (0 to 2^32-1)
      * @return updated settings (original is unchanged)
-     * @throws IllegalArgumentException if the value is out of range for the given identifier
+     * @throws Http2SettingsException if the value is out of range for the given identifier
      */
     @SuppressWarnings("PMD.CyclomaticComplexity")
     public Http2Settings withSetting(int identifier, long value) {
         return switch (identifier) {
             case ID_HEADER_TABLE_SIZE      -> new Http2Settings(
-                    validateIntParam("SETTINGS_HEADER_TABLE_SIZE", value, 0L, 0xFFFF_FFFFL),
+                    validateUnsignedIntParam("SETTINGS_HEADER_TABLE_SIZE", value),
                     enablePush, maxConcurrentStreams,
                     initialWindowSize, maxFrameSize, maxHeaderListSize);
             case ID_ENABLE_PUSH            -> {
                 if (value != 0L && value != 1L) {
-                    throw new IllegalArgumentException(
-                            "SETTINGS_ENABLE_PUSH must be 0 or 1, was: " + value);
+                    throw invalidValue("SETTINGS_ENABLE_PUSH", value, "0 or 1");
                 }
                 yield new Http2Settings(headerTableSize, value == 1L, maxConcurrentStreams,
                         initialWindowSize, maxFrameSize, maxHeaderListSize);
             }
             case ID_MAX_CONCURRENT_STREAMS -> new Http2Settings(
                     headerTableSize, enablePush,
-                    validateIntParam("SETTINGS_MAX_CONCURRENT_STREAMS", value, 0L, 0xFFFF_FFFFL),
+                    validateUnsignedIntParam("SETTINGS_MAX_CONCURRENT_STREAMS", value),
                     initialWindowSize, maxFrameSize, maxHeaderListSize);
             case ID_INITIAL_WINDOW_SIZE    -> new Http2Settings(
                     headerTableSize, enablePush, maxConcurrentStreams,
-                    validateIntParam("SETTINGS_INITIAL_WINDOW_SIZE", value, 0L, 0x7FFF_FFFFL),
+                    validateSignedIntParam("SETTINGS_INITIAL_WINDOW_SIZE", value, 0L, 0x7FFF_FFFFL),
                     maxFrameSize, maxHeaderListSize);
             case ID_MAX_FRAME_SIZE         -> new Http2Settings(
                     headerTableSize, enablePush, maxConcurrentStreams, initialWindowSize,
-                    validateIntParam("SETTINGS_MAX_FRAME_SIZE", value, 16_384L, 16_777_215L),
+                    validateSignedIntParam("SETTINGS_MAX_FRAME_SIZE", value, 16_384L, 16_777_215L),
                     maxHeaderListSize);
             case ID_MAX_HEADER_LIST_SIZE   -> new Http2Settings(
                     headerTableSize, enablePush, maxConcurrentStreams,
                     initialWindowSize, maxFrameSize,
-                    validateLongParam("SETTINGS_MAX_HEADER_LIST_SIZE", value, 0L, 0xFFFF_FFFFL));
+                    validateUnsignedIntParam("SETTINGS_MAX_HEADER_LIST_SIZE", value));
             default -> this;
         };
     }
@@ -110,25 +112,51 @@ public record Http2Settings(
      * @param identifier settings parameter identifier (0x01–0x06)
      * @param value      parameter value as a signed 32-bit integer (treated as unsigned on wire)
      * @return updated settings (original is unchanged)
-     * @throws IllegalArgumentException if the unsigned-widened value is out of range
+     * @throws Http2SettingsException if the unsigned-widened value is out of range
      */
     public Http2Settings withSetting(int identifier, int value) {
         return withSetting(identifier, Integer.toUnsignedLong(value));
     }
 
-    private static int validateIntParam(String name, long value, long min, long max) {
+    private static long validateUnsignedIntParam(String name, long value) {
+        if (value < 0L || value > 0xFFFF_FFFFL) {
+            throw outOfRange(name, value, 0L, 0xFFFF_FFFFL);
+        }
+        return value;
+    }
+
+    private static int validateSignedIntParam(String name, long value, long min, long max) {
         if (value < min || value > max) {
-            throw new IllegalArgumentException(
-                    name + " out of range: " + value + " (expected " + min + ".." + max + ')');
+            throw outOfRange(name, value, min, max);
         }
         return (int) value;
     }
 
-    private static long validateLongParam(String name, long value, long min, long max) {
-        if (value < min || value > max) {
-            throw new IllegalArgumentException(
-                    name + " out of range: " + value + " (expected " + min + ".." + max + ')');
+    private static Http2SettingsException outOfRange(String name, long value, long min, long max) {
+        return new Http2SettingsException("HTTP/2 setting out of range", name, value, min, max);
+    }
+
+    private static Http2SettingsException invalidValue(String name, long value, String expected) {
+        return new Http2SettingsException("HTTP/2 setting has invalid value", name, value, expected);
+    }
+
+    /**
+     * Unchecked validation exception for HTTP/2 SETTINGS parameter violations.
+     *
+     * @since 0.5.0
+     */
+    public static final class Http2SettingsException extends ExerisKernelException {
+
+        private static final String ERROR_CODE = KernelErrorCodes.EX_HTTP_4003;
+
+        private Http2SettingsException(String message, String settingName,
+                                       long actualValue, long min, long max) {
+            super(ERROR_CODE, message, settingName, actualValue, min, max);
         }
-        return value;
+
+        private Http2SettingsException(String message, String settingName,
+                                       long actualValue, String expected) {
+            super(ERROR_CODE, message, settingName, actualValue, expected);
+        }
     }
 }
