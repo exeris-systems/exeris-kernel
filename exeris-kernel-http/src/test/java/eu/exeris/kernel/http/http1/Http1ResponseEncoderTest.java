@@ -18,6 +18,7 @@ import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @DisplayName("L0: Http1ResponseEncoder — RFC 9112 §4 Wire Format")
 class Http1ResponseEncoderTest {
@@ -111,6 +112,74 @@ class Http1ResponseEncoderTest {
                 assertThat(pos).isEqualTo(2);
                 assertThat(buf.get(ValueLayout.JAVA_BYTE, 0)).isEqualTo((byte) '\r');
                 assertThat(buf.get(ValueLayout.JAVA_BYTE, 1)).isEqualTo((byte) '\n');
+            }
+        }
+    }
+
+    // =========================================================================
+    // Validation
+    // =========================================================================
+
+    @Nested
+    @DisplayName("writeStatusLine() — input validation")
+    class StatusLineValidation {
+
+        @Test
+        @DisplayName("Status code below 100 throws IllegalArgumentException")
+        void statusCodeBelowRangeThrows() {
+            try (Arena arena = Arena.ofConfined()) {
+                MemorySegment buf = arena.allocate(64);
+                assertThatThrownBy(() -> Http1ResponseEncoder.writeStatusLine(buf, 0, 99, "Continue"))
+                        .isInstanceOf(IllegalArgumentException.class)
+                        .hasMessageContaining("100");
+            }
+        }
+
+        @Test
+        @DisplayName("Status code above 999 throws IllegalArgumentException")
+        void statusCodeAboveRangeThrows() {
+            try (Arena arena = Arena.ofConfined()) {
+                MemorySegment buf = arena.allocate(64);
+                assertThatThrownBy(() -> Http1ResponseEncoder.writeStatusLine(buf, 0, 1000, "Unknown"))
+                        .isInstanceOf(IllegalArgumentException.class)
+                        .hasMessageContaining("999");
+            }
+        }
+
+        @Test
+        @DisplayName("Negative status code throws IllegalArgumentException")
+        void negativeStatusCodeThrows() {
+            try (Arena arena = Arena.ofConfined()) {
+                MemorySegment buf = arena.allocate(64);
+                assertThatThrownBy(() -> Http1ResponseEncoder.writeStatusLine(buf, 0, -1, "Bad"))
+                        .isInstanceOf(IllegalArgumentException.class);
+            }
+        }
+    }
+
+    @Nested
+    @DisplayName("writeHeader() — non-ASCII guard")
+    class HeaderNonAsciiValidation {
+
+        @Test
+        @DisplayName("Non-ASCII character in header name throws IllegalArgumentException")
+        void nonAsciiInNameThrows() {
+            try (Arena arena = Arena.ofConfined()) {
+                MemorySegment buf = arena.allocate(64);
+                assertThatThrownBy(() -> Http1ResponseEncoder.writeHeader(buf, 0, "X-\u00DCser", "value"))
+                        .isInstanceOf(IllegalArgumentException.class)
+                        .hasMessageContaining("Non-ASCII");
+            }
+        }
+
+        @Test
+        @DisplayName("Non-ASCII character in header value throws IllegalArgumentException")
+        void nonAsciiInValueThrows() {
+            try (Arena arena = Arena.ofConfined()) {
+                MemorySegment buf = arena.allocate(64);
+                assertThatThrownBy(() -> Http1ResponseEncoder.writeHeader(buf, 0, "X-Custom", "caf\u00E9"))
+                        .isInstanceOf(IllegalArgumentException.class)
+                        .hasMessageContaining("Non-ASCII");
             }
         }
     }

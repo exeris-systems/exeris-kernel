@@ -207,8 +207,14 @@ public final class Http1RequestParser {
     }
 
     private static long findByte(MemorySegment seg, long start, long end, byte target) {
+        final long size = seg.byteSize();
+        if (start < 0 || end < start || end > size) {
+            throw new Http1ParseException(
+                    "findByte range out of bounds: start=" + start + ", end=" + end + ", size=" + size);
+        }
+        final long limit = end;
         long pos = start;
-        while (pos < end) {
+        while (pos < limit) {
             if (seg.get(ValueLayout.JAVA_BYTE, pos) == target) {
                 return pos;
             }

@@ -75,8 +75,7 @@ public final class Http2FrameEncoder {
         writeHeader(seg, offset, payloadLen, Http2FrameType.SETTINGS.code(), flags, streamId);
         long pos = offset + Http2FrameParser.FRAME_HEADER_SIZE;
         if (!ack) {
-            int idx = 0;
-            while (idx < params.length) {
+            for (int idx = 0; idx < params.length; idx += 2) {
                 seg.set(ValueLayout.JAVA_BYTE, pos, (byte) ((params[idx] >> 8) & 0xFF));
                 seg.set(ValueLayout.JAVA_BYTE, pos + 1, (byte) (params[idx] & 0xFF));
                 int val = params[idx + 1];
@@ -85,7 +84,6 @@ public final class Http2FrameEncoder {
                 seg.set(ValueLayout.JAVA_BYTE, pos + 4, (byte) ((val >> 8) & 0xFF));
                 seg.set(ValueLayout.JAVA_BYTE, pos + 5, (byte) (val & 0xFF));
                 pos += 6;
-                idx += 2;
             }
         }
         return pos - offset;
@@ -171,6 +169,10 @@ public final class Http2FrameEncoder {
      */
     public static long writeGoAway(MemorySegment seg, long offset,
                                    int lastStreamId, int errorCode) {
+        if (lastStreamId < 0) {
+            throw new IllegalArgumentException(
+                    "GOAWAY lastStreamId must be in [0, 0x7FFFFFFF], got: " + lastStreamId);
+        }
         writeHeader(seg, offset, 8, Http2FrameType.GOAWAY.code(), 0, 0);
         long pos = offset + Http2FrameParser.FRAME_HEADER_SIZE;
         seg.set(ValueLayout.JAVA_BYTE, pos,     (byte) ((lastStreamId >> 24) & 0x7F));
@@ -203,6 +205,10 @@ public final class Http2FrameEncoder {
      */
     public static long writeContinuation(MemorySegment seg, long offset,
                                          int streamId, int length, boolean endHeaders) {
+        if (streamId <= 0) {
+            throw new IllegalArgumentException(
+                    "CONTINUATION frames are invalid on stream 0; streamId must be > 0, got: " + streamId);
+        }
         int flags = endHeaders ? 0x04 : 0x00;
         writeHeader(seg, offset, length, Http2FrameType.CONTINUATION.code(), flags, streamId);
         return Http2FrameParser.FRAME_HEADER_SIZE;

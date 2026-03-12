@@ -292,5 +292,114 @@ class Http2FrameCodecTest {
                 assertThat(written).isEqualTo(Http2FrameParser.FRAME_HEADER_SIZE);
             }
         }
+
+        @Test
+        @DisplayName("writeContinuation on stream 0 throws — RFC 7540 §6.10")
+        void writeContinuationOnStream0Throws() {
+            try (Arena arena = Arena.ofConfined()) {
+                MemorySegment seg = arena.allocate(16);
+                assertThatThrownBy(() -> Http2FrameEncoder.writeContinuation(seg, 0, 0, 50, true))
+                        .isInstanceOf(IllegalArgumentException.class)
+                        .hasMessageContaining("stream 0");
+            }
+        }
+    }
+
+    // =========================================================================
+    // Stream ID validation — RFC 7540 §6
+    // =========================================================================
+
+    @Nested
+    @DisplayName("Stream ID validation")
+    class StreamIdValidation {
+
+        @Test
+        @DisplayName("writeDataHeader on stream 0 throws — RFC 7540 §6.1")
+        void dataHeaderOnStream0Throws() {
+            try (Arena arena = Arena.ofConfined()) {
+                MemorySegment seg = arena.allocate(16);
+                assertThatThrownBy(() -> Http2FrameCodec.writeDataHeader(seg, 0, 0, 100, false))
+                        .isInstanceOf(IllegalArgumentException.class)
+                        .hasMessageContaining("stream 0");
+            }
+        }
+
+        @Test
+        @DisplayName("writeDataHeader with negative streamId throws")
+        void dataHeaderNegativeStreamIdThrows() {
+            try (Arena arena = Arena.ofConfined()) {
+                MemorySegment seg = arena.allocate(16);
+                assertThatThrownBy(() -> Http2FrameCodec.writeDataHeader(seg, 0, -1, 100, false))
+                        .isInstanceOf(IllegalArgumentException.class);
+            }
+        }
+
+        @Test
+        @DisplayName("writeHeadersHeader on stream 0 throws — RFC 7540 §6.2")
+        void headersHeaderOnStream0Throws() {
+            try (Arena arena = Arena.ofConfined()) {
+                MemorySegment seg = arena.allocate(16);
+                assertThatThrownBy(() -> Http2FrameCodec.writeHeadersHeader(seg, 0, 0, 50, false, true))
+                        .isInstanceOf(IllegalArgumentException.class)
+                        .hasMessageContaining("stream 0");
+            }
+        }
+
+        @Test
+        @DisplayName("writeHeadersHeader with positive streamId succeeds")
+        void headersHeaderPositiveStreamIdSucceeds() {
+            try (Arena arena = Arena.ofConfined()) {
+                MemorySegment seg = arena.allocate(16);
+                Http2FrameCodec.writeHeadersHeader(seg, 0, 1, 50, true, true);
+                Http2FrameParser.FrameHeader h = Http2FrameParser.parseHeaderBigEndian(seg, 0);
+                assertThat(h.streamId()).isEqualTo(1);
+                assertThat(h.isEndStream()).isTrue();
+                assertThat(h.isEndHeaders()).isTrue();
+            }
+        }
+    }
+
+    // =========================================================================
+    // GOAWAY frame — RFC 7540 §6.8
+    // =========================================================================
+
+    @Nested
+    @DisplayName("GOAWAY frame — §6.8")
+    class GoAwayValidation {
+
+        @Test
+        @DisplayName("writeGoAway with valid lastStreamId = 0 succeeds")
+        void goAwayWithLastStreamIdZeroSucceeds() {
+            try (Arena arena = Arena.ofConfined()) {
+                MemorySegment seg = arena.allocate(32);
+                long written = Http2FrameEncoder.writeGoAway(seg, 0, 0, Http2ErrorCode.NO_ERROR.code());
+                assertThat(written).isEqualTo(17);
+            }
+        }
+
+        @Test
+        @DisplayName("writeGoAway with negative lastStreamId throws")
+        void goAwayNegativeLastStreamIdThrows() {
+            try (Arena arena = Arena.ofConfined()) {
+                MemorySegment seg = arena.allocate(32);
+                int noErrorCode = Http2ErrorCode.NO_ERROR.code();
+                assertThatThrownBy(() -> Http2FrameEncoder.writeGoAway(seg, 0, -1, noErrorCode))
+                        .isInstanceOf(IllegalArgumentException.class)
+                        .hasMessageContaining("0x7FFFFFFF");
+            }
+        }
+
+        @Test
+        @DisplayName("writeGoAway encodes lastStreamId and errorCode correctly")
+        void goAwayWireLayout() {
+            try (Arena arena = Arena.ofConfined()) {
+                MemorySegment seg = arena.allocate(32);
+                Http2FrameEncoder.writeGoAway(seg, 0, 42, Http2ErrorCode.PROTOCOL_ERROR.code());
+                Http2FrameParser.FrameHeader h = Http2FrameParser.parseHeaderBigEndian(seg, 0);
+                assertThat(h.frameType()).isEqualTo(Http2FrameType.GOAWAY);
+                assertThat(h.streamId()).isZero();
+                assertThat(h.length()).isEqualTo(8);
+            }
+        }
     }
 }

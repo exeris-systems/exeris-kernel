@@ -26,6 +26,7 @@ public final class Http1ResponseEncoder {
     private static final byte[] CRLF = {'\r', '\n'};
     private static final byte[] COLON_SPACE = {':', ' '};
     private static final byte[] HTTP_11_PREFIX = "HTTP/1.1 ".getBytes(StandardCharsets.US_ASCII);
+    private static final int MAX_ASCII_CODEPOINT = 0x7F;
 
     private Http1ResponseEncoder() {
     }
@@ -91,15 +92,23 @@ public final class Http1ResponseEncoder {
 
     private static long writeAscii(MemorySegment seg, long pos, String str) {
         final int len = str.length();
-        int charIdx = 0;
-        while (charIdx < len) {
-            seg.set(ValueLayout.JAVA_BYTE, pos + charIdx, (byte) str.charAt(charIdx));
-            charIdx++;
+        for (int charIdx = 0; charIdx < len; charIdx++) {
+            char codeUnit = str.charAt(charIdx);
+            if (codeUnit > MAX_ASCII_CODEPOINT) {
+                throw new IllegalArgumentException(
+                        "Non-ASCII character (code point " + (int) codeUnit + ") " +
+                                "in HTTP/1.1 field at index " + charIdx);
+            }
+            seg.set(ValueLayout.JAVA_BYTE, pos + charIdx, (byte) codeUnit);
         }
         return pos + len;
     }
 
     private static long writeAsciiInt(MemorySegment seg, long pos, int value) {
+        if (value < 100 || value > 999) {
+            throw new IllegalArgumentException(
+                    "HTTP status code must be a 3-digit value [100, 999], got: " + value);
+        }
         seg.set(ValueLayout.JAVA_BYTE, pos,     (byte) ('0' + value / 100));
         seg.set(ValueLayout.JAVA_BYTE, pos + 1, (byte) ('0' + value / 10 % 10));
         seg.set(ValueLayout.JAVA_BYTE, pos + 2, (byte) ('0' + value % 10));

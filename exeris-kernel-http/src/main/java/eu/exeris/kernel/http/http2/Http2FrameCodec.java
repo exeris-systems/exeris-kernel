@@ -103,6 +103,10 @@ public final class Http2FrameCodec {
      */
     public static void writeDataHeader(MemorySegment seg, long offset,
                                        int streamId, int length, boolean endStream) {
+        if (streamId <= 0) {
+            throw new IllegalArgumentException(
+                    "DATA frames are invalid on stream 0; streamId must be > 0, got: " + streamId);
+        }
         int flags = endStream ? 0x01 : 0x00;
         Http2FrameEncoder.writeHeader(seg, offset, length,
                 Http2FrameType.DATA.code(), flags, streamId);
@@ -121,6 +125,10 @@ public final class Http2FrameCodec {
     public static void writeHeadersHeader(MemorySegment seg, long offset,
                                           int streamId, int length,
                                           boolean endStream, boolean endHeaders) {
+        if (streamId <= 0) {
+            throw new IllegalArgumentException(
+                    "HEADERS frames are invalid on stream 0; streamId must be > 0, got: " + streamId);
+        }
         int flags = 0;
         if (endStream) {
             flags |= 0x01;
