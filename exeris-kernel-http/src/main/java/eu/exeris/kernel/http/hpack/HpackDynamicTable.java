@@ -33,6 +33,7 @@ public final class HpackDynamicTable {
 
     private static final int ENTRY_OVERHEAD   = 32;
     private static final int INITIAL_CAPACITY = 64;
+    private static final long MIN_TABLE_SIZE  = 0L;
     private static final int UTF8_1BYTE_MAX   = 0x007F;
     private static final int UTF8_2BYTE_MAX   = 0x07FF;
     private static final int UTF8_3BYTE_MAX   = 0xFFFF;
@@ -61,6 +62,10 @@ public final class HpackDynamicTable {
      * @param maxTableSize maximum size in bytes (per SETTINGS_HEADER_TABLE_SIZE)
      */
     public HpackDynamicTable(long maxTableSize) {
+        if (maxTableSize < MIN_TABLE_SIZE) {
+            throw new IllegalArgumentException(
+                    "maxTableSize must be >= 0, got: " + maxTableSize);
+        }
         this.maxSize = maxTableSize;
         this.entries = new Entry[INITIAL_CAPACITY];
     }
@@ -144,6 +149,10 @@ public final class HpackDynamicTable {
      * @param newMaxSize new maximum size in bytes
      */
     public void setMaxSize(long newMaxSize) {
+        if (newMaxSize < MIN_TABLE_SIZE) {
+            throw new IllegalArgumentException(
+                    "newMaxSize must be >= 0, got: " + newMaxSize);
+        }
         this.maxSize = newMaxSize;
         while (currentSize > maxSize && count > 0) {
             evictOldest();

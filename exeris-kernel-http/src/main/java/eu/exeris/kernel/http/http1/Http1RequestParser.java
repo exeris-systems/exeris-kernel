@@ -28,11 +28,12 @@ import java.nio.charset.StandardCharsets;
  * {@link #DEFAULT_MAX_HEADERS} and {@link #DEFAULT_MAX_HEADER_SIZE}.
  *
  * <h2>Thread Safety</h2>
- * <p>Not thread-safe. Each connection/request uses its own parser instance.
+ * <p>Thread-safe. Stateless static utility methods can be used concurrently.
  *
  * @since 0.5.0
  * @see <a href="https://www.rfc-editor.org/rfc/rfc9112">RFC 9112</a>
  */
+@SuppressWarnings("PMD.CyclomaticComplexity")
 public final class Http1RequestParser {
 
     /** Default maximum number of header fields per request. */
@@ -196,7 +197,10 @@ public final class Http1RequestParser {
     private static long findCrLf(MemorySegment seg, long offset, long length) {
         long end = offset + length;
         long pos = offset;
-        while (pos + 1 < end) {
+        while (pos < end) {
+            if (pos + 1 >= end) {
+                break;
+            }
             if (seg.get(ValueLayout.JAVA_BYTE, pos) == CARRIAGE_RETURN
                     && seg.get(ValueLayout.JAVA_BYTE, pos + 1) == LINE_FEED) {
                 return pos;
@@ -213,7 +217,9 @@ public final class Http1RequestParser {
                     "findByte range out of bounds: start=" + start + ", end=" + end + ", size=" + size);
         }
         long pos = start;
-        while (pos < end) {
+        long remaining = end - start;
+        while (remaining > 0) {
+            remaining--;
             if (seg.get(ValueLayout.JAVA_BYTE, pos) == target) {
                 return pos;
             }

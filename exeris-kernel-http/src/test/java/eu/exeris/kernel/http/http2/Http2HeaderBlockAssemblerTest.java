@@ -77,6 +77,23 @@ class Http2HeaderBlockAssemblerTest {
             assertThatThrownBy(asm::completeBlock)
                     .isInstanceOf(IllegalStateException.class);
         }
+
+        @Test
+        @DisplayName("HEADERS with zero-length fragment yields empty complete block")
+        void headersWithZeroLengthFragment() {
+            Http2HeaderBlockAssembler asm = new Http2HeaderBlockAssembler(allocator);
+            MemorySegment payload = payloadOf(new byte[]{0x01});
+
+            Http2FrameParser.FrameHeader header = headerWith(
+                    Http2FrameType.HEADERS.code(), /*END_HEADERS*/ 0x04, 1);
+
+            asm.beginHeaders(header, payload, 0, 0);
+
+            assertThat(asm.isComplete()).isTrue();
+            assertThat(asm.completeBlock().byteSize()).isZero();
+
+            asm.reset();
+        }
     }
 
     // =========================================================================

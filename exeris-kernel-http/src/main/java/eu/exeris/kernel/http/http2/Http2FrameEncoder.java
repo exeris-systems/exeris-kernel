@@ -76,8 +76,10 @@ public final class Http2FrameEncoder {
         long pos = offset + Http2FrameParser.FRAME_HEADER_SIZE;
         if (!ack) {
             int numPairs = params.length / 2;
+            int remaining = numPairs;
             int pair = 0;
-            while (pair < numPairs) {
+            while (remaining > 0) {
+                remaining--;
                 int base = pair * 2;
                 seg.set(ValueLayout.JAVA_BYTE, pos, (byte) ((params[base] >> 8) & 0xFF));
                 seg.set(ValueLayout.JAVA_BYTE, pos + 1, (byte) (params[base] & 0xFF));

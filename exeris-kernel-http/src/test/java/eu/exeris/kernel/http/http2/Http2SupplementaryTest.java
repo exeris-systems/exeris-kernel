@@ -160,6 +160,14 @@ class Http2SupplementaryTest {
     class FlowControllerExtended {
 
         @Test
+        @DisplayName("Constructor rejects negative initial window")
+        void constructorRejectsNegativeInitialWindow() {
+            assertThatThrownBy(() -> new Http2FlowController(-1))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("initialWindowSize");
+        }
+
+        @Test
         @DisplayName("increment(0) returns false (zero increment is invalid)")
         void zeroIncrementInvalid() {
             Http2FlowController fc = new Http2FlowController();

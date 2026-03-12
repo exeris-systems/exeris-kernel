@@ -26,6 +26,14 @@ class HpackDynamicTableTest {
         assertThat(table.byteSize()).isZero();
     }
 
+    @Test
+    @DisplayName("Constructor rejects negative maxTableSize")
+    void constructorRejectsNegativeMaxTableSize() {
+        assertThatThrownBy(() -> new HpackDynamicTable(-1))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("maxTableSize");
+    }
+
     @Nested
     @DisplayName("add() — insertion and eviction")
     class AddContract {
@@ -120,6 +128,15 @@ class HpackDynamicTableTest {
 
             table.setMaxSize(0);
             assertThat(table.size()).isZero();
+        }
+
+        @Test
+        @DisplayName("setMaxSize rejects negative values")
+        void setMaxSizeRejectsNegative() {
+            HpackDynamicTable table = new HpackDynamicTable(4096);
+            assertThatThrownBy(() -> table.setMaxSize(-1))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("newMaxSize");
         }
     }
 

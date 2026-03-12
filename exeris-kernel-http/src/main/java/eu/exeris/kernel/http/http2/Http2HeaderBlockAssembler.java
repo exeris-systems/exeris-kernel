@@ -258,6 +258,12 @@ public final class Http2HeaderBlockAssembler {
         if (buffer != null && buffer.segment().byteSize() >= required) {
             return;
         }
+        if (required <= 0) {
+            if (buffer == null) {
+                buffer = allocator.allocateNetwork(INITIAL_BUFFER_SIZE);
+            }
+            return;
+        }
         int newCapacity = Math.max(INITIAL_BUFFER_SIZE, Integer.highestOneBit(required - 1) << 1);
         LoanedBuffer newBuffer = allocator.allocateNetwork(newCapacity);
         if (buffer != null) {

@@ -42,8 +42,13 @@ public final class Http2FlowController {
      * Creates a flow controller with the given initial window size.
      *
      * @param initialWindowSize initial window size in bytes
+     * @throws IllegalArgumentException if {@code initialWindowSize} is negative
      */
     public Http2FlowController(int initialWindowSize) {
+        if (initialWindowSize < 0) {
+            throw new IllegalArgumentException(
+                    "initialWindowSize must be >= 0, got: " + initialWindowSize);
+        }
         this.windowSize = initialWindowSize;
     }
 

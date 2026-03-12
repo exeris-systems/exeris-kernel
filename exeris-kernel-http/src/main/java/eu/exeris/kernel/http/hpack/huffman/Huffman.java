@@ -28,6 +28,7 @@ import java.lang.foreign.ValueLayout;
  * @since 0.5.0
  */
 @SuppressWarnings({
+        "PMD.CyclomaticComplexity",
         "PMD.CognitiveComplexity",
         "PMD.AssignmentInOperand",
         "PMD.ConfusingTernary"
@@ -54,15 +55,22 @@ public final class Huffman {
      * @return number of bytes written to {@code output}
      * @throws HuffmanDecodingException on EOS in data stream, output overflow, or invalid padding
      */
+    @SuppressWarnings({"PMD.CyclomaticComplexity", "java:S3776"}) // Complexity justified by direct table-driven decode
     public static int decode(MemorySegment input, long inputOffset, long inputLength,
                              MemorySegment output) {
+        if (inputLength < 0) {
+            throw new HuffmanDecodingException(
+                    "Huffman decode: negative input length: " + inputLength);
+        }
         int state = 0;
         int outPos = 0;
         final long maxOut = output.byteSize();
         int paddingBits = 0;
 
+        long remaining = inputLength;
         long idx = 0;
-        while (idx < inputLength) {
+        while (remaining > 0) {
+            remaining--;
             int octet = input.get(ValueLayout.JAVA_BYTE, inputOffset + idx) & 0xFF;
             idx++;
 
@@ -161,6 +169,16 @@ public final class Huffman {
     }
 
     private static void writeBits(MemorySegment out, long bitPos, long code, int len) {
+        if (len < 0) {
+            throw new HuffmanDecodingException("Invalid Huffman code length: " + len);
+        }
+        long totalBits = bitPos + len;
+        long capacityBits = out.byteSize() * 8L;
+        if (totalBits < 0 || totalBits > capacityBits) {
+            throw new HuffmanDecodingException(
+                    "Huffman encode overflow: bitPos=" + bitPos + ", len=" + len
+                            + ", capacityBits=" + capacityBits);
+        }
         int bitIdx = 0;
         while (bitIdx < len) {
             long absoluteBit = bitPos + bitIdx;
