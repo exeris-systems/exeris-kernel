@@ -165,7 +165,7 @@ public final class Http1Codec {
 
         H2cDetectionContext ctx = new H2cDetectionContext();
         long end = Http1RequestParser.parseHeaders(seg, offset, length,
-                (name, value) -> processHeader(name.strip(), value.strip(), ctx));
+                (name, value) -> processHeader(name, value, ctx));
 
         if (ctx.isValidUpgrade()) {
             upgradeState = UpgradeState.H2C_REQUESTED;

@@ -51,17 +51,20 @@ public final class Http1ChunkedEncoder {
             pos++;
         } else {
             int nibbles = 0;
+            int nibbleCountBound = 8;
             int tmp = size;
-            while (tmp != 0) {
+            while (nibbleCountBound > 0 && tmp > 0) {
                 tmp >>>= 4;
                 nibbles++;
+                nibbleCountBound--;
             }
-            int nibble = nibbles - 1;
-            while (nibble >= 0) {
-                int hexDigit = (size >>> (nibble * 4)) & 0xF;
+            int stepsLeft = nibbles;
+            while (stepsLeft > 0) {
+                int shift = (stepsLeft - 1) * 4;
+                int hexDigit = (size >>> shift) & 0xF;
                 seg.set(ValueLayout.JAVA_BYTE, pos, (byte) (hexDigit < 10 ? '0' + hexDigit : 'a' + hexDigit - 10));
                 pos++;
-                nibble--;
+                stepsLeft--;
             }
         }
         seg.set(ValueLayout.JAVA_BYTE, pos, CRLF[0]);

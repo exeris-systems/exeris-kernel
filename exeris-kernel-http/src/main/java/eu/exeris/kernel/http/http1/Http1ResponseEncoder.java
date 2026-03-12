@@ -85,15 +85,18 @@ public final class Http1ResponseEncoder {
     // =========================================================================
 
     private static long writeBytes(MemorySegment seg, long pos, byte[] data) {
-        MemorySegment.copy(MemorySegment.ofArray(data), ValueLayout.JAVA_BYTE, 0,
-                seg, ValueLayout.JAVA_BYTE, pos, data.length);
+        MemorySegment.copy(data, 0, seg, ValueLayout.JAVA_BYTE, pos, data.length);
         return pos + data.length;
     }
 
     private static long writeAscii(MemorySegment seg, long pos, String str) {
         final int len = str.length();
-        for (int i = 0; i < len; i++) {
-            seg.set(ValueLayout.JAVA_BYTE, pos + i, (byte) str.charAt(i));
+        int charIdx = 0;
+        int remaining = len;
+        while (remaining > 0) {
+            seg.set(ValueLayout.JAVA_BYTE, pos + charIdx, (byte) str.charAt(charIdx));
+            charIdx++;
+            remaining--;
         }
         return pos + len;
     }
@@ -103,25 +106,32 @@ public final class Http1ResponseEncoder {
             seg.set(ValueLayout.JAVA_BYTE, pos, (byte) '0');
             return pos + 1;
         }
-        long magnitude = value;
+        long magnitude;
         long writePos = pos;
-        if (magnitude < 0) {
+        if (value < 0) {
             seg.set(ValueLayout.JAVA_BYTE, writePos, (byte) '-');
             writePos++;
-            magnitude = -magnitude;
+            magnitude = -(long) value;
+        } else {
+            magnitude = value;
         }
-        int digits = 0;
+        int digitCount = 0;
         long tmp = magnitude;
-        while (tmp > 0) {
+        int countBound = 10;
+        while (countBound > 0 && tmp > 0) {
             tmp /= 10;
-            digits++;
+            digitCount++;
+            countBound--;
         }
-        long endPos = writePos + digits;
+        long endPos = writePos + digitCount;
         long digitPos = endPos - 1;
-        while (magnitude > 0) {
-            seg.set(ValueLayout.JAVA_BYTE, digitPos, (byte) ('0' + (int) (magnitude % 10)));
+        long mag = magnitude;
+        int digsLeft = digitCount;
+        while (digsLeft > 0) {
+            seg.set(ValueLayout.JAVA_BYTE, digitPos, (byte) ('0' + (int) (mag % 10)));
             digitPos--;
-            magnitude /= 10;
+            mag /= 10;
+            digsLeft--;
         }
         return endPos;
     }
