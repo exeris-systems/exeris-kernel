@@ -79,7 +79,7 @@ public final class Http2FrameEncoder {
             int remaining = numPairs;
             int pair = 0;
             while (remaining > 0) {
-                remaining--;
+                remaining = remaining - 1;
                 int base = pair * 2;
                 seg.set(ValueLayout.JAVA_BYTE, pos, (byte) ((params[base] >> 8) & 0xFF));
                 seg.set(ValueLayout.JAVA_BYTE, pos + 1, (byte) (params[base] & 0xFF));
@@ -89,7 +89,7 @@ public final class Http2FrameEncoder {
                 seg.set(ValueLayout.JAVA_BYTE, pos + 4, (byte) ((val >> 8) & 0xFF));
                 seg.set(ValueLayout.JAVA_BYTE, pos + 5, (byte) (val & 0xFF));
                 pos += 6;
-                pair++;
+                pair = pair + 1;
             }
         }
         return pos - offset;

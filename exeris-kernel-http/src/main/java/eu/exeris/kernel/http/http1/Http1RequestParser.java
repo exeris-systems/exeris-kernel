@@ -205,7 +205,7 @@ public final class Http1RequestParser {
                     && seg.get(ValueLayout.JAVA_BYTE, pos + 1) == LINE_FEED) {
                 return pos;
             }
-            pos++;
+            pos = pos + 1;
         }
         return -1;
     }
@@ -219,11 +219,11 @@ public final class Http1RequestParser {
         long pos = start;
         long remaining = end - start;
         while (remaining > 0) {
-            remaining--;
+            remaining = remaining - 1;
             if (seg.get(ValueLayout.JAVA_BYTE, pos) == target) {
                 return pos;
             }
-            pos++;
+            pos = pos + 1;
         }
         return -1;
     }

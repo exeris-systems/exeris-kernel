@@ -70,9 +70,9 @@ public final class Huffman {
         long remaining = inputLength;
         long idx = 0;
         while (remaining > 0) {
-            remaining--;
+            remaining = remaining - 1;
             int octet = input.get(ValueLayout.JAVA_BYTE, inputOffset + idx) & 0xFF;
-            idx++;
+            idx = idx + 1;
 
             for (int shift = 4; shift >= 0; shift -= 4) {
                 int nibble = (octet >> shift) & 0x0F;
@@ -191,7 +191,7 @@ public final class Huffman {
                 current &= (byte) ~(1 << bitInByte);
             }
             out.set(ValueLayout.JAVA_BYTE, byteIndex, current);
-            bitIdx++;
+            bitIdx = bitIdx + 1;
         }
     }
 
