@@ -91,8 +91,7 @@ public final class Http1ResponseEncoder {
     }
 
     private static long writeAscii(MemorySegment seg, long pos, String str) {
-        final int len = str.length();
-        for (int charIdx = 0; charIdx < len; charIdx++) {
+        for (int charIdx = 0; charIdx < str.length(); charIdx++) {
             char codeUnit = str.charAt(charIdx);
             if (codeUnit > MAX_ASCII_CODEPOINT) {
                 throw new IllegalArgumentException(
@@ -101,7 +100,7 @@ public final class Http1ResponseEncoder {
             }
             seg.set(ValueLayout.JAVA_BYTE, pos + charIdx, (byte) codeUnit);
         }
-        return pos + len;
+        return pos + str.length();
     }
 
     private static long writeAsciiInt(MemorySegment seg, long pos, int value) {

@@ -60,11 +60,10 @@ public final class Huffman {
         int outPos = 0;
         final long maxOut = output.byteSize();
         int paddingBits = 0;
+        long end = inputOffset + inputLength;
 
-        long byteIdx = 0;
-        while (byteIdx < inputLength) {
-            int octet = input.get(ValueLayout.JAVA_BYTE, inputOffset + byteIdx) & 0xFF;
-            byteIdx++;
+        for (long inPos = inputOffset; inPos < end; inPos++) {
+            int octet = input.get(ValueLayout.JAVA_BYTE, inPos) & 0xFF;
 
             for (int shift = 4; shift >= 0; shift -= 4) {
                 int nibble = (octet >> shift) & 0x0F;
@@ -101,11 +100,8 @@ public final class Huffman {
      */
     public static long encode(MemorySegment input, MemorySegment output) {
         long bitPos = 0;
-        final long inputSize = input.byteSize();
-        long byteIdx = 0;
-        while (byteIdx < inputSize) {
+        for (long byteIdx = 0; byteIdx < input.byteSize(); byteIdx++) {
             int sym = input.get(ValueLayout.JAVA_BYTE, byteIdx) & 0xFF;
-            byteIdx++;
             long code = HuffmanTable.getHuffmanCode(sym);
             int len = HuffmanTable.getHuffmanCodeLength(sym);
             writeBits(output, bitPos, code, len);
@@ -128,11 +124,8 @@ public final class Huffman {
      */
     public static long encodedLength(MemorySegment input) {
         long totalBits = 0;
-        final long inputSize = input.byteSize();
-        long byteIdx = 0;
-        while (byteIdx < inputSize) {
+        for (long byteIdx = 0; byteIdx < input.byteSize(); byteIdx++) {
             int sym = input.get(ValueLayout.JAVA_BYTE, byteIdx) & 0xFF;
-            byteIdx++;
             totalBits += HuffmanTable.getHuffmanCodeLength(sym);
         }
         return (totalBits + 7) / 8;
@@ -167,8 +160,10 @@ public final class Huffman {
     }
 
     private static void writeBits(MemorySegment out, long bitPos, long code, int len) {
-        int bitIdx = 0;
-        while (bitIdx < len) {
+        if (len <= 0) {
+            return;
+        }
+        for (int bitIdx = 0; bitIdx < len; bitIdx++) {
             long absoluteBit = bitPos + bitIdx;
             long byteIndex = absoluteBit >> 3;
             int bitInByte = 7 - (int) (absoluteBit & 7);
@@ -179,7 +174,6 @@ public final class Huffman {
                 current &= (byte) ~(1 << bitInByte);
             }
             out.set(ValueLayout.JAVA_BYTE, byteIndex, current);
-            bitIdx++;
         }
     }
 
