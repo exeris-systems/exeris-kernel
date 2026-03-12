@@ -33,7 +33,6 @@ import java.nio.charset.StandardCharsets;
  * @since 0.5.0
  * @see <a href="https://www.rfc-editor.org/rfc/rfc9112">RFC 9112</a>
  */
-@SuppressWarnings("PMD.CyclomaticComplexity")
 public final class Http1RequestParser {
 
     /** Default maximum number of header fields per request. */
@@ -196,16 +195,11 @@ public final class Http1RequestParser {
 
     private static long findCrLf(MemorySegment seg, long offset, long length) {
         long end = offset + length;
-        long pos = offset;
-        while (pos < end) {
-            if (pos + 1 >= end) {
-                break;
-            }
+        for (long pos = offset; pos + 1 < end; pos++) {
             if (seg.get(ValueLayout.JAVA_BYTE, pos) == CARRIAGE_RETURN
                     && seg.get(ValueLayout.JAVA_BYTE, pos + 1) == LINE_FEED) {
                 return pos;
             }
-            pos = pos + 1;
         }
         return -1;
     }
@@ -216,14 +210,10 @@ public final class Http1RequestParser {
             throw new Http1ParseException(
                     "findByte range out of bounds: start=" + start + ", end=" + end + ", size=" + size);
         }
-        long pos = start;
-        long remaining = end - start;
-        while (remaining > 0) {
-            remaining = remaining - 1;
+        for (long pos = start; pos < end; pos++) {
             if (seg.get(ValueLayout.JAVA_BYTE, pos) == target) {
                 return pos;
             }
-            pos = pos + 1;
         }
         return -1;
     }

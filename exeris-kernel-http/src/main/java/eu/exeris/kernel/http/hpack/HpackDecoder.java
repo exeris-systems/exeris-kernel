@@ -302,6 +302,9 @@ public final class HpackDecoder {
             MemorySegment.copy(decoded, ValueLayout.JAVA_BYTE, 0,
                     bytes, 0, decodedLen);
             return new String(bytes, StandardCharsets.UTF_8);
+        } catch (Huffman.HuffmanDecodingException cause) {
+            throw new HpackDecodingException(
+                    "HPACK: invalid Huffman-encoded string literal", cause);
         }
     }
 
@@ -368,6 +371,10 @@ public final class HpackDecoder {
 
         public HpackDecodingException(String message) {
             super(ERROR_CODE, message, message);
+        }
+
+        public HpackDecodingException(String message, Throwable cause) {
+            super(ERROR_CODE, message, cause, message);
         }
     }
 }

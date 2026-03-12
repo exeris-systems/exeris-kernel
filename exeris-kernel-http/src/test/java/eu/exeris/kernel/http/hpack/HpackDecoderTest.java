@@ -406,6 +406,25 @@ class HpackDecoderTest {
             assertThat(decoded).hasSize(1);
             assertThat(decoded.get(0)).containsExactly("custom-key", "custom-value");
         }
+
+        @Test
+        @DisplayName("Malformed Huffman literal is wrapped as HpackDecodingException")
+        void malformedHuffmanLiteralWrapped() {
+            byte[] block = {
+                0x41,             // literal+index, name idx 1 (:authority)
+                (byte) 0x82,      // Huffman=1, length 2
+                0x1F, (byte) 0xFF // invalid Huffman payload (padding > 7 bits)
+            };
+            MemorySegment seg = testArena.allocate(block.length);
+            MemorySegment.copy(MemorySegment.ofArray(block), ValueLayout.JAVA_BYTE, 0,
+                    seg, ValueLayout.JAVA_BYTE, 0, block.length);
+
+            assertThatThrownBy(() -> decode(seg, 0, block.length))
+                    .isInstanceOf(HpackDecoder.HpackDecodingException.class)
+                    .hasCauseInstanceOf(
+                            eu.exeris.kernel.http.hpack.huffman.Huffman.HuffmanDecodingException.class)
+                    .hasMessageContaining("invalid Huffman-encoded string literal");
+        }
     }
 
     // =========================================================================

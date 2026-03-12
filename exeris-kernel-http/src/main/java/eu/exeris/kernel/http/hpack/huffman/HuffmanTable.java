@@ -122,9 +122,8 @@ public final class HuffmanTable {
 
     // =========================================================================
     // Table construction — bootstrap-time only
-    // =========================================================================
 
-    @SuppressWarnings("java:S3776") // complexity is inherent to the algorithm; this is not a hot path
+    @SuppressWarnings({"java:S3776", "java:S6541"}) // complexity is inherent to the algorithm; this is not a hot path
     private static int[] buildFlatTable() {
         int capacity = 512;
         int[] left = new int[capacity];
@@ -164,7 +163,12 @@ public final class HuffmanTable {
             }
         }
         maxState++;
-        int stateCount = Math.min(maxState, STATE_COUNT);
+        if (maxState > STATE_COUNT) {
+            throw new IllegalStateException(
+                    "Huffman decode table generation exceeded STATE_COUNT=" + STATE_COUNT
+                            + " with maxState=" + maxState);
+        }
+        int stateCount = maxState;
 
         int[] table = new int[STATE_COUNT * NIBBLE_COUNT];
         for (int state = 0; state < stateCount; state++) {
@@ -191,6 +195,7 @@ public final class HuffmanTable {
         }
         return table;
     }
+    // =========================================================================
 
     private static int[] generateCanonicalHuffman(int[] lens) {
         int maxLen = 0;

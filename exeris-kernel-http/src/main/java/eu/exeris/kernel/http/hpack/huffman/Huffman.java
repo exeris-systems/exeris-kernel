@@ -67,12 +67,8 @@ public final class Huffman {
         final long maxOut = output.byteSize();
         int paddingBits = 0;
 
-        long remaining = inputLength;
-        long idx = 0;
-        while (remaining > 0) {
-            remaining = remaining - 1;
+        for (long idx = 0; idx < inputLength; idx++) {
             int octet = input.get(ValueLayout.JAVA_BYTE, inputOffset + idx) & 0xFF;
-            idx = idx + 1;
 
             for (int shift = 4; shift >= 0; shift -= 4) {
                 int nibble = (octet >> shift) & 0x0F;
@@ -179,8 +175,7 @@ public final class Huffman {
                     "Huffman encode overflow: bitPos=" + bitPos + ", len=" + len
                             + ", capacityBits=" + capacityBits);
         }
-        int bitIdx = 0;
-        while (bitIdx < len) {
+        for (int bitIdx = 0; bitIdx < len; bitIdx++) {
             long absoluteBit = bitPos + bitIdx;
             long byteIndex = absoluteBit >> 3;
             int bitInByte = 7 - (int) (absoluteBit & 7);
@@ -191,7 +186,6 @@ public final class Huffman {
                 current &= (byte) ~(1 << bitInByte);
             }
             out.set(ValueLayout.JAVA_BYTE, byteIndex, current);
-            bitIdx = bitIdx + 1;
         }
     }
 
