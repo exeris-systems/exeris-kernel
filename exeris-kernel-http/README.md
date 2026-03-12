@@ -17,7 +17,7 @@ and the module contract in [`docs/modules/06-http.md`](../docs/modules/06-http.m
 
 **HPACK (RFC 7541)**
 - **`HpackEncoder`**: Stateful per-connection encoder. Indexed §6.1 → Literal Incremental §6.2.1 → Never Indexed §6.2.3 strategy. Prefers dynamic table name-only match over static for compression efficiency.
-- **`HpackDecoder`**: Stateful per-connection decoder. Enforces `maxHeaderListSize`. Huffman scratch via `allocateNetwork(strLen * 2)` — safe for full 64 KB string literals.
+- **`HpackDecoder`**: Stateful per-connection decoder. Enforces `maxHeaderListSize`. Huffman scratch via `allocateNetwork(strLen * 2)` — safe for full 64 KB string literals. Allocates a new `byte[]` for non-Huffman string literals and when materialising decoded bytes into Java `String` instances (not fully zero-allocation for header values).
 - **`HpackDynamicTable`**: FIFO ring-buffer. RFC §4.1 entry cost, LIFO index address, eviction on size overflow.
 - **`HpackStaticTable`**: 61 interned entries (RFC Appendix A). O(61) lookup; read-only, shared across connections.
 - **`Huffman`**: Stateless encode/decode over `MemorySegment`. Zero allocation. RFC Appendix B nibble-FSM via `HuffmanTable` (32 KB `static final int[]`).

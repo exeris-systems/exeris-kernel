@@ -232,16 +232,25 @@ public final class Http2HeaderBlockAssembler {
     // =========================================================================
 
     private void append(MemorySegment src, long srcOffset, int length) {
-        int required = written + length;
+        if (length < 0) {
+            throw new ContinuationViolationException(
+                    "HTTP/2 PROTOCOL_ERROR: negative HPACK fragment length: " + length);
+        }
+        if (srcOffset < 0 || srcOffset + length > src.byteSize()) {
+            throw new ContinuationViolationException(
+                    "HTTP/2 PROTOCOL_ERROR: HPACK fragment out of bounds: offset=" + srcOffset
+                            + ", length=" + length + ", segmentSize=" + src.byteSize());
+        }
+        long required = (long) written + length;
         if (required > MAX_HEADER_BLOCK_SIZE) {
             throw new ContinuationViolationException(
                     "HTTP/2 PROTOCOL_ERROR: header block exceeds limit ("
                             + required + " > " + MAX_HEADER_BLOCK_SIZE + ")");
         }
-        ensureCapacity(required);
+        ensureCapacity((int) required);
         MemorySegment.copy(src, ValueLayout.JAVA_BYTE, srcOffset,
                 buffer.segment(), ValueLayout.JAVA_BYTE, written, length);
-        written += length;
+        written = (int) required;
     }
 
     @SuppressWarnings("PMD.CloseResource")
@@ -273,4 +282,3 @@ public final class Http2HeaderBlockAssembler {
         }
     }
 }
-

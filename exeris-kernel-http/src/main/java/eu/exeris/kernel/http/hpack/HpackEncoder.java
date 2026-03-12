@@ -108,6 +108,10 @@ public final class HpackEncoder {
      * @return new byte position
      */
     public long encodeSizeUpdate(MemorySegment output, long pos, int newSize) {
+        if (newSize < 0) {
+            throw new IllegalArgumentException(
+                    "HPACK dynamic table size must be non-negative, got: " + newSize);
+        }
         dynamicTable.setMaxSize(newSize);
         return encodeInteger(output, pos, 0x20, 5, newSize);
     }

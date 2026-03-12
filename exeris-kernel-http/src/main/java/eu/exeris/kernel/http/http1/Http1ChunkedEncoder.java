@@ -91,8 +91,7 @@ public final class Http1ChunkedEncoder {
      * @return new byte position (5 bytes written)
      */
     public static long writeLastChunk(MemorySegment seg, long offset) {
-        MemorySegment.copy(MemorySegment.ofArray(LAST_CHUNK), ValueLayout.JAVA_BYTE, 0,
-                seg, ValueLayout.JAVA_BYTE, offset, LAST_CHUNK.length);
+        MemorySegment.copy(LAST_CHUNK, 0, seg, ValueLayout.JAVA_BYTE, offset, LAST_CHUNK.length);
         return offset + LAST_CHUNK.length;
     }
 

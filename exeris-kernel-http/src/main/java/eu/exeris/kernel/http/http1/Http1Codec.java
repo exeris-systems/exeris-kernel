@@ -176,7 +176,8 @@ public final class Http1Codec {
     private void processHeader(String name, String value, H2cDetectionContext ctx) {
         if (HEADER_CONTENT_LENGTH.equalsIgnoreCase(name)) {
             try {
-                pendingContentLength = Long.parseLong(value);
+                long parsed = Long.parseLong(value);
+                pendingContentLength = parsed >= 0L ? parsed : NO_BODY;
             } catch (NumberFormatException _) {
                 pendingContentLength = NO_BODY;
             }

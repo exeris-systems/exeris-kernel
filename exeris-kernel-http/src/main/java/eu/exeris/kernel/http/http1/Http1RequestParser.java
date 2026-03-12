@@ -22,10 +22,10 @@ import java.nio.charset.StandardCharsets;
  * parsing; callers should treat these as the primary decoded representations.
  *
  * <h2>DoS Limits</h2>
- * <p>Use {@link #parseHeaders(MemorySegment, long, long, int, int, HeaderVisitor)}
- * to enforce per-connection header count and size limits before handing off to
- * application logic. The unbounded overload is retained for internal use by
- * {@link Http1Codec} which applies its own limits.
+ * <p>All {@code parseHeaders(...)} overloads enforce header count and/or header size
+ * limits. Use {@link #parseHeaders(MemorySegment, long, long, int, int, HeaderVisitor)}
+ * to specify explicit per-connection limits, or rely on the overload that applies
+ * {@link #DEFAULT_MAX_HEADERS} and {@link #DEFAULT_MAX_HEADER_SIZE}.
  *
  * <h2>Thread Safety</h2>
  * <p>Not thread-safe. Each connection/request uses its own parser instance.
@@ -195,11 +195,13 @@ public final class Http1RequestParser {
 
     private static long findCrLf(MemorySegment seg, long offset, long length) {
         long end = offset + length;
-        for (long pos = offset; pos + 1 < end; pos++) {
+        long pos = offset;
+        while (pos + 1 < end) {
             if (seg.get(ValueLayout.JAVA_BYTE, pos) == CARRIAGE_RETURN
                     && seg.get(ValueLayout.JAVA_BYTE, pos + 1) == LINE_FEED) {
                 return pos;
             }
+            pos++;
         }
         return -1;
     }
@@ -210,10 +212,12 @@ public final class Http1RequestParser {
             throw new Http1ParseException(
                     "findByte range out of bounds: start=" + start + ", end=" + end + ", size=" + size);
         }
-        for (long pos = start; pos < end; pos++) {
+        long pos = start;
+        while (pos < end) {
             if (seg.get(ValueLayout.JAVA_BYTE, pos) == target) {
                 return pos;
             }
+            pos++;
         }
         return -1;
     }
@@ -222,6 +226,6 @@ public final class Http1RequestParser {
         int len = (int) (end - start);
         byte[] bytes = new byte[len];
         MemorySegment.copy(seg, ValueLayout.JAVA_BYTE, start, bytes, 0, len);
-        return new String(bytes, StandardCharsets.US_ASCII);
+        return new String(bytes, StandardCharsets.ISO_8859_1);
     }
 }

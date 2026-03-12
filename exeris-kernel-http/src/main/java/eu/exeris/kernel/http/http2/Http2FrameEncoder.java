@@ -75,7 +75,9 @@ public final class Http2FrameEncoder {
         writeHeader(seg, offset, payloadLen, Http2FrameType.SETTINGS.code(), flags, streamId);
         long pos = offset + Http2FrameParser.FRAME_HEADER_SIZE;
         if (!ack) {
-            for (int pair = 0; pair < params.length / 2; pair++) {
+            int numPairs = params.length / 2;
+            int pair = 0;
+            while (pair < numPairs) {
                 int base = pair * 2;
                 seg.set(ValueLayout.JAVA_BYTE, pos, (byte) ((params[base] >> 8) & 0xFF));
                 seg.set(ValueLayout.JAVA_BYTE, pos + 1, (byte) (params[base] & 0xFF));
@@ -85,6 +87,7 @@ public final class Http2FrameEncoder {
                 seg.set(ValueLayout.JAVA_BYTE, pos + 4, (byte) ((val >> 8) & 0xFF));
                 seg.set(ValueLayout.JAVA_BYTE, pos + 5, (byte) (val & 0xFF));
                 pos += 6;
+                pair++;
             }
         }
         return pos - offset;

@@ -58,31 +58,77 @@ public record Http2Settings(
     /**
      * Returns a new settings instance with the given parameter applied.
      *
+     * <p>This is the primary overload covering the full unsigned 32-bit value range
+     * defined by RFC 7540 §6.5.2. Range validation is applied per identifier.
+     *
      * @param identifier settings parameter identifier (0x01–0x06)
-     * @param value      parameter value
+     * @param value      parameter value as an unsigned 32-bit quantity (0 to 2^32-1)
      * @return updated settings (original is unchanged)
+     * @throws IllegalArgumentException if the value is out of range for the given identifier
      */
-    public Http2Settings withSetting(int identifier, int value) {
+    @SuppressWarnings("PMD.CyclomaticComplexity")
+    public Http2Settings withSetting(int identifier, long value) {
         return switch (identifier) {
             case ID_HEADER_TABLE_SIZE      -> new Http2Settings(
-                    value, enablePush, maxConcurrentStreams,
+                    validateIntParam("SETTINGS_HEADER_TABLE_SIZE", value, 0L, 0xFFFF_FFFFL),
+                    enablePush, maxConcurrentStreams,
                     initialWindowSize, maxFrameSize, maxHeaderListSize);
-            case ID_ENABLE_PUSH            -> new Http2Settings(
-                    headerTableSize, value != 0, maxConcurrentStreams,
-                    initialWindowSize, maxFrameSize, maxHeaderListSize);
+            case ID_ENABLE_PUSH            -> {
+                if (value != 0L && value != 1L) {
+                    throw new IllegalArgumentException(
+                            "SETTINGS_ENABLE_PUSH must be 0 or 1, was: " + value);
+                }
+                yield new Http2Settings(headerTableSize, value == 1L, maxConcurrentStreams,
+                        initialWindowSize, maxFrameSize, maxHeaderListSize);
+            }
             case ID_MAX_CONCURRENT_STREAMS -> new Http2Settings(
-                    headerTableSize, enablePush, value,
+                    headerTableSize, enablePush,
+                    validateIntParam("SETTINGS_MAX_CONCURRENT_STREAMS", value, 0L, 0xFFFF_FFFFL),
                     initialWindowSize, maxFrameSize, maxHeaderListSize);
             case ID_INITIAL_WINDOW_SIZE    -> new Http2Settings(
                     headerTableSize, enablePush, maxConcurrentStreams,
-                    value, maxFrameSize, maxHeaderListSize);
+                    validateIntParam("SETTINGS_INITIAL_WINDOW_SIZE", value, 0L, 0x7FFF_FFFFL),
+                    maxFrameSize, maxHeaderListSize);
             case ID_MAX_FRAME_SIZE         -> new Http2Settings(
-                    headerTableSize, enablePush, maxConcurrentStreams,
-                    initialWindowSize, value, maxHeaderListSize);
+                    headerTableSize, enablePush, maxConcurrentStreams, initialWindowSize,
+                    validateIntParam("SETTINGS_MAX_FRAME_SIZE", value, 16_384L, 16_777_215L),
+                    maxHeaderListSize);
             case ID_MAX_HEADER_LIST_SIZE   -> new Http2Settings(
                     headerTableSize, enablePush, maxConcurrentStreams,
-                    initialWindowSize, maxFrameSize, value);
+                    initialWindowSize, maxFrameSize,
+                    validateLongParam("SETTINGS_MAX_HEADER_LIST_SIZE", value, 0L, 0xFFFF_FFFFL));
             default -> this;
         };
+    }
+
+    /**
+     * Convenience overload for callers that hold the wire value as a signed 32-bit integer.
+     *
+     * <p>The {@code value} is widened treating it as unsigned via
+     * {@link Integer#toUnsignedLong(int)}, then delegated to {@link #withSetting(int, long)}.
+     *
+     * @param identifier settings parameter identifier (0x01–0x06)
+     * @param value      parameter value as a signed 32-bit integer (treated as unsigned on wire)
+     * @return updated settings (original is unchanged)
+     * @throws IllegalArgumentException if the unsigned-widened value is out of range
+     */
+    public Http2Settings withSetting(int identifier, int value) {
+        return withSetting(identifier, Integer.toUnsignedLong(value));
+    }
+
+    private static int validateIntParam(String name, long value, long min, long max) {
+        if (value < min || value > max) {
+            throw new IllegalArgumentException(
+                    name + " out of range: " + value + " (expected " + min + ".." + max + ')');
+        }
+        return (int) value;
+    }
+
+    private static long validateLongParam(String name, long value, long min, long max) {
+        if (value < min || value > max) {
+            throw new IllegalArgumentException(
+                    name + " out of range: " + value + " (expected " + min + ".." + max + ')');
+        }
+        return value;
     }
 }
