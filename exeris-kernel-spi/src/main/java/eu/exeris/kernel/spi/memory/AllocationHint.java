@@ -75,7 +75,20 @@ public enum AllocationHint {
      * <p>Bulk data import/export, large binary blobs.
      * Always off-heap; sourced from the GlobalArbiter slab pool in Enterprise tier.
      */
-    JUMBO(128 * 1_024);
+    JUMBO(128 * 1_024),
+
+    /**
+     * Session: 4 096 bytes.
+     * <p>Per-session cryptographic context (one session handle per active connection).
+     * MUST always be allocated via {@link MemoryAllocator} so that the runtime can
+     * track session memory budgets and apply backpressure ({@code EX-MEM-1001})
+     * when session memory pressure is detected.
+     *
+     * <p><strong>Contract:</strong> provider implementations MUST use this hint for
+     * per-session native context allocations — never obtain an off-heap region directly
+     * from a platform-specific API, bypassing the allocator.
+     */
+    SESSION(4 * 1_024);
 
     private final int sizeBytes;
 
