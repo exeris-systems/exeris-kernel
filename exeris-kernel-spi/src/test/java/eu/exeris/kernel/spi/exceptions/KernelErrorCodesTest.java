@@ -195,6 +195,12 @@ class KernelErrorCodesTest {
         void exHttp4005() {
             assertThat(KernelErrorCodes.EX_HTTP_4005).isEqualTo("EX-HTTP-4005");
         }
+
+        @Test
+        @DisplayName("EX_HTTP_4006 == 'EX-HTTP-4006' (HTTP/2 frame encoding violation)")
+        void exHttp4006() {
+            assertThat(KernelErrorCodes.EX_HTTP_4006).isEqualTo("EX-HTTP-4006");
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -447,7 +453,8 @@ class KernelErrorCodesTest {
                     KernelErrorCodes.EX_NET_4001, KernelErrorCodes.EX_NET_4002,
                     KernelErrorCodes.EX_NET_4003, KernelErrorCodes.EX_NET_4004, KernelErrorCodes.EX_NET_4005,
                     KernelErrorCodes.EX_HTTP_4001, KernelErrorCodes.EX_HTTP_4002,
-                    KernelErrorCodes.EX_HTTP_4003, KernelErrorCodes.EX_HTTP_4004, KernelErrorCodes.EX_HTTP_4005,
+                    KernelErrorCodes.EX_HTTP_4003, KernelErrorCodes.EX_HTTP_4004,
+                    KernelErrorCodes.EX_HTTP_4005, KernelErrorCodes.EX_HTTP_4006,
                     KernelErrorCodes.EX_PERS_5001, KernelErrorCodes.EX_PERS_5002,
                     KernelErrorCodes.EX_PERS_5003, KernelErrorCodes.EX_PERS_5004,
                     KernelErrorCodes.EX_PERS_5005, KernelErrorCodes.EX_PERS_5006, KernelErrorCodes.EX_PERS_5007,

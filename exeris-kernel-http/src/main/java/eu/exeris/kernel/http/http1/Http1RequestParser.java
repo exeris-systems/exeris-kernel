@@ -201,11 +201,13 @@ public final class Http1RequestParser {
 
     private static long findCrLf(MemorySegment seg, long offset, long length) {
         long end = offset + length;
-        for (long pos = offset; pos + 1 < end; pos++) {
+        long pos = offset;
+        while (pos + 1 < end) {
             if (seg.get(ValueLayout.JAVA_BYTE, pos) == CARRIAGE_RETURN
                     && seg.get(ValueLayout.JAVA_BYTE, pos + 1) == LINE_FEED) {
                 return pos;
             }
+            pos++;
         }
         return -1;
     }
@@ -216,10 +218,12 @@ public final class Http1RequestParser {
             throw new Http1ParseException(
                     "findByte range out of bounds: start=" + start + ", end=" + end + ", size=" + size);
         }
-        for (long pos = start; pos < end; pos++) {
+        long pos = start;
+        while (pos < end) {
             if (seg.get(ValueLayout.JAVA_BYTE, pos) == target) {
                 return pos;
             }
+            pos++;
         }
         return -1;
     }

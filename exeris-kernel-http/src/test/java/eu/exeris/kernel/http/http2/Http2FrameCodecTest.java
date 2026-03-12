@@ -224,7 +224,7 @@ class Http2FrameCodecTest {
         void setMaxFrameSizeRejectsBelowMin() {
             Http2FrameCodec codec = new Http2FrameCodec();
             assertThatThrownBy(() -> codec.setMaxFrameSize(8_192))
-                    .isInstanceOf(Http2FrameCodec.FrameEncodingException.class);
+                    .isInstanceOf(Http2FrameEncoder.FrameEncodingException.class);
         }
 
         @Test
@@ -232,14 +232,14 @@ class Http2FrameCodecTest {
         void setMaxFrameSizeRejectsAboveMax() {
             Http2FrameCodec codec = new Http2FrameCodec();
             assertThatThrownBy(() -> codec.setMaxFrameSize(16_777_216))
-                    .isInstanceOf(Http2FrameCodec.FrameEncodingException.class);
+                    .isInstanceOf(Http2FrameEncoder.FrameEncodingException.class);
         }
 
         @Test
         @DisplayName("Constructor rejects out-of-range maxFrameSize")
         void constructorRejectsOutOfRange() {
             assertThatThrownBy(() -> new Http2FrameCodec(1024))
-                    .isInstanceOf(Http2FrameCodec.FrameEncodingException.class);
+                    .isInstanceOf(Http2FrameEncoder.FrameEncodingException.class);
         }
     }
 
@@ -299,8 +299,11 @@ class Http2FrameCodecTest {
             try (Arena arena = Arena.ofConfined()) {
                 MemorySegment seg = arena.allocate(16);
                 assertThatThrownBy(() -> Http2FrameEncoder.writeContinuation(seg, 0, 0, 50, true))
-                        .isInstanceOf(Http2FrameEncoder.FrameEncodingException.class)
-                        .hasMessageContaining("stream 0");
+                        .isInstanceOfSatisfying(Http2FrameEncoder.FrameEncodingException.class, ex -> {
+                            assertThat(ex.getMessage()).isEqualTo("HTTP/2 frame encoding violation");
+                            assertThat(ex.rawArgs()).containsExactly(
+                                    "CONTINUATION frames are invalid on stream 0; streamId must be > 0, got: 0");
+                        });
             }
         }
     }
@@ -319,8 +322,11 @@ class Http2FrameCodecTest {
             try (Arena arena = Arena.ofConfined()) {
                 MemorySegment seg = arena.allocate(16);
                 assertThatThrownBy(() -> Http2FrameCodec.writeDataHeader(seg, 0, 0, 100, false))
-                        .isInstanceOf(Http2FrameCodec.FrameEncodingException.class)
-                        .hasMessageContaining("stream 0");
+                        .isInstanceOfSatisfying(Http2FrameEncoder.FrameEncodingException.class, ex -> {
+                            assertThat(ex.getMessage()).isEqualTo("HTTP/2 frame encoding violation");
+                            assertThat(ex.rawArgs()).containsExactly(
+                                    "DATA frames are invalid on stream 0; streamId must be > 0, got: 0");
+                        });
             }
         }
 
@@ -330,7 +336,7 @@ class Http2FrameCodecTest {
             try (Arena arena = Arena.ofConfined()) {
                 MemorySegment seg = arena.allocate(16);
                 assertThatThrownBy(() -> Http2FrameCodec.writeDataHeader(seg, 0, -1, 100, false))
-                        .isInstanceOf(Http2FrameCodec.FrameEncodingException.class);
+                        .isInstanceOf(Http2FrameEncoder.FrameEncodingException.class);
             }
         }
 
@@ -340,8 +346,11 @@ class Http2FrameCodecTest {
             try (Arena arena = Arena.ofConfined()) {
                 MemorySegment seg = arena.allocate(16);
                 assertThatThrownBy(() -> Http2FrameCodec.writeHeadersHeader(seg, 0, 0, 50, false, true))
-                        .isInstanceOf(Http2FrameCodec.FrameEncodingException.class)
-                        .hasMessageContaining("stream 0");
+                        .isInstanceOfSatisfying(Http2FrameEncoder.FrameEncodingException.class, ex -> {
+                            assertThat(ex.getMessage()).isEqualTo("HTTP/2 frame encoding violation");
+                            assertThat(ex.rawArgs()).containsExactly(
+                                    "HEADERS frames are invalid on stream 0; streamId must be > 0, got: 0");
+                        });
             }
         }
 
@@ -384,8 +393,11 @@ class Http2FrameCodecTest {
                 MemorySegment seg = arena.allocate(32);
                 int noErrorCode = Http2ErrorCode.NO_ERROR.code();
                 assertThatThrownBy(() -> Http2FrameEncoder.writeGoAway(seg, 0, -1, noErrorCode))
-                        .isInstanceOf(Http2FrameEncoder.FrameEncodingException.class)
-                        .hasMessageContaining("0x7FFFFFFF");
+                        .isInstanceOfSatisfying(Http2FrameEncoder.FrameEncodingException.class, ex -> {
+                            assertThat(ex.getMessage()).isEqualTo("HTTP/2 frame encoding violation");
+                            assertThat(ex.rawArgs()).containsExactly(
+                                    "GOAWAY lastStreamId must be in [0, 0x7FFFFFFF], got: -1");
+                        });
             }
         }
 
@@ -417,7 +429,7 @@ class Http2FrameCodecTest {
             try (Arena arena = Arena.ofConfined()) {
                 MemorySegment seg = arena.allocate(16);
                 assertThatThrownBy(() -> Http2FrameCodec.writeDataHeader(seg, 0, 0, 100, false))
-                        .isInstanceOf(Http2FrameCodec.FrameEncodingException.class)
+                        .isInstanceOf(Http2FrameEncoder.FrameEncodingException.class)
                         .extracting("errorCode")
                         .isEqualTo("EX-HTTP-4006");
             }
@@ -436,14 +448,16 @@ class Http2FrameCodecTest {
         }
 
         @Test
-        @DisplayName("FrameEncodingException message captures detail")
-        void frameEncodingExceptionMessageCapture() {
+        @DisplayName("FrameEncodingException uses static message and detail raw arg")
+        void frameEncodingExceptionMessageAndRawArgContract() {
             try (Arena arena = Arena.ofConfined()) {
                 MemorySegment seg = arena.allocate(16);
                 assertThatThrownBy(() -> Http2FrameCodec.writeDataHeader(seg, 0, 0, 100, false))
-                        .isInstanceOf(Http2FrameCodec.FrameEncodingException.class)
-                        .hasMessageContaining("stream 0")
-                        .hasMessageContaining("DATA");
+                        .isInstanceOfSatisfying(Http2FrameEncoder.FrameEncodingException.class, ex -> {
+                            assertThat(ex.getMessage()).isEqualTo("HTTP/2 frame encoding violation");
+                            assertThat(ex.rawArgs()).containsExactly(
+                                    "DATA frames are invalid on stream 0; streamId must be > 0, got: 0");
+                        });
             }
         }
     }

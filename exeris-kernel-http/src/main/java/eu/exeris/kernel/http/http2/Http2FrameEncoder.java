@@ -79,7 +79,8 @@ public final class Http2FrameEncoder {
         long pos = offset + Http2FrameParser.FRAME_HEADER_SIZE;
         if (!ack) {
             int numPairs = params.length / 2;
-            for (int pair = 0; pair < numPairs; pair++) {
+            int pair = 0;
+            while (pair < numPairs) {
                 int base = pair * 2;
                 seg.set(ValueLayout.JAVA_BYTE, pos, (byte) ((params[base] >> 8) & 0xFF));
                 seg.set(ValueLayout.JAVA_BYTE, pos + 1, (byte) (params[base] & 0xFF));
@@ -89,6 +90,7 @@ public final class Http2FrameEncoder {
                 seg.set(ValueLayout.JAVA_BYTE, pos + 4, (byte) ((val >> 8) & 0xFF));
                 seg.set(ValueLayout.JAVA_BYTE, pos + 5, (byte) (val & 0xFF));
                 pos += 6;
+                pair++;
             }
         }
         return pos - offset;
@@ -224,12 +226,13 @@ public final class Http2FrameEncoder {
      *
      * @since 0.5.0
      */
-    public static final class FrameEncodingException extends ExerisKernelException {
+    public static class FrameEncodingException extends ExerisKernelException {
 
         private static final String ERROR_CODE = KernelErrorCodes.EX_HTTP_4006;
+        private static final String MESSAGE_TEMPLATE = "HTTP/2 frame encoding violation";
 
-        public FrameEncodingException(String message) {
-            super(ERROR_CODE, message, message);
+        public FrameEncodingException(String detail) {
+            super(ERROR_CODE, MESSAGE_TEMPLATE, detail);
         }
     }
 }

@@ -8,9 +8,6 @@
  */
 package eu.exeris.kernel.http.http2;
 
-import eu.exeris.kernel.spi.exceptions.ExerisKernelException;
-import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
-
 import java.lang.foreign.MemorySegment;
 
 /**
@@ -50,7 +47,7 @@ public final class Http2FrameCodec {
      */
     public Http2FrameCodec(int maxFrameSize) {
         if (maxFrameSize < MIN_MAX_FRAME_SIZE || maxFrameSize > MAX_MAX_FRAME_SIZE) {
-            throw new FrameEncodingException(
+            throw new Http2FrameEncoder.FrameEncodingException(
                     "maxFrameSize must be in [" + MIN_MAX_FRAME_SIZE + ", " + MAX_MAX_FRAME_SIZE
                             + "]; got " + maxFrameSize);
         }
@@ -64,7 +61,7 @@ public final class Http2FrameCodec {
      */
     public void setMaxFrameSize(int newMaxFrameSize) {
         if (newMaxFrameSize < MIN_MAX_FRAME_SIZE || newMaxFrameSize > MAX_MAX_FRAME_SIZE) {
-            throw new FrameEncodingException(
+            throw new Http2FrameEncoder.FrameEncodingException(
                     "maxFrameSize must be in [" + MIN_MAX_FRAME_SIZE + ", " + MAX_MAX_FRAME_SIZE
                             + "]; got " + newMaxFrameSize);
         }
@@ -107,7 +104,7 @@ public final class Http2FrameCodec {
     public static void writeDataHeader(MemorySegment seg, long offset,
                                        int streamId, int length, boolean endStream) {
         if (streamId <= 0) {
-            throw new FrameEncodingException(
+            throw new Http2FrameEncoder.FrameEncodingException(
                     "DATA frames are invalid on stream 0; streamId must be > 0, got: " + streamId);
         }
         int flags = endStream ? 0x01 : 0x00;
@@ -129,7 +126,7 @@ public final class Http2FrameCodec {
                                           int streamId, int length,
                                           boolean endStream, boolean endHeaders) {
         if (streamId <= 0) {
-            throw new FrameEncodingException(
+            throw new Http2FrameEncoder.FrameEncodingException(
                     "HEADERS frames are invalid on stream 0; streamId must be > 0, got: " + streamId);
         }
         int flags = 0;
@@ -143,17 +140,4 @@ public final class Http2FrameCodec {
                 Http2FrameType.HEADERS.code(), flags, streamId);
     }
 
-    /**
-     * Unchecked exception for HTTP/2 Frame encoding violations (RFC 7540 §4 / §6).
-     *
-     * @since 0.5.0
-     */
-    public static final class FrameEncodingException extends ExerisKernelException {
-
-        private static final String ERROR_CODE = KernelErrorCodes.EX_HTTP_4006;
-
-        public FrameEncodingException(String message) {
-            super(ERROR_CODE, message, message);
-        }
-    }
 }
