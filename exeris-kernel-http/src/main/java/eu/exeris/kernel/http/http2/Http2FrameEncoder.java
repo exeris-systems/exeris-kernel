@@ -20,6 +20,7 @@ import java.lang.foreign.ValueLayout;
  *
  * @since 0.5.0
  */
+@SuppressWarnings("PMD.CyclomaticComplexity")
 public final class Http2FrameEncoder {
 
     private Http2FrameEncoder() {
@@ -37,6 +38,14 @@ public final class Http2FrameEncoder {
      */
     public static void writeHeader(MemorySegment seg, long offset,
                                    int length, int type, int flags, int streamId) {
+        if (length < 0 || length > 0x00FF_FFFF) {
+            throw new IllegalArgumentException(
+                    "Frame payload length must be in [0, 0x00FFFFFF], got: " + length);
+        }
+        if (streamId < 0) {
+            throw new IllegalArgumentException(
+                    "Stream ID must be in [0, 0x7FFFFFFF], got: " + streamId);
+        }
         seg.set(ValueLayout.JAVA_BYTE, offset, (byte) ((length >> 16) & 0xFF));
         seg.set(ValueLayout.JAVA_BYTE, offset + 1, (byte) ((length >> 8) & 0xFF));
         seg.set(ValueLayout.JAVA_BYTE, offset + 2, (byte) (length & 0xFF));

@@ -17,6 +17,7 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @DisplayName("L0: Http2 — Supplementary Contract Tests")
 class Http2SupplementaryTest {
@@ -182,11 +183,19 @@ class Http2SupplementaryTest {
         }
 
         @Test
-        @DisplayName("updateInitialWindowSize can make window negative")
-        void updateInitialWindowSizeNegative() {
+        @DisplayName("updateInitialWindowSize reduces window to zero")
+        void updateInitialWindowSizeToZero() {
             Http2FlowController fc = new Http2FlowController(65_535);
             fc.updateInitialWindowSize(65_535, 0);
             assertThat(fc.windowSize()).isZero();
+        }
+
+        @Test
+        @DisplayName("updateInitialWindowSize throws when new window would exceed MAX_WINDOW_SIZE")
+        void updateInitialWindowSizeExceedsMax() {
+            Http2FlowController fc = new Http2FlowController(Http2FlowController.MAX_WINDOW_SIZE);
+            assertThatThrownBy(() -> fc.updateInitialWindowSize(1, Http2FlowController.MAX_WINDOW_SIZE))
+                    .isInstanceOf(IllegalStateException.class);
         }
 
         @Test

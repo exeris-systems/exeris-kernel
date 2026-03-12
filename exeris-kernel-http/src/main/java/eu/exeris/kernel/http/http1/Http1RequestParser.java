@@ -194,27 +194,24 @@ public final class Http1RequestParser {
     // =========================================================================
 
     private static long findCrLf(MemorySegment seg, long offset, long length) {
-        int remaining = (int) (length - 1);
+        final long limit = offset + length - 1;
         long pos = offset;
-        while (remaining > 0) {
+        while (pos < limit) {
             if (seg.get(ValueLayout.JAVA_BYTE, pos) == CARRIAGE_RETURN
                     && seg.get(ValueLayout.JAVA_BYTE, pos + 1) == LINE_FEED) {
                 return pos;
             }
-            remaining--;
             pos++;
         }
         return -1;
     }
 
     private static long findByte(MemorySegment seg, long start, long end, byte target) {
-        int remaining = (int) (end - start);
         long pos = start;
-        while (remaining > 0) {
+        while (pos < end) {
             if (seg.get(ValueLayout.JAVA_BYTE, pos) == target) {
                 return pos;
             }
-            remaining--;
             pos++;
         }
         return -1;

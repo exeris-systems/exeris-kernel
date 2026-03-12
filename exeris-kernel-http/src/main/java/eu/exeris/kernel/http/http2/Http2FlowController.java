@@ -103,6 +103,13 @@ public final class Http2FlowController {
      * @param newInitial new initial window size
      */
     public void updateInitialWindowSize(int oldInitial, int newInitial) {
-        windowSize += (long) newInitial - oldInitial;
+        final long delta = (long) newInitial - (long) oldInitial;
+        final long newSize = windowSize + delta;
+        if (newSize > MAX_WINDOW_SIZE) {
+            throw new IllegalStateException(
+                    "Flow-control window exceeds maximum " + MAX_WINDOW_SIZE
+                            + " after SETTINGS_INITIAL_WINDOW_SIZE change");
+        }
+        windowSize = newSize;
     }
 }

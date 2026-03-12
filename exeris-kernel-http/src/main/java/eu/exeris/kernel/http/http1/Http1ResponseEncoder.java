@@ -92,47 +92,17 @@ public final class Http1ResponseEncoder {
     private static long writeAscii(MemorySegment seg, long pos, String str) {
         final int len = str.length();
         int charIdx = 0;
-        int remaining = len;
-        while (remaining > 0) {
+        while (charIdx < len) {
             seg.set(ValueLayout.JAVA_BYTE, pos + charIdx, (byte) str.charAt(charIdx));
             charIdx++;
-            remaining--;
         }
         return pos + len;
     }
 
     private static long writeAsciiInt(MemorySegment seg, long pos, int value) {
-        if (value == 0) {
-            seg.set(ValueLayout.JAVA_BYTE, pos, (byte) '0');
-            return pos + 1;
-        }
-        long magnitude;
-        long writePos = pos;
-        if (value < 0) {
-            seg.set(ValueLayout.JAVA_BYTE, writePos, (byte) '-');
-            writePos++;
-            magnitude = -(long) value;
-        } else {
-            magnitude = value;
-        }
-        int digitCount = 0;
-        long tmp = magnitude;
-        int countBound = 10;
-        while (countBound > 0 && tmp > 0) {
-            tmp /= 10;
-            digitCount++;
-            countBound--;
-        }
-        long endPos = writePos + digitCount;
-        long digitPos = endPos - 1;
-        long mag = magnitude;
-        int digsLeft = digitCount;
-        while (digsLeft > 0) {
-            seg.set(ValueLayout.JAVA_BYTE, digitPos, (byte) ('0' + (int) (mag % 10)));
-            digitPos--;
-            mag /= 10;
-            digsLeft--;
-        }
-        return endPos;
+        seg.set(ValueLayout.JAVA_BYTE, pos,     (byte) ('0' + value / 100));
+        seg.set(ValueLayout.JAVA_BYTE, pos + 1, (byte) ('0' + value / 10 % 10));
+        seg.set(ValueLayout.JAVA_BYTE, pos + 2, (byte) ('0' + value % 10));
+        return pos + 3;
     }
 }
