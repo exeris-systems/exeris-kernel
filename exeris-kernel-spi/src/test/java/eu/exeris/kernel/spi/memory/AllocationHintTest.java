@@ -67,6 +67,12 @@ class AllocationHintTest {
         assertThat(AllocationHint.JUMBO.sizeBytes()).isEqualTo(128 * 1024);
     }
 
+    @Test
+    @DisplayName("SESSION sizeBytes() == 4096")
+    void sessionIs4096() {
+        assertThat(AllocationHint.SESSION.sizeBytes()).isEqualTo(4 * 1024);
+    }
+
     // -----------------------------------------------------------------------
     // Ordering invariants — sizes must be positive
     // -----------------------------------------------------------------------
@@ -82,7 +88,7 @@ class AllocationHintTest {
     }
 
     @Test
-    @DisplayName("MICRO < SMALL < MEDIUM < STREAMING_CHUNK < NETWORK_FRAME < JUMBO")
+    @DisplayName("MICRO < SMALL < MEDIUM < STREAMING_CHUNK < NETWORK_FRAME < JUMBO; SESSION == SMALL (special-purpose, not in ordered chain)")
     void sizesAreStrictlyIncreasing() {
         assertThat(AllocationHint.MICRO.sizeBytes())
                 .isLessThan(AllocationHint.SMALL.sizeBytes());
@@ -94,6 +100,9 @@ class AllocationHintTest {
                 .isLessThan(AllocationHint.NETWORK_FRAME.sizeBytes());
         assertThat(AllocationHint.NETWORK_FRAME.sizeBytes())
                 .isLessThan(AllocationHint.JUMBO.sizeBytes());
+        assertThat(AllocationHint.SESSION.sizeBytes())
+                .as("SESSION is a special-purpose hint sized equal to SMALL — not part of the ordered chain")
+                .isEqualTo(AllocationHint.SMALL.sizeBytes());
     }
 
     // -----------------------------------------------------------------------
@@ -101,9 +110,9 @@ class AllocationHintTest {
     // -----------------------------------------------------------------------
 
     @Test
-    @DisplayName("Total AllocationHint count == 6 — new hints require pool table review")
+    @DisplayName("Total AllocationHint count == 7 — new hints require pool table review")
     void totalHintCount() {
-        assertThat(AllocationHint.values()).hasSize(6);
+        assertThat(AllocationHint.values()).hasSize(7);
     }
 
     // -----------------------------------------------------------------------
@@ -119,5 +128,6 @@ class AllocationHintTest {
         assertThat(AllocationHint.valueOf("NETWORK_FRAME")).isEqualTo(AllocationHint.NETWORK_FRAME);
         assertThat(AllocationHint.valueOf("STREAMING_CHUNK")).isEqualTo(AllocationHint.STREAMING_CHUNK);
         assertThat(AllocationHint.valueOf("JUMBO")).isEqualTo(AllocationHint.JUMBO);
+        assertThat(AllocationHint.valueOf("SESSION")).isEqualTo(AllocationHint.SESSION);
     }
 }
