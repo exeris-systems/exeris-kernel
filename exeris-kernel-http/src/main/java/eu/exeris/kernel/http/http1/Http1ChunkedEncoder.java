@@ -10,7 +10,6 @@ package eu.exeris.kernel.http.http1;
 
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
-import java.nio.charset.StandardCharsets;
 
 /**
  * RFC 9112 §7.1 — HTTP/1.1 Chunked Transfer Encoder.
@@ -42,18 +41,33 @@ public final class Http1ChunkedEncoder {
      * @param size   chunk data size
      * @return byte position after the chunk header (caller writes data, then CRLF)
      */
-    @SuppressWarnings("PMD.AssignmentInOperand")
     public static long writeChunkHeader(MemorySegment seg, long offset, int size) {
         if (size < 0) {
             throw new IllegalArgumentException("Chunk size must be non-negative, got: " + size);
         }
-        byte[] hex = Integer.toHexString(size).getBytes(StandardCharsets.US_ASCII);
         long pos = offset;
-        MemorySegment.copy(MemorySegment.ofArray(hex), ValueLayout.JAVA_BYTE, 0,
-                seg, ValueLayout.JAVA_BYTE, pos, hex.length);
-        pos += hex.length;
-        seg.set(ValueLayout.JAVA_BYTE, pos++, CRLF[0]);
-        seg.set(ValueLayout.JAVA_BYTE, pos++, CRLF[1]);
+        if (size == 0) {
+            seg.set(ValueLayout.JAVA_BYTE, pos, (byte) '0');
+            pos++;
+        } else {
+            int nibbles = 0;
+            int tmp = size;
+            while (tmp != 0) {
+                tmp >>>= 4;
+                nibbles++;
+            }
+            int nibble = nibbles - 1;
+            while (nibble >= 0) {
+                int hexDigit = (size >>> (nibble * 4)) & 0xF;
+                seg.set(ValueLayout.JAVA_BYTE, pos, (byte) (hexDigit < 10 ? '0' + hexDigit : 'a' + hexDigit - 10));
+                pos++;
+                nibble--;
+            }
+        }
+        seg.set(ValueLayout.JAVA_BYTE, pos, CRLF[0]);
+        pos++;
+        seg.set(ValueLayout.JAVA_BYTE, pos, CRLF[1]);
+        pos++;
         return pos;
     }
 

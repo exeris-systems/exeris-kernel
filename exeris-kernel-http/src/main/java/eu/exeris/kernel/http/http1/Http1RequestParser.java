@@ -72,7 +72,8 @@ public final class Http1RequestParser {
      * @param seg    source segment
      * @param offset start offset
      * @param length available bytes
-     * @return parsed request-line, or {@code null} if incomplete (no CRLF found)
+     * @return parsed request-line, or {@code null} if the request-line is incomplete
+     *         (no CRLF found) or malformed (e.g., missing required spaces between tokens)
      */
     public static RequestLine parseRequestLine(MemorySegment seg, long offset, long length) {
         long lineEnd = findCrLf(seg, offset, length);

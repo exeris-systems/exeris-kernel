@@ -67,6 +67,9 @@ public final class Http2FlowController {
         if (bytes < 0) {
             return false;
         }
+        if (bytes == 0) {
+            return true;
+        }
         if (bytes > windowSize) {
             return false;
         }

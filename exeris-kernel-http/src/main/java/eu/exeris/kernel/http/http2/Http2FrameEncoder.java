@@ -86,6 +86,10 @@ public final class Http2FrameEncoder {
         if (streamId != 0) {
             throw new IllegalArgumentException("SETTINGS frame must use stream 0");
         }
+        if (ack && params.length != 0) {
+            throw new IllegalArgumentException(
+                    "SETTINGS ACK frame must carry no parameters; got: " + params.length);
+        }
         if (!ack && params.length % 2 != 0) {
             throw new IllegalArgumentException(
                     "SETTINGS params must be pairs of [id, value]; odd length: " + params.length);
@@ -130,6 +134,10 @@ public final class Http2FrameEncoder {
      */
     public static long writeRstStream(MemorySegment seg, long offset,
                                       int streamId, int errorCode) {
+        if (streamId <= 0) {
+            throw new IllegalArgumentException(
+                    "RST_STREAM stream ID must be > 0, got: " + streamId);
+        }
         writeHeader(seg, offset, 4, Http2FrameType.RST_STREAM.code(), 0, streamId);
         long pos = offset + Http2FrameParser.FRAME_HEADER_SIZE;
         seg.set(ValueLayout.JAVA_BYTE, pos,     (byte) ((errorCode >> 24) & 0xFF));

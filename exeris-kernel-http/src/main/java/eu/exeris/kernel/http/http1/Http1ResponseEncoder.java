@@ -91,12 +91,38 @@ public final class Http1ResponseEncoder {
     }
 
     private static long writeAscii(MemorySegment seg, long pos, String str) {
-        byte[] bytes = str.getBytes(StandardCharsets.US_ASCII);
-        return writeBytes(seg, pos, bytes);
+        final int len = str.length();
+        for (int i = 0; i < len; i++) {
+            seg.set(ValueLayout.JAVA_BYTE, pos + i, (byte) str.charAt(i));
+        }
+        return pos + len;
     }
 
     private static long writeAsciiInt(MemorySegment seg, long pos, int value) {
-        byte[] digits = Integer.toString(value).getBytes(StandardCharsets.US_ASCII);
-        return writeBytes(seg, pos, digits);
+        if (value == 0) {
+            seg.set(ValueLayout.JAVA_BYTE, pos, (byte) '0');
+            return pos + 1;
+        }
+        long magnitude = value;
+        long writePos = pos;
+        if (magnitude < 0) {
+            seg.set(ValueLayout.JAVA_BYTE, writePos, (byte) '-');
+            writePos++;
+            magnitude = -magnitude;
+        }
+        int digits = 0;
+        long tmp = magnitude;
+        while (tmp > 0) {
+            tmp /= 10;
+            digits++;
+        }
+        long endPos = writePos + digits;
+        long digitPos = endPos - 1;
+        while (magnitude > 0) {
+            seg.set(ValueLayout.JAVA_BYTE, digitPos, (byte) ('0' + (int) (magnitude % 10)));
+            digitPos--;
+            magnitude /= 10;
+        }
+        return endPos;
     }
 }
