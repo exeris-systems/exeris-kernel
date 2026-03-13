@@ -248,16 +248,16 @@ public final class Http1RequestParser {
         int start = 0;
         int end = len;
         while (start < end) {
-            char c = value.charAt(start);
-            if (c == ' ' || c == '\t') {
+            char currentChar = value.charAt(start);
+            if (currentChar == ' ' || currentChar == '\t') {
                 start++;
             } else {
                 break;
             }
         }
         while (end > start) {
-            char c = value.charAt(end - 1);
-            if (c == ' ' || c == '\t') {
+            char currentChar = value.charAt(end - 1);
+            if (currentChar == ' ' || currentChar == '\t') {
                 end--;
             } else {
                 break;
@@ -282,14 +282,14 @@ public final class Http1RequestParser {
         return true;
     }
 
-    private static boolean isTchar(char c) {
-        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')) {
+    private static boolean isTchar(char candidateChar) {
+        if ((candidateChar >= 'a' && candidateChar <= 'z') || (candidateChar >= 'A' && candidateChar <= 'Z')) {
             return true;
         }
-        if (c >= '0' && c <= '9') {
+        if (candidateChar >= '0' && candidateChar <= '9') {
             return true;
         }
-        return switch (c) {
+        return switch (candidateChar) {
             case '!', '#', '$', '%', '&', '\'', '*', '+', '-', '.', '^', '_', '`', '|', '~' -> true;
             default -> false;
         };
