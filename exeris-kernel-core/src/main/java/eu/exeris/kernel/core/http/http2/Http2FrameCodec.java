@@ -48,8 +48,8 @@ public final class Http2FrameCodec {
     public Http2FrameCodec(int maxFrameSize) {
         if (maxFrameSize < MIN_MAX_FRAME_SIZE || maxFrameSize > MAX_MAX_FRAME_SIZE) {
             throw new Http2FrameEncoder.FrameEncodingException(
-                    "maxFrameSize must be in [" + MIN_MAX_FRAME_SIZE + ", " + MAX_MAX_FRAME_SIZE
-                            + "]; got " + maxFrameSize);
+                    "maxFrameSize must be in [{0}, {1}]; got {2}",
+                    MIN_MAX_FRAME_SIZE, MAX_MAX_FRAME_SIZE, maxFrameSize);
         }
         this.maxFrameSize = maxFrameSize;
     }
@@ -62,8 +62,8 @@ public final class Http2FrameCodec {
     public void setMaxFrameSize(int newMaxFrameSize) {
         if (newMaxFrameSize < MIN_MAX_FRAME_SIZE || newMaxFrameSize > MAX_MAX_FRAME_SIZE) {
             throw new Http2FrameEncoder.FrameEncodingException(
-                    "maxFrameSize must be in [" + MIN_MAX_FRAME_SIZE + ", " + MAX_MAX_FRAME_SIZE
-                            + "]; got " + newMaxFrameSize);
+                    "maxFrameSize must be in [{0}, {1}]; got {2}",
+                    MIN_MAX_FRAME_SIZE, MAX_MAX_FRAME_SIZE, newMaxFrameSize);
         }
         this.maxFrameSize = newMaxFrameSize;
     }
@@ -86,8 +86,8 @@ public final class Http2FrameCodec {
         Http2FrameParser.FrameHeader header = Http2FrameParser.parseHeaderBigEndian(seg, offset);
         if (header.length() > maxFrameSize) {
             throw new Http2FrameEncoder.FrameEncodingException(
-                    "FRAME_SIZE_ERROR: payload length " + header.length()
-                            + " exceeds negotiated maximum " + maxFrameSize);
+                    "FRAME_SIZE_ERROR: payload length {0} exceeds negotiated maximum {1}",
+                    header.length(), maxFrameSize);
         }
         return header;
     }
@@ -105,7 +105,7 @@ public final class Http2FrameCodec {
                                        int streamId, int length, boolean endStream) {
         if (streamId <= 0) {
             throw new Http2FrameEncoder.FrameEncodingException(
-                    "DATA frames are invalid on stream 0; streamId must be > 0, got: " + streamId);
+                    "DATA frames are invalid on stream 0; streamId must be > 0, got: {0}", streamId);
         }
         int flags = endStream ? 0x01 : 0x00;
         Http2FrameEncoder.writeHeader(seg, offset, length,
@@ -127,7 +127,7 @@ public final class Http2FrameCodec {
                                           boolean endStream, boolean endHeaders) {
         if (streamId <= 0) {
             throw new Http2FrameEncoder.FrameEncodingException(
-                    "HEADERS frames are invalid on stream 0; streamId must be > 0, got: " + streamId);
+                    "HEADERS frames are invalid on stream 0; streamId must be > 0, got: {0}", streamId);
         }
         int flags = 0;
         if (endStream) {

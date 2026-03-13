@@ -44,8 +44,9 @@ class Http2SupplementaryTest {
                     Http2Settings.ID_ENABLE_PUSH, 1))
                     .isInstanceOfSatisfying(Http2FrameEncoder.FrameEncodingException.class, ex -> {
                         assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_HTTP_4006);
-                        assertThat(ex.rawArgs()).hasSize(1);
-                        assertThat(ex.rawArgs()[0]).isEqualTo("SETTINGS ACK frame must carry no parameters; got: 2");
+                        assertThat(ex.rawArgs()).hasSize(2);
+                        assertThat(ex.rawArgs()[0]).isEqualTo("SETTINGS ACK frame must carry no parameters; got: {0}");
+                        assertThat(ex.rawArgs()[1]).isEqualTo(2);
                     });
         }
     }
@@ -59,8 +60,9 @@ class Http2SupplementaryTest {
                     Http2Settings.ID_MAX_FRAME_SIZE))
                     .isInstanceOfSatisfying(Http2FrameEncoder.FrameEncodingException.class, ex -> {
                         assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_HTTP_4006);
-                        assertThat(ex.rawArgs()).hasSize(1);
-                        assertThat(ex.rawArgs()[0]).isEqualTo("SETTINGS params must be pairs of [id, value]; odd length: 1");
+                        assertThat(ex.rawArgs()).hasSize(2);
+                        assertThat(ex.rawArgs()[0]).isEqualTo("SETTINGS params must be pairs of [id, value]; odd length: {0}");
+                        assertThat(ex.rawArgs()[1]).isEqualTo(1);
                     });
         }
     }

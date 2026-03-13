@@ -43,19 +43,19 @@ public final class Http2FrameEncoder {
                                    int length, int type, int flags, int streamId) {
         if (length < 0 || length > 0x00FF_FFFF) {
             throw new FrameEncodingException(
-                    "Frame payload length must be in [0, 0x00FFFFFF], got: " + length);
+                    "Frame payload length must be in [0, 0x00FFFFFF], got: {0}", length);
         }
         if (streamId < 0) {
             throw new FrameEncodingException(
-                    "Stream ID must be in [0, 0x7FFFFFFF], got: " + streamId);
+                    "Stream ID must be in [0, 0x7FFFFFFF], got: {0}", streamId);
         }
         if (type < 0 || type > 0xFF) {
             throw new FrameEncodingException(
-                    "Frame type must be in [0, 255], got: " + type);
+                    "Frame type must be in [0, 255], got: {0}", type);
         }
         if (flags < 0 || flags > 0xFF) {
             throw new FrameEncodingException(
-                    "Frame flags must be in [0, 255], got: " + flags);
+                    "Frame flags must be in [0, 255], got: {0}", flags);
         }
         seg.set(ValueLayout.JAVA_BYTE, offset, (byte) ((length >> 16) & 0xFF));
         seg.set(ValueLayout.JAVA_BYTE, offset + 1, (byte) ((length >> 8) & 0xFF));
@@ -108,11 +108,11 @@ public final class Http2FrameEncoder {
         }
         if (ack && params.length != 0) {
             throw new FrameEncodingException(
-                    "SETTINGS ACK frame must carry no parameters; got: " + params.length);
+                    "SETTINGS ACK frame must carry no parameters; got: {0}", params.length);
         }
         if (!ack && params.length % 2 != 0) {
             throw new FrameEncodingException(
-                    "SETTINGS params must be pairs of [id, value]; odd length: " + params.length);
+                    "SETTINGS params must be pairs of [id, value]; odd length: {0}", params.length);
         }
     }
 
@@ -129,7 +129,7 @@ public final class Http2FrameEncoder {
                                          int streamId, int windowIncrement) {
         if (windowIncrement <= 0) {
             throw new FrameEncodingException(
-                    "WINDOW_UPDATE increment must be in [1, 2^31-1], got: " + windowIncrement);
+                    "WINDOW_UPDATE increment must be in [1, 2^31-1], got: {0}", windowIncrement);
         }
         writeHeader(seg, offset, 4, Http2FrameType.WINDOW_UPDATE.code(), 0, streamId);
         long pos = offset + Http2FrameParser.FRAME_HEADER_SIZE;
@@ -156,7 +156,7 @@ public final class Http2FrameEncoder {
                                       int streamId, int errorCode) {
         if (streamId <= 0) {
             throw new FrameEncodingException(
-                    "RST_STREAM stream ID must be > 0, got: " + streamId);
+                    "RST_STREAM stream ID must be > 0, got: {0}", streamId);
         }
         writeHeader(seg, offset, 4, Http2FrameType.RST_STREAM.code(), 0, streamId);
         long pos = offset + Http2FrameParser.FRAME_HEADER_SIZE;
@@ -184,7 +184,7 @@ public final class Http2FrameEncoder {
                                    int lastStreamId, int errorCode) {
         if (lastStreamId < 0) {
             throw new FrameEncodingException(
-                    "GOAWAY lastStreamId must be in [0, 0x7FFFFFFF], got: " + lastStreamId);
+                    "GOAWAY lastStreamId must be in [0, 0x7FFFFFFF], got: {0}", lastStreamId);
         }
         writeHeader(seg, offset, 8, Http2FrameType.GOAWAY.code(), 0, 0);
         long pos = offset + Http2FrameParser.FRAME_HEADER_SIZE;
@@ -220,7 +220,7 @@ public final class Http2FrameEncoder {
                                          int streamId, int length, boolean endHeaders) {
         if (streamId <= 0) {
             throw new FrameEncodingException(
-                    "CONTINUATION frames are invalid on stream 0; streamId must be > 0, got: " + streamId);
+                    "CONTINUATION frames are invalid on stream 0; streamId must be > 0, got: {0}", streamId);
         }
         int flags = endHeaders ? 0x04 : 0x00;
         writeHeader(seg, offset, length, Http2FrameType.CONTINUATION.code(), flags, streamId);
@@ -237,8 +237,20 @@ public final class Http2FrameEncoder {
         private static final String ERROR_CODE = KernelErrorCodes.EX_HTTP_4006;
         private static final String MESSAGE_TEMPLATE = "HTTP/2 frame encoding violation";
 
-        public FrameEncodingException(String detail) {
-            super(ERROR_CODE, MESSAGE_TEMPLATE, detail);
+        public FrameEncodingException(String detailTemplate) {
+            super(ERROR_CODE, MESSAGE_TEMPLATE, detailTemplate);
+        }
+
+        public FrameEncodingException(String detailTemplate, Object arg0) {
+            super(ERROR_CODE, MESSAGE_TEMPLATE, detailTemplate, arg0);
+        }
+
+        public FrameEncodingException(String detailTemplate, Object arg0, Object arg1) {
+            super(ERROR_CODE, MESSAGE_TEMPLATE, detailTemplate, arg0, arg1);
+        }
+
+        public FrameEncodingException(String detailTemplate, Object arg0, Object arg1, Object arg2) {
+            super(ERROR_CODE, MESSAGE_TEMPLATE, detailTemplate, arg0, arg1, arg2);
         }
     }
 }

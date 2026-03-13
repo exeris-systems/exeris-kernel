@@ -10,9 +10,17 @@ package eu.exeris.kernel.tck.contract.http;
 
 import eu.exeris.kernel.spi.http.HttpConfig;
 import eu.exeris.kernel.spi.http.HttpHandler;
+import eu.exeris.kernel.spi.http.HttpMode;
 import eu.exeris.kernel.spi.http.HttpServerEngine;
 import eu.exeris.kernel.spi.http.HttpStatus;
-import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
+
+import java.io.IOException;
+import java.net.ServerSocket;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -50,7 +58,26 @@ public abstract class AbstractHttpServerEngineTck {
      * @return a valid server config; never {@code null}
      */
     protected HttpConfig testConfig() {
-        return HttpConfig.defaultServer();
+        return new HttpConfig(
+                HttpMode.SERVER,
+                HttpConfig.DEFAULT_BIND_HOST,
+                findAvailablePort(),
+                HttpConfig.DEFAULT_MAX_CONNECTIONS,
+                HttpConfig.DEFAULT_IDLE_TIMEOUT_MS,
+                HttpConfig.DEFAULT_MAX_HEADER_COUNT,
+                HttpConfig.DEFAULT_MAX_HEADER_SIZE,
+                HttpConfig.DEFAULT_MAX_REQUEST_BODY_BYTES,
+                true,
+                eu.exeris.kernel.spi.http.HttpVersion.HTTP_2
+        );
+    }
+
+    private static int findAvailablePort() {
+        try (ServerSocket socket = new ServerSocket(0)) {
+            return socket.getLocalPort();
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to allocate ephemeral test port", e);
+        }
     }
 
     private HttpServerEngine engine;
@@ -146,6 +173,7 @@ public abstract class AbstractHttpServerEngineTck {
         void closeIdempotent() {
             engine.close();
             engine.close();
+            assertThat(engine.isRunning()).isFalse();
         }
 
         @Test
