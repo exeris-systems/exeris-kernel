@@ -78,34 +78,43 @@ public record HttpConfig(
     private static final int MAX_PORT = 65_535;
     private static final int MIN_CONNECTIONS = 1;
 
-    @SuppressWarnings("java:S3776")
     public HttpConfig {
         Objects.requireNonNull(mode,       "mode must not be null");
         Objects.requireNonNull(maxVersion, "maxVersion must not be null");
         if (mode != HttpMode.DISABLED) {
-            validateSharedFields(maxConnections, idleTimeoutMillis,
-                    maxRequestHeaderCount, maxRequestHeaderSize, maxRequestBodyBytes);
-            if (mode == HttpMode.SERVER || mode == HttpMode.DUAL) {
-                if (bindHost == null || bindHost.isBlank()) {
-                    throw new IllegalArgumentException(
-                            "bindHost must not be null or blank for SERVER/DUAL mode");
-                }
-                if (port < MIN_PORT || port > MAX_PORT) {
-                    throw new IllegalArgumentException(
-                            "port must be in range [1, 65535] for SERVER/DUAL mode, got: " + port);
-                }
-            } else {
-                if (port != -1 && (port < MIN_PORT || port > MAX_PORT)) {
-                    throw new IllegalArgumentException(
-                            "port must be -1 (sentinel) or 1-65535 for CLIENT mode, got: " + port);
-                }
-            }
+            validateConnectionLimits(maxConnections, idleTimeoutMillis);
+            validateRequestLimits(maxRequestHeaderCount, maxRequestHeaderSize, maxRequestBodyBytes);
+            validatePort(mode, port, bindHost);
         }
     }
 
-    private static void validateSharedFields(int maxConnections, long idleTimeoutMillis,
-                                              int maxRequestHeaderCount, int maxRequestHeaderSize,
-                                              long maxRequestBodyBytes) {
+    private static void validatePort(HttpMode mode, int port, String bindHost) {
+        if (mode == HttpMode.SERVER || mode == HttpMode.DUAL) {
+            validateServerDualBinding(bindHost, port);
+        } else {
+            validateClientPort(port);
+        }
+    }
+
+    private static void validateServerDualBinding(String bindHost, int port) {
+        if (bindHost == null || bindHost.isBlank()) {
+            throw new IllegalArgumentException(
+                    "bindHost must not be null or blank for SERVER/DUAL mode");
+        }
+        if (port < MIN_PORT || port > MAX_PORT) {
+            throw new IllegalArgumentException(
+                    "port must be in range [1, 65535] for SERVER/DUAL mode, got: " + port);
+        }
+    }
+
+    private static void validateClientPort(int port) {
+        if (port != -1 && (port < MIN_PORT || port > MAX_PORT)) {
+            throw new IllegalArgumentException(
+                    "port must be -1 (sentinel) or 1-65535 for CLIENT mode, got: " + port);
+        }
+    }
+
+    private static void validateConnectionLimits(int maxConnections, long idleTimeoutMillis) {
         if (maxConnections < MIN_CONNECTIONS) {
             throw new IllegalArgumentException(
                     "maxConnections must be >= 1, got: " + maxConnections);
@@ -114,6 +123,10 @@ public record HttpConfig(
             throw new IllegalArgumentException(
                     "idleTimeoutMillis must be >= 0 (0 = no timeout), got: " + idleTimeoutMillis);
         }
+    }
+
+    private static void validateRequestLimits(int maxRequestHeaderCount, int maxRequestHeaderSize,
+                                               long maxRequestBodyBytes) {
         if (maxRequestHeaderCount < 0) {
             throw new IllegalArgumentException(
                     "maxRequestHeaderCount must be >= 0, got: " + maxRequestHeaderCount);
