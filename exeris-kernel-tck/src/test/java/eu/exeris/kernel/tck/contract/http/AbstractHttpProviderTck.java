@@ -227,4 +227,3 @@ public abstract class AbstractHttpProviderTck {
         }
     }
 }
-

@@ -49,6 +49,7 @@ public final class Http1RequestParser {
     private static final byte LINE_FEED = '\n';
     private static final byte SPACE = ' ';
     private static final byte COLON = ':';
+    private static final long CRLF_SEQUENCE_LENGTH = 2L;
     private static final String MSG_HEADER_SIZE_LIMIT = "HTTP/1.1: header field exceeds size limit";
     private static final String MSG_TOO_MANY_HEADERS = "HTTP/1.1: too many header fields";
     private static final String MSG_MALFORMED_HEADER = "HTTP/1.1: malformed header field (missing ':')";
@@ -213,8 +214,23 @@ public final class Http1RequestParser {
     }
 
     private static long findCrLf(MemorySegment seg, long offset, long length) {
+        long size = seg.byteSize();
+        if (offset < 0 || length < 0 || offset > size) {
+            long requestedEnd = (length > Long.MAX_VALUE - offset) ? Long.MAX_VALUE : offset + length;
+            throw new Http1ParseException(MSG_RANGE_OUT_OF_BOUNDS, offset, requestedEnd, size);
+        }
+        if (length < CRLF_SEQUENCE_LENGTH) {
+            return -1;
+        }
+        long maxLength = size - offset;
+        if (length > maxLength) {
+            long requestedEnd = (length > Long.MAX_VALUE - offset) ? Long.MAX_VALUE : offset + length;
+            throw new Http1ParseException(MSG_RANGE_OUT_OF_BOUNDS, offset, requestedEnd, size);
+        }
+
         long end = offset + length;
-        for (long pos = offset; pos + 1 < end; pos++) {
+        long endMinusOne = end - 1;
+        for (long pos = offset; pos < endMinusOne; pos++) {
             if (seg.get(ValueLayout.JAVA_BYTE, pos) == CARRIAGE_RETURN
                     && seg.get(ValueLayout.JAVA_BYTE, pos + 1) == LINE_FEED) {
                 return pos;
