@@ -362,6 +362,43 @@ public final class KernelErrorCodes {
      */
     public static final String EX_HTTP_4006 = "EX-HTTP-4006";
 
+    /**
+     * HTTP SPI provider bootstrap failure: no {@code HttpProvider} is available on the
+     * classpath, or the selected provider could not initialise its engine.
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} providerName (or {@code "unknown"} if no provider found)</li>
+     * </ul>
+     */
+    public static final String EX_HTTP_4007 = "EX-HTTP-4007";
+
+    /**
+     * HTTP server engine start failure: the {@code HttpServerEngine} could not bind the
+     * configured port (port in use, TLS context creation failure, etc.).
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} providerName</li>
+     *   <li>index 1 – {@code int}    port (or -1 if not applicable)</li>
+     * </ul>
+     */
+    public static final String EX_HTTP_4008 = "EX-HTTP-4008";
+
+    /**
+     * HTTP client engine connection failure: the {@code HttpClientEngine} could not
+     * establish a connection to the target host (DNS resolution failure, connection
+     * refused, TLS handshake timeout).
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} providerName</li>
+     *   <li>index 1 – {@code String} host</li>
+     *   <li>index 2 – {@code int}    port (or -1 if not applicable)</li>
+     * </ul>
+     */
+    public static final String EX_HTTP_4009 = "EX-HTTP-4009";
+
     // -----------------------------------------------------------------------
     // EX-PERS – Persistence subsystem
     // -----------------------------------------------------------------------
