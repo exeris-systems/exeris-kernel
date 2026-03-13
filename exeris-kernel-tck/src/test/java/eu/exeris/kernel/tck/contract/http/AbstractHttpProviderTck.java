@@ -1,0 +1,123 @@
+/*
+ * Copyright (C) 2025-2026 Exeris Systems.
+ *
+ * Licensed under the Apache License, Version 2.0 with Commons Clause.
+ * You may use, modify, and distribute this file under those terms.
+ * Commercial resale of this software as a competing product is prohibited.
+ * See LICENSE-COMMUNITY in the repository root for the full text.
+ */
+package eu.exeris.kernel.tck.contract.http;
+
+import eu.exeris.kernel.spi.http.HttpProvider;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
+
+import java.util.Comparator;
+import java.util.ServiceLoader;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+/**
+ * TCK: Abstract base for {@link HttpProvider} contract verification.
+ *
+ * <h2>Contract</h2>
+ * <ul>
+ *   <li>{@code providerId()} is non-null and non-blank</li>
+ *   <li>{@code providerName()} is non-null and non-blank</li>
+ *   <li>{@code priority()} follows Open-Core convention (0 for Community, 100 for Enterprise)</li>
+ *   <li>Provider is discoverable via {@link ServiceLoader}</li>
+ *   <li>Highest-priority provider wins selection</li>
+ *   <li>Identity fields are stable across calls</li>
+ * </ul>
+ *
+ * <h2>Usage</h2>
+ * <pre>{@code
+ * class CommunityHttpProviderTck extends AbstractHttpProviderTck {
+ *     @Override
+ *     protected HttpProvider createProvider() {
+ *         return new CommunityHttpProvider();
+ *     }
+ * }
+ * }</pre>
+ *
+ * @since 0.5.0
+ */
+public abstract class AbstractHttpProviderTck {
+
+    /**
+     * Creates the {@link HttpProvider} under test.
+     *
+     * @return a fresh provider instance; never {@code null}
+     */
+    protected abstract HttpProvider createProvider();
+
+    private HttpProvider provider;
+
+    @BeforeEach
+    final void setUpProvider() {
+        provider = createProvider();
+    }
+
+    @Nested
+    @DisplayName("Provider identity")
+    class Identity {
+
+        @Test
+        @DisplayName("providerId() is non-blank")
+        void providerIdNonBlank() {
+            assertThat(provider.providerId()).isNotNull().isNotBlank();
+        }
+
+        @Test
+        @DisplayName("providerId() is stable across calls")
+        void providerIdStable() {
+            assertThat(provider.providerId()).isEqualTo(provider.providerId());
+        }
+
+        @Test
+        @DisplayName("providerName() is non-blank")
+        void providerNameNonBlank() {
+            assertThat(provider.providerName()).isNotNull().isNotBlank();
+        }
+
+        @Test
+        @DisplayName("providerName() is stable across calls")
+        void providerNameStable() {
+            assertThat(provider.providerName()).isEqualTo(provider.providerName());
+        }
+
+        @Test
+        @DisplayName("priority() follows Open-Core convention (0 or 100)")
+        void priorityConvention() {
+            assertThat(provider.priority()).isIn(0, 100);
+        }
+    }
+
+    @Nested
+    @DisplayName("ServiceLoader integration")
+    class ServiceLoaderContract {
+
+        @Test
+        @DisplayName("HttpProvider is discoverable via ServiceLoader")
+        void discoverable() {
+            long count = ServiceLoader.load(HttpProvider.class).stream().count();
+            assertThat(count)
+                    .as("At least one HttpProvider must be on the classpath")
+                    .isGreaterThanOrEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("Highest-priority provider wins")
+        void highestPriorityWins() {
+            HttpProvider selected = ServiceLoader.load(HttpProvider.class)
+                    .stream()
+                    .map(ServiceLoader.Provider::get)
+                    .max(Comparator.comparingInt(HttpProvider::priority))
+                    .orElseThrow();
+            assertThat(selected.priority()).isGreaterThanOrEqualTo(provider.priority());
+        }
+    }
+}
+

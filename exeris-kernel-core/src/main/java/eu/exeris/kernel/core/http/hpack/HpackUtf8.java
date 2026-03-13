@@ -26,7 +26,8 @@ final class HpackUtf8 {
     /* package */ static int byteLength(String str) {
         int count = 0;
         final int len = str.length();
-        for (int idx = 0; idx < len; idx = str.offsetByCodePoints(idx, 1)) {
+        int idx = 0;
+        while (idx < len) {
             int codePoint = str.codePointAt(idx);
             if (codePoint <= UTF8_1BYTE_MAX) {
                 count++;
@@ -37,6 +38,7 @@ final class HpackUtf8 {
             } else {
                 count += 4;
             }
+            idx += Character.charCount(codePoint);
         }
         return count;
     }
@@ -44,7 +46,8 @@ final class HpackUtf8 {
     /* package */ static void writeToSegment(String str, MemorySegment target, long offset) {
         long cursor = offset;
         final int len = str.length();
-        for (int idx = 0; idx < len; idx = str.offsetByCodePoints(idx, 1)) {
+        int idx = 0;
+        while (idx < len) {
             int codePoint = str.codePointAt(idx);
             if (codePoint <= UTF8_1BYTE_MAX) {
                 target.set(ValueLayout.JAVA_BYTE, cursor, (byte) codePoint);
@@ -71,6 +74,7 @@ final class HpackUtf8 {
                 target.set(ValueLayout.JAVA_BYTE, cursor, (byte) (0x80 | (codePoint & 0x3F)));
                 cursor += 1;
             }
+            idx += Character.charCount(codePoint);
         }
     }
 }
