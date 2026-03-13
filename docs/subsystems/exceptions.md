@@ -102,7 +102,7 @@ formatting. It implements:
 | `EX-NET-4006` | PAQS Load Shedding          | `[0] String transportName, [1] int streamPriority, [2] int thresholdPriority` |
 | `EX-NET-4007` | Buffer Exhaustion           | `[0] String transportName, [1] int poolCapacity, [2] int activeSlabs`         |
 
-### HTTP Codec (`EX-HTTP-`)
+### HTTP Codec (`EX-HTTP-`, codec-level violations 4001..4006)
 
 | Code           | Description                                  | Glass-Box Payload                      |
 |:---------------|:---------------------------------------------|:---------------------------------------|

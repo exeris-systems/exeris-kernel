@@ -201,6 +201,24 @@ class KernelErrorCodesTest {
         void exHttp4006() {
             assertThat(KernelErrorCodes.EX_HTTP_4006).isEqualTo("EX-HTTP-4006");
         }
+
+        @Test
+        @DisplayName("EX_HTTP_4007 == 'EX-HTTP-4007' (HTTP provider bootstrap failure)")
+        void exHttp4007() {
+            assertThat(KernelErrorCodes.EX_HTTP_4007).isEqualTo("EX-HTTP-4007");
+        }
+
+        @Test
+        @DisplayName("EX_HTTP_4008 == 'EX-HTTP-4008' (HTTP server start failure)")
+        void exHttp4008() {
+            assertThat(KernelErrorCodes.EX_HTTP_4008).isEqualTo("EX-HTTP-4008");
+        }
+
+        @Test
+        @DisplayName("EX_HTTP_4009 == 'EX-HTTP-4009' (HTTP client connect failure)")
+        void exHttp4009() {
+            assertThat(KernelErrorCodes.EX_HTTP_4009).isEqualTo("EX-HTTP-4009");
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -455,6 +473,8 @@ class KernelErrorCodesTest {
                     KernelErrorCodes.EX_HTTP_4001, KernelErrorCodes.EX_HTTP_4002,
                     KernelErrorCodes.EX_HTTP_4003, KernelErrorCodes.EX_HTTP_4004,
                     KernelErrorCodes.EX_HTTP_4005, KernelErrorCodes.EX_HTTP_4006,
+                    KernelErrorCodes.EX_HTTP_4007, KernelErrorCodes.EX_HTTP_4008,
+                    KernelErrorCodes.EX_HTTP_4009,
                     KernelErrorCodes.EX_PERS_5001, KernelErrorCodes.EX_PERS_5002,
                     KernelErrorCodes.EX_PERS_5003, KernelErrorCodes.EX_PERS_5004,
                     KernelErrorCodes.EX_PERS_5005, KernelErrorCodes.EX_PERS_5006, KernelErrorCodes.EX_PERS_5007,

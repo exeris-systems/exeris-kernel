@@ -14,10 +14,11 @@ import java.util.Optional;
  * Central {@link ScopedValue} slots for all HTTP SPI providers resolved during bootstrap.
  *
  * <h2>Separation from {@code KernelProviders}</h2>
- * <p>{@code KernelProviders} lives in {@code exeris-kernel-spi}, which has zero Exeris
- * dependencies. {@code HttpKernelProviders} lives in {@code exeris-kernel-spi-http}, which
- * depends on {@code exeris-kernel-spi}. Merging these registries would create a circular
- * dependency: {@code spi → spi-http → spi}. Separation is The Wall in practice.
+ * <p>Both {@code KernelProviders} and {@code HttpKernelProviders} live in
+ * {@code exeris-kernel-spi}. They remain separate to keep the generic kernel-provider
+ * registry protocol-blind and avoid coupling non-HTTP subsystems to HTTP-specific
+ * provider slots. This preserves The Wall by keeping SPI contracts explicit and
+ * dependency direction one-way (implementations depend on SPI, never inverse).
  *
  * <h2>Binding (bootstrap side)</h2>
  * <pre>{@code

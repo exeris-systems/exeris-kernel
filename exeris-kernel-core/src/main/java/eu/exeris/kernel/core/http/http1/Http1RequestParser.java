@@ -52,6 +52,7 @@ public final class Http1RequestParser {
     private static final String MSG_HEADER_SIZE_LIMIT = "HTTP/1.1: header field exceeds size limit";
     private static final String MSG_TOO_MANY_HEADERS = "HTTP/1.1: too many header fields";
     private static final String MSG_MALFORMED_HEADER = "HTTP/1.1: malformed header field (missing ':')";
+    private static final String MSG_INVALID_HEADER_NAME = "Invalid HTTP header field-name: '%s'";
     private static final String MSG_RANGE_OUT_OF_BOUNDS = "HTTP/1.1 parser range out of bounds";
 
     /**
@@ -172,8 +173,13 @@ public final class Http1RequestParser {
                 throw new Http1ParseException(MSG_TOO_MANY_HEADERS, headerCount, maxHeaders);
             }
 
-            String name = readAscii(seg, pos, colonPos).strip();
-            String value = readAscii(seg, colonPos + 1, lineEnd).strip();
+            String rawName = readAscii(seg, pos, colonPos);
+            if (!isValidToken(rawName)) {
+                throw new Http1ParseException(MSG_INVALID_HEADER_NAME, rawName);
+            }
+            String name = rawName;
+            String rawValue = readAscii(seg, colonPos + 1, lineEnd);
+            String value = trimOws(rawValue);
             visitor.onHeader(name, value);
             pos = lineEnd + 2;
         }
@@ -235,5 +241,57 @@ public final class Http1RequestParser {
         byte[] bytes = new byte[len];
         MemorySegment.copy(seg, ValueLayout.JAVA_BYTE, start, bytes, 0, len);
         return new String(bytes, StandardCharsets.ISO_8859_1);
+    }
+
+    private static String trimOws(String value) {
+        int len = value.length();
+        int start = 0;
+        int end = len;
+        while (start < end) {
+            char c = value.charAt(start);
+            if (c == ' ' || c == '\t') {
+                start++;
+            } else {
+                break;
+            }
+        }
+        while (end > start) {
+            char c = value.charAt(end - 1);
+            if (c == ' ' || c == '\t') {
+                end--;
+            } else {
+                break;
+            }
+        }
+        if (start == 0 && end == len) {
+            return value;
+        }
+        return value.substring(start, end);
+    }
+
+    private static boolean isValidToken(String value) {
+        int len = value.length();
+        if (len == 0) {
+            return false;
+        }
+        for (int index = 0; index < len; index++) {
+            if (!isTchar(value.charAt(index))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean isTchar(char c) {
+        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')) {
+            return true;
+        }
+        if (c >= '0' && c <= '9') {
+            return true;
+        }
+        return switch (c) {
+            case '!', '#', '$', '%', '&', '\'', '*', '+', '-', '.', '^', '_', '`', '|', '~' -> true;
+            default -> false;
+        };
     }
 }

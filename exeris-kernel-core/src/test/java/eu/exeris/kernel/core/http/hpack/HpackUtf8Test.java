@@ -36,8 +36,10 @@ class HpackUtf8Test {
             MemorySegment seg = arena.allocate(expected.length);
             HpackUtf8.writeToSegment(value, seg, 0);
 
-            for (int index = 0; index < expected.length; index++) {
-                assertThat(seg.get(ValueLayout.JAVA_BYTE, index)).isEqualTo(expected[index]);
+            int index = 0;
+            for (byte expectedByte : expected) {
+                assertThat(seg.get(ValueLayout.JAVA_BYTE, index)).isEqualTo(expectedByte);
+                index++;
             }
         }
     }

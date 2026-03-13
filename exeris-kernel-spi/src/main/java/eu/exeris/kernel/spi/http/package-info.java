@@ -16,14 +16,23 @@
  * HTTP/3 + QPACK). No transport primitives ({@code io_uring}, NIO channels, QUIC streams)
  * may appear in this package.
  *
- * <h2>Dependency direction</h2>
- * <pre>
- * exeris-kernel-spi          (LoanedBuffer, MemoryAllocator, ExerisKernelException)
- *   └─ exeris-kernel-spi-http  (this module — pure HTTP contracts)
- *        ├─ exeris-kernel-http   (HPACK, HTTP/2 framing, HTTP/1.1 wire codec)
- *        ├─ exeris-kernel-community  (HTTP/1.1 + HTTP/2 engine — implements HttpProvider)
- *        └─ exeris-kernel-enterprise (HTTP/3/QPACK engine — implements HttpProvider)
- * </pre>
+ * <h2>Module layout</h2>
+ * <p>
+ * In the current kernel module structure:
+ * </p>
+ * <ul>
+ *     <li>The HTTP SPI contracts live in the {@code exeris-kernel-spi} module,
+ *     under the {@code eu.exeris.kernel.spi.http} package (this package).</li>
+ *     <li>The HTTP codecs and orchestration logic live in the
+ *     {@code exeris-kernel-core} module, as described in
+ *     {@code docs/subsystems/http.md}.</li>
+ * </ul>
+ *
+ * <p>
+ * Any previous references to separate reactor modules such as
+ * {@code exeris-kernel-spi-http} or {@code exeris-kernel-http} are obsolete
+ * and do not reflect the current repository layout.
+ * </p>
  *
  * @since 0.5.0
  */

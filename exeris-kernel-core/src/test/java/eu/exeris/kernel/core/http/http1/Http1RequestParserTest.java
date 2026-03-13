@@ -70,4 +70,33 @@ class Http1RequestParserTest {
                     .hasMessageContaining("too many header fields");
         }
     }
+
+    @Test
+    void trimsOnlyHttpOwsInHeaderValue() {
+        try (Arena arena = Arena.ofConfined()) {
+            String headers = "X-Test:\t value with spaces \t\r\n\r\n";
+            MemorySegment segment = arena.allocateFrom(headers, StandardCharsets.US_ASCII);
+            List<String> parsed = new ArrayList<>();
+
+            long consumed = Http1RequestParser.parseHeaders(segment, 0, headers.length(),
+                    (name, value) -> parsed.add(name + "=" + value));
+
+            assertThat(consumed).isEqualTo(headers.length());
+            assertThat(parsed).containsExactly("X-Test=value with spaces");
+        }
+    }
+
+    @Test
+    void rejectsHeaderNameOutsideRfcToken() {
+        try (Arena arena = Arena.ofConfined()) {
+            String headers = "Bad Name: value\r\n\r\n";
+            MemorySegment segment = arena.allocateFrom(headers, StandardCharsets.US_ASCII);
+
+            assertThatThrownBy(() -> Http1RequestParser.parseHeaders(segment, 0, headers.length(),
+                    (name, value) -> {
+                    }))
+                    .isInstanceOf(Http1RequestParser.Http1ParseException.class)
+                    .hasMessageContaining("Invalid HTTP header field-name");
+        }
+    }
 }
