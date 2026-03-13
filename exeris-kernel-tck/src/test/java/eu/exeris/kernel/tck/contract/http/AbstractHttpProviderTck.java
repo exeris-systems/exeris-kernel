@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.Comparator;
 import java.util.ServiceLoader;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -54,6 +55,11 @@ public abstract class AbstractHttpProviderTck {
     protected abstract HttpProvider createProvider();
 
     private HttpProvider provider;
+
+    private Stream<ServiceLoader.Provider<HttpProvider>> loadProviders() {
+        ClassLoader providerClassLoader = provider.getClass().getClassLoader();
+        return ServiceLoader.load(HttpProvider.class, providerClassLoader).stream();
+    }
 
     @BeforeEach
     final void setUpProvider() {
@@ -102,7 +108,7 @@ public abstract class AbstractHttpProviderTck {
         @Test
         @DisplayName("HttpProvider is discoverable via ServiceLoader")
         void discoverable() {
-            long count = ServiceLoader.load(HttpProvider.class).stream().count();
+            long count = loadProviders().count();
             assertThat(count)
                     .as("At least one HttpProvider must be on the classpath")
                     .isGreaterThanOrEqualTo(1);
@@ -111,11 +117,10 @@ public abstract class AbstractHttpProviderTck {
         @Test
         @DisplayName("Highest-priority provider wins")
         void highestPriorityWins() {
-            HttpProvider selected = ServiceLoader.load(HttpProvider.class)
-                    .stream()
+            HttpProvider selected = loadProviders()
                     .map(ServiceLoader.Provider::get)
                     .max(Comparator.comparingInt(HttpProvider::priority))
-                    .orElseThrow();
+                    .orElseThrow(() -> new AssertionError("No HttpProvider discovered via ServiceLoader"));
             assertThat(selected.priority()).isGreaterThanOrEqualTo(provider.priority());
         }
     }
