@@ -102,6 +102,7 @@ final class CommunityMemoryAllocator implements MemoryAllocator {
     }
 
     @Override
+    @SuppressWarnings({"java:S1181", "java:S1141"})
     public LoanedBuffer allocateInfrastructure(long sizeBytes) {
         checkOpen();
         if (sizeBytes <= 0) {
@@ -112,8 +113,17 @@ final class CommunityMemoryAllocator implements MemoryAllocator {
             // CHECKSTYLE:OFF — Arena.ofShared() is legal here: this IS the allocator implementation.
             Arena sharedArena = Arena.ofShared(); //NOPMD CloseResource — ownership in CommunityLoanedBuffer.onRelease
             // CHECKSTYLE:ON
-            AbstractLoanedBuffer buf = CommunityLoanedBuffer.allocateOwned(
-                    sizeBytes, CACHE_LINE_ALIGNMENT, sharedArena);
+            AbstractLoanedBuffer buf;
+            try {
+                buf = CommunityLoanedBuffer.allocateOwned(sizeBytes, CACHE_LINE_ALIGNMENT, sharedArena);
+            } catch (Throwable t) {
+                try {
+                    sharedArena.close();
+                } catch (Throwable closeEx) {
+                    t.addSuppressed(closeEx);
+                }
+                throw t;
+            }
             trackAllocation(sizeBytes);
             buf.addCloseAction(new ReleaseAction(
                     sizeBytes, releaseCount, allocatedBytes, jfrEnabled));
@@ -134,9 +144,9 @@ final class CommunityMemoryAllocator implements MemoryAllocator {
     public MemoryStats stats() {
         long allocated = allocatedBytes.get();
         return new MemoryStats(
-                -1L,         // Community: no fixed total budget (sentinel: unknown/heap-only)
+                -1L,         // Community: unbounded off-heap allocator (no fixed total budget; sentinel value)
                 allocated,
-                0L,          // Community: no fixed free budget (not tracked; totalBytes == -1)
+                0L,          // Community: free bytes not applicable when totalBytes == -1 (unbounded; not tracked)
                 allocationCount.get(),
                 releaseCount.get(),
                 peakAllocated.get(),
@@ -169,12 +179,21 @@ final class CommunityMemoryAllocator implements MemoryAllocator {
             throw new MemoryExhaustedException(capacityBytes, allocatedBytes.get(), oom);
         }
     }
-
+    @SuppressWarnings("java:S1181")
     private AbstractLoanedBuffer allocateShared(long capacityBytes) {
         // CHECKSTYLE:OFF — Arena.ofShared() is legal here: this IS the allocator implementation.
         Arena shared = Arena.ofShared();
         // CHECKSTYLE:ON
-        return CommunityLoanedBuffer.allocateOwned(capacityBytes, CACHE_LINE_ALIGNMENT, shared);
+        try {
+            return CommunityLoanedBuffer.allocateOwned(capacityBytes, CACHE_LINE_ALIGNMENT, shared);
+        } catch (Throwable t) {
+            try {
+                shared.close();
+            } catch (Throwable closeEx) {
+                t.addSuppressed(closeEx);
+            }
+            throw t;
+        }
     }
 
     private void trackAllocation(long bytes) {
