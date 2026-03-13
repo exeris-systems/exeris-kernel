@@ -9,11 +9,7 @@
 package eu.exeris.kernel.tck.contract;
 
 import org.assertj.core.api.Assertions;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.*;
 
 import java.util.Locale;
 import java.util.concurrent.CountDownLatch;
@@ -143,12 +139,12 @@ public abstract class AbstractSubsystemCarrierPinningTck {
     // =========================================================================
 
     @BeforeEach
-    final void setUpCarrierPinningTck() {
+    public final void setUpCarrierPinningTck() {
         bootstrapSubsystem();
     }
 
     @AfterEach
-    final void tearDownCarrierPinningTck() {
+    public final void tearDownCarrierPinningTck() {
         tearDownSubsystem();
     }
 
@@ -159,7 +155,7 @@ public abstract class AbstractSubsystemCarrierPinningTck {
     @Test
     @Timeout(value = 120, unit = TimeUnit.SECONDS)
     @DisplayName("Hot-path virtual threads produce zero carrier pinning events > 20 ms")
-    final void hotPathProducesNoPinning() throws Exception {
+    public final void hotPathProducesNoPinning() throws Exception {
 
         // Phase 1 — warm-up (not measured, JFR dark)
         runVtBatch(WARMUP_VT_COUNT);

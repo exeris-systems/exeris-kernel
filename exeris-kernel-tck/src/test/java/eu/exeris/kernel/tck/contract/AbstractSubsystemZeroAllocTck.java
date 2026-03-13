@@ -139,7 +139,7 @@ public abstract class AbstractSubsystemZeroAllocTck {
     // =========================================================================
 
     @BeforeEach
-    final void setUpZeroAllocTck() {
+    public final void setUpZeroAllocTck() {
         // ── BOOTSTRAP PHASE ─────────────────────────────────────────────────
         // All SPI objects are created HERE, before any JFR recording starts.
         // Enterprise tier builds its entire slab pool and pre-allocates all
@@ -148,7 +148,7 @@ public abstract class AbstractSubsystemZeroAllocTck {
     }
 
     @AfterEach
-    final void tearDownZeroAllocTck() {
+    public final void tearDownZeroAllocTck() {
         tearDownSubsystem();
     }
 
@@ -158,7 +158,7 @@ public abstract class AbstractSubsystemZeroAllocTck {
 
     @Test
     @DisplayName("Hot path JFR allocation profile matches tier contract")
-    final void allocationProfileMatchesTierContract() throws IOException {
+    public final void allocationProfileMatchesTierContract() throws IOException {
         Config config = new Config(
                 subsystemName(),
                 getClass().getSimpleName(),
