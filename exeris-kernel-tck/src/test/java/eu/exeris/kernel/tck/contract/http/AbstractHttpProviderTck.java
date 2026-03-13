@@ -211,10 +211,17 @@ public abstract class AbstractHttpProviderTck {
         @Test
         @DisplayName("HttpProvider is discoverable via ServiceLoader")
         void discoverable() {
-            long count = discoverProviders().size();
+            List<HttpProvider> discoveredProviders = discoverProviders();
+            long count = discoveredProviders.size();
             assertThat(count)
                     .as("At least one HttpProvider must be on the classpath")
                     .isGreaterThanOrEqualTo(1);
+            assertThat(discoveredProviders)
+                    .as("Provider created by createProvider() must be discoverable via ServiceLoader")
+                    .anySatisfy(discoveredProvider -> {
+                        assertThat(discoveredProvider.getClass()).isEqualTo(provider.getClass());
+                        assertThat(discoveredProvider.providerId()).isEqualTo(provider.providerId());
+                    });
         }
 
         @Test

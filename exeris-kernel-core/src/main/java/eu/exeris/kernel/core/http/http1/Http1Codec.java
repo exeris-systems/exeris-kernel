@@ -52,6 +52,7 @@ public final class Http1Codec {
 
     /** Sentinel value meaning the request carries no declared body. */
     public static final long NO_BODY = -1L;
+    private static final long MIN_CONTENT_LENGTH = 0L;
 
     /**
      * HTTP/1.1 → HTTP/2 upgrade state after header parsing.
@@ -72,6 +73,7 @@ public final class Http1Codec {
     private static final String HEADER_CONNECTION       = "connection";
     private static final String HEADER_UPGRADE          = "upgrade";
     private static final String HEADER_HTTP2_SETTINGS   = "http2-settings";
+    private static final String MSG_INVALID_CONTENT_LENGTH = "HTTP/1.1: invalid Content-Length header";
     private static final String CONNECTION_CLOSE        = "close";
     private static final String UPGRADE_H2C             = "h2c";
 
@@ -156,72 +158,16 @@ public final class Http1Codec {
      * @param length  available bytes
      * @return byte position after the terminal CRLF CRLF, or {@code -1} if incomplete
      */
-    @SuppressWarnings("PMD.NullAssignment")
     public long parseHeaders(MemorySegment seg, long offset, long length) {
-        pendingContentLength = NO_BODY;
-        upgradeState = UpgradeState.NONE;
-        h2cSettingsPayload = null;
-        keepAlive = true;
-
-        H2cDetectionContext ctx = new H2cDetectionContext();
+        HeaderParseState state = new HeaderParseState();
         long end = Http1RequestParser.parseHeaders(seg, offset, length,
-                (name, value) -> processHeader(name, value, ctx));
+                state::processHeader);
 
-        if (ctx.isValidUpgrade()) {
-            upgradeState = UpgradeState.H2C_REQUESTED;
-        }
+        keepAlive = state.keepAlive;
+        pendingContentLength = state.pendingContentLength;
+        upgradeState = state.upgradeState();
+        h2cSettingsPayload = state.h2cSettingsPayload;
         return end;
-    }
-
-    private void processHeader(String name, String value, H2cDetectionContext ctx) {
-        if (HEADER_CONTENT_LENGTH.equalsIgnoreCase(name)) {
-            try {
-                long parsed = Long.parseLong(value);
-                pendingContentLength = parsed >= 0L ? parsed : NO_BODY;
-            } catch (NumberFormatException _) {
-                pendingContentLength = NO_BODY;
-            }
-        } else if (HEADER_CONNECTION.equalsIgnoreCase(name)) {
-            processConnectionHeader(value, ctx);
-        } else if (HEADER_UPGRADE.equalsIgnoreCase(name)) {
-            if (headerHasToken(value, UPGRADE_H2C)) {
-                ctx.upgrade = true;
-            }
-        } else if (HEADER_HTTP2_SETTINGS.equalsIgnoreCase(name)) {
-            ctx.settings = true;
-            h2cSettingsPayload = value;
-        }
-    }
-
-    private void processConnectionHeader(String value, H2cDetectionContext ctx) {
-        if (headerHasToken(value, CONNECTION_CLOSE)) {
-            keepAlive = false;
-        }
-        if (headerHasToken(value, HEADER_UPGRADE)) {
-            ctx.connectionUpgrade = true;
-        }
-        if (headerHasToken(value, HEADER_HTTP2_SETTINGS)) {
-            ctx.connectionSettings = true;
-        }
-    }
-
-    private static boolean headerHasToken(String headerValue, String token) {
-        int start = 0;
-        final int len = headerValue.length();
-        while (start < len) {
-            int comma = headerValue.indexOf(',', start);
-            String candidate = (comma == -1
-                    ? headerValue.substring(start)
-                    : headerValue.substring(start, comma)).strip();
-            if (token.equalsIgnoreCase(candidate)) {
-                return true;
-            }
-            if (comma == -1) {
-                break;
-            }
-            start = comma + 1;
-        }
-        return false;
     }
 
     /**
@@ -275,6 +221,86 @@ public final class Http1Codec {
 
         private boolean isValidUpgrade() {
             return upgrade && settings && connectionUpgrade && connectionSettings;
+        }
+    }
+
+    private static final class HeaderParseState {
+
+        private boolean keepAlive = true;
+        private long pendingContentLength = NO_BODY;
+        private String h2cSettingsPayload;
+        private final H2cDetectionContext h2c = new H2cDetectionContext();
+
+        private void processHeader(String name, String value) {
+            if (HEADER_CONTENT_LENGTH.equalsIgnoreCase(name)) {
+                pendingContentLength = parseContentLength(value);
+                return;
+            }
+            if (HEADER_CONNECTION.equalsIgnoreCase(name)) {
+                processConnectionHeader(value);
+                return;
+            }
+            if (HEADER_UPGRADE.equalsIgnoreCase(name)) {
+                markUpgradeIfPresent(value);
+                return;
+            }
+            if (HEADER_HTTP2_SETTINGS.equalsIgnoreCase(name)) {
+                h2c.settings = true;
+                h2cSettingsPayload = value;
+            }
+        }
+
+        private long parseContentLength(String value) {
+            try {
+                long parsed = Long.parseLong(value);
+                if (parsed < MIN_CONTENT_LENGTH) {
+                    throw new Http1RequestParser.Http1ParseException(MSG_INVALID_CONTENT_LENGTH, value);
+                }
+                return parsed;
+            } catch (NumberFormatException ex) {
+                throw new Http1RequestParser.Http1ParseException(MSG_INVALID_CONTENT_LENGTH, ex, value);
+            }
+        }
+
+        private void processConnectionHeader(String value) {
+            if (headerHasToken(value, CONNECTION_CLOSE)) {
+                keepAlive = false;
+            }
+            if (headerHasToken(value, HEADER_UPGRADE)) {
+                h2c.connectionUpgrade = true;
+            }
+            if (headerHasToken(value, HEADER_HTTP2_SETTINGS)) {
+                h2c.connectionSettings = true;
+            }
+        }
+
+        private void markUpgradeIfPresent(String value) {
+            if (headerHasToken(value, UPGRADE_H2C)) {
+                h2c.upgrade = true;
+            }
+        }
+
+        private boolean headerHasToken(String headerValue, String token) {
+            int start = 0;
+            final int len = headerValue.length();
+            while (start < len) {
+                int comma = headerValue.indexOf(',', start);
+                String candidate = (comma == -1
+                        ? headerValue.substring(start)
+                        : headerValue.substring(start, comma)).strip();
+                if (token.equalsIgnoreCase(candidate)) {
+                    return true;
+                }
+                if (comma == -1) {
+                    break;
+                }
+                start = comma + 1;
+            }
+            return false;
+        }
+
+        private UpgradeState upgradeState() {
+            return h2c.isValidUpgrade() ? UpgradeState.H2C_REQUESTED : UpgradeState.NONE;
         }
     }
 }

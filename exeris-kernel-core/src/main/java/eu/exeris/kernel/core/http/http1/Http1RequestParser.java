@@ -53,7 +53,7 @@ public final class Http1RequestParser {
     private static final String MSG_HEADER_SIZE_LIMIT = "HTTP/1.1: header field exceeds size limit";
     private static final String MSG_TOO_MANY_HEADERS = "HTTP/1.1: too many header fields";
     private static final String MSG_MALFORMED_HEADER = "HTTP/1.1: malformed header field (missing ':')";
-    private static final String MSG_INVALID_HEADER_NAME = "Invalid HTTP header field-name: '%s'";
+    private static final String MSG_INVALID_HEADER_NAME = "Invalid HTTP header field-name";
     private static final String MSG_RANGE_OUT_OF_BOUNDS = "HTTP/1.1 parser range out of bounds";
 
     /**
@@ -199,6 +199,10 @@ public final class Http1RequestParser {
 
         public Http1ParseException(String messageTemplate, Object... rawArgs) {
             super(ERROR_CODE, messageTemplate, rawArgs);
+        }
+
+        public Http1ParseException(String messageTemplate, Throwable cause, Object... rawArgs) {
+            super(ERROR_CODE, messageTemplate, cause, rawArgs);
         }
     }
 

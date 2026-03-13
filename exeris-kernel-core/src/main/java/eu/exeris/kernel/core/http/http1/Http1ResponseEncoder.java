@@ -23,9 +23,12 @@ import java.nio.charset.StandardCharsets;
  */
 public final class Http1ResponseEncoder {
 
+    private static final int HTTP_STATUS_MIN = 100;
+    private static final int HTTP_STATUS_MAX = 599;
     private static final byte[] CRLF = {'\r', '\n'};
     private static final byte[] COLON_SPACE = {':', ' '};
     private static final byte[] HTTP_11_PREFIX = "HTTP/1.1 ".getBytes(StandardCharsets.US_ASCII);
+    private static final int ASCII_CONTROL_MAX = 0x1F;
     private static final int MAX_ASCII_CODEPOINT = 0x7F;
 
     private Http1ResponseEncoder() {
@@ -98,15 +101,20 @@ public final class Http1ResponseEncoder {
                         "Non-ASCII character (code point " + (int) codeUnit + ") " +
                                 "in HTTP/1.1 field at index " + charIdx);
             }
+            if (codeUnit <= ASCII_CONTROL_MAX || codeUnit == MAX_ASCII_CODEPOINT) {
+                throw new IllegalArgumentException(
+                        "ASCII control character (code point " + (int) codeUnit + ") " +
+                                "not allowed in HTTP/1.1 field at index " + charIdx);
+            }
             seg.set(ValueLayout.JAVA_BYTE, pos + charIdx, (byte) codeUnit);
         }
         return pos + str.length();
     }
 
     private static long writeAsciiInt(MemorySegment seg, long pos, int value) {
-        if (value < 100 || value > 999) {
+        if (value < HTTP_STATUS_MIN || value > HTTP_STATUS_MAX) {
             throw new IllegalArgumentException(
-                    "HTTP status code must be a 3-digit value [100, 999], got: " + value);
+                    "HTTP status code must be a 3-digit value in [100, 599], got: " + value);
         }
         seg.set(ValueLayout.JAVA_BYTE, pos,     (byte) ('0' + value / 100));
         seg.set(ValueLayout.JAVA_BYTE, pos + 1, (byte) ('0' + value / 10 % 10));

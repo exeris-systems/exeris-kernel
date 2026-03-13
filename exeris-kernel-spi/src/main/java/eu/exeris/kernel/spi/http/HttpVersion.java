@@ -12,10 +12,12 @@ package eu.exeris.kernel.spi.http;
  * SPI: HTTP protocol version identifiers.
  *
  * <h2>The Wall</h2>
- * <p>This enum carries the wire token only ({@link #token()}). Framing details
+ * <p>This enum carries the protocol version token only ({@link #token()}). Framing details
  * (HTTP/2 frame types, QPACK encoder streams, QUIC stream IDs) are never present
- * here. Community maps its HTTP/1.1 and HTTP/2 wire negotiation to these constants;
- * Enterprise maps HTTP/3 QUIC ALPN negotiation to {@link #HTTP_3}.
+ * here. Community maps parsed HTTP/1.x request/status-line versions and internal
+ * HTTP/2 selection to these constants; Enterprise maps negotiated HTTP/3 runtime
+ * state to {@link #HTTP_3}. ALPN identifiers are transport-layer data and are not
+ * modeled by this enum.
  *
  * @since 0.5.0
  */
@@ -37,8 +39,8 @@ public enum HttpVersion {
     }
 
     /**
-     * Returns the protocol version token as it appears in wire representations
-     * (e.g., {@code "HTTP/1.1"} in a status line, {@code "HTTP/2"} in ALPN).
+        * Returns the protocol version token as it appears in textual HTTP version
+        * representations (e.g., {@code "HTTP/1.1"} in a request/status line).
      *
      * @return non-null, non-blank version token
      */
