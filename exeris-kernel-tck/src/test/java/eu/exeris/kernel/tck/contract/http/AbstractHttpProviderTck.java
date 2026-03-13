@@ -14,9 +14,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-import java.util.Comparator;
-import java.util.ServiceLoader;
-import java.util.stream.Stream;
+import java.util.*;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -56,9 +54,28 @@ public abstract class AbstractHttpProviderTck {
 
     private HttpProvider provider;
 
-    private Stream<ServiceLoader.Provider<HttpProvider>> loadProviders() {
+    private static void loadProvidersWithClassLoader(ClassLoader classLoader,
+                                                     Map<String, HttpProvider> providersByClassName) {
+        if (classLoader == null) {
+            return;
+        }
+        ServiceLoader.load(HttpProvider.class, classLoader)
+                .forEach(provider -> providersByClassName.putIfAbsent(provider.getClass().getName(), provider));
+    }
+
+    private List<HttpProvider> discoverProviders() {
+        Map<String, HttpProvider> providersByClassName = new LinkedHashMap<>();
+
+        ServiceLoader.load(HttpProvider.class)
+                .forEach(discoveredProvider ->
+                        providersByClassName.putIfAbsent(discoveredProvider.getClass().getName(), discoveredProvider));
+
         ClassLoader providerClassLoader = provider.getClass().getClassLoader();
-        return ServiceLoader.load(HttpProvider.class, providerClassLoader).stream();
+        loadProvidersWithClassLoader(providerClassLoader, providersByClassName);
+        loadProvidersWithClassLoader(Thread.currentThread().getContextClassLoader(), providersByClassName);
+        loadProvidersWithClassLoader(ClassLoader.getSystemClassLoader(), providersByClassName);
+
+        return List.copyOf(providersByClassName.values());
     }
 
     @BeforeEach
@@ -108,7 +125,7 @@ public abstract class AbstractHttpProviderTck {
         @Test
         @DisplayName("HttpProvider is discoverable via ServiceLoader")
         void discoverable() {
-            long count = loadProviders().count();
+            long count = discoverProviders().size();
             assertThat(count)
                     .as("At least one HttpProvider must be on the classpath")
                     .isGreaterThanOrEqualTo(1);
@@ -117,8 +134,7 @@ public abstract class AbstractHttpProviderTck {
         @Test
         @DisplayName("Highest-priority provider wins")
         void highestPriorityWins() {
-            HttpProvider selected = loadProviders()
-                    .map(ServiceLoader.Provider::get)
+            HttpProvider selected = discoverProviders().stream()
                     .max(Comparator.comparingInt(HttpProvider::priority))
                     .orElseThrow(() -> new AssertionError("No HttpProvider discovered via ServiceLoader"));
             assertThat(selected.priority()).isGreaterThanOrEqualTo(provider.priority());
