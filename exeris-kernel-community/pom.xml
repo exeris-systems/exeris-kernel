@@ -23,10 +23,12 @@
     <properties>
         <!-- Enable benchmark profile execution in this module -->
         <benchmark.skip>false</benchmark.skip>
+        <!-- Empty by default; can be set to run only selected @Tag groups -->
+        <includedGroups/>
         <!--
             Flamegraph harness tests run a 1M-VT avalanche and must never execute in CI
             by default. They are excluded from all Surefire runs unless explicitly enabled
-            via: mvn test -DincludedGroups=flamegraph
+            via: mvn test -DincludedGroups=flamegraph -DexcludedGroups=
         -->
         <excludedGroups>flamegraph</excludedGroups>
     </properties>
@@ -107,6 +109,8 @@
                 <configuration>
                     <!-- Inherit common JVM flags (ZGC + JFR + preview) from the parent POM. -->
                     <argLine>${test.jvm.args}</argLine>
+                    <!-- Optional include filter, e.g. -DincludedGroups=flamegraph -->
+                    <groups>${includedGroups}</groups>
                     <!-- Exclude @Tag("flamegraph") tests from regular CI runs -->
                     <excludedGroups>${excludedGroups}</excludedGroups>
                 </configuration>
@@ -168,7 +172,6 @@
                                         <argument>-XX:+UnlockExperimentalVMOptions</argument>
                                         <argument>-XX:+UseZGC</argument>
                                         <argument>--enable-native-access=ALL-UNNAMED</argument>
-                                        <argument>-Djava.library.path=${native.lib.dir}</argument>
                                         <argument>-classpath</argument>
                                         <classpath/>
                                         <argument>org.openjdk.jmh.Main</argument>

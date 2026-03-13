@@ -52,6 +52,7 @@ import java.util.concurrent.atomic.AtomicLong;
 final class CommunityMemoryAllocator implements MemoryAllocator {
 
     private static final long CACHE_LINE_ALIGNMENT = 64L;
+    private static final int DEFAULT_NETWORK_OFF_HEAP_THRESHOLD = 32 * 1_024;
 
     private final boolean jfrEnabled;
     private final LeakDetectionMode leakDetection;
@@ -65,6 +66,7 @@ final class CommunityMemoryAllocator implements MemoryAllocator {
     private final AtomicLong peakAllocated     = new AtomicLong(0);
 
     /* default */ CommunityMemoryAllocator(MemoryProviderConfig config) {
+        validateSupportedConfig(config);
         this.jfrEnabled    = config.jfrEnabled();
         this.leakDetection = config.leakDetection();
         this.leakTracker   = new LeakTracker(config.leakDetection());
@@ -187,6 +189,20 @@ final class CommunityMemoryAllocator implements MemoryAllocator {
     private void checkOpen() {
         if (closed.get()) {
             throw new IllegalStateException("CommunityMemoryAllocator has been closed");
+        }
+    }
+
+    private static void validateSupportedConfig(MemoryProviderConfig config) {
+        if (config.totalOffHeapBytes() != -1L) {
+            throw new IllegalArgumentException(
+                    "CommunityMemoryAllocator does not support fixed off-heap budgets; "
+                            + "use totalOffHeapBytes=-1, got: " + config.totalOffHeapBytes());
+        }
+        if (config.networkOffHeapThreshold() != DEFAULT_NETWORK_OFF_HEAP_THRESHOLD) {
+            throw new IllegalArgumentException(
+                    "CommunityMemoryAllocator does not support custom networkOffHeapThreshold; "
+                            + "use " + DEFAULT_NETWORK_OFF_HEAP_THRESHOLD
+                            + ", got: " + config.networkOffHeapThreshold());
         }
     }
 
