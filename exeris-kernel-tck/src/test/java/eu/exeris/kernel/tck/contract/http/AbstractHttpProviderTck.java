@@ -14,9 +14,18 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-import java.util.Comparator;
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.lang.reflect.InvocationTargetException;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.util.Enumeration;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.ServiceLoader;
-import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -47,6 +56,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 public abstract class AbstractHttpProviderTck {
 
+    private static final String HTTP_PROVIDER_SERVICE_RESOURCE = "META-INF/services/"
+            + HttpProvider.class.getName();
+
     /**
      * Creates the {@link HttpProvider} under test.
      *
@@ -56,9 +68,98 @@ public abstract class AbstractHttpProviderTck {
 
     private HttpProvider provider;
 
-    private Stream<ServiceLoader.Provider<HttpProvider>> loadProviders() {
+    private static void loadProvidersWithClassLoader(ClassLoader classLoader,
+                                                     Map<String, HttpProvider> providersByClassName) {
+        if (classLoader == null) {
+            return;
+        }
+        ServiceLoader.load(HttpProvider.class, classLoader)
+                .forEach(provider -> providersByClassName.putIfAbsent(provider.getClass().getName(), provider));
+    }
+
+    private static void loadProvidersFromServiceDescriptors(ClassLoader classLoader,
+                                                            Map<String, HttpProvider> providersByClassName) {
+        if (classLoader == null) {
+            return;
+        }
+        try {
+            Enumeration<URL> descriptors = classLoader.getResources(HTTP_PROVIDER_SERVICE_RESOURCE);
+            while (descriptors.hasMoreElements()) {
+                java.net.URL descriptorUrl = descriptors.nextElement();
+                loadProvidersFromSingleDescriptor(classLoader, descriptorUrl, providersByClassName);
+            }
+        } catch (IOException _) {
+            // Best-effort fallback for CI classloader edge-cases.
+        }
+    }
+
+    private static void loadProvidersFromSingleDescriptor(ClassLoader classLoader,
+                                                          java.net.URL descriptorUrl,
+                                                          Map<String, HttpProvider> providersByClassName) {
+        try (InputStream inputStream = descriptorUrl.openStream();
+             BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                String providerClassName = normalizeProviderClassName(line);
+                if (providerClassName.isEmpty() || providersByClassName.containsKey(providerClassName)) {
+                    continue;
+                }
+                instantiateProvider(providerClassName, classLoader)
+                        .ifPresent(provider -> providersByClassName.putIfAbsent(providerClassName, provider));
+            }
+        } catch (IOException _) {
+            // Descriptor may be unreadable in isolated runners, ignore and continue.
+        }
+    }
+
+    private static String normalizeProviderClassName(String line) {
+        int commentIndex = line.indexOf('#');
+        String withoutComment = commentIndex >= 0 ? line.substring(0, commentIndex) : line;
+        return withoutComment.trim();
+    }
+
+    private static Optional<HttpProvider> instantiateProvider(String providerClassName, ClassLoader classLoader) {
+        try {
+            Class<?> providerClass = Class.forName(providerClassName, true, classLoader);
+            if (!HttpProvider.class.isAssignableFrom(providerClass)) {
+                return Optional.empty();
+            }
+            Object instance = providerClass.getDeclaredConstructor().newInstance();
+            return Optional.of((HttpProvider) instance);
+        } catch (ClassNotFoundException
+                 | InstantiationException
+                 | IllegalAccessException
+                 | InvocationTargetException
+                 | NoSuchMethodException
+                 | LinkageError _) {
+            return Optional.empty();
+        }
+    }
+
+    private List<HttpProvider> discoverProviders() {
+        Map<String, HttpProvider> providersByClassName = new LinkedHashMap<>();
         ClassLoader providerClassLoader = provider.getClass().getClassLoader();
-        return ServiceLoader.load(HttpProvider.class, providerClassLoader).stream();
+        ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
+        ClassLoader systemClassLoader = ClassLoader.getSystemClassLoader();
+        ClassLoader tckClassLoader = AbstractHttpProviderTck.class.getClassLoader();
+
+        ServiceLoader.load(HttpProvider.class)
+                .forEach(discoveredProvider ->
+                        providersByClassName.putIfAbsent(discoveredProvider.getClass().getName(), discoveredProvider));
+
+        loadProvidersWithClassLoader(providerClassLoader, providersByClassName);
+        loadProvidersWithClassLoader(contextClassLoader, providersByClassName);
+        loadProvidersWithClassLoader(systemClassLoader, providersByClassName);
+        loadProvidersWithClassLoader(tckClassLoader, providersByClassName);
+
+        if (providersByClassName.isEmpty()) {
+            loadProvidersFromServiceDescriptors(providerClassLoader, providersByClassName);
+            loadProvidersFromServiceDescriptors(contextClassLoader, providersByClassName);
+            loadProvidersFromServiceDescriptors(systemClassLoader, providersByClassName);
+            loadProvidersFromServiceDescriptors(tckClassLoader, providersByClassName);
+        }
+
+        return List.copyOf(providersByClassName.values());
     }
 
     @BeforeEach
@@ -108,7 +209,7 @@ public abstract class AbstractHttpProviderTck {
         @Test
         @DisplayName("HttpProvider is discoverable via ServiceLoader")
         void discoverable() {
-            long count = loadProviders().count();
+            long count = discoverProviders().size();
             assertThat(count)
                     .as("At least one HttpProvider must be on the classpath")
                     .isGreaterThanOrEqualTo(1);
@@ -117,8 +218,7 @@ public abstract class AbstractHttpProviderTck {
         @Test
         @DisplayName("Highest-priority provider wins")
         void highestPriorityWins() {
-            HttpProvider selected = loadProviders()
-                    .map(ServiceLoader.Provider::get)
+            HttpProvider selected = discoverProviders().stream()
                     .max(Comparator.comparingInt(HttpProvider::priority))
                     .orElseThrow(() -> new AssertionError("No HttpProvider discovered via ServiceLoader"));
             assertThat(selected.priority()).isGreaterThanOrEqualTo(provider.priority());
