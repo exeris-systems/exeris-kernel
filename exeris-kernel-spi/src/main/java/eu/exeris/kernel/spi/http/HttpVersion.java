@@ -39,8 +39,8 @@ public enum HttpVersion {
     }
 
     /**
-        * Returns the protocol version token as it appears in textual HTTP version
-        * representations (e.g., {@code "HTTP/1.1"} in a request/status line).
+     * Returns the protocol version token as it appears in textual HTTP version
+     * representations (e.g., {@code "HTTP/1.1"} in a request/status line).
      *
      * @return non-null, non-blank version token
      */

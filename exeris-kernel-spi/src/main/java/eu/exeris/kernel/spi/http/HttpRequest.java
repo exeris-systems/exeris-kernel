@@ -69,6 +69,7 @@ public record HttpRequest(
      * @return optional header value
      */
     public Optional<String> firstHeader(String name) {
+        Objects.requireNonNull(name, "name must not be null");
         for (HttpHeader h : headers) {
             if (h.nameEqualsIgnoreCase(name)) {
                 return Optional.of(h.value());

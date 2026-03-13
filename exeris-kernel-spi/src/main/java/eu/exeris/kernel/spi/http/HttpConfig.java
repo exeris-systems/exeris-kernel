@@ -74,15 +74,57 @@ public record HttpConfig(
     /** Default max request body: 10 MiB. */
     public static final long DEFAULT_MAX_REQUEST_BODY_BYTES = 10L * 1_024 * 1_024;
 
+    private static final int MIN_PORT = 1;
+    private static final int MAX_PORT = 65_535;
+    private static final int MIN_CONNECTIONS = 1;
+
+    @SuppressWarnings("java:S3776")
     public HttpConfig {
         Objects.requireNonNull(mode,       "mode must not be null");
         Objects.requireNonNull(maxVersion, "maxVersion must not be null");
-        if (mode == HttpMode.SERVER || mode == HttpMode.DUAL) {
-            Objects.requireNonNull(bindHost, "bindHost must not be null for SERVER/DUAL mode");
-            if (port < 1 || port > 65_535) {
-                throw new IllegalArgumentException(
-                        "port must be in range [1, 65535] for SERVER/DUAL mode, got: " + port);
+        if (mode != HttpMode.DISABLED) {
+            validateSharedFields(maxConnections, idleTimeoutMillis,
+                    maxRequestHeaderCount, maxRequestHeaderSize, maxRequestBodyBytes);
+            if (mode == HttpMode.SERVER || mode == HttpMode.DUAL) {
+                if (bindHost == null || bindHost.isBlank()) {
+                    throw new IllegalArgumentException(
+                            "bindHost must not be null or blank for SERVER/DUAL mode");
+                }
+                if (port < MIN_PORT || port > MAX_PORT) {
+                    throw new IllegalArgumentException(
+                            "port must be in range [1, 65535] for SERVER/DUAL mode, got: " + port);
+                }
+            } else {
+                if (port != -1 && (port < MIN_PORT || port > MAX_PORT)) {
+                    throw new IllegalArgumentException(
+                            "port must be -1 (sentinel) or 1-65535 for CLIENT mode, got: " + port);
+                }
             }
+        }
+    }
+
+    private static void validateSharedFields(int maxConnections, long idleTimeoutMillis,
+                                              int maxRequestHeaderCount, int maxRequestHeaderSize,
+                                              long maxRequestBodyBytes) {
+        if (maxConnections < MIN_CONNECTIONS) {
+            throw new IllegalArgumentException(
+                    "maxConnections must be >= 1, got: " + maxConnections);
+        }
+        if (idleTimeoutMillis < 0) {
+            throw new IllegalArgumentException(
+                    "idleTimeoutMillis must be >= 0 (0 = no timeout), got: " + idleTimeoutMillis);
+        }
+        if (maxRequestHeaderCount < 0) {
+            throw new IllegalArgumentException(
+                    "maxRequestHeaderCount must be >= 0, got: " + maxRequestHeaderCount);
+        }
+        if (maxRequestHeaderSize < 0) {
+            throw new IllegalArgumentException(
+                    "maxRequestHeaderSize must be >= 0, got: " + maxRequestHeaderSize);
+        }
+        if (maxRequestBodyBytes < -1) {
+            throw new IllegalArgumentException(
+                    "maxRequestBodyBytes must be >= -1 (-1 = unlimited), got: " + maxRequestBodyBytes);
         }
     }
 

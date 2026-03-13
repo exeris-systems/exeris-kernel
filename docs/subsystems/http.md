@@ -13,8 +13,10 @@ HTTP in the current repository is implemented as:
 - **Codec implementation (Core):** `eu.exeris.kernel.core.http.*` in `exeris-kernel-core`
 - **Contract tests (TCK):** `eu.exeris.kernel.tck.contract.http.AbstractHttp*Tck` in `exeris-kernel-tck`
 
-There is currently **no separate** `exeris-kernel-spi-http` or `exeris-kernel-http` Maven module
-in the root reactor.
+There is intentionally **no separate** `exeris-kernel-spi-http` or `exeris-kernel-http` Maven module
+in the root reactor. HTTP contracts are embedded in `exeris-kernel-spi` and the codec
+implementation lives in `exeris-kernel-core` — this avoids an extra dependency hop on the hot
+path and keeps the module graph flat (see ADR-009).
 
 ---
 
