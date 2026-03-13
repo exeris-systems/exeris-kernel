@@ -18,14 +18,9 @@ import java.util.ServiceLoader;
  * kernel bootstrapper creates {@link HttpServerEngine} and {@link HttpClientEngine}.
  *
  * <h2>Open-Core (The Wall)</h2>
- * <ul>
- *   <li><b>Community binding</b> (free, priority 0): HTTP/1.1 + HTTP/2 engine backed by
- *       NIO TCP sockets, off-heap TLS (OpenSSL 3.x), HPACK-compressed HTTP/2 frames.
- *       Lives in {@code exeris-kernel-community}.</li>
- *   <li><b>Enterprise binding</b> (secret sauce, priority 100): HTTP/3 + QPACK engine backed by
- *       QUIC (io_uring UDP, {@code QuicBioMultiplexer}), with HTTP/2 fallback.
- *       Lives in {@code exeris-kernel-enterprise}. MUST NOT be referenced from this SPI.</li>
- * </ul>
+ * <p>This interface is implementation-blind and defines only capability-level contracts.
+ * Provider implementations may differ internally, but this SPI must not encode concrete
+ * transport, crypto, or OS-driver details.
  *
  * <h2>Discovery</h2>
  * <p>Loaded via {@link ServiceLoader}. The kernel bootstrapper selects the
@@ -64,8 +59,6 @@ public interface HttpProvider {
      *
      * @param config HTTP server configuration; must not be {@code null}
      * @return a fully initialised, not-yet-started server engine
-     * @throws HttpException
-     *         if the engine cannot be created (missing native lib, TLS context failure)
      */
     HttpServerEngine createServerEngine(HttpConfig config);
 
@@ -77,8 +70,6 @@ public interface HttpProvider {
      *
      * @param config HTTP client configuration; must not be {@code null}
      * @return a fully initialised, not-yet-started client engine
-     * @throws HttpException
-     *         if the engine cannot be created
      */
     HttpClientEngine createClientEngine(HttpConfig config);
 
@@ -126,8 +117,6 @@ public interface HttpProvider {
      * directly or perform its own {@link ServiceLoader} resolution.
      *
      * @return the selected provider
-     * @throws HttpException
-     *         if no {@code HttpProvider} is found on the classpath
      */
     static HttpProvider selectHighestPriority() {
         return ServiceLoader.load(HttpProvider.class)

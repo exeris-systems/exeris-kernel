@@ -8,16 +8,13 @@
  */
 package eu.exeris.kernel.spi.http;
 
-import eu.exeris.kernel.spi.exceptions.http.HttpException;
-
 /**
  * SPI: HTTP server engine lifecycle — receives inbound connections, parses requests,
  * and dispatches to the registered {@link HttpHandler}.
  *
  * <h2>The Wall</h2>
- * <p>This interface does not expose TCP sockets, NIO channels, QUIC streams, or
- * io_uring submission queues. Whether traffic arrives over TCP+TLS (Community) or
- * QUIC (Enterprise) is entirely opaque. Business logic operates via {@link HttpExchange}.
+ * <p>This interface does not expose transport internals or provider-specific mechanics.
+ * Business logic operates exclusively via {@link HttpExchange}.
  *
  * <h2>Lifecycle</h2>
  * <pre>
@@ -57,8 +54,6 @@ public interface HttpServerEngine extends AutoCloseable {
      * This is a potentially blocking call (socket bind, TLS context setup).
      * MUST NOT be called on a virtual thread expected to be non-blocking.
      *
-     * @throws HttpException
-     *         if the engine cannot be started (port in use, etc.)
      * @throws IllegalStateException if the engine has already been started or closed
      */
     void start();
@@ -71,8 +66,6 @@ public interface HttpServerEngine extends AutoCloseable {
      * This method blocks until all active exchanges have completed or the
      * implementation's drain timeout expires.
      *
-     * @throws HttpException
-     *         if a fatal error occurs during drain
      * @throws IllegalStateException if the engine has not been started
      */
     void stop();

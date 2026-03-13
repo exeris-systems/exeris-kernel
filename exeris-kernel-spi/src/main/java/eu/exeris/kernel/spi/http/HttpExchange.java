@@ -8,8 +8,6 @@
  */
 package eu.exeris.kernel.spi.http;
 
-import eu.exeris.kernel.spi.exceptions.http.HttpException;
-
 /**
  * SPI: A single HTTP request–response exchange lifecycle.
  *
@@ -60,8 +58,6 @@ public interface HttpExchange {
      * throws {@link IllegalStateException}.
      *
      * @param response response to write; must not be {@code null}
-     * @throws HttpException
-     *         if the response cannot be written (connection reset, etc.)
      * @throws IllegalStateException if {@code respond} has already been called on this exchange
      */
     void respond(HttpResponse response);
@@ -70,7 +66,6 @@ public interface HttpExchange {
      * Convenience overload — writes a bodyless response using the request's version.
      *
      * @param status response status; must not be {@code null}
-     * @throws HttpException if the response cannot be written
      * @throws IllegalStateException if {@code respond} has already been called on this exchange
      */
     default void respond(HttpStatus status) {

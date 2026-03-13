@@ -45,8 +45,6 @@ public interface HttpHandler {
      * the correct way to signal a protocol-level or application-level error.
      *
      * @param exchange the exchange to handle; never {@code null}
-     * @throws HttpException if the handler encounters
-     *         an error that must be propagated to the engine for wire-level error handling
      */
     void handle(HttpExchange exchange);
 }

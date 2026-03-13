@@ -8,16 +8,13 @@
  */
 package eu.exeris.kernel.spi.http;
 
-import eu.exeris.kernel.spi.exceptions.http.HttpException;
-
 /**
  * SPI: HTTP client engine lifecycle — initiates outbound HTTP connections and
  * sends requests, receiving responses as {@link HttpResponse} carriers.
  *
  * <h2>The Wall</h2>
- * <p>This interface does not expose TCP sockets, NIO channels, QUIC streams, or
- * io_uring submission queues. Whether traffic flows over TCP+TLS (Community) or
- * QUIC (Enterprise) is entirely opaque.
+ * <p>This interface does not expose transport internals or provider-specific mechanics.
+ * All wire details remain behind the SPI boundary.
  *
  * <h2>Lifecycle</h2>
  * <pre>
@@ -43,8 +40,6 @@ public interface HttpClientEngine extends AutoCloseable {
      * <p>This is a potentially blocking call. MUST NOT be called on a virtual thread
      * expected to be non-blocking.
      *
-     * @throws HttpException
-     *         if the engine cannot be started
      * @throws IllegalStateException if the engine has already been started or closed
      */
     void start();
@@ -61,8 +56,6 @@ public interface HttpClientEngine extends AutoCloseable {
      *
      * @param request outbound request; must not be {@code null}
      * @return the server's response; never {@code null}
-     * @throws HttpException
-     *         on connection failure, protocol error, or response timeout
      * @throws IllegalStateException if the engine has not been started or has been closed
      */
     HttpResponse send(HttpRequest request);
