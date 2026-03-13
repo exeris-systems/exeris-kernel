@@ -19,9 +19,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-import java.io.IOException;
-import java.net.ServerSocket;
-
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -61,7 +58,7 @@ public abstract class AbstractHttpServerEngineTck {
         return new HttpConfig(
                 HttpMode.SERVER,
                 HttpConfig.DEFAULT_BIND_HOST,
-                findAvailablePort(),
+                0,
                 HttpConfig.DEFAULT_MAX_CONNECTIONS,
                 HttpConfig.DEFAULT_IDLE_TIMEOUT_MS,
                 HttpConfig.DEFAULT_MAX_HEADER_COUNT,
@@ -70,14 +67,6 @@ public abstract class AbstractHttpServerEngineTck {
                 true,
                 eu.exeris.kernel.spi.http.HttpVersion.HTTP_2
         );
-    }
-
-    private static int findAvailablePort() {
-        try (ServerSocket socket = new ServerSocket(0)) {
-            return socket.getLocalPort();
-        } catch (IOException e) {
-            throw new IllegalStateException("Failed to allocate ephemeral test port", e);
-        }
     }
 
     private HttpServerEngine engine;

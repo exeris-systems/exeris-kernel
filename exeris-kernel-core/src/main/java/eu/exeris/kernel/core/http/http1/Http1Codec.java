@@ -163,10 +163,12 @@ public final class Http1Codec {
         long end = Http1RequestParser.parseHeaders(seg, offset, length,
                 state::processHeader);
 
-        keepAlive = state.keepAlive;
-        pendingContentLength = state.pendingContentLength;
-        upgradeState = state.upgradeState();
-        h2cSettingsPayload = state.h2cSettingsPayload;
+        if (end >= 0) {
+            keepAlive = state.keepAlive;
+            pendingContentLength = state.pendingContentLength;
+            upgradeState = state.upgradeState();
+            h2cSettingsPayload = state.h2cSettingsPayload;
+        }
         return end;
     }
 
