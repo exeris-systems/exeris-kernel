@@ -28,6 +28,7 @@ import java.util.Objects;
  * @param bindHost              listener bind address for SERVER / DUAL modes;
  *                              {@code null} or ignored for CLIENT / DISABLED
  * @param port                  listener port for SERVER / DUAL modes;
+ *                              use {@code 0} for ephemeral bind in SERVER / DUAL modes;
  *                              use {@code -1} as sentinel for CLIENT / DISABLED
  * @param maxConnections        hard cap on concurrent connections; ignored for DISABLED
  * @param idleTimeoutMillis     connection idle timeout in ms (0 = no timeout); ignored for DISABLED
@@ -74,6 +75,7 @@ public record HttpConfig(
     /** Default max request body: 10 MiB. */
     public static final long DEFAULT_MAX_REQUEST_BODY_BYTES = 10L * 1_024 * 1_024;
 
+    private static final int MIN_SERVER_PORT = 0;
     private static final int MIN_PORT = 1;
     private static final int MAX_PORT = 65_535;
     private static final int MIN_CONNECTIONS = 1;
@@ -101,9 +103,9 @@ public record HttpConfig(
             throw new IllegalArgumentException(
                     "bindHost must not be null or blank for SERVER/DUAL mode");
         }
-        if (port < MIN_PORT || port > MAX_PORT) {
+        if (port < MIN_SERVER_PORT || port > MAX_PORT) {
             throw new IllegalArgumentException(
-                    "port must be in range [1, 65535] for SERVER/DUAL mode, got: " + port);
+                    "port must be in range [0, 65535] for SERVER/DUAL mode (0 = ephemeral), got: " + port);
         }
     }
 
