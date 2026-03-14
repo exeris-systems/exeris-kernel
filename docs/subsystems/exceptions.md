@@ -107,11 +107,11 @@ formatting. It implements:
 | Code           | Description                                  | Glass-Box Payload                      |
 |:---------------|:---------------------------------------------|:---------------------------------------|
 | `EX-HTTP-4001` | Huffman Decode/Encode Violation              | `[0] String detail`                    |
-| `EX-HTTP-4002` | HPACK Decode Violation                       | `[0] String detail`                    |
+| `EX-HTTP-4002` | HPACK Decode Violation                       | *See `KernelErrorCodes.EX_HTTP_4002` for the typed `rawArgs` schema (indexes/counts/bounds, no pre-formatted String).* |
 | `EX-HTTP-4003` | HTTP/2 SETTINGS Validation                   | `[0] String settingName, [1] long actualValue, ...` |
-| `EX-HTTP-4004` | HTTP/1.1 Parse Violation (malformed/DoS)     | `[0] String detail`                    |
-| `EX-HTTP-4005` | HTTP/2 CONTINUATION Sequence Violation       | `[0] String detail`                    |
-| `EX-HTTP-4006` | HTTP/2 Frame Encoding Violation              | `[0] String detail`                    |
+| `EX-HTTP-4004` | HTTP/1.1 Parse Violation (malformed/DoS)     | *See `KernelErrorCodes.EX_HTTP_4004` for the typed `rawArgs` schema used by the HTTP/1.1 parser.* |
+| `EX-HTTP-4005` | HTTP/2 CONTINUATION Sequence Violation       | *See `KernelErrorCodes.EX_HTTP_4005` for the typed `rawArgs` schema (sequence counters / stream IDs, etc.).* |
+| `EX-HTTP-4006` | HTTP/2 Frame Encoding Violation              | *See `KernelErrorCodes.EX_HTTP_4006` / `FrameEncodingException` for the template+args `rawArgs` schema.* |
 
 ### Security (`EX-SEC-`)
 
