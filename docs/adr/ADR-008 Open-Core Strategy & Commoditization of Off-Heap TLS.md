@@ -152,5 +152,3 @@ Any future capability that introduces new OpenSSL symbols for TCP must land in `
 (`CoreOpenSslLoader` / `CoreSslHandles`). Any capability specific to QUIC BIO or `io_uring` ring
 management must land in `exeris-kernel-enterprise`. Violations of this boundary are a Wall breach
 and must be rejected in code review.
-
-

@@ -113,3 +113,23 @@ graph TD
    The SPI currently models this via `Supplier<KernelSettings>` (see `ConfigProvider`); Core code must follow the same
    "compute once, then reuse without additional locking" contract to enable JVM optimisations and eliminate manual
    synchronisation in the init path.
+
+## HTTP in Core (Current Repository State)
+
+- HTTP wire codecs are currently implemented in `exeris-kernel-core` under `eu.exeris.kernel.core.http`.
+- Implemented areas: `http1.*`, `http2.*`, `hpack.*`, `hpack.huffman.*`.
+- Root reactor does not currently include a dedicated `exeris-kernel-http` module.
+- Core remains responsible for delivering these codec primitives to downstream transport integrations in the current layout.
+
+### HTTP TCK Bindings in Core (Test Scope)
+
+- Core contains concrete test bindings for HTTP TCK suites in `src/test/java/eu/exeris/kernel/core/http/tck/*`.
+- These classes validate SPI contract behavior through minimal fixtures (provider/server/client/exchange) in test scope.
+- They are not production transport engines and do not implement real wire runtime responsibilities (bind/accept/connect loops).
+
+```mermaid
+graph LR
+    TCK[exeris-kernel-tck\nAbstractHttp*Tck] --> CORETEST[exeris-kernel-core tests\nCoreHttp*TckTest]
+    CORETEST --> FIXTURE[CoreHttpProviderFixture\n(test-only)]
+    COREMAIN[exeris-kernel-core main\nhttp1/http2/hpack codecs] --> RUNTIME[Driver tiers\nCommunity/Enterprise]
+```
