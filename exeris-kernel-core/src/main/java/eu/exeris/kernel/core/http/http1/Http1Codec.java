@@ -286,13 +286,35 @@ public final class Http1Codec {
             int start = 0;
             final int len = headerValue.length();
             while (start < len) {
-                int comma = headerValue.indexOf(',', start);
-                String candidate = (comma == -1
-                        ? headerValue.substring(start)
-                        : headerValue.substring(start, comma)).strip();
-                if (token.equalsIgnoreCase(candidate)) {
-                    return true;
+                final int comma = headerValue.indexOf(',', start);
+                final int segmentEnd = (comma == -1) ? len : comma;
+
+                // Trim HTTP OWS (SP / HTAB) only, per RFC 9110 and Http1RequestParser.
+                int tokenStart = start;
+                while (tokenStart < segmentEnd) {
+                    char c = headerValue.charAt(tokenStart);
+                    if (c != ' ' && c != '\t') {
+                        break;
+                    }
+                    tokenStart++;
                 }
+
+                int tokenEndExclusive = segmentEnd;
+                while (tokenEndExclusive > tokenStart) {
+                    char c = headerValue.charAt(tokenEndExclusive - 1);
+                    if (c != ' ' && c != '\t') {
+                        break;
+                    }
+                    tokenEndExclusive--;
+                }
+
+                if (tokenStart < tokenEndExclusive) {
+                    String candidate = headerValue.substring(tokenStart, tokenEndExclusive);
+                    if (token.equalsIgnoreCase(candidate)) {
+                        return true;
+                    }
+                }
+
                 if (comma == -1) {
                     break;
                 }
