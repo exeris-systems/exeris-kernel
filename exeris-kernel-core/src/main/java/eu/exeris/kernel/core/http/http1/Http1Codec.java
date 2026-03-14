@@ -253,6 +253,35 @@ public final class Http1Codec {
         }
 
         private long parseContentLength(String value) {
+            return HeaderValueParser.parseDeclaredContentLength(value);
+        }
+
+        private void processConnectionHeader(String value) {
+            if (HeaderValueParser.headerContainsToken(value, CONNECTION_CLOSE)) {
+                keepAlive = false;
+            }
+            if (HeaderValueParser.headerContainsToken(value, HEADER_UPGRADE)) {
+                h2c.connectionUpgrade = true;
+            }
+            if (HeaderValueParser.headerContainsToken(value, HEADER_HTTP2_SETTINGS)) {
+                h2c.connectionSettings = true;
+            }
+        }
+
+        private void markUpgradeIfPresent(String value) {
+            if (HeaderValueParser.headerContainsToken(value, UPGRADE_H2C)) {
+                h2c.upgrade = true;
+            }
+        }
+
+        private UpgradeState upgradeState() {
+            return h2c.isValidUpgrade() ? UpgradeState.H2C_REQUESTED : UpgradeState.NONE;
+        }
+    }
+
+    private static final class HeaderValueParser {
+
+        private static long parseDeclaredContentLength(String value) {
             try {
                 long parsed = Long.parseLong(value);
                 if (parsed < MIN_CONTENT_LENGTH) {
@@ -264,67 +293,49 @@ public final class Http1Codec {
             }
         }
 
-        private void processConnectionHeader(String value) {
-            if (headerHasToken(value, CONNECTION_CLOSE)) {
-                keepAlive = false;
-            }
-            if (headerHasToken(value, HEADER_UPGRADE)) {
-                h2c.connectionUpgrade = true;
-            }
-            if (headerHasToken(value, HEADER_HTTP2_SETTINGS)) {
-                h2c.connectionSettings = true;
-            }
-        }
-
-        private void markUpgradeIfPresent(String value) {
-            if (headerHasToken(value, UPGRADE_H2C)) {
-                h2c.upgrade = true;
-            }
-        }
-
-        private boolean headerHasToken(String headerValue, String token) {
-            int start = 0;
-            final int len = headerValue.length();
-            while (start < len) {
-                final int comma = headerValue.indexOf(',', start);
-                final int segmentEnd = (comma == -1) ? len : comma;
-
-                // Trim HTTP OWS (SP / HTAB) only, per RFC 9110 and Http1RequestParser.
-                int tokenStart = start;
-                while (tokenStart < segmentEnd) {
-                    char c = headerValue.charAt(tokenStart);
-                    if (c != ' ' && c != '\t') {
-                        break;
-                    }
-                    tokenStart++;
+        private static boolean headerContainsToken(String headerValue, String token) {
+            int tokenStart = 0;
+            while (tokenStart < headerValue.length()) {
+                int tokenEnd = nextTokenDelimiter(headerValue, tokenStart);
+                if (tokenMatchesIgnoreCase(headerValue, tokenStart, tokenEnd, token)) {
+                    return true;
                 }
-
-                int tokenEndExclusive = segmentEnd;
-                while (tokenEndExclusive > tokenStart) {
-                    char c = headerValue.charAt(tokenEndExclusive - 1);
-                    if (c != ' ' && c != '\t') {
-                        break;
-                    }
-                    tokenEndExclusive--;
-                }
-
-                if (tokenStart < tokenEndExclusive) {
-                    String candidate = headerValue.substring(tokenStart, tokenEndExclusive);
-                    if (token.equalsIgnoreCase(candidate)) {
-                        return true;
-                    }
-                }
-
-                if (comma == -1) {
-                    break;
-                }
-                start = comma + 1;
+                tokenStart = tokenEnd + 1;
             }
             return false;
         }
 
-        private UpgradeState upgradeState() {
-            return h2c.isValidUpgrade() ? UpgradeState.H2C_REQUESTED : UpgradeState.NONE;
+        private static int nextTokenDelimiter(String headerValue, int tokenStart) {
+            int delimiter = headerValue.indexOf(',', tokenStart);
+            return delimiter >= 0 ? delimiter : headerValue.length();
+        }
+
+        private static boolean tokenMatchesIgnoreCase(String headerValue, int tokenStart, int tokenEnd, String token) {
+            int trimmedStart = skipOptionalWhitespaceForward(headerValue, tokenStart, tokenEnd);
+            int trimmedEnd = skipOptionalWhitespaceBackward(headerValue, trimmedStart, tokenEnd);
+            int candidateLength = trimmedEnd - trimmedStart;
+            return candidateLength == token.length()
+                    && headerValue.regionMatches(true, trimmedStart, token, 0, candidateLength);
+        }
+
+        private static int skipOptionalWhitespaceForward(String headerValue, int index, int limit) {
+            int currentIndex = index;
+            while (currentIndex < limit && isOptionalWhitespace(headerValue.charAt(currentIndex))) {
+                currentIndex++;
+            }
+            return currentIndex;
+        }
+
+        private static int skipOptionalWhitespaceBackward(String headerValue, int start, int end) {
+            int currentIndex = end;
+            while (currentIndex > start && isOptionalWhitespace(headerValue.charAt(currentIndex - 1))) {
+                currentIndex--;
+            }
+            return currentIndex;
+        }
+
+        private static boolean isOptionalWhitespace(char currentChar) {
+            return currentChar == ' ' || currentChar == '\t';
         }
     }
 }

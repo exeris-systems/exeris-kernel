@@ -103,6 +103,20 @@ public abstract class AbstractMemoryAllocatorBenchmark extends AbstractExerisBen
     }
 
     /**
+     * Heap baseline — measures the cost of a raw {@code new byte[64]} allocation.
+     *
+     * <p>Returns the array directly so that JIT cannot eliminate the allocation as dead
+     * code. This establishes the lower bound of heap-allocation cost (TLAB fast-path,
+     * no GC guarantee) against which off-heap slab allocators are compared.
+     *
+     * @return freshly allocated 64-byte heap array (consumed by JMH's result machinery)
+     */
+    @Benchmark
+    public Object heapBaseline() {
+        return new byte[64];
+    }
+
+    /**
      * Hot-path benchmark — measures the RAII acquire→use→release loop for the
      * {@link AllocationHint#MICRO} (512-byte) slab tier.
      *

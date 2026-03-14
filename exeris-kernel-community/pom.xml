@@ -13,4 +13,149 @@
 
     <artifactId>exeris-kernel-community</artifactId>
 
+    <name>Exeris Kernel - Community</name>
+    <description>
+        Free-tier Community implementations: CommunityMemoryProvider (Arena-based),
+        CommunityKernelCryptoProvider (OpenSSL 3.x / TCP-only, no QUIC),
+        CommunityTelemetryProvider (Console, JFR, File sinks).
+    </description>
+
+    <properties>
+        <!-- Enable benchmark profile execution in this module -->
+        <benchmark.skip>false</benchmark.skip>
+        <!-- Empty by default; can be set to run only selected @Tag groups -->
+        <includedGroups/>
+        <!--
+            Flamegraph harness tests run a 1M-VT avalanche and must never execute in CI
+            by default. They are excluded from all Surefire runs unless explicitly enabled
+            via: mvn test -DincludedGroups=flamegraph -DexcludedGroups=
+        -->
+        <excludedGroups>flamegraph</excludedGroups>
+    </properties>
+
+    <dependencies>
+        <!-- SPI contracts — The Wall -->
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-kernel-spi</artifactId>
+        </dependency>
+        <!-- AbstractLoanedBuffer lives in core -->
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-kernel-core</artifactId>
+        </dependency>
+        <!-- TCK abstract test classes -->
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-kernel-tck</artifactId>
+            <classifier>tests</classifier>
+            <type>test-jar</type>
+            <scope>test</scope>
+        </dependency>
+        <!-- JMH — required for JMH @State / @Benchmark annotations in benchmark classes -->
+        <dependency>
+            <groupId>org.openjdk.jmh</groupId>
+            <artifactId>jmh-core</artifactId>
+            <scope>test</scope>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.openjdk.jmh</groupId>
+            <artifactId>jmh-generator-annprocess</artifactId>
+            <scope>test</scope>
+            <optional>true</optional>
+        </dependency>
+        <!-- Test framework -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- Community persistence: HikariCP connection pool -->
+        <dependency>
+            <groupId>com.zaxxer</groupId>
+            <artifactId>HikariCP</artifactId>
+        </dependency>
+        <!-- Community persistence: PostgreSQL JDBC driver (optional runtime) -->
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <!-- Test: Mockito for persistence/crypto unit tests with mocked SPI -->
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.2.5</version>
+                <configuration>
+                    <!-- Inherit common JVM flags (ZGC + JFR + preview) from the parent POM. -->
+                    <argLine>${test.jvm.args}</argLine>
+                    <!-- Optional include filter, e.g. -DincludedGroups=flamegraph -->
+                    <groups>${includedGroups}</groups>
+                    <!-- Exclude @Tag("flamegraph") tests from regular CI runs -->
+                    <excludedGroups>${excludedGroups}</excludedGroups>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+
+    <!-- =====================================================================
+         benchmarks profile — runs JMH against the Community memory/transport stack.
+
+          Usage:
+           mvn clean install -P benchmarks
+           mvn verify -P benchmarks "-Dbenchmark.includes=CommunityMemoryAllocatorBenchmark"
+
+          Results written to target/jmh-results.json.
+         NOT bound to the default lifecycle — only runs with explicit -P benchmarks.
+         ===================================================================== -->
+    <profiles>
+        <profile>
+            <id>benchmarks</id>
+            <properties>
+                <excludedGroups>flamegraph</excludedGroups>
+            </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-compiler-plugin</artifactId>
+                        <configuration>
+                            <release>${maven.compiler.release}</release>
+                            <compilerArgs>
+                                <arg>${jdk.preview.enable}</arg>
+                            </compilerArgs>
+                            <annotationProcessorPaths>
+                                <path>
+                                    <groupId>org.openjdk.jmh</groupId>
+                                    <artifactId>jmh-generator-annprocess</artifactId>
+                                    <version>${jmh.version}</version>
+                                </path>
+                            </annotationProcessorPaths>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+
 </project>

@@ -1,0 +1,31 @@
+/*
+ * Copyright (C) 2025-2026 Exeris Systems.
+ *
+ * Licensed under the Apache License, Version 2.0 with Commons Clause.
+ * You may use, modify, and distribute this file under those terms.
+ * Commercial resale of this software as a competing product is prohibited.
+ * See LICENSE-COMMUNITY in the repository root for the full text.
+ */
+package eu.exeris.kernel.community.memory;
+
+import eu.exeris.kernel.core.memory.AbstractLoanedBuffer;
+
+import java.lang.foreign.Arena;
+
+final class CommunityArenaBuffers {
+
+    private CommunityArenaBuffers() {
+    }
+    @SuppressWarnings("java:S125")
+    /* default */ static AbstractLoanedBuffer allocateOwned(long capacityBytes, long alignmentBytes) {
+        // Community tier intentionally uses Arena.ofAuto().
+        // L0 architecture rules ban direct use of Arena.ofConfined()/ofShared() in business logic;
+        // release is therefore best-effort via CommunityLoanedBuffer.onRelease().
+        Arena arena = Arena.ofAuto();
+        return CommunityLoanedBuffer.allocateOwned(
+                capacityBytes,
+                alignmentBytes,
+                arena
+        );
+    }
+}
