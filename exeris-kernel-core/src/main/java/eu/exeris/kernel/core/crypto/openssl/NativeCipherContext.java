@@ -88,7 +88,7 @@ public final class NativeCipherContext implements AutoCloseable {
     // =========================================================================
 
     private final long sslPtr;
-    private final CoreSslHandles.HandshakeHandles handles;
+    private final CoreSslHandles.HandshakeHandles handshakeHandles;
 
     /**
      * Off-heap SESSION slab tracked by {@link MemoryAllocator}.
@@ -117,23 +117,27 @@ public final class NativeCipherContext implements AutoCloseable {
      * @throws IllegalStateException if the provided {@link MemoryAllocator} has been closed
      * @throws TlsException if {@code SSL_new} returns a {@code NULL} pointer
      */
-    public NativeCipherContext(CoreSslHandles.HandshakeHandles handles,
+    @SuppressWarnings("PMD.UseTryWithResources")
+    public NativeCipherContext(CoreSslHandles handles,
                                long sslCtxPointer,
                                MemoryAllocator allocator) {
-        this.handles     = handles;
+        this.handshakeHandles = handles.handshake();
         this.sessionSlab = allocator.allocate(AllocationHint.SESSION);
-        final long ptr;
+        long ssl = NULL_PTR;
+        boolean initialized = false;
         try {
-            ptr = handles.invokeSslNew(sslCtxPointer);
-        } catch (Exception t) { //NOPMD AvoidCatchingGenericException — constructor must not leak larval state
-            sessionSlab.close();
-            throw new TlsException("Fatal error allocating native SSL pointer", t);
+            ssl = handshakeHandles.invokeSslNew(sslCtxPointer);
+            if (ssl == NULL_PTR) {
+                throw new TlsException("OpenSSL SSL_new returned NULL pointer. Native allocation failed.");
+            }
+            initialized = true;
+        } finally {
+            if (!initialized) {
+                rollbackConstructor(ssl);
+                sessionSlab.close();
+            }
         }
-        if (ptr == NULL_PTR) {
-            sessionSlab.close();
-            throw new TlsException("OpenSSL SSL_new returned NULL pointer. Native allocation failed.");
-        }
-        this.sslPtr = ptr;
+        this.sslPtr = ssl;
         CryptoContextAllocEvent.emit(this.sslPtr, sslCtxPointer, "NativeCipherContext",
                 AllocationHint.SESSION.sizeBytes());
     }
@@ -185,6 +189,16 @@ public final class NativeCipherContext implements AutoCloseable {
         return sslPtr;
     }
 
+    private void rollbackConstructor(long sslPtr) {
+        if (sslPtr != NULL_PTR) {
+            try {
+                handshakeHandles.invokeSslFree(sslPtr);
+            } catch (TlsException _) {
+                // best-effort constructor rollback
+            }
+        }
+    }
+
     /**
      * Decrements the reference count.
      *
@@ -203,7 +217,7 @@ public final class NativeCipherContext implements AutoCloseable {
         if (prev == BASE_REF_COUNT) {
             // Transitioned 1 → 0: we hold the last reference — safe to free.
             try { //NOPMD UseTryWithResources — sessionSlab.close() must run even if SSL_free throws
-                handles.invokeSslFree(sslPtr);
+                handshakeHandles.invokeSslFree(sslPtr);
             } catch (Throwable t) { //NOPMD AvoidCatchingThrowable — SSL_free destructor path; Errors must not escape
                 // Do NOT propagate: destructor paths must never throw.
                 // Record the failure in JFR for flight-recorder diagnostics.
@@ -218,7 +232,7 @@ public final class NativeCipherContext implements AutoCloseable {
             REF_COUNT.setRelease(this, 0);
             throw new IllegalStateException(
                     "Double release detected on NativeCipherContext (sslPtr=0x"
-                    + Long.toHexString(sslPtr) + ")");
+                            + Long.toHexString(sslPtr) + ")");
         }
         // prev > 1: other owners still active — nothing to do.
     }

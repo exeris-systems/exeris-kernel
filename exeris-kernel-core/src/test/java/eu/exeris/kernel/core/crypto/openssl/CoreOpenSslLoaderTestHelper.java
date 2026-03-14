@@ -10,24 +10,18 @@ package eu.exeris.kernel.core.crypto.openssl;
 
 import java.lang.foreign.Arena;
 import java.lang.foreign.FunctionDescriptor;
-import java.lang.foreign.Linker;
-import java.lang.foreign.SymbolLookup;
 import java.lang.invoke.MethodHandle;
 
 import static java.lang.foreign.ValueLayout.JAVA_INT;
 import static java.lang.foreign.ValueLayout.JAVA_LONG;
 
 /**
- * Test-scope bridge into {@link CoreOpenSslLoader}'s package-private resolution logic.
+ * Test-scope bridge into {@link CoreOpenSslRuntime}'s exact-library lookup.
  *
- * <p>Resides in the same package as {@link CoreOpenSslLoader} (test source set) to access
- * the package-private {@code resolveSsl(Arena)} method. Callers such as
- * {@code OffHeapTlsEngineLoopbackIT} use this to resolve additional symbols
+ * <p>Callers such as {@code OffHeapTlsEngineLoopbackIT} use this to resolve additional symbols
  * (e.g. {@code SSL_set_fd}) from the <em>exact same</em> library instance that
- * {@link CoreOpenSslLoader#load(Arena)} used — preventing an ABI mismatch that
- * would occur if the IT independently called
- * {@code SymbolLookup.libraryLookup("libssl.so.3", ...)} and resolved a different
- * system libssl than the one loaded via the candidate list or env override.
+ * {@link CoreOpenSslLoader#load(Arena)} selected — preventing an ABI mismatch that would
+ * occur if the IT independently resolved a different system {@code libssl}.
  *
  * <p>This class is <strong>not</strong> part of the production SPI and must never
  * be referenced from main source sets.
@@ -40,25 +34,17 @@ public final class CoreOpenSslLoaderTestHelper {
 
     /**
      * Resolves {@code SSL_set_fd(SSL*, int)} from the same {@code libssl} instance that
-     * {@link CoreOpenSslLoader#load(Arena)} would select.
+     * {@link CoreOpenSslLoader#load(Arena)} already selected.
      *
-     * <p>Discovery order mirrors {@link CoreOpenSslLoader}: {@code EXERIS_OPENSSL_SSL_PATH}
-     * env override → OS candidate list. Passing the same {@link Arena} ensures the loaded
-     * library shares its lifetime with the rest of the Core OpenSSL bootstrap.
+     * <p>The passed runtime encapsulates the exact bootstrap lookup, so no secondary library
+     * discovery occurs here.
      *
-     * @param arena arena whose scope governs the resolved symbol's lifetime
+     * @param runtime shared Core OpenSSL runtime selected during bootstrap
      * @return downcall handle for {@code int SSL_set_fd(SSL*, int)},
      *         or {@code null} if {@code libssl} cannot be found
      */
-    public static MethodHandle resolveSslSetFd(Arena arena) {
-        SymbolLookup sslLookup = CoreOpenSslLoader.resolveSsl(arena);
-        if (sslLookup == null) {
-            return null;
-        }
-        return sslLookup.find("SSL_set_fd")
-                .map(addr -> Linker.nativeLinker().downcallHandle(
-                        addr,
-                        FunctionDescriptor.of(JAVA_INT, JAVA_LONG, JAVA_INT)))
-                .orElse(null);
+    public static MethodHandle resolveSslSetFd(CoreOpenSslRuntime runtime) {
+        return runtime.optionalSslHandle("SSL_set_fd",
+                FunctionDescriptor.of(JAVA_INT, JAVA_LONG, JAVA_INT));
     }
 }

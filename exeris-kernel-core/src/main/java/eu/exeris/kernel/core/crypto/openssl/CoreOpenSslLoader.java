@@ -24,7 +24,7 @@ import static java.lang.foreign.ValueLayout.JAVA_INT;
 import static java.lang.foreign.ValueLayout.JAVA_LONG;
 
 /**
- * Core: "Pure function" that loads OpenSSL and resolves the common TLS 1.3 method handles.
+ * Core: "Pure function" that loads OpenSSL and resolves the shared TLS 1.3 runtime.
  *
  * <h2>Design — No State, No Arena Policy</h2>
  * <p>This class owns <strong>no arena</strong> and enforces <strong>no memory policy</strong>.
@@ -46,6 +46,7 @@ import static java.lang.foreign.ValueLayout.JAVA_LONG;
  *
  * @since 0.5.0
  */
+@SuppressWarnings("PMD.CyclomaticComplexity")
 public final class CoreOpenSslLoader {
 
     /** {@code SSL_FILETYPE_PEM = 1} from {@code openssl/ssl.h}. */
@@ -102,7 +103,7 @@ public final class CoreOpenSslLoader {
     }
 
     /**
-     * Loads OpenSSL into {@code arena} and resolves the standard TLS 1.3 method handles.
+     * Loads OpenSSL into {@code arena} and resolves the shared TLS 1.3 runtime.
      *
      * <p><b>Community</b>: pass {@code Arena.global()}.
      * <b>Enterprise</b>: pass an {@link Arena} whose scope covers a slab from
@@ -119,10 +120,10 @@ public final class CoreOpenSslLoader {
      * </ol>
      *
      * @param arena the arena whose scope governs the lifetime of the loaded symbols
-     * @return immutable {@link CoreSslHandles} record containing all resolved handles
+     * @return immutable {@link CoreOpenSslRuntime} containing the exact runtime lookup and resolved handles
      * @throws CryptoBootstrapException if libssl cannot be found or a required symbol is missing
      */
-    public static CoreSslHandles load(Arena arena) {
+    public static CoreOpenSslRuntime load(Arena arena) {
         SymbolLookup crypto = resolveCrypto(arena);
         SymbolLookup ssl    = resolveSsl(arena);
 
@@ -188,7 +189,18 @@ public final class CoreOpenSslLoader {
                 opt(linker, lookup, "SSL_CIPHER_get_name",
                         FunctionDescriptor.of(JAVA_LONG, JAVA_LONG)));
 
-        return new CoreSslHandles(ctx, handshake, ioHandles);
+        CoreSslHandles handles = new CoreSslHandles(ctx, handshake, ioHandles);
+        return new CoreOpenSslRuntime(linker, ssl, crypto, handles);
+    }
+
+    /**
+     * Transitional convenience for callers that only need the canonical Core handle carrier.
+     *
+     * @param arena the arena whose scope governs the lifetime of the loaded symbols
+     * @return immutable {@link CoreSslHandles} resolved from the shared runtime
+     */
+    public static CoreSslHandles loadHandles(Arena arena) {
+        return load(arena).handles();
     }
 
     // =========================================================================
@@ -261,7 +273,7 @@ public final class CoreOpenSslLoader {
      *   <li>Built-in {@link #SSL_CANDIDATES} list.</li>
      * </ol>
      */
-    /* default */ static SymbolLookup resolveSsl(Arena arena) {
+    private static SymbolLookup resolveSsl(Arena arena) {
         SymbolLookup lookup = tryLoadFromEnv("EXERIS_OPENSSL_SSL_PATH", arena);
         return lookup != null ? lookup : tryLoadAll(SSL_CANDIDATES, arena);
     }

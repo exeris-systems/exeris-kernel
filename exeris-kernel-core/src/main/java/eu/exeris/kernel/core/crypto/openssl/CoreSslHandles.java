@@ -21,7 +21,7 @@ import java.lang.invoke.MethodHandle;
  * <h2>Split Design — three inner records</h2>
  * <ul>
  *   <li>{@link CtxHandles}       — {@code SSL_CTX_*} lifecycle</li>
- *   <li>{@link HandshakeHandles} — connection setup (new/free/fd/accept/connect/doHandshake)</li>
+ *   <li>{@link HandshakeHandles} — connection setup (new/free/accept/connect/doHandshake)</li>
  *   <li>{@link IoHandles}        — data transfer (read/write/shutdown/error/alpn)</li>
  * </ul>
  * Each record stays under the PMD {@code CyclomaticComplexity} class threshold.
@@ -38,7 +38,8 @@ public final class CoreSslHandles {
     private final HandshakeHandles handshake;
     private final IoHandles ioHandles;
 
-    /* package */ CoreSslHandles(CtxHandles ctx, HandshakeHandles handshake, IoHandles ioHandles) {
+    /* package */ CoreSslHandles(CtxHandles ctx, HandshakeHandles handshake,
+                                 IoHandles ioHandles) {
         this.ctx = ctx;
         this.handshake = handshake;
         this.ioHandles = ioHandles;
@@ -193,12 +194,6 @@ public final class CoreSslHandles {
     /**
      * Handles for SSL session setup — {@code SSL_new}, {@code SSL_free},
      * {@code SSL_accept}, {@code SSL_connect}, {@code SSL_do_handshake}.
-     *
-     * <h2>BIO wiring is NOT here</h2>
-     * <p>{@code SSL_set_fd} (Community) and {@code BIO_new_pair}/{@code SSL_set_bio}
-     * (Enterprise) are transport-specific concerns. Community and Enterprise tiers
-     * add their own handles via tier-specific handle carriers — Core has zero
-     * knowledge of how the BIO is wired.
      *
      * @since 0.5.0
      */

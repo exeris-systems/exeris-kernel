@@ -22,6 +22,7 @@ import eu.exeris.kernel.spi.memory.LoanedBuffer;
  *
  * <h2>Lifecycle</h2>
  * <pre>
+ *  engine.notifyBound()         → transport/BIO binding completed
  *  engine.beginHandshake(out) → TlsStatus
  *  engine.unwrap(in, out)     → decrypt ciphertext → plaintext
  *  engine.wrap(in, out)       → encrypt plaintext  → ciphertext
@@ -53,6 +54,20 @@ import eu.exeris.kernel.spi.memory.LoanedBuffer;
  * @see TlsStatus
  */
 public interface TlsEngine extends AutoCloseable {
+
+    /**
+     * Signals that transport-specific BIO/channel binding has completed and the
+     * TLS session may begin the handshake state transitions.
+     *
+     * <p>Default no-op for engines that do not require an explicit bind signal.
+     * Engines with explicit pre-handshake binding (for example fd-owner or memory-BIO
+     * pipelines) should override this method and enforce their state machine contract.
+     *
+     * @throws TlsHandshakeException if called in an invalid lifecycle phase
+     */
+    default void notifyBound() {
+        // no-op by default
+    }
 
     /**
      * Initiates or advances the TLS handshake.

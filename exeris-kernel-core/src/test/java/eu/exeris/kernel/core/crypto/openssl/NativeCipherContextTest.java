@@ -107,14 +107,14 @@ class NativeCipherContextTest {
     // =========================================================================
 
     /**
-     * Assembles a {@link CoreSslHandles.HandshakeHandles} wired to the local static stubs.
+    * Assembles a {@link CoreSslHandles} wired to the local static stubs.
      *
      * <p>Only {@code sslNew} and {@code sslFree} are meaningful for lifecycle tests.
-     * All other slots ({@code sslSetFd}, {@code sslAccept}, {@code sslConnect},
+     * All other handshake slots ({@code sslAccept}, {@code sslConnect},
      * {@code sslDoHandshake}) are {@code null} — acceptable because
      * {@link NativeCipherContext} never invokes them during the operations under test.
      */
-    private CoreSslHandles.HandshakeHandles createDummyHandles() throws Exception {
+    private CoreSslHandles createDummyHandles() throws Exception {
         MethodHandles.Lookup lookup = MethodHandles.lookup();
         MethodHandle sslNew = lookup.findStatic(
                 NativeCipherContextTest.class,
@@ -125,7 +125,10 @@ class NativeCipherContextTest {
                 "dummySslFree",
                 MethodType.methodType(void.class, long.class));
 
-        return new CoreSslHandles.HandshakeHandles(sslNew, sslFree, null, null, null);
+        CoreSslHandles.HandshakeHandles handshakeHandles =
+                new CoreSslHandles.HandshakeHandles(sslNew, sslFree, null, null, null);
+
+        return CoreSslHandlesTestFactory.build(null, handshakeHandles, null);
     }
 
     // =========================================================================
@@ -227,8 +230,9 @@ class NativeCipherContextTest {
                     NativeCipherContextTest.class, "dummySslFree",
                     MethodType.methodType(void.class, long.class));
 
-            CoreSslHandles.HandshakeHandles handles = new CoreSslHandles.HandshakeHandles(
+            CoreSslHandles.HandshakeHandles handshakeHandles = new CoreSslHandles.HandshakeHandles(
                     nullSslNew, sslFree, null, null, null);
+            CoreSslHandles handles = CoreSslHandlesTestFactory.build(null, handshakeHandles, null);
 
             assertThatThrownBy(() -> new NativeCipherContext(handles, 0x1234L, STUB_ALLOC))
                     .isInstanceOf(TlsException.class);

@@ -9,6 +9,7 @@
 package eu.exeris.kernel.core.crypto.tls;
 
 import eu.exeris.kernel.core.crypto.openssl.CoreOpenSslLoader;
+import eu.exeris.kernel.core.crypto.openssl.CoreOpenSslRuntime;
 import eu.exeris.kernel.core.crypto.openssl.CoreSslHandles;
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.crypto.CryptoProviderConfig;
@@ -60,13 +61,15 @@ class CoreOffHeapTlsEngineZeroAllocTckTest extends CryptoZeroAllocTck {
     }
 
     private static final Arena GLOBAL_ARENA = Arena.global();
+    private static CoreOpenSslRuntime runtime;
     private static CoreSslHandles handles;
     private static long sslCtxPtr;
     private static Throwable loadError;
 
     static {
         try {
-            handles = CoreOpenSslLoader.load(GLOBAL_ARENA);
+            runtime = CoreOpenSslLoader.load(GLOBAL_ARENA);
+            handles = runtime.handles();
             long methodPtr = handles.ctx().invokeServerMethod();
             sslCtxPtr = handles.ctx().invokeCtxNew(methodPtr);
         } catch (Throwable t) {
@@ -78,7 +81,7 @@ class CoreOffHeapTlsEngineZeroAllocTckTest extends CryptoZeroAllocTck {
     static void requireOpenSsl() {
         assumeTrue(loadError == null,
                 "OpenSSL 3.x is not available on this host — skipping TCK: "
-                + (loadError != null ? loadError.getMessage() : ""));
+                        + (loadError != null ? loadError.getMessage() : ""));
     }
 
     private static final MemorySegment SLAB = GLOBAL_ARENA.allocate(256 * 1024L, 8L);
@@ -108,7 +111,7 @@ class CoreOffHeapTlsEngineZeroAllocTckTest extends CryptoZeroAllocTck {
                 @Override public void           addCloseAction(Runnable r) {
                     throw new UnsupportedOperationException(
                             "Zero-alloc TCK stub: addCloseAction is not supported. "
-                            + "NativeCipherContext must not register close actions on this path.");
+                                    + "NativeCipherContext must not register close actions on this path.");
                 }
                 @Override public LoanedBuffer   slice(long off, long len) {
                     throw new UnsupportedOperationException(
@@ -167,8 +170,8 @@ class CoreOffHeapTlsEngineZeroAllocTckTest extends CryptoZeroAllocTck {
             ownPlaintext.segment().fill((byte) 0xAB);
             ownPlaintext.setSize(ownPlaintext.capacity());
 
-            // THE REAL TCP BINDING - fd-based, Core tier only.
-            ((OffHeapTlsEngine) ownEngine).notifyBound();
+            // THE REAL TCP BINDING signal through SPI (no concrete cast).
+            ownEngine.notifyBound();
 
             try {
                 ownEngine.beginHandshake(ownCiphertext);
