@@ -8,6 +8,7 @@
  */
 package eu.exeris.kernel.community.memory;
 
+import eu.exeris.kernel.spi.exceptions.memory.MemoryBootstrapException;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.memory.MemoryProvider;
 import eu.exeris.kernel.spi.memory.MemoryProviderConfig;
@@ -20,6 +21,7 @@ import java.util.ServiceLoader;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * L2 Integration: {@link CommunityMemoryProvider} — ServiceLoader discovery,
@@ -127,6 +129,31 @@ class CommunityMemoryProviderIntegrationTest {
                     assertThat(second).isNotNull();
                 }
             }).doesNotThrowAnyException();
+        }
+
+        @Test
+        @DisplayName("createAllocator(null) wraps into MemoryBootstrapException")
+        void nullConfigIsWrapped() {
+            MemoryProvider provider = new CommunityMemoryProvider();
+            assertThatThrownBy(() -> provider.createAllocator(null))
+                    .isInstanceOf(MemoryBootstrapException.class)
+                    .hasCauseInstanceOf(NullPointerException.class);
+        }
+
+        @Test
+        @DisplayName("invalid config is wrapped into MemoryBootstrapException")
+        void invalidConfigIsWrapped() {
+            MemoryProvider provider = new CommunityMemoryProvider();
+            MemoryProviderConfig invalid = new MemoryProviderConfig(
+                    1024L,
+                    MemoryProviderConfig.defaults().networkOffHeapThreshold(),
+                    MemoryProviderConfig.defaults().carrierCount(),
+                    MemoryProviderConfig.defaults().leakDetection(),
+                    MemoryProviderConfig.defaults().jfrEnabled());
+
+            assertThatThrownBy(() -> provider.createAllocator(invalid))
+                    .isInstanceOf(MemoryBootstrapException.class)
+                    .hasCauseInstanceOf(IllegalArgumentException.class);
         }
     }
 }

@@ -153,44 +153,6 @@
                             </annotationProcessorPaths>
                         </configuration>
                     </plugin>
-                    <plugin>
-                        <groupId>org.codehaus.mojo</groupId>
-                        <artifactId>exec-maven-plugin</artifactId>
-                        <executions>
-                            <execution>
-                                <id>run-benchmarks</id>
-                                <phase>verify</phase>
-                                <goals>
-                                    <goal>exec</goal>
-                                </goals>
-                                <configuration>
-                                    <skip>${benchmark.skip}</skip>
-                                    <executable>java</executable>
-                                    <classpathScope>test</classpathScope>
-                                    <arguments>
-                                        <argument>--enable-preview</argument>
-                                        <argument>-XX:+UnlockExperimentalVMOptions</argument>
-                                        <argument>-XX:+UseZGC</argument>
-                                        <argument>--enable-native-access=ALL-UNNAMED</argument>
-                                        <argument>-classpath</argument>
-                                        <classpath/>
-                                        <argument>org.openjdk.jmh.Main</argument>
-                                        <argument>${benchmark.includes}</argument>
-                                        <argument>-f</argument>
-                                        <argument>${benchmark.forks}</argument>
-                                        <argument>-wi</argument>
-                                        <argument>${benchmark.warmup}</argument>
-                                        <argument>-i</argument>
-                                        <argument>${benchmark.iterations}</argument>
-                                        <argument>-rf</argument>
-                                        <argument>json</argument>
-                                        <argument>-rff</argument>
-                                        <argument>${benchmark.output}</argument>
-                                    </arguments>
-                                </configuration>
-                            </execution>
-                        </executions>
-                    </plugin>
                 </plugins>
             </build>
         </profile>

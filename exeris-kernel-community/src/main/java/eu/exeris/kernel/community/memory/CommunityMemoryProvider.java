@@ -39,9 +39,14 @@ public final class CommunityMemoryProvider implements MemoryProvider {
 
     @Override
     public MemoryAllocator createAllocator(MemoryProviderConfig config) {
+        if (config == null) {
+            throw new MemoryBootstrapException(providerName(), new NullPointerException("config"));
+        }
         try {
             return new CommunityMemoryAllocator(config);
-        } catch (IllegalArgumentException e) {
+        } catch (MemoryBootstrapException e) {
+            throw e;
+        } catch (RuntimeException e) {
             throw new MemoryBootstrapException(providerName(), e);
         }
     }
