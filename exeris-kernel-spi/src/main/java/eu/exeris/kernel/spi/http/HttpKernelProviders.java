@@ -22,7 +22,12 @@ import java.util.Optional;
  *
  * <h2>Binding (bootstrap side)</h2>
  * <pre>{@code
- * HttpProvider provider  = HttpProvider.selectHighestPriority();
+ * HttpProvider provider  = java.util.ServiceLoader.load(HttpProvider.class)
+ *         .stream()
+ *         .map(java.util.ServiceLoader.Provider::get)
+ *         .max(java.util.Comparator.comparingInt(HttpProvider::priority))
+ *         .orElseThrow(() -> eu.exeris.kernel.spi.exceptions.http.HttpException
+ *                 .providerBootstrapFailure("unknown", null));
  * HttpServerEngine server = provider.createServerEngine(HttpConfig.defaultServer());
  * server.setHandler(myRouter);
  *

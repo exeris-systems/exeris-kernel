@@ -8,11 +8,6 @@
  */
 package eu.exeris.kernel.spi.http;
 
-import eu.exeris.kernel.spi.exceptions.http.HttpException;
-
-import java.util.Comparator;
-import java.util.ServiceLoader;
-
 /**
  * SPI: Pluggable HTTP engine factory — the single entry-point through which the
  * kernel bootstrapper creates {@link HttpServerEngine} and {@link HttpClientEngine}.
@@ -23,10 +18,14 @@ import java.util.ServiceLoader;
  * transport, crypto, or OS-driver details.
  *
  * <h2>Discovery</h2>
- * <p>Loaded via {@link ServiceLoader}. The kernel bootstrapper selects the
+ * <p>Loaded via {@link java.util.ServiceLoader}. The kernel bootstrapper in Core selects the
  * highest-{@link #priority()} provider:
  * <pre>{@code
- * HttpProvider provider = HttpProvider.selectHighestPriority();
+ * HttpProvider provider = java.util.ServiceLoader.load(HttpProvider.class)
+ *         .stream()
+ *         .map(java.util.ServiceLoader.Provider::get)
+ *         .max(java.util.Comparator.comparingInt(HttpProvider::priority))
+ *         .orElseThrow(() -> HttpException.providerBootstrapFailure("unknown", null));
  * HttpServerEngine server = provider.createServerEngine(HttpConfig.defaultServer());
  * ScopedValue.where(HttpKernelProviders.HTTP_SERVER_ENGINE, server).run(kernel::start);
  * }</pre>
@@ -108,22 +107,6 @@ public interface HttpProvider {
      */
     default int priority() {
         return 0;
-    }
-
-    /**
-     * Selects the highest-priority {@link HttpProvider} available on the classpath.
-     *
-     * <p>This is a convenience bootstrap helper. The kernel bootstrapper may use it
-     * directly or perform its own {@link ServiceLoader} resolution.
-     *
-     * @return the selected provider
-     */
-    static HttpProvider selectHighestPriority() {
-        return ServiceLoader.load(HttpProvider.class)
-                .stream()
-                .map(ServiceLoader.Provider::get)
-                .max(Comparator.comparingInt(HttpProvider::priority))
-                .orElseThrow(() -> HttpException.providerBootstrapFailure("unknown", null));
     }
 }
 

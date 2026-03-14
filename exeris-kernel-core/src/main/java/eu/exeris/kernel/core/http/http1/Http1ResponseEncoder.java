@@ -11,6 +11,7 @@ package eu.exeris.kernel.core.http.http1;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
+import java.util.Objects;
 
 /**
  * RFC 9112 — HTTP/1.1 Response Encoder.
@@ -46,6 +47,7 @@ public final class Http1ResponseEncoder {
     @SuppressWarnings("PMD.AssignmentInOperand")
     public static long writeStatusLine(MemorySegment seg, long offset,
                                        int statusCode, String reasonPhrase) {
+        Objects.requireNonNull(reasonPhrase, "HTTP/1.1 reason phrase must not be null");
         long pos = offset;
         pos = writeBytes(seg, pos, HTTP_11_PREFIX);
         pos = writeAsciiInt(seg, pos, statusCode);
@@ -65,6 +67,8 @@ public final class Http1ResponseEncoder {
      * @return new byte position after the header CRLF
      */
     public static long writeHeader(MemorySegment seg, long offset, String name, String value) {
+        Objects.requireNonNull(name, "HTTP header name must not be null");
+        Objects.requireNonNull(value, "HTTP header value must not be null");
         long pos = offset;
         pos = writeAscii(seg, pos, name);
         pos = writeBytes(seg, pos, COLON_SPACE);
