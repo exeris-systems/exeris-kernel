@@ -30,7 +30,8 @@ import org.openjdk.jmh.infra.Blackhole;
  *       RAII loop through the SUT allocator (the allocator under test).</li>
  *   <li><b>{@code communityAllocatorBaseline}</b> — {@link AllocationHint#SMALL} (4 096 bytes)
  *       RAII loop through a dedicated Community allocator instance.
- *       Community {@code Arena.ofShared()} path at the next slab tier above MICRO.</li>
+ *       Community {@code Arena.ofAuto()} path (via {@code CommunityArenaBuffers})
+ *       at the next slab tier above MICRO.</li>
  * </ol>
  *
  * <h2>Interpretation</h2>
@@ -38,10 +39,10 @@ import org.openjdk.jmh.infra.Blackhole;
  *   <caption>Expected relative costs (Community tier, ZGC, steady-state)</caption>
  *   <tr><th>Benchmark</th><th>Expected cost</th><th>Bottleneck</th></tr>
  *   <tr><td>{@code heapBaseline}</td><td>~5–15 ns</td><td>TLAB bump-pointer</td></tr>
- *   <tr><td>{@code acquireAndReleaseSmallBuffer} (MICRO)</td><td>~200–800 ns</td><td>Arena mmap/munmap</td></tr>
- *   <tr><td>{@code communityAllocatorBaseline} (SMALL)</td><td>~200–800 ns</td><td>Arena mmap/munmap</td></tr>
+ *   <tr><td>{@code acquireAndReleaseSmallBuffer} (MICRO)</td><td>~200–800 ns</td><td>Panama arena setup/teardown ({@code Arena.ofAuto()})</td></tr>
+ *   <tr><td>{@code communityAllocatorBaseline} (SMALL)</td><td>~200–800 ns</td><td>Panama arena setup/teardown ({@code Arena.ofAuto()})</td></tr>
  * </table>
- * <p>Enterprise tier replaces Arena mmap with VarHandle CAS free-list, targeting &lt;50 ns.
+ * <p>Enterprise tier replaces arena overhead with a VarHandle CAS free-list, targeting &lt;50 ns.
  *
  * <h2>SLO</h2>
  * <ul>
@@ -93,7 +94,7 @@ public class CommunityMemoryAllocatorBenchmark extends AbstractMemoryAllocatorBe
      *
      * <p>Unlike {@code acquireAndReleaseSmallBuffer} which targets the {@link AllocationHint#MICRO}
      * tier, this benchmark exercises the next slab size to reveal how allocation cost scales
-     * with buffer size in the Community shared-arena ({@code Arena.ofShared()}) implementation.
+    * with buffer size in the Community {@code Arena.ofAuto()} ({@code CommunityArenaBuffers}) implementation.
      * The {@link Blackhole#consume} prevents the JIT from eliminating the entire
      * allocate/close pair as dead code.
      *

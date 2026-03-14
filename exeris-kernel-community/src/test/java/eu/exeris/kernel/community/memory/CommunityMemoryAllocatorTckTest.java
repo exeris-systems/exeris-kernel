@@ -18,9 +18,10 @@ import org.junit.jupiter.api.DisplayName;
  * {@link CommunityMemoryProvider}.
  *
  * <h2>What this proves for Community tier</h2>
- * <p>Every allocation is backed by a new {@code Arena.ofShared()}, ensuring cross-thread
- * ownership safety. The test suite verifies that despite OS-level mmap/munmap on every
- * alloc/release, the contract holds: no leaks, correct isolation, correct stats.
+ * <p>Every allocation is currently backed by a new {@code Arena.ofAuto()}.
+ * The test suite verifies contract-level behaviour (no leaks visible to the allocator,
+ * correct isolation, correct stats) without assuming deterministic native-memory release
+ * at {@code refCount==0}.
  *
  * @since 0.5.0
  */

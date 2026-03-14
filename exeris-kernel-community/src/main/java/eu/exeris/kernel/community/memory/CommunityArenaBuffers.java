@@ -16,8 +16,11 @@ final class CommunityArenaBuffers {
 
     private CommunityArenaBuffers() {
     }
-
+    @SuppressWarnings("java:S125")
     /* default */ static AbstractLoanedBuffer allocateOwned(long capacityBytes, long alignmentBytes) {
+        // Community tier intentionally uses Arena.ofAuto().
+        // L0 architecture rules ban direct use of Arena.ofConfined()/ofShared() in business logic;
+        // release is therefore best-effort via CommunityLoanedBuffer.onRelease().
         Arena arena = Arena.ofAuto();
         return CommunityLoanedBuffer.allocateOwned(
                 capacityBytes,

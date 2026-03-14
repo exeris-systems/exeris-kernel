@@ -15,13 +15,15 @@ import java.lang.foreign.MemorySegment;
 
 /**
  * Community: Off-heap {@link eu.exeris.kernel.spi.memory.LoanedBuffer} backed by a
- * shared, per-buffer {@link Arena}.
+ * per-buffer {@link Arena}.
  *
  * <h2>Memory Model (Community Tier)</h2>
- * <p>Each buffer owns the {@link Arena} it was allocated from via {@link #allocateOwned}.
- * When the buffer's reference count drops to zero, {@link #onRelease()} closes the arena,
- * returning the off-heap memory to the OS. This is "syscall-based" allocation — no global
- * pool.
+ * <p>Each buffer <em>logically owns</em> the {@link Arena} it was allocated from via
+ * {@link #allocateOwned}. When the buffer's reference count drops to zero,
+ * {@link #onRelease()} attempts to close the arena.
+ * For closeable arenas this can deterministically release native memory; for JVM-managed
+ * arenas (for example {@code Arena.ofAuto()}), {@link Arena#close()} may be unsupported and
+ * memory lifetime remains runtime-managed.
  *
  * <h2>Zero-Copy</h2>
  * <p>The backing {@link MemorySegment} is never copied. Slices use
@@ -50,12 +52,12 @@ final class CommunityLoanedBuffer extends AbstractLoanedBuffer {
     // =========================================================================
 
     /**
-     * Creates a buffer that <em>owns</em> the supplied arena.
-     * {@link #onRelease()} will close the arena when the reference count reaches zero.
+    * Creates a buffer that <em>logically owns</em> the supplied arena.
+    * {@link #onRelease()} will attempt to close the arena when the reference count reaches zero.
      *
      * @param capacityBytes capacity in bytes
      * @param alignment     byte alignment
-     * @param ownedArena    arena whose lifecycle is transferred to this buffer
+    * @param ownedArena    arena whose lifecycle is associated with this buffer
      */
     /* default */ static CommunityLoanedBuffer allocateOwned(
             long capacityBytes, long alignment, Arena ownedArena) {
@@ -73,7 +75,7 @@ final class CommunityLoanedBuffer extends AbstractLoanedBuffer {
         try {
             arena.close();
         } catch (IllegalStateException | UnsupportedOperationException _) {
-            // Arena already closed or auto-managed; safe to ignore on release.
+            // Arena already closed or non-closeable/runtime-managed (e.g., Arena.ofAuto()).
         }
     }
 }

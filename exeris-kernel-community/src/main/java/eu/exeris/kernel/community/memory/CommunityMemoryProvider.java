@@ -15,7 +15,7 @@ import eu.exeris.kernel.spi.memory.MemoryProviderConfig;
 
 /**
  * Community: {@link MemoryProvider} that creates syscall-based {@link MemoryAllocator}
- * instances using per-buffer {@code Arena.ofShared()} allocations.
+ * instances using per-buffer {@code Arena.ofAuto()} allocations.
  *
  * <h2>Open-Core Positioning</h2>
  * <p>This is the <b>free-tier</b> provider. It supports standard TCP/TLS workloads

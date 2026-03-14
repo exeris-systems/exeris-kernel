@@ -18,8 +18,9 @@ import org.junit.jupiter.api.DisplayName;
  * {@link CommunityMemoryProvider}.
  *
  * <h2>What this proves for Community tier</h2>
- * <p>Verifies that {@code AbstractLoanedBuffer} calls {@code Arena.close()} exactly
- * when the last slice's refCount drops to zero — no premature dealloc, no native leak.
+ * <p>Verifies that {@code AbstractLoanedBuffer} releases logical ownership when the
+ * last slice's refCount drops to zero (no premature invalidation, no allocator-visible leak),
+ * without assuming deterministic {@code Arena.close()} behaviour for {@code Arena.ofAuto()}.
  *
  * @since 0.5.0
  */
