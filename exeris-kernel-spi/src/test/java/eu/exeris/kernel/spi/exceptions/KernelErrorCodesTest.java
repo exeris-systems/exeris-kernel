@@ -159,6 +159,69 @@ class KernelErrorCodesTest {
     }
 
     // -----------------------------------------------------------------------
+    // EX-HTTP domain — HTTP codec
+    // -----------------------------------------------------------------------
+
+    @Nested
+    @DisplayName("EX-HTTP domain (HTTP/HPACK/Huffman)")
+    class HttpDomain {
+
+        @Test
+        @DisplayName("EX_HTTP_4001 == 'EX-HTTP-4001' (Huffman violation)")
+        void exHttp4001() {
+            assertThat(KernelErrorCodes.EX_HTTP_4001).isEqualTo("EX-HTTP-4001");
+        }
+
+        @Test
+        @DisplayName("EX_HTTP_4002 == 'EX-HTTP-4002' (HPACK decode violation)")
+        void exHttp4002() {
+            assertThat(KernelErrorCodes.EX_HTTP_4002).isEqualTo("EX-HTTP-4002");
+        }
+
+        @Test
+        @DisplayName("EX_HTTP_4003 == 'EX-HTTP-4003' (HTTP/2 SETTINGS validation)")
+        void exHttp4003() {
+            assertThat(KernelErrorCodes.EX_HTTP_4003).isEqualTo("EX-HTTP-4003");
+        }
+
+        @Test
+        @DisplayName("EX_HTTP_4004 == 'EX-HTTP-4004' (HTTP/1.1 parse violation)")
+        void exHttp4004() {
+            assertThat(KernelErrorCodes.EX_HTTP_4004).isEqualTo("EX-HTTP-4004");
+        }
+
+        @Test
+        @DisplayName("EX_HTTP_4005 == 'EX-HTTP-4005' (HTTP/2 continuation violation)")
+        void exHttp4005() {
+            assertThat(KernelErrorCodes.EX_HTTP_4005).isEqualTo("EX-HTTP-4005");
+        }
+
+        @Test
+        @DisplayName("EX_HTTP_4006 == 'EX-HTTP-4006' (HTTP/2 frame encoding violation)")
+        void exHttp4006() {
+            assertThat(KernelErrorCodes.EX_HTTP_4006).isEqualTo("EX-HTTP-4006");
+        }
+
+        @Test
+        @DisplayName("EX_HTTP_4007 == 'EX-HTTP-4007' (HTTP provider bootstrap failure)")
+        void exHttp4007() {
+            assertThat(KernelErrorCodes.EX_HTTP_4007).isEqualTo("EX-HTTP-4007");
+        }
+
+        @Test
+        @DisplayName("EX_HTTP_4008 == 'EX-HTTP-4008' (HTTP server start failure)")
+        void exHttp4008() {
+            assertThat(KernelErrorCodes.EX_HTTP_4008).isEqualTo("EX-HTTP-4008");
+        }
+
+        @Test
+        @DisplayName("EX_HTTP_4009 == 'EX-HTTP-4009' (HTTP client connect failure)")
+        void exHttp4009() {
+            assertThat(KernelErrorCodes.EX_HTTP_4009).isEqualTo("EX-HTTP-4009");
+        }
+    }
+
+    // -----------------------------------------------------------------------
     // EX-PERS domain — persistence
     // -----------------------------------------------------------------------
 
@@ -407,6 +470,11 @@ class KernelErrorCodesTest {
                     KernelErrorCodes.EX_NET_2001, KernelErrorCodes.EX_NET_2002,
                     KernelErrorCodes.EX_NET_4001, KernelErrorCodes.EX_NET_4002,
                     KernelErrorCodes.EX_NET_4003, KernelErrorCodes.EX_NET_4004, KernelErrorCodes.EX_NET_4005,
+                    KernelErrorCodes.EX_HTTP_4001, KernelErrorCodes.EX_HTTP_4002,
+                    KernelErrorCodes.EX_HTTP_4003, KernelErrorCodes.EX_HTTP_4004,
+                    KernelErrorCodes.EX_HTTP_4005, KernelErrorCodes.EX_HTTP_4006,
+                    KernelErrorCodes.EX_HTTP_4007, KernelErrorCodes.EX_HTTP_4008,
+                    KernelErrorCodes.EX_HTTP_4009,
                     KernelErrorCodes.EX_PERS_5001, KernelErrorCodes.EX_PERS_5002,
                     KernelErrorCodes.EX_PERS_5003, KernelErrorCodes.EX_PERS_5004,
                     KernelErrorCodes.EX_PERS_5005, KernelErrorCodes.EX_PERS_5006, KernelErrorCodes.EX_PERS_5007,

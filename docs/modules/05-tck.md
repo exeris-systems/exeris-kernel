@@ -83,3 +83,42 @@ the Performance Contract and must not be merged, regardless of functional correc
 2. **SLO Enforcement:** Contains JMH benchmarks and JFR inspectors to verify that a driver does not violate the
    "Zero-Allocation" or "Latency < 200µs" rules.
 3. **Leak Detection:** Tests must run with `LeakDetectionMode.PARANOID` to catch unclosed off-heap memory segments.
+
+## HTTP TCK (Current Repository State)
+
+HTTP SPI contract coverage is present in `exeris-kernel-tck` via abstract suites:
+
+- `AbstractHttpProviderTck`
+- `AbstractHttpServerEngineTck`
+- `AbstractHttpClientEngineTck`
+- `AbstractHttpHandlerTck`
+- `AbstractHttpExchangeTck`
+
+These suites validate provider discovery, lifecycle semantics, and handler/exchange contract behavior at SPI level.
+
+### Current Core Binding Coverage (HTTP)
+
+Concrete Core bindings now present:
+
+- `CoreHttpProviderTckTest` → `AbstractHttpProviderTck`
+- `CoreHttpServerEngineTckTest` → `AbstractHttpServerEngineTck`
+- `CoreHttpClientEngineTckTest` → `AbstractHttpClientEngineTck`
+- `CoreHttpHandlerTckTest` → `AbstractHttpHandlerTck`
+- `CoreHttpExchangeTckTest` → `AbstractHttpExchangeTck`
+
+Binding mechanics:
+
+- `CoreHttpProviderFixture` provides test-only minimal SPI fixtures for provider/server/client/exchange.
+- `META-INF/services/eu.exeris.kernel.spi.http.HttpProvider` in Core test resources wires ServiceLoader contract assertions.
+
+```mermaid
+graph TD
+    A[AbstractHttp*Tck in exeris-kernel-tck] --> B[CoreHttp*TckTest in exeris-kernel-core tests]
+    B --> C[CoreHttpProviderFixture (test-only)]
+    C --> D[SPI contract assertions]
+```
+
+Non-goal of these bindings:
+
+- They do not certify a production-grade HTTP transport runtime.
+- They certify executable SPI behavior and contract conformance for HTTP interfaces.

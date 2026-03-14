@@ -13,6 +13,7 @@ import eu.exeris.kernel.spi.crypto.KernelCryptoProvider;
 import eu.exeris.kernel.spi.crypto.TlsEngine;
 import eu.exeris.kernel.spi.crypto.TlsStatus;
 import eu.exeris.kernel.spi.exceptions.crypto.CryptoBootstrapException;
+import eu.exeris.kernel.spi.exceptions.crypto.TlsDecryptException;
 import eu.exeris.kernel.spi.memory.AllocationHint;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
@@ -27,6 +28,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
  * TCK: Abstract base for {@link KernelCryptoProvider} and {@link TlsEngine} contract
@@ -78,10 +80,14 @@ public abstract class AbstractCryptoEngineTck {
     // Template methods
     // =========================================================================
 
-    /** Creates the {@link KernelCryptoProvider} under test. */
+    /**
+     * Creates the {@link KernelCryptoProvider} under test.
+     */
     protected abstract KernelCryptoProvider createProvider();
 
-    /** Creates the {@link MemoryAllocator} used for off-heap TLS buffers. */
+    /**
+     * Creates the {@link MemoryAllocator} used for off-heap TLS buffers.
+     */
     protected abstract MemoryAllocator createAllocator();
 
     /**
@@ -89,18 +95,43 @@ public abstract class AbstractCryptoEngineTck {
      * Community must NOT support QUIC and must have priority() == 0.
      * Default: {@code true}.
      */
-    protected boolean isCommunityTier() { return true; }
+    protected boolean isCommunityTier() {
+        return true;
+    }
+
+    /**
+     * Returns {@code true} if the provider under test supports in-memory I/O
+     * (wrap/unwrap) without a real fd-based network socket.
+     *
+     * <p>Default: {@code true} — suitable for Memory-BIO engines whose
+     * {@code wrap}/{@code unwrap} operations work entirely on off-heap
+     * {@link eu.exeris.kernel.spi.memory.LoanedBuffer} slabs, independently
+     * of any kernel file descriptor.
+     *
+     * <p>Override to return {@code false} for fd-owner BIO engines (e.g., the
+     * Core OpenSSL {@code SSL_set_fd} path) whose wrap/unwrap hot path requires
+     * an active TCP socket bound to a real file descriptor. Those engines are
+     * covered end-to-end by {@code OffHeapTlsEngineLoopbackIT}.
+     * When {@code false}, the three I/O tests that need an {@code ACTIVE} session
+     * are skipped via {@link org.junit.jupiter.api.Assumptions#assumeTrue}.
+     *
+     * @return {@code true} if wrap/unwrap can be exercised without a real socket
+     * @since 0.5.0
+     */
+    protected boolean isIoReady() {
+        return true;
+    }
 
     // =========================================================================
     // Fixtures
     // =========================================================================
 
     private KernelCryptoProvider provider;
-    private MemoryAllocator      allocator;
+    private MemoryAllocator allocator;
 
     @BeforeEach
     final void setUp() {
-        provider  = createProvider();
+        provider = createProvider();
         allocator = createAllocator();
     }
 
@@ -111,7 +142,9 @@ public abstract class AbstractCryptoEngineTck {
         }
     }
 
-    /** Builds a minimal TCP_TLS config for use in tests. */
+    /**
+     * Builds a minimal TCP_TLS config for use in tests.
+     */
     private static CryptoProviderConfig tcpTlsConfig() {
         return new CryptoProviderConfig(
                 CryptoProviderConfig.Protocol.TCP_TLS,
@@ -122,7 +155,9 @@ public abstract class AbstractCryptoEngineTck {
         );
     }
 
-    /** Builds a QUIC config — Community must reject this. */
+    /**
+     * Builds a QUIC config — Community must reject this.
+     */
     private static CryptoProviderConfig quicConfig() {
         return new CryptoProviderConfig(
                 CryptoProviderConfig.Protocol.QUIC,
@@ -172,7 +207,7 @@ public abstract class AbstractCryptoEngineTck {
             if (!isCommunityTier()) return;
             assertThat(provider.supportsQuic())
                     .as("Community KernelCryptoProvider MUST return supportsQuic() == false " +
-                        "(QUIC is Enterprise-only)")
+                            "(QUIC is Enterprise-only)")
                     .isFalse();
         }
 
@@ -210,7 +245,7 @@ public abstract class AbstractCryptoEngineTck {
             var config = quicConfig();
             assertThatThrownBy(() -> provider.createTlsEngine(config))
                     .as("Community MUST throw CryptoBootstrapException for QUIC config — " +
-                        "QUIC support is Enterprise-only (The Wall contract)")
+                            "QUIC support is Enterprise-only (The Wall contract)")
                     .isInstanceOf(CryptoBootstrapException.class);
         }
 
@@ -236,8 +271,8 @@ public abstract class AbstractCryptoEngineTck {
         @Test
         @DisplayName("beginHandshake() returns a non-null, non-CLOSED status")
         void beginHandshakeReturnsValidStatus() {
-            try (TlsEngine engine  = provider.createTlsEngine(tcpTlsConfig());
-                 LoanedBuffer out  = allocator.allocate(AllocationHint.MEDIUM)) {
+            try (TlsEngine engine = provider.createTlsEngine(tcpTlsConfig());
+                 LoanedBuffer out = allocator.allocate(AllocationHint.MEDIUM)) {
 
                 TlsStatus status = engine.beginHandshake(out);
 
@@ -246,7 +281,7 @@ public abstract class AbstractCryptoEngineTck {
                         .isNotNull();
                 assertThat(status)
                         .as("beginHandshake() MUST NOT return CLOSED immediately — " +
-                            "handshake requires at least one exchange")
+                                "handshake requires at least one exchange")
                         .isNotEqualTo(TlsStatus.CLOSED);
             }
         }
@@ -254,8 +289,11 @@ public abstract class AbstractCryptoEngineTck {
         @Test
         @DisplayName("wrap() with off-heap LoanedBuffer returns a valid status")
         void wrapWithOffHeapBufferReturnsValidStatus() {
-            try (TlsEngine engine       = provider.createTlsEngine(tcpTlsConfig());
-                 LoanedBuffer plaintext  = allocator.allocate(AllocationHint.SMALL);
+            assumeTrue(isIoReady(),
+                    "Skipped: this engine requires fd-based BIO wiring before wrap() " +
+                            "— covered by OffHeapTlsEngineLoopbackIT");
+            try (TlsEngine engine = provider.createTlsEngine(tcpTlsConfig());
+                 LoanedBuffer plaintext = allocator.allocate(AllocationHint.SMALL);
                  LoanedBuffer ciphertext = allocator.allocate(AllocationHint.MEDIUM)) {
 
                 // Write synthetic payload into off-heap plaintext buffer
@@ -274,9 +312,12 @@ public abstract class AbstractCryptoEngineTck {
         @Test
         @DisplayName("unwrap() with off-heap LoanedBuffer returns a valid status")
         void unwrapWithOffHeapBufferReturnsValidStatus() {
-            try (TlsEngine engine       = provider.createTlsEngine(tcpTlsConfig());
+            assumeTrue(isIoReady(),
+                    "Skipped: this engine requires fd-based BIO wiring before unwrap() " +
+                            "— covered by OffHeapTlsEngineLoopbackIT");
+            try (TlsEngine engine = provider.createTlsEngine(tcpTlsConfig());
                  LoanedBuffer ciphertext = allocator.allocate(AllocationHint.MEDIUM);
-                 LoanedBuffer plaintext  = allocator.allocate(AllocationHint.MEDIUM)) {
+                 LoanedBuffer plaintext = allocator.allocate(AllocationHint.MEDIUM)) {
 
                 TlsStatus status = engine.unwrap(ciphertext, plaintext);
 
@@ -296,9 +337,9 @@ public abstract class AbstractCryptoEngineTck {
                 // a heap segment here instead of an off-heap one.
                 assertThat(buf.segment().isNative())
                         .as("LoanedBuffer.segment() MUST be backed by native (off-heap) memory. " +
-                            "A heap-backed segment (isNative=false) means the allocator " +
-                            "created a MemorySegment.ofArray() wrapper — this is a banned " +
-                            "heap copy on the zero-copy TLS path.")
+                                "A heap-backed segment (isNative=false) means the allocator " +
+                                "created a MemorySegment.ofArray() wrapper — this is a banned " +
+                                "heap copy on the zero-copy TLS path.")
                         .isTrue();
             }
         }
@@ -306,8 +347,11 @@ public abstract class AbstractCryptoEngineTck {
         @Test
         @DisplayName("wrap() input address is preserved — no silent heap copy")
         void wrapDoesNotCopyToHeap() {
-            try (TlsEngine engine       = provider.createTlsEngine(tcpTlsConfig());
-                 LoanedBuffer plaintext  = allocator.allocate(AllocationHint.SMALL);
+            assumeTrue(isIoReady(),
+                    "Skipped: this engine requires an ACTIVE session for wrap() address preservation " +
+                            "— covered by OffHeapTlsEngineLoopbackIT");
+            try (TlsEngine engine = provider.createTlsEngine(tcpTlsConfig());
+                 LoanedBuffer plaintext = allocator.allocate(AllocationHint.SMALL);
                  LoanedBuffer ciphertext = allocator.allocate(AllocationHint.MEDIUM)) {
 
                 // Capture the raw native address BEFORE wrap()
@@ -320,12 +364,74 @@ public abstract class AbstractCryptoEngineTck {
                 // A copying implementation would re-allocate and the address would change.
                 assertThat(plaintext.segment().address())
                         .as("plaintext LoanedBuffer segment address MUST remain unchanged " +
-                            "after wrap() — a changed address indicates an illegal heap copy. " +
-                            "TLS encryption MUST operate in-place on the off-heap slab " +
-                            "via MemorySegment.asSlice() — not via byte[] intermediaries.")
+                                "after wrap() — a changed address indicates an illegal heap copy. " +
+                                "TLS encryption MUST operate in-place on the off-heap slab " +
+                                "via MemorySegment.asSlice() — not via byte[] intermediaries.")
                         .isEqualTo(addressBefore);
             }
         }
     }
-}
 
+    // =========================================================================
+    // Error code contract — one-code-one-schema invariant
+    // =========================================================================
+
+    /**
+     * Validates the one-code-one-schema invariant from {@code docs/subsystems/crypto.md}:
+     * {@code unwrap()} MUST throw {@link TlsDecryptException} ({@code EX-NET-2003}),
+     * NOT a generic {@code TlsException} ({@code EX-NET-2001}).
+     * Glass-Box binary decoders rely on this distinction to separate encrypt-side from
+     * decrypt-side failures without parsing the detail string.
+     */
+    @Nested
+    @DisplayName("Error-code contract — one-code-one-schema (EX-NET-2001 vs EX-NET-2003)")
+    class ErrorCodeContract {
+
+        @Test
+        @DisplayName("unwrap() on a closed engine throws TlsDecryptException (EX-NET-2003)")
+        void unwrapOnClosedEngineThrowsTlsDecryptException() {
+            TlsEngine engine = provider.createTlsEngine(tcpTlsConfig());
+            engine.close();
+            try (LoanedBuffer cipher = allocator.allocate(AllocationHint.MEDIUM);
+                 LoanedBuffer plain = allocator.allocate(AllocationHint.MEDIUM)) {
+                assertThatThrownBy(() -> engine.unwrap(cipher, plain))
+                        .as("unwrap() on a closed TlsEngine MUST throw TlsDecryptException " +
+                                "(EX-NET-2003) to preserve the one-code-one-schema invariant. " +
+                                "Throwing TlsException or TlsHandshakeException is a contract violation.")
+                        .isInstanceOf(TlsDecryptException.class);
+            }
+        }
+
+        @Test
+        @DisplayName("wrap() and unwrap() on closed engine throw different exception types")
+        void wrapAndUnwrapThrowDistinctExceptionTypes() {
+            TlsEngine engine = provider.createTlsEngine(tcpTlsConfig());
+            engine.close();
+            try (LoanedBuffer buf1 = allocator.allocate(AllocationHint.MEDIUM);
+                 LoanedBuffer buf2 = allocator.allocate(AllocationHint.MEDIUM)) {
+                Class<?> wrapExType = null;
+                try {
+                    engine.wrap(buf1, buf2);
+                } catch (RuntimeException e) {
+                    wrapExType = e.getClass();
+                }
+                Class<?> unwrapExType = null;
+                try {
+                    engine.unwrap(buf1, buf2);
+                } catch (RuntimeException e) {
+                    unwrapExType = e.getClass();
+                }
+                assertThat(wrapExType)
+                        .as("wrap() on closed engine must throw some exception")
+                        .isNotNull();
+                assertThat(unwrapExType)
+                        .as("unwrap() on closed engine MUST throw TlsDecryptException (EX-NET-2003)")
+                        .isEqualTo(TlsDecryptException.class);
+                assertThat(unwrapExType)
+                        .as("wrap() and unwrap() MUST throw different exception types to preserve " +
+                                "the one-code-one-schema invariant (EX-NET-2001 vs EX-NET-2003)")
+                        .isNotEqualTo(wrapExType);
+            }
+        }
+    }
+}

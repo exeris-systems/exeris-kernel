@@ -52,6 +52,7 @@ graph TD
 | `*.spi.memory`             | `MemoryAllocator`, `LoanedBuffer`, `MemorySlab`    | `PanamaArenaAllocator`, `SlabPool`          |
 | `*.spi.persistence`        | `CitadelRepository`, `StorageContext`              | `JdbcTemplate`, `HikariCP`, FFM handles     |
 | `*.spi.crypto`             | `TlsEngine`, `TlsHandshakeResult`, `TlsPhase`      | `SSL_CTX*` pointers, OpenSSL symbol names   |
+| `*.spi.http`               | `HttpRequest`, `HttpResponse`, `HttpProvider`, `HttpServerEngine`, `HttpClientEngine` | HTTP wire codec implementations (`Hpack*`, `Http2*`, `Http1*`) |
 | `*.spi.exceptions`         | `ExerisKernelException` hierarchy                  | Checked exceptions on hot paths             |
 
 ## 🛡️ Architectural Rules (L0 Enforcement)
@@ -63,3 +64,9 @@ graph TD
    on these objects.
 3. **No Logic:** SPI contains only Contracts (Interfaces), Exceptions, Enums, and Constants.
 4. **Loaned Memory:** All buffer passing must use `LoanedBuffer` to enforce reference counting and zero-copy semantics.
+
+## HTTP in SPI (Current Repository State)
+
+- HTTP contracts are currently part of `exeris-kernel-spi` under `eu.exeris.kernel.spi.http`.
+- There is no separate `exeris-kernel-spi-http` module in the root reactor.
+- SPI HTTP remains a pure contract layer: no wire-codec logic and no transport-specific implementation details.
