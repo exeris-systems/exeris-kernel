@@ -312,10 +312,10 @@ class CommunityMemoryAllocatorTest {
 
         assertThat(allocator.stats().allocationCount())
                 .as("allocationCount must equal threadCount")
-                .isGreaterThanOrEqualTo(threadCount);
+                .isEqualTo(threadCount);
         assertThat(allocator.stats().releaseCount())
                 .as("all buffers must have been released inside scope")
-                .isGreaterThanOrEqualTo(threadCount);
+                .isEqualTo(threadCount);
     }
 
     private final AtomicLong totalAllocated = new AtomicLong(0);
