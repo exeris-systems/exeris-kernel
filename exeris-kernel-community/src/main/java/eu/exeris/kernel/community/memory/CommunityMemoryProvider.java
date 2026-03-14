@@ -44,9 +44,7 @@ public final class CommunityMemoryProvider implements MemoryProvider {
         }
         try {
             return new CommunityMemoryAllocator(config);
-        } catch (MemoryBootstrapException e) {
-            throw e;
-        } catch (RuntimeException e) {
+        } catch (IllegalArgumentException e) {
             throw new MemoryBootstrapException(providerName(), e);
         }
     }

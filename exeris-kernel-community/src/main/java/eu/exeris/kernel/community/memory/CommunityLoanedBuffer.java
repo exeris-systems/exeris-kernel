@@ -72,8 +72,8 @@ final class CommunityLoanedBuffer extends AbstractLoanedBuffer {
     protected void onRelease() {
         try {
             arena.close();
-        } catch (IllegalStateException _) {
-            // Arena already closed (e.g., connection scope exited) — safe to ignore
+        } catch (IllegalStateException | UnsupportedOperationException _) {
+            // Arena already closed or auto-managed; safe to ignore on release.
         }
     }
 }
