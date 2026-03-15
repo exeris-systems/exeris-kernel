@@ -12,7 +12,11 @@ import eu.exeris.kernel.spi.exceptions.crypto.CryptoBootstrapException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import java.lang.foreign.*;
+import java.lang.foreign.Arena;
+import java.lang.foreign.FunctionDescriptor;
+import java.lang.foreign.Linker;
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.SymbolLookup;
 import java.util.Optional;
 
 import static java.lang.foreign.ValueLayout.JAVA_INT;
@@ -109,7 +113,8 @@ class CoreOpenSslRuntimeTest {
                     assertThat(exception).hasMessage("Crypto provider bootstrap failed");
                     assertThat(exception.rawArgs()).containsExactly(
                             "CoreOpenSslRuntime",
-                            "Required OpenSSL symbol not found: OPENSSL_missing");
+                            "Required OpenSSL symbol not found",
+                            "OPENSSL_missing");
                 });
     }
 
