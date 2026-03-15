@@ -24,6 +24,7 @@ import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 
 import java.lang.foreign.MemorySegment;
+import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 
@@ -213,6 +214,33 @@ public final class OffHeapTlsEngine implements TlsEngine {
     // =========================================================================
     // Bind notification — transport-agnostic BIO readiness signal
     // =========================================================================
+
+    /**
+     * Invokes the provided {@code SSL_set_fd} method handle under a reference-counted
+     * retain/release, ensuring the underlying {@code SSL*} cannot be freed mid-downcall.
+     *
+     * <p>This is the only sanctioned way for Community-tier transport adapters to call
+     * {@code SSL_set_fd}. Using {@link #sslPointerForDiagnostics()} for actual OpenSSL
+     * calls bypasses the refcount contract and risks a use-after-free race.
+     *
+     * @param sslSetFd       pre-linked method handle for {@code SSL_set_fd(SSL*, int) → int}
+     * @param fileDescriptor OS-level socket file descriptor to bind
+     * @return raw return value of {@code SSL_set_fd} (1 = success, 0 = failure)
+     * @throws TlsHandshakeException if the engine is closed or the downcall throws
+     */
+    public int bindTransportFd(MethodHandle sslSetFd, int fileDescriptor) {
+        checkNotClosed();
+        long ptr = cipherCtx.retainSslPointer();
+        try {
+            return (int) sslSetFd.invokeExact(ptr, fileDescriptor);
+        } catch (TlsHandshakeException handshakeException) {
+            throw handshakeException;
+        } catch (Throwable throwable) { //NOPMD AvoidCatchingGenericException — FFM invokeExact declares Throwable
+            throw new TlsHandshakeException("SSL_set_fd invocation failed", throwable);
+        } finally {
+            cipherCtx.release();
+        }
+    }
 
     /**
     * Notifies this engine that the caller has finished transport binding and the TLS

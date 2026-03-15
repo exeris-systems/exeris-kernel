@@ -17,7 +17,9 @@ import eu.exeris.kernel.spi.exceptions.crypto.TlsHandshakeException;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 
-import java.lang.reflect.Method;
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.nio.channels.SocketChannel;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -31,7 +33,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 	"PMD.TooManyMethods",
 	"PMD.CommentDefaultAccessModifier",
 	"PMD.ExceptionAsFlowControl",
-	"PMD.AvoidCatchingGenericException",
 	"PMD.UseTryWithResources"
 })
 public final class CommunityTlsEngine implements TlsEngine {
@@ -39,7 +40,7 @@ public final class CommunityTlsEngine implements TlsEngine {
 	private static final int SSL_SUCCESS = 1;
 
 	private final OffHeapTlsEngine delegate;
-	private final java.lang.invoke.MethodHandle sslSetFd;
+	private final MethodHandle sslSetFd;
 	private final CoreSslHandles.CtxHandles ctxHandles;
 	private final long sslCtxPtr;
 	private final MemoryAllocator ownedAllocator;
@@ -48,7 +49,7 @@ public final class CommunityTlsEngine implements TlsEngine {
 	private final AtomicBoolean closed = new AtomicBoolean(false);
 
 	CommunityTlsEngine(OffHeapTlsEngine delegate,
-					   java.lang.invoke.MethodHandle sslSetFd,
+					   MethodHandle sslSetFd,
 					   CoreSslHandles.CtxHandles ctxHandles,
 					   long sslCtxPtr,
 					   MemoryAllocator ownedAllocator) {
@@ -63,8 +64,10 @@ public final class CommunityTlsEngine implements TlsEngine {
 	 * Binds OpenSSL TLS session to socket file descriptor and transitions to handshake phase.
 	 */
 	public void bindSocketChannel(SocketChannel channel) {
-		int fileDescriptor = extractFd(channel);
-		bindFileDescriptor(fileDescriptor);
+		if (channel == null) {
+			throw new TlsHandshakeException("SocketChannel must not be null");
+		}
+		bindFileDescriptor(extractFd(channel));
 	}
 
 	public void bindFileDescriptor(int fileDescriptor) {
@@ -77,20 +80,15 @@ public final class CommunityTlsEngine implements TlsEngine {
 		if (!bound.compareAndSet(false, true)) {
 			return;
 		}
-		long sslPtr = delegate.sslPointerForDiagnostics();
 		try {
-			int bindResult = (int) sslSetFd.invokeExact(sslPtr, fileDescriptor);
+			int bindResult = delegate.bindTransportFd(sslSetFd, fileDescriptor);
 			if (bindResult != SSL_SUCCESS) {
-				bound.set(false);
-				throw new TlsHandshakeException("SSL_set_fd failed (result=" + bindResult + ")");
+				throw new TlsHandshakeException(bindResult, "SSL_set_fd failed");
 			}
 			delegate.notifyBound();
 		} catch (TlsHandshakeException handshakeException) {
 			bound.set(false);
 			throw handshakeException;
-		} catch (Throwable throwable) {
-			bound.set(false);
-			throw new TlsHandshakeException("SSL_set_fd invocation failed", throwable);
 		}
 	}
 
@@ -160,10 +158,18 @@ public final class CommunityTlsEngine implements TlsEngine {
 
 	private static int extractFd(SocketChannel channel) {
 		try {
-			Method getFdVal = channel.getClass().getDeclaredMethod("getFDVal");
+			MethodHandles.Lookup lookup = MethodHandles.privateLookupIn(
+					channel.getClass(),
+					MethodHandles.lookup());
+			MethodHandle getFdVal = lookup.findVirtual(
+					channel.getClass(),
+					"getFDVal",
+					MethodType.methodType(int.class));
 			return (int) getFdVal.invoke(channel);
-		} catch (ReflectiveOperationException reflectionError) {
-			throw new TlsHandshakeException("SocketChannel FD extraction failed", reflectionError);
+		} catch (Throwable throwable) { //NOPMD AvoidCatchingGenericException — MethodHandle invocation contract
+			throw new TlsHandshakeException(
+					"SocketChannel FD access denied; use bindFileDescriptor(int)",
+					throwable);
 		}
 	}
 

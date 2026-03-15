@@ -36,16 +36,16 @@ class CoreOpenSslRuntimeTest {
     @DisplayName("handles() returns the exact carrier injected at construction")
     void handlesReturnsInjectedCarrier() {
         CoreSslHandles handles = CoreSslHandlesTestFactory.build(null, null, null);
-        CoreOpenSslRuntime runtime = newRuntime(CoreOpenSslRuntimeTest::emptyLookup,
-                CoreOpenSslRuntimeTest::emptyLookup, handles);
 
-        assertThat(runtime.handles()).isSameAs(handles);
+        assertThat(newRuntime(CoreOpenSslRuntimeTest::emptyLookup,
+                CoreOpenSslRuntimeTest::emptyLookup, handles).handles()).isSameAs(handles);
     }
 
     @Test
     @DisplayName("find() prefers libssl when a symbol exists in both lookups")
     void mergedLookupPrefersSsl() {
-        try (Arena arena = Arena.ofConfined()) { //NOPMD DirectArena — unit-test symbol stubs only
+        // CHECKSTYLE:OFF DirectArena — unit-test symbol stubs only
+        try (Arena arena = Arena.ofConfined()) { //NOPMD
             MemorySegment sslSymbol = arena.allocate(8L, 8L);
             MemorySegment cryptoSymbol = arena.allocate(8L, 8L);
 
@@ -61,12 +61,14 @@ class CoreOpenSslRuntimeTest {
             assertThat(runtime.findSsl("SSL_shared")).contains(sslSymbol);
             assertThat(runtime.findCrypto("SSL_shared")).contains(cryptoSymbol);
         }
+        // CHECKSTYLE:ON
     }
 
     @Test
     @DisplayName("findSsl() and findCrypto() stay scoped to their exact library")
     void scopedLookupsRemainIsolated() {
-        try (Arena arena = Arena.ofConfined()) { //NOPMD DirectArena — unit-test symbol stubs only
+        // CHECKSTYLE:OFF DirectArena — unit-test symbol stubs only
+        try (Arena arena = Arena.ofConfined()) { //NOPMD
             MemorySegment sslOnly = arena.allocate(8L, 8L);
             MemorySegment cryptoOnly = arena.allocate(8L, 8L);
 
@@ -86,26 +88,26 @@ class CoreOpenSslRuntimeTest {
             assertThat(runtime.findSsl("CRYPTO_only")).isEmpty();
             assertThat(runtime.findCrypto("CRYPTO_only")).contains(cryptoOnly);
         }
+        // CHECKSTYLE:ON
     }
 
     @Test
     @DisplayName("optionalSslHandle() returns null for an unresolved tier-specific symbol")
     void optionalSslHandleReturnsNullWhenMissing() {
-        CoreOpenSslRuntime runtime = newRuntime(CoreOpenSslRuntimeTest::emptyLookup,
-                CoreOpenSslRuntimeTest::emptyLookup);
-
-        assertThat(runtime.optionalSslHandle("SSL_set_fd", FunctionDescriptor.of(JAVA_INT, JAVA_INT, JAVA_INT)))
+        assertThat(newRuntime(CoreOpenSslRuntimeTest::emptyLookup,
+                CoreOpenSslRuntimeTest::emptyLookup)
+                .optionalSslHandle("SSL_set_fd", FunctionDescriptor.of(JAVA_INT, JAVA_INT, JAVA_INT)))
                 .isNull();
     }
 
     @Test
     @DisplayName("requiredCryptoHandle() fails fast when the symbol is absent")
     void requiredCryptoHandleFailsFast() {
-        CoreOpenSslRuntime runtime = newRuntime(CoreOpenSslRuntimeTest::emptyLookup,
-                CoreOpenSslRuntimeTest::emptyLookup);
         FunctionDescriptor missingSymbolDescriptor = FunctionDescriptor.of(JAVA_INT);
 
-        assertThatThrownBy(() -> runtime.requiredCryptoHandle("OPENSSL_missing", missingSymbolDescriptor))
+        assertThatThrownBy(() -> newRuntime(CoreOpenSslRuntimeTest::emptyLookup,
+                CoreOpenSslRuntimeTest::emptyLookup)
+                .requiredCryptoHandle("OPENSSL_missing", missingSymbolDescriptor))
                 .isInstanceOfSatisfying(CryptoBootstrapException.class, exception -> {
                     assertThat(exception).hasMessage("Crypto provider bootstrap failed");
                     assertThat(exception.rawArgs()).containsExactly(

@@ -21,9 +21,11 @@ import eu.exeris.kernel.spi.exceptions.crypto.CryptoBootstrapException;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.memory.MemoryProviderConfig;
+import jdk.jfr.FlightRecorder;
 
 import java.lang.foreign.Arena;
 import java.lang.foreign.FunctionDescriptor;
+import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
 import java.util.Objects;
@@ -67,7 +69,7 @@ public final class CommunityKernelCryptoProvider implements KernelCryptoProvider
 	@SuppressWarnings({
 		"PMD.CloseResource",      // allocator/delegate ownership is transferred into CommunityTlsEngine
 		"PMD.UseTryWithResources", // lifecycle uses explicit ownership transfer across success/failure paths
-		"java:S2093"             // false positive: no heap resources are used, so no risk of GC finalizer delays
+		"java:S2093"             // false positive: no heap resources are used, so no risk of GC finalizer delay
 	})
 	public TlsEngine createTlsEngine(CryptoProviderConfig config) {
 		CryptoProviderConfig safeConfig = config != null ? config : CryptoProviderConfig.tcpClient();
@@ -90,9 +92,11 @@ public final class CommunityKernelCryptoProvider implements KernelCryptoProvider
 					new OffHeapTlsEngine(runtime.handles(), sslCtxPtr, serverMode, allocator);
 
 			CommunityProviderBootstrapEvent event = new CommunityProviderBootstrapEvent();
-			event.providerName = PROVIDER_NAME;
-			event.durationNs = System.nanoTime() - startedAt;
-			event.commit();
+			if (FlightRecorder.isInitialized() && event.isEnabled()) {
+				event.providerName = PROVIDER_NAME;
+				event.durationNs = System.nanoTime() - startedAt;
+				event.commit();
+			}
 
 			CommunityTlsEngine engine = new CommunityTlsEngine(
 					delegate,
@@ -186,9 +190,7 @@ public final class CommunityKernelCryptoProvider implements KernelCryptoProvider
 		Objects.requireNonNull(path, "path must not be null");
 		byte[] utf8 = path.toString().getBytes(StandardCharsets.UTF_8);
 		LoanedBuffer buffer = allocator.allocateInfrastructure(utf8.length + 1L);
-		for (int index = 0; index < utf8.length; index++) {
-			buffer.segment().set(ValueLayout.JAVA_BYTE, index, utf8[index]);
-		}
+		MemorySegment.copy(MemorySegment.ofArray(utf8), 0L, buffer.segment(), 0L, utf8.length);
 		buffer.segment().set(ValueLayout.JAVA_BYTE, utf8.length, (byte) 0);
 		return new PathCString(buffer, buffer.segment().address());
 	}
