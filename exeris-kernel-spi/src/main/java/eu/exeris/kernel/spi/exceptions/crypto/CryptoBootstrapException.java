@@ -52,7 +52,7 @@ public final class CryptoBootstrapException extends ExerisKernelException {
         super(KernelErrorCodes.EX_NET_2002, MESSAGE, null, buildArgs(providerName, reason, extraRawArgs));
     }
 
-    private static Object[] buildArgs(String providerName, String reason, Object[] extra) {
+    private static Object[] buildArgs(String providerName, String reason, Object... extra) {
         Object[] args = new Object[2 + extra.length];
         args[0] = providerName;
         args[1] = reason;
