@@ -130,7 +130,7 @@ public final class CoreOpenSslRuntime {
         Optional<MemorySegment> address = lookup.find(requiredSymbol);
         if (address.isEmpty()) {
             throw new CryptoBootstrapException(PROVIDER,
-                    "Required OpenSSL symbol not found: " + requiredSymbol);
+                    "Required OpenSSL symbol not found", requiredSymbol);
         }
         return linker.downcallHandle(address.get(), requiredDescriptor);
     }

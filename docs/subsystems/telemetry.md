@@ -419,17 +419,17 @@ java -jar exeris-decoder.jar --jfr boot.jfr
 
 ## `Slf4jTelemetrySink` — SLF4J Fallback Binding
 
-`Slf4jTelemetrySink` is the Community fallback sink for environments without JFR (e.g., container
-runtimes with restricted JVM flags). It emits structured JSON lines and mirrors canonical EX-* fields
-into MDC for downstream log pipelines.
+`Slf4jTelemetrySink` is the planned Community fallback sink for environments without JFR (e.g., container
+runtimes with restricted JVM flags). Once implemented, it will emit structured JSON lines and mirror
+canonical EX-* fields into MDC for downstream log pipelines.
 
-| Aspect                    | Detail                                                                                   |
-|:--------------------------|:----------------------------------------------------------------------------------------|
-| **Status**                | Implemented in `exeris-kernel-community`                                                 |
-| **Role**                  | Fallback sink when `JfrTelemetrySink` cannot be used (JFR disabled/unavailable)          |
-| **SLF4J version**         | SLF4J API 2.x                                                                              |
-| **Dependency model**      | `exeris-kernel-community` declares `slf4j-api`; application owns concrete binding config |
-| **JSON semantics**        | JSON log body with `timestamp`, `level`, `code`, `component`, `message`, `rawArgs`; MDC mirrors EX-* fields |
+| Aspect                    | Detail                                                                                                           |
+|:--------------------------|:-----------------------------------------------------------------------------------------------------------------|
+| **Status**                | Planned for `exeris-kernel-community` (not yet implemented)                                                      |
+| **Role**                  | Intended fallback sink when `JfrTelemetrySink` cannot be used (JFR disabled/unavailable)                         |
+| **SLF4J version**         | SLF4J API 2.x (target for the planned implementation)                                                            |
+| **Dependency model**      | `exeris-kernel-community` does not yet declare `slf4j-api`; future versions may add it with app-owned binding    |
+| **JSON semantics**        | Intended: JSON body with `timestamp`, `level`, `code`, `component`, `message`, `rawArgs`; MDC mirrors EX-* fields |
 
 ---
 

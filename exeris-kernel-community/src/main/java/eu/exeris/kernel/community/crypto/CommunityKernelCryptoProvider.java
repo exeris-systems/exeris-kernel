@@ -180,8 +180,7 @@ public final class CommunityKernelCryptoProvider implements KernelCryptoProvider
 						CoreOpenSslLoader.SSL_FILETYPE_PEM);
 				if (certResult != SSL_SUCCESS) {
 					throw new CryptoBootstrapException(PROVIDER_NAME,
-							"SSL_CTX_use_certificate_file failed (result="
-									+ certResult + ")");
+							"SSL_CTX_use_certificate_file failed", certResult);
 				}
 
 				int keyResult = ctx.invokeCtxUseKeyFile(
@@ -190,8 +189,7 @@ public final class CommunityKernelCryptoProvider implements KernelCryptoProvider
 						CoreOpenSslLoader.SSL_FILETYPE_PEM);
 				if (keyResult != SSL_SUCCESS) {
 					throw new CryptoBootstrapException(PROVIDER_NAME,
-							"SSL_CTX_use_PrivateKey_file failed (result="
-									+ keyResult + ")");
+							"SSL_CTX_use_PrivateKey_file failed", keyResult);
 				}
 
 				int checkResult = ctx.invokeCtxCheckKey(sslCtxPtr);
