@@ -77,12 +77,6 @@ public final class CommunityKernelCryptoProvider implements KernelCryptoProvider
 			throw new CryptoBootstrapException(PROVIDER_NAME,
 					"Community does not support QUIC. Upgrade to Enterprise tier.");
 		}
-
-		long startedAt = System.nanoTime();
-		boolean ownsAllocator = !KernelProviders.MEMORY_ALLOCATOR.isBound();
-		MemoryAllocator allocator = ownsAllocator
-			? new CommunityMemoryProvider().createAllocator(MemoryProviderConfig.defaults())
-			: KernelProviders.MEMORY_ALLOCATOR.get();
 		boolean hasCert = safeConfig.certChainPath() != null;
 		boolean hasKey = safeConfig.privateKeyPath() != null;
 		if (hasCert ^ hasKey) {
@@ -91,6 +85,12 @@ public final class CommunityKernelCryptoProvider implements KernelCryptoProvider
 					"Invalid TLS server configuration: "
 							+ "both certChainPath and privateKeyPath must be set together");
 		}
+
+		long startedAt = System.nanoTime();
+		boolean ownsAllocator = !KernelProviders.MEMORY_ALLOCATOR.isBound();
+		MemoryAllocator allocator = ownsAllocator
+			? new CommunityMemoryProvider().createAllocator(MemoryProviderConfig.defaults())
+			: KernelProviders.MEMORY_ALLOCATOR.get();
 		boolean serverMode = hasCert && hasKey;
 
 		long sslCtxPtr = NULL_PTR;

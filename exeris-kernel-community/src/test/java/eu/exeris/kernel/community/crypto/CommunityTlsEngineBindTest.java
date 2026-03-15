@@ -31,8 +31,9 @@ class CommunityTlsEngineBindTest {
         CommunityKernelCryptoProvider provider = createProviderOrSkip();
 
         TlsEngine tlsEngine = provider.createTlsEngine(CryptoProviderConfig.tcpClient());
-        assumeTrue(tlsEngine instanceof CommunityTlsEngine,
-                "Provider did not return CommunityTlsEngine implementation");
+        assertThat(tlsEngine)
+                .as("Provider must return CommunityTlsEngine implementation")
+                .isInstanceOf(CommunityTlsEngine.class);
 
         try {
             CommunityTlsEngine engine = (CommunityTlsEngine) tlsEngine;
@@ -56,8 +57,9 @@ class CommunityTlsEngineBindTest {
                 "TLS test cert/key not found — skipping server bind test");
 
         TlsEngine tlsEngine = provider.createTlsEngine(CryptoProviderConfig.httpsServer(certPath, keyPath));
-        assumeTrue(tlsEngine instanceof CommunityTlsEngine,
-                "Provider did not return CommunityTlsEngine implementation");
+        assertThat(tlsEngine)
+                .as("Provider must return CommunityTlsEngine implementation")
+                .isInstanceOf(CommunityTlsEngine.class);
 
         try {
             CommunityTlsEngine engine = (CommunityTlsEngine) tlsEngine;

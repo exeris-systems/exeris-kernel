@@ -96,6 +96,15 @@ public final class CommunityTlsEngine implements TlsEngine {
 	}
 
 	@Override
+	public void notifyBound() {
+		if (!bound.get()) {
+			throw new TlsHandshakeException(
+					"Explicit FD binding is required before notifyBound()");
+		}
+		delegate.notifyBound();
+	}
+
+	@Override
 	public TlsStatus beginHandshake(LoanedBuffer outbound) {
 		try {
 			ensureBound();

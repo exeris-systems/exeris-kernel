@@ -23,6 +23,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Modifier;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -221,10 +223,14 @@ public abstract class AbstractCryptoEngineTck {
 
     @Test
     @DisplayName("Provider metadata: ServiceLoader contract: public no-arg constructor exists")
-    public final void publicNoArgConstructorExists() {
-        assertThatCode(() -> provider.getClass().getDeclaredConstructor())
+    public final void publicNoArgConstructorExists() throws NoSuchMethodException {
+        Constructor<?> constructor = provider.getClass().getConstructor();
+        assertThat(constructor)
                 .as("KernelCryptoProvider MUST have a public no-arg constructor for ServiceLoader")
-                .doesNotThrowAnyException();
+                .isNotNull();
+        assertThat(Modifier.isPublic(constructor.getModifiers()))
+                .as("KernelCryptoProvider no-arg constructor MUST be public for ServiceLoader")
+                .isTrue();
     }
 
     // =========================================================================
