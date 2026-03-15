@@ -53,6 +53,9 @@ public final class CryptoBootstrapException extends ExerisKernelException {
     }
 
     private static Object[] buildArgs(String providerName, String reason, Object... extra) {
+        if (extra == null) {
+            return new Object[]{providerName, reason};
+        }
         Object[] args = new Object[2 + extra.length];
         args[0] = providerName;
         args[1] = reason;

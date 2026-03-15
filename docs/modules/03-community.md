@@ -88,7 +88,7 @@ flowchart TD
 | Feature         | Community (Zero-GC Network, Heap Persistence)                                                   | Enterprise (Zero-GC End-to-End)               |
 | :-------------- | :---------------------------------------------------------------------------------------------- | :-------------------------------------------- |
 | **Network I/O** | **Zero-Alloc** *(Target — ADR-008, impl pending)* Off-Heap TCP + OpenSSL/FFM                   | Zero-Alloc + Kernel-Bypass (`io_uring`)       |
-| **TLS Hot Path** | **Bounded** (JSSE/SSLEngine, ≤ 8 alloc/record per `CryptoZeroAllocTck`) → Zero-Alloc once ADR-008 impl lands | Zero-Alloc hard guarantee (Panama FFM / OpenSSL) |
+| **TLS Hot Path** | **Community OpenSSL/FFM provider path** via `CommunityKernelCryptoProvider` + `CommunityTlsEngine` | Zero-Alloc hard guarantee (Panama FFM / OpenSSL) |
 | **Telemetry**   | Bounded (~65 bytes / JFR event)                                                                 | Strict Zero (Binary Ring-Buffer off-heap)     |
 | **Persistence** | JDBC overhead (heap-bound) ⚠️                                                                   | Strict Zero (Native DB driver)                |
 | **Context**     | `ScopedValue` (low overhead)                                                                    | `ScopedValue` + Off-Heap Arena                |

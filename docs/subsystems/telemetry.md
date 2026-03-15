@@ -241,7 +241,7 @@ Every critical lifecycle transition MUST emit a typed JFR event. No `Logger.info
 | `TelemetryJfrEvents.TransportBindJfrEvent` *(eu.exeris.kernel.core.telemetry.jfr)* | On transport bind / engine-start lifecycle (EX-NET-4001/4005) | `errorCode`, `transportName`, `port`, `component` |
 | `StreamShedEvent` *(eu.exeris.kernel.core.transport.jfr)* | On every PAQS load-shed | `streamId`, `priority`, `shedReason`, `engineName`, `activeStreamCount` |
 | `TelemetryJfrEvents.CarrierPinnedJfrEvent` *(eu.exeris.kernel.core.telemetry.jfr)* | Virtual thread pins carrier > threshold (EX-RUN-3002) | `errorCode`, `blockTimeMs`, `component` |
-| `CommunityTlsHandshakeEvent` *(planned, community module; not present in this repo)* | Each `SSL_do_handshake` invocation | `complete`, `opensslError` |
+| `CommunityTlsHandshakeEvent` *(implemented, community module; present in this repo)* | Each `SSL_do_handshake` invocation | `complete`, `opensslError` |
 | `TlsPhaseTransitionEvent` *(planned, TRL‑4 target; not yet implemented)* | Every `TlsStateMachine` phase transition | `sslPtr`, `fromPhase`, `toPhase` |
 | `TlsEngineCloseEvent` *(planned, TRL‑4 target; not yet implemented)* | `OffHeapTlsEngine` → CLOSED | `sslPtr`, `graceful`, `finalPhase` |
 | `TlsHandshakeEvent` *(planned, TRL‑4 target; not yet implemented)* | Start and end of TLS handshake (cross-tier) | `sessionId`, `protocol`, `cipher`, `durationNanos` |
@@ -419,17 +419,17 @@ java -jar exeris-decoder.jar --jfr boot.jfr
 
 ## `Slf4jTelemetrySink` — SLF4J Fallback Binding
 
-`Slf4jTelemetrySink` is the planned Community fallback sink for environments without JFR (e.g., container
-runtimes with restricted JVM flags). Once implemented, it will emit structured JSON lines and mirror
+`Slf4jTelemetrySink` is the Community fallback sink for environments without JFR (e.g., container
+runtimes with restricted JVM flags). It emits structured JSON lines and mirrors
 canonical EX-* fields into MDC for downstream log pipelines.
 
 | Aspect                    | Detail                                                                                                           |
 |:--------------------------|:-----------------------------------------------------------------------------------------------------------------|
-| **Status**                | Planned for `exeris-kernel-community` (not yet implemented)                                                      |
-| **Role**                  | Intended fallback sink when `JfrTelemetrySink` cannot be used (JFR disabled/unavailable)                         |
-| **SLF4J version**         | SLF4J API 2.x (target for the planned implementation)                                                            |
-| **Dependency model**      | `exeris-kernel-community` does not yet declare `slf4j-api`; future versions may add it with app-owned binding    |
-| **JSON semantics**        | Intended: JSON body with `timestamp`, `level`, `code`, `component`, `message`, `rawArgs`; MDC mirrors EX-* fields |
+| **Status**                | Implemented in `exeris-kernel-community`                                                                          |
+| **Role**                  | Fallback sink when `JfrTelemetrySink` cannot be used (JFR disabled/unavailable)                                  |
+| **SLF4J version**         | SLF4J API 2.x                                                                                                     |
+| **Dependency model**      | `exeris-kernel-community` declares `slf4j-api`; binding remains application-owned                                |
+| **JSON semantics**        | JSON body with `timestamp`, `level`, `code`, `component`, `message`, `rawArgs`; MDC mirrors EX-* fields         |
 
 ---
 
