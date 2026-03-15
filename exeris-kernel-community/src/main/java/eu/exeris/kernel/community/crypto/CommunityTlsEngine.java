@@ -94,12 +94,8 @@ public final class CommunityTlsEngine implements TlsEngine {
 
 	@Override
 	public TlsStatus beginHandshake(LoanedBuffer outbound) {
-		if (!bound.get()) {
-			outbound.setSize(0);
-			CommunityTlsHandshakeEvent.emit(false, 0);
-			return TlsStatus.NEED_HANDSHAKE;
-		}
 		try {
+			ensureBound();
 			TlsStatus status = delegate.beginHandshake(outbound);
 			CommunityTlsHandshakeEvent.emit(status == TlsStatus.FINISHED, 0);
 			return status;

@@ -53,4 +53,9 @@ class CommunityKernelCryptoProviderTckTest extends AbstractCryptoEngineTck {
 	protected boolean isIoReady() {
 		return false;
 	}
+
+	@Override
+	protected boolean requiresExternalBindBeforeHandshake() {
+		return true;
+	}
 }

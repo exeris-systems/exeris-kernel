@@ -14,6 +14,7 @@ import eu.exeris.kernel.spi.crypto.TlsEngine;
 import eu.exeris.kernel.spi.crypto.TlsStatus;
 import eu.exeris.kernel.spi.exceptions.crypto.CryptoBootstrapException;
 import eu.exeris.kernel.spi.exceptions.crypto.TlsDecryptException;
+import eu.exeris.kernel.spi.exceptions.crypto.TlsHandshakeException;
 import eu.exeris.kernel.spi.memory.AllocationHint;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
@@ -24,9 +25,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatCode;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.*;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
@@ -119,6 +118,18 @@ public abstract class AbstractCryptoEngineTck {
      */
     protected boolean isIoReady() {
         return true;
+    }
+
+    /**
+     * Returns {@code true} if the provider requires external transport binding
+     * (e.g. real socket FD wiring) before {@link TlsEngine#beginHandshake(LoanedBuffer)}
+     * can be called.
+     *
+     * <p>Default: {@code false}. Engines that can self-enter handshake phase in
+     * pure test harnesses should keep the default.
+     */
+    protected boolean requiresExternalBindBeforeHandshake() {
+        return false;
     }
 
     // =========================================================================
@@ -258,6 +269,13 @@ public abstract class AbstractCryptoEngineTck {
     public final void beginHandshakeReturnsValidStatus() {
         try (TlsEngine engine = provider.createTlsEngine(tcpTlsConfig());
              LoanedBuffer out = allocator.allocate(AllocationHint.MEDIUM)) {
+
+            if (requiresExternalBindBeforeHandshake()) {
+                assertThatThrownBy(() -> engine.beginHandshake(out))
+                        .as("beginHandshake() before external bind MUST fail fast with lifecycle error")
+                        .isInstanceOf(TlsHandshakeException.class);
+                return;
+            }
 
             TlsStatus status = engine.beginHandshake(out);
 

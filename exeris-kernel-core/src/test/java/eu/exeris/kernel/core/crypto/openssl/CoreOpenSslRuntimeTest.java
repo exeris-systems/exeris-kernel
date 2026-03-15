@@ -12,11 +12,7 @@ import eu.exeris.kernel.spi.exceptions.crypto.CryptoBootstrapException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import java.lang.foreign.Arena;
-import java.lang.foreign.FunctionDescriptor;
-import java.lang.foreign.Linker;
-import java.lang.foreign.MemorySegment;
-import java.lang.foreign.SymbolLookup;
+import java.lang.foreign.*;
 import java.util.Optional;
 
 import static java.lang.foreign.ValueLayout.JAVA_INT;
@@ -37,8 +33,8 @@ class CoreOpenSslRuntimeTest {
     void handlesReturnsInjectedCarrier() {
         CoreSslHandles handles = CoreSslHandlesTestFactory.build(null, null, null);
 
-        assertThat(newRuntime(CoreOpenSslRuntimeTest::emptyLookup,
-                CoreOpenSslRuntimeTest::emptyLookup, handles).handles()).isSameAs(handles);
+        assertThat(newRuntime(symbol -> Optional.empty(),
+            symbol -> Optional.empty(), handles).handles()).isSameAs(handles);
     }
 
     @Test
@@ -94,8 +90,8 @@ class CoreOpenSslRuntimeTest {
     @Test
     @DisplayName("optionalSslHandle() returns null for an unresolved tier-specific symbol")
     void optionalSslHandleReturnsNullWhenMissing() {
-        assertThat(newRuntime(CoreOpenSslRuntimeTest::emptyLookup,
-                CoreOpenSslRuntimeTest::emptyLookup)
+        assertThat(newRuntime(symbol -> Optional.empty(),
+            symbol -> Optional.empty())
                 .optionalSslHandle("SSL_set_fd", FunctionDescriptor.of(JAVA_INT, JAVA_INT, JAVA_INT)))
                 .isNull();
     }
@@ -103,21 +99,15 @@ class CoreOpenSslRuntimeTest {
     @Test
     @DisplayName("requiredCryptoHandle() fails fast when the symbol is absent")
     void requiredCryptoHandleFailsFast() {
-        FunctionDescriptor missingSymbolDescriptor = FunctionDescriptor.of(JAVA_INT);
-
-        assertThatThrownBy(() -> newRuntime(CoreOpenSslRuntimeTest::emptyLookup,
-                CoreOpenSslRuntimeTest::emptyLookup)
-                .requiredCryptoHandle("OPENSSL_missing", missingSymbolDescriptor))
+        assertThatThrownBy(() -> newRuntime(symbol -> Optional.empty(),
+            symbol -> Optional.empty())
+                .requiredCryptoHandle("OPENSSL_missing", FunctionDescriptor.of(JAVA_INT)))
                 .isInstanceOfSatisfying(CryptoBootstrapException.class, exception -> {
                     assertThat(exception).hasMessage("Crypto provider bootstrap failed");
                     assertThat(exception.rawArgs()).containsExactly(
                             "CoreOpenSslRuntime",
                             "Required OpenSSL symbol not found: OPENSSL_missing");
                 });
-    }
-
-    private static Optional<MemorySegment> emptyLookup(String ignoredSymbol) {
-        return Optional.empty();
     }
 
     private static CoreOpenSslRuntime newRuntime(SymbolLookup sslLookup, SymbolLookup cryptoLookup) {
