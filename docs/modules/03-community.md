@@ -1,21 +1,22 @@
 # Physical Tier: Community (The Muscle)
 
 **Module:** `exeris-kernel-community`
-**Dependencies (Planned — not yet declared in `exeris-kernel-community/pom.xml`):**
+**Current Repository Reality:** this module is no longer a placeholder. The repository contains a real `src/` tree,
+provider implementations, bootstrap wiring, tests, and e2e assets.
+
+**Dependencies (Current Architecture):**
+
 - `compile`: `exeris-kernel-spi` (SPI contracts — The Wall)
-- `compile`: `exeris-kernel-core` (shared infrastructure: `CoreOpenSslLoader`, `TlsStateMachine`, `AbstractLoanedBuffer`)
+- `compile`: `exeris-kernel-core` (bootstrap/runtime infrastructure shared across tiers)
 - `test`: `exeris-kernel-tck`
 
-> **Note:** The current `exeris-kernel-community/pom.xml` declares **no** Maven dependencies and the module has **no** `src/` tree in this repository. The dependency list above reflects the **intended target architecture**. This module is an **active placeholder** — implementations will be added in future pull requests.
+> **Status:** `exeris-kernel-community` currently ships working Community implementations for memory, crypto,
+> persistence, transport, and HTTP in this repository state. The module also contains bootstrap integration tests,
+> transport/HTTP integration tests, and e2e helper scripts under `e2e/`.
 
-> **⚠️ Implementation Status (TRL-3):** `exeris-kernel-community` is currently a **placeholder module** in this
-> repository with **no sources** and **no Maven build output**. When complete, it will ship:
-> `CommunityTelemetryProvider` *(planned)* (Console/JFR/File sinks),
-> `CommunityKernelCryptoProvider` *(planned)* (OpenSSL 3.x via Panama FFM, TCP-only — no QUIC),
-> `CommunityMemoryProvider` *(planned)* (Arena-based off-heap allocator + `CommunityAllocationEvent` JFR),
-> `CommunityPersistenceProvider` *(planned)* (JDBC-based), and `CommunityGraphProvider` *(planned)* (SQL/Bolt-based).
-> The **Network transport driver** (Off-Heap TCP carrier + PAQS scheduler) is **planned (TRL-4)**.
-> See the request-flow diagram below for the target architecture.
+> **Reality vs target-state:** parts of the original ADR-008 target architecture remain aspirational, but the module
+> is operational today. The authoritative source of truth is the current source tree and tests, not the older
+> placeholder narrative.
 
 ## 🗺️ Request Flow: Standard POSIX + JDBC Stack
 
@@ -60,29 +61,22 @@ flowchart TD
     style SHED fill:#3a1a1a,color:#ffb3b3,stroke:#e74c3c
 ```
 
-> **Key Insight:** In the target architecture (ADR-008, implementation pending), the GC will only
-> fire in steps ⑥ and ⑦ — TLS and network entirely off-heap via Panama FFM / OpenSSL.
-> In the **current in-repo state** (`exeris-kernel-community` has no sources; TRL-3), the
-> `CryptoZeroAllocTck` documents the Community TLS contract as JSSE-based with **bounded
-> allocations** (≤ 8 per record). Enterprise is the zero-alloc hard guarantee today.
-> The JDBC Tax (steps ⑥–⑦) is heap-bound in both tiers.
+> **Key Insight:** The target architecture still aims to keep TLS and transport off the heap, but the current
+> in-repo state is already materially implemented. Community boots real HTTP, transport, crypto, and persistence
+> providers today. The remaining question is not whether the module exists, but which runtime paths are already
+> zero-copy/low-allocation and which are still bounded-allocation or JDBC-bound.
 
 ## 💪 Architectural Rules (L0 Enforcement)
 
-1. **Panama-Powered TCP *(Target — ADR-008, implementation pending)*:** Community will own the
-   TCP File Descriptor, driving TLS 1.3 via `CoreOpenSslLoader` handles from `exeris-kernel-core`.
-   No QUIC, no `io_uring`. `exeris-kernel-community` currently has no sources — this is the
-   accepted ADR-008 target architecture.
-2. **TLS Allocation Contract *(current in-repo vs. target)*:** The `CryptoZeroAllocTck` documents
-   the **current** Community TLS contract as JSSE/`SSLEngine` with bounded allocations
-   (≤ 8 per record). The **target** (ADR-008) is zero-alloc Panama FFM / OpenSSL, identical
-   to Enterprise. Until the ADR-008 implementation lands, `CryptoZeroAllocTck` is the
-   authoritative contract.
+1. **Community is implemented now:** `exeris-kernel-community` contains concrete provider and bootstrap code in this
+   repository. Reviews and design decisions must start from the live implementation, not from the older placeholder
+   assumption.
+2. **Transport and TLS remain constrained by current implementation:** Community supports external HTTP/TCP
+   communication today, with crypto wired into transport-backed HTTP paths. Allocation behavior still needs to be
+   judged per concrete runtime path and test evidence rather than by stale module prose.
 3. **The Heap Boundary (JDBC):** The heap boundary begins at the business logic layer (step ⑥).
    JDBC persistence (step ⑦) allocates `ResultSet`, DTO, and `String` objects on the JVM heap.
-   The Garbage Collector may trigger here. In the ADR-008 target architecture, the network and
-   TLS layers will be exempt from GC; in the current TRL-3 state they incur bounded allocations
-   per the `CryptoZeroAllocTck` contract.
+   The Garbage Collector may trigger here. Community persistence is therefore operational but not zero-GC.
 4. **No Kernel-Bypass:** Uses standard POSIX networking (`epoll`/`kqueue`/`WSAPoll`). Advanced kernel-bypass
    techniques (`io_uring`, strictly off-heap custom DB drivers) are reserved for the Enterprise module.
 5. **Controlled Core Access (ADR-008):** Community drivers depend on `exeris-kernel-core` to utilize shared
@@ -91,13 +85,13 @@ flowchart TD
 
 ## 📊 Allocation Contract (Community vs. Enterprise)
 
-| Feature               | Community (Zero-GC Network, Heap Persistence) | Enterprise (Zero-GC End-to-End)               |
-|-----------------------|-----------------------------------------------|-----------------------------------------------|
-| **Network I/O**       | **Zero-Alloc** *(Target — ADR-008, impl pending)* Off-Heap TCP + OpenSSL/FFM | Zero-Alloc + Kernel-Bypass (`io_uring`) |
-| **TLS Hot Path**      | **Bounded** (JSSE/SSLEngine, ≤ 8 alloc/record per `CryptoZeroAllocTck`) → Zero-Alloc once ADR-008 impl lands | Zero-Alloc hard guarantee (Panama FFM / OpenSSL) |
-| **Telemetry**         | Bounded (~65 bytes / JFR event)               | Strict Zero (Binary Ring-Buffer off-heap)     |
-| **Persistence**       | JDBC overhead (heap-bound) ⚠️                  | Strict Zero (Native DB driver)                |
-| **Context**           | `ScopedValue` (low overhead)                  | `ScopedValue` + Off-Heap Arena                |
+| Feature         | Community (Zero-GC Network, Heap Persistence)                                                   | Enterprise (Zero-GC End-to-End)               |
+| :-------------- | :---------------------------------------------------------------------------------------------- | :-------------------------------------------- |
+| **Network I/O** | **Zero-Alloc** *(Target — ADR-008, impl pending)* Off-Heap TCP + OpenSSL/FFM                   | Zero-Alloc + Kernel-Bypass (`io_uring`)       |
+| **TLS Hot Path** | **Bounded** (JSSE/SSLEngine, ≤ 8 alloc/record per `CryptoZeroAllocTck`) → Zero-Alloc once ADR-008 impl lands | Zero-Alloc hard guarantee (Panama FFM / OpenSSL) |
+| **Telemetry**   | Bounded (~65 bytes / JFR event)                                                                 | Strict Zero (Binary Ring-Buffer off-heap)     |
+| **Persistence** | JDBC overhead (heap-bound) ⚠️                                                                   | Strict Zero (Native DB driver)                |
+| **Context**     | `ScopedValue` (low overhead)                                                                    | `ScopedValue` + Off-Heap Arena                |
 
 ## 🎯 Open-Core Strategy
 

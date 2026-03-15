@@ -83,11 +83,20 @@ public final class CommunityKernelCryptoProvider implements KernelCryptoProvider
 		MemoryAllocator allocator = ownsAllocator
 			? new CommunityMemoryProvider().createAllocator(MemoryProviderConfig.defaults())
 			: KernelProviders.MEMORY_ALLOCATOR.get();
-		boolean serverMode = safeConfig.certChainPath() != null && safeConfig.privateKeyPath() != null;
+		boolean hasCert = safeConfig.certChainPath() != null;
+		boolean hasKey = safeConfig.privateKeyPath() != null;
+		if (hasCert ^ hasKey) {
+			throw new CryptoBootstrapException(
+					PROVIDER_NAME,
+					"Invalid TLS server configuration: "
+							+ "both certChainPath and privateKeyPath must be set together");
+		}
+		boolean serverMode = hasCert && hasKey;
 
-		long sslCtxPtr = createSslCtx(safeConfig, allocator, serverMode);
+		long sslCtxPtr = NULL_PTR;
 		boolean engineCreated = false;
 		try {
+			sslCtxPtr = createSslCtx(safeConfig, allocator, serverMode);
 			OffHeapTlsEngine delegate =
 					new OffHeapTlsEngine(runtime.handles(), sslCtxPtr, serverMode, allocator);
 
@@ -103,12 +112,15 @@ public final class CommunityKernelCryptoProvider implements KernelCryptoProvider
 					sslSetFd,
 					runtime.handles().ctx(),
 					sslCtxPtr,
-					ownsAllocator ? allocator : null);
+					ownsAllocator ? allocator : null,
+					safeConfig.jfrEnabled());
 			engineCreated = true;
 			return engine;
 		} finally {
 			if (!engineCreated) {
-				runtime.handles().ctx().invokeCtxFree(sslCtxPtr);
+				if (sslCtxPtr != NULL_PTR) {
+					runtime.handles().ctx().invokeCtxFree(sslCtxPtr);
+				}
 				if (ownsAllocator) {
 					allocator.close();
 				}
@@ -137,53 +149,66 @@ public final class CommunityKernelCryptoProvider implements KernelCryptoProvider
 	}
 
 	// explicit cert/key cleanup keeps native failure path deterministic
-	private long createSslCtx(CryptoProviderConfig config, MemoryAllocator allocator, boolean serverMode) {
+	private long createSslCtx(
+			CryptoProviderConfig config,
+			MemoryAllocator allocator,
+			boolean serverMode) {
 		CoreSslHandles.CtxHandles ctx = runtime.handles().ctx();
 		long methodPtr = serverMode ? ctx.invokeServerMethod() : ctx.invokeClientMethod();
 		long sslCtxPtr = ctx.invokeCtxNew(methodPtr);
 		if (sslCtxPtr == NULL_PTR) {
 			throw new CryptoBootstrapException(PROVIDER_NAME, "SSL_CTX_new returned NULL");
 		}
+		boolean contextReady = false;
+		try {
+			ctx.invokeCtxSetVerify(sslCtxPtr, CoreOpenSslLoader.SSL_VERIFY_NONE);
 
-		ctx.invokeCtxSetVerify(sslCtxPtr, CoreOpenSslLoader.SSL_VERIFY_NONE);
+			if (!serverMode) {
+				contextReady = true;
+				return sslCtxPtr;
+			}
 
-		if (!serverMode) {
+			PathCString certCString = toCString(config.certChainPath(), allocator);
+			PathCString keyCString = toCString(config.privateKeyPath(), allocator);
+			try (LoanedBuffer cert = certCString.buffer();
+				 LoanedBuffer key = keyCString.buffer()) {
+				long certAddress = cert.segment().address();
+				long keyAddress = key.segment().address();
+				int certResult = ctx.invokeCtxUseCertFile(
+						sslCtxPtr,
+						certAddress,
+						CoreOpenSslLoader.SSL_FILETYPE_PEM);
+				if (certResult != SSL_SUCCESS) {
+					throw new CryptoBootstrapException(PROVIDER_NAME,
+							"SSL_CTX_use_certificate_file failed (result="
+									+ certResult + ")");
+				}
+
+				int keyResult = ctx.invokeCtxUseKeyFile(
+						sslCtxPtr,
+						keyAddress,
+						CoreOpenSslLoader.SSL_FILETYPE_PEM);
+				if (keyResult != SSL_SUCCESS) {
+					throw new CryptoBootstrapException(PROVIDER_NAME,
+							"SSL_CTX_use_PrivateKey_file failed (result="
+									+ keyResult + ")");
+				}
+
+				int checkResult = ctx.invokeCtxCheckKey(sslCtxPtr);
+				if (checkResult != SSL_SUCCESS) {
+					throw new CryptoBootstrapException(
+							PROVIDER_NAME,
+							"SSL_CTX_check_private_key mismatch");
+				}
+			}
+
+			contextReady = true;
 			return sslCtxPtr;
-		}
-
-		PathCString certCString = toCString(config.certChainPath(), allocator);
-		PathCString keyCString = toCString(config.privateKeyPath(), allocator);
-		try (LoanedBuffer cert = certCString.buffer();
-			 LoanedBuffer key = keyCString.buffer()) {
-			long certAddress = cert.segment().address();
-			long keyAddress = key.segment().address();
-			int certResult = ctx.invokeCtxUseCertFile(
-					sslCtxPtr,
-					certAddress,
-					CoreOpenSslLoader.SSL_FILETYPE_PEM);
-			if (certResult != SSL_SUCCESS) {
+		} finally {
+			if (!contextReady) {
 				ctx.invokeCtxFree(sslCtxPtr);
-				throw new CryptoBootstrapException(PROVIDER_NAME,
-						"SSL_CTX_use_certificate_file failed (result=" + certResult + ")");
-			}
-
-			int keyResult = ctx.invokeCtxUseKeyFile(
-					sslCtxPtr,
-					keyAddress,
-					CoreOpenSslLoader.SSL_FILETYPE_PEM);
-			if (keyResult != SSL_SUCCESS) {
-				ctx.invokeCtxFree(sslCtxPtr);
-				throw new CryptoBootstrapException(PROVIDER_NAME,
-						"SSL_CTX_use_PrivateKey_file failed (result=" + keyResult + ")");
-			}
-
-			int checkResult = ctx.invokeCtxCheckKey(sslCtxPtr);
-			if (checkResult != SSL_SUCCESS) {
-				ctx.invokeCtxFree(sslCtxPtr);
-				throw new CryptoBootstrapException(PROVIDER_NAME, "SSL_CTX_check_private_key mismatch");
 			}
 		}
-		return sslCtxPtr;
 	}
 
 	private static PathCString toCString(java.nio.file.Path path, MemoryAllocator allocator) {

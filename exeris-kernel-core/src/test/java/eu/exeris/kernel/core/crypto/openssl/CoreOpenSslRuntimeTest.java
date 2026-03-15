@@ -28,13 +28,16 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @DisplayName("L0: CoreOpenSslRuntime (shared lookup carrier)")
 class CoreOpenSslRuntimeTest {
 
+    private static final SymbolLookup EMPTY_LOOKUP =
+            symbol -> (symbol == null || symbol.isEmpty()) ? Optional.empty() : Optional.empty();
+
     @Test
     @DisplayName("handles() returns the exact carrier injected at construction")
     void handlesReturnsInjectedCarrier() {
         CoreSslHandles handles = CoreSslHandlesTestFactory.build(null, null, null);
 
-        assertThat(newRuntime(symbol -> Optional.empty(),
-            symbol -> Optional.empty(), handles).handles()).isSameAs(handles);
+        assertThat(newRuntime(EMPTY_LOOKUP,
+            EMPTY_LOOKUP, handles).handles()).isSameAs(handles);
     }
 
     @Test
@@ -90,8 +93,8 @@ class CoreOpenSslRuntimeTest {
     @Test
     @DisplayName("optionalSslHandle() returns null for an unresolved tier-specific symbol")
     void optionalSslHandleReturnsNullWhenMissing() {
-        assertThat(newRuntime(symbol -> Optional.empty(),
-            symbol -> Optional.empty())
+        assertThat(newRuntime(EMPTY_LOOKUP,
+            EMPTY_LOOKUP)
                 .optionalSslHandle("SSL_set_fd", FunctionDescriptor.of(JAVA_INT, JAVA_INT, JAVA_INT)))
                 .isNull();
     }
@@ -99,8 +102,8 @@ class CoreOpenSslRuntimeTest {
     @Test
     @DisplayName("requiredCryptoHandle() fails fast when the symbol is absent")
     void requiredCryptoHandleFailsFast() {
-        assertThatThrownBy(() -> newRuntime(symbol -> Optional.empty(),
-            symbol -> Optional.empty())
+        assertThatThrownBy(() -> newRuntime(EMPTY_LOOKUP,
+            EMPTY_LOOKUP)
                 .requiredCryptoHandle("OPENSSL_missing", FunctionDescriptor.of(JAVA_INT)))
                 .isInstanceOfSatisfying(CryptoBootstrapException.class, exception -> {
                     assertThat(exception).hasMessage("Crypto provider bootstrap failed");

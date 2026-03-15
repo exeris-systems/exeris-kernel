@@ -44,6 +44,7 @@ public final class CommunityTlsEngine implements TlsEngine {
 	private final CoreSslHandles.CtxHandles ctxHandles;
 	private final long sslCtxPtr;
 	private final MemoryAllocator ownedAllocator;
+	private final boolean jfrEnabled;
 
 	private final AtomicBoolean bound = new AtomicBoolean(false);
 	private final AtomicBoolean closed = new AtomicBoolean(false);
@@ -52,12 +53,14 @@ public final class CommunityTlsEngine implements TlsEngine {
 					   MethodHandle sslSetFd,
 					   CoreSslHandles.CtxHandles ctxHandles,
 					   long sslCtxPtr,
-					   MemoryAllocator ownedAllocator) {
+					   MemoryAllocator ownedAllocator,
+					   boolean jfrEnabled) {
 		this.delegate = delegate;
 		this.sslSetFd = sslSetFd;
 		this.ctxHandles = ctxHandles;
 		this.sslCtxPtr = sslCtxPtr;
 		this.ownedAllocator = ownedAllocator;
+		this.jfrEnabled = jfrEnabled;
 	}
 
 	/**
@@ -97,10 +100,14 @@ public final class CommunityTlsEngine implements TlsEngine {
 		try {
 			ensureBound();
 			TlsStatus status = delegate.beginHandshake(outbound);
-			CommunityTlsHandshakeEvent.emit(status == TlsStatus.FINISHED, 0);
+			if (jfrEnabled) {
+				CommunityTlsHandshakeEvent.emit(status == TlsStatus.FINISHED, 0);
+			}
 			return status;
 		} catch (TlsHandshakeException exception) {
-			CommunityTlsHandshakeEvent.emit(false, -1);
+			if (jfrEnabled) {
+				CommunityTlsHandshakeEvent.emit(false, -1);
+			}
 			throw exception;
 		}
 	}
