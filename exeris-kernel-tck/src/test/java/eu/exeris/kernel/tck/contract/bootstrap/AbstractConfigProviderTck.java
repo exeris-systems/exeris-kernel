@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Test;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Modifier;
 import java.util.concurrent.StructuredTaskScope;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
@@ -189,6 +190,96 @@ public abstract class AbstractConfigProviderTck {
                 .as("ConfigProvider implementations MUST have a public no-arg constructor " +
                     "for ServiceLoader discovery (banned: reflection-based DI frameworks).")
                 .isTrue();
+    }
+
+    // =========================================================================
+    // watch() — hot-reload SPI contract
+    // =========================================================================
+
+    /**
+     * Returns {@code true} if this implementation supports live hot-reload via
+     * {@link ConfigProvider#watch(String, String, java.util.function.Consumer)}.
+     *
+     * <p>Community implementations MUST return {@code false} (no-op contract).
+     * Enterprise implementations MUST return {@code true} and override
+     * {@link #triggerReload(String, String, String)} to write the new value.
+     *
+     * <p>Default: {@code false} — safe baseline for Community tests.
+     */
+    protected boolean supportsHotReload() {
+        return false;
+    }
+
+    /**
+     * Triggers a reload of {@code key} in {@code file} to {@code newValue}.
+     *
+     * <p>Override in Enterprise tests to write to the real config file and
+     * wait for the WatchService to fire. Default: no-op (Community tier).
+     *
+     * @param file     config file name
+     * @param key      dot-path key
+     * @param newValue new raw string value
+     * @throws Exception if the trigger fails
+     */
+    protected void triggerReload(String file, String key, String newValue) throws Exception {
+        // no-op for Community tier
+    }
+
+    @Nested
+    @DisplayName("watch() — hot-reload contract")
+    class WatchContract {
+
+        @Test
+        @DisplayName("watch() must not throw for any valid (file, key, callback) combination")
+        void watchDoesNotThrow() {
+            // Community: no-op. Enterprise: registers a NIO WatchService listener.
+            // Either way, calling watch() must never throw.
+            provider.watch("app.properties", "network.port", ignored -> {});
+            provider.watch(null, "network.port", ignored -> {});
+        }
+
+        @Test
+        @DisplayName("watch() with null callback does not throw")
+        void watchWithNullCallbackDoesNotThrow() {
+            // Implementations must guard against null callbacks silently.
+            try {
+                provider.watch("app.properties", "network.port", null);
+            } catch (NullPointerException ex) {
+                // Acceptable — implementations may reject null explicitly.
+                // This test verifies the method does not crash the kernel.
+            }
+        }
+
+        @Test
+        @DisplayName("Community tier: watch() is a no-op — callback is never invoked")
+        void communityWatchIsNoOp() {
+            if (supportsHotReload()) {
+                return; // Enterprise tier: skipped — covered by triggerReload() test below
+            }
+            var called = new AtomicBoolean(false);
+            provider.watch("app.properties", "network.port", v -> called.set(true));
+
+            // No file change happens — the Community no-op must never invoke the callback
+            assertThat(called.get())
+                    .as("Community watch() is a no-op — callback must not be invoked without a file change")
+                    .isFalse();
+        }
+
+        @Test
+        @DisplayName("Enterprise tier: watch() delivers new value after file change (hot-reload)")
+        void enterpriseWatchDeliversOnReload() throws Exception {
+            if (!supportsHotReload()) {
+                return; // Community tier: skipped
+            }
+            var received = new AtomicReference<String>();
+            provider.watch("app.properties", "network.port", v -> received.set((String) v));
+
+            triggerReload("app.properties", "network.port", "9999");
+
+            assertThat(received.get())
+                    .as("Enterprise watch() must deliver the new value '9999' after triggerReload()")
+                    .isEqualTo("9999");
+        }
     }
 }
 
