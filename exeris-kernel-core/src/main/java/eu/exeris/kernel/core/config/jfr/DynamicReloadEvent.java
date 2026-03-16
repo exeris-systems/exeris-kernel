@@ -19,7 +19,7 @@ import jdk.jfr.StackTrace;
  * JFR telemetry for {@code @Dynamic} field hot-reload lifecycle.
  *
  * <p>Emitted by {@code DynamicConfigFileWatcher} on every file-change event.
- * Zero overhead when JFR recording is disabled — the {@code isEnabled()} guard
+ * Minimal overhead when JFR recording is disabled — the {@code isEnabled()} guard
  * in the emit helper short-circuits before any field assignment.
  *
  * @since 0.5.0
@@ -88,7 +88,7 @@ public final class DynamicReloadEvent {
     // =========================================================================
 
     /**
-     * Emits a {@link DynamicFieldReloadedEvent} — zero allocation when JFR is disabled.
+     * Emits a {@link DynamicFieldReloadedEvent} — minimal overhead when JFR is disabled.
      *
      * @param file       config file name
      * @param key        dot-path key
@@ -106,7 +106,7 @@ public final class DynamicReloadEvent {
     }
 
     /**
-     * Emits a {@link DynamicReloadFailedEvent} — zero allocation when JFR is disabled.
+     * Emits a {@link DynamicReloadFailedEvent} — minimal overhead when JFR is disabled.
      *
      * @param file   config file name
      * @param key    dot-path key

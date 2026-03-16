@@ -32,7 +32,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.Queue;
+import java.util.PriorityQueue;
 import java.util.ServiceLoader;
 import java.util.Set;
 import java.util.concurrent.StructuredTaskScope;
@@ -40,7 +40,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.UnaryOperator;
 
 /**
- * Core: Subsystem lifecycle orchestrator — Kahn's topological sort, phase-grouped parallel init.
+ * Core: Subsystem lifecycle orchestrator — Kahn's topological sort, sequential init + phase-grouped parallel start.
  *
  * <h2>Zero External Dependencies (L0 Mandate)</h2>
  * <p>This class uses {@link System.Logger} (JEP 264, JDK 9+) for all logging.
@@ -60,8 +60,9 @@ import java.util.function.UnaryOperator;
  *   <li><b>Topological Sort:</b> Kahn's BFS algorithm, O(V+E). Detects cycles and
  *       throws {@link SubsystemCircularDependencyException} immediately — FAIL_FAST
  *       with no recovery, no degradation, JVM halts.</li>
- *   <li><b>Phase-Grouped Init:</b> FOUNDATION runs sequentially; SERVICES and RUNTIME
- *       run in parallel via {@link StructuredTaskScope} (JEP 525).</li>
+ *   <li><b>Lifecycle:</b> Initialization is sequential in topological order; start is
+ *       grouped by phase with FOUNDATION sequential and SERVICES/RUNTIME parallel via
+ *       {@link StructuredTaskScope} (JEP 525).</li>
  *   <li><b>Reverse Shutdown:</b> Always the strict reverse of topological init order.</li>
  *   <li><b>JFR Telemetry:</b> Every init/start/stop/boot-ready/shutdown event is
  *       emitted via {@link BootstrapJfrEvents}.</li>
@@ -190,6 +191,7 @@ public final class SubsystemOrchestrator {
 
     private final AtomicBoolean initialized = new AtomicBoolean(false);
     private final AtomicBoolean started     = new AtomicBoolean(false);
+    private final AtomicBoolean terminated  = new AtomicBoolean(false);
     private volatile long bootStartNanos;
 
     // =========================================================================
@@ -224,6 +226,9 @@ public final class SubsystemOrchestrator {
      * @throws BootstrapException on any other unrecoverable failure
      */
     public void initialize(ConfigProvider config) throws BootstrapException {
+        if (terminated.get()) {
+            throw new BootstrapException("SubsystemOrchestrator cannot be reused after shutdown()");
+        }
         if (!initialized.compareAndSet(false, true)) {
             LOG.log(System.Logger.Level.WARNING,
                     "SubsystemOrchestrator already initialized — skipping");
@@ -283,6 +288,9 @@ public final class SubsystemOrchestrator {
      * @throws BootstrapException if any mandatory subsystem fails to start
      */
     public void start(ConfigProvider config) throws BootstrapException {
+        if (terminated.get()) {
+            throw new BootstrapException("SubsystemOrchestrator cannot be reused after shutdown()");
+        }
         if (!initialized.get()) {
             throw new BootstrapException("initialize() must be called before start()");
         }
@@ -325,6 +333,14 @@ public final class SubsystemOrchestrator {
      * order. Never throws — exceptions are logged as WARNING.
      */
     public void shutdown() {
+        if (terminated.get()) {
+            return;
+        }
+        if (!initialized.get() && !started.get()) {
+            return;
+        }
+
+        terminated.set(true);
         long shutdownStartNanos = System.nanoTime();
         int count = orderedSubsystems.size();
         healthMonitor.markKernelState(KernelHealthMonitor.KernelState.SHUTTING_DOWN);
@@ -589,7 +605,7 @@ public final class SubsystemOrchestrator {
         DependencyGraph graph = buildDependencyGraph(byName);
 
         // Seed BFS queue with all zero-in-degree nodes
-        Queue<String> queue = new ArrayDeque<>();
+        java.util.Queue<String> queue = new PriorityQueue<>();
         graph.inDegree().entrySet().stream()
                 .filter(e -> e.getValue() == 0)
                 .map(Map.Entry::getKey)

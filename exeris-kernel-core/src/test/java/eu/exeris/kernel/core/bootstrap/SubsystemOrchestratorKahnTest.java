@@ -238,6 +238,22 @@ class SubsystemOrchestratorKahnTest {
         }
 
         @Test
+        @DisplayName("Independent zero-in-degree nodes are initialized in deterministic name order")
+        void independentNodesUseDeterministicNameOrder() throws Exception {
+            List<String> initOrder = new ArrayList<>();
+
+            Subsystem epsilon = trackingStub("epsilon", BootstrapPhase.FOUNDATION, List.of("beta"), initOrder);
+            Subsystem delta = trackingStub("delta", BootstrapPhase.FOUNDATION, List.of("alpha"), initOrder);
+            Subsystem gamma = trackingStub("gamma", BootstrapPhase.FOUNDATION, List.of(), initOrder);
+            Subsystem beta = trackingStub("beta", BootstrapPhase.FOUNDATION, List.of(), initOrder);
+            Subsystem alpha = trackingStub("alpha", BootstrapPhase.FOUNDATION, List.of(), initOrder);
+
+            buildOrchestrator(List.of(epsilon, gamma, delta, beta, alpha)).initialize(minimalConfig());
+
+            assertThat(initOrder).containsExactly("alpha", "beta", "delta", "epsilon", "gamma");
+        }
+
+        @Test
         @DisplayName("Empty subsystem list initializes without error")
         void emptyInputYieldsEmptyRegistry() throws Exception {
             SubsystemOrchestrator orch = buildOrchestrator(List.of());
@@ -333,6 +349,66 @@ class SubsystemOrchestratorKahnTest {
             SubsystemOrchestrator orch = buildOrchestrator(List.of());
             // Must not throw even though initialize() was never called
             orch.shutdown();
+            assertThat(orch.isStarted()).isFalse();
+            assertThat(orch.isInitialized()).isFalse();
+        }
+
+        @Test
+        @DisplayName("shutdown() before initialize() does not consume the orchestrator")
+        void shutdownBeforeInitializeDoesNotConsumeOrchestrator() throws Exception {
+            Subsystem a = stub("memory", BootstrapPhase.FOUNDATION, List.of());
+            SubsystemOrchestrator orch = buildOrchestrator(List.of(a));
+
+            orch.shutdown();
+            orch.initialize(minimalConfig());
+            orch.start(minimalConfig());
+
+            assertThat(orch.isInitialized()).isTrue();
+            assertThat(orch.isStarted()).isTrue();
+        }
+
+        @Test
+        @DisplayName("orchestrator cannot be initialized again after shutdown")
+        void initializeAfterShutdownFails() throws Exception {
+            Subsystem a = stub("memory", BootstrapPhase.FOUNDATION, List.of());
+            SubsystemOrchestrator orch = buildOrchestrator(List.of(a));
+
+            orch.initialize(minimalConfig());
+            orch.start(minimalConfig());
+            orch.shutdown();
+
+            assertThatThrownBy(() -> orch.initialize(minimalConfig()))
+                    .isInstanceOf(SubsystemOrchestrator.BootstrapException.class)
+                    .hasMessageContaining("cannot be reused after shutdown");
+        }
+
+        @Test
+        @DisplayName("orchestrator cannot be started again after shutdown")
+        void startAfterShutdownFails() throws Exception {
+            Subsystem a = stub("memory", BootstrapPhase.FOUNDATION, List.of());
+            SubsystemOrchestrator orch = buildOrchestrator(List.of(a));
+
+            orch.initialize(minimalConfig());
+            orch.start(minimalConfig());
+            orch.shutdown();
+
+            assertThatThrownBy(() -> orch.start(minimalConfig()))
+                    .isInstanceOf(SubsystemOrchestrator.BootstrapException.class)
+                    .hasMessageContaining("cannot be reused after shutdown");
+        }
+
+        @Test
+        @DisplayName("repeated shutdown() after lifecycle completion is a no-op")
+        void repeatedShutdownIsNoOp() throws Exception {
+            Subsystem a = stub("memory", BootstrapPhase.FOUNDATION, List.of());
+            SubsystemOrchestrator orch = buildOrchestrator(List.of(a));
+
+            orch.initialize(minimalConfig());
+            orch.start(minimalConfig());
+            orch.shutdown();
+            orch.shutdown();
+
+            assertThat(orch.isInitialized()).isFalse();
             assertThat(orch.isStarted()).isFalse();
         }
     }

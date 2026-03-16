@@ -17,12 +17,14 @@ import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Modifier;
+import java.util.Objects;
 import java.util.concurrent.StructuredTaskScope;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * TCK: Abstract base for {@link ConfigProvider} contract verification.
@@ -222,6 +224,9 @@ public abstract class AbstractConfigProviderTck {
      * @throws Exception if the trigger fails
      */
     protected void triggerReload(String file, String key, String newValue) throws Exception {
+        Objects.hashCode(file);
+        Objects.hashCode(key);
+        Objects.hashCode(newValue);
         // no-op for Community tier
     }
 
@@ -239,15 +244,11 @@ public abstract class AbstractConfigProviderTck {
         }
 
         @Test
-        @DisplayName("watch() with null callback does not throw")
-        void watchWithNullCallbackDoesNotThrow() {
-            // Implementations must guard against null callbacks silently.
-            try {
-                provider.watch("app.properties", "network.port", null);
-            } catch (NullPointerException ex) {
-                // Acceptable — implementations may reject null explicitly.
-                // This test verifies the method does not crash the kernel.
-            }
+        @DisplayName("watch() with null callback throws NullPointerException")
+        void watchWithNullCallbackThrowsNullPointerException() {
+            assertThatThrownBy(() -> provider.watch("app.properties", "network.port", null))
+                    .as("watch() must reject a null callback explicitly")
+                    .isInstanceOf(NullPointerException.class);
         }
 
         @Test

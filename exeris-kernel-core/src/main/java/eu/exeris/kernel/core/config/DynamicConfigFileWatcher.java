@@ -13,6 +13,7 @@ import eu.exeris.kernel.spi.config.ConfigProvider;
 import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 
 import java.io.IOException;
+import java.nio.file.ClosedWatchServiceException;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -175,17 +176,25 @@ public final class DynamicConfigFileWatcher implements AutoCloseable {
         if (!running.compareAndSet(false, true)) {
             return;
         }
-        activeWatchService = FileSystems.getDefault().newWatchService();
-        watchDir.register(activeWatchService,
-                StandardWatchEventKinds.ENTRY_MODIFY,
-                StandardWatchEventKinds.ENTRY_CREATE);
+        try {
+            WatchService watchService = FileSystems.getDefault().newWatchService();
+            watchDir.register(watchService,
+                    StandardWatchEventKinds.ENTRY_MODIFY,
+                    StandardWatchEventKinds.ENTRY_CREATE);
 
-        watcherVt = Thread.ofVirtual()
-                .name("exeris-config-watcher")
-                .start(this::watchLoop);
+            Thread watcherThread = Thread.ofVirtual()
+                    .name("exeris-config-watcher")
+                    .start(() -> watchLoop(watchService));
 
-        LOG.log(System.Logger.Level.INFO,
-                "DynamicConfigFileWatcher: watching ''{0}''", watchDir);
+            activeWatchService = watchService;
+            watcherVt = watcherThread;
+
+            LOG.log(System.Logger.Level.INFO,
+                    "DynamicConfigFileWatcher: watching ''{0}''", watchDir);
+        } catch (IOException | SecurityException | UnsupportedOperationException failure) {
+            running.set(false);
+            throw failure;
+        }
     }
 
     /**
@@ -234,22 +243,21 @@ public final class DynamicConfigFileWatcher implements AutoCloseable {
      * <p>{@link WatchService#take()} parks the Virtual Thread without pinning the
      * carrier — it is one of the JDK's well-known VT-safe blocking operations.
      */
-    @SuppressWarnings("PMD.AvoidCatchingGenericException")
-    private void watchLoop() {
+    private void watchLoop(WatchService watchService) {
         while (running.get()) {
             WatchKey key;
             try {
-                key = activeWatchService.take();
+                key = watchService.take();
             } catch (InterruptedException ex) {
                 Thread.currentThread().interrupt();
                 break;
-            } catch (Exception ex) {
+            } catch (ClosedWatchServiceException ex) {
                 if (!running.get()) {
                     break;
                 }
                 LOG.log(System.Logger.Level.WARNING,
-                        "DynamicConfigFileWatcher: WatchService error — {0} [{1}]",
-                        ex.getMessage(), KernelErrorCodes.EX_CFG_1003);
+                        "DynamicConfigFileWatcher: WatchService closed unexpectedly [{0}]",
+                        KernelErrorCodes.EX_CFG_1003);
                 break;
             }
 

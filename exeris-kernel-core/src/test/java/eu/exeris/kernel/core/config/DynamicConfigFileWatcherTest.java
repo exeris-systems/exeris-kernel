@@ -23,6 +23,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Integration tests for {@link DynamicConfigFileWatcher}.
@@ -53,39 +54,50 @@ class DynamicConfigFileWatcherTest {
         @DisplayName("start() starts the watcher; isRunning() returns true")
         void startSetsRunningFlag(@TempDir Path dir) throws IOException {
             var registry = new KernelConfigRegistry();
-            var watcher  = new DynamicConfigFileWatcher(dir, registry,
-                    DynamicConfigFileWatcher.PropertiesExtractor.INSTANCE);
-
-            watcher.start();
-            assertThat(watcher.isRunning()).isTrue();
-            watcher.close();
+            try (var watcher = new DynamicConfigFileWatcher(dir, registry,
+                    DynamicConfigFileWatcher.PropertiesExtractor.INSTANCE)) {
+                watcher.start();
+                assertThat(watcher.isRunning()).isTrue();
+            }
         }
 
         @Test
         @DisplayName("close() stops the watcher; isRunning() returns false")
         void closeClearsRunningFlag(@TempDir Path dir) throws IOException {
             var registry = new KernelConfigRegistry();
-            var watcher  = new DynamicConfigFileWatcher(dir, registry,
-                    DynamicConfigFileWatcher.PropertiesExtractor.INSTANCE);
+            try (var watcher = new DynamicConfigFileWatcher(dir, registry,
+                    DynamicConfigFileWatcher.PropertiesExtractor.INSTANCE)) {
+                watcher.start();
+                watcher.close();
 
-            watcher.start();
-            watcher.close();
-
-            assertThat(watcher.isRunning()).isFalse();
+                assertThat(watcher.isRunning()).isFalse();
+            }
         }
 
         @Test
         @DisplayName("start() is idempotent — calling twice does not throw or create extra threads")
         void startIsIdempotent(@TempDir Path dir) throws IOException {
             var registry = new KernelConfigRegistry();
-            var watcher  = new DynamicConfigFileWatcher(dir, registry,
-                    DynamicConfigFileWatcher.PropertiesExtractor.INSTANCE);
-
-            watcher.start();
-            watcher.start(); // second call must be no-op
-            assertThat(watcher.isRunning()).isTrue();
-            watcher.close();
+            try (var watcher = new DynamicConfigFileWatcher(dir, registry,
+                    DynamicConfigFileWatcher.PropertiesExtractor.INSTANCE)) {
+                watcher.start();
+                watcher.start(); // second call must be no-op
+                assertThat(watcher.isRunning()).isTrue();
+            }
         }
+
+            @Test
+            @DisplayName("start() rolls back running state when watch registration fails")
+            void startRollsBackRunningStateOnRegistrationFailure(@TempDir Path dir) throws IOException {
+                Path watchFile = Files.writeString(dir.resolve("not-a-directory.properties"), "x=y\n");
+                var registry = new KernelConfigRegistry();
+                try (var watcher = new DynamicConfigFileWatcher(watchFile, registry,
+                    DynamicConfigFileWatcher.PropertiesExtractor.INSTANCE)) {
+                assertThatThrownBy(watcher::start)
+                    .isInstanceOf(IOException.class);
+                assertThat(watcher.isRunning()).isFalse();
+                }
+            }
 
         @Test
         @DisplayName("close() is idempotent — calling twice does not throw")

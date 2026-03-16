@@ -37,6 +37,8 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 /**
  * Core unit tests for {@link KernelBootstrap} — verifies ScopedValue binding,
  * builder API, and boot/shutdown lifecycle.
