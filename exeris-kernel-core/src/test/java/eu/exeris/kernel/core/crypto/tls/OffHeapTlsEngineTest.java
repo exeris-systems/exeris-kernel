@@ -118,7 +118,6 @@ class OffHeapTlsEngineTest {
         assert ignoredD   >= Long.MIN_VALUE : "stubAlpnSelected:out";
         assert ignoredL   >= Long.MIN_VALUE : "stubAlpnSelected:outLen";
     }
-
     // =========================================================================
     // Handle factory
     // =========================================================================
@@ -151,7 +150,7 @@ class OffHeapTlsEngineTest {
                 null, // sslGetCurrentCipher — not needed in unit tests
                 null  // sslCipherGetName    — not needed in unit tests
         );
-        return CoreSslHandlesTestFactory.build(ctx, hs, io);
+            return CoreSslHandlesTestFactory.build(ctx, hs, io);
     }
 
     // =========================================================================

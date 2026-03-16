@@ -11,6 +11,7 @@ package eu.exeris.kernel.core.crypto.tls;
 import eu.exeris.kernel.core.crypto.ArenaLoanedBuffer;
 import eu.exeris.kernel.core.crypto.openssl.CoreOpenSslLoader;
 import eu.exeris.kernel.core.crypto.openssl.CoreOpenSslLoaderTestHelper;
+import eu.exeris.kernel.core.crypto.openssl.CoreOpenSslRuntime;
 import eu.exeris.kernel.core.crypto.openssl.CoreSslHandles;
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.crypto.TlsPhase;
@@ -99,11 +100,9 @@ class OffHeapTlsEngineLoopbackIT {
     @BeforeAll
     static void loadOpenSsl() {
         try {
-            handles = CoreOpenSslLoader.load(Arena.global());
-            // Resolve SSL_set_fd from the exact same libssl instance that CoreOpenSslLoader
-            // selected (env override → candidate list). Using a separate libraryLookup("libssl.so.3")
-            // could resolve a different system libssl and cause an ABI mismatch.
-            sslSetFdHandle = CoreOpenSslLoaderTestHelper.resolveSslSetFd(Arena.global());
+            CoreOpenSslRuntime runtime = CoreOpenSslLoader.load(Arena.global());
+            handles = runtime.handles();
+            sslSetFdHandle = CoreOpenSslLoaderTestHelper.resolveSslSetFd(runtime);
             assumeTrue(sslSetFdHandle != null,
                     "SSL_set_fd not found in the loaded libssl — skipping loopback IT");
         } catch (Throwable t) { //NOPMD AvoidCatchingThrowable — FFM libraryLookup may throw UnsatisfiedLinkError (Error, not Exception)
@@ -252,9 +251,15 @@ class OffHeapTlsEngineLoopbackIT {
      * MUST NEVER call this method.
      */
     private static int extractFd(SocketChannel ch) throws Exception {
-        java.lang.reflect.Method getFdVal = ch.getClass().getDeclaredMethod("getFDVal");
-        getFdVal.setAccessible(true); //NOPMD AvoidAccessibilityAlteration — test harness only
-        return (int) getFdVal.invoke(ch);
+        try {
+            java.lang.reflect.Method getFdVal = ch.getClass().getDeclaredMethod("getFDVal");
+            getFdVal.setAccessible(true); //NOPMD AvoidAccessibilityAlteration — test harness only
+            return (int) getFdVal.invoke(ch);
+        } catch (java.lang.reflect.InaccessibleObjectException inaccessible) {
+            throw new org.opentest4j.TestAbortedException(
+                    "SocketChannel.getFDVal() inaccessible without --add-opens java.base/sun.nio.ch=ALL-UNNAMED",
+                    inaccessible);
+        }
     }
 
     // =========================================================================
@@ -414,12 +419,12 @@ class OffHeapTlsEngineLoopbackIT {
                                 .isEqualTo(TlsStatus.OK);
                         assertThat(serverOut.size())
                                 .as("fd-owner BIO: SSL_write pushes ciphertext directly to the " +
-                                    "socket BIO — serverOut must remain empty (size=0)")
+                                        "socket BIO — serverOut must remain empty (size=0)")
                                 .isZero();
 
                         assertThat(clientOut.size())
                                 .as("fd-owner BIO: clientOut was not pre-filled — " +
-                                    "SSL_read will pull ciphertext from the socket BIO directly")
+                                        "SSL_read will pull ciphertext from the socket BIO directly")
                                 .isZero();
 
                         TlsStatus unwrapStatus = clientEngine.unwrap(clientOut, decrypted);
@@ -467,7 +472,7 @@ class OffHeapTlsEngineLoopbackIT {
 
         assertThat(sessionAllocCalled[0])
                 .as("NativeCipherContext MUST call allocator.allocate(AllocationHint.SESSION) " +
-                    "so that WatermarkManager can track TLS session memory and apply EX-MEM-1001 backpressure")
+                        "so that WatermarkManager can track TLS session memory and apply EX-MEM-1001 backpressure")
                 .isTrue();
     }
 
@@ -544,7 +549,7 @@ class OffHeapTlsEngineLoopbackIT {
 
         assertThat(server.phase() == TlsPhase.ACTIVE && client.phase() == TlsPhase.ACTIVE)
                 .as("TLS handshake did not complete — server=%s, client=%s",
-                    server.phase(), client.phase())
+                        server.phase(), client.phase())
                 .isTrue();
     }
 

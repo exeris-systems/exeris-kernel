@@ -9,6 +9,7 @@
 package eu.exeris.kernel.core.crypto.tls;
 
 import eu.exeris.kernel.core.crypto.openssl.CoreOpenSslLoader;
+import eu.exeris.kernel.core.crypto.openssl.CoreOpenSslRuntime;
 import eu.exeris.kernel.core.crypto.openssl.CoreSslHandles;
 import eu.exeris.kernel.spi.exceptions.memory.MemoryExhaustedException;
 import eu.exeris.kernel.spi.memory.AllocationHint;
@@ -90,7 +91,8 @@ public class CoreOffHeapTlsEngineBenchmark extends AbstractExerisBenchmark {
 
     static {
         try {
-            handles     = CoreOpenSslLoader.load(GLOBAL_ARENA);
+            CoreOpenSslRuntime runtime = CoreOpenSslLoader.load(GLOBAL_ARENA);
+            handles     = runtime.handles();
             long method = handles.ctx().invokeServerMethod();
             sslCtxPtr   = handles.ctx().invokeCtxNew(method);
         } catch (Throwable t) { //NOPMD AvoidCatchingThrowable — FFM library load may throw Error
@@ -278,4 +280,3 @@ public class CoreOffHeapTlsEngineBenchmark extends AbstractExerisBenchmark {
         return status;
     }
 }
-

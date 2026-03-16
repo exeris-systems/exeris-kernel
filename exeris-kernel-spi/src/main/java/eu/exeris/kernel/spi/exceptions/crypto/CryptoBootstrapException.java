@@ -25,8 +25,9 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  *
  * <h2>rawArgs Binary Layout</h2>
  * <pre>
- * index 0 → String providerName  (which provider failed to initialise)
- * index 1 → String reason        (failure cause — static constant, never formatted)
+ * index 0   → String providerName  (which provider failed to initialise)
+ * index 1   → String reason        (failure cause — static constant, never formatted)
+ * index 2..N → Object extraRawArgs (optional native context, e.g. result code, symbol name)
  * </pre>
  *
  * @since 0.5.0
@@ -41,6 +42,25 @@ public final class CryptoBootstrapException extends ExerisKernelException {
 
     public CryptoBootstrapException(String providerName, String reason, Throwable cause) {
         super(KernelErrorCodes.EX_NET_2002, MESSAGE, cause, providerName, reason);
+    }
+
+    /**
+     * Constructor with additional raw context args (no cause).
+     * Extra values are appended after {@code providerName} and {@code reason} in {@code rawArgs}.
+     */
+    public CryptoBootstrapException(String providerName, String reason, Object... extraRawArgs) {
+        super(KernelErrorCodes.EX_NET_2002, MESSAGE, null, buildArgs(providerName, reason, extraRawArgs));
+    }
+
+    private static Object[] buildArgs(String providerName, String reason, Object... extra) {
+        if (extra == null) {
+            return new Object[]{providerName, reason};
+        }
+        Object[] args = new Object[2 + extra.length];
+        args[0] = providerName;
+        args[1] = reason;
+        System.arraycopy(extra, 0, args, 2, extra.length);
+        return args;
     }
 }
 

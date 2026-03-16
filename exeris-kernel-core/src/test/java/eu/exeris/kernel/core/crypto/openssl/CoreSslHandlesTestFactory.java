@@ -16,7 +16,8 @@ import java.lang.invoke.MethodHandle;
  * <p>Lives in the same package as {@link CoreSslHandles} to access its package-private
  * constructor. This avoids widening visibility of the constructor to {@code public},
  * which would violate the "no leaky abstraction" rule — the outer modules must always
- * obtain handles via {@link CoreOpenSslLoader#load(java.lang.foreign.Arena)}.
+ * obtain handles via {@link CoreOpenSslLoader#load(java.lang.foreign.Arena)} and
+ * {@link CoreOpenSslRuntime#handles()}.
  *
  * @since 0.5.0
  */

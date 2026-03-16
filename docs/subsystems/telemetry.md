@@ -192,7 +192,7 @@ flowchart LR
 
     D["<b>JfrTelemetrySink</b>\nTyped jdk.jfr.Event\ncommit() → JFR stream\n<i>[Community]</i>"]
 
-    E["<b>Slf4jTelemetrySink</b>\nStructured JSON line\nMDC fields from rawArgs\n<i>[Community — planned]</i>"]
+    E["<b>Slf4jTelemetrySink</b>\nStructured JSON line\nMDC fields from rawArgs\n<i>[Community fallback]</i>"]
 
     F["<b>DeterministicBinarySink</b>\nFixed-width binary frame\nMemorySegment.set() direct write\n<i>[Enterprise]</i>"]
 
@@ -241,7 +241,7 @@ Every critical lifecycle transition MUST emit a typed JFR event. No `Logger.info
 | `TelemetryJfrEvents.TransportBindJfrEvent` *(eu.exeris.kernel.core.telemetry.jfr)* | On transport bind / engine-start lifecycle (EX-NET-4001/4005) | `errorCode`, `transportName`, `port`, `component` |
 | `StreamShedEvent` *(eu.exeris.kernel.core.transport.jfr)* | On every PAQS load-shed | `streamId`, `priority`, `shedReason`, `engineName`, `activeStreamCount` |
 | `TelemetryJfrEvents.CarrierPinnedJfrEvent` *(eu.exeris.kernel.core.telemetry.jfr)* | Virtual thread pins carrier > threshold (EX-RUN-3002) | `errorCode`, `blockTimeMs`, `component` |
-| `CommunityTlsHandshakeEvent` *(planned, community module; not present in this repo)* | Each `SSL_do_handshake` invocation | `complete`, `opensslError` |
+| `CommunityTlsHandshakeEvent` *(implemented, community module; present in this repo)* | Each `SSL_do_handshake` invocation | `complete`, `opensslError` |
 | `TlsPhaseTransitionEvent` *(planned, TRL‑4 target; not yet implemented)* | Every `TlsStateMachine` phase transition | `sslPtr`, `fromPhase`, `toPhase` |
 | `TlsEngineCloseEvent` *(planned, TRL‑4 target; not yet implemented)* | `OffHeapTlsEngine` → CLOSED | `sslPtr`, `graceful`, `finalPhase` |
 | `TlsHandshakeEvent` *(planned, TRL‑4 target; not yet implemented)* | Start and end of TLS handshake (cross-tier) | `sessionId`, `protocol`, `cipher`, `durationNanos` |
@@ -291,7 +291,7 @@ TelemetryProvider (SPI interface — factory)
 
 TelemetrySink (SPI interface) — implemented by:
   ├─ [Community] JfrTelemetrySink          → writes to JFR event stream
-  ├─ [Community] Slf4jTelemetrySink        → planned fallback (not yet implemented)
+  ├─ [Community] Slf4jTelemetrySink        → structured fallback via SLF4J + MDC
   └─ [Enterprise] DeterministicBinarySink  → writes to off-heap ring buffer (zero GC)
 ```
 
@@ -330,7 +330,7 @@ TelemetryRouter.emitMetric(metric);
 ### Community (Free Tier)
 
 - `JfrTelemetrySink` — writes typed JFR events. Zero external dependencies. Works with `jcmd` and JDK Mission Control.
-- `Slf4jTelemetrySink` — **planned** fallback for environments without JFR. Not yet implemented in this repository. `exeris-kernel-community` currently declares no SLF4J dependencies.
+- `Slf4jTelemetrySink` — structured fallback for environments without JFR; emits JSON lines with canonical EX-* fields mirrored in MDC.
 
 ### Enterprise (Secret Sauce — lives in `exeris-kernel-enterprise`)
 
@@ -417,19 +417,19 @@ java -jar exeris-decoder.jar --jfr boot.jfr
 
 ---
 
-## Planned `Slf4jTelemetrySink` — SLF4J Binding (Not Yet Implemented)
+## `Slf4jTelemetrySink` — SLF4J Fallback Binding
 
-`Slf4jTelemetrySink` is a **planned** fallback sink for environments without JFR (e.g., some container
-runtimes with restricted JVM flags). It is **not yet implemented** in this repository and is **not**
-available in current builds of `exeris-kernel-community`.
+`Slf4jTelemetrySink` is the Community fallback sink for environments without JFR (e.g., container
+runtimes with restricted JVM flags). It emits structured JSON lines and mirrors
+canonical EX-* fields into MDC for downstream log pipelines.
 
-| Aspect                    | Detail                                                                                   |
-|:--------------------------|:----------------------------------------------------------------------------------------|
-| **Status**                | Planned / Not yet implemented in this repo                                              |
-| **Intended role**         | Fallback sink when `JfrTelemetrySink` cannot be used (e.g., JFR disabled/unavailable)   |
-| **Intended SLF4J version**| SLF4J API 2.x (for MDC fluent API). SLF4J 1.x would not be supported.                   |
-| **Dependency model**      | To be defined. `exeris-kernel-community` currently declares **no** SLF4J dependencies; applications must configure logging independently. |
-| **Planned JSON semantics**| When implemented, MDC fields such as `errorCode`, `traceId`, `subsystem`, `rawArgs.*` are expected to be populated for structured logging. |
+| Aspect                    | Detail                                                                                                           |
+|:--------------------------|:-----------------------------------------------------------------------------------------------------------------|
+| **Status**                | Implemented in `exeris-kernel-community`                                                                          |
+| **Role**                  | Fallback sink when `JfrTelemetrySink` cannot be used (JFR disabled/unavailable)                                  |
+| **SLF4J version**         | SLF4J API 2.x                                                                                                     |
+| **Dependency model**      | `exeris-kernel-community` declares `slf4j-api`; binding remains application-owned                                |
+| **JSON semantics**        | JSON body with `timestamp`, `level`, `code`, `component`, `message`, `rawArgs`; MDC mirrors EX-* fields         |
 
 ---
 
@@ -442,7 +442,7 @@ completes. This creates a deliberate gap: L0 subsystems cannot emit JFR events t
 |:--------------------|:-------------------------------------------------------|:-----------------------------------------------|
 | **L0 boot (pre-JFR)** | ❌ JFR sink not yet bound                            | Glass-Box pre-allocated in-RAM buffer (L0-only) |
 | **L1 boot**         | ✅ JFR sink bound; `KernelProviders.TELEMETRY_PROVIDER` populated | `ScopedValue` slot bound by `KernelBootstrap` |
-| **READY**           | ✅ Full — `JfrTelemetrySink` + planned `Slf4jTelemetrySink` + Binary sink | Normal operation |
+| **READY**           | ✅ Full — `JfrTelemetrySink` + `Slf4jTelemetrySink` + Binary sink | Normal operation |
 | **SHUTTING_DOWN**   | ✅ Until `releaseArenas()` call                         | Events after Arena release are lost             |
 
 **L0 failure observability:** Any `ExerisKernelException` thrown during L0 (Config, Memory, Exceptions init)

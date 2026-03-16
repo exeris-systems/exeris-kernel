@@ -10,6 +10,7 @@ package eu.exeris.kernel.core.crypto.tls;
 
 import eu.exeris.kernel.core.crypto.ArenaLoanedBuffer;
 import eu.exeris.kernel.core.crypto.openssl.CoreOpenSslLoader;
+import eu.exeris.kernel.core.crypto.openssl.CoreOpenSslRuntime;
 import eu.exeris.kernel.core.crypto.openssl.CoreSslHandles;
 import eu.exeris.kernel.spi.crypto.CryptoProviderConfig;
 import eu.exeris.kernel.spi.crypto.KernelCryptoProvider;
@@ -77,7 +78,8 @@ class CoreOffHeapTlsEngineTckTest extends AbstractCryptoEngineTck {
 
     static {
         try {
-            handles = CoreOpenSslLoader.load(GLOBAL_ARENA);
+            CoreOpenSslRuntime runtime = CoreOpenSslLoader.load(GLOBAL_ARENA);
+            handles = runtime.handles();
             serverCtxPtr = handles.ctx().invokeCtxNew(handles.ctx().invokeServerMethod());
         } catch (Throwable t) { //NOPMD AvoidCatchingThrowable — FFM load may throw UnsatisfiedLinkError
             loadError = t;

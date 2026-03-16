@@ -9,6 +9,7 @@
 package eu.exeris.kernel.core.crypto.tls;
 
 import eu.exeris.kernel.core.crypto.openssl.CoreOpenSslLoader;
+import eu.exeris.kernel.core.crypto.openssl.CoreOpenSslRuntime;
 import eu.exeris.kernel.core.crypto.openssl.CoreSslHandles;
 import eu.exeris.kernel.core.crypto.openssl.NativeCipherContext;
 import eu.exeris.kernel.spi.crypto.TlsEngine;
@@ -23,6 +24,7 @@ import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 
 import java.lang.foreign.MemorySegment;
+import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 
@@ -38,18 +40,15 @@ import java.lang.invoke.VarHandle;
  * </ul>
  *
  * <h2>Protocol Agnosticism (The Wall — CORE Compliance)</h2>
- * <p>This class has <strong>zero</strong> knowledge of BIO wiring, file descriptors,
- * {@code io_uring}, QUIC, or any transport-specific I/O model.
- * The caller (Community or Enterprise tier) is responsible for:
+ * <p>This class does not own transport policy or transport lifecycle decisions.
+ * It exposes low-level helpers that transport adapters may use for binding
+ * (for example fd-owner or Memory-BIO), while keeping orchestration and policy
+ * in the caller (Community or Enterprise tier):
  * <ol>
- *   <li>Creating the {@code SSL*} via {@code SSL_new(ctxPtr)}.</li>
- *   <li>Attaching the appropriate BIO — either via {@code SSL_set_fd} (Community / TCP fd-owner)
- *       or via {@code BIO_new(BIO_s_mem())} + {@code SSL_set_bio} (Enterprise / Memory-BIO for
- *       TCP and QUIC/DTLS).</li>
  *   <li>Constructing this engine — the constructor allocates the {@code SSL*} handle
- *       via {@code SSL_new(ctxPtr)} but leaves the engine in
- *       {@link TlsPhase#UNINITIALIZED}.</li>
- *   <li>Calling {@link #notifyBound()} after BIO wiring is complete — this advances
+ *       and leaves the engine in {@link TlsPhase#UNINITIALIZED}.</li>
+ *   <li>Applying binding policy (for example {@code SSL_set_fd} in Community fd-owner mode).</li>
+ *   <li>Calling {@link #notifyBound()} after transport binding is complete — this advances
  *       the state machine to {@link TlsPhase#HANDSHAKE_IN_PROGRESS}.</li>
  * </ol>
  *
@@ -186,13 +185,14 @@ public final class OffHeapTlsEngine implements TlsEngine {
     /**
      * Creates a new {@code OffHeapTlsEngine}.
      *
-     * <p>The {@code SSL*} handle is allocated immediately via {@code SSL_new(ctxPtr)}.
-     * The engine is left in {@link TlsPhase#UNINITIALIZED} — BIO wiring is the
-     * caller's responsibility. Call {@link #notifyBound()} after attaching the
-     * appropriate BIO to advance the engine to
+    * <p>The {@code SSL*} handle is allocated immediately via {@code SSL_new(ctxPtr)}.
+    * The engine is left in {@link TlsPhase#UNINITIALIZED}; callers may apply
+    * transport-specific binding (for example {@code SSL_set_fd}) and then call
+    * {@link #notifyBound()} to advance the engine to
      * {@link TlsPhase#HANDSHAKE_IN_PROGRESS}.
      *
-     * @param handles    pre-resolved FFM handles from {@link CoreOpenSslLoader#load(java.lang.foreign.Arena)}
+     * @param handles    pre-resolved FFM handles from {@link CoreOpenSslRuntime#handles()},
+     *                   typically obtained from {@link CoreOpenSslLoader#load(java.lang.foreign.Arena)}
      * @param ctxPointer raw {@code SSL_CTX*} address (read-only shared context; caller retains ownership)
      * @param serverMode {@code true} for server role ({@code SSL_accept}),
      *                   {@code false} for client ({@code SSL_connect})
@@ -206,7 +206,7 @@ public final class OffHeapTlsEngine implements TlsEngine {
     public OffHeapTlsEngine(CoreSslHandles handles, long ctxPointer, boolean serverMode,
                             MemoryAllocator allocator) {
         this.handles      = handles;
-        this.cipherCtx    = new NativeCipherContext(handles.handshake(), ctxPointer, allocator);
+        this.cipherCtx    = new NativeCipherContext(handles, ctxPointer, allocator);
         this.stateMachine = new TlsStateMachine();
         this.serverMode   = serverMode;
         this.allocator    = allocator;
@@ -217,11 +217,39 @@ public final class OffHeapTlsEngine implements TlsEngine {
     // =========================================================================
 
     /**
-     * Notifies this engine that the caller has finished BIO wiring and the TLS
+     * Invokes the provided {@code SSL_set_fd} method handle under a reference-counted
+     * retain/release, ensuring the underlying {@code SSL*} cannot be freed mid-downcall.
+     *
+    * <p>This is the sanctioned helper for transport adapters that bind an fd-backed
+    * OpenSSL BIO via {@code SSL_set_fd}. Using {@link #sslPointerForDiagnostics()}
+    * for actual OpenSSL calls bypasses the refcount contract and risks a
+    * use-after-free race.
+     *
+     * @param sslSetFd       pre-linked method handle for {@code SSL_set_fd(SSL*, int) → int}
+     * @param fileDescriptor OS-level socket file descriptor to bind
+     * @return raw return value of {@code SSL_set_fd} (1 = success, 0 = failure)
+     * @throws TlsHandshakeException if the engine is closed or the downcall throws
+     */
+    public int bindTransportFd(MethodHandle sslSetFd, int fileDescriptor) {
+        checkNotClosed();
+        long ptr = cipherCtx.retainSslPointer();
+        try {
+            return (int) sslSetFd.invokeExact(ptr, fileDescriptor);
+        } catch (TlsHandshakeException handshakeException) {
+            throw handshakeException;
+        } catch (Throwable throwable) { //NOPMD AvoidCatchingGenericException — FFM invokeExact declares Throwable
+            throw new TlsHandshakeException("SSL_set_fd invocation failed", throwable);
+        } finally {
+            cipherCtx.release();
+        }
+    }
+
+    /**
+    * Notifies this engine that the caller has finished transport binding and the TLS
      * handshake may begin.
      *
-     * <p>The caller (Community or Enterprise tier) is responsible for attaching
-     * the appropriate BIO to the {@code SSL*} handle <em>before</em> calling this
+    * <p>The caller (Community or Enterprise tier) is responsible for applying
+    * transport binding to the {@code SSL*} handle <em>before</em> calling this
      * method:
      * <ul>
      *   <li><b>Community (TCP fd-owner):</b> {@code SSL_set_fd(sslPtr, socketFd)}</li>
@@ -236,6 +264,7 @@ public final class OffHeapTlsEngine implements TlsEngine {
      * @throws TlsHandshakeException if the engine is not in {@link TlsPhase#UNINITIALIZED}
      *                               or has already been closed
      */
+    @Override
     public void notifyBound() {
         checkNotClosed();
         try {

@@ -10,10 +10,9 @@
         <version>0.5.0-SNAPSHOT</version>
         <relativePath>../exeris-kernel-parent/pom.xml</relativePath>
     </parent>
-
     <artifactId>exeris-kernel-community</artifactId>
 
-    <name>Exeris Kernel - Community</name>
+    <name>Exeris Kernel :: Community</name>
     <description>
         Free-tier Community implementations: CommunityMemoryProvider (Arena-based),
         CommunityKernelCryptoProvider (OpenSSL 3.x / TCP-only, no QUIC),
@@ -43,6 +42,10 @@
         <dependency>
             <groupId>eu.exeris</groupId>
             <artifactId>exeris-kernel-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
         </dependency>
         <!-- TCK abstract test classes -->
         <dependency>
@@ -98,6 +101,12 @@
             <artifactId>mockito-junit-jupiter</artifactId>
             <scope>test</scope>
         </dependency>
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <version>2.3.232</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -108,7 +117,7 @@
                 <version>3.2.5</version>
                 <configuration>
                     <!-- Inherit common JVM flags (ZGC + JFR + preview) from the parent POM. -->
-                    <argLine>${test.jvm.args}</argLine>
+                    <argLine>${test.jvm.args} --add-opens java.base/sun.nio.ch=ALL-UNNAMED</argLine>
                     <!-- Optional include filter, e.g. -DincludedGroups=flamegraph -->
                     <groups>${includedGroups}</groups>
                     <!-- Exclude @Tag("flamegraph") tests from regular CI runs -->
@@ -157,5 +166,4 @@
             </build>
         </profile>
     </profiles>
-
 </project>
