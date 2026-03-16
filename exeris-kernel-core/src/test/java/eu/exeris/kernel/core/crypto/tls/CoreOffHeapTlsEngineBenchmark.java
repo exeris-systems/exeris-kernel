@@ -85,14 +85,13 @@ public class CoreOffHeapTlsEngineBenchmark extends AbstractExerisBenchmark {
     // =========================================================================
 
     private static final Arena GLOBAL_ARENA = Arena.global();
-    private static CoreOpenSslRuntime runtime;
     private static CoreSslHandles handles;
     private static long sslCtxPtr;
     private static Throwable loadError;
 
     static {
         try {
-            runtime     = CoreOpenSslLoader.load(GLOBAL_ARENA);
+            CoreOpenSslRuntime runtime = CoreOpenSslLoader.load(GLOBAL_ARENA);
             handles     = runtime.handles();
             long method = handles.ctx().invokeServerMethod();
             sslCtxPtr   = handles.ctx().invokeCtxNew(method);

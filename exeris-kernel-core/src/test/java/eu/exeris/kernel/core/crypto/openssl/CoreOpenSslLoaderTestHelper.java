@@ -8,7 +8,6 @@
  */
 package eu.exeris.kernel.core.crypto.openssl;
 
-import java.lang.foreign.Arena;
 import java.lang.foreign.FunctionDescriptor;
 import java.lang.invoke.MethodHandle;
 

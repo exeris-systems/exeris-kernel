@@ -72,14 +72,13 @@ class CoreOffHeapTlsEngineTckTest extends AbstractCryptoEngineTck {
     // =========================================================================
 
     private static final Arena GLOBAL_ARENA = Arena.global();
-    private static CoreOpenSslRuntime runtime;
     private static CoreSslHandles handles;
     private static long serverCtxPtr;
     private static Throwable loadError;
 
     static {
         try {
-            runtime = CoreOpenSslLoader.load(GLOBAL_ARENA);
+            CoreOpenSslRuntime runtime = CoreOpenSslLoader.load(GLOBAL_ARENA);
             handles = runtime.handles();
             serverCtxPtr = handles.ctx().invokeCtxNew(handles.ctx().invokeServerMethod());
         } catch (Throwable t) { //NOPMD AvoidCatchingThrowable — FFM load may throw UnsatisfiedLinkError

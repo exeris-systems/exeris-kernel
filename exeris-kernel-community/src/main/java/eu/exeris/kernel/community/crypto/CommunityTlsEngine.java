@@ -75,6 +75,9 @@ public final class CommunityTlsEngine implements TlsEngine {
 	}
 
 	public void bindFileDescriptor(int fileDescriptor) {
+		if (closed.get()) {
+			throw new TlsHandshakeException("TLS engine is already closed");
+		}
 		if (bound.get()) {
 			return;
 		}
@@ -82,6 +85,9 @@ public final class CommunityTlsEngine implements TlsEngine {
 			throw new TlsHandshakeException("SSL_set_fd failed: invalid file descriptor");
 		}
 		if (!bound.compareAndSet(false, true)) {
+			if (closed.get()) {
+				throw new TlsHandshakeException("TLS engine is already closed");
+			}
 			return;
 		}
 		try {
