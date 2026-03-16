@@ -20,8 +20,6 @@
     </description>
 
     <properties>
-        <!-- Enable benchmark profile execution in this module -->
-        <benchmark.skip>false</benchmark.skip>
         <!-- Empty by default; can be set to run only selected @Tag groups -->
         <includedGroups/>
         <!--
@@ -117,7 +115,7 @@
                 <version>3.2.5</version>
                 <configuration>
                     <!-- Inherit common JVM flags (ZGC + JFR + preview) from the parent POM. -->
-                    <argLine>${test.jvm.args} --add-opens java.base/sun.nio.ch=ALL-UNNAMED</argLine>
+                    <argLine>${jvm.args} --add-opens java.base/sun.nio.ch=ALL-UNNAMED</argLine>
                     <!-- Optional include filter, e.g. -DincludedGroups=flamegraph -->
                     <groups>${includedGroups}</groups>
                     <!-- Exclude @Tag("flamegraph") tests from regular CI runs -->
@@ -141,6 +139,11 @@
         <profile>
             <id>benchmarks</id>
             <properties>
+                <benchmark.skip>false</benchmark.skip>
+                <benchmark.warmuptime>2s</benchmark.warmuptime>
+                <benchmark.iterationstime>2s</benchmark.iterationstime>
+                <benchmark.jvm.gc>-XX:+UseZGC</benchmark.jvm.gc>
+                <benchmark.jvmArgs></benchmark.jvmArgs>
                 <excludedGroups>flamegraph</excludedGroups>
             </properties>
             <build>
@@ -161,6 +164,52 @@
                                 </path>
                             </annotationProcessorPaths>
                         </configuration>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>run-benchmarks</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>exec</goal>
+                                </goals>
+                                <configuration>
+                                    <skip>${benchmark.skip}</skip>
+                                    <executable>java</executable>
+                                    <classpathScope>test</classpathScope>
+                                    <arguments>
+                                        <argument>--enable-preview</argument>
+                                        <argument>-XX:+UnlockExperimentalVMOptions</argument>
+                                        <argument>${benchmark.jvm.gc}</argument>
+                                        <argument>${benchmark.jvmArgs}</argument>
+                                        <argument>--enable-native-access=ALL-UNNAMED</argument>
+                                        <argument>-Djava.library.path=${java.library.path}${path.separator}${native.lib.dir}</argument>
+                                        <argument>--add-opens</argument>
+                                        <argument>java.base/sun.nio.ch=ALL-UNNAMED</argument>
+                                        <argument>-classpath</argument>
+                                        <classpath/>
+                                        <argument>org.openjdk.jmh.Main</argument>
+                                        <argument>${benchmark.includes}</argument>
+                                        <argument>-f</argument>
+                                        <argument>${benchmark.forks}</argument>
+                                        <argument>-wi</argument>
+                                        <argument>${benchmark.warmup}</argument>
+                                        <argument>-i</argument>
+                                        <argument>${benchmark.iterations}</argument>
+                                        <argument>-w</argument>
+                                        <argument>${benchmark.warmuptime}</argument>
+                                        <argument>-r</argument>
+                                        <argument>${benchmark.iterationstime}</argument>
+                                        <argument>-rf</argument>
+                                        <argument>json</argument>
+                                        <argument>-rff</argument>
+                                        <argument>${benchmark.output}</argument>
+                                    </arguments>
+                                </configuration>
+                            </execution>
+                        </executions>
                     </plugin>
                 </plugins>
             </build>
