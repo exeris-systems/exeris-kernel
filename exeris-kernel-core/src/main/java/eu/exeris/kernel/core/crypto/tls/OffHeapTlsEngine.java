@@ -40,9 +40,10 @@ import java.lang.invoke.VarHandle;
  * </ul>
  *
  * <h2>Protocol Agnosticism (The Wall — CORE Compliance)</h2>
- * <p>This class has <strong>zero</strong> knowledge of BIO wiring, file descriptors,
- * {@code io_uring}, QUIC, or any transport-specific I/O model.
- * The caller (Community or Enterprise tier) is responsible for transport binding policy:
+ * <p>This class does not own transport policy or transport lifecycle decisions.
+ * It exposes low-level helpers that transport adapters may use for binding
+ * (for example fd-owner or Memory-BIO), while keeping orchestration and policy
+ * in the caller (Community or Enterprise tier):
  * <ol>
  *   <li>Constructing this engine — the constructor allocates the {@code SSL*} handle
  *       and leaves the engine in {@link TlsPhase#UNINITIALIZED}.</li>
@@ -219,9 +220,10 @@ public final class OffHeapTlsEngine implements TlsEngine {
      * Invokes the provided {@code SSL_set_fd} method handle under a reference-counted
      * retain/release, ensuring the underlying {@code SSL*} cannot be freed mid-downcall.
      *
-     * <p>This is the only sanctioned way for Community-tier transport adapters to call
-     * {@code SSL_set_fd}. Using {@link #sslPointerForDiagnostics()} for actual OpenSSL
-     * calls bypasses the refcount contract and risks a use-after-free race.
+    * <p>This is the sanctioned helper for transport adapters that bind an fd-backed
+    * OpenSSL BIO via {@code SSL_set_fd}. Using {@link #sslPointerForDiagnostics()}
+    * for actual OpenSSL calls bypasses the refcount contract and risks a
+    * use-after-free race.
      *
      * @param sslSetFd       pre-linked method handle for {@code SSL_set_fd(SSL*, int) → int}
      * @param fileDescriptor OS-level socket file descriptor to bind

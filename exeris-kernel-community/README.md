@@ -59,31 +59,47 @@ Exposed probes:
 
 ## E2E Load Harness (P0)
 
-Minimal, repeatable P0 harness was moved out of the module tree and now lives in `exeris-benchmarks/exeris-kernel-community/e2e`.
+Minimal, repeatable P0 harness lives in the separate `exeris-benchmarks` repository.
 
 - `launcher.sh` — builds classpath from current workspace and starts `CommunityStackLauncher`
 - `postgres-container.sh` — starts/stops a local Docker PostgreSQL for `--mode postgres`
 - `k6-health.js` — load probe for `/health`
 - `k6-db-ping.js` — load probe for `/db/ping`
 - `h2load-health.sh` — HTTP/1.1 load run for `/health`
+- `wrk-health.sh` — wrk load run for `/health`
+- `wrk-db-ping.sh` — wrk load run for `/db/ping`
+
+Tool prerequisites:
+
+- Required: `java`, `mvn`
+- Optional by scenario: `k6`, `h2load`, `wrk`, `docker` (for PostgreSQL container)
+
+Expected endpoint status by launcher mode:
+
+- `--mode http`: `/health=200`, `/db/ping=503`
+- `--mode h2`: `/health=200`, `/db/ping=200`
+- `--mode postgres`: `/health=200`, `/db/ping=200` (when DB reachable)
 
 ### 1) Start stack (HTTP only)
 
 ```bash
-./exeris-benchmarks/exeris-kernel-community/e2e/launcher.sh --mode http --port 18080
+BENCH_DIR=/path/to/exeris-benchmarks/exeris-kernel-community/e2e
+"$BENCH_DIR"/launcher.sh --mode http --port 18080
 ```
 
 ### 2) Start stack (HTTP + in-memory H2)
 
 ```bash
-./exeris-benchmarks/exeris-kernel-community/e2e/launcher.sh --mode h2 --port 18081
+BENCH_DIR=/path/to/exeris-benchmarks/exeris-kernel-community/e2e
+"$BENCH_DIR"/launcher.sh --mode h2 --port 18081
 ```
 
 ### 3) Start local PostgreSQL and run stack against it
 
 ```bash
-./exeris-benchmarks/exeris-kernel-community/e2e/postgres-container.sh up
-./exeris-benchmarks/exeris-kernel-community/e2e/launcher.sh --mode postgres --port 18082 \
+BENCH_DIR=/path/to/exeris-benchmarks/exeris-kernel-community/e2e
+"$BENCH_DIR"/postgres-container.sh up
+"$BENCH_DIR"/launcher.sh --mode postgres --port 18082 \
   --jdbc-url jdbc:postgresql://127.0.0.1:5432/exeris \
   --jdbc-user exeris \
   --jdbc-password exeris
@@ -92,25 +108,40 @@ Minimal, repeatable P0 harness was moved out of the module tree and now lives in
 Cleanup:
 
 ```bash
-./exeris-benchmarks/exeris-kernel-community/e2e/postgres-container.sh down
+BENCH_DIR=/path/to/exeris-benchmarks/exeris-kernel-community/e2e
+"$BENCH_DIR"/postgres-container.sh down
 ```
 
 ### 4) Run k6
 
 ```bash
-k6 run -e BASE_URL=http://127.0.0.1:18080 ./exeris-benchmarks/exeris-kernel-community/e2e/k6-health.js
-k6 run -e BASE_URL=http://127.0.0.1:18081 -e EXPECT_STATUS=200 ./exeris-benchmarks/exeris-kernel-community/e2e/k6-db-ping.js
+BENCH_DIR=/path/to/exeris-benchmarks/exeris-kernel-community/e2e
+k6 run -e BASE_URL=http://127.0.0.1:18080 "$BENCH_DIR"/k6-health.js
+k6 run -e BASE_URL=http://127.0.0.1:18081 -e EXPECT_STATUS=200 "$BENCH_DIR"/k6-db-ping.js
 ```
 
 ### 5) Run h2load
 
 ```bash
-PORT=18080 N=20000 C=200 T=4 ./exeris-benchmarks/exeris-kernel-community/e2e/h2load-health.sh
+BENCH_DIR=/path/to/exeris-benchmarks/exeris-kernel-community/e2e
+PORT=18080 N=20000 C=200 T=4 "$BENCH_DIR"/h2load-health.sh
+```
+
+### 6) Run wrk
+
+```bash
+BENCH_DIR=/path/to/exeris-benchmarks/exeris-kernel-community/e2e
+HOST=127.0.0.1 PORT=18080 THREADS=4 CONNECTIONS=128 DURATION=20s \
+  "$BENCH_DIR"/wrk-health.sh
+
+HOST=127.0.0.1 PORT=18081 THREADS=4 CONNECTIONS=128 DURATION=20s \
+  "$BENCH_DIR"/wrk-db-ping.sh
 ```
 
 Notes:
 
-- `k6` and `h2load` are external tools and must be installed on the host.
+- `k6`, `h2load`, and `wrk` are external tools and must be installed on the host.
+- `postgres-container.sh` requires Docker.
 - `launcher.sh` intentionally prefers local `target/classes` for `spi/core/community` and filters stale `eu.exeris` jars from `~/.m2`.
 - This harness is now treated as perf-lab tooling, not as part of the module-local contract test set.
 

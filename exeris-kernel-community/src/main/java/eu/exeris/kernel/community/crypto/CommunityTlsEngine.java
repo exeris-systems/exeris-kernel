@@ -47,6 +47,7 @@ public final class CommunityTlsEngine implements TlsEngine {
 	private final boolean jfrEnabled;
 
 	private final AtomicBoolean bound = new AtomicBoolean(false);
+	private final AtomicBoolean delegateBoundNotified = new AtomicBoolean(false);
 	private final AtomicBoolean closed = new AtomicBoolean(false);
 
 	CommunityTlsEngine(OffHeapTlsEngine delegate,
@@ -88,7 +89,7 @@ public final class CommunityTlsEngine implements TlsEngine {
 			if (bindResult != SSL_SUCCESS) {
 				throw new TlsHandshakeException(bindResult, "SSL_set_fd failed");
 			}
-			delegate.notifyBound();
+			notifyDelegateBoundOnce();
 		} catch (TlsHandshakeException handshakeException) {
 			bound.set(false);
 			throw handshakeException;
@@ -101,7 +102,7 @@ public final class CommunityTlsEngine implements TlsEngine {
 			throw new TlsHandshakeException(
 					"Explicit FD binding is required before notifyBound()");
 		}
-		delegate.notifyBound();
+		notifyDelegateBoundOnce();
 	}
 
 	@Override
@@ -194,6 +195,18 @@ public final class CommunityTlsEngine implements TlsEngine {
 	private void ensureBoundForDecrypt() {
 		if (!bound.get()) {
 			throw new TlsDecryptException("TLS engine is not bound to socket FD");
+		}
+	}
+
+	private void notifyDelegateBoundOnce() {
+		if (!delegateBoundNotified.compareAndSet(false, true)) {
+			return;
+		}
+		try {
+			delegate.notifyBound();
+		} catch (RuntimeException exception) {
+			delegateBoundNotified.set(false);
+			throw exception;
 		}
 	}
 }

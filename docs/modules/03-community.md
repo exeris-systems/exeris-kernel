@@ -12,7 +12,8 @@ provider implementations, bootstrap wiring, tests, and e2e assets.
 
 > **Status:** `exeris-kernel-community` currently ships working Community implementations for memory, crypto,
 > persistence, transport, and HTTP in this repository state. The module also contains bootstrap integration tests,
-> transport/HTTP integration tests, and e2e helper scripts under `e2e/`.
+> transport/HTTP integration tests, and TCK bindings. P0 e2e helper scripts are stored in
+> the separate `exeris-benchmarks` repository.
 
 > **Reality vs target-state:** parts of the original ADR-008 target architecture remain aspirational, but the module
 > is operational today. The authoritative source of truth is the current source tree and tests, not the older
@@ -82,6 +83,15 @@ flowchart TD
 5. **Controlled Core Access (ADR-008):** Community drivers depend on `exeris-kernel-core` to utilize shared
    infrastructure (e.g., `CoreOpenSslLoader`, `TlsStateMachine`). However, drivers must never bypass standard
    SPI orchestration or attempt to manipulate Core's internal `WatermarkManager` directly.
+
+## ✅ E2E / Test Readiness (Current State)
+
+- **P0 harness:** present in-repo under `exeris-benchmarks/exeris-kernel-community/e2e/` with launcher,
+   postgres helper, `k6`, `h2load`, and `wrk` scripts.
+- **HTTP loopback contract:** Community binds a provider-level loopback TCK that exercises client+server
+   request/response through Community runtime engines.
+- **Core HTTP TCK posture:** Core keeps fixture-based HTTP engine TCK bindings for SPI lifecycle/identity contracts;
+   transport-backed E2E binding remains a Community runtime concern in current repository reality.
 
 ## 📊 Allocation Contract (Community vs. Enterprise)
 
