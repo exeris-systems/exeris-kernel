@@ -86,18 +86,18 @@ class DynamicConfigFileWatcherTest {
             }
         }
 
-            @Test
-            @DisplayName("start() rolls back running state when watch registration fails")
-            void startRollsBackRunningStateOnRegistrationFailure(@TempDir Path dir) throws IOException {
-                Path watchFile = Files.writeString(dir.resolve("not-a-directory.properties"), "x=y\n");
-                var registry = new KernelConfigRegistry();
-                try (var watcher = new DynamicConfigFileWatcher(watchFile, registry,
+        @Test
+        @DisplayName("start() rolls back running state when watch registration fails")
+        void startRollsBackRunningStateOnRegistrationFailure(@TempDir Path dir) throws IOException {
+            Path watchFile = Files.writeString(dir.resolve("not-a-directory.properties"), "x=y\n");
+            var registry = new KernelConfigRegistry();
+            try (var watcher = new DynamicConfigFileWatcher(watchFile, registry,
                     DynamicConfigFileWatcher.PropertiesExtractor.INSTANCE)) {
                 assertThatThrownBy(watcher::start)
-                    .isInstanceOf(IOException.class);
+                        .isInstanceOf(IOException.class);
                 assertThat(watcher.isRunning()).isFalse();
-                }
             }
+        }
 
         @Test
         @DisplayName("close() is idempotent — calling twice does not throw")

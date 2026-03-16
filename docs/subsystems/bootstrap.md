@@ -382,9 +382,9 @@ startupProbe:
 | **Community**     | ≤ 500 ms              | `TelemetryJfrEvents.KernelLifecycleJfrEvent.durationNanos`                  | 60 × 2 s = 120 s budget              |
 | **Enterprise**    | ≤ 800 ms              | `TelemetryJfrEvents.KernelLifecycleJfrEvent.durationNanos` *(includes native `io_uring` ring init)* | 60 × 2 s = 120 s budget |
 
-> **Planned simplification:** a dedicated `KernelBootstrapEvent` JFR type exposing `durationNanos` will wrap
-> the bootstrap sequence once implemented. Until then, the Boot SLO MUST be computed from
-> `TelemetryJfrEvents.KernelLifecycleJfrEvent.durationNanos` as documented above.
+> **Current contract:** bootstrap completion telemetry is emitted through
+> `BootstrapJfrEvents.KernelBootReadyEvent`, which records the total boot duration and active
+> subsystem count for the completed startup sequence.
 
 The 500 ms / 800 ms figures include:
 - L0 foundation init (Config → Memory → Exceptions)

@@ -16,12 +16,16 @@ import eu.exeris.kernel.spi.config.ConfigProvider;
 import eu.exeris.kernel.spi.exceptions.SubsystemException;
 import eu.exeris.kernel.tck.contract.bootstrap.AbstractFailurePolicyTck;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.StructuredTaskScope;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
+
+import static org.assertj.core.api.Assertions.assertThat;
 
 /** Core binding for {@link AbstractFailurePolicyTck}. */
 @DisplayName("Core: FailurePolicy TCK")
@@ -34,6 +38,34 @@ class CoreFailurePolicyTckTest extends AbstractFailurePolicyTck {
 		public List<Subsystem> getSubsystems(ConfigProvider config) {
 			return subsystems;
 		}
+	}
+
+	@Test
+	@DisplayName("DEGRADE removes optional start failure from active snapshots and shutdown skips it")
+	void degradeRemovesOptionalStartFailureFromActiveSnapshots() throws Exception {
+		AtomicInteger healthyStops = new AtomicInteger();
+		AtomicInteger failedStops = new AtomicInteger();
+
+		FailurePolicySubsystemProvider.subsystems = List.of(
+				stub("memory", BootstrapPhase.FOUNDATION, false, false, List.of()),
+				stub("events", BootstrapPhase.SERVICES, true, true, List.of("memory"), failedStops),
+				stub("http", BootstrapPhase.SERVICES, false, false, List.of("memory"), healthyStops)
+		);
+
+		SubsystemOrchestrator orchestrator = newOrchestrator(SubsystemOrchestrator.FailurePolicy.DEGRADE);
+		orchestrator.initialize(minimalConfig());
+		orchestrator.start(minimalConfig());
+
+		assertThat(orchestrator.isStarted()).isTrue();
+		assertThat(orchestrator.subsystem("events")).isEmpty();
+		assertThat(orchestrator.subsystems())
+				.extracting(Subsystem::name)
+				.containsExactly("memory", "http");
+
+		orchestrator.shutdown();
+
+		assertThat(healthyStops).hasValue(1);
+		assertThat(failedStops).hasValue(0);
 	}
 
 	@Override
@@ -120,6 +152,15 @@ class CoreFailurePolicyTckTest extends AbstractFailurePolicyTck {
 								  boolean optional,
 								  boolean failOnStart,
 								  List<String> deps) {
+		return stub(name, phase, optional, failOnStart, deps, new AtomicInteger());
+	}
+
+	private static Subsystem stub(String name,
+								  BootstrapPhase phase,
+								  boolean optional,
+								  boolean failOnStart,
+								  List<String> deps,
+								  AtomicInteger stopCount) {
 		return new Subsystem() {
 			private boolean running;
 
@@ -143,6 +184,7 @@ class CoreFailurePolicyTckTest extends AbstractFailurePolicyTck {
 			@Override
 			public void stop() {
 				running = false;
+				stopCount.incrementAndGet();
 			}
 
 			@Override

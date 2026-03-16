@@ -139,7 +139,7 @@ Community and Enterprise tiers are measured separately. All limits are enforced 
 | **LoanedBuffer leak**               | 0 unreleased             | 0 unreleased               | `LeakDetectionMode.PARANOID`        |
 | **PAQS shed decision latency**      | ≤ 5 µs                   | ≤ 5 µs                     | Nanosecond timer in TCK             |
 | **MemoryAllocator complexity**      | O(1)                     | O(1)                       | JMH + PMD rule verification         |
-| **Bootstrap cold start P99**        | ≤ 500 ms                 | ≤ 800 ms                   | JFR `KernelBootstrapEvent`          |
+| **Bootstrap cold start P99**        | ≤ 500 ms                 | ≤ 800 ms                   | JFR `BootstrapJfrEvents.KernelBootReadyEvent`          |
 | **Saga state transition P99**       | ≤ 5 ms (DB-bound)        | ≤ 1 µs (memory-bound)      | JMH `AbstractFlowParkWakeBenchmark`         |
 | **OpenSSL ABI symbol resolution**   | 100% (all bound symbols) | 100% (all bound symbols)   | Planned: ABI symbol TCK (OpenSSL/FFM)       |
 | **Throughput (reference HW)**       | ~2,800 RPS/vCPU          | ~8,500 RPS/vCPU            | JMH + flame graph analysis          |

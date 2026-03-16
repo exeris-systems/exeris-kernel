@@ -49,8 +49,10 @@ import java.util.function.Consumer;
  * <h2>Thread safety</h2>
  * <p>{@link #register(String, String, Consumer)} is called only during single-threaded
  * bootstrap (L0 FOUNDATION phase). After bootstrap, the list is effectively read-only
- * for {@link #fireReload(String, String, String)}. {@code AtomicBoolean sealed} prevents
- * late registrations from Virtual Threads.
+ * for {@link #fireReload(String, String, String)}. A private boolean {@code sealed} is
+ * guarded exclusively through {@link VarHandle#getAcquire(Object...)} and
+ * {@link VarHandle#setRelease(Object...)}, preventing late registrations after
+ * {@link #seal()} without adding {@code synchronized} or full-volatile coordination.
  *
  * <h2>Valhalla readiness</h2>
  * <p>{@link Registration} is a {@code record} — no identity operations,

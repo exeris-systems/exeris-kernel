@@ -31,7 +31,7 @@
         <maven.compiler.release>26</maven.compiler.release>
 
         <jdk.preview.enable>--enable-preview</jdk.preview.enable>
-        <test.jvm.args>
+        <jvm.args>
             -XX:+UnlockExperimentalVMOptions
             -XX:+UseZGC
             -XX:-ZUncommit
@@ -39,7 +39,7 @@
             --enable-native-access=ALL-UNNAMED
             -XX:FlightRecorderOptions=stackdepth=256
             -XX:StartFlightRecording=disk=true,filename=target/recording-${maven.build.timestamp}.jfr,maxsize=256m,maxage=10m,settings=profile
-        </test.jvm.args>
+        </jvm.args>
         <maven.build.timestamp.format>yyyyMMdd-HHmmss</maven.build.timestamp.format>
     </properties>
 
@@ -62,7 +62,7 @@
                     <artifactId>maven-surefire-plugin</artifactId>
                     <version>3.2.5</version>
                     <configuration>
-                        <argLine>${test.jvm.args}</argLine>
+                        <argLine>${jvm.args}</argLine>
                     </configuration>
                 </plugin>
             </plugins>

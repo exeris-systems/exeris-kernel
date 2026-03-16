@@ -9,7 +9,6 @@
 package eu.exeris.kernel.core.config;
 
 import eu.exeris.kernel.core.config.jfr.DynamicReloadEvent;
-import eu.exeris.kernel.spi.config.ConfigProvider;
 import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 
 import java.io.IOException;
@@ -60,9 +59,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * @since 0.5.0
  * @see KernelConfigRegistry
  */
-// CognitiveComplexity: watchLoop() drives a NIO.2 event pump — the branching is
-// inherent to OS-level event dispatch and cannot be simplified without adding
-// indirection that would obscure the zero-copy hot path.
+// CognitiveComplexity: this class is a thin NIO.2 watcher/event pump. The branching
+// comes from OS watch events and lifecycle rollback, not business logic; extracting
+// helper layers here would add ceremony without reducing kernel risk.
 // CloseResource: activeWatchService is closed in close() — lifecycle is explicit.
 @SuppressWarnings({
     "PMD.CognitiveComplexity",
@@ -136,7 +135,7 @@ public final class DynamicConfigFileWatcher implements AutoCloseable {
     // =========================================================================
 
     /**
-     * Convenience factory: resolves the config directory from a {@link ConfigProvider}
+     * Convenience factory: resolves the config directory from the process configuration
      * and builds a watcher using a {@code java.util.Properties}-based extractor.
      *
      * <p>The config directory is resolved in order:
@@ -165,7 +164,7 @@ public final class DynamicConfigFileWatcher implements AutoCloseable {
     // =========================================================================
 
     /**
-     * Starts the background Virtual Thread that watches the config directory.
+    * Starts the background Virtual Thread that watches the config directory.
      *
      * <p>This method is idempotent — calling it twice is a no-op.
      *
@@ -176,24 +175,30 @@ public final class DynamicConfigFileWatcher implements AutoCloseable {
         if (!running.compareAndSet(false, true)) {
             return;
         }
+        WatchService watchService = null;
+        boolean published = false;
         try {
-            WatchService watchService = FileSystems.getDefault().newWatchService();
+            watchService = FileSystems.getDefault().newWatchService();
             watchDir.register(watchService,
                     StandardWatchEventKinds.ENTRY_MODIFY,
                     StandardWatchEventKinds.ENTRY_CREATE);
+            final WatchService startedWatchService = watchService;
 
             Thread watcherThread = Thread.ofVirtual()
                     .name("exeris-config-watcher")
-                    .start(() -> watchLoop(watchService));
+                .start(() -> watchLoop(startedWatchService));
 
             activeWatchService = watchService;
             watcherVt = watcherThread;
+            published = true;
 
             LOG.log(System.Logger.Level.INFO,
                     "DynamicConfigFileWatcher: watching ''{0}''", watchDir);
-        } catch (IOException | SecurityException | UnsupportedOperationException failure) {
-            running.set(false);
-            throw failure;
+        } finally {
+            if (!published) {
+                running.set(false);
+                closeUnpublishedWatchService(watchService);
+            }
         }
     }
 
@@ -325,6 +330,17 @@ public final class DynamicConfigFileWatcher implements AutoCloseable {
             return Path.of(envVar);
         }
         return Path.of("/etc/exeris/config");
+    }
+
+    private static void closeUnpublishedWatchService(WatchService watchService) {
+        if (watchService == null) {
+            return;
+        }
+        try {
+            watchService.close();
+        } catch (IOException ignored) {
+            // Unpublished startup resources are best-effort cleanup only.
+        }
     }
 
     // =========================================================================

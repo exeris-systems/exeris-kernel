@@ -28,7 +28,6 @@ import java.util.Set;
     "PMD.UseExplicitTypes"
 })
 public final class BootstrapJfrEvents {
-
     private BootstrapJfrEvents() {}
 
     // =========================================================================
@@ -363,5 +362,4 @@ public final class BootstrapJfrEvents {
         event.commit();
     }
 }
-
 

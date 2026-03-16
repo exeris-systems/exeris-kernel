@@ -425,6 +425,14 @@ public final class SubsystemOrchestrator {
         // The sentinel slot is never read by application code.
         ScopedValue<Boolean> seed = ScopedValue.newInstance();
         ScopedValue.Carrier  base = ScopedValue.where(seed, Boolean.TRUE);
+        // Defensive check: ensure composedEnricher is not nullbay safeguard
+        if (composedEnricher == null) {
+            return base;
+        }
+        // Defensive check: ensure composedEnricher is not nullbay safeguard
+        if (composedEnricher == null) {
+            return base;
+        }
         return composedEnricher.apply(base);
     }
 
