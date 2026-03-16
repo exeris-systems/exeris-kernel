@@ -204,7 +204,7 @@ public final class CommunityTlsEngine implements TlsEngine {
 		}
 		try {
 			delegate.notifyBound();
-		} catch (RuntimeException exception) {
+		} catch (RuntimeException exception) { // NOPMD: Delegate may throw various unchecked exceptions
 			delegateBoundNotified.set(false);
 			throw exception;
 		}
