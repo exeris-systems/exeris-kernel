@@ -31,17 +31,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * Core-tier Kahn BFS TCK — mirrors the contract defined in
  * {@code AbstractBootstrapOrchestratorTck} but is self-contained.
  *
- * <h2>Why not extend AbstractBootstrapOrchestratorTck?</h2>
- * <p>Maven's reactor cycle detection is <strong>scope-agnostic</strong>.
- * {@code exeris-kernel-tck} already has a compile dependency on
- * {@code exeris-kernel-core} (for {@code AbstractLoanedBuffer} and
- * {@code TlsStateMachine}). Adding even a {@code test}-scoped reverse edge
- * {@code core → tck} creates a cycle in the reactor DAG — Maven refuses
- * to build the project entirely, before any code is compiled.
- *
- * <p>The fix is to keep Core tests fully self-contained. The {@link #kahn}
- * implementation here is structurally identical to the one in the TCK — any
- * change to the TCK algorithm must be reflected here.
+ * <h2>Why keep this suite in Core?</h2>
+ * <p>Keep this suite self-contained in Core for fast local feedback while
+ * mirroring the contracts defined in {@code AbstractBootstrapOrchestratorTck}.
  *
  * <h2>Covered contracts (same 11 as AbstractBootstrapOrchestratorTck)</h2>
  * <ul>
@@ -63,8 +55,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class CoreBootstrapOrchestratorTckTest {
 
     // =========================================================================
-    // Reference Kahn BFS — structurally identical to AbstractBootstrapOrchestratorTck.kahn()
-    // Kept in sync manually; see class-level Javadoc.
+    // Reference Kahn BFS — mirrors AbstractBootstrapOrchestratorTck.kahn().
     // =========================================================================
 
     @SuppressWarnings("PMD.CyclomaticComplexity") // O(V+E) — inherent graph complexity

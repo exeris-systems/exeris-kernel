@@ -138,8 +138,9 @@ public interface ConfigProvider {
      *
      * @param file     observed filename (relative to config directory); {@code null} = any
      * @param key      dot-path key (e.g., {@code "network.port"})
-     * @param callback receives the new raw string value read from the config file; invoked on a virtual thread;
-     *                 must not be {@code null}
+     * @param callback receives an {@code Object} whose runtime type is {@code String}
+     *                 containing the new raw value read from the config file; invoked on a
+     *                 virtual thread; must not be {@code null}
      */
     void watch(String file, String key, Consumer<Object> callback);
 

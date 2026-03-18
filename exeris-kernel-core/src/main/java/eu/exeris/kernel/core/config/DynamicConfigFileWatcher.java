@@ -136,7 +136,7 @@ public final class DynamicConfigFileWatcher implements AutoCloseable {
 
     /**
      * Convenience factory: resolves the config directory from the process configuration
-     * and builds a watcher using a {@code java.util.Properties}-based extractor.
+     * and builds a watcher using a simple line-based key/value extractor.
      *
      * <p>The config directory is resolved in order:
      * <ol>
@@ -164,7 +164,7 @@ public final class DynamicConfigFileWatcher implements AutoCloseable {
     // =========================================================================
 
     /**
-    * Starts the background Virtual Thread that watches the config directory.
+     * Starts the background Virtual Thread that watches the config directory.
      *
      * <p>This method is idempotent — calling it twice is a no-op.
      *
@@ -348,7 +348,12 @@ public final class DynamicConfigFileWatcher implements AutoCloseable {
     // =========================================================================
 
     /**
-     * Properties-file extractor — parses key/value pairs from UTF-8 text using NIO.
+     * Simple line-based extractor for key/value config files using NIO.
+     *
+     * <p>Supported syntax:
+     * lines in {@code key=value} or {@code key:value} form, with comments prefixed
+     * by {@code #} or {@code !}. This parser does not implement
+     * {@code java.util.Properties} escaping or continuation-line semantics.
      *
      * <p>This is the Community-grade default. Enterprise implementations may replace
      * this with a JSON or YAML extractor via the constructor.
