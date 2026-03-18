@@ -20,7 +20,9 @@ import java.nio.file.StandardWatchEventKinds;
 import java.nio.file.WatchEvent;
 import java.nio.file.WatchKey;
 import java.nio.file.WatchService;
+import java.util.HashSet;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -65,6 +67,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 // CloseResource: activeWatchService is closed in close() — lifecycle is explicit.
 @SuppressWarnings({
     "PMD.CognitiveComplexity",
+    "PMD.CyclomaticComplexity",
     "PMD.CloseResource"
 })
 public final class DynamicConfigFileWatcher implements AutoCloseable {
@@ -292,28 +295,34 @@ public final class DynamicConfigFileWatcher implements AutoCloseable {
      * The previous stable value is preserved — no callback is invoked on failure.
      */
     private void dispatchFileChange(Path filePath, String fileName) {
-        registry.registrations().stream()
-                .filter(reg -> reg.file() == null || reg.file().equals(fileName))
-                .map(KernelConfigRegistry.Registration::key)
-                .distinct()
-                .forEach(key -> {
-                    try {
-                        String newValue = extractor.extract(filePath, key);
-                        if (newValue != null) {
-                            registry.fireReload(fileName, key, newValue);
-                        } else {
-                            LOG.log(System.Logger.Level.DEBUG,
-                                    "DynamicConfigFileWatcher: key ''{0}'' absent in ''{1}'' — skipping",
-                                    key, fileName);
-                        }
-                    } catch (IOException ex) {
-                        LOG.log(System.Logger.Level.WARNING,
-                                "DynamicConfigFileWatcher: failed to read ''{0}'' — {1} [{2}]",
-                                fileName, ex.getMessage(), KernelErrorCodes.EX_CFG_1003);
-                        DynamicReloadEvent.emitFailed(fileName, key,
-                                "read failed: " + ex.getClass().getSimpleName());
-                    }
-                });
+        Set<String> seenKeys = new HashSet<>();
+        for (KernelConfigRegistry.Registration registration : registry.registrations()) {
+            if (registration.file() != null && !registration.file().equals(fileName)) {
+                continue;
+            }
+
+            String key = registration.key();
+            if (!seenKeys.add(key)) {
+                continue;
+            }
+
+            try {
+                String newValue = extractor.extract(filePath, key);
+                if (newValue != null) {
+                    registry.fireReload(fileName, key, newValue);
+                } else {
+                    LOG.log(System.Logger.Level.DEBUG,
+                            "DynamicConfigFileWatcher: key ''{0}'' absent in ''{1}'' — skipping",
+                            key, fileName);
+                }
+            } catch (IOException ex) {
+                LOG.log(System.Logger.Level.WARNING,
+                        "DynamicConfigFileWatcher: failed to read ''{0}'' — {1} [{2}]",
+                        fileName, ex.getMessage(), KernelErrorCodes.EX_CFG_1003);
+                DynamicReloadEvent.emitFailed(fileName, key,
+                        "read failed: " + ex.getClass().getSimpleName());
+            }
+        }
     }
 
     // =========================================================================

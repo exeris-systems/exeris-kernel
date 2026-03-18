@@ -92,6 +92,7 @@ import java.util.function.UnaryOperator;
     "PMD.CouplingBetweenObjects",
     "PMD.TooManyMethods",
     "PMD.CyclomaticComplexity",
+    "PMD.GodClass",
     "PMD.LawOfDemeter"
 })
 public final class SubsystemOrchestrator {
@@ -303,6 +304,7 @@ public final class SubsystemOrchestrator {
         long startNanos = System.nanoTime();
         KernelProfile profile = config.kernelSettings().get().profile();
         String profileName  = profile.toString();
+        Set<String> startedNames = new LinkedHashSet<>();
         LOG.log(System.Logger.Level.INFO,
                 "Starting {0} subsystem(s)", orderedSubsystems.size());
 
@@ -315,9 +317,9 @@ public final class SubsystemOrchestrator {
             }
 
             if (phase == BootstrapPhase.FOUNDATION) {
-                startSequential(forPhase, phase, profileName);
+                startSequential(forPhase, phase, profileName, startedNames);
             } else {
-                startParallel(forPhase, phase, profileName);
+                startParallel(forPhase, phase, profileName, startedNames);
             }
         }
 
@@ -768,12 +770,14 @@ public final class SubsystemOrchestrator {
 
     private void startSequential(List<Subsystem> subsystems,
                                   BootstrapPhase phase,
-                                  String profile) throws BootstrapException {
+                                  String profile,
+                                  Set<String> startedNames) throws BootstrapException {
         LOG.log(System.Logger.Level.INFO,
                 "Phase {0}: sequential start ({1} subsystem(s))",
                 phase, subsystems.size());
         for (Subsystem subsystem : subsystems) {
             doStart(subsystem, phase, profile);
+            startedNames.add(subsystem.name());
         }
     }
 
@@ -783,38 +787,88 @@ public final class SubsystemOrchestrator {
     // a two-parameter generic type whose spelling triggers a separate compile error.
     private void startParallel(List<Subsystem> subsystems,
                                 BootstrapPhase phase,
-                                String profile) throws BootstrapException {
+                    String profile,
+                    Set<String> startedNames) throws BootstrapException {
         LOG.log(System.Logger.Level.INFO,
                 "Phase {0}: parallel start ({1} subsystem(s))",
                 phase, subsystems.size());
-        try (var scope = StructuredTaskScope.open()) {
-            // Fork one VT per subsystem; scope.join() short-circuits on first failure
-            List<StructuredTaskScope.Subtask<Object>> tasks = subsystems.stream()
-                    .<StructuredTaskScope.Subtask<Object>>map(
-                            subsystem -> scope.fork(() -> {
-                                doStart(subsystem, phase, profile);
-                                return null;
-                            }))
+        List<Subsystem> pending = new ArrayList<>(subsystems);
+        while (!pending.isEmpty()) {
+            Set<String> pendingNames = pending.stream()
+                    .map(Subsystem::name)
+                    .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+
+            List<Subsystem> ready = pending.stream()
+                    .filter(subsystem -> dependenciesReadyForRound(subsystem, pendingNames, startedNames))
                     .toList();
 
-            scope.join();
-
-            // Collect failures after join — ordered and deterministic
-            List<Throwable> failures = tasks.stream()
-                    .filter(task -> task.state() == StructuredTaskScope.Subtask.State.FAILED)
-                    .map(StructuredTaskScope.Subtask::exception)
-                    .toList();
-
-            if (!failures.isEmpty()) {
-                Throwable first = failures.getFirst();
+            if (ready.isEmpty()) {
                 throw new BootstrapException(
-                        failures.size() + " subsystem(s) failed in phase " + phase
-                        + ". First failure: " + first.getMessage(), first);
+                        "Phase " + phase + " cannot make progress: unresolved dependencies among pending subsystems "
+                        + pendingNames);
             }
-        } catch (InterruptedException ex) {
-            Thread.currentThread().interrupt();
-            throw new BootstrapException(
-                    "Bootstrap interrupted during phase " + phase, ex);
+
+            try (var scope = StructuredTaskScope.open()) {
+                // Fork one VT per ready subsystem for this dependency-safe round.
+                List<StructuredTaskScope.Subtask<Object>> tasks = ready.stream()
+                        .<StructuredTaskScope.Subtask<Object>>map(
+                                subsystem -> scope.fork(() -> {
+                                    doStart(subsystem, phase, profile);
+                                    return null;
+                                }))
+                        .toList();
+
+                scope.join();
+
+                // Collect failures after join — ordered and deterministic
+                List<Throwable> failures = tasks.stream()
+                        .filter(task -> task.state() == StructuredTaskScope.Subtask.State.FAILED)
+                        .map(StructuredTaskScope.Subtask::exception)
+                        .toList();
+
+                if (!failures.isEmpty()) {
+                    Throwable first = failures.getFirst();
+                    throw new BootstrapException(
+                            failures.size() + " subsystem(s) failed in phase " + phase
+                            + ". First failure: " + first.getMessage(), first);
+                }
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+                throw new BootstrapException(
+                        "Bootstrap interrupted during phase " + phase, ex);
+            }
+
+            Set<String> readyNames = ready.stream()
+                    .map(Subsystem::name)
+                    .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+            startedNames.addAll(readyNames);
+            Set<String> activeNames = orderedSubsystemNamesSnapshot();
+            pending.removeIf(subsystem ->
+                    readyNames.contains(subsystem.name()) || !activeNames.contains(subsystem.name()));
+        }
+    }
+
+    private boolean dependenciesReadyForRound(Subsystem subsystem,
+                                              Set<String> pendingNames,
+                                              Set<String> startedNames) {
+        for (String dependency : subsystem.dependsOn()) {
+            if (pendingNames.contains(dependency)) {
+                return false;
+            }
+            if (!startedNames.contains(dependency)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private Set<String> orderedSubsystemNamesSnapshot() {
+        synchronized (orderedSubsystemsLock) {
+            Set<String> names = new LinkedHashSet<>(orderedSubsystems.size());
+            for (Subsystem subsystem : orderedSubsystems) {
+                names.add(subsystem.name());
+            }
+            return names;
         }
     }
 
@@ -835,9 +889,7 @@ public final class SubsystemOrchestrator {
                     E_CYAN + "  [ \uD83C\uDF01 ] Module ''{0}'' failed."
                     + " Order is an anomaly. Continuing in degraded state." + E_RESET,
                     subsystem.name());
-            synchronized (orderedSubsystemsLock) {
-                orderedSubsystems.remove(subsystem);
-            }
+            removeSubsystemAndTransitiveDependents(subsystem.name());
         } else {
             // 🜁 ENTROPY INTERVENTION — mandatory module failure
             LOG.log(System.Logger.Level.ERROR, "");
@@ -863,6 +915,28 @@ public final class SubsystemOrchestrator {
             throw new BootstrapException(
                     "Subsystem '" + subsystem.name() + "' failed: "
                     + failure.getMessage(), failure);
+        }
+    }
+
+    private void removeSubsystemAndTransitiveDependents(String failedSubsystemName) {
+        synchronized (orderedSubsystemsLock) {
+            Set<String> toRemove = new LinkedHashSet<>();
+            Deque<String> frontier = new ArrayDeque<>();
+            frontier.add(failedSubsystemName);
+
+            while (!frontier.isEmpty()) {
+                String current = frontier.poll();
+                if (!toRemove.add(current)) {
+                    continue;
+                }
+                for (Subsystem candidate : orderedSubsystems) {
+                    if (candidate.dependsOn().contains(current) && !toRemove.contains(candidate.name())) {
+                        frontier.add(candidate.name());
+                    }
+                }
+            }
+
+            orderedSubsystems.removeIf(subsystem -> toRemove.contains(subsystem.name()));
         }
     }
 
