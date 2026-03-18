@@ -141,7 +141,6 @@
                                         <argument>--enable-preview</argument>
                                         <argument>-XX:+UnlockExperimentalVMOptions</argument>
                                         <argument>${benchmark.jvm.gc}</argument>
-                                        <argument>${benchmark.jvmArgs}</argument>
                                         <argument>--enable-native-access=ALL-UNNAMED</argument>
                                         <argument>-Djava.library.path=${java.library.path}${path.separator}${native.lib.dir}</argument>
                                         <argument>--add-opens</argument>

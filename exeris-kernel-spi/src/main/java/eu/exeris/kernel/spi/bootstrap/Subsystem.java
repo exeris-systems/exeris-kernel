@@ -157,18 +157,18 @@ public interface Subsystem {
 
     /**
      * Returns a function that enriches the kernel's {@link ScopedValue} carrier with
-     * this subsystem's provider bindings after {@link #start()} completes successfully
-     * and the subsystem transitions to RUNNING state.
+     * this subsystem's provider bindings after {@link #initialize()} completes successfully
+     * and before {@link #start()} is invoked.
      *
      * <h2>State Symmetry Contract</h2>
-     * <p>Provider bindings are <strong>only visible when the subsystem is actively
-     * RUNNING</strong>. Degraded subsystems (those that fail and are skipped) never
-     * register bindings, ensuring state symmetry between subsystem liveness and binding visibility.
+     * <p>Provider bindings are composed only for subsystems whose {@link #initialize()} completed
+     * successfully. Subsystems that fail or are skipped during initialization do not contribute
+     * bindings, preserving symmetry between subsystem admission to the lifecycle and binding visibility.
      *
      * <h2>Purpose — solving the ScopedValue bootstrap problem</h2>
      * <p>{@link #initialize()} executes inside an already open {@link ScopedValue} scope
      * (the one opened for {@code CURRENT_CONFIG}). It cannot extend that scope from within.
-     * After {@link #start()} completes and the subsystem reaches RUNNING state, the
+     * After {@link #initialize()} completes and before {@link #start()} is called, the
      * orchestrator calls this method to register bindings that are visible to all code
      * running inside the enriched scope context.
      *
