@@ -85,6 +85,7 @@ public final class KernelConfigRegistry {
     }
 
     private final List<Registration> registrations = new ArrayList<>();
+    private final List<Registration> registrationsView = Collections.unmodifiableList(registrations);
 
     /**
      * Sealed flag — {@code true} after bootstrap completes.
@@ -203,7 +204,7 @@ public final class KernelConfigRegistry {
      * @return immutable list of registrations
      */
     public List<Registration> registrations() {
-        return Collections.unmodifiableList(registrations);
+        return registrationsView;
     }
 
     /**

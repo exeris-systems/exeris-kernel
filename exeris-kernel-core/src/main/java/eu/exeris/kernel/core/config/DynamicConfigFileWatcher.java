@@ -215,7 +215,8 @@ public final class DynamicConfigFileWatcher implements AutoCloseable {
             return;
         }
         Thread currentVt = watcherVt;
-        if (currentVt != null) {
+        Thread currentThread = Thread.currentThread();
+        if (currentVt != null && !Objects.equals(currentVt, currentThread)) {
             currentVt.interrupt();
         }
         WatchService currentWs = activeWatchService;
@@ -226,6 +227,19 @@ public final class DynamicConfigFileWatcher implements AutoCloseable {
                 LOG.log(System.Logger.Level.WARNING,
                         "DynamicConfigFileWatcher: error closing WatchService — {0}",
                         ex.getMessage());
+            }
+        }
+        if (currentVt != null && !Objects.equals(currentVt, currentThread)) {
+            try {
+                currentVt.join(2000);
+                if (currentVt.isAlive()) {
+                    LOG.log(System.Logger.Level.WARNING,
+                            "DynamicConfigFileWatcher: watcher thread did not terminate within timeout");
+                }
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+                LOG.log(System.Logger.Level.WARNING,
+                        "DynamicConfigFileWatcher: interrupted while waiting for watcher shutdown");
             }
         }
         LOG.log(System.Logger.Level.INFO, "DynamicConfigFileWatcher: stopped");
@@ -252,6 +266,7 @@ public final class DynamicConfigFileWatcher implements AutoCloseable {
      * carrier — it is one of the JDK's well-known VT-safe blocking operations.
      */
     private void watchLoop(WatchService watchService) {
+        final Iterable<KernelConfigRegistry.Registration> registrationsSnapshot = registry.registrations();
         while (running.get()) {
             WatchKey key;
             try {
@@ -276,7 +291,7 @@ public final class DynamicConfigFileWatcher implements AutoCloseable {
                 @SuppressWarnings("unchecked")
                 Path changedPath = watchDir.resolve(((WatchEvent<Path>) event).context());
                 String fileName  = changedPath.getFileName().toString();
-                dispatchFileChange(changedPath, fileName);
+                dispatchFileChange(changedPath, fileName, registrationsSnapshot);
             }
 
             if (!key.reset()) {
@@ -294,9 +309,16 @@ public final class DynamicConfigFileWatcher implements AutoCloseable {
      * <p>On read failure, logs {@code EX-CFG-1003} and emits a JFR failure event.
      * The previous stable value is preserved — no callback is invoked on failure.
      */
+    @SuppressWarnings("unused") // retained for compatibility and test hooks
     private void dispatchFileChange(Path filePath, String fileName) {
+        dispatchFileChange(filePath, fileName, registry.registrations());
+    }
+
+    private void dispatchFileChange(Path filePath,
+                                    String fileName,
+                                    Iterable<KernelConfigRegistry.Registration> registrationsSnapshot) {
         Set<String> seenKeys = new HashSet<>();
-        for (KernelConfigRegistry.Registration registration : registry.registrations()) {
+        for (KernelConfigRegistry.Registration registration : registrationsSnapshot) {
             if (registration.file() != null && !registration.file().equals(fileName)) {
                 continue;
             }

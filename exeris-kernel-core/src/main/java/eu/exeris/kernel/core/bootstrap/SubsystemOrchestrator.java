@@ -78,8 +78,9 @@ import java.util.function.UnaryOperator;
  *
  * <h2>Thread Safety</h2>
  * <p>This class is single-use per kernel lifecycle. {@link AtomicBoolean} guards
- * are used instead of {@code volatile} double-checked locking (banned) or
- * {@code synchronized} (banned).
+ * protect lifecycle transitions without broad synchronized lifecycle guarding.
+ * Narrow synchronized sections are used only for internal {@code orderedSubsystems}
+ * list mutation/snapshots off the hot path.
  *
  * @since 0.5.0
  * @see SubsystemCircularDependencyException
@@ -271,6 +272,9 @@ public final class SubsystemOrchestrator {
 
         // 4. Initialize in topological order
         for (Subsystem subsystem : new ArrayList<>(orderedSubsystems)) {
+            if (!isOrderedSubsystemActive(subsystem)) {
+                continue;
+            }
             doInitialize(subsystem, profile);
         }
 
@@ -472,7 +476,11 @@ public final class SubsystemOrchestrator {
     private Map<String, Subsystem> buildRegistry(ConfigProvider config) {
         List<SubsystemProvider> providers = new ArrayList<>();
         ServiceLoader.load(SubsystemProvider.class, classLoader).forEach(providers::add);
-        providers.sort(Comparator.comparingInt(SubsystemProvider::priority).reversed());
+        providers.sort(Comparator
+            .comparingInt(SubsystemProvider::priority)
+            .reversed()
+            .thenComparing(provider -> Objects.toString(provider.moduleName(), ""))
+            .thenComparing(provider -> provider.getClass().getName()));
 
         if (providers.isEmpty()) {
             LOG.log(System.Logger.Level.WARNING,
@@ -869,6 +877,12 @@ public final class SubsystemOrchestrator {
                 names.add(subsystem.name());
             }
             return names;
+        }
+    }
+
+    private boolean isOrderedSubsystemActive(Subsystem subsystem) {
+        synchronized (orderedSubsystemsLock) {
+            return orderedSubsystems.contains(subsystem);
         }
     }
 

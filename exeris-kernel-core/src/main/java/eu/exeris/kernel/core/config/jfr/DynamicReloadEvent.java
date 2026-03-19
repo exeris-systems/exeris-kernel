@@ -11,6 +11,7 @@ package eu.exeris.kernel.core.config.jfr;
 import jdk.jfr.Category;
 import jdk.jfr.Description;
 import jdk.jfr.Event;
+import jdk.jfr.FlightRecorder;
 import jdk.jfr.Label;
 import jdk.jfr.Name;
 import jdk.jfr.StackTrace;
@@ -95,6 +96,9 @@ public final class DynamicReloadEvent {
      * @param startNanos {@code System.nanoTime()} captured before the reload started
      */
     public static void emitReloaded(String file, String key, long startNanos) {
+        if (!FlightRecorder.isInitialized()) {
+            return;
+        }
         DynamicFieldReloadedEvent evt = new DynamicFieldReloadedEvent();
         if (!evt.isEnabled()) {
             return;
@@ -113,6 +117,9 @@ public final class DynamicReloadEvent {
      * @param reason static failure description (must NOT contain secret data)
      */
     public static void emitFailed(String file, String key, String reason) {
+        if (!FlightRecorder.isInitialized()) {
+            return;
+        }
         DynamicReloadFailedEvent evt = new DynamicReloadFailedEvent();
         if (!evt.isEnabled()) {
             return;
