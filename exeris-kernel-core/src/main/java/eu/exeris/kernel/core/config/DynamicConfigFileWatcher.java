@@ -21,6 +21,7 @@ import java.nio.file.WatchEvent;
 import java.nio.file.WatchKey;
 import java.nio.file.WatchService;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -178,6 +179,9 @@ public final class DynamicConfigFileWatcher implements AutoCloseable {
         if (!running.compareAndSet(false, true)) {
             return;
         }
+        if (!registry.isSealed()) {
+            throw new IllegalStateException("DynamicConfigFileWatcher requires a sealed KernelConfigRegistry");
+        }
         WatchService watchService = null;
         boolean published = false;
         try {
@@ -266,7 +270,8 @@ public final class DynamicConfigFileWatcher implements AutoCloseable {
      * carrier — it is one of the JDK's well-known VT-safe blocking operations.
      */
     private void watchLoop(WatchService watchService) {
-        final Iterable<KernelConfigRegistry.Registration> registrationsSnapshot = registry.registrations();
+        final Iterable<KernelConfigRegistry.Registration> registrationsSnapshot =
+                List.copyOf(registry.registrations());
         while (running.get()) {
             WatchKey key;
             try {

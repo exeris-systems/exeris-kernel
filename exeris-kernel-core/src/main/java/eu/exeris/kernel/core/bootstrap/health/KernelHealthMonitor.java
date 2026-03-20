@@ -76,9 +76,13 @@ public final class KernelHealthMonitor {
         if (!kernelStarted.get() || kernelShuttingDown.get()) {
             return new ProbeSnapshot(STATUS_STARTING, false);
         }
-        boolean allRequiredRunning = subsystems.values().stream()
-                .filter(SubsystemHealth::requiredForReadiness)
-                .allMatch(health -> health.state() == SubsystemState.RUNNING);
+        boolean allRequiredRunning = true;
+        for (SubsystemHealth health : subsystems.values()) {
+            if (health.requiredForReadiness() && health.state() != SubsystemState.RUNNING) {
+                allRequiredRunning = false;
+                break;
+            }
+        }
         return allRequiredRunning
                 ? new ProbeSnapshot(STATUS_READY, true)
                 : new ProbeSnapshot(STATUS_STARTING, false);
