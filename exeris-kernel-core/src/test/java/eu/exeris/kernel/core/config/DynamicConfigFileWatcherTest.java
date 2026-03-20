@@ -56,6 +56,7 @@ class DynamicConfigFileWatcherTest {
             var registry = new KernelConfigRegistry();
             try (var watcher = new DynamicConfigFileWatcher(dir, registry,
                     DynamicConfigFileWatcher.PropertiesExtractor.INSTANCE)) {
+                registry.seal();
                 watcher.start();
                 assertThat(watcher.isRunning()).isTrue();
             }
@@ -67,6 +68,7 @@ class DynamicConfigFileWatcherTest {
             var registry = new KernelConfigRegistry();
             try (var watcher = new DynamicConfigFileWatcher(dir, registry,
                     DynamicConfigFileWatcher.PropertiesExtractor.INSTANCE)) {
+                registry.seal();
                 watcher.start();
                 watcher.close();
 
@@ -80,6 +82,7 @@ class DynamicConfigFileWatcherTest {
             var registry = new KernelConfigRegistry();
             try (var watcher = new DynamicConfigFileWatcher(dir, registry,
                     DynamicConfigFileWatcher.PropertiesExtractor.INSTANCE)) {
+                registry.seal();
                 watcher.start();
                 watcher.start(); // second call must be no-op
                 assertThat(watcher.isRunning()).isTrue();
@@ -94,7 +97,7 @@ class DynamicConfigFileWatcherTest {
             try (var watcher = new DynamicConfigFileWatcher(watchFile, registry,
                     DynamicConfigFileWatcher.PropertiesExtractor.INSTANCE)) {
                 assertThatThrownBy(watcher::start)
-                        .isInstanceOf(IOException.class);
+                        .isInstanceOf(IllegalStateException.class); // sealed registry check is first gate
                 assertThat(watcher.isRunning()).isFalse();
             }
         }
@@ -106,6 +109,7 @@ class DynamicConfigFileWatcherTest {
             var watcher  = new DynamicConfigFileWatcher(dir, registry,
                     DynamicConfigFileWatcher.PropertiesExtractor.INSTANCE);
 
+            registry.seal();
             watcher.start();
             watcher.close();
             watcher.close(); // must not throw
@@ -139,6 +143,7 @@ class DynamicConfigFileWatcherTest {
 
             var watcher = new DynamicConfigFileWatcher(dir, registry,
                     DynamicConfigFileWatcher.PropertiesExtractor.INSTANCE);
+            registry.seal();
             watcher.start();
 
             try {
@@ -179,6 +184,7 @@ class DynamicConfigFileWatcherTest {
 
             var watcher = new DynamicConfigFileWatcher(dir, registry,
                     DynamicConfigFileWatcher.PropertiesExtractor.INSTANCE);
+            registry.seal();
             watcher.start();
 
             try {
@@ -211,6 +217,7 @@ class DynamicConfigFileWatcherTest {
 
             var watcher = new DynamicConfigFileWatcher(dir, registry,
                     DynamicConfigFileWatcher.PropertiesExtractor.INSTANCE);
+            registry.seal();
             watcher.start();
 
             try {

@@ -176,11 +176,11 @@ public final class DynamicConfigFileWatcher implements AutoCloseable {
      *                     cannot be registered
      */
     public void start() throws IOException {
-        if (!running.compareAndSet(false, true)) {
-            return;
-        }
         if (!registry.isSealed()) {
             throw new IllegalStateException("DynamicConfigFileWatcher requires a sealed KernelConfigRegistry");
+        }
+        if (!running.compareAndSet(false, true)) {
+            return;
         }
         WatchService watchService = null;
         boolean published = false;
@@ -346,8 +346,7 @@ public final class DynamicConfigFileWatcher implements AutoCloseable {
                 LOG.log(System.Logger.Level.WARNING,
                         "DynamicConfigFileWatcher: failed to read ''{0}'' — {1} [{2}]",
                         fileName, ex.getMessage(), KernelErrorCodes.EX_CFG_1003);
-                DynamicReloadEvent.emitFailed(fileName, key,
-                        "read failed: " + ex.getClass().getSimpleName());
+                DynamicReloadEvent.emitFailed(fileName, key, ex.getClass());
             }
         }
     }

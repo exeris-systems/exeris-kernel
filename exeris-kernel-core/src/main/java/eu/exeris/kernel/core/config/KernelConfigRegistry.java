@@ -190,8 +190,7 @@ public final class KernelConfigRegistry {
                     LOG.log(System.Logger.Level.WARNING,
                             "KernelConfigRegistry: reload callback failed [{0}] — {1} [{2}]",
                             key, ex.getMessage(), KernelErrorCodes.EX_CFG_1003);
-                    DynamicReloadEvent.emitFailed(file, key,
-                            "callback threw: " + ex.getClass().getSimpleName());
+                    DynamicReloadEvent.emitFailed(file, key, ex.getClass());
                 }
             }
         }
@@ -204,7 +203,8 @@ public final class KernelConfigRegistry {
      * @return immutable list of registrations
      */
     public List<Registration> registrations() {
-        return registrationsView;
+        // Return an immutable snapshot to prevent exposure of internal representation.
+        return List.copyOf(registrationsView);
     }
 
     /**

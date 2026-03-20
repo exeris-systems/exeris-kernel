@@ -19,7 +19,7 @@ import jdk.jfr.StackTrace;
 
 import java.util.Set;
 
-// AvoidDuplicateLiterals: "Exeris", "Bootstrap", "Duration (ms)" are JFR annotation
+// AvoidDuplicateLiterals: "Exeris Kernel", "Bootstrap", "Duration (ms)" are JFR annotation
 // literals — they cannot be extracted to constants as @Label/@Category require string literals.
 // UseExplicitTypes: 'var' is used for JFR event locals; explicit type would duplicate
 // the inner class name on the same line, harming readability with zero type-safety gain.
@@ -41,7 +41,7 @@ public final class BootstrapJfrEvents {
      */
     @Name("eu.exeris.kernel.bootstrap.SubsystemInitialized")
     @Label("Subsystem Initialized")
-    @Category({"Exeris", "Bootstrap"})
+    @Category({"Exeris Kernel", "Bootstrap"})
     @Description("Emitted when a kernel subsystem completes initialize()")
     @StackTrace(false)
     public static final class SubsystemInitializedEvent extends Event {
@@ -80,7 +80,7 @@ public final class BootstrapJfrEvents {
      */
     @Name("eu.exeris.kernel.bootstrap.SubsystemStarted")
     @Label("Subsystem Started")
-    @Category({"Exeris", "Bootstrap"})
+    @Category({"Exeris Kernel", "Bootstrap"})
     @StackTrace(false)
     public static final class SubsystemStartedEvent extends Event {
 
@@ -104,7 +104,7 @@ public final class BootstrapJfrEvents {
      */
     @Name("eu.exeris.kernel.bootstrap.SubsystemStopped")
     @Label("Subsystem Stopped")
-    @Category({"Exeris", "Bootstrap"})
+    @Category({"Exeris Kernel", "Bootstrap"})
     @StackTrace(false)
     public static final class SubsystemStoppedEvent extends Event {
 
@@ -127,7 +127,7 @@ public final class BootstrapJfrEvents {
      */
     @Name("eu.exeris.kernel.bootstrap.KernelBootReady")
     @Label("Kernel Boot Ready")
-    @Category({"Exeris", "Bootstrap"})
+    @Category({"Exeris Kernel", "Bootstrap"})
     @StackTrace(false)
     public static final class KernelBootReadyEvent extends Event {
 
@@ -156,7 +156,7 @@ public final class BootstrapJfrEvents {
      */
     @Name("eu.exeris.kernel.bootstrap.KernelShutdownComplete")
     @Label("Kernel Shutdown Complete")
-    @Category({"Exeris", "Bootstrap"})
+    @Category({"Exeris Kernel", "Bootstrap"})
     @StackTrace(false)
     public static final class KernelShutdownCompleteEvent extends Event {
 
@@ -180,7 +180,7 @@ public final class BootstrapJfrEvents {
      */
     @Name("eu.exeris.kernel.bootstrap.ConfigSettingsResolved")
     @Label("Config Settings Resolved")
-    @Category({"Exeris", "Bootstrap", "Config"})
+    @Category({"Exeris Kernel", "Bootstrap", "Config"})
     @StackTrace(false)
     public static final class ConfigSettingsResolvedEvent extends Event {
 
@@ -210,7 +210,7 @@ public final class BootstrapJfrEvents {
      */
     @Name("eu.exeris.kernel.bootstrap.CircularDependencyDetected")
     @Label("Circular Dependency Detected")
-    @Category({"Exeris", "Bootstrap", "Fatal"})
+    @Category({"Exeris Kernel", "Bootstrap", "Fatal"})
     @StackTrace(true) // stack trace IS useful here — this is a fatal defect
     public static final class CircularDependencyDetectedEvent extends Event {
 

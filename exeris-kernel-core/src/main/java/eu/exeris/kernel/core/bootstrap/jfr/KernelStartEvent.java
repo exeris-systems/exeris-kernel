@@ -41,7 +41,7 @@ import jdk.jfr.StackTrace;
 @Label("Kernel Start")
 @Description("Emitted at the very first line of KernelBootstrap.boot() — "
            + "before config resolution, before any subsystem is touched.")
-@Category({"Exeris", "Bootstrap"})
+@Category({"Exeris Kernel", "Bootstrap"})
 @StackTrace(false)
 public final class KernelStartEvent extends Event {
 

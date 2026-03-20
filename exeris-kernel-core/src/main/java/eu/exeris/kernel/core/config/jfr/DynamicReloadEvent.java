@@ -129,5 +129,26 @@ public final class DynamicReloadEvent {
         evt.reason = reason;
         evt.commit();
     }
+
+    /**
+     * Emits a {@link DynamicReloadFailedEvent} for reload failures with error type.
+     *
+     * @param file      config file name
+     * @param key       dot-path key
+     * @param errorType exception class used to derive a static failure description
+     */
+    public static void emitFailed(String file, String key, Class<?> errorType) {
+        if (!FlightRecorder.isInitialized()) {
+            return;
+        }
+        DynamicReloadFailedEvent evt = new DynamicReloadFailedEvent();
+        if (!evt.isEnabled()) {
+            return;
+        }
+        evt.file = file;
+        evt.key = key;
+        evt.reason = "error type: " + errorType.getSimpleName();
+        evt.commit();
+    }
 }
 
