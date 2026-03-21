@@ -52,7 +52,7 @@ public final class DynamicReloadEvent {
         public String key;
 
         @Label("Duration (µs)")
-        @Description("Wall-clock time from WatchKey poll to VarHandle.setRelease() in microseconds")
+        @Description("Wall-clock time from reload callback entry to VarHandle.setRelease() in microseconds")
         public long durationUs;
     }
 

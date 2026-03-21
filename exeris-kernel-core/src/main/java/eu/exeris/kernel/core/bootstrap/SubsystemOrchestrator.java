@@ -784,6 +784,12 @@ public final class SubsystemOrchestrator {
                 "Phase {0}: sequential start ({1} subsystem(s))",
                 phase, subsystems.size());
         for (Subsystem subsystem : subsystems) {
+            if (!isOrderedSubsystemActive(subsystem)) {
+                LOG.log(System.Logger.Level.DEBUG,
+                        "  skip start [{0}] — no longer active in DEGRADE",
+                        subsystem.name());
+                continue;
+            }
             doStart(subsystem, phase, profile);
             startedNames.add(subsystem.name());
         }
