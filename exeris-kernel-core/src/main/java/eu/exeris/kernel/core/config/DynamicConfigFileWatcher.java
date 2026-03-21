@@ -21,7 +21,6 @@ import java.nio.file.WatchEvent;
 import java.nio.file.WatchKey;
 import java.nio.file.WatchService;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -271,7 +270,7 @@ public final class DynamicConfigFileWatcher implements AutoCloseable {
      */
     private void watchLoop(WatchService watchService) {
         final Iterable<KernelConfigRegistry.Registration> registrationsSnapshot =
-                List.copyOf(registry.registrations());
+                registry.registrations();
         while (running.get()) {
             WatchKey key;
             try {

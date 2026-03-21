@@ -13,6 +13,7 @@ import eu.exeris.kernel.spi.exceptions.bootstrap.SubsystemCircularDependencyExce
 import jdk.jfr.Category;
 import jdk.jfr.Description;
 import jdk.jfr.Event;
+import jdk.jfr.FlightRecorder;
 import jdk.jfr.Label;
 import jdk.jfr.Name;
 import jdk.jfr.StackTrace;
@@ -239,6 +240,9 @@ public final class BootstrapJfrEvents {
     @SuppressWarnings("PMD.LawOfDemeter") // JFR Event API mandates public field assignment — no setter API available
     public static void emitInitialized(String name, long startNanos,
                                        KernelProfile profile, String phase, boolean success, String error) {
+        if (!FlightRecorder.isInitialized()) {
+            return;
+        }
         var event = new SubsystemInitializedEvent();
         if (!event.isEnabled()) {
             return;
@@ -260,6 +264,9 @@ public final class BootstrapJfrEvents {
      * @param phase      bootstrap phase name
      */
     public static void emitStarted(String name, long startNanos, String phase) {
+        if (!FlightRecorder.isInitialized()) {
+            return;
+        }
         var event = new SubsystemStartedEvent();
         if (!event.isEnabled()) {
             return;
@@ -277,6 +284,9 @@ public final class BootstrapJfrEvents {
      * @param startNanos start timestamp
      */
     public static void emitStopped(String name, long startNanos) {
+        if (!FlightRecorder.isInitialized()) {
+            return;
+        }
         var event = new SubsystemStoppedEvent();
         if (!event.isEnabled()) {
             return;
@@ -298,6 +308,9 @@ public final class BootstrapJfrEvents {
     @SuppressWarnings("PMD.LawOfDemeter") // JFR Event API mandates public field assignment — no setter API available
     public static void emitBootReady(long startNanos, int subsystemCount,
             KernelProfile profile, String nodeId, String selector) {
+        if (!FlightRecorder.isInitialized()) {
+            return;
+        }
         var event = new KernelBootReadyEvent();
         if (!event.isEnabled()) {
             return;
@@ -317,6 +330,9 @@ public final class BootstrapJfrEvents {
      * @param subsystemCount number of subsystems that were stopped
      */
     public static void emitShutdownComplete(long startNanos, int subsystemCount) {
+        if (!FlightRecorder.isInitialized()) {
+            return;
+        }
         var event = new KernelShutdownCompleteEvent();
         if (!event.isEnabled()) {
             return;
@@ -336,6 +352,9 @@ public final class BootstrapJfrEvents {
      */
     public static void emitConfigResolved(String providerName, String profile,
             long startNanos, String source) {
+        if (!FlightRecorder.isInitialized()) {
+            return;
+        }
         var event = new ConfigSettingsResolvedEvent();
         if (!event.isEnabled()) {
             return;
@@ -355,6 +374,9 @@ public final class BootstrapJfrEvents {
      * @param cycleMembers ordered set of subsystem names forming the cycle
      */
     public static void emitCircularDependency(Set<String> cycleMembers) {
+        if (!FlightRecorder.isInitialized()) {
+            return;
+        }
         var event = new CircularDependencyDetectedEvent();
         if (!event.isEnabled()) {
             return;

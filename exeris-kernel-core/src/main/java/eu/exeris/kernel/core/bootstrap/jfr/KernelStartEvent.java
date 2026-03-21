@@ -11,6 +11,7 @@ package eu.exeris.kernel.core.bootstrap.jfr;
 import jdk.jfr.Category;
 import jdk.jfr.Description;
 import jdk.jfr.Event;
+import jdk.jfr.FlightRecorder;
 import jdk.jfr.Label;
 import jdk.jfr.Name;
 import jdk.jfr.StackTrace;
@@ -71,6 +72,9 @@ public final class KernelStartEvent extends Event {
     public static void emit(String kernelVersion,
                             String failurePolicy,
                             String selector) {
+        if (!FlightRecorder.isInitialized()) {
+            return;
+        }
         KernelStartEvent event = new KernelStartEvent();
         if (!event.isEnabled()) {
             return;

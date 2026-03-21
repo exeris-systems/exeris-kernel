@@ -16,6 +16,7 @@ import eu.exeris.kernel.core.config.KernelConfigRegistry;
 import eu.exeris.kernel.spi.bootstrap.BootstrapSelector;
 import eu.exeris.kernel.spi.config.ConfigProvider;
 import eu.exeris.kernel.spi.context.KernelProviders;
+import eu.exeris.kernel.spi.exceptions.bootstrap.SubsystemCircularDependencyException;
 
 import java.io.IOException;
 import java.util.Comparator;
@@ -162,6 +163,8 @@ public final class KernelBootstrap {
                         runBootInsideScope(orchestrator, config, configRegistry, configWatcher, kernelMain);
                         return null;
                     });
+        } catch (SubsystemCircularDependencyException ex) {
+            throw ex;
         } catch (SubsystemOrchestrator.BootstrapException ex) {
             throw new BootstrapException("Subsystem bootstrap failed: " + ex.getMessage(), ex);
         } catch (Exception ex) {
