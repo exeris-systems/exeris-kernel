@@ -227,6 +227,9 @@ public class CoreOffHeapTlsEngineBenchmark extends AbstractExerisBenchmark {
             bindAcceptedSocket = bindServerSocket.accept();
             bindFd = extractFd(bindAcceptedSocket);
         } catch (Exception e) {
+            closeQuietly(bindAcceptedSocket);
+            closeQuietly(bindClientSocket);
+            closeQuietly(bindServerSocket);
             throw new IllegalStateException("Could not create loopback socket pair for bind benchmark", e);
         }
     }
