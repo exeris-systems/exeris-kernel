@@ -73,6 +73,7 @@ import java.util.concurrent.locks.LockSupport;
 })
 public final class NativeTcpCarrier implements TransportEngine {
 
+    private static final System.Logger LOG = System.getLogger(NativeTcpCarrier.class.getName());
     private static final String ENGINE_NAME = "CommunityNativeTcpCarrier";
     private static final TransportEngineCapabilities CAPS =
             TransportEngineCapabilities.STANDARD.withProvider("community-transport");
@@ -105,6 +106,7 @@ public final class NativeTcpCarrier implements TransportEngine {
     private final ConcurrentMap<SocketChannel, NativeTcpStream> streamByChannel = new ConcurrentHashMap<>();
     private final ConcurrentMap<SocketChannel, ReactorLoop> channelOwner = new ConcurrentHashMap<>();
     private final ConcurrentMap<SocketChannel, Thread> clientIngressThreads = new ConcurrentHashMap<>();
+    private final ConcurrentMap<SocketChannel, Thread> clientWriterThreads = new ConcurrentHashMap<>();
 
     /* default */ NativeTcpCarrier(TransportConfig config,
                      MemoryAllocator allocator,
@@ -226,7 +228,7 @@ public final class NativeTcpCarrier implements TransportEngine {
                     connection,
                     allocator,
                     tlsEngine,
-                    () -> flushClientStream(channel),
+                    () -> requestClientWriteFlush(channel),
                     () -> onStreamClosed(channel));
             if (tlsEngine instanceof eu.exeris.kernel.community.crypto.CommunityTlsEngine) {
                 stream.markTlsBoundFromCarrier();
@@ -235,6 +237,7 @@ public final class NativeTcpCarrier implements TransportEngine {
             connection.bindSingleStream(stream);
             streamByChannel.put(channel, stream);
             startClientIngressPump(channel, stream);
+            startClientWriterPump(channel, stream);
             activeConnections.incrementAndGet();
             activeStreams.incrementAndGet();
             totalAccepted.incrementAndGet();
@@ -333,11 +336,34 @@ public final class NativeTcpCarrier implements TransportEngine {
                 // shutdown path
                 return;
             } catch (IOException e) {
-                if (!running.get()) {
-                    return;
+                if (running.get()) {
+                    handleAsyncFailure("acceptor", e);
                 }
-                running.set(false);
-                throw TransportException.engineStartFailure(engineName(), config.port(), e);
+                return;
+            }
+        }
+    }
+
+    private void handleAsyncFailure(String stage, Exception error) {
+        boolean wasRunning = running.getAndSet(false);
+        closeQuietly(serverChannel);
+        for (ReactorLoop reactor : reactors) {
+            reactor.wakeup();
+        }
+        if (wasRunning) {
+            LOG.log(System.Logger.Level.WARNING, "Async transport failure in " + stage, error);
+        }
+    }
+
+    private boolean tryReserveConnectionSlot() {
+        long maxConnections = config.maxConnections();
+        while (true) {
+            long current = activeConnections.get();
+            if (current >= maxConnections) {
+                return false;
+            }
+            if (activeConnections.compareAndSet(current, current + 1)) {
+                return true;
             }
         }
     }
@@ -359,7 +385,15 @@ public final class NativeTcpCarrier implements TransportEngine {
         while (acceptedChannel != null && running.get()) {
             SocketChannel currentChannel = acceptedChannel;
             NativeTcpConnection connection = null;
+            boolean slotReserved = false;
+            boolean connectionManagedByStreamLifecycle = false;
             try {
+                slotReserved = tryReserveConnectionSlot();
+                if (!slotReserved) {
+                    closeQuietly(currentChannel);
+                    acceptedChannel = serverChannel.accept();
+                    continue;
+                }
                 currentChannel.configureBlocking(false);
                 currentChannel.socket().setTcpNoDelay(true);
 
@@ -386,13 +420,19 @@ public final class NativeTcpCarrier implements TransportEngine {
 
                 connection.bindSingleStream(stream);
                 streamByChannel.put(currentChannel, stream);
+                connectionManagedByStreamLifecycle = true;
                 ReactorLoop owner = selectReactor();
                 channelOwner.put(currentChannel, owner);
                 owner.enqueueRegistration(currentChannel);
 
-                activeConnections.incrementAndGet();
                 activeStreams.incrementAndGet();
                 totalAccepted.incrementAndGet();
+
+                if (!stream.awaitHandshakeReadyForConnection()) {
+                    connection.close();
+                    acceptedChannel = serverChannel.accept();
+                    continue;
+                }
 
                 try {
                     connectionHandler.onConnectionEstablished(connection);
@@ -412,6 +452,10 @@ public final class NativeTcpCarrier implements TransportEngine {
                     connection.close();
                 } else {
                     closeQuietly(currentChannel);
+                }
+            } finally {
+                if (slotReserved && !connectionManagedByStreamLifecycle) {
+                    activeConnections.decrementAndGet();
                 }
             }
             acceptedChannel = serverChannel.accept();
@@ -514,18 +558,21 @@ public final class NativeTcpCarrier implements TransportEngine {
         if (clientIngressThread != null) {
             clientIngressThread.interrupt();
         }
+        Thread clientWriterThread = clientWriterThreads.remove(channel);
+        if (clientWriterThread != null) {
+            clientWriterThread.interrupt();
+        }
         if (streamByChannel.remove(channel) != null) {
             activeStreams.decrementAndGet();
             activeConnections.decrementAndGet();
         }
     }
 
-    private void flushClientStream(SocketChannel channel) {
-        NativeTcpStream stream = streamByChannel.get(channel);
-        if (stream == null) {
-            return;
+    private void requestClientWriteFlush(SocketChannel channel) {
+        Thread writer = clientWriterThreads.get(channel);
+        if (writer != null) {
+            LockSupport.unpark(writer);
         }
-        stream.flushPendingWrites();
     }
 
     private void startClientIngressPump(SocketChannel channel, NativeTcpStream stream) {
@@ -533,6 +580,13 @@ public final class NativeTcpCarrier implements TransportEngine {
                 .name("carrier/native-tcp-client-ingress/" + stream.streamId())
                 .start(() -> runClientIngressLoop(channel, stream));
         clientIngressThreads.put(channel, thread);
+    }
+
+    private void startClientWriterPump(SocketChannel channel, NativeTcpStream stream) {
+        Thread thread = Thread.ofVirtual()
+                .name("carrier/native-tcp-client-writer/" + stream.streamId())
+                .start(() -> runClientWriterLoop(stream));
+        clientWriterThreads.put(channel, thread);
     }
 
     private void runClientIngressLoop(SocketChannel channel, NativeTcpStream stream) {
@@ -563,6 +617,21 @@ public final class NativeTcpCarrier implements TransportEngine {
         }
     }
 
+    private void runClientWriterLoop(NativeTcpStream stream) {
+        while (running.get() && !stream.isClosed()) {
+            try {
+                if (stream.hasPendingData()) {
+                    stream.flushPendingWrites();
+                    continue;
+                }
+                LockSupport.parkNanos(250_000L);
+            } catch (RuntimeException _) {
+                stream.close();
+                return;
+            }
+        }
+    }
+
     private TlsEngine createTlsEngineIfEnabled() {
         if (cryptoProvider == null || cryptoConfig == null) {
             return null;
@@ -588,6 +657,11 @@ public final class NativeTcpCarrier implements TransportEngine {
             thread.interrupt();
         }
         clientIngressThreads.clear();
+
+        for (Thread thread : clientWriterThreads.values()) {
+            thread.interrupt();
+        }
+        clientWriterThreads.clear();
 
         for (ReactorLoop reactor : reactors) {
             reactor.closeSelector();
@@ -631,12 +705,18 @@ public final class NativeTcpCarrier implements TransportEngine {
         }
 
         private void enqueueRegistration(SocketChannel channel) {
-            pendingRegistrations.offer(channel);
+            boolean offered = pendingRegistrations.offer(channel);
+            if (!offered) {
+                throw new IllegalStateException("Failed to enqueue registration for channel: " + channel);
+            }
             selector.wakeup();
         }
 
         private void enqueueWriteInterest(SocketChannel channel) {
-            pendingWriteInterests.offer(channel);
+            boolean offered = pendingWriteInterests.offer(channel);
+            if (!offered) {
+                throw new IllegalStateException("Failed to enqueue write interest for channel: " + channel);
+            }
             selector.wakeup();
         }
 
@@ -697,11 +777,10 @@ public final class NativeTcpCarrier implements TransportEngine {
                         }
                     }
                 } catch (IOException e) {
-                    if (!running.get()) {
-                        return;
+                    if (running.get()) {
+                        handleAsyncFailure("reactor/" + index, e);
                     }
-                    running.set(false);
-                    throw TransportException.engineStartFailure(engineName(), config.port(), e);
+                    return;
                 }
             }
         }

@@ -68,68 +68,79 @@ class NativeTcpTransportStressTest {
 
         NativeTcpTransportProvider provider = new NativeTcpTransportProvider();
         TransportEngine serverEngine = createServerEngine(provider, port, SERVER_REACTOR_COUNT);
+        try {
+            AtomicInteger messageCount = new AtomicInteger(0);
+            serverEngine.setStreamHandler(stream -> echoUntilStreamCloses(stream, messageCount));
+            serverEngine.start();
 
-        AtomicInteger messageCount = new AtomicInteger(0);
-        serverEngine.setStreamHandler(stream -> echoUntilStreamCloses(stream, messageCount));
-        serverEngine.start();
+            ExecutorService executor = ForkJoinPool.commonPool();
+            List<Future<?>> futures = new ArrayList<>();
 
-        ExecutorService executor = ForkJoinPool.commonPool();
-        List<Future<?>> futures = new ArrayList<>();
+            for (int clientId = 0; clientId < NUM_CLIENTS; clientId++) {
+                futures.add(executor.submit(() -> {
+                    TransportEngine clientEngine = null;
+                    TransportConnection connection = null;
+                    TransportStream stream = null;
+                    try {
+                        clientEngine = createClientEngine(provider, "127.0.0.1", port);
+                        clientEngine.start();
 
-        for (int clientId = 0; clientId < NUM_CLIENTS; clientId++) {
-            futures.add(executor.submit(() -> {
-                try {
-                    TransportEngine clientEngine = createClientEngine(provider, "127.0.0.1", port);
-                    clientEngine.start();
+                        connection = clientEngine.connect("127.0.0.1", port);
+                        stream = connection.openStream();
 
-                    TransportConnection connection = clientEngine.connect("127.0.0.1", port);
-                    TransportStream stream = connection.openStream();
+                        for (int msg = 0; msg < MESSAGES_PER_CLIENT; msg++) {
+                            try (LoanedBuffer buf = ALLOCATOR.allocateNetwork(MESSAGE_SIZE)) {
+                                buf.segment().asSlice(0, MESSAGE_SIZE).copyFrom(
+                                    MemorySegment.ofArray(testPayload)
+                                );
+                                buf.setSize(MESSAGE_SIZE);
 
-                    for (int msg = 0; msg < MESSAGES_PER_CLIENT; msg++) {
-                        try (LoanedBuffer buf = ALLOCATOR.allocateNetwork(MESSAGE_SIZE)) {
-                            buf.segment().asSlice(0, MESSAGE_SIZE).copyFrom(
-                                MemorySegment.ofArray(testPayload)
-                            );
-                            buf.setSize(MESSAGE_SIZE);
+                                stream.write(buf.segment(), MESSAGE_SIZE);
 
-                            stream.write(buf.segment(), MESSAGE_SIZE);
+                                try (LoanedBuffer response = ALLOCATOR.allocateNetwork(MESSAGE_SIZE)) {
+                                    int read = stream.read(response.segment(), MESSAGE_SIZE);
+                                    assertThat(read).isEqualTo(MESSAGE_SIZE);
 
-                            try (LoanedBuffer response = ALLOCATOR.allocateNetwork(MESSAGE_SIZE)) {
-                                int read = stream.read(response.segment(), MESSAGE_SIZE);
-                                assertThat(read).isEqualTo(MESSAGE_SIZE);
-
-                                byte[] echoed = new byte[MESSAGE_SIZE];
-                                response.segment().asSlice(0, MESSAGE_SIZE).asByteBuffer().get(echoed);
-                                assertThat(Arrays.equals(echoed, testPayload)).isTrue();
+                                    byte[] echoed = new byte[MESSAGE_SIZE];
+                                    response.segment().asSlice(0, MESSAGE_SIZE).asByteBuffer().get(echoed);
+                                    assertThat(Arrays.equals(echoed, testPayload)).isTrue();
+                                }
                             }
                         }
+                    } catch (Exception ex) {
+                        throw new RuntimeException("Client failed", ex);
+                    } finally {
+                        if (stream != null) {
+                            stream.close();
+                        }
+                        if (connection != null) {
+                            connection.close();
+                        }
+                        if (clientEngine != null) {
+                            clientEngine.close();
+                        }
                     }
-
-                    connection.close();
-                    clientEngine.close();
-                } catch (Exception ex) {
-                    throw new RuntimeException("Client failed", ex);
-                }
-            }));
-        }
-
-        boolean allDone = true;
-        for (Future<?> future : futures) {
-            try {
-                future.get(2, TimeUnit.MINUTES);
-            } catch (TimeoutException ex) {
-                allDone = false;
-                future.cancel(true);
+                }));
             }
+
+            boolean allDone = true;
+            for (Future<?> future : futures) {
+                try {
+                    future.get(2, TimeUnit.MINUTES);
+                } catch (TimeoutException ex) {
+                    allDone = false;
+                    future.cancel(true);
+                }
+            }
+
+            assertThat(allDone).isTrue().withFailMessage("Not all clients completed in time");
+
+            int expectedTotal = NUM_CLIENTS * MESSAGES_PER_CLIENT;
+            assertThat(messageCount.get()).isEqualTo(expectedTotal)
+                .withFailMessage("Server did not receive expected message count");
+        } finally {
+            serverEngine.close();
         }
-
-        assertThat(allDone).isTrue().withFailMessage("Not all clients completed in time");
-
-        int expectedTotal = NUM_CLIENTS * MESSAGES_PER_CLIENT;
-        assertThat(messageCount.get()).isGreaterThanOrEqualTo((int) (expectedTotal * 0.95))
-            .withFailMessage("Server did not receive expected message count");
-
-        serverEngine.close();
     }
 
     @Test
@@ -142,45 +153,55 @@ class NativeTcpTransportStressTest {
 
         NativeTcpTransportProvider provider = new NativeTcpTransportProvider();
         TransportEngine server = createServerEngine(provider, port, reactorCount);
-        
-        AtomicInteger messageCount = new AtomicInteger(0);
-        server.setStreamHandler(stream -> echoUntilStreamCloses(stream, messageCount));
-        server.start();
 
-        // Connect 2 clients and send messages
-        List<TransportEngine> clients = new ArrayList<>();
-        for (int i = 0; i < 2; i++) {
-            TransportEngine client = createClientEngine(provider, "127.0.0.1", port);
-            client.start();
-            TransportConnection conn = client.connect("127.0.0.1", port);
-            TransportStream stream = conn.openStream();
-            
-            // Send 3 messages from each client
-            for (int msg = 0; msg < 3; msg++) {
-                try (LoanedBuffer buf = ALLOCATOR.allocateNetwork(MESSAGE_SIZE)) {
-                    buf.segment().asSlice(0, MESSAGE_SIZE).copyFrom(MemorySegment.ofArray(testPayload));
-                    buf.setSize(MESSAGE_SIZE);
-                    stream.write(buf.segment(), MESSAGE_SIZE);
+        try {
+            AtomicInteger messageCount = new AtomicInteger(0);
+            server.setStreamHandler(stream -> echoUntilStreamCloses(stream, messageCount));
+            server.start();
 
-                    try (LoanedBuffer response = ALLOCATOR.allocateNetwork(MESSAGE_SIZE)) {
-                        int read = stream.read(response.segment(), MESSAGE_SIZE);
-                        assertThat(read).isEqualTo(MESSAGE_SIZE);
+            // Connect 2 clients and send messages
+            for (int i = 0; i < 2; i++) {
+                TransportEngine client = null;
+                TransportConnection conn = null;
+                TransportStream stream = null;
+                try {
+                    client = createClientEngine(provider, "127.0.0.1", port);
+                    client.start();
+                    conn = client.connect("127.0.0.1", port);
+                    stream = conn.openStream();
+
+                    // Send 3 messages from each client
+                    for (int msg = 0; msg < 3; msg++) {
+                        try (LoanedBuffer buf = ALLOCATOR.allocateNetwork(MESSAGE_SIZE)) {
+                            buf.segment().asSlice(0, MESSAGE_SIZE).copyFrom(MemorySegment.ofArray(testPayload));
+                            buf.setSize(MESSAGE_SIZE);
+                            stream.write(buf.segment(), MESSAGE_SIZE);
+
+                            try (LoanedBuffer response = ALLOCATOR.allocateNetwork(MESSAGE_SIZE)) {
+                                int read = stream.read(response.segment(), MESSAGE_SIZE);
+                                assertThat(read).isEqualTo(MESSAGE_SIZE);
+                            }
+                        }
+                    }
+                } finally {
+                    if (stream != null) {
+                        stream.close();
+                    }
+                    if (conn != null) {
+                        conn.close();
+                    }
+                    if (client != null) {
+                        client.close();
                     }
                 }
             }
-            
-            clients.add(client);
-        }
 
-        // Verify server received all messages (6 total: 2 clients × 3 messages)
-        assertThat(messageCount.get()).isGreaterThanOrEqualTo((int) (6 * 0.8))  // Allow 20% loss
-            .withFailMessage("Server did not receive expected message count");
-
-        // Clean up
-        for (TransportEngine client : clients) {
-            client.close();
+            // Verify server received all messages (6 total: 2 clients × 3 messages)
+            assertThat(messageCount.get()).isEqualTo(6)
+                .withFailMessage("Server did not receive expected message count");
+        } finally {
+            server.close();
         }
-        server.close();
     }
 
     private TransportEngine createServerEngine(NativeTcpTransportProvider provider, int port, int reactorCount) {

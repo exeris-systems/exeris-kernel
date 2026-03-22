@@ -81,7 +81,7 @@ public final class NativeTcpTransportProvider implements TransportProvider {
                 CryptoProviderConfig.Protocol.TCP_TLS,
                 java.nio.file.Path.of(config.certPath()),
                 java.nio.file.Path.of(config.keyPath()),
-                java.util.List.of("h2", "http/1.1"),
+                java.util.List.of(),
                 512,
                 true,
                 CryptoProviderConfig.TLS_1_3
