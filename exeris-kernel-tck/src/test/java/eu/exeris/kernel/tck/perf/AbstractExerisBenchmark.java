@@ -55,7 +55,10 @@ import java.util.concurrent.TimeUnit;
 @Fork(value = 1, jvmArgsAppend = {
         "--enable-preview",
         "-XX:+UseZGC",
-        "-XX:+UnlockExperimentalVMOptions"
+    "-XX:+UnlockExperimentalVMOptions",
+    "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED",
+    "--add-opens=java.base/java.io=ALL-UNNAMED",
+    "--enable-native-access=ALL-UNNAMED"
 })
 public abstract class AbstractExerisBenchmark {
     // Base class for shared JVM configuration, JFR profiling hooks (future),

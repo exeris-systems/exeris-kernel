@@ -115,7 +115,7 @@
                 <version>3.2.5</version>
                 <configuration>
                     <!-- Inherit common JVM flags (ZGC + JFR + preview) from the parent POM. -->
-                    <argLine>${jvm.args} --add-opens java.base/sun.nio.ch=ALL-UNNAMED</argLine>
+                    <argLine>${jvm.args} --add-opens java.base/sun.nio.ch=ALL-UNNAMED --add-opens java.base/java.io=ALL-UNNAMED</argLine>
                     <!-- Optional include filter, e.g. -DincludedGroups=flamegraph -->
                     <groups>${includedGroups}</groups>
                     <!-- Exclude @Tag("flamegraph") tests from regular CI runs -->
@@ -183,11 +183,13 @@
                                         <argument>--enable-preview</argument>
                                         <argument>-XX:+UnlockExperimentalVMOptions</argument>
                                         <argument>${benchmark.jvm.gc}</argument>
-                                        <argument>${benchmark.jvmArgs}</argument>
+                                        <argument>-Dbenchmark.jvmArgs=${benchmark.jvmArgs}</argument>
                                         <argument>--enable-native-access=ALL-UNNAMED</argument>
                                         <argument>-Djava.library.path=${java.library.path}${path.separator}${native.lib.dir}</argument>
                                         <argument>--add-opens</argument>
                                         <argument>java.base/sun.nio.ch=ALL-UNNAMED</argument>
+                                        <argument>--add-opens</argument>
+                                        <argument>java.base/java.io=ALL-UNNAMED</argument>
                                         <argument>-classpath</argument>
                                         <classpath/>
                                         <argument>org.openjdk.jmh.Main</argument>

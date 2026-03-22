@@ -81,7 +81,7 @@ public abstract class AbstractTransportThroughputBenchmark extends AbstractExeri
      * Fixed benchmark port — bound to loopback for deterministic throughput measurement.
      * Using a fixed port ensures the server {@link TransportConfig} validation passes
      * (SERVER mode requires port in range 1–65535). If this port is already in use on
-     * your host, override {@link #setupTransport()} to pick a free port.
+        * your host, override {@link #benchmarkPort()} to pick a free port.
      */
     private static final int BENCH_PORT = 19_999;
 
@@ -132,6 +132,15 @@ public abstract class AbstractTransportThroughputBenchmark extends AbstractExeri
     protected abstract MemoryAllocator getAllocator();
 
     /**
+     * Returns the transport benchmark port. Subclasses can override to provide a free port.
+     *
+     * @return benchmark server/client port
+     */
+    protected int benchmarkPort() {
+        return BENCH_PORT;
+    }
+
+    /**
      * Trial-level setup: starts a loopback server, connects a client, and
      * opens the hot stream so the measurement window exercises only the
      * steady-state write path.
@@ -147,9 +156,10 @@ public abstract class AbstractTransportThroughputBenchmark extends AbstractExeri
     public void setupTransport() throws Exception {
         this.allocator = getAllocator();
         TransportProvider provider = getProvider();
+        int benchmarkPort = benchmarkPort();
 
         TransportConfig serverConfig = new TransportConfig(
-                TransportMode.SERVER, LOOPBACK, BENCH_PORT,
+            TransportMode.SERVER, LOOPBACK, benchmarkPort,
                 1,
                 null, null,
                 1_000, 10_000L
@@ -180,7 +190,7 @@ public abstract class AbstractTransportThroughputBenchmark extends AbstractExeri
         this.clientEngine = provider.createEngine(clientConfig);
         this.clientEngine.start();
 
-        this.activeConnection = this.clientEngine.connect(LOOPBACK, BENCH_PORT);
+        this.activeConnection = this.clientEngine.connect(LOOPBACK, benchmarkPort);
         this.activeStream = this.activeConnection.openStream();
     }
 
