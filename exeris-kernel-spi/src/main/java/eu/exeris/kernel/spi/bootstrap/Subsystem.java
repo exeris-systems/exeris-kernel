@@ -157,15 +157,20 @@ public interface Subsystem {
 
     /**
      * Returns a function that enriches the kernel's {@link ScopedValue} carrier with
-     * this subsystem's provider bindings after {@link #initialize()} completes successfully.
+     * this subsystem's provider bindings after {@link #initialize()} completes successfully
+     * and before {@link #start()} is invoked.
+     *
+     * <h2>State Symmetry Contract</h2>
+     * <p>Provider bindings are composed only for subsystems whose {@link #initialize()} completed
+     * successfully. Subsystems that fail or are skipped during initialization do not contribute
+     * bindings, preserving symmetry between subsystem admission to the lifecycle and binding visibility.
      *
      * <h2>Purpose — solving the ScopedValue bootstrap problem</h2>
      * <p>{@link #initialize()} executes inside an already open {@link ScopedValue} scope
      * (the one opened for {@code CURRENT_CONFIG}). It cannot extend that scope from within.
-     * This method is the type-safe exit hatch: the {@code SubsystemOrchestrator} calls it
-     * <em>after</em> {@code initialize()} returns cleanly, composes all subsystem operators
-     * in topological order into a single {@link ScopedValue.Carrier}, then re-enters
-     * {@code start()} inside that enriched scope.
+     * After {@link #initialize()} completes and before {@link #start()} is called, the
+     * orchestrator calls this method to register bindings that are visible to all code
+     * running inside the enriched scope context.
      *
      * <h2>Why {@code UnaryOperator} instead of {@code Map<ScopedValue<?>, Object>}</h2>
      * <p>The functional approach gives the compiler full type visibility at each

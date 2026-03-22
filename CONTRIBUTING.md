@@ -183,7 +183,7 @@ java -XX:StartFlightRecording=name=boot,settings=profile,filename=boot.jfr \
 | `Exeris Kernel / Security`    | `PrincipalBoundEvent`                        | Successful auth + scope bind                    |
 | `Exeris Kernel / Security`    | `SecurityContextMissing`                     | Gate drop — token invalid or no provider        |
 | `Exeris Kernel / Transport`   | `TransportBindEvent`                         | Transport successfully bound on port            |
-| `Exeris Kernel / Bootstrap`   | `KernelBootstrapEvent`                       | Per-subsystem init duration                     |
+| `Exeris Kernel / Bootstrap`   | `BootstrapJfrEvents.SubsystemInitializedEvent` | Per-subsystem initialization duration         |
 | `Exeris Kernel / Crypto`      | `TlsHandshakeEvent`                          | Handshake duration + cipher suite               |
 | `Exeris Kernel / Crypto`      | `TlsHandshakeFailureEvent`                   | Handshake failure + peer address                |
 

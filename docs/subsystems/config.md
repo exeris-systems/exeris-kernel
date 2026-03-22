@@ -256,7 +256,7 @@ When Vault is unavailable during the bootstrap phase (`config.vault.timeoutMs` e
 | Mode              | Behaviour                                                                                         |
 |:------------------|:--------------------------------------------------------------------------------------------------|
 | `FAIL_FAST` (default) | `EX-CFG-1001` thrown after `config.vault.retryCount` attempts × `config.vault.timeoutMs` deadline. Kernel halts. K8s liveness probe returns `503` → pod is replaced. |
-| `DEGRADE`         | Last-known configuration (from file/classpath) is used for secrets. A `KernelBootstrapEvent` WARNING is emitted in JFR. **NEVER deploy DEGRADE mode to production** — it means the application starts with potentially stale or empty secrets. |
+| `DEGRADE`         | Last-known configuration (from file/classpath) is used for secrets. A bootstrap warning is emitted through the current bootstrap JFR telemetry path. **NEVER deploy DEGRADE mode to production** — it means the application starts with potentially stale or empty secrets. |
 
 System properties mirror the canonical keys with an `exeris.` prefix (for example, `exeris.config.vault.timeoutMs` → `config.vault.timeoutMs`).
 

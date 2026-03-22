@@ -11,7 +11,8 @@ Core owns the canonical subsystem lifecycle. The state machine is driven by `Ker
 (implemented as `SubsystemOrchestrator` in `eu.exeris.kernel.core.bootstrap`) and is
 irreversible — there is no `RESTART` transition; a failed node must be replaced.
 
-> **Implementation status:** `SubsystemOrchestrator` and `KernelBootstrapEvent` are present in
+> **Implementation status:** `SubsystemOrchestrator`, `KernelBootstrap`, and the
+> `BootstrapJfrEvents.KernelBootReadyEvent` telemetry path are present in
 > `exeris-kernel-core`. The full `ServiceLoader`-backed multi-provider discovery path and the
 > named `KernelBootstrap` entrypoint are planned for TRL-4. The state machine below reflects the
 > intended complete behaviour.

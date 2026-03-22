@@ -242,7 +242,7 @@ on its local NUMA node.
 
 | Requirement              | Detail                                                                                     |
 |:-------------------------|:-------------------------------------------------------------------------------------------|
-| **Linux requirement**    | `libnuma.so.1` must be present. Detected at bootstrap by `EnterpriseNativeLoader`. If absent: NUMA-local allocation is disabled with a `KernelBootstrapEvent` WARNING in JFR. |
+| **Linux requirement**    | `libnuma.so.1` must be present. Detected at bootstrap by `EnterpriseNativeLoader`. If absent: NUMA-local allocation is disabled with a bootstrap warning in the current JFR telemetry path. |
 | **macOS**                | Not supported — macOS does not expose NUMA topology via `libnuma`.                         |
 | **Windows**              | Not supported — `GlobalMemoryArbiter` is Linux-only.                                       |
 | **K8s consideration**    | In Kubernetes, set `topologyManager.policy=single-numa-node` and use CPU Manager to ensure pods are pinned to a single NUMA node. Cross-NUMA pod scheduling eliminates the benefit of NUMA-local allocation. |
@@ -253,7 +253,7 @@ on its local NUMA node.
 
 | Requirement              | Detail                                                                                     |
 |:-------------------------|:-------------------------------------------------------------------------------------------|
-| **Kernel pre-allocation**| `vm.nr_hugepages` must be pre-configured: `sysctl -w vm.nr_hugepages=512` (for 1 GB huge page budget). If insufficient huge pages are available, `mmap(MAP_HUGETLB)` falls back to standard pages with a `KernelBootstrapEvent` WARNING. |
+| **Kernel pre-allocation**| `vm.nr_hugepages` must be pre-configured: `sysctl -w vm.nr_hugepages=512` (for 1 GB huge page budget). If insufficient huge pages are available, `mmap(MAP_HUGETLB)` falls back to standard pages with a bootstrap warning in the current JFR telemetry path. |
 | **K8s resource request** | Add `hugepages-2Mi: 1Gi` to the pod resource limits. Requires `HugePages` feature gate enabled in the cluster. |
 | **macOS**                | Superpage allocation (`VM_FLAGS_SUPERPAGE_SIZE_2MB`) is supported in limited form but not verified by the TCK. |
 | **Windows**              | Not supported.                                                                             |

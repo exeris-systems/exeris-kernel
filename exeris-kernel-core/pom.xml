@@ -77,7 +77,7 @@
                 <artifactId>maven-failsafe-plugin</artifactId>
                 <version>3.2.5</version>
                 <configuration>
-                    <argLine>${test.jvm.args} --add-opens java.base/sun.nio.ch=ALL-UNNAMED</argLine>
+                    <argLine>${jvm.args} --add-opens java.base/sun.nio.ch=ALL-UNNAMED</argLine>
                     <includes>
                         <include>**/*IT.java</include>
                     </includes>
@@ -98,6 +98,10 @@
             <id>benchmarks</id>
             <properties>
                 <benchmark.skip>false</benchmark.skip>
+                <benchmark.warmuptime>2s</benchmark.warmuptime>
+                <benchmark.iterationstime>2s</benchmark.iterationstime>
+                <benchmark.jvm.gc>-XX:+UseZGC</benchmark.jvm.gc>
+                <benchmark.jvmArgs></benchmark.jvmArgs>
                 <excludedGroups/>
             </properties>
             <build>
@@ -136,9 +140,11 @@
                                     <arguments>
                                         <argument>--enable-preview</argument>
                                         <argument>-XX:+UnlockExperimentalVMOptions</argument>
-                                        <argument>-XX:+UseZGC</argument>
+                                        <argument>${benchmark.jvm.gc}</argument>
                                         <argument>--enable-native-access=ALL-UNNAMED</argument>
                                         <argument>-Djava.library.path=${java.library.path}${path.separator}${native.lib.dir}</argument>
+                                        <argument>--add-opens</argument>
+                                        <argument>java.base/sun.nio.ch=ALL-UNNAMED</argument>
                                         <argument>-classpath</argument>
                                         <classpath/>
                                         <argument>org.openjdk.jmh.Main</argument>
@@ -149,6 +155,10 @@
                                         <argument>${benchmark.warmup}</argument>
                                         <argument>-i</argument>
                                         <argument>${benchmark.iterations}</argument>
+                                        <argument>-w</argument>
+                                        <argument>${benchmark.warmuptime}</argument>
+                                        <argument>-r</argument>
+                                        <argument>${benchmark.iterationstime}</argument>
                                         <argument>-rf</argument>
                                         <argument>json</argument>
                                         <argument>-rff</argument>

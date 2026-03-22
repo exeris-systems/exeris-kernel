@@ -30,7 +30,13 @@ import org.openjdk.jmh.annotations.TearDown;
 import org.openjdk.jmh.infra.Blackhole;
 
 import java.lang.foreign.Arena;
+import java.lang.foreign.FunctionDescriptor;
 import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
+import java.lang.invoke.MethodHandle;
+import java.net.InetSocketAddress;
+import java.nio.channels.ServerSocketChannel;
+import java.nio.channels.SocketChannel;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -38,7 +44,7 @@ import java.util.concurrent.TimeUnit;
  *
  * <h2>What is measured</h2>
  * <p>This benchmark isolates Core-tier operations that are independent of BIO wiring
- * (Community/Enterprise responsibility). Three hot-path cost centres are measured:
+ * (Community/Enterprise responsibility). Four hot-path cost centres are measured:
  *
  * <ol>
  *   <li><b>{@link #guardCheckWrapCost}</b> — cost of {@code wrap()} when the engine is in
@@ -55,6 +61,11 @@ import java.util.concurrent.TimeUnit;
  *       ({@link java.lang.invoke.MethodHandle#invokeExact} → OpenSSL C call → immediate
  *       {@code SSL_ERROR_SSL} return, no real peer). Measures the Panama FFM overhead +
  *       OpenSSL state-machine entry + {@link TlsStateMachine} phase validation.</li>
+ *
+ *   <li><b>{@link #bindTransportFdCost}</b> — cost of one direct
+ *       {@code SSL_set_fd(SSL*, int)} FFM downcall through
+ *       {@link OffHeapTlsEngine#bindTransportFd(MethodHandle, int)} against a real
+ *       loopback-backed file descriptor extracted from {@link SocketChannel}.</li>
  * </ol>
  *
  * <h2>Architectural scope (The Wall)</h2>
@@ -87,6 +98,7 @@ public class CoreOffHeapTlsEngineBenchmark extends AbstractExerisBenchmark {
     private static final Arena GLOBAL_ARENA = Arena.global();
     private static CoreSslHandles handles;
     private static long sslCtxPtr;
+    private static MethodHandle sslSetFdHandle;
     private static Throwable loadError;
 
     static {
@@ -95,6 +107,15 @@ public class CoreOffHeapTlsEngineBenchmark extends AbstractExerisBenchmark {
             handles     = runtime.handles();
             long method = handles.ctx().invokeServerMethod();
             sslCtxPtr   = handles.ctx().invokeCtxNew(method);
+            sslSetFdHandle = runtime.optionalSslHandle(
+                    "SSL_set_fd",
+                    FunctionDescriptor.of(
+                            ValueLayout.JAVA_INT,
+                            ValueLayout.JAVA_LONG,
+                            ValueLayout.JAVA_INT));
+            if (sslSetFdHandle == null) {
+                throw new IllegalStateException("OpenSSL symbol SSL_set_fd is required for benchmark");
+            }
         } catch (Throwable t) { //NOPMD AvoidCatchingThrowable — FFM library load may throw Error
             loadError = t;
         }
@@ -168,6 +189,12 @@ public class CoreOffHeapTlsEngineBenchmark extends AbstractExerisBenchmark {
     private OffHeapTlsEngine beginHandshakeEngine;
     private LoanedBuffer      beginHandshakeBuf;
 
+    private OffHeapTlsEngine bindFdEngine;
+    private ServerSocketChannel bindServerSocket;
+    private SocketChannel bindClientSocket;
+    private SocketChannel bindAcceptedSocket;
+    private int bindFd;
+
     @Setup(Level.Trial)
     public void setUpTrial() {
         if (loadError != null) {
@@ -185,12 +212,33 @@ public class CoreOffHeapTlsEngineBenchmark extends AbstractExerisBenchmark {
         beginHandshakeEngine = new OffHeapTlsEngine(handles, sslCtxPtr, false, SLAB_ALLOC);
         beginHandshakeEngine.notifyBound(); // UNINITIALIZED → HANDSHAKE_IN_PROGRESS
         beginHandshakeBuf = SLAB_ALLOC.allocate(AllocationHint.MEDIUM);
+
+        bindFdEngine = new OffHeapTlsEngine(handles, sslCtxPtr, false, SLAB_ALLOC);
+
+        try {
+            bindServerSocket = ServerSocketChannel.open();
+            bindServerSocket.configureBlocking(true);
+            bindServerSocket.bind(new InetSocketAddress("127.0.0.1", 0));
+            int port = ((InetSocketAddress) bindServerSocket.getLocalAddress()).getPort();
+
+            bindClientSocket = SocketChannel.open();
+            bindClientSocket.configureBlocking(true);
+            bindClientSocket.connect(new InetSocketAddress("127.0.0.1", port));
+            bindAcceptedSocket = bindServerSocket.accept();
+            bindFd = extractFd(bindAcceptedSocket);
+        } catch (Exception e) {
+            throw new IllegalStateException("Could not create loopback socket pair for bind benchmark", e);
+        }
     }
 
     @TearDown(Level.Trial)
     public void tearDownTrial() {
         if (guardEngine          != null) guardEngine.close();
         if (beginHandshakeEngine != null) beginHandshakeEngine.close();
+        if (bindFdEngine         != null) bindFdEngine.close();
+        closeQuietly(bindAcceptedSocket);
+        closeQuietly(bindClientSocket);
+        closeQuietly(bindServerSocket);
     }
 
     // =========================================================================
@@ -278,5 +326,39 @@ public class CoreOffHeapTlsEngineBenchmark extends AbstractExerisBenchmark {
                 beginHandshakeEngine.beginHandshake(beginHandshakeBuf);
         bh.consume(status);
         return status;
+    }
+
+    // =========================================================================
+    // Benchmark 4: bindTransportFd() downcall cost — SSL_set_fd(SSL*, int)
+    // =========================================================================
+
+    @Benchmark
+    @BenchmarkMode(Mode.SampleTime)
+    @OutputTimeUnit(TimeUnit.MICROSECONDS)
+    public int bindTransportFdCost(Blackhole bh) {
+        int result = bindFdEngine.bindTransportFd(sslSetFdHandle, bindFd);
+        bh.consume(result);
+        return result;
+    }
+
+    private static int extractFd(SocketChannel channel) {
+        try {
+            java.lang.reflect.Method getFdVal = channel.getClass().getDeclaredMethod("getFDVal");
+            getFdVal.setAccessible(true); //NOPMD AvoidAccessibilityAlteration — benchmark harness only
+            return (int) getFdVal.invoke(channel);
+        } catch (ReflectiveOperationException exception) {
+            throw new IllegalStateException("SocketChannel.getFDVal() unavailable", exception);
+        }
+    }
+
+    private static void closeQuietly(AutoCloseable closeable) {
+        if (closeable == null) {
+            return;
+        }
+        try {
+            closeable.close();
+        } catch (Exception ignored) {
+            // benchmark teardown should be best-effort
+        }
     }
 }
