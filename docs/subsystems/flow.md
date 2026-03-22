@@ -192,21 +192,15 @@ When the park timeout fires:
 Sagas in production may be long-running (hours or days). A deployment may change the Saga definition
 while older instances are still executing. The following versioning contract applies:
 
-| Scenario                                           | Kernel Behaviour                                                                                         |
-|:---------------------------------------------------|:---------------------------------------------------------------------------------------------------------|
-| **New deployment adds a step** to a Saga           | Existing in-flight Sagas (persisted in `exeris_saga_state`) continue on the **old definition**. New Sagas use the new definition. The `FlowRegistry` stores the definition snapshot at submission time. |
-| **New deployment removes a step**                  | If an in-flight Saga was parked on the removed step: on wake, the engine detects the missing step via the persisted `stepIdx`. `EX-FLOW-7002` with `phase="SCHEMA_MISMATCH"` is thrown and manual intervention is required. |
-| **New deployment reorders steps**                  | Treated as removal + addition — highest risk scenario. Avoid during active Saga execution. Use blue/green deployment with Saga drain before switching. |
-| **Safe migration pattern (current)**               | Perform blue/green deployment with Saga drain before switching traffic. Avoid changing step order while Sagas are in-flight. The engine currently maintains a single active definition per Saga type; fine-grained, version-aware routing is **planned** but not yet available in the public Flow SPI/Core. |
+## Scheduler Contract
 
-> **Planned feature:** Future Flow engine iterations may introduce explicit Saga definition versioning
-> (for example, via annotations and version-aware routing in the Saga registry/engine) to allow multiple
-> definition versions to coexist until all old instances complete. This capability is *not implemented*
-> in the current codebase and MUST NOT be relied upon until the corresponding SPI/Core APIs exist.
+### Scheduler Pluggability & Affinity
 
----
+Flow subsystem delegates scheduling policy to transport via `StreamExecutionBackend` SPI. The Core contract is **scheduler-agnostic**: flows execute correctly on any ForkJoinPool backing, including:
+- Default VT scheduler (recommended for latency-sensitive flows)
+- Locality-aware backends (optional, exploratory; community exploratory tier only)
 
-## Compensation Failure Handling
+**Implementation Note**: Do not prescribe affinity in flow design. Scheduler choice is transport-tier policy, not flow contract. Flow logic must remain independent of scheduling strategy.
 
 If a compensation step itself throws an exception, the Kernel enters the **COMPENSATION_FAILED** terminal state:
 

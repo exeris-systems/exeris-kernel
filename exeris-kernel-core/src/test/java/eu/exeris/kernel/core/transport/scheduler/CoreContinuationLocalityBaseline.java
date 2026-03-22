@@ -29,6 +29,9 @@ import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.TearDown;
 
 import java.lang.foreign.MemorySegment;
+import java.lang.reflect.Method;
+import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 
@@ -45,6 +48,10 @@ import java.util.function.Function;
  *       {@link StreamExecutionBackend} that executes stream tasks inline (same thread, no VT spawn).
  *       Intended for latency and allocation profiling to establish whether Virtual Thread spawning
  *       cost is the dominant factor or orthogonal to scheduling throughput.</li>
+ *   <li><b>C4 (Research):</b> Uses {@code PaqsScheduler(6-param constructor)} with a custom
+ *       {@link StreamExecutionBackend} that spawns one Virtual Thread per stream, but pinned
+ *       to a dedicated per-benchmark {@code ForkJoinPool}. Tests whether VT carrier affinity
+ *       to a fixed pool improves throughput vs the JVM default global scheduler.</li>
  * </ul>
  *
  * <h2>Measurement Goals</h2>
@@ -69,9 +76,12 @@ public class CoreContinuationLocalityBaseline extends AbstractExerisBenchmark {
     private static final String ENGINE_NAME = "ContinuationLocalityBench";
     private static final long TOTAL_HEAP = 1_000_000L;
     private static final long NORMAL_ALLOCATED = (long) (TOTAL_HEAP * 0.50);
+    private static final Method VT_SCHEDULER_METHOD = resolveVtSchedulerMethod();
 
     private PaqsScheduler schedulerC1DefaultVt;
     private PaqsScheduler schedulerC2InlineExec;
+    private PaqsScheduler schedulerC4LocalityAware;
+    private ForkJoinPool localityPool;
     private AtomicInteger streamIdCounter;
     private final AtomicInteger streamHandlerInvokeCount = new AtomicInteger();
 
@@ -128,6 +138,20 @@ public class CoreContinuationLocalityBaseline extends AbstractExerisBenchmark {
                 ENGINE_NAME,
                 inlineBackend
         );
+
+        // C4: Locality-aware backend - VT per stream but pinned to dedicated FJP carrier pool.
+        // FJP used as VT carrier scheduler (not structured-concurrency replacement).
+        localityPool = new ForkJoinPool(Runtime.getRuntime().availableProcessors());
+        StreamExecutionBackend localityBackend =
+                this::startLocalityPinnedVirtualThread;
+        schedulerC4LocalityAware = new PaqsScheduler(
+            admissionController,
+            loadShedder,
+            handler,
+            priorityExtractor,
+            ENGINE_NAME,
+            localityBackend
+        );
     }
 
     /**
@@ -149,6 +173,22 @@ public class CoreContinuationLocalityBaseline extends AbstractExerisBenchmark {
                 schedulerC2InlineExec.close();
             } catch (Exception e) {
                 // Suppress exception during teardown
+            }
+        }
+        if (schedulerC4LocalityAware != null) {
+            try {
+                schedulerC4LocalityAware.close();
+            } catch (Exception e) {
+                // Suppress exception during teardown
+            }
+        }
+        ForkJoinPool pool = localityPool;
+        if (pool != null) {
+            pool.shutdown();
+            try {
+                pool.awaitTermination(2L, TimeUnit.SECONDS);
+            } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
             }
         }
     }
@@ -191,6 +231,25 @@ public class CoreContinuationLocalityBaseline extends AbstractExerisBenchmark {
     public int c2CustomInlineBackend() {
         TransportStream stream = createStream();
         schedulerC2InlineExec.schedule(stream);
+        return streamIdCounter.get();
+    }
+
+    /**
+     * C4 Research Variant: Locality-aware Virtual Thread backend.
+     *
+     * <p>Measures the throughput of {@link PaqsScheduler#schedule(TransportStream)}
+     * with a custom execution backend that spawns one Virtual Thread per stream, but
+     * pins it to a dedicated per-benchmark {@link ForkJoinPool} as the carrier scheduler.
+     *
+     * <p>Hypothesis: reducing cross-pool continuation migrations may improve L1/L2 cache
+     * affinity when a carrier always unmounts/remounts continuations from the same thread group.
+     *
+     * @return scheduling throughput (schedules per second)
+     */
+    @Benchmark
+    public int c4LocalityAwareVirtualThreadBackend() {
+        TransportStream stream = createStream();
+        schedulerC4LocalityAware.schedule(stream);
         return streamIdCounter.get();
     }
 
@@ -298,5 +357,31 @@ public class CoreContinuationLocalityBaseline extends AbstractExerisBenchmark {
                 // Stub allocator: no resources to release
             }
         };
+    }
+
+    private static Method resolveVtSchedulerMethod() {
+        for (Method method : Thread.Builder.OfVirtual.class.getMethods()) {
+            if ("scheduler".equals(method.getName()) && method.getParameterCount() == 1) {
+                return method;
+            }
+        }
+        return null;
+    }
+
+    private void startLocalityPinnedVirtualThread(String threadName, Runnable task) {
+        Thread.Builder.OfVirtual builder = Thread.ofVirtual().name(threadName);
+        Method schedulerMethod = VT_SCHEDULER_METHOD;
+        if (schedulerMethod != null) {
+            try {
+                Object configured = schedulerMethod.invoke(builder, localityPool);
+                if (configured instanceof Thread.Builder.OfVirtual configuredBuilder) {
+                    configuredBuilder.start(task);
+                    return;
+                }
+            } catch (ReflectiveOperationException ignored) {
+                // Fallback to default virtual-thread scheduler.
+            }
+        }
+        builder.start(task);
     }
 }

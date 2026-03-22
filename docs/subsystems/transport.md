@@ -100,6 +100,20 @@ No intermediate `byte[]`, no `ByteBuffer.allocate()`, no heap serialization.
    unstructured VTs act as roots of the Request Tree. All subsequent concurrent operations within
    the stream handler MUST use `StructuredTaskScope`.
 
+## Scheduler Model
+
+### Scheduler Policy & Continuation Affinity
+
+**Default Model**: Core transport uses the default Virtual Thread scheduler (ForkJoinPool per CPU core, no affinity pinning).
+
+**Optional Optimization**: Community tier provides an exploratory `StreamExecutionBackend` seam (`LocalityAwareExecutionBackend`) that pins continuation execution to per-carrier-thread dedicated ForkJoinPool. Research (Phase C4, RESEARCH-loom-continuation-locality.md) indicates this approach:
+- **Marginal negative impact** on paced fixed-rate transactional loads (-3% to -4.9%).
+- **Marginal positive impact** on unpaced maximum-throughput regimes (+3.2%), but signal is noise-dominated and requires validation.
+
+This optimization is **not a contract requirement**. It remains optional and exploratory pending validation of mechanism and repeatable gains in asynchronous workload patterns (see C5 roadmap).
+
+**Rationale**: Affinity bookkeeping adds per-task overhead that outweighs contention-reduction benefits in latency-sensitive transactional patterns. Gains appear only at high-contention unpaced regimes, which are edge-case for Community tier.
+
 ---
 
 ## Error Codes
