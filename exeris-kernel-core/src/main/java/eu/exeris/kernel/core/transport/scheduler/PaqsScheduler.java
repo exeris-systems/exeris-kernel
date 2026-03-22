@@ -89,6 +89,7 @@ public final class PaqsScheduler implements AutoCloseable {
     private final StreamHandler handler;
     private final Function<TransportStream, StreamPriority> priorityExtractor;
     private final String engineName;
+    private final StreamExecutionBackend executionBackend;
 
     /**
      * Creates a fully configured PAQS Scheduler.
@@ -107,6 +108,28 @@ public final class PaqsScheduler implements AutoCloseable {
                          StreamHandler handler,
                          Function<TransportStream, StreamPriority> priorityExtractor,
                          String engineName) {
+        this(admissionController, loadShedder, handler, priorityExtractor, engineName,
+                defaultExecutionBackend());
+    }
+
+    /**
+     * Creates a fully configured PAQS Scheduler with a custom execution backend.
+     *
+     * @param admissionController the admission gate; must not be {@code null}
+     * @param loadShedder         the stream shedder; must not be {@code null}
+     * @param handler             the business-logic handler for admitted streams; must not be {@code null}
+     * @param priorityExtractor   a protocol-specific function mapping an incoming stream to its
+     *                            {@link StreamPriority}; must not be {@code null}
+     * @param engineName          transport engine name for JFR events and thread naming; must not be blank
+     * @param executionBackend    the stream execution backend; must not be {@code null}.
+     *                            Default ({@link #defaultExecutionBackend()}) spawns one Virtual Thread per stream.
+     */
+    public PaqsScheduler(AdmissionController admissionController,
+                         StreamLoadShedder loadShedder,
+                         StreamHandler handler,
+                         Function<TransportStream, StreamPriority> priorityExtractor,
+                         String engineName,
+                         StreamExecutionBackend executionBackend) {
         Objects.requireNonNull(admissionController, "admissionController must not be null");
         Objects.requireNonNull(loadShedder, "loadShedder must not be null");
         Objects.requireNonNull(handler, "handler must not be null");
@@ -114,11 +137,13 @@ public final class PaqsScheduler implements AutoCloseable {
         if (engineName == null || engineName.isBlank()) {
             throw new IllegalArgumentException("engineName must not be null or blank");
         }
+        Objects.requireNonNull(executionBackend, "executionBackend must not be null");
         this.admissionController = admissionController;
         this.loadShedder = loadShedder;
         this.handler = handler;
         this.priorityExtractor = priorityExtractor;
         this.engineName = engineName;
+        this.executionBackend = executionBackend;
     }
 
     // =========================================================================
@@ -241,11 +266,10 @@ public final class PaqsScheduler implements AutoCloseable {
         // PAQS bridges a continuous, unbounded stream of events from concurrent carrier threads
         // (NIO selectors, io_uring rings). JDK 26 STS.fork() enforces WrongThreadException for any
         // caller that did not open the scope — making a shared long-lived STS incompatible with the
-        // multi-carrier ingress model. This unstructured VT acts as the Root of the Request Tree.
-        // All subsequent concurrent operations within runStream() MUST use StructuredTaskScope.
-        Thread.ofVirtual()
-                .name(threadName)
-                .start(() -> runStream(stream, priority, streamId, priorityName));
+        // multi-carrier ingress model. The default StreamExecutionBackend spawns one Virtual Thread
+        // per stream, acting as the Root of the Request Tree. All subsequent concurrent operations
+        // within runStream() MUST use StructuredTaskScope.
+        executionBackend.start(threadName, () -> runStream(stream, priority, streamId, priorityName));
     }
 
     /**
@@ -311,6 +335,20 @@ public final class PaqsScheduler implements AutoCloseable {
      */
     private String buildThreadName(StreamPriority priority, long streamId) {
         return "paqs/" + engineName + "/" + priority.name() + "/" + streamId;
+    }
+
+    /**
+     * Returns the default {@link StreamExecutionBackend} implementation.
+     *
+     * <p>The default backend spawns one Virtual Thread per stream using {@link Thread#ofVirtual()},
+     * preserving the VT-per-stream guarantee and maintaining the default PAQS behavior.
+     *
+     * @return the default execution backend; never {@code null}
+     */
+    private static StreamExecutionBackend defaultExecutionBackend() {
+        return (threadName, task) -> Thread.ofVirtual()
+                .name(threadName)
+                .start(task);
     }
 
     /**
