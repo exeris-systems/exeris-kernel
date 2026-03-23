@@ -119,7 +119,7 @@ public final class NativeTcpCarrier implements TransportEngine {
         String resolvedProviderId = Objects.requireNonNull(providerId, "providerId must not be null");
         this.capabilities = new TransportEngineCapabilities(
             CAPS.supportsMultiplexing(),
-            true,
+            CAPS.supportsZeroCopy(),
             CAPS.transportName(),
             resolvedProviderId
         );
@@ -205,15 +205,18 @@ public final class NativeTcpCarrier implements TransportEngine {
             throw new IllegalStateException("Engine is not running");
         }
 
+        SocketChannel channel = null;
+        TlsEngine tlsEngine = null;
         try {
-            SocketChannel channel = SocketChannel.open();
+            channel = SocketChannel.open();
             channel.configureBlocking(true);
             channel.connect(new InetSocketAddress(host, port));
-            TlsEngine tlsEngine = createTlsEngineIfEnabled();
+            tlsEngine = createTlsEngineIfEnabled();
             bindTlsFdIfRequired(tlsEngine, channel);
             if (tlsEngine instanceof eu.exeris.kernel.community.crypto.CommunityTlsEngine) {
                 channel.configureBlocking(false);
             }
+            final SocketChannel connectedChannel = channel;
 
             NativeTcpConnection connection = new NativeTcpConnection(
                     connectionSeq.getAndIncrement(),
@@ -223,26 +226,32 @@ public final class NativeTcpCarrier implements TransportEngine {
             NativeTcpStream stream = new NativeTcpStream(
                     engineName(),
                     streamSeq.getAndIncrement(),
-                    channel,
+                    connectedChannel,
                     connection,
                     allocator,
                     tlsEngine,
-                    () -> requestClientWriteFlush(channel),
-                    () -> onStreamClosed(channel));
+                    () -> requestClientWriteFlush(connectedChannel),
+                    () -> onStreamClosed(connectedChannel));
             if (tlsEngine instanceof eu.exeris.kernel.community.crypto.CommunityTlsEngine) {
                 stream.markTlsBoundFromCarrier();
             }
 
             connection.bindSingleStream(stream);
-            streamByChannel.put(channel, stream);
-            startClientIngressPump(channel, stream);
-            startClientWriterPump(channel, stream);
+                streamByChannel.put(connectedChannel, stream);
+                startClientIngressPump(connectedChannel, stream);
+                startClientWriterPump(connectedChannel, stream);
             activeConnections.incrementAndGet();
             activeStreams.incrementAndGet();
             totalAccepted.incrementAndGet();
             return connection;
         } catch (IOException e) {
+            closeQuietly(tlsEngine);
+            closeQuietly(channel);
             throw TransportException.bindFailure(engineName(), port, e);
+        } catch (RuntimeException e) {
+            closeQuietly(tlsEngine);
+            closeQuietly(channel);
+            throw e;
         }
     }
 
