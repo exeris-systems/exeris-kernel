@@ -45,7 +45,7 @@ public abstract class AbstractTransportConnectionTck {
     /**
      * Connection pair for testing — server side is the SUT.
      */
-    protected record ConnectionPair(TransportConnection server, TransportConnection client) {
+    public record ConnectionPair(TransportConnection server, TransportConnection client) {
     }
 
     private ConnectionPair pair;

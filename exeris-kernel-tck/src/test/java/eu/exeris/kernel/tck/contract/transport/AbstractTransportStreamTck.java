@@ -62,7 +62,7 @@ public abstract class AbstractTransportStreamTck {
     /**
      * Stream pair for loopback testing.
      */
-    protected record StreamPair(TransportStream writer, TransportStream reader) {
+    public record StreamPair(TransportStream writer, TransportStream reader) {
     }
 
     private StreamPair streams;

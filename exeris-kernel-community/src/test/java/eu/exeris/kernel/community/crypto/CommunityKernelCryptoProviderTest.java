@@ -22,6 +22,7 @@ import java.nio.file.Path;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 @DisplayName("L2: CommunityKernelCryptoProvider")
@@ -94,6 +95,37 @@ class CommunityKernelCryptoProviderTest {
 					// cert/key absent on tmp path: acceptable in this test
 				}
 			}).doesNotThrowAnyException();
+		}
+
+		@Test
+		@DisplayName("createTlsEngine() with HTTP/3 config fails in Community tier")
+		void createTlsEngineWithHttp3ConfigFailsInCommunity() {
+			assumeOpenSslAvailable();
+			Path cert = tempDir.resolve("server.crt");
+			Path key = tempDir.resolve("server.key");
+
+			assertThatThrownBy(() -> provider.createTlsEngine(CryptoProviderConfig.http3Server(cert, key)))
+					.isInstanceOfSatisfying(CryptoBootstrapException.class, ex ->
+							assertThat(ex.rawArgs()[1]).asString().contains("does not support QUIC"));
+		}
+
+		@Test
+		@DisplayName("createTlsEngine() with only cert configured fails fast")
+		void createTlsEngineWithOnlyCertConfiguredFailsFast() {
+			assumeOpenSslAvailable();
+			Path cert = tempDir.resolve("server.crt");
+			CryptoProviderConfig invalidConfig = new CryptoProviderConfig(
+					CryptoProviderConfig.Protocol.TCP_TLS,
+					cert,
+					null,
+					java.util.List.of("h2"),
+					512,
+					true,
+					CryptoProviderConfig.TLS_1_3);
+
+			assertThatThrownBy(() -> provider.createTlsEngine(invalidConfig))
+					.isInstanceOfSatisfying(CryptoBootstrapException.class, ex ->
+							assertThat(ex.rawArgs()[1]).asString().contains("both certChainPath and privateKeyPath"));
 		}
 	}
 }
