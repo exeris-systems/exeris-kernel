@@ -47,7 +47,8 @@ public interface TransportConnection extends AutoCloseable {
      *
      * <p>For QUIC connections, each call creates a new multiplexed stream.
      *
-     * @return a new, open transport stream
+     * @return the stream for this connection; for TCP, always the same instance while the connection is open;
+     *         for QUIC, a new multiplexed stream on each call
      * @throws eu.exeris.kernel.spi.exceptions.transport.TransportException on failure
     * @throws IllegalStateException if this connection is closed or a stream is unavailable
      */

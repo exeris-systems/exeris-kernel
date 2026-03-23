@@ -74,13 +74,21 @@ public final class NativeTcpTransportProvider implements TransportProvider {
         if (config.mode() == eu.exeris.kernel.spi.transport.TransportMode.CLIENT) {
             return CryptoProviderConfig.tcpClient();
         }
-        if (config.certPath() == null || config.keyPath() == null) {
+        String certPath = config.certPath();
+        String keyPath = config.keyPath();
+        if (certPath == null && keyPath == null) {
             return null;
+        }
+        if (certPath == null || keyPath == null) {
+            throw TransportException.bootstrapFailure(
+                    PROVIDER_NAME,
+                    "TLS is misconfigured: both certPath and keyPath must be set together or both be null",
+                    null);
         }
         return new CryptoProviderConfig(
                 CryptoProviderConfig.Protocol.TCP_TLS,
-                java.nio.file.Path.of(config.certPath()),
-                java.nio.file.Path.of(config.keyPath()),
+                java.nio.file.Path.of(certPath),
+                java.nio.file.Path.of(keyPath),
                 java.util.List.of(),
                 512,
                 true,

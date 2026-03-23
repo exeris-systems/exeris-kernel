@@ -17,7 +17,6 @@ import eu.exeris.kernel.core.transport.scheduler.StreamLoadShedder;
 import eu.exeris.kernel.spi.crypto.CryptoProviderConfig;
 import eu.exeris.kernel.spi.crypto.KernelCryptoProvider;
 import eu.exeris.kernel.spi.crypto.TlsEngine;
-import eu.exeris.kernel.spi.crypto.TlsStatus;
 import eu.exeris.kernel.spi.exceptions.transport.TransportException;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
@@ -509,23 +508,11 @@ public final class NativeTcpCarrier implements TransportEngine {
     }
 
     private LoanedBuffer adaptTlsIfNeeded(NativeTcpStream stream, LoanedBuffer slab, int read) {
-        TlsEngine tlsEngine = stream.tlsEngine();
-        if (tlsEngine == null) {
+        if (stream.tlsEngine() == null) {
             slab.retain();
             return slab;
         }
-
-        try (LoanedBuffer plain = allocator.allocateNetwork(read)) {
-            TlsStatus status = tlsEngine.unwrap(slab, plain);
-            if (status == TlsStatus.OK && plain.size() > 0) {
-                plain.retain();
-                return plain;
-            }
-            if (status == TlsStatus.CLOSED) {
-                stream.close();
-            }
-        }
-        return null;
+        return stream.decryptIngress(slab, read);
     }
 
     private void flushStream(SocketChannel channel, SelectionKey key) {

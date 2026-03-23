@@ -95,6 +95,11 @@ final class NativeTcpStream implements TransportStream {
             writeInterestCallback,
             "writeInterestCallback must not be null");
         this.closeCallback = Objects.requireNonNull(closeCallback, "closeCallback must not be null");
+        if (tlsEngine != null && !(tlsEngine instanceof CommunityTlsEngine)) {
+            throw new IllegalArgumentException(
+                    "NativeTcpStream only supports socket-owner TLS engines (CommunityTlsEngine); "
+                    + "buffer-owner engines are not supported");
+        }
     }
 
     @Override
@@ -364,6 +369,23 @@ final class NativeTcpStream implements TransportStream {
             }
             if (status == TlsStatus.CLOSED) {
                 markRemoteClosed();
+            }
+            return null;
+        }
+    }
+
+    /* default */ LoanedBuffer decryptIngress(LoanedBuffer ciphertext, int length) {
+        try (LoanedBuffer plain = allocator.allocateNetwork(length)) {
+            TlsStatus status;
+            synchronized (tlsLock) {
+                status = tlsEngine.unwrap(ciphertext, plain);
+            }
+            if (status == TlsStatus.OK && plain.size() > 0) {
+                plain.retain();
+                return plain;
+            }
+            if (status == TlsStatus.CLOSED) {
+                close();
             }
             return null;
         }

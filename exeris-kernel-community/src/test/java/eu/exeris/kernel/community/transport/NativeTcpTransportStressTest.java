@@ -82,7 +82,7 @@ class NativeTcpTransportStressTest {
                     TransportConnection connection = null;
                     TransportStream stream = null;
                     try {
-                        clientEngine = createClientEngine(provider, "127.0.0.1", port);
+clientEngine = createClientEngine(provider, "127.0.0.1");
                         clientEngine.start();
 
                         connection = clientEngine.connect("127.0.0.1", port);
@@ -165,7 +165,7 @@ class NativeTcpTransportStressTest {
                 TransportConnection conn = null;
                 TransportStream stream = null;
                 try {
-                    client = createClientEngine(provider, "127.0.0.1", port);
+                    client = createClientEngine(provider, "127.0.0.1");
                     client.start();
                     conn = client.connect("127.0.0.1", port);
                     stream = conn.openStream();
@@ -219,7 +219,7 @@ class NativeTcpTransportStressTest {
         return holder[0];
     }
 
-    private TransportEngine createClientEngine(NativeTcpTransportProvider provider, String host, int port) {
+    private TransportEngine createClientEngine(NativeTcpTransportProvider provider, String host) {
         TransportEngine[] holder = new TransportEngine[1];
         ScopedValue.where(KernelProviders.MEMORY_ALLOCATOR, ALLOCATOR)
             .run(() -> holder[0] = provider.createEngine(new TransportConfig(
