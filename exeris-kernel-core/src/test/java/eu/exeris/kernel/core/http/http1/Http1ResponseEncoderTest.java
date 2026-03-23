@@ -60,6 +60,25 @@ class Http1ResponseEncoderTest {
         }
     }
 
+    @Test
+    void rejectsNullStatusLineAndHeaderArguments() {
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment buf = arena.allocate(64);
+
+            assertThatThrownBy(() -> Http1ResponseEncoder.writeStatusLine(buf, 0, 200, null))
+                    .isInstanceOf(NullPointerException.class)
+                    .hasMessageContaining("reason phrase must not be null");
+
+            assertThatThrownBy(() -> Http1ResponseEncoder.writeHeader(buf, 0, null, "value"))
+                    .isInstanceOf(NullPointerException.class)
+                    .hasMessageContaining("header name must not be null");
+
+            assertThatThrownBy(() -> Http1ResponseEncoder.writeHeader(buf, 0, "X-Test", null))
+                    .isInstanceOf(NullPointerException.class)
+                    .hasMessageContaining("header value must not be null");
+        }
+    }
+
     private static String readAscii(MemorySegment seg, long end) {
         byte[] bytes = new byte[(int) end];
         MemorySegment.copy(seg, ValueLayout.JAVA_BYTE, 0, bytes, 0, (int) end);

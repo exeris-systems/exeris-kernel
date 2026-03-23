@@ -39,8 +39,8 @@ import java.util.concurrent.TimeUnit;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
-@DisplayName("Community TCP: client-server e2e")
-class NativeTcpClientServerE2eIntegrationTest {
+@DisplayName("Community TCP: client-server e2e (4 reactors)")
+class NativeTcpClientServerE2eMultiReactor4IntegrationTest {
 
     private static final MemoryAllocator ALLOCATOR =
             new CommunityMemoryProvider().createAllocator(MemoryProviderConfig.defaults());
@@ -52,7 +52,7 @@ class NativeTcpClientServerE2eIntegrationTest {
     }
 
     @Test
-    @DisplayName("client connect/openStream/write/read round-trip works end-to-end")
+    @DisplayName("client connect/openStream/write/read round-trip works end-to-end (4 reactors)")
     void clientServerRoundTrip() throws Exception {
         int port = nextFreePort();
         byte[] payload = "kernel-e2e-roundtrip".getBytes(StandardCharsets.UTF_8);
@@ -67,7 +67,7 @@ class NativeTcpClientServerE2eIntegrationTest {
                     TransportMode.SERVER,
                     "127.0.0.1",
                     port,
-                    1,
+                    4,
                     null,
                     null,
                     1024,
@@ -133,7 +133,7 @@ class NativeTcpClientServerE2eIntegrationTest {
     }
 
     @Test
-    @DisplayName("client-server TLS round-trip works end-to-end")
+    @DisplayName("client-server TLS round-trip works end-to-end (4 reactors)")
     void clientServerTlsRoundTrip() throws Exception {
         int port = nextFreePort();
         byte[] payload = "kernel-e2e-tls-roundtrip".getBytes(StandardCharsets.UTF_8);
@@ -166,7 +166,7 @@ class NativeTcpClientServerE2eIntegrationTest {
                             TransportMode.SERVER,
                             "127.0.0.1",
                             port,
-                            1,
+                            4,
                             certPath.toString(),
                             keyPath.toString(),
                             1024,

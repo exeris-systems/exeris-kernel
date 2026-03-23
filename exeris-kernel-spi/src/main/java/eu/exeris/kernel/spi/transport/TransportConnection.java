@@ -41,14 +41,16 @@ public interface TransportConnection extends AutoCloseable {
     /**
      * Creates and returns a new outbound stream on this connection.
      *
-     * <p>For TCP connections, the first call returns the sole bidirectional stream;
-     * subsequent calls throw {@link IllegalStateException}.
+    * <p>For TCP connections, there is one bidirectional stream for the connection.
+    * Implementations may return that same stream on repeated {@code openStream()}
+    * calls while the connection remains open.
      *
      * <p>For QUIC connections, each call creates a new multiplexed stream.
      *
-     * @return a new, open transport stream
+     * @return the stream for this connection; for TCP, always the same instance while the connection is open;
+     *         for QUIC, a new multiplexed stream on each call
      * @throws eu.exeris.kernel.spi.exceptions.transport.TransportException on failure
-     * @throws IllegalStateException if this connection is closed or stream limit reached
+    * @throws IllegalStateException if this connection is closed or a stream is unavailable
      */
     TransportStream openStream();
 

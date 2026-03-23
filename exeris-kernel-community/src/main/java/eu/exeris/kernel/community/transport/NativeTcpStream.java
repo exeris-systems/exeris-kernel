@@ -9,6 +9,7 @@
 package eu.exeris.kernel.community.transport;
 
 import eu.exeris.kernel.community.crypto.CommunityTlsEngine;
+import eu.exeris.kernel.community.crypto.SocketChannelFdAccess;
 import eu.exeris.kernel.spi.crypto.TlsEngine;
 import eu.exeris.kernel.spi.crypto.TlsStatus;
 import eu.exeris.kernel.spi.exceptions.transport.TransportException;
@@ -45,7 +46,6 @@ import java.util.concurrent.locks.LockSupport;
     "PMD.CloseResource",
     "PMD.AvoidDeeplyNestedIfStmts",
     "PMD.AvoidBranchingStatementAsLastInLoop",
-    "PMD.PreserveStackTrace",
     "PMD.AvoidCatchingGenericException",
     "PMD.NullAssignment"
 })
@@ -95,6 +95,11 @@ final class NativeTcpStream implements TransportStream {
             writeInterestCallback,
             "writeInterestCallback must not be null");
         this.closeCallback = Objects.requireNonNull(closeCallback, "closeCallback must not be null");
+        if (tlsEngine != null && !(tlsEngine instanceof CommunityTlsEngine)) {
+            throw new IllegalArgumentException(
+                    "NativeTcpStream only supports socket-owner TLS engines (CommunityTlsEngine); "
+                    + "buffer-owner engines are not supported");
+        }
     }
 
     @Override
@@ -157,7 +162,7 @@ final class NativeTcpStream implements TransportStream {
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw TransportException.receiveTimeout(engineName, READ_POLL_MILLIS);
+            throw new IllegalStateException("Read interrupted", e);
         }
     }
 
@@ -219,7 +224,11 @@ final class NativeTcpStream implements TransportStream {
         ensureTlsReady(true);
 
         buffer.setSize(length);
-        outboundQueue.offer(new PendingWrite(buffer, length));
+        boolean offered = outboundQueue.offer(new PendingWrite(buffer, length));
+        if (!offered) {
+            buffer.close();
+            throw new IllegalStateException("Failed to enqueue outbound write for stream " + streamId);
+        }
         writeInterestCallback.run();
     }
 
@@ -235,7 +244,7 @@ final class NativeTcpStream implements TransportStream {
 
     @Override
     public boolean isClientInitiated() {
-        return false;
+        return true;
     }
 
     @Override
@@ -253,7 +262,6 @@ final class NativeTcpStream implements TransportStream {
         if (!closed.compareAndSet(false, true)) {
             return;
         }
-        remoteClosed.set(true);
         if (tlsEngine != null) {
             try {
                 try (LoanedBuffer outbound = allocator.allocateNetwork(1024)) {
@@ -289,6 +297,12 @@ final class NativeTcpStream implements TransportStream {
         }
 
         try {
+            channel.shutdownOutput();
+        } catch (IOException | RuntimeException ignored) {
+            // best effort half-close before full close
+        }
+
+        try {
             channel.close();
         } catch (IOException ignored) {
             // best effort close
@@ -303,7 +317,11 @@ final class NativeTcpStream implements TransportStream {
             ingressBuffer.close();
             return;
         }
-        inboundQueue.offer(ingressBuffer);
+        boolean offered = inboundQueue.offer(ingressBuffer);
+        if (!offered) {
+            ingressBuffer.close();
+            throw new IllegalStateException("Failed to enqueue inbound buffer for stream " + streamId);
+        }
     }
 
     /* default */ void markRemoteClosed() {
@@ -324,6 +342,10 @@ final class NativeTcpStream implements TransportStream {
 
     /* default */ boolean usesFdOwnerTls() {
         return tlsEngine instanceof CommunityTlsEngine;
+    }
+
+    /* default */ boolean awaitHandshakeReadyForConnection() {
+        return ensureTlsReady(true);
     }
 
     /* default */ LoanedBuffer readTlsIngressFromFd() {
@@ -347,6 +369,23 @@ final class NativeTcpStream implements TransportStream {
             }
             if (status == TlsStatus.CLOSED) {
                 markRemoteClosed();
+            }
+            return null;
+        }
+    }
+
+    /* default */ LoanedBuffer decryptIngress(LoanedBuffer ciphertext, int length) {
+        try (LoanedBuffer plain = allocator.allocateNetwork(length)) {
+            TlsStatus status;
+            synchronized (tlsLock) {
+                status = tlsEngine.unwrap(ciphertext, plain);
+            }
+            if (status == TlsStatus.OK && plain.size() > 0) {
+                plain.retain();
+                return plain;
+            }
+            if (status == TlsStatus.CLOSED) {
+                close();
             }
             return null;
         }
@@ -403,7 +442,7 @@ final class NativeTcpStream implements TransportStream {
                     continue;
                 }
                 if (written == 0) {
-                    Thread.onSpinWait();
+                    LockSupport.parkNanos(1_000_000L);
                     continue;
                 }
                 throw TransportException.sendFailure(engineName, writtenTotal, null);
@@ -430,7 +469,7 @@ final class NativeTcpStream implements TransportStream {
             if (tlsBound.get()) {
                 return;
             }
-            communityTlsEngine.bindSocketChannel(channel);
+            communityTlsEngine.bindFileDescriptor(SocketChannelFdAccess.requireFd(channel));
             tlsBound.set(true);
         }
     }

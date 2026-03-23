@@ -57,7 +57,7 @@ import java.util.concurrent.TimeUnit;
  *
  * @since 0.5.0
  */
-@State(Scope.Benchmark)
+@State(Scope.Thread)
 @BenchmarkMode({Mode.Throughput, Mode.SampleTime})
 @OutputTimeUnit(TimeUnit.MICROSECONDS)
 @Warmup(iterations = 5, time = 2, timeUnit = TimeUnit.SECONDS)
@@ -194,32 +194,35 @@ public abstract class AbstractTlsEngineBenchmark extends AbstractExerisBenchmark
     }
 
     /**
-     * Drives a dummy handshake loop so the engine reaches a post-handshake state
-     * (or gives up gracefully after {@code MAX_HS_STEPS} wrap/unwrap exchanges).
+     * Drives the handshake loop until the engine reaches a post-handshake state.
      *
-     * <p>For benchmark setups that use a mock/dummy TLS engine (no real TCP loopback),
-     * the handshake will never complete — we cap iterations and proceed.  Real handshake
-     * correctness is validated in {@code AbstractCryptoEngineTck}, not here.
+     * <p>Benchmark setup is strict and fails fast when handshake cannot complete.
      */
     private void completeHandshake() {
         TlsStatus status = tlsEngine.beginHandshake(ciphertext);
-
-        // Drive wrap/unwrap until the engine signals OK (handshake done) or
-        // we exhaust the guard limit (dummy engine with no peer → expected path).
-        final int maxSteps = 32;
+        final int maxSteps = 64;
         int steps = 0;
-        while (status == TlsStatus.NEED_UNWRAP || status == TlsStatus.NEED_WRAP) {
-            if (steps++ >= maxSteps) {
-                // Guard: dummy FD / no real peer — stop driving, proceed to benchmarks.
-                break;
-            }
+        while (steps++ < maxSteps &&
+                (status == TlsStatus.NEED_WRAP
+                        || status == TlsStatus.NEED_UNWRAP
+                        || status == TlsStatus.NEED_HANDSHAKE)) {
             if (status == TlsStatus.NEED_WRAP) {
                 status = tlsEngine.wrap(plaintext, ciphertext);
-            } else {
-                status = tlsEngine.unwrap(ciphertext, plaintext);
+                continue;
             }
+            if (status == TlsStatus.NEED_UNWRAP) {
+                status = tlsEngine.unwrap(ciphertext, decrypted);
+                continue;
+            }
+            status = tlsEngine.beginHandshake(ciphertext);
         }
-        // Any terminal status (OK, CLOSED, or guard-break) is acceptable here.
-        // Real correctness assertions live in AbstractCryptoEngineTck.
+
+        if (status == TlsStatus.FINISHED || status == TlsStatus.OK) {
+            return;
+        }
+        if (status == TlsStatus.CLOSED) {
+            throw new IllegalStateException("TLS handshake closed unexpectedly during benchmark setup");
+        }
+        throw new IllegalStateException("TLS handshake did not complete in benchmark setup, final status=" + status);
     }
 }

@@ -18,8 +18,6 @@ import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 
 import java.lang.invoke.MethodHandle;
-import java.lang.invoke.MethodHandles;
-import java.lang.invoke.MethodType;
 import java.nio.channels.SocketChannel;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -68,10 +66,7 @@ public final class CommunityTlsEngine implements TlsEngine {
 	 * Binds OpenSSL TLS session to socket file descriptor and transitions to handshake phase.
 	 */
 	public void bindSocketChannel(SocketChannel channel) {
-		if (channel == null) {
-			throw new TlsHandshakeException("SocketChannel must not be null");
-		}
-		bindFileDescriptor(extractFd(channel));
+		bindFileDescriptor(SocketChannelFdAccess.requireFd(channel));
 	}
 
 	public void bindFileDescriptor(int fileDescriptor) {
@@ -172,23 +167,6 @@ public final class CommunityTlsEngine implements TlsEngine {
 					ownedAllocator.close();
 				}
 			}
-		}
-	}
-
-	private static int extractFd(SocketChannel channel) {
-		try {
-			MethodHandles.Lookup lookup = MethodHandles.privateLookupIn(
-					channel.getClass(),
-					MethodHandles.lookup());
-			MethodHandle getFdVal = lookup.findVirtual(
-					channel.getClass(),
-					"getFDVal",
-					MethodType.methodType(int.class));
-			return (int) getFdVal.invoke(channel);
-		} catch (Throwable throwable) { //NOPMD AvoidCatchingGenericException — MethodHandle invocation contract
-			throw new TlsHandshakeException(
-					"SocketChannel FD access denied; use bindFileDescriptor(int)",
-					throwable);
 		}
 	}
 
