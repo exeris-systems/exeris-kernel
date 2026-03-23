@@ -77,12 +77,12 @@ public abstract class AbstractTransportThroughputBenchmark extends AbstractExeri
      */
     private static final String LOOPBACK = "127.0.0.1";
 
-    /**
-     * Fixed benchmark port — bound to loopback for deterministic throughput measurement.
-     * Using a fixed port ensures the server {@link TransportConfig} validation passes
-     * (SERVER mode requires port in range 1–65535). If this port is already in use on
-        * your host, override {@link #benchmarkPort()} to pick a free port.
-     */
+     /**
+      * Fixed benchmark port — bound to loopback for deterministic throughput measurement.
+      * Using a fixed port ensures the server {@link TransportConfig} validation passes
+      * (SERVER mode requires port in range 1–65535). If this port is already in use on
+      * your host, override {@link #benchmarkPort()} to pick a free port.
+      */
     private static final int BENCH_PORT = 19_999;
 
     /**
