@@ -127,6 +127,21 @@ public final class PersistenceProviderException extends ExerisKernelException {
     }
 
     /**
+     * Authentication failure — SCRAM/MD5 rejected, with root cause preserved.
+     *
+     * @param mechanism     auth mechanism name (or SQLSTATE in JDBC path)
+     * @param serverMessage server error message
+     * @param cause         root cause (may be {@code null})
+     * @return exception with rawArgs: [mechanism, serverMessage]
+     */
+    public static PersistenceProviderException authFailed(
+            String mechanism, String serverMessage, Throwable cause) {
+        return new PersistenceProviderException(
+                KernelErrorCodes.EX_PERS_5004, AUTH_MSG, cause,
+                mechanism, serverMessage);
+    }
+
+    /**
      * Transport I/O failure — socket read/write error.
      *
      * @param transportName  transport display name

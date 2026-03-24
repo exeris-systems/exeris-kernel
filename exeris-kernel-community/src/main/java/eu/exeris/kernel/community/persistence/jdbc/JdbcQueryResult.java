@@ -8,6 +8,7 @@
  */
 package eu.exeris.kernel.community.persistence.jdbc;
 
+import eu.exeris.kernel.core.persistence.PersistenceErrorTranslator;
 import eu.exeris.kernel.spi.exceptions.persistence.PersistenceProviderException;
 import eu.exeris.kernel.spi.persistence.QueryResult;
 import eu.exeris.kernel.spi.persistence.RowCursor;
@@ -109,8 +110,7 @@ final class JdbcQueryResult implements QueryResult {
     }
 
     private static PersistenceProviderException mapSqlException(SQLException sqlEx) {
-        return PersistenceProviderException.queryFailed(
-                sqlEx.getSQLState(), sqlEx.getMessage(), sqlEx);
+        return PersistenceErrorTranslator.translate(sqlEx.getSQLState(), sqlEx.getMessage(), sqlEx);
     }
 
     @SuppressWarnings("PMD.CyclomaticComplexity") // JDBC adapter: every RowCursor method wraps
@@ -252,8 +252,7 @@ final class JdbcQueryResult implements QueryResult {
         }
 
         private static PersistenceProviderException mapSql(SQLException sqlEx) {
-            return PersistenceProviderException.queryFailed(
-                    sqlEx.getSQLState(), sqlEx.getMessage(), sqlEx);
+            return PersistenceErrorTranslator.translate(sqlEx.getSQLState(), sqlEx.getMessage(), sqlEx);
         }
     }
 }

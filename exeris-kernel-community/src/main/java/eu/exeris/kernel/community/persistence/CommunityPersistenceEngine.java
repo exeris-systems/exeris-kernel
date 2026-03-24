@@ -73,6 +73,7 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
     private final ConcurrentMap<String, HikariDataSource> tenantPools;
     private final List<ConnectionInterceptor> interceptors;
     private volatile boolean closed;
+    private volatile boolean firstConnectionOpened;
 
     /* default */ CommunityPersistenceEngine(PersistenceConfig config) {
         this.config       = config;
@@ -105,6 +106,7 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
     @Override
     public PersistenceConnection openConnection() {
         ensureOpen();
+        firstConnectionOpened = true;
         CommunityHikariSupport hikari = CommunityHikariSupport.with(sharedPool);
         try {
             return hikari.acquireConnection(PROVIDER_ID, SHARED_TENANT);
@@ -116,6 +118,7 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
     @Override
     public PersistenceConnection openConnection(StorageContext storageContext) {
         ensureOpen();
+        firstConnectionOpened = true;
         String tenantKey = storageContext.isolationKey().orElse(SHARED_TENANT);
         CommunityHikariSupport hikari = CommunityHikariSupport.with(resolvePool(tenantKey));
         try {
@@ -171,6 +174,13 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
 
     @Override
     public void registerInterceptor(ConnectionInterceptor interceptor) {
+        if (interceptor == null) {
+            throw new NullPointerException("interceptor must not be null");
+        }
+        if (firstConnectionOpened) {
+            throw new IllegalStateException(
+                    "Interceptors must be registered before the first connection is opened");
+        }
         interceptors.add(interceptor);
     }
 
@@ -182,13 +192,19 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
         if (!config.perTenantPooling() || SHARED_TENANT.equals(tenantKey)) {
             return sharedPool;
         }
-        return tenantPools.computeIfAbsent(tenantKey, key -> {
+        synchronized (tenantPools) {
+            HikariDataSource existing = tenantPools.get(tenantKey);
+            if (existing != null) {
+                return existing;
+            }
             if (tenantPools.size() >= config.maxTenantPools()) {
                 throw PersistenceProviderException.connectionExhausted(
                         PROVIDER_ID, config.connectionTimeoutMs(), tenantPools.size());
             }
-            return CommunityHikariSupport.buildPool(config, key);
-        });
+            HikariDataSource pool = CommunityHikariSupport.buildPool(config, tenantKey);
+            tenantPools.put(tenantKey, pool);
+            return pool;
+        }
     }
 
     private void ensureOpen() {

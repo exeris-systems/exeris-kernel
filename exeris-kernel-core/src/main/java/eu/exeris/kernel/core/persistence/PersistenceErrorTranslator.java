@@ -161,7 +161,7 @@ public final class PersistenceErrorTranslator {
                     sqlState, "out of memory on database server: " + detail, cause);
             case CONN_FAILURE, CONN_REFUSED -> PersistenceProviderException.queryFailed(
                     sqlState, "connection failure: " + detail, cause);
-            case INVALID_PASSWORD      -> PersistenceProviderException.authFailed(sqlState, detail);
+            case INVALID_PASSWORD      -> PersistenceProviderException.authFailed(sqlState, detail, cause);
             default -> null; // fall through to class-level mapping
         };
     }
@@ -174,7 +174,7 @@ public final class PersistenceErrorTranslator {
             case CLASS_CONNECTION   -> PersistenceProviderException.queryFailed(
                     sqlState, "connection failure: " + detail, cause);
             case CLASS_CONSTRAINT   -> constraint(sqlState, detail, cause, "constraint violated");
-            case CLASS_AUTH         -> PersistenceProviderException.authFailed(sqlState, detail);
+            case CLASS_AUTH         -> PersistenceProviderException.authFailed(sqlState, detail, cause);
             case CLASS_TX_STATE     -> PersistenceProviderException.queryFailed(
                     sqlState, "invalid transaction state: " + detail, cause);
             case CLASS_TX_ROLLBACK  -> retryable(sqlState, detail, cause,

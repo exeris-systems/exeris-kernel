@@ -20,7 +20,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.sql.Connection;
-import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
@@ -58,9 +57,6 @@ class JdbcPersistenceConnectionTest {
 
     @Mock
     Connection mockConn;
-
-    @Mock
-    PreparedStatement mockPreparedStmt;
 
     @Mock
     Statement mockStmt;
@@ -257,6 +253,7 @@ class JdbcPersistenceConnectionTest {
 
         @Test
         @DisplayName("returned QueryResult keeps Statement open until result.close()")
+        @SuppressWarnings("resource")
         void queryResultOwnsStatementLifecycle() throws SQLException {
             when(mockConn.createStatement()).thenReturn(mockStmt);
             when(mockStmt.execute("SELECT 1")).thenReturn(true);
@@ -286,6 +283,7 @@ class JdbcPersistenceConnectionTest {
 
         @Test
         @DisplayName("SQLSTATE 40001 maps via translator with [RETRYABLE] detail")
+        @SuppressWarnings("resource")
         void sqlState40001IsRetryable() throws SQLException {
             when(mockConn.createStatement()).thenReturn(mockStmt);
             when(mockStmt.executeLargeUpdate("UPDATE test SET v = 1"))
@@ -302,6 +300,7 @@ class JdbcPersistenceConnectionTest {
 
         @Test
         @DisplayName("SQLSTATE 28P01 maps to EX_PERS_5004")
+        @SuppressWarnings("resource")
         void sqlState28P01MapsToAuthFailure() throws SQLException {
             when(mockConn.prepareStatement("SELECT 1"))
                     .thenThrow(new SQLException("password authentication failed", "28P01"));

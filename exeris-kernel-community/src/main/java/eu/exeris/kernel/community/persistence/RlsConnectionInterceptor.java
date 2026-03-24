@@ -8,7 +8,6 @@
  */
 package eu.exeris.kernel.community.persistence;
 
-import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.exceptions.persistence.PersistenceProviderException;
 import eu.exeris.kernel.spi.persistence.ConnectionInterceptor;
 import eu.exeris.kernel.spi.persistence.PersistenceConnection;
@@ -23,7 +22,7 @@ import java.util.regex.Pattern;
  * <h2>Replaces Legacy {@code RlsDataSource} / {@code RlsConnectionCustomizer}</h2>
  * <p>The legacy stack used {@code ThreadLocal<UUID>} (BANNED — JEP 506 violation)
  * to propagate the tenant ID. This interceptor reads the isolation key from
- * {@link KernelProviders#STORAGE_CONTEXT} — a {@code ScopedValue} that is
+ * {@link eu.exeris.kernel.spi.context.KernelProviders#STORAGE_CONTEXT} — a {@code ScopedValue} that is
  * correctly inherited by all virtual threads in the scope.
  *
  * <h2>Isolation Strategy Routing</h2>
@@ -49,13 +48,13 @@ import java.util.regex.Pattern;
  * {@link PersistenceStatement}.
  *
  * <h2>VT Safety</h2>
- * <p>Uses {@link KernelProviders#STORAGE_CONTEXT} (ScopedValue, JEP 506) —
+ * <p>Uses {@link eu.exeris.kernel.spi.context.KernelProviders#STORAGE_CONTEXT} (ScopedValue, JEP 506) —
  * zero {@code ThreadLocal}, zero VT pinning risk.
  *
  * @since 0.5.0
  * @see ConnectionInterceptor
  * @see StorageContext
- * @see KernelProviders#STORAGE_CONTEXT
+ * @see eu.exeris.kernel.spi.context.KernelProviders#STORAGE_CONTEXT
  */
 public final class RlsConnectionInterceptor implements ConnectionInterceptor {
 
@@ -87,7 +86,7 @@ public final class RlsConnectionInterceptor implements ConnectionInterceptor {
     }
 
     /**
-     * Injects the isolation key from the current {@link KernelProviders#STORAGE_CONTEXT}
+     * Injects the isolation key from the current {@link eu.exeris.kernel.spi.context.KernelProviders#STORAGE_CONTEXT}
      * into the database connection before it is returned to the caller.
      *
      * <p>O(1) per invocation — one SQL round-trip for SHARED/SEPARATED_SCHEMA strategy,
@@ -125,8 +124,7 @@ public final class RlsConnectionInterceptor implements ConnectionInterceptor {
         } catch (PersistenceProviderException ppe) {
             throw PersistenceProviderException.interceptorInitFailed(
                     INTERCEPTOR_NAME,
-                    "Failed to SET exeris.tenant_id for key '" + maskKey(isolationKey) + "': "
-                    + ppe.getMessage(),
+                    isolationKey,
                     ppe);
         }
     }
@@ -142,8 +140,7 @@ public final class RlsConnectionInterceptor implements ConnectionInterceptor {
         if (!SAFE_IDENTIFIER.matcher(schemaName).matches()) {
             throw PersistenceProviderException.interceptorInitFailed(
                     INTERCEPTOR_NAME,
-                    "Schema name '" + maskKey(schemaName) + "' contains unsafe characters — "
-                    + "only lowercase a-z, 0-9, and _ are permitted",
+                    storageContext.isolationKey().orElse("[none]"),
                     null);
         }
         String sql = String.format(SQL_SET_SCHEMA_TEMPLATE, schemaName);
@@ -152,22 +149,11 @@ public final class RlsConnectionInterceptor implements ConnectionInterceptor {
         } catch (PersistenceProviderException ppe) {
             throw PersistenceProviderException.interceptorInitFailed(
                     INTERCEPTOR_NAME,
-                    "Failed to SET search_path for schema '" + maskKey(schemaName) + "': "
-                    + ppe.getMessage(),
+                    storageContext.isolationKey().orElse("[none]"),
                     ppe);
         }
     }
 
-    /**
-     * Masks all but the first 3 characters of a key for safe logging.
-     * Prevents tenant-ID leakage in error messages.
-     */
-    private static String maskKey(String key) {
-        if (key == null || key.length() <= 3) {
-            return "***";
-        }
-        return key.substring(0, 3) + "***";
-    }
 }
 
 

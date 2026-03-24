@@ -19,6 +19,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.regex.Pattern;
 
 /**
  * Community: {@link PersistenceConnection} backed by a JDBC {@link Connection}.
@@ -36,6 +37,9 @@ import java.sql.Statement;
  */
 @SuppressWarnings({"PMD.TooManyMethods", "PMD.CyclomaticComplexity"})
 public final class JdbcPersistenceConnection implements PersistenceConnection {
+
+    /** Precompiled pattern for PostgreSQL-style {@code $N} parameter placeholders. */
+    private static final Pattern PARAM_PLACEHOLDER = Pattern.compile("\\$\\d+");
 
     private final Connection conn;
     private boolean inTransaction;
@@ -187,7 +191,7 @@ public final class JdbcPersistenceConnection implements PersistenceConnection {
      * JDBC {@code ?} placeholders — required for non-PG JDBC drivers (e.g., H2).
      */
     /* default */ static String translateParams(String sql) {
-        return sql.replaceAll("\\$\\d+", "?");
+        return PARAM_PLACEHOLDER.matcher(sql).replaceAll("?");
     }
 
     private static int toJdbcLevel(TransactionIsolation isolation) {
