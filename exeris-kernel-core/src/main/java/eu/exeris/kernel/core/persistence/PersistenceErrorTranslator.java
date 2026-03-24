@@ -47,27 +47,29 @@ public final class PersistenceErrorTranslator {
     // -------------------------------------------------------------------------
     // Specific SQLSTATE values — most frequent in business logic
     // -------------------------------------------------------------------------
-    private static final String UNIQUE_VIOLATION        = "23505";
-    private static final String FK_VIOLATION            = "23503";
-    private static final String NOT_NULL_VIOLATION      = "23502";
-    private static final String CHECK_VIOLATION         = "23514";
-    private static final String EXCLUSION_VIOLATION     = "23P01";
-    private static final String SERIALIZATION_FAILURE   = "40001";
-    private static final String DEADLOCK_DETECTED       = "40P01";
-    private static final String QUERY_CANCELLED         = "57014";
-    private static final String UNDEFINED_TABLE         = "42P01";
-    private static final String UNDEFINED_COLUMN        = "42703";
-    private static final String DISK_FULL               = "53100";
-    private static final String OUT_OF_MEMORY           = "53200";
-    private static final String TOO_MANY_CONNECTIONS    = "53300";
-    private static final String CONN_FAILURE            = "08006";
-    private static final String CONN_REFUSED            = "08001";
+    private static final String UNIQUE_VIOLATION      = "23505";
+    private static final String FK_VIOLATION          = "23503";
+    private static final String NOT_NULL_VIOLATION    = "23502";
+    private static final String CHECK_VIOLATION       = "23514";
+    private static final String EXCLUSION_VIOLATION   = "23P01";
+    private static final String SERIALIZATION_FAILURE = "40001";
+    private static final String DEADLOCK_DETECTED     = "40P01";
+    private static final String QUERY_CANCELLED       = "57014";
+    private static final String UNDEFINED_TABLE       = "42P01";
+    private static final String UNDEFINED_COLUMN      = "42703";
+    private static final String DISK_FULL             = "53100";
+    private static final String OUT_OF_MEMORY         = "53200";
+    private static final String TOO_MANY_CONNECTIONS  = "53300";
+    private static final String CONN_FAILURE          = "08006";
+    private static final String CONN_REFUSED          = "08001";
+    private static final String INVALID_PASSWORD      = "28P01";
 
     // -------------------------------------------------------------------------
     // SQLSTATE class prefixes (first two characters)
     // -------------------------------------------------------------------------
     private static final String CLASS_CONNECTION   = "08";
     private static final String CLASS_CONSTRAINT   = "23";
+    private static final String CLASS_AUTH         = "28";
     private static final String CLASS_TX_STATE     = "25";
     private static final String CLASS_TX_ROLLBACK  = "40";
     private static final String CLASS_SYNTAX       = "42";
@@ -159,6 +161,7 @@ public final class PersistenceErrorTranslator {
                     sqlState, "out of memory on database server: " + detail, cause);
             case CONN_FAILURE, CONN_REFUSED -> PersistenceProviderException.queryFailed(
                     sqlState, "connection failure: " + detail, cause);
+            case INVALID_PASSWORD      -> PersistenceProviderException.authFailed(sqlState, detail);
             default -> null; // fall through to class-level mapping
         };
     }
@@ -171,6 +174,7 @@ public final class PersistenceErrorTranslator {
             case CLASS_CONNECTION   -> PersistenceProviderException.queryFailed(
                     sqlState, "connection failure: " + detail, cause);
             case CLASS_CONSTRAINT   -> constraint(sqlState, detail, cause, "constraint violated");
+            case CLASS_AUTH         -> PersistenceProviderException.authFailed(sqlState, detail);
             case CLASS_TX_STATE     -> PersistenceProviderException.queryFailed(
                     sqlState, "invalid transaction state: " + detail, cause);
             case CLASS_TX_ROLLBACK  -> retryable(sqlState, detail, cause,
