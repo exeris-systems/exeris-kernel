@@ -8,7 +8,6 @@
  */
 package eu.exeris.kernel.community.transport;
 
-import eu.exeris.kernel.community.crypto.SocketChannelFdAccess;
 import eu.exeris.kernel.core.memory.ResourceArbiter;
 import eu.exeris.kernel.core.memory.WatermarkManager;
 import eu.exeris.kernel.core.transport.scheduler.AdmissionController;
@@ -18,7 +17,6 @@ import eu.exeris.kernel.core.transport.scheduler.StreamLoadShedder;
 import eu.exeris.kernel.spi.crypto.CryptoProviderConfig;
 import eu.exeris.kernel.spi.crypto.KernelCryptoProvider;
 import eu.exeris.kernel.spi.crypto.TlsEngine;
-import eu.exeris.kernel.spi.crypto.TlsStatus;
 import eu.exeris.kernel.spi.exceptions.transport.TransportException;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
@@ -151,6 +149,16 @@ public final class NativeTcpCarrier implements TransportEngine {
                      CryptoProviderConfig cryptoConfig,
                      String providerId,
                      int localityPoolParallelism) {
+        this(config, allocator, cryptoProvider, cryptoConfig, providerId, localityPoolParallelism, false);
+    }
+
+    /* default */ NativeTcpCarrier(TransportConfig config,
+                     MemoryAllocator allocator,
+                     KernelCryptoProvider cryptoProvider,
+                     CryptoProviderConfig cryptoConfig,
+                     String providerId,
+                     int localityPoolParallelism,
+                     boolean strictLocalityMode) {
         this.config = Objects.requireNonNull(config, "config must not be null");
         this.allocator = Objects.requireNonNull(allocator, "allocator must not be null");
         this.cryptoProvider = cryptoProvider;
@@ -164,7 +172,12 @@ public final class NativeTcpCarrier implements TransportEngine {
         );
         // C4: VT carrier pool pinned per-carrier for continuation-locality research.
         this.localityPool = new ForkJoinPool(localityPoolParallelism);
-        this.executionBackend = new LocalityAwareExecutionBackend(this.localityPool);
+        this.executionBackend = new LocalityAwareExecutionBackend(this.localityPool, strictLocalityMode);
+    }
+
+    /* default */ boolean isLocalityBackendActive() {
+        return executionBackend instanceof LocalityAwareExecutionBackend localityBackend
+                && localityBackend.isSchedulerOverrideEnabled();
     }
 
     @Override
@@ -631,7 +644,10 @@ public final class NativeTcpCarrier implements TransportEngine {
         if (writer != null) {
             LockSupport.unpark(writer);
         }
-        stream.flushPendingWrites();
+        NativeTcpStream stream = streamByChannel.get(channel);
+        if (stream != null) {
+            stream.flushPendingWrites();
+        }
     }
 
     private void startClientIngressPump(SocketChannel channel, NativeTcpStream stream) {

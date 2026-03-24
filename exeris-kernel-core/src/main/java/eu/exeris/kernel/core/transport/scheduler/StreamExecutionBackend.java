@@ -20,6 +20,7 @@ package eu.exeris.kernel.core.transport.scheduler;
  *
  * @since 0.5.1
  */
+@FunctionalInterface
 public interface StreamExecutionBackend {
 
     /**

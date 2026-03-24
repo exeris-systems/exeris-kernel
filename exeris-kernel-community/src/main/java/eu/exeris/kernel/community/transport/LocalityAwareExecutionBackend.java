@@ -31,16 +31,31 @@ final class LocalityAwareExecutionBackend implements StreamExecutionBackend {
     private static final Method VT_SCHEDULER_METHOD = resolveVtSchedulerMethod();
 
     private final ForkJoinPool carrierPool;
+    private final boolean strictMode;
+    private final boolean schedulerOverrideEnabled;
 
-    LocalityAwareExecutionBackend(ForkJoinPool carrierPool) {
+    /* default */ LocalityAwareExecutionBackend(ForkJoinPool carrierPool) {
+        this(carrierPool, false);
+    }
+
+    /* default */ LocalityAwareExecutionBackend(ForkJoinPool carrierPool, boolean strictMode) {
         this.carrierPool = Objects.requireNonNull(carrierPool, "carrierPool must not be null");
+        this.strictMode = strictMode;
+        this.schedulerOverrideEnabled = VT_SCHEDULER_METHOD != null;
+        if (strictMode && !schedulerOverrideEnabled) {
+            throw new IllegalStateException("VT scheduler override unavailable");
+        }
     }
 
     @Override
     public void start(String threadName, Runnable task) {
         // VT carrier pool: pins continuation to a dedicated FJP for cache-affinity research (C4).
         Thread.Builder.OfVirtual builder = Thread.ofVirtual().name(threadName);
-        configureSchedulerIfSupported(builder, carrierPool).start(task);
+        configureSchedulerIfSupported(builder, carrierPool, strictMode).start(task);
+    }
+
+    /* default */ boolean isSchedulerOverrideEnabled() {
+        return schedulerOverrideEnabled;
     }
 
     private static Method resolveVtSchedulerMethod() {
@@ -54,7 +69,8 @@ final class LocalityAwareExecutionBackend implements StreamExecutionBackend {
 
     private static Thread.Builder.OfVirtual configureSchedulerIfSupported(
             Thread.Builder.OfVirtual builder,
-            ForkJoinPool scheduler
+            ForkJoinPool scheduler,
+            boolean strictMode
     ) {
         Method method = VT_SCHEDULER_METHOD;
         if (method == null) {
@@ -65,7 +81,13 @@ final class LocalityAwareExecutionBackend implements StreamExecutionBackend {
             if (configured instanceof Thread.Builder.OfVirtual configuredBuilder) {
                 return configuredBuilder;
             }
+            if (strictMode) {
+                throw new IllegalStateException("VT scheduler override failed");
+            }
         } catch (ReflectiveOperationException ignored) {
+            if (strictMode) {
+                throw new IllegalStateException("VT scheduler override failed");
+            }
             // Fallback to default scheduler when JVM build does not expose scheduler customization.
         }
         return builder;

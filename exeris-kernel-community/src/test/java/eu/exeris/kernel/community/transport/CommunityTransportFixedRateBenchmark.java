@@ -26,8 +26,14 @@ import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.TearDown;
 import org.openjdk.jmh.infra.Blackhole;
 
+import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.LockSupport;
 
@@ -41,6 +47,10 @@ public class CommunityTransportFixedRateBenchmark extends AbstractExerisBenchmar
     private static final String PROVIDER_ID = "community-transport";
     private static final AtomicInteger PORT_BASE = new AtomicInteger(21_000);
     private static final long UNPACED_OPS_SENTINEL = -1L;
+    private static final boolean JFR_ENABLED = Boolean.parseBoolean(
+            System.getProperty("exeris.benchmark.jfr.enabled", "true"));
+    private static final String ARTIFACT_BASE = System.getProperty(
+            "exeris.benchmark.artifacts.dir", "target/benchmark-artifacts");
 
     @Param({
             "h1-plaintext-fixed-rate",
@@ -56,11 +66,15 @@ public class CommunityTransportFixedRateBenchmark extends AbstractExerisBenchmar
     @Param({"sub-max", "moderate", "max-throughput"})
     public String loadProfile;
 
+    @Param({"16", "32", "64"})
+    public int concurrency;
+
     private MemoryAllocator allocator;
     private NativeTcpCarrier serverCarrier;
     private NativeTcpCarrier clientCarrier;
     private TransportConnection activeConnection;
-    private TransportStream activeStream;
+    private List<TransportStream> streamPool;
+    private AtomicInteger streamRoundRobinIndex;
 
     private byte[] payloadBytes;
     private MemorySegment payloadSegment;
@@ -68,9 +82,25 @@ public class CommunityTransportFixedRateBenchmark extends AbstractExerisBenchmar
 
     private long targetOpsPerSecond;
     private long nextWriteNanos;
+    private jdk.jfr.Recording jfrRecording;
+    private Path artifactDir;
+    private String jfrFilePath;
 
     @Setup(Level.Trial)
     public void setupTrial() {
+        preflight();
+        initializeArtifacts();
+        
+        if (JFR_ENABLED) {
+            try {
+                jfrRecording = new jdk.jfr.Recording();
+                jfrRecording.setDestination(Paths.get(jfrFilePath));
+                jfrRecording.start();
+            } catch (Exception e) {
+                throw new IllegalStateException("Failed to start JFR recording", e);
+            }
+        }
+        
         allocator = new CommunityMemoryProvider().createAllocator(MemoryProviderConfig.defaults());
         int port = PORT_BASE.getAndIncrement();
 
@@ -111,15 +141,86 @@ public class CommunityTransportFixedRateBenchmark extends AbstractExerisBenchmar
                 50_000,
                 10_000L
         ));
+
+        if ("locality-aware".equals(backendMode)
+                && (!serverCarrier.isLocalityBackendActive() || !clientCarrier.isLocalityBackendActive())) {
+            throw new IllegalStateException("Locality backend not active");
+        }
+
         clientCarrier.start();
 
         activeConnection = clientCarrier.connect(LOOPBACK, port);
-        activeStream = activeConnection.openStream();
+        
+        // Initialize stream pool with concurrency size, round-robin indexed
+        streamPool = new ArrayList<>(concurrency);
+        for (int i = 0; i < concurrency; i++) {
+            streamPool.add(activeConnection.openStream());
+        }
+        streamRoundRobinIndex = new AtomicInteger(0);
 
         payloadBytes = payloadForScenario(scenario);
         payloadSegment = MemorySegment.ofArray(payloadBytes);
         payloadSize = payloadBytes.length;
         targetOpsPerSecond = targetOpsForProfile(loadProfile);
+    }
+
+    /**
+     * Preflight validation: verify backend path is available.
+     * Fail fast if backend unavailable.
+     */
+    private void preflight() {
+        if ("locality-aware".equals(backendMode)) {
+            try {
+                Class<?> carrierClass = Class.forName(
+                        "eu.exeris.kernel.community.transport.NativeTcpCarrier");
+                if (carrierClass == null) {
+                    throw new IllegalStateException("NativeTcpCarrier backend not available");
+                }
+            } catch (ClassNotFoundException e) {
+                throw new IllegalStateException(
+                        "Preflight validation failed: locality backend path unavailable", e);
+            }
+        }
+    }
+
+    /**
+     * Initialize per-trial artifact directory and manifest.
+     */
+    private void initializeArtifacts() {
+        try {
+            artifactDir = Files.createDirectories(Paths.get(ARTIFACT_BASE)
+                    .resolve("trial-" + System.currentTimeMillis()));
+            
+            String jfrFileName = JFR_ENABLED ? 
+                    "community-fixed-rate-c" + concurrency + "-" + System.nanoTime() + ".jfr" : null;
+            jfrFilePath = JFR_ENABLED ? artifactDir.resolve(jfrFileName).toString() : null;
+            
+            String manifestJson = buildManifest(backendMode, scenario, loadProfile, jfrFileName);
+            Files.write(artifactDir.resolve("manifest.json"),
+                    manifestJson.getBytes(StandardCharsets.UTF_8));
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to initialize benchmark artifacts", e);
+        }
+    }
+
+    /**
+     * Build JSON manifest with benchmark metadata.
+     */
+    private String buildManifest(String backend, String scenario, String profile, String jfrFileName) {
+        StringBuilder json = new StringBuilder();
+        json.append("{");
+        json.append("\"benchmarkName\":\"CommunityTransportFixedRateBenchmark\",");
+        json.append("\"backendMode\":\"").append(backend).append("\",");
+        json.append("\"scenario\":\"").append(scenario).append("\",");
+        json.append("\"loadProfile\":\"").append(profile).append("\",");
+        json.append("\"concurrency\":").append(concurrency).append(",");
+        json.append("\"timestamp\":").append(System.currentTimeMillis()).append(",");
+        json.append("\"jfrEnabled\":").append(JFR_ENABLED).append(",");
+        json.append("\"jfrFile\":").append(jfrFileName != null ? "\"" + jfrFileName + "\"" : "null").append(",");
+        json.append("\"perfStatMode\":\"external-runner\",");
+        json.append("\"perfStatIntegrated\":false");
+        json.append("}");
+        return json.toString();
     }
 
     @Setup(Level.Iteration)
@@ -131,26 +232,42 @@ public class CommunityTransportFixedRateBenchmark extends AbstractExerisBenchmar
     public void fixedRateStreamWrite(Blackhole bh) {
         paceIfRequired();
 
+        int streamIdx = streamRoundRobinIndex.getAndIncrement() % concurrency;
+        TransportStream stream = streamPool.get(streamIdx);
+        
         try (LoanedBuffer payloadBuffer = allocator.allocateNetwork(payloadSize)) {
             payloadBuffer.segment().asSlice(0, payloadSize).copyFrom(payloadSegment);
-            activeStream.write(payloadBuffer.segment(), payloadSize);
+            stream.write(payloadBuffer.segment(), payloadSize);
             bh.consume(payloadSize);
         }
     }
 
     @TearDown(Level.Trial)
     public void tearDownTrial() {
-        closeQuietly(activeStream);
+        if (streamPool != null) {
+            for (TransportStream stream : streamPool) {
+                closeQuietly(stream);
+            }
+        }
         closeQuietly(activeConnection);
         closeQuietly(clientCarrier);
         closeQuietly(serverCarrier);
         closeQuietly(allocator);
+        
+        if (JFR_ENABLED && jfrRecording != null) {
+            try {
+                jfrRecording.stop();
+                jfrRecording.close();
+            } catch (Exception e) {
+                // Best-effort JFR cleanup
+            }
+        }
     }
 
     private NativeTcpCarrier createCarrier(TransportConfig config) {
         if ("locality-aware".equals(backendMode)) {
             int localityPoolParallelism = Math.max(1, Runtime.getRuntime().availableProcessors());
-            return new NativeTcpCarrier(config, allocator, null, null, PROVIDER_ID, localityPoolParallelism);
+            return new NativeTcpCarrier(config, allocator, null, null, PROVIDER_ID, localityPoolParallelism, true);
         }
         return new NativeTcpCarrier(config, allocator, null, null, PROVIDER_ID);
     }
