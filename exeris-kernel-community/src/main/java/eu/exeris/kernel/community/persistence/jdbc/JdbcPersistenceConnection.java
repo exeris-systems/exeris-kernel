@@ -19,7 +19,6 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Statement;
-import java.util.regex.Pattern;
 
 /**
  * Community: {@link PersistenceConnection} backed by a JDBC {@link Connection}.
@@ -37,9 +36,6 @@ import java.util.regex.Pattern;
  */
 @SuppressWarnings({"PMD.TooManyMethods", "PMD.CyclomaticComplexity"})
 public final class JdbcPersistenceConnection implements PersistenceConnection {
-
-    /** Precompiled pattern for PostgreSQL-style {@code $N} parameter placeholders. */
-    private static final Pattern PARAM_PLACEHOLDER = Pattern.compile("\\$\\d+");
 
     private final Connection conn;
     private boolean inTransaction;
@@ -190,7 +186,164 @@ public final class JdbcPersistenceConnection implements PersistenceConnection {
      * JDBC {@code ?} placeholders — required for non-PG JDBC drivers (e.g., H2).
      */
     /* default */ static String translateParams(String sql) {
-        return PARAM_PLACEHOLDER.matcher(sql).replaceAll("?");
+        if (sql == null || sql.isEmpty()) {
+            return sql;
+        }
+
+        StringBuilder out = new StringBuilder(sql.length());
+        int i = 0;
+        String dollarDelimiter = null;
+
+        while (i < sql.length()) {
+            if (dollarDelimiter != null) {
+                if (sql.startsWith(dollarDelimiter, i)) {
+                    out.append(dollarDelimiter);
+                    i += dollarDelimiter.length();
+                    dollarDelimiter = null;
+                    continue;
+                }
+                out.append(sql.charAt(i));
+                i++;
+                continue;
+            }
+
+            char ch = sql.charAt(i);
+
+            if (ch == '\'') {
+                i = appendSingleQuoted(sql, i, out);
+                continue;
+            }
+
+            if (ch == '"') {
+                i = appendDoubleQuoted(sql, i, out);
+                continue;
+            }
+
+            if (ch == '-' && i + 1 < sql.length() && sql.charAt(i + 1) == '-') {
+                i = appendLineComment(sql, i, out);
+                continue;
+            }
+
+            if (ch == '/' && i + 1 < sql.length() && sql.charAt(i + 1) == '*') {
+                i = appendBlockComment(sql, i, out);
+                continue;
+            }
+
+            if (ch == '$') {
+                String delimiter = readDollarQuoteDelimiter(sql, i);
+                if (delimiter != null) {
+                    out.append(delimiter);
+                    i += delimiter.length();
+                    dollarDelimiter = delimiter;
+                    continue;
+                }
+
+                if (i + 1 < sql.length() && Character.isDigit(sql.charAt(i + 1))) {
+                    int j = i + 2;
+                    while (j < sql.length() && Character.isDigit(sql.charAt(j))) {
+                        j++;
+                    }
+                    out.append('?');
+                    i = j;
+                    continue;
+                }
+            }
+
+            out.append(ch);
+            i++;
+        }
+
+        return out.toString();
+    }
+
+    private static int appendSingleQuoted(String sql, int index, StringBuilder out) {
+        out.append('\'');
+        int i = index + 1;
+        while (i < sql.length()) {
+            char ch = sql.charAt(i);
+            out.append(ch);
+            i++;
+            if (ch == '\'' && i < sql.length() && sql.charAt(i) == '\'') {
+                out.append('\'');
+                i++;
+                continue;
+            }
+            if (ch == '\'') {
+                break;
+            }
+        }
+        return i;
+    }
+
+    private static int appendDoubleQuoted(String sql, int index, StringBuilder out) {
+        out.append('"');
+        int i = index + 1;
+        while (i < sql.length()) {
+            char ch = sql.charAt(i);
+            out.append(ch);
+            i++;
+            if (ch == '"' && i < sql.length() && sql.charAt(i) == '"') {
+                out.append('"');
+                i++;
+                continue;
+            }
+            if (ch == '"') {
+                break;
+            }
+        }
+        return i;
+    }
+
+    private static int appendLineComment(String sql, int index, StringBuilder out) {
+        out.append("--");
+        int i = index + 2;
+        while (i < sql.length()) {
+            char ch = sql.charAt(i);
+            out.append(ch);
+            i++;
+            if (ch == '\n') {
+                break;
+            }
+        }
+        return i;
+    }
+
+    private static int appendBlockComment(String sql, int index, StringBuilder out) {
+        out.append("/*");
+        int i = index + 2;
+        while (i < sql.length()) {
+            char ch = sql.charAt(i);
+            out.append(ch);
+            i++;
+            if (ch == '*' && i < sql.length() && sql.charAt(i) == '/') {
+                out.append('/');
+                i++;
+                break;
+            }
+        }
+        return i;
+    }
+
+    private static String readDollarQuoteDelimiter(String sql, int index) {
+        if (sql.charAt(index) != '$') {
+            return null;
+        }
+        int i = index + 1;
+        while (i < sql.length()) {
+            char ch = sql.charAt(i);
+            if (ch == '$') {
+                return sql.substring(index, i + 1);
+            }
+            if (!isDollarTagChar(ch)) {
+                return null;
+            }
+            i++;
+        }
+        return null;
+    }
+
+    private static boolean isDollarTagChar(char ch) {
+        return Character.isLetterOrDigit(ch) || ch == '_';
     }
 
     private static int toJdbcLevel(TransactionIsolation isolation) {

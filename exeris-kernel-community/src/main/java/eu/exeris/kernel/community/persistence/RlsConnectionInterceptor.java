@@ -133,9 +133,10 @@ public final class RlsConnectionInterceptor implements ConnectionInterceptor {
                                          StorageContext storageContext) {
         String schemaName = storageContext.schemaName().orElse(null);
         if (schemaName == null || schemaName.isBlank()) {
-            // No schema name — fall back to shared behaviour
-            injectTenantId(connection, storageContext);
-            return;
+            throw PersistenceProviderException.interceptorInitFailed(
+                    INTERCEPTOR_NAME,
+                    storageContext.isolationKey().orElse("[none]"),
+                    null);
         }
         if (!SAFE_IDENTIFIER.matcher(schemaName).matches()) {
             throw PersistenceProviderException.interceptorInitFailed(

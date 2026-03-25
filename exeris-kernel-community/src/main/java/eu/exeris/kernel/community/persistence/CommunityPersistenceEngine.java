@@ -129,16 +129,18 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
     @SuppressWarnings("PMD.AvoidCatchingGenericException")
     public PersistenceConnection openConnection(StorageContext storageContext) {
         String tenantKey;
+        List<ConnectionInterceptor> interceptorSnapshot;
         CommunityHikariSupport hikari;
         synchronized (lifecycleLock) {
             ensureOpenUnderLock();
             firstConnectionOpened.set(true);
             tenantKey = selectTenantKey(storageContext);
-            hikari = CommunityHikariSupport.with(resolvePoolUnderLock(tenantKey));
+            interceptorSnapshot = List.copyOf(interceptors);
         }
+        hikari = CommunityHikariSupport.with(resolvePoolForTenant(tenantKey));
         try {
             JdbcPersistenceConnection conn = hikari.acquireConnection(PROVIDER_ID, tenantKey);
-            for (ConnectionInterceptor interceptor : interceptors) {
+            for (ConnectionInterceptor interceptor : interceptorSnapshot) {
                 try {
                     interceptor.onConnectionAcquired(conn, storageContext);
                 } catch (PersistenceProviderException ppe) {
@@ -205,7 +207,8 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
     @Override
     public void registerInterceptor(ConnectionInterceptor interceptor) {
         Objects.requireNonNull(interceptor, "interceptor must not be null");
-        synchronized (interceptors) {
+        synchronized (lifecycleLock) {
+            ensureOpenUnderLock();
             if (firstConnectionOpened.get()) {
                 throw new IllegalStateException(
                         "Interceptors must be registered before the first connection is opened");
@@ -218,21 +221,47 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
     // Internal helpers
     // =========================================================================
 
-    private HikariDataSource resolvePoolUnderLock(String tenantKey) {
+    private HikariDataSource resolvePoolForTenant(String tenantKey) {
         if (!config.perTenantPooling() || SHARED_TENANT.equals(tenantKey)) {
             return sharedPool;
         }
-        HikariDataSource existing = tenantPools.get(tenantKey);
-        if (existing != null) {
-            return existing;
+        synchronized (lifecycleLock) {
+            ensureOpenUnderLock();
+            HikariDataSource existing = tenantPools.get(tenantKey);
+            if (existing != null) {
+                return existing;
+            }
+            if (tenantPools.size() >= config.maxTenantPools()) {
+                throw PersistenceProviderException.connectionExhausted(
+                        PROVIDER_ID, config.connectionTimeoutMs(), tenantPools.size());
+            }
         }
-        if (tenantPools.size() >= config.maxTenantPools()) {
-            throw PersistenceProviderException.connectionExhausted(
-                    PROVIDER_ID, config.connectionTimeoutMs(), tenantPools.size());
+        return buildAndInstallTenantPool(tenantKey);
+    }
+
+    private HikariDataSource buildAndInstallTenantPool(String tenantKey) {
+        HikariDataSource candidate = CommunityHikariSupport.buildPool(config, tenantKey);
+        boolean installed = false;
+        try {
+            synchronized (lifecycleLock) {
+                ensureOpenUnderLock();
+                HikariDataSource existing = tenantPools.get(tenantKey);
+                if (existing != null) {
+                    return existing;
+                }
+                if (tenantPools.size() >= config.maxTenantPools()) {
+                    throw PersistenceProviderException.connectionExhausted(
+                            PROVIDER_ID, config.connectionTimeoutMs(), tenantPools.size());
+                }
+                tenantPools.put(tenantKey, candidate);
+                installed = true;
+                return candidate;
+            }
+        } finally {
+            if (!installed) {
+                candidate.close();
+            }
         }
-        HikariDataSource pool = CommunityHikariSupport.buildPool(config, tenantKey);
-        tenantPools.put(tenantKey, pool);
-        return pool;
     }
 
     private String selectTenantKey(StorageContext storageContext) {

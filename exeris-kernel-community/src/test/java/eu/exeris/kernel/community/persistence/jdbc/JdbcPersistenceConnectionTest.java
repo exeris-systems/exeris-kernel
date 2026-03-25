@@ -347,6 +347,44 @@ class JdbcPersistenceConnectionTest {
         void emptyStringReturnsEmpty() {
             assertThat(JdbcPersistenceConnection.translateParams("")).isEmpty();
         }
+
+        @Test
+        @DisplayName("null input returns null")
+        void nullReturnsNull() {
+            assertThat(JdbcPersistenceConnection.translateParams(null)).isNull();
+        }
+
+        @Test
+        @DisplayName("$N inside single quotes is preserved, real placeholders are translated")
+        void placeholdersInSingleQuotedLiteralArePreserved() {
+            String result = JdbcPersistenceConnection.translateParams(
+                    "SELECT '$1' AS literal, id FROM t WHERE id = $2");
+            assertThat(result).isEqualTo("SELECT '$1' AS literal, id FROM t WHERE id = ?");
+        }
+
+        @Test
+        @DisplayName("$N inside double quotes is preserved, real placeholders are translated")
+        void placeholdersInDoubleQuotedIdentifierArePreserved() {
+            String result = JdbcPersistenceConnection.translateParams(
+                    "SELECT \"$1_col\" FROM t WHERE id = $2");
+            assertThat(result).isEqualTo("SELECT \"$1_col\" FROM t WHERE id = ?");
+        }
+
+        @Test
+        @DisplayName("$N inside line and block comments is preserved")
+        void placeholdersInCommentsArePreserved() {
+            String sql = "SELECT $1 -- keep $2 in comment\n/* keep $3 */ WHERE id = $4";
+            String result = JdbcPersistenceConnection.translateParams(sql);
+            assertThat(result).isEqualTo("SELECT ? -- keep $2 in comment\n/* keep $3 */ WHERE id = ?");
+        }
+
+        @Test
+        @DisplayName("$N inside dollar-quoted bodies is preserved")
+        void placeholdersInDollarQuotedBodiesArePreserved() {
+            String sql = "SELECT $$body $1$$, $2, $tag$keep $3$tag$, $4";
+            String result = JdbcPersistenceConnection.translateParams(sql);
+            assertThat(result).isEqualTo("SELECT $$body $1$$, ?, $tag$keep $3$tag$, ?");
+        }
     }
 }
 

@@ -69,9 +69,15 @@ final class CommunityHikariSupport {
     /* default */ JdbcPersistenceConnection acquireConnection(String providerId, String tenantKey) throws SQLException {
         long startNs = System.nanoTime();
         ConnectionAcquireEvent event = ConnectionAcquireEvent.beginAcquire();
-        Connection raw = pool.getConnection();
-        ConnectionAcquireEvent.endAcquire(event, providerId, tenantKey, true, startNs);
-        return new JdbcPersistenceConnection(raw);
+        boolean success = false;
+        try {
+            Connection raw = pool.getConnection();
+            JdbcPersistenceConnection connection = new JdbcPersistenceConnection(raw);
+            success = true;
+            return connection;
+        } finally {
+            ConnectionAcquireEvent.endAcquire(event, providerId, tenantKey, success, startNs);
+        }
     }
 
     /* default */ EngineStats toEngineStats(int maxPoolSize, int tenantPoolCount) {

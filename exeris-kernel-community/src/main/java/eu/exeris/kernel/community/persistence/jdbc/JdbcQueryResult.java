@@ -240,7 +240,7 @@ final class JdbcQueryResult implements QueryResult {
             if (bytes == null) {
                 Objects.requireNonNull(null, NULL_COL_PREFIX + column + NULL_COL_SUFFIX);
             }
-            return MemorySegment.ofArray(bytes);
+            return MemorySegment.ofArray(bytes).asReadOnly();
         }
 
         @Override
