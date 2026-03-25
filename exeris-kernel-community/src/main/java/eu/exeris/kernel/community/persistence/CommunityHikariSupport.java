@@ -20,6 +20,8 @@ import eu.exeris.kernel.spi.persistence.PersistenceConfig;
 
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 final class CommunityHikariSupport {
 
@@ -50,15 +52,25 @@ final class CommunityHikariSupport {
                 ? "exeris-community-shared"
                 : "exeris-community-tenant-" + tenantKey);
         hikariConfig.setRegisterMbeans(false);
-        config.properties().forEach(hikariConfig::addDataSourceProperty);
+        applyDataSourceProperties(hikariConfig, config);
         return new HikariDataSource(hikariConfig);
+    }
+
+    /* default */ static void applyDataSourceProperties(HikariConfig hikariConfig, PersistenceConfig config) {
+        Map<String, String> properties = new LinkedHashMap<>(config.properties());
+        if (config.useTls() && !CommunityHikariUtils.containsKeyIgnoreCase(properties, "ssl")
+                && !CommunityHikariUtils.containsKeyIgnoreCase(properties, "sslmode")) {
+            properties.put("ssl", "true");
+            properties.put("sslmode", "require");
+        }
+        properties.forEach(hikariConfig::addDataSourceProperty);
     }
 
     /* default */ JdbcPersistenceConnection acquireConnection(String providerId, String tenantKey) throws SQLException {
         long startNs = System.nanoTime();
         ConnectionAcquireEvent event = ConnectionAcquireEvent.beginAcquire();
         Connection raw = pool.getConnection();
-        ConnectionAcquireEvent.endAcquire(event, providerId, tenantKey, false, startNs);
+        ConnectionAcquireEvent.endAcquire(event, providerId, tenantKey, true, startNs);
         return new JdbcPersistenceConnection(raw);
     }
 
@@ -81,8 +93,8 @@ final class CommunityHikariSupport {
 
     /* default */ PersistenceProviderException translateAcquireFailure
                 (Throwable failure, String providerId, long timeoutMs) {
-        SQLException sqlException = findSqlException(failure);
-        if (sqlException != null && hasSqlState(sqlException)) {
+        SQLException sqlException = CommunityHikariUtils.findSqlException(failure);
+        if (sqlException != null && CommunityHikariUtils.hasSqlState(sqlException)) {
             return PersistenceErrorTranslator.translate(sqlException.getSQLState(), sqlException.getMessage(), 
                 sqlException);
         }
@@ -96,21 +108,5 @@ final class CommunityHikariSupport {
 
     private HikariPoolMXBean mxBean() {
         return pool.getHikariPoolMXBean();
-    }
-
-    private static SQLException findSqlException(Throwable failure) {
-        Throwable current = failure;
-        while (current != null) {
-            if (current instanceof SQLException sqlException) {
-                return sqlException;
-            }
-            current = current.getCause();
-        }
-        return null;
-    }
-
-    private static boolean hasSqlState(SQLException sqlException) {
-        String sqlState = sqlException.getSQLState();
-        return sqlState != null && !sqlState.isBlank();
     }
 }

@@ -298,8 +298,8 @@ class JdbcPersistenceConnectionTest {
         @Test
         @DisplayName("SQLSTATE 28P01 maps to EX_PERS_5004")
         void sqlState28P01MapsToAuthFailure() throws SQLException {
-            when(mockConn.prepareStatement("SELECT 1"))
-                    .thenThrow(new SQLException("password authentication failed", "28P01"));
+            doThrow(new SQLException("password authentication failed", "28P01"))
+                .when(mockConn).prepareStatement("SELECT 1");
 
             assertThatThrownBy(() -> connection.prepare("SELECT 1"))
                     .isInstanceOf(PersistenceProviderException.class)

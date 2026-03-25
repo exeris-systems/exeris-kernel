@@ -73,6 +73,7 @@ final class JdbcQueryResult implements QueryResult {
 
     @Override
     public long rowsAffected() {
+        ensureOpen();
         try {
             return resultSet.getStatement() != null
                     ? resultSet.getStatement().getUpdateCount()

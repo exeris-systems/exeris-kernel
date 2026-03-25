@@ -72,6 +72,7 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
 
     private final PersistenceConfig config;
     private final HikariDataSource  sharedPool;
+    private final Object lifecycleLock = new Object();
     // Per-tenant pools — lazily created on first openConnection(StorageContext)
     private final ConcurrentMap<String, HikariDataSource> tenantPools;
     private final List<ConnectionInterceptor> interceptors;
@@ -108,12 +109,18 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
 
     @Override
     public PersistenceConnection openConnection() {
-        ensureOpen();
-        firstConnectionOpened.set(true);
-        CommunityHikariSupport hikari = CommunityHikariSupport.with(sharedPool);
+        CommunityHikariSupport hikari;
+        synchronized (lifecycleLock) {
+            ensureOpenUnderLock();
+            firstConnectionOpened.set(true);
+            hikari = CommunityHikariSupport.with(sharedPool);
+        }
         try {
             return hikari.acquireConnection(PROVIDER_ID, SHARED_TENANT);
         } catch (HikariPool.PoolInitializationException | SQLException cause) {
+            if (closed) {
+                throw new IllegalStateException("CommunityPersistenceEngine is closed", cause);
+            }
             throw hikari.translateAcquireFailure(cause, PROVIDER_ID, config.connectionTimeoutMs());
         }
     }
@@ -121,10 +128,14 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
     @Override
     @SuppressWarnings("PMD.AvoidCatchingGenericException")
     public PersistenceConnection openConnection(StorageContext storageContext) {
-        ensureOpen();
-        firstConnectionOpened.set(true);
-        String tenantKey = selectTenantKey(storageContext);
-        CommunityHikariSupport hikari = CommunityHikariSupport.with(resolvePool(tenantKey));
+        String tenantKey;
+        CommunityHikariSupport hikari;
+        synchronized (lifecycleLock) {
+            ensureOpenUnderLock();
+            firstConnectionOpened.set(true);
+            tenantKey = selectTenantKey(storageContext);
+            hikari = CommunityHikariSupport.with(resolvePoolUnderLock(tenantKey));
+        }
         try {
             JdbcPersistenceConnection conn = hikari.acquireConnection(PROVIDER_ID, tenantKey);
             for (ConnectionInterceptor interceptor : interceptors) {
@@ -143,13 +154,18 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
             }
             return conn;
         } catch (HikariPool.PoolInitializationException | SQLException cause) {
+            if (closed) {
+                throw new IllegalStateException("CommunityPersistenceEngine is closed", cause);
+            }
             throw hikari.translateAcquireFailure(cause, PROVIDER_ID, config.connectionTimeoutMs());
         }
     }
 
     @Override
     public PersistenceHealthStatus healthCheckDetailed() {
-        ensureOpen();
+        synchronized (lifecycleLock) {
+            ensureOpenUnderLock();
+        }
         long start = System.nanoTime();
         try (Connection conn = sharedPool.getConnection()) {
             boolean valid = conn.isValid(2);
@@ -169,12 +185,16 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
     @Override
     @SuppressWarnings("try")
     public void close() {
-        if (closed) {
-            return;
+        List<HikariDataSource> poolsToClose;
+        synchronized (lifecycleLock) {
+            if (closed) {
+                return;
+            }
+            closed = true;
+            poolsToClose = new ArrayList<>(tenantPools.values());
+            tenantPools.clear();
         }
-        closed = true;
-        tenantPools.values().forEach(HikariDataSource::close);
-        tenantPools.clear();
+        poolsToClose.forEach(HikariDataSource::close);
         sharedPool.close();
     }
 
@@ -198,36 +218,35 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
     // Internal helpers
     // =========================================================================
 
-    private HikariDataSource resolvePool(String tenantKey) {
+    private HikariDataSource resolvePoolUnderLock(String tenantKey) {
         if (!config.perTenantPooling() || SHARED_TENANT.equals(tenantKey)) {
             return sharedPool;
         }
-        synchronized (tenantPools) {
-            HikariDataSource existing = tenantPools.get(tenantKey);
-            if (existing != null) {
-                return existing;
-            }
-            if (tenantPools.size() >= config.maxTenantPools()) {
-                throw PersistenceProviderException.connectionExhausted(
-                        PROVIDER_ID, config.connectionTimeoutMs(), tenantPools.size());
-            }
-            HikariDataSource pool = CommunityHikariSupport.buildPool(config, tenantKey);
-            tenantPools.put(tenantKey, pool);
-            return pool;
+        HikariDataSource existing = tenantPools.get(tenantKey);
+        if (existing != null) {
+            return existing;
         }
+        if (tenantPools.size() >= config.maxTenantPools()) {
+            throw PersistenceProviderException.connectionExhausted(
+                    PROVIDER_ID, config.connectionTimeoutMs(), tenantPools.size());
+        }
+        HikariDataSource pool = CommunityHikariSupport.buildPool(config, tenantKey);
+        tenantPools.put(tenantKey, pool);
+        return pool;
     }
 
     private String selectTenantKey(StorageContext storageContext) {
         return switch (storageContext.strategy()) {
-            case DEDICATED        -> storageContext.dataSourceKey()
-                    .orElseGet(() -> storageContext.isolationKey().orElse(SHARED_TENANT));
+            case DEDICATED        -> throw new IllegalStateException(
+                    "DEDICATED strategy is unsupported in Community provider: dedicated datasource routing "
+                            + "is unsupported in Community provider");
             case SEPARATED_SCHEMA -> storageContext.schemaName()
                     .orElseGet(() -> storageContext.isolationKey().orElse(SHARED_TENANT));
             case SHARED           -> storageContext.isolationKey().orElse(SHARED_TENANT);
         };
     }
 
-    private void ensureOpen() {
+    private void ensureOpenUnderLock() {
         if (closed) {
             throw new IllegalStateException("CommunityPersistenceEngine is closed");
         }
