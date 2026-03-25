@@ -9,9 +9,7 @@
 package eu.exeris.kernel.tck.contract.security;
 
 import eu.exeris.kernel.spi.context.KernelProviders;
-import eu.exeris.kernel.spi.exceptions.security.SecurityAuthenticationException;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
-import eu.exeris.kernel.spi.security.AuthenticationResult;
 import eu.exeris.kernel.spi.security.ImmutableStorageContext;
 import eu.exeris.kernel.spi.security.PrincipalContext;
 import eu.exeris.kernel.spi.security.SecurityProvider;
@@ -21,6 +19,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.StructuredTaskScope;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -95,7 +95,7 @@ public abstract class AbstractSecurityInterceptorTck<I> {
 
     /**
      * Creates a {@link SecurityProvider} that always succeeds authentication,
-     * returning an {@link AuthenticationResult} built from the given principal and storage.
+     * returning an {@link eu.exeris.kernel.spi.security.AuthenticationResult} built from the given principal and storage.
      *
      * @param principal the principal the provider should return
      * @param storage   the storage context the provider should return
@@ -106,7 +106,7 @@ public abstract class AbstractSecurityInterceptorTck<I> {
 
     /**
      * Creates a {@link SecurityProvider} that always fails authentication
-     * by throwing {@link SecurityAuthenticationException}.
+     * by throwing {@link eu.exeris.kernel.spi.exceptions.security.SecurityAuthenticationException}.
      *
      * @return fail provider
      */
@@ -295,6 +295,53 @@ public abstract class AbstractSecurityInterceptorTck<I> {
 
             assertThat(failure.get()).isNull();
             assertThat(successCount.get()).isEqualTo(vtCount);
+        }
+    }
+
+    // =========================================================================
+    // Concurrent isolation contract
+    // =========================================================================
+
+    @Nested
+    @DisplayName("Concurrent isolation contract")
+    class ConcurrentIsolation {
+
+        @Test
+        @DisplayName("concurrent intercept() calls do not cross-contaminate PRINCIPAL_CONTEXT")
+        void concurrentRequestsAreIsolated() throws Exception {
+            int concurrency = 8;
+            List<PrincipalContext> principals = new ArrayList<>(concurrency);
+            List<AtomicReference<PrincipalContext>> captured = new ArrayList<>(concurrency);
+            List<I> interceptorList = new ArrayList<>(concurrency);
+
+            for (int i = 0; i < concurrency; i++) {
+                PrincipalContext p = createTestPrincipal();
+                principals.add(p);
+                captured.add(new AtomicReference<>());
+                StorageContext storage = ImmutableStorageContext.GLOBAL;
+                interceptorList.add(createInterceptor(createSuccessProvider(p, storage)));
+            }
+
+            try (var scope = StructuredTaskScope.open(
+                    StructuredTaskScope.Joiner.<Void>awaitAllSuccessfulOrThrow())) {
+                for (int i = 0; i < concurrency; i++) {
+                    final int idx = i;
+                    scope.fork(() -> {
+                        try (LoanedBuffer token = createTokenBuffer()) {
+                            intercept(interceptorList.get(idx), token,
+                                    () -> captured.get(idx).set(KernelProviders.PRINCIPAL_CONTEXT.get()));
+                        }
+                        return null;
+                    });
+                }
+                scope.join();
+            }
+
+            for (int i = 0; i < concurrency; i++) {
+                assertThat(captured.get(i).get())
+                        .as("principal for slot %d must not be cross-contaminated", i)
+                        .isEqualTo(principals.get(i));
+            }
         }
     }
 }

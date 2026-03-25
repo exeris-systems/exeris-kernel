@@ -253,11 +253,9 @@ class JdbcPersistenceConnectionTest {
 
         @Test
         @DisplayName("returned QueryResult keeps Statement open until result.close()")
-        @SuppressWarnings("resource")
         void queryResultOwnsStatementLifecycle() throws SQLException {
             when(mockConn.createStatement()).thenReturn(mockStmt);
-            when(mockStmt.execute("SELECT 1")).thenReturn(true);
-            when(mockStmt.getResultSet()).thenReturn(mockResultSet);
+            when(mockStmt.executeQuery("SELECT 1")).thenReturn(mockResultSet);
             when(mockResultSet.getMetaData()).thenReturn(mockMetaData);
             when(mockMetaData.getColumnCount()).thenReturn(1);
             when(mockResultSet.next()).thenReturn(true, false);
@@ -283,7 +281,6 @@ class JdbcPersistenceConnectionTest {
 
         @Test
         @DisplayName("SQLSTATE 40001 maps via translator with [RETRYABLE] detail")
-        @SuppressWarnings("resource")
         void sqlState40001IsRetryable() throws SQLException {
             when(mockConn.createStatement()).thenReturn(mockStmt);
             when(mockStmt.executeLargeUpdate("UPDATE test SET v = 1"))
@@ -300,7 +297,6 @@ class JdbcPersistenceConnectionTest {
 
         @Test
         @DisplayName("SQLSTATE 28P01 maps to EX_PERS_5004")
-        @SuppressWarnings("resource")
         void sqlState28P01MapsToAuthFailure() throws SQLException {
             when(mockConn.prepareStatement("SELECT 1"))
                     .thenThrow(new SQLException("password authentication failed", "28P01"));

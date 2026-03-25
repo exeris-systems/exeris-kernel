@@ -26,8 +26,10 @@ import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Community: JDBC-based {@link PersistenceEngine} backed by HikariCP connection pool.
@@ -53,6 +55,7 @@ import java.util.concurrent.ConcurrentMap;
  *
  * @since 0.5.0
  */
+@SuppressWarnings("PMD.CyclomaticComplexity")
 final class CommunityPersistenceEngine implements PersistenceEngine {
 
     private static final String PROVIDER_ID   = "postgres-community";
@@ -73,7 +76,7 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
     private final ConcurrentMap<String, HikariDataSource> tenantPools;
     private final List<ConnectionInterceptor> interceptors;
     private volatile boolean closed;
-    private volatile boolean firstConnectionOpened;
+    private final AtomicBoolean firstConnectionOpened = new AtomicBoolean(false);
 
     /* default */ CommunityPersistenceEngine(PersistenceConfig config) {
         this.config       = config;
@@ -106,7 +109,7 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
     @Override
     public PersistenceConnection openConnection() {
         ensureOpen();
-        firstConnectionOpened = true;
+        firstConnectionOpened.set(true);
         CommunityHikariSupport hikari = CommunityHikariSupport.with(sharedPool);
         try {
             return hikari.acquireConnection(PROVIDER_ID, SHARED_TENANT);
@@ -116,10 +119,11 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
     }
 
     @Override
+    @SuppressWarnings("PMD.AvoidCatchingGenericException")
     public PersistenceConnection openConnection(StorageContext storageContext) {
         ensureOpen();
-        firstConnectionOpened = true;
-        String tenantKey = storageContext.isolationKey().orElse(SHARED_TENANT);
+        firstConnectionOpened.set(true);
+        String tenantKey = selectTenantKey(storageContext);
         CommunityHikariSupport hikari = CommunityHikariSupport.with(resolvePool(tenantKey));
         try {
             JdbcPersistenceConnection conn = hikari.acquireConnection(PROVIDER_ID, tenantKey);
@@ -129,6 +133,12 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
                 } catch (PersistenceProviderException ppe) {
                     conn.close();
                     throw ppe;
+                } catch (RuntimeException ex) {
+                    conn.close();
+                    throw PersistenceProviderException.interceptorInitFailed(
+                            interceptor.getClass().getSimpleName(),
+                            storageContext.isolationKey().orElse("[none]"),
+                            ex);
                 }
             }
             return conn;
@@ -174,14 +184,14 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
 
     @Override
     public void registerInterceptor(ConnectionInterceptor interceptor) {
-        if (interceptor == null) {
-            throw new NullPointerException("interceptor must not be null");
+        Objects.requireNonNull(interceptor, "interceptor must not be null");
+        synchronized (interceptors) {
+            if (firstConnectionOpened.get()) {
+                throw new IllegalStateException(
+                        "Interceptors must be registered before the first connection is opened");
+            }
+            interceptors.add(interceptor);
         }
-        if (firstConnectionOpened) {
-            throw new IllegalStateException(
-                    "Interceptors must be registered before the first connection is opened");
-        }
-        interceptors.add(interceptor);
     }
 
     // =========================================================================
@@ -205,6 +215,16 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
             tenantPools.put(tenantKey, pool);
             return pool;
         }
+    }
+
+    private String selectTenantKey(StorageContext storageContext) {
+        return switch (storageContext.strategy()) {
+            case DEDICATED        -> storageContext.dataSourceKey()
+                    .orElseGet(() -> storageContext.isolationKey().orElse(SHARED_TENANT));
+            case SEPARATED_SCHEMA -> storageContext.schemaName()
+                    .orElseGet(() -> storageContext.isolationKey().orElse(SHARED_TENANT));
+            case SHARED           -> storageContext.isolationKey().orElse(SHARED_TENANT);
+        };
     }
 
     private void ensureOpen() {

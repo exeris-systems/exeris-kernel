@@ -18,6 +18,7 @@ import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.Objects;
 import java.util.UUID;
 
 /**
@@ -36,6 +37,8 @@ final class JdbcQueryResult implements QueryResult {
     private final JdbcRowCursor cursor;
     private final int           columnCount;
     private boolean closed;
+    // true only when next() returned true — guards row() contract
+    private boolean positioned;
 
     /* default */ JdbcQueryResult(ResultSet resultSet, Statement owner) throws SQLException {
         this.resultSet   = resultSet;
@@ -47,11 +50,14 @@ final class JdbcQueryResult implements QueryResult {
     }
 
     @Override
+    @SuppressWarnings("PMD.CheckResultSet")
     public boolean next() {
         ensureOpen();
         try {
-            return resultSet.next();
+            positioned = resultSet.next();
+            return positioned;
         } catch (SQLException sqlEx) {
+            positioned = false;
             throw mapSqlException(sqlEx);
         }
     }
@@ -59,6 +65,9 @@ final class JdbcQueryResult implements QueryResult {
     @Override
     public RowCursor row() {
         ensureOpen();
+        if (!positioned) {
+            throw new IllegalStateException("QueryResult is not positioned on a valid row — call next() first");
+        }
         return cursor;
     }
 
@@ -75,11 +84,13 @@ final class JdbcQueryResult implements QueryResult {
 
     @Override
     public int columnCount() {
+        ensureOpen();
         return columnCount;
     }
 
     @Override
     public String commandTag() {
+        ensureOpen();
         return null;
     }
 
@@ -89,6 +100,7 @@ final class JdbcQueryResult implements QueryResult {
             return;
         }
         closed = true;
+        positioned = false;
         try {
             resultSet.close();
         } catch (SQLException ignored) {
@@ -113,10 +125,11 @@ final class JdbcQueryResult implements QueryResult {
         return PersistenceErrorTranslator.translate(sqlEx.getSQLState(), sqlEx.getMessage(), sqlEx);
     }
 
-    @SuppressWarnings("PMD.CyclomaticComplexity") // JDBC adapter: every RowCursor method wraps
-    // a try/catch for SQLException — total class CC is inherent to the pattern, not a design flaw.
+    @SuppressWarnings({"PMD.CyclomaticComplexity", "PMD.TooManyMethods"})
     /* default */ static final class JdbcRowCursor implements RowCursor {
 
+        private static final String NULL_COL_PREFIX = "column ";
+        private static final String NULL_COL_SUFFIX = " is SQL NULL";
         private final ResultSet resultSet;
         private final int       cachedColumnCount;
 
@@ -127,8 +140,13 @@ final class JdbcQueryResult implements QueryResult {
 
         @Override
         public int getInt(int column) {
+            checkBounds(column);
             try {
-                return resultSet.getInt(column + 1);
+                int value = resultSet.getInt(column + 1);
+                if (resultSet.wasNull()) {
+                    Objects.requireNonNull(null, NULL_COL_PREFIX + column + NULL_COL_SUFFIX);
+                }
+                return value;
             } catch (SQLException sqlEx) {
                 throw mapSql(sqlEx);
             }
@@ -136,8 +154,13 @@ final class JdbcQueryResult implements QueryResult {
 
         @Override
         public long getLong(int column) {
+            checkBounds(column);
             try {
-                return resultSet.getLong(column + 1);
+                long value = resultSet.getLong(column + 1);
+                if (resultSet.wasNull()) {
+                    Objects.requireNonNull(null, NULL_COL_PREFIX + column + NULL_COL_SUFFIX);
+                }
+                return value;
             } catch (SQLException sqlEx) {
                 throw mapSql(sqlEx);
             }
@@ -145,8 +168,13 @@ final class JdbcQueryResult implements QueryResult {
 
         @Override
         public short getShort(int column) {
+            checkBounds(column);
             try {
-                return resultSet.getShort(column + 1);
+                short value = resultSet.getShort(column + 1);
+                if (resultSet.wasNull()) {
+                    Objects.requireNonNull(null, NULL_COL_PREFIX + column + NULL_COL_SUFFIX);
+                }
+                return value;
             } catch (SQLException sqlEx) {
                 throw mapSql(sqlEx);
             }
@@ -154,8 +182,13 @@ final class JdbcQueryResult implements QueryResult {
 
         @Override
         public float getFloat(int column) {
+            checkBounds(column);
             try {
-                return resultSet.getFloat(column + 1);
+                float value = resultSet.getFloat(column + 1);
+                if (resultSet.wasNull()) {
+                    Objects.requireNonNull(null, NULL_COL_PREFIX + column + NULL_COL_SUFFIX);
+                }
+                return value;
             } catch (SQLException sqlEx) {
                 throw mapSql(sqlEx);
             }
@@ -163,8 +196,13 @@ final class JdbcQueryResult implements QueryResult {
 
         @Override
         public double getDouble(int column) {
+            checkBounds(column);
             try {
-                return resultSet.getDouble(column + 1);
+                double value = resultSet.getDouble(column + 1);
+                if (resultSet.wasNull()) {
+                    Objects.requireNonNull(null, NULL_COL_PREFIX + column + NULL_COL_SUFFIX);
+                }
+                return value;
             } catch (SQLException sqlEx) {
                 throw mapSql(sqlEx);
             }
@@ -172,8 +210,13 @@ final class JdbcQueryResult implements QueryResult {
 
         @Override
         public boolean getBoolean(int column) {
+            checkBounds(column);
             try {
-                return resultSet.getBoolean(column + 1);
+                boolean value = resultSet.getBoolean(column + 1);
+                if (resultSet.wasNull()) {
+                    Objects.requireNonNull(null, NULL_COL_PREFIX + column + NULL_COL_SUFFIX);
+                }
+                return value;
             } catch (SQLException sqlEx) {
                 throw mapSql(sqlEx);
             }
@@ -181,6 +224,7 @@ final class JdbcQueryResult implements QueryResult {
 
         @Override
         public boolean isNull(int column) {
+            checkBounds(column);
             try {
                 resultSet.getObject(column + 1);
                 return resultSet.wasNull();
@@ -192,7 +236,10 @@ final class JdbcQueryResult implements QueryResult {
         @Override
         public MemorySegment getSegment(int column) {
             byte[] bytes = getBytes(column);
-            return bytes == null ? MemorySegment.NULL : MemorySegment.ofArray(bytes);
+            if (bytes == null) {
+                Objects.requireNonNull(null, NULL_COL_PREFIX + column + NULL_COL_SUFFIX);
+            }
+            return MemorySegment.ofArray(bytes);
         }
 
         @Override
@@ -203,6 +250,7 @@ final class JdbcQueryResult implements QueryResult {
 
         @Override
         public String getString(int column) {
+            checkBounds(column);
             try {
                 return resultSet.getString(column + 1);
             } catch (SQLException sqlEx) {
@@ -212,6 +260,7 @@ final class JdbcQueryResult implements QueryResult {
 
         @Override
         public byte[] getBytes(int column) {
+            checkBounds(column);
             try {
                 return resultSet.getBytes(column + 1);
             } catch (SQLException sqlEx) {
@@ -221,6 +270,7 @@ final class JdbcQueryResult implements QueryResult {
 
         @Override
         public UUID getUuid(int column) {
+            checkBounds(column);
             try {
                 Object obj = resultSet.getObject(column + 1);
                 if (obj == null) {
@@ -248,6 +298,13 @@ final class JdbcQueryResult implements QueryResult {
                         && !resultSet.isAfterLast();
             } catch (SQLException sqlEx) {
                 return false;
+            }
+        }
+
+        private void checkBounds(int column) {
+            if (column < 0 || column >= cachedColumnCount) {
+                throw new IndexOutOfBoundsException(
+                        NULL_COL_PREFIX + column + " out of bounds [0, " + cachedColumnCount + ")");
             }
         }
 

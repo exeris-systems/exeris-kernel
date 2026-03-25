@@ -58,7 +58,7 @@ final class CommunityHikariSupport {
         long startNs = System.nanoTime();
         ConnectionAcquireEvent event = ConnectionAcquireEvent.beginAcquire();
         Connection raw = pool.getConnection();
-        ConnectionAcquireEvent.endAcquire(event, providerId, tenantKey, true, startNs);
+        ConnectionAcquireEvent.endAcquire(event, providerId, tenantKey, false, startNs);
         return new JdbcPersistenceConnection(raw);
     }
 

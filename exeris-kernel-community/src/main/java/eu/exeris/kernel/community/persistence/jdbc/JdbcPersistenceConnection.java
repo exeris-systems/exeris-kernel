@@ -69,8 +69,7 @@ public final class JdbcPersistenceConnection implements PersistenceConnection {
         Statement stmt = null;
         try {
             stmt = conn.createStatement();
-            stmt.execute(sql);
-            return new JdbcQueryResult(stmt.getResultSet(), stmt);
+            return new JdbcQueryResult(stmt.executeQuery(sql), stmt);
         } catch (SQLException sqlEx) {
             if (stmt != null) {
                 try {
