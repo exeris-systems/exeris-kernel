@@ -10,6 +10,7 @@ package eu.exeris.kernel.spi.persistence;
 
 import eu.exeris.kernel.spi.exceptions.persistence.PersistenceProviderException;
 
+import java.util.Objects;
 import java.util.function.Function;
 
 /**
@@ -60,7 +61,7 @@ import java.util.function.Function;
  *
  * @see PersistenceEngine
  * @see PersistenceConnection
- * @since 0.5.0
+ * @since 0.5.1
  */
 public interface TransactionalExecutor {
 
@@ -118,6 +119,43 @@ public interface TransactionalExecutor {
      */
     <T> T query(Function<PersistenceConnection, T> query);
 
+    /**
+     * Executes a read session at {@link TransactionIsolation#READ_COMMITTED}.
+     *
+     * <p>Within a single read session, multiple {@link ReadSession#query(Function)}
+     * calls may reuse the same underlying connection.
+     *
+     * @param work read-session callback; must not be {@code null}
+     * @param <T>  callback result type
+     * @return callback result
+     */
+    default <T> T inReadSession(Function<ReadSession, T> work) {
+        return inReadSession(TransactionIsolation.READ_COMMITTED, work);
+    }
+
+    /**
+     * Executes a read session with an explicit isolation level.
+     *
+     * <p>Default fallback implementation delegates to a single {@link #query(Function)}
+     * call and exposes a session wrapper that executes all nested queries on the
+     * same opened connection.
+     *
+     * @param isolation transaction isolation level; must not be {@code null}
+     * @param work      read-session callback; must not be {@code null}
+     * @param <T>       callback result type
+     * @return callback result
+     */
+    default <T> T inReadSession(TransactionIsolation isolation, Function<ReadSession, T> work) {
+        Objects.requireNonNull(isolation, "isolation must not be null");
+        Objects.requireNonNull(work, "work must not be null");
+        return query(conn -> work.apply(new ReadSession() {
+            @Override
+            public <R> R query(Function<PersistenceConnection, R> query) {
+                return query.apply(conn);
+            }
+        }));
+    }
+
     // =========================================================================
     // Functional interface
     // =========================================================================
@@ -137,5 +175,20 @@ public interface TransactionalExecutor {
          * @throws PersistenceProviderException on domain-level persistence failures
          */
         void run(PersistenceConnection connection);
+    }
+
+    /**
+     * Read-session view bound to one connection scope.
+     */
+    @FunctionalInterface
+    interface ReadSession {
+        /**
+         * Executes a query operation using the active read-session connection.
+         *
+         * @param query query callback; must not be {@code null}
+         * @param <T>   callback result type
+         * @return callback result
+         */
+        <T> T query(Function<PersistenceConnection, T> query);
     }
 }

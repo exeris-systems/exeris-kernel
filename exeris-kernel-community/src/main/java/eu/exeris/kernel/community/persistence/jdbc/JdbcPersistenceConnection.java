@@ -19,13 +19,18 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Community: {@link PersistenceConnection} backed by a JDBC {@link Connection}.
  *
  * <h2>Transaction Control</h2>
- * <p>Auto-commit is always set to {@code false} on checkout from HikariCP pool.
- * The caller is responsible for explicit {@link #commit()} / {@link #rollback()}.
+ * <p>Connections start in pool baseline mode ({@code autoCommit=true}).
+ * Transactional scopes switch to explicit mode in {@link #beginTransaction()}
+ * and restore baseline after {@link #commit()} / {@link #rollback()}.
  * Closing an open transaction via {@link #close()} triggers a rollback.
  *
  * <h2>The Wall (Open-Core)</h2>
@@ -38,14 +43,19 @@ import java.sql.Statement;
 public final class JdbcPersistenceConnection implements PersistenceConnection {
 
     private final Connection conn;
+    private final Runnable onClose;
     private boolean inTransaction;
-    private boolean closed;
+    private final AtomicBoolean closed;
 
     public JdbcPersistenceConnection(Connection conn) throws SQLException {
+        this(conn, () -> { });
+    }
+
+    public JdbcPersistenceConnection(Connection conn, Runnable onClose) throws SQLException {
         this.conn          = conn;
+        this.onClose       = Objects.requireNonNull(onClose, "onClose must not be null");
         this.inTransaction = false;
-        this.closed        = false;
-        conn.setAutoCommit(false);
+        this.closed        = new AtomicBoolean(false);
     }
 
     @Override
@@ -105,8 +115,16 @@ public final class JdbcPersistenceConnection implements PersistenceConnection {
                     "25001", "Transaction already active — commit or rollback first", null);
         }
         try {
-            conn.setTransactionIsolation(toJdbcLevel(isolation));
-            conn.setReadOnly(readOnly);
+            if (conn.getAutoCommit()) {
+                conn.setAutoCommit(false);
+            }
+            int targetIsolation = toJdbcLevel(isolation);
+            if (conn.getTransactionIsolation() != targetIsolation) {
+                conn.setTransactionIsolation(targetIsolation);
+            }
+            if (conn.isReadOnly() != readOnly) {
+                conn.setReadOnly(readOnly);
+            }
             inTransaction = true;
         } catch (SQLException sqlEx) {
             throw mapSql(sqlEx);
@@ -119,6 +137,7 @@ public final class JdbcPersistenceConnection implements PersistenceConnection {
         try {
             conn.commit();
             inTransaction = false;
+            restorePostTransactionBaseline();
         } catch (SQLException sqlEx) {
             throw mapSql(sqlEx);
         }
@@ -130,6 +149,7 @@ public final class JdbcPersistenceConnection implements PersistenceConnection {
         try {
             conn.rollback();
             inTransaction = false;
+            restorePostTransactionBaseline();
         } catch (SQLException sqlEx) {
             throw mapSql(sqlEx);
         }
@@ -146,7 +166,7 @@ public final class JdbcPersistenceConnection implements PersistenceConnection {
 
     @Override
     public boolean isOpen() {
-        if (closed) {
+        if (closed.get()) {
             return false;
         }
         try {
@@ -158,22 +178,25 @@ public final class JdbcPersistenceConnection implements PersistenceConnection {
 
     @Override
     public void close() {
-        if (closed) {
+        if (!closed.compareAndSet(false, true)) {
             return;
         }
-        closed = true;
-        if (inTransaction) {
-            try {
-                conn.rollback();
-            } catch (SQLException ignored) {
-                // Best-effort rollback
-            }
-            inTransaction = false;
-        }
         try {
-            conn.close();
-        } catch (SQLException ignored) {
-            // Best-effort close
+            if (inTransaction) {
+                try {
+                    conn.rollback();
+                } catch (SQLException ignored) {
+                    // Best-effort rollback
+                }
+                inTransaction = false;
+            }
+            try {
+                conn.close();
+            } catch (SQLException ignored) {
+                // Best-effort close
+            }
+        } finally {
+            onClose.run();
         }
     }
 
@@ -186,164 +209,260 @@ public final class JdbcPersistenceConnection implements PersistenceConnection {
      * JDBC {@code ?} placeholders — required for non-PG JDBC drivers (e.g., H2).
      */
     /* default */ static String translateParams(String sql) {
-        if (sql == null || sql.isEmpty()) {
-            return sql;
+        return SqlPlaceholderTranslator.translate(sql);
+    }
+
+    private static final class SqlPlaceholderTranslator {
+        private static final int TRANSLATION_CACHE_MAX_ENTRIES = 1024;
+        private static final ConcurrentMap<String, String> TRANSLATED_SQL_CACHE = new ConcurrentHashMap<>();
+        private static final char SINGLE_QUOTE = '\'';
+        private static final char DOUBLE_QUOTE = '"';
+        private static final char DOLLAR = '$';
+        private static final char DASH = '-';
+        private static final char SLASH = '/';
+        private static final char STAR = '*';
+        private static final char NEWLINE = '\n';
+        private static final char UNDERSCORE = '_';
+        private static final char JDBC_PLACEHOLDER = '?';
+        private static final String EMPTY_DELIMITER = "";
+
+        private final String sql;
+        private int cursor;
+        private String activeDollarDelimiter;
+
+        private SqlPlaceholderTranslator(String sql) {
+            this.sql = sql;
+            this.cursor = 0;
+            this.activeDollarDelimiter = EMPTY_DELIMITER;
         }
 
-        StringBuilder out = new StringBuilder(sql.length());
-        int i = 0;
-        String dollarDelimiter = null;
-
-        while (i < sql.length()) {
-            if (dollarDelimiter != null) {
-                if (sql.startsWith(dollarDelimiter, i)) {
-                    out.append(dollarDelimiter);
-                    i += dollarDelimiter.length();
-                    dollarDelimiter = null;
-                    continue;
-                }
-                out.append(sql.charAt(i));
-                i++;
-                continue;
+        private static String translate(String sql) {
+            if (sql == null || sql.isEmpty()) {
+                return sql;
+            }
+            String cachedTranslation = TRANSLATED_SQL_CACHE.get(sql);
+            if (cachedTranslation != null) {
+                return cachedTranslation;
             }
 
-            char ch = sql.charAt(i);
-
-            if (ch == '\'') {
-                i = appendSingleQuoted(sql, i, out);
-                continue;
-            }
-
-            if (ch == '"') {
-                i = appendDoubleQuoted(sql, i, out);
-                continue;
-            }
-
-            if (ch == '-' && i + 1 < sql.length() && sql.charAt(i + 1) == '-') {
-                i = appendLineComment(sql, i, out);
-                continue;
-            }
-
-            if (ch == '/' && i + 1 < sql.length() && sql.charAt(i + 1) == '*') {
-                i = appendBlockComment(sql, i, out);
-                continue;
-            }
-
-            if (ch == '$') {
-                String delimiter = readDollarQuoteDelimiter(sql, i);
-                if (delimiter != null) {
-                    out.append(delimiter);
-                    i += delimiter.length();
-                    dollarDelimiter = delimiter;
-                    continue;
-                }
-
-                if (i + 1 < sql.length() && Character.isDigit(sql.charAt(i + 1))) {
-                    int j = i + 2;
-                    while (j < sql.length() && Character.isDigit(sql.charAt(j))) {
-                        j++;
-                    }
-                    out.append('?');
-                    i = j;
-                    continue;
+            String translatedSql = new SqlPlaceholderTranslator(sql).translateInternal();
+            if (TRANSLATED_SQL_CACHE.size() < TRANSLATION_CACHE_MAX_ENTRIES) {
+                String existingTranslation = TRANSLATED_SQL_CACHE.putIfAbsent(sql, translatedSql);
+                if (existingTranslation != null) {
+                    return existingTranslation;
                 }
             }
-
-            out.append(ch);
-            i++;
+            return translatedSql;
         }
 
-        return out.toString();
-    }
-
-    private static int appendSingleQuoted(String sql, int index, StringBuilder out) {
-        out.append('\'');
-        int i = index + 1;
-        while (i < sql.length()) {
-            char ch = sql.charAt(i);
-            out.append(ch);
-            i++;
-            if (ch == '\'' && i < sql.length() && sql.charAt(i) == '\'') {
-                out.append('\'');
-                i++;
-                continue;
+        private String translateInternal() {
+            StringBuilder translatedSql = new StringBuilder(sql.length());
+            while (cursor < sql.length()) {
+                if (handleActiveDollarQuotedBody(translatedSql)) {
+                    continue;
+                }
+                if (handleSingleQuotedString(translatedSql)) {
+                    continue;
+                }
+                if (handleDoubleQuotedString(translatedSql)) {
+                    continue;
+                }
+                if (handleLineComment(translatedSql)) {
+                    continue;
+                }
+                if (handleBlockComment(translatedSql)) {
+                    continue;
+                }
+                if (handleDollarSequence(translatedSql)) {
+                    continue;
+                }
+                translatedSql.append(sql.charAt(cursor));
+                cursor++;
             }
-            if (ch == '\'') {
-                break;
-            }
+            return translatedSql.toString();
         }
-        return i;
-    }
 
-    private static int appendDoubleQuoted(String sql, int index, StringBuilder out) {
-        out.append('"');
-        int i = index + 1;
-        while (i < sql.length()) {
-            char ch = sql.charAt(i);
-            out.append(ch);
-            i++;
-            if (ch == '"' && i < sql.length() && sql.charAt(i) == '"') {
-                out.append('"');
-                i++;
-                continue;
+        private boolean handleActiveDollarQuotedBody(StringBuilder translatedSql) {
+            if (activeDollarDelimiter.isEmpty()) {
+                return false;
             }
-            if (ch == '"') {
-                break;
+            if (sql.startsWith(activeDollarDelimiter, cursor)) {
+                translatedSql.append(activeDollarDelimiter);
+                cursor += activeDollarDelimiter.length();
+                activeDollarDelimiter = EMPTY_DELIMITER;
+            } else {
+                translatedSql.append(sql.charAt(cursor));
+                cursor++;
             }
+            return true;
         }
-        return i;
-    }
 
-    private static int appendLineComment(String sql, int index, StringBuilder out) {
-        out.append("--");
-        int i = index + 2;
-        while (i < sql.length()) {
-            char ch = sql.charAt(i);
-            out.append(ch);
-            i++;
-            if (ch == '\n') {
-                break;
+        private boolean handleSingleQuotedString(StringBuilder translatedSql) {
+            if (sql.charAt(cursor) != SINGLE_QUOTE) {
+                return false;
             }
+            cursor = appendSingleQuoted(sql, cursor, translatedSql);
+            return true;
         }
-        return i;
-    }
 
-    private static int appendBlockComment(String sql, int index, StringBuilder out) {
-        out.append("/*");
-        int i = index + 2;
-        while (i < sql.length()) {
-            char ch = sql.charAt(i);
-            out.append(ch);
-            i++;
-            if (ch == '*' && i < sql.length() && sql.charAt(i) == '/') {
-                out.append('/');
-                i++;
-                break;
+        private boolean handleDoubleQuotedString(StringBuilder translatedSql) {
+            if (sql.charAt(cursor) != DOUBLE_QUOTE) {
+                return false;
             }
+            cursor = appendDoubleQuoted(sql, cursor, translatedSql);
+            return true;
         }
-        return i;
-    }
 
-    private static String readDollarQuoteDelimiter(String sql, int index) {
-        if (sql.charAt(index) != '$') {
-            return null;
-        }
-        int i = index + 1;
-        while (i < sql.length()) {
-            char ch = sql.charAt(i);
-            if (ch == '$') {
-                return sql.substring(index, i + 1);
+        private boolean handleLineComment(StringBuilder translatedSql) {
+            char currentChar = sql.charAt(cursor);
+            char followingChar = nextChar(sql, cursor);
+            if (!isLineCommentStart(currentChar, followingChar)) {
+                return false;
             }
-            if (!isDollarTagChar(ch)) {
-                return null;
-            }
-            i++;
+            cursor = appendLineComment(sql, cursor, translatedSql);
+            return true;
         }
-        return null;
-    }
 
-    private static boolean isDollarTagChar(char ch) {
-        return Character.isLetterOrDigit(ch) || ch == '_';
+        private boolean handleBlockComment(StringBuilder translatedSql) {
+            char currentChar = sql.charAt(cursor);
+            char followingChar = nextChar(sql, cursor);
+            if (!isBlockCommentStart(currentChar, followingChar)) {
+                return false;
+            }
+            cursor = appendBlockComment(sql, cursor, translatedSql);
+            return true;
+        }
+
+        private boolean handleDollarSequence(StringBuilder translatedSql) {
+            if (sql.charAt(cursor) != DOLLAR) {
+                return false;
+            }
+            String delimiter = readDollarQuoteDelimiter(sql, cursor);
+            if (!delimiter.isEmpty()) {
+                translatedSql.append(delimiter);
+                cursor += delimiter.length();
+                activeDollarDelimiter = delimiter;
+                return true;
+            }
+            char followingChar = nextChar(sql, cursor);
+            if (Character.isDigit(followingChar)) {
+                cursor = appendJdbcPlaceholder(sql, cursor, translatedSql);
+                return true;
+            }
+            return false;
+        }
+
+        private static char nextChar(String sql, int currentIndex) {
+            int nextIndex = currentIndex + 1;
+            return nextIndex < sql.length() ? sql.charAt(nextIndex) : '\0';
+        }
+
+        private static boolean isLineCommentStart(char currentChar, char nextChar) {
+            return currentChar == DASH && nextChar == DASH;
+        }
+
+        private static boolean isBlockCommentStart(char currentChar, char nextChar) {
+            return currentChar == SLASH && nextChar == STAR;
+        }
+
+        private static int appendJdbcPlaceholder(String sql, int placeholderStart, StringBuilder translatedSql) {
+            int placeholderCursor = placeholderStart + 2;
+            while (placeholderCursor < sql.length() && Character.isDigit(sql.charAt(placeholderCursor))) {
+                placeholderCursor++;
+            }
+            translatedSql.append(JDBC_PLACEHOLDER);
+            return placeholderCursor;
+        }
+
+        private static int appendSingleQuoted(String sql, int quoteIndex, StringBuilder translatedSql) {
+            translatedSql.append(SINGLE_QUOTE);
+            int cursor = quoteIndex + 1;
+            while (cursor < sql.length()) {
+                char currentChar = sql.charAt(cursor);
+                translatedSql.append(currentChar);
+                cursor++;
+                if (currentChar == SINGLE_QUOTE && cursor < sql.length() && sql.charAt(cursor) == SINGLE_QUOTE) {
+                    translatedSql.append(SINGLE_QUOTE);
+                    cursor++;
+                    continue;
+                }
+                if (currentChar == SINGLE_QUOTE) {
+                    break;
+                }
+            }
+            return cursor;
+        }
+
+        private static int appendDoubleQuoted(String sql, int quoteIndex, StringBuilder translatedSql) {
+            translatedSql.append(DOUBLE_QUOTE);
+            int cursor = quoteIndex + 1;
+            while (cursor < sql.length()) {
+                char currentChar = sql.charAt(cursor);
+                translatedSql.append(currentChar);
+                cursor++;
+                if (currentChar == DOUBLE_QUOTE && cursor < sql.length() && sql.charAt(cursor) == DOUBLE_QUOTE) {
+                    translatedSql.append(DOUBLE_QUOTE);
+                    cursor++;
+                    continue;
+                }
+                if (currentChar == DOUBLE_QUOTE) {
+                    break;
+                }
+            }
+            return cursor;
+        }
+
+        private static int appendLineComment(String sql, int commentStart, StringBuilder translatedSql) {
+            translatedSql.append("--");
+            int cursor = commentStart + 2;
+            while (cursor < sql.length()) {
+                char currentChar = sql.charAt(cursor);
+                translatedSql.append(currentChar);
+                cursor++;
+                if (currentChar == NEWLINE) {
+                    break;
+                }
+            }
+            return cursor;
+        }
+
+        private static int appendBlockComment(String sql, int commentStart, StringBuilder translatedSql) {
+            translatedSql.append("/*");
+            int cursor = commentStart + 2;
+            while (cursor < sql.length()) {
+                char currentChar = sql.charAt(cursor);
+                translatedSql.append(currentChar);
+                cursor++;
+                if (currentChar == STAR && cursor < sql.length() && sql.charAt(cursor) == SLASH) {
+                    translatedSql.append(SLASH);
+                    cursor++;
+                    break;
+                }
+            }
+            return cursor;
+        }
+
+        private static String readDollarQuoteDelimiter(String sql, int delimiterStart) {
+            if (sql.charAt(delimiterStart) != DOLLAR) {
+                return EMPTY_DELIMITER;
+            }
+            int delimiterCursor = delimiterStart + 1;
+            while (delimiterCursor < sql.length()) {
+                char currentChar = sql.charAt(delimiterCursor);
+                if (currentChar == DOLLAR) {
+                    return sql.substring(delimiterStart, delimiterCursor + 1);
+                }
+                if (!isDollarTagChar(currentChar)) {
+                    return EMPTY_DELIMITER;
+                }
+                delimiterCursor++;
+            }
+            return EMPTY_DELIMITER;
+        }
+
+        private static boolean isDollarTagChar(char value) {
+            return Character.isLetterOrDigit(value) || value == UNDERSCORE;
+        }
     }
 
     private static int toJdbcLevel(TransactionIsolation isolation) {
@@ -356,8 +475,17 @@ public final class JdbcPersistenceConnection implements PersistenceConnection {
     }
 
     private void ensureOpen() {
-        if (closed) {
+        if (closed.get()) {
             throw new IllegalStateException("JdbcPersistenceConnection is closed");
+        }
+    }
+
+    private void restorePostTransactionBaseline() throws SQLException {
+        if (!conn.getAutoCommit()) {
+            conn.setAutoCommit(true);
+        }
+        if (conn.isReadOnly()) {
+            conn.setReadOnly(false);
         }
     }
 

@@ -21,7 +21,9 @@ import eu.exeris.kernel.spi.persistence.PersistenceConfig;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 
 final class CommunityHikariSupport {
 
@@ -35,19 +37,23 @@ final class CommunityHikariSupport {
         return new CommunityHikariSupport(pool);
     }
 
+    /* default */ static boolean hasNoActiveConnections(HikariDataSource pool) {
+        return with(pool).hasNoActiveConnections();
+    }
+
     /* default */ static HikariDataSource buildPool(PersistenceConfig config, String tenantKey) {
         HikariConfig hikariConfig = new HikariConfig();
         hikariConfig.setJdbcUrl(config.connectionUrl());
         hikariConfig.setUsername(config.username());
         hikariConfig.setPassword(config.password());
         hikariConfig.setMaximumPoolSize(config.maxPoolSize());
-        hikariConfig.setMinimumIdle(config.minIdleConnections());
+        hikariConfig.setMinimumIdle(tenantKey == null ? config.minIdleConnections() : 0);
         hikariConfig.setConnectionTimeout(config.connectionTimeoutMs());
         hikariConfig.setIdleTimeout(config.idleTimeoutMs());
         hikariConfig.setMaxLifetime(config.maxLifetimeMs());
         hikariConfig.setKeepaliveTime(30_000L);
         hikariConfig.setValidationTimeout(5_000L);
-        hikariConfig.setAutoCommit(false);
+        hikariConfig.setAutoCommit(true);
         hikariConfig.setPoolName(tenantKey == null
                 ? "exeris-community-shared"
                 : "exeris-community-tenant-" + tenantKey);
@@ -63,16 +69,42 @@ final class CommunityHikariSupport {
             properties.put("ssl", "true");
             properties.put("sslmode", "require");
         }
+        if (isPostgreSql(config.connectionUrl())
+                && !CommunityHikariUtils.containsKeyIgnoreCase(properties, "defaultRowFetchSize")) {
+            properties.put("defaultRowFetchSize", "50");
+        }
         properties.forEach(hikariConfig::addDataSourceProperty);
     }
 
-    /* default */ JdbcPersistenceConnection acquireConnection(String providerId, String tenantKey) throws SQLException {
+    private static boolean isPostgreSql(String connectionUrl) {
+        return connectionUrl != null
+                && connectionUrl.toLowerCase(Locale.ROOT).startsWith("jdbc:postgresql:");
+    }
+
+    @SuppressWarnings("PMD.CloseResource")
+    /* default */ JdbcPersistenceConnection acquireConnection(
+            String providerId,
+            String tenantKey,
+            Runnable onClose
+    ) throws SQLException {
+        Objects.requireNonNull(onClose, "onClose must not be null");
         long startNs = System.nanoTime();
         ConnectionAcquireEvent event = ConnectionAcquireEvent.beginAcquire();
         boolean success = false;
         try {
+            // Connection ownership is transferred to JdbcPersistenceConnection wrapper.
             Connection raw = pool.getConnection();
-            JdbcPersistenceConnection connection = new JdbcPersistenceConnection(raw);
+            JdbcPersistenceConnection connection;
+            try {
+                connection = new JdbcPersistenceConnection(raw, onClose);
+            } catch (SQLException wrapFailure) {
+                try {
+                    raw.close();
+                } catch (SQLException _) {
+                    // Best-effort close when wrapper construction fails
+                }
+                throw wrapFailure;
+            }
             success = true;
             return connection;
         } finally {
@@ -110,6 +142,11 @@ final class CommunityHikariSupport {
     private int activeConnections() {
         HikariPoolMXBean poolMxBean = mxBean();
         return poolMxBean != null ? poolMxBean.getActiveConnections() : -1;
+    }
+
+    private boolean hasNoActiveConnections() {
+        HikariPoolMXBean poolMxBean = mxBean();
+        return poolMxBean == null || poolMxBean.getActiveConnections() == 0;
     }
 
     private HikariPoolMXBean mxBean() {

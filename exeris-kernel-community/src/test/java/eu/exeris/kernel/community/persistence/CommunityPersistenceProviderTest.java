@@ -13,7 +13,6 @@ import eu.exeris.kernel.spi.persistence.PersistenceConfig;
 import eu.exeris.kernel.spi.persistence.PersistenceEngine;
 import eu.exeris.kernel.spi.persistence.PersistenceEngineCapabilities;
 import eu.exeris.kernel.spi.persistence.PersistenceProvider;
-import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -95,17 +94,6 @@ class CommunityPersistenceProviderTest {
         @Test
         @DisplayName("createEngine() with valid H2 in-memory URL returns non-null engine with correct capabilities")
         void validH2UrlReturnsEngine() {
-            // H2 is not on classpath in community module — skip if not available
-            boolean h2Available;
-            try {
-                Class.forName("org.h2.Driver");
-                h2Available = true;
-            } catch (ClassNotFoundException e) {
-                h2Available = false;
-            }
-            Assumptions.assumeTrue(h2Available,
-                    "H2 in-memory JDBC not available on this classpath — skipping engine test");
-
             PersistenceConfig config = PersistenceConfig.defaults(
                     "jdbc:h2:mem:exeris_test_" + System.nanoTime() + ";DB_CLOSE_DELAY=-1",
                     "sa", "");

@@ -8,6 +8,7 @@
  */
 package eu.exeris.kernel.community.persistence;
 
+import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import eu.exeris.kernel.spi.persistence.PersistenceConfig;
 import org.junit.jupiter.api.DisplayName;
@@ -49,6 +50,90 @@ class CommunityHikariSupportTest {
         }
     }
 
+    @Test
+    @DisplayName("tenant pools use minimumIdle=0 to reduce retention")
+    void tenantPoolsUseMinimumIdleZero() {
+        PersistenceConfig config = config(false, Map.of());
+
+        try (HikariDataSource sharedPool = CommunityHikariSupport.buildPool(config, null);
+             HikariDataSource tenantPool = CommunityHikariSupport.buildPool(config, "tenant-a")) {
+            assertThat(sharedPool.getMinimumIdle()).isEqualTo(config.minIdleConnections());
+            assertThat(tenantPool.getMinimumIdle()).isZero();
+        }
+    }
+
+    @Test
+    @DisplayName("pool baseline uses autoCommit=true for read scopes")
+    void poolBaselineUsesAutoCommitTrue() {
+        PersistenceConfig config = config(false, Map.of());
+
+        try (HikariDataSource pool = CommunityHikariSupport.buildPool(config, null)) {
+            assertThat(pool.isAutoCommit()).isTrue();
+        }
+    }
+
+    @Test
+    @DisplayName("PostgreSQL sets defaultRowFetchSize=50 when absent")
+    void postgresAddsDefaultRowFetchSizeWhenUnset() {
+        PersistenceConfig config = postgresConfig(Map.of());
+        HikariConfig hikariConfig = new HikariConfig();
+
+        CommunityHikariSupport.applyDataSourceProperties(hikariConfig, config);
+
+        assertThat(hikariConfig.getDataSourceProperties().getProperty("defaultRowFetchSize"))
+                .isEqualTo("50");
+    }
+
+    @Test
+    @DisplayName("PostgreSQL preserves explicit defaultRowFetchSize value")
+    void postgresDoesNotOverrideExplicitDefaultRowFetchSize() {
+        PersistenceConfig config = postgresConfig(Map.of("defaultRowFetchSize", "500"));
+        HikariConfig hikariConfig = new HikariConfig();
+
+        CommunityHikariSupport.applyDataSourceProperties(hikariConfig, config);
+
+        assertThat(hikariConfig.getDataSourceProperties().getProperty("defaultRowFetchSize"))
+                .isEqualTo("500");
+    }
+
+    @Test
+    @DisplayName("Non-PostgreSQL URLs do not get defaultRowFetchSize")
+    void nonPostgresDoesNotAddDefaultRowFetchSize() {
+        PersistenceConfig config = config(false, Map.of());
+        HikariConfig hikariConfig = new HikariConfig();
+
+        CommunityHikariSupport.applyDataSourceProperties(hikariConfig, config);
+
+        assertThat(hikariConfig.getDataSourceProperties().containsKey("defaultRowFetchSize"))
+                .isFalse();
+    }
+
+    @Test
+    @DisplayName("PostgreSQL check is case-insensitive")
+    void postgresUrlCheckIsCaseInsensitive() {
+        PersistenceConfig config = new PersistenceConfig(
+                "JDBC:POSTGRESQL://localhost:5432/exeris",
+                "sa",
+                "",
+                4,
+                1,
+                5_000L,
+                60_000L,
+                600_000L,
+                false,
+                false,
+                false,
+                0,
+                Map.of()
+        );
+        HikariConfig hikariConfig = new HikariConfig();
+
+        CommunityHikariSupport.applyDataSourceProperties(hikariConfig, config);
+
+        assertThat(hikariConfig.getDataSourceProperties().getProperty("defaultRowFetchSize"))
+                .isEqualTo("50");
+    }
+
     private static PersistenceConfig config(boolean useTls, Map<String, String> properties) {
         return new PersistenceConfig(
                 "jdbc:h2:mem:community_hikari_" + System.nanoTime() + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1",
@@ -62,6 +147,24 @@ class CommunityHikariSupportTest {
                 false,
                 false,
                 useTls,
+                0,
+                properties
+        );
+    }
+
+    private static PersistenceConfig postgresConfig(Map<String, String> properties) {
+        return new PersistenceConfig(
+                "jdbc:postgresql://localhost:5432/exeris",
+                "sa",
+                "",
+                4,
+                1,
+                5_000L,
+                60_000L,
+                600_000L,
+                false,
+                false,
+                false,
                 0,
                 properties
         );

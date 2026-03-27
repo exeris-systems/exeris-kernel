@@ -8,9 +8,11 @@
  */
 package eu.exeris.kernel.community.persistence;
 
-import eu.exeris.kernel.spi.persistence.PersistenceConnection;
+import eu.exeris.kernel.core.persistence.TransactionOrchestrator;
+import eu.exeris.kernel.core.persistence.TransactionRetryPolicy;
 import eu.exeris.kernel.spi.persistence.PersistenceEngine;
 import eu.exeris.kernel.spi.persistence.PersistenceProvider;
+import eu.exeris.kernel.spi.security.ImmutableStorageContext;
 import eu.exeris.kernel.tck.perf.AbstractRowCursorThroughputBenchmark;
 
 /**
@@ -30,14 +32,17 @@ public class CommunityRowCursorThroughputBenchmark extends AbstractRowCursorThro
 
     @Override
     protected void prepareBenchmarkData(PersistenceEngine engine) {
-        try (PersistenceConnection setupConnection = engine.openConnection()) {
-            setupConnection.beginTransaction();
+        var transactionalExecutor = new TransactionOrchestrator(
+                engine,
+                TransactionRetryPolicy.NONE,
+                ImmutableStorageContext.GLOBAL
+        );
+        transactionalExecutor.executeManaged(setupConnection -> {
             setupConnection.executeUpdate(CREATE_TABLE_SQL);
             setupConnection.executeUpdate(DELETE_ROWS_SQL);
             for (int i = 0; i < 1000; i++) {
                 setupConnection.executeUpdate(INSERT_ROW_PREFIX + i + ", 'value-" + i + "', " + i + ")");
             }
-            setupConnection.commit();
-        }
+        });
     }
 }

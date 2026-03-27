@@ -129,6 +129,10 @@ sequenceDiagram
 > safe publication semantics — e.g., passing the `LoanedBuffer` reference via `StructuredTaskScope`
 > or a concurrent queue — rather than explicit memory fences. Thread B is guaranteed to observe every
 > `closeAction` slot written by Thread A as long as the buffer reference itself is published safely.
+> **Community transport handoff note:** Community transport commonly hands off `LoanedBuffer`
+> ownership through queue-based cross-VT transfer (carrier thread allocates, stream VT may release).
+> For this reason Community allocator ownership must not use `Arena.ofConfined()`; current Community
+> allocator uses shared arena semantics to keep release deterministic across that handoff.
 
 ---
 

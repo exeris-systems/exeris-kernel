@@ -24,11 +24,15 @@ import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -71,10 +75,9 @@ class JdbcPersistenceConnectionTest {
 
     @BeforeEach
     void setUp() throws SQLException {
-        // HikariCP sets autoCommit=false on checkout; JdbcPersistenceConnection
-        // calls conn.setAutoCommit(false) in the constructor
+        // Pool baseline is autoCommit=true; constructor should not force tx mode.
         connection = new JdbcPersistenceConnection(mockConn);
-        verify(mockConn).setAutoCommit(false);
+        verify(mockConn, never()).setAutoCommit(false);
     }
 
     // =========================================================================
@@ -120,7 +123,11 @@ class JdbcPersistenceConnectionTest {
         @Test
         @DisplayName("beginTransaction(READ_COMMITTED, false) sets correct JDBC isolation level")
         void beginReadCommittedSetsIsolation() throws SQLException {
+            when(mockConn.getAutoCommit()).thenReturn(true);
+            when(mockConn.getTransactionIsolation()).thenReturn(Connection.TRANSACTION_SERIALIZABLE);
+            when(mockConn.isReadOnly()).thenReturn(true);
             connection.beginTransaction(TransactionIsolation.READ_COMMITTED, false);
+            verify(mockConn).setAutoCommit(false);
             verify(mockConn).setTransactionIsolation(Connection.TRANSACTION_READ_COMMITTED);
             verify(mockConn).setReadOnly(false);
             assertThat(connection.inTransaction()).isTrue();
@@ -129,9 +136,41 @@ class JdbcPersistenceConnectionTest {
         @Test
         @DisplayName("beginTransaction(SERIALIZABLE, true) sets SERIALIZABLE + readOnly")
         void beginSerializableReadOnly() throws SQLException {
+            when(mockConn.getAutoCommit()).thenReturn(true);
+            when(mockConn.getTransactionIsolation()).thenReturn(Connection.TRANSACTION_READ_COMMITTED);
+            when(mockConn.isReadOnly()).thenReturn(false);
             connection.beginTransaction(TransactionIsolation.SERIALIZABLE, true);
+            verify(mockConn).setAutoCommit(false);
             verify(mockConn).setTransactionIsolation(Connection.TRANSACTION_SERIALIZABLE);
             verify(mockConn).setReadOnly(true);
+            assertThat(connection.inTransaction()).isTrue();
+        }
+
+        @Test
+        @DisplayName("beginTransaction() skips JDBC setters when isolation/readOnly already match")
+        void beginSkipsRedundantJdbcSetters() throws SQLException {
+            when(mockConn.getAutoCommit()).thenReturn(false);
+            when(mockConn.getTransactionIsolation()).thenReturn(Connection.TRANSACTION_READ_COMMITTED);
+            when(mockConn.isReadOnly()).thenReturn(false);
+
+            connection.beginTransaction(TransactionIsolation.READ_COMMITTED, false);
+
+            verify(mockConn, never()).setAutoCommit(false);
+            verify(mockConn, never()).setTransactionIsolation(Connection.TRANSACTION_READ_COMMITTED);
+            verify(mockConn, never()).setReadOnly(false);
+            assertThat(connection.inTransaction()).isTrue();
+        }
+
+        @Test
+        @DisplayName("beginTransaction() enables explicit tx mode when autoCommit=true")
+        void beginEnablesExplicitTxMode() throws SQLException {
+            when(mockConn.getAutoCommit()).thenReturn(true);
+            when(mockConn.getTransactionIsolation()).thenReturn(Connection.TRANSACTION_READ_COMMITTED);
+            when(mockConn.isReadOnly()).thenReturn(false);
+
+            connection.beginTransaction(TransactionIsolation.READ_COMMITTED, false);
+
+            verify(mockConn).setAutoCommit(false);
             assertThat(connection.inTransaction()).isTrue();
         }
 
@@ -147,18 +186,24 @@ class JdbcPersistenceConnectionTest {
         @Test
         @DisplayName("commit() calls conn.commit() and clears inTransaction flag")
         void commitDelegatesToJdbc() throws SQLException {
+            when(mockConn.getAutoCommit()).thenReturn(true, false);
+            when(mockConn.isReadOnly()).thenReturn(false);
             connection.beginTransaction();
             connection.commit();
             verify(mockConn).commit();
+            verify(mockConn).setAutoCommit(true);
             assertThat(connection.inTransaction()).isFalse();
         }
 
         @Test
         @DisplayName("rollback() calls conn.rollback() and clears inTransaction flag")
         void rollbackDelegatesToJdbc() throws SQLException {
+            when(mockConn.getAutoCommit()).thenReturn(true, false);
+            when(mockConn.isReadOnly()).thenReturn(false);
             connection.beginTransaction();
             connection.rollback();
             verify(mockConn).rollback();
+            verify(mockConn).setAutoCommit(true);
             assertThat(connection.inTransaction()).isFalse();
         }
 
@@ -240,6 +285,43 @@ class JdbcPersistenceConnectionTest {
             doThrow(new SQLException("network error")).when(mockConn).rollback();
             // Must not propagate the SQLException
             assertThatCode(() -> connection.close()).doesNotThrowAnyException();
+        }
+
+        @Test
+        @DisplayName("close() invokes onClose hook exactly once even when called multiple times")
+        void closeInvokesOnCloseHookExactlyOnce() throws SQLException {
+            AtomicInteger hookCalls = new AtomicInteger(0);
+            JdbcPersistenceConnection local = new JdbcPersistenceConnection(mockConn, hookCalls::incrementAndGet);
+
+            local.close();
+            local.close();
+
+            assertThat(hookCalls.get()).isEqualTo(1);
+            verify(mockConn, times(1)).close();
+        }
+
+        @Test
+        @DisplayName("concurrent close race invokes onClose hook exactly once")
+        void concurrentCloseRaceInvokesOnCloseHookOnce() throws Exception {
+            AtomicInteger hookCalls = new AtomicInteger(0);
+            JdbcPersistenceConnection local = new JdbcPersistenceConnection(mockConn, hookCalls::incrementAndGet);
+            CountDownLatch start = new CountDownLatch(1);
+
+            Thread t1 = Thread.ofVirtual().start(() -> {
+                await(start);
+                local.close();
+            });
+            Thread t2 = Thread.ofVirtual().start(() -> {
+                await(start);
+                local.close();
+            });
+
+            start.countDown();
+            t1.join();
+            t2.join();
+
+            assertThat(hookCalls.get()).isEqualTo(1);
+            verify(mockConn, times(1)).close();
         }
     }
 
@@ -384,6 +466,15 @@ class JdbcPersistenceConnectionTest {
             String sql = "SELECT $$body $1$$, $2, $tag$keep $3$tag$, $4";
             String result = JdbcPersistenceConnection.translateParams(sql);
             assertThat(result).isEqualTo("SELECT $$body $1$$, ?, $tag$keep $3$tag$, ?");
+        }
+    }
+
+    private static void await(CountDownLatch latch) {
+        try {
+            latch.await();
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while awaiting test latch", ex);
         }
     }
 }

@@ -188,12 +188,12 @@ public abstract class AbstractSecurityInterceptorTck<I> {
         @Test
         @DisplayName("STORAGE_CONTEXT is bound within the handler scope")
         void storageContextBound() {
-            AtomicBoolean bound = new AtomicBoolean(false);
+            AtomicReference<StorageContext> captured = new AtomicReference<>();
             try (LoanedBuffer token = createTokenBuffer()) {
                 intercept(successInterceptor, token,
-                        () -> bound.set(KernelProviders.STORAGE_CONTEXT.isBound()));
+                        () -> captured.set(KernelProviders.STORAGE_CONTEXT.get()));
             }
-            assertThat(bound.get()).isTrue();
+            assertThat(captured.get()).isEqualTo(testStorage);
         }
 
         @Test
@@ -251,6 +251,7 @@ public abstract class AbstractSecurityInterceptorTck<I> {
                 intercept(failInterceptor, token, () -> {});
             }
             assertThat(KernelProviders.PRINCIPAL_CONTEXT.isBound()).isFalse();
+            assertThat(KernelProviders.STORAGE_CONTEXT.isBound()).isFalse();
         }
     }
 
@@ -276,7 +277,8 @@ public abstract class AbstractSecurityInterceptorTck<I> {
                             scope.fork(() -> {
                                 try {
                                     PrincipalContext p = KernelProviders.principal();
-                                    if (p.equals(testPrincipal)) {
+                                    StorageContext s = KernelProviders.STORAGE_CONTEXT.get();
+                                    if (p.equals(testPrincipal) && s.equals(testStorage)) {
                                         successCount.incrementAndGet();
                                     }
                                 } catch (Exception e) {

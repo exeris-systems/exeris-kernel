@@ -11,7 +11,7 @@ package eu.exeris.kernel.core.persistence;
 import jdk.jfr.Category;
 import jdk.jfr.Description;
 import jdk.jfr.Event;
-import jdk.jfr.FlightRecorder;
+import jdk.jfr.EventType;
 import jdk.jfr.Label;
 import jdk.jfr.Name;
 import jdk.jfr.StackTrace;
@@ -26,9 +26,10 @@ import jdk.jfr.StackTrace;
  * {@code BEGIN → COMMIT | ROLLBACK}, and {@code RETRY_EXHAUSTED} if all attempts fail.
  *
  * <h2>Virtual-Thread Safety</h2>
- * <p>All emit methods are static and allocate a fresh {@code TransactionLifecycleEvent}
- * instance per invocation, guarded by {@link FlightRecorder#isInitialized()}.
- * No shared mutable state — safe under concurrent Virtual Thread execution.
+ * <p>All emit methods check {@link #EVENT_TYPE} before allocating a
+ * {@code TransactionLifecycleEvent}, eliminating avoidable heap pressure when
+ * the event type is disabled.  No shared mutable state — safe under concurrent
+ * Virtual Thread execution.
  *
  * @since 0.5.0
  */
@@ -38,6 +39,10 @@ import jdk.jfr.StackTrace;
 @Description("Emitted on each transaction lifecycle boundary: BEGIN, COMMIT, WORK_COMPLETE, ROLLBACK, RETRY_EXHAUSTED.")
 @StackTrace(false)
 final class TransactionLifecycleEvent extends Event {
+
+    /** Cached event-type probe; {@code isEnabled()} is always dynamically evaluated. */
+    private static final EventType EVENT_TYPE =
+            EventType.getEventType(TransactionLifecycleEvent.class);
 
     @Label("Outcome")
     @Description("BEGIN, COMMIT, WORK_COMPLETE, ROLLBACK, or RETRY_EXHAUSTED")
@@ -56,13 +61,10 @@ final class TransactionLifecycleEvent extends Event {
     /* default */ long durationNs;
 
     /* default */ static void recordBegin(int attempt) {
-        if (!FlightRecorder.isInitialized()) {
+        if (!EVENT_TYPE.isEnabled()) {
             return;
         }
         TransactionLifecycleEvent evt = new TransactionLifecycleEvent();
-        if (!evt.isEnabled()) {
-            return;
-        }
         evt.begin();
         evt.outcome        = "BEGIN";
         evt.attemptNumber  = attempt;
@@ -72,13 +74,10 @@ final class TransactionLifecycleEvent extends Event {
     }
 
     /* default */ static void recordCommit(int attempt, long durationNs) {
-        if (!FlightRecorder.isInitialized()) {
+        if (!EVENT_TYPE.isEnabled()) {
             return;
         }
         TransactionLifecycleEvent evt = new TransactionLifecycleEvent();
-        if (!evt.isEnabled()) {
-            return;
-        }
         evt.begin();
         evt.outcome        = "COMMIT";
         evt.attemptNumber  = attempt;
@@ -98,13 +97,10 @@ final class TransactionLifecycleEvent extends Event {
      * managed {@code COMMIT}.
      */
     /* default */ static void recordWorkComplete(int attempt, long durationNs) {
-        if (!FlightRecorder.isInitialized()) {
+        if (!EVENT_TYPE.isEnabled()) {
             return;
         }
         TransactionLifecycleEvent evt = new TransactionLifecycleEvent();
-        if (!evt.isEnabled()) {
-            return;
-        }
         evt.begin();
         evt.outcome        = "WORK_COMPLETE";
         evt.attemptNumber  = attempt;
@@ -114,13 +110,10 @@ final class TransactionLifecycleEvent extends Event {
     }
 
     /* default */ static void recordRollback(int attempt) {
-        if (!FlightRecorder.isInitialized()) {
+        if (!EVENT_TYPE.isEnabled()) {
             return;
         }
         TransactionLifecycleEvent evt = new TransactionLifecycleEvent();
-        if (!evt.isEnabled()) {
-            return;
-        }
         evt.begin();
         evt.outcome        = "ROLLBACK";
         evt.attemptNumber  = attempt;
@@ -129,13 +122,10 @@ final class TransactionLifecycleEvent extends Event {
     }
 
     /* default */ static void recordRetryExhausted(int totalAttempts) {
-        if (!FlightRecorder.isInitialized()) {
+        if (!EVENT_TYPE.isEnabled()) {
             return;
         }
         TransactionLifecycleEvent evt = new TransactionLifecycleEvent();
-        if (!evt.isEnabled()) {
-            return;
-        }
         evt.begin();
         evt.outcome        = "RETRY_EXHAUSTED";
         evt.attemptNumber  = totalAttempts;

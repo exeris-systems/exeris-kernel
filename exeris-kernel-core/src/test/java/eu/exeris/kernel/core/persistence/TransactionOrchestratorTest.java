@@ -414,6 +414,25 @@ class TransactionOrchestratorTest {
         }
 
         @Test
+        @DisplayName("executeManaged(READ_COMMITTED, readOnly=true) runs without beginTransaction()/commit()")
+        void readOnlyReadCommittedSkipsTransactionCeremony() {
+            StubConnection conn = new StubConnection();
+            StubEngine managedEngine = new StubEngine() {
+                @Override StubConnection supplyConnection() {
+                    lastConnection = conn;
+                    return conn;
+                }
+            };
+
+            new TransactionOrchestrator(managedEngine)
+                    .executeManaged(TransactionIsolation.READ_COMMITTED, true, ignored -> { /* empty */ });
+
+            assertThat(conn.beginCalled).isFalse();
+            assertThat(conn.commitCalled).isFalse();
+            assertThat(conn.rollbackCalled).isFalse();
+        }
+
+        @Test
         @DisplayName("executeManaged(SERIALIZABLE, readOnly=true) calls beginTransaction(SERIALIZABLE, true)")
         void serializableReadOnlyDelegation() {
             AtomicBoolean serializableRo = new AtomicBoolean(false);

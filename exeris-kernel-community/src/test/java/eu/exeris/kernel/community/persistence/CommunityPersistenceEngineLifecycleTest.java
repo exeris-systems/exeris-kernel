@@ -8,6 +8,8 @@
  */
 package eu.exeris.kernel.community.persistence;
 
+import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
+import eu.exeris.kernel.spi.exceptions.persistence.PersistenceProviderException;
 import eu.exeris.kernel.spi.persistence.PersistenceConfig;
 import eu.exeris.kernel.spi.persistence.PersistenceConnection;
 import eu.exeris.kernel.spi.security.ImmutableStorageContext;
@@ -87,20 +89,136 @@ class CommunityPersistenceEngineLifecycleTest {
         }
     }
 
+    @Test
+    @DisplayName("shared and tenant pools do not share an extra checkout gate")
+    void crossPoolCheckoutReliesOnPoolLimitsOnly() {
+        PersistenceConfig config = testConfig(true, 2, 1, 300L, 80L, 16);
+        try (CommunityPersistenceEngine engine = new CommunityPersistenceEngine(config);
+             PersistenceConnection shared = engine.openConnection();
+             PersistenceConnection tenantA = engine.openConnection(
+                     ImmutableStorageContext.separatedSchema("tenant-a", "tenant_a"))) {
+
+            assertThatCode(() -> engine.openConnection(
+                    ImmutableStorageContext.separatedSchema("tenant-b", "tenant_b")).close())
+                    .doesNotThrowAnyException();
+        }
+    }
+
+    @Test
+    @DisplayName("EX_PERS_5002 diagnostics use active shared-pool connection count")
+    void connectionExhaustedDiagnosticsUsePoolActiveConnections() {
+        PersistenceConfig config = testConfig(false, 2, 1, 300L, 80L, 16);
+        try (CommunityPersistenceEngine engine = new CommunityPersistenceEngine(config);
+             PersistenceConnection first = engine.openConnection();
+             PersistenceConnection second = engine.openConnection()) {
+
+            assertThatThrownBy(engine::openConnection)
+                    .isInstanceOf(PersistenceProviderException.class)
+                    .satisfies(ex -> {
+                        PersistenceProviderException ppe = (PersistenceProviderException) ex;
+                        assertThat(ppe.errorCode()).isEqualTo(KernelErrorCodes.EX_PERS_5002);
+                        assertThat(ppe.rawArgs()[0]).isEqualTo("postgres-community");
+                        assertThat(((Long) ppe.rawArgs()[1])).isEqualTo(300L);
+                        assertThat(((Integer) ppe.rawArgs()[2])).isGreaterThanOrEqualTo(2);
+                    });
+        }
+    }
+
+    @Test
+    @DisplayName("permit is released when interceptor initialization fails")
+    void permitReleasedOnInterceptorFailure() {
+        PersistenceConfig config = testConfig(true, 1, 0, 300L, 80L, 16);
+        try (CommunityPersistenceEngine engine = new CommunityPersistenceEngine(config)) {
+            engine.registerInterceptor((connection, storageContext) -> {
+                throw new IllegalStateException("boom");
+            });
+
+            assertThatThrownBy(() -> engine.openConnection(
+                    ImmutableStorageContext.separatedSchema("tenant-a", "tenant_a")))
+                    .isInstanceOf(PersistenceProviderException.class)
+                    .satisfies(ex -> {
+                        PersistenceProviderException ppe = (PersistenceProviderException) ex;
+                        assertThat(ppe.errorCode()).isEqualTo(KernelErrorCodes.EX_PERS_5006);
+                    });
+
+            assertThatThrownBy(() -> engine.openConnection(
+                    ImmutableStorageContext.separatedSchema("tenant-b", "tenant_b")))
+                    .isInstanceOf(PersistenceProviderException.class)
+                    .satisfies(ex -> {
+                        PersistenceProviderException ppe = (PersistenceProviderException) ex;
+                        assertThat(ppe.errorCode()).isEqualTo(KernelErrorCodes.EX_PERS_5006);
+                    });
+        }
+    }
+
+    @Test
+    @DisplayName("idle tenant pools are reclaimed only when inactive")
+    void tenantPoolReclaimHonorsActiveConnections() throws Exception {
+        PersistenceConfig config = testConfig(true, 4, 0, 500L, 120L, 16);
+        try (CommunityPersistenceEngine engine = new CommunityPersistenceEngine(config);
+             PersistenceConnection activeTenant = engine.openConnection(
+                     ImmutableStorageContext.separatedSchema("tenant-a", "tenant_a"))) {
+
+            Thread.sleep(320L);
+            try (PersistenceConnection ignored = engine.openConnection(
+                    ImmutableStorageContext.separatedSchema("tenant-b", "tenant_b"))) {
+                assertThat(engine.stats().tenantPoolCount()).isEqualTo(2);
+            }
+
+            activeTenant.close();
+            Thread.sleep(320L);
+            try (PersistenceConnection ignored = engine.openConnection(
+                    ImmutableStorageContext.separatedSchema("tenant-c", "tenant_c"))) {
+                assertThat(engine.stats().tenantPoolCount()).isLessThanOrEqualTo(2);
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("perTenantPooling=true with maxTenantPools=0 fails fast")
+    void invalidPerTenantConfigFailsFast() {
+        PersistenceConfig config = testConfig(true, 4, 1, 500L, 120L, 0);
+        assertThatThrownBy(() -> new CommunityPersistenceEngine(config))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("perTenantPooling=true requires maxTenantPools>=1")
+                .hasMessageContaining("maxTenantPools=0")
+                .hasMessageContaining("maxPoolSize=4");
+    }
+
+    @Test
+    @DisplayName("connectionTimeoutMs below Hikari floor fails fast")
+    void invalidConnectionTimeoutFailsFast() {
+        PersistenceConfig config = testConfig(true, 4, 1, 200L, 120L, 16);
+        assertThatThrownBy(() -> new CommunityPersistenceEngine(config))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("connectionTimeoutMs must be >= 250ms")
+                .hasMessageContaining("connectionTimeoutMs=200")
+                .hasMessageContaining("maxPoolSize=4");
+    }
+
     private static PersistenceConfig testConfig(boolean perTenantPooling) {
+        return testConfig(perTenantPooling, 4, 1, 5_000L, 60_000L, 16);
+    }
+
+    private static PersistenceConfig testConfig(boolean perTenantPooling,
+                                                int maxPoolSize,
+                                                int minIdleConnections,
+                                                long connectionTimeoutMs,
+                                                long idleTimeoutMs,
+                                                int maxTenantPools) {
         return new PersistenceConfig(
                 "jdbc:h2:mem:community_lifecycle_" + System.nanoTime() + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1",
                 "sa",
                 "",
-                4,
-                1,
-                5_000L,
-                60_000L,
+                maxPoolSize,
+                minIdleConnections,
+                connectionTimeoutMs,
+                idleTimeoutMs,
                 600_000L,
                 false,
                 perTenantPooling,
                 false,
-                16,
+                maxTenantPools,
                 Map.of()
         );
     }
