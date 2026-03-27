@@ -61,7 +61,7 @@ import java.util.function.Function;
  *
  * @see PersistenceEngine
  * @see PersistenceConnection
- * @since 0.5.1
+ * @since 0.5.0
  */
 public interface TransactionalExecutor {
 
