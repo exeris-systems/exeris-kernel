@@ -13,6 +13,8 @@ import eu.exeris.kernel.spi.persistence.EngineStats;
 import eu.exeris.kernel.spi.persistence.PersistenceConnection;
 import eu.exeris.kernel.spi.persistence.PersistenceEngine;
 import eu.exeris.kernel.spi.persistence.PersistenceHealthStatus;
+import eu.exeris.kernel.spi.persistence.PersistenceStatement;
+import eu.exeris.kernel.spi.persistence.QueryResult;
 import eu.exeris.kernel.spi.persistence.TransactionIsolation;
 import eu.exeris.kernel.spi.security.ImmutableStorageContext;
 import eu.exeris.kernel.spi.security.StorageContext;
@@ -251,6 +253,69 @@ public abstract class AbstractPersistenceEngineTck {
                     conn.executeUpdate("DROP TABLE IF EXISTS tck_test");
                 }
             }
+        }
+    }
+
+    // =========================================================================
+    // Statement and result lifecycle
+    // =========================================================================
+
+    @Nested
+    @DisplayName("Statement and query result lifecycle contract")
+    class StatementLifecycleContract {
+
+        @Test
+        @DisplayName("closing QueryResult keeps the same connection reusable for another prepared query")
+        void closingQueryResultKeepsConnectionReusable() {
+            String table = "tck_stmt_lifecycle_" + System.nanoTime();
+
+            try (PersistenceConnection conn = engine.openConnection()) {
+                try {
+                    conn.executeUpdate("CREATE TABLE " + table + " (id BIGINT PRIMARY KEY, v BIGINT)");
+                    conn.executeUpdate("INSERT INTO " + table + " (id, v) VALUES (1, 11)");
+                    conn.executeUpdate("INSERT INTO " + table + " (id, v) VALUES (2, 22)");
+
+                    try (PersistenceStatement first = conn.prepare("SELECT v FROM " + table + " WHERE id = $1")) {
+                        QueryResult firstResult = first.bindLong(0, 1L).executeQuery();
+                        assertThat(firstResult.next()).isTrue();
+                        assertThat(firstResult.row().getLong(0)).isEqualTo(11L);
+                        firstResult.close();
+                    }
+
+                    try (PersistenceStatement second = conn.prepare("SELECT v FROM " + table + " WHERE id = $1");
+                         QueryResult secondResult = second.bindLong(0, 2L).executeQuery()) {
+                        assertThat(secondResult.next()).isTrue();
+                        assertThat(secondResult.row().getLong(0)).isEqualTo(22L);
+                    }
+                } finally {
+                    conn.executeUpdate("DROP TABLE IF EXISTS " + table);
+                }
+            }
+        }
+
+        @Test
+        @DisplayName("try-with-resources over PersistenceStatement and QueryResult is safe and idempotent")
+        void tryWithResourcesStatementAndResultIsSafeAndIdempotent() {
+            assertThatCode(() -> {
+                String table = "tck_stmt_lifecycle_" + System.nanoTime();
+
+                try (PersistenceConnection conn = engine.openConnection()) {
+                    try {
+                        conn.executeUpdate("CREATE TABLE " + table + " (id BIGINT PRIMARY KEY, v BIGINT)");
+                        conn.executeUpdate("INSERT INTO " + table + " (id, v) VALUES (1, 111)");
+
+                        try (PersistenceStatement stmt = conn.prepare("SELECT v FROM " + table + " WHERE id = $1");
+                             QueryResult result = stmt.bindLong(0, 1L).executeQuery()) {
+                            assertThat(result.next()).isTrue();
+                            assertThat(result.row().getLong(0)).isEqualTo(111L);
+                            result.close();
+                            stmt.close();
+                        }
+                    } finally {
+                        conn.executeUpdate("DROP TABLE IF EXISTS " + table);
+                    }
+                }
+            }).doesNotThrowAnyException();
         }
     }
 

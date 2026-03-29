@@ -8,14 +8,14 @@
  */
 package eu.exeris.kernel.community.persistence;
 
-import eu.exeris.kernel.community.persistence.jdbc.JdbcPersistenceConnection;
+import eu.exeris.kernel.spi.persistence.PersistenceConnection;
 import eu.exeris.kernel.spi.persistence.TransactionIsolation;
 
 /**
  * Per-HTTP-request persistence session binding.
  *
  * <h2>Semantics</h2>
- * <p>Wraps an active JDBC connection and its transaction state scoped to a single HTTP request.
+ * <p>Wraps an active persistence connection and its transaction state scoped to a single HTTP request.
  * Immutable and Valhalla-ready (record, no mutable state, no identity-sensitive operations).
  *
  * <h2>Lifecycle</h2>
@@ -32,7 +32,7 @@ import eu.exeris.kernel.spi.persistence.TransactionIsolation;
  * }
  * </pre>
  *
- * @param connection     JDBC connection from pool, transactionally open
+ * @param connection     Persistence connection from pool, transactionally open
  * @param isolation      Isolation level set at request entry (immutable for request lifetime)
  * @param readOnly       Read-only hint (inferred from HTTP method or explicit header)
  * @param active         Flag: true if session is active, false if deactivated (post-exit)
@@ -40,21 +40,21 @@ import eu.exeris.kernel.spi.persistence.TransactionIsolation;
  * @since 0.6.0
  */
 public record RequestPersistenceSession(
-        JdbcPersistenceConnection connection,
-        TransactionIsolation isolation,
-        boolean readOnly,
-        boolean active
+    PersistenceConnection connection,
+    TransactionIsolation isolation,
+    boolean readOnly,
+    boolean active
 ) {
 
     /**
      * Factory: create an active session with a connection and isolation level.
      *
-     * @param connection JDBC connection (must be freshly acquired from pool)
+     * @param connection Persistence connection (must be freshly acquired from pool)
      * @param isolation  Transaction isolation level (default: READ_COMMITTED)
      * @param readOnly   Read-only hint
      * @return Active session
      */
-    public static RequestPersistenceSession active(JdbcPersistenceConnection connection,
+    public static RequestPersistenceSession active(PersistenceConnection connection,
                                                    TransactionIsolation isolation,
                                                    boolean readOnly) {
         return new RequestPersistenceSession(connection, isolation, readOnly, true);

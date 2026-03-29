@@ -120,6 +120,11 @@ class TransactionOrchestratorTckTest extends AbstractTransactionalExecutorTck {
                            : PersistenceHealthStatus.failed("InMemorySentinelEngine is closed");
         }
 
+        @Override
+        public boolean canServiceRequest() {
+            return !closed;
+        }
+
 
         @Override
         public PersistenceEngineCapabilities capabilities() {

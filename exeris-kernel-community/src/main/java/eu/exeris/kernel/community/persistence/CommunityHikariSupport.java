@@ -25,6 +25,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 
+@SuppressWarnings("PMD.TooManyMethods")
 final class CommunityHikariSupport {
 
     private final HikariDataSource pool;
@@ -47,7 +48,25 @@ final class CommunityHikariSupport {
         hikariConfig.setUsername(config.username());
         hikariConfig.setPassword(config.password());
         hikariConfig.setMaximumPoolSize(config.maxPoolSize());
-        hikariConfig.setMinimumIdle(tenantKey == null ? config.minIdleConnections() : 0);
+        
+        // Phase 1A: Per-tenant pool sizing control
+        // For shared pool: use configured minIdleConnections
+        // For per-tenant pool: default minIdle=0 (aggressive reclamation, lazily created)
+        int minIdle;
+        if (tenantKey == null) {
+            minIdle = config.minIdleConnections();
+        } else {
+            // Per-tenant pools: minimize idle connections (default 0)
+            String minPerTenantStr = config.properties()
+                    .getOrDefault("persistence.minPoolSizePerTenant", "0");
+            try {
+                minIdle = Math.max(0, Integer.parseInt(minPerTenantStr));
+            } catch (NumberFormatException _) {
+                minIdle = 0;
+            }
+        }
+        hikariConfig.setMinimumIdle(minIdle);
+        
         hikariConfig.setConnectionTimeout(config.connectionTimeoutMs());
         hikariConfig.setIdleTimeout(config.idleTimeoutMs());
         hikariConfig.setMaxLifetime(config.maxLifetimeMs());
@@ -129,6 +148,19 @@ final class CommunityHikariSupport {
         );
     }
 
+    /* default */ AdmissionSnapshot admissionSnapshot(int maxPoolSize) {
+        HikariPoolMXBean poolMxBean = mxBean();
+        if (poolMxBean == null) {
+            return new AdmissionSnapshot(0, 0, 0, maxPoolSize);
+        }
+        return new AdmissionSnapshot(
+                poolMxBean.getActiveConnections(),
+                poolMxBean.getIdleConnections(),
+                poolMxBean.getThreadsAwaitingConnection(),
+                maxPoolSize
+        );
+    }
+
     /* default */ PersistenceProviderException translateAcquireFailure
                 (Throwable failure, String providerId, long timeoutMs) {
         SQLException sqlException = CommunityHikariUtils.findSqlException(failure);
@@ -151,5 +183,12 @@ final class CommunityHikariSupport {
 
     private HikariPoolMXBean mxBean() {
         return pool.getHikariPoolMXBean();
+    }
+
+    /* default */ record AdmissionSnapshot(
+            int activeConnections,
+            int idleConnections,
+            int pendingAcquires,
+            int maxConnections) {
     }
 }

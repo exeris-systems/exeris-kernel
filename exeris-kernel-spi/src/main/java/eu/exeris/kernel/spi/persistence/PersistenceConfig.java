@@ -71,8 +71,8 @@ public record PersistenceConfig(
 ) {
 
     private static final int MIN_POOL = 1;
-    private static final int DEFAULT_MAX_POOL = 20;
-    private static final int DEFAULT_MIN_IDLE = 2;
+    private static final int DEFAULT_MAX_POOL = 256;
+    private static final int DEFAULT_MIN_IDLE = 16;
     private static final long DEFAULT_CONN_TIMEOUT_MS = 30_000L;
     private static final long DEFAULT_IDLE_TIMEOUT_MS = 600_000L;
     private static final long DEFAULT_MAX_LIFETIME_MS = 1_800_000L;
@@ -104,6 +104,34 @@ public record PersistenceConfig(
         }
         // Defensive copy — ensures immutability (Valhalla readiness)
         properties = Map.copyOf(properties);
+    }
+
+    /**
+     * Whether to pre-warm shared connection pool on engine startup.
+     * @return true if warm-up is enabled; default true
+     */
+    public boolean poolWarmupEnabled() {
+        // If property is present, use it; else default true
+        String val = properties.getOrDefault("pool.warmup.enabled", "true");
+        return Boolean.parseBoolean(val);
+    }
+
+    /**
+     * Number of connections to pre-warm in shared pool on startup.
+     * Range: 1–8, default 2.
+     * @return number of connections to warm
+     */
+    public int poolWarmupConnections() {
+        String val = properties.getOrDefault("pool.warmup.connections", "2");
+        try {
+            int nVal = Integer.parseInt(val);
+            if (nVal < 1 || nVal > 8) {
+                return 2;
+            }
+            return nVal;
+        } catch (NumberFormatException _) {
+            return 2;
+        }
     }
 
     /**

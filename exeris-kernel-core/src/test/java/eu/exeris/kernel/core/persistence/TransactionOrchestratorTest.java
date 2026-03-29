@@ -110,6 +110,7 @@ class TransactionOrchestratorTest {
             return lastConnection;
         }
         @Override public PersistenceConnection openConnection(StorageContext ctx) { return openConnection(); }
+        @Override public boolean canServiceRequest() { return true; }
         @Override public void registerInterceptor(ConnectionInterceptor i) { /* empty — test stub */ }
         @Override public PersistenceHealthStatus healthCheckDetailed()      { return PersistenceHealthStatus.ok(0L); }
         @Override public EngineStats stats()                                { return null; }

@@ -55,6 +55,7 @@ class PersistenceBootstrapTest {
             @Override public PersistenceHealthStatus healthCheckDetailed() {
                 return PersistenceHealthStatus.ok(0L);
             }
+            @Override public boolean canServiceRequest() { return true; }
             @Override public EngineStats stats() { return null; }
             @Override public PersistenceEngineCapabilities capabilities() {
                 return new PersistenceEngineCapabilities(

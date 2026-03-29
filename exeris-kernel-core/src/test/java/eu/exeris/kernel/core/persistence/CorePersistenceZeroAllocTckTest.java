@@ -102,6 +102,11 @@ class CorePersistenceZeroAllocTckTest extends PersistenceZeroAllocTck {
             return PersistenceHealthStatus.ok(0L);
         }
 
+        @Override
+        public boolean canServiceRequest() {
+            return true;
+        }
+
 
         @Override
         public PersistenceEngineCapabilities capabilities() {

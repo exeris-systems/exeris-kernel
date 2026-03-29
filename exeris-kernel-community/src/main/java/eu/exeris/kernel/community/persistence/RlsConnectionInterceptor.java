@@ -14,8 +14,6 @@ import eu.exeris.kernel.spi.persistence.PersistenceConnection;
 import eu.exeris.kernel.spi.persistence.PersistenceStatement;
 import eu.exeris.kernel.spi.security.StorageContext;
 
-import java.util.regex.Pattern;
-
 /**
  * Community: Row-Level Security injector via {@link ConnectionInterceptor} SPI.
  *
@@ -73,11 +71,9 @@ public final class RlsConnectionInterceptor implements ConnectionInterceptor {
     private static final String SQL_SET_TENANT =
             "SELECT set_config('exeris.tenant_id', $1, true)";
 
-    private static final String SQL_SET_SCHEMA_TEMPLATE =
-            "SET LOCAL search_path TO %s, public";
-
-    private static final Pattern SAFE_IDENTIFIER =
-            Pattern.compile("^[a-z][a-z0-9_]{0,62}$");
+        private static final String SQL_SET_SCHEMA_PREFIX = "SET LOCAL search_path TO ";
+        private static final String SQL_SET_SCHEMA_SUFFIX = ", public";
+        private static final int MAX_IDENTIFIER_LENGTH = 63;
 
     private static final String INTERCEPTOR_NAME = "RlsConnectionInterceptor";
 
@@ -138,13 +134,13 @@ public final class RlsConnectionInterceptor implements ConnectionInterceptor {
                     storageContext.isolationKey().orElse("[none]"),
                     null);
         }
-        if (!SAFE_IDENTIFIER.matcher(schemaName).matches()) {
+        if (!isSafeIdentifier(schemaName)) {
             throw PersistenceProviderException.interceptorInitFailed(
                     INTERCEPTOR_NAME,
                     storageContext.isolationKey().orElse("[none]"),
                     null);
         }
-        String sql = String.format(SQL_SET_SCHEMA_TEMPLATE, schemaName);
+        String sql = SQL_SET_SCHEMA_PREFIX + schemaName + SQL_SET_SCHEMA_SUFFIX;
         try {
             connection.executeUpdate(sql);
         } catch (PersistenceProviderException ppe) {
@@ -153,6 +149,26 @@ public final class RlsConnectionInterceptor implements ConnectionInterceptor {
                     storageContext.isolationKey().orElse("[none]"),
                     ppe);
         }
+    }
+
+    private static boolean isSafeIdentifier(String schemaName) {
+        int length = schemaName.length();
+        if (length < 1 || length > MAX_IDENTIFIER_LENGTH) {
+            return false;
+        }
+        char first = schemaName.charAt(0);
+        if (first < 'a' || first > 'z') {
+            return false;
+        }
+        for (int i = 1; i < length; i++) {
+            char currentChar = schemaName.charAt(i);
+            boolean isLowercase = currentChar >= 'a' && currentChar <= 'z';
+            boolean isDigit = currentChar >= '0' && currentChar <= '9';
+            if (!isLowercase && !isDigit && currentChar != '_') {
+                return false;
+            }
+        }
+        return true;
     }
 
 }
