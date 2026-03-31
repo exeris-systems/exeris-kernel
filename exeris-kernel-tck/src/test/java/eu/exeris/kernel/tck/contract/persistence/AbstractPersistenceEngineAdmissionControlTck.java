@@ -17,6 +17,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 
@@ -48,6 +50,9 @@ import static org.assertj.core.api.Assertions.assertThatCode;
  *
  */
 public abstract class AbstractPersistenceEngineAdmissionControlTck {
+
+    private static final Duration QUEUE_WAIT_TIMEOUT = Duration.ofSeconds(1);
+    private static final long QUEUE_POLL_SLEEP_MILLIS = 5L;
 
     /**
      * Creates a fully bootstrapped {@link PersistenceEngine} for testing.
@@ -141,8 +146,7 @@ public abstract class AbstractPersistenceEngineAdmissionControlTck {
                     throw new AssertionError("Helper thread did not start");
                 }
 
-                // Give the thread a moment to actually block in the queue
-                Thread.sleep(50);
+                waitUntilPendingAcquiresAboveZero(engine, QUEUE_WAIT_TIMEOUT);
 
                 EngineStats queuedStats = engine.stats();
                 assertThat(queuedStats.pendingAcquires())
@@ -231,6 +235,18 @@ public abstract class AbstractPersistenceEngineAdmissionControlTck {
                     .as("Engine should not accept requests after close()")
                     .isFalse();
         }
+    }
+
+    private static void waitUntilPendingAcquiresAboveZero(PersistenceEngine engine, Duration timeout)
+            throws InterruptedException {
+        long deadlineNanos = System.nanoTime() + timeout.toNanos();
+        while (System.nanoTime() < deadlineNanos) {
+            if (engine.stats().pendingAcquires() > 0) {
+                return;
+            }
+            Thread.sleep(QUEUE_POLL_SLEEP_MILLIS);
+        }
+        throw new AssertionError("Timed out waiting for pending acquires > 0");
     }
 
     // =========================================================================

@@ -69,7 +69,7 @@ class CommunityPersistenceEngineFairnessTest {
             try (PersistenceEngine engine = createTestEngine(4)) {
                 for (int i = 0; i < 10; i++) {
                     boolean result = engine.canServiceRequest();
-                    assertThat(result).isNotNull();
+                    assertThat(result).isTrue();
                 }
             }
         }
@@ -223,7 +223,7 @@ class CommunityPersistenceEngineFairnessTest {
                     if (saturation >= 0.85) {
                         // When saturated, canServiceRequest may return false
                         boolean result = engine.canServiceRequest();
-                        assertThat(result).isNotNull();
+                        assertThat(result).isFalse();
                     }
                 }
             }

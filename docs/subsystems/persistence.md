@@ -216,6 +216,7 @@ public class OrderService {
 
     @Transactional
     public void placeOrder(Order order) {
+    repository.save(order);
     }
 }
 ```
@@ -227,6 +228,9 @@ PersistenceProvider provider = ServiceLoader.load(PersistenceProvider.class)
         .findFirst()
         .orElseThrow(() -> new PersistenceBootstrapException(
                 KernelErrorCodes.EX_PERS_5007,
+    "No PersistenceProvider found on classpath. Add exeris-kernel-community or exeris-kernel-enterprise."
+  ));
+```
 ---
 
 
