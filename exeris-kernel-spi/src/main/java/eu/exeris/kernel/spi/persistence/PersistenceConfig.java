@@ -141,36 +141,41 @@ public record PersistenceConfig(
     }
 
     private static void validateWarmupProperties(Map<String, String> properties) {
-        String warmupEnabled = properties.get(POOL_WARMUP_ENABLED_KEY);
+        validateWarmupEnabled(properties.get(POOL_WARMUP_ENABLED_KEY));
+        validateWarmupConnections(properties.get(POOL_WARMUP_CONNECTIONS_KEY));
+    }
+
+    private static void validateWarmupEnabled(String warmupEnabled) {
         if (warmupEnabled != null
                 && !"true".equalsIgnoreCase(warmupEnabled)
                 && !"false".equalsIgnoreCase(warmupEnabled)) {
             throw new IllegalArgumentException(
                     POOL_WARMUP_ENABLED_KEY + " must be true or false, got: " + warmupEnabled);
         }
+    }
 
-        String warmupConnections = properties.get(POOL_WARMUP_CONNECTIONS_KEY);
+    private static void validateWarmupConnections(String warmupConnections) {
         if (warmupConnections == null) {
             return;
         }
+        int parsed = parseWarmupConnections(warmupConnections);
+        if (parsed < MIN_POOL_WARMUP_CONNECTIONS || parsed > MAX_POOL_WARMUP_CONNECTIONS) {
+            throw new IllegalArgumentException(
+                    POOL_WARMUP_CONNECTIONS_KEY + " must be an integer in ["
+                            + MIN_POOL_WARMUP_CONNECTIONS + ',' + MAX_POOL_WARMUP_CONNECTIONS
+                            + "], got: " + warmupConnections);
+        }
+    }
 
-        final int parsedConnections;
+    private static int parseWarmupConnections(String warmupConnections) {
         try {
-            parsedConnections = Integer.parseInt(warmupConnections);
+            return Integer.parseInt(warmupConnections);
         } catch (NumberFormatException ex) {
             throw new IllegalArgumentException(
                     POOL_WARMUP_CONNECTIONS_KEY + " must be an integer in ["
                             + MIN_POOL_WARMUP_CONNECTIONS + ',' + MAX_POOL_WARMUP_CONNECTIONS
                             + "], got: " + warmupConnections,
                     ex);
-        }
-
-        if (parsedConnections < MIN_POOL_WARMUP_CONNECTIONS
-                || parsedConnections > MAX_POOL_WARMUP_CONNECTIONS) {
-            throw new IllegalArgumentException(
-                    POOL_WARMUP_CONNECTIONS_KEY + " must be an integer in ["
-                            + MIN_POOL_WARMUP_CONNECTIONS + ',' + MAX_POOL_WARMUP_CONNECTIONS
-                            + "], got: " + warmupConnections);
         }
     }
 
