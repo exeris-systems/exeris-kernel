@@ -11,7 +11,7 @@ package eu.exeris.kernel.core.persistence;
 import jdk.jfr.Category;
 import jdk.jfr.Description;
 import jdk.jfr.Event;
-import jdk.jfr.FlightRecorder;
+import jdk.jfr.EventType;
 import jdk.jfr.Label;
 import jdk.jfr.Name;
 import jdk.jfr.StackTrace;
@@ -31,6 +31,9 @@ import jdk.jfr.StackTrace;
 @Category({"Exeris Kernel", "Persistence", "Memory"})
 @StackTrace(false)
 public final class PersistenceTenantPoolCreatedEvent extends Event {
+
+    private static final EventType EVENT_TYPE =
+            EventType.getEventType(PersistenceTenantPoolCreatedEvent.class);
 
     /** Provider tier identifier (e.g., {@code "postgres-community"}). */
     @Label("Provider ID")
@@ -55,12 +58,12 @@ public final class PersistenceTenantPoolCreatedEvent extends Event {
     /**
      * Emit a tenant pool creation event.
      *
-     * <p>Guards on {@link FlightRecorder#isInitialized()} to avoid
+     * <p>Guards on {@link EventType#isEnabled()} to avoid
      * allocation when JFR is off.
      */
     public static void emit(String providerId, String tenantKey, int maxConnections,
                            int minIdle, int currentPoolCount) {
-        if (!FlightRecorder.isInitialized()) {
+        if (!EVENT_TYPE.isEnabled()) {
             return;
         }
         PersistenceTenantPoolCreatedEvent event = new PersistenceTenantPoolCreatedEvent();

@@ -302,10 +302,12 @@ public final class TransactionOrchestrator implements TransactionalExecutor {
 
             try (PersistenceConnection conn = engine.openConnection(ctx)) {
                 try {
+                    long startNs = System.nanoTime();
                     T result = isolation == TransactionIsolation.READ_COMMITTED
                             ? runReadSessionReadCommitted(conn, work, attemptNumber)
                             : runReadSessionIsolated(conn, isolation, work, attemptNumber);
-                    TransactionLifecycleEvent.recordWorkComplete(attemptNumber, 0L);
+                    long durationNs = System.nanoTime() - startNs;
+                    TransactionLifecycleEvent.recordWorkComplete(attemptNumber, durationNs);
                     return result;
                 } catch (PersistenceProviderException ppe) {
                     if (isRetryable(ppe)) {
@@ -416,11 +418,13 @@ public final class TransactionOrchestrator implements TransactionalExecutor {
         try {
             conn.beginTransaction(isolation, true);
             TransactionLifecycleEvent.recordBegin(attempt);
+            long startNs = System.nanoTime();
             T result = ScopedValue.where(ACTIVE_READ_SESSION_CONNECTION, conn)
                     .call(() -> work.apply(readSession(conn)));
+            long durationNs = System.nanoTime() - startNs;
             if (conn.inTransaction()) {
                 conn.commit();
-                TransactionLifecycleEvent.recordCommit(attempt, 0L);
+                TransactionLifecycleEvent.recordCommit(attempt, durationNs);
             }
             return result;
         } catch (RuntimeException ex) {

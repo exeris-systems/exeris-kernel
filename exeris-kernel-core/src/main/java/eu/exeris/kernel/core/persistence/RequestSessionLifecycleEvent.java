@@ -11,7 +11,7 @@ package eu.exeris.kernel.core.persistence;
 import eu.exeris.kernel.spi.persistence.TransactionIsolation;
 import jdk.jfr.Category;
 import jdk.jfr.Event;
-import jdk.jfr.FlightRecorder;
+import jdk.jfr.EventType;
 import jdk.jfr.Label;
 import jdk.jfr.Name;
 import jdk.jfr.StackTrace;
@@ -21,6 +21,9 @@ import jdk.jfr.StackTrace;
 @Category({"Exeris Kernel", "Persistence"})
 @StackTrace(false)
 public final class RequestSessionLifecycleEvent extends Event {
+
+    private static final EventType EVENT_TYPE =
+            EventType.getEventType(RequestSessionLifecycleEvent.class);
 
     @Label("Operation")
     public String operation;
@@ -38,13 +41,10 @@ public final class RequestSessionLifecycleEvent extends Event {
                             TransactionIsolation isolation,
                             boolean readOnly,
                             boolean hasSession) {
-        if (!FlightRecorder.isInitialized()) {
+        if (!EVENT_TYPE.isEnabled()) {
             return;
         }
         RequestSessionLifecycleEvent event = new RequestSessionLifecycleEvent();
-        if (!event.isEnabled()) {
-            return;
-        }
         event.operation = operation;
         if (isolation != null) {
             event.isolation = isolation.name();

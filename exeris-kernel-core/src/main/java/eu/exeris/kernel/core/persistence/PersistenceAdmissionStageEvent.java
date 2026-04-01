@@ -19,7 +19,7 @@ import jdk.jfr.StackTrace;
  * Lightweight staged JFR event for persistence admission request-path telemetry.
  *
  * <p>Emits one of stages: {@code queue_enter}, {@code queue_wait}, {@code persistence_admission}.
- * Guarded by {@link FlightRecorder#isInitialized()} and {@link Event#isEnabled()}.
+ * Guarded by a cached {@link EventType#isEnabled()} probe.
  */
 @Name("eu.exeris.kernel.persistence.AdmissionStage")
 @Label("Persistence Admission Stage")

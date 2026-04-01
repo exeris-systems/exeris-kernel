@@ -27,7 +27,7 @@ import jdk.jfr.StackTrace;
  * }</pre>
  *
  * <h2>Hot-Path Guard</h2>
- * <p>Guards on {@link FlightRecorder#isInitialized()} and {@link Event#isEnabled()}
+ * <p>Uses a cached {@link EventType} probe and checks {@link EventType#isEnabled()}
  * before allocating event object — zero allocation when JFR is inactive.
  * {@link StackTrace @StackTrace(false)} eliminates stack-walk overhead.
  *

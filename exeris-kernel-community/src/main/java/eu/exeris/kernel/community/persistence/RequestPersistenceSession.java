@@ -69,13 +69,4 @@ public record RequestPersistenceSession(
     public RequestPersistenceSession deactivate() {
         return new RequestPersistenceSession(connection, isolation, readOnly, false);
     }
-
-    /**
-     * Check if session is still active (bound to the HTTP request scope).
-     *
-     * @return true if active, false if deactivated
-     */
-    public boolean isActive() {
-        return active;
-    }
 }
