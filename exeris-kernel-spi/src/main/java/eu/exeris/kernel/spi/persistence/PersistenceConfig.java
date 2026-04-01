@@ -31,7 +31,8 @@ import java.util.Objects;
  * {@code "exeris.iouring.sqe_size"}, {@code "exeris.iouring.provided_buffers"},
  * or {@code "exeris.native.keepalive_idle_sec"} from this map.
  * Community implementations may pass these through to HikariCP data source properties.
- * The SPI layer treats this map as opaque — it never inspects its contents.
+ * Most keys remain opaque to SPI, but standardized keys {@code pool.warmup.enabled}
+ * and {@code pool.warmup.connections} are interpreted here for shared pool warm-up.
  *
  * @param connectionUrl       JDBC or URI-style connection URL (parsed by implementations for host/port/db).
  *                            Examples: {@code "jdbc:postgresql://localhost:5432/exeris"},
@@ -70,6 +71,13 @@ public record PersistenceConfig(
         Map<String, String> properties
 ) {
 
+    public static final String POOL_WARMUP_ENABLED_KEY = "pool.warmup.enabled";
+    public static final String POOL_WARMUP_CONNECTIONS_KEY = "pool.warmup.connections";
+    public static final boolean DEFAULT_POOL_WARMUP_ENABLED = true;
+    public static final int DEFAULT_POOL_WARMUP_CONNECTIONS = 2;
+    public static final int MIN_POOL_WARMUP_CONNECTIONS = 1;
+    public static final int MAX_POOL_WARMUP_CONNECTIONS = 8;
+
     private static final int MIN_POOL = 1;
     private static final int DEFAULT_MAX_POOL = 256;
     private static final int DEFAULT_MIN_IDLE = 16;
@@ -102,6 +110,7 @@ public record PersistenceConfig(
         if (maxTenantPools < 0) {
             throw new IllegalArgumentException("maxTenantPools must be >= 0");
         }
+        validateWarmupProperties(properties);
         // Defensive copy — ensures immutability (Valhalla readiness)
         properties = Map.copyOf(properties);
     }
@@ -111,9 +120,11 @@ public record PersistenceConfig(
      * @return true if warm-up is enabled; default true
      */
     public boolean poolWarmupEnabled() {
-        // If property is present, use it; else default true
-        String val = properties.getOrDefault("pool.warmup.enabled", "true");
-        return Boolean.parseBoolean(val);
+        String val = properties.get(POOL_WARMUP_ENABLED_KEY);
+        if (val == null) {
+            return DEFAULT_POOL_WARMUP_ENABLED;
+        }
+        return "true".equalsIgnoreCase(val);
     }
 
     /**
@@ -122,15 +133,44 @@ public record PersistenceConfig(
      * @return number of connections to warm
      */
     public int poolWarmupConnections() {
-        String val = properties.getOrDefault("pool.warmup.connections", "2");
+        String val = properties.get(POOL_WARMUP_CONNECTIONS_KEY);
+        if (val == null) {
+            return DEFAULT_POOL_WARMUP_CONNECTIONS;
+        }
+        return Integer.parseInt(val);
+    }
+
+    private static void validateWarmupProperties(Map<String, String> properties) {
+        String warmupEnabled = properties.get(POOL_WARMUP_ENABLED_KEY);
+        if (warmupEnabled != null
+                && !"true".equalsIgnoreCase(warmupEnabled)
+                && !"false".equalsIgnoreCase(warmupEnabled)) {
+            throw new IllegalArgumentException(
+                    POOL_WARMUP_ENABLED_KEY + " must be true or false, got: " + warmupEnabled);
+        }
+
+        String warmupConnections = properties.get(POOL_WARMUP_CONNECTIONS_KEY);
+        if (warmupConnections == null) {
+            return;
+        }
+
+        final int parsedConnections;
         try {
-            int nVal = Integer.parseInt(val);
-            if (nVal < 1 || nVal > 8) {
-                return 2;
-            }
-            return nVal;
-        } catch (NumberFormatException _) {
-            return 2;
+            parsedConnections = Integer.parseInt(warmupConnections);
+        } catch (NumberFormatException ex) {
+            throw new IllegalArgumentException(
+                    POOL_WARMUP_CONNECTIONS_KEY + " must be an integer in ["
+                            + MIN_POOL_WARMUP_CONNECTIONS + ',' + MAX_POOL_WARMUP_CONNECTIONS
+                            + "], got: " + warmupConnections,
+                    ex);
+        }
+
+        if (parsedConnections < MIN_POOL_WARMUP_CONNECTIONS
+                || parsedConnections > MAX_POOL_WARMUP_CONNECTIONS) {
+            throw new IllegalArgumentException(
+                    POOL_WARMUP_CONNECTIONS_KEY + " must be an integer in ["
+                            + MIN_POOL_WARMUP_CONNECTIONS + ',' + MAX_POOL_WARMUP_CONNECTIONS
+                            + "], got: " + warmupConnections);
         }
     }
 

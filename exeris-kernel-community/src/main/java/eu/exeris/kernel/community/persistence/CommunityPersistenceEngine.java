@@ -322,9 +322,9 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
                 decision.accepted(),
                 queued,
                 decision.saturation(),
-            fairnessSnapshot.fairnessRatio(),
-            fairnessSnapshot.queueDepthP95(),
-            fairnessSnapshot.queueWaitP95Ms(),
+                fairnessSnapshot.fairnessRatio(),
+                fairnessSnapshot.queueDepthP95(),
+                fairnessSnapshot.queueWaitP95Ms(),
                 decision.decisionReason());
 
         return decision.accepted();
@@ -373,45 +373,46 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
                                                long queueDepthP95,
                                                long queueWaitP95Ms,
                                                String decisionReason) {
-        if (queueDepth > 0) {
+        if (queueDepth > 0 && PersistenceAdmissionStageEvent.isEnabled()) {
             PersistenceAdmissionStageEvent.emit(new PersistenceAdmissionStageEvent.Payload(
                     PROVIDER_ID,
                     "queue_enter",
                     queueDepth,
                     0L,
                     accepted,
-                    decisionReason
-            ));
+                    decisionReason));
         }
-        if (queueWaitP95Ms > QUEUE_WAIT_TELEMETRY_THRESHOLD_MS) {
+        if (queueWaitP95Ms > QUEUE_WAIT_TELEMETRY_THRESHOLD_MS
+                && PersistenceAdmissionStageEvent.isEnabled()) {
             PersistenceAdmissionStageEvent.emit(new PersistenceAdmissionStageEvent.Payload(
                     PROVIDER_ID,
                     "queue_wait",
                     queueDepth,
                     queueWaitP95Ms,
                     accepted,
-                    decisionReason
-            ));
+                    decisionReason));
         }
-        PersistenceAdmissionStageEvent.emit(new PersistenceAdmissionStageEvent.Payload(
-                PROVIDER_ID,
-                "persistence_admission",
-                queueDepth,
-                queueWaitP95Ms,
-                accepted,
-                decisionReason
-        ));
+        if (PersistenceAdmissionStageEvent.isEnabled()) {
+            PersistenceAdmissionStageEvent.emit(new PersistenceAdmissionStageEvent.Payload(
+                    PROVIDER_ID,
+                    "persistence_admission",
+                    queueDepth,
+                    queueWaitP95Ms,
+                    accepted,
+                    decisionReason));
+        }
 
-        AdmissionDecisionEvent.emit(new AdmissionDecisionEvent.Payload(
-                PROVIDER_ID,
-                accepted,
-                queueDepth,
-                saturation,
-                fairnessRatio,
-                queueDepthP95,
-                queueWaitP95Ms,
-                decisionReason
-        ));
+        if (AdmissionDecisionEvent.isEnabled()) {
+            AdmissionDecisionEvent.emit(new AdmissionDecisionEvent.Payload(
+                    PROVIDER_ID,
+                    accepted,
+                    queueDepth,
+                    saturation,
+                    fairnessRatio,
+                    queueDepthP95,
+                    queueWaitP95Ms,
+                    decisionReason));
+        }
     }
 
     @Override

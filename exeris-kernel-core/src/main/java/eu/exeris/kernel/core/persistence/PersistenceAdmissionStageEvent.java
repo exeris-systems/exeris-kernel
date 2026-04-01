@@ -25,35 +25,24 @@ import jdk.jfr.StackTrace;
 @Label("Persistence Admission Stage")
 @Category({"Exeris Kernel", "Persistence", "Admission"})
 @StackTrace(false)
-public final class PersistenceAdmissionStageEvent extends Event {
+public final class PersistenceAdmissionStageEvent {
 
     /** Cached event-type probe; {@code isEnabled()} is dynamically evaluated. */
     private static final EventType EVENT_TYPE =
-            EventType.getEventType(PersistenceAdmissionStageEvent.class);
+            EventType.getEventType(JfrEvent.class);
 
-    @Label("Provider ID")
-    public String providerId;
+    private PersistenceAdmissionStageEvent() {
+    }
 
-    @Label("Stage")
-    public String stage;
-
-    @Label("Queue Depth")
-    public int queueDepth;
-
-    @Label("Queue Wait P95 (ms)")
-    public long queueWaitP95Ms;
-
-    @Label("Accepted")
-    public boolean accepted;
-
-    @Label("Decision Reason")
-    public String decisionReason;
+    public static boolean isEnabled() {
+        return EVENT_TYPE.isEnabled();
+    }
 
     public static void emit(Payload payload) {
         if (!EVENT_TYPE.isEnabled()) {
             return;
         }
-        PersistenceAdmissionStageEvent evt = new PersistenceAdmissionStageEvent();
+        JfrEvent evt = new JfrEvent();
         evt.providerId = payload.providerId();
         evt.stage = payload.stage();
         evt.queueDepth = payload.queueDepth();
@@ -69,5 +58,31 @@ public final class PersistenceAdmissionStageEvent extends Event {
                           long queueWaitP95Ms,
                           boolean accepted,
                           String decisionReason) {
+    }
+
+    @Name("eu.exeris.kernel.persistence.AdmissionStage")
+    @Label("Persistence Admission Stage")
+    @Category({"Exeris Kernel", "Persistence", "Admission"})
+    @StackTrace(false)
+    @SuppressWarnings("unused")
+    private static final class JfrEvent extends Event {
+
+        @Label("Provider ID")
+        private String providerId;
+
+        @Label("Stage")
+        private String stage;
+
+        @Label("Queue Depth")
+        private int queueDepth;
+
+        @Label("Queue Wait P95 (ms)")
+        private long queueWaitP95Ms;
+
+        @Label("Accepted")
+        private boolean accepted;
+
+        @Label("Decision Reason")
+        private String decisionReason;
     }
 }

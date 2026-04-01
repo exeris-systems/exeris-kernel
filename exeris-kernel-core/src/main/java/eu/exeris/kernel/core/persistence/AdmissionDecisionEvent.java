@@ -43,43 +43,18 @@ import jdk.jfr.StackTrace;
 @Description("Emitted when a request is admitted or rejected by the persistence layer admission gate")
 @Category({"Exeris Kernel", "Persistence", "Fairness"})
 @StackTrace(false)
-public final class AdmissionDecisionEvent extends Event {
+public final class AdmissionDecisionEvent {
 
     /** Cached event-type probe; {@code isEnabled()} is dynamically evaluated. */
     private static final EventType EVENT_TYPE =
-            EventType.getEventType(AdmissionDecisionEvent.class);
+            EventType.getEventType(JfrEvent.class);
 
-    /** Provider tier identifier (e.g., {@code "postgres-community"}). */
-    @Label("Provider ID")
-    public String providerId;
+    private AdmissionDecisionEvent() {
+    }
 
-    /** {@code true} if request was accepted; {@code false} if rejected with backpressure. */
-    @Label("Accepted")
-    public boolean accepted;
-
-    /** Current depth of pending connection requests in queue. */
-    @Label("Queue Depth")
-    public int queueDepth;
-
-    /** Active connections as percentage of max pool size (0.0–1.0). */
-    @Label("Saturation")
-    public double saturation;
-
-    /** Fairness ratio: min(tier throughput) / mean(throughput). Target ≥0.90. */
-    @Label("Fairness Composite")
-    public double fairnessRatio;
-
-    /** P95 queue depth over recent fairness window. */
-    @Label("Queue Depth P95")
-    public long queueDepthP95;
-
-    /** P95 queue wait in milliseconds over recent fairness window. */
-    @Label("Queue Wait P95 (ms)")
-    public long queueWaitP95Ms;
-
-    /** Deterministic admission decision reason for stage-level diagnostics. */
-    @Label("Decision Reason")
-    public String decisionReason;
+    public static boolean isEnabled() {
+        return EVENT_TYPE.isEnabled();
+    }
 
     /**
      * Records an admission decision event.
@@ -93,7 +68,7 @@ public final class AdmissionDecisionEvent extends Event {
         if (!EVENT_TYPE.isEnabled()) {
             return;
         }
-        AdmissionDecisionEvent evt = new AdmissionDecisionEvent();
+        JfrEvent evt = new JfrEvent();
         evt.providerId = payload.providerId();
         evt.accepted = payload.accepted();
         evt.queueDepth = payload.queueDepth();
@@ -116,5 +91,46 @@ public final class AdmissionDecisionEvent extends Event {
                           long queueDepthP95,
                           long queueWaitP95Ms,
                           String decisionReason) {
+    }
+
+    @Name("eu.exeris.kernel.persistence.AdmissionDecision")
+    @Label("Persistence Admission Decision")
+    @Description("Emitted when a request is admitted or rejected by the persistence layer admission gate")
+    @Category({"Exeris Kernel", "Persistence", "Fairness"})
+    @StackTrace(false)
+    @SuppressWarnings("unused")
+    private static final class JfrEvent extends Event {
+
+        /** Provider tier identifier (e.g., {@code "postgres-community"}). */
+        @Label("Provider ID")
+        private String providerId;
+
+        /** {@code true} if request was accepted; {@code false} if rejected with backpressure. */
+        @Label("Accepted")
+        private boolean accepted;
+
+        /** Current depth of pending connection requests in queue. */
+        @Label("Queue Depth")
+        private int queueDepth;
+
+        /** Active connections as percentage of max pool size (0.0–1.0). */
+        @Label("Saturation")
+        private double saturation;
+
+        /** Fairness ratio: min(tier throughput) / mean(throughput). Target ≥0.90. */
+        @Label("Fairness Composite")
+        private double fairnessRatio;
+
+        /** P95 queue depth over recent fairness window. */
+        @Label("Queue Depth P95")
+        private long queueDepthP95;
+
+        /** P95 queue wait in milliseconds over recent fairness window. */
+        @Label("Queue Wait P95 (ms)")
+        private long queueWaitP95Ms;
+
+        /** Deterministic admission decision reason for stage-level diagnostics. */
+        @Label("Decision Reason")
+        private String decisionReason;
     }
 }
