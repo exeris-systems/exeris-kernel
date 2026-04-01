@@ -47,7 +47,7 @@ class RlsConnectionInterceptorTest {
 
         RlsConnectionInterceptor.INSTANCE.onConnectionAcquired(connection, storageContext);
 
-        verify(connection).executeUpdate("SET LOCAL search_path TO tenant_01, public");
+        verify(connection).executeUpdate("SET search_path TO tenant_01, public");
     }
 
     @Test
@@ -85,13 +85,13 @@ class RlsConnectionInterceptorTest {
     void sharedStrategyUsesPrepareAndBindString() {
         when(storageContext.strategy()).thenReturn(StorageContext.IsolationStrategy.SHARED);
         when(storageContext.isolationKey()).thenReturn(Optional.of("tenant-key-01"));
-        when(connection.prepare("SELECT set_config('exeris.tenant_id', $1, true)")).thenReturn(statement);
+        when(connection.prepare("SELECT set_config('exeris.tenant_id', $1, false)")).thenReturn(statement);
         when(statement.bindString(0, "tenant-key-01")).thenReturn(statement);
         when(statement.executeUpdate()).thenReturn(1L);
 
         RlsConnectionInterceptor.INSTANCE.onConnectionAcquired(connection, storageContext);
 
-        verify(connection).prepare("SELECT set_config('exeris.tenant_id', $1, true)");
+        verify(connection).prepare("SELECT set_config('exeris.tenant_id', $1, false)");
         verify(statement).bindString(0, "tenant-key-01");
     }
 }

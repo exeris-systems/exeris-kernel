@@ -26,9 +26,16 @@ import eu.exeris.kernel.spi.persistence.PersistenceEngineCapabilities;
 import eu.exeris.kernel.spi.persistence.PersistenceHealthStatus;
 import eu.exeris.kernel.spi.security.StorageContext;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -62,7 +69,8 @@ import java.util.concurrent.atomic.AtomicLong;
  *
  * @since 0.5.0
  */
-@SuppressWarnings({"PMD.CyclomaticComplexity", "PMD.TooManyMethods", "PMD.CouplingBetweenObjects", "PMD.GodClass"})
+@SuppressWarnings({"PMD.CyclomaticComplexity", "PMD.TooManyMethods", "PMD.CouplingBetweenObjects",
+ "PMD.GodClass", "PMD.ExcessiveImports"})
 final class CommunityPersistenceEngine implements PersistenceEngine {
 
     private static final String PROVIDER_ID   = "postgres-community";
@@ -82,6 +90,10 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
     private static final double FAIRNESS_STRESS_THRESHOLD = 0.90d;
     private static final long FAIRNESS_QUEUE_DEPTH_THRESHOLD = 1L;
     private static final long QUEUE_WAIT_TELEMETRY_THRESHOLD_MS = 0L;
+    private static final String RUN_MIGRATIONS_KEY = "run.migrations";
+    private static final List<String> MIGRATION_RESOURCES = List.of(
+            "db/migration/V0.5.0__create_outbox.sql"
+    );
 
     /**
      * Driver-local capabilities descriptor — postgres-community specific.
@@ -131,6 +143,7 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
                 "BlockingTCP"
         );
 
+        maybeRunMigrations();
         prewarmSharedPool();
     }
     /**
@@ -589,6 +602,101 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
                     + "got connectionTimeoutMs="
                             + config.connectionTimeoutMs() + ", maxPoolSize=" + config.maxPoolSize());
         }
+    }
+
+    @SuppressWarnings("PMD.AvoidCatchingGenericException")
+    private void maybeRunMigrations() {
+        if (!Boolean.parseBoolean(config.properties().getOrDefault(RUN_MIGRATIONS_KEY, "false"))) {
+            return;
+        }
+        List<String> resources = new ArrayList<>(MIGRATION_RESOURCES);
+        resources.sort(Comparator.naturalOrder());
+        try (Connection connection = sharedPool.getConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                for (String resource : resources) {
+                    executeMigrationScript(connection, resource);
+                }
+                connection.commit();
+            } catch (RuntimeException | SQLException ex) {
+                connection.rollback();
+                throw ex;
+            } finally {
+                connection.setAutoCommit(true);
+            }
+        } catch (SQLException sqlEx) {
+            throw PersistenceProviderException.bootstrapFailure(PROVIDER_ID, config.connectionUrl(), sqlEx);
+        }
+    }
+
+    private void executeMigrationScript(Connection connection, String resourcePath) throws SQLException {
+        String migrationSql = readMigrationResource(resourcePath);
+        for (String statementSql : splitSqlStatements(migrationSql)) {
+            try (Statement statement = connection.createStatement()) {
+                statement.execute(statementSql);
+            }
+        }
+    }
+
+    @SuppressWarnings("PMD.LawOfDemeter")
+    private static String readMigrationResource(String resourcePath) {
+        ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
+        try (InputStream inputStream = classLoader.getResourceAsStream(resourcePath)) {
+            if (inputStream == null) {
+                throw new IllegalStateException("Missing SQL migration resource: " + resourcePath);
+            }
+            byte[] bytes = inputStream.readAllBytes();
+            return new String(bytes, StandardCharsets.UTF_8);
+        } catch (IOException ioEx) {
+            throw new UncheckedIOException("Failed to read SQL migration resource: " + resourcePath, ioEx);
+        }
+    }
+
+    private static List<String> splitSqlStatements(String sql) {
+        if (sql == null || sql.isBlank()) {
+            return List.of();
+        }
+        StringBuilder current = new StringBuilder(sql.length());
+        List<String> statements = new ArrayList<>();
+        boolean inSingleQuote = false;
+
+        for (int i = 0; i < sql.length(); i++) {
+            char currentChar = sql.charAt(i);
+            if (currentChar == '\'' && (i == 0 || sql.charAt(i - 1) != '\\')) {
+                inSingleQuote = !inSingleQuote;
+            }
+            if (currentChar == ';' && !inSingleQuote) {
+                addStatement(statements, current);
+                current.setLength(0);
+                continue;
+            }
+            current.append(currentChar);
+        }
+        addStatement(statements, current);
+        return Collections.unmodifiableList(statements);
+    }
+
+    private static void addStatement(List<String> statements, StringBuilder current) {
+        String candidate = stripLineComments(current.toString()).trim();
+        if (!candidate.isEmpty()) {
+            statements.add(candidate);
+        }
+    }
+
+    private static String stripLineComments(String sql) {
+        String[] lines = sql.split("\\R");
+        StringBuilder builder = new StringBuilder(sql.length());
+        for (String line : lines) {
+            String trimmed = line.stripLeading();
+            if (trimmed.startsWith("--")) {
+                continue;
+            }
+            if (!builder.isEmpty()) {
+                builder.append('\n');
+            }
+            builder.append(line);
+        }
+        return builder.toString();
     }
 
     private static boolean hasNoActiveConnections(HikariDataSource pool) {

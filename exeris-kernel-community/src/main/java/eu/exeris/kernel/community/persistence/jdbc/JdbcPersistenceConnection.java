@@ -46,6 +46,10 @@ public final class JdbcPersistenceConnection implements PersistenceConnection {
     private final Runnable onClose;
     private boolean inTransaction;
     private final AtomicBoolean closed;
+    private boolean baselineAutoCommit;
+    private boolean baselineReadOnly;
+    private int baselineIsolation;
+    private boolean baselineCaptured;
 
     public JdbcPersistenceConnection(Connection conn) throws SQLException {
         this(conn, () -> { });
@@ -56,6 +60,7 @@ public final class JdbcPersistenceConnection implements PersistenceConnection {
         this.onClose       = Objects.requireNonNull(onClose, "onClose must not be null");
         this.inTransaction = false;
         this.closed        = new AtomicBoolean(false);
+        this.baselineCaptured = false;
     }
 
     @Override
@@ -115,7 +120,8 @@ public final class JdbcPersistenceConnection implements PersistenceConnection {
                     "25001", "Transaction already active — commit or rollback first", null);
         }
         try {
-            if (conn.getAutoCommit()) {
+            captureBaseline();
+            if (baselineAutoCommit) {
                 conn.setAutoCommit(false);
             }
             int targetIsolation = toJdbcLevel(isolation);
@@ -481,12 +487,20 @@ public final class JdbcPersistenceConnection implements PersistenceConnection {
     }
 
     private void restorePostTransactionBaseline() throws SQLException {
-        if (!conn.getAutoCommit()) {
-            conn.setAutoCommit(true);
+        if (!baselineCaptured) {
+            return;
         }
-        if (conn.isReadOnly()) {
-            conn.setReadOnly(false);
-        }
+        conn.setTransactionIsolation(baselineIsolation);
+        conn.setReadOnly(baselineReadOnly);
+        conn.setAutoCommit(baselineAutoCommit);
+        baselineCaptured = false;
+    }
+
+    private void captureBaseline() throws SQLException {
+        baselineAutoCommit = conn.getAutoCommit();
+        baselineReadOnly = conn.isReadOnly();
+        baselineIsolation = conn.getTransactionIsolation();
+        baselineCaptured = true;
     }
 
     private static PersistenceProviderException mapSql(SQLException sqlEx) {

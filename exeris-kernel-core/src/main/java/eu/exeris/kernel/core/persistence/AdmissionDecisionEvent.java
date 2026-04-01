@@ -11,7 +11,7 @@ package eu.exeris.kernel.core.persistence;
 import jdk.jfr.Category;
 import jdk.jfr.Description;
 import jdk.jfr.Event;
-import jdk.jfr.FlightRecorder;
+import jdk.jfr.EventType;
 import jdk.jfr.Label;
 import jdk.jfr.Name;
 import jdk.jfr.StackTrace;
@@ -44,6 +44,10 @@ import jdk.jfr.StackTrace;
 @Category({"Exeris Kernel", "Persistence", "Fairness"})
 @StackTrace(false)
 public final class AdmissionDecisionEvent extends Event {
+
+    /** Cached event-type probe; {@code isEnabled()} is dynamically evaluated. */
+    private static final EventType EVENT_TYPE =
+            EventType.getEventType(AdmissionDecisionEvent.class);
 
     /** Provider tier identifier (e.g., {@code "postgres-community"}). */
     @Label("Provider ID")
@@ -86,22 +90,19 @@ public final class AdmissionDecisionEvent extends Event {
      * @param payload immutable stage snapshot for admission telemetry
      */
     public static void emit(Payload payload) {
-        if (!FlightRecorder.isInitialized()) {
+        if (!EVENT_TYPE.isEnabled()) {
             return;
         }
-        AdmissionDecisionEvent event = new AdmissionDecisionEvent();
-        if (!event.isEnabled()) {
-            return;
-        }
-        event.providerId = payload.providerId();
-        event.accepted = payload.accepted();
-        event.queueDepth = payload.queueDepth();
-        event.saturation = payload.saturation();
-        event.fairnessRatio = payload.fairnessRatio();
-        event.queueDepthP95 = payload.queueDepthP95();
-        event.queueWaitP95Ms = payload.queueWaitP95Ms();
-        event.decisionReason = payload.decisionReason();
-        event.commit();
+        AdmissionDecisionEvent evt = new AdmissionDecisionEvent();
+        evt.providerId = payload.providerId();
+        evt.accepted = payload.accepted();
+        evt.queueDepth = payload.queueDepth();
+        evt.saturation = payload.saturation();
+        evt.fairnessRatio = payload.fairnessRatio();
+        evt.queueDepthP95 = payload.queueDepthP95();
+        evt.queueWaitP95Ms = payload.queueWaitP95Ms();
+        evt.decisionReason = payload.decisionReason();
+        evt.commit();
     }
 
     /**

@@ -10,7 +10,7 @@ package eu.exeris.kernel.core.persistence;
 
 import jdk.jfr.Category;
 import jdk.jfr.Event;
-import jdk.jfr.FlightRecorder;
+import jdk.jfr.EventType;
 import jdk.jfr.Label;
 import jdk.jfr.Name;
 import jdk.jfr.StackTrace;
@@ -26,6 +26,10 @@ import jdk.jfr.StackTrace;
 @Category({"Exeris Kernel", "Persistence", "Admission"})
 @StackTrace(false)
 public final class PersistenceAdmissionStageEvent extends Event {
+
+    /** Cached event-type probe; {@code isEnabled()} is dynamically evaluated. */
+    private static final EventType EVENT_TYPE =
+            EventType.getEventType(PersistenceAdmissionStageEvent.class);
 
     @Label("Provider ID")
     public String providerId;
@@ -46,20 +50,17 @@ public final class PersistenceAdmissionStageEvent extends Event {
     public String decisionReason;
 
     public static void emit(Payload payload) {
-        if (!FlightRecorder.isInitialized()) {
+        if (!EVENT_TYPE.isEnabled()) {
             return;
         }
-        PersistenceAdmissionStageEvent event = new PersistenceAdmissionStageEvent();
-        if (!event.isEnabled()) {
-            return;
-        }
-        event.providerId = payload.providerId();
-        event.stage = payload.stage();
-        event.queueDepth = payload.queueDepth();
-        event.queueWaitP95Ms = payload.queueWaitP95Ms();
-        event.accepted = payload.accepted();
-        event.decisionReason = payload.decisionReason();
-        event.commit();
+        PersistenceAdmissionStageEvent evt = new PersistenceAdmissionStageEvent();
+        evt.providerId = payload.providerId();
+        evt.stage = payload.stage();
+        evt.queueDepth = payload.queueDepth();
+        evt.queueWaitP95Ms = payload.queueWaitP95Ms();
+        evt.accepted = payload.accepted();
+        evt.decisionReason = payload.decisionReason();
+        evt.commit();
     }
 
     public record Payload(String providerId,

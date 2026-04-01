@@ -167,7 +167,13 @@ public interface PersistenceEngine extends AutoCloseable {
     /**
      * Shuts down the engine, draining all pools and releasing native resources.
      *
-     * <p>After this call, all methods throw {@link IllegalStateException}.
+     * <p>After this call, connection-opening methods and state-changing operations may
+     * reject work, typically by throwing {@link IllegalStateException} or a
+     * provider-specific exception.
+     *
+     * <p>This contract does not require all methods to throw after shutdown.
+     * Admission probes such as {@link #canServiceRequest()} may instead return
+     * {@code false} to report that the engine can no longer accept work.
      * Idempotent — multiple calls are safe.
      *
      */

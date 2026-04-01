@@ -27,9 +27,9 @@ import eu.exeris.kernel.spi.security.StorageContext;
  * <table>
  *   <tr><th>Strategy</th><th>SQL issued</th></tr>
  *   <tr><td>{@link StorageContext.IsolationStrategy#SHARED}</td>
- *       <td>{@code SET LOCAL exeris.tenant_id = '&lt;isolationKey&gt;'}</td></tr>
+ *       <td>{@code SELECT set_config('exeris.tenant_id', $1, false)} (session-level)</td></tr>
  *   <tr><td>{@link StorageContext.IsolationStrategy#SEPARATED_SCHEMA}</td>
- *       <td>{@code SET LOCAL search_path TO &lt;schemaName&gt;, public}</td></tr>
+ *       <td>{@code SET search_path TO &lt;schemaName&gt;, public} (session-level)</td></tr>
  *   <tr><td>{@link StorageContext.IsolationStrategy#DEDICATED}</td>
  *       <td>No-op — routing is handled at the pool level by the engine</td></tr>
  * </table>
@@ -63,17 +63,17 @@ public final class RlsConnectionInterceptor implements ConnectionInterceptor {
     public static final RlsConnectionInterceptor INSTANCE = new RlsConnectionInterceptor();
 
     /**
-     * SQL for SHARED strategy — injects tenant ID as a session-local variable.
+     * SQL for SHARED strategy — injects tenant ID as a session-level variable.
      * PostgreSQL RLS policies read {@code current_setting('exeris.tenant_id')}.
      *
      * <p>Uses parameterised bind to prevent SQL injection (isolationKey is untrusted data).
      */
     private static final String SQL_SET_TENANT =
-            "SELECT set_config('exeris.tenant_id', $1, true)";
+            "SELECT set_config('exeris.tenant_id', $1, false)";
 
-        private static final String SQL_SET_SCHEMA_PREFIX = "SET LOCAL search_path TO ";
-        private static final String SQL_SET_SCHEMA_SUFFIX = ", public";
-        private static final int MAX_IDENTIFIER_LENGTH = 63;
+    private static final String SQL_SET_SCHEMA_PREFIX = "SET search_path TO ";
+    private static final String SQL_SET_SCHEMA_SUFFIX = ", public";
+    private static final int MAX_IDENTIFIER_LENGTH = 63;
 
     private static final String INTERCEPTOR_NAME = "RlsConnectionInterceptor";
 
@@ -172,5 +172,3 @@ public final class RlsConnectionInterceptor implements ConnectionInterceptor {
     }
 
 }
-
-

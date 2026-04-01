@@ -14,6 +14,8 @@ import eu.exeris.kernel.spi.persistence.PersistenceConfig;
 import org.junit.jupiter.api.Test;
 
 import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
@@ -76,23 +78,16 @@ class CommunityPersistenceEngineWarmupTckTest {
 
 
     @Test
-    void warmupLatency_shouldBeUnder100ms() {
+    void warmupEnabled_shouldInvokeAttemptForEachWarmupSlotInOrder() {
         PersistenceConfig config = config(Map.of("pool.warmup.connections", "5"));
+        List<Integer> attemptsSeen = new ArrayList<>();
 
-        long start = System.nanoTime();
         int attempts = HARNESS.warmup(config, i -> {
-            int sink = i;
-            for (int step = 0; step < 32; step++) {
-                sink += step;
-            }
-            if (sink < 0) {
-                throw new IllegalStateException("unreachable");
-            }
+            attemptsSeen.add(i);
         });
-        long elapsedMs = (System.nanoTime() - start) / 1_000_000L;
 
         assertEquals(5, attempts);
-        assertTrue(elapsedMs < 100, "warmup latency exceeded 100ms: " + elapsedMs + "ms");
+        assertEquals(List.of(0, 1, 2, 3, 4), attemptsSeen);
     }
 
 

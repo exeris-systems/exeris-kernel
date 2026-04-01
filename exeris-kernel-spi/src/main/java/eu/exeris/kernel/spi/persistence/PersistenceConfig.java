@@ -182,12 +182,18 @@ public record PersistenceConfig(
     }
 
     /**
-     * Default configuration for development / unit tests.
+     * Fixed convenience preset for development and unit tests.
+     *
+     * <p>This helper always returns the same pool and timeout values
+     * ({@code maxPoolSize=256}, {@code minIdleConnections=16}, standard timeouts)
+     * so tests and local harnesses get a predictable baseline. It is not the
+     * Community runtime bootstrap default. Community bootstrap resolves runtime
+     * sizing adaptively when persistence pool settings are left unset.
      *
      * @param url      connection URL
      * @param username database user
      * @param password database password
-     * @return dev-ready configuration
+     * @return fixed dev/test preset
      */
     public static PersistenceConfig defaults(String url, String username, String password) {
         return new PersistenceConfig(

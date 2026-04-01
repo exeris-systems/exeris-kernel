@@ -31,6 +31,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -187,6 +188,7 @@ class JdbcPersistenceConnectionTest {
         @DisplayName("commit() calls conn.commit() and clears inTransaction flag")
         void commitDelegatesToJdbc() throws SQLException {
             when(mockConn.getAutoCommit()).thenReturn(true, false);
+            when(mockConn.getTransactionIsolation()).thenReturn(Connection.TRANSACTION_READ_COMMITTED);
             when(mockConn.isReadOnly()).thenReturn(false);
             connection.beginTransaction();
             connection.commit();
@@ -199,12 +201,51 @@ class JdbcPersistenceConnectionTest {
         @DisplayName("rollback() calls conn.rollback() and clears inTransaction flag")
         void rollbackDelegatesToJdbc() throws SQLException {
             when(mockConn.getAutoCommit()).thenReturn(true, false);
+            when(mockConn.getTransactionIsolation()).thenReturn(Connection.TRANSACTION_READ_COMMITTED);
             when(mockConn.isReadOnly()).thenReturn(false);
             connection.beginTransaction();
             connection.rollback();
             verify(mockConn).rollback();
             verify(mockConn).setAutoCommit(true);
             assertThat(connection.inTransaction()).isFalse();
+        }
+
+        @Test
+        @DisplayName("commit() restores baseline JDBC settings including isolation")
+        void commitRestoresBaselineSettings() throws SQLException {
+            when(mockConn.getAutoCommit()).thenReturn(true);
+            when(mockConn.getTransactionIsolation()).thenReturn(Connection.TRANSACTION_SERIALIZABLE);
+            when(mockConn.isReadOnly()).thenReturn(false);
+
+            connection.beginTransaction(TransactionIsolation.READ_COMMITTED, false);
+            connection.commit();
+
+            var order = inOrder(mockConn);
+            order.verify(mockConn).setAutoCommit(false);
+            order.verify(mockConn).setTransactionIsolation(Connection.TRANSACTION_READ_COMMITTED);
+            order.verify(mockConn).commit();
+            order.verify(mockConn).setTransactionIsolation(Connection.TRANSACTION_SERIALIZABLE);
+            order.verify(mockConn).setReadOnly(false);
+            order.verify(mockConn).setAutoCommit(true);
+        }
+
+        @Test
+        @DisplayName("rollback() restores baseline JDBC settings including isolation")
+        void rollbackRestoresBaselineSettings() throws SQLException {
+            when(mockConn.getAutoCommit()).thenReturn(true);
+            when(mockConn.getTransactionIsolation()).thenReturn(Connection.TRANSACTION_SERIALIZABLE);
+            when(mockConn.isReadOnly()).thenReturn(false);
+
+            connection.beginTransaction(TransactionIsolation.READ_COMMITTED, false);
+            connection.rollback();
+
+            var order = inOrder(mockConn);
+            order.verify(mockConn).setAutoCommit(false);
+            order.verify(mockConn).setTransactionIsolation(Connection.TRANSACTION_READ_COMMITTED);
+            order.verify(mockConn).rollback();
+            order.verify(mockConn).setTransactionIsolation(Connection.TRANSACTION_SERIALIZABLE);
+            order.verify(mockConn).setReadOnly(false);
+            order.verify(mockConn).setAutoCommit(true);
         }
 
         @Test
