@@ -137,7 +137,7 @@ public record PersistenceConfig(
         if (val == null) {
             return DEFAULT_POOL_WARMUP_CONNECTIONS;
         }
-        return Integer.parseInt(val);
+        return parseWarmupConnections(val);
     }
 
     private static void validateWarmupProperties(Map<String, String> properties) {
