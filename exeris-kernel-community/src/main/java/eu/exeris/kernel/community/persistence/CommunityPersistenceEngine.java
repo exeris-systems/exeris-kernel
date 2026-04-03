@@ -467,7 +467,7 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
             }
             if (tenantPools.size() >= config.maxTenantPools()) {
                 throw PersistenceProviderException.connectionExhausted(
-                        PROVIDER_ID, config.connectionTimeoutMs(), tenantPools.size());
+                        PROVIDER_ID, config.connectionTimeoutMs(), computeActiveConnections());
             }
         }
         return buildAndInstallTenantPool(tenantKey);
@@ -489,7 +489,7 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
                 }
                 if (tenantPools.size() >= config.maxTenantPools()) {
                     throw PersistenceProviderException.connectionExhausted(
-                            PROVIDER_ID, config.connectionTimeoutMs(), tenantPools.size());
+                            PROVIDER_ID, config.connectionTimeoutMs(), computeActiveConnections());
                 }
                 tenantPools.put(tenantKey, new TenantPoolState(candidate, now));
                 installed = true;
@@ -625,8 +625,8 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
             } finally {
                 connection.setAutoCommit(true);
             }
-        } catch (SQLException sqlEx) {
-            throw PersistenceProviderException.bootstrapFailure(PROVIDER_ID, config.connectionUrl(), sqlEx);
+        } catch (SQLException | RuntimeException ex) {
+            throw PersistenceProviderException.bootstrapFailure(PROVIDER_ID, config.connectionUrl(), ex);
         }
     }
 
@@ -698,6 +698,14 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
             builder.append(line);
         }
         return builder.toString();
+    }
+
+    private int computeActiveConnections() {
+        int total = CommunityHikariSupport.activeConnections(sharedPool);
+        for (TenantPoolState state : tenantPools.values()) {
+            total += CommunityHikariSupport.activeConnections(state.pool());
+        }
+        return total;
     }
 
     private static boolean hasNoActiveConnections(HikariDataSource pool) {

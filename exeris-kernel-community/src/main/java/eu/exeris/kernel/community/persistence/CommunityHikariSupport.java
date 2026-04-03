@@ -25,7 +25,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 
-@SuppressWarnings("PMD.TooManyMethods")
+@SuppressWarnings({"PMD.TooManyMethods", "PMD.CyclomaticComplexity"})
 final class CommunityHikariSupport {
 
     private final HikariDataSource pool;
@@ -40,6 +40,10 @@ final class CommunityHikariSupport {
 
     /* default */ static boolean hasNoActiveConnections(HikariDataSource pool) {
         return with(pool).hasNoActiveConnections();
+    }
+
+    /* default */ static int activeConnections(HikariDataSource pool) {
+        return with(pool).activeConnections();
     }
 
     /* default */ static HikariDataSource buildPool(PersistenceConfig config, String tenantKey) {

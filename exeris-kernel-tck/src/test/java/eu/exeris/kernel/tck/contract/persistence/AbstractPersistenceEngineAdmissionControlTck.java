@@ -8,6 +8,7 @@
  */
 package eu.exeris.kernel.tck.contract.persistence;
 
+import eu.exeris.kernel.spi.exceptions.persistence.PersistenceProviderException;
 import eu.exeris.kernel.spi.persistence.EngineStats;
 import eu.exeris.kernel.spi.persistence.PersistenceConnection;
 import eu.exeris.kernel.spi.persistence.PersistenceEngine;
@@ -32,7 +33,8 @@ import static org.assertj.core.api.Assertions.assertThatCode;
  *   <li>{@code canServiceRequest()} returns {@code true} when pool has available capacity</li>
  *   <li>{@code canServiceRequest()} returns {@code false} when pool is forming a queue</li>
  *   <li>{@code canServiceRequest()} returns {@code false} when pool is near saturation (&gt;90%)</li>
- *   <li>{@code canServiceRequest()} returns {@code false} after engine shutdown</li>
+ *   <li>{@code canServiceRequest()} returns {@code false} or throws {@code PersistenceProviderException}
+ *   after engine shutdown</li>
  *   <li>Admission gate is fast (&lt;1ms) on hot path (zero-alloc guarantee)</li>
  *   <li>Multiple calls to {@code canServiceRequest()} are consistent</li>
  * </ul>
@@ -81,24 +83,24 @@ public abstract class AbstractPersistenceEngineAdmissionControlTck {
     class CoreAdmissionControl {
 
         /**
-         * TEST 1: Returns true when pool has idle connections
-         * Precondition: Pool is fresh, has idle connections
-         * Rationale: Pool can accept new request without saturation risk
+         * TEST 1: Returns true when pool is neither saturated nor queued
+         * Precondition: Fresh pool has no pending queue and is below saturation threshold
+         * Rationale: Admission should stay open even if the provider lazily initializes idles
          */
         @Test
-        @DisplayName("canServiceRequest() returns true when pool has idle connections")
-        void testCanServiceRequestReturnsTrue_WhenPoolHasIdleConnections() {
-            // Precondition: Fresh pool should have idle connections available
+        @DisplayName("canServiceRequest() returns true when pool has no saturation or queue")
+        void testCanServiceRequestReturnsTrue_WhenPoolHasNoSaturationOrQueue() {
             EngineStats initialStats = engine.stats();
-            assertThat(initialStats.idleConnections()).isGreaterThan(0);
+            assertThat(initialStats.pendingAcquires()).isZero();
             assertThat(initialStats.activeConnections()).isZero();
+            assertThat(initialStats.saturation()).isLessThan(0.9);
 
             // Action
             boolean canService = engine.canServiceRequest();
 
             // Assertion
             assertThat(canService)
-                    .as("Pool with idle connections should accept new requests")
+                    .as("Pool with no queue and no saturation should accept new requests")
                     .isTrue();
         }
 
@@ -219,21 +221,29 @@ public abstract class AbstractPersistenceEngineAdmissionControlTck {
         }
 
         /**
-         * TEST 4: Returns false after engine shutdown
+         * TEST 4: Returns false or throws PersistenceProviderException after engine shutdown
          * Precondition: Engine.close() has been called
          * Rationale: Cannot service requests after shutdown
          */
         @Test
-        @DisplayName("canServiceRequest() returns false when engine is closed")
+        @DisplayName("canServiceRequest() returns false or throws when engine is closed")
         void testCanServiceRequestReturnsFalse_WhenEngineClosed() {
             // Precondition
             engine.close();
 
             // Action & Assertion
-            // Should either return false or throw PersistenceProviderException
-            assertThat(engine.canServiceRequest())
+            assertCanServiceRequestReturnsFalseOrThrowsAfterShutdown(engine);
+        }
+    }
+
+    private static void assertCanServiceRequestReturnsFalseOrThrowsAfterShutdown(PersistenceEngine engine) {
+        try {
+            boolean canService = engine.canServiceRequest();
+            assertThat(canService)
                     .as("Engine should not accept requests after close()")
                     .isFalse();
+        } catch (PersistenceProviderException _) {
+            // Allowed by SPI contract after shutdown.
         }
     }
 
@@ -387,7 +397,8 @@ public abstract class AbstractPersistenceEngineAdmissionControlTck {
         void testCanServiceRequest_InitialState() {
             EngineStats stats = engine.stats();
             assertThat(stats.activeConnections()).isZero();
-            assertThat(stats.idleConnections()).isGreaterThan(0);
+            assertThat(stats.pendingAcquires()).isZero();
+            assertThat(stats.saturation()).isLessThan(0.9);
 
             boolean canService = engine.canServiceRequest();
             assertThat(canService)
@@ -413,12 +424,9 @@ public abstract class AbstractPersistenceEngineAdmissionControlTck {
         void testCanServiceRequest_AfterCloseHandlesGracefully() {
             engine.close();
 
-            // Should either return false or throw (but not NPE or other unexpected exceptions)
-            assertThatCode(() -> {
-                boolean result = engine.canServiceRequest();
-                // If we get here, result must be false
-                assertThat(result).isFalse();
-            }).doesNotThrowAnyException();
+            // Should either return false or throw PersistenceProviderException,
+            // but not throw unexpected exceptions.
+            assertCanServiceRequestReturnsFalseOrThrowsAfterShutdown(engine);
         }
     }
 

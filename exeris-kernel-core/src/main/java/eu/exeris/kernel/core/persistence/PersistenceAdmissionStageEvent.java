@@ -21,10 +21,6 @@ import jdk.jfr.StackTrace;
  * <p>Emits one of stages: {@code queue_enter}, {@code queue_wait}, {@code persistence_admission}.
  * Guarded by a cached {@link EventType#isEnabled()} probe.
  */
-@Name("eu.exeris.kernel.persistence.AdmissionStage")
-@Label("Persistence Admission Stage")
-@Category({"Exeris Kernel", "Persistence", "Admission"})
-@StackTrace(false)
 public final class PersistenceAdmissionStageEvent {
 
     /** Cached event-type probe; {@code isEnabled()} is dynamically evaluated. */

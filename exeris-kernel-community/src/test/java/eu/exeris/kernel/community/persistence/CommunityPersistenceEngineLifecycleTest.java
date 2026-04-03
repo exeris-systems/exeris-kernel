@@ -125,6 +125,30 @@ class CommunityPersistenceEngineLifecycleTest {
     }
 
     @Test
+    @DisplayName("EX_PERS_5002 rawArgs[2] reflects active-connection count, not tenant-pool count")
+    void maxTenantPoolsExhaustedDiagnosticsUseActiveConnectionCount() {
+        PersistenceConfig config = testConfig(true, 4, 0, 300L, 80L, 1);
+        try (CommunityPersistenceEngine engine = new CommunityPersistenceEngine(config)) {
+            // Open and immediately close a connection for tenant-a: pool created, active=0 after close.
+            try (PersistenceConnection ignored =
+                         engine.openConnection(ImmutableStorageContext.separatedSchema("tenant-a", "tenant_a"))) {
+                // connection held during this block; close at end of try
+            }
+            // Pool for tenant-a exists but no active connections. Attempting tenant-b must hit the cap.
+            assertThatThrownBy(() -> engine.openConnection(
+                            ImmutableStorageContext.separatedSchema("tenant-b", "tenant_b")))
+                    .isInstanceOf(PersistenceProviderException.class)
+                    .satisfies(ex -> {
+                        PersistenceProviderException ppe = (PersistenceProviderException) ex;
+                        assertThat(ppe.errorCode()).isEqualTo(KernelErrorCodes.EX_PERS_5002);
+                        assertThat(ppe.rawArgs()[0]).isEqualTo("postgres-community");
+                        assertThat(((Long) ppe.rawArgs()[1])).isEqualTo(300L);
+                        assertThat(((Integer) ppe.rawArgs()[2])).isEqualTo(0);
+                    });
+        }
+    }
+
+    @Test
     @DisplayName("permit is released when interceptor initialization fails")
     void permitReleasedOnInterceptorFailure() {
         PersistenceConfig config = testConfig(true, 1, 0, 300L, 80L, 16);

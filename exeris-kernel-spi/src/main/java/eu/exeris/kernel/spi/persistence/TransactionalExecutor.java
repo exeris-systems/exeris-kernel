@@ -98,6 +98,11 @@ public interface TransactionalExecutor {
     /**
      * Executes a managed write with explicit isolation level and read-only flag.
      *
+     * <p>Implementations may optimize the {@code readOnly=true} +
+     * {@link TransactionIsolation#READ_COMMITTED} combination by running the work
+     * without an explicit {@code BEGIN}/{@code COMMIT} cycle (auto-commit semantics),
+     * while still enforcing the no-open-transaction invariant before the call returns.
+     *
      * @param isolation transaction isolation level; must not be {@code null}
      * @param readOnly  {@code true} for read-only transactions
      * @param work      data operations to execute; must not be {@code null}
