@@ -63,6 +63,71 @@ class CommunityHikariSupportTest {
     }
 
     @Test
+    @DisplayName("resolveMinIdle matches actual pool minimumIdle for shared pool")
+    void resolveMinIdleMatchesSharedPool() {
+        PersistenceConfig config = config(false, Map.of());
+
+        try (HikariDataSource pool = CommunityHikariSupport.buildPool(config, null)) {
+            assertThat(CommunityHikariSupport.resolveMinIdle(config, null))
+                    .isEqualTo(pool.getMinimumIdle());
+        }
+    }
+
+    @Test
+    @DisplayName("resolveMinIdle matches actual pool minimumIdle for tenant pool (default=0)")
+    void resolveMinIdleMatchesTenantPoolDefault() {
+        PersistenceConfig config = config(false, Map.of());
+
+        try (HikariDataSource pool = CommunityHikariSupport.buildPool(config, "tenant-b")) {
+            assertThat(CommunityHikariSupport.resolveMinIdle(config, "tenant-b"))
+                    .isEqualTo(pool.getMinimumIdle())
+                    .isZero();
+        }
+    }
+
+    @Test
+    @DisplayName("custom persistence.minPoolSizePerTenant is applied to tenant pool and resolveMinIdle")
+    void customMinPoolSizePerTenantIsApplied() {
+        PersistenceConfig config = config(false, Map.of("persistence.minPoolSizePerTenant", "3"));
+
+        assertThat(CommunityHikariSupport.resolveMinIdle(config, "tenant-c")).isEqualTo(3);
+        try (HikariDataSource pool = CommunityHikariSupport.buildPool(config, "tenant-c")) {
+            assertThat(pool.getMinimumIdle()).isEqualTo(3);
+        }
+    }
+
+    @Test
+    @DisplayName("invalid persistence.minPoolSizePerTenant falls back to 0")
+    void invalidMinPoolSizePerTenantFallsBackToZero() {
+        PersistenceConfig config = config(false, Map.of("persistence.minPoolSizePerTenant", "not-a-number"));
+
+        assertThat(CommunityHikariSupport.resolveMinIdle(config, "tenant-d")).isZero();
+        try (HikariDataSource pool = CommunityHikariSupport.buildPool(config, "tenant-d")) {
+            assertThat(pool.getMinimumIdle()).isZero();
+        }
+    }
+
+    @Test
+    @DisplayName("negative persistence.minPoolSizePerTenant is clamped to 0")
+    void negativeMinPoolSizePerTenantIsClampedToZero() {
+        PersistenceConfig config = config(false, Map.of("persistence.minPoolSizePerTenant", "-5"));
+
+        assertThat(CommunityHikariSupport.resolveMinIdle(config, "tenant-e")).isZero();
+        try (HikariDataSource pool = CommunityHikariSupport.buildPool(config, "tenant-e")) {
+            assertThat(pool.getMinimumIdle()).isZero();
+        }
+    }
+
+    @Test
+    @DisplayName("resolveMinIdle for shared ignores persistence.minPoolSizePerTenant property")
+    void resolveMinIdleSharedIgnoresTenantProperty() {
+        PersistenceConfig config = config(false, Map.of("persistence.minPoolSizePerTenant", "99"));
+
+        assertThat(CommunityHikariSupport.resolveMinIdle(config, null))
+                .isEqualTo(config.minIdleConnections());
+    }
+
+    @Test
     @DisplayName("pool baseline uses autoCommit=true for read scopes")
     void poolBaselineUsesAutoCommitTrue() {
         PersistenceConfig config = config(false, Map.of());

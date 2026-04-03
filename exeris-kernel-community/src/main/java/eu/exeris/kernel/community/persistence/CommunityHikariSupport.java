@@ -46,30 +46,33 @@ final class CommunityHikariSupport {
         return with(pool).activeConnections();
     }
 
+    /**
+     * Resolves the minimumIdle setting for a Hikari pool.
+     *
+     * <p>Shared pool ({@code tenantKey == null}) uses {@link PersistenceConfig#minIdleConnections()}.
+     * Per-tenant pools read {@code persistence.minPoolSizePerTenant} from config properties
+     * (default {@code 0}); invalid or negative values are clamped to 0.
+     */
+    /* default */ static int resolveMinIdle(PersistenceConfig config, String tenantKey) {
+        if (tenantKey == null) {
+            return config.minIdleConnections();
+        }
+        String minPerTenantStr = config.properties()
+                .getOrDefault("persistence.minPoolSizePerTenant", "0");
+        try {
+            return Math.max(0, Integer.parseInt(minPerTenantStr));
+        } catch (NumberFormatException _) {
+            return 0;
+        }
+    }
+
     /* default */ static HikariDataSource buildPool(PersistenceConfig config, String tenantKey) {
         HikariConfig hikariConfig = new HikariConfig();
         hikariConfig.setJdbcUrl(config.connectionUrl());
         hikariConfig.setUsername(config.username());
         hikariConfig.setPassword(config.password());
         hikariConfig.setMaximumPoolSize(config.maxPoolSize());
-        
-        // Phase 1A: Per-tenant pool sizing control
-        // For shared pool: use configured minIdleConnections
-        // For per-tenant pool: default minIdle=0 (aggressive reclamation, lazily created)
-        int minIdle;
-        if (tenantKey == null) {
-            minIdle = config.minIdleConnections();
-        } else {
-            // Per-tenant pools: minimize idle connections (default 0)
-            String minPerTenantStr = config.properties()
-                    .getOrDefault("persistence.minPoolSizePerTenant", "0");
-            try {
-                minIdle = Math.max(0, Integer.parseInt(minPerTenantStr));
-            } catch (NumberFormatException _) {
-                minIdle = 0;
-            }
-        }
-        hikariConfig.setMinimumIdle(minIdle);
+        hikariConfig.setMinimumIdle(resolveMinIdle(config, tenantKey));
         
         hikariConfig.setConnectionTimeout(config.connectionTimeoutMs());
         hikariConfig.setIdleTimeout(config.idleTimeoutMs());

@@ -63,6 +63,10 @@ final class FairnessTracker {
     private final AtomicLong decisionSequence;
     private volatile long lastCleanupBucketKey;
     private volatile CachedSnapshot cachedSnapshot;
+    /** Preallocated histogram arrays reused exclusively under {@link #snapshotLock} during snapshot refresh. */
+    private final long[] depthBinsReuse = new long[DEPTH_BIN_COUNT];
+    private final long[] waitBinsReuse  = new long[WAIT_BIN_COUNT];
+    private final Object snapshotLock   = new Object();
 
     /* default */ FairnessTracker() {
         this(System::nanoTime);
@@ -229,40 +233,46 @@ final class FairnessTracker {
             return local.snapshot();
         }
 
-        FairnessSnapshot recomputed = computeSnapshotAt(now);
-        cachedSnapshot = new CachedSnapshot(now, currentDecisionSequence, recomputed);
-        return recomputed;
+        synchronized (snapshotLock) {
+            // Recheck under lock — another thread may have refreshed while we waited.
+            local = cachedSnapshot;
+            if (!local.shouldRefresh(now, currentDecisionSequence)) {
+                return local.snapshot();
+            }
+            FairnessSnapshot recomputed = computeSnapshotAt(now);
+            cachedSnapshot = new CachedSnapshot(now, currentDecisionSequence, recomputed);
+            return recomputed;
+        }
     }
 
     private FairnessSnapshot computeSnapshotAt(long now) {
         long windowStart = now - RECENT_WINDOW_NANOS;
-        long[] depthBins = new long[DEPTH_BIN_COUNT];
-        long[] waitBins = new long[WAIT_BIN_COUNT];
-        WindowAggregate aggregate = aggregateWindowMetrics(windowStart, depthBins, waitBins);
+        java.util.Arrays.fill(depthBinsReuse, 0L);
+        java.util.Arrays.fill(waitBinsReuse, 0L);
+        WindowAggregate aggregate = aggregateWindowMetrics(windowStart, depthBinsReuse, waitBinsReuse);
 
         double fairnessRatio = fairnessRatio(aggregate.totalAccepted(), aggregate.totalRejected());
         long queueDepthP95 = percentileFromHistogram(
                 aggregate.depthSampleCount(),
                 QUEUE_DEPTH_P95_PERCENTILE,
-                depthBins,
+                depthBinsReuse,
                 DEPTH_BIN_UPPER_BOUNDS,
                 LAST_DEPTH_BIN);
         long queueWaitP95Ms = percentileFromHistogram(
                 aggregate.waitSampleCount(),
                 QUEUE_WAIT_P95_PERCENTILE,
-                waitBins,
+                waitBinsReuse,
                 WAIT_BIN_UPPER_BOUNDS_MS,
                 LAST_WAIT_BIN);
 
         return new FairnessSnapshot(fairnessRatio, queueDepthP95, queueWaitP95Ms);
     }
 
-    private WindowAggregate aggregateWindowMetrics(long windowStart, long[] depthBinsOrNull, long[]... waitBinsOrNull) {
+    private WindowAggregate aggregateWindowMetrics(long windowStart, long[] depthBinsOrNull, long... waitBinsOrNull) {
         long totalAccepted = 0L;
         long totalRejected = 0L;
         long depthSampleCount = 0L;
         long waitSampleCount = 0L;
-        long[] waitBins = waitBinsOrNull.length == 0 ? null : waitBinsOrNull[FIRST_BIN_INDEX];
 
         for (Map.Entry<Long, BucketMetrics> entry : metricsBySecond.entrySet()) {
             if (entry.getKey() < windowStart) {
@@ -277,9 +287,9 @@ final class FairnessTracker {
                 accumulateHistogram(depthBinsOrNull, bucket.queueDepthHistogram);
             }
 
-            if (waitBins != null) {
+            if (waitBinsOrNull != null) {
                 waitSampleCount += bucket.queueWaitSamples;
-                accumulateHistogram(waitBins, bucket.queueWaitMsHistogram);
+                accumulateHistogram(waitBinsOrNull, bucket.queueWaitMsHistogram);
             }
         }
 

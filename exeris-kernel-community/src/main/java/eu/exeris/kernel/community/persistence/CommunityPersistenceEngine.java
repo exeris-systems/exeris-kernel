@@ -496,18 +496,11 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
                 nextTenantReclaimAtNanos.set(now + tenantReclaimCadenceNanos);
                 
                 // Phase 1A: Emit JFR event for tenant pool creation
-                int minIdle;
-                String minPerTenantStr = config.properties().getOrDefault("persistence.minPoolSizePerTenant", "2");
-                try {
-                    minIdle = Math.max(1, Integer.parseInt(minPerTenantStr));
-                } catch (NumberFormatException _) {
-                    minIdle = 2;
-                }
                 PersistenceTenantPoolCreatedEvent.emit(
                         PROVIDER_ID,
                         tenantKey,
                         config.maxPoolSize(),
-                        minIdle,
+                        CommunityHikariSupport.resolveMinIdle(config, tenantKey),
                         tenantPools.size()
                 );
                 

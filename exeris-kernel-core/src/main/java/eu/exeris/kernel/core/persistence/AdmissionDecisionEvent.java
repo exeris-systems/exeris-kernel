@@ -32,8 +32,8 @@ import jdk.jfr.StackTrace;
  * {@link StackTrace @StackTrace(false)} eliminates stack-walk overhead.
  *
  * <h2>Fairness Composite Metric</h2>
- * <p>The {@code fairnessRatio} field tracks per-1s-bucket fairness as:
- * <pre>fairnessRatio = min(throughput per VT tier) / mean(throughput)</pre>
+ * <p>The {@code fairnessRatio} field records the acceptance ratio over the recent window:
+ * <pre>fairnessRatio = accepted / (accepted + rejected)</pre>
  * Target: ≥0.90 for equitable service delivery.
  *
  * @since 0.6.0
@@ -117,7 +117,7 @@ public final class AdmissionDecisionEvent {
         @Label("Saturation")
         private double saturation;
 
-        /** Fairness ratio: min(tier throughput) / mean(throughput). Target ≥0.90. */
+        /** Acceptance ratio over the recent window: accepted/(accepted+rejected). Target ≥0.90. */
         @Label("Fairness Composite")
         private double fairnessRatio;
 
