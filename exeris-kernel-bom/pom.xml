@@ -40,7 +40,7 @@
         <testcontainers.version>1.21.4</testcontainers.version>
         <jmh.version>1.37</jmh.version>
         <archunit.version>1.4.1</archunit.version>
-        <nimbus.jose.jwt.version>9.47</nimbus.jose.jwt.version>
+        <nimbus.jose.jwt.version>10.8</nimbus.jose.jwt.version>
     </properties>
 
     <dependencyManagement>
@@ -58,6 +58,11 @@
             <dependency>
                 <groupId>eu.exeris</groupId>
                 <artifactId>exeris-kernel-community</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>eu.exeris</groupId>
+                <artifactId>exeris-kernel-community-testkit</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
