@@ -79,7 +79,7 @@ final class CommunityHikariSupport {
         hikariConfig.setMaxLifetime(config.maxLifetimeMs());
         hikariConfig.setKeepaliveTime(30_000L);
         hikariConfig.setValidationTimeout(5_000L);
-        hikariConfig.setAutoCommit(true);
+        hikariConfig.setAutoCommit(false);
         hikariConfig.setPoolName(tenantKey == null
                 ? "exeris-community-shared"
                 : "exeris-community-tenant-" + tenantKey);

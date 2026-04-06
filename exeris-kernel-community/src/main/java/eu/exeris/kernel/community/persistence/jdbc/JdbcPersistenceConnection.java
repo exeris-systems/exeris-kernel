@@ -28,7 +28,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * Community: {@link PersistenceConnection} backed by a JDBC {@link Connection}.
  *
  * <h2>Transaction Control</h2>
- * <p>Connections start in pool baseline mode ({@code autoCommit=true}).
+ * <p>Connections start in pool baseline mode ({@code autoCommit=false}).
  * Transactional scopes switch to explicit mode in {@link #beginTransaction()}
  * and restore baseline after {@link #commit()} / {@link #rollback()}.
  * Closing an open transaction via {@link #close()} triggers a rollback.

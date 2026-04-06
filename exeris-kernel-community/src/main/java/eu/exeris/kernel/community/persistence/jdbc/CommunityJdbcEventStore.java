@@ -61,7 +61,7 @@ public final class CommunityJdbcEventStore implements EventStore {
         Objects.requireNonNull(event, "event must not be null");
 
         try (PersistenceStatement statement = connection.prepare(SQL_APPEND)) {
-            statement.bindString(0, event.eventId().toString())
+            statement.bindUuid(0, event.eventId())
                     .bindString(1, event.aggregateId())
                     .bindString(2, event.aggregateType())
                     .bindString(3, event.eventType())
@@ -85,7 +85,7 @@ public final class CommunityJdbcEventStore implements EventStore {
                 while (result.next()) {
                     RowCursor row = result.row();
                     events.add(new OutboxEvent(
-                            UUID.fromString(row.getString(0)),
+                            row.getUuid(0),
                             row.getString(1),
                             row.getString(2),
                             row.getString(3),
@@ -105,7 +105,7 @@ public final class CommunityJdbcEventStore implements EventStore {
 
         try (PersistenceStatement statement = connection.prepare(SQL_MARK_PUBLISHED)) {
             statement.bindLong(0, System.currentTimeMillis())
-                    .bindString(1, eventId.toString())
+                    .bindUuid(1, eventId)
                     .executeUpdate();
         }
     }
