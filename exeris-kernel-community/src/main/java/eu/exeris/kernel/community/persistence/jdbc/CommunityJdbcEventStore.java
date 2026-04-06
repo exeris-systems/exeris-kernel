@@ -73,6 +73,7 @@ public final class CommunityJdbcEventStore implements EventStore {
 
     @Override
     public List<OutboxEvent> pollPending(int maxBatchSize) {
+        ensureTransactionActive();
         if (maxBatchSize <= 0) {
             throw new IllegalArgumentException("maxBatchSize must be > 0, got: " + maxBatchSize);
         }
@@ -99,6 +100,7 @@ public final class CommunityJdbcEventStore implements EventStore {
 
     @Override
     public void markPublished(UUID eventId) {
+        ensureTransactionActive();
         Objects.requireNonNull(eventId, "eventId must not be null");
 
         try (PersistenceStatement statement = connection.prepare(SQL_MARK_PUBLISHED)) {
@@ -110,7 +112,7 @@ public final class CommunityJdbcEventStore implements EventStore {
 
     private void ensureTransactionActive() {
         if (!connection.inTransaction()) {
-            throw new IllegalStateException("EventStore.append() requires an active transaction");
+            throw new IllegalStateException("EventStore operation requires an active transaction");
         }
     }
 }

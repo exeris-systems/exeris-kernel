@@ -143,12 +143,12 @@ public interface TransactionalExecutor {
      *
      * <p>Default fallback implementation delegates to a single {@link #query(Function)}
      * call and exposes a session wrapper that executes all nested queries on the
-      * same opened connection.
-      *
-      * <p><strong>Contract note:</strong> this default fallback does not itself establish
-      * transactional boundaries or issue isolation-setting commands. Implementations that
-      * require strict enforcement of the requested {@code isolation} must override this
-      * method with provider-specific transactional semantics.
+     * same opened connection.
+     *
+     * <p><strong>Contract note:</strong> this default fallback does not itself establish
+     * transactional boundaries or issue isolation-setting commands. Implementations that
+     * require strict enforcement of the requested {@code isolation} must override this
+     * method with provider-specific transactional semantics.
      *
      * @param isolation transaction isolation level; must not be {@code null}
      * @param work      read-session callback; must not be {@code null}

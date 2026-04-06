@@ -17,6 +17,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Types;
+import java.util.UUID;
 
 /**
  * Community: {@link PersistenceStatement} backed by a JDBC {@link PreparedStatement}.
@@ -115,6 +116,21 @@ final class JdbcPersistenceStatement implements PersistenceStatement {
                 prepStmt.setNull(index + 1, Types.VARCHAR);
             } else {
                 prepStmt.setString(index + 1, value);
+            }
+            return this;
+        } catch (SQLException sqlEx) {
+            throw mapSql(sqlEx);
+        }
+    }
+
+    @Override
+    public PersistenceStatement bindUuid(int index, UUID value) {
+        ensureOpen();
+        try {
+            if (value == null) {
+                prepStmt.setNull(index + 1, Types.OTHER);
+            } else {
+                prepStmt.setObject(index + 1, value);
             }
             return this;
         } catch (SQLException sqlEx) {

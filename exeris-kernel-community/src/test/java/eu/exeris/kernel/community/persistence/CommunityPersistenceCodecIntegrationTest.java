@@ -58,7 +58,7 @@ class CommunityPersistenceCodecIntegrationTest {
             int written = encoder.encode(entity, encoded);
             byte[] encodedBytes = encoded.segment().asSlice(0, written).toArray(ValueLayout.JAVA_BYTE);
 
-            try (PersistenceStatement insert = connection.prepare("INSERT INTO codec_payloads(id, payload) VALUES (?, ?)")) {
+            try (PersistenceStatement insert = connection.prepare("INSERT INTO codec_payloads(id, payload) VALUES ($1, $2)")) {
                 long rows = insert
                         .bindLong(0, 1L)
                         .bindBytes(1, encodedBytes)
@@ -66,7 +66,7 @@ class CommunityPersistenceCodecIntegrationTest {
                 assertThat(rows).isEqualTo(1L);
             }
 
-            try (PersistenceStatement query = connection.prepare("SELECT payload FROM codec_payloads WHERE id = ?");
+            try (PersistenceStatement query = connection.prepare("SELECT payload FROM codec_payloads WHERE id = $1");
                  QueryResult result = query.bindLong(0, 1L).executeQuery()) {
 
                 assertThat(result.next()).isTrue();

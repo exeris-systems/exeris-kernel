@@ -94,6 +94,9 @@ public final class PersistenceBootstrap {
                 .orElseThrow(() -> PersistenceProviderException.noProviderAvailable(
                         ERROR_NO_PROVIDER));
 
+        // --- Phase 1.5: Validate RLS configuration before engine creation ---
+        validateRlsInterceptorConfiguration(config, interceptors, provider.providerName());
+
         // --- Phase 2: Create the PersistenceEngine (bootstrap allocation permitted) ---
         PersistenceEngine engine = provider.createEngine(config);
 
@@ -139,5 +142,26 @@ public final class PersistenceBootstrap {
      */
     public static PersistenceEngine load(PersistenceConfig config) {
         return load(config, List.of());
+    }
+
+    /**
+     * Validates that at least one {@link ConnectionInterceptor} is registered when
+     * Row-Level Security is enabled. Fails fast at bootstrap time before engine
+     * creation is attempted.
+     *
+     * @param config       persistence configuration
+     * @param interceptors registered interceptors (may be empty)
+     * @param providerName selected provider display name, captured in the exception rawArgs
+     * @throws PersistenceProviderException with code {@code EX-PERS-5001} if RLS is
+     *         enabled and no interceptors are registered
+     */
+    /* default */ static void validateRlsInterceptorConfiguration(PersistenceConfig config,
+                                                     List<ConnectionInterceptor> interceptors,
+                                                     String providerName) {
+        if (config.rlsEnabled() && interceptors.isEmpty()) {
+            throw PersistenceProviderException.bootstrapFailure(
+                    providerName, config.connectionUrl(),
+                    new IllegalStateException("RLS enabled but no ConnectionInterceptor registered"));
+        }
     }
 }

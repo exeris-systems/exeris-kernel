@@ -12,12 +12,14 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 import eu.exeris.kernel.spi.exceptions.persistence.PersistenceProviderException;
 import eu.exeris.kernel.spi.persistence.PersistenceConfig;
 import eu.exeris.kernel.spi.persistence.PersistenceConnection;
+import eu.exeris.kernel.spi.persistence.QueryResult;
 import eu.exeris.kernel.spi.security.ImmutableStorageContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -199,6 +201,53 @@ class CommunityPersistenceEngineLifecycleTest {
     }
 
     @Test
+    @DisplayName("EX_PERS_5006 emitted when RLS enabled and SHARED interceptor is absent")
+    void sharedOpenFailsFastWhenRlsEnabledAndInterceptorMissing() {
+        PersistenceConfig config = testConfig(false, true);
+        try (CommunityPersistenceEngine engine = new CommunityPersistenceEngine(config)) {
+            assertThatThrownBy(() -> engine.openConnection(ImmutableStorageContext.shared("tenant-a")))
+                    .isInstanceOf(PersistenceProviderException.class)
+                    .satisfies(ex -> {
+                        PersistenceProviderException ppe = (PersistenceProviderException) ex;
+                        assertThat(ppe.errorCode()).isEqualTo(KernelErrorCodes.EX_PERS_5006);
+                        assertThat(ppe.rawArgs()[0]).isEqualTo("RlsConnectionInterceptor");
+                        assertThat(ppe.rawArgs()[1]).isEqualTo("tenant-a");
+                    });
+        }
+    }
+
+    @Test
+    @DisplayName("pool remains healthy and reusable after interceptor failure (discard path)")
+    void poolHealthyAfterInterceptorFailure() throws Exception {
+        PersistenceConfig config = testConfig(true, 2, 1, 5_000L, 60_000L, 16);
+        try (CommunityPersistenceEngine engine = new CommunityPersistenceEngine(config)) {
+            AtomicBoolean failOnce = new AtomicBoolean(true);
+            engine.registerInterceptor((connection, storageContext) -> {
+                if (failOnce.compareAndSet(true, false)) {
+                    throw new IllegalStateException("injected interceptor failure");
+                }
+            });
+
+            assertThatThrownBy(() -> engine.openConnection(
+                    ImmutableStorageContext.separatedSchema("tenant-a", "tenant_a")))
+                    .isInstanceOf(PersistenceProviderException.class)
+                    .satisfies(ex -> {
+                        PersistenceProviderException ppe = (PersistenceProviderException) ex;
+                        assertThat(ppe.errorCode()).isEqualTo(KernelErrorCodes.EX_PERS_5006);
+                    });
+
+            assertThat(engine.stats().activeConnections()).isZero();
+
+            try (PersistenceConnection conn = engine.openConnection(
+                    ImmutableStorageContext.separatedSchema("tenant-a", "tenant_a"));
+                 QueryResult result = conn.executeQuery("SELECT 1")) {
+                assertThat(result.next()).isTrue();
+                assertThat(result.row().getInt(0)).isEqualTo(1);
+            }
+        }
+    }
+
+    @Test
     @DisplayName("perTenantPooling=true with maxTenantPools=0 fails fast")
     void invalidPerTenantConfigFailsFast() {
         PersistenceConfig config = testConfig(true, 4, 1, 500L, 120L, 0);
@@ -221,7 +270,25 @@ class CommunityPersistenceEngineLifecycleTest {
     }
 
     private static PersistenceConfig testConfig(boolean perTenantPooling) {
-        return testConfig(perTenantPooling, 4, 1, 5_000L, 60_000L, 16);
+        return testConfig(perTenantPooling, false);
+    }
+
+    private static PersistenceConfig testConfig(boolean perTenantPooling, boolean rlsEnabled) {
+        return new PersistenceConfig(
+                "jdbc:h2:mem:community_lifecycle_" + System.nanoTime() + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1",
+                "sa",
+                "",
+                4,
+                1,
+                5_000L,
+                60_000L,
+                600_000L,
+                rlsEnabled,
+                perTenantPooling,
+                false,
+                16,
+                Map.of()
+        );
     }
 
     private static PersistenceConfig testConfig(boolean perTenantPooling,

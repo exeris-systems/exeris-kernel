@@ -12,6 +12,7 @@ import eu.exeris.kernel.spi.exceptions.persistence.PersistenceProviderException;
 import eu.exeris.kernel.spi.persistence.ConnectionInterceptor;
 import eu.exeris.kernel.spi.persistence.PersistenceConnection;
 import eu.exeris.kernel.spi.persistence.PersistenceStatement;
+import eu.exeris.kernel.spi.persistence.QueryResult;
 import eu.exeris.kernel.spi.security.StorageContext;
 
 /**
@@ -69,7 +70,7 @@ public final class RlsConnectionInterceptor implements ConnectionInterceptor {
      * <p>Uses parameterised bind to prevent SQL injection (isolationKey is untrusted data).
      */
     private static final String SQL_SET_TENANT =
-            "SELECT set_config('exeris.tenant_id', $1, false)";
+            "SELECT set_config('exeris.tenant_id', ?, false)";
 
     private static final String SQL_SET_SCHEMA_PREFIX = "SET search_path TO ";
     private static final String SQL_SET_SCHEMA_SUFFIX = ", public";
@@ -115,8 +116,9 @@ public final class RlsConnectionInterceptor implements ConnectionInterceptor {
             // Global / system context — no tenant isolation needed
             return;
         }
-        try (PersistenceStatement stmt = connection.prepare(SQL_SET_TENANT)) {
-            stmt.bindString(0, isolationKey).executeUpdate();
+        try (PersistenceStatement stmt = connection.prepare(SQL_SET_TENANT);
+             QueryResult _ = stmt.bindString(0, isolationKey).executeQuery()) {
+            // set_config() returns a single row; consume and discard
         } catch (PersistenceProviderException ppe) {
             throw PersistenceProviderException.interceptorInitFailed(
                     INTERCEPTOR_NAME,

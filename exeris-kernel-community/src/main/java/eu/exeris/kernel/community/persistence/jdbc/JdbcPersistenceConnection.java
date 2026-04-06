@@ -211,6 +211,20 @@ public final class JdbcPersistenceConnection implements PersistenceConnection {
     // =========================================================================
 
     /**
+     * Returns the raw JDBC {@link Connection} backing this instance.
+     *
+     * <p><strong>Community infrastructure use only.</strong> Intended for pool
+     * discard/eviction paths (e.g., after interceptor failure) where the pool
+     * manager needs direct access to close or invalidate the underlying connection.
+     * This method is not part of the SPI contract.
+     *
+     * @return the underlying {@link Connection}; never {@code null}
+     */
+    public Connection rawJdbcConnection() {
+        return conn;
+    }
+
+    /**
      * Translates SPI PostgreSQL-style {@code $1, $2} parameter placeholders to
      * JDBC {@code ?} placeholders — required for non-PG JDBC drivers (e.g., H2).
      */

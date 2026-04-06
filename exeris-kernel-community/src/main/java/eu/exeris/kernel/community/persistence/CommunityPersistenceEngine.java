@@ -85,6 +85,7 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
     private static final String ADMISSION_REJECT_GUARD_BAND_FAIRNESS = "REJECT_GUARD_BAND_FAIRNESS";
     private static final String ADMISSION_REJECT_ENGINE_CLOSED = "REJECT_ENGINE_CLOSED";
     private static final String ADMISSION_REJECT_NO_CAPACITY = "REJECT_NO_CAPACITY";
+    private static final String REQUIRED_SHARED_INTERCEPTOR = "RlsConnectionInterceptor";
     private static final double HARD_SATURATION_THRESHOLD = 0.90d;
     private static final double GUARD_BAND_THRESHOLD = 0.85d;
     private static final double FAIRNESS_STRESS_THRESHOLD = 0.90d;
@@ -227,6 +228,7 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
         firstConnectionOpened.set(true);
         String tenantKey = selectTenantKey(storageContext);
         List<ConnectionInterceptor> snapshot = this.interceptorSnapshot;
+        ensureSharedInterceptorPresent(storageContext, snapshot);
 
         PersistenceSessionBox requestBox = PersistenceSessionBox.currentOrNull();
         if (requestBox != null && requestBox.belongsTo(this)) {
@@ -254,10 +256,10 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
                 try {
                     interceptor.onConnectionAcquired(conn, storageContext);
                 } catch (PersistenceProviderException ppe) {
-                    conn.close();
+                    discardAfterInterceptorFailure(tenantHikari, conn);
                     throw ppe;
                 } catch (RuntimeException ex) {
-                    conn.close();
+                    discardAfterInterceptorFailure(tenantHikari, conn);
                     throw PersistenceProviderException.interceptorInitFailed(
                             interceptor.getClass().getSimpleName(),
                             storageContext.isolationKey().orElse("[none]"),
@@ -576,6 +578,34 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
         if (closed) {
             throw new IllegalStateException(ENGINE_CLOSED_MESSAGE);
         }
+    }
+
+    private void ensureSharedInterceptorPresent(StorageContext storageContext,
+                                                List<ConnectionInterceptor> snapshot) {
+        if (!config.rlsEnabled()) {
+            return;
+        }
+        if (storageContext.strategy() != StorageContext.IsolationStrategy.SHARED) {
+            return;
+        }
+        String isolationKey = storageContext.isolationKey().orElse(null);
+        if (isolationKey == null || isolationKey.isBlank()) {
+            return;
+        }
+        boolean present = snapshot.stream()
+                .anyMatch(i -> REQUIRED_SHARED_INTERCEPTOR.equals(i.getClass().getSimpleName()));
+        if (!present) {
+            throw PersistenceProviderException.interceptorInitFailed(
+                    REQUIRED_SHARED_INTERCEPTOR,
+                    isolationKey,
+                    new IllegalStateException(
+                            "RLS enabled but required SHARED interceptor is not registered"));
+        }
+    }
+
+    private static void discardAfterInterceptorFailure(CommunityHikariSupport tenantHikari,
+                                                       JdbcPersistenceConnection conn) {
+        tenantHikari.discardConnection(conn);
     }
 
     private static long computeReclaimCadenceNanos(long tenantIdleTtlNanos) {

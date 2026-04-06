@@ -148,8 +148,9 @@ public interface PersistenceEngine extends AutoCloseable {
      *
      * <p><b>Semantics (Tier-specific)</b>:
      * <ul>
-     *   <li><b>Community</b>: Returns {@code true} if HikariCP has active connections available
-     *       or queue depth ≤ configured threshold. Conservative: assumes 1 thread = 1 slot.
+     *   <li><b>Community</b>: Returns {@code false} if idle connections are zero and at least one
+     *       acquire is pending (queue forming), or if active connections are at or above 90% of
+     *       the configured maximum. Returns {@code true} otherwise.
      *   <li><b>Enterprise</b>: Implements exponential backoff with native driver telemetry
      *       (e.g., io_uring SQE availability). May return {@code false} predictively before
      *       absolute saturation to maintain fairness.

@@ -12,6 +12,7 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 import eu.exeris.kernel.spi.exceptions.persistence.PersistenceProviderException;
 import eu.exeris.kernel.spi.persistence.PersistenceConnection;
 import eu.exeris.kernel.spi.persistence.PersistenceStatement;
+import eu.exeris.kernel.spi.persistence.QueryResult;
 import eu.exeris.kernel.spi.security.StorageContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -23,6 +24,7 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -85,13 +87,14 @@ class RlsConnectionInterceptorTest {
     void sharedStrategyUsesPrepareAndBindString() {
         when(storageContext.strategy()).thenReturn(StorageContext.IsolationStrategy.SHARED);
         when(storageContext.isolationKey()).thenReturn(Optional.of("tenant-key-01"));
-        when(connection.prepare("SELECT set_config('exeris.tenant_id', $1, false)")).thenReturn(statement);
+        when(connection.prepare("SELECT set_config('exeris.tenant_id', ?, false)")).thenReturn(statement);
         when(statement.bindString(0, "tenant-key-01")).thenReturn(statement);
-        when(statement.executeUpdate()).thenReturn(1L);
+        QueryResult queryResult = mock(QueryResult.class);
+        when(statement.executeQuery()).thenReturn(queryResult);
 
         RlsConnectionInterceptor.INSTANCE.onConnectionAcquired(connection, storageContext);
 
-        verify(connection).prepare("SELECT set_config('exeris.tenant_id', $1, false)");
+        verify(connection).prepare("SELECT set_config('exeris.tenant_id', ?, false)");
         verify(statement).bindString(0, "tenant-key-01");
     }
 }

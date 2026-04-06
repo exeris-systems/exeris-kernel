@@ -138,6 +138,16 @@ final class CommunityHikariSupport {
         }
     }
 
+    @SuppressWarnings("PMD.AvoidCatchingGenericException")
+    /* default */ void discardConnection(JdbcPersistenceConnection connection) {
+        Objects.requireNonNull(connection, "connection must not be null");
+        try (connection; Connection raw = connection.rawJdbcConnection()) {
+            pool.evictConnection(raw);
+        } catch (RuntimeException | SQLException _) {
+            // best-effort: eviction or resource-close failure suppressed
+        }
+    }
+
     /* default */ EngineStats toEngineStats(int maxPoolSize, int tenantPoolCount) {
         HikariPoolMXBean poolMxBean = mxBean();
         if (poolMxBean == null) {
