@@ -138,7 +138,7 @@ final class CommunityHikariSupport {
         }
     }
 
-    @SuppressWarnings("PMD.AvoidCatchingGenericException")
+    @SuppressWarnings({"PMD.AvoidCatchingGenericException", "PMD.UseTryWithResources", "PMD.CloseResource"})
     /* default */ void discardConnection(JdbcPersistenceConnection connection) {
         Objects.requireNonNull(connection, "connection must not be null");
         try {
