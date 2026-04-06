@@ -128,12 +128,12 @@ class CommunityHikariSupportTest {
     }
 
     @Test
-    @DisplayName("pool baseline uses autoCommit=true for read scopes")
-    void poolBaselineUsesAutoCommitTrue() {
+    @DisplayName("pool baseline uses autoCommit=false (SPI contract: connections default to auto-commit OFF)")
+    void poolBaselineUsesAutoCommitFalse() {
         PersistenceConfig config = config(false, Map.of());
 
         try (HikariDataSource pool = CommunityHikariSupport.buildPool(config, null)) {
-            assertThat(pool.isAutoCommit()).isTrue();
+            assertThat(pool.isAutoCommit()).isFalse();
         }
     }
 
