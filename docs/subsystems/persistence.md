@@ -257,8 +257,13 @@ thread. The following guidance applies:
 
 ## Database Schema Management — Migration Strategy
 
-The Exeris Kernel **does not manage database schemas**. Schema creation, versioning, and migration
+The Exeris Kernel **does not manage application schemas**. Schema creation, versioning, and migration
 are the responsibility of the application layer or a dedicated migration tool.
+
+> **Exception — internal kernel tables:** The Community tier includes an opt-in migration path
+> (`persistence.run.migrations=true`) that executes built-in SQL scripts to create internal kernel
+> tables (`exeris_outbox`, `exeris_outbox_dlq`). This applies only to Kernel-owned tables and is
+> explicitly disabled by default.
 
 | Concern                             | Recommendation                                                                                           |
 |:------------------------------------|:---------------------------------------------------------------------------------------------------------|

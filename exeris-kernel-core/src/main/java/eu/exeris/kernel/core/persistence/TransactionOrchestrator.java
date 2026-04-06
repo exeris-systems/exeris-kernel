@@ -372,26 +372,27 @@ public final class TransactionOrchestrator implements TransactionalExecutor {
     private PersistenceProviderException attemptReadOnlyWork(PersistenceConnection conn,
                                                               TransactionalWork work,
                                                               int attempt) {
+        conn.beginTransaction(TransactionIsolation.READ_COMMITTED, true);
+        TransactionLifecycleEvent.recordBegin(attempt);
         long startNs = System.nanoTime();
         try {
             work.run(conn);
         } catch (PersistenceProviderException ppe) {
+            safeRollback(conn, attempt);
             if (isRetryable(ppe)) {
                 return ppe;
             }
             throw ppe;
-        }
-
-        if (conn.inTransaction()) {
+        } catch (RuntimeException rte) {
             safeRollback(conn, attempt);
-            throw PersistenceProviderException.queryFailed(
-                    "2D000",
-                    "executeManaged(readOnly=true) work lambda returned with an open transaction",
-                    null);
+            throw rte;
         }
 
         long durationNs = System.nanoTime() - startNs;
-        TransactionLifecycleEvent.recordWorkComplete(attempt, durationNs);
+        if (conn.inTransaction()) {
+            conn.commit();
+            TransactionLifecycleEvent.recordCommit(attempt, durationNs);
+        }
         return null;
     }
 
@@ -399,7 +400,7 @@ public final class TransactionOrchestrator implements TransactionalExecutor {
                                                Function<ReadSession, T> work,
                                                int attempt) {
         T result = ScopedValue.where(ACTIVE_READ_SESSION_CONNECTION, conn)
-            .call(() -> work.apply(readSession(conn)));
+                .call(() -> work.apply(readSession(conn)));
 
         if (conn.inTransaction()) {
             safeRollback(conn, attempt);
