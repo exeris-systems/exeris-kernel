@@ -415,8 +415,8 @@ class TransactionOrchestratorTest {
         }
 
         @Test
-        @DisplayName("executeManaged(READ_COMMITTED, readOnly=true) runs without beginTransaction()/commit()")
-        void readOnlyReadCommittedSkipsTransactionCeremony() {
+        @DisplayName("executeManaged(READ_COMMITTED, readOnly=true) calls beginTransaction(READ_COMMITTED, true) and commit()")
+        void readOnlyReadCommittedUsesFullTransactionCeremony() {
             StubConnection conn = new StubConnection();
             StubEngine managedEngine = new StubEngine() {
                 @Override StubConnection supplyConnection() {
@@ -428,8 +428,8 @@ class TransactionOrchestratorTest {
             new TransactionOrchestrator(managedEngine)
                     .executeManaged(TransactionIsolation.READ_COMMITTED, true, ignored -> { /* empty */ });
 
-            assertThat(conn.beginCalled).isFalse();
-            assertThat(conn.commitCalled).isFalse();
+            assertThat(conn.beginCalled).isTrue();
+            assertThat(conn.commitCalled).isTrue();
             assertThat(conn.rollbackCalled).isFalse();
         }
 

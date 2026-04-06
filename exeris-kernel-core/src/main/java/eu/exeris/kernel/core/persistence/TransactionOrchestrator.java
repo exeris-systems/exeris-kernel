@@ -182,11 +182,6 @@ public final class TransactionOrchestrator implements TransactionalExecutor {
         Objects.requireNonNull(isolation, "isolation must not be null");
         Objects.requireNonNull(work,      "work must not be null");
 
-        if (readOnly && isolation == TransactionIsolation.READ_COMMITTED) {
-            executeManagedReadOnly(work);
-            return;
-        }
-
         StorageContext ctx = resolveStorageContext();
         int attemptIndex = 0;
         PersistenceProviderException lastError = null;
@@ -226,40 +221,6 @@ public final class TransactionOrchestrator implements TransactionalExecutor {
         if (lastError == null) {
             throw new IllegalStateException(
                     "Managed retry loop exhausted without recording a PersistenceProviderException");
-        }
-        throw lastError;
-    }
-
-    private void executeManagedReadOnly(TransactionalWork work) {
-        StorageContext ctx = resolveStorageContext();
-        int attemptIndex = 0;
-        PersistenceProviderException lastError = null;
-
-        while (attemptIndex < retryPolicy.maxAttempts()) {
-            if (attemptIndex > 0) {
-                sleepBackoff(retryPolicy.delayFor(attemptIndex));
-            }
-            int attemptNumber = attemptIndex + 1;
-            attemptIndex++;
-
-            try (PersistenceConnection conn = engine.openConnection(ctx)) {
-                lastError = attemptReadOnlyWork(conn, work, attemptNumber);
-                if (lastError == null) {
-                    return;
-                }
-            } catch (PersistenceProviderException ppe) {
-                if (isRetryable(ppe)) {
-                    lastError = ppe;
-                } else {
-                    throw ppe;
-                }
-            }
-        }
-
-        TransactionLifecycleEvent.recordRetryExhausted(attemptIndex);
-        if (lastError == null) {
-            throw new IllegalStateException(
-                    "Managed read-only retry loop exhausted without recording a PersistenceProviderException");
         }
         throw lastError;
     }
@@ -362,37 +323,6 @@ public final class TransactionOrchestrator implements TransactionalExecutor {
 
         long durationNs = System.nanoTime() - startNs;
         TransactionLifecycleEvent.recordWorkComplete(attempt, durationNs);
-        return null;
-    }
-
-    /**
-     * Attempts one managed read-only execution. Returns {@code null} on success,
-     * or the {@link PersistenceProviderException} if retryable — rethrows if not.
-     */
-    private PersistenceProviderException attemptReadOnlyWork(PersistenceConnection conn,
-                                                              TransactionalWork work,
-                                                              int attempt) {
-        conn.beginTransaction(TransactionIsolation.READ_COMMITTED, true);
-        TransactionLifecycleEvent.recordBegin(attempt);
-        long startNs = System.nanoTime();
-        try {
-            work.run(conn);
-        } catch (PersistenceProviderException ppe) {
-            safeRollback(conn, attempt);
-            if (isRetryable(ppe)) {
-                return ppe;
-            }
-            throw ppe;
-        } catch (RuntimeException rte) {
-            safeRollback(conn, attempt);
-            throw rte;
-        }
-
-        long durationNs = System.nanoTime() - startNs;
-        if (conn.inTransaction()) {
-            conn.commit();
-            TransactionLifecycleEvent.recordCommit(attempt, durationNs);
-        }
         return null;
     }
 

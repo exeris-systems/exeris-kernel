@@ -318,61 +318,82 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
     }
 
     /* default */ boolean canServiceRequest(CommunityHikariSupport.AdmissionSnapshot snapshot) {
-        AdmissionDecision decision = evaluateAdmission(snapshot);
-        int queued = snapshot.pendingAcquires();
-
-        // Record decision for fairness tracking
-        fairnessTracker.recordDecision(decision.accepted(), queued);
-
-        // Event metrics include current decision sample.
-        FairnessTracker.FairnessSnapshot fairnessSnapshot = fairnessTracker.computeSnapshot();
-
-        emitAdmissionTelemetry(
-                decision.accepted(),
-                queued,
-                decision.saturation(),
-                fairnessSnapshot.fairnessRatio(),
-                fairnessSnapshot.queueDepthP95(),
-                fairnessSnapshot.queueWaitP95Ms(),
-                decision.decisionReason());
-
-        return decision.accepted();
-    }
-
-    /* default */ String decisionReason(CommunityHikariSupport.AdmissionSnapshot snapshot) {
-        return evaluateAdmission(snapshot).decisionReason();
-    }
-
-    private AdmissionDecision evaluateAdmission(CommunityHikariSupport.AdmissionSnapshot snapshot) {
-        if (closed) {
-            return new AdmissionDecision(false, ADMISSION_REJECT_ENGINE_CLOSED, 1.0d);
-        }
         int active = snapshot.activeConnections();
         int queued = snapshot.pendingAcquires();
         int idle = snapshot.idleConnections();
         int max = snapshot.maxConnections();
+        String decisionReason = evaluateAdmissionReason(active, queued, idle, max);
+        boolean accepted = ADMISSION_ACCEPT.equals(decisionReason);
+        double saturation = admissionSaturation(active, max, decisionReason);
 
-        if (max <= 0) {
-            return new AdmissionDecision(false, ADMISSION_REJECT_NO_CAPACITY, 1.0d);
+        // Record decision for fairness tracking
+        fairnessTracker.recordDecision(accepted, queued);
+
+        if (admissionTelemetryEnabled()) {
+            FairnessTracker.FairnessSnapshot fairnessSnapshot = fairnessTracker.computeSnapshot();
+            emitAdmissionTelemetry(
+                    accepted,
+                    queued,
+                    saturation,
+                    fairnessSnapshot.fairnessRatio(),
+                    fairnessSnapshot.queueDepthP95(),
+                    fairnessSnapshot.queueWaitP95Ms(),
+                    decisionReason);
+        } else {
+            emitAdmissionTelemetry(
+                    accepted,
+                    queued,
+                    saturation,
+                    0.0d,
+                    0L,
+                    0L,
+                    decisionReason);
         }
+        return accepted;
+    }
 
+    /* default */ String decisionReason(CommunityHikariSupport.AdmissionSnapshot snapshot) {
+        return evaluateAdmissionReason(
+                snapshot.activeConnections(),
+                snapshot.pendingAcquires(),
+                snapshot.idleConnections(),
+                snapshot.maxConnections());
+    }
+
+    private String evaluateAdmissionReason(int active, int queued, int idle, int max) {
+        if (closed) {
+            return ADMISSION_REJECT_ENGINE_CLOSED;
+        }
+        if (max <= 0) {
+            return ADMISSION_REJECT_NO_CAPACITY;
+        }
         double saturation = (double) active / (double) max;
         if (saturation >= HARD_SATURATION_THRESHOLD) {
-            return new AdmissionDecision(false, ADMISSION_REJECT_HARD_SATURATION, saturation);
+            return ADMISSION_REJECT_HARD_SATURATION;
         }
-
         if (saturation >= GUARD_BAND_THRESHOLD
                 && queued > 0
-                && fairnessTracker.indicatesAdmissionStress(FAIRNESS_STRESS_THRESHOLD,
+                && fairnessTracker.indicatesAdmissionStress(
+                        FAIRNESS_STRESS_THRESHOLD,
                         FAIRNESS_QUEUE_DEPTH_THRESHOLD)) {
-            return new AdmissionDecision(false, ADMISSION_REJECT_GUARD_BAND_FAIRNESS, saturation);
+            return ADMISSION_REJECT_GUARD_BAND_FAIRNESS;
         }
-
         if (idle <= 0 && queued > 0) {
-            return new AdmissionDecision(false, ADMISSION_REJECT_NO_CAPACITY, saturation);
+            return ADMISSION_REJECT_NO_CAPACITY;
         }
+        return ADMISSION_ACCEPT;
+    }
 
-        return new AdmissionDecision(true, ADMISSION_ACCEPT, saturation);
+    private double admissionSaturation(int active, int max, String decisionReason) {
+        if (ADMISSION_REJECT_ENGINE_CLOSED.equals(decisionReason) || max <= 0) {
+            return 1.0d;
+        }
+        return (double) active / (double) max;
+    }
+
+    private boolean admissionTelemetryEnabled() {
+        return AdmissionDecisionEvent.isEnabled()
+                || PersistenceAdmissionStageEvent.isEnabled();
     }
 
     private static void emitAdmissionTelemetry(boolean accepted,
@@ -771,9 +792,6 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
         private long getLastAccessNanos() {
             return lastAccessNanos;
         }
-    }
-
-    private record AdmissionDecision(boolean accepted, String decisionReason, double saturation) {
     }
 }
 
