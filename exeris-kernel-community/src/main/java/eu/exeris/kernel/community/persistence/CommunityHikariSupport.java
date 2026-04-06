@@ -141,10 +141,17 @@ final class CommunityHikariSupport {
     @SuppressWarnings("PMD.AvoidCatchingGenericException")
     /* default */ void discardConnection(JdbcPersistenceConnection connection) {
         Objects.requireNonNull(connection, "connection must not be null");
-        try (connection; Connection raw = connection.rawJdbcConnection()) {
+        try {
+            Connection raw = connection.rawJdbcConnection();
             pool.evictConnection(raw);
-        } catch (RuntimeException | SQLException _) {
-            // best-effort: eviction or resource-close failure suppressed
+        } catch (RuntimeException _) {
+            // best-effort: eviction failure suppressed
+        } finally {
+            try {
+                connection.close();
+            } catch (RuntimeException _) {
+                // best-effort: wrapper close failure suppressed
+            }
         }
     }
 
