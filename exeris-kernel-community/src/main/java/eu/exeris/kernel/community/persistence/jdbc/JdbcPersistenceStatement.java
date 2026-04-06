@@ -169,7 +169,7 @@ final class JdbcPersistenceStatement implements PersistenceStatement {
         ensureOpen();
         try {
             ResultSet resultSet = prepStmt.executeQuery();
-            return new JdbcQueryResult(resultSet, prepStmt);
+            return new JdbcQueryResult(resultSet, null);
         } catch (SQLException sqlEx) {
             throw mapSql(sqlEx);
         }

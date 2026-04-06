@@ -162,11 +162,18 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
         // Never request more connections than the pool can hold simultaneously.
         warmupConnections = Math.min(warmupConnections, config.maxPoolSize());
         List<Connection> held = new ArrayList<>(warmupConnections);
+        final IllegalStateException warmupValidationFailed =
+                new IllegalStateException("Connection validation returned false during pool warm-up");
         try {
             for (int i = 0; i < warmupConnections; i++) {
                 Connection conn = sharedPool.getConnection();
                 held.add(conn);  // add before isValid so finally closes it even if isValid throws
-                conn.isValid(5);
+                if (!conn.isValid(5)) {
+                    throw PersistenceProviderException.bootstrapFailure(
+                            PROVIDER_ID,
+                            config.connectionUrl(),
+                            warmupValidationFailed);
+                }
             }
         } catch (SQLException sqlEx) {
             throw PersistenceProviderException.bootstrapFailure(PROVIDER_ID, config.connectionUrl(), sqlEx);
