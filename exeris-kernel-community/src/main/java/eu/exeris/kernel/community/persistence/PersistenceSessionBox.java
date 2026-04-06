@@ -58,15 +58,16 @@ public final class PersistenceSessionBox {
     }
 
     /**
-     * Returns the session for this request, acquiring a connection on first call.
-     * Returns {@code null} if no {@code PersistenceEngine} is available.
+     * Returns the shared-scope session for this request, acquiring a connection on first call.
+     * Returns {@code null} if no {@code PersistenceEngine} is available or if an existing
+     * request session was already acquired under a different scope key.
      */
     public RequestPersistenceSession getOrAcquire() {
         return getOrAcquire(this::openBackingConnection);
     }
 
     public RequestPersistenceSession getOrAcquire(ConnectionOpener opener) {
-        return getOrAcquireInternal(SHARED_SCOPE_KEY, opener, false);
+        return getOrAcquireInternal(SHARED_SCOPE_KEY, opener, true);
     }
 
     /**
