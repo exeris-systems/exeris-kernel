@@ -148,7 +148,7 @@ All implementations must satisfy `AbstractPersistenceEngineAdmissionControlTck`:
 - Returns false when idle==0 && queue forming
 - Returns false when active >= 90% max
 - Returns false after engine shutdown
-- Latency guarantee: ≤1ms per call
+- Latency guarantee: ≤5ms p50 per call (authoritative sub-millisecond bound enforced by JMH benchmarks)
 - Zero-allocation on hot path (JFR verified)
 
 ---

@@ -320,29 +320,29 @@ public abstract class AbstractTransactionalExecutorTck {
                     .isEqualTo(maxAttempts);
         }
 
-                @Test
-                @DisplayName("retry executor: read-session retries whole block up to maxAttempts on 40001")
-                @Timeout(value = 10, unit = TimeUnit.SECONDS)
-                void retryExecutorReadSessionRetriesUpToMax() {
-                    int maxAttempts = 3;
-                    AtomicInteger attempts = new AtomicInteger(0);
-                    TransactionalExecutor retryExecutor =
-                        createExecutorWithRetry(engine, maxAttempts, 10L);
+        @Test
+        @DisplayName("retry executor: read-session retries whole block up to maxAttempts on 40001")
+        @Timeout(value = 10, unit = TimeUnit.SECONDS)
+        void retryExecutorReadSessionRetriesUpToMax() {
+            int maxAttempts = 3;
+            AtomicInteger attempts = new AtomicInteger(0);
+            TransactionalExecutor retryExecutor =
+                    createExecutorWithRetry(engine, maxAttempts, 10L);
 
-                    assertThatThrownBy(() ->
-                        retryExecutor.inReadSession(session -> {
+            assertThatThrownBy(() ->
+                    retryExecutor.inReadSession(session -> {
                         attempts.incrementAndGet();
                         return session.query(conn -> {
                             throw PersistenceProviderException.queryFailed(
-                                "40001", "forced serialization failure", null);
+                                    "40001", "forced serialization failure", null);
                         });
-                        })
-                    ).isInstanceOf(PersistenceProviderException.class);
+                    })
+            ).isInstanceOf(PersistenceProviderException.class);
 
-                    assertThat(attempts.get())
-                        .as("retry executor must attempt exactly maxAttempts times")
-                        .isEqualTo(maxAttempts);
-                }
+            assertThat(attempts.get())
+                    .as("retry executor must attempt exactly maxAttempts times")
+                    .isEqualTo(maxAttempts);
+        }
 
         @Test
         @DisplayName("retry executor: does NOT retry on non-retryable SQLSTATE 42601")
@@ -366,26 +366,26 @@ public abstract class AbstractTransactionalExecutorTck {
                     .isOne();
         }
 
-                @Test
-                @DisplayName("retry executor: does NOT retry read-session on non-retryable SQLSTATE 42601")
-                @Timeout(value = 5, unit = TimeUnit.SECONDS)
-                void retryExecutorReadSessionDoesNotRetryOnSyntaxError() {
-                    AtomicInteger attempts = new AtomicInteger(0);
-                    TransactionalExecutor retryExecutor =
-                        createExecutorWithRetry(engine, 3, 10L);
+        @Test
+        @DisplayName("retry executor: does NOT retry read-session on non-retryable SQLSTATE 42601")
+        @Timeout(value = 5, unit = TimeUnit.SECONDS)
+        void retryExecutorReadSessionDoesNotRetryOnSyntaxError() {
+            AtomicInteger attempts = new AtomicInteger(0);
+            TransactionalExecutor retryExecutor =
+                    createExecutorWithRetry(engine, 3, 10L);
 
-                    assertThatThrownBy(() ->
-                        retryExecutor.inReadSession(session -> session.query(conn -> {
+            assertThatThrownBy(() ->
+                    retryExecutor.inReadSession(session -> session.query(conn -> {
                         attempts.incrementAndGet();
                         throw PersistenceProviderException.queryFailed(
-                            "42601", "syntax error near 'BORK'", null);
-                        }))
-                    ).isInstanceOf(PersistenceProviderException.class);
+                                "42601", "syntax error near 'BORK'", null);
+                    }))
+            ).isInstanceOf(PersistenceProviderException.class);
 
-                    assertThat(attempts.get())
-                        .as("non-retryable SQLSTATE 42601 must not be retried")
-                        .isOne();
-                }
+            assertThat(attempts.get())
+                    .as("non-retryable SQLSTATE 42601 must not be retried")
+                    .isOne();
+        }
 
         @Test
         @DisplayName("retry executor: succeeds on second attempt after transient failure")
