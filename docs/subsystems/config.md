@@ -212,7 +212,7 @@ not listed here.
 | `persistence.jdbcUrl`                              | `string`  | `jdbc:postgresql://localhost:5432/exeris` | ❌ IMMUTABLE | ✅ WIRED | JDBC connection URL (`PersistenceSettings.jdbcUrl`) |
 | `persistence.username`                             | `string`  | `exeris`            | ❌ IMMUTABLE | ✅ WIRED    | Database user — **SECRET**, redacted in telemetry        |
 | `persistence.password`                             | `string`  | `""`                | ❌ IMMUTABLE | ✅ WIRED    | Database password — **SECRET**, redacted in telemetry    |
-| `persistence.maxPoolSize`                          | `int`     | `20`                | ❌ IMMUTABLE | ✅ WIRED    | JDBC connection pool max connections (`PersistenceSettings.maxPoolSize`) |
+| `persistence.maxPoolSize`                          | `int`     | adaptive when unset (`max(min(cores × 2, 32), 2)`) | ❌ IMMUTABLE | ✅ WIRED    | JDBC connection pool max connections; explicit config overrides the adaptive Community bootstrap sizing |
 | `persistence.runMigrations`                        | `boolean` | `false`             | ❌ IMMUTABLE | ✅ WIRED    | Run schema migrations on startup (`PersistenceSettings.runMigrations`) |
 | `telemetry.jfrEnabled`                             | `boolean` | `true`              | ❌ IMMUTABLE | ✅ WIRED    | Enable JFR telemetry sink (`TelemetrySettings.jfrEnabled`) |
 | `telemetry.metricsEnabled`                         | `boolean` | `true`              | ❌ IMMUTABLE | ✅ WIRED    | Enable Prometheus metrics endpoint (`TelemetrySettings.metricsEnabled`) |
@@ -246,6 +246,8 @@ not listed here.
 > **Auto-detection:** `globalMemoryMb` defaults to 50% of available JVM process RAM
 > (`Runtime.getRuntime().maxMemory() / 1_048_576 * 0.5`). Override explicitly in production for
 > predictable behaviour under K8s memory limits.
+
+> **Persistence helper note:** `PersistenceConfig.defaults(...)` is a fixed development/unit-test preset in the SPI helper API. It is not the Community runtime bootstrap default when `persistence.maxPoolSize` is unset.
 
 ---
 
