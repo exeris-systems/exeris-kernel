@@ -51,7 +51,7 @@ zero-leak, hyper-density concurrency with immutable identity at every layer. It 
 
 **What Security Core DOES:**
 
-1. Extract and verify identity tokens from the incoming transport stream.
+1. Orchestrate identity authentication at the transport boundary through `SecurityInterceptor` + `SecurityProvider` SPI (provider implementations perform token/JWKS verification).
 2. Bind `PrincipalContext` and `StorageContext` via `ScopedValue.where(...)` for the duration of the request.
 3. Coordinate with the Persistence subsystem to enforce Row-Level Security (RLS).
 
@@ -159,7 +159,8 @@ public class TokenValidator {
   in all subtasks forked within a `StructuredTaskScope` without explicit parameter passing.
 - RLS enforcement: DB queries are physically restricted to the bound tenant — verified by attempting
   cross-tenant access and asserting row count is zero.
-- Fail-Closed: invalid token at transport edge results in `EX-SEC-2001` and zero downstream calls.
+- Fail-Closed: invalid token at transport edge results in `EX-SEC-2002` and zero downstream calls.
+- Community HTTP admission semantics (implemented): missing/invalid token maps to HTTP `401`; authenticated principal without required scope maps to HTTP `403`; steady-state scope checks remain membership tests over immutable in-memory scope sets.
 
 ---
 

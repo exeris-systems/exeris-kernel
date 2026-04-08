@@ -188,6 +188,79 @@ public final class SecurityInterceptor {
     }
 
     /**
+     * Binds a pre-authenticated identity into the current scope and runs
+     * {@code requestHandler} within that scope.
+     *
+     * <h2>Citadel Contract — Isolation Invariant</h2>
+     * <p>The caller supplies a pre-authenticated {@link PrincipalContext} (e.g., from a
+     * trusted internal gateway, an mTLS service-mesh identity, or a resumed HTTP/2 session
+     * with pre-validated credentials). The caller MUST NOT and CANNOT supply a
+     * {@link eu.exeris.kernel.spi.security.StorageContext} —
+     * {@link StorageContextBridge#derive(PrincipalContext)} is called internally.
+     * This is an unconditional invariant: the isolation strategy is always kernel-derived,
+     * never caller-controlled.
+     *
+     * <h2>Fail-Closed Bridge</h2>
+     * <p>If {@link StorageContextBridge#derive(PrincipalContext)} throws for any reason,
+     * the request is dropped immediately — the handler is <b>never invoked</b>. A JFR
+     * {@code SecurityContextMissing} event is emitted ({@code EX-SEC-2002},
+     * {@code "PRE_AUTH_BRIDGE_ERROR"}) and {@code false} is returned to the caller.
+     * {@link Error} subclasses are caught solely to emit the JFR event before being
+     * <b>re-thrown unconditionally</b>.
+     *
+     * <h2>JFR Waterfall</h2>
+     * <pre>
+     *   StorageContextDerived  ← emitted by StorageContextBridge.derive() on success
+     *   PrincipalBound         ← emitted after successful derivation (durationMicros = bridge cost)
+     *   SecurityContextMissing ← emitted on bridge failure (EX-SEC-2002 / PRE_AUTH_BRIDGE_ERROR)
+     * </pre>
+     *
+     * <h2>ScopedValue Binding</h2>
+     * <p>Both {@link eu.exeris.kernel.spi.context.KernelProviders#PRINCIPAL_CONTEXT} and
+     * {@link eu.exeris.kernel.spi.context.KernelProviders#STORAGE_CONTEXT} are bound
+     * atomically in a single {@link ScopedValue.Carrier}. Virtual threads forked within
+     * {@code requestHandler} via {@code StructuredTaskScope} inherit both slots automatically.
+     *
+     * @param principal       pre-authenticated identity; must not be {@code null}
+     * @param requestHandler  logic to execute within the authenticated scope; must not be {@code null}
+     * @return {@code true} if the handler was invoked (bridge succeeded);
+     *         {@code false} if the request was dropped at the Citadel gate
+     * @throws NullPointerException if {@code principal} or {@code requestHandler} is {@code null}
+     */
+    @SuppressWarnings("java:S1181")
+    public boolean interceptPreAuthenticated(PrincipalContext principal, Runnable requestHandler) {
+        Objects.requireNonNull(principal, "principal must not be null");
+        Objects.requireNonNull(requestHandler, "requestHandler must not be null");
+
+        long startNanos = System.nanoTime();
+
+        StorageContext storage;
+        try {
+            storage = StorageContextBridge.derive(principal);
+        } catch (Exception _) { //NOPMD AvoidCatchingGenericException — any bridge failure = fail-closed
+            SecurityJfrEvents.emitContextMissing(KernelErrorCodes.EX_SEC_2002, "PRE_AUTH_BRIDGE_ERROR");
+            return false;
+        } catch (Error ex) { //NOPMD AvoidCatchingGenericException — emit JFR then re-throw
+            SecurityJfrEvents.emitContextMissing(KernelErrorCodes.EX_SEC_2002, "PRE_AUTH_BRIDGE_ERROR");
+            throw ex;
+        }
+
+        SecurityJfrEvents.emitPrincipalBound(
+                provider.providerId(),
+                storage.strategy().name(),
+                storage.isolationKey().isPresent(),
+                startNanos
+        );
+
+        ScopedValue
+                .where(KernelProviders.PRINCIPAL_CONTEXT, principal)
+                .where(KernelProviders.STORAGE_CONTEXT, storage)
+                .run(requestHandler);
+
+        return true;
+    }
+
+    /**
      * Returns the {@link SecurityProvider} backing this interceptor.
      *
      * <p>Useful for bootstrap introspection (e.g., checking

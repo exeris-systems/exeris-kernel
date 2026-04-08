@@ -647,7 +647,7 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
             return;
         }
         boolean present = snapshot.stream()
-                .anyMatch(i -> REQUIRED_SHARED_INTERCEPTOR.equals(i.getClass().getSimpleName()));
+                .anyMatch(RlsConnectionInterceptor.class::isInstance);
         if (!present) {
             throw PersistenceProviderException.interceptorInitFailed(
                     REQUIRED_SHARED_INTERCEPTOR,

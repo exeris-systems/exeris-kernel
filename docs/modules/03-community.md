@@ -14,6 +14,7 @@ provider implementations, bootstrap wiring, tests, and e2e assets.
 > persistence, transport, and HTTP in this repository state. The module also contains bootstrap integration tests,
 > transport/HTTP integration tests, and TCK bindings. P0 e2e helper scripts are stored in
 > the separate `exeris-benchmarks` repository.
+> Resource-server security path is implemented in current repository state: Community HTTP admission integrates JWT/JWKS validation and enforces explicit `401` (authentication failure) versus `403` (insufficient scope) outcomes.
 
 > **Reality vs target-state:** parts of the original ADR-008 target architecture remain aspirational, but the module
 > is operational today. The authoritative source of truth is the current source tree and tests, not the older

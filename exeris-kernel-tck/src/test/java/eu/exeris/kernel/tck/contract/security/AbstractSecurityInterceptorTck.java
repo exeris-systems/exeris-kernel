@@ -10,6 +10,7 @@ package eu.exeris.kernel.tck.contract.security;
 
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
+import eu.exeris.kernel.spi.security.AuthenticationResult;
 import eu.exeris.kernel.spi.security.ImmutableStorageContext;
 import eu.exeris.kernel.spi.security.PrincipalContext;
 import eu.exeris.kernel.spi.security.SecurityProvider;
@@ -27,6 +28,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * TCK: Abstract base for {@code SecurityInterceptor} contract verification.
@@ -131,7 +133,7 @@ public abstract class AbstractSecurityInterceptorTck<I> {
      * Invokes the interceptor with the given token and handler.
      *
      * <p>The implementation must call the equivalent of:
-     * <pre>{@code interceptor.intercept(token, handler)</pre>
+     * <pre>{@code interceptor.intercept(token, handler)}</pre>
      *
      * @param interceptor   the interceptor instance
      * @param token         the token buffer
@@ -139,6 +141,21 @@ public abstract class AbstractSecurityInterceptorTck<I> {
      * @return {@code true} if the handler was invoked; {@code false} if dropped
      */
     protected abstract boolean intercept(I interceptor, LoanedBuffer token, Runnable handler);
+
+    /**
+     * Invokes {@code interceptPreAuthenticated} on the interceptor under test.
+     * Delegate to {@code interceptor.interceptPreAuthenticated(principal, handler)}.
+     */
+    protected abstract boolean interceptPreAuthenticated(I interceptor,
+                                                          PrincipalContext principal,
+                                                          Runnable handler);
+
+    /**
+     * Returns a {@link PrincipalContext} whose {@code tenantId()} call throws a
+     * {@link RuntimeException}, exercising the bridge-failure fail-closed path.
+     * All other methods must return non-throwing, valid values.
+     */
+    protected abstract PrincipalContext createBridgeFailurePrincipal();
 
     // =========================================================================
     // Test fixtures
@@ -253,6 +270,49 @@ public abstract class AbstractSecurityInterceptorTck<I> {
             assertThat(KernelProviders.PRINCIPAL_CONTEXT.isBound()).isFalse();
             assertThat(KernelProviders.STORAGE_CONTEXT.isBound()).isFalse();
         }
+
+        @Test
+        @DisplayName("provider uncertainty runtime failure is fail-closed")
+        void providerUncertaintyRuntimeFailureIsFailClosed() {
+            SecurityProvider uncertainProvider = new SecurityProvider() {
+                @Override
+                public String providerId() {
+                    return "uncertain-provider";
+                }
+
+                @Override
+                public String providerName() {
+                    return "UncertainProvider";
+                }
+
+                @Override
+                public int priority() {
+                    return 0;
+                }
+
+                @Override
+                public AuthenticationResult authenticate(LoanedBuffer token) {
+                    throw new RuntimeException("indeterminate");
+                }
+
+                @Override
+                public StorageContext systemStorageContext() {
+                    return ImmutableStorageContext.GLOBAL;
+                }
+            };
+
+            I uncertainInterceptor = createInterceptor(uncertainProvider);
+            AtomicBoolean invoked = new AtomicBoolean(false);
+
+            try (LoanedBuffer token = createTokenBuffer()) {
+                boolean result = intercept(uncertainInterceptor, token, () -> invoked.set(true));
+                assertThat(result).isFalse();
+            }
+
+            assertThat(invoked.get()).isFalse();
+            assertThat(KernelProviders.PRINCIPAL_CONTEXT.isBound()).isFalse();
+            assertThat(KernelProviders.STORAGE_CONTEXT.isBound()).isFalse();
+        }
     }
 
     // =========================================================================
@@ -265,7 +325,7 @@ public abstract class AbstractSecurityInterceptorTck<I> {
 
         @Test
         @DisplayName("50 child VTs all see the correct PRINCIPAL_CONTEXT via StructuredTaskScope")
-        void childVirtualThreadsInheritPrincipalContext() throws InterruptedException {
+        void childVirtualThreadsInheritPrincipalContext() {
             int vtCount = 50;
             AtomicInteger successCount = new AtomicInteger(0);
             AtomicReference<Throwable> failure = new AtomicReference<>();
@@ -344,6 +404,111 @@ public abstract class AbstractSecurityInterceptorTck<I> {
                         .as("principal for slot %d must not be cross-contaminated", i)
                         .isEqualTo(principals.get(i));
             }
+        }
+    }
+
+    // =========================================================================
+    // Pre-Authenticated Bridge
+    // =========================================================================
+
+    @Nested
+    @DisplayName("Pre-Authenticated Bridge contract")
+    class PreAuthenticatedBridge {
+
+        @Test
+        @DisplayName("returns true on successful bridge derivation")
+        void returnsTrueOnSuccess() {
+            boolean result = interceptPreAuthenticated(successInterceptor, testPrincipal, () -> {});
+            assertThat(result).isTrue();
+        }
+
+        @Test
+        @DisplayName("PRINCIPAL_CONTEXT is bound and correct within the handler scope")
+        void principalContextBound() {
+            AtomicReference<PrincipalContext> captured = new AtomicReference<>();
+            interceptPreAuthenticated(successInterceptor, testPrincipal,
+                    () -> captured.set(KernelProviders.PRINCIPAL_CONTEXT.get()));
+            assertThat(captured.get()).isEqualTo(testPrincipal);
+        }
+
+        @Test
+        @DisplayName("STORAGE_CONTEXT is bridge-derived from the principal")
+        void storageContextIsBridgeDerived() {
+            AtomicReference<StorageContext> captured = new AtomicReference<>();
+            interceptPreAuthenticated(successInterceptor, testPrincipal,
+                    () -> captured.set(KernelProviders.STORAGE_CONTEXT.get()));
+            assertThat(captured.get()).isNotNull();
+            assertThat(captured.get().strategy())
+                    .isEqualTo(StorageContext.IsolationStrategy.SHARED);
+        }
+
+        @Test
+        @DisplayName("both contexts are unbound after handler returns")
+        void contextsUnboundAfterHandler() {
+            interceptPreAuthenticated(successInterceptor, testPrincipal, () -> {});
+            assertThat(KernelProviders.PRINCIPAL_CONTEXT.isBound()).isFalse();
+            assertThat(KernelProviders.STORAGE_CONTEXT.isBound()).isFalse();
+        }
+
+        @Test
+        @DisplayName("null principal throws NullPointerException")
+        void nullPrincipalThrowsNpe() {
+            assertThatThrownBy(() -> interceptPreAuthenticated(successInterceptor, null, () -> {}))
+                    .isInstanceOf(NullPointerException.class);
+        }
+
+        @Test
+        @DisplayName("null handler throws NullPointerException")
+        void nullHandlerThrowsNpe() {
+            assertThatThrownBy(() -> interceptPreAuthenticated(successInterceptor, testPrincipal, null))
+                    .isInstanceOf(NullPointerException.class);
+        }
+
+        @Test
+        @DisplayName("bridge failure drops request — handler not invoked, no context bound")
+        void bridgeFailureDropsRequest() {
+            PrincipalContext badPrincipal = createBridgeFailurePrincipal();
+            AtomicBoolean invoked = new AtomicBoolean(false);
+
+            boolean result = interceptPreAuthenticated(successInterceptor, badPrincipal, () -> invoked.set(true));
+
+            assertThat(result).isFalse();
+            assertThat(invoked.get()).isFalse();
+            assertThat(KernelProviders.PRINCIPAL_CONTEXT.isBound()).isFalse();
+            assertThat(KernelProviders.STORAGE_CONTEXT.isBound()).isFalse();
+        }
+
+        @Test
+        @DisplayName("child virtual threads inherit PRINCIPAL_CONTEXT via StructuredTaskScope")
+        void childVirtualThreadsInheritPrincipalContext() {
+            int count = 10;
+            AtomicInteger successCount = new AtomicInteger(0);
+            AtomicReference<Throwable> failure = new AtomicReference<>();
+
+            interceptPreAuthenticated(successInterceptor, testPrincipal, () -> {
+                try (var scope = StructuredTaskScope.open()) {
+                    for (int i = 0; i < count; i++) {
+                        scope.fork(() -> {
+                            try {
+                                PrincipalContext p = KernelProviders.PRINCIPAL_CONTEXT.get();
+                                if (p.equals(testPrincipal)) {
+                                    successCount.incrementAndGet();
+                                }
+                            } catch (Exception e) {
+                                failure.compareAndSet(null, e);
+                            }
+                            return null;
+                        });
+                    }
+                    scope.join();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new AssertionError("interrupted", e);
+                }
+            });
+
+            assertThat(failure.get()).isNull();
+            assertThat(successCount.get()).isEqualTo(count);
         }
     }
 }

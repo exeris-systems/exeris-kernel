@@ -112,17 +112,16 @@ public final class RlsConnectionInterceptor implements ConnectionInterceptor {
     private static void injectTenantId(PersistenceConnection connection,
                                        StorageContext storageContext) {
         String isolationKey = storageContext.isolationKey().orElse(null);
-        if (isolationKey == null || isolationKey.isBlank()) {
-            // Global / system context — no tenant isolation needed
-            return;
-        }
+        // For global/system context use "" to clear any prior tenant from the pooled connection.
+        // set_config(..., false) is session-level, so prior tenant values survive pool recycle.
+        String effectiveKey = (isolationKey == null || isolationKey.isBlank()) ? "" : isolationKey;
         try (PersistenceStatement stmt = connection.prepare(SQL_SET_TENANT);
-             QueryResult _ = stmt.bindString(0, isolationKey).executeQuery()) {
+             QueryResult _ = stmt.bindString(0, effectiveKey).executeQuery()) {
             // set_config() returns a single row; consume and discard
         } catch (PersistenceProviderException ppe) {
             throw PersistenceProviderException.interceptorInitFailed(
                     INTERCEPTOR_NAME,
-                    isolationKey,
+                    effectiveKey,
                     ppe);
         }
     }

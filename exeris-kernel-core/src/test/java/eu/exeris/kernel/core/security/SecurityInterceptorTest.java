@@ -93,6 +93,14 @@ class SecurityInterceptorTest {
         @Override public StorageContext systemStorageContext() { return ImmutableStorageContext.GLOBAL; }
     }
 
+    private static final class ThrowingTenantPrincipal implements PrincipalContext {
+        private static final UUID STUB_ID = UUID.randomUUID();
+        @Override public UUID principalId() { return STUB_ID; }
+        @Override public Optional<UUID> tenantId() { throw new RuntimeException("bridge-test"); }
+        @Override public Set<String> roles() { return Set.of(); }
+        @Override public Set<String> scopes() { return Set.of(); }
+    }
+
     private SecurityInterceptor interceptor;
     private StubLoanedBuffer    tokenBuffer;
 
@@ -285,6 +293,75 @@ class SecurityInterceptorTest {
         void rejectsNullTask() {
             assertThatThrownBy(() -> interceptor.runAsSystem(VALID_PRINCIPAL, null))
                     .isInstanceOf(NullPointerException.class);
+        }
+    }
+
+    // =========================================================================
+    // interceptPreAuthenticated()
+    // =========================================================================
+
+    @Nested
+    @DisplayName("interceptPreAuthenticated()")
+    class InterceptPreAuthenticated {
+
+        @Test
+        @DisplayName("returns true when bridge succeeds")
+        void returnsTrueWhenBridgeSucceeds() {
+            boolean result = interceptor.interceptPreAuthenticated(VALID_PRINCIPAL, () -> {});
+            assertThat(result).isTrue();
+        }
+
+        @Test
+        @DisplayName("PRINCIPAL_CONTEXT is bound and correct within the handler scope")
+        void principalContextBoundWithinHandler() {
+            AtomicReference<PrincipalContext> captured = new AtomicReference<>();
+            interceptor.interceptPreAuthenticated(VALID_PRINCIPAL,
+                    () -> captured.set(KernelProviders.principal()));
+            assertThat(captured.get()).isEqualTo(VALID_PRINCIPAL);
+        }
+
+        @Test
+        @DisplayName("STORAGE_CONTEXT is bridge-derived from the principal")
+        void storageContextIsBridgeDerived() {
+            AtomicReference<StorageContext> captured = new AtomicReference<>();
+            interceptor.interceptPreAuthenticated(VALID_PRINCIPAL,
+                    () -> captured.set(KernelProviders.STORAGE_CONTEXT.get()));
+            assertThat(captured.get()).isNotNull();
+            assertThat(captured.get().strategy()).isEqualTo(StorageContext.IsolationStrategy.SHARED);
+        }
+
+        @Test
+        @DisplayName("both contexts are unbound after handler returns")
+        void contextsUnboundAfterHandler() {
+            interceptor.interceptPreAuthenticated(VALID_PRINCIPAL, () -> {});
+            assertThat(KernelProviders.PRINCIPAL_CONTEXT.isBound()).isFalse();
+            assertThat(KernelProviders.STORAGE_CONTEXT.isBound()).isFalse();
+        }
+
+        @Test
+        @DisplayName("null principal throws NullPointerException")
+        void nullPrincipalThrowsNpe() {
+            assertThatThrownBy(() -> interceptor.interceptPreAuthenticated(null, () -> {}))
+                    .isInstanceOf(NullPointerException.class);
+        }
+
+        @Test
+        @DisplayName("null handler throws NullPointerException")
+        void nullHandlerThrowsNpe() {
+            assertThatThrownBy(() -> interceptor.interceptPreAuthenticated(VALID_PRINCIPAL, null))
+                    .isInstanceOf(NullPointerException.class);
+        }
+
+        @Test
+        @DisplayName("bridge failure returns false — handler not invoked, no context bound")
+        void bridgeFailureReturnsFalse() {
+            AtomicBoolean invoked = new AtomicBoolean(false);
+            boolean result = interceptor.interceptPreAuthenticated(
+                    new ThrowingTenantPrincipal(), () -> invoked.set(true));
+            assertThat(result).isFalse();
+            assertThat(invoked.get()).isFalse();
+            assertThat(KernelProviders.PRINCIPAL_CONTEXT.isBound()).isFalse();
+            assertThat(KernelProviders.STORAGE_CONTEXT.isBound()).isFalse();
         }
     }
 
