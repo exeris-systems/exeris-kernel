@@ -16,13 +16,14 @@ import eu.exeris.kernel.spi.events.EventPayload;
 import eu.exeris.kernel.spi.events.EventRegistry;
 import eu.exeris.kernel.spi.events.SubscriptionToken;
 import eu.exeris.kernel.spi.exceptions.events.EventBusException;
+import jdk.jfr.FlightRecorder;
 
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.StructuredTaskScope;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -99,9 +100,9 @@ public final class InMemoryEventBus implements EventBus {
     * per subscriber directly from the calling thread. The calling thread returns
      * immediately and does not wait for handlers.
      *
-     * <p>Fire-and-forget completion semantics are preserved: the calling thread does not
-     * wait for handler completion. It does, however, wait until each handler thread has
-     * started execution, ensuring ScopedValue bindings are captured before returning.
+     * <p>Fire-and-forget semantics are preserved: the calling thread returns immediately
+     * after starting all handler virtual threads. ScopedValue bindings are inherited at
+     * virtual thread creation time — no latch, no wait.
      */
     @Override
     public void publish(EventDescriptor descriptor, EventPayload payload) {
@@ -123,19 +124,9 @@ public final class InMemoryEventBus implements EventBus {
             }
         }
 
-        CountDownLatch started = new CountDownLatch(slotCount);
         for (Slot slot : slots) {
             EventPayload slotPayload = payload;
-            Thread.ofVirtual().start(() -> {
-                started.countDown();
-                slot.handler().handle(descriptor, slotPayload);
-            });
-        }
-
-        try {
-            started.await();
-        } catch (InterruptedException interruptedException) {
-            Thread.currentThread().interrupt();
+            Thread.ofVirtual().start(() -> slot.handler().handle(descriptor, slotPayload));
         }
     }
 
@@ -172,7 +163,7 @@ public final class InMemoryEventBus implements EventBus {
 
         // Calling thread is the scope owner — fork, join, close.
         try (StructuredTaskScope<Void, Void> scope =
-                     StructuredTaskScope.open(StructuredTaskScope.Joiner.awaitAll())) {
+                     StructuredTaskScope.open(StructuredTaskScope.Joiner.<Void>awaitAllSuccessfulOrThrow())) {
             for (Slot slot : slots) {
                 EventPayload slotPayload = payload;
                 scope.fork(() -> {
@@ -180,7 +171,11 @@ public final class InMemoryEventBus implements EventBus {
                     return null;
                 });
             }
-            scope.join();
+            try {
+                scope.join();
+            } catch (ExecutionException ex) {
+                throw new EventBusException("Event handler invocation failed", ex.getCause());
+            }
         }
     }
 
@@ -227,6 +222,9 @@ public final class InMemoryEventBus implements EventBus {
     }
 
     private static void emitJfr(int ordinal, int handlerCount, boolean awaitMode) {
+        if (!FlightRecorder.isInitialized()) {
+            return;
+        }
         EventBusPublishEvent evt = new EventBusPublishEvent();
         if (evt.isEnabled()) {
             evt.eventTypeOrdinal = ordinal;

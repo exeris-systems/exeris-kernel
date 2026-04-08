@@ -15,6 +15,7 @@ import eu.exeris.kernel.spi.events.EventDescriptor;
 import eu.exeris.kernel.spi.events.EventPayload;
 import eu.exeris.kernel.spi.events.EventRegistry;
 import eu.exeris.kernel.spi.events.SubscriptionToken;
+import jdk.jfr.FlightRecorder;
 
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
@@ -132,6 +133,9 @@ public final class Projection<S> implements AutoCloseable {
     }
 
     private void emitProjectionFailure(EventDescriptor descriptor, RuntimeException handlerException) {
+        if (!FlightRecorder.isInitialized()) {
+            return;
+        }
         ProjectionHandlerFailureEvent evt = new ProjectionHandlerFailureEvent();
         if (evt.isEnabled()) {
             evt.projectionName   = projectionName;
@@ -142,6 +146,9 @@ public final class Projection<S> implements AutoCloseable {
     }
 
     private void emitJfr(EventDescriptor descriptor) {
+        if (!FlightRecorder.isInitialized()) {
+            return;
+        }
         ProjectionAppliedEvent evt = new ProjectionAppliedEvent();
         if (evt.isEnabled()) {
             evt.projectionName  = projectionName;

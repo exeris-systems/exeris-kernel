@@ -38,6 +38,7 @@ class EventDescriptorCodecTest {
                 42, EventDescriptor.FLAG_PERSISTENT | EventDescriptor.FLAG_ASYNC,
                 System.currentTimeMillis());
 
+        // CHECKSTYLE:OFF: DirectArenaAllocation — test-only, no approved allocator in test scope
         try (Arena arena = Arena.ofConfined()) {
             MemorySegment seg = arena.allocate(EventDescriptorCodec.WIRE_SIZE);
             EventDescriptorCodec.write(seg, 0L, original);
@@ -51,6 +52,7 @@ class EventDescriptorCodecTest {
             assertThat(decoded.flags()).isEqualTo(original.flags());
             assertThat(decoded.occurredAtEpochMs()).isEqualTo(original.occurredAtEpochMs());
         }
+        // CHECKSTYLE:ON: DirectArenaAllocation
     }
 
     @Test
@@ -60,6 +62,7 @@ class EventDescriptorCodecTest {
         EventDescriptor original = new EventDescriptor(
                 1L, 2L, 3L, 4L, 7, EventDescriptor.FLAG_ORDERED, 999_000L);
 
+        // CHECKSTYLE:OFF: DirectArenaAllocation — test-only, no approved allocator in test scope
         try (Arena arena = Arena.ofConfined()) {
             MemorySegment seg = arena.allocate(offset + EventDescriptorCodec.WIRE_SIZE);
             EventDescriptorCodec.write(seg, offset, original);
@@ -67,6 +70,7 @@ class EventDescriptorCodecTest {
 
             assertThat(decoded).isEqualTo(original);
         }
+        // CHECKSTYLE:ON: DirectArenaAllocation
     }
 
     @Test

@@ -115,7 +115,7 @@ public abstract class AbstractOutboxOrchestratorTck {
                 .as("Batch processor MUST be invoked for persistent events within 4 seconds")
                 .isTrue();
         assertThat(receivedCount.get())
-                .as("Exactly 1 persistent event must reach the batch processor")
+                .as("At least 1 persistent event must reach the batch processor")
                 .isGreaterThanOrEqualTo(1);
     }
 

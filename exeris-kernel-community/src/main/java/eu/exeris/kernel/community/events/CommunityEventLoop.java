@@ -184,6 +184,14 @@ final class CommunityEventLoop implements EventLoop {
 
         try {
             List<EventDescriptor> readonlyDescriptors = List.copyOf(descriptors);
+            int processorCount = processors.size();
+            if (processorCount > 1) {
+                for (EventPayload p : payloads) {
+                    for (int r = 1; r < processorCount; r++) {
+                        p.retain();
+                    }
+                }
+            }
             List<EventPayload> readonlyPayloads = List.copyOf(payloads);
             for (EventBatchProcessor processor : processors) {
                 processor.processBatch(readonlyDescriptors, readonlyPayloads);

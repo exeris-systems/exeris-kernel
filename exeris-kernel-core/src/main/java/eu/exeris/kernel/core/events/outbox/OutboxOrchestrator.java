@@ -249,7 +249,8 @@ public final class OutboxOrchestrator implements AutoCloseable {
 
         List<EventDescriptor> toDeliver = new ArrayList<>(batch.size());
         try {
-            int published = brokerPort.publish(batch);
+            int rawPublished = brokerPort.publish(batch);
+            int published = Math.max(0, Math.min(rawPublished, batch.size()));
             failed = batch.size() - published;
 
             for (int i = 0; i < published; i++) {
@@ -279,9 +280,10 @@ public final class OutboxOrchestrator implements AutoCloseable {
                     eventStore.moveToDlq(entry.descriptor(), entry.payload(), "max retries exhausted");
                 }
             } catch (RuntimeException ex) {
-                String reason = ex.getMessage() != null ? ex.getMessage() : "exception";
+                String message = ex.getMessage();
+                String reason = (message == null || message.isBlank()) ? "exception" : message;
                 emitDlqTransition(entry, reason);
-                eventStore.moveToDlq(entry.descriptor(), entry.payload(), ex.getMessage());
+                eventStore.moveToDlq(entry.descriptor(), entry.payload(), reason);
             }
         }
     }
