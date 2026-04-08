@@ -43,7 +43,6 @@ public final class CommunityKernelCryptoProvider implements KernelCryptoProvider
 	private static final String PROVIDER_NAME = "ExerisCommunity/OpenSSL3-TCP";
 	private static final int SSL_SUCCESS = 1;
 	private static final long NULL_PTR = 0L;
-
 	private final CoreOpenSslRuntime runtime;
 	private final java.lang.invoke.MethodHandle sslSetFd;
 
@@ -197,6 +196,10 @@ public final class CommunityKernelCryptoProvider implements KernelCryptoProvider
 					throw new CryptoBootstrapException(
 							PROVIDER_NAME,
 							"SSL_CTX_check_private_key mismatch");
+				}
+				if (CommunityAlpnSelector.STUB != null) {
+					ctx.invokeCtxSetAlpnSelectCb(
+							sslCtxPtr, CommunityAlpnSelector.STUB.address(), NULL_PTR);
 				}
 			}
 

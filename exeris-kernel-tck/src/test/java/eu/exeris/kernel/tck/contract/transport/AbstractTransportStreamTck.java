@@ -22,6 +22,8 @@ import org.junit.jupiter.api.Timeout;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -199,6 +201,55 @@ public abstract class AbstractTransportStreamTck {
                 MemorySegment seg = buf.segment();
                 assertThatThrownBy(() -> writer.write(seg, 1))
                         .isInstanceOf(IllegalStateException.class);
+            }
+        }
+    }
+
+    // =========================================================================
+    // Remote close — read() unblocking
+    // =========================================================================
+
+    @Nested
+    @DisplayName("Remote close unblocks reader")
+    class RemoteCloseUnblocksReader {
+
+        @Test
+        @DisplayName("read() returns -1 within 50ms of remote close signal")
+        @Timeout(value = 2, unit = TimeUnit.SECONDS)
+        void remoteClosedUnblocksReader() throws InterruptedException {
+            // Arrange: start a VT that blocks in read()
+            try (LoanedBuffer sink = allocator.allocate(AllocationHint.SMALL)) {
+                AtomicLong readReturnedAt = new AtomicLong(-1L);
+                AtomicInteger readResult = new AtomicInteger(Integer.MIN_VALUE);
+
+                Thread reader = Thread.ofVirtual().start(() -> {
+                    readResult.set(streams.reader().read(sink.segment(), (int) sink.segment().byteSize()));
+                    readReturnedAt.set(System.nanoTime());
+                });
+
+                // Wait for the VT to reach a waiting state (parked or blocked in read)
+                long spinDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
+                while (reader.getState() == Thread.State.RUNNABLE
+                        && System.nanoTime() < spinDeadline) {
+                    Thread.onSpinWait();
+                }
+
+                // Act: close the writer side to signal remote close to the reader
+                long signalAt = System.nanoTime();
+                streams.writer().close();
+
+                reader.join(500);
+
+                // Assert: unblocked within 50ms
+                long returnedAt = readReturnedAt.get();
+                assertThat(returnedAt)
+                        .as("VT should have completed read() within 500ms of close signal")
+                        .isGreaterThanOrEqualTo(0L);
+
+                long durationMs = TimeUnit.NANOSECONDS.toMillis(returnedAt - signalAt);
+                assertThat(durationMs)
+                        .as("read() should unblock within 50ms of remote close \u2014 got %dms", durationMs)
+                        .isLessThanOrEqualTo(50L);
             }
         }
     }

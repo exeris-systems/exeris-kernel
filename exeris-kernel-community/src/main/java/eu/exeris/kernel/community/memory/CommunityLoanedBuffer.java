@@ -12,18 +12,22 @@ import eu.exeris.kernel.core.memory.AbstractLoanedBuffer;
 
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * Community: Off-heap {@link eu.exeris.kernel.spi.memory.LoanedBuffer} backed by a
- * per-buffer {@link Arena}.
+ * Community: Off-heap {@link eu.exeris.kernel.spi.memory.LoanedBuffer} backed by shared
+ * or per-buffer {@link Arena} depending on allocation source.
  *
  * <h2>Memory Model (Community Tier)</h2>
- * <p>Each buffer <em>logically owns</em> the {@link Arena} it was allocated from via
- * {@link #allocateOwned}. When the buffer's reference count drops to zero,
- * {@link #onRelease()} attempts to close the arena.
- * For closeable arenas this can deterministically release native memory; for JVM-managed
- * arenas (for example {@code Arena.ofAuto()}), {@link Arena#close()} may be unsupported and
- * memory lifetime remains runtime-managed.
+ * <p>Buffers allocated via {@link CommunityMemoryAllocator} are sourced from the
+ * {@code CommunityArenaShardPool}: size-class buckets (512B, 4K, 16K, 32K, 64K, 128K,
+ * 256K, 512K, 1M) from shard-local shared arenas, with reusable free queues to
+ * reduce per-allocation contention. Payloads above 1 MB bypass free-list reuse,
+ * but are still allocated from pool-owned shard arenas.
+ *
+ * <p>On buffer release, if the buffer came from the pool, it is returned to the pool's
+ * free queue for reuse, using the original shard where it came from. If the pool is
+ * closed, returned buffers are discarded.
  *
  * <h2>Zero-Copy</h2>
  * <p>The backing {@link MemorySegment} is never copied. Slices use
@@ -31,20 +35,39 @@ import java.lang.foreign.MemorySegment;
  *
  * @since 0.5.0
  * @see CommunityMemoryAllocator
+ * @see CommunityArenaShardPool
  */
 final class CommunityLoanedBuffer extends AbstractLoanedBuffer {
 
     private final MemorySegment segment;
-    private final Arena arena;
+    private final CommunityArenaShardPool pool;
+    private final long originalCapacityBytes;
+    private final int originShard;
+    private final AtomicBoolean pooledReturnDone = new AtomicBoolean(false);
 
     // =========================================================================
     // Constructor — DeclarationOrder: fields → constructor → static factories
     // =========================================================================
 
-    private CommunityLoanedBuffer(MemorySegment segment, Arena arena) {
+    private CommunityLoanedBuffer(MemorySegment segment) {
         super();
         this.segment = segment;
-        this.arena   = arena;
+        this.pool = null;
+        this.originalCapacityBytes = 0L;
+        this.originShard = 0;
+    }
+
+    private CommunityLoanedBuffer(
+            MemorySegment segment,
+            long originalCapacityBytes,
+            int originShard,
+            CommunityArenaShardPool pool
+    ) {
+        super();
+        this.segment = segment;
+        this.originalCapacityBytes = originalCapacityBytes;
+        this.originShard = originShard;
+        this.pool = pool;
     }
 
     // =========================================================================
@@ -52,17 +75,36 @@ final class CommunityLoanedBuffer extends AbstractLoanedBuffer {
     // =========================================================================
 
     /**
-    * Creates a buffer that <em>logically owns</em> the supplied arena.
-    * {@link #onRelease()} will attempt to close the arena when the reference count reaches zero.
+     * Creates a buffer sourced from the provided pool.
+     * On release, the buffer (segment) is returned to the pool's free queue.
+     *
+     * @param segment              the allocated memory segment
+     * @param originalCapacityBytes the original requested capacity (for pool lookup)
+     * @param originShard          shard that originally supplied the segment
+     * @param pool                 the arena shard pool managing reuse
+     */
+    /* default */ static CommunityLoanedBuffer allocateOwnedPooled(
+            MemorySegment segment,
+            long originalCapacityBytes,
+            int originShard,
+            CommunityArenaShardPool pool
+    ) {
+        return new CommunityLoanedBuffer(segment, originalCapacityBytes, originShard, pool);
+    }
+
+    /**
+     * Creates a buffer that <em>logically owns</em> the supplied arena.
+      * Community currently tracks release logically and no explicit arena close
+      * is performed in {@link #onRelease()}.
      *
      * @param capacityBytes capacity in bytes
      * @param alignment     byte alignment
-    * @param ownedArena    arena whose lifecycle is associated with this buffer
+     * @param ownedArena    arena whose lifecycle is associated with this buffer
      */
     /* default */ static CommunityLoanedBuffer allocateOwned(
             long capacityBytes, long alignment, Arena ownedArena) {
         MemorySegment seg = ownedArena.allocate(capacityBytes, alignment);
-        return new CommunityLoanedBuffer(seg, ownedArena);
+        return new CommunityLoanedBuffer(seg);
     }
 
     @Override
@@ -72,10 +114,8 @@ final class CommunityLoanedBuffer extends AbstractLoanedBuffer {
 
     @Override
     protected void onRelease() {
-        try {
-            arena.close();
-        } catch (IllegalStateException | UnsupportedOperationException _) {
-            // Arena already closed or non-closeable/runtime-managed (e.g., Arena.ofAuto()).
+        if (pool != null && pooledReturnDone.compareAndSet(false, true)) {
+            pool.returnSegment(originalCapacityBytes, originShard, segment);
         }
     }
 }
