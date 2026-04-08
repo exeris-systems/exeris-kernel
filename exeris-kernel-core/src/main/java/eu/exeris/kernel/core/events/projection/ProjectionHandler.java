@@ -15,10 +15,10 @@ import eu.exeris.kernel.spi.events.EventPayload;
  * Core: Contract for a single event projection handler.
  *
  * <h2>RAII Contract</h2>
- * <p>The {@link ProjectionEngine} calls {@link #apply} with the payload already
- * ref-counted for this handler. The handler MUST close the payload (via
- * try-with-resources) to decrement the refCount. Failure to close causes a
- * slab memory leak in the Enterprise tier.
+ * <p>{@link Projection} closes the {@link eu.exeris.kernel.spi.events.EventPayload}
+ * after {@link #apply} returns (or throws). The handler MUST NOT close the payload —
+ * doing so would double-release the refCount and cause over-release bugs in
+ * Enterprise slab implementations.
  *
  * <h2>Idempotency</h2>
  * <p>Projection handlers MUST be idempotent — the EventBus delivers at-least-once.
@@ -36,7 +36,7 @@ public interface ProjectionHandler<S> {
      *
      * @param current    the current state (may be {@code null} for the first event)
      * @param descriptor event routing metadata
-     * @param payload    RAII payload — the handler MUST close this (try-with-resources)
+     * @param payload    RAII payload — owned by {@link Projection}; handler MUST NOT close
      * @return the next projection state (non-null if the projection is still active)
      */
     S apply(S current, EventDescriptor descriptor, EventPayload payload);

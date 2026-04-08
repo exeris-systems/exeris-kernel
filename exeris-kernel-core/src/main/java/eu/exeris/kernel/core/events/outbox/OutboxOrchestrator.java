@@ -13,6 +13,7 @@ import eu.exeris.kernel.core.events.jfr.OutboxDlqEvent;
 import eu.exeris.kernel.core.events.jfr.OutboxStateTransitionEvent;
 import eu.exeris.kernel.spi.events.EventDescriptor;
 import eu.exeris.kernel.spi.events.EventPayload;
+import jdk.jfr.FlightRecorder;
 
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
@@ -289,6 +290,9 @@ public final class OutboxOrchestrator implements AutoCloseable {
     }
 
     private void emitDlqTransition(OutboxBrokerPort.OutboxEntry entry, String reason) {
+        if (!FlightRecorder.isInitialized()) {
+            return;
+        }
         OutboxDlqEvent dlqEvt = new OutboxDlqEvent();
         if (dlqEvt.isEnabled()) {
             dlqEvt.eventType    = String.valueOf(entry.descriptor().eventTypeOrdinal());
@@ -351,6 +355,9 @@ public final class OutboxOrchestrator implements AutoCloseable {
     // ── JFR helpers ──────────────────────────────────────────────────────────
 
     private static void emitTransition(String prev, String next, int polled) {
+        if (!FlightRecorder.isInitialized()) {
+            return;
+        }
         OutboxStateTransitionEvent evt = new OutboxStateTransitionEvent();
         if (evt.isEnabled()) {
             evt.previousState = prev;
@@ -361,6 +368,9 @@ public final class OutboxOrchestrator implements AutoCloseable {
     }
 
     private static void emitBatchFlushed(int size, long durationNanos, int failed) {
+        if (!FlightRecorder.isInitialized()) {
+            return;
+        }
         OutboxBatchFlushedEvent evt = new OutboxBatchFlushedEvent();
         if (evt.isEnabled()) {
             evt.batchSize          = size;

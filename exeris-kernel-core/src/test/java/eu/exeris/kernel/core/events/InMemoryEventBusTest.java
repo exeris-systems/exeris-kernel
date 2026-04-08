@@ -133,7 +133,7 @@ class InMemoryEventBusTest {
 
         Projection<Integer> counter = engine.register(
                 "order-count", TYPE_ORDER, 0,
-                (state, d, p) -> { try (p) { return state + 1; } });
+                (state, d, p) -> state + 1);
 
         CountDownLatch latch = new CountDownLatch(3);
         fixture.bus().subscribe(TYPE_ORDER, (d, p) -> { try (p) { latch.countDown(); } });
@@ -158,7 +158,7 @@ class InMemoryEventBusTest {
 
         Projection<Integer> counter = engine.register(
                 "count2", TYPE_ORDER, 0,
-                (state, d, p) -> { try (p) { firstEvent.countDown(); return state + 1; } });
+                (state, d, p) -> { firstEvent.countDown(); return state + 1; });
 
         fixture.bus().publish(descriptor(ORD_ORDER), EventPayload.empty());
         assertThat(firstEvent.await(3, TimeUnit.SECONDS)).isTrue();

@@ -11,6 +11,7 @@ package eu.exeris.kernel.core.events;
 import jdk.jfr.Category;
 import jdk.jfr.Description;
 import jdk.jfr.Event;
+import jdk.jfr.FlightRecorder;
 import jdk.jfr.Label;
 import jdk.jfr.Name;
 import jdk.jfr.StackTrace;
@@ -40,11 +41,13 @@ final class EventBootstrapSelectedEvent extends Event {
 
     /* default */ static void emit(String providerClass, int priority,
                                    String providerId, String engineName) {
+        if (!FlightRecorder.isInitialized()) {
+            return;
+        }
         EventBootstrapSelectedEvent event = new EventBootstrapSelectedEvent();
         if (!event.isEnabled()) {
             return;
         }
-        event.begin();
         event.providerClass = providerClass;
         event.priority = priority;
         event.providerId = providerId;

@@ -185,10 +185,11 @@ final class CommunityEventEngine implements EventEngine {
 
             boolean queued = queue.push(descriptor, payload);
             if (!queued) {
-                throw EventBusException.publishOverflow(
-                        registry.nameOfOrdinal(descriptor.eventTypeOrdinal()),
-                        queue.size(),
-                        queue.capacity());
+                // push() returns false only on InterruptedException (interrupt flag already restored by queue).
+                // Bus took ownership but cannot deliver — close the payload before propagating.
+                payload.close();
+                throw new EventBusException("Interrupted while enqueueing persistent event '"
+                        + registry.nameOfOrdinal(descriptor.eventTypeOrdinal()) + "'");
             }
         }
     }

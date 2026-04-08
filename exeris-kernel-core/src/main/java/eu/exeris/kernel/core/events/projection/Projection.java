@@ -35,9 +35,10 @@ import java.util.concurrent.atomic.AtomicReference;
  * state via {@link #state()} — O(1) volatile read.
  *
  * <h2>RAII Contract</h2>
- * <p>The projection's internal {@link EventHandler} receives each
- * {@link EventPayload} with refCount already set correctly by the bus. The handler
- * closes the payload via try-with-resources after applying the state fold.
+ * <p>{@code Projection} is the sole owner of each {@link EventPayload} it receives
+ * from the bus. It closes the payload via try-with-resources in {@code onEvent},
+ * after the state fold completes (or fails). {@link ProjectionHandler#apply} MUST
+ * NOT close the payload.
  *
  * <h2>Lifecycle</h2>
  * <p>Call {@link #close()} to unsubscribe from the bus and stop receiving events.

@@ -16,8 +16,10 @@ import eu.exeris.kernel.spi.events.EventPayload;
 import eu.exeris.kernel.spi.events.EventQueue;
 import eu.exeris.kernel.spi.events.EventRegistry;
 import eu.exeris.kernel.spi.exceptions.events.EventEngineException;
+import jdk.jfr.FlightRecorder;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -70,13 +72,15 @@ final class CommunityEventLoop implements EventLoop {
                 .name("community-event-loop")
             .uncaughtExceptionHandler((thread, throwable) -> {
                 running.set(false);
-                EventLoopFailureEvent evt = new EventLoopFailureEvent();
-                if (evt.isEnabled()) {
-                    evt.loopName      = thread.getName();
-                    evt.phase         = "UNCAUGHT";
-                    evt.exceptionType = throwable.getClass().getSimpleName();
-                    evt.affectedCount = 0;
-                    evt.commit();
+                if (FlightRecorder.isInitialized()) {
+                    EventLoopFailureEvent evt = new EventLoopFailureEvent();
+                    if (evt.isEnabled()) {
+                        evt.loopName      = thread.getName();
+                        evt.phase         = "UNCAUGHT";
+                        evt.exceptionType = throwable.getClass().getSimpleName();
+                        evt.affectedCount = 0;
+                        evt.commit();
+                    }
                 }
             })
                 .start(this::runLoop);
@@ -153,8 +157,8 @@ final class CommunityEventLoop implements EventLoop {
 
     @SuppressWarnings("PMD.AvoidInstantiatingObjectsInLoops")
     private void dispatchByOrdinal(List<QueuedEvent> drained) {
-        Map<Integer, List<EventDescriptor>> descriptorsByOrdinal = new ConcurrentHashMap<>();
-        Map<Integer, List<EventPayload>> payloadsByOrdinal = new ConcurrentHashMap<>();
+        Map<Integer, List<EventDescriptor>> descriptorsByOrdinal = new HashMap<>();
+        Map<Integer, List<EventPayload>> payloadsByOrdinal = new HashMap<>();
 
         for (QueuedEvent event : drained) {
             int ordinal = event.descriptor().eventTypeOrdinal();
@@ -199,13 +203,15 @@ final class CommunityEventLoop implements EventLoop {
             processedTotal.addAndGet(payloads.size());
         } catch (RuntimeException ex) {
             failedTotal.addAndGet(payloads.size());
-            EventLoopFailureEvent evt = new EventLoopFailureEvent();
-            if (evt.isEnabled()) {
-                evt.loopName      = "community-event-loop";
-                evt.phase         = "DISPATCH";
-                evt.exceptionType = ex.getClass().getSimpleName();
-                evt.affectedCount = payloads.size();
-                evt.commit();
+            if (FlightRecorder.isInitialized()) {
+                EventLoopFailureEvent evt = new EventLoopFailureEvent();
+                if (evt.isEnabled()) {
+                    evt.loopName      = "community-event-loop";
+                    evt.phase         = "DISPATCH";
+                    evt.exceptionType = ex.getClass().getSimpleName();
+                    evt.affectedCount = payloads.size();
+                    evt.commit();
+                }
             }
             requeueOrClose(descriptors, payloads);
         } finally {
@@ -239,6 +245,9 @@ final class CommunityEventLoop implements EventLoop {
     }
 
     private static void emitRequeueFailure() {
+        if (!FlightRecorder.isInitialized()) {
+            return;
+        }
         EventLoopFailureEvent evt = new EventLoopFailureEvent();
         if (evt.isEnabled()) {
             evt.loopName      = "community-event-loop";
