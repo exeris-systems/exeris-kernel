@@ -70,11 +70,11 @@ class CommunityGraphDialectTest {
         }
 
         @Test
-        @DisplayName("contains a ? placeholder (JDBC-style)")
+        @DisplayName("contains a $1 placeholder (PostgreSQL-style)")
         void containsPlaceholder() {
             GraphEdgeDescriptor edge = GraphEdgeDescriptor.create("User", "FOLLOWS", "User");
             String sql = dialect.buildMatchQuery(edge);
-            assertThat(sql).contains("?");
+            assertThat(sql).contains("$1");
         }
 
         @Test
@@ -85,12 +85,12 @@ class CommunityGraphDialectTest {
         }
 
         @Test
-        @DisplayName("buildMatchQuery SQL has exactly one positional ? (source_id only, no tenant filter)")
+        @DisplayName("buildMatchQuery SQL has exactly one positional param $1 (source_id only)")
         void matchQueryHasOneParam() {
             GraphEdgeDescriptor edge = GraphEdgeDescriptor.create("User", "FOLLOWS", "User");
             String sql = dialect.buildMatchQuery(edge);
-            long count = sql.chars().filter(c -> c == '?').count();
-            assertThat(count).as("only source_id param; tenant_id filter removed").isEqualTo(1);
+            assertThat(sql).as("source_id param").contains("$1");
+            assertThat(sql).as("no second param").doesNotContain("$2");
         }
     }
 
@@ -135,12 +135,12 @@ class CommunityGraphDialectTest {
         }
 
         @Test
-        @DisplayName("buildMultiHopQuery anchor clause has one positional ? (source_id only, no tenant filter)")
+        @DisplayName("buildMultiHopQuery anchor clause has one positional param $1 (source_id only)")
         void multiHopQueryHasOneParamInAnchor() {
             GraphEdgeDescriptor edge = GraphEdgeDescriptor.create("User", "FOLLOWS", "User");
             String sql = dialect.buildMultiHopQuery(edge, 1, 2);
-            long count = sql.chars().filter(c -> c == '?').count();
-            assertThat(count).as("only source_id param in anchor; tenant_id filter removed").isEqualTo(1);
+            assertThat(sql).as("source_id param").contains("$1");
+            assertThat(sql).as("no second param").doesNotContain("$2");
         }
     }
 
@@ -250,19 +250,19 @@ class CommunityGraphDialectTest {
         }
 
         @Test
-        @DisplayName("tenant_id has DEFAULT nil-UUID sentinel")
-        void tenantIdHasNilDefault() {
+        @DisplayName("tenant_id column is not present")
+        void tenantIdNotPresent() {
             GraphEdgeDescriptor edge = GraphEdgeDescriptor.create("User", "FOLLOWS", "User");
             String sql = dialect.buildCreateEdgeTable(edge);
-            assertThat(sql).contains("DEFAULT '00000000-0000-0000-0000-000000000000'");
+            assertThat(sql).doesNotContain("tenant_id");
         }
 
         @Test
-        @DisplayName("PRIMARY KEY is composite (source_id, target_id, tenant_id)")
+        @DisplayName("PRIMARY KEY is (source_id, target_id)")
         void primaryKeyIsComposite() {
             GraphEdgeDescriptor edge = GraphEdgeDescriptor.create("User", "FOLLOWS", "User");
             String sql = dialect.buildCreateEdgeTable(edge);
-            assertThat(sql).containsIgnoringCase("PRIMARY KEY (source_id, target_id, tenant_id)");
+            assertThat(sql).containsIgnoringCase("PRIMARY KEY (source_id, target_id)");
         }
     }
 

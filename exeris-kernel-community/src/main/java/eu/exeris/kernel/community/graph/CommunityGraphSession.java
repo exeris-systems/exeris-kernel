@@ -188,7 +188,7 @@ final class CommunityGraphSession implements GraphSession {
             return;
         }
 
-        String sql = "DELETE FROM %s WHERE source_id = ? AND target_id = ?"
+        String sql = "DELETE FROM %s WHERE source_id = $1 AND target_id = $2"
                 .formatted(requireSqlIdentifier(edge.tableName()));
         try (PersistenceConnection conn = acquireConnection();
              PersistenceStatement stmt = conn.prepare(sql)) {
@@ -216,7 +216,7 @@ final class CommunityGraphSession implements GraphSession {
 
         String sql = """
                 INSERT INTO graph_nodes (id, label, properties)
-                VALUES (?, ?, ?::jsonb)
+                VALUES ($1, $2, $3::jsonb)
                 ON CONFLICT (id) DO UPDATE SET properties = EXCLUDED.properties
                 """;
         try (PersistenceConnection conn = acquireConnection();
@@ -240,7 +240,7 @@ final class CommunityGraphSession implements GraphSession {
             return;
         }
 
-        String sql = "DELETE FROM graph_nodes WHERE id = ? AND label = ?";
+        String sql = "DELETE FROM graph_nodes WHERE id = $1 AND label = $2";
         try (PersistenceConnection conn = acquireConnection();
              PersistenceStatement stmt = conn.prepare(sql)) {
             stmt.bindUuid(0, nodeId);
@@ -287,11 +287,7 @@ final class CommunityGraphSession implements GraphSession {
         if (source.equals(target)) {
             return new PathResult(source, target, List.of(source), 0.0, 0, SHORTEST_PATH_ALGORITHM);
         }
-        throw new GraphQueryException(
-                SHORTEST_PATH_ALGORITHM,
-                "Shortest path resolution without a GraphEdgeDescriptor is not supported; "
-                        + "use findShortestPath(GraphEdgeDescriptor, UUID, UUID)"
-        );
+        return PathResult.notFound(source, target, SHORTEST_PATH_ALGORITHM);
     }
 
     @Override
@@ -525,7 +521,7 @@ final class CommunityGraphSession implements GraphSession {
                 WITH RECURSIVE traversal AS (
                     SELECT target_id, 1 AS depth
                     FROM %s
-                    WHERE source_id = ?
+                    WHERE source_id = $1
                     UNION ALL
                     SELECT e.target_id, t.depth + 1
                     FROM %s e
@@ -670,15 +666,15 @@ final class CommunityGraphSession implements GraphSession {
     private String buildInsertEdgeSql(GraphEdgeDescriptor edge) {
         return """
                 INSERT INTO %s (source_id, target_id, weight, properties)
-                VALUES (?, ?, ?, ?::jsonb)
+                VALUES ($1, $2, $3, $4::jsonb)
                 """.formatted(requireSqlIdentifier(edge.tableName()));
     }
 
     private String buildUpsertEdgeSql(GraphEdgeDescriptor edge) {
         return """
                 INSERT INTO %s (source_id, target_id, weight, properties)
-                VALUES (?, ?, ?, ?::jsonb)
-                ON CONFLICT (source_id, target_id, tenant_id)
+                VALUES ($1, $2, $3, $4::jsonb)
+                ON CONFLICT (source_id, target_id)
                 DO UPDATE SET weight = EXCLUDED.weight, properties = EXCLUDED.properties
                 """.formatted(requireSqlIdentifier(edge.tableName()));
     }

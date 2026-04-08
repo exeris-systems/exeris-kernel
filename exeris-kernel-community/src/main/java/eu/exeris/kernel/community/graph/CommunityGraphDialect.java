@@ -17,11 +17,11 @@ import java.util.Locale;
 import java.util.regex.Pattern;
 
 /**
- * Community Graph Dialect — SQL:2023 PGQ transpiler for PostgreSQL.
+ * Community Graph Dialect — SQL query and DDL generator for PostgreSQL.
  *
- * <p>Generates GRAPH_TABLE MATCH queries and DDL for property graphs.
- * This is the Community tier dialect; Enterprise may use raw PG wire protocol
- * to send the same SQL without JDBC overhead.
+ * <p>Generates standard recursive CTE queries for traversal/shortest-path (SQL/PGQ mode)
+ * and Cypher queries (Cypher mode). DDL uses plain PostgreSQL syntax.
+ * Enterprise may use raw PG wire protocol to send the same SQL without JDBC overhead.
  *
  * @since 0.5.0
  */
@@ -58,7 +58,7 @@ final class CommunityGraphDialect implements GraphDialect {
         }
         return """
                 SELECT target_id FROM %s
-                WHERE source_id = ?
+                WHERE source_id = $1
                 """.formatted(requireSqlIdentifier(edge.tableName()));
     }
 
@@ -76,7 +76,7 @@ final class CommunityGraphDialect implements GraphDialect {
                 WITH RECURSIVE traversal AS (
                     SELECT target_id, 1 AS depth
                     FROM %s
-                    WHERE source_id = ?
+                    WHERE source_id = $1
                     UNION ALL
                     SELECT e.target_id, t.depth + 1
                     FROM %s e
@@ -108,7 +108,7 @@ final class CommunityGraphDialect implements GraphDialect {
                 WITH RECURSIVE path_search AS (
                     SELECT target_id, COALESCE(weight, 1.0), ARRAY[source_id, target_id] AS path, 1 AS depth
                     FROM %s
-                    WHERE source_id = ?
+                    WHERE source_id = $1
                     UNION ALL
                     SELECT e.target_id, p.weight + COALESCE(e.weight, 1.0),
                            p.path || e.target_id, p.depth + 1
@@ -117,7 +117,7 @@ final class CommunityGraphDialect implements GraphDialect {
                     WHERE p.depth < %d AND NOT e.target_id = ANY(p.path)
                 )
                 SELECT path, weight FROM path_search
-                WHERE target_id = ?
+                WHERE target_id = $2
                 ORDER BY weight ASC LIMIT 1
                 """.formatted(tableName, tableName, maxDepth);
     }
@@ -174,13 +174,12 @@ final class CommunityGraphDialect implements GraphDialect {
         }
         return """
                 CREATE TABLE IF NOT EXISTS %s (
-                    source_id   UUID NOT NULL,
-                    target_id   UUID NOT NULL,
-                    weight      DOUBLE PRECISION DEFAULT 1.0,
-                    properties  JSONB DEFAULT '{}',
-                    tenant_id   UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000',
-                    created_at  TIMESTAMPTZ DEFAULT NOW(),
-                    PRIMARY KEY (source_id, target_id, tenant_id)
+                    source_id  UUID NOT NULL,
+                    target_id  UUID NOT NULL,
+                    weight     DOUBLE PRECISION DEFAULT 1.0,
+                    properties JSONB DEFAULT '{}',
+                    created_at TIMESTAMPTZ DEFAULT NOW(),
+                    PRIMARY KEY (source_id, target_id)
                 )
                 """.formatted(requireSqlIdentifier(edge.tableName()));
     }
