@@ -148,15 +148,28 @@ public final class Slf4jTelemetrySink implements TelemetrySink {
             String component,
             String timestamp,
             ExerisKernelException exception) {
+        String message = buildStructuredMessage(exception);
         String rawArgs = buildStructuredRawArgsJson(exception != null ? exception.rawArgs() : null);
         return "{"
                 + "\"timestamp\":\"" + escapeJson(timestamp) + "\","
                 + "\"level\":\"" + escapeJson(resolvedLevelName) + "\","
                 + "\"code\":\"" + escapeJson(code) + "\","
                 + "\"component\":\"" + escapeJson(component) + "\","
-                + "\"message\":\"\","
+                + "\"message\":\"" + escapeJson(message) + "\","
                 + "\"rawArgs\":" + rawArgs
                 + "}";
+    }
+
+    private static String buildStructuredMessage(ExerisKernelException exception) {
+        if (exception == null) {
+            return "";
+        }
+        String message = exception.getMessage();
+        if (message != null && !message.isBlank()) {
+            return message;
+        }
+        String fallback = exception.getClass().getSimpleName();
+        return fallback != null ? fallback : "";
     }
 
     private static LogLevel resolveLogLevel(EventLevel eventLevel, String code) {

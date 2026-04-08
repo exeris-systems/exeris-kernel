@@ -23,6 +23,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -52,6 +53,8 @@ public final class FileSink implements TelemetrySink {
 
     private static final KernelEvent POISON = KernelEvent.info("POISON", "FileSink");
 
+    private static final AtomicInteger INSTANCE_COUNTER = new AtomicInteger(0);
+
     private final Path logPath;
     private final BlockingQueue<KernelEvent> queue;
     private final Thread writerThread;
@@ -72,8 +75,9 @@ public final class FileSink implements TelemetrySink {
         }
         this.logPath = logPath;
         this.queue   = new ArrayBlockingQueue<>(maxQueueDepth);
+        int instanceId = INSTANCE_COUNTER.getAndIncrement();
         this.writerThread = Thread.ofVirtual()
-              .name("exeris-telemetry-file-writer")
+              .name("exeris-telemetry-file-writer-" + instanceId)
               .start(this::writeLoop);
     }
 
@@ -84,7 +88,6 @@ public final class FileSink implements TelemetrySink {
     @Override
     public void emit(KernelEvent event) {
         if (!running) {
-            droppedCount.incrementAndGet();
             return;
         }
         if (!queue.offer(event)) {

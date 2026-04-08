@@ -64,7 +64,7 @@ public abstract class AbstractTelemetryProviderTck {
     }
 
     /**
-     * Opt-in assertion hook: provider should expose the standard Core JFR sink
+     * Opt-in assertion hook: provider should expose the standard JFR sink
      * when JFR is explicitly enabled.
      */
     protected boolean expectStandardJfrSinkWhenEnabled() {

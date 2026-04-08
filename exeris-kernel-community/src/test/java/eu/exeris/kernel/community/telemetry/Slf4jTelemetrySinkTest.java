@@ -46,20 +46,20 @@ class Slf4jTelemetrySinkTest {
             CapturingMdcAdapter mdcAdapter = new CapturingMdcAdapter();
             CapturingLogAdapter logAdapter = new CapturingLogAdapter(mdcAdapter);
             try (Slf4jTelemetrySink sink = new Slf4jTelemetrySink(logAdapter, mdcAdapter)) {
-            KernelEvent event = KernelEvent.error("EX-MEM-1001", "MemoryUnit",
-                new MemoryExhaustedException(4096L, 128L, null));
+                KernelEvent event = KernelEvent.error("EX-MEM-1001", "MemoryUnit",
+                        new MemoryExhaustedException(4096L, 128L, null));
 
-            sink.emit(event);
+                sink.emit(event);
 
-            assertThat(logAdapter.lastLevel).isEqualTo("ERROR");
-            assertThat(logAdapter.lastMessage)
-                .contains("\"code\":\"EX-MEM-1001\"")
-                .contains("\"component\":\"MemoryUnit\"")
-                .contains("\"rawArgs\":[4096,128]");
-            assertThat(logAdapter.lastMdcSnapshot)
-                .containsEntry("ex.code", "EX-MEM-1001")
-                .containsEntry("ex.level", "ERROR")
-                .containsEntry("ex.component", "MemoryUnit");
+                assertThat(logAdapter.lastLevel).isEqualTo("ERROR");
+                assertThat(logAdapter.lastMessage)
+                        .contains("\"code\":\"EX-MEM-1001\"")
+                        .contains("\"component\":\"MemoryUnit\"")
+                        .contains("\"rawArgs\":[4096,128]");
+                assertThat(logAdapter.lastMdcSnapshot)
+                        .containsEntry("ex.code", "EX-MEM-1001")
+                        .containsEntry("ex.level", "ERROR")
+                        .containsEntry("ex.component", "MemoryUnit");
                 assertThat(logAdapter.lastThrowablePresent).isTrue();
             }
         }
