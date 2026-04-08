@@ -51,7 +51,10 @@ final class FlowChoreographyBridge implements EventHandler {
                 case ChoreographyDecision.Wake(long most, long least) -> {
                     try {
                         scheduler.wake(new HeapFlowContext(most, least, "", 0, FlowState.PARKED, 0L));
-                    } catch (FlowEngineException ignored) {
+                    } catch (FlowEngineException ex) {
+                        if (ex.getMessage() == null || !ex.getMessage().contains("not currently parked")) {
+                            throw ex;
+                        }
                         // Stale or duplicate wake event — instance is no longer parked; idempotent no-op
                     }
                 }

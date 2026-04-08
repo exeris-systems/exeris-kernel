@@ -349,8 +349,8 @@ public final class KernelProviders {
      * The optional {@link IdempotencyGuard} for flow-step deduplication.
      *
      * <p>Bound by the bootstrapper before {@link FlowEngine#start()} when step-level
-     * idempotency tracking is required. If unbound, the engine falls back to the default
-     * heap-based {@code CoreIdempotencyGuard}.
+     * idempotency tracking is required. If unbound, the engine falls back to a default
+     * heap-based {@link IdempotencyGuard} implementation provided by the active tier.
      *
      * @since 0.6.0
      * @see IdempotencyGuard

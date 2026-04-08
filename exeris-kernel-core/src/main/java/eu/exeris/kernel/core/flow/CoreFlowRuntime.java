@@ -10,7 +10,6 @@ package eu.exeris.kernel.core.flow; // NOPMD
 
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.exceptions.flow.FlowEngineException;
-import eu.exeris.kernel.spi.exceptions.flow.FlowExecutionException;
 import eu.exeris.kernel.spi.flow.FlowEngineConfig;
 import eu.exeris.kernel.spi.flow.FlowEngineStats;
 import eu.exeris.kernel.spi.flow.FlowScheduler;
@@ -121,8 +120,19 @@ final class CoreFlowRuntime { // NOPMD
 
     private void ensureStarted() {
         if (!started || closed) {
-            throw new FlowEngineException("Flow engine is not started");
+            throw engineNotStarted();
         }
+    }
+
+    private FlowEngineException engineNotStarted() {
+        return FlowEngineException.startupFailure(
+                config.engineName(),
+                new IllegalStateException("Flow engine is not started"));
+    }
+
+    private FlowEngineException notParked(FlowKey key) {
+        return new FlowEngineException(
+                "Cannot wake flow that is not currently parked: " + key);
     }
 
     private void schedule(CoreFlowExecutionPlan plan, FlowContext context) {
@@ -190,7 +200,7 @@ final class CoreFlowRuntime { // NOPMD
         } else {
             instance = restoreFromSnapshot(key, null);
             if (instance == null) {
-                throw new FlowEngineException("Cannot wake flow that is not currently parked: " + key);
+                throw notParked(key);
             }
             liveInstances.put(key, instance);
         }
@@ -384,13 +394,12 @@ final class CoreFlowRuntime { // NOPMD
         liveInstances.remove(instance.key());
         parkedInstances.remove(instance.key());
         if (cause != null) {
-            throw FlowExecutionException.stepFailure(
+            FlowStepFailedEvent.emit(
                     instance.definitionName(),
+                    stepIndex,
                     instance.key().instanceIdMost(),
                     instance.key().instanceIdLeast(),
-                    stepIndex,
-                    cause
-            );
+                    cause);
         }
     }
 

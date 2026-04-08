@@ -33,12 +33,12 @@ final class FlowProgressPublisher {
         if (eventEngine == null) {
             return;
         }
+        if (!state.isTerminal()) {
+            return;
+        }
         try {
             int ordinal = resolveFlowProgressOrdinal(eventEngine);
             if (ordinal < 0) {
-                return;
-            }
-            if (!state.isTerminal()) {
                 return;
             }
             eventEngine.bus().publish(

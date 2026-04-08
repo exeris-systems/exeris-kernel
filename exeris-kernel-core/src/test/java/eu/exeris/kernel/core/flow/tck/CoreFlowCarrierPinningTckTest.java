@@ -28,7 +28,7 @@ import org.junit.jupiter.api.Tag;
  *
  * <h2>Why Disabled</h2>
  * <p>See {@link eu.exeris.kernel.spi.flow.FlowEngineCapabilities} and
- * <a href="docs/adr/ADR-007-Next-Gen-Runtime-Architecture.md">ADR-007 Performance Tiers</a>:
+ * <a href="docs/adr/ADR-007 Next-Gen Runtime Architecture.md">ADR-007 Performance Tiers</a>:
  * <ul>
  *   <li><b>Core:</b> Baseline orchestration; no carrier pinning guarantees.</li>
  *   <li><b>Community+:</b> Tries to avoid blocking operations on hot paths; may park carrier transiently.</li>
