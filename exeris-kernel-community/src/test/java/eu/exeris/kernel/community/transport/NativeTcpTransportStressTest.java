@@ -136,6 +136,10 @@ clientEngine = createClientEngine(provider, "127.0.0.1");
             assertThat(allDone).isTrue().withFailMessage("Not all clients completed in time");
 
             int expectedTotal = NUM_CLIENTS * MESSAGES_PER_CLIENT;
+            long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(500);
+            while (messageCount.get() < expectedTotal && System.nanoTime() < deadline) {
+                Thread.onSpinWait();
+            }
             assertThat(messageCount.get()).isEqualTo(expectedTotal)
                 .withFailMessage("Server did not receive expected message count");
         } finally {
@@ -197,6 +201,10 @@ clientEngine = createClientEngine(provider, "127.0.0.1");
             }
 
             // Verify server received all messages (6 total: 2 clients × 3 messages)
+            long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(500);
+            while (messageCount.get() < 6 && System.nanoTime() < deadline) {
+                Thread.onSpinWait();
+            }
             assertThat(messageCount.get()).isEqualTo(6)
                 .withFailMessage("Server did not receive expected message count");
         } finally {

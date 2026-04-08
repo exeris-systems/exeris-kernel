@@ -72,6 +72,14 @@ public final class HttpKernelProviders {
     public static final ScopedValue<HttpServerEngine> HTTP_SERVER_ENGINE = ScopedValue.newInstance();
 
     /**
+     * Optional bootstrap-time override for the server {@link HttpHandler}.
+     *
+     * <p>When bound, HTTP bootstrap may use this handler instead of the default
+     * subsystem handler. Intended for deterministic integration-test fixtures.
+     */
+    public static final ScopedValue<HttpHandler> HTTP_SERVER_HANDLER = ScopedValue.newInstance();
+
+    /**
      * The optional {@link HttpClientEngine} (created from {@link #HTTP_PROVIDER}).
      *
      * <p>Bound during HTTP bootstrap only when the configured {@link HttpMode} includes
@@ -103,6 +111,17 @@ public final class HttpKernelProviders {
      */
     public static HttpServerEngine httpServerEngine() {
         return HTTP_SERVER_ENGINE.get();
+    }
+
+    /**
+     * Returns an optional bootstrap-time server handler override.
+     *
+     * @return an {@link Optional} containing the override when bound, or empty otherwise
+     */
+    public static Optional<HttpHandler> httpServerHandler() {
+        return HTTP_SERVER_HANDLER.isBound()
+                ? Optional.of(HTTP_SERVER_HANDLER.get())
+                : Optional.empty();
     }
 
     /**
