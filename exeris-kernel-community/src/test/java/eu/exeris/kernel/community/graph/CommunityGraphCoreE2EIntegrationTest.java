@@ -67,7 +67,7 @@ class CommunityGraphCoreE2EIntegrationTest {
 
         assertThat(cypherQuery).contains("MATCH");
         assertThat(cypherQuery).contains("(source)-[:FOLLOWS]->(target)");
-        assertThat(cypherQuery).contains("$tenantId");
+        assertThat(cypherQuery).contains("$sourceId");
     }
 
     @Test

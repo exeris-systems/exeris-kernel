@@ -185,6 +185,20 @@ final class CommunityGraphDialect implements GraphDialect {
                 """.formatted(requireSqlIdentifier(edge.tableName()));
     }
 
+    /* default */ String buildCreateNodeTable() {
+        if (mode == Mode.CYPHER) {
+            return "// Cypher backend manages node storage implicitly";
+        }
+        return """
+                CREATE TABLE IF NOT EXISTS graph_nodes (
+                    id         UUID NOT NULL,
+                    label      VARCHAR(255) NOT NULL,
+                    properties JSONB DEFAULT '{}',
+                    PRIMARY KEY (id)
+                )
+                """;
+    }
+
     @Override
     public String buildDropPropertyGraph() {
         if (mode == Mode.CYPHER) {

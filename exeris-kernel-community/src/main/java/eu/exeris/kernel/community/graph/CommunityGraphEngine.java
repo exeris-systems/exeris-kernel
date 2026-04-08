@@ -73,6 +73,11 @@ public final class CommunityGraphEngine implements GraphEngine {
     @Override
     public void registerNodes(List<GraphNodeDescriptor> nodeDescriptors) {
         nodes.addAll(nodeDescriptors);
+        if (!dialect.isCypherMode() && KernelProviders.PERSISTENCE_ENGINE.isBound()) {
+            try (PersistenceConnection conn = KernelProviders.persistenceEngine().openConnection()) {
+                conn.executeUpdate(dialect.buildCreateNodeTable());
+            }
+        }
     }
 
     @Override
