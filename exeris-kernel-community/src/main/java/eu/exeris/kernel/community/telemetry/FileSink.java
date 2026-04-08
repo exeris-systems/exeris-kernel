@@ -118,9 +118,15 @@ public final class FileSink implements TelemetrySink {
         }
         // Wait for the writer thread to finish and close the file handle.
         // Required for test correctness (@TempDir cleanup) and graceful shutdown.
-        try {
-            writerThread.join(2_000L);
-        } catch (InterruptedException e) {
+        boolean interrupted = false;
+        while (writerThread.isAlive()) {
+            try {
+                writerThread.join();
+            } catch (InterruptedException e) {
+                interrupted = true;
+            }
+        }
+        if (interrupted) {
             Thread.currentThread().interrupt();
         }
     }
@@ -163,7 +169,8 @@ public final class FileSink implements TelemetrySink {
         } catch (InterruptedException _) {
             Thread.currentThread().interrupt();
         } catch (IOException _) {
-            // File write failure — accepted data loss. Telemetry MUST NOT crash the kernel.
+            // File write failure — stop accepting future events; telemetry MUST NOT crash the kernel.
+            running = false;
         }
     }
 

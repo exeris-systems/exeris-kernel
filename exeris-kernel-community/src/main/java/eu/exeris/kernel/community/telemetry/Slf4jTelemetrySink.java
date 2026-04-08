@@ -152,7 +152,7 @@ public final class Slf4jTelemetrySink implements TelemetrySink {
         String rawArgs = toJsonArray(exception != null ? exception.rawArgs() : null);
         return "{"
                 + "\"timestamp\":\"" + escapeJson(timestamp) + "\","
-                + "\"level\":\"" + escapeJson(resolvedLevelName) + "\",
+                + "\"level\":\"" + escapeJson(resolvedLevelName) + "\","
                 + "\"code\":\"" + escapeJson(code) + "\","
                 + "\"component\":\"" + escapeJson(component) + "\","
                 + "\"message\":\"" + escapeJson(message) + "\","

@@ -9,7 +9,6 @@
 package eu.exeris.kernel.core.telemetry;
 
 import eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents.CarrierPinnedJfrEvent;
-import eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents.EventEngineJfrEvent;
 import eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents.KernelLatencyJfrEvent;
 import eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents.KernelLifecycleJfrEvent;
 import eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents.KernelMetricJfrEvent;
@@ -56,10 +55,8 @@ import jdk.jfr.FlightRecorder;
  */
 // TooManyMethods: TelemetrySink SPI mandates emit/increment/gauge/latency/sinkName/close.
 // Typed private emitters are a minimal O(1) dispatch table required by the typed-JFR contract.
-// CyclomaticComplexity: dispatchTyped() switch covers domain prefixes — irreducible minimum.
-// GodClass: ATFD and WMC driven by typed dispatch table growth (one emitter per domain prefix).
-// Splitting into domain-specific sub-sinks would require a coordinator class of equal complexity.
-@SuppressWarnings({"PMD.TooManyMethods", "PMD.CyclomaticComplexity", "PMD.GodClass"})
+// CyclomaticComplexity: dispatchTyped() switch covers 3 domain prefixes — irreducible minimum.
+@SuppressWarnings({"PMD.TooManyMethods", "PMD.CyclomaticComplexity"})
 public final class JfrTelemetrySink implements TelemetrySink {
 
     private static final String SINK_NAME = "ExerisCore/JfrTelemetrySink";
@@ -95,8 +92,6 @@ public final class JfrTelemetrySink implements TelemetrySink {
             emitTransportBind(event, exception, code);
         } else if (code.startsWith("EX-RUN-")) {
             emitCarrierPinned(event, exception, code);
-        } else if (code.startsWith("EX-EVENT-")) {
-            emitEventEngine(event, exception, code);
         } else {
             emitLifecycle(event, safeMessage(exception));
         }
@@ -154,20 +149,6 @@ public final class JfrTelemetrySink implements TelemetrySink {
         jfr.blockTimeMs = rawLong(args, 0);
         jfr.carrierThreadName = rawString(args, 1);
         jfr.component = event.component();
-        jfr.commit();
-    }
-
-    private static void emitEventEngine(KernelEvent event, ExerisKernelException exception, String code) {
-        EventEngineJfrEvent jfr = new EventEngineJfrEvent();
-        if (!jfr.isEnabled()) {
-            return;
-        }
-        Object[] args = exception.rawArgs();
-        jfr.errorCode  = code;
-        String firstString = firstStringArg(args);
-        jfr.engineName = firstString != null ? firstString : event.component();
-        jfr.rawArg0    = rawString(args, 0);
-        jfr.rawArg1    = rawString(args, 1);
         jfr.commit();
     }
 
@@ -277,22 +258,6 @@ public final class JfrTelemetrySink implements TelemetrySink {
             return "";
         }
         return args[index] instanceof String str ? str : "";
-    }
-
-    /**
-     * Returns the first non-blank {@code String} element in {@code rawArgs}, or {@code null}
-     * if none exists. Used for EX-EVENT-* paths where the primary identifier is a String.
-     */
-    private static String firstStringArg(Object[] args) {
-        if (args == null) {
-            return null;
-        }
-        for (Object arg : args) {
-            if (arg instanceof String value && !value.isBlank()) {
-                return value;
-            }
-        }
-        return null;
     }
 
     private static String safeMessage(ExerisKernelException exception) {

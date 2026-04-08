@@ -22,7 +22,7 @@ import java.time.format.DateTimeFormatter;
  * <h2>Zero-Allocation Note</h2>
  * <p>This sink intentionally calls {@code getMessage()} and formats strings — it is a
  * <b>diagnostic, low-frequency</b> path. For production use, prefer {@link JfrTelemetrySink} or
- * the Enterprise {@code BinaryBlackBoxSink}. This sink MUST NOT be used in benchmarks
+ * the Enterprise {@code BinaryGlassBoxSink}. This sink MUST NOT be used in benchmarks
  * or hot-path testing.
  *
  * @since 0.5.0

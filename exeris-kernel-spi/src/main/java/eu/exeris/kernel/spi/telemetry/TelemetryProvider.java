@@ -17,9 +17,10 @@ import java.util.List;
  *
  * <h2>Open-Core Tier Differentiation</h2>
  * <ul>
- *   <li><b>Community</b>: Returns {@code [ConsoleSink, JfrTelemetrySink]}. Text output + JFR events.</li>
- *   <li><b>Enterprise</b>: Returns {@code [BinaryGlassBoxSink]}. Direct off-heap mmap dump
- *       of {@code rawArgs} with zero String allocation on the critical path.</li>
+ *   <li><b>Community</b>: Returns the active standard sink set for the community distribution,
+ *       typically combining human-readable output and event-oriented telemetry.</li>
+ *   <li><b>Enterprise</b>: May return a different sink set optimized for enterprise-only
+ *       telemetry capabilities and higher-performance collection paths.</li>
  * </ul>
  *
  * <h2>Discovery</h2>
