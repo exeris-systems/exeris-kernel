@@ -106,11 +106,11 @@ final class CommunityGraphDialect implements GraphDialect {
         String tableName = requireSqlIdentifier(edge.tableName());
         return """
                 WITH RECURSIVE path_search AS (
-                    SELECT target_id, weight, ARRAY[source_id, target_id] AS path, 1 AS depth
+                    SELECT target_id, COALESCE(weight, 1.0), ARRAY[source_id, target_id] AS path, 1 AS depth
                     FROM %s
                     WHERE source_id = ?
                     UNION ALL
-                    SELECT e.target_id, p.weight + e.weight,
+                    SELECT e.target_id, p.weight + COALESCE(e.weight, 1.0),
                            p.path || e.target_id, p.depth + 1
                     FROM %s e
                     INNER JOIN path_search p ON e.source_id = p.target_id

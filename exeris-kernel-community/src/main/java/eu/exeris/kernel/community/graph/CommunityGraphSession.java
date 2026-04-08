@@ -282,10 +282,16 @@ final class CommunityGraphSession implements GraphSession {
 
     @Override
     public PathResult findShortestPath(UUID source, UUID target) {
+        Objects.requireNonNull(source, "source must not be null");
+        Objects.requireNonNull(target, "target must not be null");
         if (source.equals(target)) {
             return new PathResult(source, target, List.of(source), 0.0, 0, SHORTEST_PATH_ALGORITHM);
         }
-        return PathResult.notFound(source, target, SHORTEST_PATH_ALGORITHM);
+        throw new GraphQueryException(
+                SHORTEST_PATH_ALGORITHM,
+                "Shortest path resolution without a GraphEdgeDescriptor is not supported; "
+                        + "use findShortestPath(GraphEdgeDescriptor, UUID, UUID)"
+        );
     }
 
     @Override

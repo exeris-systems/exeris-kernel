@@ -134,7 +134,7 @@ public abstract class AbstractGraphSyncServiceTck {
 
         @Test
         @DisplayName("session failure during node upsert \u2192 rollback is called")
-        void nodeUpsertFailureEmitsCorrectCode() {
+        void nodeUpsertFailureRollsBack() {
             setSessionFailMode(true);
             try (GraphSession session = engine.openSession()) {
                 session.beginTransaction();
@@ -144,7 +144,6 @@ public abstract class AbstractGraphSyncServiceTck {
                     throw new AssertionError("Expected RuntimeException from fail mode");
                 } catch (RuntimeException ex) {
                     session.rollback();
-                    assertThat(ex).isNotInstanceOf(AssertionError.class);
                 }
             }
         }
