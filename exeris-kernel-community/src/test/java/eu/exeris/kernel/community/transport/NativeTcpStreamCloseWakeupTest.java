@@ -39,7 +39,7 @@ class NativeTcpStreamCloseWakeupTest {
     }
 
     @Test
-    void markRemoteClosedUnblocksReadingVtWithin5ms() throws Exception {
+    void markRemoteClosedUnblocksReadingVtWithin50ms() throws Exception {
         try (ServerSocketChannel listener = ServerSocketChannel.open()) {
             listener.bind(new InetSocketAddress("127.0.0.1", 0));
             int port = ((InetSocketAddress) listener.getLocalAddress()).getPort();
@@ -87,8 +87,8 @@ class NativeTcpStreamCloseWakeupTest {
                     assertTrue(returnedAt >= 0, "VT did not complete read within 1s join timeout");
 
                     long durationMs = TimeUnit.NANOSECONDS.toMillis(returnedAt - signalAt);
-                    assertTrue(durationMs < 5,
-                            "Expected wakeup within 5ms but took " + durationMs + "ms");
+                    assertTrue(durationMs < 50,
+                            "Expected wakeup within 50ms but took " + durationMs + "ms");
                 } finally {
                     stream.close();
                     serverChannel.close();

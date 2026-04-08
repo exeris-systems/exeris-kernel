@@ -310,7 +310,16 @@ final class CommunityHttpClientEngine implements HttpClientEngine {
 
         List<HttpHeader> headers = parseHeaders(aggregate.segment(), headerStart, headerEnd);
         long bodyStart = headerEnd + 4;
-        long bodyLength = resolveBodyLength(headers, total - bodyStart);
+        long availableBodyBytes = total - bodyStart;
+        if (availableBodyBytes < 0) {
+            throw new IllegalStateException("Invalid HTTP response: body start exceeds received bytes");
+        }
+        long bodyLength = resolveBodyLength(headers, availableBodyBytes);
+        if (bodyLength > availableBodyBytes) {
+            throw new IllegalStateException(
+                    "Truncated HTTP response body: expected " + bodyLength
+                    + " bytes but received " + availableBodyBytes + " bytes");
+        }
 
         LoanedBuffer bodyBuffer = null;
         if (bodyLength > 0) {

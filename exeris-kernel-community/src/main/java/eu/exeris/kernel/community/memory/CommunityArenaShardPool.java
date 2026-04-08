@@ -223,7 +223,15 @@ final class CommunityArenaShardPool {
 
     private static int clampPowerOfTwo(int value, int min, int max) {
         int clamped = Math.clamp(value, min, max);
-        return Integer.highestOneBit(clamped);
+        int lower = Integer.highestOneBit(clamped);
+        if (lower == clamped) {
+            return clamped;
+        }
+        int upper = lower << 1;
+        if (upper > max || upper <= 0) {
+            return lower;
+        }
+        return upper;
     }
 
     /* default */ record Allocation(MemorySegment segment, int originShard) {

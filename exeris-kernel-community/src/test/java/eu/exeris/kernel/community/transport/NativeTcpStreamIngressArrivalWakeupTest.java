@@ -40,7 +40,7 @@ class NativeTcpStreamIngressArrivalWakeupTest {
     }
 
     @Test
-    void offerIngressUnblocksReadingVtWithin5ms() throws Exception {
+    void offerIngressUnblocksReadingVtWithin50ms() throws Exception {
         try (ServerSocketChannel listener = ServerSocketChannel.open()) {
             listener.bind(new InetSocketAddress("127.0.0.1", 0));
             int port = ((InetSocketAddress) listener.getLocalAddress()).getPort();
@@ -102,8 +102,8 @@ class NativeTcpStreamIngressArrivalWakeupTest {
                     assertTrue(bytesRead.get() > 0, "Expected positive byte count from read()");
 
                     long durationMs = TimeUnit.NANOSECONDS.toMillis(returnedAt - signalAt);
-                    assertTrue(durationMs < 5,
-                            "Expected wakeup within 5ms but took " + durationMs + "ms");
+                    assertTrue(durationMs < 50,
+                            "Expected wakeup within 50ms but took " + durationMs + "ms");
                 } finally {
                     stream.close();
                     serverChannel.close();

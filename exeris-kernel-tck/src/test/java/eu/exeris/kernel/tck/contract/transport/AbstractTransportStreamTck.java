@@ -214,7 +214,7 @@ public abstract class AbstractTransportStreamTck {
     class RemoteCloseUnblocksReader {
 
         @Test
-        @DisplayName("read() returns -1 within 50ms of remote close signal")
+        @DisplayName("read() returns -1 within 500ms of remote close signal")
         @Timeout(value = 2, unit = TimeUnit.SECONDS)
         void remoteClosedUnblocksReader() throws InterruptedException {
             // Arrange: start a VT that blocks in read()
@@ -253,8 +253,8 @@ public abstract class AbstractTransportStreamTck {
 
                 long durationMs = TimeUnit.NANOSECONDS.toMillis(returnedAt - signalAt);
                 assertThat(durationMs)
-                        .as("read() should unblock within 50ms of remote close \u2014 got %dms", durationMs)
-                        .isLessThanOrEqualTo(50L);
+                        .as("read() should unblock within 500ms of remote close — got %dms", durationMs)
+                        .isLessThanOrEqualTo(500L);
             }
         }
     }

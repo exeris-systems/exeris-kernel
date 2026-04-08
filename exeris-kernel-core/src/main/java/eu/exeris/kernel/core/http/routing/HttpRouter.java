@@ -93,7 +93,7 @@ public final class HttpRouter implements HttpHandler {
             return false;
         }
         int len = prefix.length();
-        return path.length() == len || path.charAt(len) == '/' || path.charAt(len) == '?';
+        return path.length() == len || path.charAt(len) == '/';
     }
 
     private static String stripQuery(String path) {
@@ -136,7 +136,7 @@ public final class HttpRouter implements HttpHandler {
 
         /**
          * Registers a prefix route. A trailing {@code /*} suffix is stripped automatically.
-         * Matches require a path boundary ({@code /} or {@code ?}) or exact length match
+         * Matches require a path boundary ({@code /}) or exact length match
          * to prevent partial-segment false positives (e.g. {@code /api} does not match
          * {@code /apiv2}).
          */
