@@ -517,7 +517,7 @@ final class CommunityGraphSession implements GraphSession {
     }
 
     private String buildJsonPushDownQuery(GraphTraversal traversal) {
-        String table = traversal.edgeDescriptor().tableName();
+        String table = requireSqlIdentifier(traversal.edgeDescriptor().tableName());
         int maxDepth = traversal.maxDepth();
         return """
                 WITH RECURSIVE traversal AS (
@@ -540,7 +540,7 @@ final class CommunityGraphSession implements GraphSession {
         String sql = """
                 SELECT source_id, target_id, COALESCE(weight, 1.0), properties
                 FROM %s
-                """.formatted(edge.tableName());
+                """.formatted(requireSqlIdentifier(edge.tableName()));
         try (PersistenceConnection conn = acquireConnection();
              PersistenceStatement stmt = conn.prepare(sql);
              QueryResult queryResult = stmt.executeQuery()) {

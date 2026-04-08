@@ -14,6 +14,7 @@ import eu.exeris.kernel.spi.graph.GraphEngine;
 import eu.exeris.kernel.spi.graph.GraphProvider;
 
 import java.util.Comparator;
+import java.util.Objects;
 import java.util.ServiceLoader;
 
 /**
@@ -78,6 +79,7 @@ public final class GraphBootstrap {
      * @throws GraphBootstrapException if no provider is available on the classpath
      */
     public static BootstrapResult loadWithProvider(GraphConfig config) {
+        Objects.requireNonNull(config, "config must not be null");
         GraphProvider provider = ServiceLoader.load(GraphProvider.class)
                 .stream()
                 .map(ServiceLoader.Provider::get)

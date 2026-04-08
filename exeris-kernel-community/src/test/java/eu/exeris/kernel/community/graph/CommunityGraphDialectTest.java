@@ -38,7 +38,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @DisplayName("L1 Unit: CommunityGraphDialect SQL generation")
 class CommunityGraphDialectTest {
 
-    private static final String GRAPH_NAME = "test-knowledge-graph";
+    private static final String GRAPH_NAME = "test_knowledge_graph";
     private CommunityGraphDialect dialect;
 
     @BeforeEach

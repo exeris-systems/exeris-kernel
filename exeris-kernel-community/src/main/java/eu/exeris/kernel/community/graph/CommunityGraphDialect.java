@@ -54,7 +54,7 @@ final class CommunityGraphDialect implements GraphDialect {
                     MATCH (source)-[:%s]->(target)
                     WHERE source.id = $sourceId AND source.tenant_id = $tenantId
                     RETURN target.id AS target_id
-                    """.formatted(edge.edgeType());
+                    """.formatted(requireCypherIdentifier(edge.edgeType()));
         }
         return """
                 SELECT target_id FROM %s
@@ -69,7 +69,7 @@ final class CommunityGraphDialect implements GraphDialect {
                     MATCH p = (source)-[:%s*%d..%d]->(target)
                     WHERE source.id = $sourceId AND source.tenant_id = $tenantId
                     RETURN DISTINCT target.id AS id
-                    """.formatted(edge.edgeType(), minHops, maxHops);
+                    """.formatted(requireCypherIdentifier(edge.edgeType()), minHops, maxHops);
         }
         String tableName = requireSqlIdentifier(edge.tableName());
         return """
@@ -102,7 +102,7 @@ final class CommunityGraphDialect implements GraphDialect {
                            ) AS weight
                     ORDER BY weight ASC
                     LIMIT 1
-                    """.formatted(edge.edgeType(), maxDepth);
+                    """.formatted(requireCypherIdentifier(edge.edgeType()), maxDepth);
         }
         String tableName = requireSqlIdentifier(edge.tableName());
         return """
@@ -211,6 +211,16 @@ final class CommunityGraphDialect implements GraphDialect {
             case "neo4j", "memgraph", "falkordb" -> true;
             default -> false;
         };
+    }
+
+    private static final Pattern CYPHER_IDENTIFIER_PATTERN = Pattern.compile("^[A-Za-z]\\w*$");
+
+    private static String requireCypherIdentifier(String identifier) {
+        if (identifier == null || !CYPHER_IDENTIFIER_PATTERN.matcher(identifier).matches()) {
+            throw new IllegalArgumentException(
+                    "Invalid Cypher identifier: expected [A-Za-z][A-Za-z0-9_]*, got: " + identifier);
+        }
+        return identifier;
     }
 
     private static String requireSqlIdentifier(String identifier) {
