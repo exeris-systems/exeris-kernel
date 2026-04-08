@@ -412,7 +412,8 @@ final class CommunityGraphSession implements GraphSession {
             }
         }
         if (KernelProviders.PERSISTENCE_ENGINE.isBound()) {
-            return KernelProviders.PERSISTENCE_ENGINE.get().openConnection();
+            return KernelProviders.PERSISTENCE_ENGINE.get()
+                    .openConnection(KernelProviders.storageContextOrSystem());
         }
         throw new GraphQueryException("ACCESS",
                 "PersistenceEngine is not available in this request scope (no ScopedValue binding)");

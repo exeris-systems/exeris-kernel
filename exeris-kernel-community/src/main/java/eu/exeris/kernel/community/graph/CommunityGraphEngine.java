@@ -51,7 +51,7 @@ public final class CommunityGraphEngine implements GraphEngine {
 
     /* default */ CommunityGraphEngine(GraphConfig config) {
         this.dialect = new CommunityGraphDialect(config.graphName(), config.backendType());
-        this.neo4jClient = (dialect.isCypherMode() && hasNeo4jUri(config)) ? new CommunityNeo4jClient(config) : null;
+        this.neo4jClient = dialect.isCypherMode() ? new CommunityNeo4jClient(config) : null;
         this.nodes = new CopyOnWriteArrayList<>();
         this.edges = new CopyOnWriteArrayList<>();
         this.running = true;
@@ -120,14 +120,6 @@ public final class CommunityGraphEngine implements GraphEngine {
         }
     }
 
-    private static boolean hasNeo4jUri(GraphConfig config) {
-        String uri = config.properties().get("neo4j.uri");
-        if (uri != null && !uri.isBlank()) {
-            return true;
-        }
-        String envUri = System.getenv("EXERIS_GRAPH_NEO4J_URI");
-        return envUri != null && !envUri.isBlank();
-    }
 }
 
 
