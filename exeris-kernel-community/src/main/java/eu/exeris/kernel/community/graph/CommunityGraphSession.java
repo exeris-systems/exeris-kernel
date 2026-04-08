@@ -18,7 +18,6 @@ import eu.exeris.kernel.spi.graph.algorithm.EdgeWeightFunction;
 import eu.exeris.kernel.spi.graph.model.GraphEdgeDescriptor;
 import eu.exeris.kernel.spi.graph.model.GraphTraversal;
 import eu.exeris.kernel.spi.graph.model.PathResult;
-import eu.exeris.kernel.spi.memory.AllocationHint;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.persistence.PersistenceConnection;
 import eu.exeris.kernel.spi.persistence.PersistenceStatement;
@@ -98,7 +97,7 @@ final class CommunityGraphSession implements GraphSession {
         if (dialect.isCypherMode()) {
             List<UUID> bfs = traverseBreadthFirstCypher(traversal);
             byte[] jsonBytes = toUuidJsonArray(bfs);
-            LoanedBuffer buffer = KernelProviders.allocator().allocate(AllocationHint.MEDIUM);
+            LoanedBuffer buffer = KernelProviders.allocator().allocateNetwork(jsonBytes.length);
             MemorySegment.copy(jsonBytes, 0, buffer.segment(), ValueLayout.JAVA_BYTE, 0, jsonBytes.length);
             buffer.setSize(jsonBytes.length);
             return buffer;
@@ -118,7 +117,7 @@ final class CommunityGraphSession implements GraphSession {
                 } else {
                     jsonBytes = EMPTY_JSON;
                 }
-                LoanedBuffer buffer = KernelProviders.allocator().allocate(AllocationHint.MEDIUM);
+                LoanedBuffer buffer = KernelProviders.allocator().allocateNetwork(jsonBytes.length);
                 MemorySegment.copy(jsonBytes, 0, buffer.segment(),
                         ValueLayout.JAVA_BYTE, 0, jsonBytes.length);
                 buffer.setSize(jsonBytes.length);

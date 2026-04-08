@@ -93,7 +93,11 @@ public final class GraphSyncService {
                     event.success = true;
                 }
             } catch (RuntimeException cause) {
-                session.rollback();
+                try {
+                    session.rollback();
+                } catch (RuntimeException rollbackFailure) {
+                    cause.addSuppressed(rollbackFailure);
+                }
                 GraphSyncFailedEvent.emit(label, cause.getMessage());
                 throw new GraphSyncException(label, "Node upsert failed during L1→L2 sync", cause);
             }
@@ -128,7 +132,11 @@ public final class GraphSyncService {
                     event.success = true;
                 }
             } catch (RuntimeException cause) {
-                session.rollback();
+                try {
+                    session.rollback();
+                } catch (RuntimeException rollbackFailure) {
+                    cause.addSuppressed(rollbackFailure);
+                }
                 GraphSyncFailedEvent.emit(label, cause.getMessage());
                 throw new GraphSyncException(label, "Node delete failed during L1→L2 sync", cause);
             }
@@ -169,7 +177,11 @@ public final class GraphSyncService {
                     event.success = true;
                 }
             } catch (RuntimeException cause) {
-                session.rollback();
+                try {
+                    session.rollback();
+                } catch (RuntimeException rollbackFailure) {
+                    cause.addSuppressed(rollbackFailure);
+                }
                 GraphSyncFailedEvent.emit(edgeType, cause.getMessage());
                 throw new GraphSyncException(edgeType, "Edge upsert failed during L1→L2 sync", cause);
             }
@@ -207,7 +219,11 @@ public final class GraphSyncService {
                     event.success = true;
                 }
             } catch (RuntimeException cause) {
-                session.rollback();
+                try {
+                    session.rollback();
+                } catch (RuntimeException rollbackFailure) {
+                    cause.addSuppressed(rollbackFailure);
+                }
                 GraphSyncFailedEvent.emit(edgeType, cause.getMessage());
                 throw new GraphSyncException(edgeType, "Edge delete failed during L1→L2 sync", cause);
             }

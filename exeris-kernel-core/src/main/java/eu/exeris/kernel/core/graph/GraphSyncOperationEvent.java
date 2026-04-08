@@ -48,7 +48,8 @@ final class GraphSyncOperationEvent extends Event {
 
     /**
      * Allocates and begins a new event only if JFR is initialized and this event is enabled.
-     * Returns {@code null} with zero allocation when JFR is inactive or the event is disabled.
+     * Returns {@code null} with zero allocation when JFR is not initialized; allocates one instance
+     * to check enablement and returns {@code null} (discarding the instance) if the event is disabled.
      */
     /* default */ static GraphSyncOperationEvent beginIfEnabled() {
         if (!FlightRecorder.isInitialized()) {
