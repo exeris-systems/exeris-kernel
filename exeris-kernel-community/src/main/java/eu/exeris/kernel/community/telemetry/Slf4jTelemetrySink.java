@@ -33,6 +33,14 @@ import java.util.Objects;
  * intentionally no-op. This sink is lifecycle-event-oriented; use JFR as the primary
  * path for metric signals.
  *
+ * <h2>Allocation and MDC policy</h2>
+ * <p>This sink is a <b>diagnostic/fallback path</b>. It intentionally allocates Strings,
+ * calls {@code getMessage()}, and uses SLF4J MDC. These are not violations of the
+ * no-allocation contract: that contract applies only to Core runtime hot-path sinks
+ * (e.g., {@link eu.exeris.kernel.core.telemetry.JfrTelemetrySink}). MDC is populated
+ * only at the outermost emit boundary (try/finally) and is an intrinsic edge concern
+ * of SLF4J structured logging — not kernel context propagation.</p>
+ *
  * @since 0.5.0
  */
 @SuppressWarnings({

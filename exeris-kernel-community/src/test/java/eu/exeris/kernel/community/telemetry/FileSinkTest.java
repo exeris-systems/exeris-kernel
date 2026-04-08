@@ -146,18 +146,22 @@ class FileSinkTest {
 
         @Test
         @DisplayName("Overflow increments droppedCount without blocking the caller")
-        void overflowIncrementsDropped() throws InterruptedException {
+        void overflowIncrementsDropped() throws Exception {
             Path logFile = tempDir.resolve("overflow.log");
-            // Very small queue depth = 1 to trigger drops quickly
-            FileSink sink = new FileSink(logFile, 1);
-            long attempts = 0;
-            while (sink.droppedCount() == 0L && attempts < 10_000) {
-                sink.emit(KernelEvent.info("EX-OVF-" + attempts, "overflow test"));
-                attempts++;
+            // Queue depth=1, burst from 1000 VTs: concurrent offers will race and many must be dropped.
+            try (FileSink sink = new FileSink(logFile, 1)) {
+                try (var scope = StructuredTaskScope.open()) {
+                    for (int i = 0; i < 1_000; i++) {
+                        final int idx = i;
+                        scope.fork(() -> {
+                            sink.emit(KernelEvent.info("EX-OVF-" + idx, "overflow test"));
+                            return null;
+                        });
+                    }
+                    scope.join();
+                }
+                assertThat(sink.droppedCount()).isGreaterThan(0L);
             }
-            // Must not block — and sustained overflow must be reflected in droppedCount
-            assertThat(sink.droppedCount()).isGreaterThan(0L);
-            sink.close();
         }
     }
 
@@ -171,16 +175,20 @@ class FileSinkTest {
         Path logFile = tempDir.resolve("concurrent.log");
         try (FileSink sink = new FileSink(logFile, 1024)) {
             try (var scope = StructuredTaskScope.open()) {
+                List<StructuredTaskScope.Subtask<Void>> subtasks = new java.util.ArrayList<>();
                 for (int i = 0; i < 500; i++) {
                     final int idx = i;
-                    scope.fork(() -> {
+                    subtasks.add(scope.fork(() -> {
                         sink.emit(KernelEvent.info("EX-CONCURRENT-" + idx, "vt-" + idx));
                         return null;
-                    });
+                    }));
                 }
                 scope.join();
+                assertThat(subtasks)
+                        .allSatisfy(subtask -> assertThat(subtask.state())
+                                .isEqualTo(StructuredTaskScope.Subtask.State.SUCCESS));
             }
-            // All emits completed — no exception propagated
+            // All emits completed without exception
         }
         // Writer thread finished by close() — verify file is readable
         if (Files.exists(logFile)) {

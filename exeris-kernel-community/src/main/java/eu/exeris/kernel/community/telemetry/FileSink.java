@@ -31,13 +31,13 @@ import java.util.concurrent.atomic.AtomicLong;
  *
  * <h2>Implementation</h2>
  * <p>Events are queued in a bounded {@link ArrayBlockingQueue} and drained by a
- * dedicated Virtual Thread (not a carrier thread — no pinning). If the queue is full,
- * the event is dropped and a {@link #droppedCount()} counter is incremented
- * (backpressure, NOT blocking on the caller's thread).
+ * dedicated virtual thread to avoid consuming a platform thread while parked. If the
+ * queue is full, the event is dropped and a {@link #droppedCount()} counter is
+ * incremented (backpressure, NOT blocking on the caller's thread).
  *
  * <h2>Zero-Allocation on the Hot Path</h2>
  * <p>{@link #emit} only enqueues the event reference — no {@code String.format()} occurs
- * on the caller thread. All formatting happens on the writer Virtual Thread.
+ * on the caller thread. All formatting happens on the writer virtual thread.
  *
  * <h2>Thread Safety</h2>
  * <p>Safe for concurrent invocation from any number of Virtual Threads.
@@ -128,10 +128,25 @@ public final class FileSink implements TelemetrySink {
         }
         // Wait for the writer thread to finish and close the file handle.
         // Required for test correctness (@TempDir cleanup) and graceful shutdown.
+        long gracefulNanos = TimeUnit.SECONDS.toNanos(5L);
+        long deadline = System.nanoTime() + gracefulNanos;
         boolean interrupted = false;
         while (writerThread.isAlive()) {
+            long remainingNanos = deadline - System.nanoTime();
+            if (remainingNanos <= 0L) {
+                break;
+            }
             try {
-                writerThread.join();
+                long waitMillis = Math.max(1L, TimeUnit.NANOSECONDS.toMillis(remainingNanos));
+                writerThread.join(waitMillis);
+            } catch (InterruptedException e) {
+                interrupted = true;
+            }
+        }
+        if (writerThread.isAlive()) {
+            writerThread.interrupt();
+            try {
+                writerThread.join(1_000L);
             } catch (InterruptedException e) {
                 interrupted = true;
             }
