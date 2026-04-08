@@ -65,6 +65,8 @@ final class NativeTcpStream implements TransportStream {
     private static final int QUEUE_DEPTH_THRESHOLD_LOW = 100;
     private static final int QUEUE_DEPTH_THRESHOLD_MID = 500;
     private static final int QUEUE_DEPTH_THRESHOLD_HIGH = 1000;
+    private static final int INBOUND_QUEUE_CAPACITY =
+            QUEUE_BACKPRESSURE_ENABLED ? QUEUE_DEPTH_THRESHOLD_HIGH : Integer.MAX_VALUE;
 
     private final String engineName;
     private final long streamId;
@@ -78,7 +80,7 @@ final class NativeTcpStream implements TransportStream {
     private final AtomicBoolean closed = new AtomicBoolean(false);
     private final AtomicBoolean remoteClosed = new AtomicBoolean(false);
     private final Queue<PendingWrite> outboundQueue = new LinkedBlockingQueue<>();
-    private final BlockingQueue<LoanedBuffer> inboundQueue = new LinkedBlockingQueue<>(QUEUE_DEPTH_THRESHOLD_HIGH);
+    private final BlockingQueue<LoanedBuffer> inboundQueue = new LinkedBlockingQueue<>(INBOUND_QUEUE_CAPACITY);
     private final AtomicBoolean tlsBound = new AtomicBoolean(false);
     private final AtomicBoolean tlsReady = new AtomicBoolean(false);
     private final Object tlsLock = new Object();
@@ -88,7 +90,7 @@ final class NativeTcpStream implements TransportStream {
     private final AtomicBoolean writeParked = new AtomicBoolean(false);
     
     // Phase 1B: Queue depth tracking for telemetry and backpressure
-    private int lastQueueDepth;
+    private volatile int lastQueueDepth;
 
     private LoanedBuffer currentInbound;
     private int currentInboundOffset;
@@ -440,7 +442,7 @@ final class NativeTcpStream implements TransportStream {
         }
 
         if (!ensureTlsReady(false)) {
-            return true;
+            return outboundQueue.peek() == null;
         }
 
         PendingWrite pending = outboundQueue.peek();
