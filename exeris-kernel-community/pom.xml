@@ -27,7 +27,7 @@
             by default. They are excluded from all Surefire runs unless explicitly enabled
             via: mvn test -DincludedGroups=flamegraph -DexcludedGroups=
         -->
-        <excludedGroups>flamegraph</excludedGroups>
+        <excludedGroups>flamegraph,integration</excludedGroups>
     </properties>
 
     <dependencies>
@@ -108,6 +108,10 @@
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
             <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.neo4j.driver</groupId>
+            <artifactId>neo4j-java-driver</artifactId>
         </dependency>
         <!-- Test: Mockito for persistence/crypto unit tests with mocked SPI -->
         <dependency>
