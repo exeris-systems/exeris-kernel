@@ -17,12 +17,13 @@ import jdk.jfr.Name;
 import jdk.jfr.StackTrace;
 
 /**
- * JFR event emitted on every Community-tier buffer allocation.
+ * JFR event emitted for sampled Community-tier buffer allocations.
  *
  * <h2>JFR-First Contract</h2>
  * <p>Every allocation lifecycle event MUST be observable via Java Flight Recorder
  * without any external agent. This event is emitted on the hot path only when
- * {@code MemoryProviderConfig#jfrEnabled()} is {@code true}.
+ * {@code MemoryProviderConfig#jfrEnabled()} is {@code true}; emission can be sampled
+ * by Community runtime policy.
  *
  * @since 0.5.0
  */
