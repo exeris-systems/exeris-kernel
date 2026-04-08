@@ -143,7 +143,9 @@ final class CoreFlowPlanFactory implements FlowExecutionPlanFactory {
                         "Step " + index + " has " + unconditional.size()
                         + " unconditional outgoing transitions; at most one is permitted");
             }
-            nextSteps[index] = outgoing.getFirst().toStep();
+            nextSteps[index] = unconditional.isEmpty()
+                    ? outgoing.getFirst().toStep()
+                    : unconditional.getFirst().toStep();
         }
         return nextSteps;
     }

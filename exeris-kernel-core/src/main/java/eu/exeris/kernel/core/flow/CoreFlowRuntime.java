@@ -242,6 +242,8 @@ final class CoreFlowRuntime { // NOPMD
         int admitted = activeFlows.incrementAndGet();
         if (admitted > config.maxConcurrentFlows()) {
             activeFlows.decrementAndGet();
+            instance.markNotScheduled();
+            liveInstances.remove(instance.key(), instance);
             throw new FlowEngineException(
                     "Flow scheduling rejected: maxConcurrentFlows limit reached (" + config.maxConcurrentFlows() + ')');
         }
@@ -346,7 +348,7 @@ final class CoreFlowRuntime { // NOPMD
             stepExecutions.increment();
             FlowOutcome outcome = action.execute(instance.contextView());
             if (outcome == FlowOutcome.FAIL) {
-                fail(instance, stepIndex, null);
+                fail(instance, stepIndex);
             }
             return outcome;
         } catch (Throwable cause) {
@@ -356,13 +358,13 @@ final class CoreFlowRuntime { // NOPMD
                     instance.key().instanceIdMost(),
                     instance.key().instanceIdLeast(),
                     cause);
-            fail(instance, stepIndex, cause);
+            fail(instance, stepIndex);
             return FlowOutcome.FAIL;
         }
     }
 
     @SuppressWarnings("PMD.AvoidCatchingGenericException")
-    private void fail(RuntimeFlowInstance instance, int stepIndex, Throwable cause) {
+    private void fail(RuntimeFlowInstance instance, int stepIndex) {
         instance.currentStep(stepIndex);
         instance.state(FlowState.COMPENSATING);
         persistSnapshot(instance, FlowState.COMPENSATING, stepIndex);
