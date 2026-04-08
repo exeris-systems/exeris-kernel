@@ -17,13 +17,13 @@ import jdk.jfr.Name;
 import jdk.jfr.StackTrace;
 
 /**
- * JFR event emitted on every Community-tier buffer release.
+ * JFR event emitted for sampled Community-tier buffer release.
  *
  * <h2>JFR-First Contract</h2>
  * <p>Every allocation lifecycle event MUST be observable via Java Flight Recorder
  * without any external agent. This event is the release-side counterpart of
  * {@link CommunityAllocationEvent} and is emitted when a buffer's reference count
- * drops to zero and the backing arena is closed.
+ * drops to zero and the buffer is released.
  *
  * @since 0.5.0
  * @see CommunityAllocationEvent

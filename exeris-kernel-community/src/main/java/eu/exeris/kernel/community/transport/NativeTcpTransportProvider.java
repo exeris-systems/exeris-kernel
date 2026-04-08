@@ -85,14 +85,8 @@ public final class NativeTcpTransportProvider implements TransportProvider {
                     "TLS is misconfigured: both certPath and keyPath must be set together or both be null",
                     null);
         }
-        return new CryptoProviderConfig(
-                CryptoProviderConfig.Protocol.TCP_TLS,
+        return CryptoProviderConfig.httpsServer(
                 java.nio.file.Path.of(certPath),
-                java.nio.file.Path.of(keyPath),
-                java.util.List.of(),
-                512,
-                true,
-                CryptoProviderConfig.TLS_1_3
-        );
+                java.nio.file.Path.of(keyPath));
     }
 }

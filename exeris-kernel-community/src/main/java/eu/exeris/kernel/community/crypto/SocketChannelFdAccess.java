@@ -12,6 +12,7 @@ import eu.exeris.kernel.spi.exceptions.crypto.TlsHandshakeException;
 
 import java.io.FileDescriptor;
 import java.lang.reflect.Field;
+import java.lang.reflect.InaccessibleObjectException;
 import java.nio.channels.SocketChannel;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -80,12 +81,13 @@ public final class SocketChannelFdAccess {
 	@SuppressWarnings("PMD.AvoidAccessibilityAlteration")
 	private static Field resolveFileDescriptorFdField() {
 		// Necessary for reflection access to private native FD field;
-		// modern Java module system requires explicit permission
+		// modern Java module system requires explicit permission 
+		// via --add-opens java.base/java.io=ALL-UNNAMED
 		try {
 			Field fdField = FileDescriptor.class.getDeclaredField("fd");
 			fdField.setAccessible(true);
 			return fdField;
-		} catch (NoSuchFieldException exception) {
+		} catch (NoSuchFieldException | InaccessibleObjectException exception) {
 			return null;
 		}
 	}
@@ -93,7 +95,8 @@ public final class SocketChannelFdAccess {
 	@SuppressWarnings("PMD.AvoidAccessibilityAlteration")
 	private static Field resolveChannelFdField(Class<?> channelType) {
 		// Necessary for reflection access to private native FD field;
-		// modern Java module system requires explicit permission
+		// modern Java module system requires explicit permission 
+		// via --add-opens java.base/sun.nio.ch=ALL-UNNAMED
 		Class<?> current = channelType;
 		while (current != null) {
 			try {
@@ -106,7 +109,7 @@ public final class SocketChannelFdAccess {
 				return fdField;
 			} catch (NoSuchFieldException exception) {
 				current = current.getSuperclass();
-			} catch (SecurityException exception) {
+			} catch (SecurityException | InaccessibleObjectException exception) {
 				throw new TlsHandshakeException(FD_ACCESS_DENIED_MESSAGE, exception);
 			}
 		}

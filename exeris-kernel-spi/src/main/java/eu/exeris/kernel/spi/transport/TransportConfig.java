@@ -59,35 +59,14 @@ public record TransportConfig(
     public static final String DEFAULT_BIND_ADDRESS = "0.0.0.0";
 
     /**
-     * Minimum allowed reactor count.
-     */
-    private static final int MIN_REACTOR_COUNT = 1;
-
-    /**
-     * Maximum default reactor count (capped for container environments).
-     */
-    private static final int MAX_DEFAULT_REACTORS = 4;
-
-    /**
-     * Minimum allowed connection count.
-     */
-    private static final int MIN_CONNECTIONS = 1;
-
-    /**
-     * Minimum valid port number.
-     */
-    private static final int MIN_PORT = 1;
-
-    /**
-     * Maximum valid port number.
-     */
-    private static final int MAX_PORT = 65_535;
-
-    /**
-     * Default reactor count: number of available processors, capped at 4.
+     * Default reactor count: number of available processors (minimum 1),
+     * optionally capped by {@code exeris.transport.defaultMaxReactors}.
+     *
+     * <p>If the property is absent, blank, non-numeric, or non-positive,
+     * no cap is applied.
      */
     public static final int DEFAULT_REACTOR_COUNT =
-            Math.clamp(Runtime.getRuntime().availableProcessors(), MIN_REACTOR_COUNT, MAX_DEFAULT_REACTORS);
+            TransportConfigSupport.computeDefaultReactorCount("exeris.transport.defaultMaxReactors");
 
     /**
      * Compact constructor — validates invariants eagerly (fail-fast bootstrap).
@@ -97,54 +76,14 @@ public record TransportConfig(
             throw new IllegalArgumentException("TransportMode must not be null");
         }
         if (mode != TransportMode.DISABLED) {
-            validateServerDualFields(mode, bindAddress, port);
-            validateSharedFields(reactorCount, maxConnections, idleTimeoutMillis);
-        }
-    }
-
-    private static void validateServerDualFields(TransportMode mode, String bindAddress, int port) {
-        if (mode != TransportMode.CLIENT && (bindAddress == null || bindAddress.isBlank())) {
-            throw new IllegalArgumentException("bindAddress must not be null/blank for SERVER/DUAL mode");
-        }
-        validatePort(mode, port);
-    }
-
-    /**
-     * Validates the port value for the given mode.
-     *
-     * <ul>
-     *   <li>SERVER / DUAL: port must be in the range {@value MIN_PORT}–{@value MAX_PORT}.</li>
-     *   <li>CLIENT: port must be either {@code 0} (sentinel "not used") or a valid port number
-     *       in the range {@value MIN_PORT}–{@value MAX_PORT}. Arbitrary out-of-range values
-     *       are rejected to prevent misleading diagnostics output.</li>
-     * </ul>
-     */
-    private static void validatePort(TransportMode mode, int port) {
-        if (mode == TransportMode.CLIENT) {
-            if (port != 0 && (port < MIN_PORT || port > MAX_PORT)) {
-                throw new IllegalArgumentException(
-                        "port must be 0 (not used) or 1–65535 for CLIENT mode, got: " + port);
-            }
-        } else {
-            if (port < MIN_PORT || port > MAX_PORT) {
-                throw new IllegalArgumentException(
-                        "port must be 1–65535 for SERVER/DUAL mode, got: " + port);
-            }
-        }
-    }
-
-    private static void validateSharedFields(int reactorCount, int maxConnections, long idleTimeoutMillis) {
-        if (reactorCount < MIN_REACTOR_COUNT) {
-            throw new IllegalArgumentException(
-                    "reactorCount must be >= " + MIN_REACTOR_COUNT + ", got: " + reactorCount);
-        }
-        if (maxConnections < MIN_CONNECTIONS) {
-            throw new IllegalArgumentException(
-                    "maxConnections must be >= " + MIN_CONNECTIONS + ", got: " + maxConnections);
-        }
-        if (idleTimeoutMillis < 0) {
-            throw new IllegalArgumentException(
-                    "idleTimeoutMillis must be >= 0 (0 = no timeout), got: " + idleTimeoutMillis);
+            TransportConfigSupport.validateNonDisabled(
+                    mode,
+                    bindAddress,
+                    port,
+                    reactorCount,
+                    maxConnections,
+                    idleTimeoutMillis
+            );
         }
     }
 

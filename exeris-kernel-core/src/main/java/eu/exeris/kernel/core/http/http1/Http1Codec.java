@@ -76,6 +76,7 @@ public final class Http1Codec {
     private static final String MSG_INVALID_CONTENT_LENGTH = "HTTP/1.1: invalid Content-Length header";
     private static final String CONNECTION_CLOSE        = "close";
     private static final String UPGRADE_H2C             = "h2c";
+    private static final String NO_H2C_SETTINGS         = "";
 
     private boolean keepAlive;
     private long pendingContentLength;
@@ -89,6 +90,18 @@ public final class Http1Codec {
         this.keepAlive = true;
         this.pendingContentLength = NO_BODY;
         this.upgradeState = UpgradeState.NONE;
+        this.h2cSettingsPayload = NO_H2C_SETTINGS;
+    }
+
+
+    /**
+     * Resets connection state to HTTP/1.1 defaults, ready for the next request.
+     */
+    public void reset() {
+        this.keepAlive = true;
+        this.pendingContentLength = NO_BODY;
+        this.upgradeState = UpgradeState.NONE;
+        this.h2cSettingsPayload = NO_H2C_SETTINGS;
     }
 
     /**
@@ -131,7 +144,7 @@ public final class Http1Codec {
      * @return base64url-encoded SETTINGS payload, or {@code null} if not an h2c upgrade
      */
     public String h2cSettingsPayload() {
-        return h2cSettingsPayload;
+        return h2cSettingsPayload.isEmpty() ? null : h2cSettingsPayload;
     }
 
     /**
@@ -167,7 +180,9 @@ public final class Http1Codec {
             keepAlive = state.keepAlive;
             pendingContentLength = state.pendingContentLength;
             upgradeState = state.upgradeState();
-            h2cSettingsPayload = state.h2cSettingsPayload;
+            h2cSettingsPayload = state.h2cSettingsPayload == null
+                    ? NO_H2C_SETTINGS
+                    : state.h2cSettingsPayload;
         }
         return end;
     }
