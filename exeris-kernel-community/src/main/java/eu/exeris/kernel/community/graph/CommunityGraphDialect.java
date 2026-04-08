@@ -35,6 +35,7 @@ final class CommunityGraphDialect implements GraphDialect {
     private static final String SQL_DIALECT_NAME = "SQL/PGQ";
     private static final String CYPHER_DIALECT_NAME = "Cypher";
     private static final Pattern SQL_IDENTIFIER_PATTERN = Pattern.compile("^[A-Za-z][A-Za-z0-9_]*$");
+    private static final Pattern CYPHER_IDENTIFIER_PATTERN = Pattern.compile("^[A-Za-z]\\w*$");
     private final String graphName;
     private final Mode mode;
 
@@ -225,7 +226,6 @@ final class CommunityGraphDialect implements GraphDialect {
         };
     }
 
-    private static final Pattern CYPHER_IDENTIFIER_PATTERN = Pattern.compile("^[A-Za-z]\\w*$");
 
     private static String requireCypherIdentifier(String identifier) {
         if (identifier == null || !CYPHER_IDENTIFIER_PATTERN.matcher(identifier).matches()) {
