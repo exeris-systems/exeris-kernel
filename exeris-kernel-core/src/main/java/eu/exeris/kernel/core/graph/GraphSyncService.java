@@ -13,6 +13,7 @@ import eu.exeris.kernel.spi.graph.GraphEngine;
 import eu.exeris.kernel.spi.graph.GraphSession;
 import eu.exeris.kernel.spi.graph.model.GraphEdgeDescriptor;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
+import jdk.jfr.FlightRecorder;
 
 import java.util.Objects;
 import java.util.UUID;
@@ -79,23 +80,29 @@ public final class GraphSyncService {
     public void syncNodeUpsert(String label, UUID nodeId, LoanedBuffer properties) {
         Objects.requireNonNull(label,  "label must not be null");
         Objects.requireNonNull(nodeId, "nodeId must not be null");
-        GraphSyncOperationEvent event = new GraphSyncOperationEvent();
-        event.begin();
-        event.operationType = "NODE_UPSERT";
-        event.edgeOrLabel   = label;
+        final GraphSyncOperationEvent event = FlightRecorder.isInitialized() ? new GraphSyncOperationEvent() : null;
+        if (event != null) {
+            event.begin();
+            event.operationType = "NODE_UPSERT";
+            event.edgeOrLabel   = label;
+        }
         try (GraphSession session = engine.openSession()) {
             session.beginTransaction();
             try {
                 session.upsertNode(label, nodeId, properties);
                 session.commit();
-                event.success = true;
+                if (event != null) {
+                    event.success = true;
+                }
             } catch (RuntimeException cause) {
                 session.rollback();
                 GraphSyncFailedEvent.emit(label, cause.getMessage());
                 throw new GraphSyncException(label, "Node upsert failed during L1→L2 sync", cause);
             }
         } finally {
-            event.commit();
+            if (event != null) {
+                event.commit();
+            }
         }
     }
 
@@ -109,23 +116,29 @@ public final class GraphSyncService {
     public void syncNodeDelete(String label, UUID nodeId) {
         Objects.requireNonNull(label,  "label must not be null");
         Objects.requireNonNull(nodeId, "nodeId must not be null");
-        GraphSyncOperationEvent event = new GraphSyncOperationEvent();
-        event.begin();
-        event.operationType = "NODE_DELETE";
-        event.edgeOrLabel   = label;
+        final GraphSyncOperationEvent event = FlightRecorder.isInitialized() ? new GraphSyncOperationEvent() : null;
+        if (event != null) {
+            event.begin();
+            event.operationType = "NODE_DELETE";
+            event.edgeOrLabel   = label;
+        }
         try (GraphSession session = engine.openSession()) {
             session.beginTransaction();
             try {
                 session.deleteNode(label, nodeId);
                 session.commit();
-                event.success = true;
+                if (event != null) {
+                    event.success = true;
+                }
             } catch (RuntimeException cause) {
                 session.rollback();
                 GraphSyncFailedEvent.emit(label, cause.getMessage());
                 throw new GraphSyncException(label, "Node delete failed during L1→L2 sync", cause);
             }
         } finally {
-            event.commit();
+            if (event != null) {
+                event.commit();
+            }
         }
     }
 
@@ -145,23 +158,29 @@ public final class GraphSyncService {
         Objects.requireNonNull(sourceId, "sourceId must not be null");
         Objects.requireNonNull(targetId, "targetId must not be null");
         String edgeType = edge.edgeType();
-        GraphSyncOperationEvent event = new GraphSyncOperationEvent();
-        event.begin();
-        event.operationType = "EDGE_UPSERT";
-        event.edgeOrLabel   = edgeType;
+        final GraphSyncOperationEvent event = FlightRecorder.isInitialized() ? new GraphSyncOperationEvent() : null;
+        if (event != null) {
+            event.begin();
+            event.operationType = "EDGE_UPSERT";
+            event.edgeOrLabel   = edgeType;
+        }
         try (GraphSession session = engine.openSession()) {
             session.beginTransaction();
             try {
                 session.upsertEdge(edge, sourceId, targetId, weight, properties);
                 session.commit();
-                event.success = true;
+                if (event != null) {
+                    event.success = true;
+                }
             } catch (RuntimeException cause) {
                 session.rollback();
                 GraphSyncFailedEvent.emit(edgeType, cause.getMessage());
                 throw new GraphSyncException(edgeType, "Edge upsert failed during L1→L2 sync", cause);
             }
         } finally {
-            event.commit();
+            if (event != null) {
+                event.commit();
+            }
         }
     }
 
@@ -178,23 +197,29 @@ public final class GraphSyncService {
         Objects.requireNonNull(sourceId, "sourceId must not be null");
         Objects.requireNonNull(targetId, "targetId must not be null");
         String edgeType = edge.edgeType();
-        GraphSyncOperationEvent event = new GraphSyncOperationEvent();
-        event.begin();
-        event.operationType = "EDGE_DELETE";
-        event.edgeOrLabel   = edgeType;
+        final GraphSyncOperationEvent event = FlightRecorder.isInitialized() ? new GraphSyncOperationEvent() : null;
+        if (event != null) {
+            event.begin();
+            event.operationType = "EDGE_DELETE";
+            event.edgeOrLabel   = edgeType;
+        }
         try (GraphSession session = engine.openSession()) {
             session.beginTransaction();
             try {
                 session.deleteEdge(edge, sourceId, targetId);
                 session.commit();
-                event.success = true;
+                if (event != null) {
+                    event.success = true;
+                }
             } catch (RuntimeException cause) {
                 session.rollback();
                 GraphSyncFailedEvent.emit(edgeType, cause.getMessage());
                 throw new GraphSyncException(edgeType, "Edge delete failed during L1→L2 sync", cause);
             }
         } finally {
-            event.commit();
+            if (event != null) {
+                event.commit();
+            }
         }
     }
 }

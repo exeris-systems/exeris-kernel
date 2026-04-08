@@ -39,12 +39,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <h2>Test approach</h2>
  * <p>Implementations supply a {@link GraphEngine} whose sessions can be put into
  * "fail mode" via {@link #setSessionFailMode(boolean)} to exercise the rollback path.
- * The TCK instantiates {@code GraphSyncService} internally via reflection-free
- * construction — implementations must supply the engine.
+ * Tests operate directly on {@link GraphSession} to verify session-level write, rollback,
+ * and error-propagation contracts.
  *
  * @since 0.5.0
  */
-@DisplayName("TCK: GraphEngine sync contract — dual-write, rollback, EX-GRPH-5003")
+@DisplayName("TCK: GraphSession contract — dual-write, rollback, session-level operations")
 public abstract class AbstractGraphSyncServiceTck {
 
     /**

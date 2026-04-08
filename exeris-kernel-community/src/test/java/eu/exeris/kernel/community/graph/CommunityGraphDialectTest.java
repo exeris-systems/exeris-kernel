@@ -129,9 +129,6 @@ class CommunityGraphDialectTest {
             String table = edge.tableName();
             String sql = dialect.buildMultiHopQuery(edge, 1, 3);
             // Table name should appear at least twice (anchor + recursive branch)
-            long occurrences = sql.chars()
-                    .filter(c -> c == table.charAt(0))
-                    .count();
             assertThat(sql.split(table, -1).length - 1)
                     .as("Table name must appear in both anchor and recursive branch of CTE")
                     .isGreaterThanOrEqualTo(2);

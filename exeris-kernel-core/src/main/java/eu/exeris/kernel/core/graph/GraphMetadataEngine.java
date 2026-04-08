@@ -66,7 +66,7 @@ public final class GraphMetadataEngine {
 
     /**
      * Marks a domain class as defining a graph edge relationship.
-     * The class must declare fields annotated with {@link EdgeEndpoint}.
+     * Fields annotated with {@link EdgeEndpoint} may optionally override the default table name.
      */
     @Target(ElementType.TYPE)
     @Retention(RetentionPolicy.RUNTIME)
@@ -173,22 +173,36 @@ public final class GraphMetadataEngine {
     /**
      * Resolves the backing table name for an edge descriptor.
      *
-     * <p>Priority: {@link EdgeEndpoint#table()} on a field → derived from
-     * {@link GraphEdge#type()} via lower-case + "_edges" suffix.
+     * <p>Priority: a single non-blank {@link EdgeEndpoint#table()} override on a field
+     * → derived from {@link GraphEdge#type()} via lower-case + "_edges" suffix.
+     *
+     * @throws IllegalStateException if more than one field declares a non-blank
+     *                               {@link EdgeEndpoint#table()} override
      */
     private static String resolveEdgeTable(Class<?> cls, GraphEdge annotation) {
+        String resolvedTable = null;
+        String resolvedFieldName = null;
         for (Field field : cls.getDeclaredFields()) {
             EdgeEndpoint endpoint = field.getAnnotation(EdgeEndpoint.class);
-            if (endpoint != null && !endpoint.table().isBlank()) {
-                return endpoint.table();
+            if (endpoint == null || endpoint.table().isBlank()) {
+                continue;
             }
+            if (resolvedTable != null) {
+                throw new IllegalStateException(
+                        "Multiple @EdgeEndpoint(table=...) overrides found in "
+                        + cls.getName() + ": " + resolvedFieldName + ", " + field.getName());
+            }
+            resolvedTable = endpoint.table();
+            resolvedFieldName = field.getName();
+        }
+        if (resolvedTable != null) {
+            return resolvedTable;
         }
         return annotation.type().toLowerCase(java.util.Locale.ROOT) + "_edges";
     }
 
     /**
-     * Extracts public field names from the class as graph node properties.
-     * Excludes synthetic or static fields.
+     * Extracts non-static, non-synthetic field names from the class as graph node properties.
      */
     private static List<String> extractFieldNames(Class<?> cls) {
         Field[] fields = cls.getDeclaredFields();

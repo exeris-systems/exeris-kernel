@@ -12,6 +12,7 @@ import eu.exeris.kernel.spi.exceptions.graph.PathNotFoundException;
 import eu.exeris.kernel.spi.graph.algorithm.EdgeWeightFunction;
 import eu.exeris.kernel.spi.graph.algorithm.PathFinder;
 import eu.exeris.kernel.spi.graph.model.PathResult;
+import jdk.jfr.FlightRecorder;
 
 import java.util.List;
 import java.util.Map;
@@ -37,8 +38,8 @@ import java.util.UUID;
  *
  * <h2>Error Strategy (Hot-Path Contract)</h2>
  * <p>When {@link PathResult#found()} is {@code false} and the caller requests strict
- * failure semantics, the orchestrator throws the pre-allocated sentinel
- * {@link PathNotFoundException} (EX-GRPH-5004). For bulk operations, callers receive
+ * failure semantics, the orchestrator throws {@link PathNotFoundException}
+ * (EX-GRPH-5004). For bulk operations, callers receive
  * unmodifiable {@link Map}s and can filter by {@link PathResult#found()} without
  * exception overhead.
  *
@@ -103,17 +104,21 @@ public final class AlgoOrchestrator {
         Objects.requireNonNull(target,   NULL_TARGET);
         Objects.requireNonNull(weightFn, NULL_WEIGHT);
 
-        AlgoOrchestratorEvent event = new AlgoOrchestratorEvent();
-        event.begin();
-        event.algorithmName = pathFinder.algorithmName();
-        event.operationType = "SHORTEST_PATH";
+        final AlgoOrchestratorEvent event = FlightRecorder.isInitialized() ? new AlgoOrchestratorEvent() : null;
+        if (event != null) {
+            event.begin();
+            event.algorithmName = pathFinder.algorithmName();
+            event.operationType = "SHORTEST_PATH";
+        }
 
         PathResult result = pathFinder.findShortestPath(source, target, weightFn);
 
-        event.found     = result.found();
-        event.hopCount  = result.hopCount();
-        event.totalCost = result.totalCost();
-        event.commit();
+        if (event != null) {
+            event.found     = result.found();
+            event.hopCount  = result.hopCount();
+            event.totalCost = result.totalCost();
+            event.commit();
+        }
 
         if (failIfNotFound && !result.found()) {
             throw new PathNotFoundException(source, target);
@@ -139,18 +144,22 @@ public final class AlgoOrchestrator {
         Objects.requireNonNull(targets,  NULL_TARGETS);
         Objects.requireNonNull(weightFn, NULL_WEIGHT);
 
-        AlgoOrchestratorEvent event = new AlgoOrchestratorEvent();
-        event.begin();
-        event.algorithmName = pathFinder.algorithmName();
-        event.operationType = "MULTI_TARGET_SHORTEST_PATH";
+        final AlgoOrchestratorEvent event = FlightRecorder.isInitialized() ? new AlgoOrchestratorEvent() : null;
+        if (event != null) {
+            event.begin();
+            event.algorithmName = pathFinder.algorithmName();
+            event.operationType = "MULTI_TARGET_SHORTEST_PATH";
+        }
 
         Map<UUID, PathResult> results = pathFinder.findShortestPaths(source, targets, weightFn);
 
-        long foundCount = results.values().stream().filter(PathResult::found).count();
-        event.found     = foundCount > 0;
-        event.hopCount  = (int) foundCount;
-        event.totalCost = Double.NaN;
-        event.commit();
+        if (event != null) {
+            long foundCount = results.values().stream().filter(PathResult::found).count();
+            event.found     = foundCount > 0;
+            event.hopCount  = (int) foundCount;
+            event.totalCost = Double.NaN;
+            event.commit();
+        }
 
         return results;
     }
@@ -177,17 +186,21 @@ public final class AlgoOrchestrator {
             throw new IllegalArgumentException("maxPaths must be >= 1, got: " + maxPaths);
         }
 
-        AlgoOrchestratorEvent event = new AlgoOrchestratorEvent();
-        event.begin();
-        event.algorithmName = pathFinder.algorithmName();
-        event.operationType = "K_SHORTEST_PATHS";
+        final AlgoOrchestratorEvent event = FlightRecorder.isInitialized() ? new AlgoOrchestratorEvent() : null;
+        if (event != null) {
+            event.begin();
+            event.algorithmName = pathFinder.algorithmName();
+            event.operationType = "K_SHORTEST_PATHS";
+        }
 
         List<PathResult> results = pathFinder.findKShortestPaths(source, target, maxPaths, weightFn);
 
-        event.found     = !results.isEmpty();
-        event.hopCount  = results.size();
-        event.totalCost = results.isEmpty() ? Double.POSITIVE_INFINITY : results.getFirst().totalCost();
-        event.commit();
+        if (event != null) {
+            event.found     = !results.isEmpty();
+            event.hopCount  = results.size();
+            event.totalCost = results.isEmpty() ? Double.POSITIVE_INFINITY : results.getFirst().totalCost();
+            event.commit();
+        }
 
         return results;
     }

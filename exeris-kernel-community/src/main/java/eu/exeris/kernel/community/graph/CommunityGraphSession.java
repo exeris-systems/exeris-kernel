@@ -61,6 +61,7 @@ final class CommunityGraphSession implements GraphSession {
     private static final String PARAM_TARGET_ID = "targetId";
     private static final String PARAM_PROPERTIES = "properties";
     private static final Pattern CYPHER_IDENTIFIER_PATTERN = Pattern.compile("^[A-Za-z]\\w*$");
+    private static final Pattern SQL_IDENTIFIER_PATTERN = Pattern.compile("^[A-Za-z][A-Za-z0-9_]*$");
 
     private final CommunityGraphDialect dialect;
     private final CommunityNeo4jClient neo4jClient;
@@ -188,7 +189,8 @@ final class CommunityGraphSession implements GraphSession {
             return;
         }
 
-        String sql = "DELETE FROM %s WHERE source_id = ? AND target_id = ?".formatted(edge.tableName());
+        String sql = "DELETE FROM %s WHERE source_id = ? AND target_id = ?"
+                .formatted(requireSqlIdentifier(edge.tableName()));
         try (PersistenceConnection conn = acquireConnection();
              PersistenceStatement stmt = conn.prepare(sql)) {
             stmt.bindUuid(0, sourceId);
@@ -634,6 +636,14 @@ final class CommunityGraphSession implements GraphSession {
         return identifier;
     }
 
+    private static String requireSqlIdentifier(String identifier) {
+        if (identifier == null || !SQL_IDENTIFIER_PATTERN.matcher(identifier).matches()) {
+            throw new GraphQueryException("SQL_IDENTIFIER",
+                    "Invalid SQL identifier: expected [A-Za-z][A-Za-z0-9_]*, got: " + identifier);
+        }
+        return identifier;
+    }
+
     // Lifecycle reset is intentional after transaction/session teardown.
     @SuppressWarnings("PMD.NullAssignment")
     private void closeCypherTransactionResources() {
@@ -659,7 +669,7 @@ final class CommunityGraphSession implements GraphSession {
         return """
                 INSERT INTO %s (source_id, target_id, weight, properties)
                 VALUES (?, ?, ?, ?::jsonb)
-                """.formatted(edge.tableName());
+                """.formatted(requireSqlIdentifier(edge.tableName()));
     }
 
     private String buildUpsertEdgeSql(GraphEdgeDescriptor edge) {
@@ -668,7 +678,7 @@ final class CommunityGraphSession implements GraphSession {
                 VALUES (?, ?, ?, ?::jsonb)
                 ON CONFLICT (source_id, target_id, tenant_id)
                 DO UPDATE SET weight = EXCLUDED.weight, properties = EXCLUDED.properties
-                """.formatted(edge.tableName());
+                """.formatted(requireSqlIdentifier(edge.tableName()));
     }
 
     private void executeEdgeDml(String sql, UUID sourceId, UUID targetId,

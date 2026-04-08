@@ -59,7 +59,6 @@ public final class GraphBootstrap {
      * Loads the best available {@link GraphProvider}, creates the engine, and
      * returns the ready {@link GraphEngine} for ScopedValue binding.
      *
-     * <p>This method is idempotent for the same {@code ClassLoader} and config.
      * It MUST be called exactly once per kernel lifecycle, during bootstrap.
      *
      * @param config immutable graph subsystem configuration

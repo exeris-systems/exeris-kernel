@@ -11,6 +11,7 @@ package eu.exeris.kernel.core.graph;
 import jdk.jfr.Category;
 import jdk.jfr.Description;
 import jdk.jfr.Event;
+import jdk.jfr.FlightRecorder;
 import jdk.jfr.Label;
 import jdk.jfr.Name;
 import jdk.jfr.StackTrace;
@@ -50,6 +51,9 @@ final class GraphBootstrapSelectedEvent extends Event {
 
     /* default */ static void emit(String providerClass, int priority,
                                    String providerId, String engineName) {
+        if (!FlightRecorder.isInitialized()) {
+            return;
+        }
         GraphBootstrapSelectedEvent event = new GraphBootstrapSelectedEvent();
         if (!event.isEnabled()) {
             return;

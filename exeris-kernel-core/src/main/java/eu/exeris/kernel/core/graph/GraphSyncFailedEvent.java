@@ -11,6 +11,7 @@ package eu.exeris.kernel.core.graph;
 import jdk.jfr.Category;
 import jdk.jfr.Description;
 import jdk.jfr.Event;
+import jdk.jfr.FlightRecorder;
 import jdk.jfr.Label;
 import jdk.jfr.Name;
 import jdk.jfr.StackTrace;
@@ -42,6 +43,9 @@ final class GraphSyncFailedEvent extends Event {
     /* default */ String detail;
 
     /* default */ static void emit(String edgeOrLabel, String detail) {
+        if (!FlightRecorder.isInitialized()) {
+            return;
+        }
         GraphSyncFailedEvent event = new GraphSyncFailedEvent();
         if (!event.isEnabled()) {
             return;

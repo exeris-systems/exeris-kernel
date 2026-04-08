@@ -111,7 +111,7 @@ final class CommunityPathFinder implements PathFinder {
     public boolean pathExists(UUID source, UUID target) {
         Deque<UUID> queue = new ArrayDeque<>();
         Set<UUID> visited = new HashSet<>();
-        queue.offer(source);
+        queue.add(source);
         visited.add(source);
         while (!queue.isEmpty()) {
             UUID currentNodeId = queue.poll();
@@ -120,7 +120,7 @@ final class CommunityPathFinder implements PathFinder {
             }
             for (Neighbor neighbor : adjacency.getOrDefault(currentNodeId, List.of())) {
                 if (visited.add(neighbor.target())) {
-                    queue.offer(neighbor.target());
+                    queue.add(neighbor.target());
                 }
             }
         }

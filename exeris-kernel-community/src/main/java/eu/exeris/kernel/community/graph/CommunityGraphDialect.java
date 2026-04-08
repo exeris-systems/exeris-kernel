@@ -14,6 +14,7 @@ import eu.exeris.kernel.spi.graph.model.GraphNodeDescriptor;
 
 import java.util.List;
 import java.util.Locale;
+import java.util.regex.Pattern;
 
 /**
  * Community Graph Dialect — SQL:2023 PGQ transpiler for PostgreSQL.
@@ -33,6 +34,7 @@ final class CommunityGraphDialect implements GraphDialect {
 
     private static final String SQL_DIALECT_NAME = "SQL/PGQ";
     private static final String CYPHER_DIALECT_NAME = "Cypher";
+    private static final Pattern SQL_IDENTIFIER_PATTERN = Pattern.compile("^[A-Za-z][A-Za-z0-9_]*$");
     private final String graphName;
     private final Mode mode;
 
@@ -57,7 +59,7 @@ final class CommunityGraphDialect implements GraphDialect {
         return """
                 SELECT target_id FROM %s
                 WHERE source_id = ?
-                """.formatted(edge.tableName());
+                """.formatted(requireSqlIdentifier(edge.tableName()));
     }
 
     @Override
@@ -69,6 +71,7 @@ final class CommunityGraphDialect implements GraphDialect {
                     RETURN DISTINCT target.id AS id
                     """.formatted(edge.edgeType(), minHops, maxHops);
         }
+        String tableName = requireSqlIdentifier(edge.tableName());
         return """
                 WITH RECURSIVE traversal AS (
                     SELECT target_id, 1 AS depth
@@ -81,7 +84,7 @@ final class CommunityGraphDialect implements GraphDialect {
                     WHERE t.depth < %d
                 )
                 SELECT DISTINCT target_id AS id FROM traversal WHERE depth >= %d
-                """.formatted(edge.tableName(), edge.tableName(), maxHops, minHops);
+                """.formatted(tableName, tableName, maxHops, minHops);
     }
 
     @Override
@@ -101,6 +104,7 @@ final class CommunityGraphDialect implements GraphDialect {
                     LIMIT 1
                     """.formatted(edge.edgeType(), maxDepth);
         }
+        String tableName = requireSqlIdentifier(edge.tableName());
         return """
                 WITH RECURSIVE path_search AS (
                     SELECT target_id, weight, ARRAY[source_id, target_id] AS path, 1 AS depth
@@ -116,7 +120,7 @@ final class CommunityGraphDialect implements GraphDialect {
                 SELECT path, weight FROM path_search
                 WHERE target_id = ?
                 ORDER BY weight ASC LIMIT 1
-                """.formatted(edge.tableName(), edge.tableName(), maxDepth);
+                """.formatted(tableName, tableName, maxDepth);
     }
 
     @Override
@@ -126,6 +130,7 @@ final class CommunityGraphDialect implements GraphDialect {
             return "// Cypher backend manages graph namespace implicitly for " + graphName;
         }
         StringBuilder builder = new StringBuilder(256);
+        requireSqlIdentifier(graphName);
         builder.append("CREATE PROPERTY GRAPH IF NOT EXISTS ")
                .append(graphName)
                .append(" VERTEX TABLES (");
@@ -135,11 +140,11 @@ final class CommunityGraphDialect implements GraphDialect {
                 builder.append(", ");
             }
             GraphNodeDescriptor node = nodeList.get(i);
-            builder.append(node.sourceTable())
+            builder.append(requireSqlIdentifier(node.sourceTable()))
                    .append(" AS ")
-                   .append(node.nodeLabel().toLowerCase(Locale.ROOT))
+                   .append(requireSqlIdentifier(node.nodeLabel()).toLowerCase(Locale.ROOT))
                    .append(" KEY (")
-                   .append(node.idProperty())
+                   .append(requireSqlIdentifier(node.idProperty()))
                    .append(')');
         }
 
@@ -150,13 +155,13 @@ final class CommunityGraphDialect implements GraphDialect {
                 builder.append(", ");
             }
             GraphEdgeDescriptor edge = edgeList.get(i);
-            builder.append(edge.tableName())
+            builder.append(requireSqlIdentifier(edge.tableName()))
                    .append(" AS ")
-                   .append(edge.edgeType().toLowerCase(Locale.ROOT))
+                   .append(requireSqlIdentifier(edge.edgeType()).toLowerCase(Locale.ROOT))
                    .append(" SOURCE KEY (source_id) REFERENCES ")
-                   .append(edge.sourceNode().toLowerCase(Locale.ROOT))
+                   .append(requireSqlIdentifier(edge.sourceNode()).toLowerCase(Locale.ROOT))
                    .append(" DESTINATION KEY (target_id) REFERENCES ")
-                   .append(edge.targetNode().toLowerCase(Locale.ROOT));
+                   .append(requireSqlIdentifier(edge.targetNode()).toLowerCase(Locale.ROOT));
         }
 
         builder.append(");");
@@ -178,7 +183,7 @@ final class CommunityGraphDialect implements GraphDialect {
                     created_at  TIMESTAMPTZ DEFAULT NOW(),
                     PRIMARY KEY (source_id, target_id, tenant_id)
                 )
-                """.formatted(edge.tableName());
+                """.formatted(requireSqlIdentifier(edge.tableName()));
     }
 
     @Override
@@ -186,7 +191,7 @@ final class CommunityGraphDialect implements GraphDialect {
         if (mode == Mode.CYPHER) {
             return "// Cypher backend drop graph requested for " + graphName;
         }
-        return "DROP PROPERTY GRAPH IF EXISTS " + graphName;
+        return "DROP PROPERTY GRAPH IF EXISTS " + requireSqlIdentifier(graphName);
     }
 
     @Override
@@ -206,5 +211,13 @@ final class CommunityGraphDialect implements GraphDialect {
             case "neo4j", "memgraph", "falkordb" -> true;
             default -> false;
         };
+    }
+
+    private static String requireSqlIdentifier(String identifier) {
+        if (identifier == null || !SQL_IDENTIFIER_PATTERN.matcher(identifier).matches()) {
+            throw new IllegalArgumentException(
+                    "Invalid SQL identifier: expected [A-Za-z][A-Za-z0-9_]*, got: " + identifier);
+        }
+        return identifier;
     }
 }
