@@ -178,6 +178,24 @@ public final class PersistenceProviderException extends ExerisKernelException {
     }
 
     /**
+     * Dedicated datasource routing failure — the datasource key from the DEDICATED
+     * {@link eu.exeris.kernel.spi.security.StorageContext} was not found in
+     * {@link eu.exeris.kernel.spi.persistence.PersistenceConfig#dedicatedDataSources()}.
+     *
+     * @param providerName  provider display name
+     * @param dataSourceKey the routing key that was not found in the configured map
+     * @return exception with rawArgs: [providerName, dataSourceKey]
+     */
+    public static PersistenceProviderException dedicatedDatasourceNotFound(
+            String providerName, String dataSourceKey) {
+        return new PersistenceProviderException(
+                KernelErrorCodes.EX_PERS_5006,
+                "Dedicated datasource key not found in configuration",
+                null,
+                providerName, dataSourceKey);
+    }
+
+    /**
      * No {@link eu.exeris.kernel.spi.persistence.PersistenceProvider} found on the classpath.
      *
      * <p>Kernel start MUST abort when this exception is thrown. The operator must add

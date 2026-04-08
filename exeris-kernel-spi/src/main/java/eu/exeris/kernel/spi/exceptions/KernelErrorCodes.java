@@ -642,6 +642,43 @@ public final class KernelErrorCodes {
      */
     public static final String EX_EVENT_6004 = "EX-EVENT-6004";
 
+    /**
+     * Outbox event moved to dead-letter queue: maximum retries exhausted or broker rejected the event.
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} eventType   (event type name)</li>
+     *   <li>index 1 – {@code String} reason      (static failure reason)</li>
+     *   <li>index 2 – {@code int}    retryCount  (number of delivery attempts)</li>
+     * </ul>
+     */
+    public static final String EX_EVENT_6005 = "EX-EVENT-6005";
+
+    /**
+     * Projection handler threw during state fold: the handler passed to
+     * {@code ProjectionEngine} threw a {@code RuntimeException} while applying
+     * an event, causing the projection to diverge.
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} projectionName     (logical name of the projection)</li>
+     *   <li>index 1 – {@code int}    eventTypeOrdinal   (ordinal of the failing event type)</li>
+     * </ul>
+     */
+    public static final String EX_EVENT_6006 = "EX-EVENT-6006";
+
+    /**
+     * Event-loop virtual-thread uncaught exception: the loop's dispatch thread terminated
+     * unexpectedly, stopping all further event processing for this loop.
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} loopName       (thread / loop identifier)</li>
+     *   <li>index 1 – {@code String} exceptionType  (simple class name of the throwable)</li>
+     * </ul>
+     */
+    public static final String EX_EVENT_6007 = "EX-EVENT-6007";
+
     // -----------------------------------------------------------------------
     // EX-FLOW – Flow Engine / Saga Orchestration subsystem
     // -----------------------------------------------------------------------
