@@ -229,9 +229,24 @@ public final class Slf4jTelemetrySink implements TelemetrySink {
             return;
         }
         if (value instanceof Boolean || value instanceof Byte || value instanceof Short
-                || value instanceof Integer || value instanceof Long
-                || value instanceof Float || value instanceof Double) {
+                || value instanceof Integer || value instanceof Long) {
             builder.append(value);
+            return;
+        }
+        if (value instanceof Float floatValue) {
+            if (Float.isFinite(floatValue)) {
+                builder.append(floatValue);
+            } else {
+                appendJsonString(builder, floatValue.toString());
+            }
+            return;
+        }
+        if (value instanceof Double doubleValue) {
+            if (Double.isFinite(doubleValue)) {
+                builder.append(doubleValue);
+            } else {
+                appendJsonString(builder, doubleValue.toString());
+            }
             return;
         }
         if (value instanceof String stringValue) {
@@ -246,7 +261,23 @@ public final class Slf4jTelemetrySink implements TelemetrySink {
             appendJsonString(builder, enumValue.name());
             return;
         }
+        if (value.getClass().isArray()) {
+            appendStructuredArray(builder, value);
+            return;
+        }
         appendJsonString(builder, "[unsupported]");
+    }
+
+    private static void appendStructuredArray(StringBuilder builder, Object array) {
+        int length = java.lang.reflect.Array.getLength(array);
+        builder.append('[');
+        for (int index = 0; index < length; index++) {
+            if (index > 0) {
+                builder.append(',');
+            }
+            appendStructuredRawArg(builder, java.lang.reflect.Array.get(array, index));
+        }
+        builder.append(']');
     }
 
     private static void appendJsonString(StringBuilder builder, String value) {
