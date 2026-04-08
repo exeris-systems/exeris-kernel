@@ -92,12 +92,9 @@ class CoreFlowEngineTest {
 
             go.countDown();
             assertThat(done.await(10, TimeUnit.SECONDS)).isTrue();
-            // Wait for background execution (timing-dependent, so we allow some variation)
             LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(1500));
 
-            // Due to concurrent scheduling timing, at least 1 execution is guaranteed,
-            // but timing may result in 1-2 executions in race conditions
-            assertThat(executions.get()).isGreaterThanOrEqualTo(1).isLessThanOrEqualTo(2);
+            assertThat(executions.get()).isEqualTo(1);
         }
     }
 
@@ -166,16 +163,13 @@ class CoreFlowEngineTest {
 
         @Test
         @Timeout(value = 5, unit = TimeUnit.SECONDS)
-        @DisplayName("wake without prior snapshot returns early")
-        void wakeWithoutSnapshotIsNoOp() throws InterruptedException {
+        @DisplayName("wake without prior snapshot throws when context is not parked")
+        void wakeWithoutSnapshotThrowsWhenContextIsNotParked() {
             try (CoreFlowEngine engine = startedEngine(true)) {
                 FlowContext context = context("no-snapshot-instance", "non-existent-flow");
-
-                // Wake on non-existent instance should be safe no-op
-                engine.scheduler().wake(context);
-
-                // Engine should still be operational
-                assertThat(engine.stats().parkedFlows()).isEqualTo(0);
+                org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> engine.scheduler().wake(context))
+                        .isInstanceOf(eu.exeris.kernel.spi.exceptions.flow.FlowEngineException.class);
             }
         }
 
@@ -183,60 +177,67 @@ class CoreFlowEngineTest {
         @Timeout(value = 10, unit = TimeUnit.SECONDS)
         @DisplayName("schedule restores from snapshot when available")
         void scheduleRestoresFromSnapshot() throws InterruptedException {
-            try (CoreFlowEngine engine = startedEngine(true)) {
-                CountDownLatch firstComplete = new CountDownLatch(1);
-                CountDownLatch secondComplete = new CountDownLatch(1);
+            CountDownLatch firstComplete = new CountDownLatch(1);
+            CountDownLatch secondComplete = new CountDownLatch(1);
+            InMemorySnapshotStore store = new InMemorySnapshotStore();
+            FlowEngineConfig defaults = FlowEngineConfig.defaults("CoreFlowEngineTest");
+            FlowEngineConfig config = new FlowEngineConfig(
+                    defaults.engineName(),
+                    defaults.maxConcurrentFlows(),
+                    defaults.timeoutDurationNanos(),
+                    defaults.maxSteps(),
+                    defaults.maxTransitions(),
+                    defaults.maxExecutionPlans(),
+                    defaults.schedulerQueueCapacity(),
+                    defaults.partitionName(),
+                    defaults.partitionBytes(),
+                    true,
+                    defaults.compensationEnabled()
+            );
+            try {
+                ScopedValue.where(KernelProviders.FLOW_SNAPSHOT_STORE, store).run(() -> {
+                    try (CoreFlowEngine engine = new CoreFlowEngine(config,
+                            FlowEngineCapabilities.COMMUNITY.withProvider("core-flow-test"))) {
+                        engine.start();
 
-                InMemorySnapshotStore store = new InMemorySnapshotStore();
-                try {
-                    ScopedValue.where(KernelProviders.FLOW_SNAPSHOT_STORE, store).run(() -> {
-                        try {
-                            FlowDefinition definition = engine.plans().newDefinition("snapshot-restore")
-                                    .step("first", _ -> {
-                                        firstComplete.countDown();
-                                        return FlowOutcome.PARK;
-                                    }, null)
-                                    .step("second", _ -> {
-                                        secondComplete.countDown();
-                                        return FlowOutcome.CONTINUE;
-                                    }, null)
-                                    .build();
+                        FlowDefinition definition = engine.plans().newDefinition("snapshot-restore")
+                                .step("first", _ -> {
+                                    firstComplete.countDown();
+                                    return FlowOutcome.PARK;
+                                }, null)
+                                .step("second", _ -> {
+                                    secondComplete.countDown();
+                                    return FlowOutcome.CONTINUE;
+                                }, null)
+                                .build();
 
-                            FlowExecutionPlan plan = engine.plans().compile(definition);
-                            FlowContext context = context("snapshot-instance", definition.name());
+                        FlowExecutionPlan plan = engine.plans().compile(definition);
+                        FlowContext context = context("snapshot-instance", definition.name());
 
-                            // First schedule: park after first step
-                            engine.scheduler().schedule(plan, context);
-                            if (!firstComplete.await(5, TimeUnit.SECONDS)) {
-                                throw new AssertionError("First step did not complete");
-                            }
-                            LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(300));
-
-                            // Verify snapshot was saved
-                            if (!store.exists(context.instanceIdMost(), context.instanceIdLeast())) {
-                                // Snapshot might not be persisted if persistence not enabled in engine
-                                // This is an expected behavior when snapshot store is scoped
-                                return;
-                            }
-
-                            // Wake resumes from snapshot
-                            engine.scheduler().wake(context);
-                            if (!secondComplete.await(5, TimeUnit.SECONDS)) {
-                                throw new AssertionError("Second step did not complete");
-                            }
-                            LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(300));
-
-                            assertThat(engine.stats().completedFlows()).isEqualTo(1);
-                        } catch (InterruptedException ex) {
-                            throw new RuntimeException(ex);
+                        engine.scheduler().schedule(plan, context);
+                        if (!firstComplete.await(5, TimeUnit.SECONDS)) {
+                            throw new AssertionError("First step did not complete");
                         }
-                    });
-                } catch (RuntimeException ex) {
-                    if (ex.getCause() instanceof InterruptedException) {
-                        throw (InterruptedException) ex.getCause();
+                        LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(300));
+
+                        assertThat(store.exists(context.instanceIdMost(), context.instanceIdLeast())).isTrue();
+
+                        engine.scheduler().wake(context);
+                        if (!secondComplete.await(5, TimeUnit.SECONDS)) {
+                            throw new AssertionError("Second step did not complete");
+                        }
+                        LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(300));
+
+                        assertThat(engine.stats().completedFlows()).isEqualTo(1);
+                    } catch (InterruptedException ex) {
+                        throw new RuntimeException(ex);
                     }
-                    throw ex;
+                });
+            } catch (RuntimeException ex) {
+                if (ex.getCause() instanceof InterruptedException) {
+                    throw (InterruptedException) ex.getCause();
                 }
+                throw ex;
             }
         }
     }
@@ -247,15 +248,13 @@ class CoreFlowEngineTest {
 
         @Test
         @Timeout(value = 5, unit = TimeUnit.SECONDS)
-        @DisplayName("restore with non-existent compiled plan throws exception")
+        @DisplayName("wake with no parked instance and no snapshot throws FlowEngineException")
         void restoreWithMissingPlanThrows() {
-            // Verify that restoring an orphaned snapshot throws FlowEngineException
-            // Cannot test this without a real snapshot storage, so verify it's safe to call wake
             try (CoreFlowEngine engine = startedEngine(false)) {
                 FlowContext fakeSleepingContext = context("orphan-instance", "non-existent-plan");
-                // Wake on non-existent instance should be safe no-op, not throw
-                engine.scheduler().wake(fakeSleepingContext);
-                assertThat(engine.stats().parkedFlows()).isEqualTo(0);
+                org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> engine.scheduler().wake(fakeSleepingContext))
+                        .isInstanceOf(eu.exeris.kernel.spi.exceptions.flow.FlowEngineException.class);
             }
         }
     }

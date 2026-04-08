@@ -206,9 +206,10 @@ final class RuntimeFlowInstance { // NOPMD
     }
 
     private Instant timeoutInstant() {
-        long remainingNanos = timeoutNanos == Long.MAX_VALUE
-                ? 0L
-                : Math.max(0L, timeoutNanos - System.nanoTime());
+        if (timeoutNanos == Long.MAX_VALUE) {
+            return Instant.MAX;
+        }
+        long remainingNanos = Math.max(0L, timeoutNanos - System.nanoTime());
         return Instant.now().plusNanos(remainingNanos);
     }
 }

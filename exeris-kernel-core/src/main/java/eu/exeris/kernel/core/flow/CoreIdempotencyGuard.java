@@ -16,28 +16,25 @@ import java.util.concurrent.ConcurrentMap;
 /**
  * Default heap-backed {@link IdempotencyGuard} for the Community tier.
  *
- * <p>Uses a {@link ConcurrentHashMap} keyed by {@code (instanceIdMost, instanceIdLeast, stepIndex)}.
- * {@code putIfAbsent} semantics guarantee exactly-once step execution across concurrent claims.
- * If the engine terminates before a flow reaches a terminal state, entries are silently
- * discarded — acceptable for the Community tier (no off-heap leak).
+ * <p>Claims are indexed by instance UUID (as a {@code FlowKey}) to a per-instance
+ * {@code ConcurrentHashMap<Integer, Boolean>} of step indices. This makes
+ * {@link #releaseInstance} O(1) (remove the whole inner map) rather than O(total_claimed_steps).
  *
  * @since 0.6.0
  */
 final class CoreIdempotencyGuard implements IdempotencyGuard {
 
-    private final ConcurrentMap<StepKey, Boolean> claimed = new ConcurrentHashMap<>();
-
-    private record StepKey(long instanceIdMost, long instanceIdLeast, int stepIndex) {}
+    private final ConcurrentMap<FlowKey, ConcurrentMap<Integer, Boolean>> claims = new ConcurrentHashMap<>();
 
     @Override
     public boolean tryClaimStep(long instanceIdMost, long instanceIdLeast, int stepIndex) {
-        return claimed.putIfAbsent(
-                new StepKey(instanceIdMost, instanceIdLeast, stepIndex), Boolean.TRUE) == null;
+        FlowKey key = new FlowKey(instanceIdMost, instanceIdLeast);
+        ConcurrentMap<Integer, Boolean> steps = claims.computeIfAbsent(key, k -> new ConcurrentHashMap<>());
+        return steps.putIfAbsent(stepIndex, Boolean.TRUE) == null;
     }
 
     @Override
     public void releaseInstance(long instanceIdMost, long instanceIdLeast) {
-        claimed.keySet().removeIf(k -> k.instanceIdMost() == instanceIdMost
-                                    && k.instanceIdLeast() == instanceIdLeast);
+        claims.remove(new FlowKey(instanceIdMost, instanceIdLeast));
     }
 }

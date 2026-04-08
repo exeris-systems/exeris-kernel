@@ -11,6 +11,7 @@ package eu.exeris.kernel.core.flow;
 import eu.exeris.kernel.spi.events.EventDescriptor;
 import eu.exeris.kernel.spi.events.EventHandler;
 import eu.exeris.kernel.spi.events.EventPayload;
+import eu.exeris.kernel.spi.exceptions.flow.FlowEngineException;
 import eu.exeris.kernel.spi.flow.ChoreographyDecision;
 import eu.exeris.kernel.spi.flow.FlowChoreographyMapper;
 import eu.exeris.kernel.spi.flow.FlowScheduler;
@@ -47,9 +48,13 @@ final class FlowChoreographyBridge implements EventHandler {
         try (payload) {
             ChoreographyDecision decision = mapper.map(descriptor);
             switch (decision) {
-                case ChoreographyDecision.Wake(long most, long least) ->
-                        scheduler.wake(
-                                new HeapFlowContext(most, least, "", 0, FlowState.PARKED, 0L));
+                case ChoreographyDecision.Wake(long most, long least) -> {
+                    try {
+                        scheduler.wake(new HeapFlowContext(most, least, "", 0, FlowState.PARKED, 0L));
+                    } catch (FlowEngineException ignored) {
+                        // Stale or duplicate wake event — instance is no longer parked; idempotent no-op
+                    }
+                }
                 case ChoreographyDecision.Start(FlowExecutionPlan plan, long most, long least) -> {
                     long timeoutNanos = System.nanoTime() + plan.timeoutDurationNanos();
                     scheduler.schedule(

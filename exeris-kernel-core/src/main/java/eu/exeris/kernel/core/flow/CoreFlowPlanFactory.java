@@ -154,6 +154,13 @@ final class CoreFlowPlanFactory implements FlowExecutionPlanFactory {
 
         @Override
         public FlowDefinitionBuilder step(String name, FlowStepAction action, FlowStepAction compensation) {
+            Objects.requireNonNull(name, "step name must not be null");
+            for (FlowStepDescriptor existing : steps) {
+                if (name.equals(existing.name())) {
+                    throw new IllegalArgumentException(
+                            "Duplicate step name '" + name + "' in definition '" + definitionName + '\'');
+                }
+            }
             steps.add(new FlowStepDescriptor(steps.size(), name, action, compensation));
             return this;
         }
