@@ -16,22 +16,25 @@ final class CommunityReleaseAction implements Runnable {
     private final AtomicLong releaseCount;
     private final AtomicLong allocatedBytes;
     private final boolean jfrEnabled;
+    private final CommunityMemoryJfrSampling jfrSampling;
 
     /* default */ CommunityReleaseAction(long bytes,
                                          AtomicLong releaseCount,
                                          AtomicLong allocatedBytes,
-                                         boolean jfrEnabled) {
+                                         boolean jfrEnabled,
+                                         CommunityMemoryJfrSampling jfrSampling) {
         this.bytes = bytes;
         this.releaseCount = releaseCount;
         this.allocatedBytes = allocatedBytes;
         this.jfrEnabled = jfrEnabled;
+        this.jfrSampling = jfrSampling;
     }
 
     @Override
     public void run() {
         long count = releaseCount.incrementAndGet();
         allocatedBytes.addAndGet(-bytes);
-        if (jfrEnabled) {
+        if (jfrEnabled && jfrSampling.shouldEmit(count)) {
             CommunityReleaseEvent.emit(bytes, count);
         }
     }

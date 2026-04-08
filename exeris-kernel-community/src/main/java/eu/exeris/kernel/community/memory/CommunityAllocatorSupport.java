@@ -37,11 +37,12 @@ final class CommunityAllocatorSupport {
                                               AtomicLong allocatedBytes,
                                               AtomicLong peakAllocated,
                                               boolean jfrEnabled,
+                                              CommunityMemoryJfrSampling jfrSampling,
                                               long bytes) {
         long count = allocationCount.incrementAndGet();
         long current = allocatedBytes.addAndGet(bytes);
         peakAllocated.getAndAccumulate(current, Math::max);
-        if (jfrEnabled) {
+        if (jfrEnabled && jfrSampling.shouldEmit(count)) {
             CommunityAllocationEvent.emit(bytes, count);
         }
     }

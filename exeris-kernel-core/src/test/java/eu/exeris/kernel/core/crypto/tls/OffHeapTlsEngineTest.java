@@ -133,7 +133,7 @@ class OffHeapTlsEngineTest {
 
     private CoreSslHandles buildHandles(String acceptStub) {
         CoreSslHandles.CtxHandles ctx = new CoreSslHandles.CtxHandles(
-                null, null, null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null, null, null);
         CoreSslHandles.HandshakeHandles hs = new CoreSslHandles.HandshakeHandles(
                 mh("stubSslNew",         long.class, long.class),
                 mh("stubSslFree",        void.class, long.class),
