@@ -12,7 +12,6 @@ import eu.exeris.kernel.spi.exceptions.graph.PathNotFoundException;
 import eu.exeris.kernel.spi.graph.algorithm.EdgeWeightFunction;
 import eu.exeris.kernel.spi.graph.algorithm.PathFinder;
 import eu.exeris.kernel.spi.graph.model.PathResult;
-import jdk.jfr.FlightRecorder;
 
 import java.util.List;
 import java.util.Map;
@@ -104,9 +103,8 @@ public final class AlgoOrchestrator {
         Objects.requireNonNull(target,   NULL_TARGET);
         Objects.requireNonNull(weightFn, NULL_WEIGHT);
 
-        final AlgoOrchestratorEvent event = FlightRecorder.isInitialized() ? new AlgoOrchestratorEvent() : null;
+        final AlgoOrchestratorEvent event = AlgoOrchestratorEvent.beginIfEnabled();
         if (event != null) {
-            event.begin();
             event.algorithmName = pathFinder.algorithmName();
             event.operationType = "SHORTEST_PATH";
         }
@@ -144,9 +142,8 @@ public final class AlgoOrchestrator {
         Objects.requireNonNull(targets,  NULL_TARGETS);
         Objects.requireNonNull(weightFn, NULL_WEIGHT);
 
-        final AlgoOrchestratorEvent event = FlightRecorder.isInitialized() ? new AlgoOrchestratorEvent() : null;
+        final AlgoOrchestratorEvent event = AlgoOrchestratorEvent.beginIfEnabled();
         if (event != null) {
-            event.begin();
             event.algorithmName = pathFinder.algorithmName();
             event.operationType = "MULTI_TARGET_SHORTEST_PATH";
         }
@@ -186,9 +183,8 @@ public final class AlgoOrchestrator {
             throw new IllegalArgumentException("maxPaths must be >= 1, got: " + maxPaths);
         }
 
-        final AlgoOrchestratorEvent event = FlightRecorder.isInitialized() ? new AlgoOrchestratorEvent() : null;
+        final AlgoOrchestratorEvent event = AlgoOrchestratorEvent.beginIfEnabled();
         if (event != null) {
-            event.begin();
             event.algorithmName = pathFinder.algorithmName();
             event.operationType = "K_SHORTEST_PATHS";
         }

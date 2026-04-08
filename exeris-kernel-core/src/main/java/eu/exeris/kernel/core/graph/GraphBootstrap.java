@@ -67,6 +67,7 @@ public final class GraphBootstrap {
      * @throws GraphBootstrapException if no provider is available on the classpath
      */
     public static GraphEngine load(GraphConfig config) {
+        Objects.requireNonNull(config, "config must not be null");
         return loadWithProvider(config).engine();
     }
 

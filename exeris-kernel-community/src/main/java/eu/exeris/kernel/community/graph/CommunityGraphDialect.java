@@ -52,7 +52,7 @@ final class CommunityGraphDialect implements GraphDialect {
         if (mode == Mode.CYPHER) {
             return """
                     MATCH (source)-[:%s]->(target)
-                    WHERE source.id = $sourceId AND source.tenant_id = $tenantId
+                    WHERE source.id = $sourceId
                     RETURN target.id AS target_id
                     """.formatted(requireCypherIdentifier(edge.edgeType()));
         }
@@ -67,7 +67,7 @@ final class CommunityGraphDialect implements GraphDialect {
         if (mode == Mode.CYPHER) {
             return """
                     MATCH p = (source)-[:%s*%d..%d]->(target)
-                    WHERE source.id = $sourceId AND source.tenant_id = $tenantId
+                    WHERE source.id = $sourceId
                     RETURN DISTINCT target.id AS id
                     """.formatted(requireCypherIdentifier(edge.edgeType()), minHops, maxHops);
         }
@@ -94,7 +94,6 @@ final class CommunityGraphDialect implements GraphDialect {
                     MATCH p = (source)-[:%s*1..%d]->(target)
                     WHERE source.id = $sourceId
                       AND target.id = $targetId
-                      AND source.tenant_id = $tenantId
                     RETURN [node IN nodes(p) | node.id] AS path,
                            reduce(
                                total = 0.0,

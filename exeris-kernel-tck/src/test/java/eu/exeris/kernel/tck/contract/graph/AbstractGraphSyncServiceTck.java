@@ -133,7 +133,7 @@ public abstract class AbstractGraphSyncServiceTck {
     class FailurePath {
 
         @Test
-        @DisplayName("session failure during node upsert → GraphSyncException EX-GRPH-5003")
+        @DisplayName("session failure during node upsert \u2192 rollback is called")
         void nodeUpsertFailureEmitsCorrectCode() {
             setSessionFailMode(true);
             try (GraphSession session = engine.openSession()) {

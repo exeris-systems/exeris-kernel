@@ -14,6 +14,7 @@ import eu.exeris.kernel.spi.graph.model.PathResult;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 
 /**
@@ -204,6 +205,9 @@ public interface GraphSession extends AutoCloseable {
      * @throws eu.exeris.kernel.spi.exceptions.graph.GraphQueryException if algorithm fails
      */
     default PathResult findShortestPath(GraphEdgeDescriptor edge, UUID source, UUID target) {
+        Objects.requireNonNull(edge,   "edge must not be null");
+        Objects.requireNonNull(source, "source must not be null");
+        Objects.requireNonNull(target, "target must not be null");
         return findShortestPath(source, target);
     }
 

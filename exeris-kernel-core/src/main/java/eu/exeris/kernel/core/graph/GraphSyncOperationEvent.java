@@ -11,6 +11,7 @@ package eu.exeris.kernel.core.graph;
 import jdk.jfr.Category;
 import jdk.jfr.Description;
 import jdk.jfr.Event;
+import jdk.jfr.FlightRecorder;
 import jdk.jfr.Label;
 import jdk.jfr.Name;
 import jdk.jfr.StackTrace;
@@ -44,5 +45,21 @@ final class GraphSyncOperationEvent extends Event {
     @Label("Success")
     @Description("true if the graph write committed successfully")
     /* default */ boolean success;
+
+    /**
+     * Allocates and begins a new event only if JFR is initialized and this event is enabled.
+     * Returns {@code null} with zero allocation when JFR is inactive or the event is disabled.
+     */
+    /* default */ static GraphSyncOperationEvent beginIfEnabled() {
+        if (!FlightRecorder.isInitialized()) {
+            return null;
+        }
+        GraphSyncOperationEvent event = new GraphSyncOperationEvent();
+        if (!event.isEnabled()) {
+            return null;
+        }
+        event.begin();
+        return event;
+    }
 }
 

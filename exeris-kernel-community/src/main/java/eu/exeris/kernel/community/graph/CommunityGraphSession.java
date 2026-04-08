@@ -434,12 +434,8 @@ final class CommunityGraphSession implements GraphSession {
     // Normalize backend-specific runtime failures into a stable GraphQueryException contract.
     @SuppressWarnings(PMD_AVOID_CATCHING_GENERIC_EXCEPTION)
     private List<UUID> traverseBreadthFirstCypher(GraphTraversal traversal) {
-        String relationType = requireIdentifier(traversal.edgeDescriptor().edgeType());
-        String query = """
-                MATCH p = (source)-[:%s*1..%d]->(target)
-                WHERE source.id = $sourceId
-                RETURN DISTINCT target.id AS id
-                """.formatted(relationType, traversal.maxDepth());
+        String query = dialect.buildMultiHopQuery(
+                traversal.edgeDescriptor(), 1, traversal.maxDepth());
         Map<String, Object> params = Map.of(PARAM_SOURCE_ID, traversal.startNodeId().toString());
         try {
             return executeCypherRead(query, params, result -> {

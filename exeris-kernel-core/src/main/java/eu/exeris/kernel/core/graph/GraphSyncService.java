@@ -13,7 +13,6 @@ import eu.exeris.kernel.spi.graph.GraphEngine;
 import eu.exeris.kernel.spi.graph.GraphSession;
 import eu.exeris.kernel.spi.graph.model.GraphEdgeDescriptor;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
-import jdk.jfr.FlightRecorder;
 
 import java.util.Objects;
 import java.util.UUID;
@@ -80,9 +79,8 @@ public final class GraphSyncService {
     public void syncNodeUpsert(String label, UUID nodeId, LoanedBuffer properties) {
         Objects.requireNonNull(label,  "label must not be null");
         Objects.requireNonNull(nodeId, "nodeId must not be null");
-        final GraphSyncOperationEvent event = FlightRecorder.isInitialized() ? new GraphSyncOperationEvent() : null;
+        final GraphSyncOperationEvent event = GraphSyncOperationEvent.beginIfEnabled();
         if (event != null) {
-            event.begin();
             event.operationType = "NODE_UPSERT";
             event.edgeOrLabel   = label;
         }
@@ -116,9 +114,8 @@ public final class GraphSyncService {
     public void syncNodeDelete(String label, UUID nodeId) {
         Objects.requireNonNull(label,  "label must not be null");
         Objects.requireNonNull(nodeId, "nodeId must not be null");
-        final GraphSyncOperationEvent event = FlightRecorder.isInitialized() ? new GraphSyncOperationEvent() : null;
+        final GraphSyncOperationEvent event = GraphSyncOperationEvent.beginIfEnabled();
         if (event != null) {
-            event.begin();
             event.operationType = "NODE_DELETE";
             event.edgeOrLabel   = label;
         }
@@ -158,9 +155,8 @@ public final class GraphSyncService {
         Objects.requireNonNull(sourceId, "sourceId must not be null");
         Objects.requireNonNull(targetId, "targetId must not be null");
         String edgeType = edge.edgeType();
-        final GraphSyncOperationEvent event = FlightRecorder.isInitialized() ? new GraphSyncOperationEvent() : null;
+        final GraphSyncOperationEvent event = GraphSyncOperationEvent.beginIfEnabled();
         if (event != null) {
-            event.begin();
             event.operationType = "EDGE_UPSERT";
             event.edgeOrLabel   = edgeType;
         }
@@ -197,9 +193,8 @@ public final class GraphSyncService {
         Objects.requireNonNull(sourceId, "sourceId must not be null");
         Objects.requireNonNull(targetId, "targetId must not be null");
         String edgeType = edge.edgeType();
-        final GraphSyncOperationEvent event = FlightRecorder.isInitialized() ? new GraphSyncOperationEvent() : null;
+        final GraphSyncOperationEvent event = GraphSyncOperationEvent.beginIfEnabled();
         if (event != null) {
-            event.begin();
             event.operationType = "EDGE_DELETE";
             event.edgeOrLabel   = edgeType;
         }
