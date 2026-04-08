@@ -91,6 +91,10 @@ public final class CoreFlowEngine implements FlowEngine {
             FlowChoreographyMapper mapper,
             Collection<String> eventTypeNames,
             EventBus bus) {
+        if (!capabilities.choreographySupport()) {
+            throw new UnsupportedOperationException("Choreography is not supported by this engine configuration");
+        }
+        ensureStarted();
         Objects.requireNonNull(mapper, "mapper");
         Objects.requireNonNull(eventTypeNames, "eventTypeNames");
         Objects.requireNonNull(bus, "bus");

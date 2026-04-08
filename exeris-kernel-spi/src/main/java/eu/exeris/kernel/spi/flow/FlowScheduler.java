@@ -80,14 +80,16 @@ public interface FlowScheduler {
     /**
      * Looks up a currently parked flow instance by its UUID components.
      *
-     * <p>Community: linear scan over the parked-flows map. Suitable for choreography-
-     * triggered wakes where frequency is bounded by event rate, not flow count.
+     * <p>Community: O(1) lookup via {@code ConcurrentHashMap} keyed by {@link FlowContext} UUID.
      * Enterprise: O(1) lookup via off-heap slot index.
+     *
+     * <p>The default implementation returns {@link java.util.Optional#empty()} and is
+     * suitable only for implementations that handle wakes without an in-memory parked set.
      *
      * @param instanceIdMost  most-significant bits of the flow instance UUID
      * @param instanceIdLeast least-significant bits of the flow instance UUID
      * @return an {@link Optional} containing the {@link FlowContext} if a parked instance
-     *         with the given UUID exists; empty otherwise
+     *         with the given UUID exists in the current in-memory parked set; empty otherwise
      */
     default Optional<FlowContext> lookupParked(long instanceIdMost, long instanceIdLeast) {
         return Optional.empty();

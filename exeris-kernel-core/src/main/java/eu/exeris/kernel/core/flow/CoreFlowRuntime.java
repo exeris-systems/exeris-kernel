@@ -190,7 +190,7 @@ final class CoreFlowRuntime { // NOPMD
         } else {
             instance = restoreFromSnapshot(key, null);
             if (instance == null) {
-                return;
+                throw new FlowEngineException("Cannot wake flow that is not currently parked: " + key);
             }
             liveInstances.put(key, instance);
         }
@@ -249,19 +249,23 @@ final class CoreFlowRuntime { // NOPMD
                 if (closed || !started || instance.isTerminal()) {
                     return;
                 }
-
-                int stepIndex = Math.max(0, startStep);
                 instance.state(FlowState.RUNNING);
+            }
 
-                while (!closed && started) {
+            int stepIndex = Math.max(0, startStep);
+
+            while (!closed && started) {
+                FlowStepDescriptor step;
+                FlowStepAction stepAction;
+
+                synchronized (instance.monitor()) {
                     if (stepIndex >= instance.plan().stepCount()) {
                         complete(instance);
                         return;
                     }
-
                     instance.currentStep(stepIndex);
                     progressPublisher.publishProgress(instance, stepIndex, FlowState.RUNNING);
-                    FlowStepDescriptor step = instance.plan().stepAt(stepIndex);
+                    step = instance.plan().stepAt(stepIndex);
 
                     if (guard != null && !guard.tryClaimStep(
                             instance.key().instanceIdMost(),
@@ -275,9 +279,12 @@ final class CoreFlowRuntime { // NOPMD
                         stepIndex = nextGuardIndex;
                         continue;
                     }
+                    stepAction = step.action();
+                }
 
-                    FlowOutcome outcome = executeStep(instance, stepIndex, step.action());
+                FlowOutcome outcome = executeStep(instance, stepIndex, stepAction);
 
+                synchronized (instance.monitor()) {
                     switch (outcome) {
                         case CONTINUE -> {
                             if (step.hasCompensation() && config.compensationEnabled()) {
