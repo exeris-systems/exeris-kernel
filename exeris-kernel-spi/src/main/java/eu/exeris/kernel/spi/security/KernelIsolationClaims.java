@@ -23,9 +23,9 @@ package eu.exeris.kernel.spi.security;
  *   <tr><th>Claim</th><th>Required when</th><th>Valid values</th></tr>
  *   <tr><td>{@link #ISOLATION_STRATEGY}</td><td>Always (optional)</td>
  *       <td>{@code "SHARED"}, {@code "SEPARATED_SCHEMA"}, {@code "DEDICATED"}</td></tr>
- *   <tr><td>{@link #SCHEMA_NAME}</td><td>{@code ISOLATED_STRATEGY == "SEPARATED_SCHEMA"}</td>
+ *   <tr><td>{@link #SCHEMA_NAME}</td><td>{@code ISOLATION_STRATEGY == "SEPARATED_SCHEMA"}</td>
  *       <td>PostgreSQL schema identifier (e.g. {@code "tenant_acme"})</td></tr>
- *   <tr><td>{@link #DATASOURCE_KEY}</td><td>{@code ISOLATED_STRATEGY == "DEDICATED"}</td>
+ *   <tr><td>{@link #DATASOURCE_KEY}</td><td>{@code ISOLATION_STRATEGY == "DEDICATED"}</td>
  *       <td>Key matching an entry in {@link eu.exeris.kernel.spi.persistence.PersistenceConfig#dedicatedDataSources()}
  *   </td></tr>
  * </table>

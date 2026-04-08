@@ -69,7 +69,7 @@ public final class KernelBootstrapHttpEngineFixture implements EmbeddedHttpEngin
 
             Thread thread = Thread.ofPlatform()
                     .name("kernel-bootstrap-http-fixture")
-                    .uncaughtExceptionHandler((ignoredThread, throwable) -> {
+                    .uncaughtExceptionHandler((_, throwable) -> {
                         startupFailure.compareAndSet(null, throwable);
                         startedSignal.countDown();
                     })

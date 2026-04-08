@@ -646,14 +646,12 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
         if (isolationKey == null || isolationKey.isBlank()) {
             return;
         }
-        boolean present = snapshot.stream()
-                .anyMatch(RlsConnectionInterceptor.class::isInstance);
-        if (!present) {
+        if (snapshot.isEmpty()) {
             throw PersistenceProviderException.interceptorInitFailed(
                     REQUIRED_SHARED_INTERCEPTOR,
                     isolationKey,
                     new IllegalStateException(
-                            "RLS enabled but required SHARED interceptor is not registered"));
+                            "RLS enabled but no ConnectionInterceptor is registered for SHARED strategy"));
         }
     }
 
