@@ -132,7 +132,14 @@ sequenceDiagram
 > **Community transport handoff note:** Community transport commonly hands off `LoanedBuffer`
 > ownership through queue-based cross-VT transfer (carrier thread allocates, stream VT may release).
 > For this reason Community allocator ownership must not use `Arena.ofConfined()`; current Community
-> allocator uses shared arena semantics to keep release deterministic across that handoff.
+> allocator uses shared arena semantics for all allocations (both pooled size-class allocations and
+> oversized allocations > 128 KB) to keep release deterministic across that handoff.
+> Oversized allocations are not dropped to temporary auto-arenas; they allocate from the same shared
+> arena as pooled allocations, ensuring uniform lifecycle management.
+
+> **Contract note (2026-03 refactor):** Community oversized allocations (> 128 KB) were moved from
+> temporary `Arena.ofAuto()` fallback behavior to shared-arena allocation for consistency and
+> cross-VT ownership safety. This removes GC-driven lifecycle variance for oversized buffers.
 
 ---
 
@@ -140,7 +147,7 @@ sequenceDiagram
 
 | Tier           | Allocator                                                                     | GC Handshakes on hot-path | Use Case                          |
 |:---------------|:------------------------------------------------------------------------------|:--------------------------|:----------------------------------|
-| **Community**  | `MemoryAllocator` via `KernelProviders.MEMORY_ALLOCATOR` (shared, bounded)   | Low (JVM thread-local)    | Standard TCP, JDBC persistence    |
+| **Community**  | `MemoryAllocator` via `KernelProviders.MEMORY_ALLOCATOR` (shared, bounded; pooled and oversized > 128 KB both use shared arena) | Low (JVM thread-local)    | Standard TCP, JDBC persistence    |
 | **Enterprise** | `GlobalMemoryArbiter` `mmap`                                                  | **Zero**                  | `io_uring`, native DB driver, HFT |
 
 ### ScalingContext — Multi-Tenant SLA Shedding (INCUBATING — TRL-2)

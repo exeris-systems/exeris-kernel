@@ -59,6 +59,10 @@ In subsystem/runtime code, prefer `MemoryAllocator`, `LoanedBuffer`, or approved
 2. Contract integrity (subsystem docs + ADR intent).
 3. Runtime efficiency on hot paths (allocation/copy/concurrency discipline).
 4. Verification impact (unit/integration/TCK proportional to behavior change).
+5. Style and readability (with preference for clarity over dogma).
+6. Test coverage (with preference for meaningful semantics over 100% line coverage).
+7. Documentation updates (with preference for minimal necessary updates to maintain accuracy).
+8. PMD/Checkstyle/SpotBugs warnings (with preference for addressing real issues over silencing noise) resolved.
 
 ## Comment and Explanation Policy
 - Keep code comments minimal.
