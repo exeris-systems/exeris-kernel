@@ -126,7 +126,9 @@ public final class HttpRouter implements HttpHandler {
         public Builder route(HttpHandler handler, String path, HttpMethod... methods) {
             Objects.requireNonNull(handler, HANDLER_PARAM);
             Objects.requireNonNull(path, "path");
+            Objects.requireNonNull(methods, "methods");
             for (HttpMethod method : methods) {
+                Objects.requireNonNull(method, "method");
                 exactRoutes.add(new RouteEntry(method, path, handler));
             }
             return this;

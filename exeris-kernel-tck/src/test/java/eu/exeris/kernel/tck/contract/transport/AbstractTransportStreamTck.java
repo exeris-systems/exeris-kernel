@@ -240,6 +240,11 @@ public abstract class AbstractTransportStreamTck {
 
                 reader.join(500);
 
+                // Assert: read() returned -1 (remote-close EOF)
+                assertThat(readResult.get())
+                        .as("read() should return -1 on remote close")
+                        .isEqualTo(-1);
+
                 // Assert: unblocked within 50ms
                 long returnedAt = readReturnedAt.get();
                 assertThat(returnedAt)

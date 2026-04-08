@@ -21,7 +21,7 @@ import jdk.jfr.StackTrace;
  *
  * <h2>Backpressure Control</h2>
  * <p>Only emitted when circuit breaker is enabled (flag: -Dexeris.transport.queueBackpressureEnabled=true).
- * Indicates that queue depth exceeded threshold and new connection accept was rejected.
+ * Indicates that queue depth exceeded threshold and an inbound buffer enqueue was rejected.
  *
  * @since 0.6.0
  */
@@ -54,6 +54,9 @@ public final class TransportQueueBackpressureAlertEvent extends Event {
             return;
         }
         TransportQueueBackpressureAlertEvent event = new TransportQueueBackpressureAlertEvent();
+        if (!event.isEnabled()) {
+            return;
+        }
         event.connectionsRejected = connectionsRejected;
         event.peakQueueDepth = peakQueueDepth;
         event.trend = trend;

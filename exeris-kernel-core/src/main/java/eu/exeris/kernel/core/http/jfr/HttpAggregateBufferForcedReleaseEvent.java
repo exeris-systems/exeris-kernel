@@ -58,6 +58,9 @@ public final class HttpAggregateBufferForcedReleaseEvent extends Event {
             return;
         }
         HttpAggregateBufferForcedReleaseEvent event = new HttpAggregateBufferForcedReleaseEvent();
+        if (!event.isEnabled()) {
+            return;
+        }
         event.reason = reason;
         event.bufferedBytes = bufferedBytes;
         event.threshold = threshold;

@@ -59,6 +59,9 @@ public final class TransportIngressQueueDepthEvent extends Event {
             return;
         }
         TransportIngressQueueDepthEvent event = new TransportIngressQueueDepthEvent();
+        if (!event.isEnabled()) {
+            return;
+        }
         event.streamId = streamId;
         event.queueDepth = queueDepth;
         event.threshold = threshold;

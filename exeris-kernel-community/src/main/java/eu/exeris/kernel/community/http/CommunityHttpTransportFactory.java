@@ -62,15 +62,15 @@ final class CommunityHttpTransportFactory {
                 .call(() -> provider.createEngine(transportConfig));
     }
 
-        private static String resolveTransportProperty(ConfigProvider configProvider,
-                               String primaryKey,
-                               String fallbackKey) {
+    private static String resolveTransportProperty(ConfigProvider configProvider,
+                                                   String primaryKey,
+                                                   String fallbackKey) {
         if (configProvider == null) {
             return null;
         }
         return configProvider.getString(primaryKey)
-            .orElse(configProvider.getString(fallbackKey).orElse(null));
-        }
+                .orElse(configProvider.getString(fallbackKey).orElse(null));
+    }
 
     /* default */ static int nextFreePort() {
         try (ServerSocket socket = new ServerSocket(0)) {

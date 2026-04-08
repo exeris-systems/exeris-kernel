@@ -114,7 +114,14 @@ final class CommunityHttpExchange implements HttpExchange {
         HttpResponseEncodingContext ctx = new HttpResponseEncodingContext(request, allocator);
         HttpEncodedBody encoded = encoder.encode(typedResponse.payload(), ctx);
         List<HttpHeader> mergedHeaders = mergeHeaders(typedResponse.headers(), encoded.headers());
-        respond(new HttpResponse(typedResponse.status(), request.version(), mergedHeaders, encoded.body()));
+        try {
+            respond(new HttpResponse(typedResponse.status(), request.version(), mergedHeaders, encoded.body()));
+        } catch (RuntimeException | Error ex) {
+            if (encoded.body() != null) {
+                encoded.body().close();
+            }
+            throw ex;
+        }
     }
 
     private static List<HttpHeader> mergeHeaders(List<HttpHeader> typedHeaders, List<HttpHeader> encodedHeaders) {

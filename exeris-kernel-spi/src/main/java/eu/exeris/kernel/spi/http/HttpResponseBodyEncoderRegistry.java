@@ -20,7 +20,7 @@ public interface HttpResponseBodyEncoderRegistry {
      * Resolves an encoder for payload type.
      *
      * @param payloadType payload runtime class; never null
-    * @return matching encoder when available, otherwise {@code null}
+     * @return matching encoder when available, otherwise {@code null}
      */
     HttpResponseBodyEncoder resolve(Class<?> payloadType);
 

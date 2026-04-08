@@ -344,14 +344,12 @@ final class NativeTcpStream implements TransportStream {
         int currentQueueDepth = inboundQueue.size();
         
         // Emit JFR events at thresholds for monitoring
+        String trend = currentQueueDepth >= lastQueueDepth ? "up" : "down";
         if (currentQueueDepth >= QUEUE_DEPTH_THRESHOLD_HIGH) {
-            String trend = currentQueueDepth >= lastQueueDepth ? "up" : "down";
             TransportIngressQueueDepthEvent.emit(streamId, currentQueueDepth, QUEUE_DEPTH_THRESHOLD_HIGH, trend);
         } else if (currentQueueDepth >= QUEUE_DEPTH_THRESHOLD_MID) {
-            String trend = currentQueueDepth >= lastQueueDepth ? "up" : "down";
             TransportIngressQueueDepthEvent.emit(streamId, currentQueueDepth, QUEUE_DEPTH_THRESHOLD_MID, trend);
         } else if (currentQueueDepth >= QUEUE_DEPTH_THRESHOLD_LOW) {
-            String trend = currentQueueDepth >= lastQueueDepth ? "up" : "down";
             TransportIngressQueueDepthEvent.emit(streamId, currentQueueDepth, QUEUE_DEPTH_THRESHOLD_LOW, trend);
         }
         lastQueueDepth = currentQueueDepth;
@@ -361,10 +359,9 @@ final class NativeTcpStream implements TransportStream {
             ingressBuffer.close();
             // Phase 1B: Backpressure circuit breaker (off-by-default via QUEUE_BACKPRESSURE_ENABLED)
             if (QUEUE_BACKPRESSURE_ENABLED) {
-                String trend = "up";
                 TransportQueueBackpressureAlertEvent.emit(1, currentQueueDepth, trend);
             }
-            throw new IllegalStateException("Failed to enqueue inbound buffer for stream " + streamId);
+            throw new IllegalStateException("Rejected inbound buffer due to backpressure for stream " + streamId);
         }
         signalReadableIngress();
     }

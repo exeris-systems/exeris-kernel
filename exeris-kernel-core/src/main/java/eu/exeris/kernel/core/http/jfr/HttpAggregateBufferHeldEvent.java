@@ -59,6 +59,9 @@ public final class HttpAggregateBufferHeldEvent extends Event {
             return;
         }
         HttpAggregateBufferHeldEvent event = new HttpAggregateBufferHeldEvent();
+        if (!event.isEnabled()) {
+            return;
+        }
         event.ageMs = ageMs;
         event.bufferedBytes = bufferedBytes;
         event.capacity = capacity;

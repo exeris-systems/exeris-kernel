@@ -73,7 +73,14 @@ final class InMemoryHttp2Exchange implements HttpExchange {
         HttpResponseEncodingContext context = new HttpResponseEncodingContext(request, allocator);
         HttpEncodedBody encodedBody = encoder.encode(typedResponse.payload(), context);
         List<HttpHeader> mergedHeaders = mergeHeaders(typedResponse.headers(), encodedBody.headers());
-        respond(new HttpResponse(typedResponse.status(), request.version(), mergedHeaders, encodedBody.body()));
+        try {
+            respond(new HttpResponse(typedResponse.status(), request.version(), mergedHeaders, encodedBody.body()));
+        } catch (RuntimeException | Error ex) {
+            if (encodedBody.body() != null) {
+                encodedBody.body().close();
+            }
+            throw ex;
+        }
     }
 
     private static List<HttpHeader> mergeHeaders(List<HttpHeader> typedHeaders, List<HttpHeader> encodedHeaders) {
