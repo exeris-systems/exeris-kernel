@@ -67,13 +67,12 @@ public final class PersistenceBootstrap {
     }
 
     /**
-     * Loads the best available {@link PersistenceProvider}, creates the engine,
-     * registers the supplied interceptors, and returns the ready {@link PersistenceEngine}.
+     * Loads the best available {@link PersistenceProvider} via {@link ServiceLoader},
+     * then delegates to {@link #load(PersistenceProvider, PersistenceConfig, List)}.
      *
-     * <p>This method performs a fresh {@link ServiceLoader} scan and engine construction
-     * on every invocation. It is intended to be called exactly once per kernel lifecycle,
-     * during bootstrap. Multiple calls will produce independent engine instances and
-     * re-register interceptors — the caller is responsible for lifecycle control.
+     * <p>Use this overload when the caller does not hold a pre-resolved provider.
+     * When a provider has already been resolved (e.g. in {@code CommunityPersistenceSubsystem}),
+     * prefer the three-argument overload to avoid a redundant scan.
      *
      * @param config       immutable persistence configuration; must not be {@code null}
      * @param interceptors ordered list of interceptors to register; must not be {@code null} (may be empty)
@@ -93,6 +92,29 @@ public final class PersistenceBootstrap {
                         .thenComparing(p -> p.getClass().getName()))
                 .orElseThrow(() -> PersistenceProviderException.noProviderAvailable(
                         ERROR_NO_PROVIDER));
+        return load(provider, config, interceptors);
+    }
+
+    /**
+     * Creates the engine from an already-resolved {@link PersistenceProvider}, registers
+     * interceptors, and emits JFR bootstrap events.
+     *
+     * <p>Prefer this overload when the caller has already performed provider selection
+     * (e.g. a subsystem that also needs to bind the provider into {@link eu.exeris.kernel.spi.context.KernelProviders})
+     * so that the {@link ServiceLoader} scan happens exactly once per kernel lifecycle.
+     *
+     * @param provider     pre-resolved provider; must not be {@code null}
+     * @param config       immutable persistence configuration; must not be {@code null}
+     * @param interceptors ordered list of interceptors to register; must not be {@code null} (may be empty)
+     * @return a fully initialised {@link PersistenceEngine}
+     * @throws NullPointerException if any argument is {@code null}
+     */
+    public static PersistenceEngine load(PersistenceProvider provider,
+                                         PersistenceConfig config,
+                                         List<ConnectionInterceptor> interceptors) {
+        Objects.requireNonNull(provider,     "provider must not be null");
+        Objects.requireNonNull(config,       "config must not be null");
+        Objects.requireNonNull(interceptors, "interceptors must not be null");
 
         // --- Phase 1.5: Validate RLS configuration before engine creation ---
         validateRlsInterceptorConfiguration(config, interceptors, provider.providerName());

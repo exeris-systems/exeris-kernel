@@ -10,6 +10,7 @@ package eu.exeris.kernel.tck.contract.bootstrap;
 
 import eu.exeris.kernel.spi.bootstrap.BootstrapPhase;
 import eu.exeris.kernel.spi.bootstrap.Subsystem;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -54,6 +55,7 @@ public abstract class AbstractProviderBindingLifecycleTck extends AbstractBootst
      * <p>Degraded subsystems' enrichers are not included in {@code buildKernelScope()}.
      */
     @Test
+    @Disabled("Placeholder: implement with concrete subsystem mocks")
     @DisplayName("Degraded subsystems' bindings are excluded from kernel scope")
     void providerBindingsExcludedForDegradedSubsystems() {
         // This test validates that the binding composition respects degradation.
@@ -79,6 +81,7 @@ public abstract class AbstractProviderBindingLifecycleTck extends AbstractBootst
      * during their own {@code start()} method execution.
      */
     @Test
+    @Disabled("Placeholder: implement with concrete subsystem mocks")
     @DisplayName("Active subsystems' bindings are visible during dependent start()")
     void providerBindingsVisibleDuringDependentStart() {
         // This test ensures the binding protocol maintains timing guarantees.

@@ -50,7 +50,7 @@ final class CommunityCryptoSubsystem implements Subsystem {
 
     @Override
     public void start() {
-        running = true;
+        running = (cryptoProvider != null);
     }
 
     @Override

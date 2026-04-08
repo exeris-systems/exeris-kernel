@@ -45,6 +45,9 @@ final class DeferredHttpClientEngine implements HttpClientEngine {
 
     @Override
     public HttpResponse send(HttpRequest request) {
+        if (closed.get()) {
+            throw new IllegalStateException("Client engine is closed");
+        }
         HttpClientEngine local = delegate;
         if (local == null) {
             throw new IllegalStateException("Client engine is not running");

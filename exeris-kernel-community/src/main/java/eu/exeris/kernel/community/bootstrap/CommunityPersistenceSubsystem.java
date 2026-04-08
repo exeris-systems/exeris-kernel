@@ -62,7 +62,7 @@ final class CommunityPersistenceSubsystem implements Subsystem {
                 DEFAULT_MAX_LIFETIME_MS,
                 DEFAULT_MIN_IDLE_CONNECTIONS,
                 DEFAULT_MAX_TENANT_POOLS);
-        persistenceEngine = PersistenceBootstrap.load(config, interceptors(config));
+        persistenceEngine = PersistenceBootstrap.load(persistenceProvider, config, interceptors(config));
     }
 
     @Override

@@ -123,17 +123,18 @@ public final class CommunityPersistenceConfigResolver {
     }
 
     /**
-     * Resolve pool sizing property: "exeris.persistence.maxPoolSize" or "persistence.pool.maxSize"
+     * Resolves persistence properties from system properties and environment variables.
      *
-     * If not set, defaults to: max(min(CPU_cores × 2, 32), 2)
-     * Examples:
-     * - 8-core machine: pool_size = min(16, 32) = 16
-     * - 32-core machine: pool_size = min(64, 32) = 32
-     * - Single-threaded test: pool_size = max(2, 2) = 2
+     * <p>System properties must use the {@code exeris.persistence.properties.} prefix;
+     * environment variables must use the {@code EXERIS_PERSISTENCE_PROPERTIES_} prefix.
      *
-     * To override: System.setProperty("persistence.maxPoolSize", "8")
+     * <p>Examples:
+     * <ul>
+     *   <li>{@code System.setProperty("exeris.persistence.properties.maxPoolSize", "8")}</li>
+     *   <li>{@code EXERIS_PERSISTENCE_PROPERTIES_MAXPOOLSIZE=8}</li>
+     *   <li>{@code EXERIS_PERSISTENCE_PROPERTIES_MAX_POOL_SIZE=8}</li>
+     * </ul>
      */
-
     /* default */ static Map<String, String> resolvePersistenceProperties() {
         Map<String, String> properties = new LinkedHashMap<>();
 
