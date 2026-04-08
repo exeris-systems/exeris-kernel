@@ -18,6 +18,14 @@ package eu.exeris.kernel.core.http.http2;
  * <h2>Thread Safety</h2>
  * <p>Not thread-safe. Each HTTP/2 connection manages its own flow controller instances.
  *
+ * <h2>Scope</h2>
+ * <p><strong>RFC 7540 (HTTP/2 over TCP) only.</strong> This class implements the
+ * credit-based window model of RFC 7540 §5.2 exclusively. It MUST NOT be reused
+ * as a flow-control primitive for HTTP/3 / QUIC traffic. HTTP/3 stream flow control
+ * is governed by RFC 9000 §4 and RFC 9114 §4.1. Enterprise H3 implementations
+ * MUST use QUIC-native flow control; reaching for this class from an H3 code path
+ * is a contract violation.
+ *
  * @since 0.5.0
  * @see <a href="https://www.rfc-editor.org/rfc/rfc7540#section-5.2">RFC 7540 §5.2</a>
  */

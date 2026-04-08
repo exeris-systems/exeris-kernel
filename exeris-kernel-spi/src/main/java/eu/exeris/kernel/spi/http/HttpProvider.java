@@ -108,5 +108,17 @@ public interface HttpProvider {
     default int priority() {
         return 0;
     }
+
+    /**
+     * Returns typed-response encoder registry for this provider.
+     *
+     * <p>Default implementation returns an empty registry to preserve compatibility.
+     * Providers may override this to expose auto-binding response encoding.
+     *
+     * @return response body encoder registry; never null
+     */
+    default HttpResponseBodyEncoderRegistry responseBodyEncoderRegistry() {
+        return HttpResponseBodyEncoderRegistry.empty();
+    }
 }
 

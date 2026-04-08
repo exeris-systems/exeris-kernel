@@ -157,7 +157,9 @@ public final class CoreOpenSslLoader {
                 req(linker, lookup, "SSL_CTX_set_verify",
                         FunctionDescriptor.ofVoid(JAVA_LONG, JAVA_INT, ADDRESS)),
                 opt(linker, lookup, "SSL_CTX_set_alpn_protos",
-                        FunctionDescriptor.of(JAVA_INT, JAVA_LONG, ADDRESS, JAVA_INT)));
+                        FunctionDescriptor.of(JAVA_INT, JAVA_LONG, ADDRESS, JAVA_INT)),
+                opt(linker, lookup, "SSL_CTX_set_alpn_select_cb",
+                        FunctionDescriptor.ofVoid(JAVA_LONG, JAVA_LONG, JAVA_LONG)));
 
         CoreSslHandles.HandshakeHandles handshake = new CoreSslHandles.HandshakeHandles(
                 req(linker, lookup, "SSL_new",

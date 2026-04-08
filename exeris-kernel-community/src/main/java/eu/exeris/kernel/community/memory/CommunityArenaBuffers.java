@@ -17,11 +17,22 @@ final class CommunityArenaBuffers {
     private CommunityArenaBuffers() {
     }
 
+    /* default */ static AbstractLoanedBuffer allocateOwned(
+            long capacityBytes, long alignmentBytes, CommunityArenaShardPool pool) {
+        CommunityArenaShardPool.Allocation allocation = pool.allocateSegment(capacityBytes, alignmentBytes);
+        return CommunityLoanedBuffer.allocateOwnedPooled(
+            allocation.segment(),
+                capacityBytes,
+            allocation.originShard(),
+                pool);
+    }
+
     /* default */ static AbstractLoanedBuffer allocateOwned(long capacityBytes, long alignmentBytes) {
-        // Community tier intentionally uses Arena.ofAuto().
-        // L0 architecture rules ban direct use of Arena.ofConfined()/ofShared() in business logic;
-        // release is therefore best-effort via CommunityLoanedBuffer.onRelease().
+        // Transport handoff crosses VT boundaries: carrier thread often allocates while a stream VT closes.
+        // Use auto arena to keep cross-thread safety while avoiding explicit close pressure on hot release paths.
+        //CHECKSTYLE:OFF
         Arena arena = Arena.ofAuto();
+        //CHECKSTYLE:ON
         return CommunityLoanedBuffer.allocateOwned(
                 capacityBytes,
                 alignmentBytes,
