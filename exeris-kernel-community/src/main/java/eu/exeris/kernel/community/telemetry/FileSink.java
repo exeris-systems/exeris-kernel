@@ -13,6 +13,7 @@ import eu.exeris.kernel.spi.telemetry.TelemetrySink;
 
 import java.io.BufferedWriter;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -62,9 +63,15 @@ public final class FileSink implements TelemetrySink {
      * @param maxQueueDepth maximum number of events buffered before drops start
      */
     public FileSink(Path logPath, int maxQueueDepth) {
+        // Fail-fast: validate path is writable before starting the writer thread.
+        try (BufferedWriter probe = Files.newBufferedWriter(logPath, StandardCharsets.UTF_8,
+                StandardOpenOption.CREATE, StandardOpenOption.APPEND)) {
+            // probe only — immediately closed
+        } catch (IOException e) {
+            throw new UncheckedIOException("FileSink cannot open log file: " + logPath, e);
+        }
         this.logPath = logPath;
         this.queue   = new ArrayBlockingQueue<>(maxQueueDepth);
-        // Virtual Thread — no carrier pinning during file I/O
         this.writerThread = Thread.ofVirtual()
               .name("exeris-telemetry-file-writer")
               .start(this::writeLoop);

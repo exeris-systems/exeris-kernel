@@ -148,14 +148,13 @@ public final class Slf4jTelemetrySink implements TelemetrySink {
             String component,
             String timestamp,
             ExerisKernelException exception) {
-        String message = exception != null ? sanitizeNullable(exception.getMessage()) : "";
-        String rawArgs = toJsonArray(exception != null ? exception.rawArgs() : null);
+        String rawArgs = buildStructuredRawArgsJson(exception != null ? exception.rawArgs() : null);
         return "{"
                 + "\"timestamp\":\"" + escapeJson(timestamp) + "\","
                 + "\"level\":\"" + escapeJson(resolvedLevelName) + "\","
                 + "\"code\":\"" + escapeJson(code) + "\","
                 + "\"component\":\"" + escapeJson(component) + "\","
-                + "\"message\":\"" + escapeJson(message) + "\","
+                + "\"message\":\"\","
                 + "\"rawArgs\":" + rawArgs
                 + "}";
     }
@@ -187,7 +186,7 @@ public final class Slf4jTelemetrySink implements TelemetrySink {
         return LogLevel.INFO;
     }
 
-    private static String toJsonArray(Object[] rawArgs) {
+    private static String buildStructuredRawArgsJson(Object[] rawArgs) {
         if (rawArgs == null || rawArgs.length == 0) {
             return "[]";
         }
@@ -197,22 +196,40 @@ public final class Slf4jTelemetrySink implements TelemetrySink {
             if (index > 0) {
                 builder.append(',');
             }
-            appendJsonValue(builder, rawArgs[index]);
+            appendStructuredRawArg(builder, rawArgs[index]);
         }
         builder.append(']');
         return builder.toString();
     }
 
-    private static void appendJsonValue(StringBuilder builder, Object value) {
+    private static void appendStructuredRawArg(StringBuilder builder, Object value) {
         if (value == null) {
             builder.append("null");
             return;
         }
-        if (value instanceof Number || value instanceof Boolean) {
+        if (value instanceof Boolean || value instanceof Byte || value instanceof Short
+                || value instanceof Integer || value instanceof Long
+                || value instanceof Float || value instanceof Double) {
             builder.append(value);
             return;
         }
-        builder.append('"').append(escapeJson(String.valueOf(value))).append('"');
+        if (value instanceof String stringValue) {
+            appendJsonString(builder, stringValue);
+            return;
+        }
+        if (value instanceof Character characterValue) {
+            appendJsonString(builder, characterValue.toString());
+            return;
+        }
+        if (value instanceof Enum<?> enumValue) {
+            appendJsonString(builder, enumValue.name());
+            return;
+        }
+        appendJsonString(builder, "[unsupported]");
+    }
+
+    private static void appendJsonString(StringBuilder builder, String value) {
+        builder.append('"').append(escapeJson(value)).append('"');
     }
 
     private static String sanitizeCode(String code) {

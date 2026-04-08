@@ -32,6 +32,7 @@ public final class ConsoleSink implements TelemetrySink {
     private static final DateTimeFormatter FMT =
             DateTimeFormatter.ofPattern("HH:mm:ss.SSS").withZone(ZoneOffset.UTC);
 
+    private volatile boolean closed;
     private final PrintStream out;
 
     public ConsoleSink() {
@@ -44,6 +45,9 @@ public final class ConsoleSink implements TelemetrySink {
 
     @Override
     public void emit(KernelEvent event) {
+        if (closed) {
+            return;
+        }
         String timestamp = FMT.format(event.timestamp());
         String level = event.level().name();
         String code  = event.code();
@@ -74,6 +78,7 @@ public final class ConsoleSink implements TelemetrySink {
 
     @Override
     public void close() {
+        closed = true;
         // System.out is not owned by this sink — do not close it
     }
 }
