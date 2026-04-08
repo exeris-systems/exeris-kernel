@@ -78,7 +78,7 @@ final class NativeTcpStream implements TransportStream {
     private final AtomicBoolean closed = new AtomicBoolean(false);
     private final AtomicBoolean remoteClosed = new AtomicBoolean(false);
     private final Queue<PendingWrite> outboundQueue = new LinkedBlockingQueue<>();
-    private final BlockingQueue<LoanedBuffer> inboundQueue = new LinkedBlockingQueue<>();
+    private final BlockingQueue<LoanedBuffer> inboundQueue = new LinkedBlockingQueue<>(QUEUE_DEPTH_THRESHOLD_HIGH);
     private final AtomicBoolean tlsBound = new AtomicBoolean(false);
     private final AtomicBoolean tlsReady = new AtomicBoolean(false);
     private final Object tlsLock = new Object();
@@ -356,12 +356,16 @@ final class NativeTcpStream implements TransportStream {
         }
         lastQueueDepth = currentQueueDepth;
         
-        if (QUEUE_BACKPRESSURE_ENABLED && currentQueueDepth >= QUEUE_DEPTH_THRESHOLD_HIGH) {
+        boolean offered = inboundQueue.offer(ingressBuffer);
+        if (!offered) {
             ingressBuffer.close();
-            TransportQueueBackpressureAlertEvent.emit(1, currentQueueDepth, "up");
+            // Phase 1B: Backpressure circuit breaker (off-by-default via QUEUE_BACKPRESSURE_ENABLED)
+            if (QUEUE_BACKPRESSURE_ENABLED) {
+                String trend = "up";
+                TransportQueueBackpressureAlertEvent.emit(1, currentQueueDepth, trend);
+            }
             throw new IllegalStateException("Failed to enqueue inbound buffer for stream " + streamId);
         }
-        inboundQueue.offer(ingressBuffer);
         signalReadableIngress();
     }
 
