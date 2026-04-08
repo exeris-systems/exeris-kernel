@@ -40,6 +40,8 @@ final class CoreFlowRuntime { // NOPMD
     private final Scheduler scheduler = new Scheduler();
     private final ConcurrentMap<FlowKey, RuntimeFlowInstance> liveInstances = new ConcurrentHashMap<>();
     private final ConcurrentMap<FlowKey, RuntimeFlowInstance> parkedInstances = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, CoreFlowExecutionPlan> planCatalog = new ConcurrentHashMap<>();
+    private final ConcurrentMap<FlowKey, FlowState> terminalStateCatalog = new ConcurrentHashMap<>();
     private final Set<Thread> runningThreads = ConcurrentHashMap.newKeySet();
     private final LongAdder activeFlows = new LongAdder();
     private final LongAdder parkedFlows = new LongAdder();
@@ -60,6 +62,10 @@ final class CoreFlowRuntime { // NOPMD
 
     public FlowScheduler scheduler() {
         return scheduler;
+    }
+
+    /* default */ ConcurrentMap<String, CoreFlowExecutionPlan> planCatalog() {
+        return planCatalog;
     }
 
     public FlowEngineStats stats() {
@@ -104,6 +110,9 @@ final class CoreFlowRuntime { // NOPMD
             thread.interrupt();
         }
         runningThreads.clear();
+        liveInstances.clear();
+        parkedInstances.clear();
+        terminalStateCatalog.clear();
     }
 
     public void assertStarted() {
@@ -119,7 +128,7 @@ final class CoreFlowRuntime { // NOPMD
     private void schedule(CoreFlowExecutionPlan plan, FlowContext context) {
         ensureStarted();
         FlowKey key = FlowKey.from(context);
-        if (CoreFlowCatalog.TERMINAL_STATE_CATALOG.containsKey(key)) {
+        if (terminalStateCatalog.containsKey(key)) {
             return;
         }
 
@@ -132,7 +141,7 @@ final class CoreFlowRuntime { // NOPMD
             return restored != null ? restored : RuntimeFlowInstance.fromContext(plan, context);
         });
 
-        if (instance.isTerminal() || CoreFlowCatalog.TERMINAL_STATE_CATALOG.containsKey(key)) {
+        if (instance.isTerminal() || terminalStateCatalog.containsKey(key)) {
             liveInstances.remove(key, instance);
             return;
         }
@@ -171,7 +180,7 @@ final class CoreFlowRuntime { // NOPMD
     private void wake(FlowContext context) {
         ensureStarted();
         FlowKey key = FlowKey.from(context);
-        if (CoreFlowCatalog.TERMINAL_STATE_CATALOG.containsKey(key)) {
+        if (terminalStateCatalog.containsKey(key)) {
             return;
         }
 
@@ -186,7 +195,7 @@ final class CoreFlowRuntime { // NOPMD
             liveInstances.put(key, instance);
         }
 
-        if (instance.isTerminal() || CoreFlowCatalog.TERMINAL_STATE_CATALOG.containsKey(key)) {
+        if (instance.isTerminal() || terminalStateCatalog.containsKey(key)) {
             liveInstances.remove(key, instance);
             return;
         }
@@ -210,7 +219,7 @@ final class CoreFlowRuntime { // NOPMD
         }
         CoreFlowExecutionPlan resolvedPlan = directPlan;
         if (resolvedPlan == null) {
-            resolvedPlan = CoreFlowCatalog.SHARED_PLAN_CATALOG.get(snapshot.get().definitionName());
+            resolvedPlan = planCatalog.get(snapshot.get().definitionName());
         }
         if (resolvedPlan == null) {
             throw new FlowEngineException(
@@ -220,6 +229,10 @@ final class CoreFlowRuntime { // NOPMD
     }
 
     private void launch(RuntimeFlowInstance instance, int startStep) {
+        if (activeFlows.sum() >= config.maxConcurrentFlows()) {
+            throw new FlowEngineException(
+                    "Flow scheduling rejected: maxConcurrentFlows limit reached (" + config.maxConcurrentFlows() + ')');
+        }
         queueDepth.incrementAndGet();
         activeFlows.increment();
         Thread thread = Thread.ofVirtual()
@@ -358,7 +371,7 @@ final class CoreFlowRuntime { // NOPMD
             guard.releaseInstance(instance.key().instanceIdMost(), instance.key().instanceIdLeast());
         }
         failedFlows.increment();
-        CoreFlowCatalog.TERMINAL_STATE_CATALOG.put(instance.key(), FlowState.FAILED_ROLLEDBACK);
+        terminalStateCatalog.put(instance.key(), FlowState.FAILED_ROLLEDBACK);
         persistSnapshot(instance, FlowState.FAILED_ROLLEDBACK, stepIndex);
         progressPublisher.publishProgress(instance, stepIndex, FlowState.FAILED_ROLLEDBACK);
         liveInstances.remove(instance.key());
@@ -376,7 +389,7 @@ final class CoreFlowRuntime { // NOPMD
 
     private void complete(RuntimeFlowInstance instance) {
         instance.state(FlowState.COMPLETED);
-        CoreFlowCatalog.TERMINAL_STATE_CATALOG.put(instance.key(), FlowState.COMPLETED);
+        terminalStateCatalog.put(instance.key(), FlowState.COMPLETED);
         if (guard != null) {
             guard.releaseInstance(instance.key().instanceIdMost(), instance.key().instanceIdLeast());
         }
@@ -415,11 +428,8 @@ final class CoreFlowRuntime { // NOPMD
 
         @Override
         public Optional<FlowContext> lookupParked(long instanceIdMost, long instanceIdLeast) {
-            return parkedInstances.values().stream()
-                    .filter(i -> i.key().instanceIdMost() == instanceIdMost
-                              && i.key().instanceIdLeast() == instanceIdLeast)
-                    .map(i -> (FlowContext) i.contextView())
-                    .findFirst();
+            RuntimeFlowInstance parked = parkedInstances.get(new FlowKey(instanceIdMost, instanceIdLeast));
+            return parked == null ? Optional.empty() : Optional.of(parked.contextView());
         }
 
         private static CoreFlowExecutionPlan castPlan(FlowExecutionPlan plan) {

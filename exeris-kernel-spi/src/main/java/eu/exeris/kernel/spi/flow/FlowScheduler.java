@@ -89,6 +89,8 @@ public interface FlowScheduler {
      * @return an {@link Optional} containing the {@link FlowContext} if a parked instance
      *         with the given UUID exists; empty otherwise
      */
-    Optional<FlowContext> lookupParked(long instanceIdMost, long instanceIdLeast);
+    default Optional<FlowContext> lookupParked(long instanceIdMost, long instanceIdLeast) {
+        return Optional.empty();
+    }
 }
 

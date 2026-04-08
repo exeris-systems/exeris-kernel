@@ -16,6 +16,7 @@ import eu.exeris.kernel.spi.exceptions.security.PrincipalContextMissingException
 import eu.exeris.kernel.spi.exceptions.security.StorageContextMissingException;
 import eu.exeris.kernel.spi.flow.FlowEngine;
 import eu.exeris.kernel.spi.flow.FlowProvider;
+import eu.exeris.kernel.spi.flow.IdempotencyGuard;
 import eu.exeris.kernel.spi.flow.model.FlowSnapshotStore;
 import eu.exeris.kernel.spi.graph.GraphEngine;
 import eu.exeris.kernel.spi.graph.GraphProvider;
@@ -344,6 +345,19 @@ public final class KernelProviders {
      */
     public static final ScopedValue<FlowSnapshotStore> FLOW_SNAPSHOT_STORE = ScopedValue.newInstance();
 
+    /**
+     * The optional {@link IdempotencyGuard} for flow-step deduplication.
+     *
+     * <p>Bound by the bootstrapper before {@link FlowEngine#start()} when step-level
+     * idempotency tracking is required. If unbound, the engine falls back to the default
+     * heap-based {@code CoreIdempotencyGuard}.
+     *
+     * @since 0.6.0
+     * @see IdempotencyGuard
+     * @see #idempotencyGuard()
+     */
+    public static final ScopedValue<IdempotencyGuard> IDEMPOTENCY_GUARD = ScopedValue.newInstance();
+
     // =========================================================================
     // Transport Slots (L2 Native I/O)
     // =========================================================================
@@ -575,6 +589,17 @@ public final class KernelProviders {
     public static Optional<FlowSnapshotStore> flowSnapshotStore() {
         return FLOW_SNAPSHOT_STORE.isBound()
                 ? Optional.of(FLOW_SNAPSHOT_STORE.get())
+                : Optional.empty();
+    }
+
+    /**
+     * Returns the optional {@link IdempotencyGuard} from the current scope.
+     *
+     * @return an {@link Optional} containing the guard if it was bound; empty otherwise
+     */
+    public static Optional<IdempotencyGuard> idempotencyGuard() {
+        return IDEMPOTENCY_GUARD.isBound()
+                ? Optional.of(IDEMPOTENCY_GUARD.get())
                 : Optional.empty();
     }
 

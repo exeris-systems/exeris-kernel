@@ -22,6 +22,7 @@ import eu.exeris.kernel.spi.flow.FlowScheduler;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -33,15 +34,14 @@ public final class CoreFlowEngine implements FlowEngine {
     private final CoreFlowRegistry registry;
     private final CoreFlowPlanFactory planFactory;
     private final CoreFlowRuntime runtime;
-    private final List<SubscriptionToken> choreographyTokens = new ArrayList<>();
-    private EventBus choreographyBus;
+    private final List<Map.Entry<EventBus, SubscriptionToken>> choreographySubscriptions = new ArrayList<>();
 
     public CoreFlowEngine(FlowEngineConfig config, FlowEngineCapabilities capabilities) {
         FlowEngineConfig nonNullConfig = Objects.requireNonNull(config, "config");
         this.capabilities = Objects.requireNonNull(capabilities, "capabilities");
         this.registry = new CoreFlowRegistry();
-        this.planFactory = new CoreFlowPlanFactory(nonNullConfig, registry);
         this.runtime = new CoreFlowRuntime(nonNullConfig, new FlowProgressPublisher());
+        this.planFactory = new CoreFlowPlanFactory(nonNullConfig, registry, runtime.planCatalog());
     }
 
     @Override
@@ -79,12 +79,10 @@ public final class CoreFlowEngine implements FlowEngine {
 
     @Override
     public void close() {
-        if (choreographyBus != null) {
-            for (SubscriptionToken token : choreographyTokens) {
-                choreographyBus.unsubscribe(token);
-            }
-            choreographyTokens.clear();
+        for (Map.Entry<EventBus, SubscriptionToken> entry : choreographySubscriptions) {
+            entry.getKey().unsubscribe(entry.getValue());
         }
+        choreographySubscriptions.clear();
         runtime.close();
     }
 
@@ -96,11 +94,13 @@ public final class CoreFlowEngine implements FlowEngine {
         Objects.requireNonNull(mapper, "mapper");
         Objects.requireNonNull(eventTypeNames, "eventTypeNames");
         Objects.requireNonNull(bus, "bus");
+        if (eventTypeNames.isEmpty()) {
+            throw new IllegalArgumentException("eventTypeNames must not be empty");
+        }
         FlowChoreographyBridge bridge = new FlowChoreographyBridge(mapper, runtime.scheduler());
         for (String eventType : eventTypeNames) {
-            choreographyTokens.add(bus.subscribe(eventType, bridge));
+            choreographySubscriptions.add(Map.entry(bus, bus.subscribe(eventType, bridge)));
         }
-        this.choreographyBus = bus;
     }
 
     private void ensureStarted() {

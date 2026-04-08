@@ -14,6 +14,7 @@ import eu.exeris.kernel.spi.flow.model.FlowContext;
 import eu.exeris.kernel.spi.flow.model.FlowSnapshot;
 import eu.exeris.kernel.spi.flow.model.FlowState;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -71,13 +72,15 @@ final class RuntimeFlowInstance { // NOPMD
     }
 
     public static RuntimeFlowInstance fromSnapshot(CoreFlowExecutionPlan plan, FlowSnapshot snapshot) {
+        long remainingNanos = Duration.between(Instant.now(), snapshot.timeout()).toNanos();
+        long timeoutNanos = System.nanoTime() + Math.max(0L, remainingNanos);
         return new RuntimeFlowInstance(
                 new FlowKey(snapshot.instanceIdMost(), snapshot.instanceIdLeast()),
                 snapshot.definitionName(),
                 plan,
                 snapshot.state(),
                 snapshot.currentStep(),
-                Long.MAX_VALUE,
+                timeoutNanos,
                 snapshot.compensationStack(),
                 snapshot.stackPointer()
         );

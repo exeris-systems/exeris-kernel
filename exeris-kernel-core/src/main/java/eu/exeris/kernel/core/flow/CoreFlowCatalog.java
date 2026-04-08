@@ -8,16 +8,8 @@
  */
 package eu.exeris.kernel.core.flow;
 
-import eu.exeris.kernel.spi.flow.model.FlowState;
-
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
-
 @SuppressWarnings("PMD.PublicMemberInNonPublicType")
 final class CoreFlowCatalog {
-
-    public static final ConcurrentMap<String, CoreFlowExecutionPlan> SHARED_PLAN_CATALOG = new ConcurrentHashMap<>();
-    public static final ConcurrentMap<FlowKey, FlowState> TERMINAL_STATE_CATALOG = new ConcurrentHashMap<>();
 
     private CoreFlowCatalog() {
     }

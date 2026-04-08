@@ -315,8 +315,6 @@ class CoreFlowEngineTest {
         void stepExceptionTriggersFailureState() throws InterruptedException {
             try (CoreFlowEngine engine = startedEngine(false)) {
                 CountDownLatch failureObserved = new CountDownLatch(1);
-                AtomicInteger failAtStep = new AtomicInteger(1);
-
                 FlowDefinition definition = engine.plans().newDefinition("step-exception")
                         .step("normal", _ -> {
                             return FlowOutcome.CONTINUE;
