@@ -20,7 +20,7 @@ import jdk.jfr.StackTrace;
  * JFR event emitted when TLS ingress queue backpressure circuit breaker activates.
  *
  * <h2>Backpressure Control</h2>
- * <p>Only emitted when circuit breaker is enabled (flag: -Deris.transport.queueBackpressureEnabled=true).
+ * <p>Only emitted when circuit breaker is enabled (flag: -Dexeris.transport.queueBackpressureEnabled=true).
  * Indicates that queue depth exceeded threshold and new connection accept was rejected.
  *
  * @since 0.6.0

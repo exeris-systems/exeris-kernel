@@ -243,7 +243,7 @@ public abstract class AbstractTransportStreamTck {
                 // Assert: unblocked within 50ms
                 long returnedAt = readReturnedAt.get();
                 assertThat(returnedAt)
-                        .as("VT should have completed read() within 500ms of close signal")
+                        .as("read() should have returned after remote close (join backstop: 500ms)")
                         .isGreaterThanOrEqualTo(0L);
 
                 long durationMs = TimeUnit.NANOSECONDS.toMillis(returnedAt - signalAt);

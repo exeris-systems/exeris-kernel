@@ -77,7 +77,7 @@ final class Http2RequestStreamState implements AutoCloseable {
         int nextCapacity = bodyBuffer == null
                 ? INITIAL_BODY_BUFFER_BYTES
                 : (int) bodyBuffer.capacity();
-        while (nextCapacity < needed) {
+        while (nextCapacity < (int) needed) {
             nextCapacity = Math.max(nextCapacity * 2, (int) needed);
         }
 

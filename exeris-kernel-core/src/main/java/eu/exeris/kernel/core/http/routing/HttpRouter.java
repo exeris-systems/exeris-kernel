@@ -11,9 +11,7 @@ package eu.exeris.kernel.core.http.routing;
 import eu.exeris.kernel.spi.http.HttpExchange;
 import eu.exeris.kernel.spi.http.HttpHandler;
 import eu.exeris.kernel.spi.http.HttpMethod;
-import eu.exeris.kernel.spi.http.HttpResponse;
 import eu.exeris.kernel.spi.http.HttpStatus;
-import eu.exeris.kernel.spi.http.HttpVersion;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -35,7 +33,7 @@ import java.util.Objects;
 public final class HttpRouter implements HttpHandler {
 
     private static final HttpHandler DEFAULT_NOT_FOUND = exchange ->
-            exchange.respond(HttpResponse.noBody(HttpStatus.NOT_FOUND, HttpVersion.HTTP_1_1));
+            exchange.respond(HttpStatus.NOT_FOUND);
 
     private final List<RouteEntry> exactRoutes;
     private final List<RouteEntry> prefixRoutes;

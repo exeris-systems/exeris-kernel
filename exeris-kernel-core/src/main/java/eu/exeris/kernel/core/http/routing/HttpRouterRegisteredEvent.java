@@ -10,6 +10,7 @@ package eu.exeris.kernel.core.http.routing;
 
 import jdk.jfr.Category;
 import jdk.jfr.Event;
+import jdk.jfr.FlightRecorder;
 import jdk.jfr.Label;
 import jdk.jfr.StackTrace;
 
@@ -25,6 +26,9 @@ final class HttpRouterRegisteredEvent extends Event {
 
     // Package-private for same-package router lifecycle emission only.
     /* default */ static void emit(int exactCount, int prefixCount) {
+        if (!FlightRecorder.isInitialized()) {
+            return;
+        }
         HttpRouterRegisteredEvent event = new HttpRouterRegisteredEvent();
         if (!event.isEnabled()) {
             return;

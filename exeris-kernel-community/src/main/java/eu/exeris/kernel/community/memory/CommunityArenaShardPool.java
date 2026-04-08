@@ -189,6 +189,10 @@ final class CommunityArenaShardPool {
             arena = shardArenas.get(shard);
             if (arena == null) {
                 //CHECKSTYLE:OFF
+                // Direct shared-arena allocation: this pool is the sole owner of one arena
+                // per shard. Shared scope is required so LoanedBuffer segments can cross
+                // thread boundaries without caller-managed arena lifetimes. Lifecycle is
+                // deterministic: pool.close() closes shard arenas in order.
                 arena = Arena.ofShared();
                 //CHECKSTYLE:ON
 

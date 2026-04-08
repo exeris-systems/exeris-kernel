@@ -61,7 +61,7 @@ final class NativeTcpStream implements TransportStream {
     
     // Phase 1B: TLS ingress queue monitoring thresholds and backpressure control
     private static final boolean QUEUE_BACKPRESSURE_ENABLED =
-            Boolean.parseBoolean(System.getProperty("eris.transport.queueBackpressureEnabled", "false"));
+            Boolean.parseBoolean(System.getProperty("exeris.transport.queueBackpressureEnabled", "false"));
     private static final int QUEUE_DEPTH_THRESHOLD_LOW = 100;
     private static final int QUEUE_DEPTH_THRESHOLD_MID = 500;
     private static final int QUEUE_DEPTH_THRESHOLD_HIGH = 1000;
@@ -356,16 +356,12 @@ final class NativeTcpStream implements TransportStream {
         }
         lastQueueDepth = currentQueueDepth;
         
-        boolean offered = inboundQueue.offer(ingressBuffer);
-        if (!offered) {
+        if (QUEUE_BACKPRESSURE_ENABLED && currentQueueDepth >= QUEUE_DEPTH_THRESHOLD_HIGH) {
             ingressBuffer.close();
-            // Phase 1B: Backpressure circuit breaker (off-by-default via QUEUE_BACKPRESSURE_ENABLED)
-            if (QUEUE_BACKPRESSURE_ENABLED) {
-                String trend = "up";
-                TransportQueueBackpressureAlertEvent.emit(1, currentQueueDepth, trend);
-            }
+            TransportQueueBackpressureAlertEvent.emit(1, currentQueueDepth, "up");
             throw new IllegalStateException("Failed to enqueue inbound buffer for stream " + streamId);
         }
+        inboundQueue.offer(ingressBuffer);
         signalReadableIngress();
     }
 

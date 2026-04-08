@@ -347,7 +347,11 @@ final class CommunityHttpClientEngine implements HttpClientEngine {
                 .map(HttpHeader::value)
                 .findFirst();
         if (contentLength.isPresent()) {
-            return Long.parseLong(contentLength.get());
+            try {
+                return Long.parseLong(contentLength.get());
+            } catch (NumberFormatException ignored) {
+                return Math.max(fallbackBytes, 0L);
+            }
         }
         return Math.max(fallbackBytes, 0L);
     }
@@ -376,7 +380,12 @@ final class CommunityHttpClientEngine implements HttpClientEngine {
             case "HTTP/2", "HTTP/2.0" -> HttpVersion.HTTP_2;
             default -> requestVersion;
         };
-        int code = Integer.parseInt(parts[1]);
+        int code;
+        try {
+            code = Integer.parseInt(parts[1]);
+        } catch (NumberFormatException ex) {
+            throw new IllegalStateException("Invalid HTTP status code in status line: " + statusLine, ex);
+        }
         String reason = parts.length == STATUS_LINE_PARTS_WITH_REASON ? parts[2] : "";
         return new StatusLine(version, new HttpStatus(code, reason));
     }
