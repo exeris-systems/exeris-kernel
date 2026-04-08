@@ -78,7 +78,9 @@ final class CommunityGraphSession implements GraphSession {
             return traverseBreadthFirstCypher(traversal);
         }
 
-        String sql = dialect.buildMultiHopQuery(traversal.edgeDescriptor(), 1, traversal.maxDepth());
+        String sql = traversal.maxDepth() == 1
+                ? dialect.buildMatchQuery(traversal.edgeDescriptor())
+                : dialect.buildMultiHopQuery(traversal.edgeDescriptor(), 1, traversal.maxDepth());
         List<UUID> results = new ArrayList<>();
         try (PersistenceConnection conn = acquireConnection();
              PersistenceStatement stmt = conn.prepare(sql)) {
