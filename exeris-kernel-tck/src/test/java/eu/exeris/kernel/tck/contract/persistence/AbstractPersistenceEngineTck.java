@@ -8,6 +8,8 @@
  */
 package eu.exeris.kernel.tck.contract.persistence;
 
+import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
+import eu.exeris.kernel.spi.exceptions.persistence.PersistenceProviderException;
 import eu.exeris.kernel.spi.persistence.BulkInserter;
 import eu.exeris.kernel.spi.persistence.EngineStats;
 import eu.exeris.kernel.spi.persistence.PersistenceConnection;
@@ -27,6 +29,7 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
  * TCK: Abstract base for {@link PersistenceEngine} contract verification.
@@ -49,6 +52,45 @@ public abstract class AbstractPersistenceEngineTck {
      * Creates a fully bootstrapped {@link PersistenceEngine}.
      */
     protected abstract PersistenceEngine createEngine();
+
+    /**
+     * Creates a {@link PersistenceEngine} configured with a dedicated datasource registered
+     * under the key returned by {@link #dedicatedKey()}.
+     *
+     * <p>Returns {@code null} if the implementation under test does not support dedicated
+     * datasource routing, causing all {@link DedicatedRoutingContract} tests to be skipped.
+     *
+     * @param dedicatedKey the datasource key to configure
+     * @return engine with dedicated routing, or {@code null} to skip
+     */
+    protected PersistenceEngine createEngineWithDedicatedConfig(String dedicatedKey) {
+        return null;
+    }
+
+    /**
+     * Creates a {@link PersistenceEngine} with {@code rlsEnabled=true} and a dedicated
+     * datasource registered under the key returned by {@link #dedicatedKey()}.
+     * No interceptors should be registered on the returned engine.
+     *
+     * <p>Returns {@code null} if the implementation under test does not support this
+     * combination, causing
+     * {@link DedicatedRoutingContract#assert_dedicated_strategy_skips_rls_interceptor}
+     * to be skipped.
+     *
+     * @param dedicatedKey the datasource key to configure
+     * @return engine with rlsEnabled and dedicated routing, or {@code null} to skip
+     */
+    protected PersistenceEngine createEngineWithDedicatedRlsEnabledConfig(String dedicatedKey) {
+        return null;
+    }
+
+    /**
+     * Returns the datasource routing key used in {@link DedicatedRoutingContract} tests.
+     * Default: {@code "ds-primary"}.
+     */
+    protected String dedicatedKey() {
+        return "ds-primary";
+    }
 
     private PersistenceEngine engine;
 
@@ -340,6 +382,67 @@ public abstract class AbstractPersistenceEngineTck {
             engine.close();
             assertThatThrownBy(() -> engine.openConnection())
                     .isInstanceOf(IllegalStateException.class);
+        }
+    }
+
+    // =========================================================================
+    // DEDICATED routing contract
+    // =========================================================================
+
+    @Nested
+    @DisplayName("DEDICATED routing contract")
+    class DedicatedRoutingContract {
+
+        @Test
+        @DisplayName("DEDICATED strategy routes to configured dedicated datasource (connection opens successfully)")
+        void assert_dedicated_strategy_routes_to_dedicated_datasource_config() {
+            PersistenceEngine e = createEngineWithDedicatedConfig(dedicatedKey());
+            assumeTrue(e != null, "Dedicated routing not configured for this provider \u2014 skipping");
+            try (e) {
+                StorageContext ctx = ImmutableStorageContext.dedicated("tenant-x", dedicatedKey());
+                assertThatCode(() -> {
+                    try (PersistenceConnection conn = e.openConnection(ctx)) {
+                        assertThat(conn.isOpen()).isTrue();
+                    }
+                }).as("DEDICATED strategy with a configured key must open a connection without error")
+                  .doesNotThrowAnyException();
+            }
+        }
+
+        @Test
+        @DisplayName("DEDICATED strategy with unknown key throws PersistenceProviderException EX-PERS-5006")
+        void assert_dedicated_strategy_with_unknown_key_throws_pers_5006() {
+            PersistenceEngine e = createEngineWithDedicatedConfig(dedicatedKey());
+            assumeTrue(e != null, "Dedicated routing not configured for this provider \u2014 skipping");
+            try (e) {
+                StorageContext ctx = ImmutableStorageContext.dedicated(
+                        "tenant-x", "ds-not-configured-" + System.nanoTime());
+                assertThatThrownBy(() -> e.openConnection(ctx))
+                        .isInstanceOfSatisfying(PersistenceProviderException.class, ex ->
+                                assertThat(ex.errorCode())
+                                        .as("Unknown DEDICATED key must throw EX-PERS-5006")
+                                        .isEqualTo(KernelErrorCodes.EX_PERS_5006));
+            }
+        }
+
+        @Test
+        @DisplayName("DEDICATED strategy bypasses RLS interceptor requirement (rlsEnabled=true, no interceptor \u2192 no EX-PERS-5006)")
+        void assert_dedicated_strategy_skips_rls_interceptor() {
+            PersistenceEngine e = createEngineWithDedicatedRlsEnabledConfig(dedicatedKey());
+            assumeTrue(e != null, "Dedicated + RLS engine not configured for this provider \u2014 skipping");
+            try (e) {
+                // No interceptors registered; rlsEnabled=true.
+                // DEDICATED must succeed \u2014 it does not trigger the SHARED interceptor requirement check.
+                StorageContext ctx = ImmutableStorageContext.dedicated("tenant-x", dedicatedKey());
+                assertThatCode(() -> {
+                    try (PersistenceConnection conn = e.openConnection(ctx)) {
+                        assertThat(conn.isOpen()).isTrue();
+                    }
+                }).as("DEDICATED strategy must not require RLS interceptor even when rlsEnabled=true. "
+                        + "If this fails, the engine is incorrectly applying the SHARED interceptor "
+                        + "requirement check to DEDICATED connections.")
+                  .doesNotThrowAnyException();
+            }
         }
     }
 }

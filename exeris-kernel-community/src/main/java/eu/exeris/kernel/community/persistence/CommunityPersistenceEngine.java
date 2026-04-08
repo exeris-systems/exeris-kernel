@@ -86,6 +86,7 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
     private static final String ADMISSION_REJECT_ENGINE_CLOSED = "REJECT_ENGINE_CLOSED";
     private static final String ADMISSION_REJECT_NO_CAPACITY = "REJECT_NO_CAPACITY";
     private static final String REQUIRED_SHARED_INTERCEPTOR = "RlsConnectionInterceptor";
+    private static final String DEDICATED_KEY_PREFIX = ":dedicated:";
     private static final double HARD_SATURATION_THRESHOLD = 0.90d;
     private static final double GUARD_BAND_THRESHOLD = 0.85d;
     private static final double FAIRNESS_STRESS_THRESHOLD = 0.90d;
@@ -111,6 +112,8 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
     private final Object lifecycleLock = new Object();
     // Per-tenant pools — lazily created on first openConnection(StorageContext)
     private final ConcurrentMap<String, TenantPoolState> tenantPools;
+    // Dedicated pools — lazily built on first DEDICATED openConnection, closed with engine
+    private final ConcurrentMap<String, HikariDataSource> dedicatedPools;
     private final List<ConnectionInterceptor> interceptors;
     private volatile List<ConnectionInterceptor> interceptorSnapshot;
     private final long tenantIdleTtlNanos;
@@ -124,6 +127,7 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
         validateRuntimeConfig(config);
         this.config       = config;
         this.tenantPools  = new ConcurrentHashMap<>();
+        this.dedicatedPools = new ConcurrentHashMap<>();
         this.interceptors = new ArrayList<>(2);
         this.interceptorSnapshot = List.of();
         this.tenantIdleTtlNanos = TimeUnit.MILLISECONDS.toNanos(Math.max(1L, config.idleTimeoutMs()));
@@ -305,6 +309,14 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
         return sharedHikari.toEngineStats(config.maxPoolSize(), tenantPools.size());
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * <p><b>v1 limitation:</b> saturation is assessed against the shared pool only.
+     * Dedicated-datasource pool saturation is not checked here; a request backed
+     * exclusively by a DEDICATED pool may be admitted even if that pool is fully
+     * saturated.
+     */
     @Override
     public boolean canServiceRequest() {
         if (closed) {
@@ -449,6 +461,7 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
     @SuppressWarnings("try")
     public void close() {
         List<HikariDataSource> poolsToClose;
+        List<HikariDataSource> dedicatedToClose;
         synchronized (lifecycleLock) {
             if (closed) {
                 return;
@@ -456,8 +469,11 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
             closed = true;
             poolsToClose = tenantPools.values().stream().map(TenantPoolState::pool).toList();
             tenantPools.clear();
+            dedicatedToClose = List.copyOf(dedicatedPools.values());
+            dedicatedPools.clear();
         }
         poolsToClose.forEach(HikariDataSource::close);
+        dedicatedToClose.forEach(HikariDataSource::close);
         sharedPool.close();
     }
 
@@ -484,6 +500,9 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
     // =========================================================================
 
     private HikariDataSource resolvePoolForTenant(String tenantKey) {
+        if (tenantKey.startsWith(DEDICATED_KEY_PREFIX)) {
+            return getOrBuildDedicatedPool(tenantKey.substring(DEDICATED_KEY_PREFIX.length()));
+        }
         if (!config.perTenantPooling() || SHARED_TENANT.equals(tenantKey)) {
             return sharedPool;
         }
@@ -593,9 +612,16 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
 
     private String selectTenantKey(StorageContext storageContext) {
         return switch (storageContext.strategy()) {
-            case DEDICATED        -> throw new IllegalStateException(
-                    "DEDICATED strategy is unsupported in Community provider: dedicated datasource routing "
-                            + "is unsupported in Community provider");
+            case DEDICATED -> {
+                String dataSourceKey = storageContext.dataSourceKey()
+                        .orElseThrow(() -> PersistenceProviderException.dedicatedDatasourceNotFound(
+                                PROVIDER_ID, "[none]"));
+                if (!config.dedicatedDataSources().containsKey(dataSourceKey)) {
+                    throw PersistenceProviderException.dedicatedDatasourceNotFound(
+                            PROVIDER_ID, dataSourceKey);
+                }
+                yield DEDICATED_KEY_PREFIX + dataSourceKey;
+            }
             case SEPARATED_SCHEMA -> storageContext.schemaName()
                     .orElseGet(() -> storageContext.isolationKey().orElse(SHARED_TENANT));
             case SHARED           -> storageContext.isolationKey().orElse(SHARED_TENANT);
@@ -757,6 +783,30 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
             total += CommunityHikariSupport.activeConnections(state.pool());
         }
         return total;
+    }
+
+    /**
+     * Returns a cached dedicated {@link HikariDataSource} for the given key, building and
+     * caching it on first access. Thread-safe: if two threads race to build the same
+     * pool, the loser closes its candidate and returns the winner's instance.
+     *
+     * @param dataSourceKey key matching an entry in {@code config.dedicatedDataSources()}
+     * @return the cached or newly built dedicated pool
+     */
+    private HikariDataSource getOrBuildDedicatedPool(String dataSourceKey) {
+        HikariDataSource existing = dedicatedPools.get(dataSourceKey);
+        if (existing != null) {
+            return existing;
+        }
+        PersistenceConfig dedicatedConfig = config.dedicatedDataSources().get(dataSourceKey);
+        // dedicatedConfig is non-null: validated by selectTenantKey before this call
+        HikariDataSource candidate = CommunityHikariSupport.buildPool(dedicatedConfig, null);
+        HikariDataSource prior = dedicatedPools.putIfAbsent(dataSourceKey, candidate);
+        if (prior != null) {
+            candidate.close();
+            return prior;
+        }
+        return candidate;
     }
 
     private static boolean hasNoActiveConnections(HikariDataSource pool) {

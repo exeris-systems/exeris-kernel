@@ -70,7 +70,7 @@ import java.util.function.Function;
 })
 public final class TransactionOrchestrator implements TransactionalExecutor {
 
-    private static final ScopedValue<PersistenceConnection> ACTIVE_READ_SESSION_CONNECTION =
+    private final ScopedValue<PersistenceConnection> activeReadSessionConnection =
             ScopedValue.newInstance();
 
     // =========================================================================
@@ -229,8 +229,8 @@ public final class TransactionOrchestrator implements TransactionalExecutor {
     @Override
     public <T> T query(Function<PersistenceConnection, T> query) {
         Objects.requireNonNull(query, "query must not be null");
-        if (ACTIVE_READ_SESSION_CONNECTION.isBound()) {
-            return query.apply(ACTIVE_READ_SESSION_CONNECTION.get());
+        if (activeReadSessionConnection.isBound()) {
+            return query.apply(activeReadSessionConnection.get());
         }
         StorageContext ctx = resolveStorageContext();
         try (PersistenceConnection conn = engine.openConnection(ctx)) {
@@ -329,7 +329,7 @@ public final class TransactionOrchestrator implements TransactionalExecutor {
     private <T> T runReadSessionReadCommitted(PersistenceConnection conn,
                                                Function<ReadSession, T> work,
                                                int attempt) {
-        T result = ScopedValue.where(ACTIVE_READ_SESSION_CONNECTION, conn)
+        T result = ScopedValue.where(activeReadSessionConnection, conn)
                 .call(() -> work.apply(readSession(conn)));
 
         if (conn.inTransaction()) {
@@ -350,7 +350,7 @@ public final class TransactionOrchestrator implements TransactionalExecutor {
             conn.beginTransaction(isolation, true);
             TransactionLifecycleEvent.recordBegin(attempt);
             long startNs = System.nanoTime();
-            T result = ScopedValue.where(ACTIVE_READ_SESSION_CONNECTION, conn)
+            T result = ScopedValue.where(activeReadSessionConnection, conn)
                     .call(() -> work.apply(readSession(conn)));
             long durationNs = System.nanoTime() - startNs;
             if (conn.inTransaction()) {

@@ -28,6 +28,31 @@ class CommunityPersistenceEngineTckTest extends AbstractPersistenceEngineTck {
         return new CommunityPersistenceProvider().createEngine(testConfig());
     }
 
+    @Override
+    protected PersistenceEngine createEngineWithDedicatedConfig(String dedicatedKey) {
+        PersistenceConfig dedicatedCfg = new PersistenceConfig(
+                "jdbc:h2:mem:engine_tck_ded_" + System.nanoTime() + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1",
+                "sa", "", 4, 1, 5_000L, 60_000L, 600_000L, false, false, false, 0, Map.of());
+        PersistenceConfig mainCfg = new PersistenceConfig(
+                "jdbc:h2:mem:engine_tck_main_ded_" + System.nanoTime() + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1",
+                "sa", "", 4, 1, 5_000L, 60_000L, 600_000L, false, false, false, 0, Map.of(),
+                Map.of(dedicatedKey, dedicatedCfg));
+        return new CommunityPersistenceProvider().createEngine(mainCfg);
+    }
+
+    @Override
+    protected PersistenceEngine createEngineWithDedicatedRlsEnabledConfig(String dedicatedKey) {
+        PersistenceConfig dedicatedCfg = new PersistenceConfig(
+                "jdbc:h2:mem:engine_tck_ded_rls_" + System.nanoTime() + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1",
+                "sa", "", 4, 1, 5_000L, 60_000L, 600_000L, false, false, false, 0, Map.of());
+        // rlsEnabled=true — DEDICATED strategy must not require interceptor
+        PersistenceConfig mainCfg = new PersistenceConfig(
+                "jdbc:h2:mem:engine_tck_main_rls_" + System.nanoTime() + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1",
+                "sa", "", 4, 1, 5_000L, 60_000L, 600_000L, true, false, false, 0, Map.of(),
+                Map.of(dedicatedKey, dedicatedCfg));
+        return new CommunityPersistenceProvider().createEngine(mainCfg);
+    }
+
     private static PersistenceConfig testConfig() {
         return new PersistenceConfig(
                 "jdbc:h2:mem:community_persistence_engine_tck_" + System.nanoTime() + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1",

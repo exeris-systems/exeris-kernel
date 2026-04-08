@@ -213,9 +213,12 @@ public final class JdbcPersistenceConnection implements PersistenceConnection {
     /**
      * Returns the raw JDBC {@link Connection} backing this instance.
      *
-     * <p><strong>Community infrastructure use only.</strong> Intended for pool
-     * discard/eviction paths (e.g., after interceptor failure) where the pool
-     * manager needs direct access to close or invalidate the underlying connection.
+     * <p><strong>Community infrastructure use only.</strong> Approved callers:
+     * <ul>
+     *   <li>Pool discard/eviction paths (e.g., {@code CommunityHikariSupport.discardConnection()})</li>
+     *   <li>Integration bridges that maintain connection lifecycle externally
+     *       (e.g., {@code exeris-spring-runtime-data ExerisDataSource}) — see ADR-012 §6.4</li>
+     * </ul>
      * This method is not part of the SPI contract.
      *
      * @return the underlying {@link Connection}; never {@code null}
@@ -223,7 +226,6 @@ public final class JdbcPersistenceConnection implements PersistenceConnection {
     public Connection rawJdbcConnection() {
         return conn;
     }
-
     /**
      * Translates SPI PostgreSQL-style {@code $1, $2} parameter placeholders to
      * JDBC {@code ?} placeholders — required for non-PG JDBC drivers (e.g., H2).

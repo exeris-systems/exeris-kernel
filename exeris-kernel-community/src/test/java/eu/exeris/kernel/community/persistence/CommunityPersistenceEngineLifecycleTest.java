@@ -30,14 +30,66 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class CommunityPersistenceEngineLifecycleTest {
 
     @Test
-    @DisplayName("DEDICATED strategy is explicitly rejected in Community provider")
-    void dedicatedStrategyIsRejected() {
+    @DisplayName("DEDICATED strategy with unknown datasource key throws EX-PERS-5006")
+    void dedicatedStrategy_unknownKey_throwsPersistenceProviderException() {
         try (CommunityPersistenceEngine engine = new CommunityPersistenceEngine(testConfig(true))) {
-            assertThatThrownBy(() -> engine.openConnection(ImmutableStorageContext.dedicated("tenant-a", "ds-a")))
-                    .isInstanceOf(IllegalStateException.class)
-                    .hasMessageContaining("DEDICATED strategy is unsupported in Community provider")
-                    .hasMessageContaining("dedicated datasource routing is unsupported in Community provider");
+            assertThatThrownBy(() -> engine.openConnection(ImmutableStorageContext.dedicated("tenant-a", "ds-unknown")))
+                    .isInstanceOf(PersistenceProviderException.class)
+                    .satisfies(ex -> {
+                        PersistenceProviderException ppe = (PersistenceProviderException) ex;
+                        assertThat(ppe.errorCode()).isEqualTo(KernelErrorCodes.EX_PERS_5006);
+                        assertThat(ppe.rawArgs()[1]).isEqualTo("ds-unknown");
+                    });
         }
+    }
+
+    @Test
+    @DisplayName("DEDICATED strategy routes to dedicated datasource when key is configured")
+    void dedicatedStrategy_knownKey_acquiresConnectionFromDedicatedPool() {
+        PersistenceConfig dedicatedCfg = testConfig(false);
+        PersistenceConfig mainCfg = new PersistenceConfig(
+                "jdbc:h2:mem:community_lifecycle_dedicated_main_" + System.nanoTime()
+                        + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1",
+                "sa", "",
+                4, 1, 5_000L, 60_000L, 600_000L,
+                false, false, false, 16,
+                Map.of(),
+                Map.of("ds-primary", dedicatedCfg));
+
+        try (CommunityPersistenceEngine engine = new CommunityPersistenceEngine(mainCfg)) {
+            assertThatCode(() -> {
+                try (PersistenceConnection ignored =
+                             engine.openConnection(ImmutableStorageContext.dedicated("tenant-a", "ds-primary"))) {
+                    // Connection successfully acquired from dedicated pool — no assertion on content
+                }
+            }).doesNotThrowAnyException();
+        }
+    }
+
+    @Test
+    @DisplayName("DEDICATED pool is closed when engine is closed")
+    void dedicatedPool_isClosedWithEngine() {
+        PersistenceConfig dedicatedCfg = testConfig(false);
+        PersistenceConfig mainCfg = new PersistenceConfig(
+                "jdbc:h2:mem:community_lifecycle_dedicated_close_" + System.nanoTime()
+                        + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1",
+                "sa", "",
+                4, 1, 5_000L, 60_000L, 600_000L,
+                false, false, false, 16,
+                Map.of(),
+                Map.of("ds-primary", dedicatedCfg));
+        CommunityPersistenceEngine engine = new CommunityPersistenceEngine(mainCfg);
+        // Trigger lazy creation of the dedicated pool
+        try (PersistenceConnection ignored =
+                     engine.openConnection(ImmutableStorageContext.dedicated("tenant-a", "ds-primary"))) {
+            // pool created
+        }
+        // Close engine — should close dedicated pool without throwing
+        assertThatCode(engine::close).doesNotThrowAnyException();
+        // Subsequent open must be rejected
+        assertThatThrownBy(() -> engine.openConnection(ImmutableStorageContext.dedicated("tenant-a", "ds-primary")))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("CommunityPersistenceEngine is closed");
     }
 
     @Test

@@ -34,24 +34,32 @@ import java.util.Objects;
  * Most keys remain opaque to SPI, but standardized keys {@code pool.warmup.enabled}
  * and {@code pool.warmup.connections} are interpreted here for shared pool warm-up.
  *
- * @param connectionUrl       JDBC or URI-style connection URL (parsed by implementations for host/port/db).
- *                            Examples: {@code "jdbc:postgresql://localhost:5432/exeris"},
- *                            {@code "postgresql://localhost:5432/exeris"}
- * @param username            Database username.
- * @param password            Database password.
- *                            <b>SECRET — treat as a credential. Never log or expose this value.
- *                            {@link #toString()} deliberately redacts it.</b>
- * @param maxPoolSize         Maximum number of connections in the shared pool.
- * @param minIdleConnections  Minimum idle connections maintained.
- * @param connectionTimeoutMs Maximum wait time for a connection from pool (ms).
- * @param idleTimeoutMs       Maximum idle time before connection is evicted (ms).
- * @param maxLifetimeMs       Maximum connection lifetime before forced recycle (ms).
- * @param rlsEnabled          Whether Row-Level Security is active.
- * @param perTenantPooling    Whether to create per-tenant connection pools.
- * @param useTls              Whether TLS is required for the connection.
- * @param maxTenantPools      Maximum number of per-tenant pools (if perTenantPooling=true).
- * @param properties          Opaque key-value properties for tier-specific native options.
- *                            Never {@code null} — use {@link Map#of()} for empty.
+ * @param connectionUrl          JDBC or URI-style connection URL (parsed by implementations for host/port/db).
+ *                               Examples: {@code "jdbc:postgresql://localhost:5432/exeris"},
+ *                               {@code "postgresql://localhost:5432/exeris"}
+ * @param username               Database username.
+ * @param password               Database password.
+ *                               <b>SECRET — treat as a credential. Never log or expose this value.
+ *                               {@link #toString()} deliberately redacts it.</b>
+ * @param maxPoolSize            Maximum number of connections in the shared pool.
+ * @param minIdleConnections     Minimum idle connections maintained.
+ * @param connectionTimeoutMs    Maximum wait time for a connection from pool (ms).
+ * @param idleTimeoutMs          Maximum idle time before connection is evicted (ms).
+ * @param maxLifetimeMs          Maximum connection lifetime before forced recycle (ms).
+ * @param rlsEnabled             Whether Row-Level Security is active.
+ * @param perTenantPooling       Whether to create per-tenant connection pools.
+ * @param useTls                 Whether TLS is required for the connection.
+ * @param maxTenantPools         Maximum number of per-tenant pools (if perTenantPooling=true).
+ * @param properties             Opaque key-value properties for tier-specific native options.
+ *                               Never {@code null} — use {@link Map#of()} for empty.
+ * @param dedicatedDataSources   Per-key datasource configurations for the
+ *                               {@link eu.exeris.kernel.spi.security.StorageContext.IsolationStrategy#DEDICATED}
+ *                               strategy. Keys must match the {@code x-exeris-isolation-datasource}
+ *                               JWT claim value (i.e. the value returned by
+ *                               {@link eu.exeris.kernel.spi.security.StorageContext#dataSourceKey()}).
+ *                               Never {@code null} — use {@link Map#of()} for empty.
+ *                               Nested entries MUST NOT themselves have non-empty
+ *                               {@code dedicatedDataSources} maps (nesting depth = 1).
  * @see PersistenceProvider
  * @since 0.5.0
  */
@@ -68,7 +76,8 @@ public record PersistenceConfig(
         boolean perTenantPooling,
         boolean useTls,
         int maxTenantPools,
-        Map<String, String> properties
+        Map<String, String> properties,
+        Map<String, PersistenceConfig> dedicatedDataSources
 ) {
 
     public static final String POOL_WARMUP_ENABLED_KEY = "pool.warmup.enabled";
@@ -94,6 +103,7 @@ public record PersistenceConfig(
         Objects.requireNonNull(username, "username must not be null");
         Objects.requireNonNull(password, "password must not be null");
         Objects.requireNonNull(properties, "properties must not be null — use Map.of()");
+        Objects.requireNonNull(dedicatedDataSources, "dedicatedDataSources must not be null — use Map.of()");
         if (maxPoolSize < MIN_POOL) {
             throw new IllegalArgumentException("maxPoolSize must be >= 1, got: " + maxPoolSize);
         }
@@ -110,9 +120,40 @@ public record PersistenceConfig(
         if (maxTenantPools < 0) {
             throw new IllegalArgumentException("maxTenantPools must be >= 0");
         }
+        for (Map.Entry<String, PersistenceConfig> entry : dedicatedDataSources.entrySet()) {
+            if (!entry.getValue().dedicatedDataSources().isEmpty()) {
+                throw new IllegalArgumentException(
+                        "Dedicated datasource configs must not contain nested dedicatedDataSources: "
+                                + entry.getKey());
+            }
+        }
         validateWarmupProperties(properties);
-        // Defensive copy — ensures immutability (Valhalla readiness)
+        // Defensive copies — ensures immutability (Valhalla readiness)
         properties = Map.copyOf(properties);
+        dedicatedDataSources = Map.copyOf(dedicatedDataSources);
+    }
+
+    /**
+     * Backward-compatible constructor — delegates to the canonical constructor with an empty
+     * {@code dedicatedDataSources} map.
+     *
+     * <p>Preserves source compatibility for all callers written against the pre-dedicated-datasources
+     * record shape. New callers that need {@code dedicatedDataSources} should use the
+     * canonical 14-component constructor directly.
+     */
+    @SuppressWarnings("PMD.ExcessiveParameterList") // backward-compat bridge
+    public PersistenceConfig(
+            String connectionUrl, String username, String password,
+            int maxPoolSize, int minIdleConnections,
+            long connectionTimeoutMs, long idleTimeoutMs, long maxLifetimeMs,
+            boolean rlsEnabled, boolean perTenantPooling, boolean useTls,
+            int maxTenantPools,
+            Map<String, String> properties) {
+        this(connectionUrl, username, password,
+                maxPoolSize, minIdleConnections,
+                connectionTimeoutMs, idleTimeoutMs, maxLifetimeMs,
+                rlsEnabled, perTenantPooling, useTls,
+                maxTenantPools, properties, Map.of());
     }
 
     /**
@@ -209,7 +250,24 @@ public record PersistenceConfig(
                 ", useTls=" + useTls +
                 ", maxTenantPools=" + maxTenantPools +
                 ", properties={" + properties.size() + " entries, values=[REDACTED]}" +
+                ", dedicatedDataSources={" + formatDedicatedDataSources(dedicatedDataSources) + "}" +
                 ']';
+    }
+
+    private static String formatDedicatedDataSources(Map<String, PersistenceConfig> dedicatedSources) {
+        if (dedicatedSources.isEmpty()) {
+            return "empty";
+        }
+        StringBuilder builder = new StringBuilder();
+        boolean first = true;
+        for (Map.Entry<String, PersistenceConfig> e : dedicatedSources.entrySet()) {
+            if (!first) {
+                builder.append(", ");
+            }
+            builder.append(e.getKey()).append('=').append(e.getValue());
+            first = false;
+        }
+        return builder.toString();
     }
 
     /**

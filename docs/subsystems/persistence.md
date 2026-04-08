@@ -104,7 +104,7 @@ The Persistence subsystem provides **SPI-level admission control** to prevent th
  * - Active connections >= 90% of maxPoolSize (proactive buffer)
  * - Engine is shutting down
  */
-boolean canServiceRequest() throws PersistenceProviderException;
+boolean canServiceRequest();
 ```
 
 ### HTTP Integration: 503 Service Unavailable
