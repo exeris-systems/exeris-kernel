@@ -223,4 +223,18 @@ public final class TelemetryJfrEvents {
         @Label("Duration (ns)")
         public long nanoseconds;
     }
+
+    // =========================================================================
+    // EventEngineJfrEvent — EX-EVENT-6005 / EX-EVENT-6006 / EX-EVENT-6007
+    // =========================================================================
+
+    @Label("Event Engine Failure")
+    @Category({"Exeris", "Telemetry", "Events"})
+    @StackTrace(false)
+    public static final class EventEngineJfrEvent extends Event {
+        @Label("Error Code")    public String errorCode;
+        @Label("Engine Name")   public String engineName;
+        @Label("Raw Arg 0")     public long   rawArg0;
+        @Label("Raw Arg 1")     public long   rawArg1;
+    }
 }

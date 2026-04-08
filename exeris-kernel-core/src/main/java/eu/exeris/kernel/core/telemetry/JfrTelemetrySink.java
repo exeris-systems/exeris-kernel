@@ -9,6 +9,7 @@
 package eu.exeris.kernel.core.telemetry;
 
 import eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents.CarrierPinnedJfrEvent;
+import eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents.EventEngineJfrEvent;
 import eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents.KernelLatencyJfrEvent;
 import eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents.KernelLifecycleJfrEvent;
 import eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents.KernelMetricJfrEvent;
@@ -55,8 +56,10 @@ import jdk.jfr.FlightRecorder;
  */
 // TooManyMethods: TelemetrySink SPI mandates emit/increment/gauge/latency/sinkName/close.
 // Typed private emitters are a minimal O(1) dispatch table required by the typed-JFR contract.
-// CyclomaticComplexity: dispatchTyped() switch covers 3 domain prefixes — irreducible minimum.
-@SuppressWarnings({"PMD.TooManyMethods", "PMD.CyclomaticComplexity"})
+// CyclomaticComplexity: dispatchTyped() switch covers domain prefixes — irreducible minimum.
+// GodClass: ATFD and WMC driven by typed dispatch table growth (one emitter per domain prefix).
+// Splitting into domain-specific sub-sinks would require a coordinator class of equal complexity.
+@SuppressWarnings({"PMD.TooManyMethods", "PMD.CyclomaticComplexity", "PMD.GodClass"})
 public final class JfrTelemetrySink implements TelemetrySink {
 
     private static final String SINK_NAME = "ExerisCore/JfrTelemetrySink";
@@ -92,6 +95,8 @@ public final class JfrTelemetrySink implements TelemetrySink {
             emitTransportBind(event, exception, code);
         } else if (code.startsWith("EX-RUN-")) {
             emitCarrierPinned(event, exception, code);
+        } else if (code.startsWith("EX-EVENT-")) {
+            emitEventEngine(event, exception, code);
         } else {
             emitLifecycle(event, safeMessage(exception));
         }
@@ -149,6 +154,19 @@ public final class JfrTelemetrySink implements TelemetrySink {
         jfr.blockTimeMs = rawLong(args, 0);
         jfr.carrierThreadName = rawString(args, 1);
         jfr.component = event.component();
+        jfr.commit();
+    }
+
+    private static void emitEventEngine(KernelEvent event, ExerisKernelException exception, String code) {
+        EventEngineJfrEvent jfr = new EventEngineJfrEvent();
+        if (!jfr.isEnabled()) {
+            return;
+        }
+        Object[] args = exception.rawArgs();
+        jfr.errorCode  = code;
+        jfr.engineName = event.component();
+        jfr.rawArg0    = rawLong(args, 0);
+        jfr.rawArg1    = rawLong(args, 1);
         jfr.commit();
     }
 

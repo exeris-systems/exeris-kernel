@@ -1,0 +1,310 @@
+/*
+ * Copyright (C) 2025-2026 Exeris Systems.
+ *
+ * Licensed under the Apache License, Version 2.0 with Commons Clause.
+ * You may use, modify, and distribute this file under those terms.
+ * Commercial resale of this software as a competing product is prohibited.
+ * See LICENSE-COMMUNITY in the repository root for the full text.
+ */
+package eu.exeris.kernel.community.telemetry;
+
+import eu.exeris.kernel.spi.exceptions.ExerisKernelException;
+import eu.exeris.kernel.spi.telemetry.EventLevel;
+import eu.exeris.kernel.spi.telemetry.KernelEvent;
+import eu.exeris.kernel.spi.telemetry.TelemetrySink;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
+
+/**
+ * Community fallback {@link TelemetrySink} that emits structured JSON through SLF4J.
+ *
+ * <h2>Routing model</h2>
+ * <p>{@code JfrTelemetrySink} is the primary sink when JFR is enabled. This sink is
+ * used as a fallback path for environments where JFR is disabled or unavailable.
+ *
+ * <h2>Structured payload</h2>
+ * <p>Each event is emitted as a single JSON line. Canonical EX fields are also exported
+ * via MDC for downstream log appenders and centralized collectors.
+ *
+ * <p><b>Metrics contract:</b> {@code increment}, {@code gauge}, and {@code latency} are
+ * intentionally no-op. This sink is lifecycle-event-oriented; use JFR as the primary
+ * path for metric signals.
+ *
+ * @since 0.5.0
+ */
+@SuppressWarnings({
+    "PMD.CyclomaticComplexity",
+    "PMD.TooManyMethods",
+    "PMD.UseTryWithResources",
+    "PMD.CloseResource",
+    "PMD.AvoidDuplicateLiterals",
+    "PMD.UseVarargs",
+    "PMD.ImplicitFunctionalInterface"
+})
+public final class Slf4jTelemetrySink implements TelemetrySink {
+
+    private static final String DEFAULT_CODE = "EX-UNK-0000";
+    private static final String SINK_NAME = "ExerisCommunity/Slf4jTelemetrySink";
+
+    private final LogAdapter logger;
+    private final MdcAdapter mdc;
+    private volatile boolean closed;
+
+    public Slf4jTelemetrySink() {
+        this(new Slf4jLogAdapter(LoggerFactory.getLogger(Slf4jTelemetrySink.class)), new Slf4jMdcAdapter());
+    }
+
+    /* default */ Slf4jTelemetrySink(LogAdapter logger, MdcAdapter mdc) {
+        this.logger = logger;
+        this.mdc = mdc;
+    }
+
+    @Override
+    public void emit(KernelEvent event) {
+        if (closed || event == null) {
+            return;
+        }
+
+        String code = sanitizeCode(event.code());
+        String component = sanitizeNullable(event.component());
+        String level = event.level().name();
+        String timestamp = event.timestamp().toString();
+        ExerisKernelException exception = event.exception();
+
+        MdcScope mdcScope = pushMdc(code, level, component, timestamp);
+        try {
+            String json = buildJsonLine(event, code, component, timestamp, exception);
+            switch (resolveLogLevel(event.level(), code)) {
+                case INFO -> logger.info(json, exception);
+                case WARN -> logger.warn(json, exception);
+                case ERROR -> logger.error(json, exception);
+            }
+        } finally {
+            mdcScope.close();
+        }
+    }
+
+    private MdcScope pushMdc(String code, String level, String component, String timestamp) {
+        MdcScope codeScope = mdc.put("ex.code", code);
+        MdcScope levelScope = mdc.put("ex.level", level);
+        MdcScope componentScope = mdc.put("ex.component", component);
+        MdcScope timestampScope = mdc.put("ex.timestamp", timestamp);
+        return () -> {
+            timestampScope.close();
+            componentScope.close();
+            levelScope.close();
+            codeScope.close();
+        };
+    }
+
+    /**
+     * @apiNote This sink is lifecycle-event-oriented. Metric increment signals are intentionally
+     *          not emitted. Use {@link eu.exeris.kernel.core.telemetry.JfrTelemetrySink} as the
+     *          primary path when metric signals are required.
+     */
+    @Override
+    public void increment(String name, long delta) {
+        // Fallback sink is lifecycle-oriented. Metrics are captured by JFR primary path.
+    }
+
+    /**
+     * @apiNote This sink is lifecycle-event-oriented. Metric gauge signals are intentionally
+     *          not emitted. Use {@link eu.exeris.kernel.core.telemetry.JfrTelemetrySink} as the
+     *          primary path when metric signals are required.
+     */
+    @Override
+    public void gauge(String name, long value) {
+        // Fallback sink is lifecycle-oriented. Metrics are captured by JFR primary path.
+    }
+
+    /**
+     * @apiNote This sink is lifecycle-event-oriented. Metric latency signals are intentionally
+     *          not emitted. Use {@link eu.exeris.kernel.core.telemetry.JfrTelemetrySink} as the
+     *          primary path when metric signals are required.
+     */
+    @Override
+    public void latency(String name, long nanoseconds) {
+        // Fallback sink is lifecycle-oriented. Metrics are captured by JFR primary path.
+    }
+
+    @Override
+    public String sinkName() {
+        return SINK_NAME;
+    }
+
+    @Override
+    public void close() {
+        closed = true;
+    }
+
+    private static String buildJsonLine(
+            KernelEvent event,
+            String code,
+            String component,
+            String timestamp,
+            ExerisKernelException exception) {
+        String level = event.level().name();
+        String message = exception != null ? sanitizeNullable(exception.getMessage()) : "";
+        String rawArgs = toJsonArray(exception != null ? exception.rawArgs() : null);
+        return "{"
+                + "\"timestamp\":\"" + escapeJson(timestamp) + "\","
+                + "\"level\":\"" + escapeJson(level) + "\","
+                + "\"code\":\"" + escapeJson(code) + "\","
+                + "\"component\":\"" + escapeJson(component) + "\","
+                + "\"message\":\"" + escapeJson(message) + "\","
+                + "\"rawArgs\":" + rawArgs
+                + "}";
+    }
+
+    private static LogLevel resolveLogLevel(EventLevel eventLevel, String code) {
+        LogLevel mappedByEvent = mapEventLevel(eventLevel);
+        LogLevel mappedByCode = mapCodeLevel(code);
+        return mappedByEvent.ordinal() >= mappedByCode.ordinal() ? mappedByEvent : mappedByCode;
+    }
+
+    private static LogLevel mapEventLevel(EventLevel eventLevel) {
+        return switch (eventLevel) {
+            case INFO -> LogLevel.INFO;
+            case WARN -> LogLevel.WARN;
+            case ERROR, FATAL -> LogLevel.ERROR;
+        };
+    }
+
+    private static LogLevel mapCodeLevel(String code) {
+        if (code.startsWith("EX-MEM-") || code.startsWith("EX-BOOT-") || code.startsWith("EX-SEC-")
+                || code.startsWith("EX-PERS-") || code.startsWith("EX-CFG-")
+                || code.startsWith("EX-GRPH-") || code.startsWith("EX-HTTP-")) {
+            return LogLevel.ERROR;
+        }
+        if (code.startsWith("EX-NET-") || code.startsWith("EX-RUN-")
+                || code.startsWith("EX-EVENT-") || code.startsWith("EX-FLOW-")) {
+            return LogLevel.WARN;
+        }
+        return LogLevel.INFO;
+    }
+
+    private static String toJsonArray(Object[] rawArgs) {
+        if (rawArgs == null || rawArgs.length == 0) {
+            return "[]";
+        }
+        StringBuilder builder = new StringBuilder(rawArgs.length * 16);
+        builder.append('[');
+        for (int index = 0; index < rawArgs.length; index++) {
+            if (index > 0) {
+                builder.append(',');
+            }
+            appendJsonValue(builder, rawArgs[index]);
+        }
+        builder.append(']');
+        return builder.toString();
+    }
+
+    private static void appendJsonValue(StringBuilder builder, Object value) {
+        if (value == null) {
+            builder.append("null");
+            return;
+        }
+        if (value instanceof Number || value instanceof Boolean) {
+            builder.append(value);
+            return;
+        }
+        builder.append('"').append(escapeJson(String.valueOf(value))).append('"');
+    }
+
+    private static String sanitizeCode(String code) {
+        if (code == null || code.isBlank()) {
+            return DEFAULT_CODE;
+        }
+        return code;
+    }
+
+    private static String sanitizeNullable(String value) {
+        return value == null ? "" : value;
+    }
+
+    private static String escapeJson(String value) {
+        StringBuilder escaped = new StringBuilder(value.length() + 8);
+        for (int index = 0; index < value.length(); index++) {
+            char current = value.charAt(index);
+            switch (current) {
+                case '"' -> escaped.append("\\\"");
+                case '\\' -> escaped.append("\\\\");
+                case '\n' -> escaped.append("\\n");
+                case '\r' -> escaped.append("\\r");
+                case '\t' -> escaped.append("\\t");
+                default -> escaped.append(current);
+            }
+        }
+        return escaped.toString();
+    }
+
+    /* default */ enum LogLevel {
+        INFO,
+        WARN,
+        ERROR
+    }
+
+    /* default */ interface LogAdapter {
+        void info(String message, Throwable throwable);
+
+        void warn(String message, Throwable throwable);
+
+        void error(String message, Throwable throwable);
+    }
+
+    /* default */ interface MdcAdapter {
+        MdcScope put(String key, String value);
+    }
+
+    /* default */ interface MdcScope extends AutoCloseable {
+
+        @Override
+        void close();
+    }
+
+    private static final class Slf4jLogAdapter implements LogAdapter {
+
+        private final Logger logger;
+
+        private Slf4jLogAdapter(Logger logger) {
+            this.logger = logger;
+        }
+
+        @Override
+        public void info(String message, Throwable throwable) {
+            if (throwable == null) {
+                logger.info(message);
+            } else {
+                logger.info(message, throwable);
+            }
+        }
+
+        @Override
+        public void warn(String message, Throwable throwable) {
+            if (throwable == null) {
+                logger.warn(message);
+            } else {
+                logger.warn(message, throwable);
+            }
+        }
+
+        @Override
+        public void error(String message, Throwable throwable) {
+            if (throwable == null) {
+                logger.error(message);
+            } else {
+                logger.error(message, throwable);
+            }
+        }
+    }
+
+    private static final class Slf4jMdcAdapter implements MdcAdapter {
+
+        @Override
+        public MdcScope put(String key, String value) {
+            MDC.MDCCloseable closeable = MDC.putCloseable(key, value);
+            return closeable::close;
+        }
+    }
+}

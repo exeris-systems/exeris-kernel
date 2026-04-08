@@ -63,6 +63,22 @@ public abstract class AbstractTelemetryProviderTck {
         return TelemetryConfig.defaults();
     }
 
+    /**
+     * Opt-in assertion hook: provider should expose the standard Core JFR sink
+     * when JFR is explicitly enabled.
+     */
+    protected boolean expectStandardJfrSinkWhenEnabled() {
+        return false;
+    }
+
+    /**
+     * Opt-in assertion hook: provider should expose SLF4J fallback sink when
+     * JFR is disabled.
+     */
+    protected boolean expectSlf4jFallbackWhenJfrDisabled() {
+        return false;
+    }
+
     private TelemetryProvider provider;
 
     @BeforeEach
@@ -168,6 +184,58 @@ public abstract class AbstractTelemetryProviderTck {
                     assertThatCode(() -> sink.gauge("tck.gauge", 42)).doesNotThrowAnyException();
                     assertThatCode(() -> sink.latency("tck.latency", 1_000_000L)).doesNotThrowAnyException();
                 }
+            } finally {
+                sinks.forEach(TelemetrySink::close);
+            }
+        }
+
+        @Test
+        @DisplayName("uses standard JFR sink when enabled (opt-in)")
+        void usesStandardJfrSinkWhenEnabled() {
+            if (!expectStandardJfrSinkWhenEnabled()) {
+                return;
+            }
+
+            TelemetryConfig base = createConfig();
+            TelemetryConfig jfrEnabledConfig = new TelemetryConfig(
+                    false,
+                    true,
+                    null,
+                    base.blackBoxOffHeapBytes(),
+                    base.maxEventQueueDepth());
+
+            List<TelemetrySink> sinks = provider.createSinks(jfrEnabledConfig);
+            try {
+                assertThat(sinks.stream()
+                        .map(TelemetrySink::sinkName)
+                        .anyMatch(name -> name.contains("JfrTelemetrySink")))
+                        .isTrue();
+            } finally {
+                sinks.forEach(TelemetrySink::close);
+            }
+        }
+
+        @Test
+        @DisplayName("uses SLF4J fallback when JFR disabled (opt-in)")
+        void usesSlf4jFallbackWhenJfrDisabled() {
+            if (!expectSlf4jFallbackWhenJfrDisabled()) {
+                return;
+            }
+
+            TelemetryConfig base = createConfig();
+            TelemetryConfig jfrDisabledConfig = new TelemetryConfig(
+                    true,
+                    false,
+                    null,
+                    base.blackBoxOffHeapBytes(),
+                    base.maxEventQueueDepth());
+
+            List<TelemetrySink> sinks = provider.createSinks(jfrDisabledConfig);
+            try {
+                assertThat(sinks.stream()
+                        .map(TelemetrySink::sinkName)
+                        .anyMatch(name -> name.contains("Slf4jTelemetrySink")))
+                        .isTrue();
             } finally {
                 sinks.forEach(TelemetrySink::close);
             }

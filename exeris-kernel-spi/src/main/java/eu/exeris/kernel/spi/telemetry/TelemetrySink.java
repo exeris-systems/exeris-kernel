@@ -18,8 +18,8 @@ package eu.exeris.kernel.spi.telemetry;
  *
  * <h2>Tier Implementations</h2>
  * <ul>
- *   <li><b>Community</b>: {@code ConsoleSink}, {@code FileSink}, {@code JfrSink} — text/JFR.</li>
- *   <li><b>Enterprise</b>: {@code BinaryBlackBoxSink} — direct off-heap mmap dump of
+ *   <li><b>Community</b>: {@code ConsoleSink}, {@code FileSink}, {@code JfrTelemetrySink} — text/JFR.</li>
+ *   <li><b>Enterprise</b>: {@code BinaryGlassBoxSink} — direct off-heap mmap dump of
  *       {@link eu.exeris.kernel.spi.exceptions.ExerisKernelException#rawArgs()}.
  *       Zero String allocation on the critical path.</li>
  * </ul>
