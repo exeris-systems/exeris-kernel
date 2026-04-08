@@ -8,6 +8,7 @@
  */
 package eu.exeris.kernel.tck.contract.security;
 
+import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 import eu.exeris.kernel.spi.exceptions.security.SecurityAuthenticationException;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.security.AuthenticationResult;
@@ -80,6 +81,184 @@ public abstract class AbstractSecurityProviderTck {
      * Caller owns the buffer lifecycle.
      */
     protected abstract LoanedBuffer createInvalidTokenBuffer();
+
+    /**
+     * Creates a {@link LoanedBuffer} representing provider uncertainty / indeterminate token state.
+     *
+     * <p>Default behavior maps to {@link #createInvalidTokenBuffer()} to preserve backward compatibility
+     * for existing subclasses.</p>
+     *
+     * @return token buffer for indeterminate path
+     */
+    protected LoanedBuffer createIndeterminateTokenBuffer() {
+        return createInvalidTokenBuffer();
+    }
+
+    /**
+     * Creates a {@link LoanedBuffer} containing a token with a known, valid {@code kid} that
+     * matches a key in the provider's key set.
+     * The provider MUST accept this token (per ADR-013 §6: known-kid → accept).
+     * Caller owns the buffer lifecycle.
+     * <p>Default: delegates to {@link #createValidTokenBuffer()} for providers that don't use kid.
+     */
+    protected LoanedBuffer createTokenWithKnownKid() {
+        return createValidTokenBuffer();
+    }
+
+    /**
+     * Creates a {@link LoanedBuffer} containing a token with a {@code kid} that is NOT present
+     * in the provider's key set.
+     * The provider MUST deny this token (ADR-013 §6: unknown-kid → deny).
+     * Caller owns the buffer lifecycle.
+     * <p>Default: delegates to {@link #createInvalidTokenBuffer()}.
+     */
+    protected LoanedBuffer createTokenWithUnknownKid() {
+        return createInvalidTokenBuffer();
+    }
+
+    /**
+     * Creates a {@link LoanedBuffer} containing a token without a {@code kid} header claim
+     * when kid-based key selection is required.
+     * The provider MUST deny this token (ADR-013 §6: ambiguous kid = deny).
+     * Caller owns the buffer lifecycle.
+     * <p>Default: delegates to {@link #createInvalidTokenBuffer()}.
+     */
+    protected LoanedBuffer createTokenWithMissingKid() {
+        return createInvalidTokenBuffer();
+    }
+
+    /**
+     * Creates a {@link LoanedBuffer} containing a token whose {@code exp} claim is in the past.
+     * The provider MUST deny this token with {@link eu.exeris.kernel.spi.exceptions.security.SecurityAuthenticationException}.
+     * Caller owns the buffer lifecycle.
+     * <p>Default: delegates to {@link #createInvalidTokenBuffer()}.
+     */
+    protected LoanedBuffer createExpiredTokenBuffer() {
+        return createInvalidTokenBuffer();
+    }
+
+    /**
+     * Creates a {@link LoanedBuffer} containing a token with a wrong {@code iss} claim.
+     * The provider MUST deny this token (ADR-013 §4: issuer validation).
+     * Caller owns the buffer lifecycle.
+     * <p>Default: delegates to {@link #createInvalidTokenBuffer()}.
+     */
+    protected LoanedBuffer createWrongIssuerTokenBuffer() {
+        return createInvalidTokenBuffer();
+    }
+
+    /**
+     * Creates a {@link LoanedBuffer} containing a token with a wrong {@code aud} claim.
+     * The provider MUST deny this token (ADR-013 §4: audience validation).
+     * Caller owns the buffer lifecycle.
+     * <p>Default: delegates to {@link #createInvalidTokenBuffer()}.
+     */
+    protected LoanedBuffer createWrongAudienceTokenBuffer() {
+        return createInvalidTokenBuffer();
+    }
+
+    /**
+     * Creates a {@link LoanedBuffer} containing a structurally valid token whose
+     * cryptographic signature has been tampered with.
+     * The provider MUST deny this token.
+     * Caller owns the buffer lifecycle.
+     * <p>Default: delegates to {@link #createInvalidTokenBuffer()}.
+     */
+    protected LoanedBuffer createTamperedSignatureBuffer() {
+        return createInvalidTokenBuffer();
+    }
+
+    /**
+     * Returns a scope expected to be granted for the principal returned from
+     * {@link #createValidTokenBuffer()} authentication.
+     */
+    protected String expectedGrantedScope() {
+        return "security:read";
+    }
+
+    /**
+     * Returns a scope expected to be denied for the principal returned from
+     * {@link #createValidTokenBuffer()} authentication.
+     */
+    protected String expectedDeniedScope() {
+        return "security:write";
+    }
+
+    /**
+     * Creates a {@link LoanedBuffer} containing a valid token with NO isolation strategy claim.
+     * The provider MUST return a {@link StorageContext} with
+     * {@link StorageContext.IsolationStrategy#SHARED} strategy (fail-closed default).
+     *
+     * <p>Default: delegates to {@link #createValidTokenBuffer()}, since a standard valid token
+     * carries no isolation claim.
+     */
+    protected LoanedBuffer createTokenWithNoIsolationClaim() {
+        return createValidTokenBuffer();
+    }
+
+    /**
+     * Creates a {@link LoanedBuffer} containing a token with the {@code SEPARATED_SCHEMA}
+     * isolation strategy claim and a valid schema name claim.
+     *
+     * <p>The provider MUST return a {@link StorageContext} with
+     * {@link StorageContext.IsolationStrategy#SEPARATED_SCHEMA} strategy and
+     * {@link StorageContext#schemaName()} equal to {@link #expectedSeparatedSchemaName()}.
+     * Caller owns the buffer lifecycle.
+     */
+    protected abstract LoanedBuffer createTokenWithSeparatedSchemaStrategy();
+
+    /**
+     * Returns the expected {@link StorageContext#schemaName()} for the context produced from
+     * the token returned by {@link #createTokenWithSeparatedSchemaStrategy()}.
+     */
+    protected abstract String expectedSeparatedSchemaName();
+
+    /**
+     * Creates a {@link LoanedBuffer} containing a token with the {@code DEDICATED}
+     * isolation strategy claim and a valid datasource key claim.
+     *
+     * <p>The provider MUST return a {@link StorageContext} with
+     * {@link StorageContext.IsolationStrategy#DEDICATED} strategy and
+     * {@link StorageContext#dataSourceKey()} equal to {@link #expectedDedicatedDataSourceKey()}.
+     * Caller owns the buffer lifecycle.
+     */
+    protected abstract LoanedBuffer createTokenWithDedicatedStrategy();
+
+    /**
+     * Returns the expected {@link StorageContext#dataSourceKey()} for the context produced from
+     * the token returned by {@link #createTokenWithDedicatedStrategy()}.
+     */
+    protected abstract String expectedDedicatedDataSourceKey();
+
+    /**
+     * Creates a {@link LoanedBuffer} containing a token with the {@code SEPARATED_SCHEMA}
+     * isolation strategy claim but WITHOUT a schema name claim.
+     *
+     * <p>The provider MUST fail closed — return a {@link StorageContext} with
+     * {@link StorageContext.IsolationStrategy#SHARED} strategy.
+     * Caller owns the buffer lifecycle.
+     */
+    protected abstract LoanedBuffer createTokenWithSeparatedSchemaMissingSchemaName();
+
+    /**
+     * Creates a {@link LoanedBuffer} containing a token with the {@code DEDICATED}
+     * isolation strategy claim but WITHOUT a datasource key claim.
+     *
+     * <p>The provider MUST fail closed — return a {@link StorageContext} with
+     * {@link StorageContext.IsolationStrategy#SHARED} strategy.
+     * Caller owns the buffer lifecycle.
+     */
+    protected abstract LoanedBuffer createTokenWithDedicatedMissingDataSourceKey();
+
+    /**
+     * Creates a {@link LoanedBuffer} containing a token with an unrecognised, non-empty
+     * isolation strategy claim value (e.g. {@code "SUPER_TENANT"} or {@code "BYPASS_RLS"}).
+     *
+     * <p>The provider MUST fail closed — return a {@link StorageContext} with
+     * {@link StorageContext.IsolationStrategy#SHARED} strategy.
+     * Caller owns the buffer lifecycle.
+     */
+    protected abstract LoanedBuffer createTokenWithUnrecognizedStrategy();
 
     private SecurityProvider provider;
 
@@ -229,6 +408,24 @@ public abstract class AbstractSecurityProviderTck {
                         .isInstanceOf(UnsupportedOperationException.class);
             }
         }
+
+        @Test
+        @DisplayName("principal authorization allows expected granted scope")
+        void authorizationAllowsGrantedScope() {
+            try (LoanedBuffer token = createValidTokenBuffer()) {
+                PrincipalContext principal = provider.authenticate(token).principal();
+                assertThat(principal.hasScope(expectedGrantedScope())).isTrue();
+            }
+        }
+
+        @Test
+        @DisplayName("principal authorization denies unexpected scope")
+        void authorizationDeniesUnexpectedScope() {
+            try (LoanedBuffer token = createValidTokenBuffer()) {
+                PrincipalContext principal = provider.authenticate(token).principal();
+                assertThat(principal.hasScope(expectedDeniedScope())).isFalse();
+            }
+        }
     }
 
     // =========================================================================
@@ -244,7 +441,37 @@ public abstract class AbstractSecurityProviderTck {
         void throwsOnInvalidToken() {
             try (LoanedBuffer token = createInvalidTokenBuffer()) {
                 assertThatThrownBy(() -> provider.authenticate(token))
-                        .isInstanceOf(SecurityAuthenticationException.class);
+                        .isInstanceOfSatisfying(SecurityAuthenticationException.class, ex -> {
+                            assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_SEC_2002);
+                            Object[] raw = ex.rawArgs();
+                            assertThat(raw).hasSizeGreaterThanOrEqualTo(2);
+                            assertThat(raw[0]).isInstanceOf(String.class);
+                            assertThat(raw[1]).isInstanceOf(String.class);
+                            assertThat((String) raw[0]).isNotBlank();
+                            assertThat((String) raw[1]).isNotBlank();
+                        });
+            }
+        }
+
+        @Test
+        @DisplayName("indeterminate token is denied with EX-SEC-2002")
+        void deniesIndeterminateToken() {
+            try (LoanedBuffer token = createIndeterminateTokenBuffer()) {
+                assertThatThrownBy(() -> provider.authenticate(token))
+                        .isInstanceOfSatisfying(SecurityAuthenticationException.class, ex ->
+                                assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_SEC_2002));
+            }
+        }
+
+        @Test
+        @DisplayName("repeated indeterminate token attempts are deterministically denied")
+        void repeatedIndeterminateAttemptsAreDeterministicallyDenied() {
+            for (int i = 0; i < 5; i++) {
+                try (LoanedBuffer token = createIndeterminateTokenBuffer()) {
+                    assertThatThrownBy(() -> provider.authenticate(token))
+                            .isInstanceOfSatisfying(SecurityAuthenticationException.class, ex ->
+                                    assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_SEC_2002));
+                }
             }
         }
     }
@@ -355,6 +582,187 @@ public abstract class AbstractSecurityProviderTck {
             assertThat(failure.get())
                     .as("Concurrent authenticate() must be thread-safe")
                     .isNull();
+        }
+    }
+
+    // =========================================================================
+    // JWKS key selection and claims validation — ADR-013 §4, §6
+    // =========================================================================
+
+    @Nested
+    @DisplayName("JWKS key selection contract (ADR-013 §6)")
+    class JwksKeySelectionContract {
+
+        @Test
+        @DisplayName("token with known kid is accepted")
+        void knownKidIsAccepted() {
+            try (LoanedBuffer token = createTokenWithKnownKid()) {
+                AuthenticationResult result = provider.authenticate(token);
+                assertThat(result).isNotNull();
+                assertThat(result.principal()).isNotNull();
+            }
+        }
+
+        @Test
+        @DisplayName("token with unknown kid is denied with EX-SEC-2002")
+        void unknownKidIsDenied() {
+            try (LoanedBuffer token = createTokenWithUnknownKid()) {
+                assertThatThrownBy(() -> provider.authenticate(token))
+                        .isInstanceOfSatisfying(SecurityAuthenticationException.class, ex ->
+                                assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_SEC_2002));
+            }
+        }
+
+        @Test
+        @DisplayName("token without kid is denied when kid selection is required")
+        void missingKidIsDenied() {
+            try (LoanedBuffer token = createTokenWithMissingKid()) {
+                assertThatThrownBy(() -> provider.authenticate(token))
+                        .isInstanceOfSatisfying(SecurityAuthenticationException.class, ex ->
+                                assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_SEC_2002));
+            }
+        }
+    }
+
+    @Nested
+    @DisplayName("JWT claims validation contract (ADR-013 §4)")
+    class JwtClaimsValidationContract {
+
+        @Test
+        @DisplayName("expired token is denied with EX-SEC-2002")
+        void expiredTokenIsDenied() {
+            try (LoanedBuffer token = createExpiredTokenBuffer()) {
+                assertThatThrownBy(() -> provider.authenticate(token))
+                        .isInstanceOfSatisfying(SecurityAuthenticationException.class, ex ->
+                                assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_SEC_2002));
+            }
+        }
+
+        @Test
+        @DisplayName("wrong issuer is denied with EX-SEC-2002")
+        void wrongIssuerIsDenied() {
+            try (LoanedBuffer token = createWrongIssuerTokenBuffer()) {
+                assertThatThrownBy(() -> provider.authenticate(token))
+                        .isInstanceOfSatisfying(SecurityAuthenticationException.class, ex ->
+                                assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_SEC_2002));
+            }
+        }
+
+        @Test
+        @DisplayName("wrong audience is denied with EX-SEC-2002")
+        void wrongAudienceIsDenied() {
+            try (LoanedBuffer token = createWrongAudienceTokenBuffer()) {
+                assertThatThrownBy(() -> provider.authenticate(token))
+                        .isInstanceOfSatisfying(SecurityAuthenticationException.class, ex ->
+                                assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_SEC_2002));
+            }
+        }
+
+        @Test
+        @DisplayName("tampered signature is denied with EX-SEC-2002")
+        void tamperedSignatureIsDenied() {
+            try (LoanedBuffer token = createTamperedSignatureBuffer()) {
+                assertThatThrownBy(() -> provider.authenticate(token))
+                        .isInstanceOfSatisfying(SecurityAuthenticationException.class, ex ->
+                                assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_SEC_2002));
+            }
+        }
+
+        @Test
+        @DisplayName("deny on uncertainty is deterministic across repeated calls")
+        void denyOnUncertaintyIsDeterministic() {
+            for (int i = 0; i < 5; i++) {
+                try (LoanedBuffer token = createExpiredTokenBuffer()) {
+                    assertThatThrownBy(() -> provider.authenticate(token))
+                            .isInstanceOfSatisfying(SecurityAuthenticationException.class, ex ->
+                                    assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_SEC_2002));
+                }
+            }
+        }
+    }
+
+    // =========================================================================
+    // StorageContext isolation strategy contract (KernelIsolationClaims)
+    // =========================================================================
+
+    @Nested
+    @DisplayName("StorageContext isolation strategy contract")
+    class IsolationStrategyContract {
+
+        @Test
+        @DisplayName("absent isolation claim \u2192 SHARED strategy (fail-closed default)")
+        void assert_authenticate_returns_shared_when_no_isolation_claim() {
+            try (LoanedBuffer token = createTokenWithNoIsolationClaim()) {
+                StorageContext storage = provider.authenticate(token).storage();
+                assertThat(storage.strategy())
+                        .as("absent isolation claim MUST produce SHARED strategy (fail-closed)")
+                        .isEqualTo(StorageContext.IsolationStrategy.SHARED);
+            }
+        }
+
+        @Test
+        @DisplayName("SEPARATED_SCHEMA claim \u2192 SEPARATED_SCHEMA strategy with correct schemaName")
+        void assert_authenticate_returns_separated_schema_from_jwt_claim() {
+            try (LoanedBuffer token = createTokenWithSeparatedSchemaStrategy()) {
+                StorageContext storage = provider.authenticate(token).storage();
+                assertThat(storage.strategy())
+                        .as("SEPARATED_SCHEMA claim must produce SEPARATED_SCHEMA strategy")
+                        .isEqualTo(StorageContext.IsolationStrategy.SEPARATED_SCHEMA);
+                assertThat(storage.schemaName())
+                        .as("schemaName must be present and equal expectedSeparatedSchemaName()")
+                        .isPresent()
+                        .contains(expectedSeparatedSchemaName());
+            }
+        }
+
+        @Test
+        @DisplayName("DEDICATED claim \u2192 DEDICATED strategy with correct dataSourceKey")
+        void assert_authenticate_returns_dedicated_from_jwt_claim() {
+            try (LoanedBuffer token = createTokenWithDedicatedStrategy()) {
+                StorageContext storage = provider.authenticate(token).storage();
+                assertThat(storage.strategy())
+                        .as("DEDICATED claim must produce DEDICATED strategy")
+                        .isEqualTo(StorageContext.IsolationStrategy.DEDICATED);
+                assertThat(storage.dataSourceKey())
+                        .as("dataSourceKey must be present and equal expectedDedicatedDataSourceKey()")
+                        .isPresent()
+                        .contains(expectedDedicatedDataSourceKey());
+            }
+        }
+
+        @Test
+        @DisplayName("SEPARATED_SCHEMA claim without schema name \u2192 fails closed to SHARED")
+        void assert_authenticate_fails_closed_to_shared_on_missing_schema_claim() {
+            try (LoanedBuffer token = createTokenWithSeparatedSchemaMissingSchemaName()) {
+                StorageContext storage = provider.authenticate(token).storage();
+                assertThat(storage.strategy())
+                        .as("SEPARATED_SCHEMA without schema name MUST fail closed to SHARED \u2014 "
+                                + "prevents escaping RLS by omitting the required secondary claim")
+                        .isEqualTo(StorageContext.IsolationStrategy.SHARED);
+            }
+        }
+
+        @Test
+        @DisplayName("DEDICATED claim without datasource key \u2192 fails closed to SHARED")
+        void assert_authenticate_fails_closed_to_shared_on_missing_datasource_key_claim() {
+            try (LoanedBuffer token = createTokenWithDedicatedMissingDataSourceKey()) {
+                StorageContext storage = provider.authenticate(token).storage();
+                assertThat(storage.strategy())
+                        .as("DEDICATED without datasource key MUST fail closed to SHARED")
+                        .isEqualTo(StorageContext.IsolationStrategy.SHARED);
+            }
+        }
+
+        @Test
+        @DisplayName("unrecognized strategy value \u2192 fails closed to SHARED")
+        void assert_authenticate_fails_closed_to_shared_on_unrecognized_strategy() {
+            try (LoanedBuffer token = createTokenWithUnrecognizedStrategy()) {
+                StorageContext storage = provider.authenticate(token).storage();
+                assertThat(storage.strategy())
+                        .as("Unrecognised strategy value MUST fail closed to SHARED \u2014 "
+                                + "prevents strategy claim injection attacks")
+                        .isEqualTo(StorageContext.IsolationStrategy.SHARED);
+            }
         }
     }
 }

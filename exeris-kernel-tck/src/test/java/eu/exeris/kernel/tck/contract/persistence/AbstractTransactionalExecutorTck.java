@@ -23,6 +23,7 @@ import org.junit.jupiter.api.Timeout;
 import java.util.concurrent.StructuredTaskScope;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -164,6 +165,30 @@ public abstract class AbstractTransactionalExecutorTck {
     }
 
     // =========================================================================
+    // Read-session contract
+    // =========================================================================
+
+    @Nested
+    @DisplayName("Read-session contract")
+    class ReadSessionContract {
+
+        @Test
+        @DisplayName("inReadSession() reuses the same connection within scope")
+        @Timeout(value = 5, unit = TimeUnit.SECONDS)
+        void inReadSessionReusesConnection() {
+            AtomicReference<Integer> firstIdentity = new AtomicReference<>();
+
+            Integer secondIdentity = executor.inReadSession(session -> {
+                Integer first = session.query(conn -> System.identityHashCode(conn));
+                firstIdentity.set(first);
+                return session.query(conn -> System.identityHashCode(conn));
+            });
+
+            assertThat(firstIdentity.get()).isEqualTo(secondIdentity);
+        }
+    }
+
+    // =========================================================================
     // Managed transaction contract (write path)
     // =========================================================================
 
@@ -256,6 +281,23 @@ public abstract class AbstractTransactionalExecutorTck {
         }
 
         @Test
+        @DisplayName("no-retry executor: read-session fails after exactly 1 attempt on 40001")
+        @Timeout(value = 5, unit = TimeUnit.SECONDS)
+        void noRetryReadSessionFailsAfterOneAttempt() {
+            AtomicInteger attempts = new AtomicInteger(0);
+
+            assertThatThrownBy(() ->
+                    executor.inReadSession(session -> session.query(conn -> {
+                        attempts.incrementAndGet();
+                        throw PersistenceProviderException.queryFailed(
+                                "40001", "forced serialization failure", null);
+                    }))
+            ).isInstanceOf(PersistenceProviderException.class);
+
+            assertThat(attempts.get()).as("no-retry executor must attempt exactly once").isOne();
+        }
+
+        @Test
         @DisplayName("retry executor: retries up to maxAttempts on 40001")
         @Timeout(value = 10, unit = TimeUnit.SECONDS)
         void retryExecutorRetriesUpToMax() {
@@ -279,6 +321,30 @@ public abstract class AbstractTransactionalExecutorTck {
         }
 
         @Test
+        @DisplayName("retry executor: read-session retries whole block up to maxAttempts on 40001")
+        @Timeout(value = 10, unit = TimeUnit.SECONDS)
+        void retryExecutorReadSessionRetriesUpToMax() {
+            int maxAttempts = 3;
+            AtomicInteger attempts = new AtomicInteger(0);
+            TransactionalExecutor retryExecutor =
+                    createExecutorWithRetry(engine, maxAttempts, 10L);
+
+            assertThatThrownBy(() ->
+                    retryExecutor.inReadSession(session -> {
+                        attempts.incrementAndGet();
+                        return session.query(conn -> {
+                            throw PersistenceProviderException.queryFailed(
+                                    "40001", "forced serialization failure", null);
+                        });
+                    })
+            ).isInstanceOf(PersistenceProviderException.class);
+
+            assertThat(attempts.get())
+                    .as("retry executor must attempt exactly maxAttempts times")
+                    .isEqualTo(maxAttempts);
+        }
+
+        @Test
         @DisplayName("retry executor: does NOT retry on non-retryable SQLSTATE 42601")
         @Timeout(value = 5, unit = TimeUnit.SECONDS)
         void retryExecutorDoesNotRetryOnSyntaxError() {
@@ -293,6 +359,27 @@ public abstract class AbstractTransactionalExecutorTck {
                         throw PersistenceProviderException.queryFailed(
                                 "42601", "syntax error near 'BORK'", null);
                     })
+            ).isInstanceOf(PersistenceProviderException.class);
+
+            assertThat(attempts.get())
+                    .as("non-retryable SQLSTATE 42601 must not be retried")
+                    .isOne();
+        }
+
+        @Test
+        @DisplayName("retry executor: does NOT retry read-session on non-retryable SQLSTATE 42601")
+        @Timeout(value = 5, unit = TimeUnit.SECONDS)
+        void retryExecutorReadSessionDoesNotRetryOnSyntaxError() {
+            AtomicInteger attempts = new AtomicInteger(0);
+            TransactionalExecutor retryExecutor =
+                    createExecutorWithRetry(engine, 3, 10L);
+
+            assertThatThrownBy(() ->
+                    retryExecutor.inReadSession(session -> session.query(conn -> {
+                        attempts.incrementAndGet();
+                        throw PersistenceProviderException.queryFailed(
+                                "42601", "syntax error near 'BORK'", null);
+                    }))
             ).isInstanceOf(PersistenceProviderException.class);
 
             assertThat(attempts.get())

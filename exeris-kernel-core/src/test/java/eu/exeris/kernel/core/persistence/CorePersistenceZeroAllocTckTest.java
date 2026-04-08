@@ -102,6 +102,11 @@ class CorePersistenceZeroAllocTckTest extends PersistenceZeroAllocTck {
             return PersistenceHealthStatus.ok(0L);
         }
 
+        @Override
+        public boolean canServiceRequest() {
+            return true;
+        }
+
 
         @Override
         public PersistenceEngineCapabilities capabilities() {
@@ -267,6 +272,7 @@ class CorePersistenceZeroAllocTckTest extends PersistenceZeroAllocTck {
         @Override public PersistenceStatement bindString(int idx, String v)   { return this; }
         @Override public PersistenceStatement bindBytes(int idx, byte[] v)    { return this; }
         @Override public PersistenceStatement bindNull(int idx)               { return this; }
+        @Override public PersistenceStatement bindUuid(int idx, UUID v)       { return this; }
         @Override public QueryResult executeQuery()  { return ConstantConnection.RESULT; }
         @Override public long executeUpdate()        { return 0L; }
         @Override public void close()               { /* no-op */ }

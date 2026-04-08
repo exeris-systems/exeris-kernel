@@ -189,6 +189,16 @@ class PersistenceErrorTranslatorTest {
             assertThat(ex.rawArgs()[0]).isEqualTo("08001");
             assertThat(detail(ex)).contains("connection failure");
         }
+
+        @Test
+        @DisplayName("28P01 INVALID_PASSWORD → EX_PERS_5004, rawArgs include SQLSTATE")
+        void invalidPasswordMapsToAuthFailed() {
+            PersistenceProviderException ex =
+                PersistenceErrorTranslator.translate("28P01", "password authentication failed", null);
+            assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_PERS_5004);
+            assertThat(ex.rawArgs()[0]).isEqualTo("28P01");
+            assertThat(ex.rawArgs()[1]).isEqualTo("password authentication failed");
+        }
     }
 
     // =========================================================================
@@ -225,6 +235,16 @@ class PersistenceErrorTranslatorTest {
                     PersistenceErrorTranslator.translate("25001", "SET TRANSACTION", null);
             assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_PERS_5003);
             assertThat(detail(ex)).contains("invalid transaction state");
+        }
+
+        @Test
+        @DisplayName("Class 28 (auth exception) → EX_PERS_5004")
+        void class28() {
+            PersistenceProviderException ex =
+                PersistenceErrorTranslator.translate("28000", "invalid authorization specification", null);
+            assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_PERS_5004);
+            assertThat(ex.rawArgs()[0]).isEqualTo("28000");
+            assertThat(ex.rawArgs()[1]).isEqualTo("invalid authorization specification");
         }
 
         @Test

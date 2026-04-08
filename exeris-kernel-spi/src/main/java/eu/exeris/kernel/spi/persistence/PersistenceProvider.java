@@ -9,6 +9,11 @@
 package eu.exeris.kernel.spi.persistence;
 
 import eu.exeris.kernel.spi.exceptions.persistence.PersistenceProviderException;
+import eu.exeris.kernel.spi.persistence.codec.EntityDecoder;
+import eu.exeris.kernel.spi.persistence.codec.EntityEncoder;
+
+import java.lang.foreign.MemorySegment;
+import java.util.Optional;
 
 /**
  * SPI: Top-level entry point for persistence subsystem discovery.
@@ -108,5 +113,31 @@ public interface PersistenceProvider {
      */
     default DatabaseDialect dialect(PersistenceConfig config) {
         return DatabaseDialect.fromUrl(config.connectionUrl());
+    }
+
+    /**
+     * Optional raw entity encoder binding for payload-oriented persistence paths.
+     *
+     * <p>Default is empty to preserve compatibility for providers that do not
+     * expose a raw {@link MemorySegment} codec.
+     *
+     * @return raw encoder binding, if supported by this provider
+     * @since 0.5.0
+     */
+    default Optional<EntityEncoder<MemorySegment>> rawEntityEncoder() {
+        return Optional.empty();
+    }
+
+    /**
+     * Optional raw entity decoder binding for payload-oriented persistence paths.
+     *
+     * <p>Default is empty to preserve compatibility for providers that do not
+     * expose a raw {@link MemorySegment} codec.
+     *
+     * @return raw decoder binding, if supported by this provider
+     * @since 0.5.0
+     */
+    default Optional<EntityDecoder<MemorySegment>> rawEntityDecoder() {
+        return Optional.empty();
     }
 }

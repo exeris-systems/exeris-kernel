@@ -8,6 +8,8 @@
  */
 package eu.exeris.kernel.spi.persistence;
 
+import java.util.UUID;
+
 /**
  * SPI: Zero-allocation query binder and executor.
  *
@@ -131,6 +133,22 @@ public interface PersistenceStatement extends AutoCloseable {
      * @return this statement (fluent)
      */
     PersistenceStatement bindString(int index, String value);
+
+    /**
+     * Binds a {@link UUID} value at the given parameter index.
+     *
+     * <p><b>Community:</b> Delegates to {@code PreparedStatement.setObject(index, uuid)},
+     * which the pgjdbc driver maps to PostgreSQL OID 2950 (uuid) — no implicit
+     * {@code varchar→uuid} cast required.
+     *
+     * <p><b>Enterprise:</b> Writes the 16-byte binary UUID representation directly
+     * to the off-heap Bind message buffer.
+     *
+     * @param index zero-based parameter index
+     * @param value UUID value (may be {@code null} — treated as SQL NULL)
+     * @return this statement (fluent)
+     */
+    PersistenceStatement bindUuid(int index, UUID value);
 
     /**
      * Binds raw bytes at the given parameter index.

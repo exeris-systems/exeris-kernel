@@ -62,6 +62,14 @@ public abstract class AbstractSecurityProviderBenchmark extends AbstractExerisBe
     protected abstract byte[] validTokenBytes();
     /** Returns the role name string to check in hasRole() benchmark (e.g. "ROLE_USER"). */
     protected abstract String benchmarkRole();
+    /** Returns a scope expected to be granted for hasScope allow-path latency checks. */
+    protected String benchmarkGrantedScope() {
+        return "security:read";
+    }
+    /** Returns a scope expected to be denied for hasScope deny-path latency checks. */
+    protected String benchmarkDeniedScope() {
+        return "security:write";
+    }
 
     private SecurityProvider   provider;
     private MemoryAllocator    allocator;
@@ -104,5 +112,21 @@ public abstract class AbstractSecurityProviderBenchmark extends AbstractExerisBe
     @OutputTimeUnit(TimeUnit.NANOSECONDS)
     public void hasRoleLatency(Blackhole bh) {
         bh.consume(preAuthenticated.principal().hasRole(benchmarkRole()));
+    }
+
+    // SLO: authorization fast-path by granted scope remains O(1)
+    @Benchmark
+    @BenchmarkMode(Mode.SampleTime)
+    @OutputTimeUnit(TimeUnit.NANOSECONDS)
+    public void hasScopeAllowLatency(Blackhole bh) {
+        bh.consume(preAuthenticated.principal().hasScope(benchmarkGrantedScope()));
+    }
+
+    // SLO: authorization fast-path by denied scope remains O(1)
+    @Benchmark
+    @BenchmarkMode(Mode.SampleTime)
+    @OutputTimeUnit(TimeUnit.NANOSECONDS)
+    public void hasScopeDenyLatency(Blackhole bh) {
+        bh.consume(preAuthenticated.principal().hasScope(benchmarkDeniedScope()));
     }
 }

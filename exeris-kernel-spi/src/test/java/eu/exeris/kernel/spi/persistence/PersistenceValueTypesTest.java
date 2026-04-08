@@ -12,6 +12,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import java.util.Map;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -190,6 +192,67 @@ class PersistenceValueTypesTest {
             PersistenceEngineCapabilities b =
                     new PersistenceEngineCapabilities(false, false, false, false, "NativeAsync", "acme");
             assertThat(a).isNotEqualTo(b);
+        }
+    }
+
+    @Nested
+    @DisplayName("PersistenceConfig warm-up properties — defaults and fail-fast validation")
+    class PersistenceConfigWarmupProperties {
+
+        @Test
+        @DisplayName("Absent warm-up properties use defaults")
+        void absentWarmupPropertiesUseDefaults() {
+            PersistenceConfig config = newConfig(Map.of());
+
+            assertThat(config.poolWarmupEnabled()).isTrue();
+            assertThat(config.poolWarmupConnections()).isEqualTo(2);
+        }
+
+        @Test
+        @DisplayName("Invalid explicit pool.warmup.enabled throws IllegalArgumentException")
+        void invalidWarmupEnabledThrows() {
+            Map<String, String> properties = Map.of(PersistenceConfig.POOL_WARMUP_ENABLED_KEY, "yes");
+
+            assertThatThrownBy(() -> newConfig(properties))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining(PersistenceConfig.POOL_WARMUP_ENABLED_KEY);
+        }
+
+        @Test
+        @DisplayName("Non-integer explicit pool.warmup.connections throws IllegalArgumentException")
+        void nonIntegerWarmupConnectionsThrow() {
+            Map<String, String> properties = Map.of(PersistenceConfig.POOL_WARMUP_CONNECTIONS_KEY, "abc");
+
+            assertThatThrownBy(() -> newConfig(properties))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining(PersistenceConfig.POOL_WARMUP_CONNECTIONS_KEY);
+        }
+
+        @Test
+        @DisplayName("Out-of-range explicit pool.warmup.connections throws IllegalArgumentException")
+        void outOfRangeWarmupConnectionsThrow() {
+            Map<String, String> properties = Map.of(PersistenceConfig.POOL_WARMUP_CONNECTIONS_KEY, "9");
+
+            assertThatThrownBy(() -> newConfig(properties))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining(PersistenceConfig.POOL_WARMUP_CONNECTIONS_KEY);
+        }
+
+        private static PersistenceConfig newConfig(Map<String, String> properties) {
+            return new PersistenceConfig(
+                    "jdbc:postgresql://localhost:5432/exeris",
+                    "exeris",
+                    "secret",
+                    16,
+                    4,
+                    30_000L,
+                    600_000L,
+                    1_800_000L,
+                    true,
+                    false,
+                    false,
+                    10,
+                    properties);
         }
     }
 }

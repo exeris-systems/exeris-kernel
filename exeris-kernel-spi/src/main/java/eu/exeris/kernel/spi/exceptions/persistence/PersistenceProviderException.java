@@ -127,6 +127,21 @@ public final class PersistenceProviderException extends ExerisKernelException {
     }
 
     /**
+     * Authentication failure — SCRAM/MD5 rejected, with root cause preserved.
+     *
+     * @param mechanism     auth mechanism name (or SQLSTATE in JDBC path)
+     * @param serverMessage server error message
+     * @param cause         root cause (may be {@code null})
+     * @return exception with rawArgs: [mechanism, serverMessage]
+     */
+    public static PersistenceProviderException authFailed(
+            String mechanism, String serverMessage, Throwable cause) {
+        return new PersistenceProviderException(
+                KernelErrorCodes.EX_PERS_5004, AUTH_MSG, cause,
+                mechanism, serverMessage);
+    }
+
+    /**
      * Transport I/O failure — socket read/write error.
      *
      * @param transportName  transport display name
@@ -160,6 +175,24 @@ public final class PersistenceProviderException extends ExerisKernelException {
         return new PersistenceProviderException(
                 KernelErrorCodes.EX_PERS_5006, INTERCEPTOR_MSG, cause,
                 interceptorClass, isolationKey);
+    }
+
+    /**
+     * Dedicated datasource routing failure — the datasource key from the DEDICATED
+     * {@link eu.exeris.kernel.spi.security.StorageContext} was not found in
+     * {@link eu.exeris.kernel.spi.persistence.PersistenceConfig#dedicatedDataSources()}.
+     *
+     * @param providerName  provider display name
+     * @param dataSourceKey the routing key that was not found in the configured map
+     * @return exception with rawArgs: [providerName, dataSourceKey]
+     */
+    public static PersistenceProviderException dedicatedDatasourceNotFound(
+            String providerName, String dataSourceKey) {
+        return new PersistenceProviderException(
+                KernelErrorCodes.EX_PERS_5006,
+                "Dedicated datasource key not found in configuration",
+                null,
+                providerName, dataSourceKey);
     }
 
     /**

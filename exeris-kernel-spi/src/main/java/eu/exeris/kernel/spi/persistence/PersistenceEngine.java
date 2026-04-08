@@ -135,10 +135,48 @@ public interface PersistenceEngine extends AutoCloseable {
     EngineStats stats();
 
     /**
+     * Query whether this engine can service a new request without thread starvation.
+     *
+     * <p>This method is called by HTTP dispatcher to implement admission control and prevent
+     * thread park storms when the underlying connection pool is saturated. Implementations
+     * MUST return {@code false} (or throw) immediately if the pool cannot accept new work
+     * within the No Waste Compute latency bound (≤5ms p50).
+     *
+     * <p>Per ADR-010, this is a SPI-level gating mechanism to preserve fairness and prevent
+     * cascading thread starvation (ThreadPark storms) observed when HTTP sender is faster than
+     * persistence layer can consume.
+     *
+     * <p><b>Semantics (Tier-specific)</b>:
+     * <ul>
+     *   <li><b>Community</b>: Returns {@code false} if idle connections are zero and at least one
+     *       acquire is pending (queue forming), or if active connections are at or above 90% of
+     *       the configured maximum. Returns {@code true} otherwise.
+     *   <li><b>Enterprise</b>: Implements exponential backoff with native driver telemetry
+     *       (e.g., io_uring SQE availability). May return {@code false} predictively before
+     *       absolute saturation to maintain fairness.
+     * </ul>
+     *
+     * @return {@code true} if this engine can accept a new request without violating
+     *         No Waste Compute latency guarantees; {@code false} if pool is saturated or
+     *         admission would cause unacceptable latency.
+     * @throws PersistenceProviderException if engine is shutting down or in error state
+     *
+     * @see EngineStats#activeConnections()
+     */
+    boolean canServiceRequest();
+
+    /**
      * Shuts down the engine, draining all pools and releasing native resources.
      *
-     * <p>After this call, all methods throw {@link IllegalStateException}.
+     * <p>After this call, connection-opening methods and state-changing operations may
+     * reject work, typically by throwing {@link IllegalStateException} or a
+     * provider-specific exception.
+     *
+     * <p>This contract does not require all methods to throw after shutdown.
+     * Admission probes such as {@link #canServiceRequest()} may instead return
+     * {@code false} to report that the engine can no longer accept work.
      * Idempotent — multiple calls are safe.
+     *
      */
     @Override
     void close();

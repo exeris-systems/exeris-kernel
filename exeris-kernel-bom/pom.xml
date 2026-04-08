@@ -22,8 +22,7 @@
         <lz4.version>1.10.2</lz4.version>
         <java.uuid.version>5.2.0</java.uuid.version>
 
-        <jackson.version>3.1.0</jackson.version>
-        <jackson.annotations.version>3.0-rc5</jackson.annotations.version>
+        <jackson.version>3.1.1</jackson.version>
         <postgresql.version>42.7.8</postgresql.version>
         <hikaricp.version>7.0.2</hikaricp.version>
         <flyway.version>11.19.1</flyway.version>
@@ -41,6 +40,7 @@
         <testcontainers.version>1.21.4</testcontainers.version>
         <jmh.version>1.37</jmh.version>
         <archunit.version>1.4.1</archunit.version>
+        <nimbus.jose.jwt.version>10.8</nimbus.jose.jwt.version>
     </properties>
 
     <dependencyManagement>
@@ -58,6 +58,11 @@
             <dependency>
                 <groupId>eu.exeris</groupId>
                 <artifactId>exeris-kernel-community</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>eu.exeris</groupId>
+                <artifactId>exeris-kernel-community-testkit</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
@@ -105,11 +110,6 @@
                 <groupId>tools.jackson.core</groupId>
                 <artifactId>jackson-databind</artifactId>
                 <version>${jackson.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>com.fasterxml.jackson.core</groupId>
-                <artifactId>jackson-annotations</artifactId>
-                <version>${jackson.annotations.version}</version>
             </dependency>
             <dependency>
                 <groupId>org.postgresql</groupId>
@@ -212,6 +212,11 @@
                 <artifactId>archunit-junit5</artifactId>
                 <version>${archunit.version}</version>
                 <scope>test</scope>
+            </dependency>
+            <dependency>
+                <groupId>com.nimbusds</groupId>
+                <artifactId>nimbus-jose-jwt</artifactId>
+                <version>${nimbus.jose.jwt.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
