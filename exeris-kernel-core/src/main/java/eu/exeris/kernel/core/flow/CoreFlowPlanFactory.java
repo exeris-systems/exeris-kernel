@@ -136,7 +136,7 @@ final class CoreFlowPlanFactory implements FlowExecutionPlanFactory {
                 continue;
             }
             List<FlowTransitionDescriptor> unconditional = outgoing.stream()
-                    .filter(t -> t.conditionTag() == null || t.conditionTag().isBlank())
+                    .filter(t -> "default".equals(t.conditionTag()))
                     .toList();
             if (unconditional.size() > 1) {
                 throw new IllegalArgumentException(

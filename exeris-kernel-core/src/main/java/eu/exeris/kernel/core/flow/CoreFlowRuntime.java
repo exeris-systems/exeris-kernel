@@ -42,7 +42,7 @@ final class CoreFlowRuntime { // NOPMD
     private final ConcurrentMap<String, CoreFlowExecutionPlan> planCatalog = new ConcurrentHashMap<>();
     private final ConcurrentMap<FlowKey, FlowState> terminalStateCatalog = new ConcurrentHashMap<>();
     private final Set<Thread> runningThreads = ConcurrentHashMap.newKeySet();
-    private final LongAdder activeFlows = new LongAdder();
+    private final AtomicInteger activeFlows = new AtomicInteger();
     private final LongAdder parkedFlows = new LongAdder();
     private final LongAdder completedFlows = new LongAdder();
     private final LongAdder failedFlows = new LongAdder();
@@ -69,7 +69,7 @@ final class CoreFlowRuntime { // NOPMD
 
     public FlowEngineStats stats() {
         return new FlowEngineStats(
-                activeFlows.sum(),
+                activeFlows.get(),
                 parkedFlows.sum(),
                 completedFlows.sum(),
                 failedFlows.sum(),
@@ -239,12 +239,13 @@ final class CoreFlowRuntime { // NOPMD
     }
 
     private void launch(RuntimeFlowInstance instance, int startStep) {
-        if (activeFlows.sum() >= config.maxConcurrentFlows()) {
+        int admitted = activeFlows.incrementAndGet();
+        if (admitted > config.maxConcurrentFlows()) {
+            activeFlows.decrementAndGet();
             throw new FlowEngineException(
                     "Flow scheduling rejected: maxConcurrentFlows limit reached (" + config.maxConcurrentFlows() + ')');
         }
         queueDepth.incrementAndGet();
-        activeFlows.increment();
         Thread thread = Thread.ofVirtual()
                 .name("exeris-flow-" + instance.key().instanceIdMost() + '-' + instance.key().instanceIdLeast())
                 .unstarted(() -> runInstance(instance, startStep));
@@ -295,6 +296,9 @@ final class CoreFlowRuntime { // NOPMD
                 FlowOutcome outcome = executeStep(instance, stepIndex, stepAction);
 
                 synchronized (instance.monitor()) {
+                    if (instance.state() == FlowState.PARKED) {
+                        return;
+                    }
                     switch (outcome) {
                         case CONTINUE -> {
                             if (step.hasCompensation() && config.compensationEnabled()) {
@@ -323,7 +327,6 @@ final class CoreFlowRuntime { // NOPMD
                             return;
                         }
                         case FAIL -> {
-                            fail(instance, stepIndex, null);
                             return;
                         }
                     }
@@ -332,7 +335,7 @@ final class CoreFlowRuntime { // NOPMD
         } finally {
             instance.markNotScheduled();
             queueDepth.decrementAndGet();
-            activeFlows.decrement();
+            activeFlows.decrementAndGet();
             runningThreads.remove(Thread.currentThread());
         }
     }
@@ -341,7 +344,11 @@ final class CoreFlowRuntime { // NOPMD
     private FlowOutcome executeStep(RuntimeFlowInstance instance, int stepIndex, FlowStepAction action) {
         try {
             stepExecutions.increment();
-            return action.execute(instance.contextView());
+            FlowOutcome outcome = action.execute(instance.contextView());
+            if (outcome == FlowOutcome.FAIL) {
+                fail(instance, stepIndex, null);
+            }
+            return outcome;
         } catch (Throwable cause) {
             FlowStepFailedEvent.emit(
                     instance.definitionName(),
@@ -393,14 +400,6 @@ final class CoreFlowRuntime { // NOPMD
         progressPublisher.publishProgress(instance, stepIndex, FlowState.FAILED_ROLLEDBACK);
         liveInstances.remove(instance.key());
         parkedInstances.remove(instance.key());
-        if (cause != null) {
-            FlowStepFailedEvent.emit(
-                    instance.definitionName(),
-                    stepIndex,
-                    instance.key().instanceIdMost(),
-                    instance.key().instanceIdLeast(),
-                    cause);
-        }
     }
 
     private void complete(RuntimeFlowInstance instance) {
