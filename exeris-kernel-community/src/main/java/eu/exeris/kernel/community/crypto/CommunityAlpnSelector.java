@@ -54,7 +54,12 @@ final class CommunityAlpnSelector {
 		}
 	}
 
-	// Called by OpenSSL during TLS handshake; must not throw.
+	// Panama FFI upcall for SSL_CTX_set_alpn_select_cb — ABI is fixed by OpenSSL:
+	//   int cb(SSL *ssl, const u8 **out, u8 *outlen, const u8 *in, unsigned int inlen, void *arg)
+	// 'ssl' and 'arg' are positional ABI parameters that must remain in the MethodType and
+	// FunctionDescriptor even though they are not referenced in the Java body.
+	// Removing them would cause an argument-register mismatch and a SIGSEGV at runtime.
+	// Do NOT apply CodeQL / static-analysis suggestions to remove these parameters.
 	@SuppressWarnings({"PMD.AvoidCatchingGenericException", "java:S1144", "java:S1172", "unused"})
 	private static int selectCallback(
 			long ssl, long outPtr, long outlenPtr, long alpnInput, int inlen, long arg) {

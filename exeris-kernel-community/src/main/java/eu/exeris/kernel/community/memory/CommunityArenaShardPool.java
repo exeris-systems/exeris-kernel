@@ -137,6 +137,9 @@ final class CommunityArenaShardPool {
 
         int classIndex = getSizeClassIndex(originalCapacity);
         if (classIndex < 0) {
+            // Overflow segments are allocated from the shared shard arena and cannot be
+            // individually freed — they are reclaimed only when the pool (and its arena) closes.
+            // This is intentional: shared-arena semantics require deterministic pool-level release.
             long totalOverflowReturns = overflowReturnCount.incrementAndGet();
             long totalOverflowReturnedBytes = overflowReturnedBytes.addAndGet(originalCapacity);
             CommunityOverflowReturnEvent.emit(

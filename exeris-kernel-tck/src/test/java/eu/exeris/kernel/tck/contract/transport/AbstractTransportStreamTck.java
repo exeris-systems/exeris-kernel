@@ -245,7 +245,7 @@ public abstract class AbstractTransportStreamTck {
                         .as("read() should return -1 on remote close")
                         .isEqualTo(-1);
 
-                // Assert: unblocked within 50ms
+                // Assert: unblocked within 500ms
                 long returnedAt = readReturnedAt.get();
                 assertThat(returnedAt)
                         .as("read() should have returned after remote close (join backstop: 500ms)")

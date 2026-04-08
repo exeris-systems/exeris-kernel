@@ -122,13 +122,6 @@ final class NativeTcpStream implements TransportStream {
 
     @Override
     public int read(MemorySegment target, int maxBytes) {
-        if (closed.get()) {
-            if (remoteClosed.get()) {
-                return -1;
-            }
-            throw new IllegalStateException(STREAM_CLOSED_MESSAGE);
-        }
-        ensureTlsReady(true);
         if (target == null) {
             throw new IllegalArgumentException("target must not be null");
         }
@@ -138,6 +131,17 @@ final class NativeTcpStream implements TransportStream {
         if (maxBytes == 0) {
             return 0;
         }
+        if (closed.get()) {
+            if (remoteClosed.get()) {
+                return -1;
+            }
+            throw new IllegalStateException(STREAM_CLOSED_MESSAGE);
+        }
+        // Short-circuit: if peer already closed and no buffered data remain, skip TLS readiness
+        if (remoteClosed.get() && currentInbound == null && inboundQueue.isEmpty()) {
+            return -1;
+        }
+        ensureTlsReady(true);
 
         // Register calling VT for close-signal wakeup on first read
         streamVt.compareAndSet(null, Thread.currentThread());
