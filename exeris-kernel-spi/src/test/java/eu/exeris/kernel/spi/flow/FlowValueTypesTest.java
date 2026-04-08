@@ -197,7 +197,7 @@ class FlowValueTypesTest {
         @DisplayName("Blank providerId throws IllegalArgumentException")
         void blankProviderIdThrows() {
             assertThatThrownBy(() ->
-                    new FlowEngineCapabilities(false, false, false, false, false, false, ""))
+                    new FlowEngineCapabilities(false, false, false, false, false, false, false, ""))
                     .isInstanceOf(IllegalArgumentException.class);
         }
 
@@ -205,7 +205,7 @@ class FlowValueTypesTest {
         @DisplayName("Null providerId throws IllegalArgumentException")
         void nullProviderIdThrows() {
             assertThatThrownBy(() ->
-                    new FlowEngineCapabilities(false, false, false, false, false, false, null))
+                    new FlowEngineCapabilities(false, false, false, false, false, false, false, null))
                     .isInstanceOf(IllegalArgumentException.class);
         }
 
@@ -233,16 +233,16 @@ class FlowValueTypesTest {
         @Test
         @DisplayName("Structural equals: two identical custom caps are equal")
         void structuralEquality() {
-            FlowEngineCapabilities a = new FlowEngineCapabilities(true, false, true, false, true, true, "acme");
-            FlowEngineCapabilities b = new FlowEngineCapabilities(true, false, true, false, true, true, "acme");
+            FlowEngineCapabilities a = new FlowEngineCapabilities(true, false, true, false, true, true, true, "acme");
+            FlowEngineCapabilities b = new FlowEngineCapabilities(true, false, true, false, true, true, true, "acme");
             assertThat(a).isEqualTo(b);
         }
 
         @Test
         @DisplayName("Structural hashCode: equal caps have same hashCode")
         void structuralHashCode() {
-            FlowEngineCapabilities a = new FlowEngineCapabilities(true, false, true, false, true, true, "acme");
-            FlowEngineCapabilities b = new FlowEngineCapabilities(true, false, true, false, true, true, "acme");
+            FlowEngineCapabilities a = new FlowEngineCapabilities(true, false, true, false, true, true, true, "acme");
+            FlowEngineCapabilities b = new FlowEngineCapabilities(true, false, true, false, true, true, true, "acme");
             assertThat(a).hasSameHashCodeAs(b);
         }
     }

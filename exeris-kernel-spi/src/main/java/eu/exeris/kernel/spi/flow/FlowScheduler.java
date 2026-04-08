@@ -11,6 +11,8 @@ package eu.exeris.kernel.spi.flow;
 import eu.exeris.kernel.spi.flow.model.FlowContext;
 import eu.exeris.kernel.spi.flow.model.FlowExecutionPlan;
 
+import java.util.Optional;
+
 /**
  * SPI: Schedules {@link FlowExecutionPlan} instances and manages PARK/WAKE lifecycle.
  *
@@ -74,5 +76,19 @@ public interface FlowScheduler {
      *         not currently parked
      */
     void wake(FlowContext context);
+
+    /**
+     * Looks up a currently parked flow instance by its UUID components.
+     *
+     * <p>Community: linear scan over the parked-flows map. Suitable for choreography-
+     * triggered wakes where frequency is bounded by event rate, not flow count.
+     * Enterprise: O(1) lookup via off-heap slot index.
+     *
+     * @param instanceIdMost  most-significant bits of the flow instance UUID
+     * @param instanceIdLeast least-significant bits of the flow instance UUID
+     * @return an {@link Optional} containing the {@link FlowContext} if a parked instance
+     *         with the given UUID exists; empty otherwise
+     */
+    Optional<FlowContext> lookupParked(long instanceIdMost, long instanceIdLeast);
 }
 
