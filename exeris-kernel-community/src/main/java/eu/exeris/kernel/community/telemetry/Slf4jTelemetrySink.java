@@ -16,6 +16,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 
+import java.util.Objects;
+
 /**
  * Community fallback {@link TelemetrySink} that emits structured JSON through SLF4J.
  *
@@ -62,20 +64,22 @@ public final class Slf4jTelemetrySink implements TelemetrySink {
 
     @Override
     public void emit(KernelEvent event) {
-        if (closed || event == null) {
+        if (closed) {
             return;
         }
+        Objects.requireNonNull(event, "event");
 
         String code = sanitizeCode(event.code());
         String component = sanitizeNullable(event.component());
-        String level = event.level().name();
+        LogLevel resolvedLevel = resolveLogLevel(event.level(), code);
+        String resolvedLevelName = resolvedLevel.name();
         String timestamp = event.timestamp().toString();
         ExerisKernelException exception = event.exception();
 
-        MdcScope mdcScope = pushMdc(code, level, component, timestamp);
+        MdcScope mdcScope = pushMdc(code, resolvedLevelName, component, timestamp);
         try {
-            String json = buildJsonLine(event, code, component, timestamp, exception);
-            switch (resolveLogLevel(event.level(), code)) {
+            String json = buildJsonLine(resolvedLevelName, code, component, timestamp, exception);
+            switch (resolvedLevel) {
                 case INFO -> logger.info(json, exception);
                 case WARN -> logger.warn(json, exception);
                 case ERROR -> logger.error(json, exception);
@@ -139,17 +143,16 @@ public final class Slf4jTelemetrySink implements TelemetrySink {
     }
 
     private static String buildJsonLine(
-            KernelEvent event,
+            String resolvedLevelName,
             String code,
             String component,
             String timestamp,
             ExerisKernelException exception) {
-        String level = event.level().name();
         String message = exception != null ? sanitizeNullable(exception.getMessage()) : "";
         String rawArgs = toJsonArray(exception != null ? exception.rawArgs() : null);
         return "{"
                 + "\"timestamp\":\"" + escapeJson(timestamp) + "\","
-                + "\"level\":\"" + escapeJson(level) + "\","
+                + "\"level\":\"" + escapeJson(resolvedLevelName) + "\",
                 + "\"code\":\"" + escapeJson(code) + "\","
                 + "\"component\":\"" + escapeJson(component) + "\","
                 + "\"message\":\"" + escapeJson(message) + "\","
@@ -230,13 +233,29 @@ public final class Slf4jTelemetrySink implements TelemetrySink {
             switch (current) {
                 case '"' -> escaped.append("\\\"");
                 case '\\' -> escaped.append("\\\\");
+                case '\b' -> escaped.append("\\b");
+                case '\f' -> escaped.append("\\f");
                 case '\n' -> escaped.append("\\n");
                 case '\r' -> escaped.append("\\r");
                 case '\t' -> escaped.append("\\t");
-                default -> escaped.append(current);
+                default -> {
+                    if (current < 0x20) {
+                        appendUnicodeEscape(escaped, current);
+                    } else {
+                        escaped.append(current);
+                    }
+                }
             }
         }
         return escaped.toString();
+    }
+
+    private static void appendUnicodeEscape(StringBuilder builder, char value) {
+        builder.append("\\u00");
+        int high = (value >> 4) & 0x0F;
+        int low = value & 0x0F;
+        builder.append((char) (high < 10 ? '0' + high : 'a' + (high - 10)));
+        builder.append((char) (low < 10 ? '0' + low : 'a' + (low - 10)));
     }
 
     /* default */ enum LogLevel {

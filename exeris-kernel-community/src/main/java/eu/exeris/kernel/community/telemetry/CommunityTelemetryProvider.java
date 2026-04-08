@@ -24,7 +24,7 @@ import java.util.List;
  * <h2>Open-Core Positioning</h2>
  * <p>Community sinks produce structured JFR events and structured fallback logging via SLF4J,
  * with optional human-readable Console/File diagnostics.
- * There is no binary off-heap mmap dump — that is Enterprise-only ({@code BinaryBlackBoxSink}).
+ * There is no binary off-heap mmap dump — that is Enterprise-only ({@code BinaryGlassBoxSink}).
  *
  * <h2>Discovery</h2>
  * <p>Registered via {@code META-INF/services/eu.exeris.kernel.spi.telemetry.TelemetryProvider}.
@@ -52,13 +52,21 @@ public final class CommunityTelemetryProvider implements TelemetryProvider {
             if (config.fileSinkPath() != null && !config.fileSinkPath().isBlank()) {
                 sinks.add(new FileSink(Path.of(config.fileSinkPath()), config.maxEventQueueDepth()));
             }
-            if (sinks.isEmpty()) {
-                sinks.add(new Slf4jTelemetrySink());
-            }
-        } catch (IllegalArgumentException e) {
+        } catch (RuntimeException e) {
+            closeCreatedSinks(sinks, e);
             throw new TelemetryBootstrapException(PROVIDER_NAME, "Sink creation failed", e);
         }
         return List.copyOf(sinks);
+    }
+
+    private static void closeCreatedSinks(List<TelemetrySink> sinks, RuntimeException failure) {
+        for (TelemetrySink sink : sinks) {
+            try {
+                sink.close();
+            } catch (RuntimeException closeFailure) {
+                failure.addSuppressed(closeFailure);
+            }
+        }
     }
 
     @Override

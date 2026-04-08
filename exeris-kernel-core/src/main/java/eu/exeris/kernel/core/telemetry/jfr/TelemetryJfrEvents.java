@@ -228,13 +228,20 @@ public final class TelemetryJfrEvents {
     // EventEngineJfrEvent — EX-EVENT-6005 / EX-EVENT-6006 / EX-EVENT-6007
     // =========================================================================
 
+    /**
+     * Strongly-typed JFR event for event-engine failures.
+     *
+     * <p>rawArgs layout: Strings — e.g. eventType/projectionName/loopName, exceptionType, reason.
+     */
+    @Name("eu.exeris.kernel.telemetry.EventEngineFailure")
     @Label("Event Engine Failure")
-    @Category({"Exeris", "Telemetry", "Events"})
+    @Description("Event engine failure telemetry emitted via Core JFR sink")
+    @Category({"Exeris Kernel", "Telemetry", "Events"})
     @StackTrace(false)
     public static final class EventEngineJfrEvent extends Event {
         @Label("Error Code")    public String errorCode;
         @Label("Engine Name")   public String engineName;
-        @Label("Raw Arg 0")     public long   rawArg0;
-        @Label("Raw Arg 1")     public long   rawArg1;
+        @Label("Raw Arg 0")     public String rawArg0;
+        @Label("Raw Arg 1")     public String rawArg1;
     }
 }

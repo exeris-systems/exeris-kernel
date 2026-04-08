@@ -164,9 +164,10 @@ public final class JfrTelemetrySink implements TelemetrySink {
         }
         Object[] args = exception.rawArgs();
         jfr.errorCode  = code;
-        jfr.engineName = event.component();
-        jfr.rawArg0    = rawLong(args, 0);
-        jfr.rawArg1    = rawLong(args, 1);
+        String firstString = firstStringArg(args);
+        jfr.engineName = firstString != null ? firstString : event.component();
+        jfr.rawArg0    = rawString(args, 0);
+        jfr.rawArg1    = rawString(args, 1);
         jfr.commit();
     }
 
@@ -276,6 +277,22 @@ public final class JfrTelemetrySink implements TelemetrySink {
             return "";
         }
         return args[index] instanceof String str ? str : "";
+    }
+
+    /**
+     * Returns the first non-blank {@code String} element in {@code rawArgs}, or {@code null}
+     * if none exists. Used for EX-EVENT-* paths where the primary identifier is a String.
+     */
+    private static String firstStringArg(Object[] args) {
+        if (args == null) {
+            return null;
+        }
+        for (Object arg : args) {
+            if (arg instanceof String value && !value.isBlank()) {
+                return value;
+            }
+        }
+        return null;
     }
 
     private static String safeMessage(ExerisKernelException exception) {

@@ -18,7 +18,7 @@ import java.util.List;
  * <h2>Open-Core Tier Differentiation</h2>
  * <ul>
  *   <li><b>Community</b>: Returns {@code [ConsoleSink, JfrTelemetrySink]}. Text output + JFR events.</li>
- *   <li><b>Enterprise</b>: Returns {@code [BinaryBlackBoxSink]}. Direct off-heap mmap dump
+ *   <li><b>Enterprise</b>: Returns {@code [BinaryGlassBoxSink]}. Direct off-heap mmap dump
  *       of {@code rawArgs} with zero String allocation on the critical path.</li>
  * </ul>
  *

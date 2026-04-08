@@ -76,6 +76,10 @@ public final class FileSink implements TelemetrySink {
 
     @Override
     public void emit(KernelEvent event) {
+        if (!running) {
+            droppedCount.incrementAndGet();
+            return;
+        }
         if (!queue.offer(event)) {
             droppedCount.incrementAndGet();
         }

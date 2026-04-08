@@ -20,7 +20,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.StructuredTaskScope;
-import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -112,22 +111,19 @@ class FileSinkTest {
 
         @Test
         @DisplayName("Events are written to file after close()")
-        void eventsWrittenOnClose() throws IOException, InterruptedException {
+        void eventsWrittenOnClose() throws IOException {
             Path logFile = tempDir.resolve("flush.log");
             FileSink sink = new FileSink(logFile, 256);
             for (int i = 0; i < 10; i++) {
                 sink.emit(KernelEvent.info("EX-TEST-" + i, "event " + i));
             }
             sink.close();
-            // Writer thread should have flushed everything
-            TimeUnit.MILLISECONDS.sleep(100);
 
-            if (Files.exists(logFile)) {
-                List<String> lines = Files.readAllLines(logFile, StandardCharsets.UTF_8);
-                assertThat(lines)
-                        .as("At least some events should be persisted to the log file after close()")
-                        .isNotEmpty();
-            }
+            assertThat(logFile).exists();
+            List<String> lines = Files.readAllLines(logFile, StandardCharsets.UTF_8);
+            assertThat(lines)
+                    .as("At least some events should be persisted to the log file after close()")
+                    .isNotEmpty();
         }
 
         @Test
@@ -154,12 +150,13 @@ class FileSinkTest {
             Path logFile = tempDir.resolve("overflow.log");
             // Very small queue depth = 1 to trigger drops quickly
             FileSink sink = new FileSink(logFile, 1);
-            // Suspend writer to force overflow by holding POISON-like lock
-            for (int i = 0; i < 100; i++) {
-                sink.emit(KernelEvent.info("EX-OVF-" + i, "overflow test"));
+            long attempts = 0;
+            while (sink.droppedCount() == 0L && attempts < 10_000) {
+                sink.emit(KernelEvent.info("EX-OVF-" + attempts, "overflow test"));
+                attempts++;
             }
-            // Must not block — all emits return immediately
-            assertThat(sink.droppedCount()).isGreaterThanOrEqualTo(0L);
+            // Must not block — and sustained overflow must be reflected in droppedCount
+            assertThat(sink.droppedCount()).isGreaterThan(0L);
             sink.close();
         }
     }
