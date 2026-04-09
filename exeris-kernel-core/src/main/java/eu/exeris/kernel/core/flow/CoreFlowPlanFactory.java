@@ -98,6 +98,9 @@ final class CoreFlowPlanFactory implements FlowExecutionPlanFactory {
 
     private List<List<FlowTransitionDescriptor>> transitionBuckets(String definitionName, int stepCount) {
         List<FlowTransitionDescriptor> transitions = transitionsByDefinition.getOrDefault(definitionName, List.of());
+        if (config.maxTransitions() > 0 && transitions.size() > config.maxTransitions()) {
+            throw new IllegalArgumentException("FlowDefinition exceeds maxTransitions: " + transitions.size());
+        }
         List<List<FlowTransitionDescriptor>> buckets = new ArrayList<>(stepCount);
         for (int index = 0; index < stepCount; index++) {
             buckets.add(new ArrayList<>());

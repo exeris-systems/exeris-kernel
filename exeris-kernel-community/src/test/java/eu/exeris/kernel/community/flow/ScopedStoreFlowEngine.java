@@ -61,4 +61,12 @@ final class ScopedStoreFlowEngine implements FlowEngine {
     public void close() {
         delegate.close();
     }
+
+    @Override
+    public void registerChoreographyMapper(
+            eu.exeris.kernel.spi.flow.FlowChoreographyMapper mapper,
+            java.util.Collection<String> eventTypeNames,
+            eu.exeris.kernel.spi.events.EventBus bus) {
+        delegate.registerChoreographyMapper(mapper, eventTypeNames, bus);
+    }
 }

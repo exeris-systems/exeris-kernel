@@ -349,9 +349,11 @@ final class CoreFlowRuntime { // NOPMD
                         }
                         case PARK -> {
                             instance.state(FlowState.PARKED);
-                            parkedInstances.put(instance.key(), instance);
+                            RuntimeFlowInstance previous = parkedInstances.putIfAbsent(instance.key(), instance);
                             persistSnapshot(instance, FlowState.PARKED, stepIndex);
-                            parkedFlows.increment();
+                            if (previous == null) {
+                                parkedFlows.increment();
+                            }
                             return;
                         }
                         case FAIL -> {

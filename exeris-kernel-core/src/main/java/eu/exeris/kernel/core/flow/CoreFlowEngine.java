@@ -78,7 +78,11 @@ public final class CoreFlowEngine implements FlowEngine {
     @Override
     public void close() {
         for (Map.Entry<EventBus, SubscriptionToken> entry : choreographySubscriptions) {
-            entry.getKey().unsubscribe(entry.getValue());
+            try {
+                entry.getKey().unsubscribe(entry.getValue());
+            } catch (RuntimeException _) {
+                // best-effort unsubscribe
+            }
         }
         choreographySubscriptions.clear();
         runtime.close();
