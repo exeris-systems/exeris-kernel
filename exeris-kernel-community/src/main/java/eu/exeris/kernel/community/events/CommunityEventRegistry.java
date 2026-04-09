@@ -42,9 +42,13 @@ final class CommunityEventRegistry implements EventRegistry {
         if (existingName != null && !existingName.equals(spec.name())) {
             throw EventRegistryException.duplicateConflict(spec.name(), spec.ordinal());
         }
+        boolean insertedOrdinal = existingName == null;
 
         EventTypeSpec existing = byName.putIfAbsent(spec.name(), spec);
         if (existing != null && !existing.equals(spec)) {
+            if (insertedOrdinal) {
+                byOrdinal.remove(spec.ordinal(), spec.name());
+            }
             throw EventRegistryException.duplicateConflict(spec.name(), spec.ordinal());
         }
     }

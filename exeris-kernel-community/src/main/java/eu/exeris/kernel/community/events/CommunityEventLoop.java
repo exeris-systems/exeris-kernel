@@ -189,18 +189,17 @@ final class CommunityEventLoop implements EventLoop {
 
         try {
             List<EventDescriptor> readonlyDescriptors = Collections.unmodifiableList(descriptors);
-            int processorCount = processors.size();
-            if (processorCount > 1) {
-                for (EventPayload p : payloads) {
-                    for (int r = 1; r < processorCount; r++) {
-                        p.retain();
-                    }
-                }
-            }
             List<EventPayload> readonlyPayloads = Collections.unmodifiableList(payloads);
             for (EventBatchProcessor processor : processors) {
+                // Retain per-processor so each processor owns its own ref.
+                // The loop retains its original ref throughout.
+                for (EventPayload p : payloads) {
+                    p.retain();
+                }
                 processor.processBatch(readonlyDescriptors, readonlyPayloads);
             }
+            // All processors have closed their retained refs; loop closes its own surviving ref.
+            closePayloads(payloads);
             processedTotal.addAndGet(payloads.size());
         } catch (RuntimeException ex) {
             failedTotal.addAndGet(payloads.size());

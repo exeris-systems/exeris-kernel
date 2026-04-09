@@ -183,13 +183,23 @@ final class CommunityEventEngine implements EventEngine {
                 return;
             }
 
-            boolean queued = queue.push(descriptor, payload);
-            if (!queued) {
-                // push() returns false only on InterruptedException (interrupt flag already restored by queue).
-                // Bus took ownership but cannot deliver — close the payload before propagating.
+            try {
+                boolean queued = queue.push(descriptor, payload);
+                if (!queued) {
+                    // push() returns false only on InterruptedException (interrupt flag already restored by queue).
+                    // Bus took ownership but cannot deliver — close the caller's ref before propagating.
+                    payload.close();
+                    throw new EventBusException("Interrupted while enqueueing persistent event '"
+                            + registry.nameOfOrdinal(descriptor.eventTypeOrdinal()) + "'");
+                }
+            } catch (EventBusException ex) {
+                throw ex;
+            } catch (RuntimeException ex) {
+                // push() retained internally then threw; it already closed its own retain.
+                // Close the caller's ref to prevent a leak.
                 payload.close();
-                throw new EventBusException("Interrupted while enqueueing persistent event '"
-                        + registry.nameOfOrdinal(descriptor.eventTypeOrdinal()) + "'");
+                throw new EventBusException("Failed to enqueue persistent event '"
+                        + registry.nameOfOrdinal(descriptor.eventTypeOrdinal()) + "'", ex);
             }
         }
     }
