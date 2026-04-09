@@ -18,6 +18,7 @@ import eu.exeris.kernel.spi.events.EventRegistry;
 import eu.exeris.kernel.spi.exceptions.events.EventEngineException;
 import jdk.jfr.FlightRecorder;
 
+import java.lang.foreign.MemorySegment;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -25,7 +26,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.StructuredTaskScope;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.LockSupport;
@@ -175,7 +178,7 @@ final class CommunityEventLoop implements EventLoop {
         }
     }
 
-    @SuppressWarnings("PMD.AvoidCatchingGenericException")
+    @SuppressWarnings({"PMD.AvoidCatchingGenericException", "PMD.AvoidInstantiatingObjectsInLoops"})
     private void dispatchBatch(int ordinal, List<EventDescriptor> descriptors, List<EventPayload> payloads) {
         long started = System.nanoTime();
         List<EventBatchProcessor> processors = processorsByOrdinal.get(ordinal);
@@ -187,75 +190,65 @@ final class CommunityEventLoop implements EventLoop {
             return;
         }
 
-        try {
-            List<EventDescriptor> readonlyDescriptors = Collections.unmodifiableList(descriptors);
-            List<EventPayload> readonlyPayloads = Collections.unmodifiableList(payloads);
+        List<EventDescriptor> readonlyDescriptors = Collections.unmodifiableList(descriptors);
+        ConcurrentLinkedQueue<Throwable> failures = new ConcurrentLinkedQueue<>();
+
+        // Fork each processor on its own virtual thread. awaitAll() guarantees
+        // every processor completes (succeeds or throws) before the loop tick
+        // advances — structured concurrency, no orphan threads.
+        try (StructuredTaskScope<Void, Void> scope =
+                     StructuredTaskScope.open(StructuredTaskScope.Joiner.<Void>awaitAll())) {
             for (EventBatchProcessor processor : processors) {
-                // Retain per-processor so each processor owns its own ref.
-                // The loop retains its original ref throughout.
+                // Retain per-processor; wrap for RAII tracking so the loop can
+                // close any refs a processor failed to close without risking over-release.
+                List<TrackingPayload> wrappers = new ArrayList<>(payloads.size());
                 for (EventPayload p : payloads) {
                     p.retain();
+                    wrappers.add(new TrackingPayload(p));
                 }
-                processor.processBatch(readonlyDescriptors, readonlyPayloads);
+                List<EventPayload> wrappedView = Collections.unmodifiableList(wrappers);
+                scope.fork(() -> {
+                    try {
+                        processor.processBatch(readonlyDescriptors, wrappedView);
+                    } catch (RuntimeException ex) {
+                        // Close any wrappers the processor failed to close.
+                        for (TrackingPayload w : wrappers) {
+                            if (!w.isClosed()) {
+                                w.close();
+                            }
+                        }
+                        failures.add(ex);
+                    }
+                    return null;
+                });
             }
-            // All processors have closed their retained refs; loop closes its own surviving ref.
-            closePayloads(payloads);
+            try {
+                scope.join();
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+            }
+        }
+
+        // Loop closes its own surviving refs regardless of processor outcomes.
+        closePayloads(payloads);
+
+        if (failures.isEmpty()) {
             processedTotal.addAndGet(payloads.size());
-        } catch (RuntimeException ex) {
+        } else {
             failedTotal.addAndGet(payloads.size());
             if (FlightRecorder.isInitialized()) {
+                Throwable first = failures.peek();
                 EventLoopFailureEvent evt = new EventLoopFailureEvent();
                 if (evt.isEnabled()) {
                     evt.loopName      = "community-event-loop";
                     evt.phase         = "DISPATCH";
-                    evt.exceptionType = ex.getClass().getSimpleName();
+                    evt.exceptionType = first != null ? first.getClass().getSimpleName() : "Unknown";
                     evt.affectedCount = payloads.size();
                     evt.commit();
                 }
             }
-            requeueOrClose(descriptors, payloads);
-        } finally {
-            dispatchNanosTotal.addAndGet(System.nanoTime() - started);
         }
-    }
-
-    @SuppressWarnings({"PMD.CloseResource", "PMD.AvoidCatchingGenericException"})
-    private void requeueOrClose(List<EventDescriptor> descriptors, List<EventPayload> payloads) {
-        for (int i = 0; i < payloads.size(); i++) {
-            EventDescriptor descriptor = descriptors.get(i);
-            EventPayload payload = payloads.get(i);
-            boolean shouldRequeue = descriptor.isPersistent() && payload.isAlive();
-
-            boolean requeued = false;
-            try {
-                if (shouldRequeue) {
-                    requeued = queue.push(descriptor, payload);
-                }
-            } catch (RuntimeException ex) {
-                failedTotal.incrementAndGet();
-            } finally {
-                closePayloadQuietly(payload);
-            }
-
-            if (shouldRequeue && !requeued) {
-                failedTotal.incrementAndGet();
-                emitRequeueFailure();
-            }
-        }
-    }
-
-    private static void emitRequeueFailure() {
-        if (!FlightRecorder.isInitialized()) {
-            return;
-        }
-        EventLoopFailureEvent evt = new EventLoopFailureEvent();
-        if (evt.isEnabled()) {
-            evt.loopName      = "community-event-loop";
-            evt.phase         = "REQUEUE";
-            evt.exceptionType = "QueueFull";
-            evt.affectedCount = 1;
-            evt.commit();
-        }
+        dispatchNanosTotal.addAndGet(System.nanoTime() - started);
     }
 
     @SuppressWarnings("PMD.CloseResource")
@@ -265,12 +258,56 @@ final class CommunityEventLoop implements EventLoop {
         }
     }
 
-    @SuppressWarnings("PMD.AvoidCatchingGenericException")
-    private static void closePayloadQuietly(EventPayload payload) {
-        try {
-            payload.close();
-        } catch (RuntimeException ex) {
-            // Best-effort close to ensure batch processing continues.
+    /**
+     * Delegates all {@link EventPayload} operations to the underlying ref.
+     * Tracks whether {@link #close()} has been called so the loop can deterministically
+     * close any refs the processor failed to close — preventing refCount leaks without
+     * risking over-release.
+     */
+    @SuppressWarnings("PMD.CloseResource")
+    private static final class TrackingPayload implements EventPayload {
+        private final EventPayload delegate;
+        private volatile boolean closed = false;
+
+        TrackingPayload(EventPayload delegate) {
+            this.delegate = delegate;
+        }
+
+        boolean isClosed() {
+            return closed;
+        }
+
+        @Override
+        public MemorySegment segment() {
+            return delegate.segment();
+        }
+
+        @Override
+        public int length() {
+            return delegate.length();
+        }
+
+        @Override
+        public void retain() {
+            delegate.retain();
+        }
+
+        @Override
+        public void close() {
+            if (!closed) {
+                closed = true;
+                delegate.close();
+            }
+        }
+
+        @Override
+        public int refCount() {
+            return delegate.refCount();
+        }
+
+        @Override
+        public boolean isAlive() {
+            return !closed && delegate.isAlive();
         }
     }
 }

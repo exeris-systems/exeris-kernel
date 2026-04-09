@@ -18,11 +18,11 @@ import eu.exeris.kernel.spi.events.SubscriptionToken;
 import eu.exeris.kernel.spi.exceptions.events.EventBusException;
 import jdk.jfr.FlightRecorder;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.StructuredTaskScope;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -165,7 +165,7 @@ public final class InMemoryEventBus implements EventBus {
         // awaitAll() ensures every handler runs to completion (including payload close)
         // even if some throw. Failures are surfaced as suppressed exceptions after all
         // handlers have finished — RAII balanced before exception propagation.
-        List<Throwable> failures = new ArrayList<>();
+        ConcurrentLinkedQueue<Throwable> failures = new ConcurrentLinkedQueue<>();
         try (StructuredTaskScope<Void, Void> scope =
                      StructuredTaskScope.open(StructuredTaskScope.Joiner.<Void>awaitAll())) {
             for (Slot slot : slots) {
