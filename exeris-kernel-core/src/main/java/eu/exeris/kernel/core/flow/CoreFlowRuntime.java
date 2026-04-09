@@ -218,7 +218,7 @@ final class CoreFlowRuntime { // NOPMD
         } else {
             RuntimeFlowInstance live = liveInstances.get(key);
             if (live != null && live.state() != FlowState.PARKED) {
-                return;
+                throw notParked(key);
             }
             instance = restoreFromSnapshot(key, null);
             if (instance == null) {
@@ -252,6 +252,12 @@ final class CoreFlowRuntime { // NOPMD
         CoreFlowExecutionPlan resolvedPlan = directPlan;
         if (resolvedPlan == null) {
             resolvedPlan = planCatalog.get(snapshot.get().definitionName());
+        } else if (!resolvedPlan.definitionName().equals(snapshot.get().definitionName())) {
+            throw new FlowEngineException(
+                    "Plan definition mismatch: scheduled '"
+                    + resolvedPlan.definitionName()
+                    + "' but snapshot belongs to '"
+                    + snapshot.get().definitionName() + "'");
         }
         if (resolvedPlan == null) {
             throw new FlowEngineException(
@@ -319,11 +325,11 @@ final class CoreFlowRuntime { // NOPMD
                 FlowOutcome outcome = executeStep(instance, stepIndex, stepAction);
 
                 synchronized (instance.monitor()) {
-                    if (instance.state() == FlowState.PARKED) {
-                        return;
-                    }
                     switch (outcome) {
                         case CONTINUE -> {
+                            if (instance.state() == FlowState.PARKED) {
+                                return;
+                            }
                             if (step.hasCompensation() && config.compensationEnabled()) {
                                 instance.pushCompensation(step.stepId());
                             }
