@@ -48,6 +48,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.LockSupport;
+import java.util.function.BooleanSupplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -92,7 +93,7 @@ class CoreFlowEngineTest {
 
             go.countDown();
             assertThat(done.await(10, TimeUnit.SECONDS)).isTrue();
-            LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(1500));
+            awaitTrue(5_000, () -> executions.get() >= 1);
 
             assertThat(executions.get()).isEqualTo(1);
         }
@@ -120,7 +121,7 @@ class CoreFlowEngineTest {
                     .run(() -> engine.scheduler().schedule(plan, context));
 
             assertThat(completed.await(5, TimeUnit.SECONDS)).isTrue();
-            LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(300));
+            awaitTrue(5_000, () -> !eventEngine.events().isEmpty());
 
             assertThat(eventEngine.registry().resolve(FLOW_PROGRESS_EVENT_TYPE)).isNotNull();
             assertThat(eventEngine.events())
@@ -152,7 +153,7 @@ class CoreFlowEngineTest {
                     .run(() -> engine.scheduler().schedule(plan, context));
 
             assertThat(completed.await(5, TimeUnit.SECONDS)).isTrue();
-            LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(300));
+            awaitTrue(5_000, () -> engine.stats().completedFlows() >= 1);
             assertThat(engine.stats().completedFlows()).isEqualTo(1);
         }
     }
@@ -218,7 +219,7 @@ class CoreFlowEngineTest {
                         if (!firstComplete.await(5, TimeUnit.SECONDS)) {
                             throw new AssertionError("First step did not complete");
                         }
-                        LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(300));
+                        awaitTrue(5_000, () -> store.exists(context.instanceIdMost(), context.instanceIdLeast()));
 
                         assertThat(store.exists(context.instanceIdMost(), context.instanceIdLeast())).isTrue();
 
@@ -226,7 +227,7 @@ class CoreFlowEngineTest {
                         if (!secondComplete.await(5, TimeUnit.SECONDS)) {
                             throw new AssertionError("Second step did not complete");
                         }
-                        LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(300));
+                        awaitTrue(5_000, () -> engine.stats().completedFlows() >= 1);
 
                         assertThat(engine.stats().completedFlows()).isEqualTo(1);
                     } catch (InterruptedException ex) {
@@ -297,7 +298,7 @@ class CoreFlowEngineTest {
                 // Schedule triggers failure in third step (happens in background thread)
                 engine.scheduler().schedule(plan, context);
 
-                LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(500));
+                awaitTrue(5_000, () -> engine.stats().failedFlows() >= 1);
 
                 // Verify compensation executed
                 List<Integer> actual = List.copyOf(compensationOrder);
@@ -334,7 +335,7 @@ class CoreFlowEngineTest {
                 }
 
                 assertThat(failureObserved.await(5, TimeUnit.SECONDS)).isTrue();
-                LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(300));
+                awaitTrue(5_000, () -> engine.stats().failedFlows() >= 1);
 
                 assertThat(engine.stats().failedFlows()).isGreaterThanOrEqualTo(1);
             }
@@ -381,7 +382,7 @@ class CoreFlowEngineTest {
 
                 go.countDown();
                 assertThat(done.await(5, TimeUnit.SECONDS)).isTrue();
-                LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(500));
+                awaitTrue(5_000, () -> executions.get() >= 1);
 
                 // Due to concurrent scheduling timing, at least 1 execution guaranteed
                 assertThat(executions.get()).isGreaterThanOrEqualTo(1);
@@ -416,7 +417,6 @@ class CoreFlowEngineTest {
 
                 // Let it start
                 assertThat(started.await(2, TimeUnit.SECONDS)).isTrue();
-                LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(50));
 
                 // Concurrent park should be safe (no-op or queued)
                 engine.scheduler().park(context);
@@ -454,14 +454,12 @@ class CoreFlowEngineTest {
 
                 engine.scheduler().schedule(plan, context);
                 assertThat(completed.await(5, TimeUnit.SECONDS)).isTrue();
-                LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(300));
+                awaitTrue(5_000, () -> engine.stats().completedFlows() >= 1);
 
                 long completedBefore = engine.stats().completedFlows();
 
                 // Park should be no-op on completed flow
                 engine.scheduler().park(context);
-
-                LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(100));
 
                 // No change expected
                 assertThat(engine.stats().completedFlows()).isEqualTo(completedBefore);
@@ -487,14 +485,12 @@ class CoreFlowEngineTest {
 
                 engine.scheduler().schedule(plan, context);
                 assertThat(completed.await(5, TimeUnit.SECONDS)).isTrue();
-                LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(300));
+                awaitTrue(5_000, () -> engine.stats().completedFlows() >= 1);
 
                 long completedBefore = engine.stats().completedFlows();
 
                 // Wake should be no-op on completed flow
                 engine.scheduler().wake(context);
-
-                LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(100));
 
                 // No change expected
                 assertThat(engine.stats().completedFlows()).isEqualTo(completedBefore);
@@ -536,7 +532,7 @@ class CoreFlowEngineTest {
                 FlowContext context = context("multi-step-instance", definition.name());
 
                 engine.scheduler().schedule(plan, context);
-                LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(500));
+                awaitTrue(5_000, () -> engine.stats().completedFlows() >= 1);
 
                 assertThat(executedSteps)
                         .contains(0, 1, 2, 3)
@@ -570,7 +566,7 @@ class CoreFlowEngineTest {
 
                 engine.scheduler().schedule(plan, context);
                 assertThat(parked.await(5, TimeUnit.SECONDS)).isTrue();
-                LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(300));
+                awaitTrue(5_000, () -> engine.stats().parkedFlows() >= 1);
 
                 assertThat(engine.stats().parkedFlows()).isEqualTo(1);
                 assertThat(engine.stats().completedFlows()).isEqualTo(0);
@@ -603,11 +599,26 @@ class CoreFlowEngineTest {
                 FlowContext context = context("complete-skip-instance", definition.name());
 
                 engine.scheduler().schedule(plan, context);
-                LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(300));
+                awaitTrue(5_000, () -> engine.stats().completedFlows() >= 1);
 
                 assertThat(executed).containsExactly(0, 1);
                 assertThat(engine.stats().completedFlows()).isEqualTo(1);
             }
+        }
+    }
+
+    /**
+     * Polls {@code condition} every 10 ms until it returns {@code true} or {@code timeoutMs} expires.
+     * Throws {@link AssertionError} if the condition is still false after the timeout.
+     */
+    private static void awaitTrue(long timeoutMs, BooleanSupplier condition)
+            throws InterruptedException {
+        long deadline = System.currentTimeMillis() + timeoutMs;
+        while (!condition.getAsBoolean()) {
+            if (System.currentTimeMillis() > deadline) {
+                throw new AssertionError("Condition not met within " + timeoutMs + " ms");
+            }
+            Thread.sleep(10);
         }
     }
 

@@ -119,9 +119,10 @@ final class CoreFlowRuntime { // NOPMD
         }
         boolean interrupted = false;
         for (Thread thread : threads) {
-            while (thread.isAlive()) {
+            long deadline = System.nanoTime() + 5_000_000_000L;
+            while (thread.isAlive() && System.nanoTime() < deadline) {
                 try {
-                    thread.join();
+                    thread.join(java.time.Duration.ofMillis(100));
                 } catch (InterruptedException ex) {
                     interrupted = true;
                 }
