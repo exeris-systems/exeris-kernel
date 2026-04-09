@@ -18,6 +18,7 @@ import eu.exeris.kernel.spi.events.SubscriptionToken;
 import eu.exeris.kernel.spi.exceptions.events.EventBusException;
 import jdk.jfr.FlightRecorder;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -155,31 +156,48 @@ public final class InMemoryEventBus implements EventBus {
         }
 
         int slotCount = slots.size();
-        if (slotCount > MULTI_SUBSCRIBER_THRESHOLD) {
-            for (int i = 1; i < slotCount; i++) {
+        // Build one TrackingWrapper per slot so deterministic cleanup is possible on any
+        // early-exit path (interrupt, RuntimeException) — every retain() is balanced.
+        List<TrackingWrapper> wrappers = new ArrayList<>(slotCount);
+        for (int i = 0; i < slotCount; i++) {
+            if (i > 0) {
                 payload.retain();
             }
+            wrappers.add(new TrackingWrapper(payload));
         }
 
-        // Calling thread is the scope owner — fork, join, close.
-        // awaitAll() ensures every handler runs to completion (including payload close)
-        // even if some throw. Failures are surfaced as suppressed exceptions after all
-        // handlers have finished — RAII balanced before exception propagation.
         ConcurrentLinkedQueue<Throwable> failures = new ConcurrentLinkedQueue<>();
         try (StructuredTaskScope<Void, Void> scope =
                      StructuredTaskScope.open(StructuredTaskScope.Joiner.<Void>awaitAll())) {
-            for (Slot slot : slots) {
-                EventPayload slotPayload = payload;
+            for (int i = 0; i < slotCount; i++) {
+                Slot slot = slots.get(i);
+                TrackingWrapper wrapper = wrappers.get(i);
                 scope.fork(() -> {
                     try {
-                        slot.handler().handle(descriptor, slotPayload);
+                        slot.handler().handle(descriptor, wrapper);
                     } catch (RuntimeException ex) {
                         failures.add(ex);
+                    } finally {
+                        // Close any ref the handler failed to close.
+                        if (!wrapper.isClosed()) {
+                            wrapper.close();
+                        }
                     }
                     return null;
                 });
             }
-            scope.join();
+            try {
+                scope.join();
+            } catch (InterruptedException ex) {
+                // Close any wrappers whose handler never ran or never closed due to cancellation.
+                for (TrackingWrapper w : wrappers) {
+                    if (!w.isClosed()) {
+                        w.close();
+                    }
+                }
+                Thread.currentThread().interrupt();
+                throw ex;
+            }
         }
         if (!failures.isEmpty()) {
             EventBusException ex = new EventBusException("One or more event handlers failed during publishAndAwait");
@@ -249,4 +267,56 @@ public final class InMemoryEventBus implements EventBus {
      * Valhalla-ready: primitive {@code long} key, no identity operations.
      */
     private record Slot(long ordinalSeq, EventHandler handler) {}
+
+    /**
+     * Delegates all {@link EventPayload} operations to the underlying ref.
+     * Tracks whether {@link #close()} has been called so the bus can deterministically
+     * release any ref that a handler failed to close, without risking over-release.
+     */
+    @SuppressWarnings("PMD.CloseResource")
+    private static final class TrackingWrapper implements EventPayload {
+        private final EventPayload delegate;
+        private volatile boolean closed = false;
+
+        TrackingWrapper(EventPayload delegate) {
+            this.delegate = delegate;
+        }
+
+        boolean isClosed() {
+            return closed;
+        }
+
+        @Override
+        public java.lang.foreign.MemorySegment segment() {
+            return delegate.segment();
+        }
+
+        @Override
+        public int length() {
+            return delegate.length();
+        }
+
+        @Override
+        public void retain() {
+            delegate.retain();
+        }
+
+        @Override
+        public void close() {
+            if (!closed) {
+                closed = true;
+                delegate.close();
+            }
+        }
+
+        @Override
+        public int refCount() {
+            return delegate.refCount();
+        }
+
+        @Override
+        public boolean isAlive() {
+            return !closed && delegate.isAlive();
+        }
+    }
 }

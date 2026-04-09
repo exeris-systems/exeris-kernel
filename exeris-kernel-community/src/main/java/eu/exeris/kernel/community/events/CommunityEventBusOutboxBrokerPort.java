@@ -35,7 +35,7 @@ final class CommunityEventBusOutboxBrokerPort implements OutboxBrokerPort {
     public int publish(List<OutboxEntry> batch) {
         int published = 0;
         for (OutboxEntry entry : batch) {
-            EventPayload brokerPayload = new CommunityHeapEventPayload(
+            EventPayload brokerPayload = CommunityHeapEventPayload.wrap(
                     CommunityHeapEventPayload.copyBytes(entry.payload()));
             try {
                 eventBus.publish(entry.descriptor(), brokerPayload);

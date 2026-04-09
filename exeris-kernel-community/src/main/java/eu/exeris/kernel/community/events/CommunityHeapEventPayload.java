@@ -36,11 +36,11 @@ final class CommunityHeapEventPayload implements EventPayload {
      */
     @SuppressWarnings("PMD.ArrayIsStoredDirectly")
     /* default */ static CommunityHeapEventPayload wrap(byte[] bytes) {
-        return new CommunityHeapEventPayload(bytes, false);
+        return new CommunityHeapEventPayload(bytes, (Void) null);
     }
 
-    @SuppressWarnings({"PMD.UnusedFormalParameter", "unused"})
-    private CommunityHeapEventPayload(byte[] bytes, boolean ignored) {
+    @SuppressWarnings("PMD.ArrayIsStoredDirectly")
+    private CommunityHeapEventPayload(byte[] bytes, Void noCopy) {
         this.bytes = bytes;
         this.segment = MemorySegment.ofArray(this.bytes).asReadOnly();
         this.refCount = new AtomicInteger(1);
