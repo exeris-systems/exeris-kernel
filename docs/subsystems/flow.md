@@ -50,3 +50,17 @@
 - If no event engine is bound, event registration is unavailable, or publishing fails, flow execution continues unchanged.
 - The progress payload is intentionally small and currently includes the definition name, step index, and flow state.
 - Only terminal state transitions (`COMPLETED`, `FAILED_ROLLEDBACK`) emit a progress event; intermediate states are skipped to avoid allocation on hot paths.
+
+---
+
+## Known Constraints
+
+### Terminal-State Catalog Retention
+
+`CoreFlowRuntime` maintains a `terminalStateCatalog` map that records every flow that reaches a terminal state (`COMPLETED`, `FAILED_ROLLEDBACK`). This map serves as an in-process idempotency fence — it prevents re-scheduling or re-waking already-terminal flows within a single runtime lifetime.
+
+**Current behavior:** entries accumulate from `start()` until `close()`. The map is fully cleared on `close()`. There is no per-entry TTL, cap, or eviction policy.
+
+**Implication:** For long-running runtimes processing very high flow throughput, `FlowKey` entries may accumulate in heap between `start()` and `close()`. This is a known gap. Implementing eviction requires a correctness-aware design — an overly aggressive policy could allow re-scheduling a completed flow.
+
+**Future work:** a configurable `terminalCatalogMaxSize` (or TTL) property in `FlowEngineConfig`, governed by a policy decision documented here and in `docs/ROADMAP.md`. No ADR exists for this yet; one should be created before implementation.

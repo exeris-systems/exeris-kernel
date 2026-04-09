@@ -36,6 +36,8 @@ package eu.exeris.kernel.spi.flow;
  *                               {@link FlowEngine#start()} (Enterprise only)
  * @param persistenceBacked      {@code true} if flow snapshot persistence is available
  * @param compensationSupport    {@code true} if backward compensation (saga rollback) is supported
+ * @param choreographySupport    {@code true} if event-driven saga choreography via
+ *                               {@link FlowEngine#registerChoreographyMapper} is supported
  * @param providerId             stable identifier of the provider that created this engine
  *                               (e.g. {@code "community"}, {@code "enterprise"})
  *
@@ -48,6 +50,7 @@ public record FlowEngineCapabilities(
         boolean zeroGcAfterStart,
         boolean persistenceBacked,
         boolean compensationSupport,
+        boolean choreographySupport,
         String providerId
 ) {
 
@@ -69,7 +72,7 @@ public record FlowEngineCapabilities(
      * }</pre>
      */
     public static final FlowEngineCapabilities COMMUNITY = new FlowEngineCapabilities(
-            false, false, false, false, true, true, "community"
+            false, false, false, false, true, true, true, "community"
     );
 
     /**
@@ -88,7 +91,7 @@ public record FlowEngineCapabilities(
      * }</pre>
      */
     public static final FlowEngineCapabilities ENTERPRISE = new FlowEngineCapabilities(
-            true, true, true, true, true, true, "enterprise"
+            true, true, true, true, true, true, true, "enterprise"
     );
 
     // CHECKSTYLE.ON: DeclarationOrder
@@ -127,6 +130,7 @@ public record FlowEngineCapabilities(
                 zeroGcAfterStart,
                 persistenceBacked,
                 compensationSupport,
+                choreographySupport,
                 newProviderId
         );
     }
