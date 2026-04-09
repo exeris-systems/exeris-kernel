@@ -1,0 +1,166 @@
+/*
+ * Copyright (C) 2025-2026 Exeris Systems.
+ *
+ * Licensed under the Apache License, Version 2.0 with Commons Clause.
+ * You may use, modify, and distribute this file under those terms.
+ * Commercial resale of this software as a competing product is prohibited.
+ * See LICENSE-COMMUNITY in the repository root for the full text.
+ */
+package eu.exeris.kernel.core.http.routing;
+
+import eu.exeris.kernel.spi.http.HttpExchange;
+import eu.exeris.kernel.spi.http.HttpHandler;
+import eu.exeris.kernel.spi.http.HttpMethod;
+import eu.exeris.kernel.spi.http.HttpStatus;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
+
+/**
+ * Transport-agnostic HTTP request router. Matches on (method, path) pairs using exact or prefix
+ * semantics. Provides HEAD→GET fallback per RFC 9110 §9.3.2. Thread-safe after construction.
+ *
+ * <p>Build with {@link #builder()}:
+ * <pre>{@code
+ * HttpRouter router = HttpRouter.builder()
+ *     .route(HttpMethod.GET, "/health",    e -> e.respond(HttpStatus.OK))
+ *     .route(HttpMethod.GET, "/api/users", usersHandler)
+ *     .prefixRoute(HttpMethod.GET, "/static", staticFileHandler)
+ *     .build();
+ * }</pre>
+ */
+public final class HttpRouter implements HttpHandler {
+
+    private static final HttpHandler DEFAULT_NOT_FOUND = exchange ->
+            exchange.respond(HttpStatus.NOT_FOUND);
+
+    private final List<RouteEntry> exactRoutes;
+    private final List<RouteEntry> prefixRoutes;
+    private final HttpHandler notFoundHandler;
+
+    private HttpRouter(List<RouteEntry> exactRoutes,
+                       List<RouteEntry> prefixRoutes,
+                       HttpHandler notFoundHandler) {
+        this.exactRoutes = List.copyOf(exactRoutes);
+        this.prefixRoutes = List.copyOf(prefixRoutes);
+        this.notFoundHandler = notFoundHandler;
+    }
+
+    public static Builder builder() {
+        return new Builder();
+    }
+
+    @Override
+    public void handle(HttpExchange exchange) {
+        String path = stripQuery(exchange.request().path());
+        HttpMethod method = exchange.request().method();
+
+        HttpHandler handler = resolve(method, path);
+        if (handler != null) {
+            handler.handle(exchange);
+            return;
+        }
+
+        // HEAD → GET fallback per RFC 9110 §9.3.2
+        if (method == HttpMethod.HEAD) {
+            handler = resolve(HttpMethod.GET, path);
+            if (handler != null) {
+                handler.handle(exchange);
+                return;
+            }
+        }
+
+        notFoundHandler.handle(exchange);
+    }
+
+    private HttpHandler resolve(HttpMethod method, String path) {
+        for (RouteEntry entry : exactRoutes) {
+            if (entry.method() == method && entry.path().equals(path)) {
+                return entry.handler();
+            }
+        }
+        for (RouteEntry entry : prefixRoutes) {
+            if (entry.method() == method && matchesPrefix(path, entry.path())) {
+                return entry.handler();
+            }
+        }
+        return null;
+    }
+
+    private static boolean matchesPrefix(String path, String prefix) {
+        if (!path.startsWith(prefix)) {
+            return false;
+        }
+        int len = prefix.length();
+        return path.length() == len || path.charAt(len) == '/';
+    }
+
+    private static String stripQuery(String path) {
+        int idx = path.indexOf('?');
+        return idx < 0 ? path : path.substring(0, idx);
+    }
+
+    private record RouteEntry(HttpMethod method, String path, HttpHandler handler) {}
+
+    public static final class Builder {
+
+        private static final String HANDLER_PARAM = "handler";
+
+        private final List<RouteEntry> exactRoutes = new ArrayList<>();
+        private final List<RouteEntry> prefixRoutes = new ArrayList<>();
+        private HttpHandler notFoundHandler = DEFAULT_NOT_FOUND;
+
+        private Builder() {}
+
+        /** Registers a single (method, path) → handler exact route. */
+        public Builder route(HttpMethod method, String path, HttpHandler handler) {
+            Objects.requireNonNull(method, "method");
+            Objects.requireNonNull(path, "path");
+            Objects.requireNonNull(handler, HANDLER_PARAM);
+            exactRoutes.add(new RouteEntry(method, path, handler));
+            return this;
+        }
+
+        /** Registers one handler for a path under multiple HTTP methods. */
+        public Builder route(HttpHandler handler, String path, HttpMethod... methods) {
+            Objects.requireNonNull(handler, HANDLER_PARAM);
+            Objects.requireNonNull(path, "path");
+            Objects.requireNonNull(methods, "methods");
+            for (HttpMethod method : methods) {
+                Objects.requireNonNull(method, "method");
+                exactRoutes.add(new RouteEntry(method, path, handler));
+            }
+            return this;
+        }
+
+        /**
+         * Registers a prefix route. A trailing {@code /*} suffix is stripped automatically.
+         * Matches require a path boundary ({@code /}) or exact length match
+         * to prevent partial-segment false positives (e.g. {@code /api} does not match
+         * {@code /apiv2}).
+         */
+        public Builder prefixRoute(HttpMethod method, String pathPrefix, HttpHandler handler) {
+            Objects.requireNonNull(method, "method");
+            Objects.requireNonNull(pathPrefix, "pathPrefix");
+            Objects.requireNonNull(handler, HANDLER_PARAM);
+            String normalized = pathPrefix.endsWith("/*")
+                    ? pathPrefix.substring(0, pathPrefix.length() - 2)
+                    : pathPrefix;
+            prefixRoutes.add(new RouteEntry(method, normalized, handler));
+            return this;
+        }
+
+        /** Overrides the default 404 handler. */
+        public Builder notFound(HttpHandler handler) {
+            this.notFoundHandler = Objects.requireNonNull(handler, HANDLER_PARAM);
+            return this;
+        }
+
+        /** Builds the immutable router and emits a JFR lifecycle event. */
+        public HttpRouter build() {
+            HttpRouterRegisteredEvent.emit(exactRoutes.size(), prefixRoutes.size());
+            return new HttpRouter(exactRoutes, prefixRoutes, notFoundHandler);
+        }
+    }
+}

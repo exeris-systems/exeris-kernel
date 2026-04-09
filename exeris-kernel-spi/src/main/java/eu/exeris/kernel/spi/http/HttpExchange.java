@@ -63,6 +63,33 @@ public interface HttpExchange {
     void respond(HttpResponse response);
 
     /**
+     * Writes a typed response payload using the exchange's response-encoding pipeline.
+     *
+     * <p>This is an additive path for auto-binding payload responses. Implementations that
+     * do not support typed response encoding may keep legacy behavior and throw
+     * {@link UnsupportedOperationException}.
+     *
+     * @param response typed response payload descriptor; must not be {@code null}
+     * @throws IllegalStateException if {@code respond} has already been called on this exchange
+     * @throws UnsupportedOperationException if typed response encoding is not supported
+     */
+    default void respond(HttpTypedResponse response) {
+        throw new UnsupportedOperationException("Typed response encoding is not supported by this exchange");
+    }
+
+    /**
+     * Convenience overload for typed payload responses with no extra headers.
+     *
+     * @param status response status; must not be {@code null}
+     * @param payload payload object to encode; may be {@code null}
+     * @throws IllegalStateException if {@code respond} has already been called on this exchange
+     * @throws UnsupportedOperationException if typed response encoding is not supported
+     */
+    default void respond(HttpStatus status, Object payload) {
+        respond(HttpTypedResponse.of(status, payload));
+    }
+
+    /**
      * Convenience overload — writes a bodyless response using the request's version.
      *
      * @param status response status; must not be {@code null}

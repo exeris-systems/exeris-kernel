@@ -74,6 +74,10 @@ public final class NativeTcpCarrier implements TransportEngine {
 
     private static final System.Logger LOG = System.getLogger(NativeTcpCarrier.class.getName());
     private static final String ENGINE_NAME = "CommunityNativeTcpCarrier";
+    private static final long CLIENT_TLS_INGRESS_IDLE_BACKOFF_INITIAL_NANOS = 250_000L;
+    private static final long CLIENT_TLS_INGRESS_IDLE_BACKOFF_MAX_NANOS = 2_000_000L;
+    private static final long CLIENT_WRITER_BACKOFF_INITIAL_NANOS = 250_000L;
+    private static final long CLIENT_WRITER_BACKOFF_MAX_NANOS = 2_000_000L;
     private static final TransportEngineCapabilities CAPS =
             TransportEngineCapabilities.STANDARD.withProvider("community-transport");
 
@@ -512,6 +516,7 @@ public final class NativeTcpCarrier implements TransportEngine {
                 stream.markRemoteClosed();
             }
         } catch (IOException e) {
+            stream.markRemoteClosed();
             stream.close();
         }
     }
@@ -531,8 +536,9 @@ public final class NativeTcpCarrier implements TransportEngine {
             return;
         }
 
-        stream.flushPendingWrites();
-        if (!stream.hasPendingData()) {
+        stream.signalWriteReady();
+        boolean drained = stream.flushPendingWrites();
+        if (drained && !stream.hasPendingData()) {
             key.interestOps(SelectionKey.OP_READ);
         }
     }
@@ -552,11 +558,11 @@ public final class NativeTcpCarrier implements TransportEngine {
         }
         Thread clientIngressThread = clientIngressThreads.remove(channel);
         if (clientIngressThread != null) {
-            clientIngressThread.interrupt();
+            interruptAndJoin(clientIngressThread);
         }
         Thread clientWriterThread = clientWriterThreads.remove(channel);
         if (clientWriterThread != null) {
-            clientWriterThread.interrupt();
+            interruptAndJoin(clientWriterThread);
         }
         if (streamByChannel.remove(channel) != null) {
             activeStreams.decrementAndGet();
@@ -586,6 +592,7 @@ public final class NativeTcpCarrier implements TransportEngine {
     }
 
     private void runClientIngressLoop(SocketChannel channel, NativeTcpStream stream) {
+        long idleBackoffNanos = CLIENT_TLS_INGRESS_IDLE_BACKOFF_INITIAL_NANOS;
         while (running.get()) {
             try {
                 if (stream.isClosed()) {
@@ -596,16 +603,21 @@ public final class NativeTcpCarrier implements TransportEngine {
                     LoanedBuffer offered = stream.readTlsIngressFromFd();
                     if (offered != null) {
                         stream.offerIngress(offered);
+                        idleBackoffNanos = CLIENT_TLS_INGRESS_IDLE_BACKOFF_INITIAL_NANOS;
                         continue;
                     }
                     if (stream.isClosed()) {
                         return;
                     }
-                    LockSupport.parkNanos(250_000L);
+                    LockSupport.parkNanos(idleBackoffNanos);
+                    idleBackoffNanos = Math.min(
+                            idleBackoffNanos << 1,
+                            CLIENT_TLS_INGRESS_IDLE_BACKOFF_MAX_NANOS);
                     continue;
                 }
 
                 readIngress(channel);
+                idleBackoffNanos = CLIENT_TLS_INGRESS_IDLE_BACKOFF_INITIAL_NANOS;
             } catch (RuntimeException _) {
                 stream.markRemoteClosed();
                 return;
@@ -614,13 +626,25 @@ public final class NativeTcpCarrier implements TransportEngine {
     }
 
     private void runClientWriterLoop(NativeTcpStream stream) {
+        long writeBackoffNanos = CLIENT_WRITER_BACKOFF_INITIAL_NANOS;
         while (running.get() && !stream.isClosed()) {
             try {
+                stream.signalWriteReady();
                 if (stream.hasPendingData()) {
-                    stream.flushPendingWrites();
+                    boolean drained = stream.flushPendingWrites();
+                    if (drained) {
+                        writeBackoffNanos = CLIENT_WRITER_BACKOFF_INITIAL_NANOS;
+                        continue;
+                    }
+                    LockSupport.parkNanos(writeBackoffNanos);
+                    writeBackoffNanos = Math.min(writeBackoffNanos << 1, CLIENT_WRITER_BACKOFF_MAX_NANOS);
                     continue;
                 }
-                LockSupport.parkNanos(250_000L);
+                writeBackoffNanos = CLIENT_WRITER_BACKOFF_INITIAL_NANOS;
+                LockSupport.park();
+                if (Thread.interrupted() && (!running.get() || stream.isClosed())) {
+                    return;
+                }
             } catch (RuntimeException _) {
                 stream.close();
                 return;
@@ -677,6 +701,18 @@ public final class NativeTcpCarrier implements TransportEngine {
             closeable.close();
         } catch (Exception ignored) {
             // best effort
+        }
+    }
+
+    private static void interruptAndJoin(Thread thread) {
+        thread.interrupt();
+        if (Objects.equals(thread, Thread.currentThread())) {
+            return;
+        }
+        try {
+            thread.join(200L);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         }
     }
 

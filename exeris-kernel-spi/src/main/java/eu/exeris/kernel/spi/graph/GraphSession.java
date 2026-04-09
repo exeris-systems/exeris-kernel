@@ -14,6 +14,7 @@ import eu.exeris.kernel.spi.graph.model.PathResult;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 
 /**
@@ -188,6 +189,27 @@ public interface GraphSession extends AutoCloseable {
      * @throws eu.exeris.kernel.spi.exceptions.graph.GraphQueryException if algorithm fails
      */
     PathResult findShortestPath(UUID source, UUID target);
+
+    /**
+     * Finds the shortest path between two nodes for a specific edge type.
+     *
+     * <p>This overload provides the edge descriptor needed by implementations that
+     * resolve adjacency from edge-specific storage (for example, one SQL table per
+     * edge type). Implementations that do not require edge metadata may rely on the
+     * default delegation.
+     *
+     * @param edge   edge descriptor that defines the traversed relationship set
+     * @param source source node ID
+     * @param target target node ID
+     * @return path result (may indicate not found)
+     * @throws eu.exeris.kernel.spi.exceptions.graph.GraphQueryException if algorithm fails
+     */
+    default PathResult findShortestPath(GraphEdgeDescriptor edge, UUID source, UUID target) {
+        Objects.requireNonNull(edge,   "edge must not be null");
+        Objects.requireNonNull(source, "source must not be null");
+        Objects.requireNonNull(target, "target must not be null");
+        return findShortestPath(source, target);
+    }
 
     // =========================================================================
     // Transaction Management

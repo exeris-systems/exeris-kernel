@@ -61,3 +61,53 @@ jobs:
             -DskipTests
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  persistence-rls-gate:
+    name: Persistence RLS/Interceptor Gate
+    runs-on: ubuntu-latest
+    needs: build-and-verify
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Cache JDK tarball
+        id: jdk-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/jdk.tar.gz
+          key: ${{ env.JDK_CACHE_KEY }}
+
+      - name: Fetch JDK
+        if: steps.jdk-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          wget -q -O ${{ runner.temp }}/jdk.tar.gz ${{ env.JDK_URL }}
+          echo "${{ env.JDK_SHA256 }}  ${{ runner.temp }}/jdk.tar.gz" | sha256sum -c
+
+      - name: Inject JDK into Runner
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'jdkfile'
+          jdkFile: ${{ runner.temp }}/jdk.tar.gz
+          java-version: ${{ env.JDK_VER }}
+          architecture: x64
+          cache: maven
+
+      - name: Run targeted persistence guard suite
+        run: |
+          mvn -pl exeris-kernel-core \
+            -Dtest=PersistenceBootstrapTest,PersistenceAdmissionStageEventTest \
+            test -B -e
+          mvn -pl exeris-kernel-community \
+            -Dtest=CommunityPersistenceEngineLifecycleTest,RlsConnectionInterceptorTest,CommunityConnectionInterceptorInitTckTest \
+            test -B -e
+          mvn -pl exeris-kernel-community \
+            -Dtest=CommunityPersistenceTenantIsolationIT,CommunityPersistenceIsolationLeakTckIT \
+            -DincludedGroups=integration \
+            -DexcludedGroups= \
+            test -B -e
+
+
