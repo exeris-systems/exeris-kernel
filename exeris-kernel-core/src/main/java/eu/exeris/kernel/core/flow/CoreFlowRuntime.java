@@ -463,16 +463,25 @@ final class CoreFlowRuntime { // NOPMD
 
         @Override
         public void schedule(FlowExecutionPlan plan, FlowContext context) {
+            if (context == null) {
+                throw new FlowEngineException("FlowContext must not be null");
+            }
             CoreFlowRuntime.this.schedule(castPlan(plan), context);
         }
 
         @Override
         public void park(FlowContext context) {
+            if (context == null) {
+                throw new FlowEngineException("FlowContext must not be null");
+            }
             CoreFlowRuntime.this.park(context);
         }
 
         @Override
         public void wake(FlowContext context) {
+            if (context == null) {
+                throw new FlowEngineException("FlowContext must not be null");
+            }
             CoreFlowRuntime.this.wake(context);
         }
 
