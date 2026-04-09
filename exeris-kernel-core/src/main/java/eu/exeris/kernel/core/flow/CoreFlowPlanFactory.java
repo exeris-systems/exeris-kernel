@@ -70,6 +70,7 @@ final class CoreFlowPlanFactory implements FlowExecutionPlanFactory {
                 }
                 planCatalog.put(definitionName, plan);
             }
+            transitionsByDefinition.remove(definitionName);
             return plan;
         } catch (IllegalArgumentException | IllegalStateException | IndexOutOfBoundsException ex) {
             throw FlowEngineException.compileFailure(config.engineName(), ex);

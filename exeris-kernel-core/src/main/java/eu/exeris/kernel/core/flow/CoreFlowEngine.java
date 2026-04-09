@@ -46,7 +46,6 @@ public final class CoreFlowEngine implements FlowEngine {
 
     @Override
     public FlowExecutionPlanFactory plans() {
-        ensureStarted();
         return planFactory;
     }
 
@@ -58,7 +57,6 @@ public final class CoreFlowEngine implements FlowEngine {
 
     @Override
     public FlowRegistry registry() {
-        ensureStarted();
         return registry;
     }
 

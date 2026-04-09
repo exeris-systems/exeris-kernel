@@ -41,18 +41,23 @@ final class FlowProgressPublisher {
             if (ordinal < 0) {
                 return;
             }
-            eventEngine.bus().publish(
-                    EventDescriptor.of(
-                            progressEventIdHigh(instance, state),
-                            progressEventIdLow(instance, stepIndex, state),
-                                instance.key().instanceIdMost(),
-                                instance.key().instanceIdLeast(),
-                            ordinal,
-                            EventDescriptor.FLAG_ASYNC,
-                            System.currentTimeMillis()
-                    ),
-                            new FlowProgressPayload(instance.definitionName(), stepIndex, state)
-            );
+            FlowProgressPayload payload = new FlowProgressPayload(instance.definitionName(), stepIndex, state);
+            try {
+                eventEngine.bus().publish(
+                        EventDescriptor.of(
+                                progressEventIdHigh(instance, state),
+                                progressEventIdLow(instance, stepIndex, state),
+                                    instance.key().instanceIdMost(),
+                                    instance.key().instanceIdLeast(),
+                                ordinal,
+                                EventDescriptor.FLAG_ASYNC,
+                                System.currentTimeMillis()
+                        ),
+                        payload
+                );
+            } catch (RuntimeException ex) {
+                payload.close();
+            }
         } catch (RuntimeException ignored) {
             // Best-effort publication must never alter flow execution semantics.
         }

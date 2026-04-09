@@ -426,7 +426,9 @@ final class CoreFlowRuntime { // NOPMD
         persistSnapshot(instance, FlowState.FAILED_ROLLEDBACK, stepIndex);
         progressPublisher.publishProgress(instance, stepIndex, FlowState.FAILED_ROLLEDBACK);
         liveInstances.remove(instance.key());
-        parkedInstances.remove(instance.key());
+        if (parkedInstances.remove(instance.key()) != null) {
+            parkedFlows.decrement();
+        }
     }
 
     private void complete(RuntimeFlowInstance instance) {
@@ -438,7 +440,9 @@ final class CoreFlowRuntime { // NOPMD
         completedFlows.increment();
         progressPublisher.publishProgress(instance, instance.currentStep(), FlowState.COMPLETED);
         liveInstances.remove(instance.key());
-        parkedInstances.remove(instance.key());
+        if (parkedInstances.remove(instance.key()) != null) {
+            parkedFlows.decrement();
+        }
         if (snapshotStore != null) {
             try {
                 snapshotStore.delete(instance.key().instanceIdMost(), instance.key().instanceIdLeast());

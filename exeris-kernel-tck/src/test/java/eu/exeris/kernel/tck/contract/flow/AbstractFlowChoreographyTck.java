@@ -145,7 +145,10 @@ public abstract class AbstractFlowChoreographyTck {
 
         bus.publish(descriptorForOrdinal(ordinal), EventPayload.empty());
 
-        Thread.sleep(500);
+        long wakeDeadline = System.currentTimeMillis() + 4_000;
+        while (engine.stats().parkedFlows() > 0 && System.currentTimeMillis() < wakeDeadline) {
+            Thread.sleep(10);
+        }
         assertThat(engine.stats().parkedFlows())
                 .as("flow should no longer be parked after choreography wake")
                 .isZero();
@@ -170,7 +173,10 @@ public abstract class AbstractFlowChoreographyTck {
 
         bus.publish(descriptorForOrdinal(ordinal), EventPayload.empty());
 
-        Thread.sleep(500);
+        long startDeadline = System.currentTimeMillis() + 4_000;
+        while (engine.stats().completedFlows() < 1 && System.currentTimeMillis() < startDeadline) {
+            Thread.sleep(10);
+        }
         assertThat(engine.stats().completedFlows())
                 .as("new flow triggered by choreography event must complete")
                 .isGreaterThanOrEqualTo(1L);
