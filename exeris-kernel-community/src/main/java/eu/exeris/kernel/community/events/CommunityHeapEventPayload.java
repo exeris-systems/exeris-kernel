@@ -30,6 +30,22 @@ final class CommunityHeapEventPayload implements EventPayload {
         this.refCount = new AtomicInteger(1);
     }
 
+    /**
+     * Package-private: takes ownership of the supplied array without copying.
+     * Caller MUST NOT retain or modify the array after this call.
+     */
+    @SuppressWarnings("PMD.ArrayIsStoredDirectly")
+    /* default */ static CommunityHeapEventPayload wrap(byte[] bytes) {
+        return new CommunityHeapEventPayload(bytes, false);
+    }
+
+    @SuppressWarnings({"PMD.UnusedFormalParameter", "unused"})
+    private CommunityHeapEventPayload(byte[] bytes, boolean ignored) {
+        this.bytes = bytes;
+        this.segment = MemorySegment.ofArray(this.bytes).asReadOnly();
+        this.refCount = new AtomicInteger(1);
+    }
+
     @Override
     public MemorySegment segment() {
         if (!isAlive()) {

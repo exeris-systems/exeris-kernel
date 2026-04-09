@@ -93,21 +93,21 @@ public final class EventDescriptorCodec {
      * Writes an {@link EventDescriptor} into a {@link MemorySegment} at the given byte offset.
      *
      * <p>The segment must have at least {@code offset + WIRE_SIZE} bytes available.
-     * This method performs zero heap allocations.
+     * This method performs zero heap allocations — field offsets are carried by the
+     * VarHandle at class-load time; no segment slice is created per call.
      *
      * @param segment    the target segment (non-null, must be writable)
      * @param offset     byte offset within the segment
      * @param descriptor the descriptor to encode (non-null)
      */
     public static void write(MemorySegment segment, long offset, EventDescriptor descriptor) {
-        MemorySegment slice = segment.asSlice(offset, WIRE_SIZE);
-        VH_EVENT_ID_HIGH.set(slice, 0L, descriptor.eventIdHigh());
-        VH_EVENT_ID_LOW.set(slice, 0L, descriptor.eventIdLow());
-        VH_STREAM_ID_HIGH.set(slice, 0L, descriptor.streamIdHigh());
-        VH_STREAM_ID_LOW.set(slice, 0L, descriptor.streamIdLow());
-        VH_EVENT_TYPE_ORDINAL.set(slice, 0L, descriptor.eventTypeOrdinal());
-        VH_FLAGS.set(slice, 0L, descriptor.flags());
-        VH_OCCURRED_AT.set(slice, 0L, descriptor.occurredAtEpochMs());
+        VH_EVENT_ID_HIGH.set(segment, offset, descriptor.eventIdHigh());
+        VH_EVENT_ID_LOW.set(segment, offset, descriptor.eventIdLow());
+        VH_STREAM_ID_HIGH.set(segment, offset, descriptor.streamIdHigh());
+        VH_STREAM_ID_LOW.set(segment, offset, descriptor.streamIdLow());
+        VH_EVENT_TYPE_ORDINAL.set(segment, offset, descriptor.eventTypeOrdinal());
+        VH_FLAGS.set(segment, offset, descriptor.flags());
+        VH_OCCURRED_AT.set(segment, offset, descriptor.occurredAtEpochMs());
     }
 
     /**
@@ -122,15 +122,14 @@ public final class EventDescriptorCodec {
      * @return the reconstructed {@link EventDescriptor}
      */
     public static EventDescriptor read(MemorySegment segment, long offset) {
-        MemorySegment slice = segment.asSlice(offset, WIRE_SIZE);
         return new EventDescriptor(
-                (long) VH_EVENT_ID_HIGH.get(slice, 0L),
-                (long) VH_EVENT_ID_LOW.get(slice, 0L),
-                (long) VH_STREAM_ID_HIGH.get(slice, 0L),
-                (long) VH_STREAM_ID_LOW.get(slice, 0L),
-                (int)  VH_EVENT_TYPE_ORDINAL.get(slice, 0L),
-                (int)  VH_FLAGS.get(slice, 0L),
-                (long) VH_OCCURRED_AT.get(slice, 0L)
+                (long) VH_EVENT_ID_HIGH.get(segment, offset),
+                (long) VH_EVENT_ID_LOW.get(segment, offset),
+                (long) VH_STREAM_ID_HIGH.get(segment, offset),
+                (long) VH_STREAM_ID_LOW.get(segment, offset),
+                (int)  VH_EVENT_TYPE_ORDINAL.get(segment, offset),
+                (int)  VH_FLAGS.get(segment, offset),
+                (long) VH_OCCURRED_AT.get(segment, offset)
         );
     }
 

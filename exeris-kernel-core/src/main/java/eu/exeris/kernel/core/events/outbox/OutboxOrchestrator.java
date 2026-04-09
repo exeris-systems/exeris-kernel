@@ -254,7 +254,7 @@ public final class OutboxOrchestrator implements AutoCloseable {
 
     private void flushBatch(List<OutboxBrokerPort.OutboxEntry> batch) {
         long startNanos = System.nanoTime();
-        int  failed     = 0;
+        int  failed     = batch.size(); // assume all failed until broker confirms
 
         List<EventDescriptor> toDeliver = new ArrayList<>(batch.size());
         try {
@@ -272,6 +272,10 @@ public final class OutboxOrchestrator implements AutoCloseable {
             if (failed > 0) {
                 handlePartialFailure(batch, published);
             }
+        } catch (RuntimeException ex) {
+            // broker.publish() threw — entire batch failed; failed is already batch.size()
+            handlePartialFailure(batch, 0);
+            throw ex;
         } finally {
             closeEntryPayloads(batch);
             emitBatchFlushed(batch.size() - failed, System.nanoTime() - startNanos, failed);

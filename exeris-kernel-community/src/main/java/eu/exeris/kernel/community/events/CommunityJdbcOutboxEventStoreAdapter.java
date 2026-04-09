@@ -63,9 +63,14 @@ final class CommunityJdbcOutboxEventStoreAdapter implements OutboxEventStore {
                 List<OutboxBrokerPort.OutboxEntry> entries = new ArrayList<>(events.size());
                 for (EventStore.OutboxEvent event : events) {
                     EventDescriptor descriptor = toDescriptor(event);
-                    EventPayload payload = new CommunityHeapEventPayload(event.payload());
+                    EventPayload payload = CommunityHeapEventPayload.wrap(event.payload());
                     entries.add(new OutboxBrokerPort.OutboxEntry(descriptor, payload));
                 }
+                // NOTE: committing here releases the FOR UPDATE SKIP LOCKED row locks.
+                // This is acceptable for the Community single-orchestrator model — rows already
+                // marked via markDelivered/moveToDlq are filtered by published_at IS NULL.
+                // Multi-orchestrator HA scenarios would require an inflight/claimed column to
+                // prevent concurrent re-poll between commit and markDelivered.
                 connection.commit();
                 return entries;
             } catch (RuntimeException pollException) {
