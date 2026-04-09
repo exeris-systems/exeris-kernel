@@ -211,13 +211,15 @@ final class CommunityEventLoop implements EventLoop {
                     try {
                         processor.processBatch(readonlyDescriptors, wrappedView);
                     } catch (RuntimeException ex) {
-                        // Close any wrappers the processor failed to close.
+                        failures.add(ex);
+                    } finally {
+                        // Deterministically close any wrappers the processor failed to close,
+                        // whether it returned normally or threw — every retain() balanced.
                         for (TrackingPayload w : wrappers) {
                             if (!w.isClosed()) {
                                 w.close();
                             }
                         }
-                        failures.add(ex);
                     }
                     return null;
                 });

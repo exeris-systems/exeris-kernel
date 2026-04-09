@@ -115,26 +115,25 @@ final class CommunityEventEngine implements EventEngine {
         );
     }
 
-            private static OutboxOrchestrator buildOutboxOrchestrator(
-                EventEngineConfig config,
-                EventBus delegateBus,
-                CommunityEventRegistry registry
-            ) {
-            if (!config.outboxEnabled() || !KernelProviders.PERSISTENCE_ENGINE.isBound()) {
-                return null;
-            }
+    private static OutboxOrchestrator buildOutboxOrchestrator(
+            EventEngineConfig config,
+            EventBus delegateBus,
+            CommunityEventRegistry registry) {
+        if (!config.outboxEnabled() || !KernelProviders.PERSISTENCE_ENGINE.isBound()) {
+            return null;
+        }
 
-            OutboxEventStore eventStore = new CommunityJdbcOutboxEventStoreAdapter(
+        OutboxEventStore eventStore = new CommunityJdbcOutboxEventStoreAdapter(
                 KernelProviders.persistenceEngine(),
                 registry);
-            OutboxBrokerPort brokerPort = new CommunityEventBusOutboxBrokerPort(delegateBus);
+        OutboxBrokerPort brokerPort = new CommunityEventBusOutboxBrokerPort(delegateBus);
 
-            return OutboxOrchestrator.builder()
+        return OutboxOrchestrator.builder()
                 .eventStore(eventStore)
                 .brokerPort(brokerPort)
                 .batchSize(config.outboxBatchSize())
                 .build();
-            }
+    }
 
     private static final class PersistentQueueingBus implements EventBus {
 

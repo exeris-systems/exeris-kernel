@@ -46,12 +46,13 @@ import java.util.concurrent.locks.LockSupport;
  * events in the store — they will be re-polled on the next boot cycle.
  *
  * <h2>Concurrency (JEP 525, Java 26)</h2>
- * <p>The poll-flush loop runs on a single virtual thread started via
- * {@code StructuredTaskScope.open(Joiner.awaitAll())}. The scope owner thread
- * (the caller of {@link #start()}) forks one task and immediately returns — the scope
- * lifetime is managed by the {@link #stop()} call which joins the owner's scope.
- * {@code fork()}, {@code join()}, and {@code close()} are always invoked by the same
- * owner thread, satisfying the Java 26 owner-thread rule.
+ * <p>The poll-flush loop runs on a single virtual thread managed through
+ * {@code StructuredTaskScope.open(Joiner.awaitAll())}. Calling {@link #start()}
+ * spawns an internal owner virtual thread ({@code ownerThread}) that opens the scope,
+ * forks the poll-flush task, and manages the scope lifetime until {@link #stop()}
+ * signals shutdown and the owner thread joins. {@code open()}, {@code fork()},
+ * {@code join()}, and {@code close()} are all invoked by that same internal owner
+ * thread, satisfying the Java 26 owner-thread rule.
  *
  * <h2>VarHandle State Transitions</h2>
  * <p>State is stored in a {@code volatile int} field. All transitions use

@@ -227,7 +227,8 @@ public final class InMemoryEventBus implements EventBus {
 
     private List<Slot> resolveSlots(int ordinal) {
         List<Slot> slots = subscribers.get(ordinal);
-        return slots == null ? List.of() : List.copyOf(slots);
+        // CopyOnWriteArrayList already provides safe snapshot iteration; no copy needed.
+        return slots == null ? List.of() : slots;
     }
 
     private static void emitJfr(int ordinal, int handlerCount, boolean awaitMode) {
