@@ -29,10 +29,11 @@ import java.util.concurrent.atomic.AtomicReference;
  * and applies each received event via the user-supplied {@link ProjectionHandler}.
  *
  * <h2>State Update Protocol</h2>
- * <p>State transitions use {@link AtomicReference#updateAndGet} — lock-free, no
- * {@code synchronized}. The projection state is a single atomic reference updated
- * from within the bus dispatch thread (virtual thread). Callers read the current
- * state via {@link #state()} — O(1) volatile read.
+ * <p>State transitions serialize on {@code this} — {@code onEvent} and {@code close}
+ * are both {@code synchronized} to guarantee each event is applied exactly once and
+ * to prevent post-close updates from in-flight dispatch threads. Callers read the
+ * current state via {@link #state()} — O(1) volatile read via the backing
+ * {@link AtomicReference}.
  *
  * <h2>RAII Contract</h2>
  * <p>{@code Projection} is the sole owner of each {@link EventPayload} it receives
@@ -54,6 +55,7 @@ public final class Projection<S> implements AutoCloseable {
     private final AtomicReference<S>     stateRef;
     private final EventBus               bus;
     private final SubscriptionToken      token;
+    private volatile boolean             closed = false;
 
     /**
      * Creates a projection that subscribes to the bus immediately.
@@ -105,12 +107,15 @@ public final class Projection<S> implements AutoCloseable {
     }
 
     /**
-     * Unsubscribes from the event bus. After this call, no more state updates occur.
+     * Unsubscribes from the event bus. After this call, no further events will be scheduled;
+     * any in-flight dispatch invocations that have already entered {@code onEvent} are allowed
+     * to complete, but the {@code closed} guard ensures post-close state updates are suppressed.
      *
      * <p>The last computed state remains accessible via {@link #state()}.
      */
     @Override
-    public void close() {
+    public synchronized void close() {
+        closed = true;
         bus.unsubscribe(token);
     }
 
@@ -119,16 +124,19 @@ public final class Projection<S> implements AutoCloseable {
     // =========================================================================
 
     @SuppressWarnings("PMD.AvoidCatchingGenericException")
-    private void onEvent(EventDescriptor descriptor, EventPayload payload) {
+    private synchronized void onEvent(EventDescriptor descriptor, EventPayload payload) {
         try (payload) {
-            stateRef.updateAndGet(current -> {
-                try {
-                    return handler.apply(current, descriptor, payload);
-                } catch (RuntimeException handlerException) {
-                    emitProjectionFailure(descriptor, handlerException);
-                    throw handlerException;
-                }
-            });
+            if (closed) {
+                return;
+            }
+            S next;
+            try {
+                next = handler.apply(stateRef.get(), descriptor, payload);
+            } catch (RuntimeException handlerException) {
+                emitProjectionFailure(descriptor, handlerException);
+                throw handlerException;
+            }
+            stateRef.set(next);
             emitJfr(descriptor);
         }
     }
