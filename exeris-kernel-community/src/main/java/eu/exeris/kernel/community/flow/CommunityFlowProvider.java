@@ -18,7 +18,7 @@ import eu.exeris.kernel.spi.flow.FlowProvider;
 /** Community Flow provider: thin binding over the shared core heap engine. */
 public final class CommunityFlowProvider implements FlowProvider {
 
-    private static final String PROVIDER_ID = "flow-community";
+    private static final String PROVIDER_ID = "community";
     private static final String PROVIDER_NAME = "ExerisCommunity/HeapFlow";
     private static final FlowEngineCapabilities CAPABILITIES =
             FlowEngineCapabilities.COMMUNITY.withProvider(PROVIDER_ID);

@@ -216,6 +216,10 @@ final class CoreFlowRuntime { // NOPMD
         if (instance != null) {
             parkedFlows.decrement();
         } else {
+            RuntimeFlowInstance live = liveInstances.get(key);
+            if (live != null && live.state() != FlowState.PARKED) {
+                return;
+            }
             instance = restoreFromSnapshot(key, null);
             if (instance == null) {
                 throw notParked(key);

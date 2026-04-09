@@ -79,6 +79,10 @@ final class RuntimeFlowInstance { // NOPMD
             long remainingNanos = Duration.between(Instant.now(), snapshot.timeout()).toNanos();
             timeoutNanos = System.nanoTime() + Math.max(0L, remainingNanos);
         }
+        int[] snapshotStack = snapshot.compensationStack();
+        int[] compensationStack = snapshotStack.length == 0
+                ? new int[Math.max(4, plan.stepCount())]
+                : snapshotStack;
         return new RuntimeFlowInstance(
                 new FlowKey(snapshot.instanceIdMost(), snapshot.instanceIdLeast()),
                 snapshot.definitionName(),
@@ -86,7 +90,7 @@ final class RuntimeFlowInstance { // NOPMD
                 snapshot.state(),
                 snapshot.currentStep(),
                 timeoutNanos,
-                snapshot.compensationStack(),
+                compensationStack,
                 snapshot.stackPointer()
         );
     }
