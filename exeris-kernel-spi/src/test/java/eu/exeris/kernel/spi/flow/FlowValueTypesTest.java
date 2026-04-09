@@ -168,7 +168,7 @@ class FlowValueTypesTest {
     class FlowEngineCapabilitiesContract {
 
         @Test
-        @DisplayName("COMMUNITY template: deterministicExecution=false, offHeap=false, lockFree=false, zeroGc=false, persistence=true, compensation=true, providerId='community'")
+        @DisplayName("COMMUNITY template: deterministicExecution=false, offHeap=false, lockFree=false, zeroGc=false, persistence=true, compensation=true, choreography=true, providerId='community'")
         void communityTemplate() {
             FlowEngineCapabilities c = FlowEngineCapabilities.COMMUNITY;
             assertThat(c.deterministicExecution()).isFalse();
@@ -177,11 +177,12 @@ class FlowValueTypesTest {
             assertThat(c.zeroGcAfterStart()).isFalse();
             assertThat(c.persistenceBacked()).isTrue();
             assertThat(c.compensationSupport()).isTrue();
+            assertThat(c.choreographySupport()).isTrue();
             assertThat(c.providerId()).isEqualTo("community");
         }
 
         @Test
-        @DisplayName("ENTERPRISE template: all performance flags=true, providerId='enterprise'")
+        @DisplayName("ENTERPRISE template: all performance flags=true, choreography=true, providerId='enterprise'")
         void enterpriseTemplate() {
             FlowEngineCapabilities e = FlowEngineCapabilities.ENTERPRISE;
             assertThat(e.deterministicExecution()).isTrue();
@@ -190,6 +191,7 @@ class FlowValueTypesTest {
             assertThat(e.zeroGcAfterStart()).isTrue();
             assertThat(e.persistenceBacked()).isTrue();
             assertThat(e.compensationSupport()).isTrue();
+            assertThat(e.choreographySupport()).isTrue();
             assertThat(e.providerId()).isEqualTo("enterprise");
         }
 
@@ -220,6 +222,8 @@ class FlowValueTypesTest {
                     .isEqualTo(FlowEngineCapabilities.COMMUNITY.persistenceBacked());
             assertThat(branded.compensationSupport())
                     .isEqualTo(FlowEngineCapabilities.COMMUNITY.compensationSupport());
+            assertThat(branded.choreographySupport())
+                    .isEqualTo(FlowEngineCapabilities.COMMUNITY.choreographySupport());
         }
 
         @Test

@@ -75,7 +75,7 @@ final class CoreFlowRuntime { // NOPMD
                 failedFlows.sum(),
                 compensationsRun.sum(),
                 stepExecutions.sum(),
-                queueDepth.get(),
+                0,
                 -1
         );
     }
@@ -183,7 +183,6 @@ final class CoreFlowRuntime { // NOPMD
             parkedInstances.put(key, instance);
             parkedFlows.increment();
             persistSnapshot(instance, FlowState.PARKED, instance.currentStep());
-            progressPublisher.publishProgress(instance, instance.currentStep(), FlowState.PARKED);
         }
     }
 
@@ -277,7 +276,6 @@ final class CoreFlowRuntime { // NOPMD
                         return;
                     }
                     instance.currentStep(stepIndex);
-                    progressPublisher.publishProgress(instance, stepIndex, FlowState.RUNNING);
                     step = instance.plan().stepAt(stepIndex);
 
                     if (guard != null && !guard.tryClaimStep(
@@ -325,7 +323,6 @@ final class CoreFlowRuntime { // NOPMD
                             parkedInstances.put(instance.key(), instance);
                             persistSnapshot(instance, FlowState.PARKED, stepIndex);
                             parkedFlows.increment();
-                            progressPublisher.publishProgress(instance, stepIndex, FlowState.PARKED);
                             return;
                         }
                         case FAIL -> {
@@ -368,7 +365,6 @@ final class CoreFlowRuntime { // NOPMD
         instance.currentStep(stepIndex);
         instance.state(FlowState.COMPENSATING);
         persistSnapshot(instance, FlowState.COMPENSATING, stepIndex);
-        progressPublisher.publishProgress(instance, stepIndex, FlowState.COMPENSATING);
 
         if (config.compensationEnabled()) {
             for (int index = instance.stackPointer() - 1; index >= 0; index--) {

@@ -62,12 +62,14 @@ final class CoreFlowPlanFactory implements FlowExecutionPlanFactory {
                     definition.timeoutDurationNanos()
             );
             registry.replace(steps, adjacency);
-            if (!planCatalog.containsKey(definitionName)
-                    && planCatalog.size() >= config.maxExecutionPlans()) {
-                throw new IllegalStateException(
-                        "maxExecutionPlans limit reached: " + config.maxExecutionPlans());
+            synchronized (planCatalog) {
+                if (!planCatalog.containsKey(definitionName)
+                        && planCatalog.size() >= config.maxExecutionPlans()) {
+                    throw new IllegalStateException(
+                            "maxExecutionPlans limit reached: " + config.maxExecutionPlans());
+                }
+                planCatalog.put(definitionName, plan);
             }
-            planCatalog.put(definitionName, plan);
             return plan;
         } catch (IllegalArgumentException | IllegalStateException | IndexOutOfBoundsException ex) {
             throw FlowEngineException.compileFailure(config.engineName(), ex);
