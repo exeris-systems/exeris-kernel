@@ -133,10 +133,17 @@ public final class OutboxOrchestrator implements AutoCloseable {
      * (open, fork, join, close) happen on that owner thread — satisfying the
      * Java 26 owner-thread rule. The calling thread returns immediately.
      * Idempotent — if already running, this is a no-op.
+     * STOPPED is terminal: calling {@code start()} after {@link #stop()} throws
+     * {@link IllegalStateException}. Create a new instance to restart.
      */
     public void start() {
         if (!running.compareAndSet(false, true)) {
             return;
+        }
+        if ((int) STATE_VH.getVolatile(this) == STATE_STOPPED) {
+            running.set(false);
+            throw new IllegalStateException(
+                    "OutboxOrchestrator cannot be restarted after stop(); create a new instance.");
         }
         transitionTo(STATE_POLLING, 0);
 

@@ -39,8 +39,16 @@ public interface OutboxBrokerPort {
      * <p>Each {@link EventPayload} in the batch is owned by the caller for the duration
      * of this call. The port MUST NOT retain any payload reference after this method returns.
      *
+     * <p>The {@code batch} order is contractual. Implementations MUST attempt publication
+     * in encounter order. The returned value is the size of the successfully published
+     * <em>prefix</em>: if this method returns {@code n}, then exactly {@code batch[0..n)}
+     * were published successfully, and no entry at index {@code >= n} was published.
+     * Implementations MUST NOT publish or acknowledge a non-prefix subset while
+     * reporting only the count of successes.
+     *
      * @param batch ordered list of (descriptor, payload) pairs — never null, never empty
-     * @return number of events successfully published
+     * @return number of consecutively published events from the start of {@code batch};
+     *         {@code 0} means nothing was published, {@code batch.size()} means full success
      */
     int publish(List<OutboxEntry> batch);
 

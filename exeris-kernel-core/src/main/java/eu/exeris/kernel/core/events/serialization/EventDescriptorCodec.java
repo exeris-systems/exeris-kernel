@@ -14,21 +14,24 @@ import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.lang.invoke.VarHandle;
+import java.nio.ByteOrder;
 
 /**
  * Core: Zero-copy binary codec for {@link EventDescriptor}.
  *
  * <h2>Wire Format (64 bytes = 1 cache line)</h2>
+ * <p>All multi-byte fields are fixed <b>LITTLE_ENDIAN</b> — format is portable across
+ * architectures regardless of host native byte order.
  * <pre>
  * Offset  Size  Field
  * ──────────────────────────────────────
- *  0       8B   eventIdHigh
- *  8       8B   eventIdLow
- * 16       8B   streamIdHigh
- * 24       8B   streamIdLow
- * 32       4B   eventTypeOrdinal
- * 36       4B   flags
- * 40       8B   occurredAtEpochMs
+ *  0       8B   eventIdHigh      (LE)
+ *  8       8B   eventIdLow       (LE)
+ * 16       8B   streamIdHigh     (LE)
+ * 24       8B   streamIdLow      (LE)
+ * 32       4B   eventTypeOrdinal (LE)
+ * 36       4B   flags            (LE)
+ * 40       8B   occurredAtEpochMs (LE)
  * 48      16B   _padding (cache-line fill)
  * ──────────────────────────────────────
  * TOTAL: 64 bytes
@@ -57,13 +60,13 @@ public final class EventDescriptorCodec {
     // ── MemoryLayout — single source of truth for field offsets ──────────────
 
     private static final MemoryLayout LAYOUT = MemoryLayout.structLayout(
-            ValueLayout.JAVA_LONG.withName("eventIdHigh"),
-            ValueLayout.JAVA_LONG.withName("eventIdLow"),
-            ValueLayout.JAVA_LONG.withName("streamIdHigh"),
-            ValueLayout.JAVA_LONG.withName("streamIdLow"),
-            ValueLayout.JAVA_INT.withName("eventTypeOrdinal"),
-            ValueLayout.JAVA_INT.withName("flags"),
-            ValueLayout.JAVA_LONG.withName("occurredAtEpochMs"),
+            ValueLayout.JAVA_LONG.withOrder(ByteOrder.LITTLE_ENDIAN).withName("eventIdHigh"),
+            ValueLayout.JAVA_LONG.withOrder(ByteOrder.LITTLE_ENDIAN).withName("eventIdLow"),
+            ValueLayout.JAVA_LONG.withOrder(ByteOrder.LITTLE_ENDIAN).withName("streamIdHigh"),
+            ValueLayout.JAVA_LONG.withOrder(ByteOrder.LITTLE_ENDIAN).withName("streamIdLow"),
+            ValueLayout.JAVA_INT.withOrder(ByteOrder.LITTLE_ENDIAN).withName("eventTypeOrdinal"),
+            ValueLayout.JAVA_INT.withOrder(ByteOrder.LITTLE_ENDIAN).withName("flags"),
+            ValueLayout.JAVA_LONG.withOrder(ByteOrder.LITTLE_ENDIAN).withName("occurredAtEpochMs"),
             MemoryLayout.paddingLayout(16)
     );
 

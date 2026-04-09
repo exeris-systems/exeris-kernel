@@ -18,6 +18,7 @@ import eu.exeris.kernel.spi.events.SubscriptionToken;
 import eu.exeris.kernel.spi.exceptions.events.EventBusException;
 import jdk.jfr.FlightRecorder;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -161,20 +162,29 @@ public final class InMemoryEventBus implements EventBus {
         }
 
         // Calling thread is the scope owner — fork, join, close.
+        // awaitAll() ensures every handler runs to completion (including payload close)
+        // even if some throw. Failures are surfaced as suppressed exceptions after all
+        // handlers have finished — RAII balanced before exception propagation.
+        List<Throwable> failures = new ArrayList<>();
         try (StructuredTaskScope<Void, Void> scope =
-                     StructuredTaskScope.open(StructuredTaskScope.Joiner.<Void>awaitAllSuccessfulOrThrow())) {
+                     StructuredTaskScope.open(StructuredTaskScope.Joiner.<Void>awaitAll())) {
             for (Slot slot : slots) {
                 EventPayload slotPayload = payload;
                 scope.fork(() -> {
-                    slot.handler().handle(descriptor, slotPayload);
+                    try {
+                        slot.handler().handle(descriptor, slotPayload);
+                    } catch (RuntimeException ex) {
+                        failures.add(ex);
+                    }
                     return null;
                 });
             }
-            try {
-                scope.join();
-            } catch (StructuredTaskScope.FailedException ex) {
-                throw new EventBusException("Event handler invocation failed", ex);
-            }
+            scope.join();
+        }
+        if (!failures.isEmpty()) {
+            EventBusException ex = new EventBusException("One or more event handlers failed during publishAndAwait");
+            failures.forEach(ex::addSuppressed);
+            throw ex;
         }
     }
 
