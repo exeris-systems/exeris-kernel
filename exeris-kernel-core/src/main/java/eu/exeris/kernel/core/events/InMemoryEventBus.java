@@ -23,7 +23,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.StructuredTaskScope;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -173,8 +172,8 @@ public final class InMemoryEventBus implements EventBus {
             }
             try {
                 scope.join();
-            } catch (ExecutionException ex) {
-                throw new EventBusException("Event handler invocation failed", ex.getCause());
+            } catch (StructuredTaskScope.FailedException ex) {
+                throw new EventBusException("Event handler invocation failed", ex);
             }
         }
     }

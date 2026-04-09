@@ -205,7 +205,7 @@ public abstract class AbstractEventLoopTck {
 
         @Test
         @DisplayName("processor registered for type B is NOT invoked when only type C is published")
-        @Timeout(value = 3, unit = TimeUnit.SECONDS)
+        @Timeout(value = 5, unit = TimeUnit.SECONDS)
         final void processorForTypeBNotInvokedWhenTypeCPublished() throws InterruptedException {
             engine = createEngine();
             engine.registry().register(EventTypeSpec.ofPersistent(TYPE_LOOP_B, ORD_LOOP_B));
@@ -217,11 +217,22 @@ public abstract class AbstractEventLoopTck {
                 processorBInvoked.set(true);
             });
 
+            // Sentinel: register a processor for type C so we know the loop has processed it
+            CountDownLatch typeCProcessed = new CountDownLatch(1);
+            engine.loop().registerProcessor(TYPE_LOOP_C, (descriptors, payloads) -> {
+                payloads.forEach(EventPayload::close);
+                typeCProcessed.countDown();
+            });
+
             engine.start();
             // Publish only type C — processor for B MUST NOT be triggered
             engine.bus().publish(persistentDescriptor(ORD_LOOP_C), EventPayload.empty());
 
-            Thread.sleep(500);
+            // Wait until the type C event has been processed; then the loop has passed through
+            // the point where type B would have been dispatched if routing were wrong.
+            assertThat(typeCProcessed.await(4, TimeUnit.SECONDS))
+                    .as("Type C sentinel event MUST reach its processor within 4 seconds")
+                    .isTrue();
             assertThat(processorBInvoked.get())
                     .as("Processor for type B MUST NOT be invoked when only type C events are published. "
                         + "Ordinal-based routing MUST be exact — no cross-type dispatch.")
@@ -236,11 +247,13 @@ public abstract class AbstractEventLoopTck {
             engine.registry().register(EventTypeSpec.ofPersistent(TYPE_LOOP_B, ORD_LOOP_B));
             engine.registry().register(EventTypeSpec.ofPersistent(TYPE_LOOP_C, ORD_LOOP_C));
 
+            CountDownLatch failureLatch = new CountDownLatch(1);
             CountDownLatch successLatch = new CountDownLatch(1);
 
-            // Failing processor for type B — throws on every invocation
+            // Failing processor for type B — throws on every invocation; signals via latch
             engine.loop().registerProcessor(TYPE_LOOP_B, (descriptors, payloads) -> {
                 payloads.forEach(EventPayload::close);
+                failureLatch.countDown();
                 throw new RuntimeException("TCK-induced processor failure");
             });
 
@@ -255,8 +268,10 @@ public abstract class AbstractEventLoopTck {
             // DeadPayload.isAlive()=false prevents infinite requeue of the failing event
             engine.bus().publish(persistentDescriptor(ORD_LOOP_B), new DeadPayload());
 
-            // Give the loop time to drain and fail the type B event before publishing type C
-            Thread.sleep(200);
+            // Wait for the failure to be processed before publishing type C
+            assertThat(failureLatch.await(3, TimeUnit.SECONDS))
+                    .as("Failing processor for type B MUST be invoked within 3 seconds")
+                    .isTrue();
             engine.bus().publish(persistentDescriptor(ORD_LOOP_C), EventPayload.empty());
 
             assertThat(successLatch.await(4, TimeUnit.SECONDS))

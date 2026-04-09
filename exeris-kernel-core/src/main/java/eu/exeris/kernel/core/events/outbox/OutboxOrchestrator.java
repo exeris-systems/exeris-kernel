@@ -138,7 +138,7 @@ public final class OutboxOrchestrator implements AutoCloseable {
         if (!running.compareAndSet(false, true)) {
             return;
         }
-        transitionTo(STATE_POLLING);
+        transitionTo(STATE_POLLING, 0);
 
         // Owner VT — the sole thread that may call fork/join/close on the scope.
         // Exempt from StructuredTaskScope rule per docs/modules/02-core.md §3(b):
@@ -227,20 +227,20 @@ public final class OutboxOrchestrator implements AutoCloseable {
             int batchCount = batch.size();
 
             if (batchCount == 0) {
-                transitionTo(STATE_WAITING);
+                transitionTo(STATE_WAITING, 0);
                 LockSupport.parkNanos(pollIntervalNanos);
-                transitionTo(STATE_POLLING);
+                transitionTo(STATE_POLLING, 0);
                 return;
             }
 
-            transitionTo(STATE_FLUSHING);
+            transitionTo(STATE_FLUSHING, batchCount);
             flushBatch(batch);
-            transitionTo(STATE_POLLING);
+            transitionTo(STATE_POLLING, 0);
 
         } catch (RuntimeException ex) {
-            transitionTo(STATE_WAITING);
+            transitionTo(STATE_WAITING, 0);
             LockSupport.parkNanos(pollIntervalNanos);
-            transitionTo(STATE_POLLING);
+            transitionTo(STATE_POLLING, 0);
         }
     }
 
@@ -271,7 +271,7 @@ public final class OutboxOrchestrator implements AutoCloseable {
     }
 
     private void handlePartialFailure(List<OutboxBrokerPort.OutboxEntry> batch, int successCount) {
-        transitionTo(STATE_RETRYING);
+        transitionTo(STATE_RETRYING, 0);
         for (int i = successCount; i < batch.size(); i++) {
             OutboxBrokerPort.OutboxEntry entry = batch.get(i);
             try {
@@ -332,7 +332,7 @@ public final class OutboxOrchestrator implements AutoCloseable {
 
     // ── State transitions ─────────────────────────────────────────────────────
 
-    private void transitionTo(int next) {
+    private void transitionTo(int next, int polledCount) {
         if (next != STATE_STOPPED && !running.get()) {
             return;
         }
@@ -346,7 +346,7 @@ public final class OutboxOrchestrator implements AutoCloseable {
                 return;
             }
             if (STATE_VH.compareAndSet(this, prev, next)) {
-                emitTransition(STATE_NAMES[prev], STATE_NAMES[next], 0);
+                emitTransition(STATE_NAMES[prev], STATE_NAMES[next], polledCount);
                 return;
             }
         }

@@ -64,8 +64,10 @@ public abstract class AbstractOutboxOrchestratorTck {
 
     private static final String TYPE_PERSISTENT     = "OrderPersisted";
     private static final String TYPE_NON_PERSISTENT = "HeartbeatSignal";
+    private static final String TYPE_SENTINEL       = "SentinelEvent";
     private static final int    ORD_PERSISTENT      = 300;
     private static final int    ORD_NON_PERSISTENT  = 301;
+    private static final int    ORD_SENTINEL        = 302;
 
     private EventEngine engine;
 
@@ -184,6 +186,7 @@ public abstract class AbstractOutboxOrchestratorTck {
         engine = createEngine();
         engine.registry().register(EventTypeSpec.ofPersistent(TYPE_PERSISTENT, ORD_PERSISTENT));
         engine.registry().register(EventTypeSpec.of(TYPE_NON_PERSISTENT, ORD_NON_PERSISTENT));
+        engine.registry().register(EventTypeSpec.ofPersistent(TYPE_SENTINEL, ORD_SENTINEL));
 
         AtomicBoolean processorInvoked = new AtomicBoolean(false);
         engine.loop().registerProcessor(TYPE_PERSISTENT, (descriptors, payloads) -> {
@@ -191,12 +194,26 @@ public abstract class AbstractOutboxOrchestratorTck {
             processorInvoked.set(true);
         });
 
+        // Drain sentinel: uses a DIFFERENT type so the TYPE_PERSISTENT processor above
+        // is never triggered by the sentinel publish itself.
+        CountDownLatch sentinelLatch = new CountDownLatch(1);
+        engine.loop().registerProcessor(TYPE_SENTINEL, (descriptors, payloads) -> {
+            payloads.forEach(EventPayload::close);
+            sentinelLatch.countDown();
+        });
+
         engine.start();
 
         // Publish ONLY a non-persistent event — MUST NOT reach the batch processor
         engine.bus().publish(nonPersistentDescriptor(ORD_NON_PERSISTENT), EventPayload.empty());
 
-        Thread.sleep(500);
+        // Flush a sentinel event (different type/ordinal) through the loop so we know the
+        // loop has processed everything queued before it, without triggering processorInvoked.
+        engine.bus().publish(persistentDescriptor(ORD_SENTINEL), EventPayload.empty());
+        assertThat(sentinelLatch.await(4, TimeUnit.SECONDS))
+                .as("Sentinel event MUST reach the batch processor within 4 seconds")
+                .isTrue();
+
         assertThat(processorInvoked.get())
                 .as("Non-persistent events MUST NOT be delivered to the outbox batch processor. "
                     + "Only events with FLAG_PERSISTENT are enqueued and processed by the EventLoop.")

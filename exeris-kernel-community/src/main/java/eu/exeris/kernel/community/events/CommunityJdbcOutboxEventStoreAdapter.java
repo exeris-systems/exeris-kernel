@@ -38,6 +38,9 @@ final class CommunityJdbcOutboxEventStoreAdapter implements OutboxEventStore {
                     + "(id, stream_id, event_type, payload, occurred_at, failure_reason) "
                     + "VALUES ($1, $2, $3, $4, $5, $6)";
 
+    private static final String SQL_DELETE_OUTBOX =
+            "DELETE FROM exeris_outbox WHERE id = $1";
+
     private final PersistenceEngine persistenceEngine;
     private final CommunityEventRegistry eventRegistry;
     private final AtomicInteger dynamicOrdinalSequence = new AtomicInteger(1_000_000);
@@ -103,18 +106,23 @@ final class CommunityJdbcOutboxEventStoreAdapter implements OutboxEventStore {
         String streamId = new UUID(descriptor.streamIdHigh(), descriptor.streamIdLow()).toString();
         String failureReason = reason == null || reason.isBlank() ? "unknown" : reason;
         byte[] bytes = CommunityHeapEventPayload.copyBytes(payload);
+        UUID eventId = new UUID(descriptor.eventIdHigh(), descriptor.eventIdLow());
 
         try (PersistenceConnection connection = persistenceEngine.openConnection()) {
             connection.beginTransaction();
             try {
                 try (PersistenceStatement statement = connection.prepare(SQL_INSERT_DLQ)) {
-                    statement.bindString(0, new UUID(descriptor.eventIdHigh(), descriptor.eventIdLow()).toString())
+                    statement.bindString(0, eventId.toString())
                             .bindString(1, streamId)
                             .bindString(2, eventType)
                             .bindBytes(3, bytes)
                             .bindLong(4, descriptor.occurredAtEpochMs())
                             .bindString(5, failureReason)
                             .executeUpdate();
+                }
+                // Delete the outbox row in the same transaction so it is never re-polled.
+                try (PersistenceStatement deleteStmt = connection.prepare(SQL_DELETE_OUTBOX)) {
+                    deleteStmt.bindString(0, eventId.toString()).executeUpdate();
                 }
                 connection.commit();
             } catch (RuntimeException dlqException) {

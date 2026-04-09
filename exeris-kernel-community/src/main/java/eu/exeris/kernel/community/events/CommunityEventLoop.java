@@ -19,6 +19,7 @@ import eu.exeris.kernel.spi.exceptions.events.EventEngineException;
 import jdk.jfr.FlightRecorder;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -187,7 +188,7 @@ final class CommunityEventLoop implements EventLoop {
         }
 
         try {
-            List<EventDescriptor> readonlyDescriptors = List.copyOf(descriptors);
+            List<EventDescriptor> readonlyDescriptors = Collections.unmodifiableList(descriptors);
             int processorCount = processors.size();
             if (processorCount > 1) {
                 for (EventPayload p : payloads) {
@@ -196,7 +197,7 @@ final class CommunityEventLoop implements EventLoop {
                     }
                 }
             }
-            List<EventPayload> readonlyPayloads = List.copyOf(payloads);
+            List<EventPayload> readonlyPayloads = Collections.unmodifiableList(payloads);
             for (EventBatchProcessor processor : processors) {
                 processor.processBatch(readonlyDescriptors, readonlyPayloads);
             }
