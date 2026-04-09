@@ -168,7 +168,7 @@ class FlowValueTypesTest {
     class FlowEngineCapabilitiesContract {
 
         @Test
-        @DisplayName("COMMUNITY template: deterministicExecution=false, offHeap=false, lockFree=false, zeroGc=false, persistence=true, compensation=true, providerId='community'")
+        @DisplayName("COMMUNITY template: deterministicExecution=false, offHeap=false, lockFree=false, zeroGc=false, persistence=true, compensation=true, choreography=true, providerId='community'")
         void communityTemplate() {
             FlowEngineCapabilities c = FlowEngineCapabilities.COMMUNITY;
             assertThat(c.deterministicExecution()).isFalse();
@@ -177,11 +177,12 @@ class FlowValueTypesTest {
             assertThat(c.zeroGcAfterStart()).isFalse();
             assertThat(c.persistenceBacked()).isTrue();
             assertThat(c.compensationSupport()).isTrue();
+            assertThat(c.choreographySupport()).isTrue();
             assertThat(c.providerId()).isEqualTo("community");
         }
 
         @Test
-        @DisplayName("ENTERPRISE template: all performance flags=true, providerId='enterprise'")
+        @DisplayName("ENTERPRISE template: all performance flags=true, choreography=true, providerId='enterprise'")
         void enterpriseTemplate() {
             FlowEngineCapabilities e = FlowEngineCapabilities.ENTERPRISE;
             assertThat(e.deterministicExecution()).isTrue();
@@ -190,6 +191,7 @@ class FlowValueTypesTest {
             assertThat(e.zeroGcAfterStart()).isTrue();
             assertThat(e.persistenceBacked()).isTrue();
             assertThat(e.compensationSupport()).isTrue();
+            assertThat(e.choreographySupport()).isTrue();
             assertThat(e.providerId()).isEqualTo("enterprise");
         }
 
@@ -197,7 +199,7 @@ class FlowValueTypesTest {
         @DisplayName("Blank providerId throws IllegalArgumentException")
         void blankProviderIdThrows() {
             assertThatThrownBy(() ->
-                    new FlowEngineCapabilities(false, false, false, false, false, false, ""))
+                    new FlowEngineCapabilities(false, false, false, false, false, false, false, ""))
                     .isInstanceOf(IllegalArgumentException.class);
         }
 
@@ -205,7 +207,7 @@ class FlowValueTypesTest {
         @DisplayName("Null providerId throws IllegalArgumentException")
         void nullProviderIdThrows() {
             assertThatThrownBy(() ->
-                    new FlowEngineCapabilities(false, false, false, false, false, false, null))
+                    new FlowEngineCapabilities(false, false, false, false, false, false, false, null))
                     .isInstanceOf(IllegalArgumentException.class);
         }
 
@@ -220,6 +222,8 @@ class FlowValueTypesTest {
                     .isEqualTo(FlowEngineCapabilities.COMMUNITY.persistenceBacked());
             assertThat(branded.compensationSupport())
                     .isEqualTo(FlowEngineCapabilities.COMMUNITY.compensationSupport());
+            assertThat(branded.choreographySupport())
+                    .isEqualTo(FlowEngineCapabilities.COMMUNITY.choreographySupport());
         }
 
         @Test
@@ -233,16 +237,16 @@ class FlowValueTypesTest {
         @Test
         @DisplayName("Structural equals: two identical custom caps are equal")
         void structuralEquality() {
-            FlowEngineCapabilities a = new FlowEngineCapabilities(true, false, true, false, true, true, "acme");
-            FlowEngineCapabilities b = new FlowEngineCapabilities(true, false, true, false, true, true, "acme");
+            FlowEngineCapabilities a = new FlowEngineCapabilities(true, false, true, false, true, true, true, "acme");
+            FlowEngineCapabilities b = new FlowEngineCapabilities(true, false, true, false, true, true, true, "acme");
             assertThat(a).isEqualTo(b);
         }
 
         @Test
         @DisplayName("Structural hashCode: equal caps have same hashCode")
         void structuralHashCode() {
-            FlowEngineCapabilities a = new FlowEngineCapabilities(true, false, true, false, true, true, "acme");
-            FlowEngineCapabilities b = new FlowEngineCapabilities(true, false, true, false, true, true, "acme");
+            FlowEngineCapabilities a = new FlowEngineCapabilities(true, false, true, false, true, true, true, "acme");
+            FlowEngineCapabilities b = new FlowEngineCapabilities(true, false, true, false, true, true, true, "acme");
             assertThat(a).hasSameHashCodeAs(b);
         }
     }
