@@ -48,10 +48,8 @@ final class FlowChoreographyBridge implements EventHandler {
             ChoreographyDecision decision = mapper.map(descriptor);
             switch (decision) {
                 case ChoreographyDecision.Wake(long most, long least) -> {
-                    if (scheduler.lookupParked(most, least).isPresent()) {
-                        scheduler.wake(new HeapFlowContext(most, least, "", 0, FlowState.PARKED, 0L));
-                    }
-                    // else: stale or duplicate wake event — instance no longer parked; idempotent no-op
+                    scheduler.lookupParked(most, least).ifPresent(scheduler::wake);
+                    // Stale or duplicate wake event if absent — instance no longer parked; idempotent no-op
                 }
                 case ChoreographyDecision.Start(FlowExecutionPlan plan, long most, long least) -> {
                     long timeoutNanos = System.nanoTime() + plan.timeoutDurationNanos();

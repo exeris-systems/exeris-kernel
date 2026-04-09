@@ -72,8 +72,13 @@ final class RuntimeFlowInstance { // NOPMD
     }
 
     public static RuntimeFlowInstance fromSnapshot(CoreFlowExecutionPlan plan, FlowSnapshot snapshot) {
-        long remainingNanos = Duration.between(Instant.now(), snapshot.timeout()).toNanos();
-        long timeoutNanos = System.nanoTime() + Math.max(0L, remainingNanos);
+        long timeoutNanos;
+        if (Instant.MAX.equals(snapshot.timeout())) {
+            timeoutNanos = Long.MAX_VALUE;
+        } else {
+            long remainingNanos = Duration.between(Instant.now(), snapshot.timeout()).toNanos();
+            timeoutNanos = System.nanoTime() + Math.max(0L, remainingNanos);
+        }
         return new RuntimeFlowInstance(
                 new FlowKey(snapshot.instanceIdMost(), snapshot.instanceIdLeast()),
                 snapshot.definitionName(),

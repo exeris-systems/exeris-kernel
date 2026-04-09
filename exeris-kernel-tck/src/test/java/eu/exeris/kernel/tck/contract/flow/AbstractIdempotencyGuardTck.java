@@ -12,10 +12,12 @@ import eu.exeris.kernel.spi.flow.IdempotencyGuard;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -62,6 +64,7 @@ public abstract class AbstractIdempotencyGuardTck {
     }
 
     @Test
+    @Timeout(10)
     @DisplayName("tryClaimStep — under 16 concurrent VTs, exactly one wins per (instance, step)")
     void tryClaimStep_concurrentClaims_exactlyOneWins() throws InterruptedException {
         int threads = 16;
@@ -85,10 +88,15 @@ public abstract class AbstractIdempotencyGuardTck {
             }));
         }
         vts.forEach(Thread::start);
-        ready.await();
+        assertThat(ready.await(5, TimeUnit.SECONDS))
+                .as("All virtual threads must reach the barrier within 5 seconds")
+                .isTrue();
         start.countDown();
         for (Thread vt : vts) {
-            vt.join(5_000);
+            vt.join(java.time.Duration.ofSeconds(5));
+            assertThat(vt.isAlive())
+                    .as("Virtual thread must have terminated within 5 seconds")
+                    .isFalse();
         }
 
         assertThat(wins.get())
