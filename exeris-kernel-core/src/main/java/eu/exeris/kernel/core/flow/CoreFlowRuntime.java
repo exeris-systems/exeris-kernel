@@ -105,13 +105,31 @@ final class CoreFlowRuntime { // NOPMD
         }
         closed = true;
         started = false;
-        for (Thread thread : runningThreads) {
-            thread.interrupt();
-        }
+        interruptAndJoinRunningThreads();
         runningThreads.clear();
         liveInstances.clear();
         parkedInstances.clear();
         terminalStateCatalog.clear();
+    }
+
+    private void interruptAndJoinRunningThreads() {
+        Thread[] threads = runningThreads.toArray(Thread[]::new);
+        for (Thread thread : threads) {
+            thread.interrupt();
+        }
+        boolean interrupted = false;
+        for (Thread thread : threads) {
+            while (thread.isAlive()) {
+                try {
+                    thread.join();
+                } catch (InterruptedException ex) {
+                    interrupted = true;
+                }
+            }
+        }
+        if (interrupted) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     public void assertStarted() {
@@ -411,7 +429,11 @@ final class CoreFlowRuntime { // NOPMD
         liveInstances.remove(instance.key());
         parkedInstances.remove(instance.key());
         if (snapshotStore != null) {
-            snapshotStore.delete(instance.key().instanceIdMost(), instance.key().instanceIdLeast());
+            try {
+                snapshotStore.delete(instance.key().instanceIdMost(), instance.key().instanceIdLeast());
+            } catch (RuntimeException ignored) {
+                // Best-effort deletion — completion is already recorded; do not fail the flow.
+            }
         }
     }
 
