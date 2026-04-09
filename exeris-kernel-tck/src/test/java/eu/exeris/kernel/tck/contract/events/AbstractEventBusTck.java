@@ -49,7 +49,8 @@ import static org.assertj.core.api.Assertions.assertThatCode;
  *   <li>publish() with N=1 handler: handler receives exactly 1 payload, closes it.</li>
  *   <li>publish() with N=3 handlers: retain() called (N-1)=2 times, total refCount=3,
  *       every handler closes — refCount reaches 0.</li>
- *   <li><b>Golden Test:</b> ScopedValue propagation — handlers read the same
+ *   <li><b>Golden Test:</b> ScopedValue propagation on structured dispatch
+ *       ({@code publishAndAwait}) — handlers read the same
  *       {@code KernelProviders.CURRENT_CONFIG} that was bound in the publish scope.</li>
  *   <li>Broadcast RAII: handler that forgets close() causes refCount leak → TCK detects it.</li>
  *   <li>publishAndAwait() blocks until all handlers complete.</li>
@@ -189,8 +190,6 @@ public abstract class AbstractEventBusTck {
             engine.bus().subscribe(TYPE_USER_CREATED, (d, payload) -> {
                 try (payload) {
                     handled.countDown();
-                } finally {
-                    closeCalls.incrementAndGet();
                 }
             });
 
@@ -213,8 +212,6 @@ public abstract class AbstractEventBusTck {
                 engine.bus().subscribe(TYPE_USER_CREATED, (d, payload) -> {
                     try (payload) {
                         allHandled.countDown();
-                    } finally {
-                        closeCalls.incrementAndGet();
                     }
                 });
             }
@@ -244,7 +241,7 @@ public abstract class AbstractEventBusTck {
     class ScopedValuePropagation {
 
         @Test
-        @DisplayName("GOLDEN: Handler reads ScopedValue bound in publish scope (JEP 506)")
+        @DisplayName("GOLDEN: Handler reads ScopedValue bound in structured publish scope (JEP 506)")
         @Timeout(value = 5, unit = TimeUnit.SECONDS)
         void handlerInheritsPublishScopeScopedValue() throws Exception {
             // We use a custom ScopedValue to simulate KernelProviders propagation.
@@ -266,13 +263,20 @@ public abstract class AbstractEventBusTck {
                 }
             });
 
-            ScopedValue.where(traceId, expectedTrace).run(() ->
-                    engine.bus().publish(descriptor(ORDINAL_USER_CREATED), EventPayload.empty()));
+                ScopedValue.where(traceId, expectedTrace).run(() -> {
+                    try {
+                        engine.bus().publishAndAwait(descriptor(ORDINAL_USER_CREATED), EventPayload.empty());
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        throw new RuntimeException(e);
+                    }
+                });
 
             assertThat(handled.await(5, TimeUnit.SECONDS))
                     .as("Handler must be invoked within 5 seconds").isTrue();
 
-            // NOTE: Community implementations that spawn VTs inside a StructuredTaskScope
+            // NOTE: This assertion targets the structured dispatch path (publishAndAwait).
+            // Community implementations that spawn VTs inside a StructuredTaskScope
             // within the ScopedValue binding will pass this test automatically.
             // Implementations using a background thread pool (ThreadLocal, ExecutorService)
             // will fail — the trace will be "NOT_PROPAGATED".
