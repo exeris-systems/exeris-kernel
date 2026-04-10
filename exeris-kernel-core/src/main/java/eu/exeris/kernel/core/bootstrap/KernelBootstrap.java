@@ -78,7 +78,7 @@ import java.util.function.Supplier;
 public final class KernelBootstrap {
 
     /** Kernel artifact version — emitted in JFR events for traceability. */
-    private static final String KERNEL_VERSION = "0.5.0-SNAPSHOT";
+    private static final String KERNEL_VERSION = "0.5.0";
 
     private final SubsystemOrchestrator.FailurePolicy failurePolicy;
     private final BootstrapSelector                   selector;
