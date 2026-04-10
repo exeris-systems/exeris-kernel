@@ -2,10 +2,16 @@
 
 **Physical Layout:**
 
-- SPI: `eu.exeris.kernel.spi.persistence.*` (Contracts, StorageContext, Interceptors)
-- Core: `eu.exeris.kernel.core.persistence.*` (Transaction Manager, Initializers, Outbox Poller)
-- Drivers: `exeris-kernel-community` (JDBC-Native / VT-Optimized) / `exeris-kernel-enterprise` (Native Wire
-  optimizations)
+- SPI: `eu.exeris.kernel.spi.persistence.*` (Contracts, ConnectionInterceptor — StorageContext is in Security SPI)
+  > Key SPI contracts: `PersistenceEngine`, `PersistenceProvider`, `PersistenceConfig`, `PersistenceEngineCapabilities`, 
+  > `PersistenceHealthStatus`, `BaseRepository`, `EventStore`, `ConnectionInterceptor`, `TransactionalExecutor`, 
+  > `RowCursor`, `QueryResult`, `PersistenceStatement`, `BulkInserter`, `DatabaseDialect`, `EngineStats`, 
+  > `TransactionIsolation`; codec sub-package: `codec.EntityEncoder`, `codec.EntityDecoder` 
+  > (zero-copy off-heap encode/decode contract, TCK: `AbstractEntityCodecTck`).
+- Core: `eu.exeris.kernel.core.persistence.*` (Transaction Manager, Initializers)
+  > The Outbox Poller resides in the Events subsystem (`eu.exeris.kernel.core.events.outbox.*`). 
+  > Persistence provides the `EventStore` SPI consumed by the Outbox Orchestrator.
+- Drivers: `exeris-kernel-community` (JDBC-Native / VT-Optimized)
 
 **Layer:** L1 (Data & Integrity)
 **Status:** Validated Architectural Prototype (TRL-3)
@@ -44,7 +50,8 @@ R2DBC.
 Persistence Core MUST NOT import anything from the Security SPI. It treats isolation as a **side-effect**:
 
 - **Global Mode (Default):** No context, zero overhead, direct SQL.
-- **Isolated Mode (Plugin):** Activated only when a `StorageContextProvider` is registered via `ServiceLoader`.
+- **Isolated Mode:** Activated when a `StorageContext` is bound to `KernelProviders.STORAGE_CONTEXT` (ScopedValue) 
+- by the Security layer before the persistence boundary is crossed. Zero `ServiceLoader` involvement.
 
 The Security subsystem owns the `PrincipalContext`. The Persistence subsystem owns the `StorageContext`. The bridge
 between them (extracting `tenantId` from `PrincipalContext` and constructing a `StorageContext`) lives in Core's
@@ -64,12 +71,16 @@ Java-side logic and serialization waste.
 1. Define `BaseRepository<T, ID>` and `EventStore` contracts.
 2. Provide the `StorageContext` and `ConnectionInterceptor` interfaces.
 3. Define the `PersistenceException` hierarchy with `EX-PERS-` codes.
+4. Define `RowCursor` and `QueryResult` as the zero-copy flyweight row accessor contracts. `RowCursor` is a single shared instance advanced by `QueryResult.next()` — callers must not retain references across calls.
+5. Define `BulkInserter` for batch-insertion paths.
+6. Define `PersistenceEngineCapabilities` and `PersistenceHealthStatus` as observable engine state contracts.
+7. Define the `codec` sub-package (`EntityEncoder`, `EntityDecoder`) for binary entity serialisation. TCK: `AbstractEntityCodecTck`.
 
 **What Persistence Core DOES:**
 
 1. Orchestrate the transaction lifecycle and `ScopedValue` propagation.
 2. Manage a registry of `ConnectionInterceptors`.
-3. Provide the `ConnectionInitializer` that prepares connection-level SQL for RLS and schema selection.
+3. Manage a registry of `ConnectionInterceptor` instances via `InterceptorRegistry` (`eu.exeris.kernel.core.persistence.InterceptorRegistry`). Interceptors handle RLS injection, schema switching, and audit setup.
 4. Translate database-specific errors into standardized Kernel codes.
 
 ---
@@ -82,7 +93,7 @@ Exeris supports three levels of physical isolation, resolved transparently throu
 |:------------------------|:------------------------------|:---------------------------------------|
 | **Shared Schema (RLS)** | `SET LOCAL exeris.tenant_id`  | Standard SaaS, High-Density            |
 | **Dedicated Schema**    | `SET search_path TO [schema]` | Professional Tier, easier migrations   |
-| **Dedicated Database**  | Dynamic DataSource Routing    | Enterprise, maximum physical isolation |
+| **Dedicated Database**  | Dynamic DataSource Routing    | Maximum physical isolation             |
 
 ---
 
@@ -121,26 +132,6 @@ This prevents:
 - Connection pool queue buildup
 - Cascading latency spikes (fairness inversion)
 
-### Performance Impact
-
-**Problem Fixed** (Benchmark 2026-03-28):
-- ThreadPark events: 40,793 → <5,000 (87% reduction)
-- p50 latency: 52.57ms → ≤5ms (10x improvement)
-- Fairness index: 0.1268 → ≥0.95 (fair distribution)
-
-**Root Cause Addressed:**
-- Before: HTTP created 428k session boxes per 52k requests (8.2:1 ratio)
-- After: Admission gating limits creation to available pool capacity
-
-### Tier Implementations
-
-| Aspect | Community | Enterprise |
-|--------|-----------|------------|
-| **Pool Query** | HikariCP `getNumIdle()` / `getNumActive()` | Native io_uring SQE availability + metric poll |
-| **Rejection Threshold** | idle==0 && queued>0 OR active>=90% max | Adaptive exponential backoff + native telemetry |
-| **Latency** | <1ms | <500µs |
-| **Overhead** | O(1) state query | O(1) native probe |
-
 ### TCK Compliance
 
 All implementations must satisfy `AbstractPersistenceEngineAdmissionControlTck`:
@@ -148,7 +139,6 @@ All implementations must satisfy `AbstractPersistenceEngineAdmissionControlTck`:
 - Returns false when idle==0 && queue forming
 - Returns false when active >= 90% max
 - Returns false after engine shutdown
-- Latency guarantee: ≤5ms p50 per call (authoritative sub-millisecond bound enforced by JMH benchmarks)
 - Zero-allocation on hot path (JFR verified)
 
 ---
@@ -166,7 +156,7 @@ All implementations must satisfy `AbstractPersistenceEngineAdmissionControlTck`:
 | `EX-PERS-5004` | Authentication Failure           | `[0] String authMechanism, [1] String serverMessage`              |
 | `EX-PERS-5005` | Persistence Transport Failure    | `[0] String transportName, [1] long fd, [2] int errno`            |
 | `EX-PERS-5006` | Interceptor Initialization Error | `[0] String interceptorClass, [1] String isolationKey`            |
-| `EX-PERS-5007` | No Provider on Classpath         | `[0] String message` — **Fatal:** add `community` or `enterprise` jar |
+| `EX-PERS-5007` | No Provider on Classpath         | `[0] String message` — **Fatal:** add a persistence provider implementation jar |
 
 **Privacy note for `EX-PERS-5001`:** The `sanitizedConnectionUrl` field MUST have the `user:password@` userinfo
 segment stripped before capture. Emitting raw credentials constitutes a CWE-532 violation. See
@@ -197,13 +187,17 @@ public interface ConnectionInterceptor {
 The context that drives isolation without knowing any business or security details.
 
 ```java
-package eu.exeris.kernel.spi.persistence;
+package eu.exeris.kernel.spi.security;
 
 public interface StorageContext {
-    Optional<String> isolationKey();
+    IsolationStrategy strategy();
+    Optional<String> schemaName();
+    Optional<String> dataSourceKey();
     Map<String, Object> attributes();
 }
 ```
+
+> **Note:** StorageContext is defined in the Security SPI by design (The Wall) — Persistence only consumes it; it has no definitional role in the Persistence SPI.
 
 ### 3. Clean Imperative Repository (L2/L3 Layer)
 
@@ -228,7 +222,7 @@ PersistenceProvider provider = ServiceLoader.load(PersistenceProvider.class)
         .findFirst()
         .orElseThrow(() -> new PersistenceBootstrapException(
                 KernelErrorCodes.EX_PERS_5007,
-                "No PersistenceProvider found on classpath. Add exeris-kernel-community or exeris-kernel-enterprise."
+                "No PersistenceProvider found on classpath. Add a persistence provider jar."
         ));
 ```
 ---
@@ -313,7 +307,7 @@ infinite retry storms.
 ### Unit Tests
 
 - `StorageContext` resolution logic (key extraction from `PrincipalContext` bridge in Core orchestration).
-- `ConnectionInitializer` interceptor execution order.
+- `InterceptorRegistry` execution order (registration, sealing, call order).
 - `EX-PERS-5006` is thrown on interceptor failure and the connection is NOT returned to the pool.
 
 ### Integration Tests (TCK)
@@ -324,6 +318,8 @@ infinite retry storms.
 - **Outbox Durability:** Events are committed only if the main transaction succeeds; rolled back otherwise.
 - **Pool Exhaustion:** `EX-PERS-5002` is thrown with correct `rawArgs` when all connections are in use.
 - **No Provider:** `EX-PERS-5007` is thrown at bootstrap when no `PersistenceProvider` is on the classpath.
+
+**Full TCK abstract class set:** `AbstractPersistenceEngineTck`, `AbstractPersistenceProviderTck`, `AbstractPersistenceEngineAdmissionControlTck`, `AbstractOutboxGuaranteeTck`, `AbstractEventStoreTck`, `AbstractEntityCodecTck`, `PersistenceCarrierPinningTck`, `PersistenceIsolationLeakTck`, `PersistenceZeroAllocTck`, `AbstractRowCursorThroughputBenchmark` (JMH).
 
 ---
 

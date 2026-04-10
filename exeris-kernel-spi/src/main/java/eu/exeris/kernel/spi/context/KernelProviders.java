@@ -346,13 +346,12 @@ public final class KernelProviders {
     public static final ScopedValue<FlowSnapshotStore> FLOW_SNAPSHOT_STORE = ScopedValue.newInstance();
 
     /**
-     * The optional {@link IdempotencyGuard} for flow-step deduplication.
+     * The optional {@link IdempotencyGuard} for preventing duplicate step execution.
      *
-     * <p>Bound by the bootstrapper before {@link FlowEngine#start()} when step-level
-     * idempotency tracking is required. If unbound, the engine falls back to a default
-     * heap-based {@link IdempotencyGuard} implementation provided by the active tier.
+     * <p>Bound by the bootstrapper before {@link FlowEngine#start()} when a custom
+     * guard is required. If unbound, the default {@link FlowEngine} implementation installs a heap-backed guard.
      *
-     * @since 0.6.0
+     * @since 0.5.0
      * @see IdempotencyGuard
      * @see #idempotencyGuard()
      */
@@ -595,7 +594,7 @@ public final class KernelProviders {
     /**
      * Returns the optional {@link IdempotencyGuard} from the current scope.
      *
-     * @return an {@link Optional} containing the guard if it was bound; empty otherwise
+     * @return an {@link Optional} containing the guard if the slot was bound; empty otherwise
      */
     public static Optional<IdempotencyGuard> idempotencyGuard() {
         return IDEMPOTENCY_GUARD.isBound()

@@ -25,6 +25,8 @@ import java.util.regex.Pattern;
  *
  * @since 0.5.0
  */
+@SuppressWarnings({"PMD.CyclomaticComplexity", "PMD.TooManyMethods"})
+// CyclomaticComplexity/TooManyMethods: two-dialect (SQL/PGQ + Cypher) factory; complexity is structural.
 final class CommunityGraphDialect implements GraphDialect {
 
     private enum Mode {

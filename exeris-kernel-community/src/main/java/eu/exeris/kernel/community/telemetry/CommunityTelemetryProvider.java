@@ -32,7 +32,7 @@ import java.util.List;
  *
  * @since 0.5.0
  */
-@SuppressWarnings("unused") // Loaded by ServiceLoader via reflection — no direct call site
+@SuppressWarnings("PMD.CloseResource") // sinks created/closed atomically; lifecycle delegated to caller
 public final class CommunityTelemetryProvider implements TelemetryProvider {
 
     private static final String PROVIDER_NAME = "ExerisCommunity/TextTelemetry";
@@ -52,7 +52,7 @@ public final class CommunityTelemetryProvider implements TelemetryProvider {
             if (config.fileSinkPath() != null && !config.fileSinkPath().isBlank()) {
                 sinks.add(new FileSink(Path.of(config.fileSinkPath()), config.maxEventQueueDepth()));
             }
-        } catch (RuntimeException e) {
+        } catch (RuntimeException e) { //NOPMD AvoidCatchingGenericException — must close partial sinks
             closeCreatedSinks(sinks, e);
             throw new TelemetryBootstrapException(PROVIDER_NAME, "Sink creation failed", e);
         }
@@ -63,7 +63,7 @@ public final class CommunityTelemetryProvider implements TelemetryProvider {
         for (TelemetrySink sink : sinks) {
             try {
                 sink.close();
-            } catch (RuntimeException closeFailure) {
+            } catch (RuntimeException closeFailure) { //NOPMD AvoidCatchingGenericException — drain all sinks
                 failure.addSuppressed(closeFailure);
             }
         }

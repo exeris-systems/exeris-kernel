@@ -52,7 +52,7 @@ final class CommunityJdbcOutboxEventStoreAdapter implements OutboxEventStore {
         this.eventRegistry = Objects.requireNonNull(eventRegistry, "eventRegistry");
     }
 
-    @SuppressWarnings({"PMD.CloseResource", "PMD.AvoidInstantiatingObjectsInLoops"})
+    @SuppressWarnings("PMD.CloseResource")
     @Override
     public List<OutboxBrokerPort.OutboxEntry> pollPending(int maxItems) {
         try (PersistenceConnection connection = persistenceEngine.openConnection()) {

@@ -75,7 +75,7 @@ final class InMemoryHttp2Exchange implements HttpExchange {
         List<HttpHeader> mergedHeaders = mergeHeaders(typedResponse.headers(), encodedBody.headers());
         try {
             respond(new HttpResponse(typedResponse.status(), request.version(), mergedHeaders, encodedBody.body()));
-        } catch (RuntimeException | Error ex) {
+        } catch (RuntimeException | Error ex) { //NOPMD AvoidCatchingGenericException — close body on failure
             if (encodedBody.body() != null) {
                 encodedBody.body().close();
             }

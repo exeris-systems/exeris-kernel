@@ -28,7 +28,7 @@ import java.util.function.LongSupplier;
  * buckets are periodically reclaimed and old entries removed.
  * VarHandle for lock-free counters on hot path.
  *
- * @since 0.6.0
+ * @since 0.5.0
  */
 @SuppressWarnings({"PMD.CyclomaticComplexity", "PMD.GodClass", "PMD.TooManyMethods"})
 final class FairnessTracker {

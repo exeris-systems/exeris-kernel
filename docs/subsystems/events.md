@@ -6,7 +6,6 @@
 - Core: `eu.exeris.kernel.core.events.*` (Outbox Orchestrator, Projections)
 - Drivers:
     - **`community`**: Standard Heap/NIO (PostgreSQL Event Store, JVM-heap Pub/Sub)
-    - **`enterprise`**: Off-Heap Slab Pools + `io_uring` + Native Kafka / Redpanda Integration
 
 **Layer:** L3 (Logic Engines)
 **Status:** Validated Architectural Prototype (TRL-3)
@@ -23,8 +22,6 @@ operates on local memory, a PostgreSQL partition, or a Kafka cluster.
   Postgres partition, a Kafka topic, or an off-heap ring buffer.
 - **Transactional Outbox:** Guarantees at-least-once delivery by atomically binding event publication to
   database transactions (SQL-based persistence).
-- **Zero-Copy Native Flow:** In the Enterprise tier, the engine exchanges data directly with Kafka/Redpanda,
-  bypassing the JVM heap entirely via Panama FFM and `LoanedBuffer` handover to the broker socket.
 - **Ordered Aggregates:** Enforces strict ordering and versioning per Aggregate Root, preventing race
   conditions in high-concurrency Virtual Thread environments.
 
@@ -49,11 +46,7 @@ the payload immediately — eliminating silent leaks from dead events.
 
 ### 3. Zero-Copy Native Flow
 
-In the Enterprise tier, bytes travel:
-```
-Producer LoanedBuffer → EventBus → io_uring SQE → Kafka sendfile/page cache
-```
-No `byte[]` copy, no `ByteBuffer.allocate()`, no heap serialization between the producer and the broker.
+`EventPayload` bytes travel from the producer's `LoanedBuffer` directly through the `EventBus` to the Kafka/Redpanda page cache — no `byte[]` copy, no `ByteBuffer.allocate()`, no heap serialization between producer and broker.
 
 ### 4. Backpressure by Design
 
@@ -69,8 +62,8 @@ instead of silently blocking a Carrier Thread or triggering unbounded heap growt
 | Component         | Responsibility                                                                          |
 |:------------------|:----------------------------------------------------------------------------------------|
 | **`EventBus`**    | Pub/Sub. Manages subscriptions (returns `SubscriptionToken`), publishes fire-and-forget |
-| **`EventQueue`**  | Durable backpressure buffer. Enterprise: lock-free off-heap ring buffer                 |
-| **`EventLoop`**   | Drains the queue. Community: `StructuredTaskScope` (VTs). Enterprise: single-threaded lock-free |
+| **`EventQueue`**  | Durable backpressure buffer                                                             |
+| **`EventLoop`**   | Drains the queue. Community: `StructuredTaskScope` (Virtual Threads)                    |
 | **`EventRegistry`** | Type system. Maps event names → `int` ordinals for O(1) hot-path routing            |
 
 `EventRegistry` is the critical performance gate: ordinal-based routing eliminates `String` comparison on
@@ -87,10 +80,6 @@ in the `EventDescriptor` primitive layout.
 | **Kafka / Redpanda** | Distributed Systems  | Native Off-Heap Page Cache, Zero-Copy streaming               |
 | **In-Memory**        | Testing / Ephemeral  | Zero latency, non-persistent                                  |
 
-**Batch Flush (Enterprise):** `EventLoop` supports `EventBatchProcessor` registration. At 10,000 events/s,
-the engine batches them into a single flush — one `io_uring` SQE submission instead of 10,000 individual
-inserts or Kafka `ProducerRecord` objects.
-
 ---
 
 ## Responsibilities
@@ -98,15 +87,17 @@ inserts or Kafka `ProducerRecord` objects.
 **What Events SPI DOES:**
 
 1. Define `EventDescriptor` (primitive-only routing metadata) and `EventPayload` (ref-counted off-heap bytes).
-2. Provide `EventStreamReader` and `EventStreamAppender` interfaces.
+2. Provide `EventStreamReader` and `EventStreamAppender` interfaces *(Target State — not yet implemented)*.
 3. Define `EventRegistry` ordinal contract for O(1) type routing.
-4. Define conflict-resolution contracts (Optimistic Concurrency via version field in `EventDescriptor`).
+4. Define conflict-resolution routing via `EventDescriptor.flags` (PERSISTENT, ORDERED, ASYNC, BROADCAST). Note: optimistic concurrency version enforcement is a Persistence SPI concern (`PersistenceEngine.append(streamId, expectedVersion, …)`), not an Events routing concern.
 
 **What Events Core DOES:**
 
 1. Orchestrate the **Event Bus** for in-memory distribution with RAII ref-count lifecycle.
 2. Manage the **Transactional Outbox** state machine to prevent Dual-Write problems.
 3. Handle event serialization/deserialization using the Kernel's binary formats (no JSON on hot-path).
+4. Manage local **Projections** via `ProjectionEngine` — subscribes typed `ProjectionHandler<S>` instances to the bus and maintains their immutable state via lock-free `AtomicReference.updateAndGet`.
+5. Provide binary `EventDescriptorCodec` for off-heap serialisation of `EventDescriptor` structs (Panama FFM `StructLayout`, little-endian).
 
 ---
 
@@ -201,31 +192,34 @@ responsibility of the application layer. The Kernel provides **schema version ro
 Events that consistently fail handler execution are moved to a Dead Letter Queue.
 
 **Trigger:** Handler throws an uncaught exception on attempt `max-retries` (default: 5).
-`max-retries` is configured per subscription via `bus.subscribe(...).maxRetries(5)`.
+There is currently no per-subscription retry configuration on `EventBus`. Retry behavior is configured at the engine level via `EventEngineConfig`.
 
 **DLQ table (auto-created on first boot):**
 
 ```sql
-CREATE TABLE IF NOT EXISTS exeris_event_dlq (
-    id              BIGSERIAL PRIMARY KEY,
-    original_stream TEXT NOT NULL,
-    event_ordinal   INT NOT NULL,
-    payload         BYTEA NOT NULL,
-    handler_class   TEXT NOT NULL,
-    failure_reason  TEXT,
-    moved_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+CREATE TABLE IF NOT EXISTS exeris_outbox_dlq (
+    id            TEXT PRIMARY KEY,
+    stream_id     TEXT NOT NULL,
+    event_type    TEXT NOT NULL,
+    payload       BYTEA NOT NULL,
+    occurred_at   TIMESTAMPTZ NOT NULL,
+    failure_reason TEXT
 );
 ```
 
-**JFR event:** `EventDlqTransferEvent` emitted on DLQ transition.
-`rawArgs[0]=String eventType, rawArgs[1]=int attempt, rawArgs[2]=String handlerClass`.
+**JFR event:** `OutboxDlqEvent` (`eu.exeris.kernel.core.events.jfr`) emitted on DLQ transition.
+fields: `eventType (String)`, `streamIdHigh (long)`, `streamIdLow (long)`, `reason (String)`, `retryCount (int)`.
 
-**Operator recovery:** Re-inject from DLQ via `EventEngine.replayFromDlq(dlqId)` — identical to
-a normal publish, bypassing the retry count.
+> **Target State:** Operator-triggered DLQ replay (`EventEngine.replayFromDlq(dlqId)`) is planned but not
+> yet implemented in the SPI. Current recovery requires direct `exeris_outbox_dlq` table access.
 
 ---
 
 ## Event Replay API
+
+> **Target State — not yet implemented.** `EventStreamReader`, `EventStreamAppender`, `StreamId`, and
+> `EventStream` SPI contracts do not yet exist in `exeris-kernel-spi`. This section describes a planned
+> capability.
 
 The `EventStreamReader` SPI supports replay from a specific position in the Event Store.
 This enables CQRS projection rebuilds without external tooling.
@@ -280,7 +274,6 @@ operational differences that affect Exeris configuration:
 | **Retention semantics**| Time-based (`retention.ms`) + size-based (`retention.bytes`) | Same API — compatible                                |
 | **Consumer groups**    | Standard Kafka consumer group protocol             | Compatible (Kafka protocol v2)                        |
 | **`sendfile` / zero-copy** | Page cache → socket via `sendfile(2)` (no JVM copy) | Identical — same Linux kernel path                 |
-| **Enterprise driver**  | `io_uring` submission for batch flush (`EventBatchProcessor`) | Identical — broker-agnostic `io_uring` socket path |
 | **Known difference**   | Kafka has more mature tooling (Kafka Streams, ksqlDB) | Redpanda is faster cold-start (single binary, no ZK) |
 
 > **Driver note:** The Exeris Events driver communicates with both Kafka and Redpanda over the
@@ -298,17 +291,18 @@ operational differences that affect Exeris configuration:
 - `EventDescriptor` scalarization: verify no heap objects are created during descriptor construction.
 - `EventPayload` ref-count correctness: N subscribers → ref-count N; last `close()` → pool return.
 - `EventRegistry` ordinal conflicts: `EX-EVENT-6003` thrown on duplicate registration.
+  > **(TCK gap — not yet implemented)**
 - Backpressure: `EX-EVENT-6002` thrown with correct `rawArgs` when queue is at capacity.
+  > **(TCK gap — not yet implemented)**
 
 ### Integration Tests (TCK)
 
 - **Outbox Guarantee:** Disconnect the broker mid-flight; verify events are not lost in the DB outbox.
 - **Provider Switching:** Run the same TCK suite against PostgreSQL and then against a Kafka container.
 - **Order Integrity:** Verify events for the same `StreamId` are processed in strict sequence.
+  > **(TCK gap — not yet implemented)**
 - **Zero Subscriber Fast-Free:** Publish to a bus with zero subscribers; verify `payload.refCount() == 0`
   and slab is immediately returned to the pool (no silent leak).
-- **Batch Flush (Enterprise):** Register `EventBatchProcessor`; verify 10,000 events produce a single
-  `io_uring` SQE submission, not 10,000 individual calls.
 
 ---
 

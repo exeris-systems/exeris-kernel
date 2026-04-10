@@ -23,7 +23,7 @@ import java.util.Base64;
  * <p>Produces PHC-format output: {@code $argon2id$v=19$m=...,t=...,p=...$<salt>$<hash>}.
  * Salt is 16 bytes from {@link SecureRandom}. All internal byte array copies are zeroed on exit.
  *
- * @since 0.6.0
+ * @since 0.5.0
  */
 public final class Argon2idPasswordEncoder implements KernelPasswordEncoder {
 

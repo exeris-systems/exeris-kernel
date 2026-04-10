@@ -3,7 +3,9 @@
 **Physical Layout:**
 
 - SPI: `eu.exeris.kernel.spi.exceptions.*` (Domain exceptions, Error codes, GlassBox support)
-- Core: `eu.exeris.kernel.core.exceptions.*` (Error mappers, Registry)
+- Core: `eu.exeris.kernel.core.telemetry.*` (Error mappers, Registry)
+
+> **Note:** `ConfigProviderException` is a nested static class inside `eu.exeris.kernel.spi.config.ConfigProvider` — it is not in the `spi.exceptions` package tree.
 
 **Layer:** L0 (Foundation)
 **Status:** Validated Architectural Prototype (TRL-3)
@@ -18,10 +20,12 @@ formatting. It implements:
 
 - **Standardized Error Codes:** All exceptions enforce the `EX-[DOMAIN]-[ID]` format (e.g., `EX-MEM-1001`).
 - **Glass Box Telemetry Support:** Base exceptions capture a `rawArgs: Object[]` payload of raw primitives (`long`,
-  `int`, `Enum`) instead of concatenated Strings, enabling the Enterprise tier to dump binary crash logs in nanoseconds.
+  int`, `Enum`) instead of concatenated Strings, enabling binary crash logs to be structured and processed efficiently.
 - **Centralized Error Mapper Registry:** Translates internal Kernel states to **Abstract Transport Codes**, which
   drivers later translate into protocol-specific responses (e.g., HTTP 503 or HTTP/3 `H3_EXCESSIVE_LOAD`).
 - **Environment-Aware Disclosure:** PROD shows minimal info; DEV exposes full stack trace.
+
+> **Note: Target-state. Not yet implemented in the active kernel modules.** Current implementation exposes the same level of detail regardless of environment.
 - **Distributed Tracing:** Every exception automatically captures a UUID `traceId`.
 
 ---
@@ -29,12 +33,12 @@ formatting. It implements:
 ## Core Philosophy: Every Exception is a Data Frame
 
 - **Glass Box Pattern:** We store raw primitives (`long`, `int`, `Enum`) in `rawArgs[]`. Binary crash logs are dumped
-  in nanoseconds by the Enterprise tier — `StringBuilder` and `String.formatted()` are strictly banned in constructors.
+  in nanoseconds — `StringBuilder` and `String.formatted()` are strictly banned in constructors.
 - **Autoboxing on the Exception Path:** `rawArgs: Object[]` requires autoboxing primitives (e.g., `long` → `Long`).
   This is the **only** place in the Kernel where autoboxing is permitted, because exceptions are exceptional states —
   not data flow. A healthy system never pays this cost.
 - **Protocol Blindness:** Core is blind to HTTP, QUIC, or Database protocols. It speaks only in abstract states:
-  `EXCESSIVE_LOAD`, `UNAUTHORIZED`, `INTERNAL_ERROR`. Each Driver (Community or Enterprise) independently translates
+  `EXCESSIVE_LOAD`, `UNAUTHORIZED`, `INTERNAL_ERROR`. Each Driver independently translates
   these to its native protocol codes.
 - **Privacy-First Telemetry (CWE-532 Contract):** Any configuration value, connection URL, or persistence argument
   captured in `rawArgs` **MUST** be redacted or truncated by the caller before emission. Emitting raw secrets,
@@ -112,6 +116,9 @@ formatting. It implements:
 | `EX-HTTP-4004` | HTTP/1.1 Parse Violation (malformed/DoS)     | `[0] String detail`                    |
 | `EX-HTTP-4005` | HTTP/2 CONTINUATION Sequence Violation       | `[0] String detail`                    |
 | `EX-HTTP-4006` | HTTP/2 Frame Encoding Violation              | `[0] String detail`                    |
+| `EX-HTTP-4007` | HTTP Provider Bootstrap Failure              | `rawArgs[0]: String providerName`       |
+| `EX-HTTP-4008` | HTTP Server Engine Start Failure             | `rawArgs[0]: String providerName, rawArgs[1]: int port` |
+| `EX-HTTP-4009` | HTTP Client Engine Connection Failure        | `rawArgs[0]: String providerName, rawArgs[1]: String host, rawArgs[2]: int port` |
 
 ### Security (`EX-SEC-`)
 
@@ -152,6 +159,9 @@ formatting. It implements:
 | `EX-EVENT-6002` | Queue Overflow           | `[0] String eventType, [1] long depth, [2] long capacity`       |
 | `EX-EVENT-6003` | Registry Conflict        | `[0] String eventType, [1] int ordinal`                         |
 | `EX-EVENT-6004` | Provider Creation Failure| `[0] String providerName, [1] String reason`                    |
+| `EX-EVENT-6005` | Outbox Dead-Letter Queue | `rawArgs[0]: String eventType, rawArgs[1]: String reason, rawArgs[2]: int retryCount` |
+| `EX-EVENT-6006` | Projection Handler Threw | `rawArgs[0]: String projectionName, rawArgs[1]: int eventTypeOrdinal` |
+| `EX-EVENT-6007` | Event-Loop VT Uncaught Exception | `rawArgs[0]: String loopName, rawArgs[1]: String exceptionType` |
 
 ### Flow / Saga (`EX-FLOW-`)
 
@@ -159,7 +169,7 @@ formatting. It implements:
 |:---------------|:--------------------------|:--------------------------------------------------------------------------------|
 | `EX-FLOW-7001` | Provider Engine Failure   | `[0] String providerName, [1] String reason`                                    |
 | `EX-FLOW-7002` | Engine Lifecycle Failure  | `[0] String engineName, [1] String phase, [2] String reasonCode, [3] int ctx`   |
-| `EX-FLOW-7003` | Step Execution Failure    | `[0] String def, [1] long idMost, [2] long idLeast, [3] int stepIdx, ...`       |
+| `EX-FLOW-7003` | Step Execution Failure    | `[0] String definitionName, [1] long instanceIdMost, [2] long instanceIdLeast, [3] int stepIndex, [4] String staticReasonCode ("STEP_FAILED" \| "COMPENSATION_FAILED"), [5] String causeType (cause.getClass().getName() or "none")` |
 | `EX-FLOW-7004` | Registry Conflict         | `[0] int stepId, [1] String reason`                                             |
 
 ### Config (`EX-CFG-`)
@@ -176,6 +186,8 @@ formatting. It implements:
 
 ### 1. The Glass-Box Ready Exception (SPI)
 
+// NOTE: Illustrative pseudocode — VirtualThreadPinningException is NOT present in exeris-kernel-spi. For a real SPI example, see MemoryExhaustedException.
+
 ```java
 package eu.exeris.kernel.spi.exceptions;
 
@@ -191,7 +203,7 @@ public class VirtualThreadPinningException extends ExerisKernelException {
 ### 2. Error Mapper Registry (Core — Protocol Blindness)
 
 ```java
-package eu.exeris.kernel.core.exceptions;
+package eu.exeris.kernel.core.telemetry;
 
 public class ErrorMapperRegistry {
 
@@ -207,6 +219,8 @@ public class ErrorMapperRegistry {
 }
 ```
 
+> **Note:** `EX-HTTP-*` and `EX-GRPH-*` codes map to `INTERNAL_ERROR` by policy — these represent internal infrastructure failures not surfaced as distinct protocol-level codes.
+
 ---
 
 ## Testing Strategy
@@ -219,9 +233,9 @@ public class ErrorMapperRegistry {
 
 ### Integration Tests
 
-- Full exception flow: throw → `ErrorMapperRegistry.map()` → respond via active Transport Driver.
-- Environment-aware disclosure: DEV exposes stack trace, PROD returns opaque error code only.
-- Binary Glass-Box round-trip: `rawArgs[]` serialized → deserialized → fields match source primitives.
+- Full exception flow: throw → `ErrorMapperRegistry.map()` → respond via active Transport Driver. **(Target-state / not yet implemented)**
+- Environment-aware disclosure: DEV exposes stack trace, PROD returns opaque error code only. **(Target-state / not yet implemented)**
+- Binary Glass-Box round-trip: `rawArgs[]` serialized → deserialized → fields match source primitives. **(Target-state / not yet implemented)**
 
 ---
 

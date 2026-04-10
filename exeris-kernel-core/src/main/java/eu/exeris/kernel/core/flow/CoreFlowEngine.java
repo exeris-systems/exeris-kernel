@@ -80,7 +80,7 @@ public final class CoreFlowEngine implements FlowEngine {
         for (Map.Entry<EventBus, SubscriptionToken> entry : choreographySubscriptions) {
             try {
                 entry.getKey().unsubscribe(entry.getValue());
-            } catch (RuntimeException _) {
+            } catch (RuntimeException _) { //NOPMD AvoidCatchingGenericException — best-effort unsubscribe at shutdown
                 // best-effort unsubscribe
             }
         }

@@ -1,0 +1,101 @@
+/*
+ * Copyright (C) 2025-2026 Exeris Systems.
+ *
+ * Licensed under the Apache License, Version 2.0 with Commons Clause.
+ * You may use, modify, and distribute this file under those terms.
+ * Commercial resale of this software as a competing product is prohibited.
+ * See LICENSE-COMMUNITY in the repository root for the full text.
+ */
+package eu.exeris.kernel.community.bootstrap;
+
+import eu.exeris.kernel.core.events.EventBootstrap;
+import eu.exeris.kernel.spi.bootstrap.BootstrapPhase;
+import eu.exeris.kernel.spi.bootstrap.Subsystem;
+import eu.exeris.kernel.spi.config.ConfigProvider;
+import eu.exeris.kernel.spi.context.KernelProviders;
+import eu.exeris.kernel.spi.events.EventEngine;
+import eu.exeris.kernel.spi.events.EventEngineConfig;
+import eu.exeris.kernel.spi.events.EventProvider;
+
+import java.util.List;
+import java.util.function.UnaryOperator;
+
+final class CommunityEventsSubsystem implements Subsystem {
+
+    private EventProvider eventProvider;
+    private EventEngine eventEngine;
+    private boolean running;
+
+    @Override
+    public String name() {
+        return "events";
+    }
+
+    @Override
+    public List<String> dependsOn() {
+        return List.of("memory", "persistence");
+    }
+
+    @Override
+    public BootstrapPhase phase() {
+        return BootstrapPhase.RUNTIME;
+    }
+
+    @Override
+    public void initialize() {
+        ConfigProvider configProvider = KernelProviders.CURRENT_CONFIG.get();
+        EventEngineConfig config = buildConfig(configProvider);
+        EventBootstrap.BootstrapResult bootstrapResult = EventBootstrap.loadWithProvider(config);
+        eventProvider = bootstrapResult.provider();
+        eventEngine = bootstrapResult.engine();
+    }
+
+    @Override
+    public void start() {
+        if (eventEngine == null) {
+            return;
+        }
+        eventEngine.start();
+        running = true;
+    }
+
+    @Override
+    public void stop() {
+        running = false;
+        if (eventEngine != null) {
+            eventEngine.close();
+        }
+    }
+
+    @Override
+    public boolean isRunning() {
+        return running;
+    }
+
+    @Override
+    public UnaryOperator<ScopedValue.Carrier> providerBindings() {
+        if (eventProvider == null || eventEngine == null) {
+            return Subsystem.super.providerBindings();
+        }
+        return carrier -> carrier
+                .where(KernelProviders.EVENT_PROVIDER, eventProvider)
+                .where(KernelProviders.EVENT_ENGINE, eventEngine);
+    }
+
+    private static EventEngineConfig buildConfig(ConfigProvider configProvider) {
+        EventEngineConfig defaults = EventEngineConfig.communityDefaults();
+        return new EventEngineConfig(
+                configProvider.getString("event.engineName").orElse(defaults.engineName()),
+                configProvider.getInt("event.queueCapacity").orElse(defaults.queueCapacity()),
+                configProvider.getInt("event.batchSize").orElse(defaults.batchSize()),
+                configProvider.getString("event.partitionName").orElse(defaults.partitionName()),
+                configProvider.getLong("event.partitionBytes").orElse(defaults.partitionBytes()),
+                configProvider.getInt("event.slabDescriptorCount").orElse(defaults.slabDescriptorCount()),
+                configProvider.getInt("event.slabPayloadSmall").orElse(defaults.slabPayloadSmall()),
+                configProvider.getInt("event.slabPayloadMedium").orElse(defaults.slabPayloadMedium()),
+                configProvider.getInt("event.slabPayloadLarge").orElse(defaults.slabPayloadLarge()),
+                configProvider.getBoolean("event.outboxEnabled").orElse(defaults.outboxEnabled()),
+                configProvider.getInt("event.outboxBatchSize").orElse(defaults.outboxBatchSize())
+        );
+    }
+}

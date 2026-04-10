@@ -20,7 +20,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * L1 Unit: {@link CommunityPersistenceEngine#canServiceRequest()} with fairness control.
  *
- * @since 0.6.0
+ * @since 0.5.0
  */
 @DisplayName("L1 Unit: CommunityPersistenceEngine#canServiceRequest() with Fairness")
 class CommunityPersistenceEngineFairnessTest {

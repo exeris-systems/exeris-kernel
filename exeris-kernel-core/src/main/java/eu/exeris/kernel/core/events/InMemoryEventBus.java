@@ -22,10 +22,12 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Queue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.StructuredTaskScope;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -61,6 +63,10 @@ import java.util.concurrent.atomic.AtomicLong;
  * @since 0.5.0
  */
 // CouplingBetweenObjects: EventBus coordinates registry, handlers and JFR — inherent to the bus role
+@SuppressWarnings({"PMD.CyclomaticComplexity", "PMD.CloseResource"})
+// CyclomaticComplexity: aggregate inflated by helpers; no single method exceeds threshold.
+// CloseResource: TrackingWrapper ownership transferred across lambda/loop boundaries —
+//   closed deterministically by TWR in fork lambda or closeUnclosed() on interrupt path.
 public final class InMemoryEventBus implements EventBus {
 
     /** Unique bus ID embedded in each {@link SubscriptionToken}. */
@@ -158,52 +164,21 @@ public final class InMemoryEventBus implements EventBus {
         int slotCount = slots.size();
         // Build one TrackingWrapper per slot so deterministic cleanup is possible on any
         // early-exit path (interrupt, RuntimeException) — every retain() is balanced.
-        List<TrackingWrapper> wrappers = new ArrayList<>(slotCount);
-        for (int i = 0; i < slotCount; i++) {
-            if (i > 0) {
-                payload.retain();
-            }
-            wrappers.add(new TrackingWrapper(payload));
-        }
+        List<TrackingWrapper> wrappers = buildWrappers(payload, slotCount);
 
-        ConcurrentLinkedQueue<Throwable> failures = new ConcurrentLinkedQueue<>();
+        Queue<Throwable> failures = new ConcurrentLinkedQueue<>();
         try (StructuredTaskScope<Void, Void> scope =
                      StructuredTaskScope.open(StructuredTaskScope.Joiner.<Void>awaitAll())) {
-            for (int i = 0; i < slotCount; i++) {
-                Slot slot = slots.get(i);
-                TrackingWrapper wrapper = wrappers.get(i);
-                scope.fork(() -> {
-                    try {
-                        slot.handler().handle(descriptor, wrapper);
-                    } catch (RuntimeException ex) {
-                        failures.add(ex);
-                    } finally {
-                        // Close any ref the handler failed to close.
-                        if (!wrapper.isClosed()) {
-                            wrapper.close();
-                        }
-                    }
-                    return null;
-                });
-            }
+            forkHandlers(scope, slots, wrappers, descriptor, failures);
             try {
                 scope.join();
-            } catch (InterruptedException ex) {
-                // Close any wrappers whose handler never ran or never closed due to cancellation.
-                for (TrackingWrapper w : wrappers) {
-                    if (!w.isClosed()) {
-                        w.close();
-                    }
-                }
+            } catch (InterruptedException interruptEx) {
+                closeUnclosed(wrappers);
                 Thread.currentThread().interrupt();
-                throw ex;
+                throw interruptEx;
             }
         }
-        if (!failures.isEmpty()) {
-            EventBusException ex = new EventBusException("One or more event handlers failed during publishAndAwait");
-            failures.forEach(ex::addSuppressed);
-            throw ex;
-        }
+        throwIfFailed(failures);
     }
 
     // =========================================================================
@@ -243,6 +218,55 @@ public final class InMemoryEventBus implements EventBus {
     // Internal
     // =========================================================================
 
+    private static List<TrackingWrapper> buildWrappers(EventPayload payload, int slotCount) {
+        List<TrackingWrapper> wrappers = new ArrayList<>(slotCount);
+        for (int i = 0; i < slotCount; i++) {
+            if (i > 0) {
+                payload.retain();
+            }
+            wrappers.add(new TrackingWrapper(payload));
+        }
+        return wrappers;
+    }
+
+    private static void forkHandlers(StructuredTaskScope<Void, Void> scope,
+                                     List<Slot> slots,
+                                     List<TrackingWrapper> wrappers,
+                                     EventDescriptor descriptor,
+                                     Queue<Throwable> failures) {
+        int slotCount = slots.size();
+        for (int i = 0; i < slotCount; i++) {
+            Slot slot = slots.get(i);
+            TrackingWrapper wrapper = wrappers.get(i);
+            scope.fork(() -> {
+                try (TrackingWrapper twrClose = wrapper) {
+                    slot.handler().handle(descriptor, twrClose);
+                } catch (RuntimeException handlerEx) { //NOPMD AvoidCatchingGenericException — SPI boundary
+                    failures.add(handlerEx);
+                }
+                return null;
+            });
+        }
+    }
+
+    private static void closeUnclosed(List<TrackingWrapper> wrappers) {
+        for (TrackingWrapper w : wrappers) {
+            if (!w.isClosed()) {
+                w.close();
+            }
+        }
+    }
+
+    private static void throwIfFailed(Queue<Throwable> failures) {
+        if (failures.isEmpty()) {
+            return;
+        }
+        EventBusException busException =
+                new EventBusException("One or more event handlers failed during publishAndAwait");
+        failures.forEach(busException::addSuppressed);
+        throw busException;
+    }
+
     private List<Slot> resolveSlots(int ordinal) {
         List<Slot> slots = subscribers.get(ordinal);
         // CopyOnWriteArrayList already provides safe snapshot iteration; no copy needed.
@@ -273,17 +297,16 @@ public final class InMemoryEventBus implements EventBus {
      * Tracks whether {@link #close()} has been called so the bus can deterministically
      * release any ref that a handler failed to close, without risking over-release.
      */
-    @SuppressWarnings("PMD.CloseResource")
     private static final class TrackingWrapper implements EventPayload {
         private final EventPayload delegate;
-        private volatile boolean closed = false;
+        private final AtomicBoolean closed = new AtomicBoolean();
 
-        TrackingWrapper(EventPayload delegate) {
+        /* default */ TrackingWrapper(EventPayload delegate) {
             this.delegate = delegate;
         }
 
-        boolean isClosed() {
-            return closed;
+        /* default */ boolean isClosed() {
+            return closed.get();
         }
 
         @Override
@@ -303,8 +326,7 @@ public final class InMemoryEventBus implements EventBus {
 
         @Override
         public void close() {
-            if (!closed) {
-                closed = true;
+            if (closed.compareAndSet(false, true)) {
                 delegate.close();
             }
         }
@@ -316,7 +338,7 @@ public final class InMemoryEventBus implements EventBus {
 
         @Override
         public boolean isAlive() {
-            return !closed && delegate.isAlive();
+            return !closed.get() && delegate.isAlive();
         }
     }
 }

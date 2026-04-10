@@ -53,6 +53,10 @@ final class CommunityNeo4jClient implements AutoCloseable {
         return SessionConfig.builder().withDatabase(database).build();
     }
 
+    /* default */ static boolean isConfigured(GraphConfig config) {
+        return optionalProperty(config, "neo4j.uri", "EXERIS_GRAPH_NEO4J_URI") != null;
+    }
+
     private static String requireProperty(GraphConfig config, String propertyKey, String envKey) {
         String value = optionalProperty(config, propertyKey, envKey);
         if (value == null || value.isBlank()) {

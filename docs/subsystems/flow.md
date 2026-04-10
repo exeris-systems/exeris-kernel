@@ -12,7 +12,6 @@
 - Core owns flow orchestration: definition compilation, scheduling, park/wake, compensation, and runtime state transitions.
 - Community is a thin binding over the shared Core engine.
 - Community snapshot persistence is currently heap-backed and in-memory via `CommunityFlowSnapshotStore`.
-- Enterprise-specific storage and advanced off-heap targets remain staged, not implemented in this repository state.
 
 ## Runtime Behavior
 
@@ -20,6 +19,10 @@
 - Park/wake is supported through the Flow scheduler API.
 - Compensation is supported when enabled in `FlowEngineConfig`.
 - Snapshot persistence is optional and only used when a `FlowSnapshotStore` is bound and persistence is enabled.
+
+> **Note:** `FlowOutcome.COMPLETE` provides a direct short-circuit path: a step can return `COMPLETE` to transition the flow immediately to `FlowState.COMPLETED` without executing any remaining steps.
+
+> **Note:** The `FlowEngine.start()` Javadoc references `FlowEngineBootstrapEvent` and `FlowEngine.close()` references `FlowEngineShutdownEvent`. These forward-reference class names do not yet exist as implementations. `FlowBootstrapSelectedEvent` is currently emitted by `FlowBootstrap.loadWithProvider()` (before `start()` is called), and `close()` does not yet emit a JFR event. Tracking: FlowEngineShutdownEvent implementation is in the roadmap.
 
 ## Boundaries
 
@@ -43,13 +46,44 @@
 
 ## Compensation Failure Handling
 
-## Optional Events Integration
+## Idempotency
+
+Step-level deduplication during crash-recovery replay and choreography re-wakes is governed by `IdempotencyGuard` (SPI: `eu.exeris.kernel.spi.flow.IdempotencyGuard`).
+
+- **ScopedValue binding:** `KernelProviders.IDEMPOTENCY_GUARD` (optional)
+- **Fallback:** `CoreIdempotencyGuard` (heap-based CAS per `(instanceId, stepIndex)` tuple)
+- **Lifecycle:** Per-instance guard entries are cleared on `releaseInstance()` at terminal state
+
+Custom `IdempotencyGuard` implementations can be bound via the ScopedValue slot before calling `FlowEngine.submit()`.
+
+## Events Integration
+
+### Flow → Events (Progress Publication)
 
 - When `KernelProviders.EVENT_ENGINE` is bound, Core may publish flow progress events to the Events SPI.
 - This publication is best-effort and optional.
 - If no event engine is bound, event registration is unavailable, or publishing fails, flow execution continues unchanged.
 - The progress payload is intentionally small and currently includes the definition name, step index, and flow state.
 - Only terminal state transitions (`COMPLETED`, `FAILED_ROLLEDBACK`) emit a progress event; intermediate states are skipped to avoid allocation on hot paths.
+
+### Events → Flow (Choreography)
+
+Flow can be driven by external events through the choreography bridge:
+
+- **`FlowChoreographyMapper`** — `@FunctionalInterface` that maps an incoming event to a `ChoreographyDecision`
+- **`ChoreographyDecision`** — sealed interface: `Ignore` (no action), `Wake` (wake a parked flow), `Start` (start a new flow instance)
+- **`FlowEngine.registerChoreographyMapper(String eventType, FlowChoreographyMapper mapper)`** — registers the mapper
+- **`choreographySupport`** capability flag in `FlowEngineCapabilities` must be `true`
+- **`FlowChoreographyBridge`** (Core internal) connects the EventBus handler to `FlowScheduler`
+
+---
+
+## JFR Events
+
+| Event | JFR Name | Emitted By | Key Fields |
+|---|---|---|---|
+| `FlowBootstrapSelectedEvent` | `eu.exeris.kernel.flow.BootstrapSelected` | `FlowBootstrap.loadWithProvider()` | `providerClass`, `priority`, `providerId`, `engineName` |
+| `FlowStepFailedEvent` | `eu.exeris.kernel.flow.StepFailed` | `CoreFlowRuntime` on step exception | `definitionName`, `stepIndex`, `instanceIdMost`, `instanceIdLeast`, `failureReason` |
 
 ---
 
@@ -64,3 +98,36 @@
 **Implication:** For long-running runtimes processing very high flow throughput, `FlowKey` entries may accumulate in heap between `start()` and `close()`. This is a known gap. Implementing eviction requires a correctness-aware design — an overly aggressive policy could allow re-scheduling a completed flow.
 
 **Future work:** a configurable `terminalCatalogMaxSize` (or TTL) property in `FlowEngineConfig`, governed by a policy decision documented here and in `docs/ROADMAP.md`. No ADR exists for this yet; one should be created before implementation.
+
+---
+
+## Error Codes
+
+> **Source of truth:** `KernelErrorCodes.java` in `exeris-kernel-spi`. The `rawArgs` binary layout is defined per constant Javadoc and must not diverge from this table.
+
+| Code           | Meaning                  | Glass-Box Payload (`rawArgs`)                                                                                                                           |
+|:---------------|:-------------------------|:--------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `EX-FLOW-7001` | Provider Engine Failure  | `[0] String providerName, [1] String reason`                                                                                                            |
+| `EX-FLOW-7002` | Engine Lifecycle Failure | `[0] String engineName, [1] String phase, [2] String reasonCode, [3] int contextVal` — `phase` values include `SCHEMA_MISMATCH`, `WAKE_FAILED`, `SUBMIT_REJECTED` |
+| `EX-FLOW-7003` | Step Execution Failure   | `[0] String definitionName, [1] long instanceIdMost, [2] long instanceIdLeast, [3] int stepIndex, [4] String staticReasonCode ("STEP_FAILED" \| "COMPENSATION_FAILED"), [5] String causeType` |
+| `EX-FLOW-7004` | Registry Conflict        | `[0] int stepId, [1] String reason`                                                                                                                     |
+
+> **Note — `EX-EVENT-6004` / `EX-FLOW-7001` Identical Schema:** These share the same `rawArgs` layout (`providerName`, `reason`) intentionally — they model the same class of failure in two distinct subsystem domains (Event Bus vs. Flow Engine). The duplication is deliberate; see `telemetry.md` for details.
+
+---
+
+## TCK Coverage
+
+| TCK Suite | Module | Description |
+|:---------|:-------|:------------|
+| `AbstractFlowEngineTck` | `exeris-kernel-tck` | Full flow lifecycle: submit, run, park, wake, complete, compensate |
+| `AbstractFlowSchedulerTck` | `exeris-kernel-tck` | Scheduler contract: schedule, cancel, peek parked, drain |
+| `AbstractFlowChoreographyTck` | `exeris-kernel-tck` | Choreography mapper registration and event-driven wake |
+| `AbstractSagaRecoveryTck` | `exeris-kernel-tck` | Crash-recovery replay semantics from snapshot store |
+| `AbstractIdempotencyGuardTck` | `exeris-kernel-tck` | Step-level deduplication contract for `IdempotencyGuard` |
+| `FlowZeroAllocTck` | `exeris-kernel-tck` | Zero-allocation assertion on hot flow scheduling path |
+| `FlowCarrierPinningTck` | `exeris-kernel-tck` | Flow orchestration does not pin Virtual Thread carrier |
+
+Community bindings: `CommunityFlowEngineTckTest`, `CommunityFlowSchedulerTckTest`, `CommunityFlowChoreographyTckTest`, `CommunitySagaRecoveryTckTest`, `CommunityFlowCarrierPinningTckTest` in `exeris-kernel-community`.
+
+> **Gap:** `AbstractIdempotencyGuardTck` and `FlowZeroAllocTck` have no Community-tier concrete binding in `exeris-kernel-community/src/test/`. The `IdempotencyGuard` contract is covered only by unit-level tests; no community provider binding extends `AbstractIdempotencyGuardTck`. Tracking: see `docs/ROADMAP.md`.

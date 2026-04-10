@@ -23,7 +23,7 @@ import jdk.jfr.StackTrace;
  * <p>Only emitted when circuit breaker is enabled (flag: -Dexeris.transport.queueBackpressureEnabled=true).
  * Indicates that queue depth exceeded threshold and an inbound buffer enqueue was rejected.
  *
- * @since 0.6.0
+ * @since 0.5.0
  */
 @Name("eu.exeris.kernel.core.transport.QueueBackpressureAlert")
 @Label("Transport Queue Backpressure Alert")

@@ -26,7 +26,7 @@ import java.util.Objects;
  *
  * <p>NOT thread-safe — designed for single-VT-per-request access within a ScopedValue scope.
  *
- * @since 0.6.0
+ * @since 0.5.0
  */
 public final class PersistenceSessionBox {
     public static final ScopedValue<PersistenceSessionBox> REQUEST_SESSION =

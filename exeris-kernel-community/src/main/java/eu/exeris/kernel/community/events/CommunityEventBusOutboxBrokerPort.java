@@ -28,7 +28,6 @@ final class CommunityEventBusOutboxBrokerPort implements OutboxBrokerPort {
 
     @SuppressWarnings({
         "PMD.CloseResource",
-        "PMD.AvoidInstantiatingObjectsInLoops",
         "PMD.AvoidCatchingGenericException"
     })
     @Override

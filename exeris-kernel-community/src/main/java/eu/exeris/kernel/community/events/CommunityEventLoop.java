@@ -25,6 +25,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Queue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -33,7 +34,13 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.LockSupport;
 
-@SuppressWarnings({"PMD.CyclomaticComplexity", "PMD.TooManyMethods"})
+@SuppressWarnings({
+    "PMD.CyclomaticComplexity",      // aggregate across loop/dispatch/tracking helpers
+    "PMD.TooManyMethods",            // deliberate: loop, dispatch, fork, tracking all belong here
+    "PMD.CouplingBetweenObjects",    // EventLoop coordinates queue, registry, JFR, structured scope — inherent
+    "PMD.CloseResource",             // TrackingPayload ownership transferred across lambda boundaries
+    "PMD.UseTryWithResources"        // wrappers list cannot be expressed as TWR; closed deterministically in finally
+})
 final class CommunityEventLoop implements EventLoop {
 
     private static final long IDLE_PARK_NANOS = 1_000_000L;
@@ -178,7 +185,6 @@ final class CommunityEventLoop implements EventLoop {
         }
     }
 
-    @SuppressWarnings({"PMD.AvoidCatchingGenericException", "PMD.AvoidInstantiatingObjectsInLoops"})
     private void dispatchBatch(int ordinal, List<EventDescriptor> descriptors, List<EventPayload> payloads) {
         long started = System.nanoTime();
         List<EventBatchProcessor> processors = processorsByOrdinal.get(ordinal);
@@ -191,38 +197,12 @@ final class CommunityEventLoop implements EventLoop {
         }
 
         List<EventDescriptor> readonlyDescriptors = Collections.unmodifiableList(descriptors);
-        ConcurrentLinkedQueue<Throwable> failures = new ConcurrentLinkedQueue<>();
+        Queue<Throwable> failures = new ConcurrentLinkedQueue<>();
 
-        // Fork each processor on its own virtual thread. awaitAll() guarantees
-        // every processor completes (succeeds or throws) before the loop tick
-        // advances — structured concurrency, no orphan threads.
         try (StructuredTaskScope<Void, Void> scope =
                      StructuredTaskScope.open(StructuredTaskScope.Joiner.<Void>awaitAll())) {
             for (EventBatchProcessor processor : processors) {
-                // Retain per-processor; wrap for RAII tracking so the loop can
-                // close any refs a processor failed to close without risking over-release.
-                List<TrackingPayload> wrappers = new ArrayList<>(payloads.size());
-                for (EventPayload p : payloads) {
-                    p.retain();
-                    wrappers.add(new TrackingPayload(p));
-                }
-                List<EventPayload> wrappedView = Collections.unmodifiableList(wrappers);
-                scope.fork(() -> {
-                    try {
-                        processor.processBatch(readonlyDescriptors, wrappedView);
-                    } catch (RuntimeException ex) {
-                        failures.add(ex);
-                    } finally {
-                        // Deterministically close any wrappers the processor failed to close,
-                        // whether it returned normally or threw — every retain() balanced.
-                        for (TrackingPayload w : wrappers) {
-                            if (!w.isClosed()) {
-                                w.close();
-                            }
-                        }
-                    }
-                    return null;
-                });
+                forkProcessor(scope, processor, readonlyDescriptors, payloads, failures);
             }
             try {
                 scope.join();
@@ -231,29 +211,58 @@ final class CommunityEventLoop implements EventLoop {
             }
         }
 
-        // Loop closes its own surviving refs regardless of processor outcomes.
         closePayloads(payloads);
-
-        if (failures.isEmpty()) {
-            processedTotal.addAndGet(payloads.size());
-        } else {
-            failedTotal.addAndGet(payloads.size());
-            if (FlightRecorder.isInitialized()) {
-                Throwable first = failures.peek();
-                EventLoopFailureEvent evt = new EventLoopFailureEvent();
-                if (evt.isEnabled()) {
-                    evt.loopName      = "community-event-loop";
-                    evt.phase         = "DISPATCH";
-                    evt.exceptionType = first != null ? first.getClass().getSimpleName() : "Unknown";
-                    evt.affectedCount = payloads.size();
-                    evt.commit();
-                }
-            }
-        }
+        recordOutcome(payloads, failures);
         dispatchNanosTotal.addAndGet(System.nanoTime() - started);
     }
 
-    @SuppressWarnings("PMD.CloseResource")
+    private static void forkProcessor(StructuredTaskScope<Void, Void> scope,
+                                      EventBatchProcessor processor,
+                                      List<EventDescriptor> readonlyDescriptors,
+                                      List<EventPayload> payloads,
+                                      Queue<Throwable> failures) {
+        List<TrackingPayload> wrappers = new ArrayList<>(payloads.size());
+        for (EventPayload p : payloads) {
+            p.retain();
+            wrappers.add(new TrackingPayload(p));
+        }
+        List<EventPayload> wrappedView = Collections.unmodifiableList(wrappers);
+        scope.fork(() -> {
+            try {
+                processor.processBatch(readonlyDescriptors, wrappedView);
+            } catch (RuntimeException ex) { //NOPMD AvoidCatchingGenericException — untrusted processor SPI boundary
+                failures.add(ex);
+            } finally {
+                for (TrackingPayload w : wrappers) {
+                    if (!w.isClosed()) {
+                        w.close();
+                    }
+                }
+            }
+            return null;
+        });
+    }
+
+    private void recordOutcome(List<EventPayload> payloads, Queue<Throwable> failures) {
+        if (failures.isEmpty()) {
+            processedTotal.addAndGet(payloads.size());
+            return;
+        }
+        failedTotal.addAndGet(payloads.size());
+        if (!FlightRecorder.isInitialized()) {
+            return;
+        }
+        Throwable first = failures.peek();
+        EventLoopFailureEvent evt = new EventLoopFailureEvent();
+        if (evt.isEnabled()) {
+            evt.loopName      = "community-event-loop";
+            evt.phase         = "DISPATCH";
+            evt.exceptionType = first != null ? first.getClass().getSimpleName() : "Unknown";
+            evt.affectedCount = payloads.size();
+            evt.commit();
+        }
+    }
+
     private static void closePayloads(List<EventPayload> payloads) {
         for (EventPayload payload : payloads) {
             payload.close();
@@ -266,17 +275,16 @@ final class CommunityEventLoop implements EventLoop {
      * close any refs the processor failed to close — preventing refCount leaks without
      * risking over-release.
      */
-    @SuppressWarnings("PMD.CloseResource")
     private static final class TrackingPayload implements EventPayload {
         private final EventPayload delegate;
-        private volatile boolean closed = false;
+        private final AtomicBoolean closed = new AtomicBoolean();
 
-        TrackingPayload(EventPayload delegate) {
+        /* default */ TrackingPayload(EventPayload delegate) {
             this.delegate = delegate;
         }
 
-        boolean isClosed() {
-            return closed;
+        /* default */ boolean isClosed() {
+            return closed.get();
         }
 
         @Override
@@ -296,8 +304,7 @@ final class CommunityEventLoop implements EventLoop {
 
         @Override
         public void close() {
-            if (!closed) {
-                closed = true;
+            if (closed.compareAndSet(false, true)) {
                 delegate.close();
             }
         }
@@ -309,7 +316,7 @@ final class CommunityEventLoop implements EventLoop {
 
         @Override
         public boolean isAlive() {
-            return !closed && delegate.isAlive();
+            return !closed.get() && delegate.isAlive();
         }
     }
 }

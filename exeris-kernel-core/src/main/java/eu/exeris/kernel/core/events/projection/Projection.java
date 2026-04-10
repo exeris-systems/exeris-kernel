@@ -55,7 +55,7 @@ public final class Projection<S> implements AutoCloseable {
     private final AtomicReference<S>     stateRef;
     private final EventBus               bus;
     private final SubscriptionToken      token;
-    private volatile boolean             closed = false;
+    private volatile boolean             closed;
 
     /**
      * Creates a projection that subscribes to the bus immediately.

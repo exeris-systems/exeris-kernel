@@ -24,7 +24,7 @@ import jdk.jfr.StackTrace;
  * Emitted at thresholds: 100, 500, 1000 retained buffers.
  * Peak depth should remain ≤200 under normal load.
  *
- * @since 0.6.0
+ * @since 0.5.0
  */
 @Name("eu.exeris.kernel.core.transport.IngressQueueDepth")
 @Label("Transport Ingress Queue Depth")

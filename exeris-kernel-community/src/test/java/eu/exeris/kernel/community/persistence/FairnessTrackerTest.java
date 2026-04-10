@@ -20,7 +20,7 @@ import static org.assertj.core.api.Assertions.within;
 /**
  * L1 Unit: {@link FairnessTracker} — fairness tracking and admission control.
  *
- * @since 0.6.0
+ * @since 0.5.0
  */
 @DisplayName("L1 Unit: FairnessTracker")
 class FairnessTrackerTest {

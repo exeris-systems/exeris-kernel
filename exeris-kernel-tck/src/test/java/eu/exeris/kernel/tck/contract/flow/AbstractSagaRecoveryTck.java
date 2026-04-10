@@ -188,9 +188,10 @@ public abstract class AbstractSagaRecoveryTck {
             assertThat(snap.get().currentStep()).as("Checkpoint must be at step index 1 (pay)").isEqualTo(1);
             assertThat(snap.get().state()).as("Checkpoint state must be PARKED").isEqualTo(FlowState.PARKED);
 
-            // Rebuild and wake
+            // Rebuild and wake — re-compile definition on rebuilt engine (simulates app restart re-registration)
             engine = rebuildEngine();
             engine.start();
+            engine.plans().compile(def);
             engine.scheduler().wake(ctx);
 
             // step2 must execute; step0 must NOT re-execute (already completed before kill)
