@@ -20,11 +20,11 @@ import java.util.function.UnaryOperator;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * TCK contract for provider binding lifecycle and state symmetry.
+ * TCK contract for provider binding lifecycle and initialization-state symmetry.
  *
- * <h2>State Symmetry Guarantee</h2>
- * <p>This test validates that provider bindings are visible <strong>only</strong>
- * when their originating subsystem is in the RUNNING state. Degraded subsystems
+ * <h2>Initialization-State Symmetry Guarantee</h2>
+ * <p>This test validates that provider bindings are composed <strong>only</strong>
+ * for subsystems whose {@code initialize()} completed successfully. Degraded subsystems
  * (those that fail and are skipped via DEGRADE policy) must NOT contribute
  * bindings to the kernel scope.
  *
@@ -32,7 +32,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <ul>
  *   <li>Active (non-degraded) subsystems' bindings appear in {@code buildKernelScope()}</li>
  *   <li>Degraded subsystems' bindings do NOT appear in the scope</li>
- *   <li>Bindings are tied to subsystem liveness, not initialization state</li>
+ *   <li>Bindings are composed after successful {@code initialize()}, before {@code start()}</li>
  * </ul>
  *
  * @since 0.5.0

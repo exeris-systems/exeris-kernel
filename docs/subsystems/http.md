@@ -33,6 +33,14 @@ Key contracts:
 - `HttpConfig`, `HttpMode`, `HttpMethod`, `HttpVersion`
 - `HttpKernelProviders` (ScopedValue slots)
 
+Typed Response Encoding contracts:
+
+- `HttpTypedResponse` — typed response carrier
+- `HttpResponseBodyEncoder` — encoder SPI interface
+- `HttpResponseBodyEncoderRegistry` — encoder resolution contract
+- `HttpResponseEncodingContext` — encoding parameter carrier
+- `HttpEncodedBody` — encoded output carrier
+
 HTTP exceptions in SPI:
 
 - `eu.exeris.kernel.spi.exceptions.http.HttpException`
@@ -53,12 +61,18 @@ Implemented components:
 - **HPACK / Huffman:** `hpack.*`, `hpack.huffman.*`
 - **HTTP/2 framing:** `http2.*`
 - **HTTP/1.1 codec:** `http1.*`
+- **Routing:** `routing/` — `HttpRouter` — transport-agnostic `HttpHandler` implementation with exact/prefix routing and HEAD→GET fallback (RFC 9110 §9.3.2). `HttpRouterRegisteredEvent` (JFR).
 
 Current placement reality:
 
 - Wire codec code currently lives in Core.
-- Community/Enterprise transport implementations are expected to consume these primitives
+- Community transport implementations are expected to consume these primitives
   via Core in this repository state.
+
+JFR Events (Core):
+
+- `HttpAggregateBufferHeldEvent` (`eu.exeris.kernel.core.http.AggregateBufferHeld`) — emitted when aggregate buffer is held open
+- `HttpAggregateBufferForcedReleaseEvent` (`eu.exeris.kernel.core.http.AggregateBufferForcedRelease`) — emitted when aggregate buffer is force-released
 
 ---
 
@@ -71,6 +85,7 @@ HTTP abstract TCK suites present:
 - `AbstractHttpClientEngineTck`
 - `AbstractHttpHandlerTck`
 - `AbstractHttpExchangeTck`
+- `AbstractHttpProviderLoopbackTck` — verifies real transport round-trip; bound at Community tier (`CommunityHttpProviderLoopbackTckTest`)
 
 These verify SPI-level HTTP contract behavior and ServiceLoader/provider semantics.
 
@@ -87,24 +102,23 @@ At this repository stage, HTTP contract validation is wired as:
 ```mermaid
 graph TD
   SPI[exeris-kernel-spi\n eu.exeris.kernel.spi.http.*]
-  TCK[exeris-kernel-tck\n AbstractHttpProviderTck\n AbstractHttpServerEngineTck\n AbstractHttpClientEngineTck\n AbstractHttpHandlerTck\n AbstractHttpExchangeTck]
+  TCK[exeris-kernel-tck\n AbstractHttpProviderTck\n AbstractHttpServerEngineTck\n AbstractHttpClientEngineTck\n AbstractHttpHandlerTck\n AbstractHttpExchangeTck\n AbstractHttpProviderLoopbackTck]
   CORETEST[exeris-kernel-core tests\n CoreHttpProviderTckTest\n CoreHttpServerEngineTckTest\n CoreHttpClientEngineTckTest\n CoreHttpHandlerTckTest\n CoreHttpExchangeTckTest]
   FIXTURE[CoreHttpProviderFixture\n test-only SPI fixture]
+  COMMUNITY[exeris-kernel-community\n CommunityHttpProviderTckTest\n CommunityHttpServerEngineTckTest\n CommunityHttpClientEngineTckTest\n CommunityHttpHandlerTckTest\n CommunityHttpExchangeTckTest\n CommunityHttpProviderLoopbackTckTest\n CommunityHttpTransportIntegrationTest\n HttpDispatcherBackpressureTckTest\n CommunityHttpRequestProcessorTest\n CommunityHttpSecurityAdmissionIntegrationTest]
 
   SPI --> TCK
   TCK --> CORETEST
   CORETEST --> FIXTURE
+  TCK --> COMMUNITY
 ```
 
 What this currently guarantees:
 
 - SPI contract semantics are executable and verified in CI.
 - ServiceLoader selection semantics are verified for HTTP provider contract.
-
-What this does not guarantee yet:
-
-- Production wire engine behavior (socket bind/accept loop, real client transport).
-- End-to-end runtime transport semantics in Community/Enterprise drivers.
+- Production wire engine behavior (socket bind/accept loop, real client transport) — covered by Community integration tests.
+- End-to-end runtime transport semantics — covered by Community tier (`CommunityHttpTransportIntegrationTest`).
 
 ---
 
@@ -117,9 +131,12 @@ Current `exeris-kernel-core` HTTP package focuses on codec/wire primitives:
 - `hpack.*`
 - `hpack.huffman.*`
 
-The concrete production `HttpProvider`/`HttpServerEngine`/`HttpClientEngine` drivers are expected in runtime driver tiers
-(Community/Enterprise). In current repository state, Core contains test-only contract fixtures for TCK binding,
-not a production server/client engine.
+**Community tier is implemented.** The following production HTTP classes exist in `eu.exeris.kernel.community.http`:
+- `CommunityHttpProvider`, `CommunityHttpServerEngine`, `CommunityHttpClientEngine`
+- `CommunityHttpRequestProcessor`, `CommunityHttpTransportFactory`
+- `CommunityHttpExchange`, `Http2DecodedRequest`, `Http2RequestStreamState`
+- `InMemoryHttp2Exchange`, `JsonBodyEncoder`
+- `CommunityHttpLifecycleEvent` (JFR)
 
 ---
 

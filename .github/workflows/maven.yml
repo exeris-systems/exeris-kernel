@@ -96,16 +96,10 @@ jobs:
           architecture: x64
           cache: maven
 
-      - name: Run targeted persistence guard suite
+      - name: Run persistence RLS integration gate
         run: |
-          mvn -pl exeris-kernel-core \
-            -Dtest=PersistenceBootstrapTest,PersistenceAdmissionStageEventTest \
-            test -B -e
           mvn -pl exeris-kernel-community \
-            -Dtest=CommunityPersistenceEngineLifecycleTest,RlsConnectionInterceptorTest,CommunityConnectionInterceptorInitTckTest \
-            test -B -e
-          mvn -pl exeris-kernel-community \
-            -Dtest=CommunityPersistenceTenantIsolationIT,CommunityPersistenceIsolationLeakTckIT \
+            -Dtest=CommunityPersistenceTenantIsolationIT,CommunityPersistenceIsolationLeakTckIT,CommunityIsolationStrategyEndToEndIT \
             -DincludedGroups=integration \
             -DexcludedGroups= \
             test -B -e

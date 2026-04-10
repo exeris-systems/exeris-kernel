@@ -2,9 +2,9 @@
 
 **Physical Layout:**
 
-- SPI: `eu.exeris.kernel.spi.memory.*` (Allocators, Clusters, LoanedBuffer)
-- Core: `eu.exeris.kernel.core.memory.*` (Watermarks, ResourceArbiter, AbstractLoanedBuffer)
-- Drivers: `exeris-kernel-community` / `exeris-kernel-enterprise`
+- SPI: `eu.exeris.kernel.spi.memory.*` (Allocators, LoanedBuffer)
+- Core: `eu.exeris.kernel.core.memory.*` (AbstractLoanedBuffer, LeakTracker, WatermarkLevel, WatermarkManager, ResourceArbiter, ScalingContext, MemoryEnvironmentProbe, MemoryMaintenanceTask, JFR events)
+- Drivers: `exeris-kernel-community`
 
 **Layer:** L0 (Foundation)
 **Status:** Validated Architectural Prototype (TRL-3)
@@ -18,13 +18,13 @@ FFM (Foreign Function & Memory API). Instead of a monolithic manager, memory is 
 model. It provides:
 
 - **Pluggable Allocation Strategies:** Drivers implement `MemoryAllocator` and `NetworkBufferCluster` (e.g., standard
-  Arenas in Community, global `mmap` rings in Enterprise).
+  Arenas in Community).
 - **Loan Pattern (RAII):** Automatic reference counting via `LoanedBuffer` and VarHandle-based atomics (zero GC
   pressure).
 - **Paranoid Leak Detector:** Integrated `java.lang.ref.Cleaner` to detect unclosed Off-Heap segments.
 - **Watermark & Resource Arbiter:** Core intelligence that monitors memory exhaustion and triggers load shedding.
 
-### Core Philosophy: "No Waste Compute"
+### Design Principles
 
 Every byte allocated must serve a purpose:
 
@@ -33,8 +33,7 @@ Every byte allocated must serve a purpose:
 - **Deterministic Lifecycle:** Reference counting via `VarHandle` atomics ensures memory is returned to native pools
   immediately after use.
 - **Implementation Blindness:** Core operates exclusively on the `MemoryAllocator` interface injected via
-  `ServiceLoader`. It must never know whether it is backed by a `PanamaArenaAllocator` (Community) or a
-  `GlobalMemoryArbiter` `mmap` ring (Enterprise).
+  `ServiceLoader`. It must never know what platform-specific allocator backs the `MemoryAllocator` contract.
 
 ---
 
@@ -42,7 +41,7 @@ Every byte allocated must serve a purpose:
 
 **What Memory SPI/Core DOES:**
 
-1. Define strict contracts for allocation (`AllocationHint`, `PartitionedPool`).
+1. Define strict contracts for allocation (`AllocationHint`); `PartitionedPool` is planned but not yet implemented.
 2. Provide lock-free base classes (`AbstractLoanedBuffer`).
 3. Monitor memory pressure via `WatermarkManager`.
 4. Decide when to shed load (`ResourceArbiter`).
@@ -64,7 +63,7 @@ Every byte allocated must serve a purpose:
 |:--------------|:-------------------------|:------------------------------------------------|:-----------------------------------------------------|
 | `EX-MEM-1001` | Off-heap Exhausted       | Trigger `H3_EXCESSIVE_LOAD` backpressure.       | `[0] long requestedBytes, [1] long availableBytes`   |
 | `EX-MEM-1002` | Arena Leak Detected      | Log in `PARANOID` mode with native stack trace. | `[0] long segmentAddress, [1] long segmentByteSize`  |
-| `EX-MEM-1003` | AllocationHint Conflict  | Reject allocation request (fallback or fail).   | *(no rawArgs)*                                       |
+| `EX-MEM-1003` | Peek View Ownership Misuse | `retain()` or `addCloseAction()` was called on a non-owning view returned by `peek()`; call was a no-op, potential use-after-free risk. | `rawArgs[0]: String callerMethod` |
 
 ---
 
@@ -87,7 +86,7 @@ ownership before forking. The scope's `join()` barrier does not manage buffer li
 
 ```java
 try (var scope = StructuredTaskScope.open(Joiner.awaitAllSuccessfulOrThrow())) {
-    try (LoanedBuffer buffer = networkCluster.allocate()) {
+    try (LoanedBuffer buffer = allocator.allocate(AllocationHint.NETWORK_FRAME)) {
         buffer.retain();
 
         scope.fork(() -> {
@@ -141,6 +140,8 @@ sequenceDiagram
 > temporary `Arena.ofAuto()` fallback behavior to shared-arena allocation for consistency and
 > cross-VT ownership safety. This removes GC-driven lifecycle variance for oversized buffers.
 
+> **JFR event:** `CommunityOverflowReturnEvent` (`eu.exeris.kernel.community.memory.CommunityOverflowReturnEvent`) — emitted when an oversized off-heap slab is returned to the shared arena pool.
+
 ---
 
 ## Multi-Tier Memory Strategy
@@ -148,17 +149,13 @@ sequenceDiagram
 | Tier           | Allocator                                                                     | GC Handshakes on hot-path | Use Case                          |
 |:---------------|:------------------------------------------------------------------------------|:--------------------------|:----------------------------------|
 | **Community**  | `MemoryAllocator` via `KernelProviders.MEMORY_ALLOCATOR` (shared, bounded; pooled and oversized > 128 KB both use shared arena) | Low (JVM thread-local)    | Standard TCP, JDBC persistence    |
-| **Enterprise** | `GlobalMemoryArbiter` `mmap`                                                  | **Zero**                  | `io_uring`, native DB driver, HFT |
 
 ### ScalingContext — Multi-Tenant SLA Shedding (INCUBATING — TRL-2)
 
 `ScalingContext` defines per-tier shedding thresholds (`premium`, `standard`, `free`) with O(1) `actionFor(utilization)`
-decisions. **It is currently an incubating component at TRL-2.** The `ResourceArbiter` does not yet consume
-`ScalingContext` — it operates on hardcoded `WatermarkLevel` boundaries.
+decisions.
 
-> **Technical Debt:** Full integration of `ScalingContext` with `ResourceArbiter` (multi-tenant SLA-aware shedding)
-> is planned for **v0.5.0**. Do NOT use `ScalingContext` on production hot paths until this integration is complete.
-> See `ScalingContext` Javadoc for details.
+> `ResourceArbiter.decide(Context, ScalingContext)` is implemented in Core (applies tenant-specific SLA thresholds). However, `ScalingContext` has no TCK coverage and is not yet connected to the bootstrap propagation path (no ScopedValue slot for production use). The TRL status for this feature is TRL-3 (implemented but not fully integrated).
 
 ---
 
@@ -216,58 +213,20 @@ memory.watermarkPollIntervalMs=50     # sampling interval
 
 > **Sampling note:** Allocation sampling is configurable via `telemetry.allocationSampleRate=0.01`.
 > This rate is not hardcoded — operators running JFR-based heap analysis may set it to `1.0`
-> temporarily at the cost of higher telemetry overhead. The default 1% rate ensures < 50 µs/req
-> overhead as verified by the TCK.
+> temporarily at the cost of higher telemetry overhead.
+
+> **Note:** These configuration keys are planned. In the current implementation: 
+> WatermarkManager thresholds are hardcoded via `WatermarkLevel` enum constants (70/85/95%); 
+> the watermark refresh interval defaults to **5,000 ms** (not 50 ms as shown); 
+> `telemetry.allocationSampleRate` is not implemented — Community JFR sampling uses system property 
+> `-Dexeris.community.memory.jfr.sampleEvery=N` (integer allocation-frequency, not a rate fraction).
 
 ---
 
-## PartitionedPool
+### Core Operational Components
 
-`PartitionedPool` is an `AllocationHint` variant that allows the `MemoryAllocator` to segregate
-slabs by domain. It prevents one subsystem's allocation burst from exhausting the buffers of another.
-
-| Partition Name   | Default Budget | Primary Consumer                          |
-|:-----------------|:-------------:|:------------------------------------------|
-| `"network"`      | 40%           | Transport ingress/egress slabs            |
-| `"crypto"`       | 15%           | `NativeCipherContext` session segments    |
-| `"persistence"`  | 20%           | JDBC result staging (Community)           |
-| `"graph"`        | 15%           | BFS traversal result buffers              |
-| `"system"`       | 10%           | Bootstrap, Telemetry, Misc                |
-
-Partitions are configured via `exeris.memory.partitions.<name>.budget-fraction`.
-If a partition exhausts its budget, `EX-MEM-1003` (AllocationHint conflict) is thrown.
-The `SYSTEM` partition cannot go below 5% — it is reserved for bootstrap and emergency telemetry.
-
----
-
-## NUMA Awareness and Huge Pages (Enterprise)
-
-**Status:** Enterprise tier (`GlobalMemoryArbiter`) only. Not available in Community tier.
-
-### NUMA-Local Slab Allocation
-
-In multi-socket servers, memory access latency depends on whether the CPU accessing the memory
-is on the same NUMA node as the physical DIMM. `GlobalMemoryArbiter` pre-allocates `mmap` regions
-using `libnuma` (`mbind(MPOL_BIND)`) to ensure that each carrier thread's slab pool is allocated
-on its local NUMA node.
-
-| Requirement              | Detail                                                                                     |
-|:-------------------------|:-------------------------------------------------------------------------------------------|
-| **Linux requirement**    | `libnuma.so.1` must be present. Detected at bootstrap by `EnterpriseNativeLoader`. If absent: NUMA-local allocation is disabled with a bootstrap warning in the current JFR telemetry path. |
-| **macOS**                | Not supported — macOS does not expose NUMA topology via `libnuma`.                         |
-| **Windows**              | Not supported — `GlobalMemoryArbiter` is Linux-only.                                       |
-| **K8s consideration**    | In Kubernetes, set `topologyManager.policy=single-numa-node` and use CPU Manager to ensure pods are pinned to a single NUMA node. Cross-NUMA pod scheduling eliminates the benefit of NUMA-local allocation. |
-
-### Huge Pages (2 MB mmap)
-
-`GlobalMemoryArbiter` uses `MAP_HUGETLB` on Linux to reduce TLB pressure for large off-heap regions.
-
-| Requirement              | Detail                                                                                     |
-|:-------------------------|:-------------------------------------------------------------------------------------------|
-| **Kernel pre-allocation**| `vm.nr_hugepages` must be pre-configured: `sysctl -w vm.nr_hugepages=512` (for 1 GB huge page budget). If insufficient huge pages are available, `mmap(MAP_HUGETLB)` falls back to standard pages with a bootstrap warning in the current JFR telemetry path. |
-| **K8s resource request** | Add `hugepages-2Mi: 1Gi` to the pod resource limits. Requires `HugePages` feature gate enabled in the cluster. |
-| **macOS**                | Superpage allocation (`VM_FLAGS_SUPERPAGE_SIZE_2MB`) is supported in limited form but not verified by the TCK. |
-| **Windows**              | Not supported.                                                                             |
+- **`MemoryEnvironmentProbe`** — probes cgroup v2/v1 and OS physical RAM at bootstrap to compute off-heap budget; emits `MemoryEnvironmentProbed` JFR event
+- **`MemoryMaintenanceTask`** — Virtual Thread maintenance loop: calls `performMaintenance()` every 10 s, `WatermarkManager.refresh()` every 5 s
 
 ---
 
@@ -358,9 +317,11 @@ flowchart TD
 - Arena exhaustion (graceful `MemoryExhaustedException` with correct `EX-MEM-1001` code).
 - `LeakTracker` correctly identifying dropped buffers in `PARANOID` mode (`EX-MEM-1002`).
 
+**TCK gap:** `ResourceArbiter.decide(Context, ScalingContext)` — the per-tenant SLA override path has no TCK coverage. `AbstractScalingContextArbiterTck` does not yet exist.
+
 ### Load Tests
 
-- 100k allocate/close cycles per second with < 1ms P99 latency.
+- 100k allocate/close cycles per second.
 - GC pressure baseline verified via JFR (must remain near 0 B/req).
 
 ---
@@ -368,6 +329,5 @@ flowchart TD
 ## Summary
 
 The Memory subsystem provides the foundation for hyper-density execution. By enforcing the `LoanedBuffer` pattern
-through SPI and resolving allocator implementations via `ServiceLoader`, it guarantees that Exeris can scale to millions
-of concurrent connections without triggering stop-the-world Garbage Collection pauses — regardless of which driver tier
-is active.
+through SPI and resolving allocator implementations via `ServiceLoader`, it ensures that off-heap memory lifecycle is explicit and GC-independent, 
+regardless of which allocator is active.

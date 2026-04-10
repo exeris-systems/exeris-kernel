@@ -262,6 +262,14 @@ public final class Slf4jTelemetrySink implements TelemetrySink {
         appendJsonString(builder, "[unsupported]");
     }
 
+    private static void appendFiniteOrString(StringBuilder builder, float value, boolean isFinite) {
+        if (isFinite) {
+            builder.append(value);
+        } else {
+            appendJsonString(builder, Float.toString(value));
+        }
+    }
+
     private static void appendFiniteOrString(StringBuilder builder, double value, boolean isFinite) {
         if (isFinite) {
             builder.append(value);

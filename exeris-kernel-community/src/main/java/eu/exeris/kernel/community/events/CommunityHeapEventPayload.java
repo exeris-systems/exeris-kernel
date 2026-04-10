@@ -25,14 +25,12 @@ final class CommunityHeapEventPayload implements EventPayload {
     private final AtomicInteger refCount;
 
     /* default */ CommunityHeapEventPayload(byte[] bytes) {
-        this.bytes = Arrays.copyOf(bytes, bytes.length);
-        this.segment = MemorySegment.ofArray(this.bytes).asReadOnly();
-        this.refCount = new AtomicInteger(1);
+        this(bytes, true);
     }
 
-    @SuppressWarnings("PMD.UnusedFormalParameter")
-    private CommunityHeapEventPayload(byte[] bytes, Void noCopy) {
-        this.bytes = bytes;
+    @SuppressWarnings("PMD.ArrayIsStoredDirectly") // zero-copy contract: copy=false path intentionally takes ownership
+    private CommunityHeapEventPayload(byte[] bytes, boolean copy) {
+        this.bytes = copy ? Arrays.copyOf(bytes, bytes.length) : bytes;
         this.segment = MemorySegment.ofArray(this.bytes).asReadOnly();
         this.refCount = new AtomicInteger(1);
     }
@@ -42,7 +40,7 @@ final class CommunityHeapEventPayload implements EventPayload {
      * Caller MUST NOT retain or modify the array after this call.
      */
     /* default */ static CommunityHeapEventPayload wrap(byte[] bytes) {
-        return new CommunityHeapEventPayload(bytes, (Void) null);
+        return new CommunityHeapEventPayload(bytes, false);
     }
 
     @Override

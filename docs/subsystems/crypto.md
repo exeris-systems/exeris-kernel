@@ -2,10 +2,9 @@
 
 **Physical Layout:**
 
-- SPI: `eu.exeris.kernel.spi.crypto.*` (`KernelCryptoProvider`, `TlsEngine`, `TlsStatus`)
-- Core: `eu.exeris.kernel.core.crypto.*` (`CoreOpenSslLoader`, `NativeCipherContext`, `TlsStateMachine`)
+- SPI: `eu.exeris.kernel.spi.crypto.*` (`KernelCryptoProvider`, `TlsEngine`, `TlsStatus`, `CryptoProviderConfig`, `TlsHandshakeResult`, `TlsPhase`, `TlsSessionState`, `TlsShutdownResult`)
+- Core: `eu.exeris.kernel.core.crypto.*` (`CoreOpenSslLoader`, `NativeCipherContext`, `TlsStateMachine`, `OffHeapTlsEngine`, `CoreSslHandles`, `CoreOpenSslRuntime`; plus internal helpers: `AlpnReader`, `CipherNameReader`, `FfmErrors`)
 - Community: Portable Off-Heap TLS (OpenSSL 3.x via Panama FFM on standard TCP)
-- Enterprise: Hyper-Density TLS (OpenSSL 3.x via Panama FFM + `io_uring` + QUIC)
 
 **Layer:** L1 (Data & Integrity)  
 **Status:** Integration-Tested Prototype (TRL-4)
@@ -25,7 +24,7 @@ this sustained churn conflicts with the "No Waste Compute" philosophy.
 
 Exeris eliminates this overhead by sending **raw `long` memory addresses** from `LoanedBuffer`
 directly to native OpenSSL functions via Panama FFM. No Java wrapper object is created between the
-`LoanedBuffer` and the native call — in both Community and Enterprise tiers.
+`LoanedBuffer` and the native call.
 
 ---
 
@@ -194,7 +193,7 @@ Session Start:
   SSL_new()      → ssl_ptr      (per-session, backed by sessionBuffer.segment())
   BIO_new_pair() → rbio, wbio   (per-session, same segment)
   SSL_set_bio()  → attach BIOs
-  sessionBuffer.retain()        → ref-count: 2 (held by NativeCipherContext)
+  NativeCipherContext.retainSslPointer() → ref-count: 2 (held by NativeCipherContext)
 
 Per-Record: wrap() / unwrap() calls above — ZERO allocation
 
@@ -221,6 +220,7 @@ Session End:
 
 ```java
 public interface TlsEngine extends AutoCloseable {
+    default void notifyBound() {}
     TlsStatus beginHandshake(LoanedBuffer outbound);
     TlsStatus unwrap(LoanedBuffer ciphertext, LoanedBuffer plaintext);
     TlsStatus wrap(LoanedBuffer plaintext, LoanedBuffer ciphertext);
@@ -234,6 +234,7 @@ public interface TlsEngine extends AutoCloseable {
 ```
 
 The SPI has zero knowledge of OpenSSL, JSSE, BouncyCastle, or Panama internals.
+`notifyBound()` is a default no-op; fd-owner or Memory-BIO pipelines override. Triggers `TlsEngineBindEvent` emission and state-machine transition.
 Both `CommunityTlsEngine` and `OffHeapTlsEngine` implementing this interface are discovered
 via `ServiceLoader` — the SPI module never imports either.
 
@@ -245,7 +246,7 @@ via `ServiceLoader` — the SPI module never imports either.
 public OffHeapTlsEngine(CoreSslHandles handles, long ctxPointer,
                         boolean serverMode, MemoryAllocator allocator) {
     // MemoryExhaustedException (EX-MEM-1001) propagates to caller if budget exceeded
-    this.cipherCtx = new NativeCipherContext(handles.handshake(), ctxPointer, allocator);
+    this.cipherCtx = new NativeCipherContext(handles, ctxPointer, allocator);
     this.stateMachine = new TlsStateMachine();
     this.serverMode = serverMode;
 }
@@ -275,11 +276,31 @@ decrypt-side failures without parsing the `detail` string.
 
 ## JFR Events
 
-| Event Class                | When Emitted                          | Key Fields                                         |
-|:---------------------------|:--------------------------------------|:---------------------------------------------------|
-| `TlsHandshakeEvent`        | Start and completion of TLS handshake | `sessionId`, `protocol`, `cipher`, `durationNanos` |
-| `TlsHandshakeFailureEvent` | Handshake exception                   | `errorCode`, `peerAddress`, `failureReason`        |
-| `CryptoContextAllocEvent`  | `NativeCipherContext` creation        | `allocatorName`, `sizeBytes`, `providerName`       |
+> **Note:** The previous table in this section contained incorrect field names (e.g., `sessionId` does not exist; the actual field is `sslPtr`). The table below reflects actual implementation.
+
+**Core — `eu.exeris.kernel.core.crypto` package:**
+
+| Event Class                           | JFR Category                                              | When Emitted                              | Key Fields                        |
+|:--------------------------------------|:----------------------------------------------------------|:------------------------------------------|:----------------------------------|
+| `CryptoContextAllocEvent`             | `eu.exeris.kernel.core.crypto.CryptoContextAllocEvent`    | `NativeCipherContext` creation            | `sslPtr`, `sslCtxPtr`             |
+| `NativeCipherContextFreeFailureEvent` | `eu.exeris.kernel.core.crypto.NativeCipherContextFreeFailure` | `SSL_free` failure                    | —                                 |
+
+**Core — `eu.exeris.kernel.tls` package:**
+
+| Event Class                | JFR Category                                         | When Emitted                     | Key Fields                                  |
+|:---------------------------|:-----------------------------------------------------|:---------------------------------|:--------------------------------------------|
+| `TlsHandshakeEvent`        | `eu.exeris.kernel.tls.TlsHandshake`                  | Handshake completion             | `sslPtr`, `mode`, `negotiatedAlpn`, `durationMs` |
+| `TlsHandshakeFailureEvent` | `eu.exeris.kernel.tls.TlsHandshakeFailure`           | Handshake exception              | `sslPtr`, `mode`, `sslErrorCode`            |
+| `TlsEngineBindEvent`       | `eu.exeris.kernel.tls.EngineBind`                    | `notifyBound()` call             | —                                           |
+| `TlsEngineCloseEvent`      | `eu.exeris.kernel.tls.EngineClose`                   | `close()` call                   | —                                           |
+| `TlsPhaseTransitionEvent`  | `eu.exeris.kernel.tls.PhaseTransition`               | Per state-machine transition     | —                                           |
+
+**Community — `eu.exeris.kernel.crypto` package:**
+
+| Event Class                       | JFR Category                                                   | When Emitted                            | Key Fields |
+|:----------------------------------|:---------------------------------------------------------------|:----------------------------------------|:-----------|
+| `CommunityProviderBootstrapEvent` | `eu.exeris.kernel.crypto.CommunityProviderBootstrap`           | Provider creates engine                 | —          |
+| `CommunityTlsHandshakeEvent`      | `eu.exeris.kernel.crypto.CommunityTlsHandshake`                | Per `beginHandshake()` in Community     | —          |
 
 **Rule:** `wrap()` and `unwrap()` on the cipher hot-path MUST NOT emit JFR events per-call.
 Use JFR's built-in `MethodProfiling` for cipher throughput analysis.
@@ -316,7 +337,7 @@ Use JFR's built-in `MethodProfiling` for cipher throughput analysis.
 in `exeris-kernel-core/pom.xml`) — they are NOT picked up by Surefire. Run with `mvn verify`
 or `mvn install`. OpenSSL 3.x must be present on the CI host for Linux targets.
 
-- `OffHeapTlsEngineLoopbackIT` (`@Tag("integration")`, `@EnabledOnOs(OS.LINUX)`):
+- `CommunityTlsEngineLoopbackIntegrationTest` (`exeris-kernel-community/src/test/java/eu/exeris/kernel/community/crypto/`, `@Tag("integration")`, `@EnabledOnOs(OS.LINUX)`):
   - Simulates Community tier: `SSL_set_fd` resolved as a separate Community-owned handle,
     called before `notifyBound()` — Core engine has zero knowledge of the fd.
   - Full TLS 1.3 handshake over a real `ServerSocketChannel`/`SocketChannel` loopback pair
@@ -328,7 +349,7 @@ or `mvn install`. OpenSSL 3.x must be present on the CI host for Linux targets.
 
 ### Integration Tests (TCK)
 
-- Both Community and Enterprise: verify zero heap allocations during 1000 `wrap()` calls
+- Verify zero heap allocations during 1000 `wrap()` calls
   (JFR GC allocation profiler baseline must show 0 B/op).
 - `AbstractCryptoEngineTck.ErrorCodeContract`:
   - `unwrap()` on a closed engine MUST throw `TlsDecryptException` (`EX-NET-2003`).
@@ -336,9 +357,8 @@ or `mvn install`. OpenSSL 3.x must be present on the CI host for Linux targets.
 - `MemoryExhaustedException(EX-MEM-1001)` is thrown before native allocation when
   `WatermarkManager` reports high watermark breach.
 - `NativeCipherContext` lifecycle: `SSL*` pointer freed when `LoanedBuffer` ref-count reaches zero.
+- **`CryptoCarrierPinningTck`** — verifies no carrier thread pinning during `wrap()`/`unwrap()` operations.
 
-### Load Tests
-
-- 100k TLS records/second with < 5 µs P99 `wrap()` latency *(target, not yet measured — baseline
-  JMH benchmark pending TRL-5 milestone; current manual profiling shows < 12 µs P99 on loopback)*.
-- GC pause frequency: < 1 minor GC per 10 seconds under sustained cipher load.
+> **TCK gap:** No Community binding exists for `CryptoZeroAllocTck`. As of current state, Community tier
+> zero-allocation on the TLS hot path (per ADR-008) is documented but not TCK-enforced at the Community
+> binding level.
