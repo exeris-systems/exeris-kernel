@@ -25,14 +25,10 @@ import eu.exeris.kernel.spi.http.HttpResponse;
 import eu.exeris.kernel.spi.http.HttpStatus;
 import eu.exeris.kernel.spi.http.HttpVersion;
 import eu.exeris.kernel.spi.persistence.PersistenceEngine;
-import eu.exeris.kernel.spi.persistence.PersistenceStatement;
 import eu.exeris.kernel.spi.persistence.QueryResult;
 import eu.exeris.kernel.spi.persistence.TransactionalExecutor;
 
-import java.net.URLDecoder;
-import java.nio.charset.StandardCharsets;
 import java.util.Comparator;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -43,21 +39,6 @@ import java.util.function.UnaryOperator;
 final class CommunityHttpSubsystem implements Subsystem {
 
     private static final String HEADER_PERSISTENCE = "X-Exeris-Persistence";
-    private static final String HEADER_ROUNDTRIP_KEY = "X-Exeris-Roundtrip-Key";
-    private static final String HEADER_ROUNDTRIP_VALUE = "X-Exeris-Roundtrip-Value";
-    private static final String ROUNDTRIP_TABLE = "exeris_http_roundtrip";
-    private static final String CREATE_ROUNDTRIP_TABLE_SQL = """
-            CREATE TABLE IF NOT EXISTS exeris_http_roundtrip (
-                entry_key VARCHAR(255) PRIMARY KEY,
-                entry_value VARCHAR(255) NOT NULL
-            )
-            """;
-    private static final String DELETE_ROUNDTRIP_SQL =
-            "DELETE FROM " + ROUNDTRIP_TABLE + " WHERE entry_key = $1";
-    private static final String INSERT_ROUNDTRIP_SQL =
-            "INSERT INTO " + ROUNDTRIP_TABLE + " (entry_key, entry_value) VALUES ($1, $2)";
-    private static final String SELECT_ROUNDTRIP_SQL =
-            "SELECT entry_value FROM " + ROUNDTRIP_TABLE + " WHERE entry_key = $1";
 
     private static final Map<String, HttpMode> HTTP_MODE_ALIASES = Map.of(
         "SERVER",   HttpMode.SERVER,
@@ -198,8 +179,6 @@ final class CommunityHttpSubsystem implements Subsystem {
                 e -> e.respond(HttpResponse.noBody(readinessStatus(), e.request().version())))
             .route(HttpMethod.GET, "/db/ping",
                 e -> e.respond(persistenceProbe(transactionalExecutor, e.request().version())))
-            .route(HttpMethod.GET, "/db/roundtrip",
-                e -> e.respond(persistenceRoundtrip(transactionalExecutor, e.request().path(), e.request().version())))
             .notFound(e -> e.respond(HttpResponse.noBody(HttpStatus.NOT_FOUND, e.request().version())))
             .build();
     }
@@ -253,105 +232,6 @@ final class CommunityHttpSubsystem implements Subsystem {
                     List.of(new HttpHeader(HEADER_PERSISTENCE, "error"))
             );
         }
-    }
-
-    @SuppressWarnings("PMD.AvoidCatchingGenericException")
-    private static HttpResponse persistenceRoundtrip(TransactionalExecutor transactionalExecutor,
-                                                     String requestPath,
-                                                     HttpVersion version) {
-        if (transactionalExecutor == null) {
-            return HttpResponse.noBody(
-                    HttpStatus.SERVICE_UNAVAILABLE,
-                    version,
-                    List.of(new HttpHeader(HEADER_PERSISTENCE, "unbound"))
-            );
-        }
-
-        Map<String, String> query = parseQuery(requestPath);
-        String key = query.get("key");
-        String value = query.get("value");
-        if (isBlank(key) || isBlank(value)) {
-            return HttpResponse.noBody(
-                    HttpStatus.BAD_REQUEST,
-                    version,
-                    List.of(new HttpHeader(HEADER_PERSISTENCE, "missing-parameters"))
-            );
-        }
-
-        try {
-            String[] persistedValue = new String[1];
-            transactionalExecutor.executeManaged(connection -> {
-                connection.executeUpdate(CREATE_ROUNDTRIP_TABLE_SQL);
-
-                try (PersistenceStatement delete = connection.prepare(DELETE_ROUNDTRIP_SQL)) {
-                    delete.bindString(0, key).executeUpdate();
-                }
-                try (PersistenceStatement insert = connection.prepare(INSERT_ROUNDTRIP_SQL)) {
-                    insert.bindString(0, key)
-                            .bindString(1, value)
-                            .executeUpdate();
-                }
-                try (PersistenceStatement select = connection.prepare(SELECT_ROUNDTRIP_SQL)) {
-                    select.bindString(0, key);
-                    try (QueryResult result = select.executeQuery()) {
-                        if (result.next()) {
-                            persistedValue[0] = result.row().getString(0);
-                        }
-                    }
-                }
-            });
-
-            if (persistedValue[0] != null) {
-                return HttpResponse.noBody(
-                        HttpStatus.OK,
-                        version,
-                        List.of(
-                                new HttpHeader(HEADER_PERSISTENCE, "ready"),
-                                new HttpHeader(HEADER_ROUNDTRIP_KEY, key),
-                                new HttpHeader(HEADER_ROUNDTRIP_VALUE, persistedValue[0])
-                        )
-                );
-            }
-            return HttpResponse.noBody(
-                    HttpStatus.INTERNAL_SERVER_ERROR,
-                    version,
-                    List.of(new HttpHeader(HEADER_PERSISTENCE, "missing-row"))
-            );
-        } catch (RuntimeException _) {
-            return HttpResponse.noBody(
-                    HttpStatus.INTERNAL_SERVER_ERROR,
-                    version,
-                    List.of(new HttpHeader(HEADER_PERSISTENCE, "error"))
-            );
-        }
-    }
-
-    private static Map<String, String> parseQuery(String requestPath) {
-        int separator = requestPath.indexOf('?');
-        if (separator < 0 || separator == requestPath.length() - 1) {
-            return Map.of();
-        }
-
-        Map<String, String> values = new LinkedHashMap<>();
-        String query = requestPath.substring(separator + 1);
-        for (String pair : query.split("&")) {
-            if (pair.isEmpty()) {
-                continue;
-            }
-            int equals = pair.indexOf('=');
-            String rawKey = equals >= 0 ? pair.substring(0, equals) : pair;
-            String rawValue = equals >= 0 ? pair.substring(equals + 1) : "";
-            values.put(urlDecode(rawKey), urlDecode(rawValue));
-        }
-        return values;
-    }
-
-    private static String urlDecode(String value) {
-        return URLDecoder.decode(value, StandardCharsets.UTF_8);
-    }
-
-    private static boolean isBlank(String value) {
-        return value == null || value.isBlank();
     }
 
     private static HttpConfig buildHttpConfig(ConfigProvider configProvider) {

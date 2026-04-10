@@ -208,16 +208,16 @@ public final class CommunityConfigProvider implements ConfigProvider {
 
         // Network
         int port       = resolveRaw("network.port")
-                .map(CommunityConfigProvider::safeInt)
+                .flatMap(CommunityConfigProvider::safeInt)
                 .orElse(defaults.network().port());
         int bufferSize = resolveRaw("network.bufferSize")
-                .map(CommunityConfigProvider::safeInt)
+                .flatMap(CommunityConfigProvider::safeInt)
                 .orElse(defaults.network().bufferSize());
         boolean nativeTransportPreferred = resolveRaw("network.nativeTransportPreferred")
                 .map(Boolean::parseBoolean)
                 .orElse(defaults.network().nativeTransportPreferred());
         int reactors   = resolveRaw("network.reactorCount")
-                .map(CommunityConfigProvider::safeInt)
+                .flatMap(CommunityConfigProvider::safeInt)
                 .orElse(defaults.network().reactorCount());
         boolean quic   = resolveRaw("network.quicEnabled")
                 .map(Boolean::parseBoolean)
@@ -225,7 +225,7 @@ public final class CommunityConfigProvider implements ConfigProvider {
 
         // Memory
         long memoryMb = resolveRaw("globalMemoryMb")
-                .map(CommunityConfigProvider::safeLong)
+                .flatMap(CommunityConfigProvider::safeLong)
                 .orElse(defaults.globalMemoryMb());
 
         // Telemetry
@@ -252,7 +252,7 @@ public final class CommunityConfigProvider implements ConfigProvider {
         String pass     = resolveRaw("persistence.password")
                 .orElse(defaults.persistence().password());
         int maxPool     = resolveRaw("persistence.maxPoolSize")
-                .map(CommunityConfigProvider::safeInt)
+                .flatMap(CommunityConfigProvider::safeInt)
                 .orElse(defaults.persistence().maxPoolSize());
         boolean migrate = resolveRaw("persistence.runMigrations")
                 .map(Boolean::parseBoolean)
@@ -267,23 +267,23 @@ public final class CommunityConfigProvider implements ConfigProvider {
         );
     }
 
-    private static int safeInt(String value) {
+    private static Optional<Integer> safeInt(String value) {
         try {
-            return Integer.parseInt(value.strip());
+            return Optional.of(Integer.parseInt(value.strip()));
         } catch (NumberFormatException ex) {
             LOG.log(System.Logger.Level.WARNING,
-                    "CommunityConfigProvider: cannot parse integer from ''{0}'' — using 0", value);
-            return 0;
+                    "CommunityConfigProvider: cannot parse integer from ''{0}'' — using compiled default", value);
+            return Optional.empty();
         }
     }
 
-    private static long safeLong(String value) {
+    private static Optional<Long> safeLong(String value) {
         try {
-            return Long.parseLong(value.strip());
+            return Optional.of(Long.parseLong(value.strip()));
         } catch (NumberFormatException ex) {
             LOG.log(System.Logger.Level.WARNING,
-                    "CommunityConfigProvider: cannot parse long from ''{0}'' — using 0", value);
-            return 0L;
+                    "CommunityConfigProvider: cannot parse long from ''{0}'' — using compiled default", value);
+            return Optional.empty();
         }
     }
 }

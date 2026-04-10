@@ -70,8 +70,8 @@ final class CommunityTransportSubsystem implements Subsystem {
             transportEngine.setStreamHandler(eu.exeris.kernel.spi.transport.TransportStream::close);
             LOG.log(System.Logger.Level.WARNING,
                     "CommunityTransportSubsystem: transport running with default stream handler "
-                    + "(streams will be closed immediately). Register a real handler via "
-                    + "KernelProviders.TRANSPORT_ENGINE before start().");
+                    + "(streams will be closed immediately). No stream handler was configured "
+                    + "during bootstrap; inbound streams will be dropped until a handler is installed.");
         }
         transportEngine.setConnectionHandler(connection -> {
         });
