@@ -28,7 +28,6 @@ final class CommunityHeapEventPayload implements EventPayload {
         this(bytes, true);
     }
 
-    @SuppressWarnings("PMD.ArrayIsStoredDirectly") // zero-copy contract: copy=false path intentionally takes ownership
     private CommunityHeapEventPayload(byte[] bytes, boolean copy) {
         this.bytes = copy ? Arrays.copyOf(bytes, bytes.length) : bytes;
         this.segment = MemorySegment.ofArray(this.bytes).asReadOnly();
