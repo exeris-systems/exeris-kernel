@@ -59,23 +59,22 @@ final class CommunityTransportSubsystem implements Subsystem {
             return;
         }
         transportConfig = buildTransportConfig(configProvider);
-    }
-
-    @Override
-    public void start() {
-        if (transportProvider == null || transportConfig == null
-                || transportConfig.mode() == TransportMode.DISABLED) {
+        if (transportConfig.mode() == TransportMode.DISABLED) {
             return;
         }
-
         transportEngine = transportProvider.createEngine(transportConfig);
-
         if (transportEngine.mode() == TransportMode.SERVER || transportEngine.mode() == TransportMode.DUAL) {
             transportEngine.setStreamHandler(eu.exeris.kernel.spi.transport.TransportStream::close);
         }
         transportEngine.setConnectionHandler(connection -> {
         });
+    }
 
+    @Override
+    public void start() {
+        if (transportEngine == null) {
+            return;
+        }
         transportEngine.start();
         running = true;
     }

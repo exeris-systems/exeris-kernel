@@ -31,15 +31,15 @@ final class DeferredHttpClientEngine implements HttpClientEngine {
     }
 
     @Override
-    public void start() {
+    public synchronized void start() {
         if (closed.get()) {
             throw new IllegalStateException("Client engine is closed");
         }
-        HttpClientEngine local = delegate;
-        if (local == null) {
-            local = provider.createClientEngine(config);
-            delegate = local;
+        if (delegate != null) {
+            throw new IllegalStateException("Client engine is already started");
         }
+        HttpClientEngine local = provider.createClientEngine(config);
+        delegate = local;
         local.start();
     }
 

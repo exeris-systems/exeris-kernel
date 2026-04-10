@@ -31,7 +31,7 @@ final class DeferredHttpServerEngine implements HttpServerEngine {
     }
 
     @Override
-    public void setHandler(HttpHandler handler) {
+    public synchronized void setHandler(HttpHandler handler) {
         if (isRunning()) {
             throw new IllegalStateException("Cannot set handler after start()");
         }
@@ -42,19 +42,19 @@ final class DeferredHttpServerEngine implements HttpServerEngine {
     }
 
     @Override
-    public void start() {
+    public synchronized void start() {
         if (closed.get()) {
             throw new IllegalStateException("Server engine is closed");
         }
-        HttpServerEngine local = delegate;
-        if (local == null) {
-            local = provider.createServerEngine(config);
-            HttpHandler localHandler = handler;
-            if (localHandler != null) {
-                local.setHandler(localHandler);
-            }
-            delegate = local;
+        if (delegate != null) {
+            throw new IllegalStateException("Server engine is already started");
         }
+        HttpServerEngine local = provider.createServerEngine(config);
+        HttpHandler localHandler = handler;
+        if (localHandler != null) {
+            local.setHandler(localHandler);
+        }
+        delegate = local;
         local.start();
     }
 

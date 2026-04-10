@@ -99,28 +99,28 @@ public final class CommunityConfigProvider implements ConfigProvider {
 
     @Override
     public Optional<Integer> getInt(String key) {
-        return resolveRaw(key).map(v -> {
+        return resolveRaw(key).flatMap(v -> {
             try {
-                return Integer.parseInt(v.strip());
+                return Optional.of(Integer.parseInt(v.strip()));
             } catch (NumberFormatException ex) {
                 LOG.log(System.Logger.Level.WARNING,
                         "CommunityConfigProvider: key ''{0}'' value ''{1}'' is not an integer",
                         key, v);
-                return null;
+                return Optional.empty();
             }
         });
     }
 
     @Override
     public Optional<Long> getLong(String key) {
-        return resolveRaw(key).map(v -> {
+        return resolveRaw(key).flatMap(v -> {
             try {
-                return Long.parseLong(v.strip());
+                return Optional.of(Long.parseLong(v.strip()));
             } catch (NumberFormatException ex) {
                 LOG.log(System.Logger.Level.WARNING,
                         "CommunityConfigProvider: key ''{0}'' value ''{1}'' is not a long",
                         key, v);
-                return null;
+                return Optional.empty();
             }
         });
     }
@@ -268,18 +268,10 @@ public final class CommunityConfigProvider implements ConfigProvider {
     }
 
     private static int safeInt(String value) {
-        try {
-            return Integer.parseInt(value.strip());
-        } catch (NumberFormatException _) {
-            return 0;
-        }
+        return Integer.parseInt(value.strip());
     }
 
     private static long safeLong(String value) {
-        try {
-            return Long.parseLong(value.strip());
-        } catch (NumberFormatException _) {
-            return 0L;
-        }
+        return Long.parseLong(value.strip());
     }
 }

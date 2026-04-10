@@ -27,6 +27,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.StructuredTaskScope;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -298,14 +299,14 @@ public final class InMemoryEventBus implements EventBus {
      */
     private static final class TrackingWrapper implements EventPayload {
         private final EventPayload delegate;
-        private volatile boolean closed;
+        private final AtomicBoolean closed = new AtomicBoolean();
 
         /* default */ TrackingWrapper(EventPayload delegate) {
             this.delegate = delegate;
         }
 
         /* default */ boolean isClosed() {
-            return closed;
+            return closed.get();
         }
 
         @Override
@@ -325,8 +326,7 @@ public final class InMemoryEventBus implements EventBus {
 
         @Override
         public void close() {
-            if (!closed) {
-                closed = true;
+            if (closed.compareAndSet(false, true)) {
                 delegate.close();
             }
         }
@@ -338,7 +338,7 @@ public final class InMemoryEventBus implements EventBus {
 
         @Override
         public boolean isAlive() {
-            return !closed && delegate.isAlive();
+            return !closed.get() && delegate.isAlive();
         }
     }
 }
