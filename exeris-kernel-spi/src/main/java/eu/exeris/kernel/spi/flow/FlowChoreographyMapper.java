@@ -22,7 +22,7 @@ import eu.exeris.kernel.spi.events.EventDescriptor;
  * <h2>Thread Safety</h2>
  * <p>Implementations MUST be safe for concurrent invocation from multiple virtual threads.
  *
- * @since 0.6.0
+ * @since 0.5.0
  * @see ChoreographyDecision
  * @see FlowEngine#registerChoreographyMapper
  */

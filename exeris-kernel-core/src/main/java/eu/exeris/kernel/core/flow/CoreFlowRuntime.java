@@ -212,20 +212,7 @@ final class CoreFlowRuntime { // NOPMD
             return;
         }
 
-        RuntimeFlowInstance instance = parkedInstances.remove(key);
-        if (instance != null) {
-            parkedFlows.decrement();
-        } else {
-            RuntimeFlowInstance live = liveInstances.get(key);
-            if (live != null && live.state() != FlowState.PARKED) {
-                throw notParked(key);
-            }
-            instance = restoreFromSnapshot(key, null);
-            if (instance == null) {
-                throw notParked(key);
-            }
-            liveInstances.put(key, instance);
-        }
+        RuntimeFlowInstance instance = resolveParkedInstance(key);
 
         if (instance.isTerminal() || terminalStateCatalog.containsKey(key)) {
             liveInstances.remove(key, instance);
@@ -239,6 +226,24 @@ final class CoreFlowRuntime { // NOPMD
             return;
         }
         launch(instance, startStep);
+    }
+
+    private RuntimeFlowInstance resolveParkedInstance(FlowKey key) {
+        RuntimeFlowInstance instance = parkedInstances.remove(key);
+        if (instance != null) {
+            parkedFlows.decrement();
+            return instance;
+        }
+        RuntimeFlowInstance live = liveInstances.get(key);
+        if (live != null && live.state() != FlowState.PARKED) {
+            throw notParked(key);
+        }
+        RuntimeFlowInstance restored = restoreFromSnapshot(key, null);
+        if (restored == null) {
+            throw notParked(key);
+        }
+        liveInstances.put(key, restored);
+        return restored;
     }
 
     private RuntimeFlowInstance restoreFromSnapshot(FlowKey key, CoreFlowExecutionPlan directPlan) {
@@ -448,7 +453,7 @@ final class CoreFlowRuntime { // NOPMD
         if (snapshotStore != null) {
             try {
                 snapshotStore.delete(instance.key().instanceIdMost(), instance.key().instanceIdLeast());
-            } catch (RuntimeException ignored) {
+            } catch (RuntimeException ignored) { //NOPMD AvoidCatchingGenericException — best-effort snapshot deletion
                 // Best-effort deletion — completion is already recorded; do not fail the flow.
             }
         }

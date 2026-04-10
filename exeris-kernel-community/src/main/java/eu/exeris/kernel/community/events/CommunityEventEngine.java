@@ -193,7 +193,7 @@ final class CommunityEventEngine implements EventEngine {
                 }
             } catch (EventBusException ex) {
                 throw ex;
-            } catch (RuntimeException ex) {
+            } catch (RuntimeException ex) { //NOPMD AvoidCatchingGenericException — untrusted SPI queue boundary
                 // push() retained internally then threw; it already closed its own retain.
                 // Close the caller's ref to prevent a leak.
                 payload.close();

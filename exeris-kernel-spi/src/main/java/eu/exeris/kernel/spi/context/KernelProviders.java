@@ -349,9 +349,9 @@ public final class KernelProviders {
      * The optional {@link IdempotencyGuard} for preventing duplicate step execution.
      *
      * <p>Bound by the bootstrapper before {@link FlowEngine#start()} when a custom
-     * guard is required. If unbound, {@code CoreFlowEngine} installs a default heap-backed guard.
+     * guard is required. If unbound, the default {@link FlowEngine} implementation installs a heap-backed guard.
      *
-     * @since 0.6.0
+     * @since 0.5.0
      * @see IdempotencyGuard
      * @see #idempotencyGuard()
      */

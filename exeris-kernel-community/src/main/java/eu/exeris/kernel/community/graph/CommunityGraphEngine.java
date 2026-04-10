@@ -51,7 +51,9 @@ public final class CommunityGraphEngine implements GraphEngine {
 
     /* default */ CommunityGraphEngine(GraphConfig config) {
         this.dialect = new CommunityGraphDialect(config.graphName(), config.backendType());
-        this.neo4jClient = dialect.isCypherMode() ? new CommunityNeo4jClient(config) : null;
+        this.neo4jClient = dialect.isCypherMode() && CommunityNeo4jClient.isConfigured(config)
+                ? new CommunityNeo4jClient(config)
+                : null;
         this.nodes = new CopyOnWriteArrayList<>();
         this.edges = new CopyOnWriteArrayList<>();
         this.running = true;

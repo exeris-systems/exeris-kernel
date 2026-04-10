@@ -108,7 +108,7 @@ public interface FlowEngine extends AutoCloseable {
      * @param eventTypeNames event type names to subscribe to; must not be {@code null} or empty
      * @param bus            the {@link EventBus} on which to subscribe; must not be {@code null}
      * @throws UnsupportedOperationException if choreography is not supported
-     * @since 0.6.0
+     * @since 0.5.0
      */
     default void registerChoreographyMapper(
             FlowChoreographyMapper mapper,

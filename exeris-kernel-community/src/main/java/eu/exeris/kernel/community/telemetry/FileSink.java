@@ -45,6 +45,7 @@ import java.util.concurrent.atomic.AtomicLong;
  *
  * @since 0.5.0
  */
+@SuppressWarnings("PMD.CyclomaticComplexity") // writeLoop/close() sequential complexity; no clean decomposition
 public final class FileSink implements TelemetrySink {
 
     private static final DateTimeFormatter FMT =
@@ -54,6 +55,7 @@ public final class FileSink implements TelemetrySink {
     private static final KernelEvent POISON = KernelEvent.info("POISON", "FileSink");
 
     private static final AtomicInteger INSTANCE_COUNTER = new AtomicInteger(0);
+    private static final long ZERO_NANOS = 0L;
 
     private final Path logPath;
     private final BlockingQueue<KernelEvent> queue;
@@ -67,9 +69,9 @@ public final class FileSink implements TelemetrySink {
      */
     public FileSink(Path logPath, int maxQueueDepth) {
         // Fail-fast: validate path is writable before starting the writer thread.
-        try (BufferedWriter probe = Files.newBufferedWriter(logPath, StandardCharsets.UTF_8,
+        try (BufferedWriter _ = Files.newBufferedWriter(logPath, StandardCharsets.UTF_8,
                 StandardOpenOption.CREATE, StandardOpenOption.APPEND)) {
-            // probe only — immediately closed
+            // write-probe only — opened to validate path then immediately closed
         } catch (IOException e) {
             throw new UncheckedIOException("FileSink cannot open log file: " + logPath, e);
         }
@@ -133,7 +135,7 @@ public final class FileSink implements TelemetrySink {
         boolean interrupted = false;
         while (writerThread.isAlive()) {
             long remainingNanos = deadline - System.nanoTime();
-            if (remainingNanos <= 0L) {
+            if (remainingNanos <= ZERO_NANOS) {
                 break;
             }
             try {

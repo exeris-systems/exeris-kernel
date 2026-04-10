@@ -46,6 +46,7 @@ import java.util.Objects;
 @SuppressWarnings({
     "PMD.CyclomaticComplexity",
     "PMD.TooManyMethods",
+    "PMD.GodClass",         // high WMC from JSON serialization; no clean decomposition without allocation
     "PMD.UseTryWithResources",
     "PMD.CloseResource",
     "PMD.AvoidDuplicateLiterals",
@@ -56,6 +57,7 @@ public final class Slf4jTelemetrySink implements TelemetrySink {
 
     private static final String DEFAULT_CODE = "EX-UNK-0000";
     private static final String SINK_NAME = "ExerisCommunity/Slf4jTelemetrySink";
+    private static final char FIRST_PRINTABLE_ASCII = 0x20;
 
     private final LogAdapter logger;
     private final MdcAdapter mdc;
@@ -234,19 +236,11 @@ public final class Slf4jTelemetrySink implements TelemetrySink {
             return;
         }
         if (value instanceof Float floatValue) {
-            if (Float.isFinite(floatValue)) {
-                builder.append(floatValue);
-            } else {
-                appendJsonString(builder, floatValue.toString());
-            }
+            appendFiniteOrString(builder, floatValue, Float.isFinite(floatValue));
             return;
         }
         if (value instanceof Double doubleValue) {
-            if (Double.isFinite(doubleValue)) {
-                builder.append(doubleValue);
-            } else {
-                appendJsonString(builder, doubleValue.toString());
-            }
+            appendFiniteOrString(builder, doubleValue, Double.isFinite(doubleValue));
             return;
         }
         if (value instanceof String stringValue) {
@@ -266,6 +260,14 @@ public final class Slf4jTelemetrySink implements TelemetrySink {
             return;
         }
         appendJsonString(builder, "[unsupported]");
+    }
+
+    private static void appendFiniteOrString(StringBuilder builder, double value, boolean isFinite) {
+        if (isFinite) {
+            builder.append(value);
+        } else {
+            appendJsonString(builder, Double.toString(value));
+        }
     }
 
     private static void appendStructuredArray(StringBuilder builder, Object array) {
@@ -308,7 +310,7 @@ public final class Slf4jTelemetrySink implements TelemetrySink {
                 case '\r' -> escaped.append("\\r");
                 case '\t' -> escaped.append("\\t");
                 default -> {
-                    if (current < 0x20) {
+                    if (current < FIRST_PRINTABLE_ASCII) {
                         appendUnicodeEscape(escaped, current);
                     } else {
                         escaped.append(current);
@@ -323,8 +325,8 @@ public final class Slf4jTelemetrySink implements TelemetrySink {
         builder.append("\\u00");
         int high = (value >> 4) & 0x0F;
         int low = value & 0x0F;
-        builder.append((char) (high < 10 ? '0' + high : 'a' + (high - 10)));
-        builder.append((char) (low < 10 ? '0' + low : 'a' + (low - 10)));
+        builder.append((char) (high < 10 ? '0' + high : 'a' + high - 10))
+               .append((char) (low < 10 ? '0' + low : 'a' + low - 10));
     }
 
     /* default */ enum LogLevel {

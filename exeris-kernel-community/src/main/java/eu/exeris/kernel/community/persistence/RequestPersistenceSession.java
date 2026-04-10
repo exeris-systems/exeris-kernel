@@ -37,7 +37,7 @@ import eu.exeris.kernel.spi.persistence.TransactionIsolation;
  * @param readOnly       Read-only hint (inferred from HTTP method or explicit header)
  * @param active         Flag: true if session is active, false if deactivated (post-exit)
  *
- * @since 0.6.0
+ * @since 0.5.0
  */
 public record RequestPersistenceSession(
     PersistenceConnection connection,

@@ -15,7 +15,7 @@ import eu.exeris.kernel.spi.flow.model.FlowState;
  * Minimal heap-backed {@link FlowContext} used by {@link FlowChoreographyBridge}
  * when scheduling new flow instances from choreography events.
  *
- * @since 0.6.0
+ * @since 0.5.0
  */
 record HeapFlowContext(
         long instanceIdMost,

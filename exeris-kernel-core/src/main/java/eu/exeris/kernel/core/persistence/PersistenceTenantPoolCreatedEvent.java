@@ -23,7 +23,7 @@ import jdk.jfr.StackTrace;
  * <p>Used to correlate per-tenant pool proliferation with memory growth.
  * Peak concurrent tenant pool count should remain ≤3 under typical load.
  *
- * @since 0.6.0
+ * @since 0.5.0
  */
 @Name("eu.exeris.kernel.persistence.TenantPoolCreated")
 @Label("Tenant Pool Created")

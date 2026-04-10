@@ -63,7 +63,7 @@ class CommunityGraphCoreE2EIntegrationTest {
 
         assertThat(sqlQuery).contains("SELECT");
         assertThat(sqlQuery).contains("target_id");
-        assertThat(sqlQuery).contains("?");
+        assertThat(sqlQuery).contains("$1");
 
         assertThat(cypherQuery).contains("MATCH");
         assertThat(cypherQuery).contains("(source)-[:FOLLOWS]->(target)");

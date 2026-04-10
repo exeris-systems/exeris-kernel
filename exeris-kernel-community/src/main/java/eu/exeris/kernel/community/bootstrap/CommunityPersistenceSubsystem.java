@@ -14,6 +14,7 @@ import eu.exeris.kernel.spi.bootstrap.BootstrapPhase;
 import eu.exeris.kernel.spi.bootstrap.Subsystem;
 import eu.exeris.kernel.spi.config.ConfigProvider;
 import eu.exeris.kernel.spi.context.KernelProviders;
+import eu.exeris.kernel.spi.exceptions.persistence.PersistenceProviderException;
 import eu.exeris.kernel.spi.persistence.ConnectionInterceptor;
 import eu.exeris.kernel.spi.persistence.PersistenceConfig;
 import eu.exeris.kernel.spi.persistence.PersistenceEngine;
@@ -99,7 +100,8 @@ final class CommunityPersistenceSubsystem implements Subsystem {
                 .map(ServiceLoader.Provider::get)
                 .max(Comparator.comparingInt(PersistenceProvider::priority)
                         .thenComparing(provider -> provider.getClass().getName()))
-                .orElseThrow(() -> new IllegalStateException("No PersistenceProvider found on classpath"));
+                .orElseThrow(() -> PersistenceProviderException
+                        .noProviderAvailable("No PersistenceProvider found on classpath"));
     }
 
     private static List<ConnectionInterceptor> interceptors(PersistenceConfig config) {

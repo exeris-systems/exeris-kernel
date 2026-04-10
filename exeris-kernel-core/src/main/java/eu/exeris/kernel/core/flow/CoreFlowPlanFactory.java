@@ -25,7 +25,11 @@ import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
+// compile() and compile helpers are individually simple; aggregate is inflated by Builder inner class
+@SuppressWarnings("PMD.CyclomaticComplexity")
 final class CoreFlowPlanFactory implements FlowExecutionPlanFactory {
+
+    private static final int MAX_UNCONDITIONAL_OUTGOING = 1;
 
     private final FlowEngineConfig config;
     private final CoreFlowRegistry registry;
@@ -46,6 +50,7 @@ final class CoreFlowPlanFactory implements FlowExecutionPlanFactory {
     }
 
     @Override
+    @SuppressWarnings("PMD.ExceptionAsFlowControl") // wrapping SPI validation at the compile boundary
     public FlowExecutionPlan compile(FlowDefinition definition) {
         try {
             String definitionName = validatedDefinitionName(definition);
@@ -144,7 +149,7 @@ final class CoreFlowPlanFactory implements FlowExecutionPlanFactory {
             List<FlowTransitionDescriptor> unconditional = outgoing.stream()
                     .filter(t -> "default".equals(t.conditionTag()))
                     .toList();
-            if (unconditional.size() > 1) {
+            if (unconditional.size() > MAX_UNCONDITIONAL_OUTGOING) {
                 throw new IllegalArgumentException(
                         "Step " + index + " has " + unconditional.size()
                         + " unconditional outgoing transitions; at most one is permitted");

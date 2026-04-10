@@ -23,7 +23,7 @@ import jdk.jfr.StackTrace;
  * <p>Tracks lifecycle of per-tenant pools and idle time before reclamation.
  * Tuning the idle-TTL and reclamation cadence impacts memory footprint stability.
  *
- * @since 0.6.0
+ * @since 0.5.0
  */
 @Name("eu.exeris.kernel.persistence.TenantPoolReclaimed")
 @Label("Tenant Pool Reclaimed")

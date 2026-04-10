@@ -30,7 +30,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * }
  * </pre>
  *
- * @since 0.6.0
+ * @since 0.5.0
  */
 @SuppressWarnings("java:S2699")
 public abstract class AbstractPasswordEncoderTck {

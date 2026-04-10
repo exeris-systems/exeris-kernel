@@ -116,7 +116,7 @@ final class CommunityHttpExchange implements HttpExchange {
         List<HttpHeader> mergedHeaders = mergeHeaders(typedResponse.headers(), encoded.headers());
         try {
             respond(new HttpResponse(typedResponse.status(), request.version(), mergedHeaders, encoded.body()));
-        } catch (RuntimeException | Error ex) {
+        } catch (RuntimeException | Error ex) { //NOPMD AvoidCatchingGenericException — close body on failure
             if (encoded.body() != null) {
                 encoded.body().close();
             }

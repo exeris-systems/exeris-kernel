@@ -63,7 +63,8 @@ final class CommunityTransportSubsystem implements Subsystem {
 
     @Override
     public void start() {
-        if (transportProvider == null || transportConfig == null) {
+        if (transportProvider == null || transportConfig == null
+                || transportConfig.mode() == TransportMode.DISABLED) {
             return;
         }
 
@@ -94,7 +95,8 @@ final class CommunityTransportSubsystem implements Subsystem {
 
     @Override
     public UnaryOperator<ScopedValue.Carrier> providerBindings() {
-        if (transportProvider == null || transportEngine == null) {
+        if (transportProvider == null || transportEngine == null
+                || transportConfig == null || transportConfig.mode() == TransportMode.DISABLED) {
             return Subsystem.super.providerBindings();
         }
         return carrier -> carrier

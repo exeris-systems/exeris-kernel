@@ -157,7 +157,7 @@ decisions. **It is currently an incubating component at TRL-2.** The `ResourceAr
 `ScalingContext` — it operates on hardcoded `WatermarkLevel` boundaries.
 
 > **Technical Debt:** Full integration of `ScalingContext` with `ResourceArbiter` (multi-tenant SLA-aware shedding)
-> is planned for **v0.6.0**. Do NOT use `ScalingContext` on production hot paths until this integration is complete.
+> is planned for **v0.5.0**. Do NOT use `ScalingContext` on production hot paths until this integration is complete.
 > See `ScalingContext` Javadoc for details.
 
 ---

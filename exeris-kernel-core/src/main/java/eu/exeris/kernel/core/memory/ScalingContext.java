@@ -44,7 +44,7 @@ import java.util.Objects;
  * @param maxRttMs            maximum acceptable RTT in milliseconds for this tier before
  *                            the arbiter considers the context degraded
  *
- * @implNote INCUBATING — Full integration with {@link ResourceArbiter} planned for v0.6.0.
+ * @implNote INCUBATING — Full integration with {@link ResourceArbiter} planned for v0.5.0.
  *         Multi-tenant SLA shedding is currently at TRL-2. The {@code ResourceArbiter}
  *         presently uses hardcoded {@link WatermarkLevel} boundaries and does not yet
  *         consume {@code ScalingContext}. Do NOT use on production hot paths until
