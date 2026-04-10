@@ -60,9 +60,10 @@ final class CommunityCryptoSubsystem implements Subsystem {
         if (cryptoProvider instanceof AutoCloseable closeable) {
             try {
                 closeable.close();
-            } catch (InterruptedException ex) {
+            } catch (InterruptedException _) {
                 Thread.currentThread().interrupt(); // restore interrupt status
-            } catch (Exception ignored) { //NOPMD AvoidCatchingGenericException — best-effort provider close at shutdown
+            } catch (Exception _) {
+                // best effort close, ignore any exception
             }
         }
     }

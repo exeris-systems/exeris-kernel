@@ -10,14 +10,22 @@ package eu.exeris.kernel.community.bootstrap;
 
 import eu.exeris.kernel.community.http.CommunityHttpProvider;
 import eu.exeris.kernel.core.bootstrap.KernelBootstrap;
+import eu.exeris.kernel.core.http.routing.HttpRouter;
+import eu.exeris.kernel.core.persistence.TransactionOrchestrator;
 import eu.exeris.kernel.spi.bootstrap.BootstrapSelector;
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.http.HttpClientEngine;
 import eu.exeris.kernel.spi.http.HttpConfig;
+import eu.exeris.kernel.spi.http.HttpHandler;
+import eu.exeris.kernel.spi.http.HttpHeader;
+import eu.exeris.kernel.spi.http.HttpKernelProviders;
 import eu.exeris.kernel.spi.http.HttpMethod;
 import eu.exeris.kernel.spi.http.HttpRequest;
+import eu.exeris.kernel.spi.http.HttpResponse;
+import eu.exeris.kernel.spi.http.HttpStatus;
 import eu.exeris.kernel.spi.http.HttpVersion;
 import eu.exeris.kernel.spi.persistence.PersistenceConnection;
+import eu.exeris.kernel.spi.persistence.PersistenceStatement;
 import eu.exeris.kernel.spi.persistence.QueryResult;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -29,9 +37,14 @@ import java.io.Writer;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -104,17 +117,23 @@ class CommunityPersistenceBootstrapIntegrationTest {
         System.setProperty("exeris.persistence.maxPoolSize", "4");
 
         try {
-            KernelBootstrap.builder()
-                    .selector(BootstrapSelector.forNames("http", "persistence"))
-                    .build()
-                    .boot(() -> {
-                        boundInside.set(KernelProviders.PERSISTENCE_ENGINE.isBound());
-                        String response = sendRequest(port, roundtripPath(roundtripKey, roundtripValue));
-                        assertThat(response).contains("HTTP/1.1 200 OK");
-                        assertThat(response).contains("X-Exeris-Persistence: ready");
-                        assertThat(response).contains("X-Exeris-Roundtrip-Key: " + roundtripKey);
-                        assertThat(response).contains("X-Exeris-Roundtrip-Value: " + roundtripValue);
-                        assertPersistedValue(roundtripKey, roundtripValue);
+            AtomicReference<TransactionOrchestrator> txRef = new AtomicReference<>();
+            ScopedValue.where(HttpKernelProviders.HTTP_SERVER_HANDLER, buildRoundtripHandler(txRef))
+                    .call(() -> {
+                        KernelBootstrap.builder()
+                                .selector(BootstrapSelector.forNames("http", "persistence"))
+                                .build()
+                                .boot(() -> {
+                                    txRef.set(new TransactionOrchestrator(KernelProviders.persistenceEngine()));
+                                    boundInside.set(KernelProviders.PERSISTENCE_ENGINE.isBound());
+                                    String response = sendRequest(port, roundtripPath(roundtripKey, roundtripValue));
+                                    assertThat(response).contains("HTTP/1.1 200 OK");
+                                    assertThat(response).contains("X-Exeris-Persistence: ready");
+                                    assertThat(response).contains("X-Exeris-Roundtrip-Key: " + roundtripKey);
+                                    assertThat(response).contains("X-Exeris-Roundtrip-Value: " + roundtripValue);
+                                    assertPersistedValue(roundtripKey, roundtripValue);
+                                });
+                        return null;
                     });
         } finally {
             restoreProperty("exeris.http.mode", previousHttpMode);
@@ -155,44 +174,50 @@ class CommunityPersistenceBootstrapIntegrationTest {
         System.setProperty("exeris.persistence.maxPoolSize", "4");
 
         try {
-            KernelBootstrap.builder()
-                    .selector(BootstrapSelector.forNames("http", "persistence"))
-                    .build()
-                    .boot(() -> {
-                        HttpConfig clientConfig = new HttpConfig(
-                                eu.exeris.kernel.spi.http.HttpMode.CLIENT,
-                                "127.0.0.1",
-                                port,
-                                HttpConfig.DEFAULT_MAX_CONNECTIONS,
-                                HttpConfig.DEFAULT_IDLE_TIMEOUT_MS,
-                                HttpConfig.DEFAULT_MAX_HEADER_COUNT,
-                                HttpConfig.DEFAULT_MAX_HEADER_SIZE,
-                                HttpConfig.DEFAULT_MAX_REQUEST_BODY_BYTES,
-                                false,
-                                HttpVersion.HTTP_1_1
-                        );
-                        try (HttpClientEngine client = new CommunityHttpProvider().createClientEngine(clientConfig)) {
-                            client.start();
-                            var response = client.send(HttpRequest.noBody(
-                                    HttpMethod.GET,
-                                    roundtripPath(roundtripKey, roundtripValue),
-                                    HttpVersion.HTTP_1_1,
-                                    java.util.List.of()));
-                            assertThat(response.status().code()).isEqualTo(200);
-                            assertThat(response.headers())
-                                    .anyMatch(header -> header.nameEqualsIgnoreCase("X-Exeris-Persistence")
-                                            && header.value().equals("ready"));
-                            assertThat(response.headers())
-                                    .anyMatch(header -> header.nameEqualsIgnoreCase("X-Exeris-Roundtrip-Key")
-                                            && header.value().equals(roundtripKey));
-                            assertThat(response.headers())
-                                    .anyMatch(header -> header.nameEqualsIgnoreCase("X-Exeris-Roundtrip-Value")
-                                            && header.value().equals(roundtripValue));
-                            assertPersistedValue(roundtripKey, roundtripValue);
-                            if (response.body() != null) {
-                                response.body().close();
-                            }
-                        }
+            AtomicReference<TransactionOrchestrator> txRef = new AtomicReference<>();
+            ScopedValue.where(HttpKernelProviders.HTTP_SERVER_HANDLER, buildRoundtripHandler(txRef))
+                    .call(() -> {
+                        KernelBootstrap.builder()
+                                .selector(BootstrapSelector.forNames("http", "persistence"))
+                                .build()
+                                .boot(() -> {
+                                    txRef.set(new TransactionOrchestrator(KernelProviders.persistenceEngine()));
+                                    HttpConfig clientConfig = new HttpConfig(
+                                            eu.exeris.kernel.spi.http.HttpMode.CLIENT,
+                                            "127.0.0.1",
+                                            port,
+                                            HttpConfig.DEFAULT_MAX_CONNECTIONS,
+                                            HttpConfig.DEFAULT_IDLE_TIMEOUT_MS,
+                                            HttpConfig.DEFAULT_MAX_HEADER_COUNT,
+                                            HttpConfig.DEFAULT_MAX_HEADER_SIZE,
+                                            HttpConfig.DEFAULT_MAX_REQUEST_BODY_BYTES,
+                                            false,
+                                            HttpVersion.HTTP_1_1
+                                    );
+                                    try (HttpClientEngine client = new CommunityHttpProvider().createClientEngine(clientConfig)) {
+                                        client.start();
+                                        var response = client.send(HttpRequest.noBody(
+                                                HttpMethod.GET,
+                                                roundtripPath(roundtripKey, roundtripValue),
+                                                HttpVersion.HTTP_1_1,
+                                                java.util.List.of()));
+                                        assertThat(response.status().code()).isEqualTo(200);
+                                        assertThat(response.headers())
+                                                .anyMatch(header -> header.nameEqualsIgnoreCase("X-Exeris-Persistence")
+                                                        && header.value().equals("ready"));
+                                        assertThat(response.headers())
+                                                .anyMatch(header -> header.nameEqualsIgnoreCase("X-Exeris-Roundtrip-Key")
+                                                        && header.value().equals(roundtripKey));
+                                        assertThat(response.headers())
+                                                .anyMatch(header -> header.nameEqualsIgnoreCase("X-Exeris-Roundtrip-Value")
+                                                        && header.value().equals(roundtripValue));
+                                        assertPersistedValue(roundtripKey, roundtripValue);
+                                        if (response.body() != null) {
+                                            response.body().close();
+                                        }
+                                    }
+                                });
+                        return null;
                     });
         } finally {
             restoreProperty("exeris.http.mode", previousHttpMode);
@@ -229,13 +254,19 @@ class CommunityPersistenceBootstrapIntegrationTest {
         System.setProperty("exeris.persistence.maxPoolSize", "4");
 
         try {
-            KernelBootstrap.builder()
-                    .selector(BootstrapSelector.forNames("http", "persistence"))
-                    .build()
-                    .boot(() -> {
-                        String response = sendRequest(port, "/db/roundtrip?value=" + urlEncode(roundtripValue));
-                        assertThat(response).contains("HTTP/1.1 400 Bad Request");
-                        assertThat(response).contains("X-Exeris-Persistence: missing-parameters");
+            AtomicReference<TransactionOrchestrator> txRef = new AtomicReference<>();
+            ScopedValue.where(HttpKernelProviders.HTTP_SERVER_HANDLER, buildRoundtripHandler(txRef))
+                    .call(() -> {
+                        KernelBootstrap.builder()
+                                .selector(BootstrapSelector.forNames("http", "persistence"))
+                                .build()
+                                .boot(() -> {
+                                    txRef.set(new TransactionOrchestrator(KernelProviders.persistenceEngine()));
+                                    String response = sendRequest(port, "/db/roundtrip?value=" + urlEncode(roundtripValue));
+                                    assertThat(response).contains("HTTP/1.1 400 Bad Request");
+                                    assertThat(response).contains("X-Exeris-Persistence: missing-parameters");
+                                });
+                        return null;
                     });
         } finally {
             restoreProperty("exeris.http.mode", previousHttpMode);
@@ -316,18 +347,24 @@ class CommunityPersistenceBootstrapIntegrationTest {
         System.setProperty("exeris.persistence.maxPoolSize", "4");
 
         try {
-            KernelBootstrap.builder()
-                    .selector(BootstrapSelector.forNames("http", "persistence"))
-                    .build()
-                    .boot(() -> {
-                        String firstResponse = sendRequest(port, roundtripPath(key, committedValue));
-                        assertThat(firstResponse).contains("HTTP/1.1 200 OK");
-                        assertPersistedValue(key, committedValue);
+            AtomicReference<TransactionOrchestrator> txRef = new AtomicReference<>();
+            ScopedValue.where(HttpKernelProviders.HTTP_SERVER_HANDLER, buildRoundtripHandler(txRef))
+                    .call(() -> {
+                        KernelBootstrap.builder()
+                                .selector(BootstrapSelector.forNames("http", "persistence"))
+                                .build()
+                                .boot(() -> {
+                                    txRef.set(new TransactionOrchestrator(KernelProviders.persistenceEngine()));
+                                    String firstResponse = sendRequest(port, roundtripPath(key, committedValue));
+                                    assertThat(firstResponse).contains("HTTP/1.1 200 OK");
+                                    assertPersistedValue(key, committedValue);
 
-                        String secondResponse = sendRequest(port, roundtripPath(key, failingValue));
-                        assertThat(secondResponse).contains("HTTP/1.1 500 Internal Server Error");
-                        assertThat(secondResponse).contains("X-Exeris-Persistence: error");
-                        assertPersistedValue(key, committedValue);
+                                    String secondResponse = sendRequest(port, roundtripPath(key, failingValue));
+                                    assertThat(secondResponse).contains("HTTP/1.1 500 Internal Server Error");
+                                    assertThat(secondResponse).contains("X-Exeris-Persistence: error");
+                                    assertPersistedValue(key, committedValue);
+                                });
+                        return null;
                     });
         } finally {
             restoreProperty("exeris.http.mode", previousHttpMode);
@@ -407,5 +444,101 @@ class CommunityPersistenceBootstrapIntegrationTest {
             return;
         }
         System.setProperty(key, value);
+    }
+
+    // ── Roundtrip test handler ────────────────────────────────────────────────
+
+    private static final String ROUNDTRIP_TABLE = "exeris_http_roundtrip";
+    private static final String CREATE_ROUNDTRIP_TABLE_SQL = """
+            CREATE TABLE IF NOT EXISTS exeris_http_roundtrip (
+                entry_key VARCHAR(255) PRIMARY KEY,
+                entry_value VARCHAR(255) NOT NULL
+            )
+            """;
+    private static final String DELETE_ROUNDTRIP_SQL =
+            "DELETE FROM " + ROUNDTRIP_TABLE + " WHERE entry_key = $1";
+    private static final String INSERT_ROUNDTRIP_SQL =
+            "INSERT INTO " + ROUNDTRIP_TABLE + " (entry_key, entry_value) VALUES ($1, $2)";
+    private static final String SELECT_ROUNDTRIP_SQL =
+            "SELECT entry_value FROM " + ROUNDTRIP_TABLE + " WHERE entry_key = $1";
+    private static final String HEADER_PERSISTENCE = "X-Exeris-Persistence";
+    private static final String HEADER_ROUNDTRIP_KEY = "X-Exeris-Roundtrip-Key";
+    private static final String HEADER_ROUNDTRIP_VALUE = "X-Exeris-Roundtrip-Value";
+
+    private static HttpHandler buildRoundtripHandler(AtomicReference<TransactionOrchestrator> txRef) {
+        return HttpRouter.builder()
+                .route(HttpMethod.GET, "/db/roundtrip",
+                        e -> e.respond(testRoundtrip(txRef.get(), e.request().path(), e.request().version())))
+                .notFound(e -> e.respond(HttpResponse.noBody(HttpStatus.NOT_FOUND, e.request().version())))
+                .build();
+    }
+
+    @SuppressWarnings("PMD.AvoidCatchingGenericException")
+    private static HttpResponse testRoundtrip(
+            TransactionOrchestrator tx,
+            String requestPath,
+            eu.exeris.kernel.spi.http.HttpVersion version) {
+        if (tx == null) {
+            return HttpResponse.noBody(HttpStatus.SERVICE_UNAVAILABLE, version,
+                    List.of(new HttpHeader(HEADER_PERSISTENCE, "unbound")));
+        }
+        Map<String, String> query = testParseQuery(requestPath);
+        String key = query.get("key");
+        String value = query.get("value");
+        if (key == null || key.isBlank() || value == null || value.isBlank()) {
+            return HttpResponse.noBody(HttpStatus.BAD_REQUEST, version,
+                    List.of(new HttpHeader(HEADER_PERSISTENCE, "missing-parameters")));
+        }
+        try {
+            String[] persisted = new String[1];
+            tx.executeManaged(connection -> {
+                connection.executeUpdate(CREATE_ROUNDTRIP_TABLE_SQL);
+                try (PersistenceStatement del = connection.prepare(DELETE_ROUNDTRIP_SQL)) {
+                    del.bindString(0, key).executeUpdate();
+                }
+                try (PersistenceStatement ins = connection.prepare(INSERT_ROUNDTRIP_SQL)) {
+                    ins.bindString(0, key).bindString(1, value).executeUpdate();
+                }
+                try (PersistenceStatement sel = connection.prepare(SELECT_ROUNDTRIP_SQL)) {
+                    sel.bindString(0, key);
+                    try (QueryResult r = sel.executeQuery()) {
+                        if (r.next()) {
+                            persisted[0] = r.row().getString(0);
+                        }
+                    }
+                }
+            });
+            if (persisted[0] != null) {
+                return HttpResponse.noBody(HttpStatus.OK, version, List.of(
+                        new HttpHeader(HEADER_PERSISTENCE, "ready"),
+                        new HttpHeader(HEADER_ROUNDTRIP_KEY, key),
+                        new HttpHeader(HEADER_ROUNDTRIP_VALUE, persisted[0])
+                ));
+            }
+            return HttpResponse.noBody(HttpStatus.INTERNAL_SERVER_ERROR, version,
+                    List.of(new HttpHeader(HEADER_PERSISTENCE, "missing-row")));
+        } catch (RuntimeException _) {
+            return HttpResponse.noBody(HttpStatus.INTERNAL_SERVER_ERROR, version,
+                    List.of(new HttpHeader(HEADER_PERSISTENCE, "error")));
+        }
+    }
+
+    private static Map<String, String> testParseQuery(String requestPath) {
+        int sep = requestPath.indexOf('?');
+        if (sep < 0 || sep == requestPath.length() - 1) {
+            return Map.of();
+        }
+        Map<String, String> values = new LinkedHashMap<>();
+        for (String pair : requestPath.substring(sep + 1).split("&")) {
+            if (pair.isEmpty()) {
+                continue;
+            }
+            int eq = pair.indexOf('=');
+            String k = eq >= 0 ? pair.substring(0, eq) : pair;
+            String v = eq >= 0 ? pair.substring(eq + 1) : "";
+            values.put(URLDecoder.decode(k, StandardCharsets.UTF_8),
+                    URLDecoder.decode(v, StandardCharsets.UTF_8));
+        }
+        return values;
     }
 }
