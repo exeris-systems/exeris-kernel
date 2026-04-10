@@ -98,7 +98,7 @@ jobs:
 
       - name: Run persistence RLS integration gate
         run: |
-          mvn -pl exeris-kernel-community \
+          mvn -pl exeris-kernel-community -am \
             -Dtest=CommunityPersistenceTenantIsolationIT,CommunityPersistenceIsolationLeakTckIT,CommunityIsolationStrategyEndToEndIT \
             -DincludedGroups=integration \
             -DexcludedGroups= \
