@@ -2,10 +2,16 @@
 
 **Physical Layout:**
 
-- SPI: `eu.exeris.kernel.spi.persistence.*` (Contracts, StorageContext, Interceptors)
-- Core: `eu.exeris.kernel.core.persistence.*` (Transaction Manager, Initializers, Outbox Poller)
-- Drivers: `exeris-kernel-community` (JDBC-Native / VT-Optimized) / `exeris-kernel-enterprise` (Native Wire
-  optimizations)
+- SPI: `eu.exeris.kernel.spi.persistence.*` (Contracts, ConnectionInterceptor — StorageContext is in Security SPI)
+  > Key SPI contracts: `PersistenceEngine`, `PersistenceProvider`, `PersistenceConfig`, `PersistenceEngineCapabilities`, 
+  > `PersistenceHealthStatus`, `BaseRepository`, `EventStore`, `ConnectionInterceptor`, `TransactionalExecutor`, 
+  > `RowCursor`, `QueryResult`, `PersistenceStatement`, `BulkInserter`, `DatabaseDialect`, `EngineStats`, 
+  > `TransactionIsolation`; codec sub-package: `codec.EntityEncoder`, `codec.EntityDecoder` 
+  > (zero-copy off-heap encode/decode contract, TCK: `AbstractEntityCodecTck`).
+- Core: `eu.exeris.kernel.core.persistence.*` (Transaction Manager, Initializers)
+  > The Outbox Poller resides in the Events subsystem (`eu.exeris.kernel.core.events.outbox.*`). 
+  > Persistence provides the `EventStore` SPI consumed by the Outbox Orchestrator.
+- Drivers: `exeris-kernel-community` (JDBC-Native / VT-Optimized)
 
 **Layer:** L1 (Data & Integrity)
 **Status:** Validated Architectural Prototype (TRL-3)
@@ -44,7 +50,8 @@ R2DBC.
 Persistence Core MUST NOT import anything from the Security SPI. It treats isolation as a **side-effect**:
 
 - **Global Mode (Default):** No context, zero overhead, direct SQL.
-- **Isolated Mode (Plugin):** Activated only when a `StorageContextProvider` is registered via `ServiceLoader`.
+- **Isolated Mode:** Activated when a `StorageContext` is bound to `KernelProviders.STORAGE_CONTEXT` (ScopedValue) 
+- by the Security layer before the persistence boundary is crossed. Zero `ServiceLoader` involvement.
 
 The Security subsystem owns the `PrincipalContext`. The Persistence subsystem owns the `StorageContext`. The bridge
 between them (extracting `tenantId` from `PrincipalContext` and constructing a `StorageContext`) lives in Core's
@@ -64,12 +71,16 @@ Java-side logic and serialization waste.
 1. Define `BaseRepository<T, ID>` and `EventStore` contracts.
 2. Provide the `StorageContext` and `ConnectionInterceptor` interfaces.
 3. Define the `PersistenceException` hierarchy with `EX-PERS-` codes.
+4. Define `RowCursor` and `QueryResult` as the zero-copy flyweight row accessor contracts. `RowCursor` is a single shared instance advanced by `QueryResult.next()` — callers must not retain references across calls.
+5. Define `BulkInserter` for batch-insertion paths.
+6. Define `PersistenceEngineCapabilities` and `PersistenceHealthStatus` as observable engine state contracts.
+7. Define the `codec` sub-package (`EntityEncoder`, `EntityDecoder`) for binary entity serialisation. TCK: `AbstractEntityCodecTck`.
 
 **What Persistence Core DOES:**
 
 1. Orchestrate the transaction lifecycle and `ScopedValue` propagation.
 2. Manage a registry of `ConnectionInterceptors`.
-3. Provide the `ConnectionInitializer` that prepares connection-level SQL for RLS and schema selection.
+3. Manage a registry of `ConnectionInterceptor` instances via `InterceptorRegistry` (`eu.exeris.kernel.core.persistence.InterceptorRegistry`). Interceptors handle RLS injection, schema switching, and audit setup.
 4. Translate database-specific errors into standardized Kernel codes.
 
 ---
@@ -82,7 +93,53 @@ Exeris supports three levels of physical isolation, resolved transparently throu
 |:------------------------|:------------------------------|:---------------------------------------|
 | **Shared Schema (RLS)** | `SET LOCAL exeris.tenant_id`  | Standard SaaS, High-Density            |
 | **Dedicated Schema**    | `SET search_path TO [schema]` | Professional Tier, easier migrations   |
-| **Dedicated Database**  | Dynamic DataSource Routing    | Enterprise, maximum physical isolation |
+| **Dedicated Database**  | Dynamic DataSource Routing    | Maximum physical isolation             |
+
+---
+
+## Admission Control & Backpressure Integration
+
+### Overview
+
+The Persistence subsystem provides **SPI-level admission control** to prevent thread starvation in high-concurrency scenarios. This is enforced via the `PersistenceEngine.canServiceRequest()` method, which is called by the HTTP layer before creating a session box.
+
+### Design: No Starvation Contract
+
+```java
+/**
+ * Query whether this engine can service a new request without thread starvation.
+ * Called by HTTP layer to implement admission control.
+ *
+ * Returns false if:
+ * - Pool has no idle connections AND queue is forming (idle==0 && queued>0)
+ * - Active connections >= 90% of maxPoolSize (proactive buffer)
+ * - Engine is shutting down
+ */
+boolean canServiceRequest();
+```
+
+### HTTP Integration: 503 Service Unavailable
+
+When `canServiceRequest()` returns false, the HTTP processor responds with:
+```
+HTTP/1.1 503 Service Unavailable
+Retry-After: 1
+Content-Length: 0
+```
+
+This prevents:
+- Unbounded thread creation
+- Connection pool queue buildup
+- Cascading latency spikes (fairness inversion)
+
+### TCK Compliance
+
+All implementations must satisfy `AbstractPersistenceEngineAdmissionControlTck`:
+- Returns true when pool has idle capacity
+- Returns false when idle==0 && queue forming
+- Returns false when active >= 90% max
+- Returns false after engine shutdown
+- Zero-allocation on hot path (JFR verified)
 
 ---
 
@@ -99,7 +156,7 @@ Exeris supports three levels of physical isolation, resolved transparently throu
 | `EX-PERS-5004` | Authentication Failure           | `[0] String authMechanism, [1] String serverMessage`              |
 | `EX-PERS-5005` | Persistence Transport Failure    | `[0] String transportName, [1] long fd, [2] int errno`            |
 | `EX-PERS-5006` | Interceptor Initialization Error | `[0] String interceptorClass, [1] String isolationKey`            |
-| `EX-PERS-5007` | No Provider on Classpath         | `[0] String message` — **Fatal:** add `community` or `enterprise` jar |
+| `EX-PERS-5007` | No Provider on Classpath         | `[0] String message` — **Fatal:** add a persistence provider implementation jar |
 
 **Privacy note for `EX-PERS-5001`:** The `sanitizedConnectionUrl` field MUST have the `user:password@` userinfo
 segment stripped before capture. Emitting raw credentials constitutes a CWE-532 violation. See
@@ -130,13 +187,17 @@ public interface ConnectionInterceptor {
 The context that drives isolation without knowing any business or security details.
 
 ```java
-package eu.exeris.kernel.spi.persistence;
+package eu.exeris.kernel.spi.security;
 
 public interface StorageContext {
-    Optional<String> isolationKey();
+    IsolationStrategy strategy();
+    Optional<String> schemaName();
+    Optional<String> dataSourceKey();
     Map<String, Object> attributes();
 }
 ```
+
+> **Note:** StorageContext is defined in the Security SPI by design (The Wall) — Persistence only consumes it; it has no definitional role in the Persistence SPI.
 
 ### 3. Clean Imperative Repository (L2/L3 Layer)
 
@@ -161,9 +222,9 @@ PersistenceProvider provider = ServiceLoader.load(PersistenceProvider.class)
         .findFirst()
         .orElseThrow(() -> new PersistenceBootstrapException(
                 KernelErrorCodes.EX_PERS_5007,
-                "No PersistenceProvider found — add exeris-kernel-community or exeris-kernel-enterprise"));
+                "No PersistenceProvider found on classpath. Add a persistence provider jar."
+        ));
 ```
-
 ---
 
 
@@ -190,15 +251,17 @@ thread. The following guidance applies:
 
 ## Database Schema Management — Migration Strategy
 
-The Exeris Kernel **does not manage database schemas**. Schema creation, versioning, and migration
+The Exeris Kernel **does not manage application schemas**. Schema creation, versioning, and migration
 are the responsibility of the application layer or a dedicated migration tool.
+
+> **Exception — internal kernel tables:** The Community tier includes an opt-in migration path
+> (`persistence.run.migrations=true`) that executes built-in SQL scripts to create internal kernel
+> tables (`exeris_outbox`, `exeris_outbox_dlq`). This applies only to Kernel-owned tables and is
+> explicitly disabled by default.
 
 | Concern                             | Recommendation                                                                                           |
 |:------------------------------------|:---------------------------------------------------------------------------------------------------------|
 | **Initial schema creation**         | Use Flyway or Liquibase, executed before the Exeris Kernel boots (K8s `initContainer` pattern).          |
-| **Zero-downtime migrations**        | Expand/contract pattern: add columns as nullable, back-fill, add constraints in a subsequent deployment. |
-| **Exeris-internal tables**          | The Transactional Outbox table (`exeris_outbox`) and Saga state table (`exeris_saga_state`) are created by the Kernel's bootstrap interceptor (`PersistenceInitializer`) on first boot, using `CREATE TABLE IF NOT EXISTS`. This is the **only** DDL the Kernel executes autonomously. |
-| **Multi-tenant schema migrations**  | For `Dedicated Schema` isolation strategy: migrations must be applied per-tenant schema. The Kernel does not orchestrate this. Use a Flyway multi-schema configuration or a custom migration runner. |
 
 ---
 
@@ -213,11 +276,7 @@ fail delivery to the broker regardless of retries — must be handled explicitly
 |:--------|:-----------------------------|:---------------------------------------------------------|
 | 1       | 0 ms (immediate)             | First delivery attempt                                   |
 | 2–5     | `2^n × 100 ms` (capped 16 s) | Retry with exponential backoff                           |
-| 6–10    | 16 s (fixed)                 | Extended retry                                           |
-| > 10    | DLQ transition               | Record moved to `exeris_outbox_dlq` table                |
-
 ### Dead Letter Queue (DLQ)
-
 After `exeris.persistence.outbox.max-retries` (default: 10) failed delivery attempts, the record
 is moved atomically to the `exeris_outbox_dlq` table and removed from the main outbox. A `JFR` event
 (`OutboxDlqEvent`) is emitted with `rawArgs[0]=String eventType, rawArgs[1]=long outboxRecordId`.
@@ -248,7 +307,7 @@ infinite retry storms.
 ### Unit Tests
 
 - `StorageContext` resolution logic (key extraction from `PrincipalContext` bridge in Core orchestration).
-- `ConnectionInitializer` interceptor execution order.
+- `InterceptorRegistry` execution order (registration, sealing, call order).
 - `EX-PERS-5006` is thrown on interceptor failure and the connection is NOT returned to the pool.
 
 ### Integration Tests (TCK)
@@ -259,6 +318,8 @@ infinite retry storms.
 - **Outbox Durability:** Events are committed only if the main transaction succeeds; rolled back otherwise.
 - **Pool Exhaustion:** `EX-PERS-5002` is thrown with correct `rawArgs` when all connections are in use.
 - **No Provider:** `EX-PERS-5007` is thrown at bootstrap when no `PersistenceProvider` is on the classpath.
+
+**Full TCK abstract class set:** `AbstractPersistenceEngineTck`, `AbstractPersistenceProviderTck`, `AbstractPersistenceEngineAdmissionControlTck`, `AbstractOutboxGuaranteeTck`, `AbstractEventStoreTck`, `AbstractEntityCodecTck`, `PersistenceCarrierPinningTck`, `PersistenceIsolationLeakTck`, `PersistenceZeroAllocTck`, `AbstractRowCursorThroughputBenchmark` (JMH).
 
 ---
 

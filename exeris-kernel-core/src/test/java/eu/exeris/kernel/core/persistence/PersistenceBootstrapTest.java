@@ -25,10 +25,13 @@ import org.junit.jupiter.api.Test;
 
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * L1 Unit Tests: {@link PersistenceBootstrap} — priority selection, interceptor
@@ -55,6 +58,7 @@ class PersistenceBootstrapTest {
             @Override public PersistenceHealthStatus healthCheckDetailed() {
                 return PersistenceHealthStatus.ok(0L);
             }
+            @Override public boolean canServiceRequest() { return true; }
             @Override public EngineStats stats() { return null; }
             @Override public PersistenceEngineCapabilities capabilities() {
                 return new PersistenceEngineCapabilities(
@@ -199,6 +203,55 @@ class PersistenceBootstrapTest {
                     return noopEngine(id);
                 }
             };
+        }
+    }
+
+    // =========================================================================
+    // Nested: RLS interceptor configuration validation
+    // =========================================================================
+
+    @Nested
+    @DisplayName("RLS interceptor configuration validation")
+    class RlsInterceptorValidation {
+
+        @Test
+        @DisplayName("rlsEnabled=true and no interceptors → throws EX_PERS_5001 with bootstrap message")
+        void rlsEnabledWithNoInterceptorsThrows() {
+            PersistenceConfig config = PersistenceConfig.defaults(
+                    "jdbc:postgresql://localhost:5432/exeris", "u", "p");
+
+            assertThatThrownBy(() -> PersistenceBootstrap.validateRlsInterceptorConfiguration(
+                            config, List.of(), "test-provider"))
+                    .isInstanceOf(PersistenceProviderException.class)
+                    .satisfies(e -> {
+                        PersistenceProviderException ex = (PersistenceProviderException) e;
+                        assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_PERS_5001);
+                        assertThat(ex.getMessage()).contains("bootstrap");
+                    });
+        }
+
+        @Test
+        @DisplayName("rlsEnabled=true with interceptors present → no exception")
+        void rlsEnabledWithInterceptorsDoesNotThrow() {
+            PersistenceConfig config = PersistenceConfig.defaults(
+                    "jdbc:postgresql://localhost:5432/exeris", "u", "p");
+
+            assertThatCode(() -> PersistenceBootstrap.validateRlsInterceptorConfiguration(
+                            config, List.of(noopInterceptor()), "test-provider"))
+                    .doesNotThrowAnyException();
+        }
+
+        @Test
+        @DisplayName("rlsEnabled=false and no interceptors → no exception")
+        void rlsDisabledWithNoInterceptorsDoesNotThrow() {
+            PersistenceConfig config = new PersistenceConfig(
+                    "jdbc:postgresql://localhost:5432/exeris", "u", "p",
+                    20, 2, 30_000L, 600_000L, 1_800_000L,
+                    false, false, false, 100, Map.of());
+
+            assertThatCode(() -> PersistenceBootstrap.validateRlsInterceptorConfiguration(
+                            config, List.of(), "test-provider"))
+                    .doesNotThrowAnyException();
         }
     }
 }

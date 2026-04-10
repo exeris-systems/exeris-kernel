@@ -110,6 +110,7 @@ class TransactionOrchestratorTest {
             return lastConnection;
         }
         @Override public PersistenceConnection openConnection(StorageContext ctx) { return openConnection(); }
+        @Override public boolean canServiceRequest() { return true; }
         @Override public void registerInterceptor(ConnectionInterceptor i) { /* empty — test stub */ }
         @Override public PersistenceHealthStatus healthCheckDetailed()      { return PersistenceHealthStatus.ok(0L); }
         @Override public EngineStats stats()                                { return null; }
@@ -411,6 +412,25 @@ class TransactionOrchestratorTest {
             assertThat(conn.beginCalled).isTrue();
             assertThat(conn.commitCalled).isTrue();
             assertThat(workRan.get()).isTrue();
+        }
+
+        @Test
+        @DisplayName("executeManaged(READ_COMMITTED, readOnly=true) calls beginTransaction(READ_COMMITTED, true) and commit()")
+        void readOnlyReadCommittedUsesFullTransactionCeremony() {
+            StubConnection conn = new StubConnection();
+            StubEngine managedEngine = new StubEngine() {
+                @Override StubConnection supplyConnection() {
+                    lastConnection = conn;
+                    return conn;
+                }
+            };
+
+            new TransactionOrchestrator(managedEngine)
+                    .executeManaged(TransactionIsolation.READ_COMMITTED, true, ignored -> { /* empty */ });
+
+            assertThat(conn.beginCalled).isTrue();
+            assertThat(conn.commitCalled).isTrue();
+            assertThat(conn.rollbackCalled).isFalse();
         }
 
         @Test

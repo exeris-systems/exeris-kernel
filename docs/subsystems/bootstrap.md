@@ -8,8 +8,9 @@
 - **Core:** `eu.exeris.kernel.core.bootstrap.*`  
   *(Sequence Manager, Health Monitor, Failure Policies)*
 
-- **Runner:** `eu.exeris.kernel.launcher.*`  
-  *(CLI, Main-Class, Signal Handling)*
+> `KernelBootstrap` (entry point) lives in `eu.exeris.kernel.core.bootstrap`. 
+> Signal handling (SIGTERM/SIGINT) is not yet implemented; 
+> callers are responsible for invoking `boot()` and managing JVM shutdown.
 
 **Layer:** L0 (Orchestration)  
 **Status:** Validated Architectural Prototype (TRL‑3) — targeting JDK 26 GA / Valhalla EA
@@ -51,36 +52,34 @@ Memory) are fully operational before higher‑level logic (Transport, Flow) is a
 
 ```mermaid
 flowchart TD
-    subgraph L0["L0 · Foundation (silent — no JFR)"]
-        CFG[Config] --> MEM[Memory]
-        MEM --> EXC[Exceptions]
+    CFG["Config\n(resolved by KernelBootstrap\nvia ServiceLoader(ConfigProvider)\nbefore orchestrator runs)"]
+
+    subgraph FOUNDATION["FOUNDATION (sequential — no JFR)"]
+        MEM[Memory]
     end
 
-    subgraph L1["L1 · Data & Integrity (parallel)"]
-        SEC[Security]
+    subgraph SERVICES["SERVICES (parallel)"]
+        CRP[Crypto]
         PER[Persistence]
-    end
-
-    subgraph L2["L2 · Data Synthesis (parallel)"]
         GRP[Graph]
         TRP[Transport]
     end
 
-    subgraph L3["L3/L4 · Logic Engines (parallel)"]
+    subgraph RUNTIME["RUNTIME (parallel)"]
         EVT[Events]
         FLW[Flow]
+        HTTP["HTTP"]
     end
 
-    EXC --> SEC & PER
-    SEC & PER --> GRP & TRP
-    GRP & TRP --> EVT & FLW
+    CFG --> MEM
+    MEM --> CRP & PER & GRP & TRP
+    CRP & PER & GRP & TRP --> EVT & FLW & HTTP
 
-    EVT & FLW --> RDY([KERNEL READY])
+    EVT & FLW & HTTP --> RDY([KERNEL READY])
 
-    style L0 fill:#1a1a2e,color:#e0e0e0,stroke:#444
-    style L1 fill:#16213e,color:#e0e0e0,stroke:#444
-    style L2 fill:#0f3460,color:#e0e0e0,stroke:#444
-    style L3 fill:#533483,color:#e0e0e0,stroke:#444
+    style FOUNDATION fill:#1a1a2e,color:#e0e0e0,stroke:#444
+    style SERVICES fill:#16213e,color:#e0e0e0,stroke:#444
+    style RUNTIME fill:#533483,color:#e0e0e0,stroke:#444
     style RDY fill:#00b894,color:#000,stroke:#00b894
 ```
 
@@ -94,22 +93,22 @@ Core's `SubsystemOrchestrator` drives transitions; transitions are irreversible 
 ```mermaid
 stateDiagram-v2
     direction LR
-    [*] --> INIT : JVM start\nServiceLoader discovery
+    [*] --> REGISTERED : JVM start\nServiceLoader discovery
 
-    INIT --> STARTING  : Dependencies READY\nSubsystem.initialize() called
-    INIT --> FAILED    : Dependency cycle (EX-BOOT-0001)\nor SPI provider missing
+    REGISTERED --> INITIALIZED : Dependencies READY\ninitialize() returned OK
+    REGISTERED --> FAILED      : Dependency cycle (EX-BOOT-0001)\nor SPI provider missing
 
-    STARTING --> READY        : initialize() returned OK\nHealth check passed
-    STARTING --> FAILED       : Deadline exceeded (EX-BOOT-0003)\nor init threw exception (EX-BOOT-0002)
+    INITIALIZED --> RUNNING    : start() returned OK
+    INITIALIZED --> FAILED     : Deadline exceeded (EX-BOOT-0003)\nor initialize() threw exception (EX-BOOT-0002)
 
-    READY --> SHUTTING_DOWN   : Graceful signal (SIGTERM / shutdown hook)
-    READY --> FAILED          : Unrecoverable runtime error
+    RUNNING --> STOPPED        : stop() called\nAll resources released
+    RUNNING --> FAILED         : Unrecoverable runtime error
 
-    SHUTTING_DOWN --> [*]     : All resources released\nVirtual Threads drained
+    STOPPED --> [*]            : Virtual Threads drained
 
-    FAILED --> [*]            : Emergency JFR snapshot\nJVM exit(1) · Glass-Box buffer flushed
+    FAILED --> [*]             : Emergency JFR snapshot\nJVM exit(1) · Glass-Box buffer flushed
 
-    note right of READY
+    note right of RUNNING
         Hot-path active.
         K8s readiness probe → HTTP 200.
         K8s liveness probe → HTTP 200.
@@ -119,6 +118,8 @@ stateDiagram-v2
         K8s liveness probe → HTTP 503.
         Pod replaced by ReplicaSet controller.
     end note
+
+    %% Note: kernel-level SHUTTING_DOWN is from KernelState, not per-subsystem state.
 ```
 
 ---
@@ -193,11 +194,12 @@ flowchart LR
 A layer can only start if all layers below it are **READY**.
 
 ```
-Foundation (L0):   Config → Memory → Exceptions
-Data & Integrity (L1):   Security & Persistence
-Data Synthesis (L2):     Graph & Transport
-Logic Engines (L3/L4):   Events & Flow
+FOUNDATION:   Memory (sequential)
+SERVICES:     Crypto & Persistence & Graph & Transport (parallel)
+RUNTIME:      Events & Flow & HTTP (parallel)
 ```
+
+> **Config** is resolved by `KernelBootstrap` via `ServiceLoader<ConfigProvider>` before the orchestrator runs — it is not a `Subsystem`. `Exceptions` is not a Subsystem layer.
 
 ---
 
@@ -232,9 +234,12 @@ with deterministic hard timeouts at each layer boundary (see Diagram 2).
 
 ### What Bootstrap SPI **does**
 
-- Defines `KernelSubsystem` and `Lifecycle`
-- Provides `KernelContext` during boot
-- Defines `HealthStatus` and `SubsystemPriority`
+- Defines `Subsystem` (lifecycle contract: `initialize()`, `start()`, `stop()`, `dependsOn()`, `phase()`, `isOptional()`, `providerBindings()`)
+- Defines `SubsystemProvider` (ServiceLoader discovery; `priority()` default=100)
+- Defines `BootstrapSelector` (immutable record: which subsystems to activate)
+- Defines `BootstrapPhase` enum (`FOUNDATION`, `SERVICES`, `RUNTIME`)
+- Config is NOT a Subsystem — resolved by `KernelBootstrap` via `ServiceLoader<ConfigProvider>` before the orchestrator runs
+- Health state is tracked by `KernelHealthMonitor` (Core), not an SPI type
 
 ### What Bootstrap Core **does**
 
@@ -253,6 +258,7 @@ with deterministic hard timeouts at each layer boundary (see Diagram 2).
 | **EX‑BOOT‑0002** | FATAL                  | Bootstrap failure (opaque)     | Fatal exit. `rawArgs` layout is variable — treat as opaque payload for hex/string dump. Glass-Box decoder cannot rely on field ordering for this code. |
 | **EX‑BOOT‑0003** | CRITICAL               | Bootstrap deadline exceeded    | Subsystem did not complete init within the deadline. Kill or degrade. |
 | **EX‑BOOT‑0004** | CRITICAL               | Memory provider init failure   | `MemoryProvider` could not initialise its off-heap tier (e.g., `mmap` permission denied, insufficient system memory, missing native library). `rawArgs[0]=String providerName`, `rawArgs[1]=long requestedBytes`. Inspect Glass-Box deterministic buffer. |
+| **EX‑BOOT‑3001** | CRITICAL               | Telemetry provider init failure | `TelemetryProvider` failed to initialize. Check `rawArgs[0]=providerName`, `rawArgs[1]=reason`. |
 
 > **EX‑BOOT‑0001 is not a runtime event.** A dependency cycle is a build defect.  
 > If this code surfaces in production, your deployment pipeline has failed. Gate on it in CI with `mvn clean install`.
@@ -264,17 +270,29 @@ with deterministic hard timeouts at each layer boundary (see Diagram 2).
 ### 1. Subsystem Registration (SPI)
 
 ```java
-public class PersistenceSubsystem implements KernelSubsystem {
+public class PersistenceSubsystem implements Subsystem {
 
     @Override
-    public List<Class<? extends KernelSubsystem>> dependsOn() {
-        return List.of(ConfigSubsystem.class, MemorySubsystem.class);
+    public List<String> dependsOn() {
+        return List.of("memory");
     }
 
     @Override
-    public void initialize(KernelContext ctx) {
-        // Setup Connection Pools using Config
+    public BootstrapPhase phase() {
+        return BootstrapPhase.SERVICES;
     }
+
+    @Override
+    public void initialize() {
+        ConfigProvider config = KernelProviders.CURRENT_CONFIG.get();
+        // Setup connection pools using config
+    }
+
+    @Override
+    public void start() { /* activate */ }
+
+    @Override
+    public void stop() { /* flush and release */ }
 }
 ```
 
@@ -317,6 +335,8 @@ try (var scope = StructuredTaskScope.open(Joiner.awaitAllSuccessfulOrThrow())) {
 - Hard timeout fires correctly when in-flight drain exceeds 60 s
 - Health probe accuracy (`/health/ready` returns 503 until L4 READY)
 
+> **Note:** `AbstractBootstrapOrchestratorTck` and `BootstrapZeroAllocTck` require concrete bindings in `exeris-kernel-community` tests (binding missing as of current state — open TCK debt).
+
 ---
 
 ## Summary
@@ -350,7 +370,7 @@ livenessProbe:
   httpGet:
     path: /health/live
     port: 9090
-  initialDelaySeconds: 0     # Probe starts immediately — see Boot SLO below
+  initialDelaySeconds: 0     # Probe starts immediately
   periodSeconds: 5
   failureThreshold: 3
 
@@ -375,27 +395,18 @@ startupProbe:
 
 ---
 
-## Boot SLO (Cold Start Latency Contract)
+## Boot Observability
 
-| Tier              | Target P99 Cold Start | JFR Measurement                                                             | K8s `readinessProbe` failureThreshold |
-|:------------------|:---------------------:|:----------------------------------------------------------------------------|:-------------------------------------:|
-| **Community**     | ≤ 500 ms              | `TelemetryJfrEvents.KernelLifecycleJfrEvent.durationNanos`                  | 60 × 2 s = 120 s budget              |
-| **Enterprise**    | ≤ 800 ms              | `TelemetryJfrEvents.KernelLifecycleJfrEvent.durationNanos` *(includes native `io_uring` ring init)* | 60 × 2 s = 120 s budget |
+Bootstrap completion is tracked via `BootstrapJfrEvents.KernelBootReadyEvent`. The event records `totalDurationMs` and `activeSubsystemCount` for the completed startup sequence.
 
-> **Current contract:** bootstrap completion telemetry is emitted through
-> `BootstrapJfrEvents.KernelBootReadyEvent`, which records the total boot duration and active
-> subsystem count for the completed startup sequence.
-
-The 500 ms / 800 ms figures include:
+**Sequence included in `totalDurationMs`:**
 - L0 foundation init (Config → Memory → Exceptions)
 - L1 parallel init (Security + Persistence)
 - L2 parallel init (Graph + Transport — includes native library loading)
 - L3/L4 parallel init (Events + Flow)
 - Health server bind
 
-> **JVM warm-up note:** The first requests after boot will experience JIT compilation overhead (~50 ms for
-> C2 to compile the hot path). This is expected and does not constitute a Boot SLO violation. The SLO
-> measures time until the readiness probe returns `200`, not time until first request is served at full speed.
+> **JVM warm-up note:** The first requests after boot will experience JIT compilation overhead while C2 compiles the hot path. This is expected and distinct from bootstrap completion — the readiness probe reflects DAG completion, not first-request throughput.
 
 ---
 
@@ -413,7 +424,7 @@ sequenceDiagram
 
     Note over K8s,NEW: Rolling update starts
     K8s->>NEW: Start new pod
-    NEW->>NEW: Boot DAG executes (≤ 500 ms)
+    NEW->>NEW: Boot DAG executes
     NEW-->>K8s: /health/ready → 200
 
     Note over K8s,OLD: Traffic shifts to new pod

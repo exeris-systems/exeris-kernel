@@ -1,196 +1,34 @@
 # Kernel Subsystem: Flow / Sagas (L4 Orchestration)
 
-**Physical Layout:**
-
-- **SPI:** `eu.exeris.kernel.spi.flow.*`
-  (`FlowEngine`, `FlowProvider`, `FlowDefinitionBuilder`, `FlowExecutionPlanFactory`,
-  `FlowRegistry`, `FlowScheduler`, `FlowEngineConfig`, `FlowEngineStats`, `FlowEngineCapabilities`)
-- **Core:** `eu.exeris.kernel.core.flow.*`
-  (`StateMachine`, `IdempotencyGuard` — *(planned, TRL-4; not yet present in this repo)*)
-- **State Storage:**
-    - **`community`:** PostgreSQL-backed state persistence
-    - **`enterprise`:** Linear Probing Off-Heap Cache (lock-free) + Async DB Write-Behind
+- SPI: `eu.exeris.kernel.spi.flow.*`
+- Core runtime: `eu.exeris.kernel.core.flow.*`
+- Community binding: thin provider and in-memory snapshot store in `eu.exeris.kernel.community.flow.*`
 
 **Layer:** L4 (Orchestration)
-**Status:** Validated Architectural Prototype (TRL-3)
+**Status:** Baseline runtime is implemented in Core in the current repository state.
 
----
+## Current Repo Reality
 
-## Overview
+- Core owns flow orchestration: definition compilation, scheduling, park/wake, compensation, and runtime state transitions.
+- Community is a thin binding over the shared Core engine.
+- Community snapshot persistence is currently heap-backed and in-memory via `CommunityFlowSnapshotStore`.
 
-The **Flow subsystem** is the business brain of the Kernel. It orchestrates **complex, multi-step
-processes (Sagas)** that span multiple services or subsystems. It guarantees that even if the entire
-cluster crashes mid-process, the business state will converge to a consistent outcome — either
-**completion** or **compensation**.
+## Runtime Behavior
 
-- **Saga Orchestration Engine:** Strict state transitions, atomic steps, deterministic rollback.
-- **Async Park/Wake (Virtual Threads):** A Saga waiting for an external event (e.g., a payment
-  gateway callback) simply parks its Virtual Thread. Loom's sub-1 KB thread cost allows millions of
-  suspended Sagas to coexist in memory without affecting Kernel throughput.
-- **Off-Heap State Machine (Enterprise):** Active Saga states stored in a lock-free linear probing
-  hash table, eliminating GC pauses on state transitions.
-- **Idempotency by Design:** Every step guarded by an idempotency key to prevent duplicate business
-  actions under retries or message redelivery.
+- Flow execution is step-based and stateful: `CREATED`, `RUNNING`, `PARKED`, `COMPENSATING`, `COMPLETED`, `FAILED_ROLLEDBACK`.
+- Park/wake is supported through the Flow scheduler API.
+- Compensation is supported when enabled in `FlowEngineConfig`.
+- Snapshot persistence is optional and only used when a `FlowSnapshotStore` is bound and persistence is enabled.
 
----
+> **Note:** `FlowOutcome.COMPLETE` provides a direct short-circuit path: a step can return `COMPLETE` to transition the flow immediately to `FlowState.COMPLETED` without executing any remaining steps.
 
-## Core Philosophy: "Correctness at Scale"
+> **Note:** The `FlowEngine.start()` Javadoc references `FlowEngineBootstrapEvent` and `FlowEngine.close()` references `FlowEngineShutdownEvent`. These forward-reference class names do not yet exist as implementations. `FlowBootstrapSelectedEvent` is currently emitted by `FlowBootstrap.loadWithProvider()` (before `start()` is called), and `close()` does not yet emit a JFR event. Tracking: FlowEngineShutdownEvent implementation is in the roadmap.
 
-### 1. The Saga Constitution
+## Boundaries
 
-Every process must be reversible. If Step N fails → the Kernel automatically compensates Steps
-1…N-1 in strict reverse order. There is no partial execution without a recovery path.
-
-### 2. Lock-Free Orchestration
-
-Zero database locks during processing. The Enterprise tier uses an off-heap linear probing hash
-table with `VarHandle` CAS atomics — thousands of concurrent Sagas advance state without contention
-or GC pressure.
-
-### 3. Async Park/Wake
-
-In the legacy model (Camunda, Temporal), waiting for an external event means dumping state to
-a database and killing the thread. In Exeris, the Virtual Thread simply **parks**. The off-heap
-state remains hot in the Linear Probing Cache. When the webhook arrives, `state.wake(event)` resumes
-the thread in microseconds — without a DB round-trip, without heap allocation.
-
-### 4. Invisible Durability
-
-Hot state lives in memory for speed. Every transition is asynchronously persisted to:
-
-- **Event Store (L3):** Full audit trail and replayability.
-- **Persistence Layer (L1):** Disaster recovery checkpoint.
-
-The Saga engine never forces a synchronous DB write on the hot path — durability is a background
-concern, not a latency tax.
-
----
-
-## Execution Strategies
-
-| Feature            | Community (SQL-First)       | Enterprise (Memory-First)                  |
-|:-------------------|:----------------------------|:-------------------------------------------|
-| **State Storage**  | PostgreSQL State Table      | Off-Heap Linear Probing Cache              |
-| **Persistence**    | Synchronous DB Commits      | Async Write-Behind / Event Sourcing        |
-| **Latency**        | Milliseconds (DB-bound)     | Microseconds (Memory-bound)                |
-| **Idempotency**    | DB Unique Constraints       | Bloom Filter + Off-Heap Guard              |
-
----
-
-## Responsibilities
-
-**What Flow SPI DOES:**
-
-1. Define `FlowEngine` as the central runtime facade for all flow orchestration operations.
-2. Provide `FlowDefinitionBuilder` fluent API for compensation chain definition (accessed via `FlowEngine.plans().newDefinition(...)`).
-3. Define `FlowExecutionPlanFactory` for compiling definitions into executable plans.
-4. Define `FlowRegistry` and `FlowScheduler` for plan registration and execution scheduling.
-5. Define `FlowEngineConfig`, `FlowEngineStats`, and `FlowEngineCapabilities` for configuration and observability.
-
-**What Flow Core DOES:**
-
-1. Execute the Saga State Machine (forward and compensation paths).
-2. Manage park/wake cycles for long-running processes via Virtual Thread parking.
-3. Enforce idempotency via `IdempotencyGuard` (Bloom Filter in Enterprise).
-4. Publish Saga progress events to the Events Subsystem (L3).
-5. Coordinate with `WatermarkManager` to enforce backpressure when Saga capacity is exhausted.
-
----
-
-## Error Codes
-
-> **Source of truth:** `KernelErrorCodes.java` in `exeris-kernel-spi`.
-
-| Code           | Meaning                  | Glass-Box Payload (`rawArgs`)                                                             |
-|:---------------|:-------------------------|:------------------------------------------------------------------------------------------|
-| `EX-FLOW-7001` | Provider Boot Failure    | `[0] String providerName, [1] String reason`                                              |
-| `EX-FLOW-7002` | Lifecycle / Schedule Fail| `[0] String engineName, [1] String phase, [2] String staticReasonCode, [3] int contextVal`|
-| `EX-FLOW-7003` | Step Execution Failure   | `[0] String defName, [1] long idMost, [2] long idLeast, [3] int stepIdx, [4] String reason, [5] String causeType` |
-| `EX-FLOW-7004` | Registry Conflict        | `[0] int stepId, [1] String reason`                                                       |
-
-**Forensics note for `EX-FLOW-7003`:** The `idMost` + `idLeast` pair encodes the `UUID` of the failing
-Saga instance as two `long` primitives — autoboxed to `Long` per the Glass-Box contract, but decoded by
-the Enterprise Glass-Box Decoder as a single `UUID` for instance tracing. The `causeType` is
-`cause.getClass().getName()` or `"none"` — class names are stable and never user-controlled, making
-them safe for binary telemetry.
-
-**Lifecycle note for `EX-FLOW-7002`:** The `phase` field is one of the static constants `"START"`,
-`"STOP"`, `"COMPILE"`, `"SCHEDULE"`. The `contextVal` carries a phase-specific integer (`-1` when
-not applicable; queue depth for `"SCHEDULE"`). Glass-Box consumers MUST use the `phase` field to
-select the correct interpretation of `contextVal`.
-
----
-
-## Code Examples
-
-### 1. Defining a Compensatable Flow (SPI)
-
-Imperative logic mapping to a rigid State Machine. No annotation-based disk dumps mid-method.
-
-```java
-FlowDefinition orderFulfillment = flowEngine.plans()
-        .newDefinition("order-fulfillment")
-        .step("reserve-stock",   stockService::reserve,          stockService::compensate)
-        .step("charge-payment",  paymentService::charge,         paymentService::refund)
-        .step("dispatch-order",  shippingService::requestShipment, null)
-        .transition(0, 1)
-        .transition(1, 2)
-        .maxRetries(3)
-        .build();
-```
-
-### 2. Async Park/Wake (Core — Virtual Thread Parking)
-
-```java
-public void onExternalEvent(String correlationId, Event event) {
-    SagaState state = offHeapCache.get(correlationId);
-    state.wake(event);
-}
-```
-
-> `offHeapCache.get()` is an O(1) linear probing lookup — no heap allocation, no DB round-trip.
-> `state.wake()` unparks the suspended Virtual Thread in microseconds. The Saga resumes
-> exactly where it left off, with full stack trace intact.
-
-### 3. Idempotency Guard (Core — Enterprise)
-
-```java
-public FlowStepResult executeStep(FlowStepAction action, FlowContext ctx) {
-    if (idempotencyGuard.isAlreadyExecuted(ctx.idempotencyKey())) {
-        return idempotencyGuard.getPreviousResult(ctx.idempotencyKey());
-    }
-    FlowStepResult result = action.execute(ctx);
-    idempotencyGuard.record(ctx.idempotencyKey(), result);
-    return result;
-}
-```
-
----
-
-
-## Saga Timeout — Park Duration Contract
-
-A Virtual Thread parked waiting for an external event MUST have a configurable maximum wait duration.
-
-| Scope               | Default          | Config Key                                               |
-|:--------------------|:----------------:|:---------------------------------------------------------|
-| **Global timeout**  | 30 minutes       | `flow.saga.globalParkTimeoutMs`                |
-| **Per-step timeout**| Inherited        | Flow definition per-step timeout API in `FlowDefinitionBuilder` (replaces legacy `SagaBuilder.step(...).timeout(Duration)`) |
-| **On timeout action** | COMPENSATE    | Flow definition timeout policy API in `FlowDefinitionBuilder` (replaces legacy `SagaBuilder.onTimeout(CompensationPolicy)`, default: COMPENSATE_ALL) |
-
-When the park timeout fires:
-
-1. The Saga transitions to `COMPENSATING` state via VarHandle CAS.
-2. `EX-FLOW-7002` is emitted with `phase="TIMEOUT"` and `contextVal=<parkedMs>`.
-3. Compensation steps execute in reverse order (identical to step failure compensation).
-4. `EX-FLOW-7003` is thrown for the step that exceeded its timeout.
-
----
-
-## Saga Versioning — Handling Schema Evolution
-
-Sagas in production may be long-running (hours or days). A deployment may change the Saga definition
-while older instances are still executing. The following versioning contract applies:
+- SPI remains implementation-blind.
+- Core owns orchestration and runtime behavior.
+- Community stays thin: provider wiring plus the current in-memory snapshot store.
 
 ## Scheduler Contract
 
@@ -202,106 +40,88 @@ Flow subsystem delegates scheduling policy to transport via `StreamExecutionBack
 
 **Implementation Note**: Do not prescribe affinity in flow design. Scheduler choice is transport-tier policy, not flow contract. Flow logic must remain independent of scheduling strategy.
 
-If a compensation step itself throws an exception, the Kernel enters the **COMPENSATION_FAILED** terminal state:
+## Idempotency
 
-```
-COMPENSATING → COMPENSATION_FAILED (terminal — manual intervention required)
-```
+Step-level deduplication during crash-recovery replay and choreography re-wakes is governed by `IdempotencyGuard` (SPI: `eu.exeris.kernel.spi.flow.IdempotencyGuard`).
 
-| Attempt | Action                                                                                   |
-|:--------|:-----------------------------------------------------------------------------------------|
-| 1–3     | Retry compensation step with exponential backoff (100 ms, 400 ms, 1 600 ms)              |
-| > 3     | Transition to `COMPENSATION_FAILED`. Emit `EX-FLOW-7003` with `causeType="COMPENSATION_ERROR"`. Saga record persisted to `exeris_saga_state` with status `COMPENSATION_FAILED`. |
+- **ScopedValue binding:** `KernelProviders.IDEMPOTENCY_GUARD` (optional)
+- **Fallback:** `CoreIdempotencyGuard` (heap-based CAS per `(instanceId, stepIndex)` tuple)
+- **Lifecycle:** Per-instance guard entries are cleared on `releaseInstance()` at terminal state
 
-**Operator recovery:** Query `SELECT * FROM exeris_saga_state WHERE status = 'COMPENSATION_FAILED'`.
-Each record contains the Saga UUID (`idMost` + `idLeast`), the failed step index, and the failure reason.
-Use `FlowEngine` (planned: `forceCompensate(sagaId, fromStepIdx)`) to re-trigger compensation from a specific step
-after the root cause is resolved.
+Custom `IdempotencyGuard` implementations can be bound via the ScopedValue slot before calling `FlowEngine.submit()`.
 
-> There is no automatic retry beyond attempt 3. This is deliberate — a compensation that fails repeatedly
-> indicates a system-level problem (e.g., payment gateway down) that requires human intervention, not
-> an infinite retry loop that masks the underlying issue.
+## Events Integration
 
----
+### Flow → Events (Progress Publication)
 
-## Distributed Saga Support — Clustering Model
+- When `KernelProviders.EVENT_ENGINE` is bound, Core may publish flow progress events to the Events SPI.
+- This publication is best-effort and optional.
+- If no event engine is bound, event registration is unavailable, or publishing fails, flow execution continues unchanged.
+- The progress payload is intentionally small and currently includes the definition name, step index, and flow state.
+- Only terminal state transitions (`COMPLETED`, `FAILED_ROLLEDBACK`) emit a progress event; intermediate states are skipped to avoid allocation on hot paths.
 
-At TRL-3, the Flow Engine operates in a **single-JVM model**. Distributed Saga support (multi-node cluster)
-is deferred to TRL-5.
+### Events → Flow (Choreography)
 
-| Capability                              | TRL-3 (Current)                        | TRL-5 (Planned)                              |
-|:----------------------------------------|:---------------------------------------|:---------------------------------------------|
-| Saga state storage                      | PostgreSQL (single DB)                 | Partitioned PostgreSQL / Distributed KV      |
-| Saga assignment to JVM node             | All Sagas on one node                  | Consistent hashing by Saga UUID              |
-| Node crash recovery                     | Manual restart (saga resumes from DB)  | Automatic rebalancing via `SagaPartitionSpi` |
-| Concurrent Saga updates across nodes    | Not applicable                         | OCC via `definition_version` + `stepIdx` CAS |
+Flow can be driven by external events through the choreography bridge:
 
-**TRL-3 crash recovery:** If the JVM crashes while a Saga is in `RUNNING` state, the next boot of the
-same node will detect in-progress Sagas in `exeris_saga_state` (status `RUNNING` or `COMPENSATING`)
-and resume them from the last persisted `stepIdx`. This works because every step completion is persisted
-atomically via the `@Transactional` boundary before the next step executes.
+- **`FlowChoreographyMapper`** — `@FunctionalInterface` that maps an incoming event to a `ChoreographyDecision`
+- **`ChoreographyDecision`** — sealed interface: `Ignore` (no action), `Wake` (wake a parked flow), `Start` (start a new flow instance)
+- **`FlowEngine.registerChoreographyMapper(String eventType, FlowChoreographyMapper mapper)`** — registers the mapper
+- **`choreographySupport`** capability flag in `FlowEngineCapabilities` must be `true`
+- **`FlowChoreographyBridge`** (Core internal) connects the EventBus handler to `FlowScheduler`
 
 ---
 
-## Saga Observability — Monitoring API
+## JFR Events
 
-SRE visibility into running Sagas is provided via JFR events and a diagnostic query API.
-
-| Metric                             | Access Method                                                               |
-|:-----------------------------------|:----------------------------------------------------------------------------|
-| Active Sagas (RUNNING)             | JFR `SagaLifecycleEvent` (category: `{"Exeris Kernel", "Flow"}`) — `status=RUNNING` count|
-| Parked Sagas (waiting for event)   | JFR `SagaLifecycleEvent` — `status=PARKED` count                           |
-| Compensating Sagas                 | JFR `SagaLifecycleEvent` — `status=COMPENSATING` count                     |
-| Failed / Stuck Sagas               | `SELECT COUNT(*) FROM exeris_saga_state WHERE status IN ('FAILED', 'COMPENSATION_FAILED')` |
-| P99 step execution latency         | JMH `AbstractFlowParkWakeBenchmark` (TCK) — `EX-FLOW-7002` latency histogram         |
-
-**JFR event:**
-
-```java
-@jdk.jfr.Label("Saga Lifecycle")
-@jdk.jfr.Category({"Exeris Kernel", "Flow"})
-@jdk.jfr.StackTrace(false)
-public final class SagaLifecycleEvent extends jdk.jfr.Event {
-    String sagaType;
-    String status;       // RUNNING, PARKED, COMPENSATING, COMPLETED, FAILED
-    long durationNanos;
-    int stepIndex;
-}
-```
+| Event | JFR Name | Emitted By | Key Fields |
+|---|---|---|---|
+| `FlowBootstrapSelectedEvent` | `eu.exeris.kernel.flow.BootstrapSelected` | `FlowBootstrap.loadWithProvider()` | `providerClass`, `priority`, `providerId`, `engineName` |
+| `FlowStepFailedEvent` | `eu.exeris.kernel.flow.StepFailed` | `CoreFlowRuntime` on step exception | `definitionName`, `stepIndex`, `instanceIdMost`, `instanceIdLeast`, `failureReason` |
 
 ---
 
-## Testing Strategy
+## Known Constraints
 
-### Unit Tests
+### Terminal-State Catalog Retention
 
-- Saga state transition: `STEP_1_OK → STEP_2_FAIL → COMPENSATE_1` in strict order.
-- Idempotency guard under concurrent step retries — no duplicate execution.
-- Off-heap hash table: collision handling and CAS correctness under contention.
-- `EX-FLOW-7004` thrown on duplicate step registration.
+`CoreFlowRuntime` maintains a `terminalStateCatalog` map that records every flow that reaches a terminal state (`COMPLETED`, `FAILED_ROLLEDBACK`). This map serves as an in-process idempotency fence — it prevents re-scheduling or re-waking already-terminal flows within a single runtime lifetime.
 
-### Integration Tests (TCK)
+**Current behavior:** entries accumulate from `start()` until `close()`. The map is fully cleared on `close()`. There is no per-entry TTL, cap, or eviction policy.
 
-- **Persistence Recovery:** Kill the Kernel mid-Saga → verify resume from persisted checkpoint.
-- **Event-Driven Wake-Up:** External event correctly unparks the suspended Virtual Thread.
-- **Compensation Integrity:** All preceding steps compensated in reverse order on step failure.
-- **`EX-FLOW-7003` Forensics:** Verify `rawArgs[1]` + `rawArgs[2]` decode to the correct Saga UUID.
-- **Community / Enterprise Parity:** Same `OrderSaga` produces identical business outcomes on both
-  tiers — only latency differs.
+**Implication:** For long-running runtimes processing very high flow throughput, `FlowKey` entries may accumulate in heap between `start()` and `close()`. This is a known gap. Implementing eviction requires a correctness-aware design — an overly aggressive policy could allow re-scheduling a completed flow.
 
-### Load Tests
-
-- **Concurrency:** 100k concurrent Sagas in the off-heap cache with < 1 µs state transition P99.
-- **Park Density:** 1M parked Virtual Threads with < 100 MB total memory footprint.
-- **Compensation Throughput:** Worst-case full rollback (10-step Saga) completes < 10 ms P99.
+**Future work:** a configurable `terminalCatalogMaxSize` (or TTL) property in `FlowEngineConfig`, governed by a policy decision documented here and in `docs/ROADMAP.md`. No ADR exists for this yet; one should be created before implementation.
 
 ---
 
-## Summary
+## Error Codes
 
-The Flow subsystem is where the entire Exeris architecture delivers its ultimate business value.
-By combining Events (Zero-Copy Kafka) with Flow (Off-Heap State Machine), the platform accepts
-HFT-class traffic volumes while processing business logic with the clarity of imperative Java code.
-The Async Park/Wake model solves the "Stateful Serverless" problem without paying licensing costs
-for NoSQL state stores — the off-heap Linear Probing Cache is your state store, managed
-deterministically by the L0 Memory Contract.
+> **Source of truth:** `KernelErrorCodes.java` in `exeris-kernel-spi`. The `rawArgs` binary layout is defined per constant Javadoc and must not diverge from this table.
+
+| Code           | Meaning                  | Glass-Box Payload (`rawArgs`)                                                                                                                           |
+|:---------------|:-------------------------|:--------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `EX-FLOW-7001` | Provider Engine Failure  | `[0] String providerName, [1] String reason`                                                                                                            |
+| `EX-FLOW-7002` | Engine Lifecycle Failure | `[0] String engineName, [1] String phase, [2] String reasonCode, [3] int contextVal` — `phase` values include `SCHEMA_MISMATCH`, `WAKE_FAILED`, `SUBMIT_REJECTED` |
+| `EX-FLOW-7003` | Step Execution Failure   | `[0] String definitionName, [1] long instanceIdMost, [2] long instanceIdLeast, [3] int stepIndex, [4] String staticReasonCode ("STEP_FAILED" \| "COMPENSATION_FAILED"), [5] String causeType` |
+| `EX-FLOW-7004` | Registry Conflict        | `[0] int stepId, [1] String reason`                                                                                                                     |
+
+> **Note — `EX-EVENT-6004` / `EX-FLOW-7001` Identical Schema:** These share the same `rawArgs` layout (`providerName`, `reason`) intentionally — they model the same class of failure in two distinct subsystem domains (Event Bus vs. Flow Engine). The duplication is deliberate; see `telemetry.md` for details.
+
+---
+
+## TCK Coverage
+
+| TCK Suite | Module | Description |
+|:---------|:-------|:------------|
+| `AbstractFlowEngineTck` | `exeris-kernel-tck` | Full flow lifecycle: submit, run, park, wake, complete, compensate |
+| `AbstractFlowSchedulerTck` | `exeris-kernel-tck` | Scheduler contract: schedule, cancel, peek parked, drain |
+| `AbstractFlowChoreographyTck` | `exeris-kernel-tck` | Choreography mapper registration and event-driven wake |
+| `AbstractSagaRecoveryTck` | `exeris-kernel-tck` | Crash-recovery replay semantics from snapshot store |
+| `AbstractIdempotencyGuardTck` | `exeris-kernel-tck` | Step-level deduplication contract for `IdempotencyGuard` |
+| `FlowZeroAllocTck` | `exeris-kernel-tck` | Zero-allocation assertion on hot flow scheduling path |
+| `FlowCarrierPinningTck` | `exeris-kernel-tck` | Flow orchestration does not pin Virtual Thread carrier |
+
+Community bindings: `CommunityFlowEngineTckTest`, `CommunityFlowSchedulerTckTest`, `CommunityFlowChoreographyTckTest`, `CommunitySagaRecoveryTckTest`, `CommunityFlowCarrierPinningTckTest` in `exeris-kernel-community`.
+
+> **Gap:** `AbstractIdempotencyGuardTck` and `FlowZeroAllocTck` have no Community-tier concrete binding in `exeris-kernel-community/src/test/`. The `IdempotencyGuard` contract is covered only by unit-level tests; no community provider binding extends `AbstractIdempotencyGuardTck`. Tracking: see `docs/ROADMAP.md`.

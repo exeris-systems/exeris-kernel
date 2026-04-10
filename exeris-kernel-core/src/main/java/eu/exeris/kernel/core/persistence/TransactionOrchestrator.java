@@ -65,9 +65,13 @@ import java.util.function.Function;
  */
 @SuppressWarnings({
         "PMD.CyclomaticComplexity",
-        "PMD.AvoidCatchingGenericException"
+        "PMD.AvoidCatchingGenericException",
+        "PMD.TooManyMethods"
 })
 public final class TransactionOrchestrator implements TransactionalExecutor {
+
+    private final ScopedValue<PersistenceConnection> activeReadSessionConnection =
+            ScopedValue.newInstance();
 
     // =========================================================================
     // Instance fields
@@ -177,6 +181,7 @@ public final class TransactionOrchestrator implements TransactionalExecutor {
                                 TransactionalWork work) {
         Objects.requireNonNull(isolation, "isolation must not be null");
         Objects.requireNonNull(work,      "work must not be null");
+
         StorageContext ctx = resolveStorageContext();
         int attemptIndex = 0;
         PersistenceProviderException lastError = null;
@@ -224,10 +229,63 @@ public final class TransactionOrchestrator implements TransactionalExecutor {
     @Override
     public <T> T query(Function<PersistenceConnection, T> query) {
         Objects.requireNonNull(query, "query must not be null");
+        if (activeReadSessionConnection.isBound()) {
+            return query.apply(activeReadSessionConnection.get());
+        }
         StorageContext ctx = resolveStorageContext();
         try (PersistenceConnection conn = engine.openConnection(ctx)) {
             return query.apply(conn);
         }
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public <T> T inReadSession(Function<ReadSession, T> work) {
+        return inReadSession(TransactionIsolation.READ_COMMITTED, work);
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public <T> T inReadSession(TransactionIsolation isolation, Function<ReadSession, T> work) {
+        Objects.requireNonNull(isolation, "isolation must not be null");
+        Objects.requireNonNull(work, "work must not be null");
+
+        StorageContext ctx = resolveStorageContext();
+        int attemptIndex = 0;
+        PersistenceProviderException lastError = null;
+
+        while (attemptIndex < retryPolicy.maxAttempts()) {
+            if (attemptIndex > 0) {
+                sleepBackoff(retryPolicy.delayFor(attemptIndex));
+            }
+            int attemptNumber = attemptIndex + 1;
+            attemptIndex++;
+
+            try (PersistenceConnection conn = engine.openConnection(ctx)) {
+                try {
+                    long startNs = System.nanoTime();
+                    T result = isolation == TransactionIsolation.READ_COMMITTED
+                            ? runReadSessionReadCommitted(conn, work, attemptNumber)
+                            : runReadSessionIsolated(conn, isolation, work, attemptNumber);
+                    long durationNs = System.nanoTime() - startNs;
+                    TransactionLifecycleEvent.recordWorkComplete(attemptNumber, durationNs);
+                    return result;
+                } catch (PersistenceProviderException ppe) {
+                    if (isRetryable(ppe)) {
+                        lastError = ppe;
+                    } else {
+                        throw ppe;
+                    }
+                }
+            }
+        }
+
+        TransactionLifecycleEvent.recordRetryExhausted(attemptIndex);
+        if (lastError == null) {
+            throw new IllegalStateException(
+                    "Read-session retry loop exhausted without recording a PersistenceProviderException");
+        }
+        throw lastError;
     }
 
     // =========================================================================
@@ -266,6 +324,53 @@ public final class TransactionOrchestrator implements TransactionalExecutor {
         long durationNs = System.nanoTime() - startNs;
         TransactionLifecycleEvent.recordWorkComplete(attempt, durationNs);
         return null;
+    }
+
+    private <T> T runReadSessionReadCommitted(PersistenceConnection conn,
+                                               Function<ReadSession, T> work,
+                                               int attempt) {
+        T result = ScopedValue.where(activeReadSessionConnection, conn)
+                .call(() -> work.apply(readSession(conn)));
+
+        if (conn.inTransaction()) {
+            safeRollback(conn, attempt);
+            throw PersistenceProviderException.queryFailed(
+                    "2D000",
+                    "inReadSession(READ_COMMITTED) work lambda returned with an open transaction",
+                    null);
+        }
+        return result;
+    }
+
+    private <T> T runReadSessionIsolated(PersistenceConnection conn,
+                                          TransactionIsolation isolation,
+                                          Function<ReadSession, T> work,
+                                          int attempt) {
+        try {
+            conn.beginTransaction(isolation, true);
+            TransactionLifecycleEvent.recordBegin(attempt);
+            long startNs = System.nanoTime();
+            T result = ScopedValue.where(activeReadSessionConnection, conn)
+                    .call(() -> work.apply(readSession(conn)));
+            long durationNs = System.nanoTime() - startNs;
+            if (conn.inTransaction()) {
+                conn.commit();
+                TransactionLifecycleEvent.recordCommit(attempt, durationNs);
+            }
+            return result;
+        } catch (RuntimeException ex) {
+            safeRollback(conn, attempt);
+            throw ex;
+        }
+    }
+
+    private static ReadSession readSession(PersistenceConnection conn) {
+        return new ReadSession() {
+            @Override
+            public <R> R query(Function<PersistenceConnection, R> query) {
+                return query.apply(conn);
+            }
+        };
     }
 
     private StorageContext resolveStorageContext() {

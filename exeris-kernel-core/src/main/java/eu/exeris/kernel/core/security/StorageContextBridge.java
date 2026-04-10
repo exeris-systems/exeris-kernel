@@ -42,6 +42,15 @@ import eu.exeris.kernel.spi.security.StorageContext;
  * during authentication and bound by the Security Interceptor. This bridge
  * serves the common SHARED/RLS case and the tenant-less global path.
  *
+ * <h2>SHARED-only path</h2>
+ * <p>This bridge derives only SHARED contexts. For
+ * {@link StorageContext.IsolationStrategy#SEPARATED_SCHEMA} and
+ * {@link StorageContext.IsolationStrategy#DEDICATED} strategies the
+ * {@link StorageContext} is produced exclusively by
+ * {@link eu.exeris.kernel.spi.security.SecurityProvider#authenticate} and
+ * bound by the Security Interceptor. Callers that require a non-SHARED
+ * context MUST NOT call this bridge.
+ *
  * <h2>JFR-First</h2>
  * <p>Every derivation emits a {@code StorageContextDerived} JFR event.
  *

@@ -22,7 +22,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * Community {@link MemoryAllocator}: per-buffer arena allocations with lightweight telemetry.
+ * Community {@link MemoryAllocator}: shard-based arena pool with size classes
+ * to reduce per-allocation contention. Pool manages shard-local shared arenas
+ * with lock-free reuse queues.
  *
  * @since 0.5.0
  */
@@ -32,9 +34,11 @@ final class CommunityMemoryAllocator implements MemoryAllocator {
     private static final int DEFAULT_NETWORK_OFF_HEAP_THRESHOLD = 32 * 1_024;
 
     private final boolean jfrEnabled;
+    private final CommunityMemoryJfrSampling jfrSampling;
     private final LeakDetectionMode leakDetection;
     private final LeakTracker leakTracker;
     private final AtomicBoolean closed = new AtomicBoolean(false);
+    private final CommunityArenaShardPool arenaPool;
 
     private final AtomicLong allocationCount = new AtomicLong(0);
     private final AtomicLong releaseCount = new AtomicLong(0);
@@ -44,8 +48,10 @@ final class CommunityMemoryAllocator implements MemoryAllocator {
     /* default */ CommunityMemoryAllocator(MemoryProviderConfig config) {
         CommunityAllocatorSupport.validateSupportedConfig(config, DEFAULT_NETWORK_OFF_HEAP_THRESHOLD);
         this.jfrEnabled = config.jfrEnabled();
+        this.jfrSampling = CommunityMemoryJfrSampling.fromSystemProperties();
         this.leakDetection = config.leakDetection();
         this.leakTracker = new LeakTracker(config.leakDetection());
+        this.arenaPool = new CommunityArenaShardPool();
     }
 
     @Override
@@ -97,24 +103,29 @@ final class CommunityMemoryAllocator implements MemoryAllocator {
 
     @Override
     public void close() {
-        closed.set(true);
+        if (closed.compareAndSet(false, true)) {
+            arenaPool.close();
+        }
     }
 
     private LoanedBuffer allocateBuffer(long capacityBytes) {
         try {
-            AbstractLoanedBuffer buffer = CommunityArenaBuffers.allocateOwned(capacityBytes, CACHE_LINE_ALIGNMENT);
+            AbstractLoanedBuffer buffer = CommunityArenaBuffers.allocateOwned(
+                    capacityBytes, CACHE_LINE_ALIGNMENT, arenaPool);
             CommunityAllocatorSupport.trackAllocation(
                     allocationCount,
                     allocatedBytes,
                     peakAllocated,
                     jfrEnabled,
+                    jfrSampling,
                     capacityBytes
             );
             buffer.addCloseAction(new CommunityReleaseAction(
                     capacityBytes,
                     releaseCount,
                     allocatedBytes,
-                    jfrEnabled
+                    jfrEnabled,
+                    jfrSampling
             ));
             if (leakDetection != LeakDetectionMode.DISABLED) {
                 buffer.enableLeakTracking(leakTracker);

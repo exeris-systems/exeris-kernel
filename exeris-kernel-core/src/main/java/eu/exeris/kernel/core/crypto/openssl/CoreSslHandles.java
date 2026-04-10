@@ -84,7 +84,8 @@ public final class CoreSslHandles {
             MethodHandle sslCtxUsePrivateKeyFile,
             MethodHandle sslCtxCheckPrivateKey,
             MethodHandle sslCtxSetVerify,
-            MethodHandle sslCtxSetAlpnProtos) {
+            MethodHandle sslCtxSetAlpnProtos,
+            MethodHandle sslCtxSetAlpnSelectCb) {
 
         /**
          * {@code TLS_server_method()} → native method pointer for {@code SSL_CTX_new}.
@@ -183,6 +184,22 @@ public final class CoreSslHandles {
             } catch (Throwable t) { //NOPMD AvoidCatchingGenericException — FFM invokeExact declares Throwable
                 FfmErrors.rethrowIfError(t);
                 throw new TlsException("SSL_CTX_set_verify failed", t);
+            }
+        }
+
+        /**
+         * {@code SSL_CTX_set_alpn_select_cb(ctx, cb, arg)} — installs server-side ALPN selection callback.
+         * No-op if handle is {@code null} (symbol absent in this OpenSSL build).
+         */
+        public void invokeCtxSetAlpnSelectCb(long ctxPtr, long cbPtr, long argPtr) {
+            if (sslCtxSetAlpnSelectCb == null) {
+                return;
+            }
+            try {
+                sslCtxSetAlpnSelectCb.invokeExact(ctxPtr, cbPtr, argPtr);
+            } catch (Throwable t) { //NOPMD AvoidCatchingGenericException — FFM invokeExact declares Throwable
+                FfmErrors.rethrowIfError(t);
+                throw new TlsException("SSL_CTX_set_alpn_select_cb failed", t);
             }
         }
     }

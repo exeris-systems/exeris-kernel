@@ -26,7 +26,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 
 /**
  * L1 Unit: {@link CommunityLoanedBuffer} — segment integrity, zero-copy,
- * size tracking, and arena lifecycle.
+ * size tracking, and logical ownership lifecycle.
  *
  * <h2>Coverage</h2>
  * <ul>
@@ -36,7 +36,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
  *   <li>setSize() / size() track the logical write cursor</li>
  *   <li>retain() increments refcount — isAlive() stays true until all released</li>
  *   <li>close() after full release → isAlive() == false</li>
- *   <li>double close() is safe (idempotent arena teardown)</li>
+ *   <li>double close() is safe (idempotent release path)</li>
  *   <li>segment() after close() is disallowed (WrapperInvalidException or ISE)</li>
  *   <li>asSlice() returns a sub-region of the original segment</li>
  * </ul>

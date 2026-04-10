@@ -120,6 +120,11 @@ class TransactionOrchestratorTckTest extends AbstractTransactionalExecutorTck {
                            : PersistenceHealthStatus.failed("InMemorySentinelEngine is closed");
         }
 
+        @Override
+        public boolean canServiceRequest() {
+            return !closed;
+        }
+
 
         @Override
         public PersistenceEngineCapabilities capabilities() {
@@ -315,6 +320,7 @@ class TransactionOrchestratorTckTest extends AbstractTransactionalExecutorTck {
         @Override public PersistenceStatement bindString(int idx, String v)  { return this; }
         @Override public PersistenceStatement bindBytes(int idx, byte[] v)   { return this; }
         @Override public PersistenceStatement bindNull(int idx)              { return this; }
+        @Override public PersistenceStatement bindUuid(int idx, UUID v)      { return this; }
         @Override public QueryResult executeQuery()  { return conn.executeQuery(sql); }
         @Override public long executeUpdate()        { return conn.executeUpdate(sql); }
         @Override public void close()                { /* no-op */ }

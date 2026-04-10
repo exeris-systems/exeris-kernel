@@ -2,7 +2,9 @@
 
 **Physical Layout:**
 
-- SPI: `eu.exeris.kernel.spi.security.*` (PrincipalContext, Role Enums, Annotations)
+- SPI: `eu.exeris.kernel.spi.security.*` (PrincipalContext, StorageContext, SecurityProvider, AuthenticationResult, ImmutablePrincipal, ImmutableStorageContext, KernelIsolationClaims, credentials/KernelPasswordEncoder, credentials/PasswordEncoderConfig)
+  > **Note:** `@RequiresRole` is planned only.
+- Community: `eu.exeris.kernel.community.security.*` (`CommunitySecurityProvider`, `Argon2idPasswordEncoder`, `CommunityJwksValidator`)
 - Core: `eu.exeris.kernel.core.security.*` (Token Extractors, ScopedValue Orchestration)
 
 **Layer:** L1 (Data & Integrity)
@@ -45,15 +47,21 @@ zero-leak, hyper-density concurrency with immutable identity at every layer. It 
 
 **What Security SPI DOES:**
 
-1. Define the `PrincipalContext` interface and `Role` enums.
+1. Define the `PrincipalContext` interface. Roles are open-form string constants, not a closed enum.
 2. Provide the `KernelProviders.PRINCIPAL_CONTEXT` and `KernelProviders.STORAGE_CONTEXT` ScopedValue slots.
-3. Expose `@RequiresRole` annotations for declarative RBAC.
+3. Expose `@RequiresRole` annotations for declarative RBAC (planned only — not yet implemented).
 
 **What Security Core DOES:**
 
-1. Extract and verify identity tokens from the incoming transport stream.
+1. Orchestrate identity authentication at the transport boundary through `SecurityInterceptor` + `SecurityProvider` SPI (provider implementations perform token/JWKS verification).
 2. Bind `PrincipalContext` and `StorageContext` via `ScopedValue.where(...)` for the duration of the request.
 3. Coordinate with the Persistence subsystem to enforce Row-Level Security (RLS).
+4. `CitadelGuard` — sentinel-pool RBAC enforcement gate with `preAllocate(String role)` / `seal()` / `requireRole(String role)`. Sealed at bootstrap READY transition.
+5. `StorageContextBridge` — derives a SHARED `StorageContext` from a `PrincipalContext` (SHARED-only derivation contract per ADR-010 §4a; full SEPARATED_SCHEMA/DEDICATED derivation comes from `SecurityProvider.authenticate()`).
+
+> **TCK gap:** `CitadelGuard` (RBAC sentinel-pool enforcement, `preAllocate` / `seal` / `requireRole`) has no abstract TCK suite in `exeris-kernel-tck`. Its correctness is covered only by unit and integration tests in `exeris-kernel-community`. A dedicated `AbstractCitadelGuardTck` is needed before any external provider implements a competing RBAC gate. Tracking: see `docs/ROADMAP.md`.
+
+> **TCK gap:** `StorageContextBridge.derive()` (SHARED-derivation path) has no abstract TCK suite. The derivation contract is tested only via `AbstractSecurityInterceptorTck` integration path. A standalone `AbstractStorageContextBridgeTck` should be added. Tracking: see `docs/ROADMAP.md`.
 
 ---
 
@@ -87,13 +95,16 @@ package eu.exeris.kernel.spi.security;
 public interface PrincipalContext {
     UUID principalId();
     Optional<UUID> tenantId();
-    Set<Role> roles();
+    Set<String> roles();
+    Set<String> scopes();
 
-    default boolean hasRole(Role role) {
+    default boolean hasRole(String role) {
         return roles().contains(role);
     }
 }
 ```
+
+> **Note:** Roles are open-form string constants, not a closed enum. `Set<String> scopes()` returns OAuth2 scopes; multiple zero-allocation `hasAnyScope()` overloads are provided. Scopes are distinct from roles — scopes are used for HTTP admission control and Bearer token permission checks.
 
 ### 2. Context Binding with Scope Inheritance (Core)
 
@@ -112,35 +123,26 @@ package eu.exeris.kernel.core.security;
 
 public class SecurityInterceptor {
 
-    public void runInContext(PrincipalContext principal, Runnable task) {
-        StorageContext storage = CitadelClaims.deriveStorageContext(principal);
+    // intercept(LoanedBuffer rawToken, Runnable operation): boolean
+    // runAsSystem(PrincipalContext system, Runnable operation): void
+    // bindPreAuthenticated(PrincipalContext principal, Runnable operation): void
+
+    public boolean intercept(LoanedBuffer rawToken, Runnable operation) {
+        StorageContext storage = StorageContextBridge.derive(authenticate(rawToken));
 
         ScopedValue.where(KernelProviders.PRINCIPAL_CONTEXT, principal)
                    .where(KernelProviders.STORAGE_CONTEXT, storage)
-                   .run(task);
+                   .run(operation);
+        return true;
     }
 }
 ```
+
+> The interceptor takes a raw token buffer (not a pre-authenticated `PrincipalContext`) for the normal authentication path. For SEPARATED_SCHEMA / DEDICATED strategies, `SecurityProvider.authenticate()` produces the `StorageContext` directly; `StorageContextBridge.derive()` applies only to the SHARED fallback path.
 
 ### 3. Fail-Closed Enforcement at Transport Edge
 
-```java
-package eu.exeris.kernel.core.security;
-
-public class TokenValidator {
-
-    public PrincipalContext validateOrDrop(String rawToken) {
-        return tokenExtractor.extract(rawToken)
-                .orElseThrow(() -> new PrincipalContextMissingException(
-                        KernelErrorCodes.EX_SEC_2001));
-    }
-}
-```
-
-> If `validateOrDrop` throws, the dispatching Virtual Thread is terminated immediately via controlled
-> exception bubbling. This ensures deterministic socket teardown and memory release in the core PAQS
-> `finally` block, preventing Slowloris DoS attacks. The native `close()` on the socket descriptor is
-> **always** reached — the exception never escapes the transport boundary unhandled.
+> **Note:** `TokenValidator` does not exist as a class. Fail-closed token rejection is handled inside `SecurityInterceptor.intercept()`, which catches `SecurityAuthenticationException`, emits `SecurityContextMissingEvent` (JFR), and returns `false` without propagating the exception.
 
 ---
 
@@ -154,12 +156,13 @@ public class TokenValidator {
 
 ### Integration Tests
 
-- Token extraction from different transport drivers (Community TCP vs Enterprise QUIC).
+- Token extraction validation in the Community TCP transport driver.
 - `ScopedValue` inheritance during parallel processing: verify `PrincipalContext` is accessible
   in all subtasks forked within a `StructuredTaskScope` without explicit parameter passing.
 - RLS enforcement: DB queries are physically restricted to the bound tenant — verified by attempting
   cross-tenant access and asserting row count is zero.
-- Fail-Closed: invalid token at transport edge results in `EX-SEC-2001` and zero downstream calls.
+- Fail-Closed: invalid token at transport edge results in `EX-SEC-2002` and zero downstream calls.
+- Community HTTP admission semantics (implemented): missing/invalid token maps to HTTP `401`; authenticated principal without required scope maps to HTTP `403`; steady-state scope checks remain membership tests over immutable in-memory scope sets.
 
 ---
 
@@ -237,22 +240,18 @@ under the Performance Contract.
 
 ## mTLS — Service-to-Service Authentication
 
-Mutual TLS (`mTLS`) is **supported** in the Enterprise tier via the `NativeCipherContext` lifecycle
-extension. Community tier supports TLS 1.3 server authentication only (single-direction).
+**Community tier:** TLS 1.3 server authentication (single-direction) is supported. mTLS (client certificate validation), SPIFFE/SVID identity, and TLS hot-reload without restart are not supported in the Community tier.
 
-| Feature                              | Community           | Enterprise                               |
-|:-------------------------------------|:--------------------|:-----------------------------------------|
-| TLS 1.3 (server cert validation)     | ✅ Full              | ✅ Full                                   |
-| mTLS (client cert validation)        | ❌ Not supported     | ✅ `SSL_CTX_set_verify(SSL_VERIFY_PEER)`  |
-| SPIFFE/SVID certificate identity     | ❌ Not supported     | 🚧 Planned (TRL-4)                        |
-| TLS certificate hot-reload (no restart) | ❌ Not supported  | ✅ `SSL_CTX_use_certificate_file()` hot-swap on SIGUSR1 |
+For mTLS requirements, operate an mTLS-terminating proxy (e.g., Envoy, Nginx) in front of the Exeris transport layer.
 
-**Certificate rotation (Enterprise, out-of-repo implementation):** When a new TLS certificate is available,
-the operator sends `SIGUSR1` to the Exeris process. In the Enterprise distribution, the native TLS engine
-calls `SSL_CTX_use_certificate_file()` and `SSL_CTX_use_PrivateKey_file()` on the existing `SSL_CTX*` to
-update the active server certificate in place. New connections use the updated certificate immediately.
-In-flight connections continue with the old certificate until they close naturally — there is no forced
-connection teardown.
+---
+
+## JFR Events
+
+| Event | When Emitted | Key Fields |
+|:------|:-------------|:-----------|
+| `SecurityContextMissingEvent` | Token rejection in `SecurityInterceptor.intercept()` (EX-SEC-2001) | `errorCode`, `component` |
+| `InsufficientPrivilegesEvent` | `CitadelGuard` RBAC gate denial (EX-SEC-2003) | `errorCode`, `requiredRole` |
 
 ---
 
@@ -264,3 +263,17 @@ Virtual Threads. The Fail-Closed architecture guarantees that unauthorized reque
 edge — before they consume a single CPU cycle of business logic — and the dual `ScopedValue` binding
 (`PrincipalContext` + `StorageContext`) ensures that Row-Level Security is enforced automatically at the database
 tier, regardless of whether the developer remembered to filter manually.
+
+---
+
+## Credential Hashing
+
+`KernelPasswordEncoder` (SPI: `eu.exeris.kernel.spi.security.credentials`) defines the Argon2id hash/verify contract.
+
+`PasswordEncoderConfig` (record) carries OWASP-minimum Argon2id tuning parameters.
+
+Community implementation: `Argon2idPasswordEncoder` (Bouncy Castle Argon2id, PHC format, constant-time comparison, secret-zeroing on completion).
+
+---
+
+> **Note:** ADR-012 §13 specified a required documentation update to this file. The following ADR-012 normative additions have been applied: `KernelIsolationClaims` contract, isolation claim resolution pipeline (SHARED/SEPARATED_SCHEMA/DEDICATED/fail-closed), and `StorageContextBridge` SHARED-only scope.

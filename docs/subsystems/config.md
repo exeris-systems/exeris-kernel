@@ -31,6 +31,8 @@ It initializes before any other subsystem (including Memory) and provides:
   deserialization on the hot path. No reflection, no `Map` lookups.
 - **Kubernetes-native** — designed for ConfigMap mounts at `/etc/exeris/config`.
 
+> **Community tier:** sys props (`exeris.*`) → env vars (`EXERIS_*`) → compiled defaults. File and Vault sources are not implemented in the Community tier.
+
 ---
 
 ## Core Philosophy: "Immutable Sovereignty"
@@ -53,6 +55,8 @@ It initializes before any other subsystem (including Memory) and provides:
 ### Hot-Reload (`NIO WatchService`)
 A file change triggers an atomic state reload in Core without a JVM restart — but **only** for keys annotated
 `@Dynamic`. Keys annotated `@Immutable` are validated once at T-minus 0 and sealed for the lifetime of the process.
+
+> **Note:** `@Immutable` is a planned annotation not yet present in the codebase. Currently, a config key is effectively immutable if it has no `@Dynamic` registration. The `@Immutable` annotation will provide explicit enforcement when implemented.
 
 ### JEP 513 Validation (Flexible Constructor Bodies — Closed/Delivered in JDK 25)
 Type validation is performed via JEP 513 Flexible Constructor Bodies — environment and Vault state is validated
@@ -101,6 +105,8 @@ comment.
 ### 1. Defining Config via SPI (Immutable)
 
 ```java
+// Note: MemoryProviderConfig is actually a record in eu.exeris.kernel.spi.memory, not an interface
+// in eu.exeris.kernel.spi.config. The example below illustrates the pattern using a generic name.
 package eu.exeris.kernel.spi.config;
 
 public interface MemoryProviderConfig {
@@ -113,11 +119,11 @@ public interface MemoryProviderConfig {
 ### 2. Secure Property Access with Fail-Fast (Core)
 
 ```java
-public int getNetworkPort() {
-    return config.getOptional("network.port")
-                 .map(PropertyValue::asInt)
-                 .orElseThrow(() -> new ConfigMissingException(
-                         KernelErrorCodes.EX_CFG_1001, "network.port"));
+public int getNetworkPort(ConfigProvider config) {
+    return config.getInt("network.port")
+                 .orElseThrow(() ->
+                     ConfigProvider.ConfigProviderException.missingProperty(
+                         "network.port", config.providerName()));
 }
 ```
 
@@ -128,13 +134,8 @@ field via `setRelease` on a reload event; every Virtual Thread reader uses `getA
 is cheaper than a full `volatile` load-load/store-store fence, eliminating the redundant `volatile` modifier while
 preserving the exact visibility guarantee required for a single-writer/multi-reader hot-path.
 
-> **Note:** The class below is **planned pseudocode** illustrating the target VarHandle pattern.
-> `KernelConfigRegistry` does not exist in `exeris-kernel-core` today. The `network.idleTimeoutMillis`
-> key is defined in the config reference table; its VarHandle wiring will be implemented as part of
-> `feat(core-bootstrap)` (#30).
-
 ```java
-// PLANNED — illustrative pseudocode for the target VarHandle hot-reload pattern
+// Actual implementation — see eu.exeris.kernel.core.config.KernelConfigRegistry
 package eu.exeris.kernel.core.config;
 
 public class KernelConfigRegistry {
@@ -198,7 +199,7 @@ not listed here.
 > **Key name convention:** Keys are specified in the `ConfigProvider` API format (e.g. `network.port`).
 > A typical community configuration provider maps these to system properties by prepending `exeris.` (e.g.
 > `-Dexeris.network.port=9090`) and to environment variables by converting to
-> `EXERIS_NETWORK_PORT` (uppercase, dots replaced with underscores). Enterprise implementations
+> `EXERIS_NETWORK_PORT` (uppercase, dots replaced with underscores). Future implementations
 > may also load these from Vault or ConfigMap mounts.
 
 | Key                                                | Type      | Default             | Reload       | Status      | Description                                              |
@@ -208,11 +209,11 @@ not listed here.
 | `network.bufferSize`                               | `int`     | `65536`             | ❌ IMMUTABLE | ✅ WIRED    | Per-connection off-heap buffer size in bytes (`NetworkSettings.bufferSize`) |
 | `network.nativeTransportPreferred`                 | `boolean` | `true`              | ❌ IMMUTABLE | ✅ WIRED    | Hint to prefer native async I/O transport (`NetworkSettings.nativeTransportPreferred`) |
 | `network.reactorCount`                             | `int`     | `0` (auto)          | ❌ IMMUTABLE | ✅ WIRED    | Number of carrier reactor threads; 0 = auto from CPU topology (`NetworkSettings.reactorCount`) |
-| `network.quicEnabled`                              | `boolean` | `true`              | ❌ IMMUTABLE | ✅ WIRED    | Enable QUIC/HTTP3 — Enterprise only (`NetworkSettings.quicEnabled`) |
+| `network.quicEnabled`                              | `boolean` | `true`              | ❌ IMMUTABLE | ✅ WIRED    | Enable QUIC/HTTP3 (planned; `NetworkSettings.quicEnabled`) |
 | `persistence.jdbcUrl`                              | `string`  | `jdbc:postgresql://localhost:5432/exeris` | ❌ IMMUTABLE | ✅ WIRED | JDBC connection URL (`PersistenceSettings.jdbcUrl`) |
 | `persistence.username`                             | `string`  | `exeris`            | ❌ IMMUTABLE | ✅ WIRED    | Database user — **SECRET**, redacted in telemetry        |
 | `persistence.password`                             | `string`  | `""`                | ❌ IMMUTABLE | ✅ WIRED    | Database password — **SECRET**, redacted in telemetry    |
-| `persistence.maxPoolSize`                          | `int`     | `20`                | ❌ IMMUTABLE | ✅ WIRED    | JDBC connection pool max connections (`PersistenceSettings.maxPoolSize`) |
+| `persistence.maxPoolSize`                          | `int`     | adaptive when unset (`max(min(cores × 2, 32), 2)`) | ❌ IMMUTABLE | ✅ WIRED    | JDBC connection pool max connections; explicit config overrides the adaptive Community bootstrap sizing |
 | `persistence.runMigrations`                        | `boolean` | `false`             | ❌ IMMUTABLE | ✅ WIRED    | Run schema migrations on startup (`PersistenceSettings.runMigrations`) |
 | `telemetry.jfrEnabled`                             | `boolean` | `true`              | ❌ IMMUTABLE | ✅ WIRED    | Enable JFR telemetry sink (`TelemetrySettings.jfrEnabled`) |
 | `telemetry.metricsEnabled`                         | `boolean` | `true`              | ❌ IMMUTABLE | ✅ WIRED    | Enable Prometheus metrics endpoint (`TelemetrySettings.metricsEnabled`) |
@@ -246,6 +247,8 @@ not listed here.
 > **Auto-detection:** `globalMemoryMb` defaults to 50% of available JVM process RAM
 > (`Runtime.getRuntime().maxMemory() / 1_048_576 * 0.5`). Override explicitly in production for
 > predictable behaviour under K8s memory limits.
+
+> **Persistence helper note:** `PersistenceConfig.defaults(...)` is a fixed development/unit-test preset in the SPI helper API. It is not the Community runtime bootstrap default when `persistence.maxPoolSize` is unset.
 
 ---
 
@@ -292,19 +295,35 @@ initContainers:
 Every hot-reload of a `@Dynamic` key emits a JFR event. This satisfies audit requirements in
 regulated environments (fintech, healthcare) without logging raw values.
 
+Two event classes are emitted (from `eu.exeris.kernel.core.config.jfr.DynamicReloadEvent`):
+
 ```java
-@jdk.jfr.Label("Config Hot-Reload")
+// Emitted on successful hot-reload
+@jdk.jfr.Label("Config Dynamic Field Reloaded")
 @jdk.jfr.Category({"Exeris Kernel", "Config"})
 @jdk.jfr.StackTrace(false)
-public final class ConfigHotReloadEvent extends jdk.jfr.Event {
-    String configKey;
-    String providerName;   // "file", "env", "vault"
-    boolean succeeded;
+public final class DynamicFieldReloadedEvent extends jdk.jfr.Event {
+    String file;
+    String key;
+    long durationUs;
     // NOTE: old/new values are NEVER included — CWE-532 contract
+}
+
+// Emitted on reload failure
+@jdk.jfr.Label("Config Dynamic Reload Failed")
+@jdk.jfr.Category({"Exeris Kernel", "Config"})
+@jdk.jfr.StackTrace(false)
+public final class DynamicReloadFailedEvent extends jdk.jfr.Event {
+    String file;
+    String key;
+    String reason;
+    // NOTE: value is intentionally excluded — CWE-532 compliance
 }
 ```
 
-The event records **which key changed** and **which provider delivered the new value**, but never
+> **Note:** `telemetry.md` had this event as planned/TRL-4 under the name `ConfigHotReloadEvent`, but it is now implemented under `DynamicFieldReloadedEvent` and `DynamicReloadFailedEvent`.
+
+The events record **which key changed** and **which file triggered the reload**, but never
 the old or new value itself. In regulated environments, this event stream is the config audit log.
 
 ---
@@ -323,6 +342,8 @@ the old or new value itself. In regulated environments, this event stream is the
 - `FileWatcher` triggering hot-reload on file modification (`@Dynamic` keys only).
 - Concurrent read/write safety: 100 Virtual Threads reading while `FileWatcher` updates.
 - `@Immutable` keys rejected on hot-reload attempt (sealed after T-minus 0).
+
+> **Note:** `AbstractConfigProviderTck` currently covers structural contract only (LazyConstant, banned parsers, watch() no-op contract). EX-CFG-1001 and EX-CFG-1002 path coverage lives at the unit level in `exeris-kernel-spi` tests. Full TCK coverage pending.
 
 ---
 

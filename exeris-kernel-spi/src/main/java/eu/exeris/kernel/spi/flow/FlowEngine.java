@@ -8,7 +8,10 @@
  */
 package eu.exeris.kernel.spi.flow;
 
+import eu.exeris.kernel.spi.events.EventBus;
 import eu.exeris.kernel.spi.exceptions.flow.FlowEngineException;
+
+import java.util.Collection;
 
 /**
  * SPI: Central Flow Engine facade — the primary runtime interface for all flow
@@ -91,6 +94,30 @@ public interface FlowEngine extends AutoCloseable {
 
     /** Returns a point-in-time snapshot of engine statistics. Diagnostic path only. */
     FlowEngineStats stats();
+
+    /**
+     * Registers a choreography mapper that translates incoming event descriptors to
+     * flow scheduling decisions (event-driven Saga coordination).
+     *
+     * <p>For each name in {@code eventTypeNames}, the engine subscribes a
+     * {@link FlowChoreographyMapper}-backed handler to the provided {@link EventBus}.
+     * Subsequent calls ADD additional mappers; they do NOT replace existing registrations.
+     * Subscription tokens are owned by the engine and cancelled on {@link #close()}.
+     *
+     * @param mapper         maps descriptors to decisions; must not be {@code null}
+     * @param eventTypeNames event type names to subscribe to; must not be {@code null} or empty
+     * @param bus            the {@link EventBus} on which to subscribe; must not be {@code null}
+     * @throws UnsupportedOperationException if choreography is not supported
+     * @since 0.5.0
+     */
+    default void registerChoreographyMapper(
+            FlowChoreographyMapper mapper,
+            Collection<String> eventTypeNames,
+            EventBus bus) {
+        throw new UnsupportedOperationException(
+                "Choreography registration is not supported by this FlowEngine implementation: "
+                + getClass().getName());
+    }
 
     /**
      * Starts all engine components.

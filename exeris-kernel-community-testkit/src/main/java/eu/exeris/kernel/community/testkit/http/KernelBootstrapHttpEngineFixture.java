@@ -1,0 +1,264 @@
+/*
+ * Copyright (C) 2025-2026 Exeris Systems.
+ *
+ * Licensed under the Apache License, Version 2.0 with Commons Clause.
+ * You may use, modify, and distribute this file under those terms.
+ * Commercial resale of this software as a competing product is prohibited.
+ * See LICENSE-COMMUNITY in the repository root for the full text.
+ */
+package eu.exeris.kernel.community.testkit.http;
+
+import eu.exeris.kernel.core.bootstrap.KernelBootstrap;
+import eu.exeris.kernel.spi.bootstrap.BootstrapSelector;
+import eu.exeris.kernel.spi.http.HttpHandler;
+import eu.exeris.kernel.spi.http.HttpKernelProviders;
+import eu.exeris.kernel.spi.http.HttpServerEngine;
+
+import java.net.InetSocketAddress;
+import java.net.ServerSocket;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+
+/**
+ * KernelBootstrap-based fixture that keeps HTTP running until explicitly closed.
+ */
+@SuppressWarnings({"PMD.CyclomaticComplexity", "PMD.AvoidUsingHardCodedIP"})
+public final class KernelBootstrapHttpEngineFixture implements EmbeddedHttpEngineFixture {
+
+    private static final long START_TIMEOUT_SECONDS = 10L;
+    private static final long STOP_TIMEOUT_SECONDS = 10L;
+    private static final String LOOPBACK_HOST = "127.0.0.1";
+    private static final int UNBOUND_PORT = -1;
+
+    private final Object lifecycleLock = new Object();
+
+    private final AtomicReference<HttpServerEngine> engine = new AtomicReference<>();
+    private final AtomicInteger boundPort = new AtomicInteger(UNBOUND_PORT);
+    private final AtomicBoolean started = new AtomicBoolean(false);
+
+    private CountDownLatch stopSignal;
+    private Thread runtimeThread;
+
+    @Override
+    public void start(HttpHandler handler) {
+        Objects.requireNonNull(handler, "handler must not be null");
+
+        synchronized (lifecycleLock) {
+            if (started.get()) {
+                throw new IllegalStateException("Fixture is already started");
+            }
+
+            int reservedPort = reserveLoopbackPort();
+            PropertySnapshot propertySnapshot = PropertySnapshot.capture(
+                    "exeris.http.mode",
+                    "exeris.http.bindHost",
+                    "exeris.http.port",
+                    "http.mode",
+                    "http.bindHost",
+                    "http.port");
+
+            CountDownLatch startedSignal = new CountDownLatch(1);
+            CountDownLatch stop = new CountDownLatch(1);
+            AtomicReference<Throwable> startupFailure = new AtomicReference<>();
+
+            Thread thread = Thread.ofPlatform()
+                    .name("kernel-bootstrap-http-fixture")
+                    .uncaughtExceptionHandler((_, throwable) -> {
+                        startupFailure.compareAndSet(null, throwable);
+                        startedSignal.countDown();
+                    })
+                    .start(() -> runFixtureRuntime(
+                            handler,
+                            reservedPort,
+                            propertySnapshot,
+                            startedSignal,
+                            stop,
+                            startupFailure));
+
+            try {
+                if (!startedSignal.await(START_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                    stop.countDown();
+                    joinQuietly(thread);
+                    throw new IllegalStateException("Timed out while starting kernel HTTP fixture");
+                }
+            } catch (InterruptedException interruptedException) {
+                Thread.currentThread().interrupt();
+                stop.countDown();
+                joinQuietly(thread);
+                throw new IllegalStateException("Interrupted while starting kernel HTTP fixture",
+                        interruptedException);
+            }
+
+            Throwable failure = startupFailure.get();
+            if (failure != null) {
+                stop.countDown();
+                joinQuietly(thread);
+                throw new IllegalStateException("Kernel HTTP fixture failed to start", failure);
+            }
+
+            runtimeThread = thread;
+            stopSignal = stop;
+            started.set(true);
+        }
+    }
+
+    @Override
+    public HttpServerEngine engine() {
+        HttpServerEngine currentEngine = engine.get();
+        if (!started.get() || currentEngine == null) {
+            throw new IllegalStateException("Fixture has not been started");
+        }
+        return currentEngine;
+    }
+
+    @Override
+    public int boundPort() {
+        int currentBoundPort = boundPort.get();
+        if (!started.get() || currentBoundPort < 0) {
+            throw new IllegalStateException("Fixture has not been started");
+        }
+        return currentBoundPort;
+    }
+
+    @Override
+    public boolean isRunning() {
+        HttpServerEngine currentEngine = engine.get();
+        return started.get() && currentEngine != null && currentEngine.isRunning();
+    }
+
+    @Override
+    public void close() {
+        Thread threadToJoin;
+        CountDownLatch stopToSignal;
+
+        synchronized (lifecycleLock) {
+            if (!started.get()) {
+                return;
+            }
+            stopToSignal = stopSignal;
+            threadToJoin = runtimeThread;
+        }
+
+        if (stopToSignal != null) {
+            stopToSignal.countDown();
+        }
+        joinQuietly(threadToJoin);
+
+        synchronized (lifecycleLock) {
+            started.set(false);
+            boundPort.set(UNBOUND_PORT);
+        }
+    }
+
+    private void runFixtureRuntime(HttpHandler handler,
+                                   int reservedPort,
+                                   PropertySnapshot propertySnapshot,
+                                   CountDownLatch startedSignal,
+                                   CountDownLatch stop,
+                                   AtomicReference<Throwable> startupFailure) {
+        try {
+            System.setProperty("exeris.http.mode", "SERVER");
+            System.setProperty("exeris.http.bindHost", LOOPBACK_HOST);
+            System.setProperty("exeris.http.port", Integer.toString(reservedPort));
+
+            System.setProperty("http.mode", "SERVER");
+            System.setProperty("http.bindHost", LOOPBACK_HOST);
+            System.setProperty("http.port", Integer.toString(reservedPort));
+
+            KernelBootstrap bootstrap = KernelBootstrap.builder()
+                    .selector(BootstrapSelector.forNames("http"))
+                    .build();
+
+            ScopedValue.where(HttpKernelProviders.HTTP_SERVER_HANDLER, handler)
+                    .run(() -> {
+                        try {
+                            bootstrap.boot(() -> {
+                                engine.set(HttpKernelProviders.httpServerEngine());
+                                boundPort.set(reservedPort);
+                                startedSignal.countDown();
+                                awaitShutdownSignal(stop);
+                            });
+                        } catch (KernelBootstrap.BootstrapException bootstrapException) {
+                            startupFailure.set(bootstrapException);
+                            startedSignal.countDown();
+                        }
+                    });
+        } finally {
+            propertySnapshot.restore();
+        }
+    }
+
+    private static void awaitShutdownSignal(CountDownLatch stop) {
+        try {
+            stop.await();
+        } catch (InterruptedException _) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    private static int reserveLoopbackPort() {
+        try (ServerSocket socket = new ServerSocket()) {
+            socket.bind(new InetSocketAddress(LOOPBACK_HOST, 0));
+            return socket.getLocalPort();
+        } catch (java.io.IOException exception) {
+            throw new IllegalStateException("Unable to reserve loopback HTTP port", exception);
+        }
+    }
+
+    private static void joinQuietly(Thread thread) {
+        if (thread == null) {
+            return;
+        }
+
+        long deadlineNanos = System.nanoTime() + TimeUnit.SECONDS.toNanos(STOP_TIMEOUT_SECONDS);
+        while (thread.isAlive() && System.nanoTime() < deadlineNanos) {
+            try {
+                thread.join(100L);
+            } catch (InterruptedException _) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+
+        if (thread.isAlive()) {
+            thread.interrupt();
+        }
+    }
+
+    private static final class PropertySnapshot {
+
+        private final List<String> keys;
+        private final List<String> values;
+
+        private PropertySnapshot(List<String> keys, List<String> values) {
+            this.keys = keys;
+            this.values = values;
+        }
+
+        private static PropertySnapshot capture(String... propertyKeys) {
+            List<String> capturedKeys = List.of(propertyKeys);
+            List<String> snapshotValues = new ArrayList<>(capturedKeys.size());
+            for (String key : capturedKeys) {
+                snapshotValues.add(System.getProperty(key));
+            }
+            return new PropertySnapshot(capturedKeys, snapshotValues);
+        }
+
+        private void restore() {
+            for (int index = 0; index < keys.size(); index++) {
+                String value = values.get(index);
+                if (value == null) {
+                    System.clearProperty(keys.get(index));
+                } else {
+                    System.setProperty(keys.get(index), value);
+                }
+            }
+        }
+    }
+}
