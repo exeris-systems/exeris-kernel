@@ -44,7 +44,8 @@ final class CommunityCryptoSubsystem implements Subsystem {
         cryptoProvider = ServiceLoader.load(KernelCryptoProvider.class)
                 .stream()
                 .map(ServiceLoader.Provider::get)
-                .max(Comparator.comparingInt(KernelCryptoProvider::priority))
+                .max(Comparator.comparingInt(KernelCryptoProvider::priority)
+                        .thenComparing(provider -> provider.getClass().getName()))
                 .orElse(null);
     }
 

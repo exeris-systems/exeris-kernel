@@ -268,10 +268,22 @@ public final class CommunityConfigProvider implements ConfigProvider {
     }
 
     private static int safeInt(String value) {
-        return Integer.parseInt(value.strip());
+        try {
+            return Integer.parseInt(value.strip());
+        } catch (NumberFormatException ex) {
+            LOG.log(System.Logger.Level.WARNING,
+                    "CommunityConfigProvider: cannot parse integer from ''{0}'' — using 0", value);
+            return 0;
+        }
     }
 
     private static long safeLong(String value) {
-        return Long.parseLong(value.strip());
+        try {
+            return Long.parseLong(value.strip());
+        } catch (NumberFormatException ex) {
+            LOG.log(System.Logger.Level.WARNING,
+                    "CommunityConfigProvider: cannot parse long from ''{0}'' — using 0", value);
+            return 0L;
+        }
     }
 }

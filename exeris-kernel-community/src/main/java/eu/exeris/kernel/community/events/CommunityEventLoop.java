@@ -277,14 +277,14 @@ final class CommunityEventLoop implements EventLoop {
      */
     private static final class TrackingPayload implements EventPayload {
         private final EventPayload delegate;
-        private volatile boolean closed;
+        private final AtomicBoolean closed = new AtomicBoolean();
 
         /* default */ TrackingPayload(EventPayload delegate) {
             this.delegate = delegate;
         }
 
         /* default */ boolean isClosed() {
-            return closed;
+            return closed.get();
         }
 
         @Override
@@ -304,8 +304,7 @@ final class CommunityEventLoop implements EventLoop {
 
         @Override
         public void close() {
-            if (!closed) {
-                closed = true;
+            if (closed.compareAndSet(false, true)) {
                 delegate.close();
             }
         }
@@ -317,7 +316,7 @@ final class CommunityEventLoop implements EventLoop {
 
         @Override
         public boolean isAlive() {
-            return !closed && delegate.isAlive();
+            return !closed.get() && delegate.isAlive();
         }
     }
 }

@@ -26,6 +26,8 @@ import java.util.function.UnaryOperator;
 
 final class CommunityTransportSubsystem implements Subsystem {
 
+    private static final System.Logger LOG = System.getLogger(CommunityTransportSubsystem.class.getName());
+
     private TransportProvider transportProvider;
     private TransportEngine transportEngine;
     private TransportConfig transportConfig;
@@ -52,7 +54,8 @@ final class CommunityTransportSubsystem implements Subsystem {
         transportProvider = ServiceLoader.load(TransportProvider.class)
                 .stream()
                 .map(ServiceLoader.Provider::get)
-                .max(Comparator.comparingInt(TransportProvider::priority))
+                .max(Comparator.comparingInt(TransportProvider::priority)
+                        .thenComparing(provider -> provider.getClass().getName()))
                 .orElse(null);
 
         if (transportProvider == null) {
@@ -65,6 +68,10 @@ final class CommunityTransportSubsystem implements Subsystem {
         transportEngine = transportProvider.createEngine(transportConfig);
         if (transportEngine.mode() == TransportMode.SERVER || transportEngine.mode() == TransportMode.DUAL) {
             transportEngine.setStreamHandler(eu.exeris.kernel.spi.transport.TransportStream::close);
+            LOG.log(System.Logger.Level.WARNING,
+                    "CommunityTransportSubsystem: transport running with default stream handler "
+                    + "(streams will be closed immediately). Register a real handler via "
+                    + "KernelProviders.TRANSPORT_ENGINE before start().");
         }
         transportEngine.setConnectionHandler(connection -> {
         });
