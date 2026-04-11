@@ -66,7 +66,7 @@ import org.openjdk.jmh.infra.Blackhole;
  *     protected void prepareBenchmarkData(PersistenceEngine engine) {
  *         // Insert 1 000 rows into an in-memory H2 table
  *         try (PersistenceConnection conn = engine.openConnection()) {
- *             conn.executeUpdate("CREATE TABLE benchmark_data (id BIGINT, value VARCHAR, ts BIGINT)");
+ *             conn.executeUpdate("CREATE TABLE benchmark_data (id BIGINT, value_text VARCHAR, ts BIGINT)");
  *             for (int i = 0; i < 1_000; i++) {
  *                 conn.executeUpdate("INSERT INTO benchmark_data VALUES (" + i + ", 'v" + i + "', " + i + ")");
  *             }
@@ -86,7 +86,14 @@ public abstract class AbstractRowCursorThroughputBenchmark extends AbstractExeri
      * without overwhelming the measurement window with I/O wait time.
      */
     private static final String BENCHMARK_QUERY =
-            "SELECT id, value, ts FROM benchmark_data";
+            "SELECT id, value_text, ts FROM benchmark_data";
+
+    /**
+     * Default JDBC URL: H2 in-memory, PostgreSQL compatibility mode. Override
+     * via system property {@code benchmark.persistence.url} for real backends.
+     */
+    private static final String DEFAULT_BENCHMARK_URL =
+            "jdbc:h2:mem:benchmark;MODE=PostgreSQL;DB_CLOSE_DELAY=-1";
 
     /** The engine under test — initialised once per trial. */
     protected PersistenceEngine engine;
@@ -132,8 +139,14 @@ public abstract class AbstractRowCursorThroughputBenchmark extends AbstractExeri
      */
     @Setup(Level.Trial)
     public void setupPersistence() {
+        String rawUrl = System.getProperty("benchmark.persistence.url", "");
+        String normalized = rawUrl.strip();
+        String url = (!normalized.isBlank()
+                && normalized.toLowerCase(java.util.Locale.ROOT).startsWith("jdbc:"))
+                ? normalized
+                : DEFAULT_BENCHMARK_URL;
         this.engine = getProvider().createEngine(
-                PersistenceConfig.defaults("benchmark-db", "bench", "bench")
+                PersistenceConfig.defaults(url, "bench", "bench")
         );
 
         // Insert mock rows — implementation-specific (in-memory DB or pre-warmed buffer).
