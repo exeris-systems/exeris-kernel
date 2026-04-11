@@ -70,16 +70,19 @@ final class ReportGenerator {
                 List<AllocEvent> subsysEvents = subsysEntry.getValue();
                 if (subsysEvents.isEmpty()) continue;
 
-                Path subsysOutDir = moduleOutDir.resolve(subsystem);
+                String safeSubsystem = subsystem.replaceAll("[^a-zA-Z0-9_\\-]", "_");
+                if (safeSubsystem.isEmpty() || safeSubsystem.equals(".") || safeSubsystem.equals("..")) continue;
+
+                Path subsysOutDir = moduleOutDir.resolve(safeSubsystem);
                 Files.createDirectories(subsysOutDir);
 
                 Map<String, List<String>> subsysStacksMap = new LinkedHashMap<>();
                 AtomicInteger subsysStackCounter = new AtomicInteger(0);
                 Map<String, String> subsysStackIdCache = new HashMap<>();
 
-                writeTimeline(module + "/" + subsystem, subsysOutDir, subsysEvents, subsysStacksMap, subsysStackCounter, subsysStackIdCache);
-                writeStacks(module + "/" + subsystem, subsysOutDir, subsysStacksMap);
-                writeAllocTopClasses(module + "/" + subsystem, subsysOutDir, subsysEvents);
+                writeTimeline(module + "/" + safeSubsystem, subsysOutDir, subsysEvents, subsysStacksMap, subsysStackIdCache, subsysStackCounter);
+                writeStacks(module + "/" + safeSubsystem, subsysOutDir, subsysStacksMap);
+                writeAllocTopClasses(module + "/" + safeSubsystem, subsysOutDir, subsysEvents);
             }
         }
 
