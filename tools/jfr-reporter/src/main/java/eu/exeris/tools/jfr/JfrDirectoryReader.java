@@ -30,7 +30,7 @@ final class JfrDirectoryReader {
 
     /**
      * Reads all .jfr files in dir, groups events by subsystem extracted from filename.
-     * Filename pattern from JfrAllocationMonitor: {TestClass}-{Subsystem}-{yyyyMMdd}-{HHmmss}.jfr
+     * Filename pattern from JfrAllocationMonitor: {TestClass}-{Subsystem}-{yyyyMMdd-HHmmss}.jfr
      */
     static Map<String, List<AllocEvent>> readDirectory(Path dir) throws IOException {
         Map<String, List<AllocEvent>> result = new LinkedHashMap<>();
