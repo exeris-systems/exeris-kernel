@@ -21,9 +21,9 @@ import eu.exeris.kernel.tck.perf.AbstractRowCursorThroughputBenchmark;
 public class CommunityRowCursorThroughputBenchmark extends AbstractRowCursorThroughputBenchmark {
 
     private static final String CREATE_TABLE_SQL =
-            "CREATE TABLE IF NOT EXISTS benchmark_data (id BIGINT PRIMARY KEY, value VARCHAR(64), ts BIGINT)";
+            "CREATE TABLE IF NOT EXISTS benchmark_data (id BIGINT PRIMARY KEY, value_text VARCHAR(64), ts BIGINT)";
     private static final String DELETE_ROWS_SQL = "DELETE FROM benchmark_data";
-    private static final String INSERT_ROW_PREFIX = "INSERT INTO benchmark_data (id, value, ts) VALUES (";
+    private static final String INSERT_ROW_PREFIX = "INSERT INTO benchmark_data (id, value_text, ts) VALUES (";
 
     @Override
     protected PersistenceProvider getProvider() {

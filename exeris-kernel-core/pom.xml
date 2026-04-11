@@ -102,6 +102,7 @@
                 <benchmark.iterationstime>2s</benchmark.iterationstime>
                 <benchmark.jvm.gc>-XX:+UseZGC</benchmark.jvm.gc>
                 <benchmark.jvmArgs></benchmark.jvmArgs>
+                <benchmark.jvmArgsAppend/>
                 <excludedGroups/>
             </properties>
             <build>
@@ -163,6 +164,8 @@
                                         <argument>json</argument>
                                         <argument>-rff</argument>
                                         <argument>${benchmark.output}</argument>
+                                        <argument>-jvmArgsAppend</argument>
+                                        <argument>${benchmark.jvmArgsAppend}</argument>
                                     </arguments>
                                 </configuration>
                             </execution>

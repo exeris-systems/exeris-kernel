@@ -33,6 +33,7 @@ import org.openjdk.jmh.infra.Blackhole;
 import java.net.InetSocketAddress;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
@@ -62,6 +63,7 @@ public class CommunityTlsEngineGuardBenchmark extends AbstractExerisBenchmark {
 	private LoanedBuffer clientDecrypted;
 	private LoanedBuffer serverHandshakeOutbound;
 	private LoanedBuffer clientHandshakeOutbound;
+	private Path tempCertDir;
 
 	private static final byte[] ROUNDTRIP_PAYLOAD =
 			"exeris-community-tls-roundtrip-payload".getBytes();
@@ -82,12 +84,13 @@ public class CommunityTlsEngineGuardBenchmark extends AbstractExerisBenchmark {
 		plaintext = allocator.allocate(AllocationHint.MEDIUM);
 		ciphertext = allocator.allocate(AllocationHint.MEDIUM);
 
-		Path cwd = Path.of("").toAbsolutePath().normalize();
-		Path moduleDir = "exeris-kernel-community".equals(String.valueOf(cwd.getFileName()))
-				? cwd
-				: cwd.resolve("exeris-kernel-community").normalize();
-		Path certPath = moduleDir.resolve("../native-libs/certs/server.crt").normalize();
-		Path keyPath = moduleDir.resolve("../native-libs/certs/server.key").normalize();
+		Path[] certAndKey = resolveCertPaths();
+		Path certPath = certAndKey[0];
+		Path keyPath = certAndKey[1];
+		if (!Files.exists(certPath) || !Files.exists(keyPath)) {
+			throw new IllegalStateException(
+					"No usable TLS cert/key found for benchmark. cert=" + certPath + " key=" + keyPath);
+		}
 
 		serverEngine = (CommunityTlsEngine) provider.createTlsEngine(
 				CryptoProviderConfig.httpsServer(certPath, keyPath));
@@ -164,6 +167,20 @@ public class CommunityTlsEngineGuardBenchmark extends AbstractExerisBenchmark {
 		}
 		if (provider != null) {
 			provider.close();
+		}
+		if (tempCertDir != null) {
+			try (java.nio.file.DirectoryStream<Path> stream = Files.newDirectoryStream(tempCertDir)) {
+				for (Path entry : stream) {
+					Files.deleteIfExists(entry);
+				}
+			} catch (java.io.IOException ignored) {
+				// best-effort cleanup
+			}
+			try {
+				Files.deleteIfExists(tempCertDir);
+			} catch (java.io.IOException ignored) {
+				// best-effort cleanup
+			}
 		}
 	}
 
@@ -275,6 +292,92 @@ public class CommunityTlsEngineGuardBenchmark extends AbstractExerisBenchmark {
 		}
 	}
 
+	/**
+	 * Resolves the TLS cert and key to use for the benchmark server engine.
+	 *
+	 * <p>Fallback sequence (first match wins):
+	 * <ol>
+	 *   <li>System properties {@code benchmark.tls.cert.path} and {@code benchmark.tls.key.path}
+	 *       when both point to existing files.</li>
+	 *   <li>Temporary self-signed cert/key generated via {@code openssl} CLI if available.
+	 *       The temp directory is stored in {@link #tempCertDir} for teardown cleanup.</li>
+	 *   <li>Certificates bundled under {@code native-libs/certs/} discovered by walking
+	 *       up the ancestor directories from the JVM working directory.</li>
+	 * </ol>
+	 *
+	 * @return two-element array: {@code [certPath, keyPath]}
+	 */
+	private Path[] resolveCertPaths() {
+		// 1) System-property override — takes precedence in CI/fork environments.
+		String propCert = System.getProperty("benchmark.tls.cert.path", "");
+		String propKey = System.getProperty("benchmark.tls.key.path", "");
+		if (!propCert.isBlank() && !propKey.isBlank()) {
+			Path certFile = Path.of(propCert);
+			Path keyFile = Path.of(propKey);
+			if (Files.exists(certFile) && Files.exists(keyFile)) {
+				return new Path[]{certFile, keyFile};
+			}
+		}
+
+		// 2) Generate a temporary self-signed cert via the openssl CLI if available.
+		try {
+			Path tmpDir = Files.createTempDirectory("exeris-bench-tls-");
+			Path certFile = tmpDir.resolve("server.crt");
+			Path keyFile = tmpDir.resolve("server.key");
+			try {
+				String opensslPath = findOnPath("openssl");
+				if (opensslPath == null) {
+					throw new java.io.IOException("openssl not found on PATH");
+				}
+				ProcessBuilder pb = new ProcessBuilder(
+						opensslPath, "req", "-x509", "-newkey", "rsa:2048",
+						"-keyout", keyFile.toString(),
+						"-out", certFile.toString(),
+						"-days", "1", "-nodes",
+						"-subj", "/CN=exeris-benchmark");
+				pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
+				pb.redirectError(ProcessBuilder.Redirect.DISCARD);
+				Process proc = pb.start();
+				int exit = proc.waitFor();
+				if (exit == 0 && Files.exists(certFile) && Files.exists(keyFile)) {
+					tempCertDir = tmpDir;
+					return new Path[]{certFile, keyFile};
+				}
+			} catch (InterruptedException ie) {
+				Thread.currentThread().interrupt();
+			} catch (java.io.IOException ignored) {
+				// openssl not available or failed — clean up and fall through
+			}
+			try { Files.deleteIfExists(certFile); } catch (java.io.IOException ignored) {}
+			try { Files.deleteIfExists(keyFile); } catch (java.io.IOException ignored) {}
+			try { Files.deleteIfExists(tmpDir); } catch (java.io.IOException ignored) {}
+		} catch (java.io.IOException ignored) {
+			// createTempDirectory failed — fall through to bundled certs
+		}
+
+		// 3) Locate certs bundled in the repository (native-libs/certs).
+		Path certsDir = locateCertsDir();
+		return new Path[]{certsDir.resolve("server.crt"), certsDir.resolve("server.key")};
+	}
+
+	/**
+	 * Walks up from the JVM working directory until a directory containing
+	 * {@code native-libs/certs/server.crt} is found.
+	 */
+	private static Path locateCertsDir() {
+		Path dir = Path.of("").toAbsolutePath().normalize();
+		while (dir != null) {
+			Path candidate = dir.resolve("native-libs/certs/server.crt");
+			if (Files.exists(candidate)) {
+				return candidate.getParent();
+			}
+			dir = dir.getParent();
+		}
+		throw new IllegalStateException(
+				"native-libs/certs/server.crt not found in any ancestor of: "
+						+ Path.of("").toAbsolutePath());
+	}
+
 	private static void closeQuietly(AutoCloseable closeable) {
 		if (closeable == null) {
 			return;
@@ -284,5 +387,17 @@ public class CommunityTlsEngineGuardBenchmark extends AbstractExerisBenchmark {
 		} catch (Exception ignored) {
 			// benchmark teardown should be best-effort
 		}
+	}
+
+	private static String findOnPath(String executable) {
+		String pathEnv = System.getenv("PATH");
+		if (pathEnv == null) return null;
+		for (String dir : pathEnv.split(java.io.File.pathSeparator)) {
+			java.io.File candidate = new java.io.File(dir, executable);
+			if (candidate.isFile() && candidate.canExecute()) {
+				return candidate.getAbsolutePath();
+			}
+		}
+		return null;
 	}
 }
