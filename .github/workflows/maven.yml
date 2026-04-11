@@ -276,7 +276,11 @@ jobs:
 
       - name: Run JFR Reporter
         run: |
-          jar=$(ls tools/jfr-reporter/target/jfr-reporter-*.jar | grep -v original | head -1)
+          jar=$(ls tools/jfr-reporter/target/jfr-reporter-*.jar 2>/dev/null | grep -v original | head -1)
+          if [ -z "$jar" ]; then
+            echo "ERROR: jfr-reporter shaded JAR not found in tools/jfr-reporter/target/" >&2
+            exit 1
+          fi
           java -jar "$jar" \
             --core      exeris-kernel-core/target/jfr-reports/ \
             --community exeris-kernel-community/target/jfr-reports/ \

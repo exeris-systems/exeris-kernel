@@ -10,12 +10,19 @@ public final class Main {
     private Main() {}
 
     public static void main(String[] args) throws Exception {
+        if (args.length % 2 != 0) {
+            System.err.println("[jfr-reporter] ERROR: each --<option> must be followed by a value.");
+            printUsage();
+            System.exit(1);
+        }
         Map<String, String> opts = new LinkedHashMap<>();
-        for (int i = 0; i + 1 < args.length; i++) {
-            if (args[i].startsWith("--")) {
-                opts.put(args[i].substring(2), args[i + 1]);
-                i++;
+        for (int i = 0; i < args.length; i += 2) {
+            if (!args[i].startsWith("--")) {
+                System.err.println("[jfr-reporter] ERROR: expected --<option> but got: " + args[i]);
+                printUsage();
+                System.exit(1);
             }
+            opts.put(args[i].substring(2), args[i + 1]);
         }
 
         Map<String, Path> moduleDirs = new LinkedHashMap<>();
@@ -43,5 +50,9 @@ public final class Main {
         } else {
             System.err.println("[jfr-reporter] WARN: --" + key + " path not found or not a directory: " + p);
         }
+    }
+
+    private static void printUsage() {
+        System.err.println("Usage: jfr-reporter [--core <dir>] [--community <dir>] --commit <sha> --branch <name> [--out <dir>]");
     }
 }

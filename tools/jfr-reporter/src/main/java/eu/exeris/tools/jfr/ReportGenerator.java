@@ -1,5 +1,8 @@
 package eu.exeris.tools.jfr;
 
+import com.fasterxml.jackson.core.JsonEncoding;
+import com.fasterxml.jackson.core.JsonGenerator;
+import com.fasterxml.jackson.core.util.DefaultPrettyPrinter;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -108,21 +111,28 @@ final class ReportGenerator {
                                Map<String, List<String>> stacksMap,
                                Map<String, String> stackIdCache,
                                AtomicInteger stackCounter) throws IOException {
-        ArrayNode timeline = mapper.createArrayNode();
-        for (AllocEvent e : events) {
-            String stackId = resolveStackId(e.stackFrames(), stacksMap, stackIdCache, stackCounter);
-            ObjectNode node = timeline.addObject();
-            node.put("t", e.tEpochMillis());
-            node.put("type", e.eventType());
-            node.put("class", e.className());
-            node.put("thread", e.threadName());
-            node.put("size", e.sizeBytes());
-            node.put("stackId", stackId);
-            node.put("category", e.category().name());
+        List<AllocEvent> sorted = events.stream()
+                .sorted(Comparator.comparingLong(AllocEvent::tEpochMillis))
+                .toList();
+        java.io.File outFile = outDir.resolve("timeline-" + module + ".json").toFile();
+        try (JsonGenerator gen = mapper.getFactory().createGenerator(outFile, JsonEncoding.UTF8)) {
+            gen.setPrettyPrinter(new DefaultPrettyPrinter());
+            gen.writeStartArray();
+            for (AllocEvent e : sorted) {
+                String stackId = resolveStackId(e.stackFrames(), stacksMap, stackIdCache, stackCounter);
+                gen.writeStartObject();
+                gen.writeNumberField("t", e.tEpochMillis());
+                gen.writeStringField("type", e.eventType());
+                gen.writeStringField("class", e.className());
+                gen.writeStringField("thread", e.threadName());
+                gen.writeNumberField("size", e.sizeBytes());
+                gen.writeStringField("stackId", stackId);
+                gen.writeStringField("category", e.category().name());
+                gen.writeEndObject();
+            }
+            gen.writeEndArray();
         }
-        mapper.writerWithDefaultPrettyPrinter()
-                .writeValue(outDir.resolve("timeline-" + module + ".json").toFile(), timeline);
-        System.out.println("[jfr-reporter] Wrote timeline-" + module + ".json (" + events.size() + " events)");
+        System.out.println("[jfr-reporter] Wrote timeline-" + module + ".json (" + sorted.size() + " events)");
     }
 
     private void writeStacks(String module, Map<String, List<String>> stacksMap) throws IOException {
