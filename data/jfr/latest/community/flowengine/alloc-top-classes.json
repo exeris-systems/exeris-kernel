@@ -1,0 +1,86 @@
+[ {
+  "class" : "java.lang.VirtualThread",
+  "count" : 8,
+  "bytes" : 403856,
+  "category" : "loom_runtime"
+}, {
+  "class" : "java.util.concurrent.ConcurrentHashMap",
+  "count" : 6,
+  "bytes" : 147688,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.util.concurrent.ConcurrentHashMap$Node",
+  "count" : 6,
+  "bytes" : 131632,
+  "category" : "jvm_noise"
+}, {
+  "class" : "[Ljava.util.concurrent.ConcurrentHashMap$Node;",
+  "count" : 6,
+  "bytes" : 5026952,
+  "category" : "jvm_noise"
+}, {
+  "class" : "eu.exeris.kernel.core.flow.RuntimeFlowInstance",
+  "count" : 5,
+  "bytes" : 107688,
+  "category" : "test_harness"
+}, {
+  "class" : "eu.exeris.kernel.core.flow.FlowKey",
+  "count" : 5,
+  "bytes" : 103408,
+  "category" : "test_harness"
+}, {
+  "class" : "eu.exeris.kernel.core.flow.FlowKey",
+  "count" : 4,
+  "bytes" : 104024,
+  "category" : "production"
+}, {
+  "class" : "java.lang.VirtualThread$VThreadContinuation",
+  "count" : 4,
+  "bytes" : 91392,
+  "category" : "loom_runtime"
+}, {
+  "class" : "[B",
+  "count" : 4,
+  "bytes" : 325168,
+  "category" : "jvm_noise"
+}, {
+  "class" : "[I",
+  "count" : 3,
+  "bytes" : 10961200,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.lang.ThreadBuilders$VirtualThreadBuilder",
+  "count" : 2,
+  "bytes" : 51992,
+  "category" : "loom_runtime"
+}, {
+  "class" : "java.lang.VirtualThread$VThreadContinuation$1",
+  "count" : 2,
+  "bytes" : 281272,
+  "category" : "loom_runtime"
+}, {
+  "class" : "eu.exeris.kernel.core.flow.CoreFlowRuntime$$Lambda.0x000000002b633710",
+  "count" : 1,
+  "bytes" : 5044528,
+  "category" : "test_harness"
+}, {
+  "class" : "eu.exeris.kernel.core.flow.RuntimeFlowContext",
+  "count" : 1,
+  "bytes" : 24208,
+  "category" : "test_harness"
+}, {
+  "class" : "java.lang.Object",
+  "count" : 1,
+  "bytes" : 19848,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.util.concurrent.ForkJoinTask$AdaptedRunnableAction",
+  "count" : 1,
+  "bytes" : 19744,
+  "category" : "jvm_noise"
+}, {
+  "class" : "jdk.jfr.events.InitialSecurityPropertyEvent",
+  "count" : 1,
+  "bytes" : 10174232,
+  "category" : "jvm_noise"
+} ]
