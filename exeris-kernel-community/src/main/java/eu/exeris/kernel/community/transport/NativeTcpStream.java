@@ -440,6 +440,7 @@ final class NativeTcpStream implements TransportStream {
         }
     }
 
+    // Contract: this method must only be called by the client writer VT or the reactor loop — never concurrently.
     /* default */ boolean flushPendingWrites() {
         if (closed.get()) {
             return true;

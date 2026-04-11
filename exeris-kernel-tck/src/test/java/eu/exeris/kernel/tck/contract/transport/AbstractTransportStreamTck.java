@@ -21,6 +21,7 @@ import org.junit.jupiter.api.Timeout;
 
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -256,6 +257,55 @@ public abstract class AbstractTransportStreamTck {
                         .as("read() should unblock within 500ms of remote close — got %dms", durationMs)
                         .isLessThanOrEqualTo(500L);
             }
+        }
+    }
+
+    // =========================================================================
+    // queueWrite() concurrent safety — carrier flush ownership
+    // =========================================================================
+
+    @Nested
+    @DisplayName("queueWrite() concurrent safety")
+    class QueueWriteConcurrentSafety {
+
+        @Test
+        @DisplayName("queueWrite() is safe under 50 concurrent VTs — flushing is owned by carrier loop")
+        @Timeout(value = 10, unit = TimeUnit.SECONDS)
+        void concurrentQueueWriteDoesNotThrow() throws InterruptedException {
+            int threadCount = 50;
+            CountDownLatch ready = new CountDownLatch(threadCount);
+            CountDownLatch start = new CountDownLatch(1);
+            AtomicInteger errors = new AtomicInteger(0);
+
+            for (int i = 0; i < threadCount; i++) {
+                Thread.ofVirtual().start(() -> {
+                    ready.countDown();
+                    try {
+                        start.await();
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        errors.incrementAndGet();
+                        return;
+                    }
+                    LoanedBuffer buf = allocator.allocate(AllocationHint.MICRO);
+                    buf.segment().set(ValueLayout.JAVA_BYTE, 0, (byte) 0x01);
+                    try {
+                        streams.writer().queueWrite(buf, 1);
+                    } catch (Exception e) {
+                        errors.incrementAndGet();
+                    }
+                });
+            }
+
+            ready.await();
+            start.countDown();
+
+            Thread.sleep(500);
+
+            assertThat(errors.get())
+                    .as("queueWrite() MUST be safe under concurrent callers — "
+                            + "flushing is owned exclusively by the carrier loop, not by queueWrite() callers")
+                    .isEqualTo(0);
         }
     }
 }

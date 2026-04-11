@@ -650,10 +650,6 @@ public final class NativeTcpCarrier implements TransportEngine {
         if (writer != null) {
             LockSupport.unpark(writer);
         }
-        NativeTcpStream stream = streamByChannel.get(channel);
-        if (stream != null) {
-            stream.flushPendingWrites();
-        }
     }
 
     private void startClientIngressPump(SocketChannel channel, NativeTcpStream stream) {
