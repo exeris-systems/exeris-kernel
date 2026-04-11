@@ -320,36 +320,40 @@ public class CommunityTlsEngineGuardBenchmark extends AbstractExerisBenchmark {
 		}
 
 		// 2) Generate a temporary self-signed cert via the openssl CLI if available.
-		Path tmpDir = Files.createTempDirectory("exeris-bench-tls-");
-		Path certFile = tmpDir.resolve("server.crt");
-		Path keyFile = tmpDir.resolve("server.key");
 		try {
-			String opensslPath = findOnPath("openssl");
-			if (opensslPath == null) {
-				throw new java.io.IOException("openssl not found on PATH");
+			Path tmpDir = Files.createTempDirectory("exeris-bench-tls-");
+			Path certFile = tmpDir.resolve("server.crt");
+			Path keyFile = tmpDir.resolve("server.key");
+			try {
+				String opensslPath = findOnPath("openssl");
+				if (opensslPath == null) {
+					throw new java.io.IOException("openssl not found on PATH");
+				}
+				ProcessBuilder pb = new ProcessBuilder(
+						opensslPath, "req", "-x509", "-newkey", "rsa:2048",
+						"-keyout", keyFile.toString(),
+						"-out", certFile.toString(),
+						"-days", "1", "-nodes",
+						"-subj", "/CN=exeris-benchmark");
+				pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
+				pb.redirectError(ProcessBuilder.Redirect.DISCARD);
+				Process proc = pb.start();
+				int exit = proc.waitFor();
+				if (exit == 0 && Files.exists(certFile) && Files.exists(keyFile)) {
+					tempCertDir = tmpDir;
+					return new Path[]{certFile, keyFile};
+				}
+			} catch (InterruptedException ie) {
+				Thread.currentThread().interrupt();
+			} catch (java.io.IOException ignored) {
+				// openssl not available or failed — clean up and fall through
 			}
-			ProcessBuilder pb = new ProcessBuilder(
-					opensslPath, "req", "-x509", "-newkey", "rsa:2048",
-					"-keyout", keyFile.toString(),
-					"-out", certFile.toString(),
-					"-days", "1", "-nodes",
-					"-subj", "/CN=exeris-benchmark");
-			pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
-			pb.redirectError(ProcessBuilder.Redirect.DISCARD);
-			Process proc = pb.start();
-			int exit = proc.waitFor();
-			if (exit == 0 && Files.exists(certFile) && Files.exists(keyFile)) {
-				tempCertDir = tmpDir;
-				return new Path[]{certFile, keyFile};
-			}
-		} catch (InterruptedException ie) {
-			Thread.currentThread().interrupt();
+			try { Files.deleteIfExists(certFile); } catch (java.io.IOException ignored) {}
+			try { Files.deleteIfExists(keyFile); } catch (java.io.IOException ignored) {}
+			try { Files.deleteIfExists(tmpDir); } catch (java.io.IOException ignored) {}
 		} catch (java.io.IOException ignored) {
-			// openssl not available or failed — clean up and fall through
+			// createTempDirectory failed — fall through to bundled certs
 		}
-		try { Files.deleteIfExists(certFile); } catch (java.io.IOException ignored) {}
-		try { Files.deleteIfExists(keyFile); } catch (java.io.IOException ignored) {}
-		try { Files.deleteIfExists(tmpDir); } catch (java.io.IOException ignored) {}
 
 		// 3) Locate certs bundled in the repository (native-libs/certs).
 		Path certsDir = locateCertsDir();
