@@ -165,13 +165,14 @@ jobs:
       - name: Run JMH Benchmarks
         run: |
           mvn -pl exeris-kernel-community,exeris-kernel-core -am install -DskipTests -B -e
+          mkdir -p exeris-kernel-community/target/jfr-reports exeris-kernel-core/target/jfr-reports
           mvn -pl exeris-kernel-community -P benchmarks \
             -Dbenchmark.forks=1 \
             -Dbenchmark.warmup=3 \
             -Dbenchmark.iterations=5 \
             -Dbenchmark.warmuptime=1s \
             -Dbenchmark.iterationstime=1s \
-            -Dbenchmark.jvmArgsAppend=-XX:StartFlightRecording=name=jmh,filename=target/jmh-recording.jfr,dumponexit=true,settings=default \
+            -Dbenchmark.jvmArgsAppend=-XX:StartFlightRecording=name=jmh,filename=target/jfr-reports/jmh-benchmarks.jfr,dumponexit=true,settings=default \
             verify -B -e
           mvn -pl exeris-kernel-core -P benchmarks \
             -Dbenchmark.forks=1 \
@@ -179,7 +180,7 @@ jobs:
             -Dbenchmark.iterations=5 \
             -Dbenchmark.warmuptime=1s \
             -Dbenchmark.iterationstime=1s \
-            -Dbenchmark.jvmArgsAppend=-XX:StartFlightRecording=name=jmh,filename=target/jmh-recording.jfr,dumponexit=true,settings=default \
+            -Dbenchmark.jvmArgsAppend=-XX:StartFlightRecording=name=jmh,filename=target/jfr-reports/jmh-benchmarks.jfr,dumponexit=true,settings=default \
             verify -B -e
 
       - name: Upload Community benchmark results
@@ -201,7 +202,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: jfr-benchmarks-community-${{ github.run_number }}
-          path: exeris-kernel-community/target/jmh-recording.jfr
+          path: exeris-kernel-community/target/jfr-reports/jmh-benchmarks.jfr
           if-no-files-found: warn
           retention-days: 14
 
@@ -210,7 +211,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: jfr-benchmarks-core-${{ github.run_number }}
-          path: exeris-kernel-core/target/jmh-recording.jfr
+          path: exeris-kernel-core/target/jfr-reports/jmh-benchmarks.jfr
           if-no-files-found: warn
           retention-days: 14
 

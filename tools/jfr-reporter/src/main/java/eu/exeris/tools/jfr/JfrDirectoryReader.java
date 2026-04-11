@@ -34,8 +34,9 @@ final class JfrDirectoryReader {
      */
     static Map<String, List<AllocEvent>> readDirectory(Path dir) throws IOException {
         Map<String, List<AllocEvent>> result = new LinkedHashMap<>();
-        try (Stream<Path> paths = Files.list(dir)) {
+        try (Stream<Path> paths = Files.walk(dir)) {
             List<Path> jfrFiles = paths
+                    .filter(Files::isRegularFile)
                     .filter(p -> p.getFileName().toString().endsWith(".jfr"))
                     .sorted()
                     .toList();
