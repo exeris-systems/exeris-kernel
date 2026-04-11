@@ -320,11 +320,10 @@ public class CommunityTlsEngineGuardBenchmark extends AbstractExerisBenchmark {
 		}
 
 		// 2) Generate a temporary self-signed cert via the openssl CLI if available.
+		Path tmpDir = Files.createTempDirectory("exeris-bench-tls-");
+		Path certFile = tmpDir.resolve("server.crt");
+		Path keyFile = tmpDir.resolve("server.key");
 		try {
-			Path tmpDir = Files.createTempDirectory("exeris-bench-tls-");
-			tempCertDir = tmpDir;
-			Path certFile = tmpDir.resolve("server.crt");
-			Path keyFile = tmpDir.resolve("server.key");
 			String opensslPath = findOnPath("openssl");
 			if (opensslPath == null) {
 				throw new java.io.IOException("openssl not found on PATH");
@@ -340,13 +339,17 @@ public class CommunityTlsEngineGuardBenchmark extends AbstractExerisBenchmark {
 			Process proc = pb.start();
 			int exit = proc.waitFor();
 			if (exit == 0 && Files.exists(certFile) && Files.exists(keyFile)) {
+				tempCertDir = tmpDir;
 				return new Path[]{certFile, keyFile};
 			}
-		} catch (InterruptedException interruptedException) {
+		} catch (InterruptedException ie) {
 			Thread.currentThread().interrupt();
 		} catch (java.io.IOException ignored) {
-			// openssl not available or failed — fall through to bundled certs
+			// openssl not available or failed — clean up and fall through
 		}
+		try { Files.deleteIfExists(certFile); } catch (java.io.IOException ignored) {}
+		try { Files.deleteIfExists(keyFile); } catch (java.io.IOException ignored) {}
+		try { Files.deleteIfExists(tmpDir); } catch (java.io.IOException ignored) {}
 
 		// 3) Locate certs bundled in the repository (native-libs/certs).
 		Path certsDir = locateCertsDir();

@@ -150,7 +150,7 @@ final class ReportGenerator {
             item.put("category", parts[1]);
             topClasses.add(item);
         }
-        topClasses.sort(Comparator.comparingLong((Map<String, Object> m) -> (long) m.get("count")).reversed());
+        topClasses.sort(Comparator.comparingLong((Map<String, Object> m) -> ((Number) m.get("count")).longValue()).reversed());
 
         mapper.writerWithDefaultPrettyPrinter()
                 .writeValue(outDir.resolve("alloc-top-classes-" + module + ".json").toFile(), topClasses);

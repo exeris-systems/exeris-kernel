@@ -60,7 +60,7 @@ jobs:
           name: jfr-tck-${{ github.run_number }}
           path: |
             exeris-kernel-*/target/*.jfr
-            exeris-kernel-*/target/jfr-reports/*.jfr
+            exeris-kernel-*/target/jfr-reports/**/*.jfr
           if-no-files-found: warn
           retention-days: 14
 
@@ -217,7 +217,7 @@ jobs:
   parse-jfr-to-json:
     name: Parse JFR → Lab JSON
     runs-on: ubuntu-latest
-    needs: build-and-verify
+    needs: [build-and-verify, persistence-rls-gate, benchmarks]
     if: (github.event_name == 'push' || github.event_name == 'schedule') && github.ref == 'refs/heads/main'
     permissions:
       contents: read
@@ -257,6 +257,21 @@ jobs:
         with:
           name: jfr-tck-${{ github.run_number }}
           path: .
+
+      - name: Download persistence JFR recordings
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: jfr-persistence-${{ github.run_number }}
+          path: .
+
+      - name: Download benchmark JFR recordings
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          pattern: jfr-benchmarks-*-${{ github.run_number }}
+          path: .
+          merge-multiple: true
 
       - name: Run JFR Reporter
         run: |
