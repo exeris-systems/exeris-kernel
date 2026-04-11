@@ -10,7 +10,6 @@ import jdk.jfr.consumer.RecordingFile;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -61,13 +60,9 @@ final class JfrDirectoryReader {
 
     private static List<AllocEvent> readFile(Path jfrFile) {
         List<AllocEvent> events = new ArrayList<>();
-        Instant recordingStart = null;
         try (RecordingFile rf = new RecordingFile(jfrFile)) {
             while (rf.hasMoreEvents()) {
                 RecordedEvent e = rf.readEvent();
-                if (recordingStart == null) {
-                    recordingStart = e.getStartTime();
-                }
                 String typeName = e.getEventType().getName();
                 if (!ALLOC_TYPES.contains(typeName)) continue;
 
@@ -106,11 +101,9 @@ final class JfrDirectoryReader {
                 }
 
                 Category category = EventClassifier.classify(className, frames);
-                long tMillis = recordingStart != null
-                        ? e.getStartTime().toEpochMilli() - recordingStart.toEpochMilli()
-                        : 0;
+                long tEpochMillis = e.getStartTime().toEpochMilli();
 
-                events.add(new AllocEvent(tMillis, typeName, className, threadName, sizeBytes, frames, category));
+                events.add(new AllocEvent(tEpochMillis, typeName, className, threadName, sizeBytes, frames, category));
             }
         } catch (IOException ex) {
             System.err.println("[jfr-reporter] WARN: failed to read " + jfrFile + ": " + ex.getMessage());

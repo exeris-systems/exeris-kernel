@@ -185,7 +185,7 @@
                 <benchmark.iterationstime>2s</benchmark.iterationstime>
                 <benchmark.jvm.gc>-XX:+UseZGC</benchmark.jvm.gc>
                 <benchmark.jvmArgs></benchmark.jvmArgs>
-                <benchmark.jvmArgsAppend>-Dexeris.jfr=false</benchmark.jvmArgsAppend>
+                <benchmark.jvmArgsAppend/>
                 <excludedGroups>flamegraph</excludedGroups>
             </properties>
             <build>

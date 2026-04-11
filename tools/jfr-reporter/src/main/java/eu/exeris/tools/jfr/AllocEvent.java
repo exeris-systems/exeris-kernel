@@ -3,7 +3,7 @@ package eu.exeris.tools.jfr;
 import java.util.List;
 
 public record AllocEvent(
-        long tMillis,
+        long tEpochMillis,
         String eventType,
         String className,
         String threadName,

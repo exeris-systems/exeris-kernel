@@ -112,7 +112,7 @@ final class ReportGenerator {
         for (AllocEvent e : events) {
             String stackId = resolveStackId(e.stackFrames(), stacksMap, stackIdCache, stackCounter);
             ObjectNode node = timeline.addObject();
-            node.put("t", e.tMillis());
+            node.put("t", e.tEpochMillis());
             node.put("type", e.eventType());
             node.put("class", e.className());
             node.put("thread", e.threadName());

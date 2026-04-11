@@ -129,20 +129,6 @@ public class CommunityTlsEngineGuardBenchmark extends AbstractExerisBenchmark {
 
 	@TearDown(Level.Trial)
 	public void tearDownTrial() {
-		if (tempCertDir != null) {
-			try (java.nio.file.DirectoryStream<Path> stream = Files.newDirectoryStream(tempCertDir)) {
-				for (Path entry : stream) {
-					Files.deleteIfExists(entry);
-				}
-			} catch (java.io.IOException ignored) {
-				// best-effort cleanup
-			}
-			try {
-				Files.deleteIfExists(tempCertDir);
-			} catch (java.io.IOException ignored) {
-				// best-effort cleanup
-			}
-		}
 		if (serverEngine != null) {
 			serverEngine.close();
 		}
@@ -181,6 +167,20 @@ public class CommunityTlsEngineGuardBenchmark extends AbstractExerisBenchmark {
 		}
 		if (provider != null) {
 			provider.close();
+		}
+		if (tempCertDir != null) {
+			try (java.nio.file.DirectoryStream<Path> stream = Files.newDirectoryStream(tempCertDir)) {
+				for (Path entry : stream) {
+					Files.deleteIfExists(entry);
+				}
+			} catch (java.io.IOException ignored) {
+				// best-effort cleanup
+			}
+			try {
+				Files.deleteIfExists(tempCertDir);
+			} catch (java.io.IOException ignored) {
+				// best-effort cleanup
+			}
 		}
 	}
 
@@ -325,8 +325,12 @@ public class CommunityTlsEngineGuardBenchmark extends AbstractExerisBenchmark {
 			tempCertDir = tmpDir;
 			Path certFile = tmpDir.resolve("server.crt");
 			Path keyFile = tmpDir.resolve("server.key");
+			String opensslPath = findOnPath("openssl");
+			if (opensslPath == null) {
+				throw new java.io.IOException("openssl not found on PATH");
+			}
 			ProcessBuilder pb = new ProcessBuilder(
-					"openssl", "req", "-x509", "-newkey", "rsa:2048",
+					opensslPath, "req", "-x509", "-newkey", "rsa:2048",
 					"-keyout", keyFile.toString(),
 					"-out", certFile.toString(),
 					"-days", "1", "-nodes",
@@ -376,5 +380,17 @@ public class CommunityTlsEngineGuardBenchmark extends AbstractExerisBenchmark {
 		} catch (Exception ignored) {
 			// benchmark teardown should be best-effort
 		}
+	}
+
+	private static String findOnPath(String executable) {
+		String pathEnv = System.getenv("PATH");
+		if (pathEnv == null) return null;
+		for (String dir : pathEnv.split(java.io.File.pathSeparator)) {
+			java.io.File candidate = new java.io.File(dir, executable);
+			if (candidate.isFile() && candidate.canExecute()) {
+				return candidate.getAbsolutePath();
+			}
+		}
+		return null;
 	}
 }
