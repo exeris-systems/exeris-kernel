@@ -8,6 +8,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -51,13 +52,38 @@ final class ReportGenerator {
             Map<String, List<AllocEvent>> subsystemEvents = moduleEntry.getValue();
             List<AllocEvent> allEvents = subsystemEvents.values().stream().flatMap(List::stream).toList();
 
+            Path moduleOutDir = outDir.resolve(module);
+            Files.createDirectories(moduleOutDir);
+
+            // Aggregated module-level reports
             Map<String, List<String>> stacksMap = new LinkedHashMap<>();
             AtomicInteger stackCounter = new AtomicInteger(0);
             Map<String, String> stackIdCache = new HashMap<>();
 
-            writeTimeline(module, allEvents, stacksMap, stackIdCache, stackCounter);
-            writeStacks(module, stacksMap);
-            writeAllocTopClasses(module, allEvents);
+            writeTimeline(module, moduleOutDir, allEvents, stacksMap, stackIdCache, stackCounter);
+            writeStacks(module, moduleOutDir, stacksMap);
+            writeAllocTopClasses(module, moduleOutDir, allEvents);
+
+            // Per-subsystem reports
+            for (Map.Entry<String, List<AllocEvent>> subsysEntry : subsystemEvents.entrySet()) {
+                String subsystem = subsysEntry.getKey();
+                List<AllocEvent> subsysEvents = subsysEntry.getValue();
+                if (subsysEvents.isEmpty()) continue;
+
+                String safeSubsystem = subsystem.replaceAll("[^a-zA-Z0-9_\\-]", "_");
+                if (safeSubsystem.isEmpty() || safeSubsystem.equals(".") || safeSubsystem.equals("..")) continue;
+
+                Path subsysOutDir = moduleOutDir.resolve(safeSubsystem);
+                Files.createDirectories(subsysOutDir);
+
+                Map<String, List<String>> subsysStacksMap = new LinkedHashMap<>();
+                AtomicInteger subsysStackCounter = new AtomicInteger(0);
+                Map<String, String> subsysStackIdCache = new HashMap<>();
+
+                writeTimeline(module + "/" + safeSubsystem, subsysOutDir, subsysEvents, subsysStacksMap, subsysStackIdCache, subsysStackCounter);
+                writeStacks(module + "/" + safeSubsystem, subsysOutDir, subsysStacksMap);
+                writeAllocTopClasses(module + "/" + safeSubsystem, subsysOutDir, subsysEvents);
+            }
         }
 
         writeJfrSummary(allModuleEvents);
@@ -107,14 +133,14 @@ final class ReportGenerator {
         return productionCount < 1000 ? "VERIFIED" : "WARNING";
     }
 
-    private void writeTimeline(String module, List<AllocEvent> events,
+    private void writeTimeline(String module, Path moduleOutDir, List<AllocEvent> events,
                                Map<String, List<String>> stacksMap,
                                Map<String, String> stackIdCache,
                                AtomicInteger stackCounter) throws IOException {
         List<AllocEvent> sorted = events.stream()
                 .sorted(Comparator.comparingLong(AllocEvent::tEpochMillis))
                 .toList();
-        java.io.File outFile = outDir.resolve("timeline-" + module + ".json").toFile();
+        java.io.File outFile = moduleOutDir.resolve("timeline.json").toFile();
         try (JsonGenerator gen = mapper.getFactory().createGenerator(outFile, JsonEncoding.UTF8)) {
             gen.setPrettyPrinter(new DefaultPrettyPrinter());
             gen.writeStartArray();
@@ -132,16 +158,16 @@ final class ReportGenerator {
             }
             gen.writeEndArray();
         }
-        System.out.println("[jfr-reporter] Wrote timeline-" + module + ".json (" + sorted.size() + " events)");
+        System.out.println("[jfr-reporter] Wrote " + module + "/timeline.json (" + sorted.size() + " events)");
     }
 
-    private void writeStacks(String module, Map<String, List<String>> stacksMap) throws IOException {
+    private void writeStacks(String module, Path moduleOutDir, Map<String, List<String>> stacksMap) throws IOException {
         mapper.writerWithDefaultPrettyPrinter()
-                .writeValue(outDir.resolve("stacks-" + module + ".json").toFile(), stacksMap);
-        System.out.println("[jfr-reporter] Wrote stacks-" + module + ".json (" + stacksMap.size() + " stacks)");
+                .writeValue(moduleOutDir.resolve("stacks.json").toFile(), stacksMap);
+        System.out.println("[jfr-reporter] Wrote " + module + "/stacks.json (" + stacksMap.size() + " stacks)");
     }
 
-    private void writeAllocTopClasses(String module, List<AllocEvent> events) throws IOException {
+    private void writeAllocTopClasses(String module, Path moduleOutDir, List<AllocEvent> events) throws IOException {
         Map<String, long[]> countMap = new LinkedHashMap<>();
         for (AllocEvent e : events) {
             String key = e.className() + "|" + e.category().name();
@@ -163,8 +189,8 @@ final class ReportGenerator {
         topClasses.sort(Comparator.comparingLong((Map<String, Object> m) -> ((Number) m.get("count")).longValue()).reversed());
 
         mapper.writerWithDefaultPrettyPrinter()
-                .writeValue(outDir.resolve("alloc-top-classes-" + module + ".json").toFile(), topClasses);
-        System.out.println("[jfr-reporter] Wrote alloc-top-classes-" + module + ".json (" + topClasses.size() + " classes)");
+                .writeValue(moduleOutDir.resolve("alloc-top-classes.json").toFile(), topClasses);
+        System.out.println("[jfr-reporter] Wrote " + module + "/alloc-top-classes.json (" + topClasses.size() + " classes)");
     }
 
     private void writeJfrSummary(Map<String, Map<String, List<AllocEvent>>> allModuleEvents) throws IOException {
