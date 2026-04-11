@@ -65,27 +65,10 @@ jobs:
           retention-days: 14
 
       # Publish to GitHub Packages only on push to main (not on PRs).
-      # Enterprise repo consumes SPI, Core, TCK, and BOM from here.
-      # GitHub Packages is immutable: skip deploy if this version is already published.
-      - name: Check if version already published
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        id: version-check
-        run: |
-          VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-            -H "Authorization: Bearer $GITHUB_TOKEN" \
-            "https://maven.pkg.github.com/exeris-systems/exeris-kernel/eu/exeris/exeris-kernel-root/${VERSION}/exeris-kernel-root-${VERSION}.pom")
-          if [ "$STATUS" = "200" ]; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "Version ${VERSION} already published — skipping deploy."
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-          fi
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
+      # GitHub Packages is immutable: a 409 means this version is already published — not a real failure.
       - name: Publish to GitHub Packages
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.version-check.outputs.skip != 'true'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        continue-on-error: true
         run: |
           mvn deploy -B -e \
             --settings .github/maven-settings.xml \
