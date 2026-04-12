@@ -1,617 +1,642 @@
 [ {
   "class" : "[J",
-  "count" : 543,
-  "bytes" : 178404704,
-  "category" : "jvm_noise"
-}, {
-  "class" : "[B",
-  "count" : 483,
-  "bytes" : 133981784,
+  "count" : 728,
+  "bytes" : 131717944,
   "category" : "jvm_noise"
 }, {
   "class" : "[Ljava.lang.Object;",
-  "count" : 476,
-  "bytes" : 146681112,
+  "count" : 494,
+  "bytes" : 146099080,
+  "category" : "jvm_noise"
+}, {
+  "class" : "[B",
+  "count" : 451,
+  "bytes" : 135757896,
   "category" : "jvm_noise"
 }, {
   "class" : "java.lang.VirtualThread",
-  "count" : 351,
-  "bytes" : 54295272,
+  "count" : 390,
+  "bytes" : 204049896,
   "category" : "loom_runtime"
 }, {
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000002b0f0208",
-  "count" : 289,
-  "bytes" : 14956000,
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000860f11f0",
+  "count" : 303,
+  "bytes" : 18360016,
   "category" : "loom_runtime"
+}, {
+  "class" : "[Lorg.h2.mvstore.MVMap;",
+  "count" : 155,
+  "bytes" : 138228544,
+  "category" : "jvm_noise"
 }, {
   "class" : "jdk.internal.vm.StackChunk",
-  "count" : 172,
-  "bytes" : 6636576,
+  "count" : 154,
+  "bytes" : 3978264,
   "category" : "jvm_noise"
 }, {
   "class" : "[I",
-  "count" : 162,
-  "bytes" : 58663088,
-  "category" : "jvm_noise"
-}, {
-  "class" : "[Lorg.h2.mvstore.MVMap;",
-  "count" : 154,
-  "bytes" : 111112280,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.lang.String",
-  "count" : 141,
-  "bytes" : 24644488,
+  "count" : 152,
+  "bytes" : 107437192,
   "category" : "jvm_noise"
 }, {
   "class" : "java.util.ArrayList",
-  "count" : 116,
-  "bytes" : 62008296,
+  "count" : 128,
+  "bytes" : 22548360,
   "category" : "jvm_noise"
 }, {
   "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
-  "count" : 105,
-  "bytes" : 7437320,
+  "count" : 127,
+  "bytes" : 27152544,
   "category" : "test_harness"
 }, {
-  "class" : "java.util.concurrent.ForkJoinTask$AdaptedRunnableAction",
-  "count" : 99,
-  "bytes" : 4840856,
+  "class" : "java.lang.String",
+  "count" : 119,
+  "bytes" : 48437840,
   "category" : "jvm_noise"
 }, {
-  "class" : "java.util.ArrayList$Itr",
-  "count" : 85,
-  "bytes" : 17313504,
+  "class" : "[Ljava.util.HashMap$Node;",
+  "count" : 88,
+  "bytes" : 21467584,
   "category" : "jvm_noise"
 }, {
   "class" : "eu.exeris.kernel.community.memory.CommunityReleaseAction",
-  "count" : 78,
-  "bytes" : 3840360,
+  "count" : 86,
+  "bytes" : 3890464,
   "category" : "test_harness"
 }, {
-  "class" : "[Ljava.util.HashMap$Node;",
-  "count" : 77,
-  "bytes" : 17882616,
+  "class" : "java.util.HashMap",
+  "count" : 60,
+  "bytes" : 9235368,
   "category" : "jvm_noise"
 }, {
   "class" : "jdk.jfr.internal.MetadataDescriptor$Attribute",
-  "count" : 65,
-  "bytes" : 9112192,
+  "count" : 57,
+  "bytes" : 9088456,
   "category" : "jvm_noise"
 }, {
-  "class" : "[Ljava.lang.classfile.constantpool.PoolEntry;",
-  "count" : 64,
-  "bytes" : 21167144,
-  "category" : "jvm_noise"
-}, {
-  "class" : "[Lorg.h2.mvstore.Page$PageReference;",
-  "count" : 62,
-  "bytes" : 53080464,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.util.LinkedHashMap$Entry",
-  "count" : 61,
-  "bytes" : 14830248,
-  "category" : "jvm_noise"
-}, {
-  "class" : "[Lorg.h2.value.VersionedValue;",
-  "count" : 48,
-  "bytes" : 47331168,
-  "category" : "jvm_noise"
-}, {
-  "class" : "jdk.jfr.internal.MetadataDescriptor$Element",
-  "count" : 47,
-  "bytes" : 6859520,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.util.HashMap",
-  "count" : 46,
-  "bytes" : 9099040,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.lang.reflect.Method",
-  "count" : 46,
-  "bytes" : 32987160,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.util.HashMap$Node",
-  "count" : 42,
-  "bytes" : 89467816,
-  "category" : "jvm_noise"
-}, {
-  "class" : "jdk.internal.classfile.impl.AbstractPoolEntry$Utf8EntryImpl",
-  "count" : 40,
-  "bytes" : 6893864,
-  "category" : "jvm_noise"
-}, {
-  "class" : "jdk.jfr.consumer.RecordedEvent",
-  "count" : 36,
-  "bytes" : 9153800,
+  "class" : "java.util.ArrayList$Itr",
+  "count" : 56,
+  "bytes" : 11112416,
   "category" : "jvm_noise"
 }, {
   "class" : "eu.exeris.kernel.community.memory.CommunityArenaShardPool$Allocation",
-  "count" : 34,
-  "bytes" : 8737632,
+  "count" : 51,
+  "bytes" : 1494656,
   "category" : "test_harness"
 }, {
+  "class" : "[Ljava.lang.classfile.constantpool.PoolEntry;",
+  "count" : 51,
+  "bytes" : 18812136,
+  "category" : "jvm_noise"
+}, {
   "class" : "java.util.concurrent.ConcurrentHashMap$Node",
-  "count" : 33,
-  "bytes" : 3199896,
+  "count" : 50,
+  "bytes" : 16988464,
   "category" : "jvm_noise"
 }, {
-  "class" : "java.util.stream.ReferencePipeline$Head",
-  "count" : 32,
-  "bytes" : 41897912,
+  "class" : "java.util.HashMap$Node",
+  "count" : 48,
+  "bytes" : 10421656,
   "category" : "jvm_noise"
 }, {
-  "class" : "java.lang.VirtualThread$VThreadContinuation",
-  "count" : 31,
-  "bytes" : 2928920,
+  "class" : "[Ljava.lang.Class;",
+  "count" : 45,
+  "bytes" : 14732792,
+  "category" : "jvm_noise"
+}, {
+  "class" : "[Lorg.h2.value.VersionedValue;",
+  "count" : 45,
+  "bytes" : 11763928,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.lang.reflect.Method",
+  "count" : 44,
+  "bytes" : 11750728,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.lang.ThreadBuilders$VirtualThreadBuilder",
+  "count" : 40,
+  "bytes" : 915752,
   "category" : "loom_runtime"
 }, {
+  "class" : "java.lang.VirtualThread$VThreadContinuation",
+  "count" : 38,
+  "bytes" : 11679528,
+  "category" : "loom_runtime"
+}, {
+  "class" : "jdk.jfr.internal.MetadataDescriptor$Element",
+  "count" : 38,
+  "bytes" : 5343408,
+  "category" : "jvm_noise"
+}, {
   "class" : "java.util.concurrent.ConcurrentLinkedQueue$Node",
-  "count" : 29,
-  "bytes" : 18661016,
+  "count" : 38,
+  "bytes" : 17026264,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.nio.DirectByteBuffer",
+  "count" : 37,
+  "bytes" : 1318128,
+  "category" : "jvm_noise"
+}, {
+  "class" : "jdk.internal.classfile.impl.AbstractPoolEntry$Utf8EntryImpl",
+  "count" : 37,
+  "bytes" : 7443000,
   "category" : "jvm_noise"
 }, {
   "class" : "[Ljava.lang.annotation.Annotation;",
-  "count" : 29,
-  "bytes" : 18276096,
+  "count" : 37,
+  "bytes" : 9516624,
+  "category" : "jvm_noise"
+}, {
+  "class" : "[Lorg.h2.mvstore.Page$PageReference;",
+  "count" : 37,
+  "bytes" : 9673248,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.util.concurrent.ForkJoinTask$AdaptedRunnableAction",
+  "count" : 34,
+  "bytes" : 5236752,
+  "category" : "jvm_noise"
+}, {
+  "class" : "jdk.jfr.consumer.RecordedEvent",
+  "count" : 33,
+  "bytes" : 8631352,
   "category" : "jvm_noise"
 }, {
   "class" : "java.util.LinkedHashMap",
-  "count" : 26,
-  "bytes" : 4322480,
-  "category" : "jvm_noise"
-}, {
-  "class" : "jdk.internal.loader.AbstractClassLoaderValue$Sub",
-  "count" : 26,
-  "bytes" : 6775248,
-  "category" : "jvm_noise"
-}, {
-  "class" : "[Ljava.lang.String;",
-  "count" : 24,
-  "bytes" : 4042560,
+  "count" : 32,
+  "bytes" : 15095032,
   "category" : "jvm_noise"
 }, {
   "class" : "org.h2.mvstore.RootReference",
-  "count" : 24,
-  "bytes" : 6039504,
+  "count" : 30,
+  "bytes" : 7846232,
   "category" : "jvm_noise"
 }, {
-  "class" : "org.h2.mvstore.Page$NonLeaf",
-  "count" : 24,
-  "bytes" : 25105376,
+  "class" : "java.util.stream.ReferencePipeline$Head",
+  "count" : 28,
+  "bytes" : 30735800,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.util.LinkedHashMap$Entry",
+  "count" : 27,
+  "bytes" : 4535224,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.util.HashSet",
+  "count" : 26,
+  "bytes" : 3217976,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.util.concurrent.CopyOnWriteArrayList$COWIterator",
+  "count" : 25,
+  "bytes" : 747688,
   "category" : "jvm_noise"
 }, {
   "class" : "java.lang.VirtualThread$VThreadContinuation$1",
-  "count" : 23,
-  "bytes" : 3797128,
+  "count" : 24,
+  "bytes" : 4031312,
   "category" : "loom_runtime"
 }, {
-  "class" : "java.util.stream.ReferencePipeline$2",
-  "count" : 23,
-  "bytes" : 5582144,
+  "class" : "[Ljava.lang.String;",
+  "count" : 24,
+  "bytes" : 8184304,
   "category" : "jvm_noise"
 }, {
-  "class" : "org.h2.mvstore.Page$Leaf",
+  "class" : "java.util.HashMap$KeyIterator",
   "count" : 23,
-  "bytes" : 5871832,
+  "bytes" : 7006432,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.util.stream.ReferencePipeline$2",
+  "count" : 22,
+  "bytes" : 4716840,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.util.stream.ReferencePipeline$3",
+  "count" : 21,
+  "bytes" : 64766016,
   "category" : "jvm_noise"
 }, {
   "class" : "java.lang.Long",
   "count" : 21,
-  "bytes" : 3764456,
+  "bytes" : 4622192,
   "category" : "jvm_noise"
 }, {
-  "class" : "java.util.HashSet",
+  "class" : "java.lang.reflect.Field",
+  "count" : 21,
+  "bytes" : 1302896,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.lang.ThreadLocal$ThreadLocalMap$Entry",
   "count" : 20,
-  "bytes" : 2928232,
+  "bytes" : 1726712,
   "category" : "jvm_noise"
 }, {
-  "class" : "org.h2.mvstore.CursorPos",
+  "class" : "[Ljava.lang.ThreadLocal$ThreadLocalMap$Entry;",
   "count" : 20,
-  "bytes" : 5231184,
+  "bytes" : 2435264,
   "category" : "jvm_noise"
 }, {
-  "class" : "org.h2.mvstore.Page$PageReference",
-  "count" : 20,
-  "bytes" : 5231032,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.util.HashMap$KeyIterator",
+  "class" : "jdk.internal.loader.AbstractClassLoaderValue$Sub",
   "count" : 19,
-  "bytes" : 1851352,
-  "category" : "jvm_noise"
-}, {
-  "class" : "[Ljava.lang.Class;",
-  "count" : 19,
-  "bytes" : 15311496,
+  "bytes" : 4787248,
   "category" : "jvm_noise"
 }, {
   "class" : "jdk.internal.foreign.NativeMemorySegmentImpl",
   "count" : 18,
-  "bytes" : 1782064,
+  "bytes" : 1380880,
   "category" : "panama"
 }, {
   "class" : "[Ljava.util.concurrent.ConcurrentHashMap$Node;",
   "count" : 18,
-  "bytes" : 11142432,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.lang.reflect.Field",
-  "count" : 18,
-  "bytes" : 1552016,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.lang.invoke.MethodType",
-  "count" : 17,
-  "bytes" : 3547560,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.util.stream.ReferencePipeline$3",
-  "count" : 17,
-  "bytes" : 3865552,
-  "category" : "jvm_noise"
-}, {
-  "class" : "org.h2.table.TableFilter",
-  "count" : 16,
-  "bytes" : 666656,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.util.concurrent.ConcurrentHashMap",
-  "count" : 16,
-  "bytes" : 1090504,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.lang.Integer",
-  "count" : 16,
-  "bytes" : 3412864,
+  "bytes" : 13277648,
   "category" : "jvm_noise"
 }, {
   "class" : "java.util.ImmutableCollections$List12",
-  "count" : 16,
-  "bytes" : 3578296,
+  "count" : 18,
+  "bytes" : 3468872,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.lang.Object",
+  "count" : 17,
+  "bytes" : 2306672,
   "category" : "jvm_noise"
 }, {
   "class" : "java.nio.StringCharBuffer",
   "count" : 16,
-  "bytes" : 3366808,
+  "bytes" : 3108016,
   "category" : "jvm_noise"
 }, {
-  "class" : "java.util.concurrent.CopyOnWriteArrayList$COWIterator",
+  "class" : "eu.exeris.kernel.core.events.InMemoryEventBus$$Lambda.0x00000000863ad248",
   "count" : 15,
-  "bytes" : 1648392,
+  "bytes" : 1690512,
+  "category" : "test_harness"
+}, {
+  "class" : "java.util.concurrent.atomic.AtomicBoolean",
+  "count" : 15,
+  "bytes" : 1867600,
   "category" : "jvm_noise"
 }, {
-  "class" : "java.lang.ThreadLocal$ThreadLocalMap$Entry",
-  "count" : 14,
-  "bytes" : 892648,
+  "class" : "org.h2.mvstore.Page$Leaf",
+  "count" : 15,
+  "bytes" : 3013528,
   "category" : "jvm_noise"
 }, {
-  "class" : "org.h2.command.query.Select",
-  "count" : 13,
-  "bytes" : 1353752,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.lang.Class",
-  "count" : 13,
-  "bytes" : 1813152,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.lang.ThreadBuilders$VirtualThreadBuilder",
-  "count" : 12,
-  "bytes" : 173344,
-  "category" : "loom_runtime"
-}, {
-  "class" : "jdk.internal.classfile.impl.StackMapGenerator",
-  "count" : 12,
-  "bytes" : 2705944,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.util.HashMap$KeySet",
-  "count" : 11,
-  "bytes" : 100933096,
-  "category" : "jvm_noise"
-}, {
-  "class" : "[Ljava.lang.ThreadLocal$ThreadLocalMap$Entry;",
-  "count" : 11,
-  "bytes" : 177024,
+  "class" : "org.h2.mvstore.CursorPos",
+  "count" : 15,
+  "bytes" : 3923392,
   "category" : "jvm_noise"
 }, {
   "class" : "eu.exeris.kernel.core.flow.FlowKey",
-  "count" : 11,
-  "bytes" : 227544,
-  "category" : "test_harness"
+  "count" : 14,
+  "bytes" : 306944,
+  "category" : "production"
 }, {
-  "class" : "java.lang.StringBuilder",
-  "count" : 11,
-  "bytes" : 1618336,
+  "class" : "java.util.Optional",
+  "count" : 14,
+  "bytes" : 3513480,
   "category" : "jvm_noise"
 }, {
-  "class" : "net.bytebuddy.description.type.TypeDescription$ForLoadedType",
-  "count" : 11,
-  "bytes" : 2852352,
+  "class" : "java.lang.Integer",
+  "count" : 14,
+  "bytes" : 3040424,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.util.concurrent.ConcurrentHashMap",
+  "count" : 13,
+  "bytes" : 2163688,
   "category" : "jvm_noise"
 }, {
   "class" : "[Lorg.h2.result.SearchRow;",
+  "count" : 13,
+  "bytes" : 3397792,
+  "category" : "jvm_noise"
+}, {
+  "class" : "org.h2.mvstore.Page$NonLeaf",
+  "count" : 13,
+  "bytes" : 3399976,
+  "category" : "jvm_noise"
+}, {
+  "class" : "jdk.jfr.AnnotationElement",
+  "count" : 12,
+  "bytes" : 2593832,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.lang.invoke.MethodType",
+  "count" : 12,
+  "bytes" : 2625008,
+  "category" : "jvm_noise"
+}, {
+  "class" : "jdk.jfr.internal.consumer.Reference",
+  "count" : 12,
+  "bytes" : 3138600,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.lang.StringBuilder",
+  "count" : 12,
+  "bytes" : 2214888,
+  "category" : "jvm_noise"
+}, {
+  "class" : "net.bytebuddy.description.type.TypeDescription$ForLoadedType",
+  "count" : 12,
+  "bytes" : 3138432,
+  "category" : "jvm_noise"
+}, {
+  "class" : "org.h2.command.query.Select",
   "count" : 11,
-  "bytes" : 2875024,
+  "bytes" : 1095184,
   "category" : "jvm_noise"
 }, {
-  "class" : "org.h2.table.PlanItem",
-  "count" : 10,
-  "bytes" : 1308080,
+  "class" : "java.nio.HeapByteBuffer",
+  "count" : 11,
+  "bytes" : 3919888,
   "category" : "jvm_noise"
 }, {
-  "class" : "eu.exeris.kernel.core.flow.RuntimeFlowInstance",
+  "class" : "org.h2.mvstore.db.ValueDataType",
   "count" : 10,
-  "bytes" : 215376,
-  "category" : "test_harness"
-}, {
-  "class" : "java.lang.invoke.MemberName",
-  "count" : 10,
-  "bytes" : 1413528,
+  "bytes" : 1318496,
   "category" : "jvm_noise"
 }, {
-  "class" : "[Ljdk.internal.classfile.impl.StackMapGenerator$Type;",
+  "class" : "java.net.URL",
   "count" : 10,
-  "bytes" : 68513600,
+  "bytes" : 2497272,
   "category" : "jvm_noise"
 }, {
-  "class" : "java.util.LinkedHashMap$LinkedKeyIterator",
+  "class" : "java.util.Collections$UnmodifiableCollection$1",
   "count" : 10,
-  "bytes" : 2615512,
+  "bytes" : 2435672,
   "category" : "jvm_noise"
 }, {
-  "class" : "java.util.Optional",
+  "class" : "java.math.MutableBigInteger",
   "count" : 10,
-  "bytes" : 2356560,
+  "bytes" : 2615544,
   "category" : "jvm_noise"
 }, {
-  "class" : "java.util.ImmutableCollections$ListItr",
+  "class" : "org.h2.mvstore.Page$PageReference",
   "count" : 10,
-  "bytes" : 1360824,
+  "bytes" : 2615504,
   "category" : "jvm_noise"
 }, {
-  "class" : "org.h2.mvstore.tx.TxDecisionMaker",
+  "class" : "[Lorg.bouncycastle.crypto.generators.Argon2BytesGenerator$Block;",
   "count" : 10,
-  "bytes" : 2615304,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.util.concurrent.atomic.AtomicBoolean",
-  "count" : 10,
-  "bytes" : 1546808,
-  "category" : "jvm_noise"
-}, {
-  "class" : "org.h2.command.Parser",
-  "count" : 9,
-  "bytes" : 601920,
+  "bytes" : 543714616,
   "category" : "jvm_noise"
 }, {
   "class" : "java.time.Instant",
   "count" : 9,
-  "bytes" : 34521432,
+  "bytes" : 1079624,
   "category" : "jvm_noise"
 }, {
-  "class" : "java.util.stream.Nodes$SpinedNodeBuilder",
+  "class" : "java.lang.Class",
   "count" : 9,
-  "bytes" : 1955376,
-  "category" : "jvm_noise"
-}, {
-  "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
-  "count" : 9,
-  "bytes" : 349488,
-  "category" : "production"
-}, {
-  "class" : "eu.exeris.kernel.core.flow.FlowKey",
-  "count" : 8,
-  "bytes" : 208048,
-  "category" : "production"
-}, {
-  "class" : "java.util.stream.ReferencePipeline$2$1",
-  "count" : 8,
-  "bytes" : 1754168,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.util.stream.ReferencePipeline$3$1",
-  "count" : 8,
-  "bytes" : 2005560,
-  "category" : "jvm_noise"
-}, {
-  "class" : "jdk.jfr.AnnotationElement",
-  "count" : 8,
-  "bytes" : 1350496,
-  "category" : "jvm_noise"
-}, {
-  "class" : "eu.exeris.kernel.community.memory.CommunityReleaseAction",
-  "count" : 8,
-  "bytes" : 17128,
-  "category" : "production"
-}, {
-  "class" : "eu.exeris.kernel.community.memory.CommunityArenaShardPool$Allocation",
-  "count" : 8,
-  "bytes" : 16704,
-  "category" : "production"
-}, {
-  "class" : "jdk.jfr.internal.consumer.Reference",
-  "count" : 8,
-  "bytes" : 2043256,
-  "category" : "jvm_noise"
-}, {
-  "class" : "org.h2.result.SimpleRowValue",
-  "count" : 8,
-  "bytes" : 2092392,
-  "category" : "jvm_noise"
-}, {
-  "class" : "[Lorg.bouncycastle.crypto.generators.Argon2BytesGenerator$Block;",
-  "count" : 8,
-  "bytes" : 489423264,
-  "category" : "jvm_noise"
-}, {
-  "class" : "[Ljdk.jfr.internal.util.TimespanUnit;",
-  "count" : 7,
-  "bytes" : 1830824,
+  "bytes" : 1890624,
   "category" : "jvm_noise"
 }, {
   "class" : "org.h2.command.query.Optimizer",
-  "count" : 7,
-  "bytes" : 560280,
+  "count" : 8,
+  "bytes" : 1046528,
   "category" : "jvm_noise"
 }, {
-  "class" : "java.nio.DirectByteBuffer",
-  "count" : 7,
-  "bytes" : 75656,
+  "class" : "[Lorg.h2.value.Value;",
+  "count" : 8,
+  "bytes" : 26933016,
   "category" : "jvm_noise"
 }, {
-  "class" : "java.util.ArrayList$ArrayListSpliterator",
-  "count" : 7,
-  "bytes" : 1669968,
+  "class" : "org.h2.mvstore.tx.Transaction",
+  "count" : 8,
+  "bytes" : 843992,
   "category" : "jvm_noise"
 }, {
-  "class" : "java.util.Collections$UnmodifiableCollection$1",
+  "class" : "jdk.internal.classfile.impl.AbstractPoolEntry$ClassEntryImpl",
+  "count" : 8,
+  "bytes" : 1445848,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.lang.invoke.MemberName",
+  "count" : 8,
+  "bytes" : 1377168,
+  "category" : "jvm_noise"
+}, {
+  "class" : "org.h2.mvstore.tx.TransactionMap",
+  "count" : 8,
+  "bytes" : 2092360,
+  "category" : "jvm_noise"
+}, {
+  "class" : "org.h2.mvstore.tx.TxDecisionMaker$PutIfAbsentDecisionMaker",
+  "count" : 8,
+  "bytes" : 2092056,
+  "category" : "jvm_noise"
+}, {
+  "class" : "org.h2.command.Parser",
+  "count" : 7,
+  "bytes" : 811056,
+  "category" : "jvm_noise"
+}, {
+  "class" : "org.h2.table.TableFilter",
+  "count" : 7,
+  "bytes" : 569784,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.util.LinkedHashMap$LinkedEntryIterator",
+  "count" : 7,
+  "bytes" : 1830800,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.util.stream.ReferencePipeline$3$1",
+  "count" : 7,
+  "bytes" : 62170176,
+  "category" : "jvm_noise"
+}, {
+  "class" : "jdk.internal.classfile.impl.StackMapGenerator",
+  "count" : 7,
+  "bytes" : 1201728,
+  "category" : "jvm_noise"
+}, {
+  "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
+  "count" : 7,
+  "bytes" : 1082704,
+  "category" : "production"
+}, {
+  "class" : "net.bytebuddy.description.type.TypeDescription$Generic$OfNonGenericType$ForLoadedType",
   "count" : 7,
   "bytes" : 1830872,
   "category" : "jvm_noise"
 }, {
-  "class" : "jdk.jfr.internal.AnnotationConstruct",
-  "count" : 7,
-  "bytes" : 1274344,
-  "category" : "jvm_noise"
-}, {
-  "class" : "net.bytebuddy.description.type.TypeDescription$Generic$OfNonGenericType$ForLoadedType",
-  "count" : 7,
-  "bytes" : 1814496,
-  "category" : "jvm_noise"
-}, {
-  "class" : "net.bytebuddy.description.method.MethodDescription$ForLoadedMethod",
-  "count" : 7,
-  "bytes" : 1830856,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.lang.StackFrameInfo",
-  "count" : 7,
-  "bytes" : 857344,
-  "category" : "jvm_noise"
-}, {
-  "class" : "eu.exeris.kernel.core.events.InMemoryEventBus$$Lambda.0x000000002b3adfa0",
+  "class" : "[Ljdk.jfr.internal.util.TimespanUnit;",
   "count" : 6,
-  "bytes" : 69408,
+  "bytes" : 1126200,
+  "category" : "jvm_noise"
+}, {
+  "class" : "eu.exeris.kernel.core.flow.CoreFlowRuntime$$Lambda.0x0000000086633000",
+  "count" : 6,
+  "bytes" : 125488,
   "category" : "test_harness"
 }, {
-  "class" : "[Lorg.h2.value.Value;",
+  "class" : "java.util.concurrent.ConcurrentHashMap$ReservationNode",
   "count" : 6,
-  "bytes" : 1046256,
+  "bytes" : 1057568,
   "category" : "jvm_noise"
 }, {
-  "class" : "[Lcom.zaxxer.hikari.util.ConcurrentBag$IConcurrentBagEntry;",
+  "class" : "java.util.LinkedHashMap$LinkedKeyIterator",
   "count" : 6,
-  "bytes" : 945624,
-  "category" : "jvm_noise"
-}, {
-  "class" : "jdk.internal.classfile.impl.BufWriterImpl",
-  "count" : 6,
-  "bytes" : 15802648,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.util.LinkedHashMap$LinkedEntryIterator",
-  "count" : 6,
-  "bytes" : 1569296,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.util.stream.ReduceOps$3ReducingSink",
-  "count" : 6,
-  "bytes" : 1476136,
+  "bytes" : 1569288,
   "category" : "jvm_noise"
 }, {
   "class" : "java.util.stream.Collectors$CollectorImpl",
   "count" : 6,
-  "bytes" : 1383792,
+  "bytes" : 21082984,
   "category" : "jvm_noise"
 }, {
-  "class" : "java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionNode",
+  "class" : "jdk.internal.classfile.impl.StackMapGenerator$Frame",
   "count" : 6,
-  "bytes" : 14904,
+  "bytes" : 1144256,
   "category" : "jvm_noise"
 }, {
-  "class" : "[Ljava.lang.Long;",
+  "class" : "java.util.ImmutableCollections$ListItr",
   "count" : 6,
-  "bytes" : 1562808,
+  "bytes" : 1105800,
   "category" : "jvm_noise"
 }, {
-  "class" : "org.h2.mvstore.tx.VersionedValueUncommitted",
+  "class" : "java.util.HashMap$KeySet",
+  "count" : 6,
+  "bytes" : 21048416,
+  "category" : "jvm_noise"
+}, {
+  "class" : "org.h2.mvstore.tx.Record",
+  "count" : 6,
+  "bytes" : 1569312,
+  "category" : "jvm_noise"
+}, {
+  "class" : "org.h2.result.SimpleRowValue",
   "count" : 6,
   "bytes" : 1569320,
   "category" : "jvm_noise"
 }, {
   "class" : "org.h2.mvstore.Cursor",
   "count" : 6,
-  "bytes" : 1830712,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.util.AbstractList$Itr",
-  "count" : 6,
-  "bytes" : 1569296,
-  "category" : "jvm_noise"
-}, {
-  "class" : "[C",
-  "count" : 6,
-  "bytes" : 2190272,
-  "category" : "jvm_noise"
-}, {
-  "class" : "org.h2.mvstore.db.ValueDataType",
-  "count" : 5,
-  "bytes" : 784672,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.util.BitSet",
-  "count" : 5,
-  "bytes" : 550808,
-  "category" : "jvm_noise"
-}, {
-  "class" : "org.h2.mvstore.tx.Transaction",
-  "count" : 5,
-  "bytes" : 468792,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.lang.Object",
-  "count" : 5,
-  "bytes" : 327976,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.net.URL",
-  "count" : 5,
-  "bytes" : 796176,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.lang.invoke.InnerClassLambdaMetafactory",
-  "count" : 5,
-  "bytes" : 1015088,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.util.concurrent.atomic.AtomicInteger",
-  "count" : 5,
-  "bytes" : 619664,
-  "category" : "jvm_noise"
-}, {
-  "class" : "jdk.internal.classfile.impl.ClassHierarchyImpl$CachedClassHierarchyResolver",
-  "count" : 5,
-  "bytes" : 588488,
-  "category" : "jvm_noise"
-}, {
-  "class" : "org.h2.command.Token$IdentifierToken",
-  "count" : 5,
-  "bytes" : 306688,
+  "bytes" : 1569192,
   "category" : "jvm_noise"
 }, {
   "class" : "org.h2.mvstore.tx.TxDecisionMaker$LockDecisionMaker",
+  "count" : 6,
+  "bytes" : 1569176,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.lang.StackFrameInfo",
+  "count" : 6,
+  "bytes" : 1334296,
+  "category" : "jvm_noise"
+}, {
+  "class" : "org.h2.index.DualIndex",
+  "count" : 5,
+  "bytes" : 80016,
+  "category" : "jvm_noise"
+}, {
+  "class" : "jdk.internal.foreign.SegmentFactories$1",
+  "count" : 5,
+  "bytes" : 534504,
+  "category" : "panama"
+}, {
+  "class" : "eu.exeris.kernel.core.flow.CoreFlowRuntime$$Lambda.0x00000000866338f8",
+  "count" : 5,
+  "bytes" : 123456,
+  "category" : "test_harness"
+}, {
+  "class" : "[Ljdk.internal.classfile.impl.StackMapGenerator$Type;",
+  "count" : 5,
+  "bytes" : 1088856,
+  "category" : "jvm_noise"
+}, {
+  "class" : "jdk.internal.classfile.impl.DirectMethodBuilder",
+  "count" : 5,
+  "bytes" : 1258480,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.security.CodeSource",
+  "count" : 5,
+  "bytes" : 1098448,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.util.stream.ReduceOps$3",
   "count" : 5,
   "bytes" : 1307744,
   "category" : "jvm_noise"
 }, {
-  "class" : "org.h2.mvstore.tx.Record",
+  "class" : "java.util.stream.ReduceOps$3ReducingSink",
+  "count" : 5,
+  "bytes" : 1405144,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.util.stream.ReferencePipeline$2$1",
+  "count" : 5,
+  "bytes" : 917640,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.util.stream.DistinctOps$1",
+  "count" : 5,
+  "bytes" : 1326320,
+  "category" : "jvm_noise"
+}, {
+  "class" : "jdk.internal.classfile.impl.BufWriterImpl",
+  "count" : 5,
+  "bytes" : 1389688,
+  "category" : "jvm_noise"
+}, {
+  "class" : "[Ljdk.jfr.internal.consumer.Parser;",
+  "count" : 5,
+  "bytes" : 1307696,
+  "category" : "jvm_noise"
+}, {
+  "class" : "[C",
+  "count" : 5,
+  "bytes" : 1092976,
+  "category" : "jvm_noise"
+}, {
+  "class" : "jdk.internal.classfile.impl.AttributeHolder",
+  "count" : 5,
+  "bytes" : 1020600,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.math.BigInteger",
   "count" : 5,
   "bytes" : 1307752,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.util.AbstractList$Itr",
+  "count" : 5,
+  "bytes" : 1274984,
+  "category" : "jvm_noise"
+}, {
+  "class" : "org.h2.mvstore.MVMap$IntValueHolder",
+  "count" : 5,
+  "bytes" : 49685216,
+  "category" : "jvm_noise"
+}, {
+  "class" : "org.h2.mvstore.tx.VersionedValueUncommitted",
+  "count" : 5,
+  "bytes" : 1307760,
+  "category" : "jvm_noise"
+}, {
+  "class" : "jdk.jfr.internal.PlatformEventType",
+  "count" : 5,
+  "bytes" : 762952,
+  "category" : "jvm_noise"
+}, {
+  "class" : "net.bytebuddy.description.method.MethodDescription$ForLoadedMethod",
+  "count" : 5,
+  "bytes" : 1307784,
+  "category" : "jvm_noise"
+}, {
+  "class" : "jdk.jfr.internal.SettingsManager$InternalSetting",
+  "count" : 4,
+  "bytes" : 784680,
+  "category" : "jvm_noise"
+}, {
+  "class" : "org.h2.table.PlanItem",
+  "count" : 4,
+  "bytes" : 523232,
   "category" : "jvm_noise"
 }, {
   "class" : "[Lorg.h2.table.Column;",
@@ -619,654 +644,749 @@
   "bytes" : 523152,
   "category" : "jvm_noise"
 }, {
-  "class" : "org.h2.expression.ExpressionVisitor",
+  "class" : "[Lorg.h2.value.TypeInfo;",
   "count" : 4,
-  "bytes" : 289448,
-  "category" : "jvm_noise"
-}, {
-  "class" : "org.h2.index.DualIndex",
-  "count" : 4,
-  "bytes" : 46272,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.lang.ThreadLocal$ThreadLocalMap",
-  "count" : 4,
-  "bytes" : 63904,
-  "category" : "jvm_noise"
-}, {
-  "class" : "eu.exeris.kernel.community.transport.NativeTcpStream$PendingWrite",
-  "count" : 4,
-  "bytes" : 523248,
-  "category" : "test_harness"
-}, {
-  "class" : "java.util.zip.ZipFile$ZipFileInflaterInputStream",
-  "count" : 4,
-  "bytes" : 1046176,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.util.Collections$SynchronizedSet",
-  "count" : 4,
-  "bytes" : 541648,
-  "category" : "jvm_noise"
-}, {
-  "class" : "jdk.internal.util.WeakReferenceKey",
-  "count" : 4,
-  "bytes" : 700456,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.util.stream.Streams$2",
-  "count" : 4,
-  "bytes" : 52451272,
-  "category" : "jvm_noise"
-}, {
-  "class" : "jdk.jfr.internal.PlatformEventType",
-  "count" : 4,
-  "bytes" : 490128,
-  "category" : "jvm_noise"
-}, {
-  "class" : "jdk.internal.classfile.impl.StackMapGenerator$Type",
-  "count" : 4,
-  "bytes" : 804008,
-  "category" : "jvm_noise"
-}, {
-  "class" : "jdk.internal.classfile.impl.AbstractPoolEntry$ClassEntryImpl",
-  "count" : 4,
-  "bytes" : 803888,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.nio.HeapByteBuffer",
-  "count" : 4,
-  "bytes" : 13104,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.lang.invoke.LambdaForm$Name",
-  "count" : 4,
-  "bytes" : 841320,
-  "category" : "jvm_noise"
-}, {
-  "class" : "org.h2.mvstore.tx.TransactionMap",
-  "count" : 4,
-  "bytes" : 1046072,
-  "category" : "jvm_noise"
-}, {
-  "class" : "org.h2.mvstore.tx.TxDecisionMaker$PutIfAbsentDecisionMaker",
-  "count" : 4,
-  "bytes" : 1046136,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.util.concurrent.LinkedTransferQueue$DualNode",
-  "count" : 4,
-  "bytes" : 74952,
-  "category" : "jvm_noise"
-}, {
-  "class" : "net.bytebuddy.description.type.TypeList$Generic$Explicit",
-  "count" : 4,
-  "bytes" : 1046232,
-  "category" : "jvm_noise"
-}, {
-  "class" : "org.h2.mvstore.tx.VersionedBitSet",
-  "count" : 3,
-  "bytes" : 37008,
-  "category" : "jvm_noise"
-}, {
-  "class" : "com.zaxxer.hikari.pool.HikariProxyStatement",
-  "count" : 3,
-  "bytes" : 42656,
-  "category" : "jvm_noise"
-}, {
-  "class" : "org.h2.command.Tokenizer",
-  "count" : 3,
-  "bytes" : 44984,
+  "bytes" : 292472,
   "category" : "jvm_noise"
 }, {
   "class" : "org.h2.table.DualTable",
-  "count" : 3,
-  "bytes" : 55272,
+  "count" : 4,
+  "bytes" : 58848,
   "category" : "jvm_noise"
 }, {
-  "class" : "org.h2.index.IndexCursor",
+  "class" : "java.util.BitSet",
+  "count" : 4,
+  "bytes" : 299256,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.util.concurrent.LinkedBlockingQueue$Node",
+  "count" : 4,
+  "bytes" : 548208,
+  "category" : "jvm_noise"
+}, {
+  "class" : "jdk.jfr.events.InitialSecurityPropertyEvent",
+  "count" : 4,
+  "bytes" : 160032,
+  "category" : "jvm_noise"
+}, {
+  "class" : "eu.exeris.kernel.core.flow.RuntimeFlowInstance",
+  "count" : 4,
+  "bytes" : 96448,
+  "category" : "test_harness"
+}, {
+  "class" : "[Ljdk.internal.classfile.impl.Util$Writable;",
+  "count" : 4,
+  "bytes" : 803176,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.lang.invoke.InnerClassLambdaMetafactory",
+  "count" : 4,
+  "bytes" : 1062368,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.util.stream.Nodes$SpinedNodeBuilder",
+  "count" : 4,
+  "bytes" : 793928,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.util.AbstractList$RandomAccessSpliterator",
+  "count" : 4,
+  "bytes" : 1046192,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.util.Formatter$FixedString",
+  "count" : 4,
+  "bytes" : 354712,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.util.stream.ReferencePipeline$7",
+  "count" : 4,
+  "bytes" : 865488,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.util.ArrayList$ArrayListSpliterator",
+  "count" : 4,
+  "bytes" : 864608,
+  "category" : "jvm_noise"
+}, {
+  "class" : "jdk.internal.constant.ClassOrInterfaceDescImpl",
+  "count" : 4,
+  "bytes" : 800640,
+  "category" : "jvm_noise"
+}, {
+  "class" : "jdk.internal.classfile.impl.AbstractPoolEntry$MethodRefEntryImpl",
+  "count" : 4,
+  "bytes" : 455968,
+  "category" : "jvm_noise"
+}, {
+  "class" : "jdk.jfr.ValueDescriptor",
+  "count" : 4,
+  "bytes" : 501440,
+  "category" : "jvm_noise"
+}, {
+  "class" : "org.apache.maven.surefire.api.util.internal.ImmutableMap$Node",
+  "count" : 4,
+  "bytes" : 843528,
+  "category" : "jvm_noise"
+}, {
+  "class" : "org.h2.mvstore.tx.VersionedBitSet",
+  "count" : 4,
+  "bytes" : 549520,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.util.concurrent.atomic.AtomicLong",
+  "count" : 4,
+  "bytes" : 787192,
+  "category" : "jvm_noise"
+}, {
+  "class" : "eu.exeris.kernel.core.persistence.AdmissionDecisionEvent$Payload",
+  "count" : 4,
+  "bytes" : 1046144,
+  "category" : "test_harness"
+}, {
+  "class" : "eu.exeris.kernel.core.persistence.AdmissionDecisionEvent$JfrEvent",
+  "count" : 4,
+  "bytes" : 1046064,
+  "category" : "test_harness"
+}, {
+  "class" : "org.h2.mvstore.tx.TxDecisionMaker",
+  "count" : 4,
+  "bytes" : 1046112,
+  "category" : "jvm_noise"
+}, {
+  "class" : "jdk.jfr.internal.AnnotationConstruct",
+  "count" : 4,
+  "bytes" : 241392,
+  "category" : "jvm_noise"
+}, {
+  "class" : "org.h2.result.LocalResult",
   "count" : 3,
-  "bytes" : 110360,
+  "bytes" : 40008,
+  "category" : "jvm_noise"
+}, {
+  "class" : "org.h2.expression.ExpressionVisitor",
+  "count" : 3,
+  "bytes" : 292632,
   "category" : "jvm_noise"
 }, {
   "class" : "org.h2.command.query.Select$LazyResultQueryFlat",
   "count" : 3,
-  "bytes" : 32376,
+  "bytes" : 48448,
   "category" : "jvm_noise"
 }, {
-  "class" : "jdk.jfr.events.InitialSecurityPropertyEvent",
+  "class" : "java.util.zip.ZipFile$ZipFileInflaterInputStream",
   "count" : 3,
-  "bytes" : 20424528,
+  "bytes" : 800936,
   "category" : "jvm_noise"
 }, {
-  "class" : "java.lang.reflect.Constructor",
+  "class" : "jdk.internal.classfile.impl.RawBytecodeHelper",
   "count" : 3,
-  "bytes" : 398608,
+  "bytes" : 825696,
   "category" : "jvm_noise"
 }, {
-  "class" : "jdk.internal.classfile.impl.AbstractPoolEntry$NameAndTypeEntryImpl",
+  "class" : "java.io.File",
   "count" : 3,
-  "bytes" : 542400,
-  "category" : "jvm_noise"
-}, {
-  "class" : "jdk.internal.classfile.impl.Util$1WithCodeMethodHandler",
-  "count" : 3,
-  "bytes" : 480536,
-  "category" : "jvm_noise"
-}, {
-  "class" : "[Ljava.lang.reflect.Method;",
-  "count" : 3,
-  "bytes" : 784640,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.util.LinkedHashSet",
-  "count" : 3,
-  "bytes" : 784688,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.util.AbstractList$RandomAccessSpliterator",
-  "count" : 3,
-  "bytes" : 803288,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.util.stream.ReferencePipeline$7",
-  "count" : 3,
-  "bytes" : 637856,
-  "category" : "jvm_noise"
-}, {
-  "class" : "jdk.internal.classfile.impl.AbstractPoolEntry$FieldRefEntryImpl",
-  "count" : 3,
-  "bytes" : 801088,
-  "category" : "jvm_noise"
-}, {
-  "class" : "[Ljava.lang.classfile.Attribute;",
-  "count" : 3,
-  "bytes" : 531672,
-  "category" : "jvm_noise"
-}, {
-  "class" : "jdk.jfr.ValueDescriptor",
-  "count" : 3,
-  "bytes" : 599072,
-  "category" : "jvm_noise"
-}, {
-  "class" : "jdk.internal.foreign.SharedSession",
-  "count" : 3,
-  "bytes" : 9308600,
-  "category" : "panama"
-}, {
-  "class" : "jdk.internal.classfile.impl.DirectClassBuilder",
-  "count" : 3,
-  "bytes" : 290480,
+  "bytes" : 801072,
   "category" : "jvm_noise"
 }, {
   "class" : "jdk.internal.classfile.impl.DirectCodeBuilder",
   "count" : 3,
-  "bytes" : 784384,
+  "bytes" : 817344,
   "category" : "jvm_noise"
 }, {
-  "class" : "jdk.internal.constant.MethodTypeDescImpl",
+  "class" : "jdk.internal.classfile.impl.StackMapGenerator$Type",
   "count" : 3,
-  "bytes" : 267360,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.math.MutableBigInteger",
-  "count" : 3,
-  "bytes" : 784688,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.math.BigInteger",
-  "count" : 3,
-  "bytes" : 784616,
-  "category" : "jvm_noise"
-}, {
-  "class" : "eu.exeris.kernel.core.persistence.PersistenceAdmissionStageEvent$JfrEvent",
-  "count" : 3,
-  "bytes" : 784640,
-  "category" : "test_harness"
-}, {
-  "class" : "eu.exeris.kernel.core.persistence.PersistenceAdmissionStageEvent$Payload",
-  "count" : 3,
-  "bytes" : 784608,
-  "category" : "test_harness"
-}, {
-  "class" : "java.util.stream.Streams$ConcatSpliterator$OfRef",
-  "count" : 3,
-  "bytes" : 784688,
-  "category" : "jvm_noise"
-}, {
-  "class" : "net.bytebuddy.description.type.TypeDescription$Generic$LazyProjection$ForLoadedReturnType",
-  "count" : 3,
-  "bytes" : 784664,
-  "category" : "jvm_noise"
-}, {
-  "class" : "jdk.internal.classfile.impl.DirectMethodBuilder",
-  "count" : 3,
-  "bytes" : 24645824,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.util.StringJoiner",
-  "count" : 3,
-  "bytes" : 615760,
-  "category" : "jvm_noise"
-}, {
-  "class" : "net.bytebuddy.description.type.TypeDescription$Generic$AnnotationReader$Delegator$ForLoadedExecutableParameterType",
-  "count" : 3,
-  "bytes" : 784672,
-  "category" : "jvm_noise"
-}, {
-  "class" : "org.h2.engine.SessionLocal",
-  "count" : 3,
-  "bytes" : 783992,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.util.concurrent.DelayScheduler$ScheduledForkJoinTask",
-  "count" : 3,
-  "bytes" : 109792,
-  "category" : "jvm_noise"
-}, {
-  "class" : "com.zaxxer.hikari.util.FastList",
-  "count" : 3,
-  "bytes" : 49712,
-  "category" : "jvm_noise"
-}, {
-  "class" : "org.h2.mvstore.tx.TransactionMap$$Lambda.0x000000002b33fa38",
-  "count" : 3,
-  "bytes" : 784664,
-  "category" : "jvm_noise"
-}, {
-  "class" : "org.h2.expression.ExpressionColumn",
-  "count" : 3,
-  "bytes" : 784552,
-  "category" : "jvm_noise"
-}, {
-  "class" : "org.h2.jdbc.JdbcPreparedStatement",
-  "count" : 3,
-  "bytes" : 772280,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.util.concurrent.atomic.AtomicLong",
-  "count" : 3,
-  "bytes" : 272856,
-  "category" : "jvm_noise"
-}, {
-  "class" : "net.bytebuddy.description.ByteCodeElement$Token$TokenList",
-  "count" : 3,
-  "bytes" : 784672,
-  "category" : "jvm_noise"
-}, {
-  "class" : "[Ljava.lang.StackFrameInfo;",
-  "count" : 3,
-  "bytes" : 541584,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.text.DateFormatSymbols",
-  "count" : 3,
-  "bytes" : 630136,
+  "bytes" : 743656,
   "category" : "jvm_noise"
 }, {
   "class" : "java.util.Formatter$FormatSpecifier",
   "count" : 3,
-  "bytes" : 288864,
+  "bytes" : 511984,
+  "category" : "jvm_noise"
+}, {
+  "class" : "[Ljava.lang.reflect.Method;",
+  "count" : 3,
+  "bytes" : 784592,
+  "category" : "jvm_noise"
+}, {
+  "class" : "org.junit.platform.engine.support.discovery.DiscoveryIssueReporter$$Lambda.0x00000000860b84a8",
+  "count" : 3,
+  "bytes" : 784656,
   "category" : "jvm_noise"
 }, {
   "class" : "java.lang.ScopedValue$Carrier",
   "count" : 3,
-  "bytes" : 28848,
+  "bytes" : 292000,
   "category" : "jvm_noise"
 }, {
-  "class" : "eu.exeris.kernel.community.events.CommunityEventLoop$$Lambda.0x000000002b3aa1b8",
-  "count" : 2,
-  "bytes" : 48,
-  "category" : "production"
-}, {
-  "class" : "[Lorg.h2.table.IndexColumn;",
-  "count" : 2,
-  "bytes" : 368816,
+  "class" : "jdk.jfr.internal.consumer.CompositeParser",
+  "count" : 3,
+  "bytes" : 784704,
   "category" : "jvm_noise"
 }, {
-  "class" : "org.h2.jdbc.JdbcResultSet",
-  "count" : 2,
-  "bytes" : 18256,
-  "category" : "jvm_noise"
-}, {
-  "class" : "eu.exeris.kernel.community.persistence.jdbc.JdbcPersistenceConnection",
-  "count" : 2,
-  "bytes" : 18512,
-  "category" : "test_harness"
-}, {
-  "class" : "org.h2.result.RowFactory$DefaultRowFactory",
-  "count" : 2,
-  "bytes" : 23408,
-  "category" : "jvm_noise"
-}, {
-  "class" : "org.h2.mvstore.db.RowDataType",
-  "count" : 2,
-  "bytes" : 24688,
-  "category" : "jvm_noise"
-}, {
-  "class" : "[Lorg.h2.value.TypeInfo;",
-  "count" : 2,
-  "bytes" : 23152,
-  "category" : "jvm_noise"
-}, {
-  "class" : "[Ljava.util.concurrent.ForkJoinTask;",
-  "count" : 2,
-  "bytes" : 478576,
-  "category" : "jvm_noise"
-}, {
-  "class" : "eu.exeris.kernel.tck.contract.AbstractSubsystemCarrierPinningTck$$Lambda.0x000000002b21f1b8",
-  "count" : 2,
-  "bytes" : 523104,
-  "category" : "test_harness"
-}, {
-  "class" : "eu.exeris.kernel.core.flow.CoreFlowRuntime$$Lambda.0x000000002b633710",
-  "count" : 2,
-  "bytes" : 10089056,
-  "category" : "test_harness"
-}, {
-  "class" : "eu.exeris.kernel.core.flow.RuntimeFlowContext",
-  "count" : 2,
-  "bytes" : 48416,
-  "category" : "test_harness"
-}, {
-  "class" : "java.lang.PublicMethods$MethodList",
-  "count" : 2,
-  "bytes" : 523136,
-  "category" : "jvm_noise"
-}, {
-  "class" : "[Ljava.lang.constant.ClassDesc;",
-  "count" : 2,
-  "bytes" : 523112,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.lang.invoke.BoundMethodHandle$Species_LL",
-  "count" : 2,
-  "bytes" : 523048,
-  "category" : "jvm_noise"
-}, {
-  "class" : "jdk.internal.classfile.impl.ClassHierarchyImpl$CachedClassHierarchyResolver$1",
-  "count" : 2,
-  "bytes" : 547728,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.util.stream.ReduceOps$3",
-  "count" : 2,
-  "bytes" : 523120,
-  "category" : "jvm_noise"
-}, {
-  "class" : "org.junit.platform.launcher.TestIdentifier",
-  "count" : 2,
-  "bytes" : 523112,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.util.Formatter$FixedString",
-  "count" : 2,
-  "bytes" : 263816,
-  "category" : "jvm_noise"
-}, {
-  "class" : "jdk.internal.constant.ClassOrInterfaceDescImpl",
-  "count" : 2,
-  "bytes" : 523088,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.lang.invoke.BoundMethodHandle$Species_L",
-  "count" : 2,
-  "bytes" : 523072,
-  "category" : "jvm_noise"
-}, {
-  "class" : "jdk.jfr.internal.LongMap",
-  "count" : 2,
-  "bytes" : 523112,
-  "category" : "jvm_noise"
-}, {
-  "class" : "jdk.jfr.consumer.RecordedMethod",
-  "count" : 2,
-  "bytes" : 523096,
-  "category" : "jvm_noise"
-}, {
-  "class" : "jdk.internal.foreign.SegmentFactories$1",
-  "count" : 2,
-  "bytes" : 523096,
+  "class" : "jdk.internal.foreign.SharedSession",
+  "count" : 3,
+  "bytes" : 1240080,
   "category" : "panama"
 }, {
-  "class" : "jdk.internal.util.StrongReferenceKey",
-  "count" : 2,
-  "bytes" : 78904,
+  "class" : "jdk.jfr.SettingDescriptor",
+  "count" : 3,
+  "bytes" : 603120,
   "category" : "jvm_noise"
 }, {
-  "class" : "java.lang.invoke.ResolvedMethodName",
-  "count" : 2,
-  "bytes" : 5560,
+  "class" : "[Ljava.lang.invoke.LambdaForm$Name;",
+  "count" : 3,
+  "bytes" : 800976,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000862729a8",
+  "count" : 3,
+  "bytes" : 680272,
+  "category" : "loom_runtime"
+}, {
+  "class" : "jdk.internal.classfile.impl.DirectCodeBuilder$4",
+  "count" : 3,
+  "bytes" : 317928,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.lang.Thread",
+  "count" : 3,
+  "bytes" : 290184,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.util.concurrent.ConcurrentHashMap$ValuesView",
+  "count" : 3,
+  "bytes" : 281928,
   "category" : "jvm_noise"
 }, {
   "class" : "jdk.internal.classfile.impl.LabelImpl",
-  "count" : 2,
-  "bytes" : 270120,
+  "count" : 3,
+  "bytes" : 743680,
   "category" : "jvm_noise"
 }, {
-  "class" : "java.security.Provider$ServiceKey",
-  "count" : 2,
-  "bytes" : 267016,
+  "class" : "java.util.regex.Matcher",
+  "count" : 3,
+  "bytes" : 784520,
   "category" : "jvm_noise"
 }, {
-  "class" : "eu.exeris.kernel.community.persistence.CommunityHikariSupport$AdmissionSnapshot",
-  "count" : 2,
-  "bytes" : 485824,
-  "category" : "test_harness"
-}, {
-  "class" : "eu.exeris.kernel.core.persistence.AdmissionDecisionEvent$JfrEvent",
-  "count" : 2,
-  "bytes" : 522992,
-  "category" : "test_harness"
-}, {
-  "class" : "[S",
-  "count" : 2,
-  "bytes" : 539512,
-  "category" : "jvm_noise"
-}, {
-  "class" : "jdk.internal.ref.CleanerImpl$PhantomCleanableRef",
-  "count" : 2,
-  "bytes" : 5627512,
-  "category" : "jvm_noise"
-}, {
-  "class" : "jdk.internal.classfile.impl.RawBytecodeHelper$CodeRange",
-  "count" : 2,
-  "bytes" : 328560,
-  "category" : "jvm_noise"
-}, {
-  "class" : "net.bytebuddy.description.type.TypeList$Generic$ForDetachedTypes",
-  "count" : 2,
-  "bytes" : 784688,
-  "category" : "jvm_noise"
-}, {
-  "class" : "com.zaxxer.hikari.HikariConfig",
-  "count" : 2,
-  "bytes" : 278888,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.util.concurrent.ThreadPoolExecutor$Worker",
-  "count" : 2,
-  "bytes" : 270704,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.util.Properties",
-  "count" : 2,
-  "bytes" : 279144,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject",
-  "count" : 2,
-  "bytes" : 22352,
-  "category" : "jvm_noise"
-}, {
-  "class" : "org.h2.result.LocalResult",
-  "count" : 2,
-  "bytes" : 270608,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.util.Properties$EntrySet",
-  "count" : 2,
-  "bytes" : 279256,
-  "category" : "jvm_noise"
-}, {
-  "class" : "org.h2.value.ValueTimestamp",
-  "count" : 2,
-  "bytes" : 523112,
-  "category" : "jvm_noise"
-}, {
-  "class" : "org.h2.result.Sparse",
-  "count" : 2,
-  "bytes" : 523104,
+  "class" : "java.util.concurrent.locks.ReentrantLock$NonfairSync",
+  "count" : 3,
+  "bytes" : 43512,
   "category" : "jvm_noise"
 }, {
   "class" : "org.h2.mvstore.tx.Snapshot",
+  "count" : 3,
+  "bytes" : 784672,
+  "category" : "jvm_noise"
+}, {
+  "class" : "org.h2.expression.ExpressionColumn",
+  "count" : 3,
+  "bytes" : 784616,
+  "category" : "jvm_noise"
+}, {
+  "class" : "net.bytebuddy.description.type.TypeDescription$Generic$Visitor$Substitutor$ForAttachment",
+  "count" : 3,
+  "bytes" : 768256,
+  "category" : "jvm_noise"
+}, {
+  "class" : "sun.security.provider.MD5",
+  "count" : 3,
+  "bytes" : 66880,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.util.concurrent.StructuredTaskScopeImpl$SubtaskImpl",
+  "count" : 3,
+  "bytes" : 502504,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.util.concurrent.DelayScheduler$ScheduledForkJoinTask",
   "count" : 2,
-  "bytes" : 523096,
+  "bytes" : 192,
+  "category" : "jvm_noise"
+}, {
+  "class" : "eu.exeris.kernel.core.events.jfr.EventBusPublishEvent",
+  "count" : 2,
+  "bytes" : 80,
+  "category" : "test_harness"
+}, {
+  "class" : "[Ljava.util.concurrent.ForkJoinTask;",
+  "count" : 2,
+  "bytes" : 65568,
+  "category" : "jvm_noise"
+}, {
+  "class" : "[Lorg.h2.table.TableFilter;",
+  "count" : 2,
+  "bytes" : 29584,
+  "category" : "jvm_noise"
+}, {
+  "class" : "org.h2.result.DefaultRow",
+  "count" : 2,
+  "bytes" : 760064,
   "category" : "jvm_noise"
 }, {
   "class" : "[Lorg.h2.expression.Expression;",
   "count" : 2,
-  "bytes" : 270744,
+  "bytes" : 20800,
   "category" : "jvm_noise"
 }, {
-  "class" : "org.h2.expression.ValueExpression",
+  "class" : "java.util.TreeMap",
   "count" : 2,
-  "bytes" : 23632,
+  "bytes" : 1046240,
+  "category" : "jvm_noise"
+}, {
+  "class" : "eu.exeris.kernel.tck.contract.AbstractSubsystemCarrierPinningTck$$Lambda.0x000000008621f1b8",
+  "count" : 2,
+  "bytes" : 523104,
+  "category" : "test_harness"
+}, {
+  "class" : "java.lang.ref.SoftReference",
+  "count" : 2,
+  "bytes" : 520392,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.lang.ref.WeakReference",
+  "count" : 2,
+  "bytes" : 278544,
+  "category" : "jvm_noise"
+}, {
+  "class" : "jdk.internal.util.StrongReferenceKey",
+  "count" : 2,
+  "bytes" : 514912,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.util.stream.SortedOps$OfRef",
+  "count" : 2,
+  "bytes" : 523072,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.util.Spliterators$IteratorSpliterator",
+  "count" : 2,
+  "bytes" : 523120,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.util.Collections$UnmodifiableSet",
+  "count" : 2,
+  "bytes" : 523120,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.util.LinkedHashSet",
+  "count" : 2,
+  "bytes" : 523136,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.util.Spliterators$ArraySpliterator",
+  "count" : 2,
+  "bytes" : 523120,
+  "category" : "jvm_noise"
+}, {
+  "class" : "jdk.internal.classfile.impl.DirectClassBuilder",
+  "count" : 2,
+  "bytes" : 263600,
   "category" : "jvm_noise"
 }, {
   "class" : "java.util.jar.JarFile$JarFileEntry",
   "count" : 2,
-  "bytes" : 285592,
+  "bytes" : 539672,
   "category" : "jvm_noise"
 }, {
-  "class" : "jdk.internal.classfile.impl.AbstractPoolEntry$MethodRefEntryImpl",
+  "class" : "jdk.jfr.internal.Type",
   "count" : 2,
-  "bytes" : 302184,
+  "bytes" : 523064,
   "category" : "jvm_noise"
 }, {
-  "class" : "java.util.concurrent.ConcurrentHashMap$MapEntry",
+  "class" : "org.apache.maven.surefire.report.ClassMethodIndexer$$Lambda.0x00000000861ab798",
   "count" : 2,
-  "bytes" : 547712,
+  "bytes" : 341576,
   "category" : "jvm_noise"
 }, {
-  "class" : "org.junit.jupiter.engine.extension.MutableExtensionRegistry$$Lambda.0x000000002b1a4840",
+  "class" : "eu.exeris.kernel.community.memory.CommunityReleaseAction",
   "count" : 2,
-  "bytes" : 539520,
+  "bytes" : 25424,
+  "category" : "production"
+}, {
+  "class" : "java.security.SecureClassLoader$1",
+  "count" : 2,
+  "bytes" : 276656,
   "category" : "jvm_noise"
 }, {
-  "class" : "java.util.concurrent.StructuredTaskScopeImpl$SubtaskImpl",
+  "class" : "java.util.WeakHashMap$Entry",
+  "count" : 2,
+  "bytes" : 270136,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.lang.invoke.ResolvedMethodName",
+  "count" : 2,
+  "bytes" : 87944,
+  "category" : "jvm_noise"
+}, {
+  "class" : "eu.exeris.kernel.community.events.CommunityEventLoop$QueuedEvent",
+  "count" : 2,
+  "bytes" : 25128,
+  "category" : "production"
+}, {
+  "class" : "java.util.Collections$UnmodifiableRandomAccessList",
   "count" : 2,
   "bytes" : 523104,
   "category" : "jvm_noise"
 }, {
-  "class" : "java.util.regex.Pattern",
+  "class" : "java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionNode",
   "count" : 2,
-  "bytes" : 337608,
+  "bytes" : 6432,
   "category" : "jvm_noise"
 }, {
-  "class" : "org.junit.jupiter.engine.execution.JupiterEngineExecutionContext$State",
+  "class" : "eu.exeris.kernel.core.persistence.PersistenceAdmissionStageEvent$JfrEvent",
   "count" : 2,
-  "bytes" : 541712,
-  "category" : "jvm_noise"
-}, {
-  "class" : "eu.exeris.kernel.spi.memory.MemoryStats",
-  "count" : 2,
-  "bytes" : 922760,
+  "bytes" : 523024,
   "category" : "test_harness"
 }, {
-  "class" : "java.util.Collections$UnmodifiableRandomAccessList",
+  "class" : "eu.exeris.kernel.core.persistence.PersistenceAdmissionStageEvent$Payload",
   "count" : 2,
-  "bytes" : 152144,
-  "category" : "jvm_noise"
+  "bytes" : 523048,
+  "category" : "test_harness"
 }, {
-  "class" : "java.lang.ThreadBuilders$PlatformThreadBuilder",
+  "class" : "jdk.internal.util.WeakReferenceKey",
   "count" : 2,
-  "bytes" : 4296,
+  "bytes" : 374248,
   "category" : "jvm_noise"
 }, {
-  "class" : "org.junit.jupiter.engine.descriptor.NestedClassTestDescriptor$$Lambda.0x000000002b12f620",
-  "count" : 1,
-  "bytes" : 261552,
+  "class" : "jdk.internal.classfile.impl.AbstractPoolEntry$NameAndTypeEntryImpl",
+  "count" : 2,
+  "bytes" : 523096,
   "category" : "jvm_noise"
 }, {
-  "class" : "jdk.internal.classfile.impl.EntryMap",
-  "count" : 1,
-  "bytes" : 261536,
+  "class" : "java.util.concurrent.ConcurrentHashMap$KeyIterator",
+  "count" : 2,
+  "bytes" : 278584,
   "category" : "jvm_noise"
 }, {
-  "class" : "jdk.internal.classfile.impl.RawBytecodeHelper",
-  "count" : 1,
-  "bytes" : 277952,
+  "class" : "net.bytebuddy.implementation.bytecode.StackManipulation$Size",
+  "count" : 2,
+  "bytes" : 523128,
   "category" : "jvm_noise"
 }, {
-  "class" : "java.lang.invoke.InnerClassLambdaMetafactory$1",
-  "count" : 1,
-  "bytes" : 261544,
+  "class" : "net.bytebuddy.matcher.EqualityMatcher",
+  "count" : 2,
+  "bytes" : 523120,
   "category" : "jvm_noise"
 }, {
-  "class" : "jdk.internal.classfile.impl.StackMapDecoder$StackMapFrameImpl",
-  "count" : 1,
-  "bytes" : 261552,
+  "class" : "net.bytebuddy.description.type.TypeDescription$Generic$LazyProjection$OfMethodParameter",
+  "count" : 2,
+  "bytes" : 539528,
   "category" : "jvm_noise"
 }, {
-  "class" : "java.lang.ref.SoftReference",
-  "count" : 1,
-  "bytes" : 277936,
+  "class" : "jdk.internal.classfile.impl.DirectFieldBuilder",
+  "count" : 2,
+  "bytes" : 341504,
   "category" : "jvm_noise"
 }, {
-  "class" : "org.junit.platform.launcher.core.DefaultDiscoveryRequest$$Lambda.0x000000002b108000",
-  "count" : 1,
-  "bytes" : 277968,
+  "class" : "org.junit.platform.commons.util.AnnotationUtils$$Lambda.0x00000000861ad000",
+  "count" : 2,
+  "bytes" : 341552,
   "category" : "jvm_noise"
 }, {
-  "class" : "org.junit.platform.launcher.core.EngineFilterer$$Lambda.0x000000002b12e3f8",
-  "count" : 1,
-  "bytes" : 261568,
+  "class" : "java.util.concurrent.atomic.AtomicReference",
+  "count" : 2,
+  "bytes" : 280016,
   "category" : "jvm_noise"
 }, {
-  "class" : "org.junit.jupiter.engine.discovery.MethodOrderingVisitor$$Lambda.0x000000002b128488",
+  "class" : "java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject",
+  "count" : 2,
+  "bytes" : 34120,
+  "category" : "jvm_noise"
+}, {
+  "class" : "org.h2.engine.SessionLocal$Savepoint",
+  "count" : 2,
+  "bytes" : 278680,
+  "category" : "jvm_noise"
+}, {
+  "class" : "jdk.internal.vm.SharedThreadContainer",
+  "count" : 2,
+  "bytes" : 26304,
+  "category" : "jvm_noise"
+}, {
+  "class" : "org.h2.engine.SessionLocal",
+  "count" : 2,
+  "bytes" : 278224,
+  "category" : "jvm_noise"
+}, {
+  "class" : "org.h2.value.ValueVarchar",
+  "count" : 2,
+  "bytes" : 523136,
+  "category" : "jvm_noise"
+}, {
+  "class" : "[Ljava.lang.Long;",
+  "count" : 2,
+  "bytes" : 49458160,
+  "category" : "jvm_noise"
+}, {
+  "class" : "org.h2.value.ValueTimestampTimeZone",
+  "count" : 2,
+  "bytes" : 523128,
+  "category" : "jvm_noise"
+}, {
+  "class" : "org.h2.value.ValueBigint",
+  "count" : 2,
+  "bytes" : 523136,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.util.HashMap$Values",
+  "count" : 2,
+  "bytes" : 523120,
+  "category" : "jvm_noise"
+}, {
+  "class" : "org.h2.mvstore.tx.TransactionMap$ValidationIterator",
+  "count" : 2,
+  "bytes" : 523104,
+  "category" : "jvm_noise"
+}, {
+  "class" : "org.h2.mvstore.tx.TransactionMap$$Lambda.0x000000008633f038",
+  "count" : 2,
+  "bytes" : 523112,
+  "category" : "jvm_noise"
+}, {
+  "class" : "eu.exeris.kernel.core.persistence.ConnectionAcquireEvent",
+  "count" : 2,
+  "bytes" : 193800,
+  "category" : "test_harness"
+}, {
+  "class" : "[Lcom.zaxxer.hikari.util.ConcurrentBag$IConcurrentBagEntry;",
+  "count" : 2,
+  "bytes" : 20616,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.util.Collections$SingletonSet",
+  "count" : 2,
+  "bytes" : 521328,
+  "category" : "jvm_noise"
+}, {
+  "class" : "org.junit.jupiter.engine.execution.NamespaceAwareStore",
+  "count" : 2,
+  "bytes" : 523136,
+  "category" : "jvm_noise"
+}, {
+  "class" : "[Ljava.util.Map$Entry;",
+  "count" : 2,
+  "bytes" : 523120,
+  "category" : "jvm_noise"
+}, {
+  "class" : "[Ljava.text.Format;",
+  "count" : 2,
+  "bytes" : 280408,
+  "category" : "jvm_noise"
+}, {
+  "class" : "[Leu.exeris.kernel.community.memory.CommunityArenaShardPool$Bucket;",
+  "count" : 2,
+  "bytes" : 150016,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.lang.ThreadLocal$ThreadLocalMap",
+  "count" : 2,
+  "bytes" : 46984,
+  "category" : "jvm_noise"
+}, {
+  "class" : "[Ljava.lang.constant.ClassDesc;",
   "count" : 1,
   "bytes" : 261560,
   "category" : "jvm_noise"
 }, {
-  "class" : "jdk.internal.classfile.impl.AttributeHolder",
+  "class" : "jdk.internal.ref.CleanerImpl$PhantomCleanableRef",
   "count" : 1,
-  "bytes" : 261568,
+  "bytes" : 261560,
   "category" : "jvm_noise"
 }, {
-  "class" : "org.junit.jupiter.engine.discovery.MethodSelectorResolver$$Lambda.0x000000002b11fd38",
+  "class" : "java.util.regex.Pattern$$Lambda.0x80000002d",
+  "count" : 1,
+  "bytes" : 261560,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.lang.invoke.DirectMethodHandle$Interface",
   "count" : 1,
   "bytes" : 261552,
   "category" : "jvm_noise"
 }, {
-  "class" : "org.junit.jupiter.engine.discovery.ClassOrderingVisitor$$Lambda.0x000000002b126768",
+  "class" : "org.junit.platform.launcher.jfr.FlightRecordingDiscoveryListener$EngineDiscoveryEvent",
+  "count" : 1,
+  "bytes" : 275184,
+  "category" : "jvm_noise"
+}, {
+  "class" : "org.junit.jupiter.engine.descriptor.JupiterTestDescriptor$$Lambda.0x00000000861133e8",
+  "count" : 1,
+  "bytes" : 261528,
+  "category" : "jvm_noise"
+}, {
+  "class" : "org.junit.jupiter.engine.discovery.MethodSelectorResolver$$Lambda.0x000000008611f8d0",
   "count" : 1,
   "bytes" : 261568,
   "category" : "jvm_noise"
 }, {
-  "class" : "java.util.ArrayDeque$$Lambda.0x000000002b06c588",
+  "class" : "org.junit.platform.engine.TestDescriptor$$Lambda.0x0000000086128910",
+  "count" : 1,
+  "bytes" : 261560,
+  "category" : "jvm_noise"
+}, {
+  "class" : "org.junit.jupiter.engine.discovery.AbstractOrderingVisitor$$Lambda.0x0000000086127bb8",
   "count" : 1,
   "bytes" : 261552,
   "category" : "jvm_noise"
 }, {
-  "class" : "org.junit.platform.engine.support.discovery.DiscoveryIssueReporter$Condition$$Lambda.0x000000002b0b8bb0",
+  "class" : "org.junit.jupiter.engine.descriptor.NestedClassTestDescriptor$$Lambda.0x000000008612f620",
   "count" : 1,
-  "bytes" : 261544,
-  "category" : "jvm_noise"
-}, {
-  "class" : "org.junit.jupiter.engine.discovery.predicates.TestClassPredicates",
-  "count" : 1,
-  "bytes" : 261568,
+  "bytes" : 261552,
   "category" : "jvm_noise"
 }, {
   "class" : "org.junit.platform.engine.support.descriptor.MethodSource",
   "count" : 1,
+  "bytes" : 261552,
+  "category" : "jvm_noise"
+}, {
+  "class" : "jdk.internal.loader.URLClassPath$FileLoader$1",
+  "count" : 1,
   "bytes" : 261568,
   "category" : "jvm_noise"
 }, {
-  "class" : "org.junit.jupiter.engine.discovery.MethodSelectorResolver$$Lambda.0x000000002b1262f8",
+  "class" : "java.util.Collections$SynchronizedSet",
+  "count" : 1,
+  "bytes" : 261560,
+  "category" : "jvm_noise"
+}, {
+  "class" : "org.junit.platform.engine.support.discovery.DiscoveryIssueReporter$Condition$$Lambda.0x00000000860b8bb0",
   "count" : 1,
   "bytes" : 261552,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.util.stream.MatchOps$1MatchSink",
+  "count" : 1,
+  "bytes" : 261552,
+  "category" : "jvm_noise"
+}, {
+  "class" : "org.junit.platform.launcher.TestIdentifier",
+  "count" : 1,
+  "bytes" : 261552,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.lang.WeakPairMap$Pair$Lookup",
+  "count" : 1,
+  "bytes" : 261544,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.util.LinkedHashMap$LinkedValueIterator",
+  "count" : 1,
+  "bytes" : 261552,
+  "category" : "jvm_noise"
+}, {
+  "class" : "org.junit.platform.engine.support.discovery.DiscoveryIssueReporter$Condition$$Lambda.0x0000000086119468",
+  "count" : 1,
+  "bytes" : 261552,
+  "category" : "jvm_noise"
+}, {
+  "class" : "org.junit.jupiter.engine.descriptor.NestedClassTestDescriptor",
+  "count" : 1,
+  "bytes" : 261528,
+  "category" : "jvm_noise"
+}, {
+  "class" : "org.junit.jupiter.engine.discovery.ClassSelectorResolver$$Lambda.0x000000008611dc20",
+  "count" : 1,
+  "bytes" : 261552,
+  "category" : "jvm_noise"
+}, {
+  "class" : "org.junit.jupiter.engine.descriptor.TestMethodTestDescriptor",
+  "count" : 1,
+  "bytes" : 261496,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.util.stream.ForEachOps$ForEachOp$OfRef",
+  "count" : 1,
+  "bytes" : 261560,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.util.ArrayDeque",
+  "count" : 1,
+  "bytes" : 261544,
+  "category" : "jvm_noise"
+}, {
+  "class" : "org.junit.platform.engine.support.hierarchical.NodeTestTask",
+  "count" : 1,
+  "bytes" : 277928,
+  "category" : "jvm_noise"
+}, {
+  "class" : "[Ljava.lang.classfile.constantpool.ClassEntry;",
+  "count" : 1,
+  "bytes" : 261560,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.lang.invoke.BoundMethodHandle$Species_L",
+  "count" : 1,
+  "bytes" : 261544,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.util.regex.Pattern$Start",
+  "count" : 1,
+  "bytes" : 261552,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.lang.invoke.LambdaFormEditor$Transform",
+  "count" : 1,
+  "bytes" : 277928,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.util.ArrayList$ListItr",
+  "count" : 1,
+  "bytes" : 261544,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.lang.Thread$FieldHolder",
+  "count" : 1,
+  "bytes" : 261568,
+  "category" : "jvm_noise"
+}, {
+  "class" : "org.junit.platform.launcher.core.CompositeEngineExecutionListener$$Lambda.0x000000008619f890",
+  "count" : 1,
+  "bytes" : 261560,
+  "category" : "jvm_noise"
+}, {
+  "class" : "jdk.jfr.internal.consumer.EventParser",
+  "count" : 1,
+  "bytes" : 261552,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.lang.ScopedValue$Snapshot",
+  "count" : 1,
+  "bytes" : 261568,
+  "category" : "jvm_noise"
+}, {
+  "class" : "[Ljava.lang.classfile.Attribute;",
+  "count" : 1,
+  "bytes" : 277936,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.util.concurrent.CountDownLatch",
+  "count" : 1,
+  "bytes" : 250288,
+  "category" : "jvm_noise"
+}, {
+  "class" : "jdk.internal.loader.URLClassPath$JarLoader$1",
+  "count" : 1,
+  "bytes" : 8624,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.lang.invoke.DirectMethodHandle$Constructor",
+  "count" : 1,
+  "bytes" : 8560,
+  "category" : "jvm_noise"
+}, {
+  "class" : "jdk.jfr.internal.util.Bytecode$FieldDesc",
+  "count" : 1,
+  "bytes" : 8648,
+  "category" : "jvm_noise"
+}, {
+  "class" : "org.apache.maven.surefire.junitplatform.RunListenerAdapter$$Lambda.0x00000000861aa4b0",
+  "count" : 1,
+  "bytes" : 261560,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.util.stream.DistinctOps$1$2",
+  "count" : 1,
+  "bytes" : 278584,
   "category" : "jvm_noise"
 }, {
   "class" : "java.util.LinkedHashMap$LinkedEntrySet",
@@ -1274,239 +1394,284 @@
   "bytes" : 261560,
   "category" : "jvm_noise"
 }, {
-  "class" : "org.junit.platform.engine.TestDescriptor$$Lambda.0x000000002b128910",
+  "class" : "[Ljava.util.regex.Pattern$GroupHead;",
+  "count" : 1,
+  "bytes" : 261512,
+  "category" : "jvm_noise"
+}, {
+  "class" : "[Lorg.h2.mvstore.tx.Record;",
+  "count" : 1,
+  "bytes" : 261472,
+  "category" : "jvm_noise"
+}, {
+  "class" : "org.h2.engine.Database",
+  "count" : 1,
+  "bytes" : 261232,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.util.stream.Streams$2",
+  "count" : 1,
+  "bytes" : 261552,
+  "category" : "jvm_noise"
+}, {
+  "class" : "eu.exeris.kernel.community.persistence.CommunityHikariSupport$AdmissionSnapshot",
+  "count" : 1,
+  "bytes" : 261552,
+  "category" : "test_harness"
+}, {
+  "class" : "eu.exeris.kernel.community.persistence.FairnessTracker$CachedSnapshot",
+  "count" : 1,
+  "bytes" : 261552,
+  "category" : "test_harness"
+}, {
+  "class" : "org.junit.platform.engine.support.store.NamespacedHierarchicalStore",
+  "count" : 1,
+  "bytes" : 261536,
+  "category" : "jvm_noise"
+}, {
+  "class" : "jdk.internal.classfile.impl.StackMapDecoder$StackMapFrameImpl",
   "count" : 1,
   "bytes" : 261568,
   "category" : "jvm_noise"
 }, {
-  "class" : "org.junit.jupiter.engine.descriptor.DisplayNameUtils$$Lambda.0x000000002b12b7b0",
-  "count" : 1,
-  "bytes" : 261568,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.util.stream.SortedOps$SizedRefSortingSink",
-  "count" : 1,
-  "bytes" : 261560,
-  "category" : "jvm_noise"
-}, {
-  "class" : "jdk.internal.reflect.ConstantPool",
-  "count" : 1,
-  "bytes" : 261568,
-  "category" : "jvm_noise"
-}, {
-  "class" : "org.junit.platform.launcher.core.DefaultDiscoveryRequest$$Lambda.0x000000002b104c00",
-  "count" : 1,
-  "bytes" : 261568,
-  "category" : "jvm_noise"
-}, {
-  "class" : "org.junit.jupiter.engine.discovery.MethodSelectorResolver$$Lambda.0x000000002b124248",
-  "count" : 1,
-  "bytes" : 261560,
-  "category" : "jvm_noise"
-}, {
-  "class" : "org.junit.platform.engine.support.discovery.SelectorResolver$Resolution",
-  "count" : 1,
-  "bytes" : 261560,
-  "category" : "jvm_noise"
-}, {
-  "class" : "org.junit.jupiter.engine.descriptor.MethodBasedTestDescriptor$MethodInfo$$Lambda.0x000000002b125e88",
-  "count" : 1,
-  "bytes" : 261568,
-  "category" : "jvm_noise"
-}, {
-  "class" : "[Ljava.util.stream.Stream;",
-  "count" : 1,
-  "bytes" : 261568,
-  "category" : "jvm_noise"
-}, {
-  "class" : "jdk.internal.classfile.impl.TransformImpl$MethodCodeTransform",
+  "class" : "java.lang.reflect.ProxyGenerator$$Lambda.0x000000008601d150",
   "count" : 1,
   "bytes" : 277952,
   "category" : "jvm_noise"
 }, {
-  "class" : "java.lang.NoSuchMethodError",
-  "count" : 1,
-  "bytes" : 261544,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.util.stream.DistinctOps$1",
-  "count" : 1,
-  "bytes" : 261512,
-  "category" : "jvm_noise"
-}, {
-  "class" : "sun.security.util.KnownOIDs",
-  "count" : 1,
-  "bytes" : 261568,
-  "category" : "jvm_noise"
-}, {
-  "class" : "eu.exeris.kernel.community.memory.CommunityArenaShardPool$Bucket",
-  "count" : 1,
-  "bytes" : 261552,
-  "category" : "test_harness"
-}, {
-  "class" : "org.junit.jupiter.engine.execution.NamespaceAwareStore",
-  "count" : 1,
-  "bytes" : 261560,
-  "category" : "jvm_noise"
-}, {
-  "class" : "org.apache.maven.surefire.api.util.internal.ImmutableMap$Node",
-  "count" : 1,
-  "bytes" : 261560,
-  "category" : "jvm_noise"
-}, {
-  "class" : "sun.management.spi.PlatformMBeanProvider$PlatformComponent$$Lambda.0x000000002b0553d8",
-  "count" : 1,
-  "bytes" : 523112,
-  "category" : "jvm_noise"
-}, {
-  "class" : "jdk.jfr.internal.consumer.ObjectContext",
-  "count" : 1,
-  "bytes" : 261568,
-  "category" : "jvm_noise"
-}, {
-  "class" : "[Ljava.lang.reflect.Field;",
-  "count" : 1,
-  "bytes" : 261560,
-  "category" : "jvm_noise"
-}, {
-  "class" : "[Ljdk.jfr.internal.consumer.Parser;",
-  "count" : 1,
-  "bytes" : 261560,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.lang.invoke.MethodHandles$Lookup",
-  "count" : 1,
-  "bytes" : 2984,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.lang.invoke.InnerClassLambdaMetafactory$3",
-  "count" : 1,
-  "bytes" : 2920,
-  "category" : "jvm_noise"
-}, {
-  "class" : "jdk.internal.classfile.impl.SplitConstantPool",
-  "count" : 1,
-  "bytes" : 2920,
-  "category" : "jvm_noise"
-}, {
-  "class" : "[Ljava.lang.invoke.LambdaForm$Name;",
-  "count" : 1,
-  "bytes" : 11912,
-  "category" : "jvm_noise"
-}, {
-  "class" : "sun.security.x509.AlgorithmId",
-  "count" : 1,
-  "bytes" : 8888,
-  "category" : "jvm_noise"
-}, {
-  "class" : "jdk.internal.classfile.impl.AbstractInstruction$UnboundStackInstruction",
-  "count" : 1,
-  "bytes" : 8560,
-  "category" : "jvm_noise"
-}, {
-  "class" : "org.assertj.core.api.StringAssert",
-  "count" : 1,
-  "bytes" : 261504,
-  "category" : "jvm_noise"
-}, {
-  "class" : "eu.exeris.kernel.community.events.CommunityEventLoop",
-  "count" : 1,
-  "bytes" : 261544,
-  "category" : "test_harness"
-}, {
-  "class" : "org.junit.platform.launcher.core.CompositeTestExecutionListener$$Lambda.0x000000002b2040c0",
-  "count" : 1,
-  "bytes" : 261560,
-  "category" : "jvm_noise"
-}, {
-  "class" : "org.junit.jupiter.engine.descriptor.CallbackSupport$$Lambda.0x000000002b1ff400",
-  "count" : 1,
-  "bytes" : 261536,
-  "category" : "jvm_noise"
-}, {
-  "class" : "org.h2.table.Column",
-  "count" : 1,
-  "bytes" : 261536,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.util.Collections$UnmodifiableSet",
-  "count" : 1,
-  "bytes" : 261560,
-  "category" : "jvm_noise"
-}, {
-  "class" : "org.junit.jupiter.engine.execution.InterceptingExecutableInvoker$$Lambda.0x000000002b1b2a08",
-  "count" : 1,
-  "bytes" : 261552,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.util.concurrent.LinkedBlockingQueue$Node",
-  "count" : 1,
-  "bytes" : 14864,
-  "category" : "jvm_noise"
-}, {
-  "class" : "[Ljava.lang.reflect.Constructor;",
-  "count" : 1,
-  "bytes" : 298824,
-  "category" : "jvm_noise"
-}, {
-  "class" : "eu.exeris.kernel.core.persistence.AdmissionDecisionEvent$Payload",
-  "count" : 1,
-  "bytes" : 261512,
-  "category" : "test_harness"
-}, {
-  "class" : "jdk.internal.classfile.impl.DirectCodeBuilder$4",
-  "count" : 1,
-  "bytes" : 261224,
-  "category" : "jvm_noise"
-}, {
-  "class" : "jdk.internal.classfile.impl.InterfacesImpl",
-  "count" : 1,
-  "bytes" : 261560,
-  "category" : "jvm_noise"
-}, {
-  "class" : "jdk.internal.classfile.impl.StackMapGenerator$Frame",
+  "class" : "java.util.StringJoiner",
   "count" : 1,
   "bytes" : 277936,
   "category" : "jvm_noise"
 }, {
-  "class" : "[Lnet.bytebuddy.matcher.ElementMatcher;",
+  "class" : "net.bytebuddy.description.annotation.AnnotationList$ForLoadedAnnotations",
   "count" : 1,
   "bytes" : 261552,
   "category" : "jvm_noise"
 }, {
-  "class" : "java.lang.invoke.LambdaForm$NamedFunction",
-  "count" : 1,
-  "bytes" : 261544,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.io.File",
+  "class" : "org.h2.engine.User",
   "count" : 1,
   "bytes" : 261536,
   "category" : "jvm_noise"
 }, {
-  "class" : "java.security.SecureClassLoader$1",
+  "class" : "org.junit.jupiter.engine.execution.NamespaceAwareStore$$Lambda.0x00000000861ba670",
+  "count" : 1,
+  "bytes" : 261544,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.lang.invoke.LambdaFormEditor",
+  "count" : 1,
+  "bytes" : 261552,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.lang.invoke.BoundMethodHandle$Species_LL",
+  "count" : 1,
+  "bytes" : 261544,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.lang.invoke.InfoFromMemberName",
+  "count" : 1,
+  "bytes" : 261552,
+  "category" : "jvm_noise"
+}, {
+  "class" : "net.bytebuddy.dynamic.scaffold.subclass.SubclassDynamicTypeBuilder",
+  "count" : 1,
+  "bytes" : 261520,
+  "category" : "jvm_noise"
+}, {
+  "class" : "net.bytebuddy.description.method.ParameterList$TypeSubstituting",
+  "count" : 1,
+  "bytes" : 261536,
+  "category" : "jvm_noise"
+}, {
+  "class" : "net.bytebuddy.description.type.TypeList$Generic$ForDetachedTypes$OfTypeVariables",
+  "count" : 1,
+  "bytes" : 261544,
+  "category" : "jvm_noise"
+}, {
+  "class" : "org.h2.mvstore.tx.TransactionMap$CommittedIterator",
+  "count" : 1,
+  "bytes" : 261544,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.util.concurrent.ConcurrentHashMap$ValueSpliterator",
+  "count" : 1,
+  "bytes" : 9272,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.util.Properties",
+  "count" : 1,
+  "bytes" : 16992,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.util.concurrent.locks.ReentrantLock",
+  "count" : 1,
+  "bytes" : 17064,
+  "category" : "jvm_noise"
+}, {
+  "class" : "com.zaxxer.hikari.pool.PoolEntry",
+  "count" : 1,
+  "bytes" : 9280,
+  "category" : "jvm_noise"
+}, {
+  "class" : "com.zaxxer.hikari.util.FastList",
+  "count" : 1,
+  "bytes" : 9248,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.util.concurrent.ScheduledThreadPoolExecutor$ScheduledFutureTask",
+  "count" : 1,
+  "bytes" : 9272,
+  "category" : "jvm_noise"
+}, {
+  "class" : "org.h2.engine.ConnectionInfo",
+  "count" : 1,
+  "bytes" : 9288,
+  "category" : "jvm_noise"
+}, {
+  "class" : "org.h2.command.Tokenizer",
+  "count" : 1,
+  "bytes" : 9280,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.util.concurrent.CopyOnWriteArrayList",
+  "count" : 1,
+  "bytes" : 11848,
+  "category" : "jvm_noise"
+}, {
+  "class" : "com.zaxxer.hikari.HikariDataSource",
+  "count" : 1,
+  "bytes" : 16952,
+  "category" : "jvm_noise"
+}, {
+  "class" : "org.h2.util.SmallLRUCache",
+  "count" : 1,
+  "bytes" : 17264,
+  "category" : "jvm_noise"
+}, {
+  "class" : "eu.exeris.kernel.community.persistence.CommunityPersistenceEngine$$Lambda.0x000000008659af20",
+  "count" : 1,
+  "bytes" : 18360,
+  "category" : "test_harness"
+}, {
+  "class" : "java.util.concurrent.ThreadPoolExecutor",
+  "count" : 1,
+  "bytes" : 17216,
+  "category" : "jvm_noise"
+}, {
+  "class" : "org.h2.table.Column",
+  "count" : 1,
+  "bytes" : 36168,
+  "category" : "jvm_noise"
+}, {
+  "class" : "com.zaxxer.hikari.pool.HikariProxyPreparedStatement",
+  "count" : 1,
+  "bytes" : 261544,
+  "category" : "jvm_noise"
+}, {
+  "class" : "[Lorg.h2.table.Table;",
   "count" : 1,
   "bytes" : 261568,
   "category" : "jvm_noise"
 }, {
-  "class" : "jdk.internal.loader.URLClassPath$JarLoader$1",
+  "class" : "org.h2.value.ValueTimestamp",
   "count" : 1,
-  "bytes" : 297536,
+  "bytes" : 261560,
   "category" : "jvm_noise"
 }, {
-  "class" : "net.bytebuddy.description.field.FieldList$Explicit",
+  "class" : "org.h2.result.ResultWithGeneratedKeys",
   "count" : 1,
   "bytes" : 261552,
   "category" : "jvm_noise"
 }, {
-  "class" : "net.bytebuddy.dynamic.scaffold.FieldLocator$Resolution$Simple",
+  "class" : "org.h2.command.dml.Call",
   "count" : 1,
-  "bytes" : 261552,
+  "bytes" : 11336,
   "category" : "jvm_noise"
 }, {
-  "class" : "net.bytebuddy.matcher.VisibilityMatcher",
+  "class" : "org.h2.index.IndexCursor",
   "count" : 1,
-  "bytes" : 261552,
+  "bytes" : 11280,
+  "category" : "jvm_noise"
+}, {
+  "class" : "[Lorg.h2.table.IndexColumn;",
+  "count" : 1,
+  "bytes" : 10320,
+  "category" : "jvm_noise"
+}, {
+  "class" : "org.h2.mvstore.db.RowDataType",
+  "count" : 1,
+  "bytes" : 10424,
+  "category" : "jvm_noise"
+}, {
+  "class" : "org.h2.table.Plan",
+  "count" : 1,
+  "bytes" : 10256,
+  "category" : "jvm_noise"
+}, {
+  "class" : "org.h2.jdbc.JdbcResultSetMetaData",
+  "count" : 1,
+  "bytes" : 10256,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.util.regex.Pattern$CharPropertyGreedy",
+  "count" : 1,
+  "bytes" : 261560,
+  "category" : "jvm_noise"
+}, {
+  "class" : "sun.security.jca.GetInstance$Instance",
+  "count" : 1,
+  "bytes" : 261560,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.util.concurrent.ConcurrentHashMap$EntryIterator",
+  "count" : 1,
+  "bytes" : 261528,
+  "category" : "jvm_noise"
+}, {
+  "class" : "jdk.jfr.internal.util.TimespanRate",
+  "count" : 1,
+  "bytes" : 261568,
+  "category" : "jvm_noise"
+}, {
+  "class" : "net.bytebuddy.description.method.MethodDescription$Token",
+  "count" : 1,
+  "bytes" : 261496,
+  "category" : "jvm_noise"
+}, {
+  "class" : "org.mockito.internal.verification.VerificationEventImpl",
+  "count" : 1,
+  "bytes" : 261536,
+  "category" : "jvm_noise"
+}, {
+  "class" : "[Ljava.lang.reflect.Parameter;",
+  "count" : 1,
+  "bytes" : 261560,
+  "category" : "jvm_noise"
+}, {
+  "class" : "org.junit.jupiter.engine.extension.MutableExtensionRegistry$$Lambda.0x00000000861a3378",
+  "count" : 1,
+  "bytes" : 261568,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.lang.StackStreamFactory$StackFrameTraverser",
+  "count" : 1,
+  "bytes" : 39480,
+  "category" : "jvm_noise"
+}, {
+  "class" : "net.bytebuddy.description.type.TypeDescription$Generic$Visitor$Substitutor$ForDetachment",
+  "count" : 1,
+  "bytes" : 261560,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.util.Arrays$ArrayItr",
+  "count" : 1,
+  "bytes" : 261568,
+  "category" : "jvm_noise"
+}, {
+  "class" : "net.bytebuddy.description.type.TypeList$Generic$OfMethodExceptionTypes$TypeProjection",
+  "count" : 1,
+  "bytes" : 261544,
   "category" : "jvm_noise"
 }, {
   "class" : "net.bytebuddy.description.annotation.AnnotationValue$ForConstant",
@@ -1514,249 +1679,99 @@
   "bytes" : 261568,
   "category" : "jvm_noise"
 }, {
-  "class" : "org.h2.command.Token$KeywordToken",
+  "class" : "net.bytebuddy.description.method.ParameterDescription$TypeSubstituting",
+  "count" : 1,
+  "bytes" : 261552,
+  "category" : "jvm_noise"
+}, {
+  "class" : "net.bytebuddy.dynamic.Transformer$ForMethod$TransformedMethod$AttachmentVisitor",
   "count" : 1,
   "bytes" : 261560,
   "category" : "jvm_noise"
 }, {
-  "class" : "java.util.concurrent.ConcurrentHashMap$ValuesView",
+  "class" : "net.bytebuddy.jar.asm.TypeReference",
   "count" : 1,
-  "bytes" : 9200,
+  "bytes" : 261560,
   "category" : "jvm_noise"
 }, {
-  "class" : "java.util.concurrent.locks.AbstractQueuedSynchronizer$ExclusiveNode",
+  "class" : "net.bytebuddy.description.ByteCodeElement$Token$TokenList",
   "count" : 1,
-  "bytes" : 9200,
+  "bytes" : 261560,
   "category" : "jvm_noise"
 }, {
-  "class" : "java.util.concurrent.SynchronousQueue",
+  "class" : "net.bytebuddy.description.type.TypeDescription$Generic$LazyProjection$WithResolvedErasure",
   "count" : 1,
-  "bytes" : 9272,
+  "bytes" : 261568,
   "category" : "jvm_noise"
 }, {
-  "class" : "java.util.Spliterators$ArraySpliterator",
-  "count" : 1,
-  "bytes" : 9248,
-  "category" : "jvm_noise"
-}, {
-  "class" : "org.assertj.core.api.WritableAssertionInfo",
-  "count" : 1,
-  "bytes" : 12328,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.util.concurrent.locks.ReentrantLock$NonfairSync",
-  "count" : 1,
-  "bytes" : 17680,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.util.concurrent.ConcurrentHashMap$EntryIterator",
-  "count" : 1,
-  "bytes" : 261496,
-  "category" : "jvm_noise"
-}, {
-  "class" : "com.zaxxer.hikari.pool.HikariPool$$Lambda.0x000000002b37b630",
-  "count" : 1,
-  "bytes" : 9312,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.util.concurrent.ConcurrentHashMap$KeyIterator",
-  "count" : 1,
-  "bytes" : 9296,
-  "category" : "jvm_noise"
-}, {
-  "class" : "eu.exeris.kernel.spi.security.ImmutableStorageContext",
-  "count" : 1,
-  "bytes" : 18952,
-  "category" : "test_harness"
-}, {
-  "class" : "com.zaxxer.hikari.HikariDataSource",
-  "count" : 1,
-  "bytes" : 17488,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.util.concurrent.LinkedBlockingQueue",
-  "count" : 1,
-  "bytes" : 17504,
-  "category" : "jvm_noise"
-}, {
-  "class" : "jdk.internal.vm.SharedThreadContainer",
-  "count" : 1,
-  "bytes" : 20616,
-  "category" : "jvm_noise"
-}, {
-  "class" : "com.zaxxer.hikari.util.Credentials",
-  "count" : 1,
-  "bytes" : 17472,
-  "category" : "jvm_noise"
-}, {
-  "class" : "org.h2.schema.Schema",
-  "count" : 1,
-  "bytes" : 261456,
-  "category" : "jvm_noise"
-}, {
-  "class" : "org.h2.mvstore.tx.TransactionMap$ValidationIterator",
-  "count" : 1,
-  "bytes" : 261536,
-  "category" : "jvm_noise"
-}, {
-  "class" : "org.h2.value.ValueVarbinary",
+  "class" : "net.bytebuddy.implementation.bind.MethodDelegationBinder$ParameterBinding$Anonymous",
   "count" : 1,
   "bytes" : 261544,
   "category" : "jvm_noise"
 }, {
-  "class" : "org.h2.value.ValueVarchar",
-  "count" : 1,
-  "bytes" : 261568,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.util.HashMap$ValueIterator",
-  "count" : 1,
-  "bytes" : 261560,
-  "category" : "jvm_noise"
-}, {
-  "class" : "org.h2.value.ValueTimestampTimeZone",
-  "count" : 1,
-  "bytes" : 261560,
-  "category" : "jvm_noise"
-}, {
-  "class" : "[Lorg.h2.mvstore.tx.Record;",
-  "count" : 1,
-  "bytes" : 261512,
-  "category" : "jvm_noise"
-}, {
-  "class" : "org.h2.mvstore.db.MVSecondaryIndex$MVStoreCursor",
-  "count" : 1,
-  "bytes" : 261552,
-  "category" : "jvm_noise"
-}, {
-  "class" : "org.h2.value.ValueUuid",
-  "count" : 1,
-  "bytes" : 261552,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.util.AbstractMap$SimpleImmutableEntry",
-  "count" : 1,
-  "bytes" : 261568,
-  "category" : "jvm_noise"
-}, {
-  "class" : "org.h2.mvstore.MVMap$IntValueHolder",
-  "count" : 1,
-  "bytes" : 261568,
-  "category" : "jvm_noise"
-}, {
-  "class" : "org.junit.platform.launcher.core.CompositeTestExecutionListener$$Lambda.0x000000002b18ee68",
+  "class" : "jdk.internal.constant.MethodTypeDescImpl",
   "count" : 1,
   "bytes" : 261544,
   "category" : "jvm_noise"
 }, {
-  "class" : "org.h2.jdbc.JdbcResultSetMetaData",
+  "class" : "java.util.LinkedList",
   "count" : 1,
-  "bytes" : 9232,
+  "bytes" : 261544,
   "category" : "jvm_noise"
 }, {
-  "class" : "org.h2.result.DefaultRow",
+  "class" : "java.util.Arrays$ArrayList",
   "count" : 1,
-  "bytes" : 9200,
+  "bytes" : 261552,
   "category" : "jvm_noise"
 }, {
-  "class" : "java.util.stream.Collectors$$Lambda.0x80000004c",
+  "class" : "net.bytebuddy.description.method.MethodDescription$Latent",
+  "count" : 1,
+  "bytes" : 261552,
+  "category" : "jvm_noise"
+}, {
+  "class" : "jdk.internal.classfile.impl.AnnotationImpl$OfBooleanImpl",
+  "count" : 1,
+  "bytes" : 261560,
+  "category" : "jvm_noise"
+}, {
+  "class" : "net.bytebuddy.description.method.ParameterDescription$ForLoadedParameter$OfMethod",
   "count" : 1,
   "bytes" : 261536,
   "category" : "jvm_noise"
 }, {
-  "class" : "org.h2.engine.Database",
+  "class" : "net.bytebuddy.implementation.bytecode.member.FieldAccess$AccessDispatcher",
   "count" : 1,
-  "bytes" : 261104,
+  "bytes" : 261568,
   "category" : "jvm_noise"
 }, {
-  "class" : "java.util.stream.ForEachOps$ForEachOp$OfRef",
-  "count" : 1,
-  "bytes" : 273976,
-  "category" : "jvm_noise"
-}, {
-  "class" : "org.junit.platform.engine.support.hierarchical.NodeTestTask$$Lambda.0x000000002b1998f0",
-  "count" : 1,
-  "bytes" : 298824,
-  "category" : "jvm_noise"
-}, {
-  "class" : "jdk.internal.classfile.impl.MethodImpl",
-  "count" : 1,
-  "bytes" : 26024,
-  "category" : "jvm_noise"
-}, {
-  "class" : "jdk.internal.classfile.impl.AbstractInstruction$UnboundLoadInstruction",
-  "count" : 1,
-  "bytes" : 42392,
-  "category" : "jvm_noise"
-}, {
-  "class" : "jdk.internal.classfile.impl.ClassHierarchyImpl",
-  "count" : 1,
-  "bytes" : 24192,
-  "category" : "jvm_noise"
-}, {
-  "class" : "net.bytebuddy.jar.asmjdkbridge.JdkClassReader$$Lambda.0x000000002b4f6e50",
+  "class" : "net.bytebuddy.description.type.TypeDescription$Generic$LazyProjection$ForLoadedReturnType",
   "count" : 1,
   "bytes" : 261552,
   "category" : "jvm_noise"
 }, {
-  "class" : "net.bytebuddy.implementation.bytecode.collection.ArrayFactory",
-  "count" : 1,
-  "bytes" : 245168,
-  "category" : "jvm_noise"
-}, {
-  "class" : "net.bytebuddy.description.annotation.AnnotationList$ForLoadedAnnotations",
-  "count" : 1,
-  "bytes" : 261568,
-  "category" : "jvm_noise"
-}, {
-  "class" : "net.bytebuddy.jar.asmjdkbridge.JdkClassReader$MergedLocalVariableValue",
-  "count" : 1,
-  "bytes" : 261568,
-  "category" : "jvm_noise"
-}, {
-  "class" : "net.bytebuddy.jar.asmjdkbridge.JdkClassWriter$WritingMethodVisitor",
-  "count" : 1,
-  "bytes" : 261504,
-  "category" : "jvm_noise"
-}, {
-  "class" : "net.bytebuddy.jar.asmjdkbridge.JdkClassReader$$Lambda.0x000000002b4f69c8",
-  "count" : 1,
-  "bytes" : 261568,
-  "category" : "jvm_noise"
-}, {
-  "class" : "net.bytebuddy.description.type.TypeDescription$Generic$AnnotationReader$Delegator$ForLoadedMethodReturnType",
+  "class" : "net.bytebuddy.description.method.ParameterDescription$Token",
   "count" : 1,
   "bytes" : 261560,
   "category" : "jvm_noise"
 }, {
-  "class" : "net.bytebuddy.description.type.TypeDescription$Generic$OfParameterizedType$ForLoadedType$ParameterArgumentTypeList",
+  "class" : "net.bytebuddy.implementation.bind.MethodDelegationBinder$MethodBinding$Builder$Build",
   "count" : 1,
-  "bytes" : 261560,
+  "bytes" : 261544,
   "category" : "jvm_noise"
 }, {
-  "class" : "net.bytebuddy.description.type.TypeList$Explicit",
-  "count" : 1,
-  "bytes" : 261560,
-  "category" : "jvm_noise"
-}, {
-  "class" : "net.bytebuddy.dynamic.scaffold.MethodRegistry$Handler$ForImplementation$Compiled",
-  "count" : 1,
-  "bytes" : 261552,
-  "category" : "jvm_noise"
-}, {
-  "class" : "org.mockito.internal.debugging.LocationImpl$MetadataShim",
-  "count" : 1,
-  "bytes" : 261568,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.util.LinkedHashMap$LinkedKeySet",
-  "count" : 1,
-  "bytes" : 261552,
-  "category" : "jvm_noise"
-}, {
-  "class" : "org.mockito.internal.creation.bytebuddy.access.MockMethodInterceptor",
+  "class" : "org.mockito.internal.stubbing.OngoingStubbingImpl",
   "count" : 1,
   "bytes" : 261536,
+  "category" : "jvm_noise"
+}, {
+  "class" : "org.junit.jupiter.engine.execution.InvocationInterceptorChain$InterceptedInvocation",
+  "count" : 1,
+  "bytes" : 261560,
+  "category" : "jvm_noise"
+}, {
+  "class" : "org.junit.jupiter.engine.extension.MutableExtensionRegistry$$Lambda.0x00000000861a4840",
+  "count" : 1,
+  "bytes" : 261560,
   "category" : "jvm_noise"
 }, {
   "class" : "java.lang.invoke.LambdaFormEditor$TransformKey",
@@ -1764,144 +1779,149 @@
   "bytes" : 261568,
   "category" : "jvm_noise"
 }, {
-  "class" : "java.util.LinkedList",
-  "count" : 1,
-  "bytes" : 261536,
-  "category" : "jvm_noise"
-}, {
-  "class" : "net.bytebuddy.jar.asm.Label",
+  "class" : "net.bytebuddy.description.method.ParameterDescription$Latent",
   "count" : 1,
   "bytes" : 261560,
   "category" : "jvm_noise"
 }, {
-  "class" : "net.bytebuddy.implementation.bytecode.constant.MethodConstant$ForMethod",
-  "count" : 1,
-  "bytes" : 245152,
-  "category" : "jvm_noise"
-}, {
-  "class" : "net.bytebuddy.jar.asm.Type",
-  "count" : 1,
-  "bytes" : 261560,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.lang.invoke.DirectMethodHandle$Constructor",
-  "count" : 1,
-  "bytes" : 261568,
-  "category" : "jvm_noise"
-}, {
-  "class" : "eu.exeris.kernel.core.bootstrap.SubsystemOrchestrator$DependencyGraph",
-  "count" : 1,
-  "bytes" : 261544,
-  "category" : "test_harness"
-}, {
-  "class" : "java.text.MessageFormat",
-  "count" : 1,
-  "bytes" : 261520,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.time.LocalTime",
-  "count" : 1,
-  "bytes" : 277952,
-  "category" : "jvm_noise"
-}, {
-  "class" : "jdk.internal.classfile.impl.CodeImpl",
-  "count" : 1,
-  "bytes" : 261568,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.lang.ref.WeakReference",
-  "count" : 1,
-  "bytes" : 261528,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.lang.invoke.LambdaFormEditor$Transform",
-  "count" : 1,
-  "bytes" : 277944,
-  "category" : "jvm_noise"
-}, {
-  "class" : "org.junit.jupiter.engine.descriptor.ExtensionUtils$$Lambda.0x000000002b1a5368",
-  "count" : 1,
-  "bytes" : 280216,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.time.ZonedDateTime",
+  "class" : "net.bytebuddy.jar.asmjdkbridge.JdkClassWriter$WritingMethodVisitor$$Lambda.0x00000000864c9a60",
   "count" : 1,
   "bytes" : 261552,
   "category" : "jvm_noise"
 }, {
-  "class" : "java.util.stream.ReduceOps$2",
+  "class" : "jdk.internal.constant.ArrayClassDescImpl",
   "count" : 1,
   "bytes" : 261560,
-  "category" : "jvm_noise"
-}, {
-  "class" : "sun.nio.cs.UTF_8$Encoder",
-  "count" : 1,
-  "bytes" : 228736,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.lang.Thread$FieldHolder",
-  "count" : 1,
-  "bytes" : 25976,
-  "category" : "jvm_noise"
-}, {
-  "class" : "sun.nio.ch.EPollSelectorImpl",
-  "count" : 1,
-  "bytes" : 24120,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.lang.InterruptedException",
-  "count" : 1,
-  "bytes" : 1775480,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.lang.invoke.BoundMethodHandle$Species_LLLL",
-  "count" : 1,
-  "bytes" : 261528,
   "category" : "jvm_noise"
 }, {
   "class" : "org.junit.platform.launcher.jfr.FlightRecordingExecutionListener$TestExecutionEvent",
   "count" : 1,
-  "bytes" : 261568,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.lang.foreign.SymbolLookup$$Lambda.0x000000002b556668",
-  "count" : 1,
-  "bytes" : 261568,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.util.ArrayList$ListItr",
-  "count" : 1,
-  "bytes" : 6286920,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.util.concurrent.ConcurrentHashMap$CounterCell",
-  "count" : 1,
-  "bytes" : 155904,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.util.concurrent.ConcurrentLinkedQueue",
-  "count" : 1,
   "bytes" : 261552,
   "category" : "jvm_noise"
 }, {
-  "class" : "java.util.stream.MatchOps$MatchOp",
+  "class" : "org.mockito.internal.creation.MockSettingsImpl",
   "count" : 1,
-  "bytes" : 175048,
+  "bytes" : 143424,
   "category" : "jvm_noise"
 }, {
-  "class" : "jdk.jfr.internal.RepositoryChunk",
+  "class" : "eu.exeris.kernel.core.bootstrap.SubsystemOrchestrator$$Lambda.0x00000000865e54c8",
+  "count" : 1,
+  "bytes" : 261560,
+  "category" : "test_harness"
+}, {
+  "class" : "[Ljava.lang.StackFrameInfo;",
+  "count" : 1,
+  "bytes" : 261512,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.util.Collections$UnmodifiableMap$UnmodifiableEntrySet$UnmodifiableEntry",
+  "count" : 1,
+  "bytes" : 261568,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.time.LocalDateTime",
+  "count" : 1,
+  "bytes" : 261568,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.lang.invoke.InvokerBytecodeGenerator",
   "count" : 1,
   "bytes" : 261520,
   "category" : "jvm_noise"
 }, {
-  "class" : "java.util.WeakHashMap$Entry",
+  "class" : "[S",
   "count" : 1,
-  "bytes" : 40520,
+  "bytes" : 261528,
   "category" : "jvm_noise"
 }, {
-  "class" : "eu.exeris.kernel.tck.contract.memory.AbstractLeakDetectionSampledTck$VirtualThreadConcurrency$$Lambda.0x000000002b647248",
+  "class" : "java.util.regex.Pattern$BmpCharProperty",
   "count" : 1,
   "bytes" : 261568,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.text.DecimalFormatSymbols",
+  "count" : 1,
+  "bytes" : 261448,
+  "category" : "jvm_noise"
+}, {
+  "class" : "sun.nio.cs.UTF_8$Encoder",
+  "count" : 1,
+  "bytes" : 261528,
+  "category" : "jvm_noise"
+}, {
+  "class" : "jdk.internal.classfile.impl.AbstractPseudoInstruction$ExceptionCatchImpl",
+  "count" : 1,
+  "bytes" : 277968,
+  "category" : "jvm_noise"
+}, {
+  "class" : "eu.exeris.kernel.community.memory.CommunityArenaShardPool$Bucket",
+  "count" : 1,
+  "bytes" : 261552,
+  "category" : "test_harness"
+}, {
+  "class" : "org.junit.jupiter.engine.descriptor.MethodExtensionContext",
+  "count" : 1,
+  "bytes" : 261552,
+  "category" : "jvm_noise"
+}, {
+  "class" : "org.junit.jupiter.engine.extension.MutableExtensionRegistry",
+  "count" : 1,
+  "bytes" : 261536,
+  "category" : "jvm_noise"
+}, {
+  "class" : "org.apache.maven.surefire.api.util.internal.ImmutableMap",
+  "count" : 1,
+  "bytes" : 261536,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.security.Provider$ServiceKey",
+  "count" : 1,
+  "bytes" : 25832,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.util.UUID",
+  "count" : 1,
+  "bytes" : 23136,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.nio.HeapCharBuffer",
+  "count" : 1,
+  "bytes" : 26696,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.security.MessageDigest$Delegate$CloneableDelegate",
+  "count" : 1,
+  "bytes" : 26768,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.util.concurrent.locks.AbstractQueuedSynchronizer$SharedNode",
+  "count" : 1,
+  "bytes" : 1877712,
+  "category" : "jvm_noise"
+}, {
+  "class" : "org.junit.platform.commons.util.ClassNamePatternFilterUtils$$Lambda.0x0000000086225c88",
+  "count" : 1,
+  "bytes" : 261544,
+  "category" : "jvm_noise"
+}, {
+  "class" : "jdk.jfr.consumer.RecordedClass",
+  "count" : 1,
+  "bytes" : 196016,
+  "category" : "jvm_noise"
+}, {
+  "class" : "eu.exeris.kernel.tck.contract.memory.AbstractMemoryAllocatorTck$VirtualThreadAvalanche$$Lambda.0x000000008663f1c8",
+  "count" : 1,
+  "bytes" : 159312,
+  "category" : "test_harness"
+}, {
+  "class" : "java.util.regex.Pattern$Dollar",
+  "count" : 1,
+  "bytes" : 261560,
+  "category" : "jvm_noise"
+}, {
+  "class" : "eu.exeris.kernel.tck.contract.memory.AbstractLeakDetectionSampledTck$VirtualThreadConcurrency$$Lambda.0x0000000086646ae0",
+  "count" : 1,
+  "bytes" : 261560,
   "category" : "test_harness"
 }, {
   "class" : "jdk.jfr.internal.settings.ThrottlerParameters",
@@ -1909,63 +1929,98 @@
   "bytes" : 176,
   "category" : "jvm_noise"
 }, {
-  "class" : "jdk.jfr.internal.util.TimespanRate",
+  "class" : "org.junit.jupiter.engine.extension.TempDirectory$$Lambda.0x00000000861ad260",
   "count" : 1,
-  "bytes" : 76032,
+  "bytes" : 261568,
   "category" : "jvm_noise"
 }, {
-  "class" : "sun.nio.fs.UnixFileAttributeViews$Basic",
+  "class" : "eu.exeris.kernel.spi.memory.MemoryStats",
   "count" : 1,
-  "bytes" : 76048,
+  "bytes" : 107280,
+  "category" : "test_harness"
+}, {
+  "class" : "java.util.concurrent.ConcurrentLinkedQueue",
+  "count" : 1,
+  "bytes" : 79992,
   "category" : "jvm_noise"
 }, {
-  "class" : "org.apache.maven.surefire.api.report.TestOutputReportEntry",
+  "class" : "jdk.internal.classfile.impl.SplitConstantPool",
   "count" : 1,
-  "bytes" : 2048,
+  "bytes" : 2064,
   "category" : "jvm_noise"
 }, {
-  "class" : "eu.exeris.kernel.core.transport.scheduler.PaqsScheduler",
+  "class" : "sun.security.rsa.RSAPadding",
   "count" : 1,
-  "bytes" : 2080,
-  "category" : "production"
-}, {
-  "class" : "java.text.DecimalFormat",
-  "count" : 1,
-  "bytes" : 2096,
+  "bytes" : 2240,
   "category" : "jvm_noise"
 }, {
-  "class" : "[Ljava.util.logging.Handler;",
+  "class" : "java.util.logging.LogRecord",
   "count" : 1,
-  "bytes" : 2072,
+  "bytes" : 2488,
   "category" : "jvm_noise"
 }, {
-  "class" : "eu.exeris.kernel.community.transport.NativeTcpCarrier$ReactorLoop",
+  "class" : "java.lang.reflect.Constructor",
   "count" : 1,
-  "bytes" : 2048,
-  "category" : "production"
-}, {
-  "class" : "java.io.FileDescriptor",
-  "count" : 1,
-  "bytes" : 2104,
+  "bytes" : 80096,
   "category" : "jvm_noise"
 }, {
-  "class" : "com.nimbusds.jose.shaded.gson.reflect.TypeToken",
+  "class" : "java.util.regex.Pattern",
   "count" : 1,
-  "bytes" : 4200,
+  "bytes" : 79936,
   "category" : "jvm_noise"
 }, {
-  "class" : "java.util.Spliterators$IteratorSpliterator",
+  "class" : "org.junit.platform.engine.support.hierarchical.ThrowableCollector",
   "count" : 1,
-  "bytes" : 169096,
+  "bytes" : 50752,
   "category" : "jvm_noise"
 }, {
-  "class" : "org.junit.platform.commons.util.Preconditions$$Lambda.0x000000002b092e60",
+  "class" : "java.util.stream.Streams$StreamBuilderImpl",
   "count" : 1,
-  "bytes" : 76080,
+  "bytes" : 79992,
   "category" : "jvm_noise"
 }, {
-  "class" : "java.util.function.Predicate$$Lambda.0x000000002b0d01f0",
+  "class" : "java.util.stream.SortedOps$RefSortingSink",
   "count" : 1,
-  "bytes" : 76136,
+  "bytes" : 79944,
+  "category" : "jvm_noise"
+}, {
+  "class" : "jdk.internal.classfile.impl.ClassHierarchyImpl$CachedClassHierarchyResolver$1",
+  "count" : 1,
+  "bytes" : 104616,
+  "category" : "jvm_noise"
+}, {
+  "class" : "org.junit.jupiter.engine.execution.NamespaceAwareStore$$Lambda.0x00000000861b7508",
+  "count" : 1,
+  "bytes" : 96328,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.util.concurrent.ConcurrentHashMap$MapEntry",
+  "count" : 1,
+  "bytes" : 79976,
+  "category" : "jvm_noise"
+}, {
+  "class" : "com.nimbusds.jose.shaded.gson.stream.JsonReader",
+  "count" : 1,
+  "bytes" : 79880,
+  "category" : "jvm_noise"
+}, {
+  "class" : "com.nimbusds.jose.shaded.gson.internal.GsonTypes$ParameterizedTypeImpl",
+  "count" : 1,
+  "bytes" : 96464,
+  "category" : "jvm_noise"
+}, {
+  "class" : "[[I",
+  "count" : 1,
+  "bytes" : 79808,
+  "category" : "jvm_noise"
+}, {
+  "class" : "[Ljava.lang.reflect.Type;",
+  "count" : 1,
+  "bytes" : 96416,
+  "category" : "jvm_noise"
+}, {
+  "class" : "jdk.jfr.internal.util.Rate",
+  "count" : 1,
+  "bytes" : 80032,
   "category" : "jvm_noise"
 } ]
