@@ -1,91 +1,83 @@
 # Metrics - Loom Continuation Locality Benchmark
 
-## Primary Metric: CPU Efficiency
+## Track A Metrics (Kernel Micro JMH)
 
-**Definition:** Instructions per request (IPR).
+## Primary Metric: Efficiency Signal
 
-- Collected via: perf-stat cycles and instructions; request count from harness log.
-- Calculation: total_instructions / total_requests.
-- Unit: instructions/request (dimensionless ratio).
-- Target: baseline C should be stable (CV < 3%); E should be >= 5% lower.
+**Definition:** primary efficiency ratio defined by the active micro harness
+(for example instruction-normalized cost per operation/request equivalent).
+
+- Collected from micro harness outputs and external perf/JFR side artifacts.
+- Compared as delta `%` of `locality-aware` vs `default-vt`.
+- Reported with confidence bounds and relative error.
 
 ## Secondary Metrics
 
-### Throughput (Requests Per Second)
+### Throughput (`ops/s`)
 
-- Collected via: harness timer; requests_completed / elapsed_seconds.
-- Unit: RPS.
-- Target: E should not regress vs C (within measurement CV).
-- Note: Fixed-rate mode means RPS is near-constant; variance reflects dropped requests or rate-limit spillover.
+- Unit: operations per second.
+- Used as supporting signal; not a standalone progression criterion.
 
-### Context Switches Per Request
+### Latency (`p50`, `p95`, `p99`)
 
-- Collected via: perf-stat context-switches counter.
-- Calculation: total_context_switches / total_requests.
-- Unit: switches/request.
-- Target: E should be measurably lower than C, proportional to IPR improvement.
+- Reported per matrix point and as A/B deltas.
+- Latency regressions trigger investigation and caveats.
 
-### CPU Migrations Per Request
+### Stability and Variance
 
-- Collected via: perf-stat cpu-migrations counter.
-- Calculation: total_cpu_migrations / total_requests.
-- Unit: migrations/request.
-- Target: E should reduce migrations by reducing continuation wake-ups on unaffine cores.
+- Standard deviation and confidence interval per key metric.
+- Relative error for primary efficiency metric.
 
-### Latency Percentiles (P50, P90, P99)
+### System Counters (when available)
 
-- Collected via: per-request wall-clock latency histogram from load generator.
-- Unit: milliseconds.
-- Target:
-  - P50_E must not increase by more than 5% vs C.
-  - P50 regression 5-10% is WARN (allowed with caveat).
-  - P50 regression >10% is ALARM and requires investigation.
-  - P99_E regression up to +20% is acceptable only if the P50 guard passes.
-  (Latency is secondary; efficiency is primary.)
+- `perf stat`: cycles, instructions, cache-misses, branch-misses
+  in no-multiplex mode.
+- CPU utilization and error/timeout count.
 
-### Virtual Thread Events
+### Runtime/JFR Correlation
 
-- Collected via: JFR ThreadCPULoad, VirtualThreadStart/End, JDKContinuationFork.
-- Unit: count, wall-clock time (JFR derived).
-- Target: baseline characterization; used for qualitative correlation with perf-stat data.
+- JFR runtime signals used for qualitative interpretation of scheduler/locality behavior.
 
-## Quaternary Metric: Heap Allocation Rate
+## Track B Metrics (E2E Campaign Eligibility)
 
-- Collected via: JFR `JdkThreadAllocationStatistics`.
-- Calculation: total_bytes_allocated / total_requests.
-- Unit: bytes/request.
-- Target: E should not exceed C by more than 10%.
-- If exceeded: WARN allocation shift and require JFR deep-dive.
+These metrics decide whether E2E outputs can be used for A/B interpretation.
+
+Required status fields per leg:
+- `runner_status`
+- `reproducibility_status`
+- `final_reason`
+- `claim_scope`
+- `benchmark_exit_code`
+- `json_present` and key counters
+
+Interpretation:
+- `claim_scope=none` or nonzero benchmark exit on either leg blocks
+  comparison-eligible E2E conclusion.
+- Partial/non-assessable E2E outputs remain descriptive only.
 
 ## Aggregation Rules
 
-**Mean:** Arithmetic mean over 5 runs.
-**Confidence Interval:** 95% CI using t-distribution (n=5; critical t ~= 2.776).
-**Relative Error (RE):** (CI_width / mean) * 100.
-**Acceptance Threshold:** Internal target RE <= 2% for primary metric (CPU efficiency); decision-level acceptance RE <= 10%.
+**Micro track:**
+- Mean and 95% CI for key metrics.
+- Relative error threshold enforced per reporting gates.
 
-**CV (post-filter):**
-1. Collect 5 runs.
-2. Remove runs with GC pause > 500ms.
-3. If remaining n < 3, fail batch and rerun.
-4. Compute CV on remaining runs.
-5. CV < 3% passes; otherwise extend to 10 reps.
+**E2E track:**
+- No averaging across ineligible legs.
+- Only claim-eligible rows enter A/B summary interpretation.
 
-If RE > 2%, rerun measurement with 10 reps and re-aggregate for internal quality objective.
+## Integrated Decision Metric
 
-## Outlier Handling
+Integrated decision state:
+- `GO`: quality-valid evidence with observable `locality-aware` benefit signal.
+- `NO_GO`: no consistent measurable `locality-aware` benefit signal,
+  regardless of exploratory framing.
 
-- Remove any run where GC-pause-time > 500ms (indicates unplanned GC event).
-- If after removal n < 3, rerun the batch.
-- CV is computed only after this filter is applied.
-- Document all removals in benchmark output.
+Current cycle state: `NO_GO`.
 
-## Output Format
+## Output Requirements
 
-Benchmark result includes:
-- Variant name (C or E).
-- Concurrency level (16, 32, 64 vt).
-- Mean and 95% CI for IPR, throughput, context-switches.
-- Relative error for IPR.
-- Pass/fail status (IPR_E < IPR_C * 0.95 AND P50 guard PASS; P99 guard applied per latency policy).
-- Path to JFR files for detailed post-mortem.
+Reports must include:
+- micro A/B deltas by matrix point,
+- E2E per-leg status/eligibility evidence,
+- explicit statement whether integrated decision is GO or NO_GO,
+- explanation of blocked claims when decision is NO_GO.

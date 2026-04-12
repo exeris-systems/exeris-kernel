@@ -4,7 +4,7 @@
 > **Author:** @arkstack-dev
 > **Started:** 2026-03-20
 > **Milestone:** v0.6 - findings feed scheduler seam design, benchmark harness, and bounded architecture guidance
-> **Status:** `active`
+> **Status:** `concluded`
 
 ---
 
@@ -236,15 +236,48 @@ Do not start with the full multishot/H3/drain matrix.
 - perf/JFR evidence
 - architecture recommendation
 
-## Current Findings Snapshot (2026-03-24)
+## Current Findings Snapshot (2026-04-12)
 
-- campaign ref: `results/raw/entity-read-by-id/20260324-150821-campaign`
-- 20 repeats/mode, all gates pass
-- default-vt mean 52,871.361 RPS; locality-aware mean 52,958.579 RPS; delta +0.165%
-- CI half-widths 164.121 and 118.641; relative error 0.310% and 0.224%
-- interpretation: statistically detectable at most, operationally negligible for E2E decisioning
-- claim impact: architecture-dependent effect; no general Loom public scheduler API requirement supported.
-- perf-stat addendum (Community): paired `perf stat` remains near-parity; no mechanism-level signal strong enough to change C5 `NO_GO`.
+- prior Community E2E campaign ref: `results/raw/entity-read-by-id/20260324-150821-campaign`
+- prior result remains valid: `default-vt=52,871.361 RPS`; `locality-aware=52,958.579 RPS`; delta `+0.165%`; operationally negligible
+- latest Community E2E campaign refs:
+	- `results/raw/e2e-shop-order-saga/20260412T075737Z-locality/default-vt`
+	- `results/raw/e2e-shop-order-saga/20260412T084454Z-locality/locality-aware`
+- latest campaign shape: 3 repeats per mode, `claim_scope=exploratory`; each mode produced 1 `clean` run and 2 `threshold_failure` runs
+- latest throughput means stay at parity: `default-vt=194.601 req/s`; `locality-aware=194.566 req/s`; delta `-0.018%`
+- latest CPU cost moves against locality-aware: mean `cpu_time_seconds` `193.337 -> 218.423` (`+12.97%`), mean CPU util of one core `28.87% -> 32.59%` (`+12.89%`)
+- memory profile remains close: mean RSS `730.1 MB -> 709.1 MB`; mean off-heap estimate `595.6 MB -> 589.0 MB`
+- latency also moves against locality-aware in this scenario: mean HTTP duration `4.897 ms -> 6.084 ms`; mean `p95` `11.943 ms -> 13.666 ms`
+- interpretation: Community E2E evidence still does not show a material continuation-locality payoff; the latest scenario weakens the hypothesis further because throughput remains flat while CPU and latency regress for `locality-aware`
+- claim impact: architecture-dependent effect remains benchmarkable, but current Community evidence does not support a general Loom public scheduler API requirement and does not justify Community-side execution-model escalation
+
+## Decision
+
+**Status:** `concluded`
+
+**Primary disposition:** **Park**
+
+**Cycle decision:** **NO_GO**
+
+The research produced a useful scheduler seam and defensible benchmark methodology,
+but it did not produce evidence strong enough to justify continuation-locality-driven
+execution-model escalation on the current Exeris stacks.
+
+Community evidence is now sufficient to close the current research cycle:
+- the earlier E2E campaign showed only operational near-parity,
+- the later `shop-order-saga` scenario showed no throughput win,
+- memory remained broadly similar,
+- CPU and latency moved against `locality-aware`.
+
+Cycle closure implications:
+- no H2 progression on the basis of this track,
+- no Enterprise escalation in the current cycle,
+- any future Enterprise-side locality work requires a materially different hypothesis,
+  not a continuation of the current locality-payoff thesis.
+
+Enterprise follow-up remains parked for this cycle rather than promoted. The branch
+therefore concludes with a documented negative or non-material payoff result, not with
+an ADR candidate or feature-promotion recommendation.
 
 ## Initial Position
 

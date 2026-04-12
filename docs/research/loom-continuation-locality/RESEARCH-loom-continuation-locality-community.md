@@ -4,7 +4,7 @@
 > **Author:** @arkstack-dev
 > **Started:** 2026-03-20
 > **Milestone:** v0.6 - findings feed scheduler seam design, benchmark harness, and bounded architecture guidance
-> **Status:** `active`
+> **Status:** `concluded`
 
 Shared context, hypothesis background, methodology, deliverables, milestones, and initial position are in `RESEARCH-loom-continuation-locality.md`.
 
@@ -245,19 +245,23 @@ Run scenarios at:
 
 ## Phase C4: Final Conclusion
 
-**Measurement Campaign**: consolidated Community E2E campaign `results/raw/entity-read-by-id/20260324-150821-campaign` with 20 repeats per mode; all runtime and quality gates pass.
+**Measurement Campaigns**:
+- consolidated Community E2E campaign `results/raw/entity-read-by-id/20260324-150821-campaign` with 20 repeats per mode; all runtime and quality gates pass
+- follow-up Community E2E scenario `results/raw/e2e-shop-order-saga/20260412T075737Z-locality/default-vt` vs `results/raw/e2e-shop-order-saga/20260412T084454Z-locality/locality-aware`; 3 repeats per mode, `claim_scope=exploratory`
 
 **Results Summary**:
-- default-vt mean: `52,871.361 RPS`
-- locality-aware mean: `52,958.579 RPS`
-- delta: `+0.165%` (near parity)
-- CI half-widths: `164.121` (default-vt), `118.641` (locality-aware)
-- relative error: `0.310%` and `0.224%`
+- prior campaign: `default-vt=52,871.361 RPS`; `locality-aware=52,958.579 RPS`; delta `+0.165%` (near parity)
+- latest `shop-order-saga` throughput mean: `default-vt=194.601 req/s`; `locality-aware=194.566 req/s`; delta `-0.018%` (again near parity)
+- latest `shop-order-saga` CPU mean: `cpu_time_seconds` `193.337 -> 218.423` (`+12.97%`), CPU util of one core `28.87% -> 32.59%` (`+12.89%`)
+- latest `shop-order-saga` memory profile: mean RSS `730.1 MB -> 709.1 MB`; mean off-heap estimate `595.6 MB -> 589.0 MB` (no material memory penalty or gain)
+- latest `shop-order-saga` latency mean: HTTP average `4.897 ms -> 6.084 ms`; HTTP `p95` `11.943 ms -> 13.666 ms`
 
-**Signal Classification**: weak signal at most; statistically detectable only in a narrow sense, operationally negligible for E2E decisioning.
+**Signal Classification**: Community E2E signal remains non-supportive for the payoff hypothesis. The March campaign showed only operational near-parity; the April `shop-order-saga` scenario keeps throughput flat while moving CPU and latency in the wrong direction for `locality-aware`.
 
 **Architectural Interpretation**:
-Locality-aware backend remains benchmarkable and architecture-dependent, but measured payoff is not material in current Community E2E scope. This does not strengthen a general claim for public scheduler-override API as a Loom-wide requirement.
+On the current Community execution model, locality-aware continuation placement is still benchmarkable, but the measured E2E payoff is not material. In the latest scenario the memory profile stays broadly similar while CPU cost rises meaningfully for `locality-aware`, which weakens the case that continuation locality delivers a practical benefit on Community in its present form.
+
+Because the April campaign remains `exploratory` and includes threshold-failure runs, it should be treated as directional E2E evidence rather than a fully gated acceptance pack. Even with that scope caveat, the direction of the result is clear enough to avoid stronger Community-side claims.
 
 **C5 Recommendation**: **NO_GO (maintained)**. Keep C5 closed in the current cycle.
 
@@ -273,14 +277,22 @@ If this API is unavailable, strict runs are invalid by design and must fail fast
 This is a runtime/API gate condition, independent from transport poller configuration.
 This gate is experimental validation infrastructure and is not evidence, by itself, of a required public scheduler API.
 
-### Community E2E Consolidated Update (2026-03-24)
+### Community E2E Update (2026-04-12)
 
-- Campaign reference: `results/raw/entity-read-by-id/20260324-150821-campaign`.
-- Measurement shape: 20 repeats per backend mode (`default-vt`, `locality-aware`), all quality gates pass.
-- Throughput means: `default-vt=52,871.361 RPS`; `locality-aware=52,958.579 RPS`; delta `+0.165%`.
-- Precision: CI half-widths `164.121` and `118.641`; relative error `0.310%` and `0.224%`.
-- Interpretation: near-parity; effect is at most statistically detectable and operationally negligible for Community E2E architecture decisions.
-- Decision impact: maintain C5 `NO_GO`; no escalation based on this campaign alone.
+- Campaign references:
+   - `results/raw/entity-read-by-id/20260324-150821-campaign`
+   - `results/raw/e2e-shop-order-saga/20260412T075737Z-locality/default-vt`
+   - `results/raw/e2e-shop-order-saga/20260412T084454Z-locality/locality-aware`
+- Latest measurement shape: 3 repeats per backend mode (`default-vt`, `locality-aware`), `claim_scope=exploratory`; each mode produced 1 `clean` run and 2 `threshold_failure` runs.
+- Latest throughput means: `default-vt=194.601 req/s`; `locality-aware=194.566 req/s`; delta `-0.018%`.
+- Latest resource picture:
+   - mean CPU util of one core: `28.87%` vs `32.59%` (`locality-aware +12.89%`)
+   - mean `cpu_time_seconds`: `193.337` vs `218.423` (`locality-aware +12.97%`)
+   - mean RSS: `730.1 MB` vs `709.1 MB`
+   - mean off-heap estimate: `595.6 MB` vs `589.0 MB`
+- Latest latency picture: mean HTTP duration `4.897 ms` vs `6.084 ms`; mean HTTP `p95` `11.943 ms` vs `13.666 ms`.
+- Interpretation: in this executed `shop-order-saga` E2E scenario on Community, `locality-aware` does not outperform `default-vt`. Memory stays broadly similar, but CPU cost is materially higher on `locality-aware`, which weakens the hypothesis of a material continuation-locality payoff in the current Community execution model.
+- Decision impact: maintain C5 `NO_GO`; use this as negative Community evidence, not as justification for scheduler/API escalation.
 
 ### Perf-stat Addendum (2026-03-24)
 
@@ -444,6 +456,10 @@ Toolchain note: prior `UnsupportedClassVersionError` (class `69.65535` / Java 25
 - [ ] **Run strict-locality matrix** - only on JVM builds exposing public `Thread.Builder.OfVirtual.scheduler(...)`
 - [ ] **Run isolated-host H1 confirmation** - same scenario/config, min 5 repeats, before any H2 expansion or perf-box escalation
 
+Track status: `concluded`.
+
+Closing note: the Community track resolved the methodological question and falsified a material payoff claim for the current cycle. Further Community escalation requires a new signal, not more repetition of the same A/B.
+
 ---
 
 ## Community Continuation-Locality Research Stop Rule
@@ -486,6 +502,7 @@ If the stop condition is met, the Community track is considered complete for the
 - the continuation-locality payoff was **not demonstrated** on the Community E2E path,
 - C5 remains `NO_GO`,
 - no H2 follow-up is required,
+- no Enterprise escalation is justified in the current cycle,
 - no perf-box escalation is required.
 
 This is an accepted research outcome, not a failed process.
@@ -526,24 +543,15 @@ The following remain valid after stopping the Community track:
 2. keep the scheduler seam as useful benchmark/architecture infrastructure,
 3. preserve the result as evidence that Netty-style handoff findings are not automatically transferable,
 4. revisit the question only if a materially different architecture or workload shape appears,
-5. use the findings to refine Enterprise hypotheses rather than to force a Community win.
+5. do not escalate to Enterprise on the basis of this track.
 
 ---
 
-### H2 Proceed Gate (After Isolated H1)
+### H2 Gate (Current Cycle)
 
-H2 is allowed only as a bounded follow-up if isolated H1 shows a positive, believable signal.
+H2 is closed for the current cycle.
 
-Proceed only if all of the following are true:
-
-1. locality-aware has a positive mean throughput delta,
-2. the delta is directionally credible: >= +3% is the minimum stable trigger, >= +5% is a strong trigger,
-3. CI or relative error does not wash out the effect,
-4. tail latency (p99/p999) does not degrade unacceptably,
-5. perf/JFR does not contradict the mechanism-level interpretation,
-6. the H2 objective is to test amplification or transferability in a richer transport shape, not to rescue the hypothesis.
-
-Do not proceed to H2 if isolated H1 is neutral, noisy, too small to separate from environment effects, or justified only by hope.
+Do not proceed to H2 on the basis of this track.
 
 ---
 
@@ -557,15 +565,16 @@ It may be considered only if H1 is positive and stable, H2 is positive and stabl
 
 ### Final Rule
 
-If isolated H1 is negative or neutral, stop the Community payoff track; no H2; no H3.
+The Community continuation-locality track is conclusively closed for the current cycle:
+- Community `NO_GO`,
+- no H2,
+- no Enterprise escalation in the current cycle.
 
-If isolated H1 is positive but tiny and believable, allow bounded H2 only.
+Since no material payoff was demonstrated on the simpler and more controlled Community path,
+the present evidence does not justify locality-driven progression beyond this track.
 
-If isolated H1 is positive and reasonably stable, around >= +5% with an acceptable latency profile, H2 is warranted for transferability or amplification check.
-
-Do not escalate to H2 out of hope.
-
-H3 does not proceed in the current cycle without the H1/H2 prerequisites.
+Any future Enterprise-side work would require a materially different hypothesis,
+not a continuation of the current locality-payoff thesis.
 
 ---
 

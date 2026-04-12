@@ -1,68 +1,80 @@
 # Reporting Rules - Loom Continuation Locality Benchmark
 
-## Pass Criteria
+## Decision Model
+
+This research uses a dual-track decision gate:
+
+- Track A: kernel micro JMH mechanism evidence.
+- Track B: exeris-benchmarks E2E survivability evidence.
+
+Final decision is GO only when both tracks are valid.
+
+## Track A Pass Criteria (Micro)
 
 A measurement batch PASSES if:
 
-1. **Preflight Validation:** All API preflight checks green (both implementations discovered, SPI calls succeed).
-2. **Baseline Stability (post-filter CV sequence):**
-  1. Collect 5 runs.
-  2. Remove runs with GC pause > 500ms.
-  3. If remaining n < 3, fail batch and rerun.
-  4. Compute CV on remaining runs.
-  5. CV < 3% passes; otherwise extend to 10 reps.
-3. **Measurement Quality:** Internal target relative error (95% CI) <= 2% for primary metric (IPR); decision-level acceptance <= 10%.
-4. **No Dropouts:** < 5% of requests dropped or timed out per run.
-5. **GC Outlier Policy Applied:** Runs with GC pause > 500ms are removed; batch remains valid only if filtered n >= 3.
-6. **Statistically Significant Improvement (H1):** IPR_E < IPR_C * 0.95 at 64 virtual threads.
-7. **Monotonic Scaling (Concurrency):** Efficiency gain increases or plateaus from 16vt to 64vt (no regression at higher concurrency).
-8. **Latency Regression Guard:**
-  - P50_E must not increase by more than 5% vs C.
-  - P50 regression 5-10%: WARN (efficiency-latency tradeoff; allowed with caveat).
-  - P50 regression > 10%: ALARM; defer pending investigation.
-  - P99_E regression up to +20% is acceptable only if the P50 guard passes.
+1. Preflight and matrix invariants valid.
+2. Required repetitions and CI/RE quality gates valid.
+3. Primary metric and stability requirements satisfied.
+4. Artifacts complete and traceable per run.
 
-## Claim Eligibility Mapping
+## Track B Pass Criteria (E2E)
 
-- Batch passes all gates -> `claim_scope="comparison_eligible"`.
-- Any hard gate fails -> `claim_scope="descriptive_only"`.
-- Aggregate mixes eligible and non-eligible inputs (for example, one side not eligible) -> `claim_scope="descriptive_partial"`.
-- Compare E vs C only when both sides are `comparison_eligible`.
+E2E A/B track PASSES only when:
+
+1. Both legs (`default-vt`, `locality-aware`) complete successfully.
+2. Both legs are reproducibility-assessable.
+3. Both legs are claim-eligible for intended interpretation.
+4. No leg is downgraded to `claim_scope=none`/non-assessable.
+
+If any E2E leg fails these conditions, E2E claim is descriptive-only and
+cannot support progression.
+
+## Integrated GO/NO_GO Gate
+
+- GO: quality-valid evidence and consistent measurable `locality-aware` benefit.
+- NO_GO: no consistent measurable `locality-aware` benefit signal.
 
 ## Failure Modes and Escalation
 
-### Preflight Fails
+### Micro Gate Failure
 
-- **Cause:** SPI discovery, provider binding, or contract violation.
-- **Action:** Fix provider configuration or SPI contract before re-running.
-- **Report:** "Preflight Failure - <detail>" in benchmark output.
+- **Cause:** Methodology quality failure (variance, CI, artifacts, invariants).
+- **Action:** Fix methodology issue and rerun micro track.
+- **Report:** explicit failed gate and corrective action.
 
-### Baseline Instability (post-filter CV > 3%)
+### E2E Eligibility Failure
 
-- **Cause:** Noisy measurement environment, GC pauses, or harness jitter.
-- **Action:** Collect 5 runs, remove runs with GC pause > 500ms, fail and rerun if n < 3, then compute CV on remaining runs. If CV remains > 3%, extend to 10 reps.
-- **Report:** "Baseline Instability - post-filter CV=<value>% (> 3% threshold); rerun/extend to 10 reps."
+- **Cause:** One or more E2E legs failed, missing, or non-eligible.
+- **Action:** fix campaign reliability first; do not force comparative claims.
+- **Report:** status evidence per leg (`runner_status`, `final_reason`, `claim_scope`).
 
-### Measurement Noise (RE > 2%)
+### Mixed Evidence
 
-- **Cause:** Insufficient iterations or high variance hardware.
-- **Action:** Increase repetitions to 10, apply outlier filters, rerun.
-- **Report:** "High Measurement Variance - RE=<value>% (above internal target, not necessarily decision-level blocker); expanded to 10 reps."
+- **Cause:** quality-valid runs but no observable `locality-aware` benefit signal.
+- **Action:** keep decision NO_GO and document absence of benefit as primary reason.
+- **Report:** explicitly state "no measurable benefit signal" in final rationale.
 
-### No Improvement (IPR_E >= IPR_C * 0.95)
+## Claim Language Policy
 
-- **Cause:** Experimental backend provides no efficiency gain at 64vt.
-- **Action:** Review experimental implementation, capture detailed JFR traces, check affinity assumptions.
-- **Report:** "No Statistically-Significant Improvement - IPR improvement < 5% at 64vt; defer phase."
+- Allowed:
+  - "micro mechanism signal observed/not observed"
+  - "E2E A/B evidence eligible/non-eligible"
+  - "integrated decision: GO/NO_GO"
 
-### Latency Regression Guard
+- Not allowed when E2E is non-eligible:
+  - production-readiness claims
+  - progression/upgrade recommendations that imply GO
+  - cross-runtime superiority claims from exploratory locality runs
 
-- **Cause:** Experimental backend trades latency for throughput.
-- **Action:**
-  - P50 +5-10%: keep result as WARN with caveat, capture JFR trace, and document tradeoff.
-  - P50 > +10%: ALARM, defer decision pending investigation.
-  - P99 up to +20% is allowed only when P50 <= +5%.
-- **Report:** "Latency Guard - P50 delta=<value>%, P99 delta=<value>%, status=<PASS|WARN|ALARM>; review <JFR-path>."
+## Current Cycle Decision
+
+Current classification: NO_GO.
+
+Rationale:
+- No consistent measurable benefit of `locality-aware` over `default-vt`
+  was observed in current-cycle evidence.
+- E2E eligibility constraints may exist, but they are not the primary NO_GO driver.
 
 ## Output Format
 
@@ -71,46 +83,22 @@ Benchmark summary report includes:
 ```
 ===== Loom Continuation Locality Benchmark Summary =====
 
-Preflight Status: PASS
-Baseline Stability: PASS (C CV = 2.1%)
+Track A (Micro): <PASS|FAIL>
+Track B (E2E): <PASS|FAIL>
+Integrated Decision: <GO|NO_GO>
 
-Results (Mean ± 95% CI, Relative Error):
+Track A Summary (mechanism):
+- key A/B deltas
+- CI/RE quality status
 
-Concurrency 16vt:
-  Baseline (C)   IPR: 4200 ± 45 cycles/req (RE=1.1%)
-  Experimental (E) IPR: 3900 ± 48 cycles/req (RE=1.2%)
-  Improvement: 7.1% (PASS)
+Track B Summary (survivability):
+- per-leg status and claim eligibility
+- blocked-claim reasons if any
 
-Concurrency 32vt:
-  Baseline (C)   IPR: 4400 ± 55 cycles/req (RE=1.2%)
-  Experimental (E) IPR: 3850 ± 60 cycles/req (RE=1.4%)
-  Improvement: 12.5% (PASS)
-
-Concurrency 64vt:
-  Baseline (C)   IPR: 4650 ± 70 cycles/req (RE=1.5%)
-  Experimental (E) IPR: 4100 ± 75 cycles/req (RE=1.6%)
-  Improvement: 11.8% (PASS)
-
-Overall: H1 PASS (>= 5% at 64vt), Concurrency scaling PASS (monotonic scaling to 32vt, plateau at 64vt)
-Final Status: PASS
-
-JFR Files (for post-run analysis):
-  benchmark-16vt-c-run1.jfr ... benchmark-64vt-e-run5.jfr
+Decision Boundary Notes:
+- micro-only improvements are not progression approval
+- NO_GO when no measurable locality-aware benefit is observed
 ```
-
-## Regression Detection
-
-If current measurement differs from last approved baseline by > 20% absolute IPR:
-- Halt and report as "Regression Candidate."
-- Require manual review and re-baseline before merging experimental changes.
-
-## Archival
-
-All benchmark results (output summary, JFR files, perf-stat logs) are archived to:
-`target/benchmark-results/loom-continuation-locality/<YYYY-MM-DD-HH-MM-SS>/`
-
-with symlink to latest:
-`target/benchmark-results/loom-continuation-locality/latest/`
 
 ## References
 

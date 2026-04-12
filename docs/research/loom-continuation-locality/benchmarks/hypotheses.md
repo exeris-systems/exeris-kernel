@@ -2,44 +2,44 @@
 
 ## Primary Hypothesis (H1)
 
-**Statement:** On the Exeris Community stack with NativeTcpCarrier transport,
-replacing default virtual-thread execution with a scheduler-aware continuation backend
-will improve fixed-rate CPU efficiency by >= 5% under sustained load.
+**Statement:** In kernel micro JMH runs, replacing `backendMode=default-vt`
+with `backendMode=locality-aware` improves scheduler/locality efficiency signals
+under controlled synthetic load.
 
-**Rationale:** The default FJP-resume path incurs context-switch and cache-locality costs
-that a scheduler-aware alternative can mitigate by co-scheduling on affine threads.
+**Rationale:** The default VT resume path can lose continuation/cache locality;
+scheduler-aware execution may reduce this mechanism cost.
 
 **Success Criteria:**
-- Measurable reduction in instructions-per-request at fixed rate.
-- Measurable reduction in context-switches per request.
-- Internal target CI/relative-error <= 2% across 5+ runs; decision-level acceptance <= 10%.
+- Positive, repeatable micro deltas on primary efficiency metrics.
+- Relative error and CI within accepted quality thresholds.
+- No artifact mixing across binaries, JVM configs, and host profile.
 
 ---
 
-## Secondary Hypothesis (Concurrency Scaling)
+## Secondary Hypothesis (H2: E2E Survivability)
 
-**Statement:** The measured improvement will scale proportionally with concurrency level
-(concurrency levels at 16, 32, 64 virtual threads).
+**Statement:** If H1 is a meaningful mechanism signal, it should be at least partially
+visible in E2E campaigns executed in exeris-benchmarks for locality A/B legs.
 
-**Rationale:** Locality effects should be more pronounced as thread pressure increases
-and default FJP scheduling becomes more contended.
+**Rationale:** Pure micro gains that disappear entirely in E2E are insufficient for
+progression decisions.
 
 **Success Criteria:**
-- Efficiency gain increases monotonically from 16vt to 64vt.
-- Relative gain plateaus by 64vt (scheduler saturation or transport limit).
+- E2E runs provide comparison-eligible evidence for both legs.
+- No systematic leg failure preventing A/B interpretation.
 
 ---
 
 ## Control Hypothesis (C0)
 
-**Statement:** The baseline (default VT execution) shows stable, reproducible throughput
-and CPU efficiency across runs.
+**Statement:** Baseline `default-vt` remains reproducible in both tracks
+(kernel micro and E2E campaign baseline leg).
 
-**Rationale:** Validates harness and measurement discipline before introducing changes.
+**Rationale:** Decision quality depends on baseline stability and reproducibility.
 
 **Success Criteria:**
-- Coefficient of variation (CV) < 3% for baseline CPU efficiency.
-- No unexplained drift across sequential benchmark runs.
+- Stable baseline in micro repetitions.
+- E2E baseline leg completes with valid status/metadata.
 
 ---
 
@@ -49,11 +49,16 @@ and CPU efficiency across runs.
 - Multishot or bounded-drain effectiveness
 - JDK internal poller tuning
 - Lock-free scheduler design validation
+- Cross-runtime superiority claims from locality exploratory runs
 
 ---
 
-## Observation: Latency vs Throughput Trade-off
+## Current Decision Snapshot
 
-Note: improved CPU efficiency may reduce P50/P90/P99 latency, but the hypothesis
-does not require latency improvement. We measure both; latency regression (> 5%)
-triggers investigation.
+Current cycle outcome: NO_GO for progression.
+
+Interpretation:
+- Observed results do not show a consistent measurable benefit of
+  `locality-aware` over `default-vt`.
+- This remains true even under exploratory interpretation.
+- Therefore, progression claims are deferred.

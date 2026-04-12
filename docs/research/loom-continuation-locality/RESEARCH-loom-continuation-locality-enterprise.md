@@ -4,7 +4,7 @@
 > **Author:** @arkstack-dev
 > **Started:** 2026-03-20
 > **Milestone:** v0.6 - findings feed scheduler seam design, benchmark harness, and bounded architecture guidance
-> **Status:** `active`
+> **Status:** `concluded`
 
 Shared context, hypothesis background, methodology, deliverables, milestones, and initial position are in `RESEARCH-loom-continuation-locality.md`.
 
@@ -33,7 +33,7 @@ A second-order Enterprise hypothesis follows:
 > placement, multishot receive, batch receive, and bounded drain becomes a primary
 > determinant of throughput/latency/fairness trade-offs.
 
-Gate note (2026-03-24): after Community near-parity, Enterprise proceeds as targeted validation of architecture-dependent effects, not as a pre-justified redesign track.
+Gate note (2026-04-12): after Community near-parity in the earlier campaign and no E2E win plus higher CPU cost in `shop-order-saga`, Enterprise proceeds as targeted validation of architecture-dependent effects, not as a pre-justified redesign track.
 
 ---
 
@@ -331,7 +331,11 @@ Goal:
 - [ ] **Proceed to deeper transport redesign** - if affine/locality-aware execution shows durable gains
 - [ ] **Proceed to bounded-drain study only** - if scheduler signal exists but backend change is partial
 - [ ] **Hold as research-only** - if signal exists but implementation complexity is not justified yet
-- [ ] **Park** - if Enterprise-specific complexity overwhelms the signal
+- [x] **Park** - Community concluded `NO_GO`; Enterprise-specific escalation is not justified in the current cycle
+
+Track status: `concluded`.
+
+Closing note: Enterprise remained a planned follow-up track, but the combined Community evidence did not justify carrying this branch into deeper Enterprise execution-model work in the current cycle.
 
 ---
 
