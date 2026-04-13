@@ -64,7 +64,7 @@ Do not maintain duplicated full copies of the same living research document in m
 The `main` branch does **not** carry all active lab notes and branch-specific details.
 Instead:
 
-- `docs/RESEARCH.md` defines the framework and portfolio,
+- `docs/research/RESEARCH.md` defines the framework and portfolio,
 - each research branch contains the living research document,
 - conclusions are promoted back into `main` via ADRs, feature PRs, or summary updates.
 
@@ -95,7 +95,7 @@ Do **not** open a research branch for:
 ## Required Shape of a Research Document
 
 Every concrete research document should follow the structure defined in
-`docs/RESEARCH-TEMPLATE.md`.
+`docs/research/RESEARCH-TEMPLATE.md`.
 
 At minimum, a research document must contain:
 
@@ -315,7 +315,7 @@ Use when findings imply a durable architectural decision.
 ### Option 2 — Promote to Feature
 Use when findings are conclusive but architecture does not need an ADR.
 
-### Option 3 — Update `docs/RESEARCH.md`
+### Option 3 — Update `docs/research/RESEARCH.md`
 Add status update, final disposition, or successor work.
 
 ### Option 4 — Open follow-up issue/discussion
@@ -352,7 +352,7 @@ Decision section.
 ## Recommended Branch Lifecycle
 
 1. Create `research/[slug]`
-2. Add `research.md` from `docs/RESEARCH-TEMPLATE.md`
+2. Add `research.md` from `docs/research/RESEARCH-TEMPLATE.md`
 3. Define hypothesis and methodology before large prototype work
 4. Collect evidence and update implementation notes continuously
 5. Record results
@@ -382,8 +382,8 @@ Use:
 `# Research: [Short Title]`
 
 ### Main branch documentation
-- `docs/RESEARCH.md` — framework and portfolio
-- `docs/RESEARCH-TEMPLATE.md` — canonical template
+- `docs/research/RESEARCH.md` — framework and portfolio
+- `docs/research/RESEARCH-TEMPLATE.md` — canonical template
 
 ### Branch-local document
 Prefer:
@@ -426,7 +426,7 @@ A research effort that never reaches a disposition is incomplete.
 
 Use the canonical template in:
 
-- `docs/RESEARCH-TEMPLATE.md`
+- `docs/research/RESEARCH-TEMPLATE.md`
 
 for all new research branches.
 
@@ -434,7 +434,7 @@ for all new research branches.
 
 ## References
 
-- `docs/RESEARCH-TEMPLATE.md`
+- `docs/research/RESEARCH-TEMPLATE.md`
 - `docs/architecture.md`
 - `docs/performance-contract.md`
 - `docs/adr/ADR-007*`

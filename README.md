@@ -73,7 +73,7 @@ mvn -pl exeris-kernel-core -am clean install
 - SPI contracts: [exeris-kernel-spi/src/main](exeris-kernel-spi/src/main)
 - Core bootstrap and orchestration: [exeris-kernel-core/src/main](exeris-kernel-core/src/main)
 - Community providers and integration paths: [exeris-kernel-community/src/main](exeris-kernel-community/src/main)
-- Contract tests and abstract TCK suites: [exeris-kernel-tck/src/main](exeris-kernel-tck/src/main) and [exeris-kernel-tck/src/test](exeris-kernel-tck/src/test)
+- Contract tests and TCK suites: [exeris-kernel-tck/src/test](exeris-kernel-tck/src/test)
 
 ## Documentation Index
 
