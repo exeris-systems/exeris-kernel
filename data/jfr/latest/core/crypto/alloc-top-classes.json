@@ -1,41 +1,26 @@
 [ {
-  "class" : "java.util.LinkedHashMap$Entry",
+  "class" : "java.lang.String",
+  "count" : 4,
+  "bytes" : 784728,
+  "category" : "jvm_noise"
+}, {
+  "class" : "[Ljava.lang.Object;",
   "count" : 3,
-  "bytes" : 523176,
+  "bytes" : 522240,
   "category" : "jvm_noise"
 }, {
-  "class" : "java.util.HashMap$Node",
-  "count" : 1,
-  "bytes" : 261536,
+  "class" : "java.util.LinkedHashMap$Entry",
+  "count" : 2,
+  "bytes" : 494296,
   "category" : "jvm_noise"
 }, {
-  "class" : "[Ljava.util.HashMap$Node;",
-  "count" : 1,
-  "bytes" : 392464,
-  "category" : "jvm_noise"
+  "class" : "java.lang.VirtualThread",
+  "count" : 2,
+  "bytes" : 522824,
+  "category" : "loom_runtime"
 }, {
-  "class" : "java.util.HashMap$KeySet",
+  "class" : "java.util.concurrent.ForkJoinTask$AdaptedRunnableAction",
   "count" : 1,
-  "bytes" : 261568,
+  "bytes" : 261552,
   "category" : "jvm_noise"
-}, {
-  "class" : "java.lang.StringBuilder",
-  "count" : 1,
-  "bytes" : 261544,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.lang.Object",
-  "count" : 1,
-  "bytes" : 261560,
-  "category" : "jvm_noise"
-}, {
-  "class" : "[B",
-  "count" : 1,
-  "bytes" : 261560,
-  "category" : "jvm_noise"
-}, {
-  "class" : "eu.exeris.kernel.tck.contract.AbstractSubsystemCarrierPinningTck$$Lambda.0x0000000047326b08",
-  "count" : 1,
-  "bytes" : 17848,
-  "category" : "test_harness"
 } ]
