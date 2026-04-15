@@ -45,8 +45,8 @@ class CommunityTransportSubsystemLifecycleTckTest extends AbstractSubsystemLifec
     private static final class DisabledConfigProvider implements ConfigProvider {
 
         @Override
-        public Supplier<KernelSettings> kernelSettings() {
-            return KernelSettings::defaults;
+        public Supplier<ConfigProvider.KernelSettings> kernelSettings() {
+            return ConfigProvider.KernelSettings::defaults;
         }
 
         @Override

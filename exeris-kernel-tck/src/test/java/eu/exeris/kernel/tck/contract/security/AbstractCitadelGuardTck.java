@@ -28,6 +28,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.fail;
 
 /**
  * TCK: Abstract base for Citadel-style RBAC gate verification.
@@ -187,7 +188,7 @@ public abstract class AbstractCitadelGuardTck<G> {
     private InsufficientPrivilegesException catchRejection(ScopedValue.Carrier carrier, String requiredRole) {
         try {
             carrier.run(() -> requireRole(guard, requiredRole));
-            return null;
+            return fail("Expected requireRole() to reject missing role: " + requiredRole);
         } catch (InsufficientPrivilegesException ex) {
             return ex;
         }
