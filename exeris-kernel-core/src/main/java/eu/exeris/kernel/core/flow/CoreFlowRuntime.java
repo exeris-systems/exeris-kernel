@@ -188,8 +188,12 @@ final class CoreFlowRuntime { // NOPMD
         return started && !closed && isCurrentLifecycle(instance);
     }
 
+    private boolean isStaleLifecycle(RuntimeFlowInstance instance) {
+        return !isCurrentLifecycle(instance);
+    }
+
     private boolean cleanupOnly(RuntimeFlowInstance instance) {
-        return shutdownFinalized || !isCurrentLifecycle(instance);
+        return shutdownFinalized || isStaleLifecycle(instance);
     }
 
     private void resetLifecycleTotals() {
@@ -589,10 +593,11 @@ final class CoreFlowRuntime { // NOPMD
     }
 
     private void fail(RuntimeFlowInstance instance, int stepIndex) {
+        boolean staleLifecycle = isStaleLifecycle(instance);
         boolean cleanupOnly = cleanupOnly(instance);
         transitionToCompensating(instance, stepIndex, cleanupOnly);
         runCompensations(instance, cleanupOnly);
-        finalizeFailedInstance(instance, stepIndex, cleanupOnly);
+        finalizeFailedInstance(instance, stepIndex, cleanupOnly, staleLifecycle);
     }
 
     private void transitionToCompensating(RuntimeFlowInstance instance, int stepIndex, boolean cleanupOnly) {
@@ -634,9 +639,13 @@ final class CoreFlowRuntime { // NOPMD
         }
     }
 
-    private void finalizeFailedInstance(RuntimeFlowInstance instance, int stepIndex, boolean cleanupOnly) {
+    private void finalizeFailedInstance(
+            RuntimeFlowInstance instance,
+            int stepIndex,
+            boolean cleanupOnly,
+            boolean staleLifecycle) {
         instance.state(FlowState.FAILED_ROLLEDBACK);
-        if (guard != null) {
+        if (!staleLifecycle && guard != null) {
             guard.releaseInstance(instance.key().instanceIdMost(), instance.key().instanceIdLeast());
         }
         clearParkedLookupMiss(instance.key());
@@ -644,7 +653,9 @@ final class CoreFlowRuntime { // NOPMD
             failedFlows.increment();
             terminalStateCatalog.put(instance.key(), FlowState.FAILED_ROLLEDBACK);
         }
-        persistSnapshot(instance, FlowState.FAILED_ROLLEDBACK, stepIndex);
+        if (!staleLifecycle) {
+            persistSnapshot(instance, FlowState.FAILED_ROLLEDBACK, stepIndex);
+        }
         if (!cleanupOnly) {
             progressPublisher.publishProgress(instance, stepIndex, FlowState.FAILED_ROLLEDBACK);
         }
@@ -655,15 +666,14 @@ final class CoreFlowRuntime { // NOPMD
     }
 
     private void complete(RuntimeFlowInstance instance) {
+        boolean staleLifecycle = isStaleLifecycle(instance);
         boolean cleanupOnly = cleanupOnly(instance);
         instance.state(FlowState.COMPLETED);
         clearParkedLookupMiss(instance.key());
         if (!cleanupOnly) {
             terminalStateCatalog.put(instance.key(), FlowState.COMPLETED);
         }
-        if (guard != null) {
-            guard.releaseInstance(instance.key().instanceIdMost(), instance.key().instanceIdLeast());
-        }
+        releaseInstanceClaims(instance, staleLifecycle);
         if (!cleanupOnly) {
             completedFlows.increment();
             progressPublisher.publishProgress(instance, instance.currentStep(), FlowState.COMPLETED);
@@ -672,12 +682,24 @@ final class CoreFlowRuntime { // NOPMD
         if (!cleanupOnly && parkedInstances.remove(instance.key(), instance)) {
             parkedFlows.decrement();
         }
-        if (snapshotStore != null) {
-            try {
-                snapshotStore.delete(instance.key().instanceIdMost(), instance.key().instanceIdLeast());
-            } catch (RuntimeException ignored) { //NOPMD AvoidCatchingGenericException — best-effort snapshot deletion
-                // Best-effort deletion — completion is already recorded; do not fail the flow.
-            }
+        deleteSnapshot(instance, staleLifecycle);
+    }
+
+    private void releaseInstanceClaims(RuntimeFlowInstance instance, boolean staleLifecycle) {
+        if (staleLifecycle || guard == null) {
+            return;
+        }
+        guard.releaseInstance(instance.key().instanceIdMost(), instance.key().instanceIdLeast());
+    }
+
+    private void deleteSnapshot(RuntimeFlowInstance instance, boolean staleLifecycle) {
+        if (staleLifecycle || snapshotStore == null) {
+            return;
+        }
+        try {
+            snapshotStore.delete(instance.key().instanceIdMost(), instance.key().instanceIdLeast());
+        } catch (RuntimeException ignored) { //NOPMD AvoidCatchingGenericException — best-effort snapshot deletion
+            // Best-effort deletion — completion is already recorded; do not fail the flow.
         }
     }
 

@@ -21,7 +21,7 @@
 - Snapshot persistence is optional and only used when a `FlowSnapshotStore` is bound and persistence is enabled.
 
 > **Note:** `FlowOutcome.COMPLETE` provides a direct short-circuit path: a step can return `COMPLETE` to transition the flow immediately to `FlowState.COMPLETED` without executing any remaining steps.
-> **Note:** `FlowBootstrapSelectedEvent` is emitted by `FlowBootstrap.loadWithProvider()` before `start()`. `FlowEngine.close()` emits `FlowEngineShutdownEvent` after its bounded shutdown join and snapshot finalization, so the JFR payload reflects the stable counter view captured when `close()` completes. Promptly interrupted workers may still contribute before that snapshot is finalized.
+> **Note:** `FlowBootstrapSelectedEvent` is emitted by `FlowBootstrap.loadWithProvider()` before `start()`. `FlowEngine.close()` emits `FlowEngineShutdownEvent` after runtime close and its bounded shutdown join, so the JFR payload reflects the stable shutdown counter view captured when `close()` completes. Promptly interrupted workers may still finalize snapshots afterward without changing that counter snapshot.
 
 ## Boundaries
 
@@ -83,7 +83,7 @@ Flow can be driven by external events through the choreography bridge:
 |---|---|---|---|
 | `FlowBootstrapSelectedEvent` | `eu.exeris.kernel.flow.BootstrapSelected` | `FlowBootstrap.loadWithProvider()` | `providerClass`, `priority`, `providerId`, `engineName` |
 | `FlowStepFailedEvent` | `eu.exeris.kernel.flow.StepFailed` | `CoreFlowRuntime` on step exception | `definitionName`, `stepIndex`, `instanceIdMost`, `instanceIdLeast`, `failureReason` |
-| `FlowEngineShutdownEvent` | `eu.exeris.kernel.flow.Shutdown` | `CoreFlowEngine.close()` after runtime close and shutdown snapshot finalization | `engineName`, `activeFlows`, `parkedFlows`, `completedFlows`, `failedFlows`, `persistenceEnabled`, `compensationEnabled` |
+| `FlowEngineShutdownEvent` | `eu.exeris.kernel.flow.Shutdown` | `CoreFlowEngine.close()` after runtime close and bounded shutdown join; captures the stable shutdown counter view even if late workers finalize snapshots afterward | `engineName`, `activeFlows`, `parkedFlows`, `completedFlows`, `failedFlows`, `persistenceEnabled`, `compensationEnabled` |
 
 ---
 

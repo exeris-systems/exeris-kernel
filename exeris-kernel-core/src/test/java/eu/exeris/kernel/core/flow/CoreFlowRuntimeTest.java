@@ -857,6 +857,212 @@ class CoreFlowRuntimeTest {
         }
     }
 
+    @Test
+    @Timeout(value = 20, unit = TimeUnit.SECONDS)
+    @DisplayName("stale completed worker after restart does not release current claims or delete the reused snapshot")
+    void staleCompletedWorkerAfterRestartDoesNotReleaseCurrentClaimsOrDeleteTheReusedSnapshot() throws Exception {
+        InMemorySnapshotStore snapshotStore = new InMemorySnapshotStore();
+        TrackingIdempotencyGuard guard = new TrackingIdempotencyGuard();
+        CountDownLatch staleParked = new CountDownLatch(1);
+        CountDownLatch staleResumed = new CountDownLatch(1);
+        CountDownLatch currentParked = new CountDownLatch(1);
+        AtomicReference<Boolean> allowStaleExit = new AtomicReference<>(false);
+        AtomicReference<Thread> staleThread = new AtomicReference<>();
+
+        CoreFlowEngine engine = startedEngine(true, snapshotStore, guard);
+        try {
+            FlowDefinition staleDefinition = engine.plans().newDefinition("stale-restart-complete-old")
+                    .step("park", _ -> {
+                        staleParked.countDown();
+                        return FlowOutcome.PARK;
+                    }, null)
+                    .step("linger-then-complete", _ -> {
+                        staleThread.compareAndSet(null, Thread.currentThread());
+                        staleResumed.countDown();
+                        while (!Boolean.TRUE.equals(allowStaleExit.get())) {
+                            LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(50));
+                            if (Thread.interrupted()) {
+                                Thread.currentThread().interrupt();
+                            }
+                        }
+                        return FlowOutcome.COMPLETE;
+                    }, null)
+                    .build();
+
+            FlowExecutionPlan stalePlan = engine.plans().compile(staleDefinition);
+            FlowContext staleContext = context("stale-restart-reused-complete-instance", staleDefinition.name());
+
+            engine.scheduler().schedule(stalePlan, staleContext);
+
+            assertThat(staleParked.await(3, TimeUnit.SECONDS)).isTrue();
+            awaitTrue(3_000, () -> snapshotStore.exists(staleContext.instanceIdMost(), staleContext.instanceIdLeast()));
+
+            engine.scheduler().wake(engine.scheduler().lookupParked(
+                    staleContext.instanceIdMost(), staleContext.instanceIdLeast()).orElseThrow());
+
+            assertThat(staleResumed.await(3, TimeUnit.SECONDS)).isTrue();
+            awaitTrue(3_000, () -> !guard.tryClaimStep(staleContext.instanceIdMost(), staleContext.instanceIdLeast(), 1));
+
+            engine.close();
+            snapshotStore.delete(staleContext.instanceIdMost(), staleContext.instanceIdLeast());
+            ScopedValue.where(KernelProviders.FLOW_SNAPSHOT_STORE, snapshotStore)
+                    .where(KernelProviders.IDEMPOTENCY_GUARD, guard)
+                    .run(engine::start);
+
+            FlowDefinition currentDefinition = engine.plans().newDefinition("stale-restart-complete-current")
+                    .step("skip-0", _ -> FlowOutcome.CONTINUE, null)
+                    .step("skip-1", _ -> FlowOutcome.CONTINUE, null)
+                    .step("park-current", _ -> {
+                        currentParked.countDown();
+                        return FlowOutcome.PARK;
+                    }, null)
+                    .build();
+
+            FlowExecutionPlan currentPlan = engine.plans().compile(currentDefinition);
+            FlowContext currentContext = context(
+                    staleContext.instanceIdMost(),
+                    staleContext.instanceIdLeast(),
+                    currentDefinition.name(),
+                    2,
+                    FlowState.RUNNING);
+
+            engine.scheduler().schedule(currentPlan, currentContext);
+
+            assertThat(currentParked.await(3, TimeUnit.SECONDS)).isTrue();
+            awaitTrue(3_000, () -> snapshotStore.load(currentContext.instanceIdMost(), currentContext.instanceIdLeast())
+                    .map(snapshot -> snapshot.state() == FlowState.PARKED
+                            && snapshot.definitionName().equals(currentDefinition.name()))
+                    .orElse(false));
+            assertThat(guard.releaseCount())
+                    .as("no lifecycle should have released claims before the stale worker exits")
+                    .isZero();
+            assertThat(guard.tryClaimStep(currentContext.instanceIdMost(), currentContext.instanceIdLeast(), 2))
+                    .as("current lifecycle must still own its parked-step idempotency claim before stale completion")
+                    .isFalse();
+
+            allowStaleExit.set(true);
+            awaitTrue(3_000, () -> staleThread.get() != null && !staleThread.get().isAlive());
+
+            assertThat(guard.releaseCount())
+                    .as("stale completion from the prior lifecycle must not release current lifecycle claims")
+                    .isZero();
+            assertThat(guard.tryClaimStep(currentContext.instanceIdMost(), currentContext.instanceIdLeast(), 2))
+                    .as("stale completion must not reopen the reused instance's current idempotency claim")
+                    .isFalse();
+            assertThat(snapshotStore.load(currentContext.instanceIdMost(), currentContext.instanceIdLeast()))
+                    .as("stale completion must not delete the current lifecycle snapshot for the reused instance")
+                    .get()
+                    .extracting(FlowSnapshot::state, FlowSnapshot::definitionName)
+                    .containsExactly(FlowState.PARKED, currentDefinition.name());
+        } finally {
+            allowStaleExit.set(true);
+            engine.close();
+        }
+    }
+
+    @Test
+    @Timeout(value = 20, unit = TimeUnit.SECONDS)
+    @DisplayName("stale failed worker after restart does not release current claims or overwrite the reused snapshot")
+    void staleFailedWorkerAfterRestartDoesNotReleaseCurrentClaimsOrOverwriteTheReusedSnapshot() throws Exception {
+        InMemorySnapshotStore snapshotStore = new InMemorySnapshotStore();
+        TrackingIdempotencyGuard guard = new TrackingIdempotencyGuard();
+        CountDownLatch staleParked = new CountDownLatch(1);
+        CountDownLatch staleResumed = new CountDownLatch(1);
+        CountDownLatch currentParked = new CountDownLatch(1);
+        AtomicReference<Boolean> allowStaleExit = new AtomicReference<>(false);
+        AtomicReference<Thread> staleThread = new AtomicReference<>();
+
+        CoreFlowEngine engine = startedEngine(true, snapshotStore, guard);
+        try {
+            FlowDefinition staleDefinition = engine.plans().newDefinition("stale-restart-fail-old")
+                    .step("park", _ -> {
+                        staleParked.countDown();
+                        return FlowOutcome.PARK;
+                    }, null)
+                    .step("linger-then-fail", _ -> {
+                        staleThread.compareAndSet(null, Thread.currentThread());
+                        staleResumed.countDown();
+                        while (!Boolean.TRUE.equals(allowStaleExit.get())) {
+                            LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(50));
+                            if (Thread.interrupted()) {
+                                Thread.currentThread().interrupt();
+                            }
+                        }
+                        return FlowOutcome.FAIL;
+                    }, null)
+                    .build();
+
+            FlowExecutionPlan stalePlan = engine.plans().compile(staleDefinition);
+            FlowContext staleContext = context("stale-restart-reused-fail-instance", staleDefinition.name());
+
+            engine.scheduler().schedule(stalePlan, staleContext);
+
+            assertThat(staleParked.await(3, TimeUnit.SECONDS)).isTrue();
+            awaitTrue(3_000, () -> snapshotStore.exists(staleContext.instanceIdMost(), staleContext.instanceIdLeast()));
+
+            engine.scheduler().wake(engine.scheduler().lookupParked(
+                    staleContext.instanceIdMost(), staleContext.instanceIdLeast()).orElseThrow());
+
+            assertThat(staleResumed.await(3, TimeUnit.SECONDS)).isTrue();
+            awaitTrue(3_000, () -> !guard.tryClaimStep(staleContext.instanceIdMost(), staleContext.instanceIdLeast(), 1));
+
+            engine.close();
+            snapshotStore.delete(staleContext.instanceIdMost(), staleContext.instanceIdLeast());
+            ScopedValue.where(KernelProviders.FLOW_SNAPSHOT_STORE, snapshotStore)
+                    .where(KernelProviders.IDEMPOTENCY_GUARD, guard)
+                    .run(engine::start);
+
+            FlowDefinition currentDefinition = engine.plans().newDefinition("stale-restart-fail-current")
+                    .step("skip-0", _ -> FlowOutcome.CONTINUE, null)
+                    .step("skip-1", _ -> FlowOutcome.CONTINUE, null)
+                    .step("park-current", _ -> {
+                        currentParked.countDown();
+                        return FlowOutcome.PARK;
+                    }, null)
+                    .build();
+
+            FlowExecutionPlan currentPlan = engine.plans().compile(currentDefinition);
+            FlowContext currentContext = context(
+                    staleContext.instanceIdMost(),
+                    staleContext.instanceIdLeast(),
+                    currentDefinition.name(),
+                    2,
+                    FlowState.RUNNING);
+
+            engine.scheduler().schedule(currentPlan, currentContext);
+
+            assertThat(currentParked.await(3, TimeUnit.SECONDS)).isTrue();
+            awaitTrue(3_000, () -> snapshotStore.load(currentContext.instanceIdMost(), currentContext.instanceIdLeast())
+                    .map(snapshot -> snapshot.state() == FlowState.PARKED
+                            && snapshot.definitionName().equals(currentDefinition.name()))
+                    .orElse(false));
+            assertThat(guard.releaseCount())
+                    .as("no lifecycle should have released claims before the stale worker exits")
+                    .isZero();
+            assertThat(guard.tryClaimStep(currentContext.instanceIdMost(), currentContext.instanceIdLeast(), 2))
+                    .as("current lifecycle must still own its parked-step idempotency claim before stale failure")
+                    .isFalse();
+
+            allowStaleExit.set(true);
+            awaitTrue(3_000, () -> staleThread.get() != null && !staleThread.get().isAlive());
+
+            assertThat(guard.releaseCount())
+                    .as("stale failure from the prior lifecycle must not release current lifecycle claims")
+                    .isZero();
+            assertThat(guard.tryClaimStep(currentContext.instanceIdMost(), currentContext.instanceIdLeast(), 2))
+                    .as("stale failure must not reopen the reused instance's current idempotency claim")
+                    .isFalse();
+            assertThat(snapshotStore.load(currentContext.instanceIdMost(), currentContext.instanceIdLeast()))
+                    .as("stale failure must not overwrite the current lifecycle snapshot for the reused instance")
+                    .get()
+                    .extracting(FlowSnapshot::state, FlowSnapshot::definitionName)
+                    .containsExactly(FlowState.PARKED, currentDefinition.name());
+        } finally {
+            allowStaleExit.set(true);
+            engine.close();
+        }
+    }
+
     private static CoreFlowEngine startedEngine() {
         return startedEngine(false, null, null);
     }
