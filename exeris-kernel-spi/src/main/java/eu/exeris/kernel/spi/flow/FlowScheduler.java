@@ -70,6 +70,8 @@ public interface FlowScheduler {
      *
      * <p>Community: retrieves from the parked-flows map and re-schedules.
      * Enterprise: CAS-enqueues the base address back into the lock-free ring buffer.
+     * Implementations may tolerate the immediate schedule → park → wake race window,
+     * but an ordinary non-parked context should still fail clearly.
      *
      * @param context the context to wake; must not be {@code null}
      * @throws eu.exeris.kernel.spi.exceptions.flow.FlowEngineException if the context is

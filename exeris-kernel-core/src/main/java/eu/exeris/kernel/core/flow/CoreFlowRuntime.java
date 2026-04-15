@@ -60,6 +60,7 @@ final class CoreFlowRuntime { // NOPMD
     private volatile IdempotencyGuard guard;
     private volatile boolean started;
     private volatile boolean closed;
+    private volatile boolean shutdownFinalized;
 
     /* default */ CoreFlowRuntime(FlowEngineConfig config, FlowProgressPublisher progressPublisher) {
         this.config = Objects.requireNonNull(config, "config");
@@ -72,6 +73,10 @@ final class CoreFlowRuntime { // NOPMD
 
     /* default */ ConcurrentMap<String, CoreFlowExecutionPlan> planCatalog() {
         return planCatalog;
+    }
+
+    /* default */ void clearLookupSuppressionAfterPlanCompile() {
+        clearParkedLookupMissTracking();
     }
 
     public FlowEngineStats stats() {
@@ -103,6 +108,7 @@ final class CoreFlowRuntime { // NOPMD
         }
         guard = KernelProviders.idempotencyGuard().orElseGet(CoreIdempotencyGuard::new);
         closed = false;
+        shutdownFinalized = false;
         started = true;
     }
 
@@ -113,6 +119,7 @@ final class CoreFlowRuntime { // NOPMD
         closed = true;
         started = false;
         interruptAndJoinRunningThreads();
+        shutdownFinalized = true;
         runningThreads.clear();
         liveInstances.clear();
         parkedInstances.clear();
@@ -210,6 +217,7 @@ final class CoreFlowRuntime { // NOPMD
     }
 
     private void park(FlowContext context) {
+        ensureStarted();
         FlowKey key = FlowKey.from(context);
         clearParkedLookupMiss(key);
         RuntimeFlowInstance instance = liveInstances.get(key);
@@ -234,7 +242,7 @@ final class CoreFlowRuntime { // NOPMD
             return;
         }
 
-        RuntimeFlowInstance instance = resolveParkedInstance(key);
+        RuntimeFlowInstance instance = resolveParkedInstance(key, context.state());
 
         if (instance.isTerminal() || terminalStateCatalog.containsKey(key)) {
             liveInstances.remove(key, instance);
@@ -250,7 +258,7 @@ final class CoreFlowRuntime { // NOPMD
         launch(instance, startStep);
     }
 
-    private RuntimeFlowInstance resolveParkedInstance(FlowKey key) {
+    private RuntimeFlowInstance resolveParkedInstance(FlowKey key, FlowState requestedState) {
         RuntimeFlowInstance instance = parkedInstances.remove(key);
         if (instance != null) {
             parkedFlows.decrement();
@@ -258,7 +266,13 @@ final class CoreFlowRuntime { // NOPMD
         }
         RuntimeFlowInstance live = liveInstances.get(key);
         if (live != null) {
-            return live;
+            if (live.state() == FlowState.PARKED) {
+                return live;
+            }
+            if (requestedState == FlowState.PARKED && live.isScheduled()) {
+                return live;
+            }
+            throw notParked(key);
         }
         RuntimeFlowInstance restored = restoreParkedFromSnapshot(key, false);
         if (restored == null) {
@@ -298,6 +312,9 @@ final class CoreFlowRuntime { // NOPMD
         }
         CoreFlowExecutionPlan resolvedPlan = resolvePlanForSnapshot(directPlan, persisted);
         if (resolvedPlan == null) {
+            if (suppressRepeatedMisses) {
+                recordParkedLookupMiss(key);
+            }
             return null;
         }
         clearParkedLookupMiss(key);
@@ -519,6 +536,9 @@ final class CoreFlowRuntime { // NOPMD
 
     @SuppressWarnings("PMD.AvoidCatchingGenericException")
     private void fail(RuntimeFlowInstance instance, int stepIndex) {
+        if (shutdownFinalized) {
+            return;
+        }
         instance.currentStep(stepIndex);
         instance.state(FlowState.COMPENSATING);
         persistSnapshot(instance, FlowState.COMPENSATING, stepIndex);
@@ -561,6 +581,9 @@ final class CoreFlowRuntime { // NOPMD
     }
 
     private void complete(RuntimeFlowInstance instance) {
+        if (shutdownFinalized) {
+            return;
+        }
         instance.state(FlowState.COMPLETED);
         clearParkedLookupMiss(instance.key());
         terminalStateCatalog.put(instance.key(), FlowState.COMPLETED);

@@ -16,46 +16,31 @@ import eu.exeris.kernel.spi.flow.model.FlowStepAction;
 import eu.exeris.kernel.tck.contract.AbstractSubsystemZeroAllocTck;
 import org.junit.jupiter.api.DisplayName;
 
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.LockSupport;
+
 /**
- * TCK: JFR-based Zero-Allocation verifier for Flow Engine step transitions.
+ * TCK: JFR-based zero-allocation verifier for the Flow scheduler submission hot path.
  *
  * <h2>Front 2 — FlowZeroAllocTck (Enterprise SLO)</h2>
- * <p>Proves that in Enterprise tier, transitioning a Saga from Step A → Step B
- * does <b>not</b> allocate any {@code eu.exeris.*} objects on the heap.
+ * <p>Proves that the measured steady-state path — repeated
+ * {@link FlowEngine#scheduler()} submission of pre-allocated unique contexts through a
+ * simple A → B flow — does <b>not</b> allocate {@code eu.exeris.*} objects on the heap
+ * for tiers that advertise a strict zero-GC contract.
  *
  * <h2>How it works</h2>
  * <p>Extends {@link AbstractSubsystemZeroAllocTck}, which runs the JFR three-phase
- * protocol (bootstrap → warm-up → steady-state). During steady-state, this test
- * calls {@link FlowEngine#scheduler()} schedule/park/wake in a tight loop and
- * asserts zero {@code eu.exeris.*} heap allocations.
+ * protocol (bootstrap → warm-up → steady-state). During steady-state, this test exercises
+ * the schedule-only submission path with a small bounded in-flight window so the scheduler
+ * remains hot without reintroducing the earlier immediate park/wake race.
  *
  * <h2>Community vs Enterprise</h2>
  * <ul>
  *   <li>Community: {@link #supportsZeroGcHotPath()} returns {@code false} —
- *       heap allocations are expected and the test is advisory only.</li>
+ *       bounded heap allocations are expected and the test is advisory only.</li>
  *   <li>Enterprise: {@link #supportsZeroGcHotPath()} returns {@code true} —
- *       any {@code eu.exeris.*} allocation during step transitions fails the build.</li>
+ *       any {@code eu.exeris.*} allocation on the measured scheduler hot path fails the build.</li>
  * </ul>
- *
- * <h2>Usage — Community</h2>
- * <pre>{@code
- * public class CommunityFlowZeroAllocTest extends FlowZeroAllocTck {
- *     \@Override protected FlowEngine createEngine() {
- *         return new CommunityFlowProvider().createEngine(FlowEngineConfig.defaults());
- *     }
- *     \@Override protected boolean supportsZeroGcHotPath() { return false; }
- * }
- * }</pre>
- *
- * <h2>Usage — Enterprise</h2>
- * <pre>{@code
- * public class EnterpriseFlowZeroAllocTest extends FlowZeroAllocTck {
- *     \@Override protected FlowEngine createEngine() {
- *         return new EnterpriseFlowProvider().createEngine(EnterpriseFlowEngineConfig.production());
- *     }
- *     \@Override protected boolean supportsZeroGcHotPath() { return true; }
- * }
- * }</pre>
  *
  * @since 0.5.0
  * @see AbstractSubsystemZeroAllocTck
@@ -73,10 +58,13 @@ public abstract class FlowZeroAllocTck extends AbstractSubsystemZeroAllocTck {
     // AbstractSubsystemZeroAllocTck bindings
     // =========================================================================
 
+    private static final int MAX_IN_FLIGHT = 8;
+
     private FlowEngine        engine;
     private FlowExecutionPlan plan;
     /** Pre-allocated per-iteration contexts — avoids hot-path fixture allocation while keeping instances unique. */
     private eu.exeris.kernel.spi.flow.model.FlowContext[] testContexts;
+    private AtomicInteger inFlight;
     private int contextIndex;
 
     @Override
@@ -86,7 +74,7 @@ public abstract class FlowZeroAllocTck extends AbstractSubsystemZeroAllocTck {
 
     @Override
     protected String hotPathDescription() {
-        return "scheduler.schedule(plan, ctx) — Saga step A→B transition";
+        return "scheduler.schedule(plan, ctx) with bounded in-flight submission — Saga step A→B transition";
     }
 
     @Override
@@ -94,10 +82,15 @@ public abstract class FlowZeroAllocTck extends AbstractSubsystemZeroAllocTck {
         engine = createEngine();
         engine.start();
 
-        FlowStepAction noOp = ctx -> FlowOutcome.CONTINUE;
+        inFlight = new AtomicInteger();
+        FlowStepAction firstStep = ctx -> FlowOutcome.CONTINUE;
+        FlowStepAction secondStep = ctx -> {
+            inFlight.decrementAndGet();
+            return FlowOutcome.COMPLETE;
+        };
         FlowDefinition def = engine.plans().newDefinition("zero-alloc-flow")
-                .step("step-a", noOp, null)
-                .step("step-b", noOp, null)
+                .step("step-a", firstStep, null)
+                .step("step-b", secondStep, null)
                 .transition(0, 1)
                 .build();
         plan = engine.plans().compile(def);
@@ -112,13 +105,27 @@ public abstract class FlowZeroAllocTck extends AbstractSubsystemZeroAllocTck {
 
     @Override
     protected void runSingleIteration() {
-        // Hot-path: schedule a pre-allocated unique context through the A→B transition.
-        // This avoids fixture allocations and removes the stale immediate park/wake race.
-        engine.scheduler().schedule(plan, testContexts[contextIndex++]);
+        while (inFlight.get() >= MAX_IN_FLIGHT) {
+            LockSupport.parkNanos(1L);
+        }
+
+        inFlight.incrementAndGet();
+        try {
+            engine.scheduler().schedule(plan, testContexts[contextIndex++]);
+        } catch (RuntimeException ex) {
+            inFlight.decrementAndGet();
+            throw ex;
+        }
     }
 
     @Override
     protected void tearDownSubsystem() {
+        if (inFlight != null) {
+            int spins = 0;
+            while (inFlight.get() > 0 && spins++ < 10_000) {
+                Thread.onSpinWait();
+            }
+        }
         if (engine != null) {
             engine.close();
         }

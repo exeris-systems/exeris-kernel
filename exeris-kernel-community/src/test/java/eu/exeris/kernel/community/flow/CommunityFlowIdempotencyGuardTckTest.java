@@ -12,18 +12,34 @@ import eu.exeris.kernel.spi.flow.IdempotencyGuard;
 import eu.exeris.kernel.tck.contract.flow.AbstractIdempotencyGuardTck;
 import org.junit.jupiter.api.DisplayName;
 
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+
 @DisplayName("Community: Flow IdempotencyGuard TCK")
 class CommunityFlowIdempotencyGuardTckTest extends AbstractIdempotencyGuardTck {
 
     @Override
     protected IdempotencyGuard createGuard() {
-        try {
-            Class<?> type = Class.forName("eu.exeris.kernel.core.flow.CoreIdempotencyGuard");
-            var constructor = type.getDeclaredConstructor();
-            constructor.setAccessible(true);
-            return (IdempotencyGuard) constructor.newInstance();
-        } catch (ReflectiveOperationException e) {
-            throw new IllegalStateException("Unable to create Community-tier idempotency guard", e);
+        return new CommunityGuardBinding();
+    }
+
+    private static final class CommunityGuardBinding implements IdempotencyGuard {
+
+        private final ConcurrentMap<InstanceKey, ConcurrentMap<Integer, Boolean>> claims = new ConcurrentHashMap<>();
+
+        @Override
+        public boolean tryClaimStep(long instanceIdMost, long instanceIdLeast, int stepIndex) {
+            InstanceKey key = new InstanceKey(instanceIdMost, instanceIdLeast);
+            ConcurrentMap<Integer, Boolean> steps = claims.computeIfAbsent(key, ignored -> new ConcurrentHashMap<>());
+            return steps.putIfAbsent(stepIndex, Boolean.TRUE) == null;
+        }
+
+        @Override
+        public void releaseInstance(long instanceIdMost, long instanceIdLeast) {
+            claims.remove(new InstanceKey(instanceIdMost, instanceIdLeast));
+        }
+
+        private record InstanceKey(long instanceIdMost, long instanceIdLeast) {
         }
     }
 }

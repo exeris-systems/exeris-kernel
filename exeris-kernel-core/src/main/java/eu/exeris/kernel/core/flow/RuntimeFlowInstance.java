@@ -145,6 +145,10 @@ final class RuntimeFlowInstance { // NOPMD
         }
     }
 
+    public boolean isScheduled() {
+        return scheduled.get();
+    }
+
     public void attachPlan(CoreFlowExecutionPlan candidate) {
         if (plan == null && candidate != null) {
             plan = candidate;

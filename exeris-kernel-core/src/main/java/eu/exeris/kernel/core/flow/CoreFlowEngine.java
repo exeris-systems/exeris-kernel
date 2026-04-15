@@ -45,7 +45,11 @@ public final class CoreFlowEngine implements FlowEngine {
         this.capabilities = Objects.requireNonNull(capabilities, "capabilities");
         this.registry = new CoreFlowRegistry();
         this.runtime = new CoreFlowRuntime(nonNullConfig, new FlowProgressPublisher());
-        this.planFactory = new CoreFlowPlanFactory(nonNullConfig, registry, runtime.planCatalog());
+        this.planFactory = new CoreFlowPlanFactory(
+                nonNullConfig,
+                registry,
+                runtime.planCatalog(),
+                runtime::clearLookupSuppressionAfterPlanCompile);
     }
 
     @Override

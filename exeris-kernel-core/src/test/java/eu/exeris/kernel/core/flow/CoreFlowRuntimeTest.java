@@ -143,6 +143,59 @@ class CoreFlowRuntimeTest {
 
     @Test
     @Timeout(value = 10, unit = TimeUnit.SECONDS)
+    @DisplayName("plan-miss suppression is cleared once the flow plan is compiled again")
+    void planMissSuppressionIsClearedOnceTheFlowPlanIsCompiledAgain() throws Exception {
+        CountingSnapshotStore snapshotStore = new CountingSnapshotStore();
+        CountDownLatch parked = new CountDownLatch(1);
+
+        FlowContext parkedContext;
+        FlowDefinition definition;
+
+        try (CoreFlowEngine engine = startedEngine(true, snapshotStore)) {
+            definition = engine.plans().newDefinition("plan-miss-clears-on-compile")
+                    .step("park", _ -> {
+                        parked.countDown();
+                        return FlowOutcome.PARK;
+                    }, null)
+                    .build();
+
+            FlowExecutionPlan plan = engine.plans().compile(definition);
+            parkedContext = context("plan-miss-clears-on-compile-instance", definition.name());
+
+            engine.scheduler().schedule(plan, parkedContext);
+
+            assertThat(parked.await(3, TimeUnit.SECONDS))
+                    .as("flow must reach PARKED before restart")
+                    .isTrue();
+            awaitTrue(3_000, () -> snapshotStore.exists(
+                    parkedContext.instanceIdMost(), parkedContext.instanceIdLeast()));
+        }
+
+        int loadCountBeforeRestart = snapshotStore.loadCount();
+
+        try (CoreFlowEngine rebuilt = startedEngine(true, snapshotStore)) {
+            assertThat(rebuilt.scheduler().lookupParked(
+                    parkedContext.instanceIdMost(), parkedContext.instanceIdLeast()))
+                    .isEmpty();
+            assertThat(rebuilt.scheduler().lookupParked(
+                    parkedContext.instanceIdMost(), parkedContext.instanceIdLeast()))
+                    .isEmpty();
+            assertThat(snapshotStore.loadCount())
+                    .as("plan-not-yet-available misses should be negatively suppressed after the first probe")
+                    .isEqualTo(loadCountBeforeRestart + 1);
+
+            rebuilt.plans().compile(definition);
+
+            assertThat(rebuilt.scheduler().lookupParked(
+                    parkedContext.instanceIdMost(), parkedContext.instanceIdLeast()))
+                    .as("recompiling the plan must clear negative suppression so parked lookup can recover")
+                    .isPresent();
+            assertThat(snapshotStore.loadCount()).isEqualTo(loadCountBeforeRestart + 2);
+        }
+    }
+
+    @Test
+    @Timeout(value = 10, unit = TimeUnit.SECONDS)
     @DisplayName("lookupParked falls back to the snapshot store after restart")
     void lookupParkedFallsBackToSnapshotStoreAfterRestart() throws Exception {
         InMemorySnapshotStore snapshotStore = new InMemorySnapshotStore();
@@ -492,10 +545,14 @@ class CoreFlowRuntimeTest {
             assertThat(queueDepth(engine))
                     .as("close() should immediately reset queue depth after runtime teardown")
                     .isZero();
+            long failedAfterClose = engine.stats().failedFlows();
 
             allowExit.set(true);
+            LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(250));
 
-            awaitTrue(3_000, () -> engine.stats().failedFlows() == 1L);
+            assertThat(engine.stats().failedFlows())
+                    .as("late worker exits must not mutate the stable shutdown counters after close() returns")
+                    .isEqualTo(failedAfterClose);
             assertThat(engine.stats().activeFlows())
                     .as("late worker teardown must not drive active flow counters below zero")
                     .isZero();
