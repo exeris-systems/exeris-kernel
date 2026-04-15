@@ -190,6 +190,11 @@ final class CoreFlowRuntime { // NOPMD
         if (startStep < 0) {
             return;
         }
+        if (instance.state() == FlowState.PARKED) {
+            ensureParkedRegistration(instance);
+            instance.markNotScheduled();
+            return;
+        }
 
         if (parkedInstances.remove(key) != null) {
             parkedFlows.decrement();
@@ -209,8 +214,7 @@ final class CoreFlowRuntime { // NOPMD
                 return;
             }
             instance.state(FlowState.PARKED);
-            parkedInstances.put(key, instance);
-            parkedFlows.increment();
+            ensureParkedRegistration(instance);
             persistSnapshot(instance, FlowState.PARKED, instance.currentStep());
         }
     }
@@ -289,6 +293,9 @@ final class CoreFlowRuntime { // NOPMD
             return null;
         }
         CoreFlowExecutionPlan resolvedPlan = resolvePlanForSnapshot(directPlan, persisted);
+        if (resolvedPlan == null) {
+            return null;
+        }
         clearParkedLookupMiss(key);
         return RuntimeFlowInstance.fromSnapshot(resolvedPlan, persisted);
     }
@@ -315,7 +322,21 @@ final class CoreFlowRuntime { // NOPMD
         if (parkedLookupMisses.add(key)) {
             parkedLookupMissOrder.offerLast(key);
         }
-        while (parkedLookupMisses.size() > MAX_PARKED_LOOKUP_MISSES) {
+        trimParkedLookupMissOrder();
+    }
+
+    private void clearParkedLookupMiss(FlowKey key) {
+        if (parkedLookupMisses.remove(key)) {
+            boolean removed;
+            do {
+                removed = parkedLookupMissOrder.removeFirstOccurrence(key);
+            } while (removed);
+        }
+        trimParkedLookupMissOrder();
+    }
+
+    private void trimParkedLookupMissOrder() {
+        while (parkedLookupMissOrder.size() > MAX_PARKED_LOOKUP_MISSES) {
             FlowKey oldest = parkedLookupMissOrder.pollFirst();
             if (oldest == null) {
                 break;
@@ -324,8 +345,11 @@ final class CoreFlowRuntime { // NOPMD
         }
     }
 
-    private void clearParkedLookupMiss(FlowKey key) {
-        parkedLookupMisses.remove(key);
+    private void ensureParkedRegistration(RuntimeFlowInstance instance) {
+        clearParkedLookupMiss(instance.key());
+        if (parkedInstances.putIfAbsent(instance.key(), instance) == null) {
+            parkedFlows.increment();
+        }
     }
 
     private boolean matchesRequiredState(FlowSnapshot persisted, FlowState requiredState) {
@@ -334,12 +358,7 @@ final class CoreFlowRuntime { // NOPMD
 
     private CoreFlowExecutionPlan resolvePlanForSnapshot(CoreFlowExecutionPlan directPlan, FlowSnapshot persisted) {
         if (directPlan == null) {
-            CoreFlowExecutionPlan resolvedPlan = planCatalog.get(persisted.definitionName());
-            if (resolvedPlan == null) {
-                throw new FlowEngineException(
-                        "No compiled FlowExecutionPlan available for definition: " + persisted.definitionName());
-            }
-            return resolvedPlan;
+            return planCatalog.get(persisted.definitionName());
         }
         if (!directPlan.definitionName().equals(persisted.definitionName())) {
             throw new FlowEngineException(
@@ -376,6 +395,7 @@ final class CoreFlowRuntime { // NOPMD
                     return;
                 }
                 if (instance.state() == FlowState.PARKED) {
+                    ensureParkedRegistration(instance);
                     return;
                 }
                 instance.state(FlowState.RUNNING);
@@ -437,11 +457,8 @@ final class CoreFlowRuntime { // NOPMD
                         }
                         case PARK -> {
                             instance.state(FlowState.PARKED);
-                            RuntimeFlowInstance previous = parkedInstances.putIfAbsent(instance.key(), instance);
+                            ensureParkedRegistration(instance);
                             persistSnapshot(instance, FlowState.PARKED, stepIndex);
-                            if (previous == null) {
-                                parkedFlows.increment();
-                            }
                             return;
                         }
                         case FAIL -> {

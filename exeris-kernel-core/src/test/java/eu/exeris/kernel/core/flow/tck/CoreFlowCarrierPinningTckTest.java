@@ -13,7 +13,6 @@ import eu.exeris.kernel.spi.flow.FlowEngine;
 import eu.exeris.kernel.spi.flow.FlowEngineCapabilities;
 import eu.exeris.kernel.spi.flow.FlowEngineConfig;
 import eu.exeris.kernel.tck.contract.flow.FlowCarrierPinningTck;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 
@@ -79,7 +78,6 @@ import org.junit.jupiter.api.Tag;
  * @see eu.exeris.kernel.tck.contract.flow.FlowCarrierPinningTck
  * @see CoreFlowEngine
  */
-@Disabled("Core-tier flow—carrier pinning avoidance not guaranteed. See ADR-007 Performance Tiers.")
 @DisplayName("Core: Flow carrier pinning TCK [ADVISORY]")
 @Tag("perf-contract")
 @Tag("advisory")

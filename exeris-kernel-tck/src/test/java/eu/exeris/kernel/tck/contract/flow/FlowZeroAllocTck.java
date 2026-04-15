@@ -75,8 +75,9 @@ public abstract class FlowZeroAllocTck extends AbstractSubsystemZeroAllocTck {
 
     private FlowEngine        engine;
     private FlowExecutionPlan plan;
-    /** Pre-allocated flyweight context — reused across all hot-path iterations. Zero-GC guarantee. */
-    private eu.exeris.kernel.spi.flow.model.FlowContext testCtx;
+    /** Pre-allocated per-iteration contexts — avoids hot-path fixture allocation while keeping instances unique. */
+    private eu.exeris.kernel.spi.flow.model.FlowContext[] testContexts;
+    private int contextIndex;
 
     @Override
     protected String subsystemName() {
@@ -101,18 +102,19 @@ public abstract class FlowZeroAllocTck extends AbstractSubsystemZeroAllocTck {
                 .build();
         plan = engine.plans().compile(def);
 
-        // Pre-allocate FlowContext ONCE — reused every iteration to avoid heap churn.
-        // The context is deterministic (constant ID), so UUID derivation runs only here.
-        testCtx = TestFlowContexts.create("zero-alloc-steady", "zero-alloc-flow");
+        int totalIterations = warmupIterations() + hotPathIterations();
+        testContexts = new eu.exeris.kernel.spi.flow.model.FlowContext[totalIterations];
+        for (int i = 0; i < totalIterations; i++) {
+            testContexts[i] = TestFlowContexts.create("zero-alloc-steady-" + i, "zero-alloc-flow");
+        }
+        contextIndex = 0;
     }
 
     @Override
     protected void runSingleIteration() {
-        // Hot-path: schedule → park → wake using the PRE-ALLOCATED flyweight context.
-        // No object construction allowed here — Enterprise: 0 eu.exeris.* allocations.
-        engine.scheduler().schedule(plan, testCtx);
-        engine.scheduler().park(testCtx);
-        engine.scheduler().wake(testCtx);
+        // Hot-path: schedule a pre-allocated unique context through the A→B transition.
+        // This avoids fixture allocations and removes the stale immediate park/wake race.
+        engine.scheduler().schedule(plan, testContexts[contextIndex++]);
     }
 
     @Override

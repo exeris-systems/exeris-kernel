@@ -13,7 +13,6 @@ import eu.exeris.kernel.spi.flow.FlowEngine;
 import eu.exeris.kernel.spi.flow.FlowEngineCapabilities;
 import eu.exeris.kernel.spi.flow.FlowEngineConfig;
 import eu.exeris.kernel.tck.contract.flow.FlowZeroAllocTck;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 
@@ -65,7 +64,6 @@ import org.junit.jupiter.api.Tag;
  * @see eu.exeris.kernel.tck.contract.flow.FlowZeroAllocTck
  * @see CoreFlowEngine
  */
-@Disabled("Core-tier flow—zero-allocation SLO not applicable. See ADR-007 Performance Tiers.")
 @DisplayName("Core: Flow zero-allocation TCK [ADVISORY]")
 @Tag("perf-contract")
 @Tag("advisory")

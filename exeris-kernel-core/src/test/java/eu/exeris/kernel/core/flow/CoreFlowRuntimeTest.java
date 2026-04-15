@@ -105,6 +105,43 @@ class CoreFlowRuntimeTest {
 
     @Test
     @Timeout(value = 10, unit = TimeUnit.SECONDS)
+    @DisplayName("lookupParked returns empty instead of throwing when restart snapshot exists before the plan is recompiled")
+    void lookupParkedFailsSoftWhenRestartSnapshotExistsBeforePlanRecompile() throws Exception {
+        InMemorySnapshotStore snapshotStore = new InMemorySnapshotStore();
+        CountDownLatch parked = new CountDownLatch(1);
+
+        FlowContext parkedContext;
+
+        try (CoreFlowEngine engine = startedEngine(true, snapshotStore)) {
+            FlowDefinition definition = engine.plans().newDefinition("restart-plan-not-ready")
+                    .step("park", _ -> {
+                        parked.countDown();
+                        return FlowOutcome.PARK;
+                    }, null)
+                    .build();
+
+            FlowExecutionPlan plan = engine.plans().compile(definition);
+            parkedContext = context("restart-plan-not-ready-instance", definition.name());
+
+            engine.scheduler().schedule(plan, parkedContext);
+
+            assertThat(parked.await(3, TimeUnit.SECONDS))
+                    .as("flow must reach PARKED before restart")
+                    .isTrue();
+            awaitTrue(3_000, () -> snapshotStore.exists(
+                    parkedContext.instanceIdMost(), parkedContext.instanceIdLeast()));
+        }
+
+        try (CoreFlowEngine rebuilt = startedEngine(true, snapshotStore)) {
+            assertThat(rebuilt.scheduler().lookupParked(
+                    parkedContext.instanceIdMost(), parkedContext.instanceIdLeast()))
+                    .as("lookupParked should fail-soft until the plan is compiled again after restart")
+                    .isEmpty();
+        }
+    }
+
+    @Test
+    @Timeout(value = 10, unit = TimeUnit.SECONDS)
     @DisplayName("lookupParked falls back to the snapshot store after restart")
     void lookupParkedFallsBackToSnapshotStoreAfterRestart() throws Exception {
         InMemorySnapshotStore snapshotStore = new InMemorySnapshotStore();
@@ -153,6 +190,79 @@ class CoreFlowRuntimeTest {
             assertThat(resumed.await(3, TimeUnit.SECONDS))
                     .as("the parked flow must resume after lookup-based wake on rebuilt runtime")
                     .isTrue();
+        }
+    }
+
+    @Test
+    @Timeout(value = 10, unit = TimeUnit.SECONDS)
+    @DisplayName("rescheduling an already parked flow preserves its parked registration and count")
+    void reschedulingAlreadyParkedFlowPreservesParkedRegistrationAndCount() throws Exception {
+        InMemorySnapshotStore snapshotStore = new InMemorySnapshotStore();
+        CountDownLatch parked = new CountDownLatch(1);
+        CountDownLatch resumed = new CountDownLatch(1);
+
+        try (CoreFlowEngine engine = startedEngine(true, snapshotStore)) {
+            FlowDefinition definition = engine.plans().newDefinition("reschedule-keeps-parked-registration")
+                    .step("park", _ -> {
+                        parked.countDown();
+                        return FlowOutcome.PARK;
+                    }, null)
+                    .step("resume", _ -> {
+                        resumed.countDown();
+                        return FlowOutcome.COMPLETE;
+                    }, null)
+                    .build();
+
+            FlowExecutionPlan plan = engine.plans().compile(definition);
+            FlowContext parkedContext = context("reschedule-keeps-parked-registration-instance", definition.name());
+
+            engine.scheduler().schedule(plan, parkedContext);
+
+            assertThat(parked.await(3, TimeUnit.SECONDS))
+                    .as("flow must reach PARKED before reschedule")
+                    .isTrue();
+            awaitTrue(3_000, () -> engine.stats().parkedFlows() == 1L);
+
+            engine.scheduler().schedule(plan, parkedContext);
+
+            awaitTrue(3_000, () -> engine.scheduler().lookupParked(
+                    parkedContext.instanceIdMost(), parkedContext.instanceIdLeast()).isPresent());
+            assertThat(engine.stats().parkedFlows())
+                    .as("a redundant schedule call must not unregister or uncount a parked flow")
+                    .isEqualTo(1L);
+
+            engine.scheduler().wake(engine.scheduler().lookupParked(
+                    parkedContext.instanceIdMost(), parkedContext.instanceIdLeast()).orElseThrow());
+            assertThat(resumed.await(3, TimeUnit.SECONDS))
+                    .as("wake must still resume the parked flow immediately after the redundant schedule")
+                    .isTrue();
+        }
+    }
+
+    @Test
+    @Timeout(value = 10, unit = TimeUnit.SECONDS)
+    @DisplayName("clearing parked-lookup misses also clears stale miss-order entries")
+    void clearingParkedLookupMissesAlsoClearsStaleMissOrderEntries() throws Exception {
+        CountingSnapshotStore snapshotStore = new CountingSnapshotStore();
+
+        try (CoreFlowEngine engine = startedEngine(true, snapshotStore)) {
+            FlowDefinition definition = engine.plans().newDefinition("clears-stale-miss-order")
+                    .step("complete", _ -> FlowOutcome.COMPLETE, null)
+                    .build();
+            FlowExecutionPlan plan = engine.plans().compile(definition);
+
+            for (int i = 0; i < 400; i++) {
+                long most = 10_000L + i;
+                long least = 20_000L + i;
+
+                assertThat(engine.scheduler().lookupParked(most, least)).isEmpty();
+                engine.scheduler().schedule(plan, context(most, least, definition.name()));
+            }
+
+            awaitTrue(3_000, () -> engine.stats().completedFlows() == 400L);
+            assertThat(parkedLookupMissOrderSize(engine))
+                    .as("stale cleared keys must not accumulate indefinitely in the miss-order deque")
+                    .isLessThanOrEqualTo(256);
         }
     }
 
@@ -326,15 +436,19 @@ class CoreFlowRuntimeTest {
 
     private static FlowContext context(String instanceId, String definitionName) {
         UUID uuid = UUID.nameUUIDFromBytes(instanceId.getBytes(StandardCharsets.UTF_8));
+        return context(uuid.getMostSignificantBits(), uuid.getLeastSignificantBits(), definitionName);
+    }
+
+    private static FlowContext context(long instanceIdMost, long instanceIdLeast, String definitionName) {
         return new FlowContext() {
             @Override
             public long instanceIdMost() {
-                return uuid.getMostSignificantBits();
+                return instanceIdMost;
             }
 
             @Override
             public long instanceIdLeast() {
-                return uuid.getLeastSignificantBits();
+                return instanceIdLeast;
             }
 
             @Override
@@ -357,6 +471,21 @@ class CoreFlowRuntimeTest {
                 return System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
             }
         };
+    }
+
+    private static int parkedLookupMissOrderSize(CoreFlowEngine engine) {
+        try {
+            java.lang.reflect.Field runtimeField = CoreFlowEngine.class.getDeclaredField("runtime");
+            runtimeField.setAccessible(true);
+            Object runtime = runtimeField.get(engine);
+
+            java.lang.reflect.Field orderField = CoreFlowRuntime.class.getDeclaredField("parkedLookupMissOrder");
+            orderField.setAccessible(true);
+            java.util.Deque<?> order = (java.util.Deque<?>) orderField.get(runtime);
+            return order.size();
+        } catch (ReflectiveOperationException e) {
+            throw new AssertionError("Unable to inspect parkedLookupMissOrder size", e);
+        }
     }
 
     private static class InMemorySnapshotStore implements FlowSnapshotStore {
