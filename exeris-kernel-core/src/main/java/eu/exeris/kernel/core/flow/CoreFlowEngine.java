@@ -79,7 +79,6 @@ public final class CoreFlowEngine implements FlowEngine {
 
     @Override
     public void close() {
-        FlowEngineStats shutdownStats = runtime.stats();
         for (Map.Entry<EventBus, SubscriptionToken> entry : choreographySubscriptions) {
             try {
                 entry.getKey().unsubscribe(entry.getValue());
@@ -88,8 +87,8 @@ public final class CoreFlowEngine implements FlowEngine {
             }
         }
         choreographySubscriptions.clear();
-        FlowEngineShutdownEvent.emit(config, shutdownStats);
         runtime.close();
+        FlowEngineShutdownEvent.emit(config, runtime.stats());
     }
 
     @Override

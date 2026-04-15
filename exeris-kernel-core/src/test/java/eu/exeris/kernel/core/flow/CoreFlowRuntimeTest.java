@@ -160,7 +160,7 @@ class CoreFlowRuntimeTest {
                             if (!allowCompletion.await(3, TimeUnit.SECONDS)) {
                                 return FlowOutcome.FAIL;
                             }
-                        } catch (InterruptedException ex) {
+                        } catch (InterruptedException _) {
                             Thread.currentThread().interrupt();
                             return FlowOutcome.FAIL;
                         }
@@ -204,9 +204,10 @@ class CoreFlowRuntimeTest {
 
     @Test
     @Timeout(value = 10, unit = TimeUnit.SECONDS)
-    @DisplayName("close emits the Flow shutdown JFR event required by the contract")
+    @DisplayName("close emits the Flow shutdown JFR event with final counters after runtime quiesces")
     void closeEmitsShutdownJfrEvent() throws Exception {
         CountDownLatch eventReceived = new CountDownLatch(1);
+        CountDownLatch stepStarted = new CountDownLatch(1);
         AtomicReference<RecordedEvent> captured = new AtomicReference<>();
 
         try (RecordingStream rs = new RecordingStream()) {
@@ -218,7 +219,28 @@ class CoreFlowRuntimeTest {
             rs.startAsync();
 
             try (CoreFlowEngine engine = startedEngine()) {
-                assertThat(engine.stats().activeFlows()).isZero();
+                FlowDefinition definition = engine.plans().newDefinition("shutdown-final-stats")
+                        .step("blocking-step", _ -> {
+                            stepStarted.countDown();
+                            try {
+                                new CountDownLatch(1).await(5, TimeUnit.SECONDS);
+                                return FlowOutcome.CONTINUE;
+                            } catch (InterruptedException _) {
+                                Thread.currentThread().interrupt();
+                                return FlowOutcome.FAIL;
+                            }
+                        }, null)
+                        .build();
+
+                FlowExecutionPlan plan = engine.plans().compile(definition);
+                FlowContext context = context("shutdown-final-stats-instance", definition.name());
+
+                engine.scheduler().schedule(plan, context);
+
+                assertThat(stepStarted.await(3, TimeUnit.SECONDS))
+                        .as("flow must be running before close() to verify final shutdown counters")
+                        .isTrue();
+                awaitTrue(3_000, () -> engine.stats().activeFlows() == 1);
             }
 
             assertThat(eventReceived.await(3, TimeUnit.SECONDS))
@@ -227,6 +249,10 @@ class CoreFlowRuntimeTest {
 
             RecordedEvent event = captured.get();
             assertThat(event.getString("engineName")).isEqualTo("CoreFlowRuntimeTest");
+            assertThat(event.getLong("activeFlows"))
+                    .as("shutdown event must capture counters after runtime quiesces")
+                    .isZero();
+            assertThat(event.getLong("failedFlows")).isEqualTo(1L);
         }
     }
 
@@ -261,9 +287,10 @@ class CoreFlowRuntimeTest {
     }
 
     private static void awaitTrue(long timeoutMs, BooleanSupplier condition) {
-        long deadline = System.currentTimeMillis() + timeoutMs;
+        long timeoutNanos = TimeUnit.MILLISECONDS.toNanos(timeoutMs);
+        long deadline = System.nanoTime() + timeoutNanos;
         while (!condition.getAsBoolean()) {
-            if (System.currentTimeMillis() > deadline) {
+            if (System.nanoTime() > deadline) {
                 throw new AssertionError("Condition not met within " + timeoutMs + " ms");
             }
             LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(10));

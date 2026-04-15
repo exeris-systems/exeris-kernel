@@ -21,8 +21,7 @@
 - Snapshot persistence is optional and only used when a `FlowSnapshotStore` is bound and persistence is enabled.
 
 > **Note:** `FlowOutcome.COMPLETE` provides a direct short-circuit path: a step can return `COMPLETE` to transition the flow immediately to `FlowState.COMPLETED` without executing any remaining steps.
-
-> **Note:** The `FlowEngine.start()` Javadoc references `FlowEngineBootstrapEvent` and `FlowEngine.close()` references `FlowEngineShutdownEvent`. These forward-reference class names do not yet exist as implementations. `FlowBootstrapSelectedEvent` is currently emitted by `FlowBootstrap.loadWithProvider()` (before `start()` is called), and `close()` does not yet emit a JFR event. Tracking: FlowEngineShutdownEvent implementation is in the roadmap.
+> **Note:** `FlowBootstrapSelectedEvent` is emitted by `FlowBootstrap.loadWithProvider()` before `start()`. `FlowEngine.close()` now emits `FlowEngineShutdownEvent` after shutdown work has quiesced, so the JFR payload carries the final runtime counter snapshot.
 
 ## Boundaries
 
@@ -84,6 +83,7 @@ Flow can be driven by external events through the choreography bridge:
 |---|---|---|---|
 | `FlowBootstrapSelectedEvent` | `eu.exeris.kernel.flow.BootstrapSelected` | `FlowBootstrap.loadWithProvider()` | `providerClass`, `priority`, `providerId`, `engineName` |
 | `FlowStepFailedEvent` | `eu.exeris.kernel.flow.StepFailed` | `CoreFlowRuntime` on step exception | `definitionName`, `stepIndex`, `instanceIdMost`, `instanceIdLeast`, `failureReason` |
+| `FlowEngineShutdownEvent` | `eu.exeris.kernel.flow.Shutdown` | `CoreFlowEngine.close()` after runtime close | `engineName`, `activeFlows`, `parkedFlows`, `completedFlows`, `failedFlows`, `persistenceEnabled`, `compensationEnabled` |
 
 ---
 
