@@ -17,15 +17,15 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 
 /**
- * Performance contract TCK binding: advisory carrier-thread pinning verification for the Core flow subsystem.
+ * Performance contract TCK binding: carrier-thread pinning verification for the Core flow subsystem.
  *
  * <h2>Status</h2>
- * <p><b>Enabled — Advisory (Core-tier capability):</b><br/>
- * This advisory binding stays enabled to validate that the Core tier remains within its documented
+ * <p><b>Enabled — Core-tier validation:</b><br/>
+ * This binding stays enabled to validate that the Core tier remains within its documented
  * pinning tolerance. Core uses standard virtual threading without stronger scheduler guarantees,
- * so carrier-pinning resilience is advisory rather than a hard zero-pinning contract.
+ * so carrier-pinning resilience is validated here against the documented Core contract.
  *
- * <h2>Advisory Scope</h2>
+ * <h2>Scope</h2>
  * <p>See {@link eu.exeris.kernel.spi.flow.FlowEngineCapabilities} and
  * <a href="docs/adr/ADR-007 Next-Gen Runtime Architecture.md">ADR-007 Performance Tiers</a>:
  * <ul>
@@ -43,17 +43,17 @@ import org.junit.jupiter.api.Tag;
  * and inspects JFR events for {@code jdk.VirtualThreadPinned} exceeding the 20 ms threshold.
  *
  * <h2>What This Test Verifies</h2>
- * <p>This advisory test:
+ * <p>This test:
  * <ol>
  *   <li>Bootstraps a {@link FlowEngine} with the Core binding.</li>
  *   <li>Compiles a simple two-step Saga definition.</li>
  *   <li>Spawns warm-up and steady-state virtual threads that call
  *       {@code scheduler.schedule(plan, ctx)}.</li>
- *   <li>Checks that observed carrier pinning stays within the Core tier's advisory tolerance.</li>
+ *   <li>Checks that observed carrier pinning stays within the Core tier's documented tolerance.</li>
  * </ol>
  *
  * <h2>Future Tightening</h2>
- * <p>If the Core tier later adopts stronger pinning guarantees, this advisory binding can be
+ * <p>If the Core tier later adopts stronger pinning guarantees, this binding can be
  * tightened to enforce a stricter threshold without changing its role as the Core test hook.
  *
  * <h2>References</h2>
@@ -68,9 +68,8 @@ import org.junit.jupiter.api.Tag;
  * @see eu.exeris.kernel.tck.contract.flow.FlowCarrierPinningTck
  * @see CoreFlowEngine
  */
-@DisplayName("Core: Flow carrier pinning TCK [ADVISORY]")
+@DisplayName("Core: Flow carrier pinning TCK")
 @Tag("perf-contract")
-@Tag("advisory")
 class CoreFlowCarrierPinningTckTest extends FlowCarrierPinningTck {
 
     /**
