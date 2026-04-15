@@ -138,6 +138,72 @@ class CoreFlowRuntimeTest {
 
     @Test
     @Timeout(value = 10, unit = TimeUnit.SECONDS)
+    @DisplayName("restore-backed wake consumes parked registration before the resumed flow continues")
+    void restoreBackedWakeConsumesParkedRegistration() throws Exception {
+        InMemorySnapshotStore snapshotStore = new InMemorySnapshotStore();
+        CountDownLatch parked = new CountDownLatch(1);
+        CountDownLatch resumed = new CountDownLatch(1);
+        CountDownLatch allowCompletion = new CountDownLatch(1);
+
+        FlowContext parkedContext;
+        FlowDefinition definition;
+
+        try (CoreFlowEngine engine = startedEngine(true, snapshotStore)) {
+            definition = engine.plans().newDefinition("restore-backed-wake-consumes-parked")
+                    .step("park", _ -> {
+                        parked.countDown();
+                        return FlowOutcome.PARK;
+                    }, null)
+                    .step("resume", _ -> {
+                        resumed.countDown();
+                        try {
+                            if (!allowCompletion.await(3, TimeUnit.SECONDS)) {
+                                return FlowOutcome.FAIL;
+                            }
+                        } catch (InterruptedException ex) {
+                            Thread.currentThread().interrupt();
+                            return FlowOutcome.FAIL;
+                        }
+                        return FlowOutcome.COMPLETE;
+                    }, null)
+                    .build();
+
+            FlowExecutionPlan plan = engine.plans().compile(definition);
+            parkedContext = context("restore-backed-wake-instance", definition.name());
+
+            engine.scheduler().schedule(plan, parkedContext);
+
+            assertThat(parked.await(3, TimeUnit.SECONDS))
+                    .as("flow must reach PARKED before restart")
+                    .isTrue();
+            awaitTrue(3_000, () -> snapshotStore.exists(
+                    parkedContext.instanceIdMost(), parkedContext.instanceIdLeast()));
+        }
+
+        try (CoreFlowEngine rebuilt = startedEngine(true, snapshotStore)) {
+            rebuilt.plans().compile(definition);
+
+            rebuilt.scheduler().wake(parkedContext);
+
+            assertThat(resumed.await(3, TimeUnit.SECONDS))
+                    .as("the restored flow must resume after wake")
+                    .isTrue();
+
+            assertThat(rebuilt.scheduler().lookupParked(
+                    parkedContext.instanceIdMost(), parkedContext.instanceIdLeast()))
+                    .as("restore-backed wake must consume parked registration before the flow is running")
+                    .isEmpty();
+            assertThat(rebuilt.stats().parkedFlows())
+                    .as("parked flow count must drop to zero once wake resumes the flow")
+                    .isZero();
+
+            allowCompletion.countDown();
+            awaitTrue(3_000, () -> rebuilt.stats().completedFlows() == 1L);
+        }
+    }
+
+    @Test
+    @Timeout(value = 10, unit = TimeUnit.SECONDS)
     @DisplayName("close emits the Flow shutdown JFR event required by the contract")
     void closeEmitsShutdownJfrEvent() throws Exception {
         CountDownLatch eventReceived = new CountDownLatch(1);
