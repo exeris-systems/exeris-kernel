@@ -176,6 +176,53 @@ class CoreFlowEngineTest {
 
         @Test
         @Timeout(value = 10, unit = TimeUnit.SECONDS)
+        @DisplayName("immediate schedule, park, and wake on the same context is race-safe")
+        void immediateScheduleParkWakeOnSameContextIsRaceSafe() throws InterruptedException {
+            try (CoreFlowEngine engine = startedEngine(false)) {
+                AtomicInteger executions = new AtomicInteger();
+
+                FlowDefinition definition = engine.plans().newDefinition("schedule-park-wake-race")
+                        .step("first", _ -> {
+                            executions.incrementAndGet();
+                            return FlowOutcome.CONTINUE;
+                        }, null)
+                        .step("second", _ -> {
+                            executions.incrementAndGet();
+                            return FlowOutcome.CONTINUE;
+                        }, null)
+                        .build();
+
+                FlowExecutionPlan plan = engine.plans().compile(definition);
+                FlowContext context = context("schedule-park-wake-race-instance", definition.name());
+
+                for (int iteration = 0; iteration < 512; iteration++) {
+                    org.assertj.core.api.Assertions.assertThatCode(() -> {
+                        engine.scheduler().schedule(plan, context);
+                        engine.scheduler().park(context);
+                        engine.scheduler().wake(context);
+                    }).doesNotThrowAnyException();
+                }
+
+                awaitTrue(5_000, () -> engine.stats().completedFlows() >= 1
+                        || engine.scheduler().lookupParked(
+                                context.instanceIdMost(),
+                                context.instanceIdLeast()).isPresent());
+
+                Optional<FlowContext> parked = engine.scheduler().lookupParked(
+                        context.instanceIdMost(),
+                        context.instanceIdLeast());
+                if (parked.isPresent()) {
+                    engine.scheduler().wake(parked.orElseThrow());
+                    awaitTrue(5_000, () -> engine.stats().completedFlows() >= 1);
+                }
+
+                assertThat(engine.stats().failedFlows()).isZero();
+                assertThat(executions.get()).isGreaterThanOrEqualTo(1);
+            }
+        }
+
+        @Test
+        @Timeout(value = 10, unit = TimeUnit.SECONDS)
         @DisplayName("schedule restores from snapshot when available")
         void scheduleRestoresFromSnapshot() throws InterruptedException {
             CountDownLatch firstComplete = new CountDownLatch(1);

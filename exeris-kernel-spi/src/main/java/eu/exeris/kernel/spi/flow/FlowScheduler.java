@@ -80,7 +80,11 @@ public interface FlowScheduler {
     /**
      * Looks up a currently parked flow instance by its UUID components.
      *
-     * <p>Implementations MUST return the result in O(1) time.
+     * <p>The in-memory parked registry is the required O(1) fast path
+     * for live-runtime wake. When persistence is enabled, implementations
+     * may consult {@link eu.exeris.kernel.spi.flow.model.FlowSnapshotStore}
+     * only on an in-memory miss, and that fallback path should be bounded
+     * so repeated misses do not degenerate into unbounded repeated store probes.
      * The default implementation always returns {@link java.util.Optional#empty()}.
      *
      * @param instanceIdMost  most-significant bits of the flow instance UUID

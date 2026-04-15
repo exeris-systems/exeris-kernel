@@ -23,16 +23,20 @@ import eu.exeris.kernel.spi.flow.model.FlowState;
 import eu.exeris.kernel.spi.flow.model.FlowStepAction;
 import eu.exeris.kernel.spi.flow.model.FlowStepDescriptor;
 
+import java.util.Deque;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.LongAdder;
 
 @SuppressWarnings("PMD.PublicMemberInNonPublicType")
 final class CoreFlowRuntime { // NOPMD
+
+    private static final int MAX_PARKED_LOOKUP_MISSES = 256;
 
     private final FlowEngineConfig config;
     private final FlowProgressPublisher progressPublisher;
@@ -41,6 +45,8 @@ final class CoreFlowRuntime { // NOPMD
     private final ConcurrentMap<FlowKey, RuntimeFlowInstance> parkedInstances = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, CoreFlowExecutionPlan> planCatalog = new ConcurrentHashMap<>();
     private final ConcurrentMap<FlowKey, FlowState> terminalStateCatalog = new ConcurrentHashMap<>();
+    private final Set<FlowKey> parkedLookupMisses = ConcurrentHashMap.newKeySet();
+    private final Deque<FlowKey> parkedLookupMissOrder = new ConcurrentLinkedDeque<>();
     private final Set<Thread> runningThreads = ConcurrentHashMap.newKeySet();
     private final AtomicInteger activeFlows = new AtomicInteger();
     private final LongAdder parkedFlows = new LongAdder();
@@ -110,6 +116,8 @@ final class CoreFlowRuntime { // NOPMD
         liveInstances.clear();
         parkedInstances.clear();
         terminalStateCatalog.clear();
+        parkedLookupMisses.clear();
+        parkedLookupMissOrder.clear();
     }
 
     private void interruptAndJoinRunningThreads() {
@@ -157,6 +165,7 @@ final class CoreFlowRuntime { // NOPMD
     private void schedule(CoreFlowExecutionPlan plan, FlowContext context) {
         ensureStarted();
         FlowKey key = FlowKey.from(context);
+        clearParkedLookupMiss(key);
         if (terminalStateCatalog.containsKey(key)) {
             return;
         }
@@ -166,7 +175,7 @@ final class CoreFlowRuntime { // NOPMD
                 current.attachPlan(plan);
                 return current;
             }
-            RuntimeFlowInstance restored = restoreFromSnapshot(flowKey, plan, null);
+            RuntimeFlowInstance restored = restoreFromSnapshot(flowKey, plan, null, false);
             return restored != null ? restored : RuntimeFlowInstance.fromContext(plan, context);
         });
 
@@ -190,6 +199,7 @@ final class CoreFlowRuntime { // NOPMD
 
     private void park(FlowContext context) {
         FlowKey key = FlowKey.from(context);
+        clearParkedLookupMiss(key);
         RuntimeFlowInstance instance = liveInstances.get(key);
         if (instance == null || instance.state() == FlowState.PARKED || instance.isTerminal()) {
             return;
@@ -208,6 +218,7 @@ final class CoreFlowRuntime { // NOPMD
     private void wake(FlowContext context) {
         ensureStarted();
         FlowKey key = FlowKey.from(context);
+        clearParkedLookupMiss(key);
         if (terminalStateCatalog.containsKey(key)) {
             return;
         }
@@ -253,7 +264,7 @@ final class CoreFlowRuntime { // NOPMD
     }
 
     private RuntimeFlowInstance restoreParkedFromSnapshot(FlowKey key, boolean registerParked) {
-        RuntimeFlowInstance restored = restoreFromSnapshot(key, null, FlowState.PARKED);
+        RuntimeFlowInstance restored = restoreFromSnapshot(key, null, FlowState.PARKED, true);
         if (restored == null) {
             return null;
         }
@@ -271,23 +282,50 @@ final class CoreFlowRuntime { // NOPMD
     private RuntimeFlowInstance restoreFromSnapshot(
             FlowKey key,
             CoreFlowExecutionPlan directPlan,
-            FlowState requiredState) {
-        FlowSnapshot persisted = loadSnapshot(key);
+            FlowState requiredState,
+            boolean suppressRepeatedMisses) {
+        FlowSnapshot persisted = loadSnapshot(key, requiredState, suppressRepeatedMisses);
         if (persisted == null) {
             return null;
         }
-        if (!matchesRequiredState(persisted, requiredState)) {
-            return null;
-        }
         CoreFlowExecutionPlan resolvedPlan = resolvePlanForSnapshot(directPlan, persisted);
+        clearParkedLookupMiss(key);
         return RuntimeFlowInstance.fromSnapshot(resolvedPlan, persisted);
     }
 
-    private FlowSnapshot loadSnapshot(FlowKey key) {
+    private FlowSnapshot loadSnapshot(FlowKey key, FlowState requiredState, boolean suppressRepeatedMisses) {
         if (snapshotStore == null) {
             return null;
         }
-        return snapshotStore.load(key.instanceIdMost(), key.instanceIdLeast()).orElse(null);
+        if (suppressRepeatedMisses && parkedLookupMisses.contains(key)) {
+            return null;
+        }
+        FlowSnapshot snapshot = snapshotStore.load(key.instanceIdMost(), key.instanceIdLeast()).orElse(null);
+        if (snapshot == null || !matchesRequiredState(snapshot, requiredState)) {
+            if (suppressRepeatedMisses) {
+                recordParkedLookupMiss(key);
+            }
+            return null;
+        }
+        clearParkedLookupMiss(key);
+        return snapshot;
+    }
+
+    private void recordParkedLookupMiss(FlowKey key) {
+        if (parkedLookupMisses.add(key)) {
+            parkedLookupMissOrder.offerLast(key);
+        }
+        while (parkedLookupMisses.size() > MAX_PARKED_LOOKUP_MISSES) {
+            FlowKey oldest = parkedLookupMissOrder.pollFirst();
+            if (oldest == null) {
+                break;
+            }
+            parkedLookupMisses.remove(oldest);
+        }
+    }
+
+    private void clearParkedLookupMiss(FlowKey key) {
+        parkedLookupMisses.remove(key);
     }
 
     private boolean matchesRequiredState(FlowSnapshot persisted, FlowState requiredState) {
@@ -335,6 +373,9 @@ final class CoreFlowRuntime { // NOPMD
         try {
             synchronized (instance.monitor()) {
                 if (closed || !started || instance.isTerminal()) {
+                    return;
+                }
+                if (instance.state() == FlowState.PARKED) {
                     return;
                 }
                 instance.state(FlowState.RUNNING);
@@ -471,6 +512,7 @@ final class CoreFlowRuntime { // NOPMD
             guard.releaseInstance(instance.key().instanceIdMost(), instance.key().instanceIdLeast());
         }
         failedFlows.increment();
+        clearParkedLookupMiss(instance.key());
         terminalStateCatalog.put(instance.key(), FlowState.FAILED_ROLLEDBACK);
         persistSnapshot(instance, FlowState.FAILED_ROLLEDBACK, stepIndex);
         progressPublisher.publishProgress(instance, stepIndex, FlowState.FAILED_ROLLEDBACK);
@@ -482,6 +524,7 @@ final class CoreFlowRuntime { // NOPMD
 
     private void complete(RuntimeFlowInstance instance) {
         instance.state(FlowState.COMPLETED);
+        clearParkedLookupMiss(instance.key());
         terminalStateCatalog.put(instance.key(), FlowState.COMPLETED);
         if (guard != null) {
             guard.releaseInstance(instance.key().instanceIdMost(), instance.key().instanceIdLeast());
@@ -505,6 +548,7 @@ final class CoreFlowRuntime { // NOPMD
         if (snapshotStore == null) {
             return;
         }
+        clearParkedLookupMiss(instance.key());
         snapshotStore.save(instance.toSnapshot(state, stepIndex));
     }
 
@@ -537,12 +581,17 @@ final class CoreFlowRuntime { // NOPMD
         @Override
         public Optional<FlowContext> lookupParked(long instanceIdMost, long instanceIdLeast) {
             FlowKey key = new FlowKey(instanceIdMost, instanceIdLeast);
+            if (terminalStateCatalog.containsKey(key)) {
+                return Optional.empty();
+            }
             RuntimeFlowInstance parked = parkedInstances.get(key);
             if (parked != null) {
+                clearParkedLookupMiss(key);
                 return Optional.of(parked.contextView());
             }
             RuntimeFlowInstance live = liveInstances.get(key);
             if (live != null && live.state() == FlowState.PARKED) {
+                clearParkedLookupMiss(key);
                 return Optional.of(live.contextView());
             }
             RuntimeFlowInstance restored = restoreParkedFromSnapshot(key);

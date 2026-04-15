@@ -85,6 +85,26 @@ class CoreFlowRuntimeTest {
 
     @Test
     @Timeout(value = 10, unit = TimeUnit.SECONDS)
+    @DisplayName("lookupParked suppresses repeated snapshot-store probes after a miss")
+    void lookupParkedSuppressesRepeatedSnapshotStoreProbesAfterMiss() {
+        CountingSnapshotStore snapshotStore = new CountingSnapshotStore();
+
+        try (CoreFlowEngine engine = startedEngine(true, snapshotStore)) {
+            Optional<FlowContext> first = engine.scheduler().lookupParked(11L, 22L);
+            Optional<FlowContext> second = engine.scheduler().lookupParked(11L, 22L);
+            Optional<FlowContext> third = engine.scheduler().lookupParked(11L, 22L);
+
+            assertThat(first).isEmpty();
+            assertThat(second).isEmpty();
+            assertThat(third).isEmpty();
+            assertThat(snapshotStore.loadCount())
+                    .as("unknown parked-flow lookups should not keep re-probing the snapshot store")
+                    .isEqualTo(1);
+        }
+    }
+
+    @Test
+    @Timeout(value = 10, unit = TimeUnit.SECONDS)
     @DisplayName("lookupParked falls back to the snapshot store after restart")
     void lookupParkedFallsBackToSnapshotStoreAfterRestart() throws Exception {
         InMemorySnapshotStore snapshotStore = new InMemorySnapshotStore();
@@ -293,7 +313,14 @@ class CoreFlowRuntimeTest {
             if (System.nanoTime() > deadline) {
                 throw new AssertionError("Condition not met within " + timeoutMs + " ms");
             }
+            if (Thread.currentThread().isInterrupted()) {
+                throw new AssertionError("awaitTrue interrupted while waiting");
+            }
             LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(10));
+            if (Thread.interrupted()) {
+                Thread.currentThread().interrupt();
+                throw new AssertionError("awaitTrue interrupted while waiting");
+            }
         }
     }
 
@@ -332,7 +359,7 @@ class CoreFlowRuntimeTest {
         };
     }
 
-    private static final class InMemorySnapshotStore implements FlowSnapshotStore {
+    private static class InMemorySnapshotStore implements FlowSnapshotStore {
         private final ConcurrentMap<FlowSnapshotKey, FlowSnapshot> snapshots = new ConcurrentHashMap<>();
 
         @Override
@@ -353,6 +380,20 @@ class CoreFlowRuntimeTest {
         @Override
         public boolean exists(long instanceIdMost, long instanceIdLeast) {
             return snapshots.containsKey(new FlowSnapshotKey(instanceIdMost, instanceIdLeast));
+        }
+    }
+
+    private static final class CountingSnapshotStore extends InMemorySnapshotStore {
+        private final java.util.concurrent.atomic.AtomicInteger loadCount = new java.util.concurrent.atomic.AtomicInteger();
+
+        @Override
+        public Optional<FlowSnapshot> load(long instanceIdMost, long instanceIdLeast) {
+            loadCount.incrementAndGet();
+            return super.load(instanceIdMost, instanceIdLeast);
+        }
+
+        private int loadCount() {
+            return loadCount.get();
         }
     }
 

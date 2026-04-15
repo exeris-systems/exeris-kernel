@@ -101,7 +101,7 @@ Flow can be driven by external events through the choreography bridge:
 
 For choreography-driven wake, the in-memory parked map remains the O(1) fast path during a live runtime.
 
-When persistence is enabled, a restart-aware implementation may consult `FlowSnapshotStore` only after an in-memory miss to recover a `PARKED` `FlowContext` for wake. This fallback does not change The Wall: Core continues to orchestrate through SPI contracts only, and persistence details remain hidden behind `FlowSnapshotStore`.
+When persistence is enabled, a restart-aware implementation may consult `FlowSnapshotStore` only after an in-memory miss to recover a `PARKED` `FlowContext` for wake. That fallback is a bounded miss-path rather than an unbounded repeated store probe: repeated unknown-flow misses should be negatively suppressed in Core so persistence cost does not amplify under choreography polling. This fallback does not change The Wall: Core continues to orchestrate through SPI contracts only, and persistence details remain hidden behind `FlowSnapshotStore`.
 
 If persistence is disabled, cross-restart choreography wake remains unsupported by contract.
 
