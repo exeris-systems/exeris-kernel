@@ -150,6 +150,20 @@ See also: [Transport Subsystem](./subsystems/transport.md) — Testing Strategy 
 
 ---
 
+### Transport: Community Socket Path Migration to Core FFM Syscalls
+
+**Gap:** The active Community transport carrier still uses Java NIO socket primitives (`ServerSocketChannel`, `SocketChannel`, `Selector`) for bind / accept / connect / readiness management. Core already ships cross-platform POSIX / Winsock symbol loading in `CoreSyscallLoader`, but Community does not yet consume that socket path.
+
+**Owner:** Core / Transport subsystem.
+
+**Resolution:** Migrate the Community carrier incrementally from primary NIO socket lifecycle management to the Core-provided FFM syscall path backed by `CoreSyscallLoader`. Preserve SPI blindness, PAQS semantics, and current TLS FD-owner binding while moving socket bootstrap and readiness operations onto the shared POSIX / Winsock layer. Java NIO remains the explicit portability / compatibility fallback when FFM socket bootstrap is unavailable, unsupported, or temporarily disabled.
+
+**Merge Gate:** Add Community integration and TCK coverage proving boot, bind, connect, ingress, and load-shed behavior through the FFM-backed socket path. Linux validation is mandatory; Windows-capable CI coverage is required for Winsock compatibility before milestone close.
+
+See also: [Transport Subsystem](./subsystems/transport.md) — Responsibilities / Zero-Copy Ingress.
+
+---
+
 ### Quality: PMD Suppression Reduction and Structural Refactoring
 
 **Gap:** A number of `@SuppressWarnings` / `//NOPMD` usages are justified by boundary-heavy or performance-sensitive code, but some still hide maintainability debt that could be removed through structural refactoring.

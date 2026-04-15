@@ -141,12 +141,13 @@ public abstract class AbstractRowCursorThroughputBenchmark extends AbstractExeri
     public void setupPersistence() {
         String rawUrl = System.getProperty("benchmark.persistence.url", "");
         String normalized = rawUrl.strip();
-        String url = (!normalized.isBlank()
-                && normalized.toLowerCase(java.util.Locale.ROOT).startsWith("jdbc:"))
-                ? normalized
-                : DEFAULT_BENCHMARK_URL;
+        String url = normalized.isBlank() ? DEFAULT_BENCHMARK_URL : normalized;
+        String benchUser = System.getProperty("benchmark.persistence.user",
+                url.equals(DEFAULT_BENCHMARK_URL) ? "sa" : "bench");
+        String benchPassword = System.getProperty("benchmark.persistence.password",
+                url.equals(DEFAULT_BENCHMARK_URL) ? "" : "bench");
         this.engine = getProvider().createEngine(
-                PersistenceConfig.defaults(url, "bench", "bench")
+                PersistenceConfig.defaults(url, benchUser, benchPassword)
         );
 
         // Insert mock rows — implementation-specific (in-memory DB or pre-warmed buffer).

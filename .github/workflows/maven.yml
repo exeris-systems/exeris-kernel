@@ -53,10 +53,22 @@ jobs:
       - name: Build & Run TCK Verification
         run: mvn clean verify -B -e
 
+      - name: Upload TCK JFR recordings
+        if: always() && (github.event_name == 'push' || github.event_name == 'schedule') && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: jfr-tck-${{ github.run_number }}
+          path: |
+            exeris-kernel-*/target/*.jfr
+            exeris-kernel-*/target/jfr-reports/**/*.jfr
+          if-no-files-found: warn
+          retention-days: 14
+
       # Publish to GitHub Packages only on push to main (not on PRs).
-      # Enterprise repo consumes SPI, Core, TCK, and BOM from here.
+      # GitHub Packages is immutable: a 409 means this version is already published — not a real failure.
       - name: Publish to GitHub Packages
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        continue-on-error: true
         run: |
           mvn deploy -B -e \
             --settings .github/maven-settings.xml \
@@ -106,6 +118,15 @@ jobs:
             -DexcludedGroups= \
             test -B -e
 
+      - name: Upload persistence JFR recordings
+        if: always() && (github.event_name == 'push' || github.event_name == 'schedule') && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: jfr-persistence-${{ github.run_number }}
+          path: exeris-kernel-community/target/*.jfr
+          if-no-files-found: warn
+          retention-days: 14
+
   benchmarks:
     name: JMH Benchmarks (Community + Core)
     # TODO: point runs-on to a dedicated bare-metal runner when available
@@ -145,12 +166,14 @@ jobs:
       - name: Run JMH Benchmarks
         run: |
           mvn -pl exeris-kernel-community,exeris-kernel-core -am install -DskipTests -B -e
+          mkdir -p exeris-kernel-community/target/jfr-reports exeris-kernel-core/target/jfr-reports
           mvn -pl exeris-kernel-community -P benchmarks \
             -Dbenchmark.forks=1 \
             -Dbenchmark.warmup=3 \
             -Dbenchmark.iterations=5 \
             -Dbenchmark.warmuptime=1s \
             -Dbenchmark.iterationstime=1s \
+            -Dbenchmark.jvmArgsAppend=-XX:StartFlightRecording=name=jmh,filename=target/jfr-reports/jmh-benchmarks.jfr,dumponexit=true,settings=default \
             verify -B -e
           mvn -pl exeris-kernel-core -P benchmarks \
             -Dbenchmark.forks=1 \
@@ -158,6 +181,7 @@ jobs:
             -Dbenchmark.iterations=5 \
             -Dbenchmark.warmuptime=1s \
             -Dbenchmark.iterationstime=1s \
+            -Dbenchmark.jvmArgsAppend=-XX:StartFlightRecording=name=jmh,filename=target/jfr-reports/jmh-benchmarks.jfr,dumponexit=true,settings=default \
             verify -B -e
 
       - name: Upload Community benchmark results
@@ -174,4 +198,167 @@ jobs:
           path: exeris-kernel-core/target/jmh-results.json
           if-no-files-found: warn
 
+      - name: Upload Community benchmark JFR
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jfr-benchmarks-community-${{ github.run_number }}
+          path: exeris-kernel-community/target/jfr-reports/jmh-benchmarks.jfr
+          if-no-files-found: warn
+          retention-days: 14
 
+      - name: Upload Core benchmark JFR
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jfr-benchmarks-core-${{ github.run_number }}
+          path: exeris-kernel-core/target/jfr-reports/jmh-benchmarks.jfr
+          if-no-files-found: warn
+          retention-days: 14
+
+  parse-jfr-to-json:
+    name: Parse JFR → Lab JSON
+    runs-on: ubuntu-latest
+    needs: [build-and-verify, persistence-rls-gate, benchmarks]
+    if: (github.event_name == 'push' || github.event_name == 'schedule') && github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Cache JDK tarball
+        id: jdk-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/jdk.tar.gz
+          key: ${{ env.JDK_CACHE_KEY }}
+
+      - name: Fetch JDK
+        if: steps.jdk-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          wget -q -O ${{ runner.temp }}/jdk.tar.gz ${{ env.JDK_URL }}
+          echo "${{ env.JDK_SHA256 }}  ${{ runner.temp }}/jdk.tar.gz" | sha256sum -c
+
+      - name: Inject JDK into Runner
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'jdkfile'
+          jdkFile: ${{ runner.temp }}/jdk.tar.gz
+          java-version: ${{ env.JDK_VER }}
+          architecture: x64
+          cache: maven
+
+      - name: Build JFR Reporter
+        run: mvn -f tools/jfr-reporter/pom.xml clean package -q
+
+      - name: Download TCK JFR recordings
+        uses: actions/download-artifact@v4
+        with:
+          name: jfr-tck-${{ github.run_number }}
+          path: .
+
+      - name: Download persistence JFR recordings
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: jfr-persistence-${{ github.run_number }}
+          path: .
+
+      - name: Download benchmark JFR recordings
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          pattern: jfr-benchmarks-*-${{ github.run_number }}
+          path: .
+          merge-multiple: true
+
+      - name: Run JFR Reporter
+        run: |
+          jar=$(ls tools/jfr-reporter/target/jfr-reporter-*.jar 2>/dev/null | grep -v original | head -1)
+          if [ -z "$jar" ]; then
+            echo "ERROR: jfr-reporter shaded JAR not found in tools/jfr-reporter/target/" >&2
+            exit 1
+          fi
+          java -jar "$jar" \
+            --core      exeris-kernel-core/target/ \
+            --community exeris-kernel-community/target/ \
+            --commit    ${{ github.sha }} \
+            --branch    ${{ github.ref_name }} \
+            --out       build/jfr-report/
+
+      - name: Upload Lab JSON
+        uses: actions/upload-artifact@v4
+        with:
+          name: jfr-lab-json-${{ github.run_number }}
+          path: build/jfr-report/
+          if-no-files-found: warn
+          retention-days: 30
+
+  publish-gh-pages-data:
+    name: Publish JFR Data → GH Pages
+    runs-on: ubuntu-latest
+    needs: [parse-jfr-to-json, benchmarks]
+    if: (github.event_name == 'push' || github.event_name == 'schedule') && github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Download Lab JSON
+        uses: actions/download-artifact@v4
+        with:
+          name: jfr-lab-json-${{ github.run_number }}
+          path: build/jfr-report/
+
+      - name: Download Community benchmark results
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: jmh-community-results
+          path: build/jmh-results/community/
+
+      - name: Download Core benchmark results
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: jmh-core-results
+          path: build/jmh-results/core/
+
+      - name: Publish latest to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: build/jfr-report/
+          destination_dir: data/jfr/latest
+          keep_files: true
+
+      - name: Publish run snapshot to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: build/jfr-report/
+          destination_dir: data/jfr/${{ github.run_number }}
+          keep_files: true
+
+      - name: Publish JMH results latest to GitHub Pages
+        continue-on-error: true
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: build/jmh-results/
+          destination_dir: data/jmh/latest
+          keep_files: true
+
+      - name: Publish JMH results snapshot to GitHub Pages
+        continue-on-error: true
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: build/jmh-results/
+          destination_dir: data/jmh/${{ github.run_number }}
+          keep_files: true

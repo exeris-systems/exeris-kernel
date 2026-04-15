@@ -129,20 +129,6 @@ public class CommunityTlsEngineGuardBenchmark extends AbstractExerisBenchmark {
 
 	@TearDown(Level.Trial)
 	public void tearDownTrial() {
-		if (tempCertDir != null) {
-			try (java.nio.file.DirectoryStream<Path> stream = Files.newDirectoryStream(tempCertDir)) {
-				for (Path entry : stream) {
-					Files.deleteIfExists(entry);
-				}
-			} catch (java.io.IOException ignored) {
-				// best-effort cleanup
-			}
-			try {
-				Files.deleteIfExists(tempCertDir);
-			} catch (java.io.IOException ignored) {
-				// best-effort cleanup
-			}
-		}
 		if (serverEngine != null) {
 			serverEngine.close();
 		}
@@ -181,6 +167,20 @@ public class CommunityTlsEngineGuardBenchmark extends AbstractExerisBenchmark {
 		}
 		if (provider != null) {
 			provider.close();
+		}
+		if (tempCertDir != null) {
+			try (java.nio.file.DirectoryStream<Path> stream = Files.newDirectoryStream(tempCertDir)) {
+				for (Path entry : stream) {
+					Files.deleteIfExists(entry);
+				}
+			} catch (java.io.IOException ignored) {
+				// best-effort cleanup
+			}
+			try {
+				Files.deleteIfExists(tempCertDir);
+			} catch (java.io.IOException ignored) {
+				// best-effort cleanup
+			}
 		}
 	}
 
@@ -322,26 +322,37 @@ public class CommunityTlsEngineGuardBenchmark extends AbstractExerisBenchmark {
 		// 2) Generate a temporary self-signed cert via the openssl CLI if available.
 		try {
 			Path tmpDir = Files.createTempDirectory("exeris-bench-tls-");
-			tempCertDir = tmpDir;
 			Path certFile = tmpDir.resolve("server.crt");
 			Path keyFile = tmpDir.resolve("server.key");
-			ProcessBuilder pb = new ProcessBuilder(
-					"openssl", "req", "-x509", "-newkey", "rsa:2048",
-					"-keyout", keyFile.toString(),
-					"-out", certFile.toString(),
-					"-days", "1", "-nodes",
-					"-subj", "/CN=exeris-benchmark");
-			pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
-			pb.redirectError(ProcessBuilder.Redirect.DISCARD);
-			Process proc = pb.start();
-			int exit = proc.waitFor();
-			if (exit == 0 && Files.exists(certFile) && Files.exists(keyFile)) {
-				return new Path[]{certFile, keyFile};
+			try {
+				String opensslPath = findOnPath("openssl");
+				if (opensslPath == null) {
+					throw new java.io.IOException("openssl not found on PATH");
+				}
+				ProcessBuilder pb = new ProcessBuilder(
+						opensslPath, "req", "-x509", "-newkey", "rsa:2048",
+						"-keyout", keyFile.toString(),
+						"-out", certFile.toString(),
+						"-days", "1", "-nodes",
+						"-subj", "/CN=exeris-benchmark");
+				pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
+				pb.redirectError(ProcessBuilder.Redirect.DISCARD);
+				Process proc = pb.start();
+				int exit = proc.waitFor();
+				if (exit == 0 && Files.exists(certFile) && Files.exists(keyFile)) {
+					tempCertDir = tmpDir;
+					return new Path[]{certFile, keyFile};
+				}
+			} catch (InterruptedException ie) {
+				Thread.currentThread().interrupt();
+			} catch (java.io.IOException ignored) {
+				// openssl not available or failed — clean up and fall through
 			}
-		} catch (InterruptedException interruptedException) {
-			Thread.currentThread().interrupt();
+			try { Files.deleteIfExists(certFile); } catch (java.io.IOException ignored) {}
+			try { Files.deleteIfExists(keyFile); } catch (java.io.IOException ignored) {}
+			try { Files.deleteIfExists(tmpDir); } catch (java.io.IOException ignored) {}
 		} catch (java.io.IOException ignored) {
-			// openssl not available or failed — fall through to bundled certs
+			// createTempDirectory failed — fall through to bundled certs
 		}
 
 		// 3) Locate certs bundled in the repository (native-libs/certs).
@@ -376,5 +387,17 @@ public class CommunityTlsEngineGuardBenchmark extends AbstractExerisBenchmark {
 		} catch (Exception ignored) {
 			// benchmark teardown should be best-effort
 		}
+	}
+
+	private static String findOnPath(String executable) {
+		String pathEnv = System.getenv("PATH");
+		if (pathEnv == null) return null;
+		for (String dir : pathEnv.split(java.io.File.pathSeparator)) {
+			java.io.File candidate = new java.io.File(dir, executable);
+			if (candidate.isFile() && candidate.canExecute()) {
+				return candidate.getAbsolutePath();
+			}
+		}
+		return null;
 	}
 }
