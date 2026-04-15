@@ -241,7 +241,7 @@ final class CoreFlowRuntime { // NOPMD
             }
             return live;
         }
-        RuntimeFlowInstance restored = restoreParkedFromSnapshot(key);
+        RuntimeFlowInstance restored = restoreParkedFromSnapshot(key, false);
         if (restored == null) {
             throw notParked(key);
         }
@@ -249,6 +249,10 @@ final class CoreFlowRuntime { // NOPMD
     }
 
     private RuntimeFlowInstance restoreParkedFromSnapshot(FlowKey key) {
+        return restoreParkedFromSnapshot(key, true);
+    }
+
+    private RuntimeFlowInstance restoreParkedFromSnapshot(FlowKey key, boolean registerParked) {
         RuntimeFlowInstance restored = restoreFromSnapshot(key, null, FlowState.PARKED);
         if (restored == null) {
             return null;
@@ -258,7 +262,7 @@ final class CoreFlowRuntime { // NOPMD
         if (resolved.state() != FlowState.PARKED) {
             return null;
         }
-        if (parkedInstances.putIfAbsent(key, resolved) == null) {
+        if (registerParked && parkedInstances.putIfAbsent(key, resolved) == null) {
             parkedFlows.increment();
         }
         return resolved;
