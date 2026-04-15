@@ -31,8 +31,8 @@ import java.util.concurrent.locks.LockSupport;
  * <h2>How it works</h2>
  * <p>Extends {@link AbstractSubsystemZeroAllocTck}, which runs the JFR three-phase
  * protocol (bootstrap → warm-up → steady-state). During steady-state, this test exercises
- * the schedule-only submission path with a small bounded in-flight window so the scheduler
- * remains hot without reintroducing the earlier immediate park/wake race.
+ * a small bounded end-to-end A → B execution path after submission so the scheduler remains
+ * hot without reintroducing the earlier immediate park/wake race.
  *
  * <h2>Community vs Enterprise</h2>
  * <ul>

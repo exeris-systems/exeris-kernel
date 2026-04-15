@@ -31,6 +31,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
 
 @SuppressWarnings("PMD.PublicMemberInNonPublicType")
@@ -49,6 +50,7 @@ final class CoreFlowRuntime { // NOPMD
     private final Deque<FlowKey> parkedLookupMissOrder = new ConcurrentLinkedDeque<>();
     private final Object parkedLookupMissLock = new Object();
     private final Set<Thread> runningThreads = ConcurrentHashMap.newKeySet();
+    private final AtomicLong lifecycleGeneration = new AtomicLong();
     private final AtomicInteger activeFlows = new AtomicInteger();
     private final LongAdder parkedFlows = new LongAdder();
     private final LongAdder completedFlows = new LongAdder();
@@ -107,6 +109,7 @@ final class CoreFlowRuntime { // NOPMD
             snapshotStore = store.get();
         }
         guard = KernelProviders.idempotencyGuard().orElseGet(CoreIdempotencyGuard::new);
+        lifecycleGeneration.incrementAndGet();
         resetLifecycleTotals();
         closed = false;
         shutdownFinalized = false;
@@ -121,7 +124,7 @@ final class CoreFlowRuntime { // NOPMD
         started = false;
         interruptAndJoinRunningThreads();
         shutdownFinalized = true;
-        runningThreads.clear();
+        runningThreads.removeIf(thread -> !thread.isAlive());
         liveInstances.clear();
         parkedInstances.clear();
         terminalStateCatalog.clear();
@@ -166,6 +169,18 @@ final class CoreFlowRuntime { // NOPMD
         }
     }
 
+    private boolean isCurrentLifecycle(RuntimeFlowInstance instance) {
+        return instance.lifecycleGeneration() == lifecycleGeneration.get();
+    }
+
+    private boolean isActiveLifecycle(RuntimeFlowInstance instance) {
+        return started && !closed && isCurrentLifecycle(instance);
+    }
+
+    private boolean cleanupOnly(RuntimeFlowInstance instance) {
+        return shutdownFinalized || !isCurrentLifecycle(instance);
+    }
+
     private void resetLifecycleTotals() {
         activeFlows.set(0);
         queueDepth.set(0);
@@ -201,7 +216,9 @@ final class CoreFlowRuntime { // NOPMD
                 return current;
             }
             RuntimeFlowInstance restored = restoreFromSnapshot(flowKey, plan, null, false);
-            return restored != null ? restored : RuntimeFlowInstance.fromContext(plan, context);
+            return restored != null
+                    ? restored
+                    : RuntimeFlowInstance.fromContext(plan, context, lifecycleGeneration.get());
         });
 
         if (instance.isTerminal() || terminalStateCatalog.containsKey(key)) {
@@ -333,7 +350,7 @@ final class CoreFlowRuntime { // NOPMD
             return null;
         }
         clearParkedLookupMiss(key);
-        return RuntimeFlowInstance.fromSnapshot(resolvedPlan, persisted);
+        return RuntimeFlowInstance.fromSnapshot(resolvedPlan, persisted, lifecycleGeneration.get());
     }
 
     private FlowSnapshot loadSnapshot(FlowKey key, FlowState requiredState, boolean suppressRepeatedMisses) {
@@ -423,6 +440,10 @@ final class CoreFlowRuntime { // NOPMD
     }
 
     private void launch(RuntimeFlowInstance instance, int startStep) {
+        if (!isActiveLifecycle(instance)) {
+            instance.markNotScheduled();
+            return;
+        }
         int admitted = activeFlows.incrementAndGet();
         if (admitted > config.maxConcurrentFlows()) {
             activeFlows.decrementAndGet();
@@ -443,7 +464,7 @@ final class CoreFlowRuntime { // NOPMD
     private void runInstance(RuntimeFlowInstance instance, int startStep) { // NOPMD
         try {
             synchronized (instance.monitor()) {
-                if (closed || !started || instance.isTerminal()) {
+                if (!isActiveLifecycle(instance) || instance.isTerminal()) {
                     return;
                 }
                 if (instance.state() == FlowState.PARKED) {
@@ -455,7 +476,7 @@ final class CoreFlowRuntime { // NOPMD
 
             int stepIndex = Math.max(0, startStep);
 
-            while (!closed && started) {
+            while (isActiveLifecycle(instance)) {
                 FlowStepDescriptor step;
                 FlowStepAction stepAction;
 
@@ -485,6 +506,12 @@ final class CoreFlowRuntime { // NOPMD
                 FlowOutcome outcome = executeStep(instance, stepIndex, stepAction);
 
                 synchronized (instance.monitor()) {
+                    if (!isCurrentLifecycle(instance)) {
+                        if (outcome == FlowOutcome.COMPLETE) {
+                            complete(instance);
+                        }
+                        return;
+                    }
                     switch (outcome) {
                         case CONTINUE -> {
                             if (instance.state() == FlowState.PARKED) {
@@ -521,8 +548,10 @@ final class CoreFlowRuntime { // NOPMD
             }
         } finally {
             instance.markNotScheduled();
-            decrementToZeroFloor(queueDepth);
-            decrementToZeroFloor(activeFlows);
+            if (isCurrentLifecycle(instance)) {
+                decrementToZeroFloor(queueDepth);
+                decrementToZeroFloor(activeFlows);
+            }
             runningThreads.remove(Thread.currentThread());
         }
     }
@@ -549,7 +578,7 @@ final class CoreFlowRuntime { // NOPMD
     }
 
     private void fail(RuntimeFlowInstance instance, int stepIndex) {
-        boolean cleanupOnly = shutdownFinalized;
+        boolean cleanupOnly = cleanupOnly(instance);
         transitionToCompensating(instance, stepIndex, cleanupOnly);
         runCompensations(instance, cleanupOnly);
         finalizeFailedInstance(instance, stepIndex, cleanupOnly);
@@ -608,14 +637,14 @@ final class CoreFlowRuntime { // NOPMD
         if (!cleanupOnly) {
             progressPublisher.publishProgress(instance, stepIndex, FlowState.FAILED_ROLLEDBACK);
         }
-        liveInstances.remove(instance.key());
-        if (!cleanupOnly && parkedInstances.remove(instance.key()) != null) {
+        liveInstances.remove(instance.key(), instance);
+        if (!cleanupOnly && parkedInstances.remove(instance.key(), instance)) {
             parkedFlows.decrement();
         }
     }
 
     private void complete(RuntimeFlowInstance instance) {
-        boolean cleanupOnly = shutdownFinalized;
+        boolean cleanupOnly = cleanupOnly(instance);
         instance.state(FlowState.COMPLETED);
         clearParkedLookupMiss(instance.key());
         if (!cleanupOnly) {
@@ -628,8 +657,8 @@ final class CoreFlowRuntime { // NOPMD
             completedFlows.increment();
             progressPublisher.publishProgress(instance, instance.currentStep(), FlowState.COMPLETED);
         }
-        liveInstances.remove(instance.key());
-        if (!cleanupOnly && parkedInstances.remove(instance.key()) != null) {
+        liveInstances.remove(instance.key(), instance);
+        if (!cleanupOnly && parkedInstances.remove(instance.key(), instance)) {
             parkedFlows.decrement();
         }
         if (snapshotStore != null) {

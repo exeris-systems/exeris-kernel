@@ -29,6 +29,7 @@ final class RuntimeFlowInstance { // NOPMD
 
     private final FlowKey key;
     private final String definitionName;
+    private final long lifecycleGeneration;
     private final AtomicBoolean scheduled = new AtomicBoolean(false);
     private final Object monitor = new Object();
     private final RuntimeFlowContext contextView = new RuntimeFlowContext(this);
@@ -42,6 +43,7 @@ final class RuntimeFlowInstance { // NOPMD
 
     private RuntimeFlowInstance(FlowKey key,
                                 String definitionName,
+                                long lifecycleGeneration,
                                 CoreFlowExecutionPlan plan,
                                 FlowState state,
                                 int currentStep,
@@ -50,6 +52,7 @@ final class RuntimeFlowInstance { // NOPMD
                                 int stackPointer) {
         this.key = key;
         this.definitionName = definitionName;
+        this.lifecycleGeneration = lifecycleGeneration;
         this.plan = plan;
         this.state = state;
         this.currentStep = currentStep;
@@ -58,10 +61,14 @@ final class RuntimeFlowInstance { // NOPMD
         this.stackPointer = stackPointer;
     }
 
-    public static RuntimeFlowInstance fromContext(CoreFlowExecutionPlan plan, FlowContext context) {
+    public static RuntimeFlowInstance fromContext(
+            CoreFlowExecutionPlan plan,
+            FlowContext context,
+            long lifecycleGeneration) {
         return new RuntimeFlowInstance(
                 FlowKey.from(context),
                 context.definitionName(),
+                lifecycleGeneration,
                 plan,
                 context.state(),
                 Math.max(0, context.currentStep()),
@@ -73,7 +80,10 @@ final class RuntimeFlowInstance { // NOPMD
         );
     }
 
-    public static RuntimeFlowInstance fromSnapshot(CoreFlowExecutionPlan plan, FlowSnapshot snapshot) {
+    public static RuntimeFlowInstance fromSnapshot(
+            CoreFlowExecutionPlan plan,
+            FlowSnapshot snapshot,
+            long lifecycleGeneration) {
         long timeoutNanos;
         if (Instant.MAX.equals(snapshot.timeout())) {
             timeoutNanos = Long.MAX_VALUE;
@@ -88,6 +98,7 @@ final class RuntimeFlowInstance { // NOPMD
         return new RuntimeFlowInstance(
                 new FlowKey(snapshot.instanceIdMost(), snapshot.instanceIdLeast()),
                 snapshot.definitionName(),
+                lifecycleGeneration,
                 plan,
                 snapshot.state(),
                 snapshot.currentStep(),
@@ -107,6 +118,10 @@ final class RuntimeFlowInstance { // NOPMD
 
     public Object monitor() {
         return monitor;
+    }
+
+    public long lifecycleGeneration() {
+        return lifecycleGeneration;
     }
 
     public CoreFlowExecutionPlan plan() {

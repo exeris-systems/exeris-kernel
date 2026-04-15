@@ -38,6 +38,7 @@ import java.util.concurrent.locks.LockSupport;
 import java.util.function.BooleanSupplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @DisplayName("CoreFlowRuntime - JFR telemetry")
 class CoreFlowRuntimeTest {
@@ -129,7 +130,8 @@ class CoreFlowRuntimeTest {
             CoreFlowExecutionPlan plan = (CoreFlowExecutionPlan) engine.plans().compile(definition);
             RuntimeFlowInstance instance = RuntimeFlowInstance.fromContext(
                     plan,
-                    context("parked-reschedule-does-not-block-wake-instance", definition.name(), 0, FlowState.PARKED)
+                    context("parked-reschedule-does-not-block-wake-instance", definition.name(), 0, FlowState.PARKED),
+                    1L
             );
 
             int scheduleResult = instance.beginScheduleForSchedule();
@@ -764,6 +766,97 @@ class CoreFlowRuntimeTest {
         }
     }
 
+    @Test
+    @Timeout(value = 20, unit = TimeUnit.SECONDS)
+    @DisplayName("late worker from a prior lifecycle cannot reopen admission control after restart")
+    void lateWorkerFromPriorLifecycleCannotReopenAdmissionControlAfterRestart() throws Exception {
+        CountDownLatch staleStarted = new CountDownLatch(1);
+        CountDownLatch currentStarted = new CountDownLatch(1);
+        CountDownLatch releaseCurrent = new CountDownLatch(1);
+        AtomicReference<Boolean> allowStaleExit = new AtomicReference<>(false);
+        AtomicReference<Thread> staleThread = new AtomicReference<>();
+
+        CoreFlowEngine engine = startedEngine(1, false, null, null);
+        try {
+            FlowDefinition staleDefinition = engine.plans().newDefinition("stale-worker-old-lifecycle")
+                    .step("linger", _ -> {
+                        staleThread.compareAndSet(null, Thread.currentThread());
+                        staleStarted.countDown();
+                        while (!Boolean.TRUE.equals(allowStaleExit.get())) {
+                            LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(50));
+                            if (Thread.interrupted()) {
+                                Thread.currentThread().interrupt();
+                            }
+                        }
+                        return FlowOutcome.COMPLETE;
+                    }, null)
+                    .build();
+
+            FlowExecutionPlan stalePlan = engine.plans().compile(staleDefinition);
+            engine.scheduler().schedule(stalePlan, context("stale-worker-old-lifecycle-instance", staleDefinition.name()));
+
+            assertThat(staleStarted.await(3, TimeUnit.SECONDS))
+                    .as("old-lifecycle worker must start before restart")
+                    .isTrue();
+            awaitTrue(3_000, () -> engine.stats().activeFlows() == 1L);
+
+            engine.close();
+            engine.start();
+
+            FlowDefinition currentDefinition = engine.plans().newDefinition("current-lifecycle-admission")
+                    .step("hold", _ -> {
+                        currentStarted.countDown();
+                        try {
+                            if (!releaseCurrent.await(3, TimeUnit.SECONDS)) {
+                                return FlowOutcome.FAIL;
+                            }
+                        } catch (InterruptedException _) {
+                            Thread.currentThread().interrupt();
+                            return FlowOutcome.FAIL;
+                        }
+                        return FlowOutcome.COMPLETE;
+                    }, null)
+                    .build();
+
+            FlowExecutionPlan currentPlan = engine.plans().compile(currentDefinition);
+            engine.scheduler().schedule(currentPlan, context("current-lifecycle-admission-instance-1", currentDefinition.name()));
+
+            assertThat(currentStarted.await(3, TimeUnit.SECONDS))
+                    .as("new-lifecycle worker must start after restart")
+                    .isTrue();
+            awaitTrue(3_000, () -> engine.stats().activeFlows() == 1L);
+
+            long completedBeforeStaleExit = engine.stats().completedFlows();
+            long failedBeforeStaleExit = engine.stats().failedFlows();
+
+            allowStaleExit.set(true);
+            awaitTrue(3_000, () -> staleThread.get() != null && !staleThread.get().isAlive());
+
+            assertThat(engine.stats().activeFlows())
+                    .as("a late worker from the prior lifecycle must not decrement the restarted engine's live active count")
+                    .isEqualTo(1L);
+            assertThat(engine.stats().completedFlows())
+                    .as("a late worker from the prior lifecycle must not be counted as a completion in the restarted lifecycle")
+                    .isEqualTo(completedBeforeStaleExit);
+            assertThat(engine.stats().failedFlows())
+                    .as("a late worker from the prior lifecycle must not mutate restarted failure totals")
+                    .isEqualTo(failedBeforeStaleExit);
+
+            assertThatThrownBy(() -> engine.scheduler().schedule(
+                    currentPlan, context("current-lifecycle-admission-instance-2", currentDefinition.name())))
+                    .as("maxConcurrentFlows must still reject a second active flow while the restarted worker is running")
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("maxConcurrentFlows limit reached");
+
+            releaseCurrent.countDown();
+            awaitTrue(3_000, () -> engine.stats().completedFlows() == completedBeforeStaleExit + 1L);
+        } finally {
+            allowStaleExit.set(true);
+            releaseCurrent.countDown();
+            engine.close();
+        }
+    }
+
     private static CoreFlowEngine startedEngine() {
         return startedEngine(false, null, null);
     }
@@ -777,10 +870,19 @@ class CoreFlowRuntimeTest {
             FlowSnapshotStore snapshotStore,
             IdempotencyGuard idempotencyGuard) {
         FlowEngineConfig defaults = FlowEngineConfig.defaults("CoreFlowRuntimeTest");
+        return startedEngine(defaults.maxConcurrentFlows(), persistenceEnabled, snapshotStore, idempotencyGuard);
+    }
+
+    private static CoreFlowEngine startedEngine(
+            int maxConcurrentFlows,
+            boolean persistenceEnabled,
+            FlowSnapshotStore snapshotStore,
+            IdempotencyGuard idempotencyGuard) {
+        FlowEngineConfig defaults = FlowEngineConfig.defaults("CoreFlowRuntimeTest");
         CoreFlowEngine engine = new CoreFlowEngine(
                 new FlowEngineConfig(
                         defaults.engineName(),
-                        defaults.maxConcurrentFlows(),
+                        maxConcurrentFlows,
                         defaults.timeoutDurationNanos(),
                         defaults.maxSteps(),
                         defaults.maxTransitions(),
