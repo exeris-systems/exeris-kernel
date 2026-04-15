@@ -77,6 +77,13 @@ class StorageContextBridgeTest {
             StorageContext ctx = StorageContextBridge.derive(SYSTEM_PRINCIPAL);
             assertThat(ctx.isolationKey()).isEmpty();
         }
+
+        @Test
+        @DisplayName("null principal is rejected with PrincipalContextMissingException")
+        void nullPrincipalRejectedFailClosed() {
+            assertThatThrownBy(() -> StorageContextBridge.derive(null))
+                    .isInstanceOf(PrincipalContextMissingException.class);
+        }
     }
 
     // =========================================================================
