@@ -166,7 +166,7 @@ final class CoreFlowRuntime { // NOPMD
                 current.attachPlan(plan);
                 return current;
             }
-            RuntimeFlowInstance restored = restoreFromSnapshot(flowKey, plan);
+            RuntimeFlowInstance restored = restoreFromSnapshot(flowKey, plan, null);
             return restored != null ? restored : RuntimeFlowInstance.fromContext(plan, context);
         });
 
@@ -235,40 +235,78 @@ final class CoreFlowRuntime { // NOPMD
             return instance;
         }
         RuntimeFlowInstance live = liveInstances.get(key);
-        if (live != null && live.state() != FlowState.PARKED) {
-            throw notParked(key);
+        if (live != null) {
+            if (live.state() != FlowState.PARKED) {
+                throw notParked(key);
+            }
+            return live;
         }
-        RuntimeFlowInstance restored = restoreFromSnapshot(key, null);
+        RuntimeFlowInstance restored = restoreParkedFromSnapshot(key);
         if (restored == null) {
             throw notParked(key);
         }
-        liveInstances.put(key, restored);
         return restored;
     }
 
-    private RuntimeFlowInstance restoreFromSnapshot(FlowKey key, CoreFlowExecutionPlan directPlan) {
+    private RuntimeFlowInstance restoreParkedFromSnapshot(FlowKey key) {
+        RuntimeFlowInstance restored = restoreFromSnapshot(key, null, FlowState.PARKED);
+        if (restored == null) {
+            return null;
+        }
+        RuntimeFlowInstance concurrent = liveInstances.putIfAbsent(key, restored);
+        RuntimeFlowInstance resolved = concurrent != null ? concurrent : restored;
+        if (resolved.state() != FlowState.PARKED) {
+            return null;
+        }
+        if (parkedInstances.putIfAbsent(key, resolved) == null) {
+            parkedFlows.increment();
+        }
+        return resolved;
+    }
+
+    private RuntimeFlowInstance restoreFromSnapshot(
+            FlowKey key,
+            CoreFlowExecutionPlan directPlan,
+            FlowState requiredState) {
+        FlowSnapshot persisted = loadSnapshot(key);
+        if (persisted == null) {
+            return null;
+        }
+        if (!matchesRequiredState(persisted, requiredState)) {
+            return null;
+        }
+        CoreFlowExecutionPlan resolvedPlan = resolvePlanForSnapshot(directPlan, persisted);
+        return RuntimeFlowInstance.fromSnapshot(resolvedPlan, persisted);
+    }
+
+    private FlowSnapshot loadSnapshot(FlowKey key) {
         if (snapshotStore == null) {
             return null;
         }
-        Optional<FlowSnapshot> snapshot = snapshotStore.load(key.instanceIdMost(), key.instanceIdLeast());
-        if (snapshot.isEmpty()) {
-            return null;
+        return snapshotStore.load(key.instanceIdMost(), key.instanceIdLeast()).orElse(null);
+    }
+
+    private boolean matchesRequiredState(FlowSnapshot persisted, FlowState requiredState) {
+        return requiredState == null || persisted.state() == requiredState;
+    }
+
+    private CoreFlowExecutionPlan resolvePlanForSnapshot(CoreFlowExecutionPlan directPlan, FlowSnapshot persisted) {
+        if (directPlan == null) {
+            CoreFlowExecutionPlan resolvedPlan = planCatalog.get(persisted.definitionName());
+            if (resolvedPlan == null) {
+                throw new FlowEngineException(
+                        "No compiled FlowExecutionPlan available for definition: " + persisted.definitionName());
+            }
+            return resolvedPlan;
         }
-        CoreFlowExecutionPlan resolvedPlan = directPlan;
-        if (resolvedPlan == null) {
-            resolvedPlan = planCatalog.get(snapshot.get().definitionName());
-        } else if (!resolvedPlan.definitionName().equals(snapshot.get().definitionName())) {
+        if (!directPlan.definitionName().equals(persisted.definitionName())) {
             throw new FlowEngineException(
                     "Plan definition mismatch: scheduled '"
-                    + resolvedPlan.definitionName()
+                    + directPlan.definitionName()
                     + "' but snapshot belongs to '"
-                    + snapshot.get().definitionName() + "'");
+                    + persisted.definitionName() + "'");
         }
-        if (resolvedPlan == null) {
-            throw new FlowEngineException(
-                    "No compiled FlowExecutionPlan available for definition: " + snapshot.get().definitionName());
-        }
-        return RuntimeFlowInstance.fromSnapshot(resolvedPlan, snapshot.get());
+        return directPlan;
     }
 
     private void launch(RuntimeFlowInstance instance, int startStep) {
@@ -494,8 +532,17 @@ final class CoreFlowRuntime { // NOPMD
 
         @Override
         public Optional<FlowContext> lookupParked(long instanceIdMost, long instanceIdLeast) {
-            RuntimeFlowInstance parked = parkedInstances.get(new FlowKey(instanceIdMost, instanceIdLeast));
-            return parked == null ? Optional.empty() : Optional.of(parked.contextView());
+            FlowKey key = new FlowKey(instanceIdMost, instanceIdLeast);
+            RuntimeFlowInstance parked = parkedInstances.get(key);
+            if (parked != null) {
+                return Optional.of(parked.contextView());
+            }
+            RuntimeFlowInstance live = liveInstances.get(key);
+            if (live != null && live.state() == FlowState.PARKED) {
+                return Optional.of(live.contextView());
+            }
+            RuntimeFlowInstance restored = restoreParkedFromSnapshot(key);
+            return restored == null ? Optional.empty() : Optional.of(restored.contextView());
         }
 
         private static CoreFlowExecutionPlan castPlan(FlowExecutionPlan plan) {

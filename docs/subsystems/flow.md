@@ -93,11 +93,17 @@ Flow can be driven by external events through the choreography bridge:
 
 `CoreFlowRuntime` maintains a `terminalStateCatalog` map that records every flow that reaches a terminal state (`COMPLETED`, `FAILED_ROLLEDBACK`). This map serves as an in-process idempotency fence — it prevents re-scheduling or re-waking already-terminal flows within a single runtime lifetime.
 
-**Current behavior:** entries accumulate from `start()` until `close()`. The map is fully cleared on `close()`. There is no per-entry TTL, cap, or eviction policy.
+**Sprint 1 contract lock:** entries still accumulate from `start()` until `close()`, and the map is still cleared on `close()`. Any future bounded retention, cap, or eviction policy MUST preserve this fence and MUST NOT allow re-execution or re-wake of a flow that has already reached a terminal state.
 
-**Implication:** For long-running runtimes processing very high flow throughput, `FlowKey` entries may accumulate in heap between `start()` and `close()`. This is a known gap. Implementing eviction requires a correctness-aware design — an overly aggressive policy could allow re-scheduling a completed flow.
+**Operational stance:** the current runtime-lifetime scope remains acceptable for the present operational model. If a bounded policy is introduced later, it must be correctness-first and remain implementation-blind at the SPI boundary.
 
-**Future work:** a configurable `terminalCatalogMaxSize` (or TTL) property in `FlowEngineConfig`, governed by a policy decision documented here and in `docs/ROADMAP.md`. No ADR exists for this yet; one should be created before implementation.
+### Cross-Restart Choreography Wake
+
+For choreography-driven wake, the in-memory parked map remains the O(1) fast path during a live runtime.
+
+When persistence is enabled, a restart-aware implementation may consult `FlowSnapshotStore` only after an in-memory miss to recover a `PARKED` `FlowContext` for wake. This fallback does not change The Wall: Core continues to orchestrate through SPI contracts only, and persistence details remain hidden behind `FlowSnapshotStore`.
+
+If persistence is disabled, cross-restart choreography wake remains unsupported by contract.
 
 ---
 

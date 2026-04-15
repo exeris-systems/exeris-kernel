@@ -30,6 +30,7 @@ import java.util.Objects;
  */
 public final class CoreFlowEngine implements FlowEngine {
 
+    private final FlowEngineConfig config;
     private final FlowEngineCapabilities capabilities;
     private final CoreFlowRegistry registry;
     private final CoreFlowPlanFactory planFactory;
@@ -38,6 +39,7 @@ public final class CoreFlowEngine implements FlowEngine {
 
     public CoreFlowEngine(FlowEngineConfig config, FlowEngineCapabilities capabilities) {
         FlowEngineConfig nonNullConfig = Objects.requireNonNull(config, "config");
+        this.config = nonNullConfig;
         this.capabilities = Objects.requireNonNull(capabilities, "capabilities");
         this.registry = new CoreFlowRegistry();
         this.runtime = new CoreFlowRuntime(nonNullConfig, new FlowProgressPublisher());
@@ -77,6 +79,7 @@ public final class CoreFlowEngine implements FlowEngine {
 
     @Override
     public void close() {
+        FlowEngineStats shutdownStats = runtime.stats();
         for (Map.Entry<EventBus, SubscriptionToken> entry : choreographySubscriptions) {
             try {
                 entry.getKey().unsubscribe(entry.getValue());
@@ -85,6 +88,7 @@ public final class CoreFlowEngine implements FlowEngine {
             }
         }
         choreographySubscriptions.clear();
+        FlowEngineShutdownEvent.emit(config, shutdownStats);
         runtime.close();
     }
 
