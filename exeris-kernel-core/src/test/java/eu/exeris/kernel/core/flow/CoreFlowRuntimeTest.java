@@ -87,6 +87,68 @@ class CoreFlowRuntimeTest {
 
     @Test
     @Timeout(value = 10, unit = TimeUnit.SECONDS)
+    @DisplayName("restart resets cumulative lifecycle counters before the next run")
+    void restartResetsCumulativeLifecycleCountersBeforeTheNextRun() {
+        try (CoreFlowEngine engine = startedEngine()) {
+            FlowDefinition definition = engine.plans().newDefinition("restart-resets-counters")
+                    .step("complete", _ -> FlowOutcome.COMPLETE, null)
+                    .build();
+
+            FlowExecutionPlan plan = engine.plans().compile(definition);
+            engine.scheduler().schedule(plan, context("restart-resets-counters-instance", definition.name()));
+
+            awaitTrue(3_000, () -> engine.stats().completedFlows() == 1L);
+            assertThat(engine.stats().stepExecutions()).isEqualTo(1L);
+
+            engine.close();
+            engine.start();
+
+            assertThat(engine.stats().activeFlows()).isZero();
+            assertThat(engine.stats().parkedFlows()).isZero();
+            assertThat(engine.stats().completedFlows())
+                    .as("restart should reset cumulative completed-flow totals for the new run")
+                    .isZero();
+            assertThat(engine.stats().failedFlows()).isZero();
+            assertThat(engine.stats().compensationsRun()).isZero();
+            assertThat(engine.stats().stepExecutions())
+                    .as("restart should reset cumulative step execution totals for the new run")
+                    .isZero();
+        }
+    }
+
+    @Test
+    @Timeout(value = 10, unit = TimeUnit.SECONDS)
+    @DisplayName("rescheduling a parked instance does not block a subsequent wake")
+    void reschedulingAParkedInstanceDoesNotBlockASubsequentWake() {
+        try (CoreFlowEngine engine = startedEngine()) {
+            FlowDefinition definition = engine.plans().newDefinition("parked-reschedule-does-not-block-wake")
+                    .step("park", _ -> FlowOutcome.PARK, null)
+                    .step("resume", _ -> FlowOutcome.COMPLETE, null)
+                    .build();
+
+            CoreFlowExecutionPlan plan = (CoreFlowExecutionPlan) engine.plans().compile(definition);
+            RuntimeFlowInstance instance = RuntimeFlowInstance.fromContext(
+                    plan,
+                    context("parked-reschedule-does-not-block-wake-instance", definition.name(), 0, FlowState.PARKED)
+            );
+
+            int scheduleResult = instance.beginScheduleForSchedule();
+
+            assertThat(scheduleResult)
+                    .as("redundant schedule on a parked instance should remain a no-op")
+                    .isNegative();
+            assertThat(instance.isScheduled())
+                    .as("the no-op parked schedule path must not transiently claim the scheduled flag")
+                    .isFalse();
+            assertThat(instance.beginScheduleAfterWake())
+                    .as("wake should still be able to claim scheduling immediately after the parked no-op path")
+                    .isEqualTo(1);
+            assertThat(instance.state()).isEqualTo(FlowState.RUNNING);
+        }
+    }
+
+    @Test
+    @Timeout(value = 10, unit = TimeUnit.SECONDS)
     @DisplayName("lookupParked suppresses repeated snapshot-store probes after a miss")
     void lookupParkedSuppressesRepeatedSnapshotStoreProbesAfterMiss() {
         CountingSnapshotStore snapshotStore = new CountingSnapshotStore();
@@ -768,7 +830,21 @@ class CoreFlowRuntimeTest {
         return context(uuid.getMostSignificantBits(), uuid.getLeastSignificantBits(), definitionName);
     }
 
+    private static FlowContext context(String instanceId, String definitionName, int currentStep, FlowState state) {
+        UUID uuid = UUID.nameUUIDFromBytes(instanceId.getBytes(StandardCharsets.UTF_8));
+        return context(uuid.getMostSignificantBits(), uuid.getLeastSignificantBits(), definitionName, currentStep, state);
+    }
+
     private static FlowContext context(long instanceIdMost, long instanceIdLeast, String definitionName) {
+        return context(instanceIdMost, instanceIdLeast, definitionName, 0, FlowState.RUNNING);
+    }
+
+    private static FlowContext context(
+            long instanceIdMost,
+            long instanceIdLeast,
+            String definitionName,
+            int currentStep,
+            FlowState state) {
         return new FlowContext() {
             @Override
             public long instanceIdMost() {
@@ -787,12 +863,12 @@ class CoreFlowRuntimeTest {
 
             @Override
             public int currentStep() {
-                return 0;
+                return currentStep;
             }
 
             @Override
             public FlowState state() {
-                return FlowState.RUNNING;
+                return state;
             }
 
             @Override

@@ -107,6 +107,7 @@ final class CoreFlowRuntime { // NOPMD
             snapshotStore = store.get();
         }
         guard = KernelProviders.idempotencyGuard().orElseGet(CoreIdempotencyGuard::new);
+        resetLifecycleTotals();
         closed = false;
         shutdownFinalized = false;
         started = true;
@@ -165,6 +166,16 @@ final class CoreFlowRuntime { // NOPMD
         }
     }
 
+    private void resetLifecycleTotals() {
+        activeFlows.set(0);
+        queueDepth.set(0);
+        parkedFlows.reset();
+        completedFlows.reset();
+        failedFlows.reset();
+        compensationsRun.reset();
+        stepExecutions.reset();
+    }
+
     private FlowEngineException engineNotStarted() {
         return FlowEngineException.startupFailure(
                 config.engineName(),
@@ -201,6 +212,10 @@ final class CoreFlowRuntime { // NOPMD
         instance.captureEventEngine();
 
         int startStep = instance.beginScheduleForSchedule();
+        if (startStep == RuntimeFlowInstance.PARKED_SCHEDULE_NOOP) {
+            ensureParkedRegistration(instance);
+            return;
+        }
         if (startStep < 0) {
             return;
         }
@@ -362,7 +377,6 @@ final class CoreFlowRuntime { // NOPMD
                     removed = parkedLookupMissOrder.removeFirstOccurrence(key);
                 } while (removed);
             }
-            trimParkedLookupMissOrderLocked();
         }
     }
 

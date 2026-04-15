@@ -22,6 +22,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @SuppressWarnings("PMD.PublicMemberInNonPublicType")
 final class RuntimeFlowInstance { // NOPMD
 
+    /* default */ static final int PARKED_SCHEDULE_NOOP = -2;
+
     private static final int[]  EMPTY_STACK        = new int[0];
     private static final byte[] EMPTY_OPAQUE_STATE = new byte[0];
 
@@ -178,8 +180,11 @@ final class RuntimeFlowInstance { // NOPMD
             if (scheduled.get() || isTerminal()) {
                 return -1;
             }
+            if (state == FlowState.PARKED) {
+                return PARKED_SCHEDULE_NOOP;
+            }
             scheduled.set(true);
-            return state == FlowState.PARKED ? Math.min(currentStep + 1, plan.stepCount()) : currentStep;
+            return currentStep;
         }
     }
 
