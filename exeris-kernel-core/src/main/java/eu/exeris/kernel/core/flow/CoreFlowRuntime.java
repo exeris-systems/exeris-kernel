@@ -534,66 +534,88 @@ final class CoreFlowRuntime { // NOPMD
         }
     }
 
-    @SuppressWarnings("PMD.AvoidCatchingGenericException")
     private void fail(RuntimeFlowInstance instance, int stepIndex) {
-        if (shutdownFinalized) {
-            return;
-        }
+        boolean cleanupOnly = shutdownFinalized;
+        transitionToCompensating(instance, stepIndex, cleanupOnly);
+        runCompensations(instance, cleanupOnly);
+        finalizeFailedInstance(instance, stepIndex, cleanupOnly);
+    }
+
+    private void transitionToCompensating(RuntimeFlowInstance instance, int stepIndex, boolean cleanupOnly) {
         instance.currentStep(stepIndex);
         instance.state(FlowState.COMPENSATING);
-        persistSnapshot(instance, FlowState.COMPENSATING, stepIndex);
-
-        if (config.compensationEnabled()) {
-            for (int index = instance.stackPointer() - 1; index >= 0; index--) {
-                int compensationStep = instance.compensationStepAt(index);
-                FlowStepDescriptor descriptor = instance.plan().stepAt(compensationStep);
-                if (!descriptor.hasCompensation()) {
-                    continue;
-                }
-                try {
-                    instance.currentStep(compensationStep);
-                    compensationsRun.increment();
-                    descriptor.compensation().execute(instance.contextView());
-                } catch (Throwable compensationCause) {
-                    FlowStepFailedEvent.emit(
-                            instance.definitionName(),
-                            compensationStep,
-                            instance.key().instanceIdMost(),
-                            instance.key().instanceIdLeast(),
-                            compensationCause);
-                }
-            }
+        if (!cleanupOnly) {
+            persistSnapshot(instance, FlowState.COMPENSATING, stepIndex);
         }
+    }
 
+    private void runCompensations(RuntimeFlowInstance instance, boolean cleanupOnly) {
+        if (!config.compensationEnabled()) {
+            return;
+        }
+        for (int index = instance.stackPointer() - 1; index >= 0; index--) {
+            runCompensationStep(instance, index, cleanupOnly);
+        }
+    }
+
+    private void runCompensationStep(RuntimeFlowInstance instance, int stackIndex, boolean cleanupOnly) {
+        int compensationStep = instance.compensationStepAt(stackIndex);
+        FlowStepDescriptor descriptor = instance.plan().stepAt(compensationStep);
+        if (!descriptor.hasCompensation()) {
+            return;
+        }
+        try {
+            instance.currentStep(compensationStep);
+            if (!cleanupOnly) {
+                compensationsRun.increment();
+            }
+            descriptor.compensation().execute(instance.contextView());
+        } catch (Throwable compensationCause) { // NOPMD AvoidCatchingGenericException -- cleanup must continue
+            FlowStepFailedEvent.emit(
+                    instance.definitionName(),
+                    compensationStep,
+                    instance.key().instanceIdMost(),
+                    instance.key().instanceIdLeast(),
+                    compensationCause);
+        }
+    }
+
+    private void finalizeFailedInstance(RuntimeFlowInstance instance, int stepIndex, boolean cleanupOnly) {
         instance.state(FlowState.FAILED_ROLLEDBACK);
         if (guard != null) {
             guard.releaseInstance(instance.key().instanceIdMost(), instance.key().instanceIdLeast());
         }
-        failedFlows.increment();
         clearParkedLookupMiss(instance.key());
-        terminalStateCatalog.put(instance.key(), FlowState.FAILED_ROLLEDBACK);
+        if (!cleanupOnly) {
+            failedFlows.increment();
+            terminalStateCatalog.put(instance.key(), FlowState.FAILED_ROLLEDBACK);
+        }
         persistSnapshot(instance, FlowState.FAILED_ROLLEDBACK, stepIndex);
-        progressPublisher.publishProgress(instance, stepIndex, FlowState.FAILED_ROLLEDBACK);
+        if (!cleanupOnly) {
+            progressPublisher.publishProgress(instance, stepIndex, FlowState.FAILED_ROLLEDBACK);
+        }
         liveInstances.remove(instance.key());
-        if (parkedInstances.remove(instance.key()) != null) {
+        if (!cleanupOnly && parkedInstances.remove(instance.key()) != null) {
             parkedFlows.decrement();
         }
     }
 
     private void complete(RuntimeFlowInstance instance) {
-        if (shutdownFinalized) {
-            return;
-        }
+        boolean cleanupOnly = shutdownFinalized;
         instance.state(FlowState.COMPLETED);
         clearParkedLookupMiss(instance.key());
-        terminalStateCatalog.put(instance.key(), FlowState.COMPLETED);
+        if (!cleanupOnly) {
+            terminalStateCatalog.put(instance.key(), FlowState.COMPLETED);
+        }
         if (guard != null) {
             guard.releaseInstance(instance.key().instanceIdMost(), instance.key().instanceIdLeast());
         }
-        completedFlows.increment();
-        progressPublisher.publishProgress(instance, instance.currentStep(), FlowState.COMPLETED);
+        if (!cleanupOnly) {
+            completedFlows.increment();
+            progressPublisher.publishProgress(instance, instance.currentStep(), FlowState.COMPLETED);
+        }
         liveInstances.remove(instance.key());
-        if (parkedInstances.remove(instance.key()) != null) {
+        if (!cleanupOnly && parkedInstances.remove(instance.key()) != null) {
             parkedFlows.decrement();
         }
         if (snapshotStore != null) {

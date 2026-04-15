@@ -11,6 +11,7 @@ package eu.exeris.kernel.core.flow;
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.flow.FlowEngineCapabilities;
 import eu.exeris.kernel.spi.flow.FlowEngineConfig;
+import eu.exeris.kernel.spi.flow.IdempotencyGuard;
 import eu.exeris.kernel.spi.flow.model.FlowContext;
 import eu.exeris.kernel.spi.flow.model.FlowDefinition;
 import eu.exeris.kernel.spi.flow.model.FlowExecutionPlan;
@@ -565,11 +566,154 @@ class CoreFlowRuntimeTest {
         }
     }
 
+    @Test
+    @Timeout(value = 20, unit = TimeUnit.SECONDS)
+    @DisplayName("late failed exit after close preserves counters but releases claims and finalizes the snapshot")
+    void lateFailedExitAfterCloseStillReleasesClaimsAndFinalizesSnapshot() throws Exception {
+        InMemorySnapshotStore snapshotStore = new InMemorySnapshotStore();
+        TrackingIdempotencyGuard guard = new TrackingIdempotencyGuard();
+        CountDownLatch parked = new CountDownLatch(1);
+        CountDownLatch resumed = new CountDownLatch(1);
+        CountDownLatch interruptObserved = new CountDownLatch(1);
+        AtomicReference<Boolean> allowExit = new AtomicReference<>(false);
+
+        CoreFlowEngine engine = startedEngine(true, snapshotStore, guard);
+        try {
+            FlowDefinition definition = engine.plans().newDefinition("late-fail-cleanup-after-close")
+                    .step("park", _ -> {
+                        parked.countDown();
+                        return FlowOutcome.PARK;
+                    }, null)
+                    .step("linger-then-fail", _ -> {
+                        resumed.countDown();
+                        while (!Boolean.TRUE.equals(allowExit.get())) {
+                            LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(50));
+                            if (Thread.interrupted()) {
+                                interruptObserved.countDown();
+                            }
+                        }
+                        return FlowOutcome.FAIL;
+                    }, null)
+                    .build();
+
+            FlowExecutionPlan plan = engine.plans().compile(definition);
+            FlowContext context = context("late-fail-cleanup-after-close-instance", definition.name());
+
+            engine.scheduler().schedule(plan, context);
+
+            assertThat(parked.await(3, TimeUnit.SECONDS)).isTrue();
+            awaitTrue(3_000, () -> snapshotStore.exists(context.instanceIdMost(), context.instanceIdLeast()));
+
+            engine.scheduler().wake(engine.scheduler().lookupParked(
+                    context.instanceIdMost(), context.instanceIdLeast()).orElseThrow());
+
+            assertThat(resumed.await(3, TimeUnit.SECONDS)).isTrue();
+            awaitTrue(3_000, () -> !guard.tryClaimStep(context.instanceIdMost(), context.instanceIdLeast(), 1));
+
+            engine.close();
+
+            assertThat(interruptObserved.await(1, TimeUnit.SECONDS)).isTrue();
+            long failedAfterClose = engine.stats().failedFlows();
+
+            allowExit.set(true);
+            awaitTrue(3_000, () -> guard.releaseCount() == 1);
+
+            assertThat(engine.stats().failedFlows())
+                    .as("late failed exits must not change stable shutdown counters")
+                    .isEqualTo(failedAfterClose);
+            assertThat(guard.tryClaimStep(context.instanceIdMost(), context.instanceIdLeast(), 1))
+                    .as("late failed exit must still release idempotency claims after close()")
+                    .isTrue();
+            assertThat(snapshotStore.load(context.instanceIdMost(), context.instanceIdLeast()))
+                    .as("late failed exit must still finalize the terminal failure snapshot after close()")
+                    .get()
+                    .extracting(FlowSnapshot::state)
+                    .isEqualTo(FlowState.FAILED_ROLLEDBACK);
+        } finally {
+            allowExit.set(true);
+            engine.close();
+        }
+    }
+
+    @Test
+    @Timeout(value = 20, unit = TimeUnit.SECONDS)
+    @DisplayName("late completed exit after close preserves counters but releases claims and deletes the stale snapshot")
+    void lateCompletedExitAfterCloseStillReleasesClaimsAndDeletesSnapshot() throws Exception {
+        InMemorySnapshotStore snapshotStore = new InMemorySnapshotStore();
+        TrackingIdempotencyGuard guard = new TrackingIdempotencyGuard();
+        CountDownLatch parked = new CountDownLatch(1);
+        CountDownLatch resumed = new CountDownLatch(1);
+        CountDownLatch interruptObserved = new CountDownLatch(1);
+        AtomicReference<Boolean> allowExit = new AtomicReference<>(false);
+
+        CoreFlowEngine engine = startedEngine(true, snapshotStore, guard);
+        try {
+            FlowDefinition definition = engine.plans().newDefinition("late-complete-cleanup-after-close")
+                    .step("park", _ -> {
+                        parked.countDown();
+                        return FlowOutcome.PARK;
+                    }, null)
+                    .step("linger-then-complete", _ -> {
+                        resumed.countDown();
+                        while (!Boolean.TRUE.equals(allowExit.get())) {
+                            LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(50));
+                            if (Thread.interrupted()) {
+                                interruptObserved.countDown();
+                            }
+                        }
+                        return FlowOutcome.COMPLETE;
+                    }, null)
+                    .build();
+
+            FlowExecutionPlan plan = engine.plans().compile(definition);
+            FlowContext context = context("late-complete-cleanup-after-close-instance", definition.name());
+
+            engine.scheduler().schedule(plan, context);
+
+            assertThat(parked.await(3, TimeUnit.SECONDS)).isTrue();
+            awaitTrue(3_000, () -> snapshotStore.exists(context.instanceIdMost(), context.instanceIdLeast()));
+
+            engine.scheduler().wake(engine.scheduler().lookupParked(
+                    context.instanceIdMost(), context.instanceIdLeast()).orElseThrow());
+
+            assertThat(resumed.await(3, TimeUnit.SECONDS)).isTrue();
+            awaitTrue(3_000, () -> !guard.tryClaimStep(context.instanceIdMost(), context.instanceIdLeast(), 1));
+
+            engine.close();
+
+            assertThat(interruptObserved.await(1, TimeUnit.SECONDS)).isTrue();
+            long completedAfterClose = engine.stats().completedFlows();
+
+            allowExit.set(true);
+            awaitTrue(3_000, () -> guard.releaseCount() == 1);
+
+            assertThat(engine.stats().completedFlows())
+                    .as("late completed exits must not change stable shutdown counters")
+                    .isEqualTo(completedAfterClose);
+            assertThat(guard.tryClaimStep(context.instanceIdMost(), context.instanceIdLeast(), 1))
+                    .as("late completed exit must still release idempotency claims after close()")
+                    .isTrue();
+            assertThat(snapshotStore.exists(context.instanceIdMost(), context.instanceIdLeast()))
+                    .as("late completed exit must still delete the stale parked snapshot after close()")
+                    .isFalse();
+        } finally {
+            allowExit.set(true);
+            engine.close();
+        }
+    }
+
     private static CoreFlowEngine startedEngine() {
-        return startedEngine(false, null);
+        return startedEngine(false, null, null);
     }
 
     private static CoreFlowEngine startedEngine(boolean persistenceEnabled, FlowSnapshotStore snapshotStore) {
+        return startedEngine(persistenceEnabled, snapshotStore, null);
+    }
+
+    private static CoreFlowEngine startedEngine(
+            boolean persistenceEnabled,
+            FlowSnapshotStore snapshotStore,
+            IdempotencyGuard idempotencyGuard) {
         FlowEngineConfig defaults = FlowEngineConfig.defaults("CoreFlowRuntimeTest");
         CoreFlowEngine engine = new CoreFlowEngine(
                 new FlowEngineConfig(
@@ -587,8 +731,14 @@ class CoreFlowRuntimeTest {
                 ),
                 FlowEngineCapabilities.COMMUNITY.withProvider("core-flow-runtime-test")
         );
-        if (persistenceEnabled) {
+        if (persistenceEnabled && idempotencyGuard != null) {
+            ScopedValue.where(KernelProviders.FLOW_SNAPSHOT_STORE, snapshotStore)
+                    .where(KernelProviders.IDEMPOTENCY_GUARD, idempotencyGuard)
+                    .run(engine::start);
+        } else if (persistenceEnabled) {
             ScopedValue.where(KernelProviders.FLOW_SNAPSHOT_STORE, snapshotStore).run(engine::start);
+        } else if (idempotencyGuard != null) {
+            ScopedValue.where(KernelProviders.IDEMPOTENCY_GUARD, idempotencyGuard).run(engine::start);
         } else {
             engine.start();
         }
@@ -717,6 +867,26 @@ class CoreFlowRuntimeTest {
 
         private int loadCount() {
             return loadCount.get();
+        }
+    }
+
+    private static final class TrackingIdempotencyGuard implements IdempotencyGuard {
+        private final CoreIdempotencyGuard delegate = new CoreIdempotencyGuard();
+        private final AtomicInteger releaseCount = new AtomicInteger();
+
+        @Override
+        public boolean tryClaimStep(long instanceIdMost, long instanceIdLeast, int stepIndex) {
+            return delegate.tryClaimStep(instanceIdMost, instanceIdLeast, stepIndex);
+        }
+
+        @Override
+        public void releaseInstance(long instanceIdMost, long instanceIdLeast) {
+            releaseCount.incrementAndGet();
+            delegate.releaseInstance(instanceIdMost, instanceIdLeast);
+        }
+
+        private int releaseCount() {
+            return releaseCount.get();
         }
     }
 
