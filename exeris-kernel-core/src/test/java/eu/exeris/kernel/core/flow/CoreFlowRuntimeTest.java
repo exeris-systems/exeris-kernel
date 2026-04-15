@@ -31,6 +31,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.LockSupport;
 import java.util.function.BooleanSupplier;
@@ -386,6 +387,127 @@ class CoreFlowRuntimeTest {
         }
     }
 
+    @Test
+    @Timeout(value = 10, unit = TimeUnit.SECONDS)
+    @DisplayName("repeated close emits shutdown once and clears parked-flow counters")
+    void repeatedCloseEmitsShutdownOnceAndClearsParkedFlowCounters() throws Exception {
+        CountDownLatch eventReceived = new CountDownLatch(1);
+        CountDownLatch parked = new CountDownLatch(1);
+        AtomicInteger eventCount = new AtomicInteger();
+        AtomicReference<RecordedEvent> captured = new AtomicReference<>();
+
+        try (RecordingStream rs = new RecordingStream()) {
+            rs.enable(SHUTDOWN_EVENT);
+            rs.onEvent(SHUTDOWN_EVENT, event -> {
+                eventCount.incrementAndGet();
+                captured.compareAndSet(null, event);
+                eventReceived.countDown();
+            });
+            rs.startAsync();
+
+            CoreFlowEngine engine = startedEngine();
+            try {
+                FlowDefinition definition = engine.plans().newDefinition("shutdown-parked-stats")
+                        .step("park", _ -> {
+                            parked.countDown();
+                            return FlowOutcome.PARK;
+                        }, null)
+                        .build();
+
+                FlowExecutionPlan plan = engine.plans().compile(definition);
+                FlowContext context = context("shutdown-parked-stats-instance", definition.name());
+
+                engine.scheduler().schedule(plan, context);
+
+                assertThat(parked.await(3, TimeUnit.SECONDS))
+                        .as("flow must reach PARKED before close() to verify parked-flow shutdown counters")
+                        .isTrue();
+                awaitTrue(3_000, () -> engine.stats().parkedFlows() == 1L);
+
+                engine.close();
+                assertThat(engine.stats().parkedFlows())
+                        .as("close() must leave parked-flow stats internally consistent with cleared runtime state")
+                        .isZero();
+
+                engine.close();
+            } finally {
+                engine.close();
+            }
+
+            assertThat(eventReceived.await(3, TimeUnit.SECONDS))
+                    .as("eu.exeris.kernel.flow.Shutdown must be emitted when the engine is closed")
+                    .isTrue();
+            awaitTrue(3_000L, () -> eventCount.get() >= 1);
+
+            assertThat(eventCount.get())
+                    .as("repeated close() calls must not emit duplicate shutdown JFR events")
+                    .isEqualTo(1);
+            assertThat(captured.get().getLong("parkedFlows"))
+                    .as("shutdown event must report zero parked flows after runtime teardown")
+                    .isZero();
+        }
+    }
+
+    @Test
+    @Timeout(value = 15, unit = TimeUnit.SECONDS)
+    @DisplayName("close keeps counters non-negative when a delayed worker exits after shutdown")
+    void closeKeepsCountersNonNegativeWhenDelayedWorkerExitsAfterShutdown() throws Exception {
+        CountDownLatch stepStarted = new CountDownLatch(1);
+        CountDownLatch interruptObserved = new CountDownLatch(1);
+        AtomicReference<Boolean> allowExit = new AtomicReference<>(false);
+
+        CoreFlowEngine engine = startedEngine();
+        try {
+            FlowDefinition definition = engine.plans().newDefinition("shutdown-counter-clamp")
+                    .step("linger-through-shutdown", _ -> {
+                        stepStarted.countDown();
+                        while (!Boolean.TRUE.equals(allowExit.get())) {
+                            LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(50));
+                            if (Thread.interrupted()) {
+                                interruptObserved.countDown();
+                            }
+                        }
+                        return FlowOutcome.FAIL;
+                    }, null)
+                    .build();
+
+            FlowExecutionPlan plan = engine.plans().compile(definition);
+            FlowContext context = context("shutdown-counter-clamp-instance", definition.name());
+
+            engine.scheduler().schedule(plan, context);
+
+            assertThat(stepStarted.await(3, TimeUnit.SECONDS))
+                    .as("flow must be running before close() to verify delayed shutdown accounting")
+                    .isTrue();
+            awaitTrue(3_000, () -> engine.stats().activeFlows() == 1L);
+
+            engine.close();
+
+            assertThat(interruptObserved.await(1, TimeUnit.SECONDS))
+                    .as("close() must interrupt in-flight worker threads")
+                    .isTrue();
+            assertThat(engine.stats().activeFlows())
+                    .as("close() should immediately report zero active flows after runtime teardown")
+                    .isZero();
+            assertThat(queueDepth(engine))
+                    .as("close() should immediately reset queue depth after runtime teardown")
+                    .isZero();
+
+            allowExit.set(true);
+
+            awaitTrue(3_000, () -> engine.stats().failedFlows() == 1L);
+            assertThat(engine.stats().activeFlows())
+                    .as("late worker teardown must not drive active flow counters below zero")
+                    .isZero();
+            assertThat(queueDepth(engine))
+                    .as("late worker teardown must not drive queue depth below zero")
+                    .isZero();
+        } finally {
+            allowExit.set(true);
+            engine.close();
+        }
+    }
+
     private static CoreFlowEngine startedEngine() {
         return startedEngine(false, null);
     }
@@ -485,6 +607,21 @@ class CoreFlowRuntimeTest {
             return order.size();
         } catch (ReflectiveOperationException e) {
             throw new AssertionError("Unable to inspect parkedLookupMissOrder size", e);
+        }
+    }
+
+    private static int queueDepth(CoreFlowEngine engine) {
+        try {
+            java.lang.reflect.Field runtimeField = CoreFlowEngine.class.getDeclaredField("runtime");
+            runtimeField.setAccessible(true);
+            Object runtime = runtimeField.get(engine);
+
+            java.lang.reflect.Field queueDepthField = CoreFlowRuntime.class.getDeclaredField("queueDepth");
+            queueDepthField.setAccessible(true);
+            AtomicInteger queueDepth = (AtomicInteger) queueDepthField.get(runtime);
+            return queueDepth.get();
+        } catch (ReflectiveOperationException e) {
+            throw new AssertionError("Unable to inspect queue depth", e);
         }
     }
 

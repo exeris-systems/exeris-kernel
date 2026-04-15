@@ -17,15 +17,15 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 
 /**
- * Performance contract TCK binding: zero-allocation verification for Core flow subsystem.
+ * Performance contract TCK binding: advisory zero-allocation verification for the Core flow subsystem.
  *
  * <h2>Status</h2>
- * <p><b>DISABLED — Advisory (Core-tier capability):</b><br/>
- * The Core flow subsystem does not guarantee zero-allocation on the step-transition hot path.
- * Core uses unrestricted virtual threading with standard heap allocations for intermediate
- * state. Zero-allocation is a Community-tier and above SLO.
+ * <p><b>Enabled — Advisory (Core-tier capability):</b><br/>
+ * This advisory binding remains active to document and verify the Core tier's bounded-allocation
+ * behavior. Core does not guarantee zero-allocation on the step-transition hot path and uses
+ * standard heap-backed orchestration for intermediate state.
  *
- * <h2>Why Disabled</h2>
+ * <h2>Advisory Scope</h2>
  * <p>See {@link eu.exeris.kernel.spi.flow.FlowEngineCapabilities} and
  * <a href="docs/adr/ADR-007 Next-Gen Runtime Architecture.md">ADR-007 Performance Tiers</a>:
  * <ul>
@@ -34,24 +34,19 @@ import org.junit.jupiter.api.Tag;
  *   <li><b>Enterprise:</b> Strict zero-allocation + carrier pinning avoidance on hot paths.</li>
  * </ul>
  *
- * <h2>What This Test Would Verify</h2>
- * <p>If enabled (e.g., for a future Community-tier flow implementation), this test would:
+ * <h2>What This Test Verifies</h2>
+ * <p>This advisory test:
  * <ol>
- *   <li>Bootstrap a {@link FlowEngine} with the Core binding.</li>
- *   <li>Compile a simple two-step Saga definition.</li>
- *   <li>Run {@code scheduler.schedule(plan, ctx)} in a tight loop (10k iterations).</li>
- *   <li>Assert zero {@code eu.exeris.*} heap allocations via JFR (if {@code supportsZeroGcHotPath() == true}).</li>
+ *   <li>Bootstraps a {@link FlowEngine} with the Core binding.</li>
+ *   <li>Compiles a simple two-step Saga definition.</li>
+ *   <li>Runs {@code scheduler.schedule(plan, ctx)} in a tight loop.</li>
+ *   <li>Confirms the Core tier stays within its documented bounded-allocation budget.</li>
  * </ol>
  *
- * <h2>Path to Enablement</h2>
- * <p>To enable this test:
- * <ol>
- *   <li>Refactor Core flow step transitions to use pre-allocated object pools or Arena-based allocation.</li>
- *   <li>Verify with JFR that no transient objects are created during
- *       {@code schedule → park → wake} sequences.</li>
- *   <li>Change this class's {@link #supportsZeroGcHotPath()} to return {@code true}.</li>
- *   <li>Remove {@code @Disabled} and update {@code @DisplayName}.</li>
- * </ol>
+ * <h2>Future Tightening</h2>
+ * <p>If the Core tier later adopts stricter zero-allocation guarantees, this binding can tighten
+ * its budget by updating {@link #supportsZeroGcHotPath()} and
+ * {@link #maxExerisAllocationsPerIteration()} accordingly.
  *
  * <h2>References</h2>
  * <ul>

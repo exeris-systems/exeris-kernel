@@ -47,6 +47,7 @@ final class CoreFlowRuntime { // NOPMD
     private final ConcurrentMap<FlowKey, FlowState> terminalStateCatalog = new ConcurrentHashMap<>();
     private final Set<FlowKey> parkedLookupMisses = ConcurrentHashMap.newKeySet();
     private final Deque<FlowKey> parkedLookupMissOrder = new ConcurrentLinkedDeque<>();
+    private final Object parkedLookupMissLock = new Object();
     private final Set<Thread> runningThreads = ConcurrentHashMap.newKeySet();
     private final AtomicInteger activeFlows = new AtomicInteger();
     private final LongAdder parkedFlows = new LongAdder();
@@ -116,8 +117,10 @@ final class CoreFlowRuntime { // NOPMD
         liveInstances.clear();
         parkedInstances.clear();
         terminalStateCatalog.clear();
-        parkedLookupMisses.clear();
-        parkedLookupMissOrder.clear();
+        clearParkedLookupMissTracking();
+        activeFlows.set(0);
+        queueDepth.set(0);
+        parkedFlows.reset();
     }
 
     private void interruptAndJoinRunningThreads() {
@@ -143,6 +146,10 @@ final class CoreFlowRuntime { // NOPMD
 
     public void assertStarted() {
         ensureStarted();
+    }
+
+    private static void decrementToZeroFloor(AtomicInteger counter) {
+        counter.getAndUpdate(current -> current > 0 ? current - 1 : 0);
     }
 
     private void ensureStarted() {
@@ -251,9 +258,6 @@ final class CoreFlowRuntime { // NOPMD
         }
         RuntimeFlowInstance live = liveInstances.get(key);
         if (live != null) {
-            if (live.state() != FlowState.PARKED) {
-                throw notParked(key);
-            }
             return live;
         }
         RuntimeFlowInstance restored = restoreParkedFromSnapshot(key, false);
@@ -304,7 +308,7 @@ final class CoreFlowRuntime { // NOPMD
         if (snapshotStore == null) {
             return null;
         }
-        if (suppressRepeatedMisses && parkedLookupMisses.contains(key)) {
+        if (suppressRepeatedMisses && hasParkedLookupMiss(key)) {
             return null;
         }
         FlowSnapshot snapshot = snapshotStore.load(key.instanceIdMost(), key.instanceIdLeast()).orElse(null);
@@ -318,24 +322,41 @@ final class CoreFlowRuntime { // NOPMD
         return snapshot;
     }
 
-    private void recordParkedLookupMiss(FlowKey key) {
-        if (parkedLookupMisses.add(key)) {
-            parkedLookupMissOrder.offerLast(key);
+    private boolean hasParkedLookupMiss(FlowKey key) {
+        synchronized (parkedLookupMissLock) {
+            return parkedLookupMisses.contains(key);
         }
-        trimParkedLookupMissOrder();
+    }
+
+    private void recordParkedLookupMiss(FlowKey key) {
+        synchronized (parkedLookupMissLock) {
+            if (parkedLookupMisses.add(key)) {
+                parkedLookupMissOrder.offerLast(key);
+            }
+            trimParkedLookupMissOrderLocked();
+        }
     }
 
     private void clearParkedLookupMiss(FlowKey key) {
-        if (parkedLookupMisses.remove(key)) {
-            boolean removed;
-            do {
-                removed = parkedLookupMissOrder.removeFirstOccurrence(key);
-            } while (removed);
+        synchronized (parkedLookupMissLock) {
+            if (parkedLookupMisses.remove(key)) {
+                boolean removed;
+                do {
+                    removed = parkedLookupMissOrder.removeFirstOccurrence(key);
+                } while (removed);
+            }
+            trimParkedLookupMissOrderLocked();
         }
-        trimParkedLookupMissOrder();
     }
 
-    private void trimParkedLookupMissOrder() {
+    private void clearParkedLookupMissTracking() {
+        synchronized (parkedLookupMissLock) {
+            parkedLookupMisses.clear();
+            parkedLookupMissOrder.clear();
+        }
+    }
+
+    private void trimParkedLookupMissOrderLocked() {
         while (parkedLookupMissOrder.size() > MAX_PARKED_LOOKUP_MISSES) {
             FlowKey oldest = parkedLookupMissOrder.pollFirst();
             if (oldest == null) {
@@ -469,8 +490,8 @@ final class CoreFlowRuntime { // NOPMD
             }
         } finally {
             instance.markNotScheduled();
-            queueDepth.decrementAndGet();
-            activeFlows.decrementAndGet();
+            decrementToZeroFloor(queueDepth);
+            decrementToZeroFloor(activeFlows);
             runningThreads.remove(Thread.currentThread());
         }
     }

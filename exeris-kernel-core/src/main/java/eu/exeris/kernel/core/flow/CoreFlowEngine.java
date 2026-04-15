@@ -24,6 +24,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Heap-backed core flow engine shared by Community and future thin provider bindings.
@@ -36,6 +37,7 @@ public final class CoreFlowEngine implements FlowEngine {
     private final CoreFlowPlanFactory planFactory;
     private final CoreFlowRuntime runtime;
     private final List<Map.Entry<EventBus, SubscriptionToken>> choreographySubscriptions = new ArrayList<>();
+    private final AtomicBoolean closeInitiated = new AtomicBoolean();
 
     public CoreFlowEngine(FlowEngineConfig config, FlowEngineCapabilities capabilities) {
         FlowEngineConfig nonNullConfig = Objects.requireNonNull(config, "config");
@@ -74,11 +76,15 @@ public final class CoreFlowEngine implements FlowEngine {
 
     @Override
     public void start() {
+        closeInitiated.set(false);
         runtime.start();
     }
 
     @Override
     public void close() {
+        if (!closeInitiated.compareAndSet(false, true)) {
+            return;
+        }
         for (Map.Entry<EventBus, SubscriptionToken> entry : choreographySubscriptions) {
             try {
                 entry.getKey().unsubscribe(entry.getValue());
