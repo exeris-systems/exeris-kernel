@@ -23,12 +23,12 @@ import eu.exeris.kernel.spi.flow.model.FlowState;
 import eu.exeris.kernel.spi.flow.model.FlowStepAction;
 import eu.exeris.kernel.spi.flow.model.FlowStepDescriptor;
 
+import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -47,7 +47,7 @@ final class CoreFlowRuntime { // NOPMD
     private final ConcurrentMap<String, CoreFlowExecutionPlan> planCatalog = new ConcurrentHashMap<>();
     private final ConcurrentMap<FlowKey, FlowState> terminalStateCatalog = new ConcurrentHashMap<>();
     private final Set<FlowKey> parkedLookupMisses = ConcurrentHashMap.newKeySet();
-    private final Deque<FlowKey> parkedLookupMissOrder = new ConcurrentLinkedDeque<>();
+    private final Deque<FlowKey> parkedLookupMissOrder = new ArrayDeque<>();
     private final Object parkedLookupMissLock = new Object();
     private final Set<Thread> runningThreads = ConcurrentHashMap.newKeySet();
     private final AtomicLong lifecycleGeneration = new AtomicLong();
@@ -160,7 +160,18 @@ final class CoreFlowRuntime { // NOPMD
     }
 
     private static void decrementToZeroFloor(AtomicInteger counter) {
-        counter.getAndUpdate(current -> current > 0 ? current - 1 : 0);
+        int current = counter.get();
+        while (current > 0 && !counter.compareAndSet(current, current - 1)) {
+            current = counter.get();
+        }
+    }
+
+    private void decrementLifecycleCounterOnExit(AtomicInteger counter) {
+        if (!closed && !shutdownFinalized) {
+            counter.decrementAndGet();
+            return;
+        }
+        decrementToZeroFloor(counter);
     }
 
     private void ensureStarted() {
@@ -549,8 +560,8 @@ final class CoreFlowRuntime { // NOPMD
         } finally {
             instance.markNotScheduled();
             if (isCurrentLifecycle(instance)) {
-                decrementToZeroFloor(queueDepth);
-                decrementToZeroFloor(activeFlows);
+                decrementLifecycleCounterOnExit(queueDepth);
+                decrementLifecycleCounterOnExit(activeFlows);
             }
             runningThreads.remove(Thread.currentThread());
         }
