@@ -30,6 +30,7 @@ import java.lang.foreign.MemorySegment;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -110,6 +111,10 @@ class PaqsSchedulerTest {
     }
 
     private static TransportStream stubStream(long id, AtomicBoolean closedFlag) {
+        return stubStream(id, () -> closedFlag.set(true));
+    }
+
+    private static TransportStream stubStream(long id, Runnable closeHook) {
         return new TransportStream() {
             @Override
             public int read(MemorySegment target, int maxBytes) {
@@ -153,7 +158,7 @@ class PaqsSchedulerTest {
 
             @Override
             public void close() {
-                closedFlag.set(true);
+                closeHook.run();
             }
         };
     }
@@ -360,6 +365,28 @@ class PaqsSchedulerTest {
             Thread.ofVirtual().start(() -> awaitCounterZero(controller, counterZero));
             assertThat(counterZero.await(TIMEOUT_MS, TimeUnit.MILLISECONDS)).isTrue();
             assertThat(controller.activeStreamCount()).isZero();
+        }
+
+        @Test
+        @DisplayName("scheduler cleanup closes failing stream exactly once")
+        @Timeout(value = TIMEOUT_MS, unit = TimeUnit.MILLISECONDS)
+        void schedulerCleanupClosesFailingStreamExactlyOnce() throws InterruptedException {
+            CountDownLatch handlerRan = new CountDownLatch(1);
+            AtomicInteger closeCalls = new AtomicInteger();
+            AdmissionController controller = buildController(WatermarkLevel.NORMAL);
+            PaqsScheduler sut = new PaqsScheduler(controller, new StreamLoadShedder(ENGINE),
+                    stream -> {
+                        handlerRan.countDown();
+                        throw new IllegalStateException("boom");
+                    }, s -> StreamPriority.NORMAL, ENGINE);
+
+            sut.schedule(stubStream(401L, closeCalls::incrementAndGet));
+
+            assertThat(handlerRan.await(TIMEOUT_MS, TimeUnit.MILLISECONDS)).isTrue();
+            CountDownLatch counterZero = new CountDownLatch(1);
+            Thread.ofVirtual().start(() -> awaitCounterZero(controller, counterZero));
+            assertThat(counterZero.await(TIMEOUT_MS, TimeUnit.MILLISECONDS)).isTrue();
+            assertThat(closeCalls.get()).isEqualTo(1);
         }
 
         private static void signalAndFail(CountDownLatch latch) {

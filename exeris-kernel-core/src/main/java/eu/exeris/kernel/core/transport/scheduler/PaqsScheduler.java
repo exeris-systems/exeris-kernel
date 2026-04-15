@@ -9,6 +9,7 @@
 package eu.exeris.kernel.core.transport.scheduler;
 
 import eu.exeris.kernel.core.transport.TransportScopes;
+import eu.exeris.kernel.core.transport.jfr.PaqsHandlerFailureEvent;
 import eu.exeris.kernel.core.transport.jfr.StreamAcceptedEvent;
 import eu.exeris.kernel.core.transport.jfr.StreamLifecycleEvent;
 import eu.exeris.kernel.spi.transport.StreamHandler;
@@ -83,6 +84,7 @@ public final class PaqsScheduler implements AutoCloseable {
 
     private static final System.Logger LOG = System.getLogger(PaqsScheduler.class.getName());
     private static final long SPIN_THRESHOLD = 10_000L;
+    private static final String PHASE_HANDLER = "HANDLER";
 
     private final AdmissionController admissionController;
     private final StreamLoadShedder loadShedder;
@@ -273,26 +275,33 @@ public final class PaqsScheduler implements AutoCloseable {
                     .run(() -> handler.handle(stream));
         } catch (Error error) { //NOPMD AvoidCatchingGenericException — outcome must be set before rethrow
             outcome = StreamLifecycleEvent.OUTCOME_ERROR;
-            try {
-                stream.close();
-            } catch (Throwable _) { //NOPMD AvoidCatchingThrowable — best-effort: always release native fd on Error path
-                // suppress close failure to allow Error rethrow
-            }
+            PaqsHandlerFailureEvent.emit(streamId, engineName, error.getClass().getName(), PHASE_HANDLER);
+            closeStreamBestEffort(stream, null, false);
             throw error;
         } catch (Throwable t) { //NOPMD AvoidCatchingGenericException,AvoidCatchingThrowable
             // VT stream boundary isolation
             outcome = StreamLifecycleEvent.OUTCOME_ERROR;
-            try {
-                stream.close();
-            } catch (Throwable closeError) { //NOPMD AvoidCatchingThrowable — best-effort close on error path
-                t.addSuppressed(closeError);
-            }
+            PaqsHandlerFailureEvent.emit(streamId, engineName, t.getClass().getName(), PHASE_HANDLER);
+            closeStreamBestEffort(stream, t, true);
             if (LOG.isLoggable(System.Logger.Level.WARNING)) {
                 LOG.log(System.Logger.Level.WARNING, "Stream handler failed internally (VT boundary isolation)");
             }
         } finally {
             admissionController.onStreamCompleted();
             StreamLifecycleEvent.emit(streamId, priorityName, outcome, System.nanoTime() - startNs);
+        }
+    }
+
+    @SuppressWarnings("java:S1181")
+    private static void closeStreamBestEffort(TransportStream stream,
+                                              Throwable primary,
+                                              boolean attachSuppressed) {
+        try {
+            stream.close();
+        } catch (Throwable closeError) { //NOPMD AvoidCatchingThrowable — best-effort close on failure path
+            if (attachSuppressed && primary != null) {
+                primary.addSuppressed(closeError);
+            }
         }
     }
 
