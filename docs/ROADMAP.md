@@ -104,11 +104,11 @@ See also: [Flow Subsystem](./subsystems/flow.md) — JFR Events.
 
 ---
 
-### Security: `CitadelGuard` Lacks Abstract TCK Suite
+### Security: `CitadelGuard` Abstract TCK Suite Added
 
-`CitadelGuard` (Core: `eu.exeris.kernel.core.security.CitadelGuard`) implements sentinel-pool RBAC enforcement (`preAllocate(String role)` / `seal()` / `requireRole(String role)`). There is no abstract `AbstractCitadelGuardTck` in `exeris-kernel-tck`.
+`CitadelGuard` (Core: `eu.exeris.kernel.core.security.CitadelGuard`) now has a shared `AbstractCitadelGuardTck` in `exeris-kernel-tck` plus Community and Core bindings.
 
-**Gap:** Alternative RBAC gate implementations cannot prove contract compliance through a shared TCK harness. Coverage relies on Core unit tests.
+**Status:** Contract closure is in place for v0.6; alternative RBAC gate implementations can now prove compliance through the shared harness.
 
 **Owner:** Core / Security subsystem.
 
@@ -120,11 +120,11 @@ See also: [Security Subsystem](./subsystems/security.md) — Responsibilities.
 
 ---
 
-### Security: `StorageContextBridge` Lacks Abstract TCK Suite
+### Security: `StorageContextBridge` Abstract TCK Suite Added
 
-`StorageContextBridge.derive(PrincipalContext)` (Core: `eu.exeris.kernel.core.security.StorageContextBridge`) derives a SHARED-isolation `StorageContext` from a verified `PrincipalContext`. The derivation contract is tested only transitively via `AbstractSecurityInterceptorTck`.
+`StorageContextBridge.derive(PrincipalContext)` (Core: `eu.exeris.kernel.core.security.StorageContextBridge`) now has a standalone `AbstractStorageContextBridgeTck` in `exeris-kernel-tck`, with Community and Core bindings.
 
-**Gap:** No standalone `AbstractStorageContextBridgeTck` to verify SHARED derivation produces correct `tenantId`; SEPARATED_SCHEMA/DEDICATED strategies are rejected (delegated to `SecurityProvider`); null principal throws `EX-SEC-2001`.
+**Status:** SHARED derivation and fail-closed null-principal handling are now covered directly for v0.6.
 
 **Owner:** Core / Security subsystem.
 
@@ -254,6 +254,18 @@ See also: [Security Subsystem](./subsystems/security.md) — `@RequiresRole` Pro
 **Merge Gate:** Validate async path with both `AbstractTelemetryRingBufferTck` (dispatch/ring contract) and `TelemetryZeroAllocTck` (caller-path allocation discipline). Keep synchronous path as supported baseline until async gate passes.
 
 See also: [Telemetry Subsystem](./subsystems/telemetry.md) — Design Principles.
+
+---
+
+### Runtime: Hot-Path Collections Review
+
+**Gap:** Some Community runtime hot paths may justify a targeted collections review, but replacement structures must preserve current contracts and lookup semantics.
+
+**Owner:** Core / Flow / Transport subsystem.
+
+**Resolution:** Evaluate specialized runtime collections only where profiling shows real contention. Identity-based maps such as JCTools `NonBlockingIdentityHashMap` are not a fit for Flow registries/catalogs because those paths use value-semantic keys for restart, wake, and idempotency lookups; queue-oriented JCTools structures may still be assessed for bounded internal handoff paths as an implementation detail only.
+
+**Merge Gate:** Any adoption must remain Community-internal, keep SPI/Core contracts unchanged, and show measurable benefit under representative profiling.
 
 ---
 
