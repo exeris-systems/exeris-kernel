@@ -716,12 +716,21 @@ public final class NativeTcpCarrier implements TransportEngine {
         }
     }
 
+    private enum ReactorRequestType {
+        REGISTER,
+        ENABLE_WRITE,
+        CANCEL
+    }
+
+    private record ReactorRequest(ReactorRequestType type, SocketChannel channel) {
+    }
+
     private final class ReactorLoop {
 
         private final int index;
         private final Selector selector;
-        private final Queue<SocketChannel> pendingRegistrations = new ConcurrentLinkedQueue<>();
-        private final Queue<SocketChannel> pendingWriteInterests = new ConcurrentLinkedQueue<>();
+        private final Queue<ReactorRequest> pendingRequests = new ConcurrentLinkedQueue<>();
+        private final AtomicBoolean wakeupPending = new AtomicBoolean(false);
 
         private volatile Thread thread;
 
@@ -737,31 +746,34 @@ public final class NativeTcpCarrier implements TransportEngine {
         }
 
         private void enqueueRegistration(SocketChannel channel) {
-            boolean offered = pendingRegistrations.offer(channel);
-            if (!offered) {
-                throw new IllegalStateException("Failed to enqueue registration for channel: " + channel);
-            }
-            selector.wakeup();
+            enqueueRequest(new ReactorRequest(ReactorRequestType.REGISTER, channel));
         }
 
         private void enqueueWriteInterest(SocketChannel channel) {
-            boolean offered = pendingWriteInterests.offer(channel);
-            if (!offered) {
-                throw new IllegalStateException("Failed to enqueue write interest for channel: " + channel);
-            }
-            selector.wakeup();
+            enqueueRequest(new ReactorRequest(ReactorRequestType.ENABLE_WRITE, channel));
         }
 
         private void cancelKey(SocketChannel channel) {
-            SelectionKey key = channel.keyFor(selector);
-            if (key != null) {
-                key.cancel();
-            }
-            selector.wakeup();
+            enqueueRequest(new ReactorRequest(ReactorRequestType.CANCEL, channel));
         }
 
         private void wakeup() {
-            selector.wakeup();
+            signalSelector();
+        }
+
+        private void enqueueRequest(ReactorRequest request) {
+            boolean offered = pendingRequests.offer(request);
+            if (!offered) {
+                throw new IllegalStateException("Failed to enqueue reactor request " + request.type()
+                        + " for channel: " + request.channel());
+            }
+            signalSelector();
+        }
+
+        private void signalSelector() {
+            if (wakeupPending.compareAndSet(false, true)) {
+                selector.wakeup();
+            }
         }
 
         private void join(long timeoutMs) {
@@ -783,10 +795,18 @@ public final class NativeTcpCarrier implements TransportEngine {
         private void runLoop() {
             while (running.get()) {
                 try {
-                    drainRegistrations();
-                    drainWriteInterests();
+                    boolean drainedRequests = drainPendingRequests();
+                    if (!running.get()) {
+                        return;
+                    }
 
-                    selector.select(100L);
+                    if (drainedRequests) {
+                        selector.selectNow();
+                    } else {
+                        selector.select(100L);
+                    }
+
+                    drainPendingRequests();
                     Iterator<SelectionKey> iterator = selector.selectedKeys().iterator();
                     while (iterator.hasNext()) {
                         SelectionKey key = iterator.next();
@@ -802,7 +822,7 @@ public final class NativeTcpCarrier implements TransportEngine {
                             if (key.isWritable()) {
                                 flushStream((SocketChannel) key.channel(), key);
                             }
-                        } catch (CancelledKeyException ignored) {
+                        } catch (CancelledKeyException _) {
                             // channel closed concurrently by VT handler path
                         } catch (RuntimeException _) {
                             closeKeyStream(key);
@@ -817,35 +837,60 @@ public final class NativeTcpCarrier implements TransportEngine {
             }
         }
 
-        private void drainRegistrations() {
-            SocketChannel channel = pendingRegistrations.poll();
-            while (channel != null) {
-                try {
-                    if (channel.isOpen()) {
-                        channel.register(selector, SelectionKey.OP_READ);
-                    }
-                } catch (IOException e) {
-                    NativeTcpStream stream = streamByChannel.get(channel);
-                    if (stream != null) {
-                        stream.close();
-                    }
-                }
-                channel = pendingRegistrations.poll();
+        private boolean drainPendingRequests() {
+            boolean drainedAny = false;
+            ReactorRequest request = pendingRequests.poll();
+            while (request != null) {
+                drainedAny = true;
+                processPendingRequest(request);
+                request = pendingRequests.poll();
+            }
+
+            wakeupPending.set(false);
+            if (!pendingRequests.isEmpty()) {
+                signalSelector();
+                return true;
+            }
+            return drainedAny;
+        }
+
+        private void processPendingRequest(ReactorRequest request) {
+            SocketChannel channel = request.channel();
+            switch (request.type()) {
+                case REGISTER -> registerChannel(channel);
+                case ENABLE_WRITE -> enableWriteInterest(channel);
+                case CANCEL -> cancelSelection(channel);
             }
         }
 
-        private void drainWriteInterests() {
-            SocketChannel channel = pendingWriteInterests.poll();
-            while (channel != null) {
-                SelectionKey key = channel.keyFor(selector);
-                if (key != null && key.isValid()) {
-                    try {
-                        key.interestOps(key.interestOps() | SelectionKey.OP_WRITE | SelectionKey.OP_READ);
-                    } catch (RuntimeException ignored) {
-                        // key may be cancelled concurrently
-                    }
+        private void registerChannel(SocketChannel channel) {
+            try {
+                if (channel.isOpen()) {
+                    channel.register(selector, SelectionKey.OP_READ);
                 }
-                channel = pendingWriteInterests.poll();
+            } catch (IOException e) {
+                NativeTcpStream stream = streamByChannel.get(channel);
+                if (stream != null) {
+                    stream.close();
+                }
+            }
+        }
+
+        private void enableWriteInterest(SocketChannel channel) {
+            SelectionKey key = channel.keyFor(selector);
+            if (key != null && key.isValid()) {
+                try {
+                    key.interestOps(key.interestOps() | SelectionKey.OP_WRITE | SelectionKey.OP_READ);
+                } catch (RuntimeException _) {
+                    // key may be cancelled concurrently during shutdown
+                }
+            }
+        }
+
+        private void cancelSelection(SocketChannel channel) {
+            SelectionKey key = channel.keyFor(selector);
+            if (key != null) {
+                key.cancel();
             }
         }
     }

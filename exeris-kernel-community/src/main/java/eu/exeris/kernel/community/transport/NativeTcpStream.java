@@ -19,6 +19,9 @@ import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.transport.TransportConnection;
 import eu.exeris.kernel.spi.transport.TransportStream;
+import org.jctools.queues.MpscUnboundedArrayQueue;
+import org.jctools.queues.SpscArrayQueue;
+import org.jctools.queues.SpscUnboundedArrayQueue;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
@@ -26,10 +29,9 @@ import java.nio.ByteBuffer;
 import java.nio.channels.SocketChannel;
 import java.util.Objects;
 import java.util.Queue;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.LockSupport;
 
@@ -65,6 +67,7 @@ final class NativeTcpStream implements TransportStream {
     private static final int QUEUE_DEPTH_THRESHOLD_LOW = 100;
     private static final int QUEUE_DEPTH_THRESHOLD_MID = 500;
     private static final int QUEUE_DEPTH_THRESHOLD_HIGH = 1000;
+    private static final int JCTOOLS_QUEUE_CHUNK_SIZE = 128;
     private static final int INBOUND_QUEUE_CAPACITY =
             QUEUE_BACKPRESSURE_ENABLED ? QUEUE_DEPTH_THRESHOLD_HIGH : Integer.MAX_VALUE;
 
@@ -79,8 +82,12 @@ final class NativeTcpStream implements TransportStream {
 
     private final AtomicBoolean closed = new AtomicBoolean(false);
     private final AtomicBoolean remoteClosed = new AtomicBoolean(false);
-    private final Queue<PendingWrite> outboundQueue = new LinkedBlockingQueue<>();
-    private final BlockingQueue<LoanedBuffer> inboundQueue = new LinkedBlockingQueue<>(INBOUND_QUEUE_CAPACITY);
+    private final Queue<PendingWrite> outboundQueue = new MpscUnboundedArrayQueue<>(JCTOOLS_QUEUE_CHUNK_SIZE);
+    private final Queue<LoanedBuffer> inboundQueue = QUEUE_BACKPRESSURE_ENABLED
+            ? new SpscArrayQueue<>(INBOUND_QUEUE_CAPACITY)
+            : new SpscUnboundedArrayQueue<>(JCTOOLS_QUEUE_CHUNK_SIZE);
+    private final AtomicInteger outboundQueueDepth = new AtomicInteger(0);
+    private final AtomicInteger inboundQueueDepth = new AtomicInteger(0);
     private final AtomicBoolean tlsBound = new AtomicBoolean(false);
     private final AtomicBoolean tlsReady = new AtomicBoolean(false);
     private final Object tlsLock = new Object();
@@ -138,7 +145,7 @@ final class NativeTcpStream implements TransportStream {
             throw new IllegalStateException(STREAM_CLOSED_MESSAGE);
         }
         // Short-circuit: if peer already closed and no buffered data remain, skip TLS readiness
-        if (remoteClosed.get() && currentInbound == null && inboundQueue.isEmpty()) {
+        if (remoteClosed.get() && currentInbound == null && inboundQueueDepth.get() == 0) {
             return -1;
         }
         ensureTlsReady(true);
@@ -162,6 +169,7 @@ final class NativeTcpStream implements TransportStream {
                     awaitReadableIngress();
                     continue;
                 }
+                decrementDepth(inboundQueueDepth);
                 currentInbound = next;
                 currentInboundOffset = 0;
             }
@@ -249,6 +257,7 @@ final class NativeTcpStream implements TransportStream {
             buffer.close();
             throw new IllegalStateException("Failed to enqueue outbound write for stream " + streamId);
         }
+        outboundQueueDepth.incrementAndGet();
         writeInterestCallback.run();
     }
 
@@ -274,7 +283,7 @@ final class NativeTcpStream implements TransportStream {
 
     @Override
     public boolean hasPendingData() {
-        return !outboundQueue.isEmpty();
+        return outboundQueueDepth.get() > 0;
     }
 
     @Override
@@ -345,11 +354,8 @@ final class NativeTcpStream implements TransportStream {
             ingressBuffer.close();
             return;
         }
-        
-        // Phase 1B: Queue depth monitoring and optional backpressure
-        int currentQueueDepth = inboundQueue.size();
-        
-        // Emit JFR events at thresholds for monitoring
+
+        int currentQueueDepth = inboundQueueDepth.get();
         String trend = currentQueueDepth >= lastQueueDepth ? "up" : "down";
         if (currentQueueDepth >= QUEUE_DEPTH_THRESHOLD_HIGH) {
             TransportIngressQueueDepthEvent.emit(streamId, currentQueueDepth, QUEUE_DEPTH_THRESHOLD_HIGH, trend);
@@ -358,17 +364,22 @@ final class NativeTcpStream implements TransportStream {
         } else if (currentQueueDepth >= QUEUE_DEPTH_THRESHOLD_LOW) {
             TransportIngressQueueDepthEvent.emit(streamId, currentQueueDepth, QUEUE_DEPTH_THRESHOLD_LOW, trend);
         }
-        lastQueueDepth = currentQueueDepth;
-        
+
+        if (QUEUE_BACKPRESSURE_ENABLED && currentQueueDepth >= INBOUND_QUEUE_CAPACITY) {
+            ingressBuffer.close();
+            TransportQueueBackpressureAlertEvent.emit(1, currentQueueDepth, trend);
+            throw new IllegalStateException("Rejected inbound buffer due to backpressure for stream " + streamId);
+        }
+
         boolean offered = inboundQueue.offer(ingressBuffer);
         if (!offered) {
             ingressBuffer.close();
-            // Phase 1B: Backpressure circuit breaker (off-by-default via QUEUE_BACKPRESSURE_ENABLED)
             if (QUEUE_BACKPRESSURE_ENABLED) {
                 TransportQueueBackpressureAlertEvent.emit(1, currentQueueDepth, trend);
             }
             throw new IllegalStateException("Rejected inbound buffer due to backpressure for stream " + streamId);
         }
+        lastQueueDepth = inboundQueueDepth.incrementAndGet();
         signalReadableIngress();
     }
 
@@ -472,6 +483,7 @@ final class NativeTcpStream implements TransportStream {
             if (!Objects.equals(completed, pending)) {
                 throw new IllegalStateException("Outbound queue head changed during flush for stream " + streamId);
             }
+            decrementDepth(outboundQueueDepth);
             completed.close();
             pending = outboundQueue.peek();
         }
@@ -517,7 +529,7 @@ final class NativeTcpStream implements TransportStream {
     private void awaitReadableIngress() {
         readParked.set(true);
         try {
-            if (closed.get() || remoteClosed.get() || currentInbound != null || !inboundQueue.isEmpty()) {
+            if (closed.get() || remoteClosed.get() || currentInbound != null || inboundQueueDepth.get() > 0) {
                 return;
             }
             LockSupport.park();
@@ -666,6 +678,7 @@ final class NativeTcpStream implements TransportStream {
     private void drainInboundQueue() {
         LoanedBuffer inbound = inboundQueue.poll();
         while (inbound != null) {
+            decrementDepth(inboundQueueDepth);
             inbound.close();
             inbound = inboundQueue.poll();
         }
@@ -674,9 +687,14 @@ final class NativeTcpStream implements TransportStream {
     private void drainOutboundQueue() {
         PendingWrite pending = outboundQueue.poll();
         while (pending != null) {
+            decrementDepth(outboundQueueDepth);
             pending.close();
             pending = outboundQueue.poll();
         }
+    }
+
+    private static int decrementDepth(AtomicInteger counter) {
+        return counter.updateAndGet(current -> current > 0 ? current - 1 : 0);
     }
 
     private static void logBestEffortCleanupFailure(String stage, RuntimeException error) {
