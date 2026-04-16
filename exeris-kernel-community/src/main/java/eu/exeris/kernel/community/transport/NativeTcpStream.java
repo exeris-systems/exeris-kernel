@@ -92,6 +92,8 @@ final class NativeTcpStream implements TransportStream {
     private final AtomicBoolean tlsReady = new AtomicBoolean(false);
     private final Object tlsLock = new Object();
     private final AtomicReference<Thread> streamVt = new AtomicReference<>();
+    private final AtomicReference<Thread> inboundConsumer = new AtomicReference<>();
+    private final AtomicReference<Thread> outboundConsumer = new AtomicReference<>();
     private final AtomicBoolean readParked = new AtomicBoolean(false);
     private final AtomicReference<Thread> writeWaiter = new AtomicReference<>();
     private final AtomicBoolean writeParked = new AtomicBoolean(false);
@@ -138,60 +140,59 @@ final class NativeTcpStream implements TransportStream {
         if (maxBytes == 0) {
             return 0;
         }
-        if (closed.get()) {
-            if (remoteClosed.get()) {
+
+        Thread currentThread = Thread.currentThread();
+        acquireSingleConsumer(inboundConsumer, currentThread, "inbound");
+        try {
+            if (closed.get()) {
+                return closedReadOutcome();
+            }
+            if (remoteClosed.get() && currentInbound == null && inboundQueueDepth.get() == 0) {
                 return -1;
             }
-            throw new IllegalStateException(STREAM_CLOSED_MESSAGE);
-        }
-        // Short-circuit: if peer already closed and no buffered data remain, skip TLS readiness
-        if (remoteClosed.get() && currentInbound == null && inboundQueueDepth.get() == 0) {
-            return -1;
-        }
-        ensureTlsReady(true);
+            ensureTlsReady(true);
 
-        // Register calling VT for close-signal wakeup on first read
-        streamVt.compareAndSet(null, Thread.currentThread());
+            streamVt.compareAndSet(null, currentThread);
 
-        while (true) {
-            if (closed.get()) {
-                if (remoteClosed.get()) {
-                    return -1;
+            while (true) {
+                if (closed.get()) {
+                    return closedReadOutcome();
                 }
-                throw new IllegalStateException(STREAM_CLOSED_MESSAGE);
-            }
-            if (currentInbound == null) {
-                LoanedBuffer next = inboundQueue.poll();
-                if (next == null) {
-                    if (remoteClosed.get()) {
-                        return -1;
+                if (currentInbound == null) {
+                    LoanedBuffer next = inboundQueue.poll();
+                    if (next == null) {
+                        if (remoteClosed.get()) {
+                            return -1;
+                        }
+                        awaitReadableIngress();
+                        continue;
                     }
-                    awaitReadableIngress();
+                    decrementDepth(inboundQueueDepth);
+                    currentInbound = next;
+                    currentInboundOffset = 0;
+                }
+
+                int available = (int) currentInbound.size() - currentInboundOffset;
+                if (available <= 0) {
+                    closeCurrentInbound();
                     continue;
                 }
-                decrementDepth(inboundQueueDepth);
-                currentInbound = next;
-                currentInboundOffset = 0;
-            }
 
-            int available = (int) currentInbound.size() - currentInboundOffset;
-            if (available <= 0) {
-                closeCurrentInbound();
-                continue;
+                int bytes = Math.min(available, maxBytes);
+                MemorySegment.copy(
+                        currentInbound.segment(),
+                        currentInboundOffset,
+                        target,
+                        0,
+                        bytes);
+                currentInboundOffset += bytes;
+                if (currentInboundOffset >= currentInbound.size()) {
+                    closeCurrentInbound();
+                }
+                return bytes;
             }
-
-            int bytes = Math.min(available, maxBytes);
-            MemorySegment.copy(
-                    currentInbound.segment(),
-                    currentInboundOffset,
-                    target,
-                    0,
-                    bytes);
-            currentInboundOffset += bytes;
-            if (currentInboundOffset >= currentInbound.size()) {
-                closeCurrentInbound();
-            }
-            return bytes;
+        } finally {
+            releaseSingleConsumer(inboundConsumer, currentThread);
         }
     }
 
@@ -315,22 +316,15 @@ final class NativeTcpStream implements TransportStream {
         }
 
         try {
-            closeCurrentInbound();
+            cleanupInboundIfOwnedByCurrentThreadOrIdle();
         } catch (RuntimeException error) {
-            // channel.close() must always proceed
-            logBestEffortCleanupFailure("closeCurrentInbound", error);
+            logBestEffortCleanupFailure("cleanupInbound", error);
         }
 
         try {
-            drainInboundQueue();
+            cleanupOutboundIfOwnedByCurrentThreadOrIdle();
         } catch (RuntimeException error) {
-            logBestEffortCleanupFailure("drainInboundQueue", error);
-        }
-
-        try {
-            drainOutboundQueue();
-        } catch (RuntimeException error) {
-            logBestEffortCleanupFailure("drainOutboundQueue", error);
+            logBestEffortCleanupFailure("cleanupOutbound", error);
         }
 
         try {
@@ -452,42 +446,49 @@ final class NativeTcpStream implements TransportStream {
     }
 
     /* default */ boolean flushPendingWrites() {
-        if (closed.get()) {
+        Thread currentThread = Thread.currentThread();
+        acquireSingleConsumer(outboundConsumer, currentThread, "outbound");
+        try {
+            if (closed.get()) {
+                drainOutboundQueue();
+                return true;
+            }
+
+            if (!ensureTlsReady(false)) {
+                return outboundQueue.peek() == null;
+            }
+
+            PendingWrite pending = outboundQueue.peek();
+            while (pending != null) {
+                if (tlsEngine == null) {
+                    if (!tryDrainPlainWrite(pending)) {
+                        return false;
+                    }
+                } else {
+                    TlsStatus status = pending.prepareCipher();
+                    if (status == TlsStatus.CLOSED) {
+                        close();
+                        return true;
+                    }
+                    if (status != TlsStatus.OK) {
+                        throw TransportException.sendFailure(engineName, pending.bytesWritten(), null);
+                    }
+                    if (!tryDrainCipherWrite(pending)) {
+                        return false;
+                    }
+                }
+                PendingWrite completed = outboundQueue.poll();
+                if (!Objects.equals(completed, pending)) {
+                    throw new IllegalStateException("Outbound queue head changed during flush for stream " + streamId);
+                }
+                decrementDepth(outboundQueueDepth);
+                completed.close();
+                pending = outboundQueue.peek();
+            }
             return true;
+        } finally {
+            releaseSingleConsumer(outboundConsumer, currentThread);
         }
-
-        if (!ensureTlsReady(false)) {
-            return outboundQueue.peek() == null;
-        }
-
-        PendingWrite pending = outboundQueue.peek();
-        while (pending != null) {
-            if (tlsEngine == null) {
-                if (!tryDrainPlainWrite(pending)) {
-                    return false;
-                }
-            } else {
-                TlsStatus status = pending.prepareCipher();
-                if (status == TlsStatus.CLOSED) {
-                    close();
-                    return true;
-                }
-                if (status != TlsStatus.OK) {
-                    throw TransportException.sendFailure(engineName, pending.bytesWritten(), null);
-                }
-                if (!tryDrainCipherWrite(pending)) {
-                    return false;
-                }
-            }
-            PendingWrite completed = outboundQueue.poll();
-            if (!Objects.equals(completed, pending)) {
-                throw new IllegalStateException("Outbound queue head changed during flush for stream " + streamId);
-            }
-            decrementDepth(outboundQueueDepth);
-            completed.close();
-            pending = outboundQueue.peek();
-        }
-        return true;
     }
 
     private boolean tryDrainPlainWrite(PendingWrite pending) {
@@ -665,6 +666,63 @@ final class NativeTcpStream implements TransportStream {
             LockSupport.parkNanos(HANDSHAKE_BACKOFF_NANOS);
         }
         return false;
+    }
+
+    private int closedReadOutcome() {
+        closeCurrentInbound();
+        drainInboundQueue();
+        if (remoteClosed.get()) {
+            return -1;
+        }
+        throw new IllegalStateException(STREAM_CLOSED_MESSAGE);
+    }
+
+    private void cleanupInboundIfOwnedByCurrentThreadOrIdle() {
+        Thread currentThread = Thread.currentThread();
+        if (!tryAcquireSingleConsumer(inboundConsumer, currentThread)) {
+            return;
+        }
+        try {
+            closeCurrentInbound();
+            drainInboundQueue();
+        } finally {
+            releaseSingleConsumer(inboundConsumer, currentThread);
+        }
+    }
+
+    private void cleanupOutboundIfOwnedByCurrentThreadOrIdle() {
+        Thread currentThread = Thread.currentThread();
+        if (!tryAcquireSingleConsumer(outboundConsumer, currentThread)) {
+            return;
+        }
+        try {
+            drainOutboundQueue();
+        } finally {
+            releaseSingleConsumer(outboundConsumer, currentThread);
+        }
+    }
+
+    private static void acquireSingleConsumer(AtomicReference<Thread> consumerRef,
+                                              Thread currentThread,
+                                              String queueName) {
+        Thread owner = consumerRef.get();
+        if (owner == currentThread) {
+            return;
+        }
+        if (!consumerRef.compareAndSet(null, currentThread)) {
+            throw new IllegalStateException(
+                    "Concurrent " + queueName + " queue consumer detected for stream thread "
+                            + currentThread.getName());
+        }
+    }
+
+    private static boolean tryAcquireSingleConsumer(AtomicReference<Thread> consumerRef, Thread currentThread) {
+        Thread owner = consumerRef.get();
+        return owner == currentThread || (owner == null && consumerRef.compareAndSet(null, currentThread));
+    }
+
+    private static void releaseSingleConsumer(AtomicReference<Thread> consumerRef, Thread currentThread) {
+        consumerRef.compareAndSet(currentThread, null);
     }
 
     private void closeCurrentInbound() {
