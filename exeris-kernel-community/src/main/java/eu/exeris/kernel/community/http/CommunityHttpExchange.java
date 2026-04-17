@@ -61,6 +61,10 @@ final class CommunityHttpExchange implements HttpExchange {
 
     @Override
     public void respond(HttpResponse response) {
+        respondInternal(response);
+    }
+
+    private void respondInternal(HttpResponse response) {
         Objects.requireNonNull(response, "response must not be null");
         if (!responded.compareAndSet(false, true)) {
             throw new IllegalStateException("respond() already called for this exchange");
@@ -114,9 +118,7 @@ final class CommunityHttpExchange implements HttpExchange {
         HttpResponseEncodingContext ctx = new HttpResponseEncodingContext(request, allocator);
         HttpEncodedBody encoded = encoder.encode(typedResponse.payload(), ctx);
         List<HttpHeader> mergedHeaders = mergeHeaders(typedResponse.headers(), encoded.headers());
-        try (LoanedBuffer encodedBody = encoded.body()) {
-            respond(new HttpResponse(typedResponse.status(), request.version(), mergedHeaders, encodedBody));
-        }
+        respondInternal(new HttpResponse(typedResponse.status(), request.version(), mergedHeaders, encoded.body()));
     }
 
     private static List<HttpHeader> mergeHeaders(List<HttpHeader> typedHeaders, List<HttpHeader> encodedHeaders) {

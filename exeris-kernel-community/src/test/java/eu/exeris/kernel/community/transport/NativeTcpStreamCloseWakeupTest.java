@@ -291,7 +291,7 @@ class NativeTcpStreamCloseWakeupTest {
 
                     assertFalse(flusher.isAlive(), "Outbound flusher did not stop after stream close");
                     assertTrue(stream.isClosed(), "Stream should be closed after shutdown");
-                    assertNull(failure.get(), () -> "Unexpected outbound flush failure: " + failure.get());
+                    assertNull(failure.get(), "Unexpected outbound flush failure: " + failure.get());
                 } finally {
                     stream.close();
                     serverChannel.close();
