@@ -248,27 +248,13 @@ final class NativeTcpStream implements TransportStream {
             }
             return;
         }
-        ensureTlsReady(true);
 
-        try (LoanedBuffer plain = allocator.allocateNetwork(length);
-             LoanedBuffer cipher = allocator.allocateNetwork(length + 1024)) {
+        ensureTlsReady(true);
+        try (LoanedBuffer plain = allocator.allocateNetwork(length)) {
             MemorySegment.copy(source, 0, plain.segment(), 0, length);
             plain.setSize(length);
-            TlsStatus status;
-            synchronized (tlsLock) {
-                status = tlsEngine.wrap(plain, cipher);
-            }
-            if (status == TlsStatus.OK) {
-                if (cipher.size() > 0) {
-                    enqueueDeferredWrite(cipher.segment(), 0, (int) cipher.size());
-                }
-                return;
-            }
-            if (status == TlsStatus.CLOSED) {
-                close();
-                return;
-            }
-            throw TransportException.sendFailure(engineName, 0, null);
+            plain.retain();
+            queueWrite(plain, length);
         }
     }
 
@@ -509,7 +495,9 @@ final class NativeTcpStream implements TransportStream {
 
     /* default */ boolean flushPendingWrites() {
         Thread currentThread = Thread.currentThread();
-        acquireSingleConsumer(runtime.outboundConsumer(), currentThread, "outbound");
+        if (!tryAcquireSingleConsumer(runtime.outboundConsumer(), currentThread)) {
+            return false;
+        }
         try {
             return drainPendingWrites();
         } finally {
@@ -536,18 +524,14 @@ final class NativeTcpStream implements TransportStream {
         }
 
         if (!ensureTlsReady(false)) {
-            boolean queueEmpty = outboundQueue.peek() == null;
-            if (queueEmpty && closeRequested.get()) {
-                finishCloseIfDrained();
-            }
-            return queueEmpty;
+            return abortCloseAfterBestEffortFlush() || outboundQueue.peek() == null;
         }
 
         PendingWrite pending = outboundQueue.peek();
         while (pending != null) {
             if (tlsEngine == null) {
                 if (!tryDrainPlainWrite(pending)) {
-                    return false;
+                    return abortCloseAfterBestEffortFlush();
                 }
             } else {
                 TlsStatus status = pending.prepareCipher();
@@ -559,7 +543,7 @@ final class NativeTcpStream implements TransportStream {
                     throw TransportException.sendFailure(engineName, pending.bytesWritten(), null);
                 }
                 if (!tryDrainCipherWrite(pending)) {
-                    return false;
+                    return abortCloseAfterBestEffortFlush();
                 }
             }
             PendingWrite completed = outboundQueue.poll();
@@ -869,6 +853,15 @@ final class NativeTcpStream implements TransportStream {
         } finally {
             releaseSingleConsumer(runtime.outboundConsumer(), currentThread);
         }
+    }
+
+    private boolean abortCloseAfterBestEffortFlush() {
+        if (!closeRequested.get()) {
+            return false;
+        }
+        drainOutboundQueue();
+        finishCloseIfDrained();
+        return true;
     }
 
     private void finishCloseIfDrained() {

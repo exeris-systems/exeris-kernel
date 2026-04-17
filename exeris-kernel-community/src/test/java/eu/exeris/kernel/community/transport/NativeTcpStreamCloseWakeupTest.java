@@ -26,7 +26,9 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.LockSupport;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -114,6 +116,7 @@ class NativeTcpStreamCloseWakeupTest {
                  SocketChannel serverChannel = listener.accept()) {
 
                 clientChannel.configureBlocking(false);
+                serverChannel.configureBlocking(false);
 
                 NativeTcpConnection connection = new NativeTcpConnection(11L, "127.0.0.1", port);
                 NativeTcpStream stream = new NativeTcpStream(
@@ -133,9 +136,9 @@ class NativeTcpStreamCloseWakeupTest {
                 stream.write(MemorySegment.ofArray(payload), payload.length);
 
                 ByteBuffer received = ByteBuffer.allocate(payload.length);
-                int read = serverChannel.read(received);
+                int read = readWithinDeadline(serverChannel, received, payload.length, 1_000L);
 
-                assertTrue(read > 0, "Expected plain write to reach peer immediately");
+                assertEquals(payload.length, read, "Expected plain write to reach peer within the bounded deadline");
                 assertFalse(stream.hasPendingData(), "Plain write should not stay queued on the active socket path");
                 assertArrayEquals(payload, java.util.Arrays.copyOf(received.array(), read));
 
@@ -201,6 +204,7 @@ class NativeTcpStreamCloseWakeupTest {
                  SocketChannel serverChannel = listener.accept()) {
 
                 clientChannel.configureBlocking(false);
+                serverChannel.configureBlocking(false);
 
                 AtomicInteger writeInterestSignals = new AtomicInteger();
                 NativeTcpConnection connection = new NativeTcpConnection(13L, "127.0.0.1", port);
@@ -225,9 +229,9 @@ class NativeTcpStreamCloseWakeupTest {
                 stream.queueWrite(source, payload.length);
 
                 ByteBuffer received = ByteBuffer.allocate(payload.length);
-                int read = serverChannel.read(received);
+                int read = readWithinDeadline(serverChannel, received, payload.length, 1_000L);
 
-                assertTrue(read > 0, "Expected ownership-transfer fast path to write immediately");
+                assertEquals(payload.length, read, "Expected ownership-transfer fast path to write within the bounded deadline");
                 assertFalse(stream.hasPendingData(), "Fast path should not leave queued backlog after immediate write");
                 assertEquals(0, writeInterestSignals.get(),
                         "Expected no write-interest callback when the immediate write drains fully");
@@ -238,6 +242,26 @@ class NativeTcpStreamCloseWakeupTest {
                 stream.close();
             }
         }
+    }
+
+    private static int readWithinDeadline(SocketChannel channel,
+                                           ByteBuffer target,
+                                           int expectedBytes,
+                                           long timeoutMillis) throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
+        int totalRead = 0;
+        while (totalRead < expectedBytes && System.nanoTime() < deadline) {
+            int read = channel.read(target);
+            if (read > 0) {
+                totalRead += read;
+                continue;
+            }
+            if (read < 0) {
+                break;
+            }
+            LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(1));
+        }
+        return totalRead;
     }
 
     @Test

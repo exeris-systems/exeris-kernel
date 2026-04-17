@@ -28,7 +28,6 @@ import eu.exeris.kernel.spi.transport.StreamPriority;
 import eu.exeris.kernel.spi.transport.TransportConfig;
 import eu.exeris.kernel.spi.transport.TransportConnection;
 import eu.exeris.kernel.spi.transport.TransportEngine;
-import eu.exeris.kernel.spi.transport.TransportEngineCapabilities;
 import eu.exeris.kernel.spi.transport.TransportMode;
 import eu.exeris.kernel.spi.transport.TransportStats;
 
@@ -98,20 +97,18 @@ public final class NativeTcpCarrier implements TransportEngine {
     private static final int SOCK_STREAM = 1;
     private static final int DEFAULT_IP_PROTOCOL = 0;
     private static final int SOCKADDR_IN_SIZE = 16;
+    private static final boolean SOCKADDR_INCLUDES_LENGTH = usesBsdSockaddrLayout();
     private static final long CLIENT_TLS_INGRESS_IDLE_BACKOFF_INITIAL_NANOS = 250_000L;
     private static final long CLIENT_TLS_INGRESS_IDLE_BACKOFF_MAX_NANOS = 2_000_000L;
     private static final long CLIENT_WRITER_BACKOFF_INITIAL_NANOS = 250_000L;
     private static final long CLIENT_WRITER_BACKOFF_MAX_NANOS = 2_000_000L;
     private static final int MIN_LISTENER_BACKLOG = 64;
     private static final int MAX_LISTENER_BACKLOG = 1_024;
-    private static final TransportEngineCapabilities CAPS =
-            TransportEngineCapabilities.STANDARD.withProvider("community-transport");
 
     private final TransportConfig config;
     private final MemoryAllocator allocator;
     private final KernelCryptoProvider cryptoProvider;
     private final CryptoProviderConfig cryptoConfig;
-    private final TransportEngineCapabilities capabilities;
     private final SocketBackendMode requestedSocketBackend;
     private final Arena socketBackendArena;
     private final SyscallHandles socketHandles;
@@ -155,24 +152,16 @@ public final class NativeTcpCarrier implements TransportEngine {
     /* default */ NativeTcpCarrier(TransportConfig config,
                      MemoryAllocator allocator,
                      KernelCryptoProvider cryptoProvider,
-                     CryptoProviderConfig cryptoConfig,
-                     String providerId) {
+                     CryptoProviderConfig cryptoConfig) {
         this.config = Objects.requireNonNull(config, "config must not be null");
         this.allocator = Objects.requireNonNull(allocator, "allocator must not be null");
         this.cryptoProvider = cryptoProvider;
         this.cryptoConfig = cryptoConfig;
-        String resolvedProviderId = Objects.requireNonNull(providerId, "providerId must not be null");
         SocketBackendSelection backendSelection = SocketBackendSelection.resolve();
         this.requestedSocketBackend = backendSelection.requestedMode();
         this.socketBackendArena = backendSelection.socketBackendArena();
         this.socketHandles = backendSelection.socketHandles();
         this.ffmSocketBackendArmed = backendSelection.ffmSocketBackendArmed();
-        this.capabilities = new TransportEngineCapabilities(
-            CAPS.supportsMultiplexing(),
-            CAPS.supportsZeroCopy(),
-            CAPS.transportName(),
-            resolvedProviderId
-        );
         LOG.log(System.Logger.Level.INFO, () ->
                 "[NativeTcpCarrier] Community socket backend mode="
                         + backendSelection.requestedMode().configValue()
@@ -336,11 +325,6 @@ public final class NativeTcpCarrier implements TransportEngine {
                 0,
                 0
         );
-    }
-
-    @Override
-    public TransportEngineCapabilities capabilities() {
-        return capabilities;
     }
 
     @Override
@@ -919,13 +903,25 @@ public final class NativeTcpCarrier implements TransportEngine {
                                           byte thirdOctet,
                                           byte fourthOctet) {
         target.fill((byte) 0);
-        target.set(ValueLayout.JAVA_SHORT, 0, (short) AF_INET);
+        if (SOCKADDR_INCLUDES_LENGTH) {
+            target.set(ValueLayout.JAVA_BYTE, 0, (byte) SOCKADDR_IN_SIZE);
+            target.set(ValueLayout.JAVA_BYTE, 1, (byte) AF_INET);
+        } else {
+            target.set(ValueLayout.JAVA_SHORT, 0, (short) AF_INET);
+        }
         target.set(ValueLayout.JAVA_BYTE, 2, (byte) ((port >>> 8) & 0xFF));
         target.set(ValueLayout.JAVA_BYTE, 3, (byte) (port & 0xFF));
         target.set(ValueLayout.JAVA_BYTE, 4, firstOctet);
         target.set(ValueLayout.JAVA_BYTE, 5, secondOctet);
         target.set(ValueLayout.JAVA_BYTE, 6, thirdOctet);
         target.set(ValueLayout.JAVA_BYTE, 7, fourthOctet);
+    }
+
+    private static boolean usesBsdSockaddrLayout() {
+        String osName = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
+        return osName.contains("mac")
+                || osName.contains("darwin")
+                || osName.contains("bsd");
     }
 
     private static int openPosixStreamSocket(SyscallHandles handles) {
