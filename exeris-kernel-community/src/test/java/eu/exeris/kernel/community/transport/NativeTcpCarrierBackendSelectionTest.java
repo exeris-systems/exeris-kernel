@@ -32,6 +32,7 @@ import static org.junit.jupiter.api.Assumptions.assumeFalse;
 class NativeTcpCarrierBackendSelectionTest {
 
     private static final String SOCKET_BACKEND_PROPERTY = "exeris.community.transport.socket.backend";
+    private static final String SOCKET_BACKEND_ALIAS_PROPERTY = "SOCKET_BACKEND_ENV";
     private static final String SOCKET_BACKEND_AUTO = "auto";
     private static final String SOCKET_BACKEND_NIO = "nio";
     private static final String SOCKET_BACKEND_POSIX_HYBRID = "posix-hybrid";
@@ -49,6 +50,7 @@ class NativeTcpCarrierBackendSelectionTest {
     @SuppressWarnings("unused")
     void clearBackendOverride() {
         System.clearProperty(SOCKET_BACKEND_PROPERTY);
+        System.clearProperty(SOCKET_BACKEND_ALIAS_PROPERTY);
     }
 
     @Test
@@ -110,6 +112,18 @@ class NativeTcpCarrierBackendSelectionTest {
             } else {
                 assertThat(carrier.activeSocketBackend()).isEqualTo(SOCKET_BACKEND_NIO);
             }
+        }
+    }
+
+    @Test
+    @DisplayName("legacy backend alias property is honored without breaking the canonical override")
+    void legacyBackendAliasPropertyIsHonored() {
+        System.setProperty(SOCKET_BACKEND_ALIAS_PROPERTY, SOCKET_BACKEND_POSIX_HYBRID);
+
+        try (NativeTcpCarrier carrier = createCarrier(TransportMode.SERVER)) {
+            assertThat(carrier.requestedSocketBackend()).isEqualTo(SOCKET_BACKEND_POSIX_HYBRID);
+            assertThat(carrier.activeSocketBackend())
+                    .isIn(SOCKET_BACKEND_POSIX_HYBRID, SOCKET_BACKEND_NIO);
         }
     }
 

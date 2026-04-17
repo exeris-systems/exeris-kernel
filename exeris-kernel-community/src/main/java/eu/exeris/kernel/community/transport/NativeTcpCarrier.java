@@ -33,6 +33,7 @@ import eu.exeris.kernel.spi.transport.TransportMode;
 import eu.exeris.kernel.spi.transport.TransportStats;
 
 import java.io.IOException;
+import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.net.InetAddress;
@@ -83,9 +84,11 @@ public final class NativeTcpCarrier implements TransportEngine {
     private static final String ENGINE_NAME = "CommunityNativeTcpCarrier";
     private static final String SOCKET_BACKEND_PROPERTY = "exeris.community.transport.socket.backend";
     private static final String SOCKET_BACKEND_ENV = "EXERIS_COMMUNITY_TRANSPORT_SOCKET_BACKEND";
+    private static final String SOCKET_BACKEND_ENV_ALIAS = "SOCKET_BACKEND_ENV";
     private static final String SOCKET_BACKEND_AUTO = "auto";
     private static final String SOCKET_BACKEND_NIO = "nio";
     private static final String SOCKET_BACKEND_POSIX_HYBRID = "posix-hybrid";
+    private static final String ACTIVE_NIO_FALLBACK_DETAIL = "continuing on the active NIO fallback.";
     private static final String LOOPBACK_HOST = InetAddress.getLoopbackAddress().getHostAddress();
     private static final byte LOOPBACK_FIRST_OCTET = 127;
     private static final byte LOOPBACK_SECOND_OCTET = 0;
@@ -110,6 +113,7 @@ public final class NativeTcpCarrier implements TransportEngine {
     private final CryptoProviderConfig cryptoConfig;
     private final TransportEngineCapabilities capabilities;
     private final SocketBackendMode requestedSocketBackend;
+    private final Arena socketBackendArena;
     private final SyscallHandles socketHandles;
     private final boolean ffmSocketBackendArmed;
 
@@ -160,6 +164,7 @@ public final class NativeTcpCarrier implements TransportEngine {
         String resolvedProviderId = Objects.requireNonNull(providerId, "providerId must not be null");
         SocketBackendSelection backendSelection = SocketBackendSelection.resolve();
         this.requestedSocketBackend = backendSelection.requestedMode();
+        this.socketBackendArena = backendSelection.socketBackendArena();
         this.socketHandles = backendSelection.socketHandles();
         this.ffmSocketBackendArmed = backendSelection.ffmSocketBackendArmed();
         this.capabilities = new TransportEngineCapabilities(
@@ -348,7 +353,14 @@ public final class NativeTcpCarrier implements TransportEngine {
         if (!closed.compareAndSet(false, true)) {
             return;
         }
-        stop();
+        final Arena backendArena = socketBackendArena;
+        if (backendArena == null) {
+            stop();
+            return;
+        }
+        try (backendArena) {
+            stop();
+        }
     }
 
     /* default */ String requestedSocketBackend() {
@@ -828,16 +840,22 @@ public final class NativeTcpCarrier implements TransportEngine {
         }
     }
 
+    private SyscallHandles resolvedSocketHandlesForValidation() {
+        if (!ffmSocketBackendArmed) {
+            return null;
+        }
+        SyscallHandles handles = this.socketHandles;
+        return handles != null && handles.supportsPlainSocketIo() ? handles : null;
+    }
+
     private boolean runServerSocketValidationProbe() {
-        return CoreSyscallLoader.tryLoadSocketSeam()
-                .map(this::validateServerSocketBootstrap)
-                .orElse(false);
+        SyscallHandles handles = resolvedSocketHandlesForValidation();
+        return handles != null && validateServerSocketBootstrap(handles);
     }
 
     private boolean runClientSocketValidationProbe(String host, int port) {
-        return CoreSyscallLoader.tryLoadSocketSeam()
-                .map(handles -> validateClientSocketConnect(handles, host, port))
-                .orElse(false);
+        SyscallHandles handles = resolvedSocketHandlesForValidation();
+        return handles != null && validateClientSocketConnect(handles, host, port);
     }
 
     private boolean validateServerSocketBootstrap(SyscallHandles handles) {
@@ -1021,7 +1039,13 @@ public final class NativeTcpCarrier implements TransportEngine {
         private static SocketBackendMode resolveConfiguredMode() {
             String configured = System.getProperty(SOCKET_BACKEND_PROPERTY);
             if (configured == null || configured.isBlank()) {
+                configured = System.getProperty(SOCKET_BACKEND_ENV_ALIAS);
+            }
+            if (configured == null || configured.isBlank()) {
                 configured = System.getenv(SOCKET_BACKEND_ENV);
+            }
+            if (configured == null || configured.isBlank()) {
+                configured = System.getenv(SOCKET_BACKEND_ENV_ALIAS);
             }
             if (configured == null || configured.isBlank()) {
                 return AUTO;
@@ -1041,6 +1065,7 @@ public final class NativeTcpCarrier implements TransportEngine {
     }
 
     private record SocketBackendSelection(SocketBackendMode requestedMode,
+                                          Arena socketBackendArena,
                                           SyscallHandles socketHandles,
                                           boolean ffmSocketBackendArmed,
                                           String detail) {
@@ -1051,27 +1076,62 @@ public final class NativeTcpCarrier implements TransportEngine {
                 return new SocketBackendSelection(
                         configuredMode,
                         null,
+                        null,
                         false,
-                        "NIO backend pinned explicitly; Core syscall probe skipped.");
+                        "NIO backend pinned explicitly; Core syscall load skipped.");
             }
-            SyscallHandles handles = CoreSyscallLoader.tryLoadSocketSeam().orElse(null);
+
+            //CHECKSTYLE:OFF
+            // Direct shared-arena allocation: the Community carrier is the sole owner of
+            // the socket backend seam lifetime. Shared scope is required because resolved
+            // syscall handles are used across transport threads, and carrier.close()
+            // deterministically closes this arena.
+            Arena arena = Arena.ofShared();
+            //CHECKSTYLE:ON
+            SyscallHandles handles = null;
+            try {
+                handles = CoreSyscallLoader.load(arena);
+            } catch (IllegalCallerException | IllegalStateException | UnsupportedOperationException ex) {
+                LOG.log(System.Logger.Level.DEBUG,
+                        "[NativeTcpCarrier] Community-owned Core socket load unavailable; continuing on NIO fallback.",
+                        ex);
+            }
+
+            if (handles == null) {
+                closeQuietly(arena);
+                String detail = configuredMode == SocketBackendMode.POSIX_HYBRID
+                        ? "Core socket seam was requested explicitly but is unavailable; "
+                        + ACTIVE_NIO_FALLBACK_DETAIL
+                        : "Core socket seam probe unavailable on this platform; "
+                        + ACTIVE_NIO_FALLBACK_DETAIL;
+                return new SocketBackendSelection(configuredMode, null, null, false, detail);
+            }
+
+            boolean plainSocketIoAvailable = handles.supportsPlainSocketIo();
             boolean fdAccessAvailable = SocketChannelFdAccess.isRuntimeFdAccessAvailable();
-            boolean seamArmed = handles != null && handles.supportsPlainSocketIo() && fdAccessAvailable;
+            boolean seamArmed = plainSocketIoAvailable && fdAccessAvailable;
             String detail;
             if (seamArmed) {
                 detail = "Core socket seam armed for plain TCP traffic; "
                         + "selector ownership and NIO fallback remain intact.";
             } else if (configuredMode == SocketBackendMode.POSIX_HYBRID) {
-                detail = "Core socket seam was requested explicitly but is unavailable; "
-                        + "continuing on the active NIO fallback.";
-            } else if (handles != null) {
-                detail = "Core socket seam resolved but SocketChannel FD access is unavailable; "
-                        + "continuing on the active NIO fallback.";
+                detail = plainSocketIoAvailable
+                        ? "Core socket seam was requested explicitly but "
+                        + "SocketChannel FD access is blocked by runtime openness; "
+                        + "add the required --add-opens flags or "
+                        + ACTIVE_NIO_FALLBACK_DETAIL
+                        : "Core socket seam was requested explicitly but is unavailable; "
+                        + ACTIVE_NIO_FALLBACK_DETAIL;
             } else {
-                detail = "Core socket seam probe unavailable on this platform; "
-                        + "continuing on the active NIO fallback.";
+                detail = plainSocketIoAvailable
+                        ? "Core socket seam resolved but SocketChannel FD access "
+                        + "is blocked by runtime openness; "
+                        + "add the required --add-opens flags or "
+                        + ACTIVE_NIO_FALLBACK_DETAIL
+                        : "Core socket seam resolved without plain socket syscall support; "
+                        + ACTIVE_NIO_FALLBACK_DETAIL;
             }
-            return new SocketBackendSelection(configuredMode, handles, seamArmed, detail);
+            return new SocketBackendSelection(configuredMode, arena, handles, seamArmed, detail);
         }
 
     }
