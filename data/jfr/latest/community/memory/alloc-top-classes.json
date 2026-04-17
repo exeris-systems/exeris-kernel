@@ -1,36 +1,31 @@
 [ {
-  "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
-  "count" : 8,
-  "bytes" : 1046488,
+  "class" : "eu.exeris.kernel.community.memory.CommunityReleaseAction",
+  "count" : 10,
+  "bytes" : 1307928,
   "category" : "test_harness"
 }, {
-  "class" : "eu.exeris.kernel.community.memory.CommunityReleaseAction",
-  "count" : 8,
-  "bytes" : 1046328,
+  "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
+  "count" : 6,
+  "bytes" : 784864,
   "category" : "test_harness"
 }, {
   "class" : "java.util.LinkedHashMap$Entry",
   "count" : 2,
-  "bytes" : 261616,
+  "bytes" : 261600,
   "category" : "jvm_noise"
 }, {
   "class" : "eu.exeris.kernel.community.memory.CommunityArenaShardPool$Allocation",
   "count" : 2,
-  "bytes" : 101576,
+  "bytes" : 124424,
   "category" : "test_harness"
 }, {
-  "class" : "sun.nio.fs.UnixPath",
+  "class" : "java.util.HashMap$Node",
   "count" : 1,
   "bytes" : 261568,
   "category" : "jvm_noise"
 }, {
-  "class" : "java.util.HashMap$Node",
+  "class" : "[B",
   "count" : 1,
-  "bytes" : 261544,
-  "category" : "jvm_noise"
-}, {
-  "class" : "[Ljava.util.HashMap$Node;",
-  "count" : 1,
-  "bytes" : 261552,
+  "bytes" : 261536,
   "category" : "jvm_noise"
 } ]
