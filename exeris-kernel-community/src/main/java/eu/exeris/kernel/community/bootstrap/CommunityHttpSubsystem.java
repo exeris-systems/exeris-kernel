@@ -284,8 +284,11 @@ final class CommunityHttpSubsystem implements Subsystem {
     }
 
     private static HttpMode resolveMode(ConfigProvider configProvider) {
-        String configuredMode = configProvider.getString("http.mode").orElse("DISABLED");
-        HttpMode mode = HTTP_MODE_ALIASES.get(configuredMode.strip().toUpperCase(Locale.ROOT));
+        String configuredMode = configProvider.getString("http.mode")
+                .map(String::strip)
+                .filter(mode -> !mode.isEmpty())
+                .orElse(HttpMode.SERVER.name());
+        HttpMode mode = HTTP_MODE_ALIASES.get(configuredMode.toUpperCase(Locale.ROOT));
         if (mode == null) {
             throw new IllegalArgumentException("Unsupported http.mode: " + configuredMode);
         }

@@ -23,9 +23,8 @@ import java.util.function.Supplier;
  * {@link AbstractSubsystemLifecycleTck} contract in DISABLED mode.
  *
  * <p>{@code KernelProviders.CURRENT_CONFIG} is bound via {@link #withLifecycleContext(Runnable)}
- * using a minimal stub that returns {@link Optional#empty()} for all keys.
- * {@code http.mode} therefore falls back to {@code "DISABLED"} in
- * {@code CommunityHttpSubsystem.resolveMode()}, avoiding any network or provider binding.
+ * using a minimal stub that explicitly returns {@code "DISABLED"} for {@code http.mode},
+ * avoiding any network or provider binding during lifecycle verification.
  */
 @DisplayName("Community: CommunityHttpSubsystem lifecycle TCK")
 class CommunityHttpSubsystemLifecycleTckTest extends AbstractSubsystemLifecycleTck {
@@ -50,6 +49,9 @@ class CommunityHttpSubsystemLifecycleTckTest extends AbstractSubsystemLifecycleT
 
         @Override
         public Optional<String> getString(String key) {
+            if ("http.mode".equals(key)) {
+                return Optional.of("DISABLED");
+            }
             return Optional.empty();
         }
 

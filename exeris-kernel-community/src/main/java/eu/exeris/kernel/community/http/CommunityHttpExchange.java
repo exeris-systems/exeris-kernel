@@ -61,15 +61,18 @@ final class CommunityHttpExchange implements HttpExchange {
 
     @Override
     public void respond(HttpResponse response) {
-        respondInternal(response);
+        Objects.requireNonNull(response, "response must not be null");
+        claimResponse();
+        respondInternalClaimed(response);
     }
 
-    private void respondInternal(HttpResponse response) {
-        Objects.requireNonNull(response, "response must not be null");
+    private void claimResponse() {
         if (!responded.compareAndSet(false, true)) {
             throw new IllegalStateException("respond() already called for this exchange");
         }
+    }
 
+    private void respondInternalClaimed(HttpResponse response) {
         LoanedBuffer responseBody = response.body();
         int bodyBytes = responseBody == null ? 0 : (int) responseBody.size();
         int bufferSize = RESPONSE_HEADROOM_BYTES + bodyBytes;
@@ -101,24 +104,26 @@ final class CommunityHttpExchange implements HttpExchange {
         return responded.get();
     }
 
-    /* default */ boolean keepAlive() {
-        return keepAlive;
-    }
-
     @Override
     public void respond(HttpTypedResponse typedResponse) {
         Objects.requireNonNull(typedResponse, "typedResponse must not be null");
-        HttpResponseBodyEncoder encoder = encoderRegistry.resolve(
-                typedResponse.payload() == null ? Void.class : typedResponse.payload().getClass());
+        Object payload = typedResponse.payload();
+        Class<?> payloadType = payload == null ? Void.class : payload.getClass();
+        HttpResponseBodyEncoder encoder = encoderRegistry.resolve(payloadType);
         if (encoder == null) {
-            throw new UnsupportedOperationException(
-                    "No encoder registered for payload type: " +
-                    (typedResponse.payload() == null ? "null" : typedResponse.payload().getClass().getName()));
+            throw new UnsupportedOperationException("No encoder registered for payload type: " + payloadType.getName());
         }
-        HttpResponseEncodingContext ctx = new HttpResponseEncodingContext(request, allocator);
-        HttpEncodedBody encoded = encoder.encode(typedResponse.payload(), ctx);
+        HttpResponseEncodingContext context = new HttpResponseEncodingContext(request, allocator);
+        HttpEncodedBody encoded = encoder.encode(typedResponse.payload(), context);
         List<HttpHeader> mergedHeaders = mergeHeaders(typedResponse.headers(), encoded.headers());
-        respondInternal(new HttpResponse(typedResponse.status(), request.version(), mergedHeaders, encoded.body()));
+        try {
+            respond(new HttpResponse(typedResponse.status(), request.version(), mergedHeaders, encoded.body()));
+        } catch (IllegalStateException ex) {
+            if (encoded.body() != null) {
+                encoded.body().close();
+            }
+            throw ex;
+        }
     }
 
     private static List<HttpHeader> mergeHeaders(List<HttpHeader> typedHeaders, List<HttpHeader> encodedHeaders) {

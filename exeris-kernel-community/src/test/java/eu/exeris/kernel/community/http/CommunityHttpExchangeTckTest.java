@@ -9,12 +9,15 @@
 package eu.exeris.kernel.community.http;
 
 import eu.exeris.kernel.community.memory.CommunityMemoryProvider;
+import eu.exeris.kernel.spi.http.HttpEncodedBody;
 import eu.exeris.kernel.spi.http.HttpExchange;
 import eu.exeris.kernel.spi.http.HttpMethod;
 import eu.exeris.kernel.spi.http.HttpRequest;
 import eu.exeris.kernel.spi.http.HttpResponse;
+import eu.exeris.kernel.spi.http.HttpResponseBodyEncoder;
 import eu.exeris.kernel.spi.http.HttpResponseBodyEncoderRegistry;
 import eu.exeris.kernel.spi.http.HttpStatus;
+import eu.exeris.kernel.spi.http.HttpTypedResponse;
 import eu.exeris.kernel.spi.http.HttpVersion;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
@@ -31,6 +34,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 @DisplayName("Community: HttpExchange TCK")
 class CommunityHttpExchangeTckTest extends AbstractHttpExchangeTck {
@@ -69,6 +74,46 @@ class CommunityHttpExchangeTckTest extends AbstractHttpExchangeTck {
         assertEquals(1, stream.emissionCalls, "Exchange should emit exactly one outbound response");
         assertEquals("HTTP/1.1 200 OK", stream.statusLine);
         assertEquals("hello", stream.bodyText);
+    }
+
+    @Test
+    void typedResponseEncodingClosesBodyWhenExchangeAlreadyResponded() {
+        HttpRequest request = HttpRequest.noBody(HttpMethod.GET, "/health", HttpVersion.HTTP_1_1, List.of());
+        LoanedBuffer[] encodedBodyRef = new LoanedBuffer[1];
+        HttpResponseBodyEncoder encoder = new HttpResponseBodyEncoder() {
+            @Override
+            public boolean supports(Class<?> payloadType) {
+                return String.class.equals(payloadType);
+            }
+
+            @Override
+            public HttpEncodedBody encode(Object payload, eu.exeris.kernel.spi.http.HttpResponseEncodingContext context) {
+                byte[] bytes = payload.toString().getBytes(StandardCharsets.UTF_8);
+                LoanedBuffer encodedBody = context.allocator().allocateNetwork(bytes.length);
+                MemorySegment.copy(MemorySegment.ofArray(bytes), 0, encodedBody.segment(), 0, bytes.length);
+                encodedBody.setSize(bytes.length);
+                encodedBodyRef[0] = encodedBody;
+                return new HttpEncodedBody(List.of(), encodedBody);
+            }
+        };
+        CommunityHttpExchange exchange = new CommunityHttpExchange(
+                request,
+                new RecordingStream(),
+                ALLOCATOR,
+                true,
+                payloadType -> encoder.supports(payloadType) ? encoder : null);
+
+        exchange.respond(HttpResponse.noBody(HttpStatus.OK, HttpVersion.HTTP_1_1));
+
+        IllegalStateException ex = assertThrows(
+                IllegalStateException.class,
+                () -> exchange.respond(HttpTypedResponse.of(HttpStatus.OK, "typed-body")));
+
+        assertEquals("respond() already called for this exchange", ex.getMessage());
+        if (encodedBodyRef[0] != null) {
+            assertFalse(encodedBodyRef[0].isAlive(), "Encoded typed body should be released on failed respond");
+            assertEquals(0, encodedBodyRef[0].refCount(), "Encoded typed body should not leak ownership");
+        }
     }
 
     private static final class RecordingStream implements TransportStream {
