@@ -11,6 +11,8 @@ package eu.exeris.kernel.community.http;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 
+import java.lang.foreign.MemorySegment;
+
 @SuppressWarnings({
     "PMD.TooManyMethods",
     "PMD.CommentDefaultAccessModifier",
@@ -47,8 +49,35 @@ final class ProcessingState implements AutoCloseable {
         return aggregate != null;
     }
 
-    void ensureAggregate(MemoryAllocator allocator, int maxAggregateBytes) {
-        aggregate = aggregate != null ? aggregate : allocator.allocateNetwork(maxAggregateBytes);
+    void ensureAggregate(MemoryAllocator allocator, int initialAggregateBytes) {
+        aggregate = aggregate != null ? aggregate : allocator.allocateNetwork(initialAggregateBytes);
+    }
+
+    void ensureAggregateCapacity(MemoryAllocator allocator,
+                                 long requiredBytes,
+                                 int maxAggregateBytes) {
+        if (aggregate == null || requiredBytes <= aggregate.capacity()) {
+            return;
+        }
+
+        long targetCapacity = aggregate.capacity();
+        while (targetCapacity < requiredBytes && targetCapacity < maxAggregateBytes) {
+            targetCapacity = Math.min(targetCapacity << 1, maxAggregateBytes);
+        }
+        if (targetCapacity < requiredBytes) {
+            throw new IllegalStateException("HTTP aggregate exceeds configured maximum");
+        }
+
+        try (LoanedBuffer previous = aggregate;
+             LoanedBuffer expanded = allocator.allocateNetwork((int) targetCapacity)) {
+            long previousSize = previous.size();
+            if (previousSize > 0) {
+                MemorySegment.copy(previous.segment(), 0, expanded.segment(), 0, previousSize);
+                expanded.setSize(previousSize);
+            }
+            expanded.retain();
+            aggregate = expanded;
+        }
     }
 
     void resetBufferForNewAggregate() {

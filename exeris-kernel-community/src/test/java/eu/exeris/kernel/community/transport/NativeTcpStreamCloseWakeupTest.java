@@ -15,12 +15,19 @@ import eu.exeris.kernel.spi.memory.MemoryProviderConfig;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 
+import java.lang.foreign.MemorySegment;
 import java.net.InetSocketAddress;
+import java.nio.ByteBuffer;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
+import java.nio.charset.StandardCharsets;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -89,6 +96,202 @@ class NativeTcpStreamCloseWakeupTest {
                     long durationMs = TimeUnit.NANOSECONDS.toMillis(returnedAt - signalAt);
                     assertTrue(durationMs < 50,
                             "Expected wakeup within 50ms but took " + durationMs + "ms");
+                } finally {
+                    stream.close();
+                    serverChannel.close();
+                }
+            }
+        }
+    }
+
+    @Test
+    void plainWritePrefersActiveSocketBackendBeforeQueueFallback() throws Exception {
+        try (ServerSocketChannel listener = ServerSocketChannel.open()) {
+            listener.bind(new InetSocketAddress("127.0.0.1", 0));
+            int port = ((InetSocketAddress) listener.getLocalAddress()).getPort();
+
+            try (SocketChannel clientChannel = SocketChannel.open(new InetSocketAddress("127.0.0.1", port));
+                 SocketChannel serverChannel = listener.accept()) {
+
+                clientChannel.configureBlocking(false);
+
+                NativeTcpConnection connection = new NativeTcpConnection(11L, "127.0.0.1", port);
+                NativeTcpStream stream = new NativeTcpStream(
+                        "test-engine",
+                        11L,
+                        clientChannel,
+                        connection,
+                        ALLOCATOR,
+                        null,
+                        () -> { },
+                        () -> { }
+                );
+                connection.bindSingleStream(stream);
+                stream.markRegistrationReady();
+
+                byte[] payload = "direct-path".getBytes(StandardCharsets.UTF_8);
+                stream.write(MemorySegment.ofArray(payload), payload.length);
+
+                ByteBuffer received = ByteBuffer.allocate(payload.length);
+                int read = serverChannel.read(received);
+
+                assertTrue(read > 0, "Expected plain write to reach peer immediately");
+                assertFalse(stream.hasPendingData(), "Plain write should not stay queued on the active socket path");
+                assertArrayEquals(payload, java.util.Arrays.copyOf(received.array(), read));
+
+                stream.close();
+            }
+        }
+    }
+
+    @Test
+    void queueWriteSignalsWriteInterestOnlyOnEmptyToNonEmptyTransition() throws Exception {
+        try (ServerSocketChannel listener = ServerSocketChannel.open()) {
+            listener.bind(new InetSocketAddress("127.0.0.1", 0));
+            int port = ((InetSocketAddress) listener.getLocalAddress()).getPort();
+
+            try (SocketChannel clientChannel = SocketChannel.open(new InetSocketAddress("127.0.0.1", port));
+                 SocketChannel serverChannel = listener.accept()) {
+
+                clientChannel.configureBlocking(false);
+                serverChannel.configureBlocking(false);
+
+                AtomicInteger writeInterestSignals = new AtomicInteger();
+                NativeTcpConnection connection = new NativeTcpConnection(12L, "127.0.0.1", port);
+                NativeTcpStream stream = new NativeTcpStream(
+                        "test-engine",
+                        12L,
+                        clientChannel,
+                        connection,
+                        ALLOCATOR,
+                        null,
+                        writeInterestSignals::incrementAndGet,
+                        () -> { }
+                );
+                connection.bindSingleStream(stream);
+                stream.markRegistrationReady();
+
+                int payloadBytes = 2 * 1024 * 1024;
+                LoanedBuffer first = ALLOCATOR.allocateNetwork(payloadBytes);
+                first.setSize(payloadBytes);
+                LoanedBuffer second = ALLOCATOR.allocateNetwork(payloadBytes);
+                second.setSize(payloadBytes);
+                try {
+                    stream.queueWrite(first, payloadBytes);
+                    stream.queueWrite(second, payloadBytes);
+
+                    assertTrue(stream.hasPendingData(), "Expected socket backpressure to leave outbound data pending");
+                    assertEquals(1, writeInterestSignals.get(),
+                            "Expected a single write-interest callback for the empty-to-non-empty transition");
+                } finally {
+                    stream.close();
+                    serverChannel.close();
+                }
+            }
+        }
+    }
+
+    @Test
+    void queueWriteFastPathWritesImmediatelyWithoutLeavingBacklog() throws Exception {
+        try (ServerSocketChannel listener = ServerSocketChannel.open()) {
+            listener.bind(new InetSocketAddress("127.0.0.1", 0));
+            int port = ((InetSocketAddress) listener.getLocalAddress()).getPort();
+
+            try (SocketChannel clientChannel = SocketChannel.open(new InetSocketAddress("127.0.0.1", port));
+                 SocketChannel serverChannel = listener.accept()) {
+
+                clientChannel.configureBlocking(false);
+
+                AtomicInteger writeInterestSignals = new AtomicInteger();
+                NativeTcpConnection connection = new NativeTcpConnection(13L, "127.0.0.1", port);
+                NativeTcpStream stream = new NativeTcpStream(
+                        "test-engine",
+                        13L,
+                        clientChannel,
+                        connection,
+                        ALLOCATOR,
+                        null,
+                        writeInterestSignals::incrementAndGet,
+                        () -> { }
+                );
+                connection.bindSingleStream(stream);
+                stream.markRegistrationReady();
+
+                byte[] payload = "ownership-fast-path".getBytes(StandardCharsets.UTF_8);
+                LoanedBuffer source = ALLOCATOR.allocateNetwork(payload.length);
+                MemorySegment.copy(MemorySegment.ofArray(payload), 0, source.segment(), 0, payload.length);
+                source.setSize(payload.length);
+
+                stream.queueWrite(source, payload.length);
+
+                ByteBuffer received = ByteBuffer.allocate(payload.length);
+                int read = serverChannel.read(received);
+
+                assertTrue(read > 0, "Expected ownership-transfer fast path to write immediately");
+                assertFalse(stream.hasPendingData(), "Fast path should not leave queued backlog after immediate write");
+                assertEquals(0, writeInterestSignals.get(),
+                        "Expected no write-interest callback when the immediate write drains fully");
+                assertArrayEquals(payload, java.util.Arrays.copyOf(received.array(), read));
+                assertTrue(source.refCount() == 0 || !source.isAlive(),
+                        "Ownership-transfer fast path should release the transferred buffer once the write completes");
+
+                stream.close();
+            }
+        }
+    }
+
+    @Test
+    void closeDoesNotCompeteWithActiveOutboundConsumer() throws Exception {
+        try (ServerSocketChannel listener = ServerSocketChannel.open()) {
+            listener.bind(new InetSocketAddress("127.0.0.1", 0));
+            int port = ((InetSocketAddress) listener.getLocalAddress()).getPort();
+
+            try (SocketChannel clientChannel = SocketChannel.open(new InetSocketAddress("127.0.0.1", port));
+                 SocketChannel serverChannel = listener.accept()) {
+
+                clientChannel.configureBlocking(false);
+                serverChannel.configureBlocking(false);
+
+                NativeTcpConnection connection = new NativeTcpConnection(2L, "127.0.0.1", port);
+                NativeTcpStream stream = new NativeTcpStream(
+                        "test-engine",
+                        2L,
+                        clientChannel,
+                        connection,
+                        ALLOCATOR,
+                        null,
+                        () -> { },
+                        () -> { }
+                );
+                connection.bindSingleStream(stream);
+
+                AtomicReference<Throwable> failure = new AtomicReference<>();
+                CountDownLatch flusherStarted = new CountDownLatch(1);
+
+                try (LoanedBuffer source = ALLOCATOR.allocateNetwork(256 * 1024)) {
+                    source.setSize((int) source.capacity());
+                    stream.queueWrite(source, (int) source.capacity());
+
+                    Thread flusher = Thread.ofVirtual().start(() -> {
+                        flusherStarted.countDown();
+                        try {
+                            while (!stream.flushPendingWrites() && !stream.isClosed()) {
+                                Thread.onSpinWait();
+                            }
+                        } catch (Throwable t) {
+                            failure.set(t);
+                        }
+                    });
+
+                    assertTrue(flusherStarted.await(1, TimeUnit.SECONDS),
+                            "Outbound flusher did not start in time");
+
+                    stream.close();
+                    flusher.join(1_000L);
+
+                    assertFalse(flusher.isAlive(), "Outbound flusher did not stop after stream close");
+                    assertTrue(stream.isClosed(), "Stream should be closed after shutdown");
+                    assertNull(failure.get(), () -> "Unexpected outbound flush failure: " + failure.get());
                 } finally {
                     stream.close();
                     serverChannel.close();

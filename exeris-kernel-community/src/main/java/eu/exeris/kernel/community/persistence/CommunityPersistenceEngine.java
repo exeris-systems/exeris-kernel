@@ -91,6 +91,8 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
     private static final double GUARD_BAND_THRESHOLD = 0.85d;
     private static final double FAIRNESS_STRESS_THRESHOLD = 0.90d;
     private static final long FAIRNESS_QUEUE_DEPTH_THRESHOLD = 1L;
+    private static final double EARLY_GUARD_BAND_HEADROOM_RATIO = 0.15d;
+    private static final int EARLY_GUARD_BAND_HEADROOM_CAP = 3;
     private static final long QUEUE_WAIT_TELEMETRY_THRESHOLD_MS = 0L;
     private static final String RUN_MIGRATIONS_KEY = "run.migrations";
     private static final List<String> MIGRATION_RESOURCES = List.of(
@@ -385,15 +387,31 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
         }
         if (saturation >= GUARD_BAND_THRESHOLD
                 && queued > 0
-                && fairnessTracker.indicatesAdmissionStress(
-                        FAIRNESS_STRESS_THRESHOLD,
-                        FAIRNESS_QUEUE_DEPTH_THRESHOLD)) {
+                && (shouldRejectEarlyInGuardBand(active, queued, max)
+                    || fairnessTracker.indicatesAdmissionStress(
+                            FAIRNESS_STRESS_THRESHOLD,
+                            FAIRNESS_QUEUE_DEPTH_THRESHOLD))) {
             return ADMISSION_REJECT_GUARD_BAND_FAIRNESS;
         }
         if (idle <= 0 && queued > 0) {
             return ADMISSION_REJECT_NO_CAPACITY;
         }
         return ADMISSION_ACCEPT;
+    }
+
+    private boolean shouldRejectEarlyInGuardBand(int active, int queued, int max) {
+        if (queued <= 0 || max <= 0) {
+            return false;
+        }
+        int remainingHeadroom = Math.max(0, max - active);
+        if (remainingHeadroom <= 0) {
+            return false;
+        }
+        int lowHeadroomThreshold = Math.clamp(
+                (int) Math.ceil(max * EARLY_GUARD_BAND_HEADROOM_RATIO),
+                1,
+                EARLY_GUARD_BAND_HEADROOM_CAP);
+        return remainingHeadroom <= lowHeadroomThreshold && queued >= remainingHeadroom;
     }
 
     private double admissionSaturation(int active, int max, String decisionReason) {

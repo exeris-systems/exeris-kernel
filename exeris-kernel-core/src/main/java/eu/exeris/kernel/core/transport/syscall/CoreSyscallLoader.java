@@ -17,6 +17,7 @@ import java.lang.invoke.MethodHandle;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static java.lang.foreign.ValueLayout.ADDRESS;
 import static java.lang.foreign.ValueLayout.JAVA_INT;
@@ -25,15 +26,10 @@ import static java.lang.foreign.ValueLayout.JAVA_LONG;
 /**
  * Core: Bootstrap loader that resolves Berkeley socket symbols via Project Panama FFM.
  *
- * <h2>Design — No State, No Arena Policy</h2>
- * <p>This class owns <strong>no arena</strong> and enforces <strong>no memory policy</strong>.
- * The caller decides where native symbols live:
- * <ul>
- *   <li><b>Community:</b> pass {@link Arena#global()} — symbols live for the JVM lifetime.</li>
- *   <li><b>Enterprise:</b> pass an {@link Arena} carved from the
- *       {@code GlobalMemoryArbiter.INFRASTRUCTURE} partition — symbols live inside the
- *       single pre-allocated mmap block.</li>
- * </ul>
+ * <h2>Design — Caller-Owned Arena Policy</h2>
+ * <p>This class owns <strong>no arena</strong>, creates <strong>no arena</strong>, and enforces
+ * <strong>no memory policy</strong>. The caller supplies the arena for full loads, and optional
+ * probe helpers may only reference an arena installed externally by the caller.
  *
  * <h2>C-type to ValueLayout mapping</h2>
  * <pre>
@@ -68,43 +64,98 @@ public final class CoreSyscallLoader {
     private static final boolean IS_WINDOWS =
             System.getProperty("os.name", "").toLowerCase(Locale.ROOT).startsWith("windows");
 
+    private static final String ARENA_MUST_NOT_BE_NULL = "arena must not be null";
+
     /**
      * Winsock2 version word: MAKEWORD(2, 2) = 0x0202.
      */
     private static final int WINSOCK_VERSION_2_2 = 0x0202;
+
+    /**
+     * Optional caller-installed arena reference used by probe helpers.
+     * Ownership and lifecycle remain external to Core.
+     */
+    private static final AtomicReference<Arena> PROBE_ARENA = new AtomicReference<>();
 
     private CoreSyscallLoader() {
         // static utility class
     }
 
     /**
+     * Installs a caller-owned arena reference for optional probe helpers.
+     *
+     * <p>This method stores only the reference. Core does not create, close, or otherwise
+     * manage the arena lifecycle.
+     *
+     * @param arena caller-owned arena to reference during probing
+     */
+    public static void installProbeArena(Arena arena) {
+        PROBE_ARENA.set(Objects.requireNonNull(arena, ARENA_MUST_NOT_BE_NULL));
+    }
+
+    /**
+     * Clears the caller-installed probe arena reference.
+     */
+    public static void clearProbeArena() {
+        PROBE_ARENA.set(null);
+    }
+
+    /**
      * Loads Berkeley socket symbols into {@code arena} and returns resolved handles.
      *
-     * <p><b>Community:</b> pass {@code Arena.global()}.
-     * <b>Enterprise:</b> pass an {@link Arena} whose scope covers a slab from
-     * {@code GlobalMemoryArbiter.INFRASTRUCTURE}.
+     * <p>The supplied arena remains fully caller-owned. On Windows this method also invokes
+     * {@code WSAStartup(MAKEWORD(2,2), &wsaData)} and allocates the required {@code WSADATA}
+     * scratch buffer within that same arena. On POSIX, the arena is still required for API
+     * symmetry and caller-owned policy, even though symbol resolution currently uses the native
+     * default lookup.
      *
-     * <p>On Windows this method also invokes {@code WSAStartup(MAKEWORD(2,2), &wsaData)}.
-     * The {@code wsaData} scratch buffer is allocated within the supplied {@code arena}
-     * — the 408-byte cost is a one-time bootstrap overhead, not a hot-path allocation.
-     *
-     * @param arena arena whose scope governs the lifetime of the loaded symbols
-     *              (Windows only: used for {@code Ws2_32.dll} library lookup and
-     *              {@code WSADATA} scratch allocation; ignored on POSIX as standard
-     *              socket libraries are globally resident)
+     * @param arena arena whose scope governs the caller-selected loading policy
      * @return immutable {@link SyscallHandles} record containing all resolved handles
      * @throws IllegalStateException if a required symbol is missing or WSAStartup fails
      */
     public static SyscallHandles load(Arena arena) {
-        Objects.requireNonNull(arena, "arena must not be null");
-        return IS_WINDOWS ? loadWindows(arena) : loadPosix();
+        Objects.requireNonNull(arena, ARENA_MUST_NOT_BE_NULL);
+        return IS_WINDOWS ? loadWindows(arena) : loadPosix(arena);
+    }
+
+    /**
+     * Attempts to resolve the Core portable socket seam for the current platform.
+     *
+     * <p>This is the canonical optional probe API for Berkeley socket access in Core.
+     * Linux/macOS receive POSIX Berkeley socket handles; Windows receives the
+     * Winsock-backed equivalent, including the required {@code WSAStartup} pairing.
+     * Callers can prefer this seam and retain an explicit compatibility fallback when
+     * it is unavailable.
+     *
+     * <p>If no caller-owned probe arena reference is installed, this helper remains
+     * fallback-safe and returns {@link Optional#empty()}.
+     *
+     * @return resolved socket handles when available; otherwise {@link Optional#empty()}
+     */
+    public static Optional<SyscallHandles> tryLoadSocketSeam() {
+        Arena arena = PROBE_ARENA.get();
+        if (arena == null) {
+            LOG.log(System.Logger.Level.DEBUG,
+                    "[CoreSyscallLoader] No probe arena installed; leaving compatibility fallback active.");
+            return Optional.empty();
+        }
+        try {
+            return Optional.of(load(arena));
+        } catch (IllegalCallerException | IllegalStateException | UnsupportedOperationException ex) {
+            LOG.log(System.Logger.Level.DEBUG,
+                    "[CoreSyscallLoader] Core socket seam probe unavailable; leaving compatibility fallback active.",
+                    ex);
+            return Optional.empty();
+        }
     }
 
     // =========================================================================
     // POSIX (Linux / macOS) loader
     // =========================================================================
 
-    private static SyscallHandles loadPosix() {
+    private static SyscallHandles loadPosix(Arena arena) {
+        Objects.requireNonNull(arena, ARENA_MUST_NOT_BE_NULL);
+
         LOG.log(System.Logger.Level.INFO,
                 "[CoreSyscallLoader] Resolving POSIX Berkeley socket symbols via FFM defaultLookup");
 
@@ -146,6 +197,7 @@ public final class CoreSyscallLoader {
                 send, recv,
                 fcntl,  // POSIX non-blocking control
                 null,   // ioctlsocket — Windows only
+                null,   // WSAGetLastError — Windows only
                 null);  // wsaCleanup — Windows only
     }
 
@@ -202,6 +254,9 @@ public final class CoreSyscallLoader {
         MethodHandle ioctlsocket = req(linker, ws2, "ioctlsocket",
                 FunctionDescriptor.of(JAVA_INT, JAVA_LONG, JAVA_LONG, JAVA_LONG));
 
+        MethodHandle wsaGetLastError = req(linker, ws2, "WSAGetLastError",
+                FunctionDescriptor.of(JAVA_INT));
+
         MethodHandle wsaCleanup = req(linker, ws2, "WSACleanup",
                 FunctionDescriptor.of(JAVA_INT));
 
@@ -211,9 +266,10 @@ public final class CoreSyscallLoader {
         return new SyscallHandles(
                 socket, bind, listen, accept, connect, close,
                 send, recv,
-                null,          // fcntl — POSIX only
-                ioctlsocket,   // Windows non-blocking control
-                wsaCleanup);   // Windows Winsock lifecycle
+                null,             // fcntl — POSIX only
+                ioctlsocket,      // Windows non-blocking control
+                wsaGetLastError,  // Windows socket error inspection
+                wsaCleanup);      // Windows Winsock lifecycle
     }
 
     // =========================================================================
@@ -252,9 +308,7 @@ public final class CoreSyscallLoader {
 
     private static int wsaStartupCall(MethodHandle handle, MemorySegment wsaData) {
         try {
-            // explicit (long) cast: guarantees invokeExact signature matches JAVA_LONG descriptor
-            //noinspection RedundantCast
-            return (int) handle.invokeExact(WINSOCK_VERSION_2_2, (long) wsaData.address());
+            return (int) handle.invokeExact(WINSOCK_VERSION_2_2, wsaData.address());
         } catch (Throwable ex) { //NOPMD AvoidCatchingThrowable — MethodHandle.invokeExact bootstrap isolation
             throw new IllegalStateException(
                     "[CoreSyscallLoader] WSAStartup native call failed", ex);

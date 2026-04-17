@@ -112,6 +112,19 @@ class CommunityPersistenceEngineFairnessTest {
         }
 
         @Test
+        @DisplayName("Rejects earlier in guard band when queue forms with low headroom and no fairness warmup")
+        void rejectsInGuardBand_whenQueuedAndLowHeadroomWithoutWarmup() {
+            try (CommunityPersistenceEngine engine = createCommunityTestEngine(20)) {
+                CommunityHikariSupport.AdmissionSnapshot snapshot =
+                        new CommunityHikariSupport.AdmissionSnapshot(17, 0, 3, 20);
+
+                assertThat(engine.canServiceRequest(snapshot)).isFalse();
+                assertThat(engine.decisionReason(snapshot))
+                        .isEqualTo("REJECT_GUARD_BAND_FAIRNESS");
+            }
+        }
+
+        @Test
         @DisplayName("Uses deterministic REJECT_HARD_SATURATION reason at >=90% saturation")
         void rejectsHardSaturation_withDeterministicReason() {
             try (CommunityPersistenceEngine engine = createCommunityTestEngine(10)) {

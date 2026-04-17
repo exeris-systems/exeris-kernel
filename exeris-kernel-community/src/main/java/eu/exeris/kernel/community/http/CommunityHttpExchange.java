@@ -70,8 +70,8 @@ final class CommunityHttpExchange implements HttpExchange {
         int bodyBytes = responseBody == null ? 0 : (int) responseBody.size();
         int bufferSize = RESPONSE_HEADROOM_BYTES + bodyBytes;
 
-            try (LoanedBuffer bodyOwned = responseBody;
-                 LoanedBuffer outbound = allocator.allocateNetwork(bufferSize)) {
+        try (LoanedBuffer bodyOwned = responseBody;
+             LoanedBuffer outbound = allocator.allocateNetwork(bufferSize)) {
             long position = 0L;
             position = Http1ResponseEncoder.writeStatusLine(
                     outbound.segment(),
@@ -80,17 +80,17 @@ final class CommunityHttpExchange implements HttpExchange {
                     response.status().reasonPhrase());
             position = writeHeaders(outbound.segment(), response.headers(), bodyBytes, position);
 
-                if (bodyOwned != null && bodyBytes > 0) {
-                    MemorySegment.copy(bodyOwned.segment(), 0, outbound.segment(), position, bodyBytes);
+            if (bodyOwned != null && bodyBytes > 0) {
+                MemorySegment.copy(bodyOwned.segment(), 0, outbound.segment(), position, bodyBytes);
                 position += bodyBytes;
             }
 
             outbound.setSize(position);
             stream.write(outbound.segment(), (int) position);
         }
-            if (!keepAlive) {
-                stream.close();
-            }
+        if (!keepAlive) {
+            stream.close();
+        }
     }
 
     /* default */ boolean isResponded() {
@@ -114,13 +114,8 @@ final class CommunityHttpExchange implements HttpExchange {
         HttpResponseEncodingContext ctx = new HttpResponseEncodingContext(request, allocator);
         HttpEncodedBody encoded = encoder.encode(typedResponse.payload(), ctx);
         List<HttpHeader> mergedHeaders = mergeHeaders(typedResponse.headers(), encoded.headers());
-        try {
-            respond(new HttpResponse(typedResponse.status(), request.version(), mergedHeaders, encoded.body()));
-        } catch (RuntimeException | Error ex) { //NOPMD AvoidCatchingGenericException — close body on failure
-            if (encoded.body() != null) {
-                encoded.body().close();
-            }
-            throw ex;
+        try (LoanedBuffer encodedBody = encoded.body()) {
+            respond(new HttpResponse(typedResponse.status(), request.version(), mergedHeaders, encodedBody));
         }
     }
 
