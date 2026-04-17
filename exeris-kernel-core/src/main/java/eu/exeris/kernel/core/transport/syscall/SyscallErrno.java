@@ -93,7 +93,10 @@ public final class SyscallErrno {
      * or temporarily unavailable errno state on the non-blocking hot path
      */
     public static boolean isRetryable(int errno) {
-        return errno <= 0 || errno == EINTR || errno == WSAEINTR || errno == WSAEINPROGRESS || isWouldBlock(errno);
+        if (errno <= 0) {
+            return false;
+        }
+        return errno == EINTR || errno == WSAEINTR || errno == WSAEINPROGRESS || isWouldBlock(errno);
     }
 
     /**

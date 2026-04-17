@@ -9,6 +9,7 @@
 package eu.exeris.kernel.community.transport;
 
 import eu.exeris.kernel.community.memory.CommunityMemoryProvider;
+import eu.exeris.kernel.core.transport.syscall.SyscallHandles;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.memory.MemoryProviderConfig;
@@ -16,6 +17,9 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 
 import java.lang.foreign.MemorySegment;
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.ServerSocketChannel;
@@ -244,6 +248,58 @@ class NativeTcpStreamCloseWakeupTest {
         }
     }
 
+    @Test
+    void windowsStyleSocketHandlesForceNioFallback() throws Exception {
+        try (ServerSocketChannel listener = ServerSocketChannel.open()) {
+            listener.bind(new InetSocketAddress("127.0.0.1", 0));
+            int port = ((InetSocketAddress) listener.getLocalAddress()).getPort();
+
+            try (SocketChannel clientChannel = SocketChannel.open(new InetSocketAddress("127.0.0.1", port));
+                 SocketChannel serverChannel = listener.accept()) {
+
+                clientChannel.configureBlocking(false);
+                serverChannel.configureBlocking(false);
+
+                MethodHandle handle = stubHandle();
+                SyscallHandles windowsHandles = new SyscallHandles(
+                        handle,
+                        handle,
+                        handle,
+                        handle,
+                        handle,
+                        handle,
+                        handle,
+                        handle,
+                        null,
+                        handle,
+                        handle,
+                        handle
+                );
+
+                NativeTcpConnection connection = new NativeTcpConnection(14L, "127.0.0.1", port);
+                NativeTcpStream stream = new NativeTcpStream(
+                        "test-engine",
+                        14L,
+                        clientChannel,
+                        connection,
+                        ALLOCATOR,
+                        null,
+                        () -> { },
+                        () -> { },
+                        windowsHandles
+                );
+                connection.bindSingleStream(stream);
+
+                try {
+                    assertEquals("nio-fallback", stream.plainSocketBackendName(),
+                            "Windows-style socket handles must not use the int-based Core socket seam");
+                } finally {
+                    stream.close();
+                }
+            }
+        }
+    }
+
     private static int readWithinDeadline(SocketChannel channel,
                                            ByteBuffer target,
                                            int expectedBytes,
@@ -262,6 +318,20 @@ class NativeTcpStreamCloseWakeupTest {
             LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(1));
         }
         return totalRead;
+    }
+
+    private static MethodHandle stubHandle() {
+        try {
+            return MethodHandles.lookup()
+                    .findStatic(NativeTcpStreamCloseWakeupTest.class, "noOp", MethodType.methodType(void.class));
+        } catch (NoSuchMethodException | IllegalAccessException e) {
+            throw new AssertionError("Test setup failed", e);
+        }
+    }
+
+    @SuppressWarnings("unused")
+    private static void noOp() {
+        // stub target — intentionally empty
     }
 
     @Test

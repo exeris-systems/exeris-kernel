@@ -1001,7 +1001,10 @@ final class NativeTcpStream implements TransportStream {
         private static PlainSocketBackend resolve(SocketChannel channel,
                                                   TlsEngine tlsEngine,
                                                   SyscallHandles socketHandles) {
-            if (tlsEngine != null || socketHandles == null || !socketHandles.supportsPlainSocketIo()) {
+            if (tlsEngine != null
+                    || socketHandles == null
+                    || !socketHandles.supportsPlainSocketIo()
+                    || socketHandles.hasIoctlsocket()) {
                 return NIO_FALLBACK;
             }
             return SocketChannelFdAccess.canResolveFd(channel) ? CORE_SOCKET_SEAM : NIO_FALLBACK;
