@@ -1,41 +1,36 @@
 [ {
-  "class" : "[Ljava.util.HashMap$Node;",
-  "count" : 3,
-  "bytes" : 521240,
-  "category" : "jvm_noise"
-}, {
   "class" : "java.util.LinkedHashMap",
-  "count" : 1,
-  "bytes" : 261560,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.util.HashSet",
-  "count" : 1,
-  "bytes" : 261552,
+  "count" : 3,
+  "bytes" : 523128,
   "category" : "jvm_noise"
 }, {
   "class" : "java.lang.String",
-  "count" : 1,
-  "bytes" : 261568,
+  "count" : 2,
+  "bytes" : 523112,
   "category" : "jvm_noise"
 }, {
-  "class" : "[Ljava.lang.String;",
-  "count" : 1,
-  "bytes" : 261568,
+  "class" : "[Ljava.util.HashMap$Node;",
+  "count" : 2,
+  "bytes" : 653696,
   "category" : "jvm_noise"
 }, {
-  "class" : "[B",
+  "class" : "java.util.LinkedHashMap$Entry",
   "count" : 1,
-  "bytes" : 232760,
+  "bytes" : 245128,
   "category" : "jvm_noise"
 }, {
-  "class" : "java.lang.VirtualThread",
+  "class" : "[Ljdk.jfr.internal.util.TimespanUnit;",
   "count" : 1,
-  "bytes" : 261424,
+  "bytes" : 261512,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000490e5028",
+  "count" : 1,
+  "bytes" : 261560,
   "category" : "loom_runtime"
 }, {
-  "class" : "java.util.concurrent.ForkJoinTask$AdaptedRunnableAction",
+  "class" : "java.lang.ThreadBuilders$VirtualThreadBuilder",
   "count" : 1,
-  "bytes" : 261552,
-  "category" : "jvm_noise"
+  "bytes" : 130656,
+  "category" : "loom_runtime"
 } ]
