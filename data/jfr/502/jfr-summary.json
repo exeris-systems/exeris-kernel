@@ -1,0 +1,171 @@
+{
+  "core" : {
+    "topThreads" : [ {
+      "thread" : "main",
+      "count" : 818
+    }, {
+      "thread" : "JFR Periodic Tasks",
+      "count" : 12
+    }, {
+      "thread" : "C1 CompilerThread0",
+      "count" : 2
+    } ],
+    "topClasses" : [ {
+      "class" : "java.util.HashMap$Node",
+      "count" : 211
+    }, {
+      "class" : "[Ljava.util.HashMap$Node;",
+      "count" : 173
+    }, {
+      "class" : "[Ljava.lang.Object;",
+      "count" : 91
+    }, {
+      "class" : "java.util.ImmutableCollections$ListItr",
+      "count" : 83
+    }, {
+      "class" : "[B",
+      "count" : 69
+    }, {
+      "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
+      "count" : 50
+    }, {
+      "class" : "[I",
+      "count" : 23
+    }, {
+      "class" : "[Ljava.lang.classfile.constantpool.PoolEntry;",
+      "count" : 21
+    }, {
+      "class" : "java.lang.String",
+      "count" : 11
+    }, {
+      "class" : "jdk.internal.classfile.impl.AbstractPoolEntry$Utf8EntryImpl",
+      "count" : 10
+    }, {
+      "class" : "[Ljdk.internal.classfile.impl.StackMapGenerator$Type;",
+      "count" : 8
+    }, {
+      "class" : "java.lang.Class",
+      "count" : 6
+    }, {
+      "class" : "java.util.ArrayList",
+      "count" : 4
+    }, {
+      "class" : "java.util.LinkedHashMap",
+      "count" : 3
+    }, {
+      "class" : "java.util.HashMap",
+      "count" : 3
+    }, {
+      "class" : "jdk.internal.classfile.impl.StackMapGenerator$Frame",
+      "count" : 3
+    }, {
+      "class" : "java.lang.reflect.Method",
+      "count" : 3
+    }, {
+      "class" : "jdk.internal.classfile.impl.RawBytecodeHelper",
+      "count" : 3
+    }, {
+      "class" : "[Ljava.lang.classfile.Attribute;",
+      "count" : 3
+    }, {
+      "class" : "java.util.LinkedHashMap$Entry",
+      "count" : 2
+    } ],
+    "phaseBoundaries" : [ ]
+  },
+  "community" : {
+    "topThreads" : [ {
+      "thread" : "main",
+      "count" : 4088
+    }, {
+      "thread" : "",
+      "count" : 439
+    }, {
+      "thread" : "paqs/CommunityNativeTcpCarrier/NORMAL/1",
+      "count" : 117
+    }, {
+      "thread" : "JFR Periodic Tasks",
+      "count" : 99
+    }, {
+      "thread" : "carrier/native-tcp-client-writer/1",
+      "count" : 86
+    }, {
+      "thread" : "community-event-loop",
+      "count" : 81
+    }, {
+      "thread" : "carrier/native-tcp/reactor/0",
+      "count" : 30
+    }, {
+      "thread" : "carrier/native-tcp-client-ingress/1",
+      "count" : 25
+    }, {
+      "thread" : "ForkJoinPool-1-worker-2",
+      "count" : 19
+    }, {
+      "thread" : "exeris-pin-Persistence-8",
+      "count" : 17
+    } ],
+    "topClasses" : [ {
+      "class" : "[J",
+      "count" : 521
+    }, {
+      "class" : "[Ljava.lang.Object;",
+      "count" : 493
+    }, {
+      "class" : "[B",
+      "count" : 437
+    }, {
+      "class" : "java.lang.VirtualThread",
+      "count" : 370
+    }, {
+      "class" : "java.lang.VirtualThread$$Lambda.0x000000000f0f11f0",
+      "count" : 282
+    }, {
+      "class" : "[I",
+      "count" : 213
+    }, {
+      "class" : "jdk.internal.vm.StackChunk",
+      "count" : 156
+    }, {
+      "class" : "[Lorg.h2.mvstore.MVMap;",
+      "count" : 154
+    }, {
+      "class" : "java.util.ArrayList",
+      "count" : 140
+    }, {
+      "class" : "java.lang.String",
+      "count" : 119
+    }, {
+      "class" : "java.nio.DirectByteBuffer",
+      "count" : 110
+    }, {
+      "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
+      "count" : 106
+    }, {
+      "class" : "java.util.concurrent.ConcurrentHashMap$Node",
+      "count" : 84
+    }, {
+      "class" : "[Ljava.util.HashMap$Node;",
+      "count" : 65
+    }, {
+      "class" : "java.util.concurrent.ForkJoinTask$AdaptedRunnableAction",
+      "count" : 65
+    }, {
+      "class" : "java.util.ArrayList$Itr",
+      "count" : 63
+    }, {
+      "class" : "java.lang.reflect.Method",
+      "count" : 58
+    }, {
+      "class" : "java.util.concurrent.ConcurrentLinkedQueue$Node",
+      "count" : 56
+    }, {
+      "class" : "[Ljava.lang.classfile.constantpool.PoolEntry;",
+      "count" : 51
+    }, {
+      "class" : "java.util.LinkedHashMap$Entry",
+      "count" : 49
+    } ],
+    "phaseBoundaries" : [ ]
+  }
+}
