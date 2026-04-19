@@ -41,9 +41,9 @@ final class PersistenceBootstrapSelectedEvent extends Event {
     @Description("ServiceLoader priority of the selected provider (100=Enterprise, 0=Community)")
     /* default */ int priority;
 
-    @Label("Transport Name")
-    @Description("PersistenceEngineCapabilities.transportName() of the created PersistenceEngine")
-    /* default */ String transportName;
+    @Label("Provider Name")
+    @Description("Human-readable name of the selected PersistenceProvider")
+    /* default */ String providerName;
 
     @Label("Interceptor Count")
     @Description("Number of ConnectionInterceptors registered at startup")
@@ -52,13 +52,13 @@ final class PersistenceBootstrapSelectedEvent extends Event {
     /**
      * Emits the bootstrap selected event.
      *
-     * @param providerClass   FQN of the selected {@link eu.exeris.kernel.spi.persistence.PersistenceProvider}
-     * @param priority        provider priority
-     * @param transportName   transport name reported by {@code PersistenceEngineCapabilities.transportName()}
+     * @param providerClass    FQN of the selected {@link eu.exeris.kernel.spi.persistence.PersistenceProvider}
+     * @param priority         provider priority
+     * @param providerName     human-readable provider name reported by the selected provider
      * @param interceptorCount number of registered interceptors
      */
     /* default */ static void emit(String providerClass, int priority,
-                     String transportName, int interceptorCount) {
+                     String providerName, int interceptorCount) {
         if (!FlightRecorder.isInitialized()) {
             return;
         }
@@ -69,7 +69,7 @@ final class PersistenceBootstrapSelectedEvent extends Event {
         event.begin();
         event.providerClass     = providerClass;
         event.priority          = priority;
-        event.transportName     = transportName;
+        event.providerName      = providerName;
         event.interceptorCount  = interceptorCount;
         event.commit();
     }

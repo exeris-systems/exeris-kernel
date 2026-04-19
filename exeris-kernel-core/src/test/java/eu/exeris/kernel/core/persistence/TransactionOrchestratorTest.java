@@ -13,7 +13,6 @@ import eu.exeris.kernel.spi.persistence.ConnectionInterceptor;
 import eu.exeris.kernel.spi.persistence.EngineStats;
 import eu.exeris.kernel.spi.persistence.PersistenceConnection;
 import eu.exeris.kernel.spi.persistence.PersistenceEngine;
-import eu.exeris.kernel.spi.persistence.PersistenceEngineCapabilities;
 import eu.exeris.kernel.spi.persistence.PersistenceHealthStatus;
 import eu.exeris.kernel.spi.persistence.PersistenceStatement;
 import eu.exeris.kernel.spi.persistence.QueryResult;
@@ -114,7 +113,6 @@ class TransactionOrchestratorTest {
         @Override public void registerInterceptor(ConnectionInterceptor i) { /* empty — test stub */ }
         @Override public PersistenceHealthStatus healthCheckDetailed()      { return PersistenceHealthStatus.ok(0L); }
         @Override public EngineStats stats()                                { return null; }
-        @Override public PersistenceEngineCapabilities capabilities()       { return null; }
         @Override public void close()                                       { /* empty — test stub */ }
     }
 

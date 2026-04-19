@@ -22,7 +22,6 @@ import eu.exeris.kernel.spi.persistence.EngineStats;
 import eu.exeris.kernel.spi.persistence.PersistenceConfig;
 import eu.exeris.kernel.spi.persistence.PersistenceConnection;
 import eu.exeris.kernel.spi.persistence.PersistenceEngine;
-import eu.exeris.kernel.spi.persistence.PersistenceEngineCapabilities;
 import eu.exeris.kernel.spi.persistence.PersistenceHealthStatus;
 import eu.exeris.kernel.spi.security.StorageContext;
 
@@ -57,11 +56,6 @@ import java.util.concurrent.atomic.AtomicLong;
  *      └── JdbcPersistenceConnection → JdbcPersistenceStatement
  *                                    → JdbcQueryResult → JdbcRowCursor
  * </pre>
- *
- * <h2>Capabilities</h2>
- * <p>Returns {@link PersistenceEngineCapabilities#DEFAULT} — no native protocol,
- * no io_uring, no zero-copy rows. {@code KernelBootstrap} uses this to emit the
- * {@code EX-PERS-0001} WARN event when Enterprise is unavailable.
  *
  * <h2>Memory</h2>
  * <p>Uses temporary JDBC connections backed by HikariCP's default heap-based pool.
@@ -98,15 +92,6 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
     private static final List<String> MIGRATION_RESOURCES = List.of(
             "db/migration/V0.5.0__create_outbox.sql"
     );
-
-    /**
-     * Driver-local capabilities descriptor — postgres-community specific.
-     * Built once at class-load via {@link PersistenceEngineCapabilities#withProvider(String)}
-     * to stamp the real {@code PROVIDER_ID} in JFR/diagnostic output.
-     * Pre-built constant; O(1) return from {@link #capabilities()}.
-     */
-    private static final PersistenceEngineCapabilities CAPABILITIES =
-            PersistenceEngineCapabilities.DEFAULT.withProvider(PROVIDER_ID);
 
     private final PersistenceConfig config;
     private final HikariDataSource  sharedPool;
@@ -197,11 +182,6 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
     // =========================================================================
     // PersistenceEngine
     // =========================================================================
-
-    @Override
-    public PersistenceEngineCapabilities capabilities() {
-        return CAPABILITIES; // pre-built constant, O(1), real providerId in JFR
-    }
 
     @Override
     public PersistenceConnection openConnection() {

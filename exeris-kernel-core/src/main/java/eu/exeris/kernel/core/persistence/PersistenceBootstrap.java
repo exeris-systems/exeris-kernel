@@ -130,18 +130,18 @@ public final class PersistenceBootstrap {
 
             // --- Phase 4: JFR-First — emit bootstrap events ---
             PersistenceEngineBootstrapEvent.emit(
-                    engine.capabilities().providerId(),
-                    provider.getClass().getName(),
+                    provider.providerId(),
+                    provider.providerName(),
                     config.maxPoolSize(),
                     config.rlsEnabled(),
                     config.perTenantPooling(),
                     config.useTls(),
-                    engine.capabilities().transportName()
+                    provider.providerName()
             );
             PersistenceBootstrapSelectedEvent.emit(
                     provider.getClass().getName(),
                     provider.priority(),
-                    engine.capabilities().transportName(),
+                    provider.providerName(),
                     interceptors.size()
             );
         } catch (RuntimeException ex) { //NOPMD AvoidCatchingGenericException — SPI may throw any RuntimeException

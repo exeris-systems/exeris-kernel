@@ -12,7 +12,6 @@ import eu.exeris.kernel.spi.persistence.ConnectionInterceptor;
 import eu.exeris.kernel.spi.persistence.EngineStats;
 import eu.exeris.kernel.spi.persistence.PersistenceConnection;
 import eu.exeris.kernel.spi.persistence.PersistenceEngine;
-import eu.exeris.kernel.spi.persistence.PersistenceEngineCapabilities;
 import eu.exeris.kernel.spi.persistence.PersistenceHealthStatus;
 import eu.exeris.kernel.spi.persistence.PersistenceStatement;
 import eu.exeris.kernel.spi.persistence.QueryResult;
@@ -125,11 +124,6 @@ class TransactionOrchestratorTckTest extends AbstractTransactionalExecutorTck {
             return !closed;
         }
 
-
-        @Override
-        public PersistenceEngineCapabilities capabilities() {
-            return PersistenceEngineCapabilities.DEFAULT;
-        }
 
         @Override
         public EngineStats stats() {

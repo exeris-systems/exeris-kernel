@@ -99,23 +99,6 @@ public interface PersistenceProvider {
     PersistenceEngine createEngine(PersistenceConfig config);
 
     /**
-     * Returns the {@link DatabaseDialect} supported by this provider.
-     *
-     * <p>Used by {@code KernelBootstrap} to emit dialect-capability warnings
-     * (e.g., "COPY not supported") and to gate optional features at runtime.
-     *
-     * <p>Default implementation performs autodetection from
-     * {@link PersistenceConfig#connectionUrl()} — override for explicit declarations.
-     *
-     * @param config the same config that will be passed to {@link #createEngine(PersistenceConfig)}
-     * @return the dialect descriptor; never {@code null}
-     * @since 0.5.0
-     */
-    default DatabaseDialect dialect(PersistenceConfig config) {
-        return DatabaseDialect.fromUrl(config.connectionUrl());
-    }
-
-    /**
      * Optional raw entity encoder binding for payload-oriented persistence paths.
      *
      * <p>Default is empty to preserve compatibility for providers that do not
