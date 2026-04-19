@@ -11,7 +11,6 @@ package eu.exeris.kernel.community.persistence;
 import eu.exeris.kernel.spi.exceptions.persistence.PersistenceProviderException;
 import eu.exeris.kernel.spi.persistence.PersistenceConfig;
 import eu.exeris.kernel.spi.persistence.PersistenceEngine;
-import eu.exeris.kernel.spi.persistence.PersistenceEngineCapabilities;
 import eu.exeris.kernel.spi.persistence.PersistenceProvider;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -29,7 +28,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *   <li>providerId() and providerName() are stable identifiers</li>
  *   <li>priority() == 0 (Community Open-Core slot)</li>
  *   <li>createEngine() with invalid JDBC URL wraps in PersistenceProviderException.bootstrapFailure</li>
- *   <li>PersistenceEngineCapabilities returned by the created engine matches Community spec</li>
+ *   <li>createEngine() with a valid URL returns a usable engine instance</li>
  * </ul>
  *
  * @since 0.5.0
@@ -92,7 +91,7 @@ class CommunityPersistenceProviderTest {
         }
 
         @Test
-        @DisplayName("createEngine() with valid H2 in-memory URL returns non-null engine with correct capabilities")
+        @DisplayName("createEngine() with valid H2 in-memory URL returns non-null engine")
         void validH2UrlReturnsEngine() {
             PersistenceConfig config = PersistenceConfig.defaults(
                     "jdbc:h2:mem:exeris_test_" + System.nanoTime() + ";DB_CLOSE_DELAY=-1",
@@ -100,11 +99,7 @@ class CommunityPersistenceProviderTest {
 
             try (PersistenceEngine engine = provider.createEngine(config)) {
                 assertThat(engine).isNotNull();
-                PersistenceEngineCapabilities caps = engine.capabilities();
-                assertThat(caps).isNotNull();
-                // Community must NOT claim native protocol or kernel async transport
-                assertThat(caps.supportsNativeProtocol()).isFalse();
-                assertThat(caps.supportsKernelAsyncTransport()).isFalse();
+                assertThat(engine.canServiceRequest()).isTrue();
             }
         }
     }

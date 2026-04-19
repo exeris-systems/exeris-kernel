@@ -16,7 +16,9 @@ import eu.exeris.kernel.spi.transport.TransportConfig;
 import eu.exeris.kernel.spi.transport.TransportEngine;
 import eu.exeris.kernel.spi.transport.TransportMode;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
@@ -40,6 +42,8 @@ import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+@Tag("integration")
+@Timeout(30)
 class NativeTcpCarrierIngressIntegrationTest {
 
     private static final MemoryAllocator ALLOCATOR =
@@ -197,7 +201,6 @@ class NativeTcpCarrierIngressIntegrationTest {
                 clients.add(client);
             }
 
-            LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(75));
             assertThat(handled.await(10, TimeUnit.SECONDS)).isTrue();
 
             for (SocketChannel client : clients) {

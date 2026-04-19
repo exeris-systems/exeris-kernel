@@ -11,6 +11,7 @@ package eu.exeris.kernel.community.crypto;
 import jdk.jfr.Category;
 import jdk.jfr.Description;
 import jdk.jfr.Event;
+import jdk.jfr.FlightRecorder;
 import jdk.jfr.Label;
 import jdk.jfr.Name;
 import jdk.jfr.StackTrace;
@@ -32,5 +33,18 @@ final class CommunityProviderBootstrapEvent extends Event {
 
     @Label("Bootstrap Duration (ns)")
     /* default */ long durationNs;
+
+    /* default */ static void emit(String providerName, long durationNs) {
+        if (!FlightRecorder.isInitialized()) {
+            return;
+        }
+        CommunityProviderBootstrapEvent event = new CommunityProviderBootstrapEvent();
+        if (!event.isEnabled()) {
+            return;
+        }
+        event.providerName = providerName;
+        event.durationNs = durationNs;
+        event.commit();
+    }
 }
 

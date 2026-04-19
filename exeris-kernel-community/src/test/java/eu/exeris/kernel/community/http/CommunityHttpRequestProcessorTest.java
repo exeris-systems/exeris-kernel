@@ -21,9 +21,11 @@ import eu.exeris.kernel.spi.http.HttpResponse;
 import eu.exeris.kernel.spi.http.HttpResponseBodyEncoderRegistry;
 import eu.exeris.kernel.spi.http.HttpStatus;
 import eu.exeris.kernel.spi.http.HttpVersion;
+import eu.exeris.kernel.spi.memory.AllocationHint;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.memory.MemoryProviderConfig;
+import eu.exeris.kernel.spi.memory.MemoryStats;
 import eu.exeris.kernel.spi.transport.TransportConnection;
 import eu.exeris.kernel.spi.transport.TransportStream;
 import org.junit.jupiter.api.AfterAll;
@@ -35,6 +37,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Handler;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
@@ -51,6 +54,26 @@ class CommunityHttpRequestProcessorTest {
     @SuppressWarnings("unused")
     static void closeAllocator() {
         ALLOCATOR.close();
+    }
+
+    @Test
+    void smallHttp11RequestDoesNotPreallocateHugeAggregateBuffer() {
+        RecordingMemoryAllocator recordingAllocator = new RecordingMemoryAllocator(ALLOCATOR);
+        CommunityHttpRequestProcessor processor = new CommunityHttpRequestProcessor(
+                recordingAllocator,
+                HttpResponseBodyEncoderRegistry.empty(),
+                HttpConfig.defaultServer());
+        CapturingTransportStream stream = new CapturingTransportStream("""
+                GET /tiny HTTP/1.1\r
+                Host: localhost\r
+                \r
+                """);
+
+        processor.process(stream, exchange ->
+                exchange.respond(HttpResponse.noBody(HttpStatus.OK, HttpVersion.HTTP_1_1)));
+
+        assertThat(stream.responseText()).startsWith("HTTP/1.1 200 OK");
+        assertThat(recordingAllocator.maxRequestedNetworkAllocation()).isLessThan(64 * 1024);
     }
 
     @Test
@@ -618,6 +641,51 @@ class CommunityHttpRequestProcessorTest {
         }
     }
 
+    private static final class RecordingMemoryAllocator implements MemoryAllocator {
+
+        private final MemoryAllocator delegate;
+        private final AtomicInteger maxRequestedNetworkAllocation = new AtomicInteger();
+
+        private RecordingMemoryAllocator(MemoryAllocator delegate) {
+            this.delegate = delegate;
+        }
+
+        @Override
+        public LoanedBuffer allocate(AllocationHint hint) {
+            return delegate.allocate(hint);
+        }
+
+        @Override
+        public LoanedBuffer allocateNetwork(int estimatedBytes) {
+            maxRequestedNetworkAllocation.accumulateAndGet(estimatedBytes, Math::max);
+            return delegate.allocateNetwork(estimatedBytes);
+        }
+
+        @Override
+        public LoanedBuffer allocateCarrierSlab(int carrierIndex) {
+            return delegate.allocateCarrierSlab(carrierIndex);
+        }
+
+        @Override
+        public LoanedBuffer allocateInfrastructure(long sizeBytes) {
+            return delegate.allocateInfrastructure(sizeBytes);
+        }
+
+        @Override
+        public MemoryStats stats() {
+            return delegate.stats();
+        }
+
+        @Override
+        public void close() {
+            // Delegate allocator is shared across the test class lifecycle.
+        }
+
+        private int maxRequestedNetworkAllocation() {
+            return maxRequestedNetworkAllocation.get();
+        }
+    }
+
     private static final class ThrowingTransportStream implements TransportStream {
 
         private final RuntimeException failure;
@@ -713,7 +781,11 @@ class CommunityHttpRequestProcessorTest {
 
         @Override
         public void queueWrite(LoanedBuffer buffer, int length) {
-            throw new UnsupportedOperationException();
+            try {
+                write(buffer.segment(), length);
+            } finally {
+                buffer.close();
+            }
         }
 
         @Override

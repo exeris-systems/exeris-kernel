@@ -79,6 +79,63 @@ class CommunityHttpBootstrapIntegrationTest {
     }
 
     @Test
+    @DisplayName("KernelBootstrap with HTTP subsystem stays disabled when neither mode nor port is configured")
+    void httpSubsystemRemainsDisabledWithoutExplicitModeOrPort() throws Exception {
+        String previousMode = System.getProperty("exeris.http.mode");
+        String previousHttpPort = System.getProperty("exeris.http.port");
+        String previousNetworkPort = System.getProperty("exeris.network.port");
+        String previousBindHost = System.getProperty("exeris.http.bindHost");
+
+        System.clearProperty("exeris.http.mode");
+        System.clearProperty("exeris.http.port");
+        System.clearProperty("exeris.network.port");
+        System.clearProperty("exeris.http.bindHost");
+
+        try {
+            KernelBootstrap.builder()
+                    .selector(BootstrapSelector.forNames("http"))
+                    .build()
+                    .boot(() -> {
+                        assertThat(HttpKernelProviders.HTTP_PROVIDER.isBound()).isFalse();
+                        assertThat(HttpKernelProviders.HTTP_SERVER_ENGINE.isBound()).isFalse();
+                        assertThat(HttpKernelProviders.HTTP_CLIENT_ENGINE.isBound()).isFalse();
+                    });
+        } finally {
+            restoreProperty("exeris.http.mode", previousMode);
+            restoreProperty("exeris.http.port", previousHttpPort);
+            restoreProperty("exeris.network.port", previousNetworkPort);
+            restoreProperty("exeris.http.bindHost", previousBindHost);
+        }
+    }
+
+    @Test
+    @DisplayName("KernelBootstrap with HTTP subsystem serves health when only network.port is configured")
+    void httpSubsystemServesHealthEndpointWhenNetworkPortIsConfiguredWithoutExplicitMode() throws Exception {
+        int port = nextFreePort();
+        String previousMode = System.getProperty("exeris.http.mode");
+        String previousNetworkPort = System.getProperty("exeris.network.port");
+
+        System.clearProperty("exeris.http.mode");
+        System.setProperty("exeris.network.port", Integer.toString(port));
+
+        try {
+            KernelBootstrap.builder()
+                    .selector(BootstrapSelector.forNames("http"))
+                    .build()
+                    .boot(() -> {
+                        assertThat(HttpKernelProviders.HTTP_SERVER_ENGINE.isBound()).isTrue();
+                        assertThat(HttpKernelProviders.httpServerEngine().isRunning()).isTrue();
+
+                        String healthResponse = sendRequest(port, "/health");
+                        assertThat(healthResponse).contains("HTTP/1.1 200 OK");
+                    });
+        } finally {
+            restoreProperty("exeris.http.mode", previousMode);
+            restoreProperty("exeris.network.port", previousNetworkPort);
+        }
+    }
+
+    @Test
     @DisplayName("HTTP ScopedValues are unbound after boot returns")
     void httpScopedValuesAreUnboundAfterBoot() throws Exception {
         int port = nextFreePort();

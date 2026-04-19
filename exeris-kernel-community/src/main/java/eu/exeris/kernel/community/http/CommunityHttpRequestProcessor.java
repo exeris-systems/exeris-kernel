@@ -91,6 +91,7 @@ public final class CommunityHttpRequestProcessor {
     private static final String H2C_TOKEN = "h2c";
     private static final String UPGRADE_TOKEN = "upgrade";
     private static final int READ_CHUNK_BYTES = 8 * 1024;
+    private static final int INITIAL_HTTP1_AGGREGATE_BYTES = 16 * 1024;
     private static final int MAX_AGGREGATE_BYTES = 1 * 1024 * 1024;
     private static final long HTTP2_FRAME_LOOP_INVALID = -1L;
     private static final long HTTP2_FRAME_LOOP_STOP = -2L;
@@ -162,12 +163,12 @@ public final class CommunityHttpRequestProcessor {
                                      HttpHandler handler,
                                      ProcessingState state) {
         boolean hadAggregate = state.hasAggregate();
-        state.ensureAggregate(allocator, MAX_AGGREGATE_BYTES);
+        state.ensureAggregate(allocator, INITIAL_HTTP1_AGGREGATE_BYTES);
         if (!hadAggregate) {
             state.resetBufferForNewAggregate();
         }
 
-        ReadResult readResult = readRequest(codec, stream, handler, state.aggregate(), state.bufferedBytes());
+        ReadResult readResult = readRequest(codec, stream, handler, state, state.bufferedBytes());
         if (readResult == null) {
             return false;
         }
@@ -177,7 +178,7 @@ public final class CommunityHttpRequestProcessor {
                 LOG.log(System.Logger.Level.INFO,
                         "HTTP/1.1 h2c upgrade requested; switching to HTTP/2 frame-loop mode");
             }
-            handleHttp1UpgradeToH2c(readResult, stream, handler, state.aggregate());
+            handleHttp1UpgradeToH2c(readResult, stream, handler, state);
             return false;
         }
 
@@ -487,12 +488,13 @@ public final class CommunityHttpRequestProcessor {
     private ReadResult readRequest(Http1Codec codec,
                                    TransportStream stream,
                                    HttpHandler handler,
-                                   LoanedBuffer aggregate,
+                                   ProcessingState state,
                                    long bufferedBytes) {
         codec.reset();
+        LoanedBuffer aggregate = state.aggregate();
         long total = bufferedBytes;
 
-        if (shouldHandlePriorKnowledge(stream, handler, aggregate, total)) {
+        if (shouldHandlePriorKnowledge(stream, handler, state, total)) {
             return null;
         }
 
@@ -504,7 +506,11 @@ public final class CommunityHttpRequestProcessor {
         }
 
         while (total < MAX_AGGREGATE_BYTES) {
-            int remaining = MAX_AGGREGATE_BYTES - (int) total;
+            long requiredCapacity = Math.min(MAX_AGGREGATE_BYTES, total + READ_CHUNK_BYTES);
+            state.ensureAggregateCapacity(allocator, requiredCapacity, MAX_AGGREGATE_BYTES);
+            aggregate = state.aggregate();
+
+            int remaining = (int) Math.min(aggregate.capacity() - total, MAX_AGGREGATE_BYTES - total);
             int chunk = Math.min(READ_CHUNK_BYTES, remaining);
             int read = stream.read(aggregate.segment().asSlice(total, chunk), chunk);
             if (read < 0) {
@@ -514,7 +520,7 @@ public final class CommunityHttpRequestProcessor {
                 total += read;
                 aggregate.setSize(total);
 
-                if (shouldHandlePriorKnowledge(stream, handler, aggregate, total)) {
+                if (shouldHandlePriorKnowledge(stream, handler, state, total)) {
                     return null;
                 }
 
@@ -621,21 +627,22 @@ public final class CommunityHttpRequestProcessor {
 
     private boolean shouldHandlePriorKnowledge(TransportStream stream,
                                                HttpHandler handler,
-                                               LoanedBuffer aggregate,
+                                               ProcessingState state,
                                                long totalBytes) {
         if (!supportsHttp2(config.maxVersion())) {
             return false;
         }
+        LoanedBuffer aggregate = state.aggregate();
         if (!isHttp2PriorKnowledgePreface(aggregate.segment(), totalBytes)) {
             return false;
         }
-        handleHttp2PriorKnowledge(stream, handler, aggregate, totalBytes);
+        handleHttp2PriorKnowledge(stream, handler, state, totalBytes);
         return true;
     }
 
     private void handleHttp2PriorKnowledge(TransportStream stream,
                                            HttpHandler handler,
-                                           LoanedBuffer aggregate,
+                                           ProcessingState state,
                                            long totalBytes) {
         if (LOG.isLoggable(System.Logger.Level.INFO)) {
             LOG.log(System.Logger.Level.INFO,
@@ -647,7 +654,7 @@ public final class CommunityHttpRequestProcessor {
                     stream,
                     handler,
                     session,
-                    aggregate,
+                    state,
                     totalBytes,
                     HTTP2_PRIOR_KNOWLEDGE_PREFACE.length);
         }
@@ -656,12 +663,13 @@ public final class CommunityHttpRequestProcessor {
     private void handleHttp1UpgradeToH2c(ReadResult readResult,
                                           TransportStream stream,
                                           HttpHandler handler,
-                                          LoanedBuffer aggregate) {
+                                          ProcessingState state) {
+        LoanedBuffer aggregate = state.aggregate();
         writeHttp11UpgradeResponse(stream);
         long bufferedHttp2Bytes = retainUnreadBytes(aggregate, readResult.consumedBytes());
         sendHttp2ServerSettings(stream);
         try (Http2SessionContext session = Http2SessionContext.create(allocator)) {
-            processBufferedHttp2Frames(stream, handler, session, aggregate, bufferedHttp2Bytes, 0);
+            processBufferedHttp2Frames(stream, handler, session, state, bufferedHttp2Bytes, 0);
         }
     }
 
@@ -679,13 +687,14 @@ public final class CommunityHttpRequestProcessor {
     private void processBufferedHttp2Frames(TransportStream stream,
                                             HttpHandler handler,
                                             Http2SessionContext session,
-                                            LoanedBuffer aggregate,
+                                            ProcessingState state,
                                             long initialBytes,
                                             long initialFrameOffset) {
         long bufferedBytes = initialBytes;
         long offset = initialFrameOffset;
 
         while (true) {
+            LoanedBuffer aggregate = state.aggregate();
             offset = processAvailableHttp2Frames(stream, handler, session, aggregate, bufferedBytes, offset);
             if (offset == HTTP2_FRAME_LOOP_STOP) {
                 return;
@@ -704,14 +713,14 @@ public final class CommunityHttpRequestProcessor {
                 return;
             }
 
-            int read = readHttp2Bytes(stream, aggregate, bufferedBytes);
+            int read = readHttp2Bytes(stream, state, bufferedBytes);
             if (read < 0) {
                 sendHttp2GoAwayNoError(stream);
                 return;
             }
             if (read > 0) {
                 bufferedBytes += read;
-                aggregate.setSize(bufferedBytes);
+                state.aggregate().setSize(bufferedBytes);
             }
         }
     }
@@ -762,10 +771,14 @@ public final class CommunityHttpRequestProcessor {
         return unreadBytes;
     }
 
-    private static int readHttp2Bytes(TransportStream stream,
-                                      LoanedBuffer aggregate,
-                                      long bufferedBytes) {
-        int remaining = MAX_AGGREGATE_BYTES - (int) bufferedBytes;
+    private int readHttp2Bytes(TransportStream stream,
+                               ProcessingState state,
+                               long bufferedBytes) {
+        long requiredCapacity = Math.min(MAX_AGGREGATE_BYTES, bufferedBytes + READ_CHUNK_BYTES);
+        state.ensureAggregateCapacity(allocator, requiredCapacity, MAX_AGGREGATE_BYTES);
+        LoanedBuffer aggregate = state.aggregate();
+
+        int remaining = (int) Math.min(aggregate.capacity() - bufferedBytes, MAX_AGGREGATE_BYTES - bufferedBytes);
         int chunk = Math.min(READ_CHUNK_BYTES, remaining);
         return stream.read(aggregate.segment().asSlice(bufferedBytes, chunk), chunk);
     }

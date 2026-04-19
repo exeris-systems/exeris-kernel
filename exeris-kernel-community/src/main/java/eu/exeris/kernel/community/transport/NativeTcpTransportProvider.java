@@ -46,7 +46,7 @@ public final class NativeTcpTransportProvider implements TransportProvider {
 
         CryptoProviderConfig cryptoConfig = resolveCryptoConfig(config);
         try {
-            return new NativeTcpCarrier(config, allocator, cryptoProvider, cryptoConfig, PROVIDER_ID);
+            return new NativeTcpCarrier(config, allocator, cryptoProvider, cryptoConfig);
         } catch (RuntimeException cause) {
             throw TransportException.bootstrapFailure(PROVIDER_NAME, "Failed to create NativeTcpCarrier", cause);
         }

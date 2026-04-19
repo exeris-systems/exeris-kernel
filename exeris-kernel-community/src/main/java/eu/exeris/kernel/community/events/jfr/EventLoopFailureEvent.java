@@ -10,6 +10,7 @@ package eu.exeris.kernel.community.events.jfr;
 
 import jdk.jfr.Category;
 import jdk.jfr.Event;
+import jdk.jfr.FlightRecorder;
 import jdk.jfr.Label;
 import jdk.jfr.StackTrace;
 
@@ -34,4 +35,19 @@ public final class EventLoopFailureEvent extends Event {
 
     @Label("Affected Count")
     public int affectedCount;
+
+    public static void emit(String loopName, String phase, Throwable failure, int affectedCount) {
+        if (!FlightRecorder.isInitialized()) {
+            return;
+        }
+        EventLoopFailureEvent event = new EventLoopFailureEvent();
+        if (!event.isEnabled()) {
+            return;
+        }
+        event.loopName = loopName;
+        event.phase = phase;
+        event.exceptionType = failure != null ? failure.getClass().getSimpleName() : "Unknown";
+        event.affectedCount = affectedCount;
+        event.commit();
+    }
 }

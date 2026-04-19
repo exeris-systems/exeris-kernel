@@ -11,6 +11,8 @@ package eu.exeris.kernel.community.http;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 
+import java.lang.foreign.MemorySegment;
+
 @SuppressWarnings({
     "PMD.TooManyMethods",
     "PMD.CommentDefaultAccessModifier",
@@ -47,8 +49,46 @@ final class ProcessingState implements AutoCloseable {
         return aggregate != null;
     }
 
-    void ensureAggregate(MemoryAllocator allocator, int maxAggregateBytes) {
-        aggregate = aggregate != null ? aggregate : allocator.allocateNetwork(maxAggregateBytes);
+    void ensureAggregate(MemoryAllocator allocator, int initialAggregateBytes) {
+        if (aggregate == null) {
+            aggregate = allocator.allocateNetwork(initialAggregateBytes);
+        }
+    }
+
+    void ensureAggregateCapacity(MemoryAllocator allocator,
+                                 long requiredBytes,
+                                 int maxAggregateBytes) {
+        if (aggregate == null || requiredBytes <= aggregate.capacity()) {
+            return;
+        }
+
+        replaceAggregate(allocateExpandedAggregate(allocator, aggregate, requiredBytes, maxAggregateBytes));
+    }
+
+    private void replaceAggregate(LoanedBuffer expanded) {
+        if (aggregate != null) {
+            aggregate.close();
+        }
+        aggregate = expanded;
+    }
+
+    private static LoanedBuffer allocateExpandedAggregate(MemoryAllocator allocator,
+                                                          LoanedBuffer current,
+                                                          long requiredBytes,
+                                                          int maxAggregateBytes) {
+        long targetCapacity = current.capacity();
+        while (targetCapacity < requiredBytes) {
+            if (targetCapacity >= maxAggregateBytes) {
+                throw new IllegalStateException("HTTP aggregate exceeds configured maximum");
+            }
+            targetCapacity = Math.min(targetCapacity << 1, maxAggregateBytes);
+        }
+
+        try (AggregateExpansion expansion = new AggregateExpansion(
+                allocator.allocateNetwork(Math.toIntExact(targetCapacity)))) {
+            expansion.copyFrom(current);
+            return expansion.take();
+        }
     }
 
     void resetBufferForNewAggregate() {
@@ -89,6 +129,36 @@ final class ProcessingState implements AutoCloseable {
         if (aggregate != null) {
             aggregate.close();
             aggregate = null;
+        }
+    }
+
+    private static final class AggregateExpansion implements AutoCloseable {
+        private LoanedBuffer buffer;
+
+        private AggregateExpansion(LoanedBuffer buffer) {
+            this.buffer = buffer;
+        }
+
+        private void copyFrom(LoanedBuffer current) {
+            long currentSize = current.size();
+            if (currentSize > 0) {
+                MemorySegment.copy(current.segment(), 0, buffer.segment(), 0, currentSize);
+                buffer.setSize(currentSize);
+            }
+        }
+
+        private LoanedBuffer take() {
+            LoanedBuffer taken = buffer;
+            buffer = null;
+            return taken;
+        }
+
+        @Override
+        public void close() {
+            if (buffer != null) {
+                buffer.close();
+                buffer = null;
+            }
         }
     }
 }

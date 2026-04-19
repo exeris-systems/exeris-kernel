@@ -22,7 +22,6 @@ import eu.exeris.kernel.spi.persistence.EngineStats;
 import eu.exeris.kernel.spi.persistence.PersistenceConfig;
 import eu.exeris.kernel.spi.persistence.PersistenceConnection;
 import eu.exeris.kernel.spi.persistence.PersistenceEngine;
-import eu.exeris.kernel.spi.persistence.PersistenceEngineCapabilities;
 import eu.exeris.kernel.spi.persistence.PersistenceHealthStatus;
 import eu.exeris.kernel.spi.security.StorageContext;
 
@@ -58,11 +57,6 @@ import java.util.concurrent.atomic.AtomicLong;
  *                                    → JdbcQueryResult → JdbcRowCursor
  * </pre>
  *
- * <h2>Capabilities</h2>
- * <p>Returns {@link PersistenceEngineCapabilities#DEFAULT} — no native protocol,
- * no io_uring, no zero-copy rows. {@code KernelBootstrap} uses this to emit the
- * {@code EX-PERS-0001} WARN event when Enterprise is unavailable.
- *
  * <h2>Memory</h2>
  * <p>Uses temporary JDBC connections backed by HikariCP's default heap-based pool.
  * No {@code GlobalMemoryArbiter} claims — Community tier only.
@@ -91,20 +85,13 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
     private static final double GUARD_BAND_THRESHOLD = 0.85d;
     private static final double FAIRNESS_STRESS_THRESHOLD = 0.90d;
     private static final long FAIRNESS_QUEUE_DEPTH_THRESHOLD = 1L;
+    private static final double EARLY_GUARD_BAND_HEADROOM_RATIO = 0.15d;
+    private static final int EARLY_GUARD_BAND_HEADROOM_CAP = 3;
     private static final long QUEUE_WAIT_TELEMETRY_THRESHOLD_MS = 0L;
     private static final String RUN_MIGRATIONS_KEY = "run.migrations";
     private static final List<String> MIGRATION_RESOURCES = List.of(
             "db/migration/V0.5.0__create_outbox.sql"
     );
-
-    /**
-     * Driver-local capabilities descriptor — postgres-community specific.
-     * Built once at class-load via {@link PersistenceEngineCapabilities#withProvider(String)}
-     * to stamp the real {@code PROVIDER_ID} in JFR/diagnostic output.
-     * Pre-built constant; O(1) return from {@link #capabilities()}.
-     */
-    private static final PersistenceEngineCapabilities CAPABILITIES =
-            PersistenceEngineCapabilities.DEFAULT.withProvider(PROVIDER_ID);
 
     private final PersistenceConfig config;
     private final HikariDataSource  sharedPool;
@@ -195,11 +182,6 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
     // =========================================================================
     // PersistenceEngine
     // =========================================================================
-
-    @Override
-    public PersistenceEngineCapabilities capabilities() {
-        return CAPABILITIES; // pre-built constant, O(1), real providerId in JFR
-    }
 
     @Override
     public PersistenceConnection openConnection() {
@@ -385,15 +367,31 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
         }
         if (saturation >= GUARD_BAND_THRESHOLD
                 && queued > 0
-                && fairnessTracker.indicatesAdmissionStress(
-                        FAIRNESS_STRESS_THRESHOLD,
-                        FAIRNESS_QUEUE_DEPTH_THRESHOLD)) {
+                && (shouldRejectEarlyInGuardBand(active, queued, max)
+                    || fairnessTracker.indicatesAdmissionStress(
+                            FAIRNESS_STRESS_THRESHOLD,
+                            FAIRNESS_QUEUE_DEPTH_THRESHOLD))) {
             return ADMISSION_REJECT_GUARD_BAND_FAIRNESS;
         }
         if (idle <= 0 && queued > 0) {
             return ADMISSION_REJECT_NO_CAPACITY;
         }
         return ADMISSION_ACCEPT;
+    }
+
+    private boolean shouldRejectEarlyInGuardBand(int active, int queued, int max) {
+        if (queued <= 0 || max <= 0) {
+            return false;
+        }
+        int remainingHeadroom = Math.max(0, max - active);
+        if (remainingHeadroom <= 0) {
+            return false;
+        }
+        int lowHeadroomThreshold = Math.clamp(
+                (int) Math.ceil(max * EARLY_GUARD_BAND_HEADROOM_RATIO),
+                1,
+                EARLY_GUARD_BAND_HEADROOM_CAP);
+        return remainingHeadroom <= lowHeadroomThreshold && queued >= remainingHeadroom;
     }
 
     private double admissionSaturation(int active, int max, String decisionReason) {

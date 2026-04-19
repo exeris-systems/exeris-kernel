@@ -134,18 +134,6 @@ public interface TransportEngine extends AutoCloseable {
     TransportStats stats();
 
     /**
-     * Returns the engine's capability descriptor.
-     *
-     * <p>This call is non-blocking and returns a pre-built constant (O(1)).
-     * Used by the Core module for tier-detection and JFR events without downcasting.
-     * For example, the Core may check {@link TransportEngineCapabilities#supportsMultiplexing()}
-     * before opening more than one stream per connection.
-     *
-     * @return immutable capabilities descriptor; never {@code null}
-     */
-    TransportEngineCapabilities capabilities();
-
-    /**
      * Returns the display name of this engine for diagnostics and JFR events.
      *
      * @return engine name (e.g., {@code "CommunityTcpEngine"}, {@code "EnterpriseNativeEngine"})

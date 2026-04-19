@@ -37,7 +37,6 @@ import java.util.concurrent.locks.LockSupport;
 @SuppressWarnings({
     "PMD.CyclomaticComplexity",      // aggregate across loop/dispatch/tracking helpers
     "PMD.TooManyMethods",            // deliberate: loop, dispatch, fork, tracking all belong here
-    "PMD.CouplingBetweenObjects",    // EventLoop coordinates queue, registry, JFR, structured scope — inherent
     "PMD.CloseResource",             // TrackingPayload ownership transferred across lambda boundaries
     "PMD.UseTryWithResources"        // wrappers list cannot be expressed as TWR; closed deterministically in finally
 })
@@ -83,16 +82,7 @@ final class CommunityEventLoop implements EventLoop {
                 .name("community-event-loop")
             .uncaughtExceptionHandler((thread, throwable) -> {
                 running.set(false);
-                if (FlightRecorder.isInitialized()) {
-                    EventLoopFailureEvent evt = new EventLoopFailureEvent();
-                    if (evt.isEnabled()) {
-                        evt.loopName      = thread.getName();
-                        evt.phase         = "UNCAUGHT";
-                        evt.exceptionType = throwable.getClass().getSimpleName();
-                        evt.affectedCount = 0;
-                        evt.commit();
-                    }
-                }
+                EventLoopFailureEvent.emit(thread.getName(), "UNCAUGHT", throwable, 0);
             })
                 .start(this::runLoop);
     }
@@ -253,14 +243,7 @@ final class CommunityEventLoop implements EventLoop {
             return;
         }
         Throwable first = failures.peek();
-        EventLoopFailureEvent evt = new EventLoopFailureEvent();
-        if (evt.isEnabled()) {
-            evt.loopName      = "community-event-loop";
-            evt.phase         = "DISPATCH";
-            evt.exceptionType = first != null ? first.getClass().getSimpleName() : "Unknown";
-            evt.affectedCount = payloads.size();
-            evt.commit();
-        }
+        EventLoopFailureEvent.emit("community-event-loop", "DISPATCH", first, payloads.size());
     }
 
     private static void closePayloads(List<EventPayload> payloads) {
