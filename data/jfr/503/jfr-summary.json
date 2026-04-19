@@ -1,0 +1,171 @@
+{
+  "core" : {
+    "topThreads" : [ {
+      "thread" : "main",
+      "count" : 814
+    }, {
+      "thread" : "JFR Periodic Tasks",
+      "count" : 12
+    }, {
+      "thread" : "C1 CompilerThread0",
+      "count" : 2
+    } ],
+    "topClasses" : [ {
+      "class" : "java.util.HashMap$Node",
+      "count" : 207
+    }, {
+      "class" : "[Ljava.util.HashMap$Node;",
+      "count" : 170
+    }, {
+      "class" : "[Ljava.lang.Object;",
+      "count" : 90
+    }, {
+      "class" : "java.util.ImmutableCollections$ListItr",
+      "count" : 85
+    }, {
+      "class" : "[B",
+      "count" : 66
+    }, {
+      "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
+      "count" : 50
+    }, {
+      "class" : "[Ljava.lang.classfile.constantpool.PoolEntry;",
+      "count" : 27
+    }, {
+      "class" : "[I",
+      "count" : 23
+    }, {
+      "class" : "java.lang.String",
+      "count" : 14
+    }, {
+      "class" : "java.util.LinkedHashMap$Entry",
+      "count" : 8
+    }, {
+      "class" : "jdk.internal.classfile.impl.AbstractPoolEntry$Utf8EntryImpl",
+      "count" : 8
+    }, {
+      "class" : "java.util.HashMap",
+      "count" : 6
+    }, {
+      "class" : "[Ljdk.internal.classfile.impl.StackMapGenerator$Type;",
+      "count" : 6
+    }, {
+      "class" : "java.lang.invoke.MethodType",
+      "count" : 4
+    }, {
+      "class" : "java.util.LinkedHashMap",
+      "count" : 3
+    }, {
+      "class" : "java.net.URL",
+      "count" : 3
+    }, {
+      "class" : "jdk.internal.classfile.impl.StackMapGenerator$Frame",
+      "count" : 3
+    }, {
+      "class" : "java.lang.invoke.MemberName",
+      "count" : 3
+    }, {
+      "class" : "jdk.internal.classfile.impl.StackMapGenerator",
+      "count" : 3
+    }, {
+      "class" : "jdk.internal.util.StrongReferenceKey",
+      "count" : 3
+    } ],
+    "phaseBoundaries" : [ ]
+  },
+  "community" : {
+    "topThreads" : [ {
+      "thread" : "main",
+      "count" : 4367
+    }, {
+      "thread" : "",
+      "count" : 737
+    }, {
+      "thread" : "community-event-loop",
+      "count" : 170
+    }, {
+      "thread" : "JFR Periodic Tasks",
+      "count" : 91
+    }, {
+      "thread" : "paqs/CommunityNativeTcpCarrier/NORMAL/1",
+      "count" : 84
+    }, {
+      "thread" : "carrier/native-tcp-client-writer/1",
+      "count" : 53
+    }, {
+      "thread" : "carrier/native-tcp-client-ingress/1",
+      "count" : 36
+    }, {
+      "thread" : "ForkJoinPool-1-worker-3",
+      "count" : 16
+    }, {
+      "thread" : "C1 CompilerThread0",
+      "count" : 10
+    }, {
+      "thread" : "VirtualThread-unblocker",
+      "count" : 9
+    } ],
+    "topClasses" : [ {
+      "class" : "[J",
+      "count" : 673
+    }, {
+      "class" : "[Ljava.lang.Object;",
+      "count" : 506
+    }, {
+      "class" : "[B",
+      "count" : 473
+    }, {
+      "class" : "java.lang.VirtualThread",
+      "count" : 318
+    }, {
+      "class" : "[I",
+      "count" : 267
+    }, {
+      "class" : "java.lang.VirtualThread$$Lambda.0x00000000450f1458",
+      "count" : 210
+    }, {
+      "class" : "jdk.internal.vm.StackChunk",
+      "count" : 200
+    }, {
+      "class" : "[Lorg.h2.mvstore.MVMap;",
+      "count" : 155
+    }, {
+      "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
+      "count" : 136
+    }, {
+      "class" : "eu.exeris.kernel.community.memory.CommunityReleaseAction",
+      "count" : 133
+    }, {
+      "class" : "java.lang.String",
+      "count" : 118
+    }, {
+      "class" : "java.util.ArrayList",
+      "count" : 86
+    }, {
+      "class" : "[Ljava.util.HashMap$Node;",
+      "count" : 75
+    }, {
+      "class" : "java.util.concurrent.ConcurrentHashMap$Node",
+      "count" : 75
+    }, {
+      "class" : "java.util.HashMap",
+      "count" : 75
+    }, {
+      "class" : "java.util.ArrayList$Itr",
+      "count" : 68
+    }, {
+      "class" : "java.lang.ThreadBuilders$VirtualThreadBuilder",
+      "count" : 62
+    }, {
+      "class" : "java.lang.VirtualThread$VThreadContinuation",
+      "count" : 61
+    }, {
+      "class" : "jdk.internal.classfile.impl.AbstractPoolEntry$Utf8EntryImpl",
+      "count" : 61
+    }, {
+      "class" : "java.util.concurrent.atomic.AtomicBoolean",
+      "count" : 56
+    } ],
+    "phaseBoundaries" : [ ]
+  }
+}
