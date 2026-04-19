@@ -1,31 +1,21 @@
 [ {
+  "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
+  "count" : 10,
+  "bytes" : 1273072,
+  "category" : "test_harness"
+}, {
   "class" : "eu.exeris.kernel.community.memory.CommunityReleaseAction",
   "count" : 8,
-  "bytes" : 1011280,
+  "bytes" : 1046304,
   "category" : "test_harness"
 }, {
-  "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
-  "count" : 8,
-  "bytes" : 1046464,
-  "category" : "test_harness"
-}, {
-  "class" : "java.util.HashMap",
-  "count" : 2,
-  "bytes" : 261600,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.util.HashMap$KeySet",
-  "count" : 2,
-  "bytes" : 261592,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.util.ArrayList$Itr",
+  "class" : "[Ljava.util.HashMap$Node;",
   "count" : 2,
   "bytes" : 261576,
   "category" : "jvm_noise"
 }, {
-  "class" : "[B",
-  "count" : 1,
-  "bytes" : 261560,
+  "class" : "java.util.HashMap",
+  "count" : 2,
+  "bytes" : 523072,
   "category" : "jvm_noise"
 } ]
