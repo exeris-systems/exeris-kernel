@@ -62,15 +62,14 @@ final class ProcessingState implements AutoCloseable {
             return;
         }
 
-        aggregate.retain();
-        try (LoanedBuffer current = aggregate) {
-            aggregate = allocateExpandedAggregate(allocator, current, requiredBytes, maxAggregateBytes);
-            releaseRetainedAggregate(current);
-        }
+        replaceAggregate(allocateExpandedAggregate(allocator, aggregate, requiredBytes, maxAggregateBytes));
     }
 
-    private static void releaseRetainedAggregate(LoanedBuffer buffer) {
-        buffer.close();
+    private void replaceAggregate(LoanedBuffer expanded) {
+        if (aggregate != null) {
+            aggregate.close();
+        }
+        aggregate = expanded;
     }
 
     private static LoanedBuffer allocateExpandedAggregate(MemoryAllocator allocator,
@@ -85,14 +84,10 @@ final class ProcessingState implements AutoCloseable {
             targetCapacity = Math.min(targetCapacity << 1, maxAggregateBytes);
         }
 
-        try (LoanedBuffer expanded = allocator.allocateNetwork(Math.toIntExact(targetCapacity))) {
-            long currentSize = current.size();
-            if (currentSize > 0) {
-                MemorySegment.copy(current.segment(), 0, expanded.segment(), 0, currentSize);
-                expanded.setSize(currentSize);
-            }
-            expanded.retain();
-            return expanded;
+        try (AggregateExpansion expansion = new AggregateExpansion(
+                allocator.allocateNetwork(Math.toIntExact(targetCapacity)))) {
+            expansion.copyFrom(current);
+            return expansion.take();
         }
     }
 
@@ -134,6 +129,36 @@ final class ProcessingState implements AutoCloseable {
         if (aggregate != null) {
             aggregate.close();
             aggregate = null;
+        }
+    }
+
+    private static final class AggregateExpansion implements AutoCloseable {
+        private LoanedBuffer buffer;
+
+        private AggregateExpansion(LoanedBuffer buffer) {
+            this.buffer = buffer;
+        }
+
+        private void copyFrom(LoanedBuffer current) {
+            long currentSize = current.size();
+            if (currentSize > 0) {
+                MemorySegment.copy(current.segment(), 0, buffer.segment(), 0, currentSize);
+                buffer.setSize(currentSize);
+            }
+        }
+
+        private LoanedBuffer take() {
+            LoanedBuffer taken = buffer;
+            buffer = null;
+            return taken;
+        }
+
+        @Override
+        public void close() {
+            if (buffer != null) {
+                buffer.close();
+                buffer = null;
+            }
         }
     }
 }
