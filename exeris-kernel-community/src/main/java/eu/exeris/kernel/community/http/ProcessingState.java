@@ -50,7 +50,9 @@ final class ProcessingState implements AutoCloseable {
     }
 
     void ensureAggregate(MemoryAllocator allocator, int initialAggregateBytes) {
-        aggregate = aggregate != null ? aggregate : allocator.allocateNetwork(initialAggregateBytes);
+        if (aggregate == null) {
+            aggregate = allocator.allocateNetwork(initialAggregateBytes);
+        }
     }
 
     void ensureAggregateCapacity(MemoryAllocator allocator,
@@ -60,23 +62,37 @@ final class ProcessingState implements AutoCloseable {
             return;
         }
 
-        long targetCapacity = aggregate.capacity();
-        while (targetCapacity < requiredBytes && targetCapacity < maxAggregateBytes) {
+        aggregate.retain();
+        try (LoanedBuffer current = aggregate) {
+            aggregate = allocateExpandedAggregate(allocator, current, requiredBytes, maxAggregateBytes);
+            releaseRetainedAggregate(current);
+        }
+    }
+
+    private static void releaseRetainedAggregate(LoanedBuffer buffer) {
+        buffer.close();
+    }
+
+    private static LoanedBuffer allocateExpandedAggregate(MemoryAllocator allocator,
+                                                          LoanedBuffer current,
+                                                          long requiredBytes,
+                                                          int maxAggregateBytes) {
+        long targetCapacity = current.capacity();
+        while (targetCapacity < requiredBytes) {
+            if (targetCapacity >= maxAggregateBytes) {
+                throw new IllegalStateException("HTTP aggregate exceeds configured maximum");
+            }
             targetCapacity = Math.min(targetCapacity << 1, maxAggregateBytes);
         }
-        if (targetCapacity < requiredBytes) {
-            throw new IllegalStateException("HTTP aggregate exceeds configured maximum");
-        }
 
-        try (LoanedBuffer previous = aggregate;
-             LoanedBuffer expanded = allocator.allocateNetwork((int) targetCapacity)) {
-            long previousSize = previous.size();
-            if (previousSize > 0) {
-                MemorySegment.copy(previous.segment(), 0, expanded.segment(), 0, previousSize);
-                expanded.setSize(previousSize);
+        try (LoanedBuffer expanded = allocator.allocateNetwork(Math.toIntExact(targetCapacity))) {
+            long currentSize = current.size();
+            if (currentSize > 0) {
+                MemorySegment.copy(current.segment(), 0, expanded.segment(), 0, currentSize);
+                expanded.setSize(currentSize);
             }
             expanded.retain();
-            aggregate = expanded;
+            return expanded;
         }
     }
 

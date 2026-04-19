@@ -26,7 +26,7 @@ import java.util.ServiceLoader;
  * <p>This class is the <b>only</b> place in the kernel that calls
  * {@link ServiceLoader#load(Class)} for {@link PersistenceProvider}.
  * It selects the highest-priority provider, creates the engine, registers
- * pre-built interceptors, and emits JFR bootstrap events.
+ * pre-built interceptors, and emits provider-selection telemetry.
  * The resulting {@link PersistenceEngine} is returned to the caller ready
  * for {@link eu.exeris.kernel.spi.context.KernelProviders#PERSISTENCE_ENGINE} binding.
  *
@@ -97,7 +97,7 @@ public final class PersistenceBootstrap {
 
     /**
      * Creates the engine from an already-resolved {@link PersistenceProvider}, registers
-     * interceptors, and emits JFR bootstrap events.
+     * interceptors, and emits provider-selection telemetry.
      *
      * <p>Prefer this overload when the caller has already performed provider selection
      * (e.g. a subsystem that also needs to bind the provider into {@link eu.exeris.kernel.spi.context.KernelProviders})
@@ -128,16 +128,7 @@ public final class PersistenceBootstrap {
                 engine.registerInterceptor(interceptor);
             }
 
-            // --- Phase 4: JFR-First — emit bootstrap events ---
-            PersistenceEngineBootstrapEvent.emit(
-                    provider.providerId(),
-                    provider.providerName(),
-                    config.maxPoolSize(),
-                    config.rlsEnabled(),
-                    config.perTenantPooling(),
-                    config.useTls(),
-                    provider.providerName()
-            );
+            // --- Phase 4: JFR-First — emit provider-selection telemetry ---
             PersistenceBootstrapSelectedEvent.emit(
                     provider.getClass().getName(),
                     provider.priority(),
