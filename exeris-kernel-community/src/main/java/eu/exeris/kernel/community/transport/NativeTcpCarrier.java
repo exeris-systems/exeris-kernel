@@ -98,6 +98,8 @@ public final class NativeTcpCarrier implements TransportEngine {
     private static final int DEFAULT_IP_PROTOCOL = 0;
     private static final int SOCKADDR_IN_SIZE = 16;
     private static final boolean SOCKADDR_INCLUDES_LENGTH = usesBsdSockaddrLayout();
+    private static final boolean IS_WINDOWS_RUNTIME =
+            System.getProperty("os.name", "").toLowerCase(Locale.ROOT).startsWith("windows");
     private static final long CLIENT_TLS_INGRESS_IDLE_BACKOFF_INITIAL_NANOS = 250_000L;
     private static final long CLIENT_TLS_INGRESS_IDLE_BACKOFF_MAX_NANOS = 2_000_000L;
     private static final long CLIENT_WRITER_BACKOFF_INITIAL_NANOS = 250_000L;
@@ -337,13 +339,24 @@ public final class NativeTcpCarrier implements TransportEngine {
         if (!closed.compareAndSet(false, true)) {
             return;
         }
-        final Arena backendArena = socketBackendArena;
-        if (backendArena == null) {
-            stop();
+        Arena arena = socketBackendArena;
+        try (arena) {
+            try {
+                stop();
+            } finally {
+                bestEffortWsaCleanup(socketHandles);
+            }
+        }
+    }
+
+    private static void bestEffortWsaCleanup(SyscallHandles handles) {
+        if (handles == null || !handles.hasWsaCleanup()) {
             return;
         }
-        try (backendArena) {
-            stop();
+        try {
+            handles.wsaCleanup().invokeExact();
+        } catch (Throwable _) {
+            // best effort
         }
     }
 
@@ -1075,6 +1088,12 @@ public final class NativeTcpCarrier implements TransportEngine {
                         null,
                         false,
                         "NIO backend pinned explicitly; Core syscall load skipped.");
+            }
+            if (IS_WINDOWS_RUNTIME) {
+                String detail = configuredMode == SocketBackendMode.POSIX_HYBRID
+                        ? resolveRequestedFallbackDetail(true, true)
+                        : resolveAutoFallbackDetail(true, true);
+                return new SocketBackendSelection(configuredMode, null, null, false, detail);
             }
 
             //CHECKSTYLE:OFF

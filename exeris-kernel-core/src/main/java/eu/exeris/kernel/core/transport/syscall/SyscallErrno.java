@@ -116,10 +116,18 @@ public final class SyscallErrno {
         try {
             Linker linker = Linker.nativeLinker();
             SymbolLookup lookup = linker.defaultLookup();
-            String symbol = IS_MAC ? "__error" : "__errno_location";
-            return lookup.find(symbol)
-                    .map(address -> linker.downcallHandle(address, FunctionDescriptor.of(ADDRESS)))
-                    .orElse(null);
+            String[] candidates = IS_MAC
+                    ? new String[]{"__error", "__errno_location"}
+                    : new String[]{"__errno_location", "__error"};
+            for (String symbol : candidates) {
+                MethodHandle handle = lookup.find(symbol)
+                        .map(address -> linker.downcallHandle(address, FunctionDescriptor.of(ADDRESS)))
+                        .orElse(null);
+                if (handle != null) {
+                    return handle;
+                }
+            }
+            return null;
         } catch (UnsupportedOperationException | IllegalCallerException | SecurityException | LinkageError _) {
             return null;
         }
