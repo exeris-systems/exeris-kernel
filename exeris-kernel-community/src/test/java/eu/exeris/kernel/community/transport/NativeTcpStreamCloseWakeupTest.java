@@ -34,6 +34,7 @@ import java.util.concurrent.locks.LockSupport;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -385,7 +386,8 @@ class NativeTcpStreamCloseWakeupTest {
 
                     assertFalse(flusher.isAlive(), "Outbound flusher did not stop after stream close");
                     assertTrue(stream.isClosed(), "Stream should be closed after shutdown");
-                    assertNull(failure.get(), "Unexpected outbound flush failure: " + failure.get());
+                    Throwable flushFailure = failure.get();
+                    assertNull(flushFailure, "Unexpected outbound flush failure: " + flushFailure);
                 } finally {
                     stream.close();
                     serverChannel.close();

@@ -1095,39 +1095,69 @@ public final class NativeTcpCarrier implements TransportEngine {
 
             if (handles == null) {
                 closeQuietly(arena);
-                String detail = configuredMode == SocketBackendMode.POSIX_HYBRID
-                        ? "Core socket seam was requested explicitly but is unavailable; "
-                        + ACTIVE_NIO_FALLBACK_DETAIL
-                        : "Core socket seam probe unavailable on this platform; "
-                        + ACTIVE_NIO_FALLBACK_DETAIL;
+                String detail;
+                if (configuredMode == SocketBackendMode.POSIX_HYBRID) {
+                    detail = "Core socket seam was requested explicitly but is unavailable; "
+                            + ACTIVE_NIO_FALLBACK_DETAIL;
+                } else {
+                    detail = "Core socket seam probe unavailable on this platform; "
+                            + ACTIVE_NIO_FALLBACK_DETAIL;
+                }
                 return new SocketBackendSelection(configuredMode, null, null, false, detail);
             }
 
             boolean plainSocketIoAvailable = handles.supportsPlainSocketIo();
             boolean fdAccessAvailable = SocketChannelFdAccess.isRuntimeFdAccessAvailable();
-            boolean seamArmed = plainSocketIoAvailable && fdAccessAvailable;
-            String detail;
+            boolean winsockModel = handles.hasIoctlsocket();
+            boolean seamArmed = plainSocketIoAvailable && fdAccessAvailable && !winsockModel;
+            String detail = resolveDetail(configuredMode, seamArmed, plainSocketIoAvailable, winsockModel);
+            return new SocketBackendSelection(configuredMode, arena, handles, seamArmed, detail);
+        }
+
+        private static String resolveDetail(SocketBackendMode configuredMode,
+                                            boolean seamArmed,
+                                            boolean plainSocketIoAvailable,
+                                            boolean winsockModel) {
             if (seamArmed) {
-                detail = "Core socket seam armed for plain TCP traffic; "
+                return "Core socket seam armed for plain TCP traffic; "
                         + "selector ownership and NIO fallback remain intact.";
-            } else if (configuredMode == SocketBackendMode.POSIX_HYBRID) {
-                detail = plainSocketIoAvailable
-                        ? "Core socket seam was requested explicitly but "
-                        + "SocketChannel FD access is blocked by runtime openness; "
-                        + "add the required --add-opens flags or "
-                        + ACTIVE_NIO_FALLBACK_DETAIL
-                        : "Core socket seam was requested explicitly but is unavailable; "
-                        + ACTIVE_NIO_FALLBACK_DETAIL;
-            } else {
-                detail = plainSocketIoAvailable
-                        ? "Core socket seam resolved but SocketChannel FD access "
-                        + "is blocked by runtime openness; "
-                        + "add the required --add-opens flags or "
-                        + ACTIVE_NIO_FALLBACK_DETAIL
-                        : "Core socket seam resolved without plain socket syscall support; "
+            }
+            if (configuredMode == SocketBackendMode.POSIX_HYBRID) {
+                return resolveRequestedFallbackDetail(plainSocketIoAvailable, winsockModel);
+            }
+            return resolveAutoFallbackDetail(plainSocketIoAvailable, winsockModel);
+        }
+
+        private static String resolveRequestedFallbackDetail(boolean plainSocketIoAvailable,
+                                                             boolean winsockModel) {
+            if (!plainSocketIoAvailable) {
+                return "Core socket seam was requested explicitly but is unavailable; "
                         + ACTIVE_NIO_FALLBACK_DETAIL;
             }
-            return new SocketBackendSelection(configuredMode, arena, handles, seamArmed, detail);
+            if (winsockModel) {
+                return "Core socket seam was requested explicitly but this platform uses the Winsock model; "
+                        + ACTIVE_NIO_FALLBACK_DETAIL;
+            }
+            return "Core socket seam was requested explicitly but "
+                    + "SocketChannel FD access is blocked by runtime openness; "
+                    + "add the required --add-opens flags or "
+                    + ACTIVE_NIO_FALLBACK_DETAIL;
+        }
+
+        private static String resolveAutoFallbackDetail(boolean plainSocketIoAvailable,
+                                                        boolean winsockModel) {
+            if (!plainSocketIoAvailable) {
+                return "Core socket seam resolved without plain socket syscall support; "
+                        + ACTIVE_NIO_FALLBACK_DETAIL;
+            }
+            if (winsockModel) {
+                return "Core socket seam resolved on a Winsock platform; "
+                        + ACTIVE_NIO_FALLBACK_DETAIL;
+            }
+            return "Core socket seam resolved but SocketChannel FD access "
+                    + "is blocked by runtime openness; "
+                    + "add the required --add-opens flags or "
+                    + ACTIVE_NIO_FALLBACK_DETAIL;
         }
 
     }

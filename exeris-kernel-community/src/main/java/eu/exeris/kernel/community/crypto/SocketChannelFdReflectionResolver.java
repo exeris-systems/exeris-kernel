@@ -16,8 +16,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.InaccessibleObjectException;
 import java.lang.reflect.Method;
 import java.nio.channels.SocketChannel;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
+import java.util.Optional;
 
 /**
  * Resolves SocketChannel file descriptors for community TLS FD-owner binding using reflection.
@@ -100,10 +99,15 @@ final class SocketChannelFdReflectionResolver {
     private static final class MethodAccessor {
 
         private static final String[] METHOD_NAMES = {"getFDVal", "fdVal"};
-        private static final ConcurrentMap<Class<?>, Method> CACHE = new ConcurrentHashMap<>();
+        private static final ClassValue<Optional<Method>> CACHE = new ClassValue<>() {
+            @Override
+            protected Optional<Method> computeValue(Class<?> channelType) {
+                return Optional.ofNullable(resolveMethod(channelType));
+            }
+        };
 
         private static Integer tryResolve(SocketChannel channel) {
-            Method accessor = CACHE.computeIfAbsent(channel.getClass(), MethodAccessor::resolveMethod);
+            Method accessor = CACHE.get(channel.getClass()).orElse(null);
             if (accessor == null) {
                 return null;
             }
@@ -115,7 +119,7 @@ final class SocketChannelFdReflectionResolver {
         }
 
         private static boolean hasAccessor(Class<?> channelType) {
-            return CACHE.computeIfAbsent(channelType, MethodAccessor::resolveMethod) != null;
+            return CACHE.get(channelType).isPresent();
         }
 
         private static Method resolveMethod(Class<?> channelType) {
@@ -157,10 +161,15 @@ final class SocketChannelFdReflectionResolver {
     private static final class FieldAccessor {
 
         private static final String[] FIELD_NAMES = {"fdVal", "fd"};
-        private static final ConcurrentMap<Class<?>, Field> CACHE = new ConcurrentHashMap<>();
+        private static final ClassValue<Optional<Field>> CACHE = new ClassValue<>() {
+            @Override
+            protected Optional<Field> computeValue(Class<?> channelType) {
+                return Optional.ofNullable(resolveField(channelType));
+            }
+        };
 
         private static Integer tryResolve(SocketChannel channel) {
-            Field accessor = CACHE.computeIfAbsent(channel.getClass(), FieldAccessor::resolveField);
+            Field accessor = CACHE.get(channel.getClass()).orElse(null);
             if (accessor == null) {
                 return null;
             }
@@ -172,7 +181,7 @@ final class SocketChannelFdReflectionResolver {
         }
 
         private static boolean hasAccessor(Class<?> channelType) {
-            return CACHE.computeIfAbsent(channelType, FieldAccessor::resolveField) != null;
+            return CACHE.get(channelType).isPresent();
         }
 
         private static Field resolveField(Class<?> channelType) {
@@ -209,27 +218,24 @@ final class SocketChannelFdReflectionResolver {
     private static final class FileDescriptorFallback {
 
         private static final Field FILE_DESCRIPTOR_FD_FIELD = resolveFileDescriptorFdField();
-        private static final ConcurrentMap<Class<?>, Field> CHANNEL_FD_FIELDS = new ConcurrentHashMap<>();
+        private static final ClassValue<ChannelFdFieldResolution> CHANNEL_FD_FIELDS = new ClassValue<>() {
+            @Override
+            protected ChannelFdFieldResolution computeValue(Class<?> channelType) {
+                return resolveChannelFdField(channelType);
+            }
+        };
 
         private static int resolve(SocketChannel channel) {
             if (FILE_DESCRIPTOR_FD_FIELD == null) {
                 throw new TlsHandshakeException(FD_ACCESS_DENIED_MESSAGE);
             }
-            Field channelFdField = CHANNEL_FD_FIELDS.computeIfAbsent(
-                    channel.getClass(), FileDescriptorFallback::resolveChannelFdField);
+            Field channelFdField = CHANNEL_FD_FIELDS.get(channel.getClass()).requireField();
             return extractFileDescriptorInt(channel, channelFdField);
         }
 
         private static boolean hasResolutionPath(Class<?> channelType) {
-            if (FILE_DESCRIPTOR_FD_FIELD == null) {
-                return false;
-            }
-            try {
-                return CHANNEL_FD_FIELDS.computeIfAbsent(channelType,
-                        FileDescriptorFallback::resolveChannelFdField) != null;
-            } catch (TlsHandshakeException _) {
-                return false;
-            }
+            return FILE_DESCRIPTOR_FD_FIELD != null
+                    && CHANNEL_FD_FIELDS.get(channelType).hasField();
         }
 
         private static int extractFileDescriptorInt(SocketChannel channel, Field channelFdField) {
@@ -258,7 +264,7 @@ final class SocketChannelFdReflectionResolver {
             }
         }
 
-        private static Field resolveChannelFdField(Class<?> channelType) {
+        private static ChannelFdFieldResolution resolveChannelFdField(Class<?> channelType) {
             Class<?> current = channelType;
             while (current != null) {
                 try {
@@ -268,16 +274,49 @@ final class SocketChannelFdReflectionResolver {
                         continue;
                     }
                     if (!fdField.trySetAccessible()) {
-                        throw new TlsHandshakeException(FD_ACCESS_DENIED_MESSAGE);
+                        return ChannelFdFieldResolution.denied();
                     }
-                    return fdField;
+                    return ChannelFdFieldResolution.available(fdField);
                 } catch (NoSuchFieldException _) {
                     current = current.getSuperclass();
                 } catch (SecurityException | InaccessibleObjectException exception) {
-                    throw new TlsHandshakeException(FD_ACCESS_DENIED_MESSAGE, exception);
+                    return ChannelFdFieldResolution.denied(exception);
                 }
             }
-            throw new TlsHandshakeException(RAW_DESCRIPTOR_UNAVAILABLE_MESSAGE);
+            return ChannelFdFieldResolution.unavailable();
+        }
+
+        private record ChannelFdFieldResolution(Field field, TlsHandshakeException failure) {
+
+            private static ChannelFdFieldResolution available(Field field) {
+                return new ChannelFdFieldResolution(field, null);
+            }
+
+            private static ChannelFdFieldResolution unavailable() {
+                return new ChannelFdFieldResolution(null,
+                        new TlsHandshakeException(RAW_DESCRIPTOR_UNAVAILABLE_MESSAGE));
+            }
+
+            private static ChannelFdFieldResolution denied() {
+                return new ChannelFdFieldResolution(null,
+                        new TlsHandshakeException(FD_ACCESS_DENIED_MESSAGE));
+            }
+
+            private static ChannelFdFieldResolution denied(Throwable cause) {
+                return new ChannelFdFieldResolution(null,
+                        new TlsHandshakeException(FD_ACCESS_DENIED_MESSAGE, cause));
+            }
+
+            private boolean hasField() {
+                return field != null;
+            }
+
+            private Field requireField() {
+                if (field == null) {
+                    throw failure;
+                }
+                return field;
+            }
         }
     }
 }
