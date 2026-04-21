@@ -1,3457 +1,3297 @@
 [ {
-  "t" : 1776660987071,
+  "t" : 1776746838665,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.String",
+  "class" : "[Ljava.util.HashMap$Node;",
   "thread" : "main",
-  "size" : 261552,
+  "size" : 261536,
   "stackId" : "stk_0001",
   "category" : "jvm_noise"
 }, {
-  "t" : 1776660987071,
+  "t" : 1776746838667,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "jdk.internal.vm.StackChunk",
-  "thread" : "community-event-loop",
-  "size" : 16824,
-  "stackId" : "stk_0002",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987072,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.HashMap$KeySet",
+  "class" : "java.lang.ThreadBuilders$VirtualThreadBuilder",
   "thread" : "main",
-  "size" : 261568,
+  "size" : 261560,
+  "stackId" : "stk_0002",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838667,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.ThreadBuilders$VirtualThreadBuilder",
+  "thread" : "main",
+  "size" : 48,
+  "stackId" : "stk_0002",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838667,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 139304,
   "stackId" : "stk_0003",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987075,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 261488,
-  "stackId" : "stk_0004",
   "category" : "loom_runtime"
 }, {
-  "t" : 1776660987075,
+  "t" : 1776746838667,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "java.lang.VirtualThread",
   "thread" : "main",
   "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838668,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 261552,
   "stackId" : "stk_0004",
   "category" : "loom_runtime"
 }, {
-  "t" : 1776660987075,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 261552,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987075,
+  "t" : 1776746838668,
   "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
   "thread" : "main",
   "size" : 24,
-  "stackId" : "stk_0005",
+  "stackId" : "stk_0004",
   "category" : "loom_runtime"
 }, {
-  "t" : 1776660987076,
+  "t" : 1776746838669,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "java.lang.VirtualThread",
   "thread" : "main",
   "size" : 261432,
-  "stackId" : "stk_0004",
+  "stackId" : "stk_0003",
   "category" : "loom_runtime"
 }, {
-  "t" : 1776660987076,
+  "t" : 1776746838669,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "java.lang.VirtualThread",
   "thread" : "main",
   "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838670,
+  "type" : "jdk.ObjectAllocationOutsideTLAB",
+  "class" : "jdk.internal.vm.StackChunk",
+  "thread" : "community-event-loop",
+  "size" : 1016,
+  "stackId" : "stk_0005",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1776746838670,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 261552,
   "stackId" : "stk_0004",
   "category" : "loom_runtime"
 }, {
-  "t" : 1776660987077,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "jdk.internal.vm.StackChunk",
-  "thread" : "community-event-loop",
-  "size" : 252240,
-  "stackId" : "stk_0002",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987077,
-  "type" : "jdk.ObjectAllocationOutsideTLAB",
-  "class" : "jdk.internal.vm.StackChunk",
-  "thread" : "community-event-loop",
-  "size" : 1016,
-  "stackId" : "stk_0002",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987078,
-  "type" : "jdk.ObjectAllocationOutsideTLAB",
-  "class" : "jdk.internal.vm.StackChunk",
-  "thread" : "community-event-loop",
-  "size" : 1016,
-  "stackId" : "stk_0002",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987079,
-  "type" : "jdk.ObjectAllocationOutsideTLAB",
-  "class" : "jdk.internal.vm.StackChunk",
-  "thread" : "community-event-loop",
-  "size" : 1016,
-  "stackId" : "stk_0002",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987080,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 261552,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987080,
+  "t" : 1776746838670,
   "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
   "thread" : "main",
   "size" : 24,
-  "stackId" : "stk_0005",
+  "stackId" : "stk_0004",
   "category" : "loom_runtime"
 }, {
-  "t" : 1776660987081,
+  "t" : 1776746838670,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "java.lang.VirtualThread",
   "thread" : "main",
   "size" : 261432,
-  "stackId" : "stk_0004",
+  "stackId" : "stk_0003",
   "category" : "loom_runtime"
 }, {
-  "t" : 1776660987081,
+  "t" : 1776746838670,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "java.lang.VirtualThread",
   "thread" : "main",
   "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838671,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 261552,
   "stackId" : "stk_0004",
   "category" : "loom_runtime"
 }, {
-  "t" : 1776660987081,
+  "t" : 1776746838671,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0004",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838672,
+  "type" : "jdk.ObjectAllocationOutsideTLAB",
+  "class" : "jdk.internal.vm.StackChunk",
+  "thread" : "community-event-loop",
+  "size" : 1016,
+  "stackId" : "stk_0005",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1776746838672,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 261432,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838672,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838673,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 261552,
+  "stackId" : "stk_0004",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838673,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0004",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838674,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "jdk.internal.vm.StackChunk",
+  "thread" : "community-event-loop",
+  "size" : 8752,
+  "stackId" : "stk_0005",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1776746838674,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "jdk.internal.vm.StackChunk",
+  "thread" : "community-event-loop",
+  "size" : 1016,
+  "stackId" : "stk_0005",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1776746838674,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 261432,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838674,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838675,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 261552,
+  "stackId" : "stk_0004",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838675,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0004",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838676,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 261432,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838676,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838676,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 261552,
+  "stackId" : "stk_0004",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838676,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0004",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838677,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 261432,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838677,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838678,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 261552,
+  "stackId" : "stk_0004",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838678,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0004",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838679,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 261432,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838679,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838679,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 261552,
+  "stackId" : "stk_0004",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838679,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0004",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838680,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 261432,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838680,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838681,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 261552,
+  "stackId" : "stk_0004",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838681,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0004",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838682,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 261432,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838682,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838683,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 261552,
+  "stackId" : "stk_0004",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838683,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0004",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838684,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "eu.exeris.kernel.community.events.CommunityEventLoop$$Lambda.0x00000000893aa1b8",
+  "thread" : "community-event-loop",
+  "size" : 5960,
+  "stackId" : "stk_0006",
+  "category" : "production"
+}, {
+  "t" : 1776746838684,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "eu.exeris.kernel.community.events.CommunityEventLoop$$Lambda.0x00000000893aa1b8",
+  "thread" : "community-event-loop",
+  "size" : 24,
+  "stackId" : "stk_0006",
+  "category" : "production"
+}, {
+  "t" : 1776746838684,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 261432,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838684,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838685,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 261552,
+  "stackId" : "stk_0004",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838685,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0004",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838687,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 261432,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838687,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838688,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 261552,
+  "stackId" : "stk_0004",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838688,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0004",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838688,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 261432,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838688,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838689,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "java.util.concurrent.ConcurrentHashMap$Node",
   "thread" : "main",
-  "size" : 258496,
-  "stackId" : "stk_0006",
+  "size" : 261568,
+  "stackId" : "stk_0007",
   "category" : "jvm_noise"
 }, {
-  "t" : 1776660987082,
+  "t" : 1776746838689,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "java.util.concurrent.ConcurrentHashMap$Node",
   "thread" : "main",
   "size" : 40,
-  "stackId" : "stk_0006",
+  "stackId" : "stk_0007",
   "category" : "jvm_noise"
 }, {
-  "t" : 1776660987082,
+  "t" : 1776746838690,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "java.lang.VirtualThread",
   "thread" : "main",
   "size" : 261408,
-  "stackId" : "stk_0004",
+  "stackId" : "stk_0003",
   "category" : "loom_runtime"
 }, {
-  "t" : 1776660987082,
+  "t" : 1776746838690,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "java.lang.VirtualThread",
   "thread" : "main",
   "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838691,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 261552,
   "stackId" : "stk_0004",
   "category" : "loom_runtime"
 }, {
-  "t" : 1776660987083,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 261552,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987083,
+  "t" : 1776746838691,
   "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
   "thread" : "main",
   "size" : 24,
-  "stackId" : "stk_0005",
+  "stackId" : "stk_0004",
   "category" : "loom_runtime"
 }, {
-  "t" : 1776660987084,
+  "t" : 1776746838692,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.ThreadBuilders$VirtualThreadBuilder",
+  "class" : "java.lang.VirtualThread",
   "thread" : "main",
-  "size" : 261544,
-  "stackId" : "stk_0007",
+  "size" : 261432,
+  "stackId" : "stk_0003",
   "category" : "loom_runtime"
 }, {
-  "t" : 1776660987084,
+  "t" : 1776746838692,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838693,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 261552,
+  "stackId" : "stk_0004",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838693,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0004",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838693,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 261432,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838693,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838694,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 261552,
+  "stackId" : "stk_0004",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838694,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0004",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838695,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 261432,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838695,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838696,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 261552,
+  "stackId" : "stk_0004",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838696,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0004",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838697,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 261432,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838697,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838698,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 261552,
+  "stackId" : "stk_0004",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838698,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0004",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838699,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 261432,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838699,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838700,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 261552,
+  "stackId" : "stk_0004",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838700,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0004",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838701,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "jdk.internal.vm.StackChunk",
+  "thread" : "community-event-loop",
+  "size" : 42616,
+  "stackId" : "stk_0005",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1776746838701,
+  "type" : "jdk.ObjectAllocationOutsideTLAB",
+  "class" : "jdk.internal.vm.StackChunk",
+  "thread" : "community-event-loop",
+  "size" : 1016,
+  "stackId" : "stk_0005",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1776746838701,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 261432,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838701,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838702,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 261552,
+  "stackId" : "stk_0004",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838702,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0004",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838703,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 261432,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838703,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838703,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 261552,
+  "stackId" : "stk_0004",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838703,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0004",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838704,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 261432,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838704,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838705,
+  "type" : "jdk.ObjectAllocationOutsideTLAB",
+  "class" : "jdk.internal.vm.StackChunk",
+  "thread" : "community-event-loop",
+  "size" : 1016,
+  "stackId" : "stk_0005",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1776746838705,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 261552,
+  "stackId" : "stk_0004",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838705,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0004",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838706,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 261432,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838706,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838707,
+  "type" : "jdk.ObjectAllocationOutsideTLAB",
+  "class" : "jdk.internal.vm.StackChunk",
+  "thread" : "community-event-loop",
+  "size" : 1016,
+  "stackId" : "stk_0005",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1776746838708,
+  "type" : "jdk.ObjectAllocationOutsideTLAB",
+  "class" : "jdk.internal.vm.StackChunk",
+  "thread" : "community-event-loop",
+  "size" : 1016,
+  "stackId" : "stk_0005",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1776746838709,
+  "type" : "jdk.ObjectAllocationOutsideTLAB",
+  "class" : "jdk.internal.vm.StackChunk",
+  "thread" : "community-event-loop",
+  "size" : 1016,
+  "stackId" : "stk_0005",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1776746838709,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 261552,
+  "stackId" : "stk_0004",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838709,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0004",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838709,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 261432,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838709,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838710,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 261552,
+  "stackId" : "stk_0004",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838710,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0004",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838712,
+  "type" : "jdk.ObjectAllocationOutsideTLAB",
+  "class" : "jdk.internal.vm.StackChunk",
+  "thread" : "community-event-loop",
+  "size" : 1016,
+  "stackId" : "stk_0005",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1776746838713,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "jdk.internal.vm.StackChunk",
+  "thread" : "community-event-loop",
+  "size" : 13176,
+  "stackId" : "stk_0005",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1776746838713,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "jdk.internal.vm.StackChunk",
+  "thread" : "community-event-loop",
+  "size" : 1016,
+  "stackId" : "stk_0005",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1776746838714,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 261432,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838714,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838714,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 261552,
+  "stackId" : "stk_0004",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838714,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0004",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838715,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 261432,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838715,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838716,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "jdk.internal.vm.StackChunk",
+  "thread" : "community-event-loop",
+  "size" : 11552,
+  "stackId" : "stk_0005",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1776746838716,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "jdk.internal.vm.StackChunk",
+  "thread" : "community-event-loop",
+  "size" : 1016,
+  "stackId" : "stk_0005",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1776746838719,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 261552,
+  "stackId" : "stk_0004",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838719,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0004",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838720,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 261432,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838720,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838720,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 261552,
+  "stackId" : "stk_0004",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838720,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0004",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838723,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838724,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0004",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838724,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838726,
+  "type" : "jdk.ObjectAllocationOutsideTLAB",
+  "class" : "jdk.internal.vm.StackChunk",
+  "thread" : "community-event-loop",
+  "size" : 1016,
+  "stackId" : "stk_0005",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1776746838727,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0004",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838728,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838729,
+  "type" : "jdk.ObjectAllocationOutsideTLAB",
+  "class" : "jdk.internal.vm.StackChunk",
+  "thread" : "community-event-loop",
+  "size" : 1016,
+  "stackId" : "stk_0005",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1776746838731,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "eu.exeris.kernel.core.events.InMemoryEventBus$$Lambda.0x00000000893adfa0",
+  "thread" : "main",
+  "size" : 40,
+  "stackId" : "stk_0008",
+  "category" : "test_harness"
+}, {
+  "t" : 1776746838731,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$VThreadContinuation$1",
+  "thread" : "main",
+  "size" : 32,
+  "stackId" : "stk_0009",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838732,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838733,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838734,
+  "type" : "jdk.ObjectAllocationOutsideTLAB",
+  "class" : "jdk.internal.vm.StackChunk",
+  "thread" : "community-event-loop",
+  "size" : 1016,
+  "stackId" : "stk_0005",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1776746838735,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "jdk.internal.vm.StackChunk",
+  "thread" : "community-event-loop",
+  "size" : 1016,
+  "stackId" : "stk_0005",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1776746838736,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0004",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838737,
+  "type" : "jdk.ObjectAllocationOutsideTLAB",
+  "class" : "jdk.internal.vm.StackChunk",
+  "thread" : "community-event-loop",
+  "size" : 1016,
+  "stackId" : "stk_0005",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1776746838737,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838738,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "jdk.internal.vm.StackChunk",
+  "thread" : "community-event-loop",
+  "size" : 1016,
+  "stackId" : "stk_0005",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1776746838739,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0004",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838740,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838741,
+  "type" : "jdk.ObjectAllocationOutsideTLAB",
+  "class" : "jdk.internal.vm.StackChunk",
+  "thread" : "community-event-loop",
+  "size" : 1016,
+  "stackId" : "stk_0005",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1776746838742,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0004",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838743,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838744,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838745,
+  "type" : "jdk.ObjectAllocationOutsideTLAB",
+  "class" : "jdk.internal.vm.StackChunk",
+  "thread" : "community-event-loop",
+  "size" : 1016,
+  "stackId" : "stk_0005",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1776746838745,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0010",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838745,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838747,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838748,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0010",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838748,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838748,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "eu.exeris.kernel.core.events.InMemoryEventBus$$Lambda.0x00000000893adfa0",
+  "thread" : "main",
+  "size" : 40,
+  "stackId" : "stk_0008",
+  "category" : "test_harness"
+}, {
+  "t" : 1776746838749,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "jdk.internal.vm.StackChunk",
+  "thread" : "community-event-loop",
+  "size" : 1016,
+  "stackId" : "stk_0005",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1776746838749,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$VThreadContinuation$1",
+  "thread" : "main",
+  "size" : 32,
+  "stackId" : "stk_0009",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838749,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838751,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838751,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0010",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838752,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838753,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0010",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838753,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838755,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0010",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838755,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838756,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0010",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838756,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838759,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0010",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838760,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838760,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0010",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838760,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838761,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0010",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838761,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838763,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0010",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838763,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838764,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0010",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838764,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838765,
+  "type" : "jdk.ObjectAllocationOutsideTLAB",
+  "class" : "jdk.internal.vm.StackChunk",
+  "thread" : "community-event-loop",
+  "size" : 1016,
+  "stackId" : "stk_0005",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1776746838765,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0010",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838765,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838766,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0010",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838766,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "java.lang.ThreadBuilders$VirtualThreadBuilder",
   "thread" : "main",
   "size" : 48,
-  "stackId" : "stk_0007",
+  "stackId" : "stk_0002",
   "category" : "loom_runtime"
 }, {
-  "t" : 1776660987085,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread$VThreadContinuation",
-  "thread" : "main",
-  "size" : 261536,
-  "stackId" : "stk_0008",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987085,
+  "t" : 1776746838767,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "java.lang.VirtualThread$VThreadContinuation",
   "thread" : "main",
   "size" : 72,
-  "stackId" : "stk_0008",
+  "stackId" : "stk_0011",
   "category" : "loom_runtime"
 }, {
-  "t" : 1776660987086,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 261536,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987086,
+  "t" : 1776746838767,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "java.lang.VirtualThread",
   "thread" : "main",
   "size" : 248,
-  "stackId" : "stk_0004",
+  "stackId" : "stk_0003",
   "category" : "loom_runtime"
 }, {
-  "t" : 1776660987086,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 261552,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987087,
+  "t" : 1776746838768,
   "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
   "thread" : "main",
   "size" : 24,
-  "stackId" : "stk_0005",
+  "stackId" : "stk_0010",
   "category" : "loom_runtime"
 }, {
-  "t" : 1776660987087,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 261432,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987087,
+  "t" : 1776746838769,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "java.lang.VirtualThread",
   "thread" : "main",
   "size" : 248,
-  "stackId" : "stk_0004",
+  "stackId" : "stk_0003",
   "category" : "loom_runtime"
 }, {
-  "t" : 1776660987088,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 261552,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987088,
+  "t" : 1776746838769,
   "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
   "thread" : "main",
   "size" : 24,
-  "stackId" : "stk_0005",
+  "stackId" : "stk_0010",
   "category" : "loom_runtime"
 }, {
-  "t" : 1776660987089,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread",
+  "t" : 1776746838770,
+  "type" : "jdk.ObjectAllocationOutsideTLAB",
+  "class" : "[Ljava.util.concurrent.ForkJoinTask;",
   "thread" : "main",
-  "size" : 261432,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
+  "size" : 16400,
+  "stackId" : "stk_0012",
+  "category" : "jvm_noise"
 }, {
-  "t" : 1776660987089,
+  "t" : 1776746838770,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "java.lang.VirtualThread",
   "thread" : "main",
   "size" : 248,
-  "stackId" : "stk_0004",
+  "stackId" : "stk_0003",
   "category" : "loom_runtime"
 }, {
-  "t" : 1776660987090,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 261552,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987090,
+  "t" : 1776746838770,
   "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
   "thread" : "main",
   "size" : 24,
-  "stackId" : "stk_0005",
+  "stackId" : "stk_0010",
   "category" : "loom_runtime"
 }, {
-  "t" : 1776660987090,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 261432,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987090,
+  "t" : 1776746838771,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "java.lang.VirtualThread",
   "thread" : "main",
   "size" : 248,
-  "stackId" : "stk_0004",
+  "stackId" : "stk_0003",
   "category" : "loom_runtime"
 }, {
-  "t" : 1776660987091,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 261552,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987091,
+  "t" : 1776746838773,
   "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
+  "class" : "java.util.concurrent.ForkJoinTask$AdaptedRunnableAction",
+  "thread" : "ForkJoinPool-1-worker-3",
+  "size" : 32,
+  "stackId" : "stk_0013",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1776746838773,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
   "thread" : "main",
   "size" : 24,
-  "stackId" : "stk_0005",
+  "stackId" : "stk_0010",
   "category" : "loom_runtime"
 }, {
-  "t" : 1776660987092,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 261432,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987092,
+  "t" : 1776746838773,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "java.lang.VirtualThread",
   "thread" : "main",
   "size" : 248,
-  "stackId" : "stk_0004",
+  "stackId" : "stk_0003",
   "category" : "loom_runtime"
 }, {
-  "t" : 1776660987093,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 261552,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987093,
+  "t" : 1776746838774,
   "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
   "thread" : "main",
   "size" : 24,
-  "stackId" : "stk_0005",
+  "stackId" : "stk_0010",
   "category" : "loom_runtime"
 }, {
-  "t" : 1776660987094,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread",
+  "t" : 1776746838775,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
   "thread" : "main",
-  "size" : 261432,
-  "stackId" : "stk_0004",
+  "size" : 24,
+  "stackId" : "stk_0010",
   "category" : "loom_runtime"
 }, {
-  "t" : 1776660987094,
+  "t" : 1776746838776,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "java.lang.VirtualThread",
   "thread" : "main",
   "size" : 248,
-  "stackId" : "stk_0004",
+  "stackId" : "stk_0003",
   "category" : "loom_runtime"
 }, {
-  "t" : 1776660987095,
+  "t" : 1776746838776,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0010",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838777,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838777,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0010",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838778,
   "type" : "jdk.ObjectAllocationOutsideTLAB",
   "class" : "jdk.internal.vm.StackChunk",
   "thread" : "community-event-loop",
   "size" : 1016,
-  "stackId" : "stk_0002",
+  "stackId" : "stk_0005",
   "category" : "jvm_noise"
 }, {
-  "t" : 1776660987096,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "jdk.internal.vm.StackChunk",
-  "thread" : "community-event-loop",
-  "size" : 8520,
-  "stackId" : "stk_0002",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987096,
+  "t" : 1776746838778,
   "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "jdk.internal.vm.StackChunk",
-  "thread" : "community-event-loop",
-  "size" : 1016,
-  "stackId" : "stk_0002",
-  "category" : "jvm_noise"
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
 }, {
-  "t" : 1776660987097,
+  "t" : 1776746838778,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0010",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838779,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838780,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0010",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838780,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838781,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0010",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838781,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838782,
   "type" : "jdk.ObjectAllocationOutsideTLAB",
   "class" : "jdk.internal.vm.StackChunk",
   "thread" : "community-event-loop",
   "size" : 1016,
-  "stackId" : "stk_0002",
+  "stackId" : "stk_0005",
   "category" : "jvm_noise"
 }, {
-  "t" : 1776660987097,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 261552,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987097,
+  "t" : 1776746838782,
   "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
   "thread" : "main",
   "size" : 24,
-  "stackId" : "stk_0005",
+  "stackId" : "stk_0010",
   "category" : "loom_runtime"
 }, {
-  "t" : 1776660987098,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 261432,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987098,
+  "t" : 1776746838782,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "java.lang.VirtualThread",
   "thread" : "main",
   "size" : 248,
-  "stackId" : "stk_0004",
+  "stackId" : "stk_0003",
   "category" : "loom_runtime"
 }, {
-  "t" : 1776660987099,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 261552,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987099,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987102,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 261432,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987102,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987103,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 261552,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987103,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987104,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 261432,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987104,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987105,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "jdk.internal.vm.StackChunk",
-  "thread" : "community-event-loop",
-  "size" : 10408,
-  "stackId" : "stk_0002",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987105,
+  "t" : 1776746838783,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "jdk.internal.vm.StackChunk",
   "thread" : "community-event-loop",
   "size" : 1016,
-  "stackId" : "stk_0002",
+  "stackId" : "stk_0005",
   "category" : "jvm_noise"
 }, {
-  "t" : 1776660987108,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 261552,
+  "t" : 1776746838784,
+  "type" : "jdk.ObjectAllocationOutsideTLAB",
+  "class" : "jdk.internal.vm.StackChunk",
+  "thread" : "community-event-loop",
+  "size" : 1016,
   "stackId" : "stk_0005",
-  "category" : "loom_runtime"
+  "category" : "jvm_noise"
 }, {
-  "t" : 1776660987108,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987110,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 261432,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987110,
+  "t" : 1776746838784,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "java.lang.VirtualThread",
   "thread" : "main",
   "size" : 248,
-  "stackId" : "stk_0004",
+  "stackId" : "stk_0003",
   "category" : "loom_runtime"
 }, {
-  "t" : 1776660987111,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "eu.exeris.kernel.community.events.CommunityEventLoop$$Lambda.0x000000009e3a9220",
+  "t" : 1776746838784,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0010",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838785,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838785,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0010",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838786,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838787,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0010",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838787,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838787,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0010",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838788,
+  "type" : "jdk.ObjectAllocationOutsideTLAB",
+  "class" : "jdk.internal.vm.StackChunk",
   "thread" : "community-event-loop",
-  "size" : 8920,
-  "stackId" : "stk_0009",
+  "size" : 1016,
+  "stackId" : "stk_0005",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1776746838788,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838789,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0010",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838790,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "jdk.internal.vm.StackChunk",
+  "thread" : "community-event-loop",
+  "size" : 1016,
+  "stackId" : "stk_0005",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1776746838790,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838790,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0010",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838790,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838791,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0010",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838791,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838793,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0010",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838795,
+  "type" : "jdk.ObjectAllocationOutsideTLAB",
+  "class" : "jdk.internal.vm.StackChunk",
+  "thread" : "community-event-loop",
+  "size" : 1016,
+  "stackId" : "stk_0005",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1776746838795,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838795,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0010",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838796,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "jdk.internal.vm.StackChunk",
+  "thread" : "community-event-loop",
+  "size" : 1016,
+  "stackId" : "stk_0005",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1776746838796,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838796,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0010",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838796,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0010",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838798,
+  "type" : "jdk.ObjectAllocationOutsideTLAB",
+  "class" : "jdk.internal.vm.StackChunk",
+  "thread" : "community-event-loop",
+  "size" : 1016,
+  "stackId" : "stk_0005",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1776746838798,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838798,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0010",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838799,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838799,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0010",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838801,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838801,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0010",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838801,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838801,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0010",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838802,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838802,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0010",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838803,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "jdk.internal.vm.StackChunk",
+  "thread" : "community-event-loop",
+  "size" : 1016,
+  "stackId" : "stk_0005",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1776746838803,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838803,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0010",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838803,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838804,
+  "type" : "jdk.ObjectAllocationOutsideTLAB",
+  "class" : "jdk.internal.vm.StackChunk",
+  "thread" : "community-event-loop",
+  "size" : 1016,
+  "stackId" : "stk_0005",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1776746838804,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0010",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838804,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838805,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0010",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838805,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838805,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0010",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838806,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0010",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838806,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838808,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0010",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838809,
+  "type" : "jdk.ObjectAllocationOutsideTLAB",
+  "class" : "jdk.internal.vm.StackChunk",
+  "thread" : "community-event-loop",
+  "size" : 1016,
+  "stackId" : "stk_0005",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1776746838810,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.util.concurrent.ForkJoinTask$AdaptedRunnableAction",
+  "thread" : "ForkJoinPool-1-worker-3",
+  "size" : 32,
+  "stackId" : "stk_0013",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1776746838810,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838811,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0010",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838811,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838811,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0010",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838814,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838814,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0010",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838814,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838814,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0010",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838814,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838816,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.Object",
+  "thread" : "main",
+  "size" : 16,
+  "stackId" : "stk_0014",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1776746838816,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838816,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0010",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838818,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838818,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0010",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838819,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838819,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0010",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838820,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838820,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0010",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838820,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838821,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0010",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838821,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838822,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0010",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838822,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838823,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0010",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838823,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838824,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0010",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838824,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838825,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0010",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838825,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838826,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0010",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838826,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838826,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0010",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838829,
+  "type" : "jdk.ObjectAllocationOutsideTLAB",
+  "class" : "jdk.internal.vm.StackChunk",
+  "thread" : "community-event-loop",
+  "size" : 1016,
+  "stackId" : "stk_0005",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1776746838829,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838829,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0010",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838829,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838830,
+  "type" : "jdk.ObjectAllocationOutsideTLAB",
+  "class" : "jdk.internal.vm.StackChunk",
+  "thread" : "community-event-loop",
+  "size" : 1016,
+  "stackId" : "stk_0005",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1776746838830,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0010",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838831,
+  "type" : "jdk.ObjectAllocationOutsideTLAB",
+  "class" : "jdk.internal.vm.StackChunk",
+  "thread" : "community-event-loop",
+  "size" : 1016,
+  "stackId" : "stk_0005",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1776746838831,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838831,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0010",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838831,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838832,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0010",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838832,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838833,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "eu.exeris.kernel.community.events.CommunityEventLoop$$Lambda.0x00000000893aa1b8",
+  "thread" : "community-event-loop",
+  "size" : 24,
+  "stackId" : "stk_0006",
   "category" : "production"
 }, {
-  "t" : 1776660987111,
+  "t" : 1776746838835,
   "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "eu.exeris.kernel.community.events.CommunityEventLoop$$Lambda.0x000000009e3a9220",
-  "thread" : "community-event-loop",
-  "size" : 24,
-  "stackId" : "stk_0009",
-  "category" : "production"
-}, {
-  "t" : 1776660987111,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 242088,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987111,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987112,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 261552,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987112,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
   "thread" : "main",
   "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987113,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 261432,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987113,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987114,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 261552,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987114,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987115,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 261432,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987115,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987116,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 261552,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987116,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987117,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 261432,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987117,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987118,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 261552,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987118,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987119,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 261432,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987119,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987120,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 261552,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987120,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987120,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 261432,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987120,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987121,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 261552,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987121,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987122,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 261432,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987122,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987123,
-  "type" : "jdk.ObjectAllocationOutsideTLAB",
-  "class" : "jdk.internal.vm.StackChunk",
-  "thread" : "community-event-loop",
-  "size" : 1016,
-  "stackId" : "stk_0002",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987123,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 261552,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987123,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987124,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 261432,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987124,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987125,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 261552,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987125,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987126,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.concurrent.DelayScheduler$ScheduledForkJoinTask",
-  "thread" : "ForkJoinPool-1-worker-3",
-  "size" : 9384,
   "stackId" : "stk_0010",
-  "category" : "jvm_noise"
+  "category" : "loom_runtime"
 }, {
-  "t" : 1776660987126,
+  "t" : 1776746838836,
   "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.util.concurrent.DelayScheduler$ScheduledForkJoinTask",
-  "thread" : "ForkJoinPool-1-worker-3",
-  "size" : 96,
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838836,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
   "stackId" : "stk_0010",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987126,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 261432,
-  "stackId" : "stk_0004",
   "category" : "loom_runtime"
 }, {
-  "t" : 1776660987126,
+  "t" : 1776746838836,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "java.lang.VirtualThread",
   "thread" : "main",
   "size" : 248,
-  "stackId" : "stk_0004",
+  "stackId" : "stk_0003",
   "category" : "loom_runtime"
 }, {
-  "t" : 1776660987127,
+  "t" : 1776746838837,
   "type" : "jdk.ObjectAllocationOutsideTLAB",
   "class" : "jdk.internal.vm.StackChunk",
   "thread" : "community-event-loop",
   "size" : 1016,
-  "stackId" : "stk_0002",
+  "stackId" : "stk_0005",
   "category" : "jvm_noise"
 }, {
-  "t" : 1776660987127,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 261552,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987127,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987128,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 261432,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987128,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987129,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 261552,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987129,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987130,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 261432,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987130,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987131,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 261552,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987131,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987132,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 261432,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987132,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987133,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "jdk.internal.vm.StackChunk",
-  "thread" : "community-event-loop",
-  "size" : 9632,
-  "stackId" : "stk_0002",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987133,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "jdk.internal.vm.StackChunk",
-  "thread" : "community-event-loop",
-  "size" : 1016,
-  "stackId" : "stk_0002",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987133,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 261552,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987133,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987134,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987135,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987135,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987137,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987138,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "eu.exeris.kernel.core.events.jfr.EventBusPublishEvent",
-  "thread" : "main",
-  "size" : 40,
-  "stackId" : "stk_0011",
-  "category" : "test_harness"
-}, {
-  "t" : 1776660987139,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987139,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987140,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987141,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987142,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987143,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987144,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.ThreadBuilders$VirtualThreadBuilder",
-  "thread" : "main",
-  "size" : 48,
-  "stackId" : "stk_0007",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987145,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$VThreadContinuation",
-  "thread" : "main",
-  "size" : 72,
-  "stackId" : "stk_0008",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987146,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987147,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987148,
+  "t" : 1776746838838,
   "type" : "jdk.ObjectAllocationOutsideTLAB",
   "class" : "jdk.internal.vm.StackChunk",
   "thread" : "community-event-loop",
   "size" : 1016,
-  "stackId" : "stk_0002",
+  "stackId" : "stk_0005",
   "category" : "jvm_noise"
 }, {
-  "t" : 1776660987148,
+  "t" : 1776746838838,
   "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987149,
-  "type" : "jdk.ObjectAllocationOutsideTLAB",
-  "class" : "jdk.internal.vm.StackChunk",
-  "thread" : "community-event-loop",
-  "size" : 1016,
-  "stackId" : "stk_0002",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987149,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
   "thread" : "main",
   "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987150,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987151,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987152,
-  "type" : "jdk.ObjectAllocationOutsideTLAB",
-  "class" : "jdk.internal.vm.StackChunk",
-  "thread" : "community-event-loop",
-  "size" : 1016,
-  "stackId" : "stk_0002",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987152,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987153,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$VThreadContinuation",
-  "thread" : "main",
-  "size" : 72,
-  "stackId" : "stk_0008",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987154,
-  "type" : "jdk.ObjectAllocationOutsideTLAB",
-  "class" : "jdk.internal.vm.StackChunk",
-  "thread" : "community-event-loop",
-  "size" : 1016,
-  "stackId" : "stk_0002",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987154,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987155,
-  "type" : "jdk.ObjectAllocationOutsideTLAB",
-  "class" : "jdk.internal.vm.StackChunk",
-  "thread" : "community-event-loop",
-  "size" : 1016,
-  "stackId" : "stk_0002",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987155,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987156,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.util.concurrent.DelayScheduler$ScheduledForkJoinTask",
-  "thread" : "ForkJoinPool-1-worker-3",
-  "size" : 96,
   "stackId" : "stk_0010",
-  "category" : "jvm_noise"
+  "category" : "loom_runtime"
 }, {
-  "t" : 1776660987156,
+  "t" : 1776746838838,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "java.lang.VirtualThread",
   "thread" : "main",
   "size" : 248,
-  "stackId" : "stk_0004",
+  "stackId" : "stk_0003",
   "category" : "loom_runtime"
 }, {
-  "t" : 1776660987157,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987159,
-  "type" : "jdk.ObjectAllocationOutsideTLAB",
-  "class" : "jdk.internal.vm.StackChunk",
-  "thread" : "community-event-loop",
-  "size" : 1016,
-  "stackId" : "stk_0002",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987160,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987161,
+  "t" : 1776746838839,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "jdk.internal.vm.StackChunk",
   "thread" : "community-event-loop",
   "size" : 1016,
-  "stackId" : "stk_0002",
+  "stackId" : "stk_0005",
   "category" : "jvm_noise"
 }, {
-  "t" : 1776660987161,
+  "t" : 1776746838839,
   "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
   "thread" : "main",
   "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987162,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987163,
-  "type" : "jdk.ObjectAllocationOutsideTLAB",
-  "class" : "jdk.internal.vm.StackChunk",
-  "thread" : "community-event-loop",
-  "size" : 1016,
-  "stackId" : "stk_0002",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987163,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987164,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987165,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987165,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987166,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987167,
-  "type" : "jdk.ObjectAllocationOutsideTLAB",
-  "class" : "jdk.internal.vm.StackChunk",
-  "thread" : "community-event-loop",
-  "size" : 1016,
-  "stackId" : "stk_0002",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987167,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987168,
-  "type" : "jdk.ObjectAllocationOutsideTLAB",
-  "class" : "jdk.internal.vm.StackChunk",
-  "thread" : "community-event-loop",
-  "size" : 1016,
-  "stackId" : "stk_0002",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987168,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987169,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "jdk.internal.vm.StackChunk",
-  "thread" : "community-event-loop",
-  "size" : 1016,
-  "stackId" : "stk_0002",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987169,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987170,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987171,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987172,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "jdk.internal.vm.StackChunk",
-  "thread" : "community-event-loop",
-  "size" : 1016,
-  "stackId" : "stk_0002",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987172,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987173,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987174,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987175,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987175,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987176,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987177,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987178,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987179,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987180,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987181,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987182,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987183,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987183,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987184,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987185,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987185,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987186,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987187,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987188,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987189,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987190,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987191,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987191,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987192,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987193,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987194,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987195,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987196,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "jdk.internal.vm.StackChunk",
-  "thread" : "community-event-loop",
-  "size" : 1016,
-  "stackId" : "stk_0002",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987196,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987197,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987198,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987199,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987200,
-  "type" : "jdk.ObjectAllocationOutsideTLAB",
-  "class" : "jdk.internal.vm.StackChunk",
-  "thread" : "community-event-loop",
-  "size" : 1016,
-  "stackId" : "stk_0002",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987200,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987201,
-  "type" : "jdk.ObjectAllocationOutsideTLAB",
-  "class" : "jdk.internal.vm.StackChunk",
-  "thread" : "community-event-loop",
-  "size" : 1016,
-  "stackId" : "stk_0002",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987201,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987202,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987203,
-  "type" : "jdk.ObjectAllocationOutsideTLAB",
-  "class" : "jdk.internal.vm.StackChunk",
-  "thread" : "community-event-loop",
-  "size" : 1016,
-  "stackId" : "stk_0002",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987203,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987203,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987204,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987205,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "jdk.internal.vm.StackChunk",
-  "thread" : "community-event-loop",
-  "size" : 1016,
-  "stackId" : "stk_0002",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987205,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987206,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987207,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987208,
-  "type" : "jdk.ObjectAllocationOutsideTLAB",
-  "class" : "jdk.internal.vm.StackChunk",
-  "thread" : "community-event-loop",
-  "size" : 1016,
-  "stackId" : "stk_0002",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987208,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987208,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987209,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987210,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987211,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987211,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987212,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987213,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "jdk.internal.vm.StackChunk",
-  "thread" : "community-event-loop",
-  "size" : 1016,
-  "stackId" : "stk_0002",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987213,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987214,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987214,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987215,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987216,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987216,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987217,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987218,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987219,
-  "type" : "jdk.ObjectAllocationOutsideTLAB",
-  "class" : "jdk.internal.vm.StackChunk",
-  "thread" : "community-event-loop",
-  "size" : 1016,
-  "stackId" : "stk_0002",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987219,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987219,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987220,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987221,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987221,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987222,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987223,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987224,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987225,
-  "type" : "jdk.ObjectAllocationOutsideTLAB",
-  "class" : "jdk.internal.vm.StackChunk",
-  "thread" : "community-event-loop",
-  "size" : 1016,
-  "stackId" : "stk_0002",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987225,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987225,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987226,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987227,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987227,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987228,
-  "type" : "jdk.ObjectAllocationOutsideTLAB",
-  "class" : "jdk.internal.vm.StackChunk",
-  "thread" : "community-event-loop",
-  "size" : 1016,
-  "stackId" : "stk_0002",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987228,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987229,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987230,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "jdk.internal.vm.StackChunk",
-  "thread" : "community-event-loop",
-  "size" : 1016,
-  "stackId" : "stk_0002",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987231,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987231,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987232,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987234,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987234,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987235,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.util.concurrent.DelayScheduler$ScheduledForkJoinTask",
-  "thread" : "ForkJoinPool-1-worker-3",
-  "size" : 96,
   "stackId" : "stk_0010",
-  "category" : "jvm_noise"
+  "category" : "loom_runtime"
 }, {
-  "t" : 1776660987235,
+  "t" : 1776746838839,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "java.lang.VirtualThread",
   "thread" : "main",
   "size" : 248,
-  "stackId" : "stk_0004",
+  "stackId" : "stk_0003",
   "category" : "loom_runtime"
 }, {
-  "t" : 1776660987236,
+  "t" : 1776746838840,
   "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
   "thread" : "main",
   "size" : 24,
-  "stackId" : "stk_0005",
+  "stackId" : "stk_0010",
   "category" : "loom_runtime"
 }, {
-  "t" : 1776660987237,
+  "t" : 1776746838840,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "java.lang.VirtualThread",
   "thread" : "main",
   "size" : 248,
-  "stackId" : "stk_0004",
+  "stackId" : "stk_0003",
   "category" : "loom_runtime"
 }, {
-  "t" : 1776660987238,
+  "t" : 1776746838841,
   "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
   "thread" : "main",
   "size" : 24,
-  "stackId" : "stk_0005",
+  "stackId" : "stk_0010",
   "category" : "loom_runtime"
 }, {
-  "t" : 1776660987238,
+  "t" : 1776746838841,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "java.lang.VirtualThread",
   "thread" : "main",
   "size" : 248,
-  "stackId" : "stk_0004",
+  "stackId" : "stk_0003",
   "category" : "loom_runtime"
 }, {
-  "t" : 1776660987239,
+  "t" : 1776746838841,
   "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
   "thread" : "main",
   "size" : 24,
-  "stackId" : "stk_0005",
+  "stackId" : "stk_0010",
   "category" : "loom_runtime"
 }, {
-  "t" : 1776660987240,
+  "t" : 1776746838843,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838843,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0010",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838844,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838844,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0010",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838845,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838845,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0010",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838845,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0003",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838846,
   "type" : "jdk.ObjectAllocationOutsideTLAB",
   "class" : "jdk.internal.vm.StackChunk",
   "thread" : "community-event-loop",
   "size" : 1016,
-  "stackId" : "stk_0002",
+  "stackId" : "stk_0005",
   "category" : "jvm_noise"
 }, {
-  "t" : 1776660987240,
+  "t" : 1776746838846,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0010",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746838846,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "java.lang.VirtualThread",
   "thread" : "main",
   "size" : 248,
-  "stackId" : "stk_0004",
+  "stackId" : "stk_0003",
   "category" : "loom_runtime"
 }, {
-  "t" : 1776660987240,
+  "t" : 1776746838847,
   "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
+  "class" : "jdk.internal.vm.StackChunk",
+  "thread" : "community-event-loop",
+  "size" : 1016,
+  "stackId" : "stk_0005",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1776746838847,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
   "thread" : "main",
   "size" : 24,
-  "stackId" : "stk_0005",
+  "stackId" : "stk_0010",
   "category" : "loom_runtime"
 }, {
-  "t" : 1776660987241,
+  "t" : 1776746838847,
   "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.ThreadBuilders$VirtualThreadBuilder",
+  "class" : "java.lang.VirtualThread",
   "thread" : "main",
-  "size" : 48,
-  "stackId" : "stk_0007",
+  "size" : 248,
+  "stackId" : "stk_0003",
   "category" : "loom_runtime"
 }, {
-  "t" : 1776660987242,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$VThreadContinuation",
-  "thread" : "main",
-  "size" : 72,
-  "stackId" : "stk_0008",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987243,
+  "t" : 1776746838848,
   "type" : "jdk.ObjectAllocationOutsideTLAB",
   "class" : "jdk.internal.vm.StackChunk",
   "thread" : "community-event-loop",
   "size" : 1016,
-  "stackId" : "stk_0002",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987244,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "jdk.internal.vm.StackChunk",
-  "thread" : "community-event-loop",
-  "size" : 1016,
-  "stackId" : "stk_0002",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987245,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987245,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
   "stackId" : "stk_0005",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1776746838848,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0010",
   "category" : "loom_runtime"
 }, {
-  "t" : 1776660987246,
-  "type" : "jdk.ObjectAllocationOutsideTLAB",
-  "class" : "jdk.internal.vm.StackChunk",
-  "thread" : "community-event-loop",
-  "size" : 1016,
-  "stackId" : "stk_0002",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987248,
-  "type" : "jdk.ObjectAllocationOutsideTLAB",
-  "class" : "jdk.internal.vm.StackChunk",
-  "thread" : "community-event-loop",
-  "size" : 1016,
-  "stackId" : "stk_0002",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987248,
+  "t" : 1776746838848,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "java.lang.VirtualThread",
   "thread" : "main",
   "size" : 248,
-  "stackId" : "stk_0004",
+  "stackId" : "stk_0003",
   "category" : "loom_runtime"
 }, {
-  "t" : 1776660987248,
+  "t" : 1776746838848,
   "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
   "thread" : "main",
   "size" : 24,
-  "stackId" : "stk_0005",
+  "stackId" : "stk_0010",
   "category" : "loom_runtime"
 }, {
-  "t" : 1776660987249,
+  "t" : 1776746838850,
   "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$VThreadContinuation$1",
+  "class" : "java.util.LinkedHashMap",
   "thread" : "main",
-  "size" : 32,
-  "stackId" : "stk_0012",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987250,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987253,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "jdk.internal.vm.StackChunk",
-  "thread" : "community-event-loop",
-  "size" : 1016,
-  "stackId" : "stk_0002",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987253,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987253,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987254,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987254,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "eu.exeris.kernel.core.events.jfr.EventBusPublishEvent",
-  "thread" : "main",
-  "size" : 40,
-  "stackId" : "stk_0011",
-  "category" : "test_harness"
-}, {
-  "t" : 1776660987256,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987258,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987259,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987260,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987260,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987261,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987261,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987263,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987265,
-  "type" : "jdk.ObjectAllocationOutsideTLAB",
-  "class" : "jdk.internal.vm.StackChunk",
-  "thread" : "community-event-loop",
-  "size" : 1016,
-  "stackId" : "stk_0002",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987265,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987265,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987267,
-  "type" : "jdk.ObjectAllocationOutsideTLAB",
-  "class" : "jdk.internal.vm.StackChunk",
-  "thread" : "community-event-loop",
-  "size" : 1016,
-  "stackId" : "stk_0002",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987267,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987268,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987268,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987268,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.util.concurrent.ConcurrentHashMap$Node",
-  "thread" : "main",
-  "size" : 40,
-  "stackId" : "stk_0006",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987269,
-  "type" : "jdk.ObjectAllocationOutsideTLAB",
-  "class" : "jdk.internal.vm.StackChunk",
-  "thread" : "community-event-loop",
-  "size" : 1016,
-  "stackId" : "stk_0002",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987269,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987270,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0005",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987270,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987271,
-  "type" : "jdk.ObjectAllocationOutsideTLAB",
-  "class" : "jdk.internal.vm.StackChunk",
-  "thread" : "community-event-loop",
-  "size" : 1016,
-  "stackId" : "stk_0002",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987271,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0013",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987272,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987273,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0013",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987274,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "jdk.internal.vm.StackChunk",
-  "thread" : "community-event-loop",
-  "size" : 32880,
-  "stackId" : "stk_0002",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987274,
-  "type" : "jdk.ObjectAllocationOutsideTLAB",
-  "class" : "jdk.internal.vm.StackChunk",
-  "thread" : "community-event-loop",
-  "size" : 1016,
-  "stackId" : "stk_0002",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987274,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 40521472,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987274,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987274,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 261552,
-  "stackId" : "stk_0013",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987274,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0013",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987275,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.concurrent.ConcurrentHashMap$Node",
-  "thread" : "main",
-  "size" : 261544,
-  "stackId" : "stk_0006",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987275,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.util.concurrent.ConcurrentHashMap$Node",
-  "thread" : "main",
-  "size" : 40,
-  "stackId" : "stk_0006",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987275,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 261552,
-  "stackId" : "stk_0013",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987275,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0013",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987275,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread$VThreadContinuation$1",
-  "thread" : "main",
-  "size" : 261544,
-  "stackId" : "stk_0012",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987275,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$VThreadContinuation$1",
-  "thread" : "main",
-  "size" : 32,
-  "stackId" : "stk_0012",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987276,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread$VThreadContinuation",
-  "thread" : "main",
-  "size" : 261504,
-  "stackId" : "stk_0008",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987276,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$VThreadContinuation",
-  "thread" : "main",
-  "size" : 72,
-  "stackId" : "stk_0008",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987276,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.Object",
-  "thread" : "main",
-  "size" : 261560,
-  "stackId" : "stk_0014",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987276,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.Object",
-  "thread" : "main",
-  "size" : 16,
-  "stackId" : "stk_0014",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987277,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 261328,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987277,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987277,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "eu.exeris.kernel.core.events.InMemoryEventBus$$Lambda.0x000000009e3ad248",
-  "thread" : "main",
-  "size" : 261536,
+  "size" : 88,
   "stackId" : "stk_0015",
-  "category" : "test_harness"
+  "category" : "jvm_noise"
 }, {
-  "t" : 1776660987277,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "eu.exeris.kernel.core.events.InMemoryEventBus$$Lambda.0x000000009e3ad248",
-  "thread" : "main",
-  "size" : 40,
-  "stackId" : "stk_0015",
-  "category" : "test_harness"
-}, {
-  "t" : 1776660987277,
+  "t" : 1776746838851,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "java.util.concurrent.ForkJoinTask$AdaptedRunnableAction",
+  "thread" : "ForkJoinPool-1-worker-3",
+  "size" : 28704,
+  "stackId" : "stk_0013",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1776746838851,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.util.concurrent.ForkJoinTask$AdaptedRunnableAction",
+  "thread" : "ForkJoinPool-1-worker-3",
+  "size" : 32,
+  "stackId" : "stk_0013",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1776746838851,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.String",
   "thread" : "main",
-  "size" : 261544,
+  "size" : 48115192,
   "stackId" : "stk_0016",
   "category" : "jvm_noise"
 }, {
-  "t" : 1776660987277,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.util.concurrent.ForkJoinTask$AdaptedRunnableAction",
-  "thread" : "main",
-  "size" : 32,
-  "stackId" : "stk_0016",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987277,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.concurrent.ConcurrentHashMap$Node",
-  "thread" : "main",
-  "size" : 261536,
-  "stackId" : "stk_0006",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987277,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.util.concurrent.ConcurrentHashMap$Node",
-  "thread" : "main",
-  "size" : 40,
-  "stackId" : "stk_0006",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987277,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 261552,
-  "stackId" : "stk_0013",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987277,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0013",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987278,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread$VThreadContinuation$1",
-  "thread" : "main",
-  "size" : 261544,
-  "stackId" : "stk_0012",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987278,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$VThreadContinuation$1",
-  "thread" : "main",
-  "size" : 32,
-  "stackId" : "stk_0012",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987278,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread$VThreadContinuation",
-  "thread" : "main",
-  "size" : 261504,
-  "stackId" : "stk_0008",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987278,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$VThreadContinuation",
-  "thread" : "main",
-  "size" : 72,
-  "stackId" : "stk_0008",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987278,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.Object",
-  "thread" : "main",
-  "size" : 261560,
-  "stackId" : "stk_0014",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987278,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.Object",
-  "thread" : "main",
-  "size" : 16,
-  "stackId" : "stk_0014",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987278,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 261328,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987278,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987278,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "eu.exeris.kernel.core.events.InMemoryEventBus$$Lambda.0x000000009e3ad248",
-  "thread" : "main",
-  "size" : 261536,
-  "stackId" : "stk_0015",
-  "category" : "test_harness"
-}, {
-  "t" : 1776660987278,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "eu.exeris.kernel.core.events.InMemoryEventBus$$Lambda.0x000000009e3ad248",
-  "thread" : "main",
-  "size" : 40,
-  "stackId" : "stk_0015",
-  "category" : "test_harness"
-}, {
-  "t" : 1776660987279,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.concurrent.ForkJoinTask$AdaptedRunnableAction",
-  "thread" : "main",
-  "size" : 261544,
-  "stackId" : "stk_0016",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987279,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.util.concurrent.ForkJoinTask$AdaptedRunnableAction",
-  "thread" : "main",
-  "size" : 32,
-  "stackId" : "stk_0016",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987279,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.concurrent.ConcurrentHashMap$Node",
-  "thread" : "main",
-  "size" : 261536,
-  "stackId" : "stk_0006",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987279,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.util.concurrent.ConcurrentHashMap$Node",
-  "thread" : "main",
-  "size" : 40,
-  "stackId" : "stk_0006",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987279,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 261552,
-  "stackId" : "stk_0013",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987279,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0013",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987280,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread$VThreadContinuation$1",
-  "thread" : "main",
-  "size" : 261544,
-  "stackId" : "stk_0012",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987280,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$VThreadContinuation$1",
-  "thread" : "main",
-  "size" : 32,
-  "stackId" : "stk_0012",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987280,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread$VThreadContinuation",
-  "thread" : "main",
-  "size" : 261504,
-  "stackId" : "stk_0008",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987280,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$VThreadContinuation",
-  "thread" : "main",
-  "size" : 72,
-  "stackId" : "stk_0008",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987280,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.Object",
-  "thread" : "main",
-  "size" : 261560,
-  "stackId" : "stk_0014",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987280,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.Object",
-  "thread" : "main",
-  "size" : 16,
-  "stackId" : "stk_0014",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987280,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 261328,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987280,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987281,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "jdk.internal.vm.StackChunk",
-  "thread" : "community-event-loop",
-  "size" : 29336,
-  "stackId" : "stk_0002",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987281,
-  "type" : "jdk.ObjectAllocationOutsideTLAB",
-  "class" : "jdk.internal.vm.StackChunk",
-  "thread" : "community-event-loop",
-  "size" : 1016,
-  "stackId" : "stk_0002",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987282,
+  "t" : 1776746839116,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "java.util.LinkedHashMap$Entry",
   "thread" : "main",
-  "size" : 261552,
+  "size" : 261544,
   "stackId" : "stk_0017",
   "category" : "jvm_noise"
 }, {
-  "t" : 1776660987282,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.util.LinkedHashMap$Entry",
-  "thread" : "main",
-  "size" : 56,
-  "stackId" : "stk_0017",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987562,
+  "t" : 1776746839116,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.LinkedHashMap$Entry",
+  "class" : "[Ljava.lang.Object;",
   "thread" : "main",
-  "size" : 261528,
+  "size" : 260256,
   "stackId" : "stk_0018",
   "category" : "jvm_noise"
 }, {
-  "t" : 1776660987563,
+  "t" : 1776746839119,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.LinkedHashMap$Entry",
-  "thread" : "main",
-  "size" : 261560,
+  "class" : "java.lang.VirtualThread",
+  "thread" : "exeris-pin-EventBus-7",
+  "size" : 743952,
   "stackId" : "stk_0019",
-  "category" : "jvm_noise"
+  "category" : "loom_runtime"
 }, {
-  "t" : 1776660987566,
+  "t" : 1776746839119,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "exeris-pin-EventBus-2",
-  "size" : 13880,
+  "class" : "java.lang.ThreadBuilders$VirtualThreadBuilder",
+  "thread" : "exeris-pin-EventBus-8",
+  "size" : 13184,
   "stackId" : "stk_0020",
   "category" : "loom_runtime"
 }, {
-  "t" : 1776660987566,
+  "t" : 1776746839119,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "exeris-pin-EventBus-25",
-  "size" : 13248,
-  "stackId" : "stk_0020",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987566,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "exeris-pin-EventBus-48",
-  "size" : 13248,
-  "stackId" : "stk_0020",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987566,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "exeris-pin-EventBus-71",
-  "size" : 13248,
-  "stackId" : "stk_0020",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987566,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "exeris-pin-EventBus-94",
-  "size" : 13248,
-  "stackId" : "stk_0020",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987566,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "[B",
-  "thread" : "main",
-  "size" : 261560,
+  "class" : "java.util.concurrent.ForkJoinTask$AdaptedRunnableAction",
+  "thread" : "exeris-pin-EventBus-56",
+  "size" : 13192,
   "stackId" : "stk_0021",
   "category" : "jvm_noise"
 }, {
-  "t" : 1776660987567,
+  "t" : 1776746839119,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "java.lang.VirtualThread",
-  "thread" : "exeris-pin-EventBus-117",
-  "size" : 13248,
-  "stackId" : "stk_0020",
+  "thread" : "exeris-pin-EventBus-34",
+  "size" : 24720,
+  "stackId" : "stk_0019",
   "category" : "loom_runtime"
 }, {
-  "t" : 1776660987567,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "exeris-pin-EventBus-140",
-  "size" : 13248,
-  "stackId" : "stk_0020",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987567,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "exeris-pin-EventBus-163",
-  "size" : 13248,
-  "stackId" : "stk_0020",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987567,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "exeris-pin-EventBus-186",
-  "size" : 13248,
-  "stackId" : "stk_0020",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987567,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "exeris-pin-EventBus-209",
-  "size" : 13248,
-  "stackId" : "stk_0020",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987567,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "exeris-pin-EventBus-232",
-  "size" : 13248,
-  "stackId" : "stk_0020",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987567,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "exeris-pin-EventBus-255",
-  "size" : 13248,
-  "stackId" : "stk_0020",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987567,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "exeris-pin-EventBus-279",
-  "size" : 13248,
-  "stackId" : "stk_0020",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987567,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "exeris-pin-EventBus-314",
-  "size" : 13248,
-  "stackId" : "stk_0020",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987567,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "exeris-pin-EventBus-358",
-  "size" : 13248,
-  "stackId" : "stk_0020",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987567,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "exeris-pin-EventBus-404",
-  "size" : 13248,
-  "stackId" : "stk_0020",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987567,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "exeris-pin-EventBus-290",
-  "size" : 7392,
-  "stackId" : "stk_0022",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987567,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread$VThreadContinuation",
-  "thread" : "exeris-pin-EventBus-324",
-  "size" : 7384,
-  "stackId" : "stk_0023",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987567,
+  "t" : 1776746839120,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "java.util.concurrent.CopyOnWriteArrayList$COWIterator",
-  "thread" : "exeris-pin-EventBus-359",
-  "size" : 7688,
-  "stackId" : "stk_0024",
+  "thread" : "exeris-pin-EventBus-98",
+  "size" : 5832,
+  "stackId" : "stk_0022",
   "category" : "jvm_noise"
 }, {
-  "t" : 1776660987567,
+  "t" : 1776746839120,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "exeris-pin-EventBus-380",
-  "size" : 7392,
-  "stackId" : "stk_0022",
+  "class" : "java.lang.ThreadBuilders$VirtualThreadBuilder",
+  "thread" : "exeris-pin-EventBus-108",
+  "size" : 5784,
+  "stackId" : "stk_0020",
   "category" : "loom_runtime"
 }, {
-  "t" : 1776660987567,
+  "t" : 1776746839120,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread$VThreadContinuation",
-  "thread" : "exeris-pin-EventBus-407",
-  "size" : 7384,
+  "class" : "eu.exeris.kernel.core.events.InMemoryEventBus$$Lambda.0x00000000893adfa0",
+  "thread" : "exeris-pin-EventBus-118",
+  "size" : 5808,
   "stackId" : "stk_0023",
+  "category" : "test_harness"
+}, {
+  "t" : 1776746839120,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "exeris-pin-EventBus-128",
+  "size" : 5800,
+  "stackId" : "stk_0019",
   "category" : "loom_runtime"
 }, {
-  "t" : 1776660987567,
+  "t" : 1776746839120,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "java.lang.VirtualThread$VThreadContinuation",
-  "thread" : "main",
-  "size" : 261512,
+  "thread" : "exeris-pin-EventBus-138",
+  "size" : 6024,
+  "stackId" : "stk_0024",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746839120,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "exeris-pin-EventBus-148",
+  "size" : 5864,
   "stackId" : "stk_0025",
   "category" : "loom_runtime"
 }, {
-  "t" : 1776660987567,
+  "t" : 1776746839120,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "[B",
-  "thread" : "main",
-  "size" : 261560,
+  "class" : "java.util.concurrent.ConcurrentHashMap$Node",
+  "thread" : "exeris-pin-EventBus-158",
+  "size" : 5784,
   "stackId" : "stk_0026",
   "category" : "jvm_noise"
 }, {
-  "t" : 1776660987568,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "exeris-pin-EventBus-456",
-  "size" : 13248,
-  "stackId" : "stk_0020",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987568,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "exeris-pin-EventBus-500",
-  "size" : 13248,
-  "stackId" : "stk_0020",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987568,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "exeris-pin-EventBus-545",
-  "size" : 13248,
-  "stackId" : "stk_0020",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987568,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "exeris-pin-EventBus-589",
-  "size" : 13248,
-  "stackId" : "stk_0020",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987568,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "exeris-pin-EventBus-630",
-  "size" : 13248,
-  "stackId" : "stk_0020",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987568,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "exeris-pin-EventBus-676",
-  "size" : 13248,
-  "stackId" : "stk_0020",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987568,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "exeris-pin-EventBus-719",
-  "size" : 13248,
-  "stackId" : "stk_0020",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987568,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "exeris-pin-EventBus-760",
-  "size" : 13248,
-  "stackId" : "stk_0020",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987568,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "exeris-pin-EventBus-804",
-  "size" : 13248,
-  "stackId" : "stk_0020",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987568,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "exeris-pin-EventBus-848",
-  "size" : 13248,
-  "stackId" : "stk_0020",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987568,
+  "t" : 1776746839120,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "java.util.concurrent.CopyOnWriteArrayList$COWIterator",
-  "thread" : "exeris-pin-EventBus-439",
-  "size" : 7688,
-  "stackId" : "stk_0024",
+  "thread" : "exeris-pin-EventBus-169",
+  "size" : 5832,
+  "stackId" : "stk_0022",
   "category" : "jvm_noise"
 }, {
-  "t" : 1776660987568,
+  "t" : 1776746839120,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "exeris-pin-EventBus-455",
-  "size" : 7392,
-  "stackId" : "stk_0022",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987568,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread$VThreadContinuation",
-  "thread" : "exeris-pin-EventBus-480",
-  "size" : 7384,
-  "stackId" : "stk_0023",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987568,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.concurrent.CopyOnWriteArrayList$COWIterator",
-  "thread" : "exeris-pin-EventBus-510",
-  "size" : 7688,
-  "stackId" : "stk_0024",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987568,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "exeris-pin-EventBus-535",
-  "size" : 7392,
-  "stackId" : "stk_0022",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987568,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread$VThreadContinuation",
-  "thread" : "exeris-pin-EventBus-559",
-  "size" : 7384,
-  "stackId" : "stk_0023",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987568,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.concurrent.CopyOnWriteArrayList$COWIterator",
-  "thread" : "exeris-pin-EventBus-594",
-  "size" : 7688,
-  "stackId" : "stk_0024",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987568,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "exeris-pin-EventBus-621",
-  "size" : 7392,
-  "stackId" : "stk_0022",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987568,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread$VThreadContinuation",
-  "thread" : "exeris-pin-EventBus-641",
-  "size" : 7384,
-  "stackId" : "stk_0023",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987568,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.concurrent.CopyOnWriteArrayList$COWIterator",
-  "thread" : "exeris-pin-EventBus-675",
-  "size" : 7688,
-  "stackId" : "stk_0024",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987568,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "exeris-pin-EventBus-697",
-  "size" : 7392,
-  "stackId" : "stk_0022",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987568,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread$VThreadContinuation",
-  "thread" : "exeris-pin-EventBus-725",
-  "size" : 7384,
-  "stackId" : "stk_0023",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987568,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.concurrent.CopyOnWriteArrayList$COWIterator",
-  "thread" : "exeris-pin-EventBus-761",
-  "size" : 7688,
-  "stackId" : "stk_0024",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987568,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "exeris-pin-EventBus-787",
-  "size" : 7392,
-  "stackId" : "stk_0022",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987568,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread$VThreadContinuation",
-  "thread" : "exeris-pin-EventBus-813",
-  "size" : 7384,
-  "stackId" : "stk_0023",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987568,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.concurrent.CopyOnWriteArrayList$COWIterator",
-  "thread" : "exeris-pin-EventBus-841",
-  "size" : 7688,
-  "stackId" : "stk_0024",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1776660987568,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "exeris-pin-EventBus-862",
-  "size" : 7392,
-  "stackId" : "stk_0022",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987569,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "exeris-pin-EventBus-891",
-  "size" : 13248,
+  "class" : "java.lang.ThreadBuilders$VirtualThreadBuilder",
+  "thread" : "exeris-pin-EventBus-179",
+  "size" : 5784,
   "stackId" : "stk_0020",
   "category" : "loom_runtime"
 }, {
-  "t" : 1776660987569,
+  "t" : 1776746839120,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "eu.exeris.kernel.core.events.InMemoryEventBus$$Lambda.0x00000000893adfa0",
+  "thread" : "exeris-pin-EventBus-189",
+  "size" : 5808,
+  "stackId" : "stk_0023",
+  "category" : "test_harness"
+}, {
+  "t" : 1776746839120,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "java.lang.VirtualThread",
-  "thread" : "exeris-pin-EventBus-935",
-  "size" : 13248,
-  "stackId" : "stk_0020",
+  "thread" : "exeris-pin-EventBus-199",
+  "size" : 5800,
+  "stackId" : "stk_0019",
   "category" : "loom_runtime"
 }, {
-  "t" : 1776660987569,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "exeris-pin-EventBus-981",
-  "size" : 13248,
-  "stackId" : "stk_0020",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1776660987569,
+  "t" : 1776746839120,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "java.lang.VirtualThread$VThreadContinuation",
-  "thread" : "exeris-pin-EventBus-894",
-  "size" : 7384,
-  "stackId" : "stk_0023",
+  "thread" : "exeris-pin-EventBus-209",
+  "size" : 6024,
+  "stackId" : "stk_0024",
   "category" : "loom_runtime"
 }, {
-  "t" : 1776660987569,
+  "t" : 1776746839120,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.concurrent.CopyOnWriteArrayList$COWIterator",
-  "thread" : "exeris-pin-EventBus-925",
-  "size" : 7688,
-  "stackId" : "stk_0024",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "exeris-pin-EventBus-219",
+  "size" : 5864,
+  "stackId" : "stk_0025",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746839120,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.util.concurrent.ConcurrentHashMap$Node",
+  "thread" : "exeris-pin-EventBus-229",
+  "size" : 5784,
+  "stackId" : "stk_0026",
   "category" : "jvm_noise"
 }, {
-  "t" : 1776660987569,
+  "t" : 1776746839120,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000009e0f11f0",
-  "thread" : "exeris-pin-EventBus-948",
-  "size" : 7392,
+  "class" : "java.util.concurrent.CopyOnWriteArrayList$COWIterator",
+  "thread" : "exeris-pin-EventBus-240",
+  "size" : 5832,
   "stackId" : "stk_0022",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1776746839120,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.ThreadBuilders$VirtualThreadBuilder",
+  "thread" : "exeris-pin-EventBus-250",
+  "size" : 5784,
+  "stackId" : "stk_0020",
   "category" : "loom_runtime"
 }, {
-  "t" : 1776660987569,
+  "t" : 1776746839120,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "eu.exeris.kernel.core.events.InMemoryEventBus$$Lambda.0x00000000893adfa0",
+  "thread" : "exeris-pin-EventBus-260",
+  "size" : 5808,
+  "stackId" : "stk_0023",
+  "category" : "test_harness"
+}, {
+  "t" : 1776746839120,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "exeris-pin-EventBus-270",
+  "size" : 5800,
+  "stackId" : "stk_0019",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746839120,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "java.lang.VirtualThread$VThreadContinuation",
-  "thread" : "exeris-pin-EventBus-974",
-  "size" : 7384,
-  "stackId" : "stk_0023",
+  "thread" : "exeris-pin-EventBus-280",
+  "size" : 6024,
+  "stackId" : "stk_0024",
   "category" : "loom_runtime"
 }, {
-  "t" : 1776660987570,
+  "t" : 1776746839120,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.LinkedHashMap$Entry",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "exeris-pin-EventBus-290",
+  "size" : 5864,
+  "stackId" : "stk_0025",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746839120,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.util.concurrent.ConcurrentHashMap$Node",
+  "thread" : "exeris-pin-EventBus-300",
+  "size" : 5784,
+  "stackId" : "stk_0026",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1776746839120,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.util.concurrent.CopyOnWriteArrayList$COWIterator",
+  "thread" : "exeris-pin-EventBus-311",
+  "size" : 5832,
+  "stackId" : "stk_0022",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1776746839120,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.ThreadBuilders$VirtualThreadBuilder",
+  "thread" : "exeris-pin-EventBus-321",
+  "size" : 5784,
+  "stackId" : "stk_0020",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746839120,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "eu.exeris.kernel.core.events.InMemoryEventBus$$Lambda.0x00000000893adfa0",
+  "thread" : "exeris-pin-EventBus-331",
+  "size" : 5808,
+  "stackId" : "stk_0023",
+  "category" : "test_harness"
+}, {
+  "t" : 1776746839120,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "exeris-pin-EventBus-341",
+  "size" : 5800,
+  "stackId" : "stk_0019",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746839120,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread$VThreadContinuation",
+  "thread" : "exeris-pin-EventBus-351",
+  "size" : 6024,
+  "stackId" : "stk_0024",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746839120,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.util.concurrent.ConcurrentHashMap$Node",
+  "thread" : "exeris-pin-EventBus-94",
+  "size" : 7488,
+  "stackId" : "stk_0026",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1776746839120,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread",
   "thread" : "main",
-  "size" : 261536,
+  "size" : 261448,
   "stackId" : "stk_0027",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746839120,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.util.concurrent.ForkJoinTask$AdaptedRunnableAction",
+  "thread" : "main",
+  "size" : 261552,
+  "stackId" : "stk_0028",
   "category" : "jvm_noise"
 }, {
-  "t" : 1776660987571,
+  "t" : 1776746839120,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "[B",
+  "class" : "java.util.concurrent.ForkJoinTask$AdaptedRunnableAction",
   "thread" : "main",
-  "size" : 240032,
+  "size" : 164832,
   "stackId" : "stk_0028",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1776746839121,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "exeris-pin-EventBus-361",
+  "size" : 5864,
+  "stackId" : "stk_0025",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746839121,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.util.concurrent.ConcurrentHashMap$Node",
+  "thread" : "exeris-pin-EventBus-371",
+  "size" : 5784,
+  "stackId" : "stk_0026",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1776746839121,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.util.concurrent.CopyOnWriteArrayList$COWIterator",
+  "thread" : "exeris-pin-EventBus-382",
+  "size" : 5832,
+  "stackId" : "stk_0022",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1776746839121,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.ThreadBuilders$VirtualThreadBuilder",
+  "thread" : "exeris-pin-EventBus-392",
+  "size" : 5784,
+  "stackId" : "stk_0020",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746839121,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "eu.exeris.kernel.core.events.InMemoryEventBus$$Lambda.0x00000000893adfa0",
+  "thread" : "exeris-pin-EventBus-402",
+  "size" : 5808,
+  "stackId" : "stk_0023",
+  "category" : "test_harness"
+}, {
+  "t" : 1776746839121,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "exeris-pin-EventBus-412",
+  "size" : 5800,
+  "stackId" : "stk_0019",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746839121,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread$VThreadContinuation",
+  "thread" : "exeris-pin-EventBus-423",
+  "size" : 6024,
+  "stackId" : "stk_0024",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746839121,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread$VThreadContinuation$1",
+  "thread" : "exeris-pin-EventBus-454",
+  "size" : 5864,
+  "stackId" : "stk_0029",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746839121,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.util.concurrent.ConcurrentHashMap$Node",
+  "thread" : "exeris-pin-EventBus-475",
+  "size" : 5816,
+  "stackId" : "stk_0026",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1776746839121,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.util.concurrent.CopyOnWriteArrayList$COWIterator",
+  "thread" : "exeris-pin-EventBus-496",
+  "size" : 5832,
+  "stackId" : "stk_0022",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1776746839121,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.ThreadBuilders$VirtualThreadBuilder",
+  "thread" : "exeris-pin-EventBus-516",
+  "size" : 5784,
+  "stackId" : "stk_0020",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746839121,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "eu.exeris.kernel.core.events.InMemoryEventBus$$Lambda.0x00000000893adfa0",
+  "thread" : "exeris-pin-EventBus-537",
+  "size" : 5808,
+  "stackId" : "stk_0023",
+  "category" : "test_harness"
+}, {
+  "t" : 1776746839121,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "exeris-pin-EventBus-557",
+  "size" : 5800,
+  "stackId" : "stk_0019",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746839121,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread$VThreadContinuation",
+  "thread" : "exeris-pin-EventBus-573",
+  "size" : 6024,
+  "stackId" : "stk_0024",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746839121,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "exeris-pin-EventBus-597",
+  "size" : 5864,
+  "stackId" : "stk_0025",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746839121,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.util.concurrent.ConcurrentHashMap$Node",
+  "thread" : "exeris-pin-EventBus-618",
+  "size" : 5784,
+  "stackId" : "stk_0026",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1776746839121,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.util.concurrent.CopyOnWriteArrayList$COWIterator",
+  "thread" : "exeris-pin-EventBus-645",
+  "size" : 5832,
+  "stackId" : "stk_0022",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1776746839121,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.ThreadBuilders$VirtualThreadBuilder",
+  "thread" : "exeris-pin-EventBus-665",
+  "size" : 5784,
+  "stackId" : "stk_0020",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746839121,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "eu.exeris.kernel.core.events.InMemoryEventBus$$Lambda.0x00000000893adfa0",
+  "thread" : "exeris-pin-EventBus-687",
+  "size" : 5808,
+  "stackId" : "stk_0023",
+  "category" : "test_harness"
+}, {
+  "t" : 1776746839121,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "exeris-pin-EventBus-430",
+  "size" : 13184,
+  "stackId" : "stk_0025",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746839121,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread$VThreadContinuation",
+  "thread" : "exeris-pin-EventBus-463",
+  "size" : 13144,
+  "stackId" : "stk_0024",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746839121,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.ThreadBuilders$VirtualThreadBuilder",
+  "thread" : "exeris-pin-EventBus-513",
+  "size" : 13472,
+  "stackId" : "stk_0020",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746839121,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.util.concurrent.ForkJoinTask$AdaptedRunnableAction",
+  "thread" : "exeris-pin-EventBus-558",
+  "size" : 13192,
+  "stackId" : "stk_0021",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1776746839121,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000890f11f0",
+  "thread" : "exeris-pin-EventBus-601",
+  "size" : 13184,
+  "stackId" : "stk_0025",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746839121,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread$VThreadContinuation",
+  "thread" : "exeris-pin-EventBus-644",
+  "size" : 13144,
+  "stackId" : "stk_0024",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746839121,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.ThreadBuilders$VirtualThreadBuilder",
+  "thread" : "exeris-pin-EventBus-690",
+  "size" : 13472,
+  "stackId" : "stk_0020",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1776746839123,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "[Ljdk.jfr.internal.util.TimespanUnit;",
+  "thread" : "main",
+  "size" : 523016,
+  "stackId" : "stk_0030",
   "category" : "jvm_noise"
 } ]
