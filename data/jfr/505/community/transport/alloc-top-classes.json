@@ -1,0 +1,86 @@
+[ {
+  "class" : "java.nio.DirectByteBuffer",
+  "count" : 32,
+  "bytes" : 661144,
+  "category" : "jvm_noise"
+}, {
+  "class" : "jdk.internal.vm.StackChunk",
+  "count" : 21,
+  "bytes" : 307400,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.util.concurrent.ConcurrentLinkedQueue$Node",
+  "count" : 8,
+  "bytes" : 24240,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.lang.String",
+  "count" : 7,
+  "bytes" : 1307840,
+  "category" : "jvm_noise"
+}, {
+  "class" : "jdk.internal.foreign.NativeMemorySegmentImpl",
+  "count" : 6,
+  "bytes" : 16032,
+  "category" : "panama"
+}, {
+  "class" : "[Ljava.util.HashMap$Node;",
+  "count" : 5,
+  "bytes" : 1046184,
+  "category" : "jvm_noise"
+}, {
+  "class" : "[B",
+  "count" : 4,
+  "bytes" : 784680,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.util.LinkedHashMap$Entry",
+  "count" : 3,
+  "bytes" : 523128,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.lang.VirtualThread",
+  "count" : 3,
+  "bytes" : 784224,
+  "category" : "loom_runtime"
+}, {
+  "class" : "[Ljdk.jfr.internal.util.TimespanUnit;",
+  "count" : 2,
+  "bytes" : 261600,
+  "category" : "jvm_noise"
+}, {
+  "class" : "jdk.internal.foreign.SegmentFactories$1",
+  "count" : 2,
+  "bytes" : 224344,
+  "category" : "panama"
+}, {
+  "class" : "eu.exeris.kernel.community.transport.NativeTcpStream$PendingWrite",
+  "count" : 2,
+  "bytes" : 261608,
+  "category" : "test_harness"
+}, {
+  "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
+  "count" : 2,
+  "bytes" : 261648,
+  "category" : "test_harness"
+}, {
+  "class" : "java.util.concurrent.ForkJoinTask$AdaptedRunnableAction",
+  "count" : 2,
+  "bytes" : 523104,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.util.HashSet",
+  "count" : 1,
+  "bytes" : 261568,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.util.HashMap$Node",
+  "count" : 1,
+  "bytes" : 40,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.util.LinkedHashMap",
+  "count" : 1,
+  "bytes" : 261536,
+  "category" : "jvm_noise"
+} ]
