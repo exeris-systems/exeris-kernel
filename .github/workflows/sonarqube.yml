@@ -1,0 +1,75 @@
+name: SonarQube
+
+on:
+  push:
+    branches: [ "main", "development/**" ]
+  pull_request:
+    branches: [ "main", "development/**" ]
+
+env:
+  MAVEN_OPTS: "--enable-preview --enable-final-field-mutation=ALL-UNNAMED --enable-native-access=ALL-UNNAMED"
+  JDK_URL: "https://download.java.net/java/GA/jdk26/c3cc523845074aa0af4f5e1e1ed4151d/35/GPL/openjdk-26_linux-x64_bin.tar.gz"
+  JDK_SHA256: "83c78367f8c81257beef72aca4bbbf8e6dac8ca2b3a4546a85879a09e6e4e128"
+  JDK_CACHE_KEY: "jdk-26-b35-linux-x64"
+  JDK_VER: "26.0.0"
+
+jobs:
+  sonarqube:
+    name: SonarQube New Code Gate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: SonarQube configuration check
+        if: env.SONAR_TOKEN == '' || env.SONAR_HOST_URL == ''
+        run: |
+          echo "SONAR_TOKEN or SONAR_HOST_URL is not configured for this repository."
+          echo "Skipping remote analysis while keeping the status check name stable."
+
+      - name: Cache JDK tarball
+        if: env.SONAR_TOKEN != '' && env.SONAR_HOST_URL != ''
+        id: jdk-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/jdk.tar.gz
+          key: ${{ env.JDK_CACHE_KEY }}
+
+      - name: Fetch JDK
+        if: env.SONAR_TOKEN != '' && env.SONAR_HOST_URL != '' && steps.jdk-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          wget -q -O ${{ runner.temp }}/jdk.tar.gz ${{ env.JDK_URL }}
+          echo "${{ env.JDK_SHA256 }}  ${{ runner.temp }}/jdk.tar.gz" | sha256sum -c
+
+      - name: Inject JDK into Runner
+        if: env.SONAR_TOKEN != '' && env.SONAR_HOST_URL != ''
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'jdkfile'
+          jdkFile: ${{ runner.temp }}/jdk.tar.gz
+          java-version: ${{ env.JDK_VER }}
+          architecture: x64
+          cache: maven
+
+      - name: Build, Test and Collect Coverage
+        if: env.SONAR_TOKEN != '' && env.SONAR_HOST_URL != ''
+        run: mvn -B -ntp verify -P coverage
+
+      - name: Run SonarQube new-code analysis
+        if: env.SONAR_TOKEN != '' && env.SONAR_HOST_URL != ''
+        run: |
+          mvn -B -ntp -DskipTests sonar:sonar \
+            -Dsonar.token=${SONAR_TOKEN} \
+            -Dsonar.host.url=${SONAR_HOST_URL} \
+            -Dsonar.qualitygate.wait=true \
+            -Dsonar.qualitygate.timeout=300

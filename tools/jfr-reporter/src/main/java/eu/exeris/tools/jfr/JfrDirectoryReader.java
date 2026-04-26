@@ -67,40 +67,12 @@ final class JfrDirectoryReader {
                 String typeName = e.getEventType().getName();
                 if (!ALLOC_TYPES.contains(typeName)) continue;
 
-                RecordedClass objClass = null;
-                try { objClass = e.getValue("objectClass"); } catch (Exception ignored) {}
-                if (objClass == null) continue;
+                String className = extractClassName(e);
+                if (className == null) continue;
 
-                String className = objClass.getName();
-
-                long sizeBytes = 0;
-                try { sizeBytes = e.getLong("allocationSize"); } catch (Exception ignored) {}
-                if (sizeBytes == 0) {
-                    try { sizeBytes = e.getLong("weight"); } catch (Exception ignored) {}
-                }
-
-                String threadName = "unknown";
-                RecordedThread thread = e.getThread();
-                if (thread != null && thread.getJavaName() != null) {
-                    threadName = thread.getJavaName();
-                }
-
-                List<String> frames = new ArrayList<>();
-                RecordedStackTrace stack = e.getStackTrace();
-                if (stack != null) {
-                    for (RecordedFrame frame : stack.getFrames()) {
-                        if (frame.getMethod() != null && frame.getMethod().getType() != null) {
-                            String fqn = frame.getMethod().getType().getName();
-                            int dot = fqn.lastIndexOf('.');
-                            String simpleName = dot >= 0 ? fqn.substring(dot + 1) : fqn;
-                            frames.add(fqn
-                                    + "." + frame.getMethod().getName()
-                                    + "(" + simpleName
-                                    + ".java:" + frame.getLineNumber() + ")");
-                        }
-                    }
-                }
-
+                long sizeBytes = extractSizeBytes(e);
+                String threadName = extractThreadName(e);
+                List<String> frames = extractFrames(e);
                 Category category = EventClassifier.classify(className, frames);
                 long tEpochMillis = e.getStartTime().toEpochMilli();
 
@@ -110,5 +82,46 @@ final class JfrDirectoryReader {
             System.err.println("[jfr-reporter] WARN: failed to read " + jfrFile + ": " + ex.getMessage());
         }
         return events;
+    }
+
+    private static String extractClassName(RecordedEvent e) {
+        try {
+            RecordedClass objClass = e.getValue("objectClass");
+            return objClass != null ? objClass.getName() : null;
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private static long extractSizeBytes(RecordedEvent e) {
+        try { return e.getLong("allocationSize"); } catch (Exception ignored) {}
+        try { return e.getLong("weight"); } catch (Exception ignored) {}
+        return 0L;
+    }
+
+    private static String extractThreadName(RecordedEvent e) {
+        RecordedThread thread = e.getThread();
+        if (thread != null && thread.getJavaName() != null) {
+            return thread.getJavaName();
+        }
+        return "unknown";
+    }
+
+    private static List<String> extractFrames(RecordedEvent e) {
+        List<String> frames = new ArrayList<>();
+        RecordedStackTrace stack = e.getStackTrace();
+        if (stack == null) return frames;
+        for (RecordedFrame frame : stack.getFrames()) {
+            if (frame.getMethod() != null && frame.getMethod().getType() != null) {
+                String fqn = frame.getMethod().getType().getName();
+                int dot = fqn.lastIndexOf('.');
+                String simpleName = dot >= 0 ? fqn.substring(dot + 1) : fqn;
+                frames.add(fqn
+                        + "." + frame.getMethod().getName()
+                        + "(" + simpleName
+                        + ".java:" + frame.getLineNumber() + ")");
+            }
+        }
+        return frames;
     }
 }
