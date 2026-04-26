@@ -175,22 +175,23 @@ final class CommunityHttpClientEngine implements HttpClientEngine {
             long total = 0;
             long headerTerminator = -1;
             long expectedTotal = -1;
-            while (total < aggregate.capacity()) {
+            boolean endOfStream = false;
+            boolean responseComplete = false;
+            while (total < aggregate.capacity() && !endOfStream && !responseComplete) {
                 int remaining = (int) (aggregate.capacity() - total);
                 int chunk = Math.min(READ_CHUNK_BYTES, remaining);
                 int read = stream.read(aggregate.segment().asSlice(total, chunk), chunk);
-                if (read < 0) {
-                    break;
-                }
-                if (read == 0) {
-                    continue;
-                }
-                total += read;
-                aggregate.setSize(total);
-                headerTerminator = resolveHeaderTerminator(headerTerminator, aggregate.segment(), total);
-                expectedTotal = resolveExpectedTotal(expectedTotal, aggregate.segment(), total, headerTerminator);
-                if (isResponseComplete(total, expectedTotal)) {
-                    break;
+                if (read != 0) {
+                    if (read < 0) {
+                        endOfStream = true;
+                    } else {
+                        total += read;
+                        aggregate.setSize(total);
+                        headerTerminator = resolveHeaderTerminator(headerTerminator, aggregate.segment(), total);
+                        expectedTotal = resolveExpectedTotal(expectedTotal, aggregate.segment(),
+                                        total, headerTerminator);
+                        responseComplete = isResponseComplete(total, expectedTotal);
+                    }
                 }
             }
 
@@ -277,7 +278,7 @@ final class CommunityHttpClientEngine implements HttpClientEngine {
         if (currentExpectedTotal >= 0 || headerTerminator < 0) {
             return currentExpectedTotal;
         }
-        long statusLineEnd = findCrLf(segment, 0, totalBytes);
+        long statusLineEnd = CommunityHttpBufferOps.findCrLf(segment, 0, totalBytes);
         if (statusLineEnd < 0) {
             return -1;
         }
@@ -294,7 +295,7 @@ final class CommunityHttpClientEngine implements HttpClientEngine {
     }
 
     private HttpResponse decodeResponse(LoanedBuffer aggregate, long total, HttpVersion requestVersion) {
-        long statusLineEnd = findCrLf(aggregate.segment(), 0, total);
+        long statusLineEnd = CommunityHttpBufferOps.findCrLf(aggregate.segment(), 0, total);
         if (statusLineEnd < 0) {
             throw new IllegalStateException("Invalid HTTP response: missing status line terminator");
         }
@@ -334,7 +335,7 @@ final class CommunityHttpClientEngine implements HttpClientEngine {
         List<HttpHeader> headers = new ArrayList<>();
         long cursor = start;
         while (cursor < endExclusive) {
-            long lineEnd = findCrLf(segment, cursor, endExclusive + 2);
+            long lineEnd = CommunityHttpBufferOps.findCrLf(segment, cursor, endExclusive + 2);
             if (lineEnd < 0 || lineEnd == cursor) {
                 break;
             }
@@ -358,7 +359,7 @@ final class CommunityHttpClientEngine implements HttpClientEngine {
         if (contentLength.isPresent()) {
             try {
                 return Long.parseLong(contentLength.get());
-            } catch (NumberFormatException ignored) {
+            } catch (NumberFormatException _) {
                 return Math.max(fallbackBytes, 0L);
             }
         }
@@ -370,7 +371,7 @@ final class CommunityHttpClientEngine implements HttpClientEngine {
             if (h.nameEqualsIgnoreCase(HEADER_CONTENT_LENGTH)) {
                 try {
                     return Long.parseLong(h.value().trim());
-                } catch (NumberFormatException ignored) {
+                } catch (NumberFormatException _) {
                     return -1;
                 }
             }
@@ -405,16 +406,6 @@ final class CommunityHttpClientEngine implements HttpClientEngine {
                     && segment.get(ValueLayout.JAVA_BYTE, index + 1) == '\n'
                     && segment.get(ValueLayout.JAVA_BYTE, index + 2) == '\r'
                     && segment.get(ValueLayout.JAVA_BYTE, index + 3) == '\n') {
-                return index;
-            }
-        }
-        return -1;
-    }
-
-    private static long findCrLf(MemorySegment segment, long start, long endExclusive) {
-        for (long index = start; index + 1 < endExclusive; index++) {
-            if (segment.get(ValueLayout.JAVA_BYTE, index) == '\r'
-                    && segment.get(ValueLayout.JAVA_BYTE, index + 1) == '\n') {
                 return index;
             }
         }

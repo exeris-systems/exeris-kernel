@@ -13,7 +13,10 @@ import eu.exeris.kernel.spi.config.ConfigProvider;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.util.concurrent.atomic.AtomicBoolean;
+
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 
 /**
  * Community-tier contract test for {@link CommunityConfigProvider}.
@@ -84,7 +87,13 @@ class CommunityConfigProviderContractTest {
     @Test
     @DisplayName("watch() is a no-op — does not throw")
     void watchIsNoOp() {
-        // Community hot-reload is not supported; must not throw
-        provider.watch(null, "some.key", ignored -> { });
+        AtomicBoolean callbackInvoked = new AtomicBoolean(false);
+
+        assertThatCode(() -> provider.watch(null, "some.key", ignored -> callbackInvoked.set(true)))
+            .as("Community watch() must accept the no-op contract without throwing")
+            .doesNotThrowAnyException();
+        assertThat(callbackInvoked.get())
+            .as("Community watch() is a no-op and must not invoke the callback without a reload trigger")
+            .isFalse();
     }
 }

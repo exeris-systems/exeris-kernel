@@ -24,24 +24,19 @@ import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-@SuppressWarnings({
-    "PMD.CommentDefaultAccessModifier",
-    "PMD.NullAssignment"
-})
-final class InMemoryHttp2Exchange implements HttpExchange {
+/* default */ final class InMemoryHttp2Exchange implements HttpExchange {
     private final HttpRequest request;
     private final MemoryAllocator allocator;
     private final HttpResponseBodyEncoderRegistry encoderRegistry;
     private final AtomicBoolean responded = new AtomicBoolean(false);
     private HttpResponse capturedResponse;
 
-    InMemoryHttp2Exchange(HttpRequest request,
-                          MemoryAllocator allocator,
-                          HttpResponseBodyEncoderRegistry encoderRegistry) {
+    /* default */ InMemoryHttp2Exchange(HttpRequest request,
+                                        MemoryAllocator allocator,
+                                        HttpResponseBodyEncoderRegistry encoderRegistry) {
         this.request = request;
         this.allocator = allocator;
         this.encoderRegistry = encoderRegistry;
-        this.capturedResponse = null;
     }
 
     @Override
@@ -73,13 +68,14 @@ final class InMemoryHttp2Exchange implements HttpExchange {
         HttpResponseEncodingContext context = new HttpResponseEncodingContext(request, allocator);
         HttpEncodedBody encodedBody = encoder.encode(typedResponse.payload(), context);
         List<HttpHeader> mergedHeaders = mergeHeaders(typedResponse.headers(), encodedBody.headers());
-        try {
+        boolean responseCaptured = false;
+        try { //NOPMD UseTryWithResources — response body ownership transfers on success; close only on failure
             respond(new HttpResponse(typedResponse.status(), request.version(), mergedHeaders, encodedBody.body()));
-        } catch (RuntimeException | Error ex) { //NOPMD AvoidCatchingGenericException — close body on failure
-            if (encodedBody.body() != null) {
+            responseCaptured = true;
+        } finally {
+            if (!responseCaptured && encodedBody.body() != null) {
                 encodedBody.body().close();
             }
-            throw ex;
         }
     }
 
@@ -96,11 +92,11 @@ final class InMemoryHttp2Exchange implements HttpExchange {
         return merged;
     }
 
-    boolean isResponded() {
+    /* default */ boolean isResponded() {
         return responded.get();
     }
 
-    HttpResponse capturedResponse() {
+    /* default */ HttpResponse capturedResponse() {
         return capturedResponse;
     }
 }

@@ -107,7 +107,6 @@ final class CommunityHikariSupport {
                 && connectionUrl.toLowerCase(Locale.ROOT).startsWith("jdbc:postgresql:");
     }
 
-    @SuppressWarnings("PMD.CloseResource")
     /* default */ JdbcPersistenceConnection acquireConnection(
             String providerId,
             String tenantKey,
@@ -117,20 +116,8 @@ final class CommunityHikariSupport {
         long startNs = System.nanoTime();
         ConnectionAcquireEvent event = ConnectionAcquireEvent.beginAcquire();
         boolean success = false;
-        try {
-            // Connection ownership is transferred to JdbcPersistenceConnection wrapper.
-            Connection raw = pool.getConnection();
-            JdbcPersistenceConnection connection;
-            try {
-                connection = new JdbcPersistenceConnection(raw, onClose);
-            } catch (SQLException wrapFailure) {
-                try {
-                    raw.close();
-                } catch (SQLException _) {
-                    // Best-effort close when wrapper construction fails
-                }
-                throw wrapFailure;
-            }
+        try (ConnectionLease lease = ConnectionLease.open(pool)) {
+            JdbcPersistenceConnection connection = lease.transferToJdbc(onClose);
             success = true;
             return connection;
         } finally {
@@ -138,19 +125,37 @@ final class CommunityHikariSupport {
         }
     }
 
-    @SuppressWarnings({"PMD.AvoidCatchingGenericException", "PMD.UseTryWithResources", "PMD.CloseResource"})
     /* default */ void discardConnection(JdbcPersistenceConnection connection) {
         Objects.requireNonNull(connection, "connection must not be null");
-        try {
-            Connection raw = connection.rawJdbcConnection();
-            pool.evictConnection(raw);
-        } catch (RuntimeException _) {
-            // best-effort: eviction failure suppressed
-        } finally {
-            try {
+        try (connection) {
+            pool.evictConnection(connection.rawJdbcConnection());
+        } catch (IllegalArgumentException | IllegalStateException _) {
+            // best-effort: connection already detached or pool is shutting down
+        }
+    }
+
+    private static final class ConnectionLease implements AutoCloseable {
+        private final Connection connection;
+        private boolean transferred;
+
+        private ConnectionLease(Connection connection) {
+            this.connection = connection;
+            this.transferred = false;
+        }
+
+        private static ConnectionLease open(HikariDataSource pool) throws SQLException {
+            return new ConnectionLease(pool.getConnection());
+        }
+
+        private JdbcPersistenceConnection transferToJdbc(Runnable onClose) {
+            transferred = true;
+            return new JdbcPersistenceConnection(connection, onClose);
+        }
+
+        @Override
+        public void close() throws SQLException {
+            if (!transferred) {
                 connection.close();
-            } catch (RuntimeException _) {
-                // best-effort: wrapper close failure suppressed
             }
         }
     }

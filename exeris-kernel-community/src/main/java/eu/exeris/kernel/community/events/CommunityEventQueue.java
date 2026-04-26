@@ -39,8 +39,7 @@ final class CommunityEventQueue implements EventQueue {
 
     private record Entry(EventDescriptor descriptor, EventPayload payload) {}
 
-    @SuppressWarnings("PMD.CommentDefaultAccessModifier")
-    CommunityEventQueue(int capacity) {
+    /* default */ CommunityEventQueue(int capacity) {
         this.capacity = capacity;
         this.deque    = new LinkedBlockingDeque<>(capacity);
     }
@@ -52,7 +51,7 @@ final class CommunityEventQueue implements EventQueue {
         try {
             deque.putLast(new Entry(descriptor, payload));
             return true;
-        } catch (InterruptedException ex) {
+        } catch (InterruptedException _) {
             payload.close();
             Thread.currentThread().interrupt();
             return false;

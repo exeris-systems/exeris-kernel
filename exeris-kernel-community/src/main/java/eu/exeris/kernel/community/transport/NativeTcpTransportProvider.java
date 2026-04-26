@@ -67,6 +67,14 @@ public final class NativeTcpTransportProvider implements TransportProvider {
         return 0;
     }
 
+    /**
+     * NIO-backed transport is always available — no platform gate required.
+     */
+    @Override
+    public boolean isAvailable() {
+        return true;
+    }
+
     private static CryptoProviderConfig resolveCryptoConfig(TransportConfig config) {
         if (config == null) {
             return null;

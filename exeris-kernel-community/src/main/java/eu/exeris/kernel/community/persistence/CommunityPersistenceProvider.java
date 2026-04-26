@@ -41,13 +41,12 @@ import java.util.Optional;
  */
 public final class CommunityPersistenceProvider implements PersistenceProvider {
 
-    private static final String PROVIDER_ID   = "postgres-community";
     private static final String PROVIDER_NAME = "ExerisCommunity/JDBC+HikariCP";
     private static final CommunityRawJsonbCodec RAW_JSONB_CODEC = new CommunityRawJsonbCodec();
 
     @Override
     public String providerId() {
-        return PROVIDER_ID;
+        return CommunityPersistenceConstants.PROVIDER_ID;
     }
 
     @Override

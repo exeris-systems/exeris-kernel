@@ -77,6 +77,7 @@ public final class RlsConnectionInterceptor implements ConnectionInterceptor {
     private static final int MAX_IDENTIFIER_LENGTH = 63;
 
     private static final String INTERCEPTOR_NAME = "RlsConnectionInterceptor";
+    private static final String ISOLATION_KEY_NONE = "[none]";
 
     private RlsConnectionInterceptor() {
         // singleton — use INSTANCE
@@ -132,13 +133,13 @@ public final class RlsConnectionInterceptor implements ConnectionInterceptor {
         if (schemaName == null || schemaName.isBlank()) {
             throw PersistenceProviderException.interceptorInitFailed(
                     INTERCEPTOR_NAME,
-                    storageContext.isolationKey().orElse("[none]"),
+                    storageContext.isolationKey().orElse(ISOLATION_KEY_NONE),
                     null);
         }
         if (!isSafeIdentifier(schemaName)) {
             throw PersistenceProviderException.interceptorInitFailed(
                     INTERCEPTOR_NAME,
-                    storageContext.isolationKey().orElse("[none]"),
+                    storageContext.isolationKey().orElse(ISOLATION_KEY_NONE),
                     null);
         }
         String sql = SQL_SET_SCHEMA_PREFIX + schemaName + SQL_SET_SCHEMA_SUFFIX;
@@ -147,7 +148,7 @@ public final class RlsConnectionInterceptor implements ConnectionInterceptor {
         } catch (PersistenceProviderException ppe) {
             throw PersistenceProviderException.interceptorInitFailed(
                     INTERCEPTOR_NAME,
-                    storageContext.isolationKey().orElse("[none]"),
+                    storageContext.isolationKey().orElse(ISOLATION_KEY_NONE),
                     ppe);
         }
     }

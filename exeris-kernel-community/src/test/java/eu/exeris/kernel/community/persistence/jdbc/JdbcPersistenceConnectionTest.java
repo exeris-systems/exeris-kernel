@@ -20,6 +20,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
@@ -67,6 +68,9 @@ class JdbcPersistenceConnectionTest {
     Statement mockStmt;
 
     @Mock
+    PreparedStatement mockPreparedStmt;
+
+    @Mock
     ResultSet mockResultSet;
 
     @Mock
@@ -76,7 +80,7 @@ class JdbcPersistenceConnectionTest {
 
     @BeforeEach
     void setUp() throws SQLException {
-        // Pool baseline is autoCommit=true; constructor should not force tx mode.
+        // Constructor must not force tx mode regardless of the pool baseline.
         connection = new JdbcPersistenceConnection(mockConn);
         verify(mockConn, never()).setAutoCommit(false);
     }
@@ -246,6 +250,47 @@ class JdbcPersistenceConnectionTest {
             order.verify(mockConn).setTransactionIsolation(Connection.TRANSACTION_SERIALIZABLE);
             order.verify(mockConn).setReadOnly(false);
             order.verify(mockConn).setAutoCommit(true);
+        }
+
+        @Test
+        @DisplayName("non-transactional updates commit on baseline autoCommit=false without breaking explicit tx")
+        void nonTransactionalUpdatesCommitOnBaselineAutoCommitFalse() throws SQLException {
+            when(mockConn.getAutoCommit()).thenReturn(false);
+            when(mockConn.getTransactionIsolation()).thenReturn(Connection.TRANSACTION_READ_COMMITTED);
+            when(mockConn.isReadOnly()).thenReturn(false);
+            when(mockConn.createStatement()).thenReturn(mockStmt);
+            when(mockStmt.executeLargeUpdate("UPDATE docs SET value = 'x'"))
+                    .thenReturn(1L);
+            when(mockConn.prepareStatement("INSERT INTO docs(value) VALUES (?)"))
+                    .thenReturn(mockPreparedStmt);
+            when(mockPreparedStmt.executeLargeUpdate()).thenReturn(1L);
+
+            assertThat(connection.executeUpdate("UPDATE docs SET value = 'x'"))
+                    .isEqualTo(1L);
+            verify(mockConn, times(1)).commit();
+            verify(mockConn, never()).rollback();
+            verify(mockConn, never()).setAutoCommit(true);
+
+            try (var stmt = connection.prepare("INSERT INTO docs(value) VALUES ($1)")) {
+                assertThat(stmt.bindString(0, "tenant-a").executeUpdate()).isEqualTo(1L);
+            }
+            verify(mockConn, times(2)).commit();
+            verify(mockConn, never()).rollback();
+            verify(mockConn, never()).setAutoCommit(true);
+
+            connection.beginTransaction();
+            assertThat(connection.inTransaction()).isTrue();
+
+            try (var stmt = connection.prepare("INSERT INTO docs(value) VALUES ($1)")) {
+                assertThat(stmt.bindString(0, "tenant-b").executeUpdate()).isEqualTo(1L);
+            }
+            verify(mockConn, times(2)).commit();
+            verify(mockConn, never()).rollback();
+
+            connection.commit();
+            verify(mockConn, times(3)).commit();
+            verify(mockConn, never()).setAutoCommit(true);
+            assertThat(connection.inTransaction()).isFalse();
         }
 
         @Test

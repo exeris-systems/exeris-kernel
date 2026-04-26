@@ -49,7 +49,6 @@ import java.util.concurrent.locks.LockSupport;
     "PMD.GodClass",
     "PMD.CyclomaticComplexity",
     "PMD.TooManyMethods",
-    "PMD.CognitiveComplexity",
     "PMD.CloseResource",
     "PMD.AvoidDeeplyNestedIfStmts",
     "PMD.AvoidBranchingStatementAsLastInLoop",
@@ -77,6 +76,10 @@ final class NativeTcpStream implements TransportStream {
     private static final int JCTOOLS_QUEUE_CHUNK_SIZE = 128;
     private static final int INBOUND_QUEUE_CAPACITY =
             QUEUE_BACKPRESSURE_ENABLED ? QUEUE_DEPTH_THRESHOLD_HIGH : Integer.MAX_VALUE;
+
+    private static final int DRAIN_CLOSED  = 0;
+    private static final int DRAIN_OK      = 1;
+    private static final int DRAIN_STALLED = 2;
 
     private final String engineName;
     private final long streamId;
@@ -189,42 +192,59 @@ final class NativeTcpStream implements TransportStream {
                 if (closed.get()) {
                     return closedReadOutcome();
                 }
-                if (currentInbound == null) {
-                    LoanedBuffer next = inboundQueue.poll();
-                    if (next == null) {
-                        if (remoteClosed.get()) {
-                            return -1;
-                        }
-                        awaitReadableIngress();
-                        continue;
-                    }
-                    decrementDepth(inboundQueueDepth);
-                    currentInbound = next;
-                    currentInboundOffset = 0;
+                int inboundState = advanceInbound();
+                if (inboundState == -1) {
+                    return -1;
                 }
-
-                int available = (int) currentInbound.size() - currentInboundOffset;
-                if (available <= 0) {
-                    closeCurrentInbound();
+                if (inboundState == 0) {
                     continue;
                 }
-
-                int bytes = Math.min(available, maxBytes);
-                MemorySegment.copy(
-                        currentInbound.segment(),
-                        currentInboundOffset,
-                        target,
-                        0,
-                        bytes);
-                currentInboundOffset += bytes;
-                if (currentInboundOffset >= currentInbound.size()) {
-                    closeCurrentInbound();
-                }
-                return bytes;
+                return copyFromInbound(target, maxBytes);
             }
         } finally {
             releaseSingleConsumer(runtime.inboundConsumer(), currentThread);
         }
+    }
+
+    /**
+     * Ensures {@link #currentInbound} has data to read.
+     * Returns: -1 (remote closed, return -1 to caller), 0 (not ready, continue loop), 1 (ready).
+     */
+    private int advanceInbound() {
+        if (currentInbound == null) {
+            LoanedBuffer next = inboundQueue.poll();
+            if (next == null) {
+                if (remoteClosed.get()) {
+                    return -1;
+                }
+                awaitReadableIngress();
+                return 0;
+            }
+            decrementDepth(inboundQueueDepth);
+            currentInbound = next;
+            currentInboundOffset = 0;
+        }
+        int available = (int) currentInbound.size() - currentInboundOffset;
+        if (available <= 0) {
+            closeCurrentInbound();
+            return 0;
+        }
+        return 1;
+    }
+
+    /**
+     * Copies bytes from {@link #currentInbound} to {@code target}. Closes the buffer if
+     * fully consumed. Assumes {@code currentInbound} is non-null with available data.
+     */
+    private int copyFromInbound(MemorySegment target, int maxBytes) {
+        int available = (int) currentInbound.size() - currentInboundOffset;
+        int bytes = Math.min(available, maxBytes);
+        MemorySegment.copy(currentInbound.segment(), currentInboundOffset, target, 0, bytes);
+        currentInboundOffset += bytes;
+        if (currentInboundOffset >= currentInbound.size()) {
+            closeCurrentInbound();
+        }
+        return bytes;
     }
 
     @Override
@@ -361,8 +381,9 @@ final class NativeTcpStream implements TransportStream {
 
     /* default */ void offerIngress(LoanedBuffer ingressBuffer) {
         if (closed.get()) {
-            ingressBuffer.close();
-            return;
+            try (ingressBuffer) {
+                return;
+            }
         }
 
         int currentQueueDepth = inboundQueueDepth.get();
@@ -377,20 +398,22 @@ final class NativeTcpStream implements TransportStream {
 
         int reservedDepth = inboundQueueDepth.incrementAndGet();
         if (QUEUE_BACKPRESSURE_ENABLED && reservedDepth > INBOUND_QUEUE_CAPACITY) {
-            decrementDepth(inboundQueueDepth);
-            ingressBuffer.close();
-            TransportQueueBackpressureAlertEvent.emit(1, reservedDepth, trend);
-            throw new IllegalStateException("Rejected inbound buffer due to backpressure for stream " + streamId);
+            try (ingressBuffer) {
+                decrementDepth(inboundQueueDepth);
+                TransportQueueBackpressureAlertEvent.emit(1, reservedDepth, trend);
+                throw new IllegalStateException("Rejected inbound buffer due to backpressure for stream " + streamId);
+            }
         }
 
         boolean offered = inboundQueue.offer(ingressBuffer);
         if (!offered) {
-            decrementDepth(inboundQueueDepth);
-            ingressBuffer.close();
-            if (QUEUE_BACKPRESSURE_ENABLED) {
-                TransportQueueBackpressureAlertEvent.emit(1, reservedDepth, trend);
+            try (ingressBuffer) {
+                decrementDepth(inboundQueueDepth);
+                if (QUEUE_BACKPRESSURE_ENABLED) {
+                    TransportQueueBackpressureAlertEvent.emit(1, reservedDepth, trend);
+                }
+                throw new IllegalStateException("Rejected inbound buffer due to backpressure for stream " + streamId);
             }
-            throw new IllegalStateException("Rejected inbound buffer due to backpressure for stream " + streamId);
         }
         lastQueueDepth = reservedDepth;
         signalReadableIngress();
@@ -506,15 +529,7 @@ final class NativeTcpStream implements TransportStream {
     }
 
     private boolean tryFlushPendingWritesNow() {
-        Thread currentThread = Thread.currentThread();
-        if (!tryAcquireSingleConsumer(runtime.outboundConsumer(), currentThread)) {
-            return false;
-        }
-        try {
-            return drainPendingWrites();
-        } finally {
-            releaseSingleConsumer(runtime.outboundConsumer(), currentThread);
-        }
+        return flushPendingWrites();
     }
 
     private boolean drainPendingWrites() {
@@ -524,40 +539,59 @@ final class NativeTcpStream implements TransportStream {
         }
 
         if (!ensureTlsReady(false)) {
-            return abortCloseAfterBestEffortFlush() || outboundQueue.peek() == null;
+            finalizeCloseIfRequestedAfterBestEffortFlush();
+            return outboundQueue.peek() == null;
         }
 
         PendingWrite pending = outboundQueue.peek();
         while (pending != null) {
-            if (tlsEngine == null) {
-                if (!tryDrainPlainWrite(pending)) {
-                    return abortCloseAfterBestEffortFlush();
-                }
-            } else {
-                TlsStatus status = pending.prepareCipher();
-                if (status == TlsStatus.CLOSED) {
-                    close();
-                    return true;
-                }
-                if (status != TlsStatus.OK) {
-                    throw TransportException.sendFailure(engineName, pending.bytesWritten(), null);
-                }
-                if (!tryDrainCipherWrite(pending)) {
-                    return abortCloseAfterBestEffortFlush();
-                }
+            int result = drainSinglePendingWrite(pending);
+            if (result == DRAIN_CLOSED) {
+                return true;
             }
-            PendingWrite completed = outboundQueue.poll();
-            if (!Objects.equals(completed, pending)) {
-                throw new IllegalStateException("Outbound queue head changed during flush for stream " + streamId);
+            if (result == DRAIN_STALLED) {
+                finalizeCloseIfRequestedAfterBestEffortFlush();
+                return false;
             }
-            decrementDepth(outboundQueueDepth);
-            completed.close();
+            completeQueueHeadAfterDrain(pending);
             pending = outboundQueue.peek();
         }
         if (closeRequested.get()) {
             finishCloseIfDrained();
         }
         return true;
+    }
+
+    private int drainSinglePendingWrite(PendingWrite pending) {
+        if (tlsEngine == null) {
+            return tryDrainPlainWrite(pending) ? DRAIN_OK : DRAIN_STALLED;
+        }
+        return drainTlsPending(pending);
+    }
+
+    private void completeQueueHeadAfterDrain(PendingWrite expectedHead) {
+        PendingWrite completed = outboundQueue.poll();
+        if (!Objects.equals(completed, expectedHead)) {
+            throw new IllegalStateException("Outbound queue head changed during flush for stream " + streamId);
+        }
+        closePendingWriteAfterPoll(completed);
+    }
+
+    private void closePendingWriteAfterPoll(PendingWrite pendingWrite) {
+        decrementDepth(outboundQueueDepth);
+        pendingWrite.close();
+    }
+
+    private int drainTlsPending(PendingWrite pending) {
+        TlsStatus status = pending.prepareCipher();
+        if (status == TlsStatus.CLOSED) {
+            close();
+            return DRAIN_CLOSED;
+        }
+        if (status != TlsStatus.OK) {
+            throw TransportException.sendFailure(engineName, pending.bytesWritten(), null);
+        }
+        return tryDrainCipherWrite(pending) ? DRAIN_OK : DRAIN_STALLED;
     }
 
     private boolean tryDrainPlainWrite(PendingWrite pending) {
@@ -588,11 +622,10 @@ final class NativeTcpStream implements TransportStream {
             if (awaitRegistrationReady(false)) {
                 while (writtenTotal < length) {
                     int written = tryWrite(source, writtenTotal, length - writtenTotal);
-                    if (written > 0) {
-                        writtenTotal += written;
-                        continue;
+                    if (written <= 0) {
+                        break;
                     }
-                    break;
+                    writtenTotal += written;
                 }
             }
         } catch (IOException e) {
@@ -701,8 +734,10 @@ final class NativeTcpStream implements TransportStream {
             throw new IOException("Core socket send() failed with errno=" + errno + " for stream " + streamId);
         } catch (IOException ex) {
             throw ex;
-        } catch (Throwable ex) {
-            throw new IOException("Core socket send() invocation failed for stream " + streamId, ex);
+        } catch (Throwable _) {
+            MemorySegment slice = source.asSlice(offset, length);
+            ByteBuffer sourceBuffer = slice.asByteBuffer();
+            return channel.write(sourceBuffer);
         }
     }
 
@@ -734,50 +769,69 @@ final class NativeTcpStream implements TransportStream {
         }
 
         ensureTlsBound();
-        if (tlsEngine.isHandshakeComplete()) {
-            tlsReady.set(true);
+        if (markTlsReadyIfHandshakeComplete()) {
             return true;
         }
 
-        long timeoutNanos = TimeUnit.MILLISECONDS.toNanos(HANDSHAKE_TIMEOUT_MILLIS);
-        long deadline = System.nanoTime() + timeoutNanos;
+        long deadline = handshakeDeadlineNanos();
 
         while (!closed.get()) {
-            try (LoanedBuffer outbound = allocator.allocateInfrastructure(1)) {
-                TlsStatus status;
-                boolean handshakeComplete;
-                synchronized (tlsLock) {
-                    handshakeComplete = tlsEngine.isHandshakeComplete();
-                    if (handshakeComplete) {
-                        tlsReady.set(true);
-                        return true;
-                    }
-                    status = tlsEngine.beginHandshake(outbound);
-                    handshakeComplete = tlsEngine.isHandshakeComplete();
-                }
-
-                if (status == TlsStatus.FINISHED || handshakeComplete) {
-                    tlsReady.set(true);
-                    return true;
-                }
-                if (status == TlsStatus.CLOSED) {
-                    close();
-                    return false;
-                }
-                if (status == TlsStatus.NEED_WRAP) {
-                    writeInterestCallback.run();
-                }
+            TlsStatus status = executeHandshakeStep();
+            if (status == TlsStatus.FINISHED) {
+                return true;
+            }
+            if (status == TlsStatus.CLOSED) {
+                close();
+                return false;
+            }
+            if (status == TlsStatus.NEED_WRAP) {
+                writeInterestCallback.run();
             }
 
             if (!blocking) {
                 return false;
             }
-            if (System.nanoTime() >= deadline) {
+            if (isHandshakeTimedOut(deadline)) {
                 throw TransportException.receiveTimeout(engineName, HANDSHAKE_TIMEOUT_MILLIS);
             }
-            LockSupport.parkNanos(HANDSHAKE_BACKOFF_NANOS);
+            backoffHandshake();
         }
         return false;
+    }
+
+    private TlsStatus executeHandshakeStep() {
+        try (LoanedBuffer outbound = allocator.allocateInfrastructure(1)) {
+            synchronized (tlsLock) {
+                if (markTlsReadyIfHandshakeComplete()) {
+                    return TlsStatus.FINISHED;
+                }
+                TlsStatus status = tlsEngine.beginHandshake(outbound);
+                if (status == TlsStatus.FINISHED || markTlsReadyIfHandshakeComplete()) {
+                    return TlsStatus.FINISHED;
+                }
+                return status;
+            }
+        }
+    }
+
+    private boolean markTlsReadyIfHandshakeComplete() {
+        if (!tlsEngine.isHandshakeComplete()) {
+            return false;
+        }
+        tlsReady.set(true);
+        return true;
+    }
+
+    private static long handshakeDeadlineNanos() {
+        return System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(HANDSHAKE_TIMEOUT_MILLIS);
+    }
+
+    private static boolean isHandshakeTimedOut(long deadline) {
+        return System.nanoTime() >= deadline;
+    }
+
+    private static void backoffHandshake() {
+        LockSupport.parkNanos(HANDSHAKE_BACKOFF_NANOS);
     }
 
     private int closedReadOutcome() {
@@ -818,9 +872,10 @@ final class NativeTcpStream implements TransportStream {
         int previousDepth = outboundQueueDepth.getAndIncrement();
         boolean offered = outboundQueue.offer(pendingWrite);
         if (!offered) {
-            decrementDepth(outboundQueueDepth);
-            pendingWrite.close();
-            throw new IllegalStateException("Failed to enqueue outbound write for stream " + streamId);
+            try (pendingWrite) {
+                decrementDepth(outboundQueueDepth);
+                throw new IllegalStateException("Failed to enqueue outbound write for stream " + streamId);
+            }
         }
         boolean queueWasEmpty = previousDepth == 0;
         if (signalWriteInterest && queueWasEmpty) {
@@ -855,13 +910,11 @@ final class NativeTcpStream implements TransportStream {
         }
     }
 
-    private boolean abortCloseAfterBestEffortFlush() {
+    private void finalizeCloseIfRequestedAfterBestEffortFlush() {
         if (!closeRequested.get()) {
-            return false;
+            return;
         }
-        drainOutboundQueue();
         finishCloseIfDrained();
-        return true;
     }
 
     private void finishCloseIfDrained() {
@@ -964,8 +1017,7 @@ final class NativeTcpStream implements TransportStream {
     private void drainOutboundQueue() {
         PendingWrite pending = outboundQueue.poll();
         while (pending != null) {
-            decrementDepth(outboundQueueDepth);
-            pending.close();
+            closePendingWriteAfterPoll(pending);
             pending = outboundQueue.poll();
         }
     }
