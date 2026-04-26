@@ -24,6 +24,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
@@ -239,8 +240,12 @@ public abstract class AbstractConfigProviderTck {
         void watchDoesNotThrow() {
             // Community: no-op. Enterprise: registers a NIO WatchService listener.
             // Either way, calling watch() must never throw.
-            provider.watch("app.properties", "network.port", ignored -> {});
-            provider.watch(null, "network.port", ignored -> {});
+            assertThatCode(() -> {
+                provider.watch("app.properties", "network.port", ignored -> { });
+                provider.watch(null, "network.port", ignored -> { });
+            })
+                    .as("watch() must accept valid invocations without throwing regardless of tier")
+                    .doesNotThrowAnyException();
         }
 
         @Test

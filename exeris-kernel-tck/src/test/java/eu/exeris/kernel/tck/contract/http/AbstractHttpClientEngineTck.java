@@ -10,9 +10,14 @@ package eu.exeris.kernel.tck.contract.http;
 
 import eu.exeris.kernel.spi.http.HttpClientEngine;
 import eu.exeris.kernel.spi.http.HttpConfig;
-import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
@@ -117,8 +122,15 @@ public abstract class AbstractHttpClientEngineTck {
         @Test
         @DisplayName("close() is idempotent — second call does not throw")
         void closeIdempotent() {
-            engine.close();
-            engine.close();
+            assertThatCode(() -> {
+                engine.close();
+                engine.close();
+            })
+                    .as("close() must be idempotent across repeated invocations")
+                    .doesNotThrowAnyException();
+            assertThat(engine.isRunning())
+                    .as("Closed client engine must not remain in running state")
+                    .isFalse();
         }
 
         @Test

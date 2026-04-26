@@ -23,6 +23,7 @@ import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 
 /**
  * TCK: Abstract base for L1→L2 dual-write contract verification via {@link GraphEngine}.
@@ -84,43 +85,59 @@ public abstract class AbstractGraphSyncServiceTck {
         @Test
         @DisplayName("openSession().upsertNode() completes without exception")
         void nodeUpsertSucceeds() {
-            try (GraphSession session = engine.openSession()) {
-                session.beginTransaction();
-                session.upsertNode("User", UUID.randomUUID(), null);
-                session.commit();
-            }
+            assertThatCode(() -> {
+                try (GraphSession session = engine.openSession()) {
+                    session.beginTransaction();
+                    session.upsertNode("User", UUID.randomUUID(), null);
+                    session.commit();
+                }
+            })
+                    .as("Node upsert happy path must complete without throwing across the full transaction block")
+                    .doesNotThrowAnyException();
         }
 
         @Test
         @DisplayName("openSession().upsertEdge() completes without exception")
         void edgeUpsertSucceeds() {
-            try (GraphSession session = engine.openSession()) {
-                GraphEdgeDescriptor follows = GraphEdgeDescriptor.create("User", "FOLLOWS", "User");
-                session.beginTransaction();
-                session.upsertEdge(follows, UUID.randomUUID(), UUID.randomUUID(), 1.0, null);
-                session.commit();
-            }
+            assertThatCode(() -> {
+                try (GraphSession session = engine.openSession()) {
+                    GraphEdgeDescriptor follows = GraphEdgeDescriptor.create("User", "FOLLOWS", "User");
+                    session.beginTransaction();
+                    session.upsertEdge(follows, UUID.randomUUID(), UUID.randomUUID(), 1.0, null);
+                    session.commit();
+                }
+            })
+                    .as("Edge upsert happy path must complete without throwing across the full transaction block")
+                    .doesNotThrowAnyException();
         }
 
         @Test
         @DisplayName("openSession().deleteNode() completes without exception")
         void nodeDeleteSucceeds() {
-            try (GraphSession session = engine.openSession()) {
-                session.beginTransaction();
-                session.deleteNode("User", UUID.randomUUID());
-                session.commit();
-            }
+            assertThatCode(() -> {
+                try (GraphSession session = engine.openSession()) {
+                    session.beginTransaction();
+                    session.deleteNode("User", UUID.randomUUID());
+                    session.commit();
+                }
+            })
+                    .as("Node delete happy path must complete without throwing across the full transaction block")
+                    .doesNotThrowAnyException();
         }
 
         @Test
         @DisplayName("openSession().deleteEdge() completes without exception")
         void edgeDeleteSucceeds() {
-            try (GraphSession session = engine.openSession()) {
-                GraphEdgeDescriptor follows = GraphEdgeDescriptor.create("User", "FOLLOWS", "User");
-                session.beginTransaction();
-                session.deleteEdge(follows, UUID.randomUUID(), UUID.randomUUID());
-                session.commit();
-            }
+            assertThatCode(() -> {
+                try (GraphSession session = engine.openSession()) {
+                    GraphEdgeDescriptor follows = GraphEdgeDescriptor.create("User", "FOLLOWS", "User");
+                    session.beginTransaction();
+                    session.deleteEdge(follows, UUID.randomUUID(), UUID.randomUUID());
+                    session.commit();
+                }
+            })
+                    .as("Edge delete happy path must complete without throwing across the full transaction block")
+                    .doesNotThrowAnyException();
         }
     }
 
@@ -222,7 +239,7 @@ public abstract class AbstractGraphSyncServiceTck {
     @DisplayName("GraphSyncException.rawArgs()[0] carries the edge type / label")
     void syncExceptionRawArgsEdgeType() {
         GraphSyncException ex = new GraphSyncException("FOLLOWS", "detail");
-        assertThat(ex.rawArgs()[0].toString()).isEqualTo("FOLLOWS");
+        assertThat(ex.rawArgs()[0]).hasToString("FOLLOWS");
     }
 }
 

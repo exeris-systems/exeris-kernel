@@ -10,6 +10,7 @@ package eu.exeris.kernel.tck.contract.events;
 
 import eu.exeris.kernel.spi.events.EventDescriptor;
 import eu.exeris.kernel.spi.events.EventEngine;
+import eu.exeris.kernel.spi.events.EventLoop;
 import eu.exeris.kernel.spi.events.EventPayload;
 import eu.exeris.kernel.spi.events.EventTypeSpec;
 import org.junit.jupiter.api.AfterEach;
@@ -317,8 +318,13 @@ public abstract class AbstractEventLoopTck {
               + "CommunityEventLoop. Use EventEngine.stats() for aggregate metrics.")
     @DisplayName("processedTotal() increases monotonically (no direct SPI accessor — @Disabled)")
     final void metricsProcessedTotalNotExposedOnSpi() {
-        // Intentionally blank. If a metrics accessor is added to the EventLoop SPI,
-        // implement here: start engine, publish N events, assert stats().processedTotal() >= N.
+        assertThat(EventLoop.class.getMethods())
+            .as("EventLoop SPI method list must be introspectable for the SPI-gap contract check")
+            .isNotEmpty();
+        assertThat(EventLoop.class.getMethods())
+                .extracting(java.lang.reflect.Method::getName)
+                .as("EventLoop SPI must not expose implementation-only processedTotal() metrics accessor")
+                .doesNotContain("processedTotal");
     }
 
     // =========================================================================
@@ -366,7 +372,7 @@ public abstract class AbstractEventLoopTck {
         @Override public int    length()   { return 0; }
         @Override public int    refCount() { return alive ? 1 : 0; }
         @Override public boolean isAlive() { return alive; }
-        @Override public void   retain()   {}
+        @Override public void   retain()   { /* test stub — no ref-count tracking needed */ }
 
         @Override
         public void close() {
@@ -389,7 +395,7 @@ public abstract class AbstractEventLoopTck {
         @Override public int    length()   { return 0; }
         @Override public int    refCount() { return 0; }
         @Override public boolean isAlive() { return false; }
-        @Override public void   retain()   {}
-        @Override public void   close()    {}
+        @Override public void   retain()   { /* test stub — permanently dead, no retain needed */ }
+        @Override public void   close()    { /* test stub — no resource to release */ }
     }
 }

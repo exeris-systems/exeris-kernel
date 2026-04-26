@@ -87,6 +87,7 @@
                 <version>3.2.5</version>
                 <configuration>
                     <argLine>
+                        @{coverage.argLine}
                         --enable-preview
                         --enable-native-access=ALL-UNNAMED
                         -XX:+UnlockExperimentalVMOptions

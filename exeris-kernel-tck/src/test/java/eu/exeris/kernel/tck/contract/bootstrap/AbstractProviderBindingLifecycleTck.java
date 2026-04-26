@@ -40,6 +40,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 @DisplayName("Provider Binding Lifecycle — State Symmetry TCK")
 public abstract class AbstractProviderBindingLifecycleTck extends AbstractBootstrapOrchestratorTck {
 
+    private static final ScopedValue<String>  HEALTHY_SLOT  = ScopedValue.newInstance();
+    private static final ScopedValue<String>  FAILING_SLOT  = ScopedValue.newInstance();
+    private static final ScopedValue<String>  PROVIDER_SLOT = ScopedValue.newInstance();
+    private static final ScopedValue<Boolean> BINDING_SEED  = ScopedValue.newInstance();
+
     /**
      * Validates that provider bindings are composed only for active (non-degraded) subsystems.
      *
@@ -56,14 +61,11 @@ public abstract class AbstractProviderBindingLifecycleTck extends AbstractBootst
     @Test
     @DisplayName("Degraded subsystems' bindings are excluded from kernel scope")
     void providerBindingsExcludedForDegradedSubsystems() {
-        ScopedValue<String> healthySlot = ScopedValue.newInstance();
-        ScopedValue<String> failingSlot = ScopedValue.newInstance();
-
         BindingTestSubsystem healthy = new BindingTestSubsystem(
                 "healthy", List.of(), BootstrapPhase.SERVICES, false) {
             @Override
             public UnaryOperator<ScopedValue.Carrier> providerBindings() {
-                return carrier -> carrier.where(healthySlot, "healthy-value");
+                return carrier -> carrier.where(HEALTHY_SLOT, "healthy-value");
             }
         };
 
@@ -71,7 +73,7 @@ public abstract class AbstractProviderBindingLifecycleTck extends AbstractBootst
                 "failing", List.of(), BootstrapPhase.SERVICES, true) {
             @Override
             public UnaryOperator<ScopedValue.Carrier> providerBindings() {
-                return carrier -> carrier.where(failingSlot, "failing-value");
+                return carrier -> carrier.where(FAILING_SLOT, "failing-value");
             }
         };
 
@@ -86,15 +88,15 @@ public abstract class AbstractProviderBindingLifecycleTck extends AbstractBootst
             }
         }
 
-        ScopedValue.Carrier seed  = ScopedValue.where(ScopedValue.newInstance(), Boolean.TRUE);
+        ScopedValue.Carrier seed  = ScopedValue.where(BINDING_SEED, Boolean.TRUE);
         ScopedValue.Carrier scope = composedEnricher.apply(seed);
 
         AtomicReference<String> capturedHealthy = new AtomicReference<>();
         AtomicReference<String> capturedFailing = new AtomicReference<>();
 
         scope.run(() -> {
-            capturedHealthy.set(healthySlot.isBound() ? healthySlot.get() : null);
-            capturedFailing.set(failingSlot.isBound() ? failingSlot.get() : null);
+            capturedHealthy.set(HEALTHY_SLOT.isBound() ? HEALTHY_SLOT.get() : null);
+            capturedFailing.set(FAILING_SLOT.isBound() ? FAILING_SLOT.get() : null);
         });
 
         assertThat(capturedHealthy.get())
@@ -117,14 +119,13 @@ public abstract class AbstractProviderBindingLifecycleTck extends AbstractBootst
     @Test
     @DisplayName("Active subsystems' bindings are visible during dependent start()")
     void providerBindingsVisibleDuringDependentStart() {
-        ScopedValue<String> providerSlot = ScopedValue.newInstance();
         AtomicReference<String> capturedDuringStart = new AtomicReference<>();
 
         BindingTestSubsystem provider = new BindingTestSubsystem(
                 "provider", List.of(), BootstrapPhase.FOUNDATION, false) {
             @Override
             public UnaryOperator<ScopedValue.Carrier> providerBindings() {
-                return carrier -> carrier.where(providerSlot, "provider-value");
+                return carrier -> carrier.where(PROVIDER_SLOT, "provider-value");
             }
         };
 
@@ -133,7 +134,7 @@ public abstract class AbstractProviderBindingLifecycleTck extends AbstractBootst
             @Override
             public void start() {
                 super.start();
-                capturedDuringStart.set(providerSlot.isBound() ? providerSlot.get() : null);
+                capturedDuringStart.set(PROVIDER_SLOT.isBound() ? PROVIDER_SLOT.get() : null);
             }
         };
 
@@ -148,7 +149,7 @@ public abstract class AbstractProviderBindingLifecycleTck extends AbstractBootst
         }
 
         // Phase 2: run start() inside the composed scope — bindings must be visible
-        ScopedValue.Carrier seed  = ScopedValue.where(ScopedValue.newInstance(), Boolean.TRUE);
+        ScopedValue.Carrier seed  = ScopedValue.where(BINDING_SEED, Boolean.TRUE);
         ScopedValue.Carrier scope = enricher.apply(seed);
 
         scope.run(consumer::start);

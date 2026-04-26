@@ -189,6 +189,8 @@ public abstract class AbstractEventBusTck {
 
             engine.bus().subscribe(TYPE_USER_CREATED, (d, payload) -> {
                 try (payload) {
+                    // handler work is intentionally empty
+                } finally {
                     handled.countDown();
                 }
             });
@@ -207,22 +209,27 @@ public abstract class AbstractEventBusTck {
         void broadcastThreeHandlersAllClose() throws Exception {
             AtomicInteger closeCalls = new AtomicInteger(0);
             CountDownLatch allHandled = new CountDownLatch(3);
+            CountDownLatch allClosed = new CountDownLatch(3);
 
             for (int i = 0; i < 3; i++) {
                 engine.bus().subscribe(TYPE_USER_CREATED, (d, payload) -> {
                     try (payload) {
+                        // handler work is intentionally empty
+                    } finally {
                         allHandled.countDown();
                     }
                 });
             }
 
-            TrackingPayload payload = new TrackingPayload(closeCalls);
+            TrackingPayload payload = new TrackingPayload(closeCalls, allClosed);
             engine.bus().publish(descriptor(ORDINAL_USER_CREATED), payload);
 
             assertThat(allHandled.await(5, TimeUnit.SECONDS))
                     .as("All 3 handlers must be invoked within 5 seconds").isTrue();
+            assertThat(allClosed.await(5, TimeUnit.SECONDS))
+                    .as("All 3 handler-owned payload references must be closed within 5 seconds")
+                    .isTrue();
 
-            // All handlers signalled via CountDownLatch — no sleep needed
             assertThat(payload.retainCalls())
                     .as("Bus MUST call retain() exactly (N-1)=2 times before forking handlers")
                     .isEqualTo(2);
