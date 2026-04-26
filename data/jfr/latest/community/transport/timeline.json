@@ -1,457 +1,625 @@
 [ {
-  "t" : 1777179451827,
+  "t" : 1777197912249,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.HashMap$Node",
+  "class" : "jdk.jfr.internal.SettingsManager$InternalSetting",
   "thread" : "main",
-  "size" : 261544,
+  "size" : 261560,
   "stackId" : "stk_0001",
   "category" : "jvm_noise"
 }, {
-  "t" : 1777179451828,
+  "t" : 1777197912249,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "[Ljava.util.HashMap$Node;",
+  "class" : "java.util.HashMap$KeyIterator",
   "thread" : "main",
-  "size" : 261568,
+  "size" : 261528,
   "stackId" : "stk_0002",
   "category" : "jvm_noise"
 }, {
-  "t" : 1777179451834,
+  "t" : 1777197912253,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.String",
+  "class" : "eu.exeris.kernel.community.memory.CommunityReleaseAction",
   "thread" : "main",
-  "size" : 261544,
+  "size" : 261536,
   "stackId" : "stk_0003",
+  "category" : "test_harness"
+}, {
+  "t" : 1777197912253,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "eu.exeris.kernel.community.memory.CommunityReleaseAction",
+  "thread" : "main",
+  "size" : 48,
+  "stackId" : "stk_0003",
+  "category" : "test_harness"
+}, {
+  "t" : 1777197912254,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.util.concurrent.ConcurrentLinkedQueue$Node",
+  "thread" : "carrier/native-tcp-client-writer/1",
+  "size" : 32,
+  "stackId" : "stk_0004",
   "category" : "jvm_noise"
 }, {
-  "t" : 1777179451839,
+  "t" : 1777197912259,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread$$Lambda.0x00000000820f1458",
-  "thread" : "main",
-  "size" : 261560,
-  "stackId" : "stk_0004",
-  "category" : "loom_runtime"
-}, {
-  "t" : 1777179451843,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.StringBuilder",
+  "class" : "[Ljava.util.HashMap$Node;",
   "thread" : "main",
   "size" : 261552,
   "stackId" : "stk_0005",
   "category" : "jvm_noise"
 }, {
-  "t" : 1777179451845,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "jdk.internal.vm.StackChunk",
-  "thread" : "paqs/CommunityNativeTcpCarrier/NORMAL/1",
-  "size" : 260880,
-  "stackId" : "stk_0006",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1777179451847,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.LinkedHashMap",
-  "thread" : "main",
-  "size" : 261488,
-  "stackId" : "stk_0007",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1777179451994,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "[Ljava.util.HashMap$Node;",
-  "thread" : "main",
-  "size" : 274728,
-  "stackId" : "stk_0008",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1777179451995,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "[Ljava.util.HashMap$Node;",
-  "thread" : "main",
-  "size" : 261504,
-  "stackId" : "stk_0009",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1777179452000,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.nio.DirectByteBuffer",
-  "thread" : "carrier/native-tcp-client-writer/1",
-  "size" : 242896,
-  "stackId" : "stk_0010",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1777179452000,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.nio.DirectByteBuffer",
-  "thread" : "carrier/native-tcp-client-writer/1",
-  "size" : 88,
-  "stackId" : "stk_0010",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1777179452001,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "eu.exeris.kernel.community.transport.NativeTcpStream$PendingWrite",
-  "thread" : "main",
-  "size" : 261568,
-  "stackId" : "stk_0011",
-  "category" : "test_harness"
-}, {
-  "t" : 1777179452001,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "eu.exeris.kernel.community.transport.NativeTcpStream$PendingWrite",
-  "thread" : "main",
-  "size" : 56,
-  "stackId" : "stk_0011",
-  "category" : "test_harness"
-}, {
-  "t" : 1777179452005,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "[Ljava.util.HashMap$Node;",
-  "thread" : "main",
-  "size" : 261568,
-  "stackId" : "stk_0012",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1777179452005,
+  "t" : 1777197912259,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "[Ljava.util.HashMap$Node;",
   "thread" : "main",
   "size" : 80,
+  "stackId" : "stk_0005",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1777197912532,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "[Ljava.util.HashMap$Node;",
+  "thread" : "main",
+  "size" : 261544,
+  "stackId" : "stk_0006",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1777197912533,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "[Ljava.util.HashMap$Node;",
+  "thread" : "main",
+  "size" : 228696,
+  "stackId" : "stk_0007",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1777197912536,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.nio.DirectByteBuffer",
+  "thread" : "carrier/native-tcp-client-writer/1",
+  "size" : 261560,
+  "stackId" : "stk_0008",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1777197912537,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.util.concurrent.ForkJoinTask$AdaptedRunnableAction",
+  "thread" : "main",
+  "size" : 261544,
+  "stackId" : "stk_0009",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1777197912537,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 261504,
+  "stackId" : "stk_0010",
+  "category" : "loom_runtime"
+}, {
+  "t" : 1777197912538,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.util.concurrent.ForkJoinTask$AdaptedRunnableAction",
+  "thread" : "main",
+  "size" : 261552,
+  "stackId" : "stk_0009",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1777197912540,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "eu.exeris.kernel.community.transport.NativeTcpStream$PendingWrite",
+  "thread" : "exeris-pin-Transport-478",
+  "size" : 261528,
+  "stackId" : "stk_0011",
+  "category" : "test_harness"
+}, {
+  "t" : 1777197912542,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.nio.DirectByteBuffer",
+  "thread" : "carrier/native-tcp-client-writer/1",
+  "size" : 261488,
+  "stackId" : "stk_0008",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1777197912542,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.util.LinkedHashMap$Entry",
+  "thread" : "main",
+  "size" : 261544,
   "stackId" : "stk_0012",
   "category" : "jvm_noise"
 }, {
-  "t" : 1777179452006,
+  "t" : 1777197912632,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.String",
-  "thread" : "main",
-  "size" : 245144,
-  "stackId" : "stk_0013",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1777179452006,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.String",
-  "thread" : "main",
-  "size" : 32,
-  "stackId" : "stk_0013",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1777179452300,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "[Ljava.util.HashMap$Node;",
-  "thread" : "main",
-  "size" : 261552,
-  "stackId" : "stk_0014",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1777179452303,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.Object",
+  "class" : "java.util.LinkedHashMap$Entry",
   "thread" : "main",
   "size" : 261568,
-  "stackId" : "stk_0015",
+  "stackId" : "stk_0013",
   "category" : "jvm_noise"
 }, {
-  "t" : 1777179452304,
+  "t" : 1777197912634,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "[B",
+  "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
+  "thread" : "main",
+  "size" : 261528,
+  "stackId" : "stk_0014",
+  "category" : "test_harness"
+}, {
+  "t" : 1777197912634,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
+  "thread" : "main",
+  "size" : 104,
+  "stackId" : "stk_0014",
+  "category" : "test_harness"
+}, {
+  "t" : 1777197912636,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "eu.exeris.kernel.community.memory.CommunityArenaShardPool$Allocation",
   "thread" : "main",
   "size" : 261560,
+  "stackId" : "stk_0015",
+  "category" : "test_harness"
+}, {
+  "t" : 1777197912636,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "eu.exeris.kernel.community.memory.CommunityArenaShardPool$Allocation",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0015",
+  "category" : "test_harness"
+}, {
+  "t" : 1777197912637,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.util.concurrent.ConcurrentLinkedQueue$Node",
+  "thread" : "carrier/native-tcp-client-writer/1",
+  "size" : 261544,
+  "stackId" : "stk_0004",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1777197912637,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.String",
+  "thread" : "main",
+  "size" : 261568,
   "stackId" : "stk_0016",
   "category" : "jvm_noise"
 }, {
-  "t" : 1777179452305,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread$VThreadContinuation",
+  "t" : 1777197912637,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.String",
   "thread" : "main",
-  "size" : 261512,
-  "stackId" : "stk_0017",
-  "category" : "loom_runtime"
+  "size" : 32,
+  "stackId" : "stk_0016",
+  "category" : "jvm_noise"
 }, {
-  "t" : 1777179452307,
+  "t" : 1777197912786,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "[Ljava.util.HashMap$Node;",
+  "class" : "java.util.HashMap",
   "thread" : "main",
-  "size" : 261512,
+  "size" : 261552,
+  "stackId" : "stk_0017",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1777197912791,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
+  "thread" : "main",
+  "size" : 261568,
+  "stackId" : "stk_0014",
+  "category" : "test_harness"
+}, {
+  "t" : 1777197912791,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
+  "thread" : "main",
+  "size" : 104,
+  "stackId" : "stk_0014",
+  "category" : "test_harness"
+}, {
+  "t" : 1777197912792,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.util.HashMap$Node",
+  "thread" : "carrier/native-tcp/reactor/0",
+  "size" : 40,
   "stackId" : "stk_0018",
   "category" : "jvm_noise"
 }, {
-  "t" : 1777179452309,
+  "t" : 1777197912792,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.LinkedHashMap$Entry",
-  "thread" : "main",
-  "size" : 261536,
+  "class" : "jdk.internal.foreign.NativeMemorySegmentImpl",
+  "thread" : "carrier/native-tcp-client-writer/1",
+  "size" : 11088,
   "stackId" : "stk_0019",
+  "category" : "panama"
+}, {
+  "t" : 1777197912792,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "jdk.internal.foreign.NativeMemorySegmentImpl",
+  "thread" : "carrier/native-tcp-client-writer/1",
+  "size" : 40,
+  "stackId" : "stk_0019",
+  "category" : "panama"
+}, {
+  "t" : 1777197912793,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "jdk.internal.foreign.NativeMemorySegmentImpl",
+  "thread" : "carrier/native-tcp-client-writer/1",
+  "size" : 5440,
+  "stackId" : "stk_0019",
+  "category" : "panama"
+}, {
+  "t" : 1777197912793,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "jdk.internal.foreign.NativeMemorySegmentImpl",
+  "thread" : "carrier/native-tcp-client-writer/1",
+  "size" : 40,
+  "stackId" : "stk_0019",
+  "category" : "panama"
+}, {
+  "t" : 1777197912793,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "jdk.internal.foreign.NativeMemorySegmentImpl",
+  "thread" : "carrier/native-tcp-client-writer/1",
+  "size" : 5440,
+  "stackId" : "stk_0019",
+  "category" : "panama"
+}, {
+  "t" : 1777197912793,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "jdk.internal.foreign.NativeMemorySegmentImpl",
+  "thread" : "carrier/native-tcp-client-writer/1",
+  "size" : 40,
+  "stackId" : "stk_0019",
+  "category" : "panama"
+}, {
+  "t" : 1777197912793,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "jdk.internal.foreign.NativeMemorySegmentImpl",
+  "thread" : "carrier/native-tcp-client-writer/1",
+  "size" : 5440,
+  "stackId" : "stk_0019",
+  "category" : "panama"
+}, {
+  "t" : 1777197912793,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "jdk.internal.foreign.NativeMemorySegmentImpl",
+  "thread" : "carrier/native-tcp-client-writer/1",
+  "size" : 40,
+  "stackId" : "stk_0019",
+  "category" : "panama"
+}, {
+  "t" : 1777197912793,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "jdk.internal.foreign.NativeMemorySegmentImpl",
+  "thread" : "carrier/native-tcp-client-writer/1",
+  "size" : 5440,
+  "stackId" : "stk_0019",
+  "category" : "panama"
+}, {
+  "t" : 1777197912793,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "jdk.internal.foreign.NativeMemorySegmentImpl",
+  "thread" : "carrier/native-tcp-client-writer/1",
+  "size" : 40,
+  "stackId" : "stk_0019",
+  "category" : "panama"
+}, {
+  "t" : 1777197912793,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.nio.DirectByteBuffer",
+  "thread" : "carrier/native-tcp-client-writer/1",
+  "size" : 5416,
+  "stackId" : "stk_0008",
   "category" : "jvm_noise"
 }, {
-  "t" : 1777179452412,
+  "t" : 1777197912793,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.nio.DirectByteBuffer",
+  "thread" : "carrier/native-tcp-client-writer/1",
+  "size" : 88,
+  "stackId" : "stk_0008",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1777197912793,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.HashMap$Node",
-  "thread" : "main",
-  "size" : 261536,
+  "class" : "java.util.concurrent.ConcurrentLinkedQueue$Node",
+  "thread" : "paqs/CommunityNativeTcpCarrier/NORMAL/1",
+  "size" : 1072,
   "stackId" : "stk_0020",
   "category" : "jvm_noise"
 }, {
-  "t" : 1777179452412,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.ArrayList$Itr",
-  "thread" : "main",
-  "size" : 261552,
-  "stackId" : "stk_0021",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1777179452415,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "eu.exeris.kernel.community.transport.NativeTcpStream$PendingWrite",
-  "thread" : "main",
-  "size" : 261536,
-  "stackId" : "stk_0011",
-  "category" : "test_harness"
-}, {
-  "t" : 1777179452415,
+  "t" : 1777197912793,
   "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "eu.exeris.kernel.community.transport.NativeTcpStream$PendingWrite",
-  "thread" : "main",
-  "size" : 56,
-  "stackId" : "stk_0011",
-  "category" : "test_harness"
-}, {
-  "t" : 1777179452417,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.HashMap",
-  "thread" : "main",
-  "size" : 261560,
-  "stackId" : "stk_0022",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1777179452417,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.util.HashMap",
-  "thread" : "main",
-  "size" : 64,
-  "stackId" : "stk_0022",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1777179452419,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "jdk.internal.vm.StackChunk",
+  "class" : "java.util.concurrent.ConcurrentLinkedQueue$Node",
   "thread" : "paqs/CommunityNativeTcpCarrier/NORMAL/1",
-  "size" : 261312,
-  "stackId" : "stk_0006",
+  "size" : 32,
+  "stackId" : "stk_0020",
   "category" : "jvm_noise"
 }, {
-  "t" : 1777179452639,
+  "t" : 1777197912794,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.nio.DirectByteBuffer",
+  "thread" : "carrier/native-tcp-client-writer/1",
+  "size" : 5504,
+  "stackId" : "stk_0008",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1777197912794,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.nio.DirectByteBuffer",
+  "thread" : "carrier/native-tcp-client-writer/1",
+  "size" : 88,
+  "stackId" : "stk_0008",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1777197912794,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.nio.DirectByteBuffer",
+  "thread" : "carrier/native-tcp-client-writer/1",
+  "size" : 5504,
+  "stackId" : "stk_0008",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1777197912794,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.nio.DirectByteBuffer",
+  "thread" : "carrier/native-tcp-client-writer/1",
+  "size" : 88,
+  "stackId" : "stk_0008",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1777197912794,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.nio.DirectByteBuffer",
+  "thread" : "carrier/native-tcp-client-writer/1",
+  "size" : 5504,
+  "stackId" : "stk_0008",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1777197912794,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.nio.DirectByteBuffer",
+  "thread" : "carrier/native-tcp-client-writer/1",
+  "size" : 88,
+  "stackId" : "stk_0008",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1777197912794,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.nio.DirectByteBuffer",
+  "thread" : "carrier/native-tcp-client-writer/1",
+  "size" : 5504,
+  "stackId" : "stk_0008",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1777197912794,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.nio.DirectByteBuffer",
+  "thread" : "carrier/native-tcp-client-writer/1",
+  "size" : 88,
+  "stackId" : "stk_0008",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1777197912794,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.nio.DirectByteBuffer",
+  "thread" : "carrier/native-tcp-client-writer/1",
+  "size" : 5504,
+  "stackId" : "stk_0008",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1777197912794,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.nio.DirectByteBuffer",
+  "thread" : "carrier/native-tcp-client-writer/1",
+  "size" : 88,
+  "stackId" : "stk_0008",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1777197912794,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.nio.DirectByteBuffer",
+  "thread" : "carrier/native-tcp-client-writer/1",
+  "size" : 5504,
+  "stackId" : "stk_0008",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1777197912794,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.nio.DirectByteBuffer",
+  "thread" : "carrier/native-tcp-client-writer/1",
+  "size" : 88,
+  "stackId" : "stk_0008",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1777197912794,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.nio.DirectByteBuffer",
+  "thread" : "carrier/native-tcp-client-writer/1",
+  "size" : 5504,
+  "stackId" : "stk_0008",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1777197912794,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.nio.DirectByteBuffer",
+  "thread" : "carrier/native-tcp-client-writer/1",
+  "size" : 88,
+  "stackId" : "stk_0008",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1777197912794,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.nio.DirectByteBuffer",
+  "thread" : "carrier/native-tcp-client-writer/1",
+  "size" : 5504,
+  "stackId" : "stk_0008",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1777197912794,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.nio.DirectByteBuffer",
+  "thread" : "carrier/native-tcp-client-writer/1",
+  "size" : 88,
+  "stackId" : "stk_0008",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1777197912795,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.nio.DirectByteBuffer",
+  "thread" : "carrier/native-tcp-client-writer/1",
+  "size" : 5504,
+  "stackId" : "stk_0008",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1777197912795,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.nio.DirectByteBuffer",
+  "thread" : "carrier/native-tcp-client-writer/1",
+  "size" : 88,
+  "stackId" : "stk_0008",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1777197912795,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.nio.DirectByteBuffer",
+  "thread" : "carrier/native-tcp-client-writer/1",
+  "size" : 5504,
+  "stackId" : "stk_0008",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1777197912795,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.nio.DirectByteBuffer",
+  "thread" : "carrier/native-tcp-client-writer/1",
+  "size" : 88,
+  "stackId" : "stk_0008",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1777197912795,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.nio.DirectByteBuffer",
+  "thread" : "carrier/native-tcp-client-writer/1",
+  "size" : 5504,
+  "stackId" : "stk_0008",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1777197912795,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.nio.DirectByteBuffer",
+  "thread" : "carrier/native-tcp-client-writer/1",
+  "size" : 88,
+  "stackId" : "stk_0008",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1777197912795,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.nio.DirectByteBuffer",
+  "thread" : "carrier/native-tcp-client-writer/1",
+  "size" : 5504,
+  "stackId" : "stk_0008",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1777197912795,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.nio.DirectByteBuffer",
+  "thread" : "carrier/native-tcp-client-writer/1",
+  "size" : 88,
+  "stackId" : "stk_0008",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1777197912795,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.nio.DirectByteBuffer",
+  "thread" : "carrier/native-tcp-client-writer/1",
+  "size" : 5504,
+  "stackId" : "stk_0008",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1777197912795,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.nio.DirectByteBuffer",
+  "thread" : "carrier/native-tcp-client-writer/1",
+  "size" : 88,
+  "stackId" : "stk_0008",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1777197912795,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "java.util.LinkedHashMap",
   "thread" : "main",
-  "size" : 277896,
-  "stackId" : "stk_0023",
+  "size" : 261544,
+  "stackId" : "stk_0021",
   "category" : "jvm_noise"
 }, {
-  "t" : 1777179452639,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.HashMap",
+  "t" : 1777197912795,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.util.LinkedHashMap",
   "thread" : "main",
-  "size" : 261536,
-  "stackId" : "stk_0024",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1777179452650,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.nio.DirectByteBuffer",
-  "thread" : "carrier/native-tcp-client-writer/1",
-  "size" : 13048,
-  "stackId" : "stk_0010",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1777179452650,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.nio.DirectByteBuffer",
-  "thread" : "carrier/native-tcp-client-writer/1",
   "size" : 88,
-  "stackId" : "stk_0010",
+  "stackId" : "stk_0021",
   "category" : "jvm_noise"
 }, {
-  "t" : 1777179452650,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.concurrent.ConcurrentLinkedQueue$Node",
-  "thread" : "carrier/native-tcp-client-writer/1",
-  "size" : 13048,
-  "stackId" : "stk_0025",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1777179452650,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.util.concurrent.ConcurrentLinkedQueue$Node",
-  "thread" : "carrier/native-tcp-client-writer/1",
-  "size" : 32,
-  "stackId" : "stk_0025",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1777179452650,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "eu.exeris.kernel.community.memory.CommunityReleaseAction",
-  "thread" : "main",
-  "size" : 261536,
-  "stackId" : "stk_0026",
-  "category" : "test_harness"
-}, {
-  "t" : 1777179452650,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "eu.exeris.kernel.community.memory.CommunityReleaseAction",
-  "thread" : "main",
-  "size" : 48,
-  "stackId" : "stk_0026",
-  "category" : "test_harness"
-}, {
-  "t" : 1777179452651,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "jdk.internal.foreign.NativeMemorySegmentImpl",
-  "thread" : "carrier/native-tcp-client-writer/1",
-  "size" : 12992,
-  "stackId" : "stk_0027",
-  "category" : "panama"
-}, {
-  "t" : 1777179452651,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "jdk.internal.foreign.NativeMemorySegmentImpl",
-  "thread" : "carrier/native-tcp-client-writer/1",
-  "size" : 40,
-  "stackId" : "stk_0027",
-  "category" : "panama"
-}, {
-  "t" : 1777179452651,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.nio.DirectByteBuffer",
-  "thread" : "carrier/native-tcp-client-writer/1",
-  "size" : 13000,
-  "stackId" : "stk_0010",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1777179452651,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.nio.DirectByteBuffer",
-  "thread" : "carrier/native-tcp-client-writer/1",
-  "size" : 88,
-  "stackId" : "stk_0010",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1777179452651,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.concurrent.ConcurrentLinkedQueue$Node",
-  "thread" : "carrier/native-tcp-client-writer/1",
-  "size" : 13048,
-  "stackId" : "stk_0025",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1777179452651,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.util.concurrent.ConcurrentLinkedQueue$Node",
-  "thread" : "carrier/native-tcp-client-writer/1",
-  "size" : 32,
-  "stackId" : "stk_0025",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1777179452652,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "jdk.internal.foreign.NativeMemorySegmentImpl",
-  "thread" : "carrier/native-tcp-client-writer/1",
-  "size" : 12992,
-  "stackId" : "stk_0027",
-  "category" : "panama"
-}, {
-  "t" : 1777179452652,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "jdk.internal.foreign.NativeMemorySegmentImpl",
-  "thread" : "carrier/native-tcp-client-writer/1",
-  "size" : 40,
-  "stackId" : "stk_0027",
-  "category" : "panama"
-}, {
-  "t" : 1777179452655,
-  "type" : "jdk.ObjectAllocationOutsideTLAB",
-  "class" : "jdk.internal.vm.StackChunk",
-  "thread" : "paqs/CommunityNativeTcpCarrier/NORMAL/1",
-  "size" : 1008,
-  "stackId" : "stk_0006",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1777179452655,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.nio.DirectByteBuffer",
-  "thread" : "carrier/native-tcp-client-writer/1",
-  "size" : 13016,
-  "stackId" : "stk_0010",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1777179452655,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.nio.DirectByteBuffer",
-  "thread" : "carrier/native-tcp-client-writer/1",
-  "size" : 88,
-  "stackId" : "stk_0010",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1777179452656,
+  "t" : 1777197912796,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "java.util.LinkedHashMap$Entry",
   "thread" : "main",
   "size" : 261536,
-  "stackId" : "stk_0028",
+  "stackId" : "stk_0022",
   "category" : "jvm_noise"
 }, {
-  "t" : 1777179452656,
+  "t" : 1777197912796,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "java.util.LinkedHashMap$Entry",
   "thread" : "main",
   "size" : 56,
-  "stackId" : "stk_0028",
+  "stackId" : "stk_0022",
   "category" : "jvm_noise"
 }, {
-  "t" : 1777179452657,
+  "t" : 1777197912799,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "java.nio.DirectByteBuffer",
   "thread" : "carrier/native-tcp-client-writer/1",
-  "size" : 13056,
-  "stackId" : "stk_0010",
+  "size" : 5424,
+  "stackId" : "stk_0008",
   "category" : "jvm_noise"
 }, {
-  "t" : 1777179452657,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.HashMap$KeySet",
-  "thread" : "main",
-  "size" : 261568,
-  "stackId" : "stk_0029",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1777179452657,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.util.HashMap$KeySet",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0029",
-  "category" : "jvm_noise"
-}, {
-  "t" : 1777179452658,
+  "t" : 1777197912799,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "java.nio.DirectByteBuffer",
   "thread" : "carrier/native-tcp-client-writer/1",
-  "size" : 13056,
-  "stackId" : "stk_0010",
+  "size" : 5504,
+  "stackId" : "stk_0008",
   "category" : "jvm_noise"
 }, {
-  "t" : 1777179452658,
+  "t" : 1777197912799,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "java.nio.DirectByteBuffer",
   "thread" : "carrier/native-tcp-client-writer/1",
-  "size" : 13056,
-  "stackId" : "stk_0010",
+  "size" : 5504,
+  "stackId" : "stk_0008",
   "category" : "jvm_noise"
 }, {
-  "t" : 1777179452659,
+  "t" : 1777197912799,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "java.nio.DirectByteBuffer",
   "thread" : "carrier/native-tcp-client-writer/1",
-  "size" : 13056,
-  "stackId" : "stk_0010",
+  "size" : 5504,
+  "stackId" : "stk_0008",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1777197912799,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.nio.DirectByteBuffer",
+  "thread" : "carrier/native-tcp-client-writer/1",
+  "size" : 5504,
+  "stackId" : "stk_0008",
+  "category" : "jvm_noise"
+}, {
+  "t" : 1777197912799,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.nio.DirectByteBuffer",
+  "thread" : "carrier/native-tcp-client-writer/1",
+  "size" : 5504,
+  "stackId" : "stk_0008",
   "category" : "jvm_noise"
 } ]
