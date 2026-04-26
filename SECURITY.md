@@ -363,7 +363,7 @@ Do not include raw tokens, private keys, passwords, production credentials, auth
 
 ## Reporting a Vulnerability
 
-Please report suspected vulnerabilities privately using GitHub private vulnerability reporting or the maintainer-designated security contact.
+Please report suspected vulnerabilities privately using GitHub private vulnerability reporting for this repository.
 
 Do not open a public issue for suspected vulnerabilities.
 
