@@ -89,5 +89,26 @@ final class CoreFlowRegistry implements FlowRegistry {
     }
 
     private record RegistrySnapshot(FlowStepDescriptor[] steps, FlowTransitionDescriptor[][] transitions) {
+        @Override
+        public boolean equals(Object other) {
+            if (this == other) {
+                return true;
+            }
+            if (!(other instanceof RegistrySnapshot(var otherSteps, var otherTransitions))) {
+                return false;
+            }
+            return Arrays.equals(steps, otherSteps) && Arrays.deepEquals(transitions, otherTransitions);
+        }
+
+        @Override
+        public int hashCode() {
+            return 31 * Arrays.hashCode(steps) + Arrays.deepHashCode(transitions);
+        }
+
+        @Override
+        public String toString() {
+            return "RegistrySnapshot[steps=" + Arrays.toString(steps)
+                    + ", transitions=" + Arrays.deepToString(transitions) + "]";
+        }
     }
 }

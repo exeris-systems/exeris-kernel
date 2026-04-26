@@ -92,6 +92,7 @@ class Http2HeaderBlockAssemblerTest {
 
                 @Override
                 public void close() {
+                    /* test stub — no resources to release */
                 }
         }
 
@@ -136,10 +137,12 @@ class Http2HeaderBlockAssemblerTest {
 
                 @Override
                 public void retain() {
+                    /* test stub — ref-count not tracked in this fixture */
                 }
 
                 @Override
                 public void close() {
+                    /* test stub — no resource to release */
                 }
 
                 @Override
@@ -159,6 +162,7 @@ class Http2HeaderBlockAssemblerTest {
 
                 @Override
                 public void addCloseAction(Runnable action) {
+                    /* test stub — close actions not tracked */
                 }
         }
 }

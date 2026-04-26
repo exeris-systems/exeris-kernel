@@ -106,6 +106,7 @@ public final class HttpRouter implements HttpHandler {
     public static final class Builder {
 
         private static final String HANDLER_PARAM = "handler";
+        private static final String METHOD_PARAM = "method";
 
         private final List<RouteEntry> exactRoutes = new ArrayList<>();
         private final List<RouteEntry> prefixRoutes = new ArrayList<>();
@@ -115,7 +116,7 @@ public final class HttpRouter implements HttpHandler {
 
         /** Registers a single (method, path) → handler exact route. */
         public Builder route(HttpMethod method, String path, HttpHandler handler) {
-            Objects.requireNonNull(method, "method");
+            Objects.requireNonNull(method, METHOD_PARAM);
             Objects.requireNonNull(path, "path");
             Objects.requireNonNull(handler, HANDLER_PARAM);
             exactRoutes.add(new RouteEntry(method, path, handler));
@@ -128,7 +129,7 @@ public final class HttpRouter implements HttpHandler {
             Objects.requireNonNull(path, "path");
             Objects.requireNonNull(methods, "methods");
             for (HttpMethod method : methods) {
-                Objects.requireNonNull(method, "method");
+                Objects.requireNonNull(method, METHOD_PARAM);
                 exactRoutes.add(new RouteEntry(method, path, handler));
             }
             return this;
@@ -141,7 +142,7 @@ public final class HttpRouter implements HttpHandler {
          * {@code /apiv2}).
          */
         public Builder prefixRoute(HttpMethod method, String pathPrefix, HttpHandler handler) {
-            Objects.requireNonNull(method, "method");
+            Objects.requireNonNull(method, METHOD_PARAM);
             Objects.requireNonNull(pathPrefix, "pathPrefix");
             Objects.requireNonNull(handler, HANDLER_PARAM);
             String normalized = pathPrefix.endsWith("/*")

@@ -94,6 +94,7 @@ class CoreFlowEngineTest {
             go.countDown();
             assertThat(done.await(10, TimeUnit.SECONDS)).isTrue();
             awaitTrue(5_000, () -> executions.get() >= 1);
+            LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(300));
 
             assertThat(executions.get()).isEqualTo(1);
         }
@@ -809,6 +810,7 @@ class CoreFlowEngineTest {
 
             @Override
             public void unsubscribe(SubscriptionToken token) {
+                /* test stub — subscription not exercised in this fixture */
             }
 
             @Override
@@ -839,10 +841,12 @@ class CoreFlowEngineTest {
 
         @Override
         public void start() {
+            /* test stub — not exercised */
         }
 
         @Override
         public void close() {
+            /* test stub — no resources to release */
         }
 
         @Override
@@ -871,6 +875,7 @@ class CoreFlowEngineTest {
 
             @Override
             public void unsubscribe(SubscriptionToken token) {
+                /* test stub — subscription not exercised in this fixture */
             }
 
             @Override
@@ -901,10 +906,12 @@ class CoreFlowEngineTest {
 
         @Override
         public void start() {
+            /* test stub — not exercised */
         }
 
         @Override
         public void close() {
+            /* test stub — no resources to release */
         }
 
         @Override

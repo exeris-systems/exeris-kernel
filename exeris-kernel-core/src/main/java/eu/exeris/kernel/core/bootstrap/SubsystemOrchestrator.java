@@ -352,10 +352,7 @@ public final class SubsystemOrchestrator {
         healthMonitor.markKernelState(KernelHealthMonitor.KernelState.SHUTTING_DOWN);
         LOG.log(System.Logger.Level.INFO, "Shutting down {0} subsystem(s)", count);
 
-        List<Subsystem> reversed = new ArrayList<>(orderedSubsystems);
-        Collections.reverse(reversed);
-
-        for (Subsystem subsystem : reversed) {
+        for (Subsystem subsystem : orderedSubsystems.reversed()) {
             if (subsystem.isRunning()) {
                 long stopStartNanos = System.nanoTime();
                 LOG.log(System.Logger.Level.INFO, "  Stopping [{0}]", subsystem.name());
