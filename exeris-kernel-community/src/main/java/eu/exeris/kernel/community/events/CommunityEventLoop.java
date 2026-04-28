@@ -83,8 +83,18 @@ final class CommunityEventLoop implements EventLoop {
                     running.set(false);
                     EventLoopFailureEvent.emit(failedThread.getName(), "UNCAUGHT", throwable, 0);
                 })
-                .start(this::runLoop);
+                .unstarted(this::runLoop);
         loopThread.set(thread);
+        boolean started = false;
+        try {
+            thread.start();
+            started = true;
+        } finally {
+            if (!started) {
+                loopThread.compareAndSet(thread, null);
+                running.set(false);
+            }
+        }
     }
 
     @Override
