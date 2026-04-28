@@ -73,7 +73,8 @@ final class JfrDirectoryReader {
                 }
             }
         } catch (IOException ex) {
-            LOGGER.log(Level.WARNING, () -> "[jfr-reporter] WARN: failed to read " + jfrFile + ": " + ex.getMessage());
+            LOGGER.log(Level.WARNING, ex,
+                    () -> "[jfr-reporter] WARN: failed to read " + jfrFile);
         }
         return events;
     }

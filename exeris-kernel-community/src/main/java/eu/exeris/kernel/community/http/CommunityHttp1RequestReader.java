@@ -60,8 +60,13 @@ import java.util.List;
                 total - headerStart,
                 (name, value) -> headers.add(new HttpHeader(name, value)));
 
+        HttpMethod method = parseMethod(requestLine.method());
+        if (method == null) {
+            return null;
+        }
+
         return new ReadResult(
-                parseMethod(requestLine.method()),
+            method,
                 requestLine.target(),
                 parseVersion(requestLine.version()),
                 List.copyOf(headers),
@@ -75,7 +80,7 @@ import java.util.List;
         try {
             return HttpMethod.valueOf(token);
         } catch (IllegalArgumentException _) {
-            return HttpMethod.GET;
+            return null;
         }
     }
 

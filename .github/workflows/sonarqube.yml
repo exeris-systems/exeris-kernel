@@ -31,10 +31,17 @@ jobs:
           fetch-depth: 0
 
       - name: SonarQube configuration check
-        if: env.SONAR_TOKEN == '' || env.SONAR_HOST_URL == ''
+        if: (env.SONAR_TOKEN == '' || env.SONAR_HOST_URL == '') && (github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository))
         run: |
           echo "SONAR_TOKEN or SONAR_HOST_URL is not configured for this repository."
-          echo "Skipping remote analysis while keeping the status check name stable."
+          echo "This workflow must fail for pushes and same-repository pull requests to avoid false-green enforcement."
+          exit 1
+
+      - name: SonarQube configuration check (fork PR informational)
+        if: (env.SONAR_TOKEN == '' || env.SONAR_HOST_URL == '') && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
+        run: |
+          echo "SONAR_TOKEN or SONAR_HOST_URL is not configured for this repository context."
+          echo "External fork pull request detected; skipping remote analysis while keeping the status check name stable."
 
       - name: Cache JDK tarball
         if: env.SONAR_TOKEN != '' && env.SONAR_HOST_URL != ''
