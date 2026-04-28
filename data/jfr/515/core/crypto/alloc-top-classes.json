@@ -1,0 +1,36 @@
+[ {
+  "class" : "java.util.LinkedHashMap",
+  "count" : 3,
+  "bytes" : 654064,
+  "category" : "jvm_noise"
+}, {
+  "class" : "[B",
+  "count" : 2,
+  "bytes" : 523104,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.lang.ThreadBuilders$VirtualThreadBuilder",
+  "count" : 2,
+  "bytes" : 312184,
+  "category" : "loom_runtime"
+}, {
+  "class" : "java.util.HashMap$KeyIterator",
+  "count" : 1,
+  "bytes" : 261536,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.util.HashMap$KeySet",
+  "count" : 1,
+  "bytes" : 261552,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.lang.VirtualThread",
+  "count" : 1,
+  "bytes" : 261472,
+  "category" : "loom_runtime"
+}, {
+  "class" : "java.util.concurrent.ForkJoinTask$AdaptedRunnableAction",
+  "count" : 1,
+  "bytes" : 261552,
+  "category" : "jvm_noise"
+} ]

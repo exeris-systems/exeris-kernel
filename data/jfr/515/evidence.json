@@ -1,0 +1,96 @@
+{
+  "meta" : {
+    "generated" : "2026-04-28T05:37:39.95019339Z",
+    "jdk" : "26",
+    "commit" : "ec26e996f0c0a6d294bbac48aff0bfa4d6ceaed9",
+    "branch" : "main"
+  },
+  "core" : {
+    "bootstrap" : {
+      "verdict" : "VERIFIED",
+      "total_events" : 550,
+      "exeris_alloc_count" : 0,
+      "exeris_production_alloc_count" : 0,
+      "exeris_test_harness_count" : 0
+    },
+    "crypto" : {
+      "verdict" : "VERIFIED",
+      "total_events" : 11,
+      "exeris_alloc_count" : 0,
+      "exeris_production_alloc_count" : 0,
+      "exeris_test_harness_count" : 0
+    },
+    "persistence" : {
+      "verdict" : "VERIFIED",
+      "total_events" : 6,
+      "exeris_alloc_count" : 0,
+      "exeris_production_alloc_count" : 0,
+      "exeris_test_harness_count" : 0
+    },
+    "telemetry" : {
+      "verdict" : "VERIFIED",
+      "total_events" : 54,
+      "exeris_alloc_count" : 50,
+      "exeris_production_alloc_count" : 0,
+      "exeris_test_harness_count" : 50
+    },
+    "unknown" : {
+      "verdict" : "VERIFIED",
+      "total_events" : 215,
+      "exeris_alloc_count" : 0,
+      "exeris_production_alloc_count" : 0,
+      "exeris_test_harness_count" : 0
+    }
+  },
+  "community" : {
+    "eventbus" : {
+      "verdict" : "VERIFIED",
+      "total_events" : 385,
+      "exeris_alloc_count" : 8,
+      "exeris_production_alloc_count" : 3,
+      "exeris_test_harness_count" : 5
+    },
+    "persistence" : {
+      "verdict" : "VERIFIED",
+      "total_events" : 120,
+      "exeris_alloc_count" : 0,
+      "exeris_production_alloc_count" : 0,
+      "exeris_test_harness_count" : 0
+    },
+    "transport" : {
+      "verdict" : "VERIFIED",
+      "total_events" : 83,
+      "exeris_alloc_count" : 9,
+      "exeris_production_alloc_count" : 0,
+      "exeris_test_harness_count" : 9
+    },
+    "memory" : {
+      "verdict" : "VERIFIED",
+      "total_events" : 21,
+      "exeris_alloc_count" : 18,
+      "exeris_production_alloc_count" : 0,
+      "exeris_test_harness_count" : 18
+    },
+    "storagecontext" : {
+      "verdict" : "VERIFIED",
+      "total_events" : 14,
+      "exeris_alloc_count" : 0,
+      "exeris_production_alloc_count" : 0,
+      "exeris_test_harness_count" : 0
+    },
+    "flowengine" : {
+      "verdict" : "VERIFIED",
+      "total_events" : 60,
+      "exeris_alloc_count" : 7,
+      "exeris_production_alloc_count" : 5,
+      "exeris_test_harness_count" : 2
+    },
+    "unknown" : {
+      "verdict" : "VERIFIED",
+      "total_events" : 4922,
+      "exeris_alloc_count" : 241,
+      "exeris_production_alloc_count" : 39,
+      "exeris_test_harness_count" : 202
+    }
+  }
+}
