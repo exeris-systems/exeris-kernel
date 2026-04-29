@@ -233,6 +233,7 @@ final class CoreFlowRuntime { // NOPMD
         });
 
         if (instance.isTerminal() || terminalStateCatalog.containsKey(key)) {
+            liveInstances.remove(key, instance);
             return;
         }
 
@@ -287,6 +288,7 @@ final class CoreFlowRuntime { // NOPMD
         RuntimeFlowInstance instance = resolveParkedInstance(key, context.state());
 
         if (instance.isTerminal() || terminalStateCatalog.containsKey(key)) {
+            liveInstances.remove(key, instance);
             return;
         }
 

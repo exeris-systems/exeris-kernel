@@ -94,7 +94,7 @@ class CoreFlowEngineTest {
             go.countDown();
             assertThat(done.await(10, TimeUnit.SECONDS)).isTrue();
             awaitTrue(5_000, () -> executions.get() >= 1);
-            LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(300));
+            awaitTrue(5_000, () -> executions.get() == 1 && engine.stats().activeFlows() == 0);
 
             assertThat(executions.get()).isEqualTo(1);
         }

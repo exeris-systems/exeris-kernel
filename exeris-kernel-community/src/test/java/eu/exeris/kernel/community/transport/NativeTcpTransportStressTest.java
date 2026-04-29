@@ -80,7 +80,7 @@ class NativeTcpTransportStressTest {
                         TransportConnection connection = null;
                         TransportStream stream = null;
                         try {
-clientEngine = createClientEngine(provider, "127.0.0.1");
+                            clientEngine = createClientEngine(provider, "127.0.0.1");
                             clientEngine.start();
 
                             connection = clientEngine.connect("127.0.0.1", port);
