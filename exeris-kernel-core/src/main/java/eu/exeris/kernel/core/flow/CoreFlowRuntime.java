@@ -134,8 +134,10 @@ final class CoreFlowRuntime { // NOPMD
         parkedFlows.reset();
     }
 
+    @SuppressWarnings("java:S2142")
     private void interruptAndJoinRunningThreads() {
         Thread[] threads = runningThreads.toArray(Thread[]::new);
+        boolean interrupted = false;
         for (Thread thread : threads) {
             thread.interrupt();
         }
@@ -146,8 +148,11 @@ final class CoreFlowRuntime { // NOPMD
                     thread.join(java.time.Duration.ofMillis(100));
                 }
             } catch (InterruptedException _) {
-                Thread.currentThread().interrupt(); // restore; join attempt cut short
+                interrupted = true;
             }
+        }
+        if (interrupted) {
+            Thread.currentThread().interrupt();
         }
     }
 

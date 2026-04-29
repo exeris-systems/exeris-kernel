@@ -15,6 +15,9 @@ import java.util.ServiceLoader;
 
 /**
  * Internal core utility for deterministic ServiceLoader-based provider selection.
+ *
+ * <p>Providers are ranked by the supplied comparator. When two providers compare as equal,
+ * selection is deterministically resolved by provider implementation class name.</p>
  */
 public final class BootstrapProviderSelector {
 
@@ -27,9 +30,17 @@ public final class BootstrapProviderSelector {
         Objects.requireNonNull(providerType, "providerType must not be null");
         Objects.requireNonNull(comparator, "comparator must not be null");
 
+        Comparator<T> deterministicComparator = (left, right) -> {
+            int compared = comparator.compare(left, right);
+            if (compared != 0) {
+                return compared;
+            }
+            return left.getClass().getName().compareTo(right.getClass().getName());
+        };
+
         return ServiceLoader.load(providerType)
                 .stream()
                 .map(ServiceLoader.Provider::get)
-                .max(comparator);
+                .max(deterministicComparator);
     }
 }
