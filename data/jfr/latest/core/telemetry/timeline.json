@@ -1,433 +1,425 @@
 [ {
-  "t" : 1777354132646,
+  "t" : 1777440265021,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "[Ljava.util.HashMap$Node;",
+  "class" : "java.util.HashMap$Node",
   "thread" : "main",
-  "size" : 276544,
+  "size" : 261568,
   "stackId" : "stk_0001",
   "category" : "jvm_noise"
 }, {
-  "t" : 1777354132647,
+  "t" : 1777440265024,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "[Ljava.util.HashMap$Node;",
+  "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
-  "size" : 261504,
+  "size" : 261544,
   "stackId" : "stk_0002",
-  "category" : "jvm_noise"
+  "category" : "test_harness"
 }, {
-  "t" : 1777354132648,
+  "t" : 1777440265024,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
+  "thread" : "main",
+  "size" : 64,
+  "stackId" : "stk_0002",
+  "category" : "test_harness"
+}, {
+  "t" : 1777440265025,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
+  "thread" : "main",
+  "size" : 222528,
+  "stackId" : "stk_0002",
+  "category" : "test_harness"
+}, {
+  "t" : 1777440265025,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
+  "thread" : "main",
+  "size" : 64,
+  "stackId" : "stk_0002",
+  "category" : "test_harness"
+}, {
+  "t" : 1777440265027,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
   "size" : 261536,
-  "stackId" : "stk_0003",
+  "stackId" : "stk_0002",
   "category" : "test_harness"
 }, {
-  "t" : 1777354132648,
+  "t" : 1777440265027,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
   "size" : 64,
-  "stackId" : "stk_0003",
+  "stackId" : "stk_0002",
   "category" : "test_harness"
 }, {
-  "t" : 1777354132649,
+  "t" : 1777440265029,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
   "size" : 261568,
-  "stackId" : "stk_0003",
+  "stackId" : "stk_0002",
   "category" : "test_harness"
 }, {
-  "t" : 1777354132649,
+  "t" : 1777440265029,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
   "size" : 64,
-  "stackId" : "stk_0003",
+  "stackId" : "stk_0002",
   "category" : "test_harness"
 }, {
-  "t" : 1777354132650,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
-  "thread" : "main",
-  "size" : 104032,
-  "stackId" : "stk_0003",
-  "category" : "test_harness"
-}, {
-  "t" : 1777354132650,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
-  "thread" : "main",
-  "size" : 64,
-  "stackId" : "stk_0003",
-  "category" : "test_harness"
-}, {
-  "t" : 1777354132651,
+  "t" : 1777440265030,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
   "size" : 261568,
-  "stackId" : "stk_0003",
+  "stackId" : "stk_0002",
   "category" : "test_harness"
 }, {
-  "t" : 1777354132651,
+  "t" : 1777440265030,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
   "size" : 64,
-  "stackId" : "stk_0003",
+  "stackId" : "stk_0002",
   "category" : "test_harness"
 }, {
-  "t" : 1777354132652,
+  "t" : 1777440265032,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
   "size" : 261568,
-  "stackId" : "stk_0003",
+  "stackId" : "stk_0002",
   "category" : "test_harness"
 }, {
-  "t" : 1777354132652,
+  "t" : 1777440265032,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
   "size" : 64,
-  "stackId" : "stk_0003",
+  "stackId" : "stk_0002",
   "category" : "test_harness"
 }, {
-  "t" : 1777354132653,
+  "t" : 1777440265034,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
   "size" : 261568,
-  "stackId" : "stk_0003",
+  "stackId" : "stk_0002",
   "category" : "test_harness"
 }, {
-  "t" : 1777354132653,
+  "t" : 1777440265034,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
   "size" : 64,
-  "stackId" : "stk_0003",
+  "stackId" : "stk_0002",
   "category" : "test_harness"
 }, {
-  "t" : 1777354132654,
+  "t" : 1777440265037,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
   "size" : 261568,
-  "stackId" : "stk_0003",
+  "stackId" : "stk_0002",
   "category" : "test_harness"
 }, {
-  "t" : 1777354132654,
+  "t" : 1777440265037,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
   "size" : 64,
-  "stackId" : "stk_0003",
+  "stackId" : "stk_0002",
   "category" : "test_harness"
 }, {
-  "t" : 1777354132655,
+  "t" : 1777440265039,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
   "size" : 261568,
-  "stackId" : "stk_0003",
+  "stackId" : "stk_0002",
   "category" : "test_harness"
 }, {
-  "t" : 1777354132655,
+  "t" : 1777440265039,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
   "size" : 64,
-  "stackId" : "stk_0003",
+  "stackId" : "stk_0002",
   "category" : "test_harness"
 }, {
-  "t" : 1777354132656,
+  "t" : 1777440265041,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
   "size" : 261568,
-  "stackId" : "stk_0003",
+  "stackId" : "stk_0002",
   "category" : "test_harness"
 }, {
-  "t" : 1777354132656,
+  "t" : 1777440265041,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
   "size" : 64,
-  "stackId" : "stk_0003",
+  "stackId" : "stk_0002",
   "category" : "test_harness"
 }, {
-  "t" : 1777354132657,
+  "t" : 1777440265043,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
   "size" : 261568,
-  "stackId" : "stk_0003",
+  "stackId" : "stk_0002",
   "category" : "test_harness"
 }, {
-  "t" : 1777354132657,
+  "t" : 1777440265043,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
   "size" : 64,
-  "stackId" : "stk_0003",
+  "stackId" : "stk_0002",
   "category" : "test_harness"
 }, {
-  "t" : 1777354132658,
+  "t" : 1777440265044,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
   "size" : 261568,
-  "stackId" : "stk_0003",
+  "stackId" : "stk_0002",
   "category" : "test_harness"
 }, {
-  "t" : 1777354132658,
+  "t" : 1777440265044,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
   "size" : 64,
-  "stackId" : "stk_0003",
+  "stackId" : "stk_0002",
   "category" : "test_harness"
 }, {
-  "t" : 1777354132659,
+  "t" : 1777440265046,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
   "size" : 261568,
-  "stackId" : "stk_0003",
+  "stackId" : "stk_0002",
   "category" : "test_harness"
 }, {
-  "t" : 1777354132659,
+  "t" : 1777440265046,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
   "size" : 64,
-  "stackId" : "stk_0003",
+  "stackId" : "stk_0002",
   "category" : "test_harness"
 }, {
-  "t" : 1777354132660,
+  "t" : 1777440265047,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
   "size" : 261568,
-  "stackId" : "stk_0003",
+  "stackId" : "stk_0002",
   "category" : "test_harness"
 }, {
-  "t" : 1777354132660,
+  "t" : 1777440265047,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
   "size" : 64,
-  "stackId" : "stk_0003",
+  "stackId" : "stk_0002",
   "category" : "test_harness"
 }, {
-  "t" : 1777354132661,
+  "t" : 1777440265049,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
   "size" : 261568,
-  "stackId" : "stk_0003",
+  "stackId" : "stk_0002",
   "category" : "test_harness"
 }, {
-  "t" : 1777354132661,
+  "t" : 1777440265049,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
   "size" : 64,
-  "stackId" : "stk_0003",
+  "stackId" : "stk_0002",
   "category" : "test_harness"
 }, {
-  "t" : 1777354132662,
+  "t" : 1777440265052,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
   "size" : 261568,
-  "stackId" : "stk_0003",
+  "stackId" : "stk_0002",
   "category" : "test_harness"
 }, {
-  "t" : 1777354132662,
+  "t" : 1777440265052,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
   "size" : 64,
-  "stackId" : "stk_0003",
+  "stackId" : "stk_0002",
   "category" : "test_harness"
 }, {
-  "t" : 1777354132663,
+  "t" : 1777440265054,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
   "size" : 261568,
-  "stackId" : "stk_0003",
+  "stackId" : "stk_0002",
   "category" : "test_harness"
 }, {
-  "t" : 1777354132663,
+  "t" : 1777440265054,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
   "size" : 64,
-  "stackId" : "stk_0003",
+  "stackId" : "stk_0002",
   "category" : "test_harness"
 }, {
-  "t" : 1777354132664,
+  "t" : 1777440265055,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
   "size" : 261568,
-  "stackId" : "stk_0003",
+  "stackId" : "stk_0002",
   "category" : "test_harness"
 }, {
-  "t" : 1777354132664,
+  "t" : 1777440265055,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
   "size" : 64,
-  "stackId" : "stk_0003",
+  "stackId" : "stk_0002",
   "category" : "test_harness"
 }, {
-  "t" : 1777354132665,
+  "t" : 1777440265057,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
   "size" : 261568,
-  "stackId" : "stk_0003",
+  "stackId" : "stk_0002",
   "category" : "test_harness"
 }, {
-  "t" : 1777354132665,
+  "t" : 1777440265057,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
   "size" : 64,
-  "stackId" : "stk_0003",
+  "stackId" : "stk_0002",
   "category" : "test_harness"
 }, {
-  "t" : 1777354132666,
+  "t" : 1777440265058,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
   "size" : 261568,
-  "stackId" : "stk_0003",
+  "stackId" : "stk_0002",
   "category" : "test_harness"
 }, {
-  "t" : 1777354132666,
+  "t" : 1777440265058,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
   "size" : 64,
-  "stackId" : "stk_0003",
+  "stackId" : "stk_0002",
   "category" : "test_harness"
 }, {
-  "t" : 1777354132666,
+  "t" : 1777440265060,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
   "size" : 261568,
-  "stackId" : "stk_0003",
+  "stackId" : "stk_0002",
   "category" : "test_harness"
 }, {
-  "t" : 1777354132666,
+  "t" : 1777440265060,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
   "size" : 64,
-  "stackId" : "stk_0003",
+  "stackId" : "stk_0002",
   "category" : "test_harness"
 }, {
-  "t" : 1777354132667,
+  "t" : 1777440265061,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
   "size" : 261568,
-  "stackId" : "stk_0003",
+  "stackId" : "stk_0002",
   "category" : "test_harness"
 }, {
-  "t" : 1777354132667,
+  "t" : 1777440265061,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
   "size" : 64,
-  "stackId" : "stk_0003",
+  "stackId" : "stk_0002",
   "category" : "test_harness"
 }, {
-  "t" : 1777354132668,
+  "t" : 1777440265063,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
   "size" : 261568,
-  "stackId" : "stk_0003",
+  "stackId" : "stk_0002",
   "category" : "test_harness"
 }, {
-  "t" : 1777354132668,
+  "t" : 1777440265063,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
   "size" : 64,
-  "stackId" : "stk_0003",
+  "stackId" : "stk_0002",
   "category" : "test_harness"
 }, {
-  "t" : 1777354132669,
+  "t" : 1777440265065,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
   "size" : 261568,
-  "stackId" : "stk_0003",
+  "stackId" : "stk_0002",
   "category" : "test_harness"
 }, {
-  "t" : 1777354132669,
+  "t" : 1777440265065,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
   "size" : 64,
-  "stackId" : "stk_0003",
+  "stackId" : "stk_0002",
   "category" : "test_harness"
 }, {
-  "t" : 1777354132670,
+  "t" : 1777440265066,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
   "size" : 261568,
-  "stackId" : "stk_0003",
+  "stackId" : "stk_0002",
   "category" : "test_harness"
 }, {
-  "t" : 1777354132670,
+  "t" : 1777440265066,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
   "thread" : "main",
   "size" : 64,
-  "stackId" : "stk_0003",
+  "stackId" : "stk_0002",
   "category" : "test_harness"
 }, {
-  "t" : 1777354132671,
+  "t" : 1777440265069,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
+  "class" : "java.util.HashMap",
   "thread" : "main",
-  "size" : 261568,
+  "size" : 261512,
   "stackId" : "stk_0003",
-  "category" : "test_harness"
-}, {
-  "t" : 1777354132671,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
-  "thread" : "main",
-  "size" : 64,
-  "stackId" : "stk_0003",
-  "category" : "test_harness"
-}, {
-  "t" : 1777354132672,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.LinkedHashMap",
-  "thread" : "main",
-  "size" : 261536,
-  "stackId" : "stk_0004",
   "category" : "jvm_noise"
 }, {
-  "t" : 1777354132672,
+  "t" : 1777440265069,
   "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.util.LinkedHashMap",
+  "class" : "java.util.HashMap",
   "thread" : "main",
-  "size" : 88,
-  "stackId" : "stk_0004",
+  "size" : 64,
+  "stackId" : "stk_0003",
   "category" : "jvm_noise"
 } ]
