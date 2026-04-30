@@ -1,36 +1,41 @@
 [ {
-  "class" : "eu.exeris.kernel.community.memory.CommunityReleaseAction",
-  "count" : 8,
-  "bytes" : 1046336,
-  "category" : "test_harness"
-}, {
   "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
-  "count" : 8,
-  "bytes" : 1046464,
+  "count" : 6,
+  "bytes" : 784864,
   "category" : "test_harness"
 }, {
-  "class" : "jdk.jfr.internal.SettingsManager$InternalSetting",
+  "class" : "eu.exeris.kernel.community.memory.CommunityReleaseAction",
+  "count" : 6,
+  "bytes" : 784728,
+  "category" : "test_harness"
+}, {
+  "class" : "java.util.LinkedHashMap$Entry",
   "count" : 2,
   "bytes" : 261592,
   "category" : "jvm_noise"
 }, {
-  "class" : "java.util.HashMap$KeySet",
+  "class" : "[Ljava.lang.Object;",
   "count" : 2,
-  "bytes" : 261592,
+  "bytes" : 261960,
   "category" : "jvm_noise"
 }, {
-  "class" : "java.util.LinkedHashMap",
-  "count" : 1,
-  "bytes" : 261520,
+  "class" : "java.util.concurrent.ConcurrentLinkedQueue$Node",
+  "count" : 2,
+  "bytes" : 261576,
   "category" : "jvm_noise"
 }, {
-  "class" : "java.lang.String",
-  "count" : 1,
-  "bytes" : 261560,
+  "class" : "java.util.concurrent.atomic.AtomicBoolean",
+  "count" : 2,
+  "bytes" : 261584,
   "category" : "jvm_noise"
 }, {
-  "class" : "java.util.HashMap$KeyIterator",
+  "class" : "java.util.HashMap",
   "count" : 1,
-  "bytes" : 11584,
+  "bytes" : 227592,
+  "category" : "jvm_noise"
+}, {
+  "class" : "[Ljdk.jfr.internal.util.TimespanUnit;",
+  "count" : 1,
+  "bytes" : 261544,
   "category" : "jvm_noise"
 } ]

@@ -1,86 +1,96 @@
 [ {
-  "class" : "[Ljava.util.concurrent.ConcurrentHashMap$Node;",
-  "count" : 15,
-  "bytes" : 8355704,
-  "category" : "jvm_noise"
-}, {
   "class" : "java.util.concurrent.ConcurrentHashMap$Node",
-  "count" : 10,
-  "bytes" : 3974984,
+  "count" : 15,
+  "bytes" : 312448,
   "category" : "jvm_noise"
 }, {
   "class" : "java.lang.VirtualThread",
-  "count" : 8,
-  "bytes" : 9540736,
+  "count" : 11,
+  "bytes" : 454712,
   "category" : "loom_runtime"
 }, {
+  "class" : "[B",
+  "count" : 5,
+  "bytes" : 4065792,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.util.concurrent.ConcurrentHashMap",
+  "count" : 4,
+  "bytes" : 87152,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.util.concurrent.ForkJoinTask$AdaptedRunnableAction",
+  "count" : 3,
+  "bytes" : 56440,
+  "category" : "jvm_noise"
+}, {
   "class" : "eu.exeris.kernel.core.flow.RuntimeFlowInstance",
-  "count" : 6,
-  "bytes" : 134136,
+  "count" : 3,
+  "bytes" : 55800,
   "category" : "test_harness"
 }, {
-  "class" : "[B",
-  "count" : 4,
-  "bytes" : 328704,
+  "class" : "[Ljava.util.concurrent.ConcurrentHashMap$Node;",
+  "count" : 3,
+  "bytes" : 9635376,
+  "category" : "jvm_noise"
+}, {
+  "class" : "java.lang.VirtualThread$VThreadContinuation$1",
+  "count" : 3,
+  "bytes" : 295784,
+  "category" : "loom_runtime"
+}, {
+  "class" : "java.util.concurrent.ConcurrentHashMap$ReservationNode",
+  "count" : 2,
+  "bytes" : 34640,
   "category" : "jvm_noise"
 }, {
   "class" : "java.lang.String",
-  "count" : 3,
-  "bytes" : 67136,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.lang.Object",
   "count" : 2,
-  "bytes" : 44704,
-  "category" : "jvm_noise"
-}, {
-  "class" : "eu.exeris.kernel.core.flow.CoreFlowRuntime$$Lambda.0x0000000035632000",
-  "count" : 2,
-  "bytes" : 44888,
-  "category" : "test_harness"
-}, {
-  "class" : "java.lang.VirtualThread$VThreadContinuation$1",
-  "count" : 2,
-  "bytes" : 283856,
-  "category" : "loom_runtime"
-}, {
-  "class" : "java.lang.VirtualThread$VThreadContinuation",
-  "count" : 2,
-  "bytes" : 44656,
-  "category" : "loom_runtime"
-}, {
-  "class" : "java.lang.ThreadBuilders$VirtualThreadBuilder",
-  "count" : 1,
-  "bytes" : 7997320,
-  "category" : "loom_runtime"
-}, {
-  "class" : "java.util.concurrent.atomic.AtomicBoolean",
-  "count" : 1,
-  "bytes" : 22352,
-  "category" : "jvm_noise"
-}, {
-  "class" : "java.lang.VirtualThread$$Lambda.0x00000000350f11f0",
-  "count" : 1,
-  "bytes" : 22336,
-  "category" : "loom_runtime"
-}, {
-  "class" : "java.util.concurrent.ForkJoinTask$AdaptedRunnableAction",
-  "count" : 1,
-  "bytes" : 22536,
-  "category" : "jvm_noise"
-}, {
-  "class" : "eu.exeris.kernel.core.flow.FlowKey",
-  "count" : 1,
-  "bytes" : 19264,
-  "category" : "production"
-}, {
-  "class" : "java.util.concurrent.ConcurrentHashMap",
-  "count" : 1,
-  "bytes" : 25552,
+  "bytes" : 110496,
   "category" : "jvm_noise"
 }, {
   "class" : "java.util.HashMap$KeyIterator",
   "count" : 1,
-  "bytes" : 523112,
+  "bytes" : 12824448,
   "category" : "jvm_noise"
+}, {
+  "class" : "eu.exeris.kernel.core.flow.FlowKey",
+  "count" : 1,
+  "bytes" : 3386384,
+  "category" : "production"
+}, {
+  "class" : "eu.exeris.kernel.core.flow.RuntimeFlowContext",
+  "count" : 1,
+  "bytes" : 21728,
+  "category" : "test_harness"
+}, {
+  "class" : "java.lang.VirtualThread$VThreadContinuation",
+  "count" : 1,
+  "bytes" : 21672,
+  "category" : "loom_runtime"
+}, {
+  "class" : "eu.exeris.kernel.core.flow.FlowKey",
+  "count" : 1,
+  "bytes" : 17328,
+  "category" : "test_harness"
+}, {
+  "class" : "java.lang.Object",
+  "count" : 1,
+  "bytes" : 17120,
+  "category" : "jvm_noise"
+}, {
+  "class" : "eu.exeris.kernel.core.flow.CoreFlowRuntime$$Lambda.0x00000000836338d8",
+  "count" : 1,
+  "bytes" : 17120,
+  "category" : "test_harness"
+}, {
+  "class" : "java.lang.ThreadBuilders$VirtualThreadBuilder",
+  "count" : 1,
+  "bytes" : 17128,
+  "category" : "loom_runtime"
+}, {
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000830f1458",
+  "count" : 1,
+  "bytes" : 6819504,
+  "category" : "loom_runtime"
 } ]
