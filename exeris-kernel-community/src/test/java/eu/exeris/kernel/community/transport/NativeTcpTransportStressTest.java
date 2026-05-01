@@ -21,6 +21,7 @@ import eu.exeris.kernel.spi.transport.TransportStream;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -60,6 +61,7 @@ class NativeTcpTransportStressTest {
     }
 
     @Test
+    @Tag("stress")
     @DisplayName("10 concurrent clients × 4 reactors: round-trip messaging")
     void stressTest10ClientsWith4Reactors() throws Exception {
         int port = nextFreePort();
