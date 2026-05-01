@@ -10,7 +10,6 @@ package eu.exeris.kernel.community.bootstrap;
 
 import eu.exeris.kernel.community.transport.CommunityReactorCountResolver;
 import eu.exeris.kernel.spi.bootstrap.BootstrapPhase;
-import eu.exeris.kernel.spi.bootstrap.Subsystem;
 import eu.exeris.kernel.spi.config.ConfigProvider;
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.transport.TransportConfig;
@@ -24,14 +23,13 @@ import java.util.Locale;
 import java.util.ServiceLoader;
 import java.util.function.UnaryOperator;
 
-final class CommunityTransportSubsystem implements Subsystem {
+final class CommunityTransportSubsystem extends AbstractCommunitySubsystem {
 
     private static final System.Logger LOG = System.getLogger(CommunityTransportSubsystem.class.getName());
 
     private TransportProvider transportProvider;
     private TransportEngine transportEngine;
     private TransportConfig transportConfig;
-    private boolean running;
 
     @Override
     public String name() {
@@ -54,8 +52,11 @@ final class CommunityTransportSubsystem implements Subsystem {
         transportProvider = ServiceLoader.load(TransportProvider.class)
                 .stream()
                 .map(ServiceLoader.Provider::get)
-                .max(Comparator.comparingInt(TransportProvider::priority)
-                        .thenComparing(provider -> provider.getClass().getName()))
+                .sorted(Comparator.comparingInt(TransportProvider::priority)
+                        .reversed()
+                        .thenComparing(p -> p.getClass().getName()))
+                .filter(TransportProvider::isAvailable)
+                .findFirst()
                 .orElse(null);
 
         if (transportProvider == null) {
@@ -83,31 +84,27 @@ final class CommunityTransportSubsystem implements Subsystem {
             return;
         }
         transportEngine.start();
-        running = true;
+        markRunning(true);
     }
 
     @Override
     public void stop() {
-        running = false;
+        markRunning(false);
         if (transportEngine != null) {
             transportEngine.close();
         }
     }
 
     @Override
-    public boolean isRunning() {
-        return running;
-    }
-
-    @Override
     public UnaryOperator<ScopedValue.Carrier> providerBindings() {
         if (transportProvider == null || transportEngine == null
                 || transportConfig == null || transportConfig.mode() == TransportMode.DISABLED) {
-            return Subsystem.super.providerBindings();
+            return defaultProviderBindings();
         }
-        return carrier -> carrier
-                .where(KernelProviders.TRANSPORT_PROVIDER, transportProvider)
-                .where(KernelProviders.TRANSPORT_ENGINE, transportEngine);
+        return CommunityCarrierBindings.operator(
+            CommunityCarrierBindings.binding(KernelProviders.TRANSPORT_PROVIDER, transportProvider),
+            CommunityCarrierBindings.binding(KernelProviders.TRANSPORT_ENGINE, transportEngine)
+        );
     }
 
     private static TransportConfig buildTransportConfig(ConfigProvider configProvider) {

@@ -1,6 +1,6 @@
 # Exeris Kernel: Architecture Overview
-**Version:** 0.5.0-SNAPSHOT  
-**Last Updated:** February 2026  
+**Version:** 0.6.0  
+**Last Updated:** May 2026  
 **Status:** Validated Architectural Prototype (TRL‑3)
 
 ---
@@ -30,26 +30,30 @@ Modules are not divided by domain, but by **trust and execution tier**.
 ```
 exeris-kernel-parent
 ├── exeris-kernel-spi        (The Constitution: Pure contracts, Value Records)
-├── exeris-kernel-core       (The Brain: Orchestration, Bootstrap, Context)
-├── exeris-kernel-community  (The Engine: Standard Java 26 FFM adapters)
+├── exeris-kernel-core       (The Brain: Orchestration, Bootstrap, Context + HTTP/2 wire codec)
+├── exeris-kernel-community  (The Engine: NIO.2-backed Java 26 subsystem drivers)
 ├── exeris-kernel-enterprise (The Accelerator: Off-Heap drivers, io_uring, QUIC)
 └── exeris-kernel-tck        (The Judge: Technology Compatibility Kit)
 ```
 
+> **Supporting modules** (not part of the trust tier Wall): `exeris-kernel-bom` (BOM), `exeris-kernel-build-config` (PMD/Checkstyle rules), `exeris-kernel-community-testkit` (reusable HTTP test fixtures for Community).
+
 ### The "Mix & Match" Rule (Opt-In Architecture)
 
-Exeris is an **À la carte** execution engine. Subsystems are loaded dynamically via the SPI. You can mix providers across tiers. For example, you can use the free **Community Transport** (TCP — planned TRL-4) while plugging in the **Enterprise Persistence** driver (`io_uring` DB), or disable higher-level features entirely.
+Exeris is an **À la carte** execution engine. Subsystems are loaded dynamically via the SPI. You can mix providers across tiers. For example, you can use the **Community Transport** (NIO.2-backed TCP) while plugging in the **Enterprise Persistence** driver (`io_uring` DB), or disable higher-level features entirely.
 
 ### Rules
 
-> **Note:** The rules below describe the **target architecture**. The current `0.5.0-SNAPSHOT` release may be a partial implementation of this structure.
+> **Note:** The rules below describe the **target architecture**. The current `0.6.0` release may be a partial implementation of this structure.
 
 1. **spi** has zero Exeris dependencies — it is the immutable foundation.
 2. **core** depends only on **spi**.
-3. **community** depends on **spi** and **core** (for shared TLS/memory infrastructure — `AbstractLoanedBuffer`, `CoreOpenSslLoader`, `TlsStateMachine`). **Currently, `exeris-kernel-community` is a minimal placeholder module with no declared Maven dependencies.**
+3. **community** depends on **spi** and **core** (for shared TLS/memory infrastructure — `AbstractLoanedBuffer`, `CoreOpenSslLoader`, `TlsStateMachine`). As of `0.6.0`, `exeris-kernel-community` contains full subsystem driver implementations (bootstrap, crypto, events, flow, graph, HTTP dispatch, memory, persistence, security, telemetry, transport) and declares compile dependencies on `exeris-kernel-spi`, `exeris-kernel-core`, `slf4j-api`, and `jctools-core`.
 4. **enterprise** depends on **spi** and **core** (same shared infrastructure).
 5. **community** and **enterprise** never depend on each other.
 6. Applications depend on **core** and **one** selected driver (community *or* enterprise).
+
+> **HTTP Codec placement (ADR-009, ACCEPTED 2026-03-13):** The HTTP/2 wire codec (HPACK encoder, HTTP/2 frame parser/codec, flow controller) is embedded directly in `exeris-kernel-core` under `eu.exeris.kernel.core.http.*`. No separate HTTP codec module exists. This keeps the codec accessible to both Community and Enterprise tiers without cross-tier dependencies.
 
 ---
 
@@ -80,7 +84,7 @@ Contracts live in **spi**, orchestration in **core**, and execution in the **dri
 └──────────────────────────────────────────────────────────────┘
 ```
 
-### L2 — Data Synthesis (Graph, Transport)
+### L2 — Data Synthesis (Graph, Transport, HTTP)
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -89,7 +93,14 @@ Contracts live in **spi**, orchestration in **core**, and execution in the **dri
 │  │  Graph Service     │ │  Transport (I/O)                 │ │
 │  │  - Path Finding    │ │  - Protocol-Agnostic SPI         │ │
 │  │  - Native Queries  │ │  - Priority-Aware Scheduler      │ │
-│  └────────────────────┘ └──────────────────────────────────┘ │
+│  └────────────────────┘ │  - Community: NIO.2 TCP (FFM     │ │
+│  ┌────────────────────┐ │    socket path in progress)      │ │
+│  │  HTTP              │ └──────────────────────────────────┘ │
+│  │  - HTTP/2 + HPACK  │                                      │
+│  │    codec in Core   │                                      │
+│  │  - Dispatch in     │                                      │
+│  │    Community       │                                      │
+│  └────────────────────┘                                      │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -153,7 +164,8 @@ Contracts live in **spi**, orchestration in **core**, and execution in the **dri
 
 ### 4. LoanedBuffer Pattern
 - Data never copies, it **loans**
-- Buffers are leased from the `GlobalMemoryArbiter` and passed by reference directly from the NIC to the Database
+- Buffers are leased from the `MemoryAllocator` / `ResourceArbiter` (Community) or `GlobalMemoryArbiter` (Enterprise) and passed by reference directly from the NIC to the Database
+- `AbstractLoanedBuffer` in Core provides lock-free reference counting via `VarHandle` CAS
 
 ---
 
@@ -205,7 +217,7 @@ the closed-source `exeris-kernel-enterprise` module.
 |:----------------------------------------|:----------------------:|:----------------------:|:----------------------:|
 | **Virtual Threads (Loom)**              | ✅ Full                | ✅ Full                | ✅ Full                |
 | **Panama FFM / OpenSSL TLS**            | ✅ `libssl.so.3`       | ✅ `libssl.3.dylib`    | ✅ `libssl-3-x64.dll`  |
-| **Community TCP transport (epoll/kqueue/WSAPoll)** *(planned / not yet implemented in this repository)* | 🔸 Planned | 🔸 Planned | 🔸 Planned |
+| **Community TCP transport (NIO.2-backed; FFM socket path in progress — Sprint 3–4)** | ⚠️ In progress | ⚠️ In progress | ⚠️ In progress |
 | **`io_uring` kernel-bypass** `[Ent.]`  | ✅ kernel ≥ 5.11       | ❌ Not available       | ❌ Not available       |
 | **QUIC / UDP transport** `[Ent.]`       | ✅                     | ✅                     | ⚠️ Partial (no io_uring)|
 | **L0 Glass-Box crash buffer**           | `/tmp/exeris-crash/`   | `/tmp/exeris-crash/`   | `%TEMP%\exeris-crash\` |
@@ -234,7 +246,7 @@ Kubernetes environments, the following strategy applies:
 | **Crash diagnostics**   | Glass-Box binary crash buffer + `exeris-decoder` | 🚧 TRL-4 planned |
 | **Metrics (Prometheus)**| `DeterministicBinarySink` → OTLP exporter   | 🚧 TRL-4 planned |
 | **Distributed tracing** | `traceId` in `ExerisKernelException.rawArgs`; OTLP span export | 🚧 TRL-4 planned |
-| **Log aggregation**     | `Slf4jTelemetrySink` → structured JSON → Loki/Fluent Bit | 🚧 TRL-4 planned |
+| **Log aggregation**     | `Slf4jTelemetrySink` → structured JSON → Loki/Fluent Bit | ✅ TRL-3 (Community) |
 
 > **TRL-4 obligation:** A `PrometheusOtlpTelemetrySink` implementing the `TelemetrySink` SPI must be
 > delivered in `exeris-kernel-community` before TRL-4 certification. It must export the standard
@@ -262,7 +274,7 @@ To understand how these concepts map to actual code, read the subsystem definiti
 **Physical Modules (The Wall):**
 - [SPI Module](modules/01-spi.md) – The Constitution & Contracts
 - [Core Module](modules/02-core.md) – The Brain & Orchestration
-- [Community Module](modules/03-community.md) – Standard Java 26 Drivers
+- [Community Module](modules/03-community.md) – NIO.2-backed Java 26 subsystem drivers (OSS)
 - [Enterprise Module](modules/04-enterprise.md) - High-Performance Native Drivers
 - [TCK Module](modules/05-tck.md) - Technology Compatibility Kit
 

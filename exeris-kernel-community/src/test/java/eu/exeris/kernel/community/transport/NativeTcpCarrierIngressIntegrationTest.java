@@ -16,9 +16,12 @@ import eu.exeris.kernel.spi.transport.TransportConfig;
 import eu.exeris.kernel.spi.transport.TransportEngine;
 import eu.exeris.kernel.spi.transport.TransportMode;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 import java.io.IOException;
+import java.lang.foreign.MemorySegment;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.ServerSocketChannel;
@@ -27,6 +30,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -38,6 +42,8 @@ import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+@Tag("integration")
+@Timeout(30)
 class NativeTcpCarrierIngressIntegrationTest {
 
     private static final MemoryAllocator ALLOCATOR =
@@ -150,6 +156,113 @@ class NativeTcpCarrierIngressIntegrationTest {
         }
     }
 
+    @Test
+    void immediateLargeServerWritesCompleteDuringRegistrationHandoff() throws Exception {
+        int port = nextFreePort();
+        int connectionCount = 8;
+        int payloadSize = 256 * 1024;
+        byte[] payload = new byte[payloadSize];
+        Arrays.fill(payload, (byte) 'x');
+        CountDownLatch handled = new CountDownLatch(connectionCount);
+
+        NativeTcpTransportProvider provider = new NativeTcpTransportProvider();
+        TransportEngine[] holder = new TransportEngine[1];
+
+        ScopedValue.where(KernelProviders.MEMORY_ALLOCATOR, ALLOCATOR)
+                .run(() -> holder[0] = provider.createEngine(new TransportConfig(
+                        TransportMode.SERVER,
+                        "127.0.0.1",
+                        port,
+                        2,
+                        null,
+                        null,
+                        1024,
+                        30_000
+                )));
+
+        TransportEngine engine = holder[0];
+        engine.setStreamHandler(stream -> {
+            try (stream) {
+                stream.write(MemorySegment.ofArray(payload), payload.length);
+            } finally {
+                handled.countDown();
+            }
+        });
+
+        List<SocketChannel> clients = new ArrayList<>();
+        try {
+            engine.start();
+
+            for (int i = 0; i < connectionCount; i++) {
+                SocketChannel client = SocketChannel.open();
+                client.configureBlocking(true);
+                client.socket().setReceiveBufferSize(4 * 1024);
+                client.connect(new InetSocketAddress("127.0.0.1", port));
+                clients.add(client);
+            }
+
+            assertThat(handled.await(10, TimeUnit.SECONDS)).isTrue();
+
+            for (SocketChannel client : clients) {
+                assertThat(readFully(client, payloadSize, Duration.ofSeconds(5))).isEqualTo(payloadSize);
+            }
+        } finally {
+            for (SocketChannel client : clients) {
+                client.close();
+            }
+            engine.close();
+        }
+    }
+
+    @Test
+    void rapidConnectAndCloseDoesNotLeaveDanglingReactorOwnership() throws Exception {
+        int port = nextFreePort();
+        int connectionCount = 12;
+        CountDownLatch handled = new CountDownLatch(connectionCount);
+
+        NativeTcpTransportProvider provider = new NativeTcpTransportProvider();
+        TransportEngine[] holder = new TransportEngine[1];
+
+        ScopedValue.where(KernelProviders.MEMORY_ALLOCATOR, ALLOCATOR)
+                .run(() -> holder[0] = provider.createEngine(new TransportConfig(
+                        TransportMode.SERVER,
+                        "127.0.0.1",
+                        port,
+                        2,
+                        null,
+                        null,
+                        1024,
+                        30_000
+                )));
+
+        TransportEngine engine = holder[0];
+        engine.setStreamHandler(stream -> {
+            try (stream) {
+                // close immediately to exercise register/write/cancel handoff ordering
+            } finally {
+                handled.countDown();
+            }
+        });
+
+        try {
+            engine.start();
+
+            for (int i = 0; i < connectionCount; i++) {
+                try (SocketChannel client = SocketChannel.open()) {
+                    client.configureBlocking(true);
+                    client.connect(new InetSocketAddress("127.0.0.1", port));
+                }
+            }
+
+            assertThat(handled.await(10, TimeUnit.SECONDS)).isTrue();
+
+            NativeTcpCarrier carrier = (NativeTcpCarrier) engine;
+            waitUntilNoOwnedChannels(carrier, Duration.ofSeconds(5));
+        } finally {
+            engine.close();
+        }
+    }
+
     private static int nextFreePort() {
         try (ServerSocketChannel server = ServerSocketChannel.open()) {
             server.bind(new InetSocketAddress("127.0.0.1", 0));
@@ -161,7 +274,7 @@ class NativeTcpCarrierIngressIntegrationTest {
 
     private static void waitUntilChannelsAssigned(NativeTcpCarrier carrier,
                                                    int expectedConnections,
-                                                   Duration timeout) throws InterruptedException {
+                                                   Duration timeout) {
         Instant deadline = Instant.now().plus(timeout);
         while (Instant.now().isBefore(deadline)) {
             Map<?, ?> ownerMap = readPrivateField(carrier, "channelOwner", Map.class);
@@ -171,6 +284,34 @@ class NativeTcpCarrierIngressIntegrationTest {
             LockSupport.parkNanos(25_000_000L);
         }
         throw new AssertionError("Expected channel ownership assignments were not created before timeout");
+    }
+
+    private static void waitUntilNoOwnedChannels(NativeTcpCarrier carrier, Duration timeout) {
+        Instant deadline = Instant.now().plus(timeout);
+        while (Instant.now().isBefore(deadline)) {
+            Map<?, ?> ownerMap = readPrivateField(carrier, "channelOwner", Map.class);
+            Map<?, ?> streamMap = readPrivateField(carrier, "streamByChannel", Map.class);
+            if (ownerMap.isEmpty() && streamMap.isEmpty()) {
+                return;
+            }
+            LockSupport.parkNanos(25_000_000L);
+        }
+        throw new AssertionError("Expected channel ownership and stream tracking to drain before timeout");
+    }
+
+    private static int readFully(SocketChannel client, int expectedBytes, Duration timeout) throws IOException {
+        ByteBuffer buffer = ByteBuffer.allocate(expectedBytes);
+        Instant deadline = Instant.now().plus(timeout);
+        while (buffer.hasRemaining() && Instant.now().isBefore(deadline)) {
+            int read = client.read(buffer);
+            if (read < 0) {
+                break;
+            }
+            if (read == 0) {
+                LockSupport.parkNanos(1_000_000L);
+            }
+        }
+        return buffer.position();
     }
 
     private static <T> T readPrivateField(Object target, String name, Class<T> type) {

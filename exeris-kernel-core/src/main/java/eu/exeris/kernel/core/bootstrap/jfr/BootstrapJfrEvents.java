@@ -384,4 +384,8 @@ public final class BootstrapJfrEvents {
         event.cycleMembers = String.join(", ", cycleMembers);
         event.commit();
     }
+
+    public static <E extends Event> E beginIfEnabled(E event) {
+        return BootstrapJfrEventSupport.beginIfEnabled(event);
+    }
 }

@@ -59,9 +59,9 @@ zero-leak, hyper-density concurrency with immutable identity at every layer. It 
 4. `CitadelGuard` — sentinel-pool RBAC enforcement gate with `preAllocate(String role)` / `seal()` / `requireRole(String role)`. Sealed at bootstrap READY transition.
 5. `StorageContextBridge` — derives a SHARED `StorageContext` from a `PrincipalContext` (SHARED-only derivation contract per ADR-010 §4a; full SEPARATED_SCHEMA/DEDICATED derivation comes from `SecurityProvider.authenticate()`).
 
-> **TCK gap:** `CitadelGuard` (RBAC sentinel-pool enforcement, `preAllocate` / `seal` / `requireRole`) has no abstract TCK suite in `exeris-kernel-tck`. Its correctness is covered only by unit and integration tests in `exeris-kernel-community`. A dedicated `AbstractCitadelGuardTck` is needed before any external provider implements a competing RBAC gate. Tracking: see `docs/ROADMAP.md`.
+> **TCK status:** `CitadelGuard` is now covered by the shared `AbstractCitadelGuardTck` contract plus Community/Core bindings.
 
-> **TCK gap:** `StorageContextBridge.derive()` (SHARED-derivation path) has no abstract TCK suite. The derivation contract is tested only via `AbstractSecurityInterceptorTck` integration path. A standalone `AbstractStorageContextBridgeTck` should be added. Tracking: see `docs/ROADMAP.md`.
+> **TCK status:** `StorageContextBridge.derive()` is now covered by a standalone `AbstractStorageContextBridgeTck`, including SHARED derivation and fail-closed handling for missing principal context.
 
 ---
 

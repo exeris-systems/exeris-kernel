@@ -34,14 +34,17 @@ final class CoreFlowPlanFactory implements FlowExecutionPlanFactory {
     private final FlowEngineConfig config;
     private final CoreFlowRegistry registry;
     private final ConcurrentMap<String, CoreFlowExecutionPlan> planCatalog;
+    private final Runnable onPlanCompiled;
     private final ConcurrentMap<String, List<FlowTransitionDescriptor>> transitionsByDefinition =
             new ConcurrentHashMap<>();
 
     /* default */ CoreFlowPlanFactory(FlowEngineConfig config, CoreFlowRegistry registry,
-                                      ConcurrentMap<String, CoreFlowExecutionPlan> planCatalog) {
+                                      ConcurrentMap<String, CoreFlowExecutionPlan> planCatalog,
+                                      Runnable onPlanCompiled) {
         this.config = Objects.requireNonNull(config, "config");
         this.registry = Objects.requireNonNull(registry, "registry");
         this.planCatalog = Objects.requireNonNull(planCatalog, "planCatalog");
+        this.onPlanCompiled = Objects.requireNonNull(onPlanCompiled, "onPlanCompiled");
     }
 
     @Override
@@ -76,6 +79,7 @@ final class CoreFlowPlanFactory implements FlowExecutionPlanFactory {
                 planCatalog.put(definitionName, plan);
             }
             transitionsByDefinition.remove(definitionName);
+            onPlanCompiled.run();
             return plan;
         } catch (IllegalArgumentException | IllegalStateException | IndexOutOfBoundsException ex) {
             throw FlowEngineException.compileFailure(config.engineName(), ex);

@@ -20,6 +20,8 @@ import eu.exeris.kernel.spi.memory.MemoryStats;
 import eu.exeris.kernel.spi.transport.StreamPriority;
 import eu.exeris.kernel.spi.transport.TransportConnection;
 import eu.exeris.kernel.spi.transport.TransportStream;
+import jdk.jfr.consumer.RecordedEvent;
+import jdk.jfr.consumer.RecordingStream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -32,6 +34,7 @@ import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -47,6 +50,7 @@ class PaqsSchedulerIntegrationTest {
     private static final String ENGINE = "IntegrationTestEngine";
     private static final long TIMEOUT_MS = 5_000L;
     private static final long TOTAL = 1_000_000L;
+    private static final String HANDLER_FAILURE_EVENT = "eu.exeris.kernel.core.transport.PaqsHandlerFailure";
     private final AtomicLong liveAllocated = new AtomicLong(0L);
     private WatermarkManager watermarkManager;
     private AdmissionController admissionController;
@@ -161,6 +165,90 @@ class PaqsSchedulerIntegrationTest {
         }
         assertThat(loadShedder.shedCount()).isEqualTo(count);
         assertThat(admissionController.activeStreamCount()).isZero();
+    }
+
+    @Test
+    @DisplayName("emits PaqsHandlerFailure event with stream/engine/phase/cause on handler failure")
+    @Timeout(value = TIMEOUT_MS, unit = TimeUnit.MILLISECONDS)
+    void emitsPaqsHandlerFailureEventOnHandlerFailure() throws InterruptedException {
+        setPressure(WatermarkLevel.NORMAL);
+        long streamId = 919L;
+        CountDownLatch eventLatch = new CountDownLatch(1);
+        AtomicReference<RecordedEvent> captured = new AtomicReference<>();
+
+        try (RecordingStream rs = new RecordingStream()) {
+            rs.enable(HANDLER_FAILURE_EVENT);
+            rs.onEvent(HANDLER_FAILURE_EVENT, event -> {
+                captured.compareAndSet(null, event);
+                eventLatch.countDown();
+            });
+            rs.startAsync();
+
+            PaqsScheduler sut = new PaqsScheduler(admissionController, loadShedder,
+                    stream -> {
+                        throw new IllegalStateException("deterministic-failure");
+                    }, s -> StreamPriority.NORMAL, ENGINE);
+
+            sut.schedule(buildFailingStream(streamId));
+
+            assertThat(eventLatch.await(TIMEOUT_MS, TimeUnit.MILLISECONDS)).isTrue();
+        }
+
+        RecordedEvent event = captured.get();
+        assertThat(event).isNotNull();
+        assertThat(event.getLong("streamId")).isEqualTo(streamId);
+        assertThat(event.getString("engineName")).isEqualTo(ENGINE);
+        assertThat(event.getString("exceptionClass")).isEqualTo(IllegalStateException.class.getName());
+        assertThat(event.getString("lifecyclePhase")).isEqualTo("HANDLER");
+    }
+
+    private static TransportStream buildFailingStream(long streamId) {
+        return new TransportStream() {
+            @Override
+            public int read(MemorySegment target, int maxBytes) {
+                return -1;
+            }
+
+            @Override
+            public void write(MemorySegment source, int length) {
+                // test stub — write direction not exercised in integration tests
+            }
+
+            @Override
+            public void queueWrite(LoanedBuffer buffer, int length) {
+                // test stub — async write path not exercised in integration tests
+            }
+
+            @Override
+            public long streamId() {
+                return streamId;
+            }
+
+            @Override
+            public boolean isBidirectional() {
+                return true;
+            }
+
+            @Override
+            public boolean isClientInitiated() {
+                return true;
+            }
+
+            @Override
+            public TransportConnection connection() {
+                return null;
+            }
+
+            @Override
+            public boolean hasPendingData() {
+                return false;
+            }
+
+            @Override
+            public void close() {
+                // test stub — no resources to release on integration test stream stubs
+            }
+        };
     }
 
     private static List<TransportStream> buildStreams(int start, int count) {

@@ -78,7 +78,7 @@ The Community carrier transfers bytes from the network socket directly into off-
    a shared long-lived STS is architecturally incompatible with the multi-carrier ingress model. These
    unstructured VTs act as roots of the Request Tree. All subsequent concurrent operations within
    the stream handler MUST use `StructuredTaskScope`.
-4. Resolve cross-platform POSIX socket symbols via `CoreSyscallLoader` (Panama FFM) — shared by Community carrier bootstrap.
+4. Expose cross-platform POSIX / Winsock socket symbol loading via `CoreSyscallLoader` (Panama FFM). Migration of the active Community carrier onto this shared socket path is planned; the current in-repo carrier remains NIO-backed, and NIO is retained as the explicit fallback path for portability and degraded-operation scenarios.
 
 ---
 

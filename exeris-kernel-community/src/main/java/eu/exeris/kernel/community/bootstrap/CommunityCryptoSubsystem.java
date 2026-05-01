@@ -9,7 +9,6 @@
 package eu.exeris.kernel.community.bootstrap;
 
 import eu.exeris.kernel.spi.bootstrap.BootstrapPhase;
-import eu.exeris.kernel.spi.bootstrap.Subsystem;
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.crypto.KernelCryptoProvider;
 
@@ -19,10 +18,9 @@ import java.util.ServiceLoader;
 import java.util.function.UnaryOperator;
 
 @SuppressWarnings({"PMD.CloseResource", "PMD.AvoidCatchingGenericException"})
-final class CommunityCryptoSubsystem implements Subsystem {
+final class CommunityCryptoSubsystem extends AbstractCommunitySubsystem {
 
     private KernelCryptoProvider cryptoProvider;
-    private boolean running;
 
     @Override
     public String name() {
@@ -51,12 +49,12 @@ final class CommunityCryptoSubsystem implements Subsystem {
 
     @Override
     public void start() {
-        running = (cryptoProvider != null);
+        markRunning(cryptoProvider != null);
     }
 
     @Override
     public void stop() {
-        running = false;
+        markRunning(false);
         if (cryptoProvider instanceof AutoCloseable closeable) {
             try {
                 closeable.close();
@@ -69,15 +67,12 @@ final class CommunityCryptoSubsystem implements Subsystem {
     }
 
     @Override
-    public boolean isRunning() {
-        return running;
-    }
-
-    @Override
     public UnaryOperator<ScopedValue.Carrier> providerBindings() {
         if (cryptoProvider == null) {
-            return Subsystem.super.providerBindings();
+            return defaultProviderBindings();
         }
-        return carrier -> carrier.where(KernelProviders.CRYPTO_PROVIDER, cryptoProvider);
+        return CommunityCarrierBindings.operator(
+                CommunityCarrierBindings.binding(KernelProviders.CRYPTO_PROVIDER, cryptoProvider)
+        );
     }
 }

@@ -23,7 +23,6 @@ import eu.exeris.kernel.spi.transport.ConnectionHandler;
 import eu.exeris.kernel.spi.transport.StreamHandler;
 import eu.exeris.kernel.spi.transport.TransportConnection;
 import eu.exeris.kernel.spi.transport.TransportEngine;
-import eu.exeris.kernel.spi.transport.TransportEngineCapabilities;
 import eu.exeris.kernel.spi.transport.TransportMode;
 import eu.exeris.kernel.spi.transport.TransportStats;
 import eu.exeris.kernel.spi.transport.TransportStream;
@@ -175,6 +174,7 @@ class CommunityHttpTransportIntegrationTest {
 
         @Override
         public void setConnectionHandler(ConnectionHandler handler) {
+            /* test stub — connection-handler wiring not exercised by this test */
         }
 
         @Override
@@ -201,11 +201,6 @@ class CommunityHttpTransportIntegrationTest {
         @Override
         public TransportStats stats() {
             return TransportStats.EMPTY;
-        }
-
-        @Override
-        public TransportEngineCapabilities capabilities() {
-            return TransportEngineCapabilities.STANDARD.withProvider("test");
         }
 
         @Override

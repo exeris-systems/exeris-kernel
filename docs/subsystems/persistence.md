@@ -3,9 +3,9 @@
 **Physical Layout:**
 
 - SPI: `eu.exeris.kernel.spi.persistence.*` (Contracts, ConnectionInterceptor — StorageContext is in Security SPI)
-  > Key SPI contracts: `PersistenceEngine`, `PersistenceProvider`, `PersistenceConfig`, `PersistenceEngineCapabilities`, 
+  > Key SPI contracts: `PersistenceEngine`, `PersistenceProvider`, `PersistenceConfig`,
   > `PersistenceHealthStatus`, `BaseRepository`, `EventStore`, `ConnectionInterceptor`, `TransactionalExecutor`, 
-  > `RowCursor`, `QueryResult`, `PersistenceStatement`, `BulkInserter`, `DatabaseDialect`, `EngineStats`, 
+  > `RowCursor`, `QueryResult`, `PersistenceStatement`, `BulkInserter`, `EngineStats`, 
   > `TransactionIsolation`; codec sub-package: `codec.EntityEncoder`, `codec.EntityDecoder` 
   > (zero-copy off-heap encode/decode contract, TCK: `AbstractEntityCodecTck`).
 - Core: `eu.exeris.kernel.core.persistence.*` (Transaction Manager, Initializers)
@@ -73,7 +73,7 @@ Java-side logic and serialization waste.
 3. Define the `PersistenceException` hierarchy with `EX-PERS-` codes.
 4. Define `RowCursor` and `QueryResult` as the zero-copy flyweight row accessor contracts. `RowCursor` is a single shared instance advanced by `QueryResult.next()` — callers must not retain references across calls.
 5. Define `BulkInserter` for batch-insertion paths.
-6. Define `PersistenceEngineCapabilities` and `PersistenceHealthStatus` as observable engine state contracts.
+6. Define `PersistenceHealthStatus` as the observable engine state contract.
 7. Define the `codec` sub-package (`EntityEncoder`, `EntityDecoder`) for binary entity serialisation. TCK: `AbstractEntityCodecTck`.
 
 **What Persistence Core DOES:**

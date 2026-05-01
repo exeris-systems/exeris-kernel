@@ -23,17 +23,12 @@ import static java.lang.foreign.ValueLayout.JAVA_INT;
 import static java.lang.foreign.ValueLayout.JAVA_LONG;
 
 /**
- * Core: Bootstrap loader that resolves Berkeley socket symbols via Project Panama FFM.
+ * Core: Explicit caller-owned loader that resolves Berkeley socket symbols via Project Panama FFM.
  *
- * <h2>Design — No State, No Arena Policy</h2>
- * <p>This class owns <strong>no arena</strong> and enforces <strong>no memory policy</strong>.
- * The caller decides where native symbols live:
- * <ul>
- *   <li><b>Community:</b> pass {@link Arena#global()} — symbols live for the JVM lifetime.</li>
- *   <li><b>Enterprise:</b> pass an {@link Arena} carved from the
- *       {@code GlobalMemoryArbiter.INFRASTRUCTURE} partition — symbols live inside the
- *       single pre-allocated mmap block.</li>
- * </ul>
+ * <h2>Design — Single Explicit Load Path</h2>
+ * <p>This class owns <strong>no arena</strong>, creates <strong>no arena</strong>, and enforces
+ * <strong>no memory policy</strong>. The only supported entry point is {@link #load(Arena)},
+ * with the arena supplied and owned entirely by the caller.
  *
  * <h2>C-type to ValueLayout mapping</h2>
  * <pre>
@@ -68,6 +63,8 @@ public final class CoreSyscallLoader {
     private static final boolean IS_WINDOWS =
             System.getProperty("os.name", "").toLowerCase(Locale.ROOT).startsWith("windows");
 
+    private static final String ARENA_MUST_NOT_BE_NULL = "arena must not be null";
+
     /**
      * Winsock2 version word: MAKEWORD(2, 2) = 0x0202.
      */
@@ -80,31 +77,28 @@ public final class CoreSyscallLoader {
     /**
      * Loads Berkeley socket symbols into {@code arena} and returns resolved handles.
      *
-     * <p><b>Community:</b> pass {@code Arena.global()}.
-     * <b>Enterprise:</b> pass an {@link Arena} whose scope covers a slab from
-     * {@code GlobalMemoryArbiter.INFRASTRUCTURE}.
+     * <p>This is the single supported loading path. The supplied arena remains fully
+     * caller-owned. On Windows this method also invokes {@code WSAStartup(MAKEWORD(2,2),
+     * &wsaData)} and allocates the required {@code WSADATA} scratch buffer within that same
+     * arena. On POSIX, the arena is still required for API symmetry and caller-owned policy,
+     * even though symbol resolution currently uses the native default lookup.
      *
-     * <p>On Windows this method also invokes {@code WSAStartup(MAKEWORD(2,2), &wsaData)}.
-     * The {@code wsaData} scratch buffer is allocated within the supplied {@code arena}
-     * — the 408-byte cost is a one-time bootstrap overhead, not a hot-path allocation.
-     *
-     * @param arena arena whose scope governs the lifetime of the loaded symbols
-     *              (Windows only: used for {@code Ws2_32.dll} library lookup and
-     *              {@code WSADATA} scratch allocation; ignored on POSIX as standard
-     *              socket libraries are globally resident)
+     * @param arena arena whose scope governs the caller-selected loading policy
      * @return immutable {@link SyscallHandles} record containing all resolved handles
      * @throws IllegalStateException if a required symbol is missing or WSAStartup fails
      */
     public static SyscallHandles load(Arena arena) {
-        Objects.requireNonNull(arena, "arena must not be null");
-        return IS_WINDOWS ? loadWindows(arena) : loadPosix();
+        Objects.requireNonNull(arena, ARENA_MUST_NOT_BE_NULL);
+        return IS_WINDOWS ? loadWindows(arena) : loadPosix(arena);
     }
 
     // =========================================================================
     // POSIX (Linux / macOS) loader
     // =========================================================================
 
-    private static SyscallHandles loadPosix() {
+    private static SyscallHandles loadPosix(Arena arena) {
+        Objects.requireNonNull(arena, ARENA_MUST_NOT_BE_NULL);
+
         LOG.log(System.Logger.Level.INFO,
                 "[CoreSyscallLoader] Resolving POSIX Berkeley socket symbols via FFM defaultLookup");
 
@@ -146,6 +140,7 @@ public final class CoreSyscallLoader {
                 send, recv,
                 fcntl,  // POSIX non-blocking control
                 null,   // ioctlsocket — Windows only
+                null,   // WSAGetLastError — Windows only
                 null);  // wsaCleanup — Windows only
     }
 
@@ -202,6 +197,9 @@ public final class CoreSyscallLoader {
         MethodHandle ioctlsocket = req(linker, ws2, "ioctlsocket",
                 FunctionDescriptor.of(JAVA_INT, JAVA_LONG, JAVA_LONG, JAVA_LONG));
 
+        MethodHandle wsaGetLastError = req(linker, ws2, "WSAGetLastError",
+                FunctionDescriptor.of(JAVA_INT));
+
         MethodHandle wsaCleanup = req(linker, ws2, "WSACleanup",
                 FunctionDescriptor.of(JAVA_INT));
 
@@ -211,9 +209,10 @@ public final class CoreSyscallLoader {
         return new SyscallHandles(
                 socket, bind, listen, accept, connect, close,
                 send, recv,
-                null,          // fcntl — POSIX only
-                ioctlsocket,   // Windows non-blocking control
-                wsaCleanup);   // Windows Winsock lifecycle
+                null,             // fcntl — POSIX only
+                ioctlsocket,      // Windows non-blocking control
+                wsaGetLastError,  // Windows socket error inspection
+                wsaCleanup);      // Windows Winsock lifecycle
     }
 
     // =========================================================================
@@ -252,9 +251,7 @@ public final class CoreSyscallLoader {
 
     private static int wsaStartupCall(MethodHandle handle, MemorySegment wsaData) {
         try {
-            // explicit (long) cast: guarantees invokeExact signature matches JAVA_LONG descriptor
-            //noinspection RedundantCast
-            return (int) handle.invokeExact(WINSOCK_VERSION_2_2, (long) wsaData.address());
+            return (int) handle.invokeExact(WINSOCK_VERSION_2_2, wsaData.address());
         } catch (Throwable ex) { //NOPMD AvoidCatchingThrowable — MethodHandle.invokeExact bootstrap isolation
             throw new IllegalStateException(
                     "[CoreSyscallLoader] WSAStartup native call failed", ex);

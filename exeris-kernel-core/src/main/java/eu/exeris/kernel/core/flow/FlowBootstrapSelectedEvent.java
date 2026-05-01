@@ -8,6 +8,7 @@
  */
 package eu.exeris.kernel.core.flow;
 
+import eu.exeris.kernel.core.bootstrap.jfr.BootstrapJfrEvents;
 import jdk.jfr.Category;
 import jdk.jfr.Description;
 import jdk.jfr.Event;
@@ -40,11 +41,11 @@ final class FlowBootstrapSelectedEvent extends Event {
 
     /* default */ static void emit(String providerClass, int priority,
                                    String providerId, String engineName) {
-        FlowBootstrapSelectedEvent event = new FlowBootstrapSelectedEvent();
-        if (!event.isEnabled()) {
+        FlowBootstrapSelectedEvent event = BootstrapJfrEvents.beginIfEnabled(
+                new FlowBootstrapSelectedEvent());
+        if (event == null) {
             return;
         }
-        event.begin();
         event.providerClass = providerClass;
         event.priority = priority;
         event.providerId = providerId;

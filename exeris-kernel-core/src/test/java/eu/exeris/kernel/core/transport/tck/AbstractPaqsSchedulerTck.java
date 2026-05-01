@@ -32,6 +32,7 @@ import org.junit.jupiter.api.Timeout;
 import java.lang.foreign.MemorySegment;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
@@ -221,6 +222,65 @@ public abstract class AbstractPaqsSchedulerTck {
             }, s -> StreamPriority.HIGH).schedule(stubStream(100L));
             assertThat(admissionController.activeStreamCount()).isZero();
         }
+
+        @Test
+        @DisplayName("Failure isolation preserves admission progress and counter recovery")
+        @Timeout(value = TIMEOUT_MS, unit = TimeUnit.MILLISECONDS)
+        void failureIsolationPreservesProgressAndCounterRecovery() throws InterruptedException {
+            setPressure(WatermarkLevel.NORMAL);
+            CountDownLatch failSeen = new CountDownLatch(1);
+            CountDownLatch successSeen = new CountDownLatch(1);
+
+            PaqsScheduler sut = buildScheduler(stream -> {
+                if (stream.streamId() == 201L) {
+                    failSeen.countDown();
+                    throw new IllegalStateException("deterministic-failure");
+                }
+                successSeen.countDown();
+            }, s -> StreamPriority.NORMAL);
+
+            sut.schedule(stubStream(201L));
+            sut.schedule(stubStream(202L));
+
+            assertThat(failSeen.await(TIMEOUT_MS, TimeUnit.MILLISECONDS)).isTrue();
+            assertThat(successSeen.await(TIMEOUT_MS, TimeUnit.MILLISECONDS)).isTrue();
+            CountDownLatch counterZero = new CountDownLatch(1);
+            Thread.ofVirtual().start(() -> {
+                while (admissionController.activeStreamCount() > 0) {
+                    Thread.onSpinWait();
+                }
+                counterZero.countDown();
+            });
+            assertThat(counterZero.await(TIMEOUT_MS, TimeUnit.MILLISECONDS)).isTrue();
+            assertThat(admissionController.activeStreamCount()).isZero();
+        }
+
+        @Test
+        @DisplayName("Scheduler cleanup closes failing stream exactly once")
+        @Timeout(value = TIMEOUT_MS, unit = TimeUnit.MILLISECONDS)
+        void cleanupClosesFailingStreamExactlyOnce() throws InterruptedException {
+            setPressure(WatermarkLevel.NORMAL);
+            AtomicInteger closeCalls = new AtomicInteger();
+            CountDownLatch handlerRan = new CountDownLatch(1);
+
+            PaqsScheduler sut = buildScheduler(stream -> {
+                handlerRan.countDown();
+                throw new RuntimeException("close-once");
+            }, s -> StreamPriority.NORMAL);
+
+            sut.schedule(stubStream(203L, closeCalls::incrementAndGet));
+
+            assertThat(handlerRan.await(TIMEOUT_MS, TimeUnit.MILLISECONDS)).isTrue();
+            CountDownLatch counterZero = new CountDownLatch(1);
+            Thread.ofVirtual().start(() -> {
+                while (admissionController.activeStreamCount() > 0) {
+                    Thread.onSpinWait();
+                }
+                counterZero.countDown();
+            });
+            assertThat(counterZero.await(TIMEOUT_MS, TimeUnit.MILLISECONDS)).isTrue();
+            assertThat(closeCalls.get()).isEqualTo(1);
+        }
     }
 
     // =========================================================================
@@ -232,6 +292,12 @@ public abstract class AbstractPaqsSchedulerTck {
     }
 
     protected static TransportStream stubStream(long id) {
+        return stubStream(id, () -> {
+            // test stub — no resources to release on TCK transport stubs
+        });
+    }
+
+    protected static TransportStream stubStream(long id, Runnable closeHook) {
         return new TransportStream() {
             @Override
             public int read(MemorySegment t, int m) {
@@ -275,7 +341,7 @@ public abstract class AbstractPaqsSchedulerTck {
 
             @Override
             public void close() {
-                // test stub — no resources to release on TCK transport stubs
+                closeHook.run();
             }
         };
     }

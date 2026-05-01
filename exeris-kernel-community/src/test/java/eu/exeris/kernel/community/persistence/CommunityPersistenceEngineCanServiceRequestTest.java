@@ -10,7 +10,6 @@ package eu.exeris.kernel.community.persistence;
 
 import eu.exeris.kernel.spi.persistence.PersistenceConfig;
 import eu.exeris.kernel.spi.persistence.PersistenceEngine;
-import eu.exeris.kernel.spi.persistence.PersistenceEngineCapabilities;
 import eu.exeris.kernel.spi.persistence.PersistenceProvider;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -127,16 +126,6 @@ class CommunityPersistenceEngineCanServiceRequestTest {
 
             // After close, should not be willing to service requests
             assertThat(engine.canServiceRequest()).isFalse();
-        }
-
-        @Test
-        @DisplayName("Capabilities are correct (Community tier)")
-        void capabilitiesAreCorrect() {
-            try (PersistenceEngine engine = createTestEngine(4)) {
-                PersistenceEngineCapabilities caps = engine.capabilities();
-                assertThat(caps).isNotNull();
-                assertThat(caps.providerId()).contains("postgres-community");
-            }
         }
 
         @Test

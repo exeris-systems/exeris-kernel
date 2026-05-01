@@ -54,10 +54,11 @@ import java.lang.invoke.MethodHandle;
  *                    {@code int closesocket(SOCKET)} on Windows
  * @param send        {@code ssize_t send(int sockfd, const void*, size_t, int)}
  * @param recv        {@code ssize_t recv(int sockfd, void*, size_t, int)}
- * @param fcntl       {@code int fcntl(int fd, int cmd, ...)} — POSIX only; {@code null} on Windows
- * @param ioctlsocket {@code int ioctlsocket(SOCKET, long, u_long*)} — Windows only; {@code null} on POSIX
- * @param wsaCleanup  {@code int WSACleanup(void)} — Windows only; {@code null} on POSIX.
- *                    Must be invoked to pair with {@code WSAStartup} before the owning arena is closed.
+ * @param fcntl           {@code int fcntl(int fd, int cmd, ...)} — POSIX only; {@code null} on Windows
+ * @param ioctlsocket     {@code int ioctlsocket(SOCKET, long, u_long*)} — Windows only; {@code null} on POSIX
+ * @param socketLastError {@code int WSAGetLastError(void)} — Windows only; {@code null} on POSIX
+ * @param wsaCleanup      {@code int WSACleanup(void)} — Windows only; {@code null} on POSIX.
+ *                        Must be invoked to pair with {@code WSAStartup} before the owning arena is closed.
  * @since 0.5.0
  */
 public record SyscallHandles(
@@ -71,6 +72,7 @@ public record SyscallHandles(
         MethodHandle recv,
         MethodHandle fcntl,
         MethodHandle ioctlsocket,
+        MethodHandle socketLastError,
         MethodHandle wsaCleanup
 ) {
 
@@ -92,6 +94,24 @@ public record SyscallHandles(
      */
     public boolean hasIoctlsocket() {
         return ioctlsocket != null;
+    }
+
+    /**
+     * Returns {@code true} when the plain Berkeley socket send/recv seam is fully available.
+     *
+     * @return {@code true} when the resolved handles can drive plain socket I/O
+     */
+    public boolean supportsPlainSocketIo() {
+        return send != null && recv != null && close != null;
+    }
+
+    /**
+     * Returns {@code true} if the Windows {@code WSAGetLastError} handle is available.
+     *
+     * @return {@code true} when {@link #socketLastError()} is non-null
+     */
+    public boolean hasSocketLastError() {
+        return socketLastError != null;
     }
 
     /**

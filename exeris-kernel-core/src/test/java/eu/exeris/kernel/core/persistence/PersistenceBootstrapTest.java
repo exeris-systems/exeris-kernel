@@ -15,7 +15,6 @@ import eu.exeris.kernel.spi.persistence.EngineStats;
 import eu.exeris.kernel.spi.persistence.PersistenceConfig;
 import eu.exeris.kernel.spi.persistence.PersistenceConnection;
 import eu.exeris.kernel.spi.persistence.PersistenceEngine;
-import eu.exeris.kernel.spi.persistence.PersistenceEngineCapabilities;
 import eu.exeris.kernel.spi.persistence.PersistenceHealthStatus;
 import eu.exeris.kernel.spi.persistence.PersistenceProvider;
 import eu.exeris.kernel.spi.security.StorageContext;
@@ -60,11 +59,6 @@ class PersistenceBootstrapTest {
             }
             @Override public boolean canServiceRequest() { return true; }
             @Override public EngineStats stats() { return null; }
-            @Override public PersistenceEngineCapabilities capabilities() {
-                return new PersistenceEngineCapabilities(
-                        false, false, false, false,
-                        "BlockingTCP", providerId);
-            }
             // close() is a lifecycle no-op for test stub — engine has no resources to release
             @Override public void close() { /* no resources to release in test stub */ }
         };

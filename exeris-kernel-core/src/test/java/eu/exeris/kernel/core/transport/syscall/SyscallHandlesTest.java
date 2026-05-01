@@ -58,12 +58,12 @@ class SyscallHandlesTest {
 
     private static SyscallHandles posixHandles() {
         MethodHandle h = stubHandle();
-        return new SyscallHandles(h, h, h, h, h, h, h, h, h, null, null);
+        return new SyscallHandles(h, h, h, h, h, h, h, h, h, null, null, null);
     }
 
     private static SyscallHandles windowsHandles() {
         MethodHandle h = stubHandle();
-        return new SyscallHandles(h, h, h, h, h, h, h, h, null, h, h);
+        return new SyscallHandles(h, h, h, h, h, h, h, h, null, h, h, h);
     }
 
     // =========================================================================
@@ -122,6 +122,8 @@ class SyscallHandlesTest {
             assertThat(posixHandles()).satisfies(h -> {
                 assertThat(h.hasFcntl()).isTrue();
                 assertThat(h.hasIoctlsocket()).isFalse();
+                assertThat(h.supportsPlainSocketIo()).isTrue();
+                assertThat(h.hasSocketLastError()).isFalse();
             });
         }
 
@@ -131,6 +133,8 @@ class SyscallHandlesTest {
             assertThat(windowsHandles()).satisfies(h -> {
                 assertThat(h.hasFcntl()).isFalse();
                 assertThat(h.hasIoctlsocket()).isTrue();
+                assertThat(h.supportsPlainSocketIo()).isTrue();
+                assertThat(h.hasSocketLastError()).isTrue();
             });
         }
     }
@@ -188,8 +192,8 @@ class SyscallHandlesTest {
         @DisplayName("Two SyscallHandles with identical fields are equal (value semantics)")
         void equalByValue() {
             MethodHandle h = stubHandle();
-            SyscallHandles p1 = new SyscallHandles(h, h, h, h, h, h, h, h, h, null, null);
-            SyscallHandles p2 = new SyscallHandles(h, h, h, h, h, h, h, h, h, null, null);
+            SyscallHandles p1 = new SyscallHandles(h, h, h, h, h, h, h, h, h, null, null, null);
+            SyscallHandles p2 = new SyscallHandles(h, h, h, h, h, h, h, h, h, null, null, null);
             assertThat(p1).isEqualTo(p2).hasSameHashCodeAs(p2);
         }
 

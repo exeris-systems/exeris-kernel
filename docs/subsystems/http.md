@@ -1,7 +1,7 @@
 # Kernel Subsystem: HTTP (HPACK + HTTP/2 + HTTP/1.1)
 
 **Layer:** L2 (Wire Translation)  
-**Status:** Implemented in `exeris-kernel-core` (`v0.5.0-SNAPSHOT`)
+**Status:** Implemented in `exeris-kernel-core` (`v0.6.0`)
 
 ---
 

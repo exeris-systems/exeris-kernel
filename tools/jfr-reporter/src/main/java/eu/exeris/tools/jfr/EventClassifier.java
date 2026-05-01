@@ -10,24 +10,24 @@ final class EventClassifier {
     static Category classify(String className, List<String> stackFrames) {
         if (className.startsWith("eu.exeris.")) {
             if (isTestHarnessClass(className)) {
-                return Category.test_harness;
+                return Category.TEST_HARNESS;
             }
             for (String frame : stackFrames) {
                 String lower = frame.toLowerCase(Locale.ROOT);
                 if (lower.contains("test") || lower.contains("tck")
                         || lower.contains("harness") || lower.contains("jmh_generated")) {
-                    return Category.test_harness;
+                    return Category.TEST_HARNESS;
                 }
             }
-            return Category.production;
+            return Category.PRODUCTION;
         }
         if (className.startsWith("jdk.internal.foreign")) {
-            return Category.panama;
+            return Category.PANAMA;
         }
         if (className.contains("VirtualThread") || className.contains("Continuation")) {
-            return Category.loom_runtime;
+            return Category.LOOM_RUNTIME;
         }
-        return Category.jvm_noise;
+        return Category.JVM_NOISE;
     }
 
     private static boolean isTestHarnessClass(String className) {

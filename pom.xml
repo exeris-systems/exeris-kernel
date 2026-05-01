@@ -5,7 +5,7 @@
 
     <groupId>eu.exeris</groupId>
     <artifactId>exeris-kernel-root</artifactId>
-    <version>0.5.0</version>
+    <version>0.6.0</version>
     <packaging>pom</packaging>
 
     <name>Exeris Kernel :: Root</name>
@@ -32,6 +32,7 @@
         <maven.compiler.release>26</maven.compiler.release>
 
         <jdk.preview.enable>--enable-preview</jdk.preview.enable>
+        <coverage.argLine/>
         <jvm.args>
             -XX:+UnlockExperimentalVMOptions
             -XX:+UseZGC
@@ -63,12 +64,51 @@
                     <artifactId>maven-surefire-plugin</artifactId>
                     <version>3.2.5</version>
                     <configuration>
-                        <argLine>${jvm.args}</argLine>
+                        <argLine>@{coverage.argLine} ${jvm.args}</argLine>
                     </configuration>
                 </plugin>
             </plugins>
         </pluginManagement>
     </build>
+
+    <profiles>
+        <profile>
+            <id>coverage</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.jacoco</groupId>
+                        <artifactId>jacoco-maven-plugin</artifactId>
+                        <version>0.8.14</version>
+                        <executions>
+                            <execution>
+                                <id>prepare-jacoco-agent</id>
+                                <goals>
+                                    <goal>prepare-agent</goal>
+                                </goals>
+                                <configuration>
+                                    <propertyName>coverage.argLine</propertyName>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>jacoco-report</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>report</goal>
+                                </goals>
+                                <configuration>
+                                    <formats>
+                                        <format>XML</format>
+                                        <format>HTML</format>
+                                    </formats>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 
     <distributionManagement>
         <repository>

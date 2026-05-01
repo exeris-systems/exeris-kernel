@@ -21,7 +21,6 @@ import eu.exeris.kernel.spi.exceptions.crypto.CryptoBootstrapException;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.memory.MemoryProviderConfig;
-import jdk.jfr.FlightRecorder;
 
 import java.lang.foreign.Arena;
 import java.lang.foreign.FunctionDescriptor;
@@ -99,12 +98,7 @@ public final class CommunityKernelCryptoProvider implements KernelCryptoProvider
 			OffHeapTlsEngine delegate =
 					new OffHeapTlsEngine(runtime.handles(), sslCtxPtr, serverMode, allocator);
 
-			CommunityProviderBootstrapEvent event = new CommunityProviderBootstrapEvent();
-			if (FlightRecorder.isInitialized() && event.isEnabled()) {
-				event.providerName = PROVIDER_NAME;
-				event.durationNs = System.nanoTime() - startedAt;
-				event.commit();
-			}
+			CommunityProviderBootstrapEvent.emit(PROVIDER_NAME, System.nanoTime() - startedAt);
 
 			CommunityTlsEngine engine = new CommunityTlsEngine(
 					delegate,

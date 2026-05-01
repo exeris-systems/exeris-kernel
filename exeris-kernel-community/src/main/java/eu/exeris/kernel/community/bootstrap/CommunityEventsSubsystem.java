@@ -10,7 +10,6 @@ package eu.exeris.kernel.community.bootstrap;
 
 import eu.exeris.kernel.core.events.EventBootstrap;
 import eu.exeris.kernel.spi.bootstrap.BootstrapPhase;
-import eu.exeris.kernel.spi.bootstrap.Subsystem;
 import eu.exeris.kernel.spi.config.ConfigProvider;
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.events.EventEngine;
@@ -20,11 +19,10 @@ import eu.exeris.kernel.spi.events.EventProvider;
 import java.util.List;
 import java.util.function.UnaryOperator;
 
-final class CommunityEventsSubsystem implements Subsystem {
+final class CommunityEventsSubsystem extends AbstractCommunitySubsystem {
 
     private EventProvider eventProvider;
     private EventEngine eventEngine;
-    private boolean running;
 
     @Override
     public String name() {
@@ -56,30 +54,26 @@ final class CommunityEventsSubsystem implements Subsystem {
             return;
         }
         eventEngine.start();
-        running = true;
+        markRunning(true);
     }
 
     @Override
     public void stop() {
-        running = false;
+        markRunning(false);
         if (eventEngine != null) {
             eventEngine.close();
         }
     }
 
     @Override
-    public boolean isRunning() {
-        return running;
-    }
-
-    @Override
     public UnaryOperator<ScopedValue.Carrier> providerBindings() {
         if (eventProvider == null || eventEngine == null) {
-            return Subsystem.super.providerBindings();
+            return defaultProviderBindings();
         }
-        return carrier -> carrier
-                .where(KernelProviders.EVENT_PROVIDER, eventProvider)
-                .where(KernelProviders.EVENT_ENGINE, eventEngine);
+        return CommunityCarrierBindings.operator(
+                CommunityCarrierBindings.binding(KernelProviders.EVENT_PROVIDER, eventProvider),
+                CommunityCarrierBindings.binding(KernelProviders.EVENT_ENGINE, eventEngine)
+        );
     }
 
     private static EventEngineConfig buildConfig(ConfigProvider configProvider) {

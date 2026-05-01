@@ -94,6 +94,7 @@ class CoreFlowEngineTest {
             go.countDown();
             assertThat(done.await(10, TimeUnit.SECONDS)).isTrue();
             awaitTrue(5_000, () -> executions.get() >= 1);
+            awaitTrue(5_000, () -> engine.stats().activeFlows() == 0);
 
             assertThat(executions.get()).isEqualTo(1);
         }
@@ -171,6 +172,95 @@ class CoreFlowEngineTest {
                 org.assertj.core.api.Assertions.assertThatThrownBy(
                         () -> engine.scheduler().wake(context))
                         .isInstanceOf(eu.exeris.kernel.spi.exceptions.flow.FlowEngineException.class);
+            }
+        }
+
+        @Test
+        @Timeout(value = 10, unit = TimeUnit.SECONDS)
+        @DisplayName("wake on an ordinary running context fails clearly when the flow is not parked")
+        void wakeOnRunningNonParkedContextFailsClearly() throws InterruptedException {
+            try (CoreFlowEngine engine = startedEngine(false)) {
+                CountDownLatch started = new CountDownLatch(1);
+                CountDownLatch allowCompletion = new CountDownLatch(1);
+
+                FlowDefinition definition = engine.plans().newDefinition("wake-running-non-parked")
+                        .step("hold", _ -> {
+                            started.countDown();
+                            try {
+                                if (!allowCompletion.await(3, TimeUnit.SECONDS)) {
+                                    return FlowOutcome.FAIL;
+                                }
+                            } catch (InterruptedException ex) {
+                                Thread.currentThread().interrupt();
+                                return FlowOutcome.FAIL;
+                            }
+                            return FlowOutcome.COMPLETE;
+                        }, null)
+                        .build();
+
+                FlowExecutionPlan plan = engine.plans().compile(definition);
+                FlowContext context = context("wake-running-non-parked-instance", definition.name());
+
+                engine.scheduler().schedule(plan, context);
+                assertThat(started.await(3, TimeUnit.SECONDS)).isTrue();
+
+                org.assertj.core.api.Assertions.assertThatThrownBy(() -> engine.scheduler().wake(context))
+                        .isInstanceOf(eu.exeris.kernel.spi.exceptions.flow.FlowEngineException.class)
+                        .hasMessageContaining("not currently parked");
+
+                allowCompletion.countDown();
+                awaitTrue(5_000, () -> engine.stats().completedFlows() == 1L);
+            }
+        }
+
+        @Test
+        @Timeout(value = 10, unit = TimeUnit.SECONDS)
+        @DisplayName("immediate schedule, park, and wake on the same context is race-safe")
+        void immediateScheduleParkWakeOnSameContextIsRaceSafe() throws InterruptedException {
+            try (CoreFlowEngine engine = startedEngine(false)) {
+                AtomicInteger executions = new AtomicInteger();
+
+                FlowDefinition definition = engine.plans().newDefinition("schedule-park-wake-race")
+                        .step("first", _ -> {
+                            executions.incrementAndGet();
+                            return FlowOutcome.CONTINUE;
+                        }, null)
+                        .step("second", _ -> {
+                            executions.incrementAndGet();
+                            return FlowOutcome.CONTINUE;
+                        }, null)
+                        .build();
+
+                FlowExecutionPlan plan = engine.plans().compile(definition);
+                FlowContext context = context("schedule-park-wake-race-instance", definition.name());
+
+                for (int iteration = 0; iteration < 512; iteration++) {
+                    engine.scheduler().schedule(plan, context);
+                    engine.scheduler().park(context);
+                    try {
+                        engine.scheduler().wake(context);
+                    } catch (RuntimeException ex) {
+                        if (!isExpectedNotParkedRace(ex)) {
+                            throw ex;
+                        }
+                    }
+                }
+
+                awaitTrue(5_000, () -> engine.stats().completedFlows() >= 1
+                        || engine.scheduler().lookupParked(
+                                context.instanceIdMost(),
+                                context.instanceIdLeast()).isPresent());
+
+                Optional<FlowContext> parked = engine.scheduler().lookupParked(
+                        context.instanceIdMost(),
+                        context.instanceIdLeast());
+                if (parked.isPresent()) {
+                    engine.scheduler().wake(parked.orElseThrow());
+                    awaitTrue(5_000, () -> engine.stats().completedFlows() >= 1);
+                }
+
+                assertThat(engine.stats().failedFlows()).isZero();
+                assertThat(executions.get()).isGreaterThanOrEqualTo(1);
             }
         }
 
@@ -468,6 +558,23 @@ class CoreFlowEngineTest {
 
         @Test
         @Timeout(value = 5, unit = TimeUnit.SECONDS)
+        @DisplayName("captured scheduler rejects park once the engine is closed")
+        void capturedSchedulerRejectsParkAfterEngineClose() {
+            CoreFlowEngine engine = startedEngine(false);
+            try {
+                var scheduler = engine.scheduler();
+                engine.close();
+
+                org.assertj.core.api.Assertions.assertThatThrownBy(() -> scheduler.park(
+                        context("park-after-close-instance", "closed-flow")))
+                        .isInstanceOf(eu.exeris.kernel.spi.exceptions.flow.FlowEngineException.class);
+            } finally {
+                engine.close();
+            }
+        }
+
+        @Test
+        @Timeout(value = 5, unit = TimeUnit.SECONDS)
         @DisplayName("wake after completion is idempotent")
         void wakeAfterCompletionIsIdempotent() throws InterruptedException {
             try (CoreFlowEngine engine = startedEngine(false)) {
@@ -622,6 +729,14 @@ class CoreFlowEngineTest {
         }
     }
 
+    private static boolean isExpectedNotParkedRace(Throwable throwable) {
+        if (!(throwable instanceof eu.exeris.kernel.spi.exceptions.flow.FlowEngineException flowEngineException)) {
+            return false;
+        }
+        String message = flowEngineException.getMessage();
+        return message != null && message.contains("not currently parked");
+    }
+
     private static CoreFlowEngine startedEngine(boolean persistenceEnabled) {
         FlowEngineConfig defaults = FlowEngineConfig.defaults("CoreFlowEngineTest");
         CoreFlowEngine engine = new CoreFlowEngine(
@@ -707,6 +822,7 @@ class CoreFlowEngineTest {
 
             @Override
             public void unsubscribe(SubscriptionToken token) {
+                /* test stub — subscription not exercised in this fixture */
             }
 
             @Override
@@ -737,10 +853,12 @@ class CoreFlowEngineTest {
 
         @Override
         public void start() {
+            /* test stub — not exercised */
         }
 
         @Override
         public void close() {
+            /* test stub — no resources to release */
         }
 
         @Override
@@ -769,6 +887,7 @@ class CoreFlowEngineTest {
 
             @Override
             public void unsubscribe(SubscriptionToken token) {
+                /* test stub — subscription not exercised in this fixture */
             }
 
             @Override
@@ -799,10 +918,12 @@ class CoreFlowEngineTest {
 
         @Override
         public void start() {
+            /* test stub — not exercised */
         }
 
         @Override
         public void close() {
+            /* test stub — no resources to release */
         }
 
         @Override

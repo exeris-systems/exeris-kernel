@@ -18,8 +18,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * L0 Contract: Persistence domain value types — {@link TransactionIsolation}
- * and {@link PersistenceEngineCapabilities}.
+ * L0 Contract: Persistence domain value types centered on {@link TransactionIsolation}
+ * and {@link PersistenceConfig} validation.
  *
  * <h2>TransactionIsolation ordinal stability</h2>
  * <p>Community tier maps ordinals to JDBC {@code Connection.TRANSACTION_*} constants.
@@ -27,12 +27,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * {@code BEGIN TRANSACTION ISOLATION LEVEL ...} command assembly.
  * Silent reordering sends serializable queries under read-committed.
  *
- * <h2>PersistenceEngineCapabilities — Valhalla-readiness</h2>
- * <p>Constructor guards; DEFAULT/HIGH_PERFORMANCE templates pinned; {@code withProvider()} contract.
- *
  * @since 0.5.0
  */
-@DisplayName("L0: Persistence Value Types — TransactionIsolation ordinals + PersistenceEngineCapabilities")
+@DisplayName("L0: Persistence Value Types — TransactionIsolation ordinals + PersistenceConfig")
 class PersistenceValueTypesTest {
 
     // =========================================================================
@@ -95,103 +92,6 @@ class PersistenceValueTypesTest {
                     .isEqualTo(TransactionIsolation.REPEATABLE_READ);
             assertThat(TransactionIsolation.valueOf("SERIALIZABLE"))
                     .isEqualTo(TransactionIsolation.SERIALIZABLE);
-        }
-    }
-
-    // =========================================================================
-    // PersistenceEngineCapabilities — templates + constructor guards + withProvider()
-    // =========================================================================
-
-    @Nested
-    @DisplayName("PersistenceEngineCapabilities — DEFAULT/HIGH_PERFORMANCE templates + withProvider()")
-    class PersistenceEngineCapabilitiesContract {
-
-        @Test
-        @DisplayName("DEFAULT: all capability flags false, transportName='BlockingTCP', providerId='default'")
-        void defaultTemplate() {
-            PersistenceEngineCapabilities d = PersistenceEngineCapabilities.DEFAULT;
-            assertThat(d.supportsNativeProtocol()).isFalse();
-            assertThat(d.supportsZeroCopyRows()).isFalse();
-            assertThat(d.supportsKernelAsyncTransport()).isFalse();
-            assertThat(d.supportsPerTenantPools()).isFalse();
-            assertThat(d.transportName()).isEqualTo("BlockingTCP");
-            assertThat(d.providerId()).isEqualTo("default");
-        }
-
-        @Test
-        @DisplayName("HIGH_PERFORMANCE: all capability flags true, transportName='NativeAsync', providerId='high-performance'")
-        void highPerformanceTemplate() {
-            PersistenceEngineCapabilities hp = PersistenceEngineCapabilities.HIGH_PERFORMANCE;
-            assertThat(hp.supportsNativeProtocol()).isTrue();
-            assertThat(hp.supportsZeroCopyRows()).isTrue();
-            assertThat(hp.supportsKernelAsyncTransport()).isTrue();
-            assertThat(hp.supportsPerTenantPools()).isTrue();
-            assertThat(hp.transportName()).isEqualTo("NativeAsync");
-            assertThat(hp.providerId()).isEqualTo("high-performance");
-        }
-
-        @Test
-        @DisplayName("Blank transportName throws IllegalArgumentException")
-        void blankTransportNameThrows() {
-            assertThatThrownBy(() ->
-                    new PersistenceEngineCapabilities(false, false, false, false, "", "community"))
-                    .isInstanceOf(IllegalArgumentException.class);
-        }
-
-        @Test
-        @DisplayName("Blank providerId throws IllegalArgumentException")
-        void blankProviderIdThrows() {
-            assertThatThrownBy(() ->
-                    new PersistenceEngineCapabilities(false, false, false, false, "BlockingTCP", ""))
-                    .isInstanceOf(IllegalArgumentException.class);
-        }
-
-        @Test
-        @DisplayName("withProvider() changes only providerId, preserves all other fields")
-        void withProviderPreservesFields() {
-            PersistenceEngineCapabilities branded =
-                    PersistenceEngineCapabilities.DEFAULT.withProvider("postgres-community");
-            assertThat(branded.providerId()).isEqualTo("postgres-community");
-            assertThat(branded.transportName()).isEqualTo("BlockingTCP");
-            assertThat(branded.supportsNativeProtocol()).isFalse();
-            assertThat(branded.supportsZeroCopyRows()).isFalse();
-        }
-
-        @Test
-        @DisplayName("withProvider() does not mutate the original DEFAULT constant")
-        void withProviderDoesNotMutate() {
-            PersistenceEngineCapabilities.DEFAULT.withProvider("x");
-            assertThat(PersistenceEngineCapabilities.DEFAULT.providerId()).isEqualTo("default");
-        }
-
-        @Test
-        @DisplayName("Structural equals: two identical custom caps are equal")
-        void structuralEquality() {
-            PersistenceEngineCapabilities a =
-                    new PersistenceEngineCapabilities(true, true, false, false, "MyTransport", "acme");
-            PersistenceEngineCapabilities b =
-                    new PersistenceEngineCapabilities(true, true, false, false, "MyTransport", "acme");
-            assertThat(a).isEqualTo(b);
-        }
-
-        @Test
-        @DisplayName("Structural hashCode: equal caps have same hashCode")
-        void structuralHashCode() {
-            PersistenceEngineCapabilities a =
-                    new PersistenceEngineCapabilities(true, false, true, false, "NativeAsync", "acme");
-            PersistenceEngineCapabilities b =
-                    new PersistenceEngineCapabilities(true, false, true, false, "NativeAsync", "acme");
-            assertThat(a).hasSameHashCodeAs(b);
-        }
-
-        @Test
-        @DisplayName("Different transportName yields inequality")
-        void differentTransportNameNotEqual() {
-            PersistenceEngineCapabilities a =
-                    PersistenceEngineCapabilities.DEFAULT.withProvider("acme");
-            PersistenceEngineCapabilities b =
-                    new PersistenceEngineCapabilities(false, false, false, false, "NativeAsync", "acme");
-            assertThat(a).isNotEqualTo(b);
         }
     }
 

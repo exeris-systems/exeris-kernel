@@ -27,6 +27,7 @@ public final class CoreSecurityProviderFixture implements SecurityProvider {
     private static final String TENANT_KEY    = "00000000-0000-7000-8000-000000000002";
 
     public CoreSecurityProviderFixture() {
+        /* ServiceLoader-required public no-arg constructor */
     }
 
     @Override

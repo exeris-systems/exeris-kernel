@@ -14,6 +14,7 @@ import eu.exeris.kernel.spi.graph.model.PathResult;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Deque;
 import java.util.HashMap;
@@ -21,6 +22,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.PriorityQueue;
+import java.util.Queue;
 import java.util.Set;
 import java.util.UUID;
 
@@ -32,10 +34,10 @@ import java.util.UUID;
  *
  * @since 0.5.0
  */
+// CouplingBetweenObjects: Dijkstra + Yen's require HashMap/ArrayList/PriorityQueue/HashSet/Deque —
+// inherent algorithm data structures, not dependency coupling.
 @SuppressWarnings({"PMD.TooManyMethods", "PMD.CouplingBetweenObjects", "PMD.CyclomaticComplexity"})
 final class CommunityPathFinder implements PathFinder {
-
-    private static final String PMD_LOOSE_COUPLING = "PMD.LooseCoupling";
 
     private final Map<UUID, List<Neighbor>> adjacency;
 
@@ -159,13 +161,11 @@ final class CommunityPathFinder implements PathFinder {
      *
      * @return PathEntry or {@code null} if target is unreachable
      */
-    // Concrete collections are algorithmic primitives here, not replaceable dependencies.
-    @SuppressWarnings(PMD_LOOSE_COUPLING)
     private PathEntry dijkstra(UUID source, UUID target, EdgeWeightFunction weightFn,
                                 Set<String> removedEdges, Set<UUID> removedNodes) {
         Map<UUID, Double> dist = new HashMap<>();
         Map<UUID, UUID> parent = new HashMap<>();
-        PriorityQueue<Item> frontier = new PriorityQueue<>();
+        Queue<Item> frontier = new PriorityQueue<>();
 
         for (UUID node : adjacency.keySet()) {
             if (!removedNodes.contains(node)) {
@@ -200,12 +200,11 @@ final class CommunityPathFinder implements PathFinder {
     }
 
     /** Yen's k-shortest paths using the Dijkstra helper above. */
-    // Concrete collections are algorithmic primitives here, not replaceable dependencies.
-    @SuppressWarnings({PMD_LOOSE_COUPLING, "PMD.AvoidInstantiatingObjectsInLoops"})
+    @SuppressWarnings("PMD.AvoidInstantiatingObjectsInLoops")
     private List<PathResult> yens(UUID source, UUID target, int maxPaths,
                                    EdgeWeightFunction weightFn) {
         List<PathEntry> kPaths = new ArrayList<>();
-        PriorityQueue<PathEntry> candidates = new PriorityQueue<>();
+        Queue<PathEntry> candidates = new PriorityQueue<>();
 
         PathEntry first = dijkstra(source, target, weightFn, Set.of(), Set.of());
         if (first == null) {
@@ -244,11 +243,9 @@ final class CommunityPathFinder implements PathFinder {
         return removedEdges.contains(from + "->" + neighbor.target()) || removedNodes.contains(neighbor.target());
     }
 
-    // Concrete collections are algorithmic primitives here, not replaceable dependencies.
-    @SuppressWarnings(PMD_LOOSE_COUPLING)
     private void relax(UUID currentNodeId, EdgeWeightFunction weightFn,
                         Set<String> removedEdges, Set<UUID> removedNodes,
-                        Map<UUID, Double> dist, Map<UUID, UUID> parent, PriorityQueue<Item> frontier) {
+                        Map<UUID, Double> dist, Map<UUID, UUID> parent, Queue<Item> frontier) {
         double distU = dist.get(currentNodeId);
         for (Neighbor neighbor : adjacency.getOrDefault(currentNodeId, List.of())) {
             if (isExcluded(currentNodeId, neighbor, removedEdges, removedNodes)) {
@@ -268,11 +265,9 @@ final class CommunityPathFinder implements PathFinder {
         }
     }
 
-    // Concrete collections are algorithmic primitives here, not replaceable dependencies.
-    @SuppressWarnings(PMD_LOOSE_COUPLING)
     private void addSpurCandidate(int spurIdx, List<UUID> rootPath, PathEntry spur,
                                    EdgeWeightFunction weightFn, List<PathEntry> kPaths,
-                                   PriorityQueue<PathEntry> candidates) {
+                                   Queue<PathEntry> candidates) {
         if (spur == null) {
             return;
         }
@@ -296,9 +291,7 @@ final class CommunityPathFinder implements PathFinder {
         return removed;
     }
 
-    // Concrete collections are algorithmic primitives here, not replaceable dependencies.
-    @SuppressWarnings(PMD_LOOSE_COUPLING)
-    private boolean isKnownPath(List<PathEntry> kPaths, PriorityQueue<PathEntry> candidates,
+    private boolean isKnownPath(List<PathEntry> kPaths, Collection<PathEntry> candidates,
                                  List<UUID> path) {
         for (PathEntry p : kPaths) {
             if (p.path().equals(path)) {

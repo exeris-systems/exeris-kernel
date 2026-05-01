@@ -8,7 +8,12 @@
  */
 package eu.exeris.kernel.tck.contract.http;
 
-import eu.exeris.kernel.spi.http.*;
+import eu.exeris.kernel.spi.http.HttpExchange;
+import eu.exeris.kernel.spi.http.HttpMethod;
+import eu.exeris.kernel.spi.http.HttpRequest;
+import eu.exeris.kernel.spi.http.HttpResponse;
+import eu.exeris.kernel.spi.http.HttpStatus;
+import eu.exeris.kernel.spi.http.HttpVersion;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -16,6 +21,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
@@ -94,7 +100,9 @@ public abstract class AbstractHttpExchangeTck {
         void respondStatusUsesRequestVersion() {
             HttpRequest req = minimalRequest();
             HttpExchange exchange = createExchange(req);
-            exchange.respond(HttpStatus.NO_CONTENT);
+            assertThatCode(() -> exchange.respond(HttpStatus.NO_CONTENT))
+                    .as("respond(HttpStatus) must delegate successfully using the request version")
+                    .doesNotThrowAnyException();
         }
     }
 }

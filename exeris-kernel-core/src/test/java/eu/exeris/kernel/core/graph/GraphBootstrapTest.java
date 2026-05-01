@@ -46,13 +46,13 @@ class GraphBootstrapTest {
         return new GraphEngine() {
             @Override public GraphSession openSession() { return null; }
             @Override public GraphDialect dialect()     { return null; }
-            @Override public void registerNodes(List<GraphNodeDescriptor> n) {}
-            @Override public void registerEdges(List<GraphEdgeDescriptor> e) {}
+            @Override public void registerNodes(List<GraphNodeDescriptor> n) { /* test stub — schema registration not exercised */ }
+            @Override public void registerEdges(List<GraphEdgeDescriptor> e) { /* test stub — schema registration not exercised */ }
             @Override public List<GraphNodeDescriptor> registeredNodes() { return List.of(); }
             @Override public List<GraphEdgeDescriptor> registeredEdges() { return List.of(); }
             @Override public String engineName()  { return name; }
             @Override public boolean isRunning()  { return true; }
-            @Override public void close()         {}
+            @Override public void close()         { /* test stub — no resources to release */ }
         };
     }
 

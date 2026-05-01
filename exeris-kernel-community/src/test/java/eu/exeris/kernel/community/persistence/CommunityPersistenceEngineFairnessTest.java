@@ -43,6 +43,7 @@ class CommunityPersistenceEngineFairnessTest {
         return (CommunityPersistenceEngine) createTestEngine(maxPoolSize);
     }
 
+    @SuppressWarnings("unused")
     @Nested
     @DisplayName("Fairness-aware admission control")
     class FairnessAwareAdmissionControl {
@@ -112,6 +113,19 @@ class CommunityPersistenceEngineFairnessTest {
         }
 
         @Test
+        @DisplayName("Rejects earlier in guard band when queue forms with low headroom and no fairness warmup")
+        void rejectsInGuardBand_whenQueuedAndLowHeadroomWithoutWarmup() {
+            try (CommunityPersistenceEngine engine = createCommunityTestEngine(20)) {
+                CommunityHikariSupport.AdmissionSnapshot snapshot =
+                        new CommunityHikariSupport.AdmissionSnapshot(17, 0, 3, 20);
+
+                assertThat(engine.canServiceRequest(snapshot)).isFalse();
+                assertThat(engine.decisionReason(snapshot))
+                        .isEqualTo("REJECT_GUARD_BAND_FAIRNESS");
+            }
+        }
+
+        @Test
         @DisplayName("Uses deterministic REJECT_HARD_SATURATION reason at >=90% saturation")
         void rejectsHardSaturation_withDeterministicReason() {
             try (CommunityPersistenceEngine engine = createCommunityTestEngine(10)) {
@@ -165,16 +179,13 @@ class CommunityPersistenceEngineFairnessTest {
         @Test
         @DisplayName("Uses deterministic REJECT_ENGINE_CLOSED reason when engine is closed")
         void rejectsEngineClosed_withDeterministicReason() {
-            CommunityPersistenceEngine engine = createCommunityTestEngine(4);
-            try {
+            try (CommunityPersistenceEngine engine = createCommunityTestEngine(4)) {
                 CommunityHikariSupport.AdmissionSnapshot snapshot =
                         new CommunityHikariSupport.AdmissionSnapshot(0, 0, 0, 4);
                 engine.close();
 
                 assertThat(engine.canServiceRequest(snapshot)).isFalse();
                 assertThat(engine.decisionReason(snapshot)).isEqualTo("REJECT_ENGINE_CLOSED");
-            } finally {
-                engine.close();
             }
         }
 
@@ -191,6 +202,7 @@ class CommunityPersistenceEngineFairnessTest {
         }
     }
 
+    @SuppressWarnings("unused")
     @Nested
     @DisplayName("Edge cases")
     class EdgeCases {
@@ -202,6 +214,7 @@ class CommunityPersistenceEngineFairnessTest {
                 assertThat(engine.canServiceRequest()).isTrue();
 
                 try (var conn = engine.openConnection()) {
+                    assertThat(conn.isOpen()).isTrue();
                     var stats = engine.stats();
                     double saturation = (double) stats.activeConnections() / (double) stats.maxConnections();
                     assertThat(saturation).isGreaterThanOrEqualTo(1.0);
@@ -217,11 +230,14 @@ class CommunityPersistenceEngineFairnessTest {
                      var conn2 = engine.openConnection();
                      var conn3 = engine.openConnection()) {
 
+                    assertThat(conn1.isOpen()).isTrue();
+                    assertThat(conn2.isOpen()).isTrue();
+                    assertThat(conn3.isOpen()).isTrue();
+
                     var stats = engine.stats();
                     double saturation = (double) stats.activeConnections() / (double) stats.maxConnections();
-                    
+
                     if (saturation >= 0.85) {
-                        // When saturated, canServiceRequest may return false
                         boolean result = engine.canServiceRequest();
                         assertThat(result).isFalse();
                     }

@@ -35,10 +35,16 @@ import java.util.UUID;
 final class JdbcPersistenceStatement implements PersistenceStatement {
 
     private final PreparedStatement prepStmt;
+    private final WriteCompletion writeCompletion;
     private boolean closed;
 
-    /* default */ JdbcPersistenceStatement(PreparedStatement prepStmt) {
+    /* default */ @FunctionalInterface interface WriteCompletion {
+        void afterExecuteUpdate() throws SQLException;
+    }
+
+    /* default */ JdbcPersistenceStatement(PreparedStatement prepStmt, WriteCompletion writeCompletion) {
         this.prepStmt = prepStmt;
+        this.writeCompletion = writeCompletion;
         this.closed = false;
     }
 
@@ -179,7 +185,9 @@ final class JdbcPersistenceStatement implements PersistenceStatement {
     public long executeUpdate() {
         ensureOpen();
         try {
-            return prepStmt.executeLargeUpdate();
+            long updated = prepStmt.executeLargeUpdate();
+            writeCompletion.afterExecuteUpdate();
+            return updated;
         } catch (SQLException sqlEx) {
             throw mapSql(sqlEx);
         }
@@ -193,7 +201,7 @@ final class JdbcPersistenceStatement implements PersistenceStatement {
         closed = true;
         try {
             prepStmt.close();
-        } catch (SQLException ignored) {
+        } catch (SQLException _) {
             // Best-effort — idempotent per SPI contract
         }
     }

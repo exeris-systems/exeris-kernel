@@ -11,7 +11,6 @@ package eu.exeris.kernel.community.bootstrap;
 import eu.exeris.kernel.community.persistence.RlsConnectionInterceptor;
 import eu.exeris.kernel.core.persistence.PersistenceBootstrap;
 import eu.exeris.kernel.spi.bootstrap.BootstrapPhase;
-import eu.exeris.kernel.spi.bootstrap.Subsystem;
 import eu.exeris.kernel.spi.config.ConfigProvider;
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.exceptions.persistence.PersistenceProviderException;
@@ -25,7 +24,7 @@ import java.util.List;
 import java.util.ServiceLoader;
 import java.util.function.UnaryOperator;
 
-final class CommunityPersistenceSubsystem implements Subsystem {
+final class CommunityPersistenceSubsystem extends AbstractCommunitySubsystem {
 
     private static final long DEFAULT_CONNECTION_TIMEOUT_MS = 250L;  // was 5_000L; fail-fast on pool exhaustion
     private static final long DEFAULT_IDLE_TIMEOUT_MS = 600_000L;
@@ -35,7 +34,6 @@ final class CommunityPersistenceSubsystem implements Subsystem {
 
     private PersistenceProvider persistenceProvider;
     private PersistenceEngine persistenceEngine;
-    private boolean running;
 
     @Override
     public String name() {
@@ -68,30 +66,26 @@ final class CommunityPersistenceSubsystem implements Subsystem {
 
     @Override
     public void start() {
-        running = persistenceEngine != null;
+        markRunning(persistenceEngine != null);
     }
 
     @Override
     public void stop() {
-        running = false;
+        markRunning(false);
         if (persistenceEngine != null) {
             persistenceEngine.close();
         }
     }
 
     @Override
-    public boolean isRunning() {
-        return running;
-    }
-
-    @Override
     public UnaryOperator<ScopedValue.Carrier> providerBindings() {
         if (persistenceProvider == null || persistenceEngine == null) {
-            return Subsystem.super.providerBindings();
+            return defaultProviderBindings();
         }
-        return carrier -> carrier
-                .where(KernelProviders.PERSISTENCE_PROVIDER, persistenceProvider)
-                .where(KernelProviders.PERSISTENCE_ENGINE, persistenceEngine);
+        return CommunityCarrierBindings.operator(
+                CommunityCarrierBindings.binding(KernelProviders.PERSISTENCE_PROVIDER, persistenceProvider),
+                CommunityCarrierBindings.binding(KernelProviders.PERSISTENCE_ENGINE, persistenceEngine)
+        );
     }
 
     private static PersistenceProvider resolveProvider() {

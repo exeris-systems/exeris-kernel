@@ -11,7 +11,6 @@ package eu.exeris.kernel.community.bootstrap;
 import eu.exeris.kernel.community.flow.CommunityFlowSnapshotStore;
 import eu.exeris.kernel.core.flow.FlowBootstrap;
 import eu.exeris.kernel.spi.bootstrap.BootstrapPhase;
-import eu.exeris.kernel.spi.bootstrap.Subsystem;
 import eu.exeris.kernel.spi.config.ConfigProvider;
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.flow.FlowEngine;
@@ -19,15 +18,15 @@ import eu.exeris.kernel.spi.flow.FlowEngineConfig;
 import eu.exeris.kernel.spi.flow.FlowProvider;
 import eu.exeris.kernel.spi.flow.model.FlowSnapshotStore;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.function.UnaryOperator;
 
-final class CommunityFlowSubsystem implements Subsystem {
+final class CommunityFlowSubsystem extends AbstractCommunitySubsystem {
 
     private FlowProvider flowProvider;
     private FlowEngine flowEngine;
     private FlowSnapshotStore snapshotStore;
-    private boolean running;
 
     @Override
     public String name() {
@@ -62,36 +61,29 @@ final class CommunityFlowSubsystem implements Subsystem {
             return;
         }
         flowEngine.start();
-        running = true;
+        markRunning(true);
     }
 
     @Override
     public void stop() {
-        running = false;
+        markRunning(false);
         if (flowEngine != null) {
             flowEngine.close();
         }
     }
 
     @Override
-    public boolean isRunning() {
-        return running;
-    }
-
-    @Override
     public UnaryOperator<ScopedValue.Carrier> providerBindings() {
         if (flowProvider == null || flowEngine == null) {
-            return Subsystem.super.providerBindings();
+            return defaultProviderBindings();
         }
-        return carrier -> {
-            ScopedValue.Carrier bound = carrier
-                    .where(KernelProviders.FLOW_PROVIDER, flowProvider)
-                    .where(KernelProviders.FLOW_ENGINE, flowEngine);
-            if (snapshotStore != null) {
-                bound = bound.where(KernelProviders.FLOW_SNAPSHOT_STORE, snapshotStore);
-            }
-            return bound;
-        };
+        List<CommunityCarrierBindings.Binding<?>> bindings = new ArrayList<>();
+        bindings.add(CommunityCarrierBindings.binding(KernelProviders.FLOW_PROVIDER, flowProvider));
+        bindings.add(CommunityCarrierBindings.binding(KernelProviders.FLOW_ENGINE, flowEngine));
+        if (snapshotStore != null) {
+            bindings.add(CommunityCarrierBindings.binding(KernelProviders.FLOW_SNAPSHOT_STORE, snapshotStore));
+        }
+        return CommunityCarrierBindings.operator(bindings);
     }
 
     private static FlowEngineConfig buildFlowConfig(ConfigProvider configProvider) {

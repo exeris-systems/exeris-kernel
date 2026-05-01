@@ -79,33 +79,8 @@ public final class GraphSyncService {
     public void syncNodeUpsert(String label, UUID nodeId, LoanedBuffer properties) {
         Objects.requireNonNull(label,  "label must not be null");
         Objects.requireNonNull(nodeId, "nodeId must not be null");
-        final GraphSyncOperationEvent event = GraphSyncOperationEvent.beginIfEnabled();
-        if (event != null) {
-            event.operationType = "NODE_UPSERT";
-            event.edgeOrLabel   = label;
-        }
-        try (GraphSession session = engine.openSession()) {
-            session.beginTransaction();
-            try {
-                session.upsertNode(label, nodeId, properties);
-                session.commit();
-                if (event != null) {
-                    event.success = true;
-                }
-            } catch (RuntimeException cause) {
-                try {
-                    session.rollback();
-                } catch (RuntimeException rollbackFailure) {
-                    cause.addSuppressed(rollbackFailure);
-                }
-                GraphSyncFailedEvent.emit(label, cause.getMessage());
-                throw new GraphSyncException(label, "Node upsert failed during L1→L2 sync", cause);
-            }
-        } finally {
-            if (event != null) {
-                event.commit();
-            }
-        }
+        executeSync("NODE_UPSERT", label, "Node upsert failed during L1→L2 sync",
+                session -> session.upsertNode(label, nodeId, properties));
     }
 
     /**
@@ -118,33 +93,8 @@ public final class GraphSyncService {
     public void syncNodeDelete(String label, UUID nodeId) {
         Objects.requireNonNull(label,  "label must not be null");
         Objects.requireNonNull(nodeId, "nodeId must not be null");
-        final GraphSyncOperationEvent event = GraphSyncOperationEvent.beginIfEnabled();
-        if (event != null) {
-            event.operationType = "NODE_DELETE";
-            event.edgeOrLabel   = label;
-        }
-        try (GraphSession session = engine.openSession()) {
-            session.beginTransaction();
-            try {
-                session.deleteNode(label, nodeId);
-                session.commit();
-                if (event != null) {
-                    event.success = true;
-                }
-            } catch (RuntimeException cause) {
-                try {
-                    session.rollback();
-                } catch (RuntimeException rollbackFailure) {
-                    cause.addSuppressed(rollbackFailure);
-                }
-                GraphSyncFailedEvent.emit(label, cause.getMessage());
-                throw new GraphSyncException(label, "Node delete failed during L1→L2 sync", cause);
-            }
-        } finally {
-            if (event != null) {
-                event.commit();
-            }
-        }
+        executeSync("NODE_DELETE", label, "Node delete failed during L1→L2 sync",
+                session -> session.deleteNode(label, nodeId));
     }
 
     /**
@@ -163,33 +113,8 @@ public final class GraphSyncService {
         Objects.requireNonNull(sourceId, "sourceId must not be null");
         Objects.requireNonNull(targetId, "targetId must not be null");
         String edgeType = edge.edgeType();
-        final GraphSyncOperationEvent event = GraphSyncOperationEvent.beginIfEnabled();
-        if (event != null) {
-            event.operationType = "EDGE_UPSERT";
-            event.edgeOrLabel   = edgeType;
-        }
-        try (GraphSession session = engine.openSession()) {
-            session.beginTransaction();
-            try {
-                session.upsertEdge(edge, sourceId, targetId, weight, properties);
-                session.commit();
-                if (event != null) {
-                    event.success = true;
-                }
-            } catch (RuntimeException cause) {
-                try {
-                    session.rollback();
-                } catch (RuntimeException rollbackFailure) {
-                    cause.addSuppressed(rollbackFailure);
-                }
-                GraphSyncFailedEvent.emit(edgeType, cause.getMessage());
-                throw new GraphSyncException(edgeType, "Edge upsert failed during L1→L2 sync", cause);
-            }
-        } finally {
-            if (event != null) {
-                event.commit();
-            }
-        }
+        executeSync("EDGE_UPSERT", edgeType, "Edge upsert failed during L1→L2 sync",
+                session -> session.upsertEdge(edge, sourceId, targetId, weight, properties));
     }
 
     /**
@@ -205,15 +130,20 @@ public final class GraphSyncService {
         Objects.requireNonNull(sourceId, "sourceId must not be null");
         Objects.requireNonNull(targetId, "targetId must not be null");
         String edgeType = edge.edgeType();
+        executeSync("EDGE_DELETE", edgeType, "Edge delete failed during L1→L2 sync",
+                session -> session.deleteEdge(edge, sourceId, targetId));
+    }
+
+    private void executeSync(String operationType, String label, String failureMessage, SessionAction action) {
         final GraphSyncOperationEvent event = GraphSyncOperationEvent.beginIfEnabled();
         if (event != null) {
-            event.operationType = "EDGE_DELETE";
-            event.edgeOrLabel   = edgeType;
+            event.operationType = operationType;
+            event.edgeOrLabel   = label;
         }
         try (GraphSession session = engine.openSession()) {
             session.beginTransaction();
             try {
-                session.deleteEdge(edge, sourceId, targetId);
+                action.execute(session);
                 session.commit();
                 if (event != null) {
                     event.success = true;
@@ -224,13 +154,18 @@ public final class GraphSyncService {
                 } catch (RuntimeException rollbackFailure) {
                     cause.addSuppressed(rollbackFailure);
                 }
-                GraphSyncFailedEvent.emit(edgeType, cause.getMessage());
-                throw new GraphSyncException(edgeType, "Edge delete failed during L1→L2 sync", cause);
+                GraphSyncFailedEvent.emit(label, cause.getMessage());
+                throw new GraphSyncException(label, failureMessage, cause);
             }
         } finally {
             if (event != null) {
                 event.commit();
             }
         }
+    }
+
+    @FunctionalInterface
+    private interface SessionAction {
+        void execute(GraphSession session);
     }
 }

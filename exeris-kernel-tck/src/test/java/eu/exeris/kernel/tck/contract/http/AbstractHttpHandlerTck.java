@@ -9,7 +9,12 @@
 package eu.exeris.kernel.tck.contract.http;
 
 import eu.exeris.kernel.spi.exceptions.http.HttpException;
-import eu.exeris.kernel.spi.http.*;
+import eu.exeris.kernel.spi.http.HttpExchange;
+import eu.exeris.kernel.spi.http.HttpHandler;
+import eu.exeris.kernel.spi.http.HttpMethod;
+import eu.exeris.kernel.spi.http.HttpRequest;
+import eu.exeris.kernel.spi.http.HttpStatus;
+import eu.exeris.kernel.spi.http.HttpVersion;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -18,6 +23,7 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
@@ -71,7 +77,9 @@ public abstract class AbstractHttpHandlerTck {
         @DisplayName("Handler can call respond(HttpStatus.OK) without exception")
         void respondOkNoException() {
             HttpHandler handler = exchange -> exchange.respond(HttpStatus.OK);
-            handler.handle(createRecordingExchange(minimalRequest()));
+            assertThatCode(() -> handler.handle(createRecordingExchange(minimalRequest())))
+                    .as("Handler should be able to emit an OK response without throwing")
+                    .doesNotThrowAnyException();
         }
 
         @Test
@@ -108,14 +116,18 @@ public abstract class AbstractHttpHandlerTck {
         @DisplayName("HttpHandler can be expressed as a lambda")
         void lambdaCompatible() {
             HttpHandler handler = exchange -> exchange.respond(HttpStatus.NO_CONTENT);
-            handler.handle(createRecordingExchange(minimalRequest()));
+            assertThatCode(() -> handler.handle(createRecordingExchange(minimalRequest())))
+                    .as("Lambda-based HttpHandler implementations must remain invocation-compatible")
+                    .doesNotThrowAnyException();
         }
 
         @Test
         @DisplayName("HttpHandler can be expressed as a method reference")
         void methodReferenceCompatible() {
             HttpHandler handler = AbstractHttpHandlerTck::staticTestHandler;
-            handler.handle(createRecordingExchange(minimalRequest()));
+            assertThatCode(() -> handler.handle(createRecordingExchange(minimalRequest())))
+                    .as("Method-reference HttpHandler implementations must remain invocation-compatible")
+                    .doesNotThrowAnyException();
         }
     }
 

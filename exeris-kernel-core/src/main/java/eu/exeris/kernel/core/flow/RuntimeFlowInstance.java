@@ -20,16 +20,19 @@ import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 @SuppressWarnings("PMD.PublicMemberInNonPublicType")
-final class RuntimeFlowInstance { // NOPMD
+final class RuntimeFlowInstance implements RuntimeFlowContextStateView { // NOPMD
+
+    /* default */ static final int PARKED_SCHEDULE_NOOP = -2;
 
     private static final int[]  EMPTY_STACK        = new int[0];
     private static final byte[] EMPTY_OPAQUE_STATE = new byte[0];
 
     private final FlowKey key;
     private final String definitionName;
+    private final long lifecycleGeneration;
     private final AtomicBoolean scheduled = new AtomicBoolean(false);
     private final Object monitor = new Object();
-    private final RuntimeFlowContext contextView = new RuntimeFlowContext(this);
+    private final RuntimeFlowContext contextView;
     private volatile CoreFlowExecutionPlan plan;
     private volatile EventEngine eventEngine;
     private volatile FlowState state;
@@ -40,6 +43,7 @@ final class RuntimeFlowInstance { // NOPMD
 
     private RuntimeFlowInstance(FlowKey key,
                                 String definitionName,
+                                long lifecycleGeneration,
                                 CoreFlowExecutionPlan plan,
                                 FlowState state,
                                 int currentStep,
@@ -48,6 +52,8 @@ final class RuntimeFlowInstance { // NOPMD
                                 int stackPointer) {
         this.key = key;
         this.definitionName = definitionName;
+        this.lifecycleGeneration = lifecycleGeneration;
+        this.contextView = new RuntimeFlowContext(key, definitionName, this);
         this.plan = plan;
         this.state = state;
         this.currentStep = currentStep;
@@ -56,10 +62,14 @@ final class RuntimeFlowInstance { // NOPMD
         this.stackPointer = stackPointer;
     }
 
-    public static RuntimeFlowInstance fromContext(CoreFlowExecutionPlan plan, FlowContext context) {
+    public static RuntimeFlowInstance fromContext(
+            CoreFlowExecutionPlan plan,
+            FlowContext context,
+            long lifecycleGeneration) {
         return new RuntimeFlowInstance(
                 FlowKey.from(context),
                 context.definitionName(),
+                lifecycleGeneration,
                 plan,
                 context.state(),
                 Math.max(0, context.currentStep()),
@@ -71,7 +81,10 @@ final class RuntimeFlowInstance { // NOPMD
         );
     }
 
-    public static RuntimeFlowInstance fromSnapshot(CoreFlowExecutionPlan plan, FlowSnapshot snapshot) {
+    public static RuntimeFlowInstance fromSnapshot(
+            CoreFlowExecutionPlan plan,
+            FlowSnapshot snapshot,
+            long lifecycleGeneration) {
         long timeoutNanos;
         if (Instant.MAX.equals(snapshot.timeout())) {
             timeoutNanos = Long.MAX_VALUE;
@@ -86,6 +99,7 @@ final class RuntimeFlowInstance { // NOPMD
         return new RuntimeFlowInstance(
                 new FlowKey(snapshot.instanceIdMost(), snapshot.instanceIdLeast()),
                 snapshot.definitionName(),
+                lifecycleGeneration,
                 plan,
                 snapshot.state(),
                 snapshot.currentStep(),
@@ -107,10 +121,15 @@ final class RuntimeFlowInstance { // NOPMD
         return monitor;
     }
 
+    public long lifecycleGeneration() {
+        return lifecycleGeneration;
+    }
+
     public CoreFlowExecutionPlan plan() {
         return plan;
     }
 
+    @Override
     public FlowState state() {
         return state;
     }
@@ -119,6 +138,7 @@ final class RuntimeFlowInstance { // NOPMD
         this.state = newState;
     }
 
+    @Override
     public int currentStep() {
         return currentStep;
     }
@@ -127,6 +147,7 @@ final class RuntimeFlowInstance { // NOPMD
         this.currentStep = step;
     }
 
+    @Override
     public long timeoutNanos() {
         return timeoutNanos;
     }
@@ -143,6 +164,10 @@ final class RuntimeFlowInstance { // NOPMD
         synchronized (monitor) {
             scheduled.set(false);
         }
+    }
+
+    public boolean isScheduled() {
+        return scheduled.get();
     }
 
     public void attachPlan(CoreFlowExecutionPlan candidate) {
@@ -174,8 +199,11 @@ final class RuntimeFlowInstance { // NOPMD
             if (scheduled.get() || isTerminal()) {
                 return -1;
             }
+            if (state == FlowState.PARKED) {
+                return PARKED_SCHEDULE_NOOP;
+            }
             scheduled.set(true);
-            return state == FlowState.PARKED ? Math.min(currentStep + 1, plan.stepCount()) : currentStep;
+            return currentStep;
         }
     }
 

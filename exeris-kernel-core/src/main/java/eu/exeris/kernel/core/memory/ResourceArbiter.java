@@ -302,9 +302,8 @@ public final class ResourceArbiter {
             return Action.ALLOW;
         }
         int utilizationPct = watermarkManager.currentUtilizationPct();
-        double utilization = utilizationPct / 100.0;
-        Action action = scalingContext.actionFor(utilization);
-        ResourceArbiterDecisionEvent.emit(action, context.contextName(), utilizationPct, nowNs);
+        Action action = ResourceArbiterPolicy.actionForScalingContext(scalingContext, utilizationPct);
+        ResourceArbiterDecisionTelemetry.emit(action, context, utilizationPct, nowNs);
         return action;
     }
 
@@ -331,7 +330,7 @@ public final class ResourceArbiter {
      */
     private Action reEvaluate(Context context, long nowNs) {
         WatermarkLevel level = watermarkManager.currentLevel();
-        Action action = mapLevelToAction(context, level);
+        Action action = ResourceArbiterPolicy.actionForLevel(context, level);
 
         int newOrdinal = action.ordinal();
 
@@ -344,28 +343,8 @@ public final class ResourceArbiter {
         }
 
         int utilizationPct = watermarkManager.currentUtilizationPct();
-        ResourceArbiterDecisionEvent.emit(action, context.contextName(), utilizationPct, nowNs);
+        ResourceArbiterDecisionTelemetry.emit(action, context, utilizationPct, nowNs);
 
         return action;
-    }
-
-    /**
-     * Maps a {@link WatermarkLevel} to an {@link Action} for the given context.
-     *
-     * <p>O(1) — enum ordinal switch. C2 JIT will compile this to a jump table.
-     *
-     * @param context the arbitration context
-     * @param level   the current watermark level
-     * @return the appropriate action
-     */
-    private static Action mapLevelToAction(Context context, WatermarkLevel level) {
-        return switch (level) {
-            case NORMAL -> Action.ALLOW;
-            case WARNING -> Action.THROTTLE;
-            case CRITICAL -> context == Context.KERNEL_LOGIC
-                    ? Action.SHED_LOAD
-                    : Action.REJECT;
-            case SHEDDING -> Action.SHED_LOAD;
-        };
     }
 }

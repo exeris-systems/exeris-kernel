@@ -79,9 +79,10 @@ final class CommunityMemorySubsystem implements Subsystem {
 
     @Override
     public UnaryOperator<ScopedValue.Carrier> providerBindings() {
-        return carrier -> carrier
-                .where(KernelProviders.MEMORY_PROVIDER,  memoryProvider)
-                .where(KernelProviders.MEMORY_ALLOCATOR, memoryAllocator);
+        return CommunityCarrierBindings.operator(
+            CommunityCarrierBindings.binding(KernelProviders.MEMORY_PROVIDER, memoryProvider),
+            CommunityCarrierBindings.binding(KernelProviders.MEMORY_ALLOCATOR, memoryAllocator)
+        );
     }
 
     private static MemoryProviderConfig buildConfig(ConfigProvider config) {

@@ -7,7 +7,7 @@
     <parent>
         <groupId>eu.exeris</groupId>
         <artifactId>exeris-kernel-parent</artifactId>
-        <version>0.5.0</version>
+        <version>0.6.0</version>
         <relativePath>../exeris-kernel-parent/pom.xml</relativePath>
     </parent>
 
@@ -87,6 +87,7 @@
                 <version>3.2.5</version>
                 <configuration>
                     <argLine>
+                        @{coverage.argLine}
                         --enable-preview
                         --enable-native-access=ALL-UNNAMED
                         -XX:+UnlockExperimentalVMOptions

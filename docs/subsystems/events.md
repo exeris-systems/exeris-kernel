@@ -16,14 +16,35 @@
 
 The **Events subsystem** is the nervous system of the Exeris Kernel. It acts as the **"Invisible Wall"** for
 event-driven communication — the engine is completely **implementation-blind**: it does not know whether it
-operates on local memory, a PostgreSQL partition, or a Kafka cluster.
+operates on local memory, a PostgreSQL partition, or a Kafka cluster. (The SPI is designed to be implementation-blind; the current Community implementation provides in-memory bus and PostgreSQL-backed Outbox only — see Current Repo Reality below.)
 
 - **Unified Stream SPI:** Business logic appends events to a `Stream` oblivious to whether it maps to a
-  Postgres partition, a Kafka topic, or an off-heap ring buffer.
+  Postgres partition, a Kafka topic, or an off-heap ring buffer. *(Current Community: in-memory bus + PostgreSQL outbox only.)*
 - **Transactional Outbox:** Guarantees at-least-once delivery by atomically binding event publication to
   database transactions (SQL-based persistence).
 - **Ordered Aggregates:** Enforces strict ordering and versioning per Aggregate Root, preventing race
   conditions in high-concurrency Virtual Thread environments.
+
+---
+
+## Current Repo Reality
+
+**Implemented in this repository:**
+- **`CommunityEventEngine`** (`eu.exeris.kernel.community.events.CommunityEventEngine`) — wires all components
+- **`CommunityEventBus`** — in-memory JVM-heap pub/sub (not persistent)
+- **`CommunityEventQueue`** + **`CommunityEventLoop`** — in-process queue and drain loop
+- **`CommunityEventRegistry`** — ordinal registry backed by `ConcurrentHashMap`
+- **`CommunityHeapEventPayload`** — heap-backed `EventPayload` (not off-heap)
+- **`CommunityJdbcEventStore`** — PostgreSQL-backed `EventStore` (JDBC, via `PersistenceEngine`)
+- **`CommunityJdbcOutboxEventStoreAdapter`** — adapts `CommunityJdbcEventStore` for the Outbox pattern
+- **`CommunityEventBusOutboxBrokerPort`** — Outbox delivery port that publishes to the local in-memory `CommunityEventBus` (NOT to Kafka/Redpanda)
+- **`CommunityEventProvider`** — `ServiceLoader` entry point
+
+**Not yet implemented:**
+- Kafka or Redpanda driver — **no binding exists in the repository**
+- `EventStreamReader` / `EventStreamAppender` SPI contracts
+- Per-subscription retry configuration on `EventBus`
+- Operator-triggered DLQ replay API (`EventEngine.replayFromDlq(dlqId)`)
 
 ---
 
@@ -46,7 +67,7 @@ the payload immediately — eliminating silent leaks from dead events.
 
 ### 3. Zero-Copy Native Flow
 
-`EventPayload` bytes travel from the producer's `LoanedBuffer` directly through the `EventBus` to the Kafka/Redpanda page cache — no `byte[]` copy, no `ByteBuffer.allocate()`, no heap serialization between producer and broker.
+`EventPayload` bytes travel from the producer's `LoanedBuffer` directly through the `EventBus` to subscribers with RAII ref-count lifecycle — no heap serialization on the dispatch path. When the Outbox is enabled, the Community implementation delivers events to the in-memory `EventBus` after the database commit. A future distributed broker driver (Kafka/Redpanda) would preserve this zero-copy contract end-to-end; that driver is not yet implemented.
 
 ### 4. Backpressure by Design
 
@@ -77,7 +98,7 @@ in the `EventDescriptor` primitive layout.
 | Backend              | Best For             | Technical Advantage                                           |
 |:---------------------|:---------------------|:--------------------------------------------------------------|
 | **PostgreSQL**       | Local Event Sourcing | ACID-compliant atomic commits with entities                   |
-| **Kafka / Redpanda** | Distributed Systems  | Native Off-Heap Page Cache, Zero-Copy streaming               |
+| **Kafka / Redpanda** | Distributed Systems *(Target State — driver not yet implemented)* | Native Off-Heap Page Cache, Zero-Copy streaming — planned, no Community binding exists |
 | **In-Memory**        | Testing / Ephemeral  | Zero latency, non-persistent                                  |
 
 ---
@@ -262,10 +283,15 @@ must implement their own idempotency using the event UUID as the deduplication k
 
 ---
 
-## Redpanda vs. Kafka — Semantic Differences
+## Redpanda vs. Kafka — Semantic Differences (Target State — Not Yet Implemented)
 
-Both brokers are supported via the same `EventEngine` SPI. The following table highlights
-operational differences that affect Exeris configuration:
+> **Target State — not yet implemented.** No Kafka or Redpanda driver exists in the current
+> repository. The `EventEngine` SPI is designed to be broker-agnostic so that a future driver
+> can implement either broker without changing application code. The table below documents the
+> planned operational differences for reference when that driver is developed.
+
+Both brokers can be supported via the same `EventEngine` SPI. The following table highlights
+operational differences relevant to a future Exeris Kafka/Redpanda driver:
 
 | Behaviour              | Apache Kafka                                       | Redpanda                                              |
 |:-----------------------|:---------------------------------------------------|:------------------------------------------------------|
@@ -275,12 +301,6 @@ operational differences that affect Exeris configuration:
 | **Consumer groups**    | Standard Kafka consumer group protocol             | Compatible (Kafka protocol v2)                        |
 | **`sendfile` / zero-copy** | Page cache → socket via `sendfile(2)` (no JVM copy) | Identical — same Linux kernel path                 |
 | **Known difference**   | Kafka has more mature tooling (Kafka Streams, ksqlDB) | Redpanda is faster cold-start (single binary, no ZK) |
-
-> **Driver note:** The Exeris Events driver communicates with both Kafka and Redpanda over the
-> **Kafka binary protocol**. It does not use the Kafka Java client library (heap allocations).
-> It speaks the Kafka wire protocol directly via Panama FFM socket operations, treating both
-> brokers identically. Any broker-specific behaviour difference (e.g., compaction timing) is
-> an operational concern, not a driver concern.
 
 ---
 
@@ -298,7 +318,7 @@ operational differences that affect Exeris configuration:
 ### Integration Tests (TCK)
 
 - **Outbox Guarantee:** Disconnect the broker mid-flight; verify events are not lost in the DB outbox.
-- **Provider Switching:** Run the same TCK suite against PostgreSQL and then against a Kafka container.
+- **Provider Switching:** Run the same TCK suite against PostgreSQL. *(Kafka/Redpanda provider switching TCK: planned — no driver available yet.)*
 - **Order Integrity:** Verify events for the same `StreamId` are processed in strict sequence.
   > **(TCK gap — not yet implemented)**
 - **Zero Subscriber Fast-Free:** Publish to a bus with zero subscribers; verify `payload.refCount() == 0`
@@ -312,6 +332,6 @@ The Events subsystem is the nervous system of the Exeris Kernel. The `EventDescr
 separation is the architectural core: primitive routing metadata enables O(1) dispatch and Valhalla
 scalarization, while RAII `EventPayload` ref-counting guarantees that off-heap memory is reclaimed
 deterministically — regardless of how many subscribers fan out or how deep the retry chain goes. Together
-with the Transactional Outbox and Native Kafka Zero-Copy path, it scales from a single-node application to a
+with the Transactional Outbox, it scales from a single-node application to a
 globally distributed event-driven mesh without changing a single line of domain logic.
 

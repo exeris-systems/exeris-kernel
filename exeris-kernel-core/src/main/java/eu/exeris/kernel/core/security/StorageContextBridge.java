@@ -10,6 +10,7 @@ package eu.exeris.kernel.core.security;
 
 import eu.exeris.kernel.core.security.jfr.SecurityJfrEvents;
 import eu.exeris.kernel.spi.context.KernelProviders;
+import eu.exeris.kernel.spi.exceptions.security.PrincipalContextMissingException;
 import eu.exeris.kernel.spi.security.ImmutableStorageContext;
 import eu.exeris.kernel.spi.security.PrincipalContext;
 import eu.exeris.kernel.spi.security.StorageContext;
@@ -96,6 +97,10 @@ public final class StorageContextBridge {
      * @return derived {@link StorageContext}; never {@code null}
      */
     public static StorageContext derive(PrincipalContext principal) {
+        if (principal == null) {
+            throw new PrincipalContextMissingException();
+        }
+
         StorageContext result = principal.tenantId()
                 .map(tenantId -> (StorageContext) ImmutableStorageContext.shared(
                         tenantId.getMostSignificantBits(),

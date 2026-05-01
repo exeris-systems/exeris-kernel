@@ -8,6 +8,7 @@
  */
 package eu.exeris.kernel.core.persistence;
 
+import eu.exeris.kernel.core.bootstrap.BootstrapProviderSelector;
 import eu.exeris.kernel.spi.exceptions.persistence.PersistenceProviderException;
 import eu.exeris.kernel.spi.persistence.ConnectionInterceptor;
 import eu.exeris.kernel.spi.persistence.PersistenceConfig;
@@ -17,7 +18,6 @@ import eu.exeris.kernel.spi.persistence.PersistenceProvider;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
-import java.util.ServiceLoader;
 
 /**
  * Core: ServiceLoader-driven bootstrap for the Persistence subsystem.
@@ -26,7 +26,7 @@ import java.util.ServiceLoader;
  * <p>This class is the <b>only</b> place in the kernel that calls
  * {@link ServiceLoader#load(Class)} for {@link PersistenceProvider}.
  * It selects the highest-priority provider, creates the engine, registers
- * pre-built interceptors, and emits JFR bootstrap events.
+ * pre-built interceptors, and emits provider-selection telemetry.
  * The resulting {@link PersistenceEngine} is returned to the caller ready
  * for {@link eu.exeris.kernel.spi.context.KernelProviders#PERSISTENCE_ENGINE} binding.
  *
@@ -85,11 +85,10 @@ public final class PersistenceBootstrap {
         Objects.requireNonNull(config,       "config must not be null");
         Objects.requireNonNull(interceptors, "interceptors must not be null");
         // --- Phase 1: Discover all PersistenceProviders via ServiceLoader ---
-        PersistenceProvider provider = ServiceLoader.load(PersistenceProvider.class)
-                .stream()
-                .map(ServiceLoader.Provider::get)
-                .max(Comparator.comparingInt(PersistenceProvider::priority)
-                        .thenComparing(p -> p.getClass().getName()))
+        PersistenceProvider provider = BootstrapProviderSelector.loadHighestPriority(
+                PersistenceProvider.class,
+                Comparator.comparingInt(PersistenceProvider::priority)
+                    .thenComparing(p -> p.getClass().getName()))
                 .orElseThrow(() -> PersistenceProviderException.noProviderAvailable(
                         ERROR_NO_PROVIDER));
         return load(provider, config, interceptors);
@@ -97,7 +96,7 @@ public final class PersistenceBootstrap {
 
     /**
      * Creates the engine from an already-resolved {@link PersistenceProvider}, registers
-     * interceptors, and emits JFR bootstrap events.
+     * interceptors, and emits provider-selection telemetry.
      *
      * <p>Prefer this overload when the caller has already performed provider selection
      * (e.g. a subsystem that also needs to bind the provider into {@link eu.exeris.kernel.spi.context.KernelProviders})
@@ -128,20 +127,11 @@ public final class PersistenceBootstrap {
                 engine.registerInterceptor(interceptor);
             }
 
-            // --- Phase 4: JFR-First — emit bootstrap events ---
-            PersistenceEngineBootstrapEvent.emit(
-                    engine.capabilities().providerId(),
-                    provider.getClass().getName(),
-                    config.maxPoolSize(),
-                    config.rlsEnabled(),
-                    config.perTenantPooling(),
-                    config.useTls(),
-                    engine.capabilities().transportName()
-            );
+            // --- Phase 4: JFR-First — emit provider-selection telemetry ---
             PersistenceBootstrapSelectedEvent.emit(
                     provider.getClass().getName(),
                     provider.priority(),
-                    engine.capabilities().transportName(),
+                    provider.providerName(),
                     interceptors.size()
             );
         } catch (RuntimeException ex) { //NOPMD AvoidCatchingGenericException — SPI may throw any RuntimeException

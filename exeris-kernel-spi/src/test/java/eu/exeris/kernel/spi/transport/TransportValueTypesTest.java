@@ -13,11 +13,10 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * L0 Contract: Transport domain value types — {@link TransportMode},
- * {@link TransportStats}, and {@link TransportEngineCapabilities}.
+ * L0 Contract: Transport domain value types — {@link TransportMode}
+ * and {@link TransportStats}.
  *
  * <h2>TransportMode ordinals</h2>
  * <p>Used in the resource-allocation switch table during bootstrap.
@@ -26,12 +25,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * <h2>TransportStats — Valhalla-readiness</h2>
  * <p>All-primitive record; EMPTY sentinel; structural equality.
  *
- * <h2>TransportEngineCapabilities — constructor guard + STANDARD/MULTIPLEXED templates</h2>
- * <p>Blank/null field guards; withProvider() contract.
- *
  * @since 0.5.0
  */
-@DisplayName("L0: Transport Value Types — TransportMode ordinals + TransportStats + TransportEngineCapabilities")
+@DisplayName("L0: Transport Value Types — TransportMode ordinals + TransportStats")
 class TransportValueTypesTest {
 
     // =========================================================================
@@ -145,80 +141,4 @@ class TransportValueTypesTest {
         }
     }
 
-    // =========================================================================
-    // TransportEngineCapabilities — constructor guard + template constants
-    // =========================================================================
-
-    @Nested
-    @DisplayName("TransportEngineCapabilities — STANDARD/MULTIPLEXED + withProvider()")
-    class TransportEngineCapabilitiesContract {
-
-        @Test
-        @DisplayName("STANDARD template: multiplexing=false, zeroCopy=false, name='StandardTCP', provider='community'")
-        void standardTemplate() {
-            TransportEngineCapabilities s = TransportEngineCapabilities.STANDARD;
-            assertThat(s.supportsMultiplexing()).isFalse();
-            assertThat(s.supportsZeroCopy()).isFalse();
-            assertThat(s.transportName()).isEqualTo("StandardTCP");
-            assertThat(s.providerId()).isEqualTo("community");
-        }
-
-        @Test
-        @DisplayName("MULTIPLEXED template: multiplexing=true, zeroCopy=true, name='NativeMultiplexed', provider='enterprise'")
-        void multiplexedTemplate() {
-            TransportEngineCapabilities m = TransportEngineCapabilities.MULTIPLEXED;
-            assertThat(m.supportsMultiplexing()).isTrue();
-            assertThat(m.supportsZeroCopy()).isTrue();
-            assertThat(m.transportName()).isEqualTo("NativeMultiplexed");
-            assertThat(m.providerId()).isEqualTo("enterprise");
-        }
-
-        @Test
-        @DisplayName("Blank transportName throws IllegalArgumentException")
-        void blankTransportNameThrows() {
-            assertThatThrownBy(() -> new TransportEngineCapabilities(false, false, "", "community"))
-                    .isInstanceOf(IllegalArgumentException.class);
-        }
-
-        @Test
-        @DisplayName("Blank providerId throws IllegalArgumentException")
-        void blankProviderIdThrows() {
-            assertThatThrownBy(() -> new TransportEngineCapabilities(false, false, "TCP", ""))
-                    .isInstanceOf(IllegalArgumentException.class);
-        }
-
-        @Test
-        @DisplayName("withProvider() changes only providerId, preserves all other fields")
-        void withProviderPreservesFields() {
-            TransportEngineCapabilities branded =
-                    TransportEngineCapabilities.MULTIPLEXED.withProvider("my-quic");
-            assertThat(branded.providerId()).isEqualTo("my-quic");
-            assertThat(branded.supportsMultiplexing()).isTrue();
-            assertThat(branded.supportsZeroCopy()).isTrue();
-            assertThat(branded.transportName()).isEqualTo("NativeMultiplexed");
-        }
-
-        @Test
-        @DisplayName("withProvider() does not mutate original constant")
-        void withProviderDoesNotMutate() {
-            TransportEngineCapabilities.STANDARD.withProvider("x");
-            assertThat(TransportEngineCapabilities.STANDARD.providerId()).isEqualTo("community");
-        }
-
-        @Test
-        @DisplayName("Structural equals: two identical custom caps are equal")
-        void structuralEquality() {
-            TransportEngineCapabilities a = new TransportEngineCapabilities(true, false, "MyTCP", "acme");
-            TransportEngineCapabilities b = new TransportEngineCapabilities(true, false, "MyTCP", "acme");
-            assertThat(a).isEqualTo(b);
-        }
-
-        @Test
-        @DisplayName("Structural hashCode: equal caps have same hashCode")
-        void structuralHashCode() {
-            TransportEngineCapabilities a = new TransportEngineCapabilities(true, false, "MyTCP", "acme");
-            TransportEngineCapabilities b = new TransportEngineCapabilities(true, false, "MyTCP", "acme");
-            assertThat(a).hasSameHashCodeAs(b);
-        }
-    }
 }

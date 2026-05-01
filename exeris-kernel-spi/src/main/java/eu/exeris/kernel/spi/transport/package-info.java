@@ -28,8 +28,6 @@
  *   <li>{@link eu.exeris.kernel.spi.transport.TransportConfig} – Configuration record (protocol-blind)</li>
  *   <li>{@link eu.exeris.kernel.spi.transport.TransportMode} – SERVER / CLIENT / DUAL / DISABLED</li>
  *   <li>{@link eu.exeris.kernel.spi.transport.TransportStats} – Diagnostics snapshot</li>
- *   <li>{@link eu.exeris.kernel.spi.transport.TransportEngineCapabilities} – Capability descriptor for tier-detection
- *       (multiplexing, zero-copy support)</li>
  * </ul>
  *
  * <h2>The Wall</h2>
