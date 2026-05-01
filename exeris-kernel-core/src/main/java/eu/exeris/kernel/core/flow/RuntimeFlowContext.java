@@ -13,39 +13,45 @@ import eu.exeris.kernel.spi.flow.model.FlowState;
 
 final class RuntimeFlowContext implements FlowContext {
 
-    private final RuntimeFlowInstance instance;
+    private final FlowKey key;
+    private final String definitionName;
+    private final RuntimeFlowContextStateView stateView;
 
-    /* default */ RuntimeFlowContext(RuntimeFlowInstance instance) {
-        this.instance = instance;
+    /* default */ RuntimeFlowContext(FlowKey key,
+                                     String definitionName,
+                                     RuntimeFlowContextStateView stateView) {
+        this.key = key;
+        this.definitionName = definitionName;
+        this.stateView = stateView;
     }
 
     @Override
     public long instanceIdMost() {
-        return instance.key().instanceIdMost();
+        return key.instanceIdMost();
     }
 
     @Override
     public long instanceIdLeast() {
-        return instance.key().instanceIdLeast();
+        return key.instanceIdLeast();
     }
 
     @Override
     public String definitionName() {
-        return instance.definitionName();
+        return definitionName;
     }
 
     @Override
     public int currentStep() {
-        return instance.currentStep();
+        return stateView.currentStep();
     }
 
     @Override
     public FlowState state() {
-        return instance.state();
+        return stateView.state();
     }
 
     @Override
     public long timeoutNanos() {
-        return instance.timeoutNanos();
+        return stateView.timeoutNanos();
     }
 }

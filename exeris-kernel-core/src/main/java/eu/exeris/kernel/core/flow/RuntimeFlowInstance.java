@@ -20,7 +20,7 @@ import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 @SuppressWarnings("PMD.PublicMemberInNonPublicType")
-final class RuntimeFlowInstance { // NOPMD
+final class RuntimeFlowInstance implements RuntimeFlowContextStateView { // NOPMD
 
     /* default */ static final int PARKED_SCHEDULE_NOOP = -2;
 
@@ -32,7 +32,7 @@ final class RuntimeFlowInstance { // NOPMD
     private final long lifecycleGeneration;
     private final AtomicBoolean scheduled = new AtomicBoolean(false);
     private final Object monitor = new Object();
-    private final RuntimeFlowContext contextView = new RuntimeFlowContext(this);
+    private final RuntimeFlowContext contextView;
     private volatile CoreFlowExecutionPlan plan;
     private volatile EventEngine eventEngine;
     private volatile FlowState state;
@@ -53,6 +53,7 @@ final class RuntimeFlowInstance { // NOPMD
         this.key = key;
         this.definitionName = definitionName;
         this.lifecycleGeneration = lifecycleGeneration;
+        this.contextView = new RuntimeFlowContext(key, definitionName, this);
         this.plan = plan;
         this.state = state;
         this.currentStep = currentStep;
@@ -128,6 +129,7 @@ final class RuntimeFlowInstance { // NOPMD
         return plan;
     }
 
+    @Override
     public FlowState state() {
         return state;
     }
@@ -136,6 +138,7 @@ final class RuntimeFlowInstance { // NOPMD
         this.state = newState;
     }
 
+    @Override
     public int currentStep() {
         return currentStep;
     }
@@ -144,6 +147,7 @@ final class RuntimeFlowInstance { // NOPMD
         this.currentStep = step;
     }
 
+    @Override
     public long timeoutNanos() {
         return timeoutNanos;
     }

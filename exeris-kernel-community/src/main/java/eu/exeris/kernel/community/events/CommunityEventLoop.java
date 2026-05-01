@@ -32,11 +32,13 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.StructuredTaskScope;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.LockSupport;
 
 @SuppressWarnings({
     "PMD.CyclomaticComplexity",      // aggregate across loop/dispatch/tracking helpers
     "PMD.TooManyMethods",            // deliberate: loop, dispatch, fork, tracking all belong here
+    "PMD.CouplingBetweenObjects",    // loop owns dispatch, JFR, queue, and structured-scope coordination by design
     "PMD.CloseResource",             // TrackingPayload ownership transferred across lambda boundaries
     "PMD.UseTryWithResources"        // wrappers list cannot be expressed as TWR; closed deterministically in finally
 })
@@ -44,7 +46,6 @@ final class CommunityEventLoop implements EventLoop {
 
     private static final long IDLE_PARK_NANOS = 1_000_000L;
     private static final long ZERO_PROCESSED = 0L;
-    private static final String COMMENT_DEFAULT_ACCESS_MODIFIER = "PMD.CommentDefaultAccessModifier";
 
     private final EventRegistry registry;
     private final EventQueue queue;
@@ -56,14 +57,12 @@ final class CommunityEventLoop implements EventLoop {
     private final AtomicLong processedTotal = new AtomicLong(0L);
     private final AtomicLong failedTotal = new AtomicLong(0L);
     private final AtomicLong dispatchNanosTotal = new AtomicLong(0L);
-
-    private volatile Thread loopThread;
+    private final AtomicReference<Thread> loopThread = new AtomicReference<>();
 
     private record QueuedEvent(EventDescriptor descriptor, EventPayload payload) {
     }
 
-    @SuppressWarnings(COMMENT_DEFAULT_ACCESS_MODIFIER)
-    CommunityEventLoop(EventRegistry registry, EventQueue queue, int batchSize) {
+    /* default */ CommunityEventLoop(EventRegistry registry, EventQueue queue, int batchSize) {
         this.registry = Objects.requireNonNull(registry, "registry");
         this.queue = Objects.requireNonNull(queue, "queue");
         if (batchSize <= 0) {
@@ -78,27 +77,38 @@ final class CommunityEventLoop implements EventLoop {
             return;
         }
 
-        loopThread = Thread.ofVirtual()
+        Thread thread = Thread.ofVirtual()
                 .name("community-event-loop")
-            .uncaughtExceptionHandler((thread, throwable) -> {
+                .uncaughtExceptionHandler((failedThread, throwable) -> {
+                    running.set(false);
+                    EventLoopFailureEvent.emit(failedThread.getName(), "UNCAUGHT", throwable, 0);
+                })
+                .unstarted(this::runLoop);
+        loopThread.set(thread);
+        boolean started = false;
+        try {
+            thread.start();
+            started = true;
+        } finally {
+            if (!started) {
+                loopThread.compareAndSet(thread, null);
                 running.set(false);
-                EventLoopFailureEvent.emit(thread.getName(), "UNCAUGHT", throwable, 0);
-            })
-                .start(this::runLoop);
+            }
+        }
     }
 
     @Override
     public void stop() {
         running.set(false);
 
-        Thread thread = loopThread;
+        Thread thread = loopThread.get();
         if (thread == null) {
             return;
         }
 
         try {
             thread.join();
-        } catch (InterruptedException ex) {
+        } catch (InterruptedException _) {
             Thread.currentThread().interrupt();
         }
     }
@@ -124,18 +134,15 @@ final class CommunityEventLoop implements EventLoop {
                 .add(processor);
     }
 
-    @SuppressWarnings(COMMENT_DEFAULT_ACCESS_MODIFIER)
-    long processedTotal() {
+    /* default */ long processedTotal() {
         return processedTotal.get();
     }
 
-    @SuppressWarnings(COMMENT_DEFAULT_ACCESS_MODIFIER)
-    long failedTotal() {
+    /* default */ long failedTotal() {
         return failedTotal.get();
     }
 
-    @SuppressWarnings(COMMENT_DEFAULT_ACCESS_MODIFIER)
-    long averageDispatchNanos() {
+    /* default */ long averageDispatchNanos() {
         long processed = processedTotal.get();
         if (processed == ZERO_PROCESSED) {
             return 0L;
@@ -145,14 +152,18 @@ final class CommunityEventLoop implements EventLoop {
 
     private void runLoop() {
         List<QueuedEvent> drained = new ArrayList<>(batchSize);
-        while (running.get() || !queue.isEmpty()) {
-            drained.clear();
-            queue.drain((descriptor, payload) -> drained.add(new QueuedEvent(descriptor, payload)), batchSize);
-            if (drained.isEmpty()) {
-                LockSupport.parkNanos(IDLE_PARK_NANOS);
-                continue;
+        try {
+            while (running.get() || !queue.isEmpty()) {
+                drained.clear();
+                queue.drain((descriptor, payload) -> drained.add(new QueuedEvent(descriptor, payload)), batchSize);
+                if (drained.isEmpty()) {
+                    LockSupport.parkNanos(IDLE_PARK_NANOS);
+                    continue;
+                }
+                dispatchByOrdinal(drained);
             }
-            dispatchByOrdinal(drained);
+        } finally {
+            loopThread.compareAndSet(Thread.currentThread(), null);
         }
     }
 
@@ -196,7 +207,7 @@ final class CommunityEventLoop implements EventLoop {
             }
             try {
                 scope.join();
-            } catch (InterruptedException ex) {
+            } catch (InterruptedException _) {
                 Thread.currentThread().interrupt();
             }
         }

@@ -67,98 +67,94 @@ class NativeTcpTransportStressTest {
         Arrays.fill(testPayload, (byte) 42);
 
         NativeTcpTransportProvider provider = new NativeTcpTransportProvider();
-        TransportEngine serverEngine = createServerEngine(provider, port, SERVER_REACTOR_COUNT);
-        try {
+        try (TransportEngine serverEngine = createServerEngine(provider, port, SERVER_REACTOR_COUNT)) {
             AtomicInteger messageCount = new AtomicInteger(0);
             serverEngine.setStreamHandler(stream -> echoUntilStreamCloses(stream, messageCount));
             serverEngine.start();
 
-            ExecutorService executor = ForkJoinPool.commonPool();
             List<Future<?>> futures = new ArrayList<>();
+            try (ExecutorService executor = new ForkJoinPool(NUM_CLIENTS)) {
+                for (int clientId = 0; clientId < NUM_CLIENTS; clientId++) {
+                    futures.add(executor.submit(() -> {
+                        TransportEngine clientEngine = null;
+                        TransportConnection connection = null;
+                        TransportStream stream = null;
+                        try {
+                            clientEngine = createClientEngine(provider, "127.0.0.1");
+                            clientEngine.start();
 
-            for (int clientId = 0; clientId < NUM_CLIENTS; clientId++) {
-                futures.add(executor.submit(() -> {
-                    TransportEngine clientEngine = null;
-                    TransportConnection connection = null;
-                    TransportStream stream = null;
-                    try {
-clientEngine = createClientEngine(provider, "127.0.0.1");
-                        clientEngine.start();
+                            connection = clientEngine.connect("127.0.0.1", port);
+                            stream = connection.openStream();
 
-                        connection = clientEngine.connect("127.0.0.1", port);
-                        stream = connection.openStream();
+                            for (int msg = 0; msg < MESSAGES_PER_CLIENT; msg++) {
+                                try (LoanedBuffer buf = ALLOCATOR.allocateNetwork(MESSAGE_SIZE)) {
+                                    buf.segment().asSlice(0, MESSAGE_SIZE).copyFrom(
+                                        MemorySegment.ofArray(testPayload)
+                                    );
+                                    buf.setSize(MESSAGE_SIZE);
 
-                        for (int msg = 0; msg < MESSAGES_PER_CLIENT; msg++) {
-                            try (LoanedBuffer buf = ALLOCATOR.allocateNetwork(MESSAGE_SIZE)) {
-                                buf.segment().asSlice(0, MESSAGE_SIZE).copyFrom(
-                                    MemorySegment.ofArray(testPayload)
-                                );
-                                buf.setSize(MESSAGE_SIZE);
+                                    stream.write(buf.segment(), MESSAGE_SIZE);
 
-                                stream.write(buf.segment(), MESSAGE_SIZE);
+                                    try (LoanedBuffer response = ALLOCATOR.allocateNetwork(MESSAGE_SIZE)) {
+                                        int read = stream.read(response.segment(), MESSAGE_SIZE);
+                                        assertThat(read).isEqualTo(MESSAGE_SIZE);
 
-                                try (LoanedBuffer response = ALLOCATOR.allocateNetwork(MESSAGE_SIZE)) {
-                                    int read = stream.read(response.segment(), MESSAGE_SIZE);
-                                    assertThat(read).isEqualTo(MESSAGE_SIZE);
-
-                                    byte[] echoed = new byte[MESSAGE_SIZE];
-                                    response.segment().asSlice(0, MESSAGE_SIZE).asByteBuffer().get(echoed);
-                                    assertThat(Arrays.equals(echoed, testPayload)).isTrue();
+                                        byte[] echoed = new byte[MESSAGE_SIZE];
+                                        response.segment().asSlice(0, MESSAGE_SIZE).asByteBuffer().get(echoed);
+                                        assertThat(Arrays.equals(echoed, testPayload)).isTrue();
+                                    }
                                 }
                             }
+                        } catch (Exception ex) {
+                            throw new RuntimeException("Client failed", ex);
+                        } finally {
+                            if (stream != null) {
+                                stream.close();
+                            }
+                            if (connection != null) {
+                                connection.close();
+                            }
+                            if (clientEngine != null) {
+                                clientEngine.close();
+                            }
                         }
-                    } catch (Exception ex) {
-                        throw new RuntimeException("Client failed", ex);
-                    } finally {
-                        if (stream != null) {
-                            stream.close();
-                        }
-                        if (connection != null) {
-                            connection.close();
-                        }
-                        if (clientEngine != null) {
-                            clientEngine.close();
-                        }
-                    }
-                }));
-            }
-
-            boolean allDone = true;
-            for (Future<?> future : futures) {
-                try {
-                    future.get(2, TimeUnit.MINUTES);
-                } catch (TimeoutException ex) {
-                    allDone = false;
-                    future.cancel(true);
+                    }));
                 }
-            }
 
-            assertThat(allDone).isTrue().withFailMessage("Not all clients completed in time");
+                boolean allDone = true;
+                for (Future<?> future : futures) {
+                    try {
+                        future.get(2, TimeUnit.MINUTES);
+                    } catch (TimeoutException _) {
+                        allDone = false;
+                        future.cancel(true);
+                    }
+                }
+
+                assertThat(allDone).withFailMessage("Not all clients completed in time").isTrue();
+            }
 
             int expectedTotal = NUM_CLIENTS * MESSAGES_PER_CLIENT;
             long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(500);
             while (messageCount.get() < expectedTotal && System.nanoTime() < deadline) {
                 Thread.onSpinWait();
             }
-            assertThat(messageCount.get()).isEqualTo(expectedTotal)
-                .withFailMessage("Server did not receive expected message count");
-        } finally {
-            serverEngine.close();
+            assertThat(messageCount.get())
+                .withFailMessage("Server did not receive expected message count")
+                .isEqualTo(expectedTotal);
         }
     }
 
     @Test
     @DisplayName("2 concurrent clients × 3 reactors: verify channel owner tracking")
-    void stressTest2ClientsWithMultiReactor() throws Exception {
+    void stressTest2ClientsWithMultiReactor() {
         int port = nextFreePort();
         int reactorCount = 3;
         byte[] testPayload = new byte[MESSAGE_SIZE];
         Arrays.fill(testPayload, (byte) 99);
 
         NativeTcpTransportProvider provider = new NativeTcpTransportProvider();
-        TransportEngine server = createServerEngine(provider, port, reactorCount);
-
-        try {
+        try (TransportEngine server = createServerEngine(provider, port, reactorCount)) {
             AtomicInteger messageCount = new AtomicInteger(0);
             server.setStreamHandler(stream -> echoUntilStreamCloses(stream, messageCount));
             server.start();
@@ -205,10 +201,9 @@ clientEngine = createClientEngine(provider, "127.0.0.1");
             while (messageCount.get() < 6 && System.nanoTime() < deadline) {
                 Thread.onSpinWait();
             }
-            assertThat(messageCount.get()).isEqualTo(6)
-                .withFailMessage("Server did not receive expected message count");
-        } finally {
-            server.close();
+            assertThat(messageCount.get())
+                .withFailMessage("Server did not receive expected message count")
+                .isEqualTo(6);
         }
     }
 
@@ -243,12 +238,17 @@ clientEngine = createClientEngine(provider, "127.0.0.1");
     }
 
     private void echoUntilStreamCloses(TransportStream stream, AtomicInteger messageCount) {
-        try (LoanedBuffer inbound = ALLOCATOR.allocateNetwork(MESSAGE_SIZE + 1);
+        try (stream;
+             LoanedBuffer inbound = ALLOCATOR.allocateNetwork(MESSAGE_SIZE + 1);
              LoanedBuffer outbound = ALLOCATOR.allocateNetwork(MESSAGE_SIZE + 1)) {
             while (true) {
                 int read = stream.read(inbound.segment(), MESSAGE_SIZE);
-                if (read <= 0) {
+                if (read < 0) {
                     return;
+                }
+                if (read == 0) {
+                    Thread.onSpinWait();
+                    continue;
                 }
                 inbound.setSize(read);
                 outbound.segment().asSlice(0, read).copyFrom(inbound.segment().asSlice(0, read));

@@ -14,6 +14,7 @@ import eu.exeris.kernel.spi.persistence.QueryResult;
 import eu.exeris.kernel.spi.persistence.RowCursor;
 
 import java.lang.foreign.MemorySegment;
+import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
@@ -49,6 +50,12 @@ final class JdbcQueryResult implements QueryResult {
         this.closed      = false;
     }
 
+    /* default */ static JdbcQueryResult execute(Connection conn, String sql) throws SQLException {
+        try (StatementOwner owner = StatementOwner.open(conn)) {
+            return new JdbcQueryResult(owner.statement().executeQuery(sql), owner.release());
+        }
+    }
+
     @Override
     @SuppressWarnings("PMD.CheckResultSet")
     public boolean next() {
@@ -78,7 +85,7 @@ final class JdbcQueryResult implements QueryResult {
             return resultSet.getStatement() != null
                     ? resultSet.getStatement().getUpdateCount()
                     : -1;
-        } catch (SQLException sqlEx) {
+        } catch (SQLException _) {
             return -1L;
         }
     }
@@ -104,13 +111,13 @@ final class JdbcQueryResult implements QueryResult {
         positioned = false;
         try {
             resultSet.close();
-        } catch (SQLException ignored) {
+        } catch (SQLException _) {
             // Best-effort
         }
         if (owner != null) {
             try {
                 owner.close();
-            } catch (SQLException ignored) {
+            } catch (SQLException _) {
                 // Best-effort
             }
         }
@@ -124,6 +131,40 @@ final class JdbcQueryResult implements QueryResult {
 
     private static PersistenceProviderException mapSqlException(SQLException sqlEx) {
         return PersistenceErrorTranslator.translate(sqlEx.getSQLState(), sqlEx.getMessage(), sqlEx);
+    }
+
+    private static final class StatementOwner implements AutoCloseable {
+        private final Statement statement;
+        private boolean released;
+
+        private StatementOwner(Statement statement) {
+            this.statement = statement;
+            this.released = false;
+        }
+
+        private static StatementOwner open(Connection conn) throws SQLException {
+            return new StatementOwner(conn.createStatement());
+        }
+
+        private Statement statement() {
+            return statement;
+        }
+
+        private Statement release() {
+            released = true;
+            return statement;
+        }
+
+        @Override
+        public void close() {
+            if (!released) {
+                try {
+                    statement.close();
+                } catch (SQLException _) {
+                    // Best-effort
+                }
+            }
+        }
     }
 
     @SuppressWarnings({"PMD.CyclomaticComplexity", "PMD.TooManyMethods"})
@@ -297,7 +338,7 @@ final class JdbcQueryResult implements QueryResult {
                 return !resultSet.isClosed()
                         && !resultSet.isBeforeFirst()
                         && !resultSet.isAfterLast();
-            } catch (SQLException sqlEx) {
+            } catch (SQLException _) {
                 return false;
             }
         }

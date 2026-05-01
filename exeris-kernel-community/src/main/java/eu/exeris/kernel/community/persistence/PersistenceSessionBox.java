@@ -144,10 +144,9 @@ public final class PersistenceSessionBox {
         return RequestPersistenceSession.active(conn, isolation, readOnly);
     }
 
-    @SuppressWarnings("PMD.CloseResource")
     private PersistenceConnection openBackingConnection() {
-        if (engine instanceof CommunityPersistenceEngine communityEngine) {
-            return communityEngine.openPhysicalConnection();
+        if (engine instanceof PhysicalConnectionSource source) {
+            return source.openPhysical();
         }
         return engine.openConnection();
     }
@@ -188,10 +187,10 @@ public final class PersistenceSessionBox {
         PersistenceConnection open();
     }
 
-    private static final class NonOwningPersistenceConnection implements PersistenceConnection {
+    private abstract static class ForwardingPersistenceConnection implements PersistenceConnection {
         private final PersistenceConnection delegate;
 
-        private NonOwningPersistenceConnection(PersistenceConnection delegate) {
+        private ForwardingPersistenceConnection(PersistenceConnection delegate) {
             this.delegate = delegate;
         }
 
@@ -238,6 +237,13 @@ public final class PersistenceSessionBox {
         @Override
         public boolean isOpen() {
             return delegate.isOpen();
+        }
+    }
+
+    private static final class NonOwningPersistenceConnection extends ForwardingPersistenceConnection {
+
+        private NonOwningPersistenceConnection(PersistenceConnection delegate) {
+            super(delegate);
         }
 
         @Override

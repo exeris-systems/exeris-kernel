@@ -54,8 +54,8 @@ class OutboxOrchestratorIntegrationTest {
     private static OutboxEventStore emptyStore() {
         return new OutboxEventStore() {
             @Override public List<OutboxBrokerPort.OutboxEntry> pollPending(int maxItems) { return List.of(); }
-            @Override public void markDelivered(List<EventDescriptor> delivered) {}
-            @Override public void moveToDlq(EventDescriptor descriptor, EventPayload payload, String reason) {}
+            @Override public void markDelivered(List<EventDescriptor> delivered) { /* test stub — delivery tracking not needed */ }
+            @Override public void moveToDlq(EventDescriptor descriptor, EventPayload payload, String reason) { /* test stub — DLQ not exercised */ }
         };
     }
 }

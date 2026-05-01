@@ -74,14 +74,14 @@ class GraphSyncServiceTest {
             ops.add(SessionOp.EDGE_DELETE);
         }
         @Override public void createEdge(GraphEdgeDescriptor e, UUID src, UUID tgt,
-                                         double w, String p) {}
+                                         double w, String p) { /* test stub — not exercised in this path */ }
         @Override public List<UUID> traverseBreadthFirst(GraphTraversal t) { return List.of(); }
         @Override public LoanedBuffer streamBfsJson(GraphTraversal t) { return null; }
         @Override public UUID getRootNode() { return UUID.randomUUID(); }
         @Override public PathResult findShortestPath(UUID src, UUID tgt) {
             return PathResult.notFound(src, tgt, "stub");
         }
-        @Override public void close() { }
+        @Override public void close() { /* test stub — no resources to release */ }
     }
 
     private RecordingSession session;
@@ -94,13 +94,13 @@ class GraphSyncServiceTest {
         stubEngine = new GraphEngine() {
             @Override public GraphSession openSession() { return session; }
             @Override public GraphDialect dialect()     { return null; }
-            @Override public void registerNodes(List<GraphNodeDescriptor> n) {}
-            @Override public void registerEdges(List<GraphEdgeDescriptor> e) {}
+            @Override public void registerNodes(List<GraphNodeDescriptor> n) { /* test stub — registration not asserted */ }
+            @Override public void registerEdges(List<GraphEdgeDescriptor> e) { /* test stub — registration not asserted */ }
             @Override public List<GraphNodeDescriptor> registeredNodes() { return List.of(); }
             @Override public List<GraphEdgeDescriptor> registeredEdges() { return List.of(); }
             @Override public String engineName()  { return "Stub"; }
             @Override public boolean isRunning()  { return true; }
-            @Override public void close()         {}
+            @Override public void close()         { /* test stub — no resources to release */ }
         };
         syncService = new GraphSyncService(stubEngine);
     }

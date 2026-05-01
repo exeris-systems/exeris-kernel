@@ -160,7 +160,7 @@
                 <version>3.2.5</version>
                 <configuration>
                     <!-- Inherit common JVM flags (ZGC + JFR + preview) from the parent POM. -->
-                    <argLine>${jvm.args} --add-opens java.base/sun.nio.ch=ALL-UNNAMED --add-opens java.base/java.io=ALL-UNNAMED</argLine>
+                    <argLine>@{coverage.argLine} ${jvm.args} --add-opens java.base/sun.nio.ch=ALL-UNNAMED --add-opens java.base/java.io=ALL-UNNAMED</argLine>
                     <!-- Optional include filter, e.g. -DincludedGroups=flamegraph -->
                     <groups>${includedGroups}</groups>
                     <!-- Exclude @Tag("flamegraph") tests from regular CI runs -->
@@ -181,6 +181,18 @@
          NOT bound to the default lifecycle — only runs with explicit -P benchmarks.
          ===================================================================== -->
     <profiles>
+        <profile>
+            <id>targeted-test-run</id>
+            <activation>
+                <property>
+                    <name>test</name>
+                </property>
+            </activation>
+            <properties>
+                <!-- Keep flamegraph excluded, but allow explicit -Dtest integration classes. -->
+                <excludedGroups>flamegraph</excludedGroups>
+            </properties>
+        </profile>
         <profile>
             <id>benchmarks</id>
             <properties>

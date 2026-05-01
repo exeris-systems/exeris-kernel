@@ -11,11 +11,7 @@ package eu.exeris.kernel.community.persistence;
 import com.zaxxer.hikari.HikariDataSource;
 import com.zaxxer.hikari.pool.HikariPool;
 import eu.exeris.kernel.community.persistence.jdbc.JdbcPersistenceConnection;
-import eu.exeris.kernel.core.persistence.AdmissionDecisionEvent;
-import eu.exeris.kernel.core.persistence.PersistenceAdmissionStageEvent;
 import eu.exeris.kernel.core.persistence.PersistenceEngineBootstrapEvent;
-import eu.exeris.kernel.core.persistence.PersistenceTenantPoolCreatedEvent;
-import eu.exeris.kernel.core.persistence.PersistenceTenantPoolReclaimedEvent;
 import eu.exeris.kernel.spi.exceptions.persistence.PersistenceProviderException;
 import eu.exeris.kernel.spi.persistence.ConnectionInterceptor;
 import eu.exeris.kernel.spi.persistence.EngineStats;
@@ -36,13 +32,9 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Community: JDBC-based {@link PersistenceEngine} backed by HikariCP connection pool.
@@ -64,69 +56,47 @@ import java.util.concurrent.atomic.AtomicLong;
  * @since 0.5.0
  */
 @SuppressWarnings({"PMD.CyclomaticComplexity", "PMD.TooManyMethods", "PMD.CouplingBetweenObjects",
- "PMD.GodClass", "PMD.ExcessiveImports"})
-final class CommunityPersistenceEngine implements PersistenceEngine {
+        "PMD.GodClass"})
+final class CommunityPersistenceEngine implements PersistenceEngine, PhysicalConnectionSource {
 
-    private static final String PROVIDER_ID   = "postgres-community";
-    private static final String SHARED_TENANT = "shared";
     private static final String ENGINE_CLOSED_MESSAGE = "CommunityPersistenceEngine is closed";
-    private static final long MIN_RECLAIM_CADENCE_MS = 250L;
-    private static final long MAX_RECLAIM_CADENCE_MS = 5_000L;
     private static final long MIN_CONNECTION_TIMEOUT_MS = 250L;
     private static final Runnable NOOP_ON_CLOSE = () -> { };
-    private static final String ADMISSION_ACCEPT = "ACCEPT";
-    private static final String ADMISSION_REJECT_HARD_SATURATION = "REJECT_HARD_SATURATION";
-    private static final String ADMISSION_REJECT_GUARD_BAND_FAIRNESS = "REJECT_GUARD_BAND_FAIRNESS";
-    private static final String ADMISSION_REJECT_ENGINE_CLOSED = "REJECT_ENGINE_CLOSED";
-    private static final String ADMISSION_REJECT_NO_CAPACITY = "REJECT_NO_CAPACITY";
     private static final String REQUIRED_SHARED_INTERCEPTOR = "RlsConnectionInterceptor";
-    private static final String DEDICATED_KEY_PREFIX = ":dedicated:";
-    private static final double HARD_SATURATION_THRESHOLD = 0.90d;
-    private static final double GUARD_BAND_THRESHOLD = 0.85d;
-    private static final double FAIRNESS_STRESS_THRESHOLD = 0.90d;
-    private static final long FAIRNESS_QUEUE_DEPTH_THRESHOLD = 1L;
-    private static final double EARLY_GUARD_BAND_HEADROOM_RATIO = 0.15d;
-    private static final int EARLY_GUARD_BAND_HEADROOM_CAP = 3;
-    private static final long QUEUE_WAIT_TELEMETRY_THRESHOLD_MS = 0L;
     private static final String RUN_MIGRATIONS_KEY = "run.migrations";
     private static final List<String> MIGRATION_RESOURCES = List.of(
             "db/migration/V0.5.0__create_outbox.sql"
     );
 
     private final PersistenceConfig config;
-    private final HikariDataSource  sharedPool;
+    private final HikariDataSource sharedPool;
     private final CommunityHikariSupport sharedHikari;
     private final Object lifecycleLock = new Object();
-    // Per-tenant pools — lazily created on first openConnection(StorageContext)
-    private final ConcurrentMap<String, TenantPoolState> tenantPools;
-    // Dedicated pools — lazily built on first DEDICATED openConnection, closed with engine
-    private final ConcurrentMap<String, HikariDataSource> dedicatedPools;
+    private final CommunityTenantPoolRegistry poolRegistry;
     private final List<ConnectionInterceptor> interceptors;
-    private volatile List<ConnectionInterceptor> interceptorSnapshot;
-    private final long tenantIdleTtlNanos;
-    private final long tenantReclaimCadenceNanos;
-    private final AtomicLong nextTenantReclaimAtNanos;
-    private volatile boolean closed;
+    private final AtomicReference<List<ConnectionInterceptor>> interceptorSnapshot;
     private final AtomicBoolean firstConnectionOpened = new AtomicBoolean(false);
-    private final FairnessTracker fairnessTracker = new FairnessTracker();
+    private final CommunityPersistenceAdmissionController admissionController =
+            new CommunityPersistenceAdmissionController();
+    private volatile boolean closed;
 
     /* default */ CommunityPersistenceEngine(PersistenceConfig config) {
         validateRuntimeConfig(config);
-        this.config       = config;
-        this.tenantPools  = new ConcurrentHashMap<>();
-        this.dedicatedPools = new ConcurrentHashMap<>();
-        this.interceptors = new ArrayList<>(2);
-        this.interceptorSnapshot = List.of();
-        this.tenantIdleTtlNanos = TimeUnit.MILLISECONDS.toNanos(Math.max(1L, config.idleTimeoutMs()));
-        this.tenantReclaimCadenceNanos = computeReclaimCadenceNanos(this.tenantIdleTtlNanos);
-        this.nextTenantReclaimAtNanos = new AtomicLong(System.nanoTime() + tenantReclaimCadenceNanos);
-        this.closed       = false;
-        this.sharedPool   = CommunityHikariSupport.buildPool(config, null);
+        this.config = config;
+        this.sharedPool = CommunityHikariSupport.buildPool(config, null);
         this.sharedHikari = CommunityHikariSupport.with(sharedPool);
+        this.poolRegistry = new CommunityTenantPoolRegistry(
+            CommunityPersistenceConstants.PROVIDER_ID,
+            config,
+            lifecycleLock,
+            sharedPool);
+        this.interceptors = new ArrayList<>(2);
+        this.interceptorSnapshot = new AtomicReference<>(List.of());
+        this.closed = false;
 
         // JFR-First: emit bootstrap event so SRE tooling can verify clean startup
         PersistenceEngineBootstrapEvent.emit(
-                PROVIDER_ID,
+                CommunityPersistenceConstants.PROVIDER_ID,
                 "ExerisCommunity/JDBC+HikariCP",
                 config.maxPoolSize(),
                 config.rlsEnabled(),
@@ -144,38 +114,40 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
      * concurrently, so the idle pool is fully populated before the first request arrives.
      * Fail-fast on error to surface DB unavailability at startup.
      */
-    @SuppressWarnings({"PMD.UseTryWithResources", "PMD.CloseResource"})
     private void prewarmSharedPool() {
         int warmupConnections = config.poolWarmupConnections();
         if (!config.poolWarmupEnabled() || warmupConnections <= 0) {
             return;
         }
-        // Never request more connections than the pool can hold simultaneously.
-        warmupConnections = Math.min(warmupConnections, config.maxPoolSize());
-        List<Connection> held = new ArrayList<>(warmupConnections);
-        final IllegalStateException warmupValidationFailed =
-                new IllegalStateException("Connection validation returned false during pool warm-up");
+        int targetConnections = Math.min(warmupConnections, config.maxPoolSize());
+        List<Connection> heldConnections = new ArrayList<>(targetConnections);
         try {
-            for (int i = 0; i < warmupConnections; i++) {
-                Connection conn = sharedPool.getConnection();
-                held.add(conn);  // add before isValid so finally closes it even if isValid throws
-                if (!conn.isValid(5)) {
-                    throw PersistenceProviderException.bootstrapFailure(
-                            PROVIDER_ID,
-                            config.connectionUrl(),
-                            warmupValidationFailed);
-                }
-            }
+            acquireWarmupConnections(targetConnections, heldConnections);
         } catch (SQLException sqlEx) {
-            throw PersistenceProviderException.bootstrapFailure(PROVIDER_ID, config.connectionUrl(), sqlEx);
+            throw PersistenceProviderException.bootstrapFailure(
+                    CommunityPersistenceConstants.PROVIDER_ID,
+                    config.connectionUrl(),
+                    sqlEx);
         } finally {
-            for (Connection conn : held) {
-                try {
-                    conn.close();
-                } catch (SQLException _) {
-                    // best-effort return to pool
-                }
-            }
+            releaseConnectionsQuietly(heldConnections);
+        }
+    }
+
+    private void acquireWarmupConnections(int warmupConnections,
+                                          List<Connection> heldConnections) throws SQLException {
+        for (int i = 0; i < warmupConnections; i++) {
+            Connection connection = sharedPool.getConnection(); // NOPMD CloseResource -- held for warm-up
+            heldConnections.add(connection);
+            validateWarmupConnection(connection);
+        }
+    }
+
+    private void validateWarmupConnection(Connection connection) throws SQLException {
+        if (!connection.isValid(5)) {
+            throw PersistenceProviderException.bootstrapFailure(
+                    CommunityPersistenceConstants.PROVIDER_ID,
+                    config.connectionUrl(),
+                    new IllegalStateException("Connection validation returned false during pool warm-up"));
         }
     }
 
@@ -198,18 +170,29 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
         return openPhysicalConnection();
     }
 
+    @Override
+    public PersistenceConnection openPhysical() {
+        return openPhysicalConnection();
+    }
+
     /* default */ PersistenceConnection openPhysicalConnection() {
         if (closed) {
             throw new IllegalStateException(ENGINE_CLOSED_MESSAGE);
         }
         firstConnectionOpened.set(true);
         try {
-            return sharedHikari.acquireConnection(PROVIDER_ID, SHARED_TENANT, NOOP_ON_CLOSE);
+            return sharedHikari.acquireConnection(
+                    CommunityPersistenceConstants.PROVIDER_ID,
+                    CommunityPersistenceConstants.SHARED_TENANT,
+                    NOOP_ON_CLOSE);
         } catch (HikariPool.PoolInitializationException | SQLException cause) {
             if (closed) {
                 throw new IllegalStateException(ENGINE_CLOSED_MESSAGE, cause);
             }
-            throw sharedHikari.translateAcquireFailure(cause, PROVIDER_ID, config.connectionTimeoutMs());
+            throw sharedHikari.translateAcquireFailure(
+                    cause,
+                    CommunityPersistenceConstants.PROVIDER_ID,
+                    config.connectionTimeoutMs());
         }
     }
 
@@ -220,7 +203,7 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
         }
         firstConnectionOpened.set(true);
         String tenantKey = selectTenantKey(storageContext);
-        List<ConnectionInterceptor> snapshot = this.interceptorSnapshot;
+        List<ConnectionInterceptor> snapshot = interceptorSnapshot.get();
         ensureSharedInterceptorPresent(storageContext, snapshot);
 
         PersistenceSessionBox requestBox = PersistenceSessionBox.currentOrNull();
@@ -236,7 +219,6 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
         return openPhysicalConnection(storageContext, tenantKey, snapshot);
     }
 
-    @SuppressWarnings("PMD.AvoidCatchingGenericException")
     private JdbcPersistenceConnection openPhysicalConnection(StorageContext storageContext,
                                                              String tenantKey,
                                                              List<ConnectionInterceptor> snapshot) {
@@ -244,21 +226,8 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
         try {
             tenantHikari = CommunityHikariSupport.with(resolvePoolForTenant(tenantKey));
             JdbcPersistenceConnection conn =
-                    tenantHikari.acquireConnection(PROVIDER_ID, tenantKey, NOOP_ON_CLOSE);
-            for (ConnectionInterceptor interceptor : snapshot) {
-                try {
-                    interceptor.onConnectionAcquired(conn, storageContext);
-                } catch (PersistenceProviderException ppe) {
-                    discardAfterInterceptorFailure(tenantHikari, conn);
-                    throw ppe;
-                } catch (RuntimeException ex) {
-                    discardAfterInterceptorFailure(tenantHikari, conn);
-                    throw PersistenceProviderException.interceptorInitFailed(
-                            interceptor.getClass().getSimpleName(),
-                            storageContext.isolationKey().orElse("[none]"),
-                            ex);
-                }
-            }
+                    tenantHikari.acquireConnection(CommunityPersistenceConstants.PROVIDER_ID, tenantKey, NOOP_ON_CLOSE);
+            applyConnectionInterceptors(tenantHikari, conn, storageContext, snapshot);
             return conn;
         } catch (HikariPool.PoolInitializationException | SQLException cause) {
             if (closed) {
@@ -266,7 +235,31 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
             }
             CommunityHikariSupport hikari =
                     tenantHikari != null ? tenantHikari : CommunityHikariSupport.with(sharedPool);
-            throw hikari.translateAcquireFailure(cause, PROVIDER_ID, config.connectionTimeoutMs());
+            throw hikari.translateAcquireFailure(
+                    cause,
+                    CommunityPersistenceConstants.PROVIDER_ID,
+                    config.connectionTimeoutMs());
+        }
+    }
+
+    @SuppressWarnings("PMD.AvoidCatchingGenericException")
+    private void applyConnectionInterceptors(CommunityHikariSupport tenantHikari,
+                                             JdbcPersistenceConnection conn,
+                                             StorageContext storageContext,
+                                             List<ConnectionInterceptor> snapshot) {
+        for (ConnectionInterceptor interceptor : snapshot) {
+            try {
+                interceptor.onConnectionAcquired(conn, storageContext);
+            } catch (PersistenceProviderException ppe) {
+                discardAfterInterceptorFailure(tenantHikari, conn);
+                throw ppe;
+            } catch (RuntimeException ex) {
+                discardAfterInterceptorFailure(tenantHikari, conn);
+                throw PersistenceProviderException.interceptorInitFailed(
+                        interceptor.getClass().getSimpleName(),
+                        storageContext.isolationKey().orElse("[none]"),
+                        ex);
+            }
         }
     }
 
@@ -288,7 +281,7 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
 
     @Override
     public EngineStats stats() {
-        return sharedHikari.toEngineStats(config.maxPoolSize(), tenantPools.size());
+        return sharedHikari.toEngineStats(config.maxPoolSize(), poolRegistry.tenantPoolCount());
     }
 
     /**
@@ -302,8 +295,7 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
     @Override
     public boolean canServiceRequest() {
         if (closed) {
-            emitAdmissionTelemetry(false, 0, 1.0d, 0.0d, 0L, 0L, ADMISSION_REJECT_ENGINE_CLOSED);
-            return false; // Engine is shutting down — cannot service new requests
+            return canServiceRequest(new CommunityHikariSupport.AdmissionSnapshot(0, 0, 0, 0));
         }
 
         CommunityHikariSupport.AdmissionSnapshot snapshot =
@@ -312,167 +304,51 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
     }
 
     /* default */ boolean canServiceRequest(CommunityHikariSupport.AdmissionSnapshot snapshot) {
-        int active = snapshot.activeConnections();
-        int queued = snapshot.pendingAcquires();
-        int idle = snapshot.idleConnections();
-        int max = snapshot.maxConnections();
-        String decisionReason = evaluateAdmissionReason(active, queued, idle, max);
-        boolean accepted = ADMISSION_ACCEPT.equals(decisionReason);
-        double saturation = admissionSaturation(active, max, decisionReason);
-
-        // Record decision for fairness tracking
-        fairnessTracker.recordDecision(accepted, queued);
-
-        if (admissionTelemetryEnabled()) {
-            FairnessTracker.FairnessSnapshot fairnessSnapshot = fairnessTracker.computeSnapshot();
-            emitAdmissionTelemetry(
-                    accepted,
-                    queued,
-                    saturation,
-                    fairnessSnapshot.fairnessRatio(),
-                    fairnessSnapshot.queueDepthP95(),
-                    fairnessSnapshot.queueWaitP95Ms(),
-                    decisionReason);
-        } else {
-            emitAdmissionTelemetry(
-                    accepted,
-                    queued,
-                    saturation,
-                    0.0d,
-                    0L,
-                    0L,
-                    decisionReason);
-        }
-        return accepted;
+        return admissionController.canServiceRequest(snapshot, closed);
     }
 
     /* default */ String decisionReason(CommunityHikariSupport.AdmissionSnapshot snapshot) {
-        return evaluateAdmissionReason(
-                snapshot.activeConnections(),
-                snapshot.pendingAcquires(),
-                snapshot.idleConnections(),
-                snapshot.maxConnections());
-    }
-
-    private String evaluateAdmissionReason(int active, int queued, int idle, int max) {
-        if (closed) {
-            return ADMISSION_REJECT_ENGINE_CLOSED;
-        }
-        if (max <= 0) {
-            return ADMISSION_REJECT_NO_CAPACITY;
-        }
-        double saturation = (double) active / (double) max;
-        if (saturation >= HARD_SATURATION_THRESHOLD) {
-            return ADMISSION_REJECT_HARD_SATURATION;
-        }
-        if (saturation >= GUARD_BAND_THRESHOLD
-                && queued > 0
-                && (shouldRejectEarlyInGuardBand(active, queued, max)
-                    || fairnessTracker.indicatesAdmissionStress(
-                            FAIRNESS_STRESS_THRESHOLD,
-                            FAIRNESS_QUEUE_DEPTH_THRESHOLD))) {
-            return ADMISSION_REJECT_GUARD_BAND_FAIRNESS;
-        }
-        if (idle <= 0 && queued > 0) {
-            return ADMISSION_REJECT_NO_CAPACITY;
-        }
-        return ADMISSION_ACCEPT;
-    }
-
-    private boolean shouldRejectEarlyInGuardBand(int active, int queued, int max) {
-        if (queued <= 0 || max <= 0) {
-            return false;
-        }
-        int remainingHeadroom = Math.max(0, max - active);
-        if (remainingHeadroom <= 0) {
-            return false;
-        }
-        int lowHeadroomThreshold = Math.clamp(
-                (int) Math.ceil(max * EARLY_GUARD_BAND_HEADROOM_RATIO),
-                1,
-                EARLY_GUARD_BAND_HEADROOM_CAP);
-        return remainingHeadroom <= lowHeadroomThreshold && queued >= remainingHeadroom;
-    }
-
-    private double admissionSaturation(int active, int max, String decisionReason) {
-        if (ADMISSION_REJECT_ENGINE_CLOSED.equals(decisionReason) || max <= 0) {
-            return 1.0d;
-        }
-        return (double) active / (double) max;
-    }
-
-    private boolean admissionTelemetryEnabled() {
-        return AdmissionDecisionEvent.isEnabled()
-                || PersistenceAdmissionStageEvent.isEnabled();
-    }
-
-    private static void emitAdmissionTelemetry(boolean accepted,
-                                               int queueDepth,
-                                               double saturation,
-                                               double fairnessRatio,
-                                               long queueDepthP95,
-                                               long queueWaitP95Ms,
-                                               String decisionReason) {
-        if (queueDepth > 0 && PersistenceAdmissionStageEvent.isEnabled()) {
-            PersistenceAdmissionStageEvent.emit(new PersistenceAdmissionStageEvent.Payload(
-                    PROVIDER_ID,
-                    "queue_enter",
-                    queueDepth,
-                    0L,
-                    accepted,
-                    decisionReason));
-        }
-        if (queueWaitP95Ms > QUEUE_WAIT_TELEMETRY_THRESHOLD_MS
-                && PersistenceAdmissionStageEvent.isEnabled()) {
-            PersistenceAdmissionStageEvent.emit(new PersistenceAdmissionStageEvent.Payload(
-                    PROVIDER_ID,
-                    "queue_wait",
-                    queueDepth,
-                    queueWaitP95Ms,
-                    accepted,
-                    decisionReason));
-        }
-        if (PersistenceAdmissionStageEvent.isEnabled()) {
-            PersistenceAdmissionStageEvent.emit(new PersistenceAdmissionStageEvent.Payload(
-                    PROVIDER_ID,
-                    "persistence_admission",
-                    queueDepth,
-                    queueWaitP95Ms,
-                    accepted,
-                    decisionReason));
-        }
-
-        if (AdmissionDecisionEvent.isEnabled()) {
-            AdmissionDecisionEvent.emit(new AdmissionDecisionEvent.Payload(
-                    PROVIDER_ID,
-                    accepted,
-                    queueDepth,
-                    saturation,
-                    fairnessRatio,
-                    queueDepthP95,
-                    queueWaitP95Ms,
-                    decisionReason));
-        }
+        return admissionController.decisionReason(snapshot, closed);
     }
 
     @Override
-    @SuppressWarnings("try")
     public void close() {
-        List<HikariDataSource> poolsToClose;
-        List<HikariDataSource> dedicatedToClose;
+        CommunityTenantPoolRegistry.PoolShutdownPlan shutdownPlan = preparePoolShutdown();
+        if (shutdownPlan == null) {
+            return;
+        }
+        poolRegistry.close(shutdownPlan);
+        closeSharedPoolSafely();
+    }
+
+    @SuppressWarnings("PMD.CloseResource")
+    private void releaseConnectionsQuietly(List<Connection> connections) {
+        for (Connection connection : connections) {
+            if (connection == null) {
+                continue;
+            }
+            try {
+                connection.close();
+            } catch (SQLException _) {
+                // best-effort return to pool
+            }
+        }
+    }
+
+    private CommunityTenantPoolRegistry.PoolShutdownPlan preparePoolShutdown() {
         synchronized (lifecycleLock) {
             if (closed) {
-                return;
+                return null;
             }
             closed = true;
-            poolsToClose = tenantPools.values().stream().map(TenantPoolState::pool).toList();
-            tenantPools.clear();
-            dedicatedToClose = List.copyOf(dedicatedPools.values());
-            dedicatedPools.clear();
+            return poolRegistry.prepareShutdownPlan();
         }
-        poolsToClose.forEach(HikariDataSource::close);
-        dedicatedToClose.forEach(HikariDataSource::close);
-        sharedPool.close();
+    }
+
+    private void closeSharedPoolSafely() {
+        if (!sharedPool.isClosed()) {
+            sharedPool.close();
+        }
     }
 
     // =========================================================================
@@ -489,7 +365,7 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
                         "Interceptors must be registered before the first connection is opened");
             }
             interceptors.add(interceptor);
-            interceptorSnapshot = List.copyOf(interceptors);
+            interceptorSnapshot.set(List.copyOf(interceptors));
         }
     }
 
@@ -498,114 +374,11 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
     // =========================================================================
 
     private HikariDataSource resolvePoolForTenant(String tenantKey) {
-        if (tenantKey.startsWith(DEDICATED_KEY_PREFIX)) {
-            return getOrBuildDedicatedPool(tenantKey.substring(DEDICATED_KEY_PREFIX.length()));
-        }
-        if (!config.perTenantPooling() || SHARED_TENANT.equals(tenantKey)) {
-            return sharedPool;
-        }
-        maybeReclaimIdleTenantPools(false);
-        synchronized (lifecycleLock) {
-            ensureOpenUnderLock();
-            TenantPoolState existing = tenantPools.get(tenantKey);
-            if (existing != null) {
-                existing.touch(System.nanoTime());
-                return existing.pool();
-            }
-            if (tenantPools.size() >= config.maxTenantPools()) {
-                throw PersistenceProviderException.connectionExhausted(
-                        PROVIDER_ID, config.connectionTimeoutMs(), computeActiveConnections());
-            }
-        }
-        return buildAndInstallTenantPool(tenantKey);
-    }
-
-    @SuppressWarnings("PMD.UseTryWithResources")
-    private HikariDataSource buildAndInstallTenantPool(String tenantKey) {
-        // candidate may be returned to tenantPools, so try-with-resources cannot express this ownership transfer.
-        HikariDataSource candidate = CommunityHikariSupport.buildPool(config, tenantKey);
-        long now = System.nanoTime();
-        boolean installed = false;
-        try {
-            synchronized (lifecycleLock) {
-                ensureOpenUnderLock();
-                TenantPoolState existing = tenantPools.get(tenantKey);
-                if (existing != null) {
-                    existing.touch(now);
-                    return existing.pool();
-                }
-                if (tenantPools.size() >= config.maxTenantPools()) {
-                    throw PersistenceProviderException.connectionExhausted(
-                            PROVIDER_ID, config.connectionTimeoutMs(), computeActiveConnections());
-                }
-                tenantPools.put(tenantKey, new TenantPoolState(candidate, now));
-                installed = true;
-                nextTenantReclaimAtNanos.set(now + tenantReclaimCadenceNanos);
-                
-                // Phase 1A: Emit JFR event for tenant pool creation
-                PersistenceTenantPoolCreatedEvent.emit(
-                        PROVIDER_ID,
-                        tenantKey,
-                        config.maxPoolSize(),
-                        CommunityHikariSupport.resolveMinIdle(config, tenantKey),
-                        tenantPools.size()
-                );
-                
-                return candidate;
-            }
-        } finally {
-            if (!installed) {
-                candidate.close();
-            }
-        }
-    }
-
-    private void maybeReclaimIdleTenantPools(boolean force) {
-        if (!config.perTenantPooling() || tenantPools.isEmpty()) {
-            return;
-        }
-        long now = System.nanoTime();
-        long nextCheck = nextTenantReclaimAtNanos.get();
-        if (!force && now < nextCheck) {
-            return;
-        }
-        if (!nextTenantReclaimAtNanos.compareAndSet(nextCheck, now + tenantReclaimCadenceNanos) && !force) {
-            return;
-        }
-        
-        // Phase 1A: Aggressive reclamation with JFR telemetry
-        List<Map.Entry<String, TenantPoolState>> toReclaimList = new ArrayList<>();
-        List<HikariDataSource> poolsToClose = new ArrayList<>();
-        
-        synchronized (lifecycleLock) {
-            if (closed) {
-                return;
-            }
-            for (Map.Entry<String, TenantPoolState> entry : tenantPools.entrySet()) {
-                TenantPoolState state = entry.getValue();
-                boolean reclaimable = state.idlePast(now, tenantIdleTtlNanos) && state.hasNoActiveConnections();
-                if (reclaimable && tenantPools.remove(entry.getKey(), state)) {
-                    toReclaimList.add(entry);
-                    poolsToClose.add(state.pool());
-                }
-            }
-        }
-        
-        // Emit JFR events for reclaimed pools
-        for (Map.Entry<String, TenantPoolState> entry : toReclaimList) {
-            TenantPoolState state = entry.getValue();
-            long idleDurationNanos = now - state.getLastAccessNanos();
-            long idleDurationMs = TimeUnit.NANOSECONDS.toMillis(idleDurationNanos);
-            PersistenceTenantPoolReclaimedEvent.emit(
-                    PROVIDER_ID,
-                    entry.getKey(),
-                    "idle_timeout",
-                    idleDurationMs,
-                    tenantPools.size()
-            );
-        }
-        
-        poolsToClose.forEach(HikariDataSource::close);
+        return poolRegistry.resolvePoolForTenant(
+                tenantKey,
+                this::ensureOpenUnderLock,
+                () -> closed,
+                this::computeActiveConnections);
     }
 
     private String selectTenantKey(StorageContext storageContext) {
@@ -613,16 +386,18 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
             case DEDICATED -> {
                 String dataSourceKey = storageContext.dataSourceKey()
                         .orElseThrow(() -> PersistenceProviderException.dedicatedDatasourceNotFound(
-                                PROVIDER_ID, "[none]"));
+                                CommunityPersistenceConstants.PROVIDER_ID, "[none]"));
                 if (!config.dedicatedDataSources().containsKey(dataSourceKey)) {
                     throw PersistenceProviderException.dedicatedDatasourceNotFound(
-                            PROVIDER_ID, dataSourceKey);
+                            CommunityPersistenceConstants.PROVIDER_ID, dataSourceKey);
                 }
-                yield DEDICATED_KEY_PREFIX + dataSourceKey;
+                yield CommunityPersistenceConstants.DEDICATED_KEY_PREFIX + dataSourceKey;
             }
             case SEPARATED_SCHEMA -> storageContext.schemaName()
-                    .orElseGet(() -> storageContext.isolationKey().orElse(SHARED_TENANT));
-            case SHARED           -> storageContext.isolationKey().orElse(SHARED_TENANT);
+                    .orElseGet(() -> storageContext.isolationKey()
+                        .orElse(CommunityPersistenceConstants.SHARED_TENANT));
+                case SHARED           -> storageContext.isolationKey()
+                    .orElse(CommunityPersistenceConstants.SHARED_TENANT);
         };
     }
 
@@ -658,12 +433,6 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
         tenantHikari.discardConnection(conn);
     }
 
-    private static long computeReclaimCadenceNanos(long tenantIdleTtlNanos) {
-        long ttlMs = TimeUnit.NANOSECONDS.toMillis(tenantIdleTtlNanos);
-        long cadenceMs = Math.clamp(ttlMs / 4L, MIN_RECLAIM_CADENCE_MS, MAX_RECLAIM_CADENCE_MS);
-        return TimeUnit.MILLISECONDS.toNanos(cadenceMs);
-    }
-
     private static void validateRuntimeConfig(PersistenceConfig config) {
         if (config.perTenantPooling() && config.maxTenantPools() < 1) {
             throw new IllegalArgumentException(
@@ -678,7 +447,6 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
         }
     }
 
-    @SuppressWarnings("PMD.AvoidCatchingGenericException")
     private void maybeRunMigrations() {
         if (!Boolean.parseBoolean(config.properties().getOrDefault(RUN_MIGRATIONS_KEY, "false"))) {
             return;
@@ -686,20 +454,37 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
         List<String> resources = new ArrayList<>(MIGRATION_RESOURCES);
         resources.sort(Comparator.naturalOrder());
         try (Connection connection = sharedPool.getConnection()) {
-            connection.setAutoCommit(false);
-            try {
-                for (String resource : resources) {
-                    executeMigrationScript(connection, resource);
-                }
-                connection.commit();
-            } catch (RuntimeException | SQLException ex) {
-                connection.rollback();
-                throw ex;
-            } finally {
-                connection.setAutoCommit(true);
+            runMigrationsInTransaction(connection, resources);
+        } catch (SQLException | IllegalStateException | UncheckedIOException ex) {
+            throw PersistenceProviderException.bootstrapFailure(
+                    CommunityPersistenceConstants.PROVIDER_ID,
+                    config.connectionUrl(),
+                    ex);
+        }
+    }
+
+    private void runMigrationsInTransaction(Connection connection,
+                                            List<String> resources) throws SQLException {
+        connection.setAutoCommit(false);
+        boolean committed = false;
+        try {
+            for (String resource : resources) {
+                executeMigrationScript(connection, resource);
             }
-        } catch (SQLException | RuntimeException ex) {
-            throw PersistenceProviderException.bootstrapFailure(PROVIDER_ID, config.connectionUrl(), ex);
+            connection.commit();
+            committed = true;
+        } finally {
+            restoreAutoCommit(connection, committed);
+        }
+    }
+
+    private void restoreAutoCommit(Connection connection, boolean committed) throws SQLException {
+        try {
+            if (!committed) {
+                connection.rollback();
+            }
+        } finally {
+            connection.setAutoCommit(true);
         }
     }
 
@@ -774,70 +559,7 @@ final class CommunityPersistenceEngine implements PersistenceEngine {
     }
 
     private int computeActiveConnections() {
-        int total = CommunityHikariSupport.activeConnections(sharedPool);
-        for (TenantPoolState state : tenantPools.values()) {
-            total += CommunityHikariSupport.activeConnections(state.pool());
-        }
-        return total;
-    }
-
-    /**
-     * Returns a cached dedicated {@link HikariDataSource} for the given key, building and
-     * caching it on first access. Thread-safe: if two threads race to build the same
-     * pool, the loser closes its candidate and returns the winner's instance.
-     *
-     * @param dataSourceKey key matching an entry in {@code config.dedicatedDataSources()}
-     * @return the cached or newly built dedicated pool
-     */
-    private HikariDataSource getOrBuildDedicatedPool(String dataSourceKey) {
-        HikariDataSource existing = dedicatedPools.get(dataSourceKey);
-        if (existing != null) {
-            return existing;
-        }
-        PersistenceConfig dedicatedConfig = config.dedicatedDataSources().get(dataSourceKey);
-        // dedicatedConfig is non-null: validated by selectTenantKey before this call
-        HikariDataSource candidate = CommunityHikariSupport.buildPool(dedicatedConfig, null);
-        HikariDataSource prior = dedicatedPools.putIfAbsent(dataSourceKey, candidate);
-        if (prior != null) {
-            candidate.close();
-            return prior;
-        }
-        return candidate;
-    }
-
-    private static boolean hasNoActiveConnections(HikariDataSource pool) {
-        return CommunityHikariSupport.hasNoActiveConnections(pool);
-    }
-
-    private static final class TenantPoolState {
-        private final HikariDataSource pool;
-        private volatile long lastAccessNanos;
-
-        private TenantPoolState(HikariDataSource pool, long now) {
-            this.pool = pool;
-            this.lastAccessNanos = now;
-        }
-
-        private HikariDataSource pool() {
-            return pool;
-        }
-
-        private void touch(long now) {
-            lastAccessNanos = now;
-        }
-
-        private boolean idlePast(long now, long ttlNanos) {
-            return now - lastAccessNanos >= ttlNanos;
-        }
-
-        private boolean hasNoActiveConnections() {
-            return CommunityPersistenceEngine.hasNoActiveConnections(pool);
-        }
-        
-        // Phase 1A: Expose lastAccessNanos for JFR telemetry
-        private long getLastAccessNanos() {
-            return lastAccessNanos;
-        }
+        return poolRegistry.computeActiveConnections();
     }
 }
 

@@ -8,13 +8,13 @@
  */
 package eu.exeris.kernel.core.flow;
 
+import eu.exeris.kernel.core.bootstrap.BootstrapProviderSelector;
 import eu.exeris.kernel.spi.exceptions.flow.FlowProviderException;
 import eu.exeris.kernel.spi.flow.FlowEngine;
 import eu.exeris.kernel.spi.flow.FlowEngineConfig;
 import eu.exeris.kernel.spi.flow.FlowProvider;
 
 import java.util.Comparator;
-import java.util.ServiceLoader;
 
 /**
  * Core: ServiceLoader-driven bootstrap for the Flow subsystem.
@@ -40,10 +40,9 @@ public final class FlowBootstrap {
     }
 
     public static BootstrapResult loadWithProvider(FlowEngineConfig config) {
-        FlowProvider provider = ServiceLoader.load(FlowProvider.class)
-                .stream()
-                .map(ServiceLoader.Provider::get)
-                .max(Comparator.comparingInt(FlowProvider::priority))
+        FlowProvider provider = BootstrapProviderSelector.loadHighestPriority(
+                        FlowProvider.class,
+                        Comparator.comparingInt(FlowProvider::priority))
                 .orElseThrow(() -> FlowProviderException.creationFailure(
                         "FlowBootstrap", ERROR_NO_PROVIDER, null));
 

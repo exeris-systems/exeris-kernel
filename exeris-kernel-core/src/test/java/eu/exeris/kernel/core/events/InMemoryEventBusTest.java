@@ -186,7 +186,7 @@ class InMemoryEventBusTest {
             @Override public int length() { return 0; }
             @Override public int refCount() { return 1; }
             @Override public boolean isAlive() { return true; }
-            @Override public void retain() {}
+            @Override public void retain() { /* test stub — ref-count not tracked in this fixture */ }
             @Override public void close() { closes.incrementAndGet(); latch.countDown(); }
         };
     }
@@ -200,8 +200,8 @@ class InMemoryEventBusTest {
         private final EventRegistry reg = new MinimalTestRegistry();
         private final InMemoryEventBus bus = new InMemoryEventBus(reg);
 
-        void start() {}
-        void close() {}
+        void start() { /* test fixture — no lifecycle startup needed */ }
+        void close() { /* test fixture — no resource cleanup needed */ }
         InMemoryEventBus bus() { return bus; }
         EventRegistry registry() { return reg; }
     }

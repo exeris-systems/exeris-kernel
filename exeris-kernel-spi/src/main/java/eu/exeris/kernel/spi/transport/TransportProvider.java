@@ -24,14 +24,18 @@ package eu.exeris.kernel.spi.transport;
  * </ul>
  *
  * <h2>Discovery</h2>
- * <p>Loaded via {@link java.util.ServiceLoader}. The kernel bootstrapper selects the
- * highest-{@link #priority()} provider:
+ * <p>Loaded via {@link java.util.ServiceLoader}. The kernel bootstrapper iterates providers in
+ * descending priority order and selects the first one for which {@link #isAvailable()} returns
+ * {@code true}:
  * <pre>{@code
  * TransportProvider provider = ServiceLoader.load(TransportProvider.class)
  *     .stream()
  *     .map(ServiceLoader.Provider::get)
- *     .max(Comparator.comparingInt(TransportProvider::priority))
- *     .orElseThrow(() -> TransportException.bootstrapFailure("unknown", "No TransportProvider on classpath", null));
+ *     .sorted(Comparator.comparingInt(TransportProvider::priority).reversed())
+ *     .filter(TransportProvider::isAvailable)
+ *     .findFirst()
+ *     .orElseThrow(() -> TransportException.bootstrapFailure(
+ *             "unknown", "No available TransportProvider on classpath", null));
  *
  * TransportEngine engine = provider.createEngine(config);
  * ScopedValue.where(KernelProviders.TRANSPORT_ENGINE, engine).run(kernel::start);
@@ -115,5 +119,32 @@ public interface TransportProvider {
      */
     default int priority() {
         return 0;
+    }
+
+    /**
+     * Returns {@code true} if this provider can create a working engine on the current platform.
+     *
+     * <p>{@code KernelBootstrap} (or the active transport subsystem) calls this before
+     * selecting a provider. The selection loop iterates providers in descending priority
+     * order and picks the first one for which {@code isAvailable()} returns {@code true}:
+     * <pre>{@code
+     * TransportProvider selected = ServiceLoader.load(TransportProvider.class)
+     *     .stream()
+     *     .map(ServiceLoader.Provider::get)
+     *     .sorted(Comparator.comparingInt(TransportProvider::priority).reversed())
+     *     .filter(TransportProvider::isAvailable)
+     *     .findFirst()
+     *     .orElseThrow(() -> TransportException.bootstrapFailure("unknown", "No available TransportProvider", null));
+     * }</pre>
+     *
+     * <p>Platform-conditional providers (e.g., {@code io_uring} on Linux only, IOCP on
+     * Windows only) <strong>MUST</strong> override this method and gate on their platform
+     * check. The default returns {@code true} — always-available providers
+     * (e.g., NIO-based Community tier) do not need to override.
+     *
+     * @return {@code true} if this provider can operate on the current platform
+     */
+    default boolean isAvailable() {
+        return true;
     }
 }

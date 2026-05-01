@@ -51,12 +51,12 @@ public final class JdbcPersistenceConnection implements PersistenceConnection {
     private int baselineIsolation;
     private boolean baselineCaptured;
 
-    public JdbcPersistenceConnection(Connection conn) throws SQLException {
+    public JdbcPersistenceConnection(Connection conn) {
         this(conn, () -> { });
     }
 
-    public JdbcPersistenceConnection(Connection conn, Runnable onClose) throws SQLException {
-        this.conn          = conn;
+    public JdbcPersistenceConnection(Connection conn, Runnable onClose) {
+        this.conn          = Objects.requireNonNull(conn, "conn must not be null");
         this.onClose       = Objects.requireNonNull(onClose, "onClose must not be null");
         this.inTransaction = false;
         this.closed        = new AtomicBoolean(false);
@@ -68,7 +68,7 @@ public final class JdbcPersistenceConnection implements PersistenceConnection {
         ensureOpen();
         try {
             PreparedStatement preparedStmt = conn.prepareStatement(translateParams(sql));
-            return new JdbcPersistenceStatement(preparedStmt);
+            return new JdbcPersistenceStatement(preparedStmt, this::commitStandaloneWriteIfNeeded);
         } catch (SQLException sqlEx) {
             throw mapSql(sqlEx);
         }
@@ -77,18 +77,9 @@ public final class JdbcPersistenceConnection implements PersistenceConnection {
     @Override
     public QueryResult executeQuery(String sql) {
         ensureOpen();
-        Statement stmt = null;
         try {
-            stmt = conn.createStatement();
-            return new JdbcQueryResult(stmt.executeQuery(sql), stmt);
+            return JdbcQueryResult.execute(conn, sql);
         } catch (SQLException sqlEx) {
-            if (stmt != null) {
-                try {
-                    stmt.close();
-                } catch (SQLException ignored) {
-                    // Best-effort cleanup on failure
-                }
-            }
             throw mapSql(sqlEx);
         }
     }
@@ -97,7 +88,9 @@ public final class JdbcPersistenceConnection implements PersistenceConnection {
     public long executeUpdate(String sql) {
         ensureOpen();
         try (Statement stmt = conn.createStatement()) {
-            return stmt.executeLargeUpdate(sql);
+            long updated = stmt.executeLargeUpdate(sql);
+            commitStandaloneWriteIfNeeded();
+            return updated;
         } catch (SQLException sqlEx) {
             throw mapSql(sqlEx);
         }
@@ -177,7 +170,7 @@ public final class JdbcPersistenceConnection implements PersistenceConnection {
         }
         try {
             return !conn.isClosed();
-        } catch (SQLException sqlEx) {
+        } catch (SQLException _) {
             return false;
         }
     }
@@ -191,14 +184,14 @@ public final class JdbcPersistenceConnection implements PersistenceConnection {
             if (inTransaction) {
                 try {
                     conn.rollback();
-                } catch (SQLException ignored) {
+                } catch (SQLException _) {
                     // Best-effort rollback
                 }
                 inTransaction = false;
             }
             try {
                 conn.close();
-            } catch (SQLException ignored) {
+            } catch (SQLException _) {
                 // Best-effort close
             }
         } finally {
@@ -226,6 +219,7 @@ public final class JdbcPersistenceConnection implements PersistenceConnection {
     public Connection rawJdbcConnection() {
         return conn;
     }
+
     /**
      * Translates SPI PostgreSQL-style {@code $1, $2} parameter placeholders to
      * JDBC {@code ?} placeholders — required for non-PG JDBC drivers (e.g., H2).
@@ -280,26 +274,16 @@ public final class JdbcPersistenceConnection implements PersistenceConnection {
         private String translateInternal() {
             StringBuilder translatedSql = new StringBuilder(sql.length());
             while (cursor < sql.length()) {
-                if (handleActiveDollarQuotedBody(translatedSql)) {
-                    continue;
+                boolean handled = handleActiveDollarQuotedBody(translatedSql)
+                        || handleSingleQuotedString(translatedSql)
+                        || handleDoubleQuotedString(translatedSql)
+                        || handleLineComment(translatedSql)
+                        || handleBlockComment(translatedSql)
+                        || handleDollarSequence(translatedSql);
+                if (!handled) {
+                    translatedSql.append(sql.charAt(cursor));
+                    cursor++;
                 }
-                if (handleSingleQuotedString(translatedSql)) {
-                    continue;
-                }
-                if (handleDoubleQuotedString(translatedSql)) {
-                    continue;
-                }
-                if (handleLineComment(translatedSql)) {
-                    continue;
-                }
-                if (handleBlockComment(translatedSql)) {
-                    continue;
-                }
-                if (handleDollarSequence(translatedSql)) {
-                    continue;
-                }
-                translatedSql.append(sql.charAt(cursor));
-                cursor++;
             }
             return translatedSql.toString();
         }
@@ -403,13 +387,14 @@ public final class JdbcPersistenceConnection implements PersistenceConnection {
                 char currentChar = sql.charAt(cursor);
                 translatedSql.append(currentChar);
                 cursor++;
-                if (currentChar == SINGLE_QUOTE && cursor < sql.length() && sql.charAt(cursor) == SINGLE_QUOTE) {
-                    translatedSql.append(SINGLE_QUOTE);
-                    cursor++;
-                    continue;
-                }
                 if (currentChar == SINGLE_QUOTE) {
-                    break;
+                    boolean escapedQuote = cursor < sql.length() && sql.charAt(cursor) == SINGLE_QUOTE;
+                    if (escapedQuote) {
+                        translatedSql.append(SINGLE_QUOTE);
+                        cursor++;
+                    } else {
+                        return cursor;
+                    }
                 }
             }
             return cursor;
@@ -422,13 +407,14 @@ public final class JdbcPersistenceConnection implements PersistenceConnection {
                 char currentChar = sql.charAt(cursor);
                 translatedSql.append(currentChar);
                 cursor++;
-                if (currentChar == DOUBLE_QUOTE && cursor < sql.length() && sql.charAt(cursor) == DOUBLE_QUOTE) {
-                    translatedSql.append(DOUBLE_QUOTE);
-                    cursor++;
-                    continue;
-                }
                 if (currentChar == DOUBLE_QUOTE) {
-                    break;
+                    boolean escapedQuote = cursor < sql.length() && sql.charAt(cursor) == DOUBLE_QUOTE;
+                    if (escapedQuote) {
+                        translatedSql.append(DOUBLE_QUOTE);
+                        cursor++;
+                    } else {
+                        return cursor;
+                    }
                 }
             }
             return cursor;
@@ -442,7 +428,7 @@ public final class JdbcPersistenceConnection implements PersistenceConnection {
                 translatedSql.append(currentChar);
                 cursor++;
                 if (currentChar == NEWLINE) {
-                    break;
+                    return cursor;
                 }
             }
             return cursor;
@@ -455,10 +441,12 @@ public final class JdbcPersistenceConnection implements PersistenceConnection {
                 char currentChar = sql.charAt(cursor);
                 translatedSql.append(currentChar);
                 cursor++;
-                if (currentChar == STAR && cursor < sql.length() && sql.charAt(cursor) == SLASH) {
+                boolean blockCommentClosed = currentChar == STAR
+                        && cursor < sql.length()
+                        && sql.charAt(cursor) == SLASH;
+                if (blockCommentClosed) {
                     translatedSql.append(SLASH);
-                    cursor++;
-                    break;
+                    return cursor + 1;
                 }
             }
             return cursor;
@@ -510,6 +498,20 @@ public final class JdbcPersistenceConnection implements PersistenceConnection {
         conn.setReadOnly(baselineReadOnly);
         conn.setAutoCommit(baselineAutoCommit);
         baselineCaptured = false;
+    }
+
+    /**
+     * Community pool baseline is {@code autoCommit=false}. When SPI callers perform a write
+     * without opening an explicit transaction, JDBC still requires a manual commit so the
+     * change becomes visible across later pooled connections.
+     */
+    private void commitStandaloneWriteIfNeeded() throws SQLException {
+        if (inTransaction) {
+            return;
+        }
+        if (!conn.getAutoCommit()) {
+            conn.commit();
+        }
     }
 
     private void captureBaseline() throws SQLException {

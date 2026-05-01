@@ -13,52 +13,50 @@ import eu.exeris.kernel.spi.memory.MemoryAllocator;
 
 import java.lang.foreign.MemorySegment;
 
-@SuppressWarnings({
-    "PMD.TooManyMethods",
-    "PMD.CommentDefaultAccessModifier",
-    "PMD.NullAssignment"
-})
-final class ProcessingState implements AutoCloseable {
+@SuppressWarnings("PMD.TooManyMethods")
+/* default */ final class ProcessingState implements AutoCloseable {
     private LoanedBuffer aggregate;
+    private boolean aggregateActive;
     private long bufferedBytes;
     private long aggregateAllocationTimeNs;
     private long pipelinedRequestCount;
     private long totalRequestCount;
 
-    LoanedBuffer aggregate() {
-        return aggregate;
+    /* default */ LoanedBuffer aggregate() {
+        return aggregateActive ? aggregate : null;
     }
 
-    long bufferedBytes() {
+    /* default */ long bufferedBytes() {
         return bufferedBytes;
     }
 
-    long aggregateAllocationTimeNs() {
+    /* default */ long aggregateAllocationTimeNs() {
         return aggregateAllocationTimeNs;
     }
 
-    long pipelinedRequestCount() {
+    /* default */ long pipelinedRequestCount() {
         return pipelinedRequestCount;
     }
 
-    long totalRequestCount() {
+    /* default */ long totalRequestCount() {
         return totalRequestCount;
     }
 
-    boolean hasAggregate() {
-        return aggregate != null;
+    /* default */ boolean hasAggregate() {
+        return aggregateActive;
     }
 
-    void ensureAggregate(MemoryAllocator allocator, int initialAggregateBytes) {
-        if (aggregate == null) {
+    /* default */ void ensureAggregate(MemoryAllocator allocator, int initialAggregateBytes) {
+        if (!aggregateActive) {
             aggregate = allocator.allocateNetwork(initialAggregateBytes);
+            aggregateActive = true;
         }
     }
 
-    void ensureAggregateCapacity(MemoryAllocator allocator,
-                                 long requiredBytes,
-                                 int maxAggregateBytes) {
-        if (aggregate == null || requiredBytes <= aggregate.capacity()) {
+    /* default */ void ensureAggregateCapacity(MemoryAllocator allocator,
+                                               long requiredBytes,
+                                               int maxAggregateBytes) {
+        if (!aggregateActive || requiredBytes <= aggregate.capacity()) {
             return;
         }
 
@@ -66,10 +64,9 @@ final class ProcessingState implements AutoCloseable {
     }
 
     private void replaceAggregate(LoanedBuffer expanded) {
-        if (aggregate != null) {
-            aggregate.close();
-        }
+        closeAggregate();
         aggregate = expanded;
+        aggregateActive = true;
     }
 
     private static LoanedBuffer allocateExpandedAggregate(MemoryAllocator allocator,
@@ -91,49 +88,50 @@ final class ProcessingState implements AutoCloseable {
         }
     }
 
-    void resetBufferForNewAggregate() {
+    /* default */ void resetBufferForNewAggregate() {
         bufferedBytes = 0;
         aggregateAllocationTimeNs = System.nanoTime();
     }
 
-    void recordRequest() {
+    /* default */ void recordRequest() {
         totalRequestCount++;
         if (bufferedBytes > 0 && totalRequestCount > 1) {
             pipelinedRequestCount++;
         }
     }
 
-    void updateBufferedBytes(long newBufferedBytes) {
+    /* default */ void updateBufferedBytes(long newBufferedBytes) {
         bufferedBytes = newBufferedBytes;
     }
 
-    void forceReleaseAggregate() {
-        if (aggregate != null) {
-            aggregate.close();
-            aggregate = null;
-        }
+    /* default */ void forceReleaseAggregate() {
+        closeAggregate();
         aggregateAllocationTimeNs = 0;
         pipelinedRequestCount = 0;
         totalRequestCount = 0;
     }
 
-    void releaseAggregateIfIdle() {
-        if (bufferedBytes == 0 && aggregate != null) {
-            aggregate.close();
-            aggregate = null;
+    /* default */ void releaseAggregateIfIdle() {
+        if (bufferedBytes == 0) {
+            closeAggregate();
         }
     }
 
     @Override
     public void close() {
-        if (aggregate != null) {
+        closeAggregate();
+    }
+
+    private void closeAggregate() {
+        if (aggregateActive && aggregate != null) {
             aggregate.close();
-            aggregate = null;
+            aggregateActive = false;
         }
     }
 
     private static final class AggregateExpansion implements AutoCloseable {
-        private LoanedBuffer buffer;
+        private final LoanedBuffer buffer;
+        private boolean taken;
 
         private AggregateExpansion(LoanedBuffer buffer) {
             this.buffer = buffer;
@@ -148,16 +146,14 @@ final class ProcessingState implements AutoCloseable {
         }
 
         private LoanedBuffer take() {
-            LoanedBuffer taken = buffer;
-            buffer = null;
-            return taken;
+            taken = true;
+            return buffer;
         }
 
         @Override
         public void close() {
-            if (buffer != null) {
+            if (!taken) {
                 buffer.close();
-                buffer = null;
             }
         }
     }

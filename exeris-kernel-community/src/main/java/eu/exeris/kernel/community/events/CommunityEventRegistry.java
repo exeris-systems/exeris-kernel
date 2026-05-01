@@ -68,8 +68,7 @@ final class CommunityEventRegistry implements EventRegistry {
         return byName.size();
     }
 
-    @SuppressWarnings("PMD.CommentDefaultAccessModifier")
-    String nameOfOrdinal(int ordinal) {
+    /* default */ String nameOfOrdinal(int ordinal) {
         String name = byOrdinal.get(ordinal);
         return name != null ? name : "ordinal-" + ordinal;
     }

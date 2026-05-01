@@ -70,6 +70,8 @@ import java.util.function.Function;
 })
 public final class TransactionOrchestrator implements TransactionalExecutor {
 
+    private static final String WORK_NOT_NULL = "work must not be null";
+
     private final ScopedValue<PersistenceConnection> activeReadSessionConnection =
             ScopedValue.newInstance();
 
@@ -133,7 +135,7 @@ public final class TransactionOrchestrator implements TransactionalExecutor {
      */
     @Override
     public void execute(TransactionalWork work) {
-        Objects.requireNonNull(work, "work must not be null");
+        Objects.requireNonNull(work, WORK_NOT_NULL);
         StorageContext ctx = resolveStorageContext();
         int attemptIndex = 0;
         PersistenceProviderException lastError = null;
@@ -180,7 +182,7 @@ public final class TransactionOrchestrator implements TransactionalExecutor {
                                 boolean readOnly,
                                 TransactionalWork work) {
         Objects.requireNonNull(isolation, "isolation must not be null");
-        Objects.requireNonNull(work,      "work must not be null");
+        Objects.requireNonNull(work,      WORK_NOT_NULL);
 
         StorageContext ctx = resolveStorageContext();
         int attemptIndex = 0;
@@ -248,7 +250,7 @@ public final class TransactionOrchestrator implements TransactionalExecutor {
     @Override
     public <T> T inReadSession(TransactionIsolation isolation, Function<ReadSession, T> work) {
         Objects.requireNonNull(isolation, "isolation must not be null");
-        Objects.requireNonNull(work, "work must not be null");
+        Objects.requireNonNull(work, WORK_NOT_NULL);
 
         StorageContext ctx = resolveStorageContext();
         int attemptIndex = 0;

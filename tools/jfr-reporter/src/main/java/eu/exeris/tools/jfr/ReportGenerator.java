@@ -23,6 +23,10 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 final class ReportGenerator {
 
+    private static final String FIELD_CLASS      = "class";
+    private static final String LOG_PREFIX_WROTE = "[jfr-reporter] Wrote ";
+    private static final String FIELD_COUNT      = "count";
+
     private final Map<String, Path> moduleDirs;
     private final String commit;
     private final String branch;
@@ -108,9 +112,9 @@ final class ReportGenerator {
                 long exerisCount = events.stream()
                         .filter(e -> e.className().startsWith("eu.exeris.")).count();
                 long productionCount = events.stream()
-                        .filter(e -> e.category() == Category.production).count();
+                        .filter(e -> e.category() == Category.PRODUCTION).count();
                 long harnessCount = events.stream()
-                        .filter(e -> e.category() == Category.test_harness).count();
+                        .filter(e -> e.category() == Category.TEST_HARNESS).count();
 
                 ObjectNode subsysNode = moduleNode.putObject(subsysEntry.getKey());
                 subsysNode.put("verdict", verdict(moduleEntry.getKey(), productionCount));
@@ -149,7 +153,7 @@ final class ReportGenerator {
                 gen.writeStartObject();
                 gen.writeNumberField("t", e.tEpochMillis());
                 gen.writeStringField("type", e.eventType());
-                gen.writeStringField("class", e.className());
+                gen.writeStringField(FIELD_CLASS, e.className());
                 gen.writeStringField("thread", e.threadName());
                 gen.writeNumberField("size", e.sizeBytes());
                 gen.writeStringField("stackId", stackId);
@@ -158,13 +162,13 @@ final class ReportGenerator {
             }
             gen.writeEndArray();
         }
-        System.out.println("[jfr-reporter] Wrote " + module + "/timeline.json (" + sorted.size() + " events)");
+        System.out.println(LOG_PREFIX_WROTE + module + "/timeline.json (" + sorted.size() + " events)");
     }
 
     private void writeStacks(String module, Path moduleOutDir, Map<String, List<String>> stacksMap) throws IOException {
         mapper.writerWithDefaultPrettyPrinter()
                 .writeValue(moduleOutDir.resolve("stacks.json").toFile(), stacksMap);
-        System.out.println("[jfr-reporter] Wrote " + module + "/stacks.json (" + stacksMap.size() + " stacks)");
+        System.out.println(LOG_PREFIX_WROTE + module + "/stacks.json (" + stacksMap.size() + " stacks)");
     }
 
     private void writeAllocTopClasses(String module, Path moduleOutDir, List<AllocEvent> events) throws IOException {
@@ -180,8 +184,8 @@ final class ReportGenerator {
         for (Map.Entry<String, long[]> entry : countMap.entrySet()) {
             String[] parts = entry.getKey().split("\\|", 2);
             Map<String, Object> item = new LinkedHashMap<>();
-            item.put("class", parts[0]);
-            item.put("count", entry.getValue()[0]);
+            item.put(FIELD_CLASS, parts[0]);
+            item.put(FIELD_COUNT, entry.getValue()[0]);
             item.put("bytes", entry.getValue()[1]);
             item.put("category", parts[1]);
             topClasses.add(item);
@@ -190,7 +194,7 @@ final class ReportGenerator {
 
         mapper.writerWithDefaultPrettyPrinter()
                 .writeValue(moduleOutDir.resolve("alloc-top-classes.json").toFile(), topClasses);
-        System.out.println("[jfr-reporter] Wrote " + module + "/alloc-top-classes.json (" + topClasses.size() + " classes)");
+        System.out.println(LOG_PREFIX_WROTE + module + "/alloc-top-classes.json (" + topClasses.size() + " classes)");
     }
 
     private void writeJfrSummary(Map<String, Map<String, List<AllocEvent>>> allModuleEvents) throws IOException {
@@ -212,7 +216,7 @@ final class ReportGenerator {
                     .forEach(entry -> {
                         ObjectNode t = topThreads.addObject();
                         t.put("thread", entry.getKey());
-                        t.put("count", entry.getValue());
+                        t.put(FIELD_COUNT, entry.getValue());
                     });
 
             Map<String, Long> classCounts = new LinkedHashMap<>();
@@ -225,8 +229,8 @@ final class ReportGenerator {
                     .limit(20)
                     .forEach(entry -> {
                         ObjectNode c = topClasses.addObject();
-                        c.put("class", entry.getKey());
-                        c.put("count", entry.getValue());
+                        c.put(FIELD_CLASS, entry.getKey());
+                        c.put(FIELD_COUNT, entry.getValue());
                     });
 
             moduleNode.putArray("phaseBoundaries");

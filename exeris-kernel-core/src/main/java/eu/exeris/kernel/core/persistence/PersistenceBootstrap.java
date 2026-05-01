@@ -8,6 +8,7 @@
  */
 package eu.exeris.kernel.core.persistence;
 
+import eu.exeris.kernel.core.bootstrap.BootstrapProviderSelector;
 import eu.exeris.kernel.spi.exceptions.persistence.PersistenceProviderException;
 import eu.exeris.kernel.spi.persistence.ConnectionInterceptor;
 import eu.exeris.kernel.spi.persistence.PersistenceConfig;
@@ -17,7 +18,6 @@ import eu.exeris.kernel.spi.persistence.PersistenceProvider;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
-import java.util.ServiceLoader;
 
 /**
  * Core: ServiceLoader-driven bootstrap for the Persistence subsystem.
@@ -85,11 +85,10 @@ public final class PersistenceBootstrap {
         Objects.requireNonNull(config,       "config must not be null");
         Objects.requireNonNull(interceptors, "interceptors must not be null");
         // --- Phase 1: Discover all PersistenceProviders via ServiceLoader ---
-        PersistenceProvider provider = ServiceLoader.load(PersistenceProvider.class)
-                .stream()
-                .map(ServiceLoader.Provider::get)
-                .max(Comparator.comparingInt(PersistenceProvider::priority)
-                        .thenComparing(p -> p.getClass().getName()))
+        PersistenceProvider provider = BootstrapProviderSelector.loadHighestPriority(
+                PersistenceProvider.class,
+                Comparator.comparingInt(PersistenceProvider::priority)
+                    .thenComparing(p -> p.getClass().getName()))
                 .orElseThrow(() -> PersistenceProviderException.noProviderAvailable(
                         ERROR_NO_PROVIDER));
         return load(provider, config, interceptors);

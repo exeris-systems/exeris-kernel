@@ -134,20 +134,21 @@ final class CoreFlowRuntime { // NOPMD
         parkedFlows.reset();
     }
 
+    @SuppressWarnings("java:S2142")
     private void interruptAndJoinRunningThreads() {
         Thread[] threads = runningThreads.toArray(Thread[]::new);
+        boolean interrupted = false;
         for (Thread thread : threads) {
             thread.interrupt();
         }
-        boolean interrupted = false;
         for (Thread thread : threads) {
             long deadline = System.nanoTime() + 5_000_000_000L;
-            while (thread.isAlive() && System.nanoTime() < deadline) {
-                try {
+            try {
+                while (thread.isAlive() && System.nanoTime() < deadline) {
                     thread.join(java.time.Duration.ofMillis(100));
-                } catch (InterruptedException ex) {
-                    interrupted = true;
                 }
+            } catch (InterruptedException _) {
+                interrupted = true;
             }
         }
         if (interrupted) {
@@ -475,90 +476,16 @@ final class CoreFlowRuntime { // NOPMD
         thread.start();
     }
 
-    @SuppressWarnings("PMD.CognitiveComplexity")
-    private void runInstance(RuntimeFlowInstance instance, int startStep) { // NOPMD
+    private void runInstance(RuntimeFlowInstance instance, int startStep) {
         try {
-            synchronized (instance.monitor()) {
-                if (!isActiveLifecycle(instance) || instance.isTerminal()) {
-                    return;
-                }
-                if (instance.state() == FlowState.PARKED) {
-                    ensureParkedRegistration(instance);
-                    return;
-                }
-                instance.state(FlowState.RUNNING);
+            if (!initializeRunState(instance)) {
+                return;
             }
-
             int stepIndex = Math.max(0, startStep);
-
             while (isActiveLifecycle(instance)) {
-                FlowStepDescriptor step;
-                FlowStepAction stepAction;
-
-                synchronized (instance.monitor()) {
-                    if (stepIndex >= instance.plan().stepCount()) {
-                        complete(instance);
-                        return;
-                    }
-                    instance.currentStep(stepIndex);
-                    step = instance.plan().stepAt(stepIndex);
-
-                    if (guard != null && !guard.tryClaimStep(
-                            instance.key().instanceIdMost(),
-                            instance.key().instanceIdLeast(),
-                            stepIndex)) {
-                        int nextGuardIndex = instance.plan().nextStep(stepIndex);
-                        if (nextGuardIndex < 0) {
-                            complete(instance);
-                            return;
-                        }
-                        stepIndex = nextGuardIndex;
-                        continue;
-                    }
-                    stepAction = step.action();
-                }
-
-                FlowOutcome outcome = executeStep(instance, stepIndex, stepAction);
-
-                synchronized (instance.monitor()) {
-                    if (!isCurrentLifecycle(instance)) {
-                        if (outcome == FlowOutcome.COMPLETE) {
-                            complete(instance);
-                        }
-                        return;
-                    }
-                    switch (outcome) {
-                        case CONTINUE -> {
-                            if (instance.state() == FlowState.PARKED) {
-                                return;
-                            }
-                            if (step.hasCompensation() && config.compensationEnabled()) {
-                                instance.pushCompensation(step.stepId());
-                            }
-                            int nextStep = instance.plan().nextStep(stepIndex);
-                            if (nextStep < 0) {
-                                complete(instance);
-                                return;
-                            }
-                            stepIndex = nextStep;
-                        }
-                        case COMPLETE -> {
-                            if (step.hasCompensation() && config.compensationEnabled()) {
-                                instance.pushCompensation(step.stepId());
-                            }
-                            complete(instance);
-                            return;
-                        }
-                        case PARK -> {
-                            instance.state(FlowState.PARKED);
-                            ensureParkedRegistration(instance);
-                            persistSnapshot(instance, FlowState.PARKED, stepIndex);
-                            return;
-                        }
-                        case FAIL -> {
-                            return;
-                        }
-                    }
+                stepIndex = runStep(instance, stepIndex);
+                if (stepIndex < 0) {
+                    return;
                 }
             }
         } finally {
@@ -569,6 +496,119 @@ final class CoreFlowRuntime { // NOPMD
             }
             runningThreads.remove(Thread.currentThread());
         }
+    }
+
+    /**
+     * Executes one step of the flow loop within the context of a running instance.
+     * Called by {@link #runInstance} on each while-loop iteration.
+     *
+     * <p>Returns the next step index to process, or {@code -1} to terminate the loop.
+     * Must be called from OUTSIDE any synchronized block.
+     */
+    private int runStep(RuntimeFlowInstance instance, int stepIndex) {
+        FlowStepDescriptor step;
+        FlowStepAction stepAction;
+
+        synchronized (instance.monitor()) {
+            if (stepIndex >= instance.plan().stepCount()) {
+                complete(instance);
+                return -1;
+            }
+            instance.currentStep(stepIndex);
+            step = instance.plan().stepAt(stepIndex);
+
+            if (guard != null && !guard.tryClaimStep(
+                    instance.key().instanceIdMost(),
+                    instance.key().instanceIdLeast(),
+                    stepIndex)) {
+                int nextGuardIndex = instance.plan().nextStep(stepIndex);
+                if (nextGuardIndex < 0) {
+                    complete(instance);
+                    return -1;
+                }
+                return nextGuardIndex;
+            }
+            stepAction = step.action();
+        }
+
+        FlowOutcome outcome = executeStep(instance, stepIndex, stepAction);
+
+        synchronized (instance.monitor()) {
+            if (!isCurrentLifecycle(instance)) {
+                if (outcome == FlowOutcome.COMPLETE) {
+                    complete(instance);
+                }
+                return -1;
+            }
+            return applyOutcome(instance, step, stepIndex, outcome);
+        }
+    }
+
+    /**
+     * Must be called outside any synchronized block.
+     * Returns {@code false} if {@code runInstance} should return early.
+     */
+    private boolean initializeRunState(RuntimeFlowInstance instance) {
+        synchronized (instance.monitor()) {
+            if (!isActiveLifecycle(instance) || instance.isTerminal()) {
+                return false;
+            }
+            if (instance.state() == FlowState.PARKED) {
+                ensureParkedRegistration(instance);
+                return false;
+            }
+            instance.state(FlowState.RUNNING);
+        }
+        return true;
+    }
+
+    /**
+     * Must be called from WITHIN {@code synchronized(instance.monitor())}.
+     * Returns next step index, or {@code -1} to exit {@code runInstance}.
+     */
+    private int applyOutcome(
+            RuntimeFlowInstance instance, FlowStepDescriptor step, int stepIndex, FlowOutcome outcome) {
+        return switch (outcome) {
+            case CONTINUE -> applyContinueOutcome(instance, step, stepIndex);
+            case COMPLETE -> {
+                applyCompleteOutcome(instance, step);
+                yield -1;
+            }
+            case PARK -> {
+                applyParkOutcome(instance, stepIndex);
+                yield -1;
+            }
+            default -> -1;
+        };
+    }
+
+    private int applyContinueOutcome(
+            RuntimeFlowInstance instance, FlowStepDescriptor step, int stepIndex) {
+        if (instance.state() == FlowState.PARKED) {
+            return -1;
+        }
+        if (step.hasCompensation() && config.compensationEnabled()) {
+            instance.pushCompensation(step.stepId());
+        }
+        int nextStep = instance.plan().nextStep(stepIndex);
+        if (nextStep < 0) {
+            complete(instance);
+            return -1;
+        }
+        return nextStep;
+    }
+
+    private void applyCompleteOutcome(RuntimeFlowInstance instance, FlowStepDescriptor step) {
+        if (step.hasCompensation() && config.compensationEnabled()) {
+            instance.pushCompensation(step.stepId());
+        }
+        complete(instance);
+    }
+
+    private void applyParkOutcome(RuntimeFlowInstance instance, int stepIndex) {
+        instance.state(FlowState.PARKED);
+        ensureParkedRegistration(instance);
+        persistSnapshot(instance, FlowState.PARKED, stepIndex);
     }
 
     @SuppressWarnings("PMD.AvoidCatchingGenericException")

@@ -125,7 +125,7 @@ class OutboxOrchestratorTest {
             }
 
             @Override
-            public void moveToDlq(EventDescriptor d, EventPayload p, String reason) {}
+            public void moveToDlq(EventDescriptor d, EventPayload p, String reason) { /* test stub — DLQ not exercised in this test path */ }
         };
 
         OutboxBrokerPort port = new OutboxBrokerPort() {
@@ -170,7 +170,7 @@ class OutboxOrchestratorTest {
             }
 
             @Override
-            public void markDelivered(List<EventDescriptor> delivered) {}
+            public void markDelivered(List<EventDescriptor> delivered) { /* test stub — delivery not asserted here */ }
 
             @Override
             public void moveToDlq(EventDescriptor d, EventPayload p, String reason) {
@@ -211,8 +211,8 @@ class OutboxOrchestratorTest {
     private static OutboxEventStore emptyStore() {
         return new OutboxEventStore() {
             @Override public List<OutboxBrokerPort.OutboxEntry> pollPending(int maxItems) { return List.of(); }
-            @Override public void markDelivered(List<EventDescriptor> d) {}
-            @Override public void moveToDlq(EventDescriptor d, EventPayload p, String r) {}
+            @Override public void markDelivered(List<EventDescriptor> d) { /* empty store — nothing delivered */ }
+            @Override public void moveToDlq(EventDescriptor d, EventPayload p, String r) { /* empty store — no DLQ */ }
         };
     }
 }

@@ -174,6 +174,7 @@ class CommunityHttpTransportIntegrationTest {
 
         @Override
         public void setConnectionHandler(ConnectionHandler handler) {
+            /* test stub — connection-handler wiring not exercised by this test */
         }
 
         @Override

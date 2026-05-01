@@ -8,13 +8,13 @@
  */
 package eu.exeris.kernel.core.events;
 
+import eu.exeris.kernel.core.bootstrap.BootstrapProviderSelector;
 import eu.exeris.kernel.spi.events.EventEngine;
 import eu.exeris.kernel.spi.events.EventEngineConfig;
 import eu.exeris.kernel.spi.events.EventProvider;
 import eu.exeris.kernel.spi.exceptions.events.EventProviderException;
 
 import java.util.Comparator;
-import java.util.ServiceLoader;
 
 /**
  * Core: ServiceLoader-driven bootstrap for the Events subsystem.
@@ -40,10 +40,9 @@ public final class EventBootstrap {
     }
 
     public static BootstrapResult loadWithProvider(EventEngineConfig config) {
-        EventProvider provider = ServiceLoader.load(EventProvider.class)
-                .stream()
-                .map(ServiceLoader.Provider::get)
-                .max(Comparator.comparingInt(EventProvider::priority))
+        EventProvider provider = BootstrapProviderSelector.loadHighestPriority(
+                        EventProvider.class,
+                        Comparator.comparingInt(EventProvider::priority))
                 .orElseThrow(() -> EventProviderException.creationFailure(
                         "EventBootstrap", ERROR_NO_PROVIDER, null));
 

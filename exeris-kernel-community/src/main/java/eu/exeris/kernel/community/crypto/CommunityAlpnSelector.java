@@ -37,6 +37,9 @@ final class CommunityAlpnSelector {
 
 	private CommunityAlpnSelector() { }
 
+	// Panama/FFM stub registration: RuntimeException absorbed to ensure graceful degradation —
+	// if the native upcall cannot be installed, STUB returns null and ALPN selection is skipped
+	// without propagating a boot-time failure.
 	@SuppressWarnings("PMD.AvoidCatchingGenericException")
 	private static MemorySegment resolveStub() {
 		try {

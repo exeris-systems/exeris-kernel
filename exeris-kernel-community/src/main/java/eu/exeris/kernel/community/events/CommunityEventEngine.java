@@ -41,8 +41,7 @@ final class CommunityEventEngine implements EventEngine {
     private final AtomicBoolean started = new AtomicBoolean(false);
     private final AtomicLong publishedTotal = new AtomicLong(0L);
 
-    @SuppressWarnings("PMD.CommentDefaultAccessModifier")
-    CommunityEventEngine(EventEngineConfig config) {
+    /* default */ CommunityEventEngine(EventEngineConfig config) {
         Objects.requireNonNull(config, "config");
         this.registry = new CommunityEventRegistry();
         this.queue = new CommunityEventQueue(config.queueCapacity());

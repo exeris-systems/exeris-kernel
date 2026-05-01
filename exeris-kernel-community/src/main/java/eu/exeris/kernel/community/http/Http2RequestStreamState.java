@@ -13,42 +13,36 @@ import eu.exeris.kernel.spi.memory.MemoryAllocator;
 
 import java.lang.foreign.MemorySegment;
 
-@SuppressWarnings({
-    "PMD.CommentDefaultAccessModifier",
-    "PMD.NullAssignment",
-    "PMD.CloseResource"
-})
-final class Http2RequestStreamState implements AutoCloseable {
+/* default */ final class Http2RequestStreamState implements AutoCloseable {
     private static final int INITIAL_BODY_BUFFER_BYTES = 1024;
 
     private final int streamId;
     private final Http2DecodedRequest request;
     private LoanedBuffer bodyBuffer;
+    private boolean bodyDetached;
     private int bodyBytes;
 
-    Http2RequestStreamState(int streamId, Http2DecodedRequest request) {
+    /* default */ Http2RequestStreamState(int streamId, Http2DecodedRequest request) {
         this.streamId = streamId;
         this.request = request;
-        this.bodyBuffer = null;
-        this.bodyBytes = 0;
     }
 
-    int streamId() {
+    /* default */ int streamId() {
         return streamId;
     }
 
-    Http2DecodedRequest request() {
+    /* default */ Http2DecodedRequest request() {
         return request;
     }
 
-    int bodyBytes() {
+    /* default */ int bodyBytes() {
         return bodyBytes;
     }
 
-    void appendBody(MemoryAllocator allocator,
-                    MemorySegment source,
-                    long sourceOffset,
-                    int length) {
+    /* default */ void appendBody(MemoryAllocator allocator,
+                                  MemorySegment source,
+                                  long sourceOffset,
+                                  int length) {
         if (length <= 0) {
             return;
         }
@@ -59,43 +53,85 @@ final class Http2RequestStreamState implements AutoCloseable {
         bodyBuffer.setSize(bodyBytes);
     }
 
-    LoanedBuffer detachBody() {
-        LoanedBuffer detached = bodyBuffer;
-        bodyBuffer = null;
+    /* default */ LoanedBuffer detachBody() {
+        if (bodyBuffer == null || bodyDetached) {
+            return null;
+        }
+        bodyDetached = true;
         bodyBytes = 0;
-        return detached;
+        return bodyBuffer;
     }
 
     private void ensureCapacity(MemoryAllocator allocator, long needed) {
-        if (bodyBuffer != null && bodyBuffer.capacity() >= needed) {
+        if (!bodyDetached && bodyBuffer != null && bodyBuffer.capacity() >= needed) {
             return;
         }
         if (needed > Integer.MAX_VALUE) {
             throw new IllegalStateException("HTTP/2 request body exceeds allocator limits");
         }
 
-        int nextCapacity = bodyBuffer == null
+        int nextCapacity = bodyDetached || bodyBuffer == null
                 ? INITIAL_BODY_BUFFER_BYTES
                 : (int) bodyBuffer.capacity();
         while (nextCapacity < (int) needed) {
             nextCapacity = Math.max(nextCapacity * 2, (int) needed);
         }
 
-        LoanedBuffer nextBuffer = allocator.allocateNetwork(nextCapacity);
-        if (bodyBuffer != null && bodyBytes > 0) {
-            MemorySegment.copy(bodyBuffer.segment(), 0, nextBuffer.segment(), 0, bodyBytes);
-            nextBuffer.setSize(bodyBytes);
-            bodyBuffer.close();
+        try (BufferReservation reservation = new BufferReservation(
+                allocator.allocateNetwork(nextCapacity))) {
+            copyExistingBodyTo(reservation.buffer());
+            replaceBodyBuffer(reservation.take());
         }
-        bodyBuffer = nextBuffer;
+    }
+
+    private void copyExistingBodyTo(LoanedBuffer targetBuffer) {
+        if (!bodyDetached && bodyBuffer != null && bodyBytes > 0) {
+            MemorySegment.copy(bodyBuffer.segment(), 0, targetBuffer.segment(), 0, bodyBytes);
+            targetBuffer.setSize(bodyBytes);
+        }
     }
 
     @Override
     public void close() {
-        if (bodyBuffer != null) {
-            bodyBuffer.close();
-            bodyBuffer = null;
-        }
+        closeOwnedBodyBuffer();
+        bodyDetached = true;
         bodyBytes = 0;
+    }
+
+    private void replaceBodyBuffer(LoanedBuffer nextBuffer) {
+        closeOwnedBodyBuffer();
+        bodyBuffer = nextBuffer;
+        bodyDetached = false;
+    }
+
+    private void closeOwnedBodyBuffer() {
+        if (!bodyDetached && bodyBuffer != null) {
+            bodyBuffer.close();
+        }
+    }
+
+    private static final class BufferReservation implements AutoCloseable {
+        private final LoanedBuffer buffer;
+        private boolean taken;
+
+        private BufferReservation(LoanedBuffer buffer) {
+            this.buffer = buffer;
+        }
+
+        private LoanedBuffer buffer() {
+            return buffer;
+        }
+
+        private LoanedBuffer take() {
+            taken = true;
+            return buffer;
+        }
+
+        @Override
+        public void close() {
+            if (!taken) {
+                buffer.close();
+            }
+        }
     }
 }

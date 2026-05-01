@@ -56,7 +56,6 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.LockSupport;
 
 /**
@@ -139,17 +138,17 @@ public final class NativeTcpCarrier implements TransportEngine {
     private final List<ReactorLoop> reactors = new ArrayList<>();
     private final AtomicInteger nextReactorIndex = new AtomicInteger(0);
 
-    /**
-     * Canonical per-channel runtime registry. Carrier-side ownership, client pumps,
-     * and stream lifecycle coordination resolve through this map.
-     */
-    private final ConcurrentMap<SocketChannel, ChannelRuntimeState> runtimeByChannel = new ConcurrentHashMap<>();
+    private final ChannelRuntimeRegistry channelRuntimeRegistry = new ChannelRuntimeRegistry();
 
     /**
      * Compatibility mirrors retained for diagnostics and existing transport tests.
      */
-    private final ConcurrentMap<SocketChannel, NativeTcpStream> streamByChannel = new ConcurrentHashMap<>();
-    private final ConcurrentMap<SocketChannel, ReactorLoop> channelOwner = new ConcurrentHashMap<>();
+    private final ConcurrentMap<SocketChannel, ChannelRuntimeRegistry.ChannelRuntimeState> runtimeByChannel =
+            channelRuntimeRegistry.runtimeByChannel;
+    private final ConcurrentMap<SocketChannel, NativeTcpStream> streamByChannel =
+            channelRuntimeRegistry.streamByChannel;
+    private final ConcurrentMap<SocketChannel, ReactorLoop> channelOwner =
+            channelRuntimeRegistry.channelOwner;
 
     /* default */ NativeTcpCarrier(TransportConfig config,
                      MemoryAllocator allocator,
@@ -286,7 +285,7 @@ public final class NativeTcpCarrier implements TransportEngine {
             }
 
             connection.bindSingleStream(stream);
-            ChannelRuntimeState runtime = registerRuntime(stream, connectedChannel);
+            ChannelRuntimeRegistry.ChannelRuntimeState runtime = registerRuntime(stream, connectedChannel);
             startClientIngressPump(runtime);
             startClientWriterPump(runtime);
             activeConnections.incrementAndGet();
@@ -511,59 +510,11 @@ public final class NativeTcpCarrier implements TransportEngine {
                         connectionSeq.getAndIncrement(),
                         remote.getAddress().getHostAddress(),
                         remote.getPort());
-                TlsEngine tlsEngine = createTlsEngineIfEnabled();
-                bindTlsFdIfRequired(tlsEngine, currentChannel);
 
-                NativeTcpStream stream = new NativeTcpStream(
-                        engineName(),
-                        streamSeq.getAndIncrement(),
-                        currentChannel,
-                        connection,
-                        allocator,
-                        tlsEngine,
-                        () -> requestWriteInterest(currentChannel),
-                        () -> onStreamClosed(currentChannel),
-                        socketHandles);
-                if (tlsEngine instanceof eu.exeris.kernel.community.crypto.CommunityTlsEngine) {
-                    stream.markTlsBoundFromCarrier();
-                }
-
+                NativeTcpStream stream = buildAcceptedStream(currentChannel, connection);
                 connection.bindSingleStream(stream);
-                ChannelRuntimeState runtime = registerRuntime(stream, currentChannel);
                 connectionManagedByStreamLifecycle = true;
-                ReactorLoop owner = selectReactor();
-                runtime.markRegistrationPending();
-                runtime.bindOwner(owner);
-                owner.enqueueRegistration(currentChannel);
-
-                activeStreams.incrementAndGet();
-                totalAccepted.incrementAndGet();
-
-                if (!stream.awaitRegistrationReadyForConnection()) {
-                    connection.close();
-                    acceptedChannel = serverChannel.accept();
-                    continue;
-                }
-
-                if (!stream.awaitHandshakeReadyForConnection()) {
-                    connection.close();
-                    acceptedChannel = serverChannel.accept();
-                    continue;
-                }
-
-                try {
-                    connectionHandler.onConnectionEstablished(connection);
-                } catch (RuntimeException ignored) {
-                    connection.close();
-                    acceptedChannel = serverChannel.accept();
-                    continue;
-                }
-
-                try {
-                    paqs.schedule(stream);
-                } catch (RuntimeException ex) {
-                    connection.close();
-                }
+                registerAndHandshakeConnection(connection, stream, currentChannel);
             } catch (RuntimeException exception) {
                 if (connection != null) {
                     connection.close();
@@ -579,6 +530,63 @@ public final class NativeTcpCarrier implements TransportEngine {
         }
     }
 
+    private NativeTcpStream buildAcceptedStream(SocketChannel channel, NativeTcpConnection connection) {
+        TlsEngine tlsEngine = createTlsEngineIfEnabled();
+        bindTlsFdIfRequired(tlsEngine, channel);
+        NativeTcpStream stream = new NativeTcpStream(
+                engineName(),
+                streamSeq.getAndIncrement(),
+                channel,
+                connection,
+                allocator,
+                tlsEngine,
+                () -> requestWriteInterest(channel),
+                () -> onStreamClosed(channel),
+                socketHandles);
+        if (tlsEngine instanceof eu.exeris.kernel.community.crypto.CommunityTlsEngine) {
+            stream.markTlsBoundFromCarrier();
+        }
+        return stream;
+    }
+
+    /**
+     * Registers the stream with a reactor, awaits TLS handshake, notifies the connection handler,
+     * and enqueues the stream in PAQS. Returns {@code false} if the connection should be rejected.
+     */
+    private boolean registerAndHandshakeConnection(NativeTcpConnection connection,
+                                                   NativeTcpStream stream,
+                                                   SocketChannel currentChannel) {
+        ChannelRuntimeRegistry.ChannelRuntimeState runtime = registerRuntime(stream, currentChannel);
+        ReactorLoop owner = selectReactor();
+        runtime.markRegistrationPending();
+        runtime.bindOwner(owner);
+        owner.enqueueRegistration(currentChannel);
+
+        activeStreams.incrementAndGet();
+        totalAccepted.incrementAndGet();
+
+        if (!stream.awaitRegistrationReadyForConnection()) {
+            connection.close();
+            return false;
+        }
+        if (!stream.awaitHandshakeReadyForConnection()) {
+            connection.close();
+            return false;
+        }
+        try {
+            connectionHandler.onConnectionEstablished(connection);
+        } catch (RuntimeException ignored) {
+            connection.close();
+            return false;
+        }
+        try {
+            paqs.schedule(stream);
+        } catch (RuntimeException ex) {
+            connection.close();
+        }
+        return true;
+    }
+
     private ReactorLoop selectReactor() {
         int size = reactors.size();
         if (size == 0) {
@@ -588,26 +596,17 @@ public final class NativeTcpCarrier implements TransportEngine {
         return reactors.get(index);
     }
 
-    private ChannelRuntimeState registerRuntime(NativeTcpStream stream,
-                                                SocketChannel channel) {
-        ChannelRuntimeState runtime = new ChannelRuntimeState(channel, stream);
-        ChannelRuntimeState previous = runtimeByChannel.putIfAbsent(channel, runtime);
-        if (previous != null) {
-            throw new IllegalStateException(
-                    "Transport runtime already registered for channel on backend "
-                            + previous.socketBackend() + ": " + channel);
-        }
-        streamByChannel.put(channel, stream);
-        return runtime;
+    private ChannelRuntimeRegistry.ChannelRuntimeState registerRuntime(NativeTcpStream stream,
+                                                                       SocketChannel channel) {
+        return channelRuntimeRegistry.registerRuntime(stream, channel);
     }
 
-    private ChannelRuntimeState resolveRuntime(SocketChannel channel) {
-        return runtimeByChannel.get(channel);
+    private ChannelRuntimeRegistry.ChannelRuntimeState resolveRuntime(SocketChannel channel) {
+        return channelRuntimeRegistry.resolveRuntime(channel);
     }
 
     private NativeTcpStream resolveStream(SocketChannel channel) {
-        ChannelRuntimeState runtime = resolveRuntime(channel);
-        return runtime != null ? runtime.stream() : streamByChannel.get(channel);
+        return channelRuntimeRegistry.resolveStream(channel);
     }
 
     private void readIngress(SocketChannel channel) {
@@ -669,7 +668,7 @@ public final class NativeTcpCarrier implements TransportEngine {
     }
 
     private void requestWriteInterest(SocketChannel channel) {
-        ChannelRuntimeState runtime = resolveRuntime(channel);
+        ChannelRuntimeRegistry.ChannelRuntimeState runtime = resolveRuntime(channel);
         ReactorLoop owner = runtime != null ? runtime.owner() : channelOwner.get(channel);
         if (owner == null) {
             return;
@@ -678,7 +677,7 @@ public final class NativeTcpCarrier implements TransportEngine {
     }
 
     private void onStreamClosed(SocketChannel channel) {
-        ChannelRuntimeState runtime = runtimeByChannel.remove(channel);
+        ChannelRuntimeRegistry.ChannelRuntimeState runtime = runtimeByChannel.remove(channel);
         if (runtime == null) {
             ReactorLoop owner = channelOwner.remove(channel);
             if (owner != null) {
@@ -715,7 +714,7 @@ public final class NativeTcpCarrier implements TransportEngine {
     }
 
     private void requestClientWriteFlush(SocketChannel channel) {
-        ChannelRuntimeState runtime = resolveRuntime(channel);
+        ChannelRuntimeRegistry.ChannelRuntimeState runtime = resolveRuntime(channel);
         if (runtime == null) {
             return;
         }
@@ -725,14 +724,14 @@ public final class NativeTcpCarrier implements TransportEngine {
         }
     }
 
-    private void startClientIngressPump(ChannelRuntimeState runtime) {
+    private void startClientIngressPump(ChannelRuntimeRegistry.ChannelRuntimeState runtime) {
         Thread thread = Thread.ofVirtual()
                 .name("carrier/native-tcp-client-ingress/" + runtime.stream().streamId())
                 .start(() -> runClientIngressLoop(runtime.channel(), runtime.stream()));
         runtime.bindClientIngressThread(thread);
     }
 
-    private void startClientWriterPump(ChannelRuntimeState runtime) {
+    private void startClientWriterPump(ChannelRuntimeRegistry.ChannelRuntimeState runtime) {
         Thread thread = Thread.ofVirtual()
                 .name("carrier/native-tcp-client-writer/" + runtime.stream().streamId())
                 .start(() -> runClientWriterLoop(runtime.stream()));
@@ -982,7 +981,7 @@ public final class NativeTcpCarrier implements TransportEngine {
     }
 
     private void closeSelectorAndChannels() {
-        for (ChannelRuntimeState runtime : new ArrayList<>(runtimeByChannel.values())) {
+        for (ChannelRuntimeRegistry.ChannelRuntimeState runtime : new ArrayList<>(runtimeByChannel.values())) {
             runtime.stream().close();
             Thread ingressThread = runtime.detachClientIngressThread();
             if (ingressThread != null) {
@@ -1181,77 +1180,6 @@ public final class NativeTcpCarrier implements TransportEngine {
 
     }
 
-    private final class ChannelRuntimeState {
-
-        private final SocketChannel channel;
-        private final NativeTcpStream stream;
-        private final String socketBackend;
-        private final AtomicReference<ReactorLoop> owner = new AtomicReference<>();
-        private final AtomicReference<Thread> clientIngressThread = new AtomicReference<>();
-        private final AtomicReference<Thread> clientWriterThread = new AtomicReference<>();
-        private final AtomicBoolean lifecycleCleanup = new AtomicBoolean(false);
-
-        private ChannelRuntimeState(SocketChannel channel,
-                                    NativeTcpStream stream) {
-            this.channel = channel;
-            this.stream = stream;
-            this.socketBackend = stream.plainSocketBackendName();
-        }
-
-        private SocketChannel channel() {
-            return channel;
-        }
-
-        private NativeTcpStream stream() {
-            return stream;
-        }
-
-        private String socketBackend() {
-            return socketBackend;
-        }
-
-        private void bindOwner(ReactorLoop newOwner) {
-            owner.set(newOwner);
-            channelOwner.put(channel, newOwner);
-        }
-
-        private void markRegistrationPending() {
-            stream.markRegistrationPending();
-        }
-
-        private ReactorLoop owner() {
-            return owner.get();
-        }
-
-        private ReactorLoop detachOwner() {
-            return owner.getAndSet(null);
-        }
-
-        private void bindClientIngressThread(Thread thread) {
-            clientIngressThread.set(thread);
-        }
-
-        private Thread detachClientIngressThread() {
-            return clientIngressThread.getAndSet(null);
-        }
-
-        private void bindClientWriterThread(Thread thread) {
-            clientWriterThread.set(thread);
-        }
-
-        private Thread clientWriterThread() {
-            return clientWriterThread.get();
-        }
-
-        private Thread detachClientWriterThread() {
-            return clientWriterThread.getAndSet(null);
-        }
-
-        private boolean beginLifecycleCleanup() {
-            return lifecycleCleanup.compareAndSet(false, true);
-        }
-    }
-
     private enum ReactorRequestType {
         REGISTER,
         ENABLE_WRITE,
@@ -1261,7 +1189,9 @@ public final class NativeTcpCarrier implements TransportEngine {
     private record ReactorRequest(ReactorRequestType type, SocketChannel channel) {
     }
 
-    private final class ReactorLoop {
+    // CommentDefaultAccessModifier: package-private loop enables same-package transport diagnostics/tests.
+    @SuppressWarnings("PMD.CommentDefaultAccessModifier")
+    final class ReactorLoop {
 
         private final int index;
         private final Selector selector;

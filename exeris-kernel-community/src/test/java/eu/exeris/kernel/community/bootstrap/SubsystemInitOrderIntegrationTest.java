@@ -150,7 +150,7 @@ class SubsystemInitOrderIntegrationTest {
 
         static List<Subsystem> subsystems = List.of();
 
-        public TrackingSubsystemProvider() {}
+        public TrackingSubsystemProvider() { /* ServiceLoader-required public no-arg constructor */ }
 
         @Override
         public List<Subsystem> getSubsystems(ConfigProvider config) {
@@ -181,7 +181,7 @@ class SubsystemInitOrderIntegrationTest {
             @Override public Optional<Long>    getLong(String k)     { return Optional.empty(); }
             @Override public Optional<Boolean> getBoolean(String k)  { return Optional.empty(); }
             @Override public <T> Optional<T>   get(String k, Class<T> t) { return Optional.empty(); }
-            @Override public void watch(String f, String k, Consumer<Object> cb) {}
+            @Override public void watch(String f, String k, Consumer<Object> cb) { /* no-op — test stub */ }
             @Override public String providerName() { return "MinimalTestConfig"; }
         };
     }
@@ -408,8 +408,8 @@ class SubsystemInitOrderIntegrationTest {
                     throw new SubsystemException("bad", SubsystemException.Phase.INITIALIZE,
                             "simulated failure", null);
                 }
-                @Override public void start()  {}
-                @Override public void stop()   {}
+                @Override public void start()  { /* test stub — no lifecycle action needed */ }
+                @Override public void stop()   { /* test stub — no lifecycle action needed */ }
             };
 
             TrackingSubsystemProvider.subsystems = List.of(badSubsystem);
@@ -444,8 +444,8 @@ class SubsystemInitOrderIntegrationTest {
                     throw new SubsystemException("optional-bad", SubsystemException.Phase.INITIALIZE,
                             "optional failure", null);
                 }
-                @Override public void start() {}
-                @Override public void stop()  {}
+                @Override public void start() { /* test stub — no lifecycle action needed */ }
+                @Override public void stop()  { /* test stub — no lifecycle action needed */ }
             };
 
             TrackingSubsystemProvider.subsystems = List.of(memory, optionalBad);

@@ -67,6 +67,12 @@ public abstract class AbstractTransportProviderTck {
         void priorityConvention() {
             assertThat(provider.priority()).isIn(0, 100);
         }
+
+        @Test
+        @DisplayName("isAvailable() does not throw")
+        void isAvailableDoesNotThrow() {
+            assertThat(provider.isAvailable()).isIn(true, false);
+        }
     }
 
     @Nested
@@ -83,14 +89,19 @@ public abstract class AbstractTransportProviderTck {
         }
 
         @Test
-        @DisplayName("Highest-priority provider wins")
-        void highestPriorityWins() {
+        @DisplayName("Selection loop respects isAvailable() before priority")
+        void availableProviderIsSelected() {
             TransportProvider selected = ServiceLoader.load(TransportProvider.class)
                     .stream()
                     .map(ServiceLoader.Provider::get)
-                    .max(Comparator.comparingInt(TransportProvider::priority))
-                    .orElseThrow();
-            assertThat(selected.priority()).isGreaterThanOrEqualTo(provider.priority());
+                    .sorted(Comparator.comparingInt(TransportProvider::priority).reversed())
+                    .filter(TransportProvider::isAvailable)
+                    .findFirst()
+                    .orElse(null);
+            assertThat(selected)
+                    .as("At least one available TransportProvider must be selectable")
+                    .isNotNull();
+            assertThat(selected.isAvailable()).isTrue();
         }
     }
 }

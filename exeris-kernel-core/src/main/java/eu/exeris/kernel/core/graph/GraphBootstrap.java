@@ -8,6 +8,7 @@
  */
 package eu.exeris.kernel.core.graph;
 
+import eu.exeris.kernel.core.bootstrap.BootstrapProviderSelector;
 import eu.exeris.kernel.spi.exceptions.graph.GraphBootstrapException;
 import eu.exeris.kernel.spi.graph.GraphConfig;
 import eu.exeris.kernel.spi.graph.GraphEngine;
@@ -15,7 +16,6 @@ import eu.exeris.kernel.spi.graph.GraphProvider;
 
 import java.util.Comparator;
 import java.util.Objects;
-import java.util.ServiceLoader;
 
 /**
  * Core: ServiceLoader-driven bootstrap for the Graph subsystem (L2 Data Synthesis).
@@ -81,10 +81,9 @@ public final class GraphBootstrap {
      */
     public static BootstrapResult loadWithProvider(GraphConfig config) {
         Objects.requireNonNull(config, "config must not be null");
-        GraphProvider provider = ServiceLoader.load(GraphProvider.class)
-                .stream()
-                .map(ServiceLoader.Provider::get)
-                .max(Comparator.comparingInt(GraphProvider::priority))
+        GraphProvider provider = BootstrapProviderSelector.loadHighestPriority(
+                GraphProvider.class,
+                Comparator.comparingInt(GraphProvider::priority))
                 .orElseThrow(() -> new GraphBootstrapException(
                         "GraphBootstrap", ERROR_NO_PROVIDER));
 

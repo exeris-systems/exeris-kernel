@@ -10,7 +10,6 @@ package eu.exeris.kernel.community.bootstrap;
 
 import eu.exeris.kernel.core.graph.GraphBootstrap;
 import eu.exeris.kernel.spi.bootstrap.BootstrapPhase;
-import eu.exeris.kernel.spi.bootstrap.Subsystem;
 import eu.exeris.kernel.spi.config.ConfigProvider;
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.graph.GraphConfig;
@@ -22,11 +21,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.UnaryOperator;
 
-final class CommunityGraphSubsystem implements Subsystem {
+final class CommunityGraphSubsystem extends AbstractCommunitySubsystem {
 
     private GraphProvider graphProvider;
     private GraphEngine graphEngine;
-    private boolean running;
 
     @Override
     public String name() {
@@ -54,30 +52,26 @@ final class CommunityGraphSubsystem implements Subsystem {
 
     @Override
     public void start() {
-        running = graphEngine != null && graphEngine.isRunning();
+        markRunning(graphEngine != null && graphEngine.isRunning());
     }
 
     @Override
     public void stop() {
-        running = false;
+        markRunning(false);
         if (graphEngine != null) {
             graphEngine.close();
         }
     }
 
     @Override
-    public boolean isRunning() {
-        return running;
-    }
-
-    @Override
     public UnaryOperator<ScopedValue.Carrier> providerBindings() {
         if (graphProvider == null || graphEngine == null) {
-            return Subsystem.super.providerBindings();
+            return defaultProviderBindings();
         }
-        return carrier -> carrier
-                .where(KernelProviders.GRAPH_PROVIDER, graphProvider)
-                .where(KernelProviders.GRAPH_ENGINE, graphEngine);
+        return CommunityCarrierBindings.operator(
+                CommunityCarrierBindings.binding(KernelProviders.GRAPH_PROVIDER, graphProvider),
+                CommunityCarrierBindings.binding(KernelProviders.GRAPH_ENGINE, graphEngine)
+        );
     }
 
     private static GraphConfig buildGraphConfig(ConfigProvider configProvider) {
