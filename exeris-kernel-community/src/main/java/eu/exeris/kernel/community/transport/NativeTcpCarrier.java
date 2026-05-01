@@ -973,8 +973,7 @@ public final class NativeTcpCarrier implements TransportEngine {
             return;
         }
         try {
-            @SuppressWarnings("unused")
-            int ignored = (int) handles.close().invokeExact(socketFd);
+            int _ = (int) handles.close().invokeExact(socketFd);
         } catch (Throwable _) {
             // best effort cleanup on the validation probe path
         }

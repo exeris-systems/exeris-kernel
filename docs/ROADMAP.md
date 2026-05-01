@@ -279,6 +279,45 @@ See also: [Telemetry Subsystem](./subsystems/telemetry.md) — Design Principles
 
 ---
 
+### Cross-Cutting: v0.6.0 PR Review Follow-ups Carried Into v0.7
+
+**Gap:** The v0.6.0 release-cut PR review (architect / TCK / performance / docs-adr passes) surfaced one P1 and several P2 items that were intentionally not blocking the merge but must stay visible in v0.7 planning. None of these block the v0.6.0 cut.
+
+**Owner:** Cross-cutting (Core / Community / TCK / Docs).
+
+**Resolution:** Carry the items below into v0.7 until each is closed, fixed in a v0.6.x patch, or re-triaged in release planning.
+
+**Merge Gate:** v0.7 planning retains these items until disposition is recorded.
+
+**P1 — Contract integrity:**
+
+- TCK-061 `BootstrapProviderSelector` does not enforce `TransportProvider.isAvailable()` filter. SPI Javadoc (`exeris-kernel-spi/.../TransportProvider.java`) mandates "descending priority + first-available" but only `CommunityTransportSubsystem` applies the filter manually; other subsystems (`PersistenceBootstrap`, `FlowBootstrap`, `EventBootstrap`, `GraphBootstrap`) routed through the shared selector would silently bypass `isAvailable()` if those SPIs ever add the method. Either move the filter into `BootstrapProviderSelector` or document the filter as caller responsibility and add a binding test for each subsystem.
+
+**P2 — Hot-path performance:**
+
+- PERF-061 Per-frame `LoanedBuffer` allocation in `CommunityHttp2SessionProcessor.writeHttp2Frame` and helpers (`sendHttp2PingAck`, settings/handshake helpers); replace with a per-stream/session reusable outbound carrier sized to peer `MAX_FRAME_SIZE` and slice in place — removes 2N allocations + copies per response.
+- PERF-062 Double allocate+copy in TLS ingress path (`NativeTcpStream.decryptIngress` / `readTlsIngressFromFd`) under `synchronized(tlsLock)` with per-record retain/close; pre-pin a per-stream plaintext slab and only retain when the queue takes ownership transfer.
+- PERF-063 Unbounded `ConcurrentLinkedQueue` in reactor control path (`NativeTcpCarrier.pendingRequests`) allocates per-event (record + CLQ node); evaluate bounded `MpscArrayQueue` (JCTools) sized to max channels per reactor (subject to Hot-Path Collections Review constraints below). Also document that `CLQ.offer` is always-true to silence the CodeQL "ignored return" flag.
+- PERF-064 `LongAdder.reset()` race during engine shutdown (`CoreFlowRuntime.resetLifecycleTotals` / `close`); JDK docs state `reset()` is only effective with no concurrent updates, but `runInstance` virtual threads may still be decrementing via `decrementLifecycleCounterOnExit`. Replace with snapshot+replace via `lifecycleGeneration` or skip the reset and rely on generation gating.
+
+**P2 — TCK contract coverage:**
+
+- TCK-062 `FlowEngineShutdownEvent` JFR emission is documented in SPI Javadoc as a contract obligation, but verification lives only in `CoreFlowRuntimeTest` (Core impl). An Enterprise `FlowEngine` could omit the event without TCK failure. Either lift the assertion into `AbstractFlowEngineTck` as a binding-agnostic JFR-stream check, or soften the SPI Javadoc to "implementations may emit".
+- TCK-063 Restart-aware semantics in `CoreFlowRuntime` (counter reset on restart, parked-reschedule no-op, `lookupParked` snapshot-probe suppression) are tested only at Core impl level (`CoreFlowRuntimeTest.java:91-174`). If these are intended as cross-binding contract guarantees, lift to `AbstractFlowEngineTck` / `AbstractSagaRecoveryTck`; if Core-internal, keep current placement and clarify in the SPI Javadoc.
+
+**P2 — Documentation alignment:**
+
+- DOC-061 `docs/subsystems/persistence.md:197` documents `StorageContext.attributes()` as `Map<String, Object>`; SPI declares `Map<String, String>` (Wall-protective). Correct the doc example.
+- DOC-062 `docs/subsystems/transport.md` (Responsibilities section) lacks a paragraph describing `TransportProvider.isAvailable()` and the descending-priority + first-available selection contract. Mirror the snippet from the SPI Javadoc.
+- DOC-063 `docs/subsystems/security.md` should explicitly link the `StorageContextBridge` null-principal path to `PrincipalContextMissingException` / `EX-SEC-2001`; currently only TCK note covers fail-closed behavior.
+- DOC-064 (optional) `docs/subsystems/crypto.md` operator note for `SocketChannelFdReflectionResolver`: document the `--add-opens java.base/sun.nio.ch=ALL-UNNAMED` and `--add-opens java.base/java.io=ALL-UNNAMED` requirement on closed JDKs, with `bindFileDescriptor(int)` as the explicit fallback.
+
+**Heuristic — class-size decomposition:**
+
+- HEUR-061 Two Community transport files exceed 1k LOC after the v0.6.0 rewrite: `NativeTcpCarrier.java` (1376) and `NativeTcpStream.java` (1229). CLAUDE.md `>5 collaborators` heuristic flags both. Evaluate decomposition along reactor / FD-owner / PAQS-dispatch responsibility lines, analogous to SQ-006 for `CoreFlowRuntime`.
+
+---
+
 ### Runtime: Hot-Path Collections Review
 
 **Gap:** Some Community runtime hot paths may justify a targeted collections review, but replacement structures must preserve current contracts and lookup semantics.
