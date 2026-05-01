@@ -259,7 +259,7 @@ See also: [Telemetry Subsystem](./subsystems/telemetry.md) — Design Principles
 
 ### Cross-Cutting Quality: Sprint 5 Deferred Items Carried Into v0.7
 
-**Gap:** Sprint 5 was closed with P1 gates green; the remaining P2/P3 quality items were intentionally deferred and must stay visible in v0.7 release planning. Source of truth: [`docs/release/sprint5-quality-gate-report.md`](./release/sprint5-quality-gate-report.md).
+**Gap:** Sprint 5 was closed with P1 gates green; the remaining P2/P3 quality items were intentionally deferred and must stay visible in v0.7 release planning.
 
 **Owner:** Cross-cutting quality backlog.
 
