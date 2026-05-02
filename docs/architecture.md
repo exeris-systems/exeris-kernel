@@ -1,5 +1,5 @@
 # Exeris Kernel: Architecture Overview
-**Version:** 0.6.0  
+**Version:** 0.7.0-SNAPSHOT  
 **Last Updated:** May 2026  
 **Status:** Validated Architectural Prototype (TRL‑3)
 

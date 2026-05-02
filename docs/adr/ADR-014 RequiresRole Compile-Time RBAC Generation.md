@@ -2,9 +2,9 @@
 
 | Attribute      | Value                                                                                  |
 |:---------------|:---------------------------------------------------------------------------------------|
-| **Status**     | **PROPOSED**                                                                           |
+| **Status**     | **ACCEPTED**                                                                           |
 | **Deciders**   | Arkadiusz Przychocki                                                                   |
-| **Date**       | 2026-05-01                                                                             |
+| **Date**       | 2026-05-02                                                                             |
 | **Driven By**  | ADR-007 (next-gen runtime), ADR-012 (security trust model), `docs/subsystems/security.md` (`@RequiresRole` design note), performance contract |
 | **Compliance** | [Strategic Pillar: Zero-Reflection Security Hot Path](../whitepaper.md)               |
 

@@ -145,6 +145,7 @@ public record FlowSnapshot(
      *
      * @since 0.7.0
      */
+    @SuppressWarnings("PMD.ExcessiveParameterList") // backward-compat bridge — preserves v0.6 call shape
     public FlowSnapshot(
             long      instanceIdMost,
             long      instanceIdLeast,

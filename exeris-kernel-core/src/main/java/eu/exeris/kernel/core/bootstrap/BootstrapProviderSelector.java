@@ -79,7 +79,7 @@ public final class BootstrapProviderSelector {
      * filter+rank logic so tests can drive selection from any provider stream without
      * registering {@code META-INF/services} fixtures.
      */
-    static <T> Optional<T> selectFrom(java.util.stream.Stream<T> providers,
+    /* default */ static <T> Optional<T> selectFrom(java.util.stream.Stream<T> providers,
                                        Comparator<? super T> comparator,
                                        Predicate<? super T> availabilityFilter) {
         Objects.requireNonNull(providers, "providers must not be null");

@@ -2,9 +2,9 @@
 
 | Attribute      | Value                                                                                  |
 |:---------------|:---------------------------------------------------------------------------------------|
-| **Status**     | **PROPOSED**                                                                           |
+| **Status**     | **ACCEPTED**                                                                           |
 | **Deciders**   | Arkadiusz Przychocki                                                                   |
-| **Date**       | 2026-05-01                                                                             |
+| **Date**       | 2026-05-02                                                                             |
 | **Driven By**  | ADR-007 (next-gen runtime), ADR-008 (open-core), `docs/subsystems/flow.md`, `docs/subsystems/events.md`, ROADMAP DIST-301 |
 | **Compliance** | [Strategic Pillar: Distributed Saga Recovery](../whitepaper.md)                        |
 
