@@ -82,6 +82,29 @@ The Community carrier transfers bytes from the network socket directly into off-
 
 ---
 
+## Provider Selection — Descending Priority + First-Available
+
+`CommunityTransportSubsystem` resolves a `TransportProvider` at bootstrap via the shared
+`BootstrapProviderSelector.loadHighestPriority(...)` helper with the availability filter
+`TransportProvider::isAvailable`. Selection semantics:
+
+1. **Discovery:** all `TransportProvider` implementations on the classpath are loaded via `ServiceLoader`.
+2. **Availability filter:** providers for which `isAvailable()` returns `false` are removed from the
+   candidate set. Platform-conditional providers (e.g., io_uring on Linux only, IOCP on Windows only)
+   gate themselves here. The default `isAvailable()` returns `true`.
+3. **Descending priority + deterministic tie-break:** remaining candidates are ranked by
+   `priority()` (higher wins). On ties, the implementation class name (alphabetical, last wins under
+   `Stream.max`) breaks the tie deterministically across JVMs and ServiceLoader orderings.
+4. **First-available wins:** the highest-priority available provider is selected. If the candidate
+   set is empty, no transport engine is created and the subsystem stays in `DISABLED` mode.
+
+This means an unavailable higher-priority provider (e.g., io_uring on a non-Linux host) does NOT
+shadow an available lower-priority provider (e.g., NIO Community baseline). The selection contract
+is exercised by `BootstrapProviderSelectorTest` and validated end-to-end through the
+`CommunityTransportSubsystemLifecycleTckTest` binding.
+
+---
+
 ## Error Codes
 
 > **Source of truth:** `KernelErrorCodes.java` in `exeris-kernel-spi`.

@@ -57,7 +57,7 @@ zero-leak, hyper-density concurrency with immutable identity at every layer. It 
 2. Bind `PrincipalContext` and `StorageContext` via `ScopedValue.where(...)` for the duration of the request.
 3. Coordinate with the Persistence subsystem to enforce Row-Level Security (RLS).
 4. `CitadelGuard` — sentinel-pool RBAC enforcement gate with `preAllocate(String role)` / `seal()` / `requireRole(String role)`. Sealed at bootstrap READY transition.
-5. `StorageContextBridge` — derives a SHARED `StorageContext` from a `PrincipalContext` (SHARED-only derivation contract per ADR-010 §4a; full SEPARATED_SCHEMA/DEDICATED derivation comes from `SecurityProvider.authenticate()`).
+5. `StorageContextBridge` — derives a SHARED `StorageContext` from a `PrincipalContext` (SHARED-only derivation contract per ADR-010 §4a; full SEPARATED_SCHEMA/DEDICATED derivation comes from `SecurityProvider.authenticate()`). Fail-closed: when the `PrincipalContext` ScopedValue is unbound at the call site, `StorageContextBridge.derive()` raises `PrincipalContextMissingException` (`EX-SEC-2001`) and the request is rejected at the security boundary before any persistence interaction.
 
 > **TCK status:** `CitadelGuard` is now covered by the shared `AbstractCitadelGuardTck` contract plus Community/Core bindings.
 

@@ -258,6 +258,37 @@ public OffHeapTlsEngine(CoreSslHandles handles, long ctxPointer,
 
 ---
 
+## Operator Notes — FD Resolution on Restricted JDKs
+
+The Community TLS pipeline binds an OpenSSL BIO to the underlying socket file descriptor through
+`SocketChannelFdAccess.requireFd(channel)` at `CommunityTlsEngine.bindFileDescriptor(...)` time.
+On open JDK builds, FD resolution uses reflective access to `sun.nio.ch.SocketChannelImpl` and
+`java.io.FileDescriptor`. On JDKs that close those internals (e.g., distributions with strict
+`--illegal-access=deny`, modular runtime images that omit the relevant exports), reflective FD
+extraction fails with a clear diagnostic.
+
+Two operator-side resolutions exist:
+
+1. **Add JVM flags at startup** — pass:
+
+   ```text
+   --add-opens java.base/sun.nio.ch=ALL-UNNAMED
+   --add-opens java.base/java.io=ALL-UNNAMED
+   ```
+
+   This restores reflective FD access without code changes and is the recommended path for hosts
+   the operator controls.
+2. **Use the explicit FD entry point** — call `CommunityTlsEngine.bindFileDescriptor(int)` directly
+   from your transport carrier with an FD obtained outside the closed reflection path (e.g., from
+   a native socket library or from a pre-opened descriptor). The reference Community carrier
+   already exposes this fallback via `NativeTcpCarrier` / `NativeTcpStream`, and embedders that
+   build their own carrier should mirror the contract.
+
+Either path keeps the SPI surface unchanged — `TlsEngine` does not expose JVM internals, and the
+fallback is a Community implementation detail.
+
+---
+
 ## Error Codes
 
 > **Source of truth:** `KernelErrorCodes.java` in `exeris-kernel-spi`.
