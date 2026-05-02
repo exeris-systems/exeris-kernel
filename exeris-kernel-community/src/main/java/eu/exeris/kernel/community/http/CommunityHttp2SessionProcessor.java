@@ -408,17 +408,25 @@ final class CommunityHttp2SessionProcessor {
                                     Http2SessionContext session,
                                     int streamId,
                                     HttpResponse response) {
-        try (LoanedBuffer headerBlock = allocator.allocateNetwork(HTTP2_MAX_HEADER_BLOCK_BYTES)) {
+        // PERF-061: per-response reusable outbound carrier sized to MAX frame header + payload.
+        // One borrow replaces (1 HEADERS/CONTINUATION + N DATA) per-frame allocations from the
+        // pre-PERF-061 path. Frame writers receive a slice of this carrier and serialize the
+        // wire image in-place; no per-frame slab borrow + free cycle on the response hot path.
+        try (LoanedBuffer headerBlock = allocator.allocateNetwork(HTTP2_MAX_HEADER_BLOCK_BYTES);
+             LoanedBuffer outboundFrame = allocator.allocateNetwork(
+                     Http2FrameParser.FRAME_HEADER_SIZE + HTTP2_MAX_FRAME_PAYLOAD_BYTES)) {
             long headerBytes = session.encodeResponseHeaders(headerBlock.segment(), response);
             LoanedBuffer bodyBuffer = response.body();
             int bodyBytes = bodyBuffer == null ? 0 : (int) bodyBuffer.size();
             boolean headerEndsStream = bodyBytes == 0;
-            writeHttp2HeaderBlockFrames(stream, streamId, headerBlock.segment(), (int) headerBytes, headerEndsStream);
+            writeHttp2HeaderBlockFrames(stream, streamId, headerBlock.segment(), (int) headerBytes,
+                    headerEndsStream, outboundFrame);
 
             if (bodyBuffer != null) {
                 try (bodyBuffer) {
                     if (bodyBytes > 0) {
-                        writeHttp2DataFrames(stream, streamId, bodyBuffer.segment(), bodyBytes);
+                        writeHttp2DataFrames(stream, streamId, bodyBuffer.segment(), bodyBytes,
+                                outboundFrame);
                     }
                 }
             }
@@ -436,7 +444,8 @@ final class CommunityHttp2SessionProcessor {
                                              int streamId,
                                              MemorySegment headerBlock,
                                              int headerLength,
-                                             boolean endStream) {
+                                             boolean endStream,
+                                             LoanedBuffer outboundFrame) {
         int written = 0;
         boolean firstFrame = true;
         while (written < headerLength) {
@@ -447,7 +456,7 @@ final class CommunityHttp2SessionProcessor {
             if (firstFrame && endStream) {
                 flags |= HTTP2_FLAG_END_STREAM;
             }
-            writeHttp2Frame(stream, type, flags, streamId, headerBlock, written, chunk);
+            writeHttp2Frame(stream, type, flags, streamId, headerBlock, written, chunk, outboundFrame);
             written += chunk;
             firstFrame = false;
         }
@@ -456,13 +465,15 @@ final class CommunityHttp2SessionProcessor {
     private void writeHttp2DataFrames(TransportStream stream,
                                       int streamId,
                                       MemorySegment body,
-                                      int bodyLength) {
+                                      int bodyLength,
+                                      LoanedBuffer outboundFrame) {
         int written = 0;
         while (written < bodyLength) {
             int chunk = Math.min(HTTP2_MAX_FRAME_PAYLOAD_BYTES, bodyLength - written);
             boolean endStream = (written + chunk) == bodyLength;
             int flags = endStream ? HTTP2_FLAG_END_STREAM : 0;
-            writeHttp2Frame(stream, Http2FrameType.DATA.code(), flags, streamId, body, written, chunk);
+            writeHttp2Frame(stream, Http2FrameType.DATA.code(), flags, streamId, body, written, chunk,
+                    outboundFrame);
             written += chunk;
         }
     }
@@ -473,21 +484,23 @@ final class CommunityHttp2SessionProcessor {
                                  int streamId,
                                  MemorySegment payloadSource,
                                  int payloadOffset,
-                                 int payloadLength) {
-        try (LoanedBuffer outbound = allocator.allocateNetwork(Http2FrameParser.FRAME_HEADER_SIZE + payloadLength)) {
-            Http2FrameEncoder.writeHeader(outbound.segment(), 0, payloadLength, frameType, flags, streamId);
-            if (payloadLength > 0) {
-                MemorySegment.copy(
-                        payloadSource,
-                        payloadOffset,
-                        outbound.segment(),
-                        Http2FrameParser.FRAME_HEADER_SIZE,
-                        payloadLength);
-            }
-            long written = Http2FrameParser.FRAME_HEADER_SIZE + (long) payloadLength;
-            outbound.setSize(written);
-            stream.write(outbound.segment(), (int) written);
+                                 int payloadLength,
+                                 LoanedBuffer outboundFrame) {
+        // PERF-061: serialize the frame wire image into the per-response reusable carrier.
+        // No allocator borrow on the per-frame path; the carrier is sized to one full frame
+        // (header + max payload) and is reused across every frame in the response.
+        Http2FrameEncoder.writeHeader(outboundFrame.segment(), 0, payloadLength, frameType, flags, streamId);
+        if (payloadLength > 0) {
+            MemorySegment.copy(
+                    payloadSource,
+                    payloadOffset,
+                    outboundFrame.segment(),
+                    Http2FrameParser.FRAME_HEADER_SIZE,
+                    payloadLength);
         }
+        long written = Http2FrameParser.FRAME_HEADER_SIZE + (long) payloadLength;
+        outboundFrame.setSize(written);
+        stream.write(outboundFrame.segment(), (int) written);
     }
 
     private void sendHttp2PingAck(TransportStream stream,

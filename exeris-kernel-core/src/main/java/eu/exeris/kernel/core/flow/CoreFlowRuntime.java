@@ -57,6 +57,16 @@ final class CoreFlowRuntime { // NOPMD
     private final LongAdder failedFlows = new LongAdder();
     private final LongAdder compensationsRun = new LongAdder();
     private final LongAdder stepExecutions = new LongAdder();
+    // PERF-064: lifecycle baselines snapshotted on start()/close() instead of LongAdder.reset(),
+    // which is intrinsically racy under concurrent updates. Visible per-generation count is
+    // (totalSinceForever - baselineAtLifecycleTransition); baseline writes are atomic volatile
+    // longs, so a stale worker that survives interruptAndJoinRunningThreads' 5s join timeout
+    // cannot leave the next generation with a non-zero residual.
+    private volatile long parkedFlowsBaseline;
+    private volatile long completedFlowsBaseline;
+    private volatile long failedFlowsBaseline;
+    private volatile long compensationsRunBaseline;
+    private volatile long stepExecutionsBaseline;
     private final AtomicInteger queueDepth = new AtomicInteger();
     private volatile FlowSnapshotStore snapshotStore;
     private volatile IdempotencyGuard guard;
@@ -84,11 +94,11 @@ final class CoreFlowRuntime { // NOPMD
     public FlowEngineStats stats() {
         return new FlowEngineStats(
                 activeFlows.get(),
-                parkedFlows.sum(),
-                completedFlows.sum(),
-                failedFlows.sum(),
-                compensationsRun.sum(),
-                stepExecutions.sum(),
+                Math.max(0L, parkedFlows.sum() - parkedFlowsBaseline),
+                completedFlows.sum() - completedFlowsBaseline,
+                failedFlows.sum() - failedFlowsBaseline,
+                compensationsRun.sum() - compensationsRunBaseline,
+                stepExecutions.sum() - stepExecutionsBaseline,
                 0,
                 -1
         );
@@ -131,7 +141,7 @@ final class CoreFlowRuntime { // NOPMD
         clearParkedLookupMissTracking();
         activeFlows.set(0);
         queueDepth.set(0);
-        parkedFlows.reset();
+        parkedFlowsBaseline = parkedFlows.sum();
     }
 
     @SuppressWarnings("java:S2142")
@@ -200,11 +210,13 @@ final class CoreFlowRuntime { // NOPMD
     private void resetLifecycleTotals() {
         activeFlows.set(0);
         queueDepth.set(0);
-        parkedFlows.reset();
-        completedFlows.reset();
-        failedFlows.reset();
-        compensationsRun.reset();
-        stepExecutions.reset();
+        // PERF-064: snapshot baselines instead of LongAdder.reset() — atomic per-counter,
+        // race-safe against stale workers that may have survived the close() join timeout.
+        parkedFlowsBaseline = parkedFlows.sum();
+        completedFlowsBaseline = completedFlows.sum();
+        failedFlowsBaseline = failedFlows.sum();
+        compensationsRunBaseline = compensationsRun.sum();
+        stepExecutionsBaseline = stepExecutions.sum();
     }
 
     private FlowEngineException engineNotStarted() {
