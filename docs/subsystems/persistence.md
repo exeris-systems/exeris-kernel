@@ -193,7 +193,7 @@ public interface StorageContext {
     IsolationStrategy strategy();
     Optional<String> schemaName();
     Optional<String> dataSourceKey();
-    Map<String, Object> attributes();
+    Map<String, String> attributes();
 }
 ```
 

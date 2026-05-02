@@ -20,6 +20,15 @@ import java.util.Objects;
  * PARK/WAKE cycles and kernel restarts. Fields map 1:1 to the off-heap context
  * slab layout in the Enterprise tier (see {@code FLOW_CONTEXT_STRIDE}).
  *
+ * <h2>Optimistic Concurrency (since 0.7.0)</h2>
+ * <p>{@code schemaVersion} carries a monotonic version counter that durable, distributed
+ * stores (e.g., {@code JdbcFlowSnapshotStore}) use as an optimistic-locking discriminator
+ * on UPSERT. New snapshots SHOULD start at {@link #SCHEMA_VERSION_INITIAL}; durable stores
+ * MUST advance the on-disk value on every accepted write and MUST reject a write whose
+ * incoming {@code schemaVersion} does not match the on-disk row, raising
+ * {@code EX-FLOW-7002 / phase=OPTIMISTIC_LOCK_CONFLICT}. In-memory stores (which never
+ * race across processes) MAY ignore the field entirely.
+ *
  * <h2>Array Equality</h2>
  * <p>This record contains {@code int[]} and {@code byte[]} array fields.
  * The default record {@code equals()}/{@code hashCode()}/{@code toString()} use
@@ -43,6 +52,8 @@ import java.util.Objects;
  * @param compensationStack array of step ids whose compensations must execute in reverse order
  * @param stackPointer      number of valid entries in {@code compensationStack}
  * @param opaqueState       raw byte payload for implementation-specific state (max 916 bytes)
+ * @param schemaVersion     monotonic version for optimistic concurrency control on durable
+ *                          stores; {@code >= 1L}; new snapshots use {@link #SCHEMA_VERSION_INITIAL}
  *
  * @since 0.5.0
  */
@@ -56,7 +67,8 @@ public record FlowSnapshot(
         Instant   timeout,
         int[]     compensationStack,
         int       stackPointer,
-        byte[]    opaqueState
+        byte[]    opaqueState,
+        long      schemaVersion
 ) {
 
     /**
@@ -64,6 +76,14 @@ public record FlowSnapshot(
      * off-heap context slab reserved region documented in {@code FLOW_CONTEXT_STRIDE}.
      */
     public static final int MAX_OPAQUE_STATE_BYTES = 916;
+
+    /**
+     * Initial value of {@link #schemaVersion} for newly created snapshots. Durable stores
+     * MUST advance from this value on every accepted write.
+     *
+     * @since 0.7.0
+     */
+    public static final long SCHEMA_VERSION_INITIAL = 1L;
 
     /**
      * Compact constructor — validates all invariants eagerly (fail-fast) and defensively
@@ -108,8 +128,38 @@ public record FlowSnapshot(
                     "opaqueState exceeds max size: " + opaqueState.length
                     + " > " + MAX_OPAQUE_STATE_BYTES);
         }
+        if (schemaVersion < SCHEMA_VERSION_INITIAL) {
+            throw new IllegalArgumentException(
+                    "schemaVersion must be >= " + SCHEMA_VERSION_INITIAL + ", got: " + schemaVersion);
+        }
         compensationStack = Arrays.copyOf(compensationStack, compensationStack.length);
         opaqueState       = Arrays.copyOf(opaqueState, opaqueState.length);
+    }
+
+    /**
+     * Convenience constructor that omits {@link #schemaVersion}, defaulting it to
+     * {@link #SCHEMA_VERSION_INITIAL}. Preserves the pre-0.7 call shape so existing
+     * callers (e.g., the runtime engine's {@code toSnapshot} path and in-memory stores)
+     * compile unchanged. Durable stores that participate in optimistic concurrency
+     * MUST use the canonical constructor and pass the current on-disk version.
+     *
+     * @since 0.7.0
+     */
+    public FlowSnapshot(
+            long      instanceIdMost,
+            long      instanceIdLeast,
+            String    definitionName,
+            int       currentStep,
+            FlowState state,
+            Instant   lastUpdate,
+            Instant   timeout,
+            int[]     compensationStack,
+            int       stackPointer,
+            byte[]    opaqueState
+    ) {
+        this(instanceIdMost, instanceIdLeast, definitionName, currentStep, state,
+             lastUpdate, timeout, compensationStack, stackPointer, opaqueState,
+             SCHEMA_VERSION_INITIAL);
     }
 
     /**
@@ -167,6 +217,7 @@ public record FlowSnapshot(
                && instanceIdLeast  == other.instanceIdLeast
                && currentStep      == other.currentStep
                && stackPointer     == other.stackPointer
+               && schemaVersion    == other.schemaVersion
                && state            == other.state
                && Objects.equals(definitionName, other.definitionName)
                && Objects.equals(lastUpdate,     other.lastUpdate)
@@ -183,7 +234,7 @@ public record FlowSnapshot(
     public int hashCode() {
         int result = Objects.hash(
                 instanceIdMost, instanceIdLeast, definitionName,
-                currentStep, state, lastUpdate, timeout, stackPointer);
+                currentStep, state, lastUpdate, timeout, stackPointer, schemaVersion);
         result = 31 * result + Arrays.hashCode(compensationStack);
         result = 31 * result + Arrays.hashCode(opaqueState);
         return result;
@@ -205,6 +256,7 @@ public record FlowSnapshot(
                + ", compensationStack=" + Arrays.toString(compensationStack)
                + ", stackPointer=" + stackPointer
                + ", opaqueState=" + Arrays.toString(opaqueState)
+               + ", schemaVersion=" + schemaVersion
                + ']';
     }
 }
