@@ -18,6 +18,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 
 @SuppressWarnings("PMD.PublicMemberInNonPublicType")
 final class RuntimeFlowInstance implements RuntimeFlowContextStateView { // NOPMD
@@ -44,8 +45,13 @@ final class RuntimeFlowInstance implements RuntimeFlowContextStateView { // NOPM
     // fromContext seeds this to FlowSnapshot.SCHEMA_VERSION_INITIAL (new instance — never
     // saved); fromSnapshot reads back the loaded version so subsequent saves stay aligned
     // with the on-disk row. Bumped via markPersisted() after every accepted save (INSERT
-    // and UPDATE both advance by one — see JdbcFlowSnapshotStore).
-    private volatile long schemaVersion;
+    // and UPDATE both advance by one in any compliant durable store).
+    //
+    // AtomicLong rather than volatile long: read-modify-write on volatile is not atomic
+    // (java:S3078) and we cannot rely on the per-instance monitor for every call site of
+    // markPersisted() to make the increment safe — the durable-store contract permits
+    // multiple persist paths, and AtomicLong removes the dependency on caller discipline.
+    private final AtomicLong schemaVersion;
 
     private RuntimeFlowInstance(FlowKey key,
                                 String definitionName,
@@ -67,7 +73,7 @@ final class RuntimeFlowInstance implements RuntimeFlowContextStateView { // NOPM
         this.timeoutNanos = timeoutNanos;
         this.compensationStack = compensationStack;
         this.stackPointer = stackPointer;
-        this.schemaVersion = schemaVersion;
+        this.schemaVersion = new AtomicLong(schemaVersion);
     }
 
     public static RuntimeFlowInstance fromContext(
@@ -245,7 +251,7 @@ final class RuntimeFlowInstance implements RuntimeFlowContextStateView { // NOPM
                 stack,
                 stackPointer,
                 EMPTY_OPAQUE_STATE,
-                schemaVersion
+                schemaVersion.get()
         );
     }
 
@@ -254,19 +260,18 @@ final class RuntimeFlowInstance implements RuntimeFlowContextStateView { // NOPM
      * for the next save (ADR-013 §5).
      */
     public long schemaVersion() {
-        return schemaVersion;
+        return schemaVersion.get();
     }
 
     /**
      * Advances the local view of {@code schemaVersion} after a successful save.
-     * Both INSERT and UPDATE paths in {@code JdbcFlowSnapshotStore} advance the
-     * on-disk version by exactly one, so the caller bumps locally by one regardless
-     * of which path the store took. Callers MUST hold {@link #monitor()} when
-     * pairing this with a {@code save()} call to keep the toSnapshot/save/markPersisted
-     * sequence atomic per instance.
+     * Compliant durable stores advance the on-disk version by exactly one on every
+     * accepted write (INSERT or UPDATE), so the caller bumps locally by one
+     * regardless of which path the store took. The bump is atomic via {@link AtomicLong},
+     * so this method is safe under concurrent persist paths without external locking.
      */
     public void markPersisted() {
-        schemaVersion++;
+        schemaVersion.incrementAndGet();
     }
 
     public RuntimeFlowContext contextView() {

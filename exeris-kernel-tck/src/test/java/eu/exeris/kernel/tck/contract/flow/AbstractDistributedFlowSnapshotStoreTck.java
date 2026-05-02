@@ -253,26 +253,66 @@ public abstract class AbstractDistributedFlowSnapshotStoreTck {
     class ConcurrentSaveContention {
 
         @Test
-        @DisplayName("Two writers racing the same instance with the same incoming version: one wins, one gets OCC conflict")
+        @DisplayName("UPDATE race: two writers, same loaded version — one wins, the other observes OCC conflict")
         void concurrentSaveOnSameInstanceResolvesViaCas() throws Exception {
             UUID id = UUID.randomUUID();
             store.save(snapshot(id, FlowState.PARKED, 0, FlowSnapshot.SCHEMA_VERSION_INITIAL));
             FlowSnapshot loaded = store.load(id.getMostSignificantBits(), id.getLeastSignificantBits()).orElseThrow();
 
+            RaceOutcome outcome = raceTwoSavers(
+                    () -> store.save(snapshot(id, FlowState.RUNNING, 1, loaded.schemaVersion())));
+
+            assertThat(outcome.unexpected.get()).as("Unexpected error in racy writer").isNull();
+            assertThat(outcome.successes.get()).as("Exactly one writer should win the CAS race").isEqualTo(1);
+            assertThat(outcome.conflicts.get()).as("The losing writer must observe an OCC conflict").isEqualTo(1);
+
+            FlowSnapshot finalState = store.load(id.getMostSignificantBits(), id.getLeastSignificantBits()).orElseThrow();
+            assertThat(finalState.state()).isEqualTo(FlowState.RUNNING);
+            assertThat(finalState.schemaVersion()).isEqualTo(loaded.schemaVersion() + 1L);
+        }
+
+        @Test
+        @DisplayName("INSERT race: two first-writers for the same new instance — one wins, the other observes OCC conflict (TOCTOU contract)")
+        void concurrentFirstSaveOnNewInstanceResolvesViaPkRemap() throws Exception {
+            UUID id = UUID.randomUUID();
+            // No pre-existing row — both writers will hit the no-row branch inside save(),
+            // both pass the existsInTransaction probe, and then race on INSERT. The loser
+            // gets a primary-key integrity violation from the database which the durable
+            // store contract requires to be remapped to phase=OPTIMISTIC_LOCK_CONFLICT
+            // (ADR-013 §5) — without that remap the loser would surface an opaque SQL
+            // error and break the OCC failure-mode promise.
+
+            RaceOutcome outcome = raceTwoSavers(
+                    () -> store.save(snapshot(id, FlowState.PARKED, 0, FlowSnapshot.SCHEMA_VERSION_INITIAL)));
+
+            assertThat(outcome.unexpected.get())
+                    .as("Concurrent INSERT loser must surface as FlowEngineException, not a raw SQL error")
+                    .isNull();
+            assertThat(outcome.successes.get()).as("Exactly one INSERT must succeed").isEqualTo(1);
+            assertThat(outcome.conflicts.get())
+                    .as("The losing INSERT must surface as OPTIMISTIC_LOCK_CONFLICT, not as an opaque SQL error")
+                    .isEqualTo(1);
+
+            // Exactly one row persisted; idempotency restored on the next attempt with a fresh load.
+            FlowSnapshot persisted = store.load(id.getMostSignificantBits(), id.getLeastSignificantBits()).orElseThrow();
+            assertThat(persisted.schemaVersion())
+                    .as("First successful save advances version by exactly one (ADR-013 §5)")
+                    .isEqualTo(FlowSnapshot.SCHEMA_VERSION_INITIAL + 1L);
+        }
+
+        private RaceOutcome raceTwoSavers(Runnable saveAction) throws Exception {
             CountDownLatch start = new CountDownLatch(1);
-            AtomicInteger successes = new AtomicInteger();
-            AtomicInteger conflicts = new AtomicInteger();
-            AtomicReference<Throwable> unexpected = new AtomicReference<>();
+            RaceOutcome outcome = new RaceOutcome();
 
             Runnable writer = () -> {
                 try {
                     start.await();
-                    store.save(snapshot(id, FlowState.RUNNING, 1, loaded.schemaVersion()));
-                    successes.incrementAndGet();
-                } catch (FlowEngineException occ) {
-                    conflicts.incrementAndGet();
-                } catch (Throwable t) { //NOPMD AvoidCatchingThrowable — racy test path needs to capture any error
-                    unexpected.set(t);
+                    saveAction.run();
+                    outcome.successes.incrementAndGet();
+                } catch (FlowEngineException _) {
+                    outcome.conflicts.incrementAndGet();
+                } catch (Throwable t) { //NOPMD AvoidCatchingThrowable — racy test path captures any error
+                    outcome.unexpected.set(t);
                 }
             };
 
@@ -283,14 +323,13 @@ public abstract class AbstractDistributedFlowSnapshotStoreTck {
             start.countDown();
             t1.join(TimeUnit.SECONDS.toMillis(10));
             t2.join(TimeUnit.SECONDS.toMillis(10));
+            return outcome;
+        }
 
-            assertThat(unexpected.get()).as("Unexpected error in racy writer").isNull();
-            assertThat(successes.get()).as("Exactly one writer should win the CAS race").isEqualTo(1);
-            assertThat(conflicts.get()).as("The losing writer must observe an OCC conflict").isEqualTo(1);
-
-            FlowSnapshot finalState = store.load(id.getMostSignificantBits(), id.getLeastSignificantBits()).orElseThrow();
-            assertThat(finalState.state()).isEqualTo(FlowState.RUNNING);
-            assertThat(finalState.schemaVersion()).isEqualTo(loaded.schemaVersion() + 1L);
+        private final class RaceOutcome {
+            final AtomicInteger successes = new AtomicInteger();
+            final AtomicInteger conflicts = new AtomicInteger();
+            final AtomicReference<Throwable> unexpected = new AtomicReference<>();
         }
     }
 }

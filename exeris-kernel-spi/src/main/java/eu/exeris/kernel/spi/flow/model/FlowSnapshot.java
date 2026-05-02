@@ -22,7 +22,7 @@ import java.util.Objects;
  *
  * <h2>Optimistic Concurrency (since 0.7.0)</h2>
  * <p>{@code schemaVersion} carries a monotonic version counter that durable, distributed
- * stores (e.g., {@code JdbcFlowSnapshotStore}) use as an optimistic-locking discriminator
+ * {@link FlowSnapshotStore} implementations use as an optimistic-locking discriminator
  * on UPSERT. New snapshots SHOULD start at {@link #SCHEMA_VERSION_INITIAL}; durable stores
  * MUST advance the on-disk value on every accepted write and MUST reject a write whose
  * incoming {@code schemaVersion} does not match the on-disk row, raising

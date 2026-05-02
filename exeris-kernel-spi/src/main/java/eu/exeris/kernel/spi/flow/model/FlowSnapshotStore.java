@@ -92,9 +92,9 @@ public interface FlowSnapshotStore {
      *
      * <h2>Default Contract</h2>
      * <p>The default implementation returns an empty list, which is the correct semantics
-     * for in-memory stores that do not survive restart. Durable, distributed stores
-     * (e.g., {@code JdbcFlowSnapshotStore}) MUST override to enumerate every parked
-     * snapshot so the engine can resume choreography on the cross-restart fallback path.
+     * for in-memory stores that do not survive restart. Durable, distributed store
+     * implementations MUST override this method to enumerate every parked snapshot so
+     * the engine can resume choreography on the cross-restart fallback path.
      *
      * <h2>Call Site</h2>
      * <p>Cold path. Invoked at engine startup (one-shot) and on choreography wake when the

@@ -76,9 +76,9 @@ public final class FlowEngineException extends ExerisKernelException {
 
     /**
      * Creates an exception for an optimistic-lock conflict on a durable snapshot store
-     * (see ADR-013). Raised when {@code save()} on {@code JdbcFlowSnapshotStore} (or any
-     * durable equivalent) finds the on-disk {@code schemaVersion} no longer matches the
-     * incoming snapshot's version — another kernel advanced the saga first.
+     * (see ADR-013). Raised when a durable {@code FlowSnapshotStore} implementation
+     * finds the on-disk {@code schemaVersion} no longer matches the incoming snapshot's
+     * version — another kernel advanced the saga first.
      *
      * <p>rawArgs layout: {@code [engineName, "OPTIMISTIC_LOCK_CONFLICT", "STALE_VERSION",
      * incomingSchemaVersion]}. The version is bound to {@code int}; saga rows that exceed

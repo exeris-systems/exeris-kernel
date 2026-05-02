@@ -121,7 +121,7 @@ public final class JdbcFlowSnapshotStore implements FlowSnapshotStore {
                     if (existsInTransaction(conn, snapshot.instanceIdMost(), snapshot.instanceIdLeast())) {
                         throw FlowEngineException.optimisticLockConflict(engineName, snapshot.schemaVersion());
                     }
-                    insertSnapshot(conn, snapshot);
+                    insertOrRemapPkConflict(conn, snapshot);
                 }
                 conn.commit();
             } catch (FlowEngineException occ) {
@@ -136,6 +136,43 @@ public final class JdbcFlowSnapshotStore implements FlowSnapshotStore {
         } catch (SQLException ex) {
             throw new FlowEngineException("Failed to acquire connection for save", ex);
         }
+    }
+
+    /**
+     * Performs the INSERT and remaps a concurrent-INSERT race on the composite PK to
+     * {@code OPTIMISTIC_LOCK_CONFLICT}. Between the {@code existsInTransaction} probe
+     * and this call, a concurrent first-writer may commit a row for the same instance;
+     * the resulting integrity-constraint violation (SQLState class {@code 23}) is the
+     * indistinguishable race-loser signal, so it surfaces under the same OCC contract
+     * documented in ADR-013 §5 — the loser of an INSERT race observes the same failure
+     * mode as the loser of a stale-version UPDATE race.
+     */
+    private void insertOrRemapPkConflict(Connection conn, FlowSnapshot snapshot) throws SQLException {
+        try {
+            insertSnapshot(conn, snapshot);
+        } catch (SQLException pkViolation) {
+            if (isIntegrityConstraintViolation(pkViolation)) {
+                throw FlowEngineException.optimisticLockConflict(engineName, snapshot.schemaVersion());
+            }
+            throw pkViolation;
+        }
+    }
+
+    /**
+     * Returns {@code true} if the given exception's SQLState is an ANSI integrity-constraint
+     * class (prefix {@code 23}) — covers Postgres {@code 23505} (unique_violation),
+     * H2 {@code 23505}, and any spec-conformant driver.
+     */
+    private static boolean isIntegrityConstraintViolation(SQLException ex) {
+        for (Throwable cur = ex; cur != null; cur = cur.getCause()) {
+            if (cur instanceof SQLException sql) {
+                String state = sql.getSQLState();
+                if (state != null && state.startsWith("23")) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     @Override
