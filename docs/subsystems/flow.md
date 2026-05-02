@@ -101,9 +101,21 @@ Flow can be driven by external events through the choreography bridge:
 
 For choreography-driven wake, the in-memory parked map remains the O(1) fast path during a live runtime.
 
-When persistence is enabled, a restart-aware implementation may consult `FlowSnapshotStore` only after an in-memory miss to recover a `PARKED` `FlowContext` for wake. That fallback is a bounded miss-path rather than an unbounded repeated store probe: repeated unknown-flow misses should be negatively suppressed in Core so persistence cost does not amplify under choreography polling. This fallback does not change The Wall: Core continues to orchestrate through SPI contracts only, and persistence details remain hidden behind `FlowSnapshotStore`.
+When persistence is enabled, a restart-aware implementation may consult `FlowSnapshotStore` only after an in-memory miss to recover a `PARKED` `FlowContext` for wake. That fallback is a bounded miss-path rather than an unbounded repeated store probe: repeated unknown-flow misses are negatively suppressed in `CoreFlowRuntime` via a `parkedLookupMisses` set capped at 256 entries with FIFO eviction (`MAX_PARKED_LOOKUP_MISSES`). The cache is cleared on every successful lookup, on park/wake/complete transitions, on plan recompilation, and on engine restart. This bounds persistence cost under choreography polling without ever masking a genuine PARKED instance.
+
+This fallback does not change The Wall: Core continues to orchestrate through SPI contracts only, and persistence details remain hidden behind `FlowSnapshotStore`.
 
 If persistence is disabled, cross-restart choreography wake remains unsupported by contract.
+
+### Distributed Snapshot Store Contract (since 0.7.0)
+
+Three additions land in 0.7 to support distributed saga state per ADR-013:
+
+- **`FlowSnapshotStore.listParked()`** — returns every snapshot whose state is `PARKED`. The default returns `List.of()` (correct for in-memory stores that do not survive restart). Durable stores (`JdbcFlowSnapshotStore`) override to enumerate every parked row so the engine can resume choreography on the cross-restart fallback path. Cold path; pagination is not required for v0.7.
+- **`FlowSnapshot.schemaVersion: long`** — monotonic optimistic-locking version. New snapshots use `FlowSnapshot.SCHEMA_VERSION_INITIAL` (`1L`); on every accepted save (INSERT or UPDATE) the durable store advances the on-disk version by exactly one. The runtime engine round-trips this version through `RuntimeFlowInstance.schemaVersion()` / `markPersisted()` so subsequent saves carry the up-to-date expected version. Stale-version writes are rejected with `EX-FLOW-7002` `phase=OPTIMISTIC_LOCK_CONFLICT` (`reasonCode=STALE_VERSION`, `contextVal=incomingSchemaVersion`).
+- **`JdbcFlowSnapshotStore`** (Community) — durable JDBC implementation backed by the `exeris_saga_state` table (created via `db/migration/V0.7.0__create_saga_state.sql`). Constructor-injected `DataSource` (HikariCP in Community); raw JDBC, no `PersistenceEngine` dependency. The save path is a portable two-step UPDATE-then-INSERT: an UPDATE with a CAS guard on `schema_version` is attempted first; on affected-rows = 0 the implementation distinguishes "row absent" (→ INSERT) from "row present with stale version" (→ raise `EX-FLOW-7002`). `compensation_stack` is packed into `BYTEA` (4 bytes per int, big-endian) for cross-database portability — H2 does not support native `INT[]`. `state` is stored as TEXT (`FlowState.name()`); `last_update` and `timeout_at` as `TIMESTAMPTZ`; `Instant.MAX` is encoded as NULL and decoded back to `Instant.MAX` because it falls outside the TIMESTAMPTZ range (4713 BC..294276 AD).
+
+In-memory bindings (`CommunityFlowSnapshotStore`, test stores) continue to ignore `schemaVersion`; the `markPersisted()` increment is harmless for them. Enterprise binding inherits the same SPI contract and TCK obligations on parity (`AbstractDistributedFlowSnapshotStoreTck`).
 
 ---
 
@@ -114,7 +126,7 @@ If persistence is disabled, cross-restart choreography wake remains unsupported 
 | Code           | Meaning                  | Glass-Box Payload (`rawArgs`)                                                                                                                           |
 |:---------------|:-------------------------|:--------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `EX-FLOW-7001` | Provider Engine Failure  | `[0] String providerName, [1] String reason`                                                                                                            |
-| `EX-FLOW-7002` | Engine Lifecycle Failure | `[0] String engineName, [1] String phase, [2] String reasonCode, [3] int contextVal` — `phase` values include `SCHEMA_MISMATCH`, `WAKE_FAILED`, `SUBMIT_REJECTED` |
+| `EX-FLOW-7002` | Engine Lifecycle Failure | `[0] String engineName, [1] String phase, [2] String reasonCode, [3] int contextVal` — `phase` values include `START`, `STOP`, `COMPILE`, `SCHEDULE`, `SCHEMA_MISMATCH`, `WAKE_FAILED`, `SUBMIT_REJECTED`, `OPTIMISTIC_LOCK_CONFLICT` (since 0.7) |
 | `EX-FLOW-7003` | Step Execution Failure   | `[0] String definitionName, [1] long instanceIdMost, [2] long instanceIdLeast, [3] int stepIndex, [4] String staticReasonCode ("STEP_FAILED" \| "COMPENSATION_FAILED"), [5] String causeType` |
 | `EX-FLOW-7004` | Registry Conflict        | `[0] int stepId, [1] String reason`                                                                                                                     |
 
@@ -133,7 +145,8 @@ If persistence is disabled, cross-restart choreography wake remains unsupported 
 | `AbstractIdempotencyGuardTck` | `exeris-kernel-tck` | Step-level deduplication contract for `IdempotencyGuard` |
 | `FlowZeroAllocTck` | `exeris-kernel-tck` | Zero-allocation assertion on hot flow scheduling path |
 | `FlowCarrierPinningTck` | `exeris-kernel-tck` | Flow orchestration does not pin Virtual Thread carrier |
+| `AbstractDistributedFlowSnapshotStoreTck` | `exeris-kernel-tck` | Durable snapshot store contract (since 0.7) — save/load round-trip, delete, listParked filter, cross-restart recovery, OCC stale-version conflict |
 
-Community bindings: `CommunityFlowEngineTckTest`, `CommunityFlowSchedulerTckTest`, `CommunityFlowChoreographyTckTest`, `CommunitySagaRecoveryTckTest`, `CommunityFlowCarrierPinningTckTest` in `exeris-kernel-community`.
+Community bindings: `CommunityFlowEngineTckTest`, `CommunityFlowSchedulerTckTest`, `CommunityFlowChoreographyTckTest`, `CommunitySagaRecoveryTckTest`, `CommunityFlowCarrierPinningTckTest`, `CommunityJdbcFlowSnapshotStoreTckIT` (Postgres via Testcontainers) in `exeris-kernel-community`.
 
 > **Gap:** `AbstractIdempotencyGuardTck` and `FlowZeroAllocTck` have no Community-tier concrete binding in `exeris-kernel-community/src/test/`. The `IdempotencyGuard` contract is covered only by unit-level tests; no community provider binding extends `AbstractIdempotencyGuardTck`. Tracking: see `docs/ROADMAP.md`.

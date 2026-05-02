@@ -65,7 +65,8 @@ final class CommunityPersistenceEngine implements PersistenceEngine, PhysicalCon
     private static final String REQUIRED_SHARED_INTERCEPTOR = "RlsConnectionInterceptor";
     private static final String RUN_MIGRATIONS_KEY = "run.migrations";
     private static final List<String> MIGRATION_RESOURCES = List.of(
-            "db/migration/V0.5.0__create_outbox.sql"
+            "db/migration/V0.5.0__create_outbox.sql",
+            "db/migration/V0.7.0__create_saga_state.sql"
     );
 
     private final PersistenceConfig config;
