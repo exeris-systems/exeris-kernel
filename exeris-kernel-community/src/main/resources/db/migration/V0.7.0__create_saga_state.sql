@@ -27,8 +27,12 @@ CREATE TABLE IF NOT EXISTS exeris_saga_state (
     PRIMARY KEY (instance_id_most, instance_id_least)
 );
 
--- Partial index for the listParked() recovery enumeration. Predicate matches the
--- FlowState.PARKED.name() string emitted by JdbcFlowSnapshotStore.
+-- Composite index for the listParked() recovery enumeration. Leading column on `state` lets
+-- both Postgres and H2 narrow to PARKED rows on the listParked SELECT (`WHERE state = 'PARKED'`);
+-- secondary column orders by `last_update` for the hot resume path. A Postgres-only partial
+-- index (`WHERE state = 'PARKED'`) would be marginally tighter but H2 (developer-loop fallback,
+-- and the in-memory persistence smoke path) does not support partial-index predicates, so this
+-- migration deliberately stays portable. JdbcFlowSnapshotStore retains its `WHERE state = 'PARKED'`
+-- query, which benefits from the leading column either way.
 CREATE INDEX IF NOT EXISTS idx_exeris_saga_state_parked
-    ON exeris_saga_state (last_update)
-    WHERE state = 'PARKED';
+    ON exeris_saga_state (state, last_update);

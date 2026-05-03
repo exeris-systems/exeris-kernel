@@ -25,6 +25,8 @@ import eu.exeris.kernel.spi.flow.model.FlowStepDescriptor;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -37,7 +39,10 @@ import java.util.concurrent.atomic.LongAdder;
 @SuppressWarnings("PMD.PublicMemberInNonPublicType")
 final class CoreFlowRuntime { // NOPMD
 
-    private static final int MAX_PARKED_LOOKUP_MISSES = 256;
+    private static final int  MAX_PARKED_LOOKUP_MISSES = 256;
+    private static final long NO_TIMEOUT_OVERRUN       = 0L;
+    private static final int  STEP_PROCEED             = Integer.MIN_VALUE;
+    private static final int  EXIT_RUN_LOOP            = -1;
 
     private final FlowEngineConfig config;
     private final FlowProgressPublisher progressPublisher;
@@ -45,7 +50,7 @@ final class CoreFlowRuntime { // NOPMD
     private final ConcurrentMap<FlowKey, RuntimeFlowInstance> liveInstances = new ConcurrentHashMap<>();
     private final ConcurrentMap<FlowKey, RuntimeFlowInstance> parkedInstances = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, CoreFlowExecutionPlan> planCatalog = new ConcurrentHashMap<>();
-    private final ConcurrentMap<FlowKey, FlowState> terminalStateCatalog = new ConcurrentHashMap<>();
+    private final TerminalStateCatalog terminalStateCatalog;
     private final Set<FlowKey> parkedLookupMisses = ConcurrentHashMap.newKeySet();
     private final Deque<FlowKey> parkedLookupMissOrder = new ArrayDeque<>();
     private final Object parkedLookupMissLock = new Object();
@@ -77,6 +82,7 @@ final class CoreFlowRuntime { // NOPMD
     /* default */ CoreFlowRuntime(FlowEngineConfig config, FlowProgressPublisher progressPublisher) {
         this.config = Objects.requireNonNull(config, "config");
         this.progressPublisher = Objects.requireNonNull(progressPublisher, "progressPublisher");
+        this.terminalStateCatalog = new TerminalStateCatalog(config.terminalCatalogMaxSize());
     }
 
     public FlowScheduler scheduler() {
@@ -234,7 +240,7 @@ final class CoreFlowRuntime { // NOPMD
         ensureStarted();
         FlowKey key = FlowKey.from(context);
         clearParkedLookupMiss(key);
-        if (terminalStateCatalog.containsKey(key)) {
+        if (terminalStateCatalog.isTerminal(key)) {
             return;
         }
 
@@ -249,7 +255,13 @@ final class CoreFlowRuntime { // NOPMD
                     : RuntimeFlowInstance.fromContext(plan, context, lifecycleGeneration.get());
         });
 
-        if (instance.isTerminal() || terminalStateCatalog.containsKey(key)) {
+        if (instance.isTerminal() || terminalStateCatalog.isTerminal(key)) {
+            // FLOW-107: catalog miss with a terminal snapshot row means the in-memory entry
+            // was evicted under bounded LRU. Re-cache the terminal state so subsequent
+            // resubmits short-circuit on the in-memory fast path.
+            if (instance.isTerminal()) {
+                terminalStateCatalog.recordTerminal(key, instance.state());
+            }
             liveInstances.remove(key, instance);
             return;
         }
@@ -298,13 +310,13 @@ final class CoreFlowRuntime { // NOPMD
         ensureStarted();
         FlowKey key = FlowKey.from(context);
         clearParkedLookupMiss(key);
-        if (terminalStateCatalog.containsKey(key)) {
+        if (terminalStateCatalog.isTerminal(key)) {
             return;
         }
 
         RuntimeFlowInstance instance = resolveParkedInstance(key, context.state());
 
-        if (instance.isTerminal() || terminalStateCatalog.containsKey(key)) {
+        if (instance.isTerminal() || terminalStateCatalog.isTerminal(key)) {
             liveInstances.remove(key, instance);
             return;
         }
@@ -514,21 +526,41 @@ final class CoreFlowRuntime { // NOPMD
      * Executes one step of the flow loop within the context of a running instance.
      * Called by {@link #runInstance} on each while-loop iteration.
      *
-     * <p>Returns the next step index to process, or {@code -1} to terminate the loop.
+     * <p>Returns the next step index to process, or {@link #EXIT_RUN_LOOP} to terminate.
      * Must be called from OUTSIDE any synchronized block.
      */
     private int runStep(RuntimeFlowInstance instance, int stepIndex) {
-        FlowStepDescriptor step;
-        FlowStepAction stepAction;
+        StepPlan plan = prepareStep(instance, stepIndex);
+        if (plan.exitCode != STEP_PROCEED) {
+            return plan.exitCode;
+        }
+        if (plan.timeoutOverrunNanos != NO_TIMEOUT_OVERRUN) {
+            return failOnTimeout(instance, stepIndex, plan.timeoutOverrunNanos);
+        }
+        FlowOutcome outcome = executeStep(instance, stepIndex, plan.action);
+        return finalizeStep(instance, plan.step, stepIndex, outcome);
+    }
 
+    /**
+     * Synchronized prep phase: bounds-check, snapshot the step, enforce the absolute saga
+     * deadline (DIST-303), and consult the {@code IdempotencyGuard}. Returns a {@link StepPlan}
+     * describing whether to proceed, time-out, or short-circuit with an exit code.
+     */
+    private StepPlan prepareStep(RuntimeFlowInstance instance, int stepIndex) {
         synchronized (instance.monitor()) {
             if (stepIndex >= instance.plan().stepCount()) {
                 complete(instance);
-                return -1;
+                return StepPlan.exit(EXIT_RUN_LOOP);
             }
             instance.currentStep(stepIndex);
-            step = instance.plan().stepAt(stepIndex);
+            FlowStepDescriptor step = instance.plan().stepAt(stepIndex);
 
+            // DIST-303: timeoutNanos == Long.MAX_VALUE encodes Instant.MAX (no timeout).
+            long now = System.nanoTime();
+            long deadline = instance.timeoutNanos();
+            if (deadline != Long.MAX_VALUE && deadline < now) {
+                return StepPlan.timedOut(step, now - deadline);
+            }
             if (guard != null && !guard.tryClaimStep(
                     instance.key().instanceIdMost(),
                     instance.key().instanceIdLeast(),
@@ -536,23 +568,76 @@ final class CoreFlowRuntime { // NOPMD
                 int nextGuardIndex = instance.plan().nextStep(stepIndex);
                 if (nextGuardIndex < 0) {
                     complete(instance);
-                    return -1;
+                    return StepPlan.exit(EXIT_RUN_LOOP);
                 }
-                return nextGuardIndex;
+                return StepPlan.exit(nextGuardIndex);
             }
-            stepAction = step.action();
+            return StepPlan.proceed(step, step.action());
         }
+    }
 
-        FlowOutcome outcome = executeStep(instance, stepIndex, stepAction);
-
+    /**
+     * Synchronized post-execution phase: re-check lifecycle and dispatch the outcome through
+     * {@link #applyOutcome}.
+     */
+    private int finalizeStep(
+            RuntimeFlowInstance instance, FlowStepDescriptor step, int stepIndex, FlowOutcome outcome) {
         synchronized (instance.monitor()) {
             if (!isCurrentLifecycle(instance)) {
                 if (outcome == FlowOutcome.COMPLETE) {
                     complete(instance);
                 }
-                return -1;
+                return EXIT_RUN_LOOP;
             }
             return applyOutcome(instance, step, stepIndex, outcome);
+        }
+    }
+
+    /**
+     * Emits {@link FlowTimeoutEvent} and drives the instance through the compensation path
+     * to {@link FlowState#FAILED_ROLLEDBACK}. Always returns {@link #EXIT_RUN_LOOP}.
+     */
+    private int failOnTimeout(RuntimeFlowInstance instance, int stepIndex, long overrunNanos) {
+        FlowTimeoutEvent.emit(
+                config.engineName(),
+                instance.definitionName(),
+                instance.key().instanceIdMost(),
+                instance.key().instanceIdLeast(),
+                stepIndex,
+                overrunNanos);
+        fail(instance, stepIndex);
+        return EXIT_RUN_LOOP;
+    }
+
+    /**
+     * Carrier for {@link #prepareStep} → {@link #runStep} hand-off.
+     *
+     * <ul>
+     *   <li>{@code exitCode == STEP_PROCEED}: caller MUST execute {@code action}.</li>
+     *   <li>otherwise: caller MUST short-circuit with {@code exitCode}.</li>
+     *   <li>{@code timeoutOverrunNanos != NO_TIMEOUT_OVERRUN}: caller MUST run the timeout path.</li>
+     * </ul>
+     *
+     * <p>Allocated once per step iteration on the cold prep path (already inside
+     * {@code synchronized}); JIT escape analysis routinely scalarizes this carrier on the
+     * Loom virtual-thread dispatch loop, so no heap pressure is introduced on the hot path.
+     */
+    private record StepPlan(
+            FlowStepDescriptor step,
+            FlowStepAction     action,
+            int                exitCode,
+            long               timeoutOverrunNanos) {
+
+        /* default */ static StepPlan proceed(FlowStepDescriptor step, FlowStepAction action) {
+            return new StepPlan(step, action, STEP_PROCEED, NO_TIMEOUT_OVERRUN);
+        }
+
+        /* default */ static StepPlan timedOut(FlowStepDescriptor step, long overrunNanos) {
+            return new StepPlan(step, null, STEP_PROCEED, overrunNanos);
+        }
+
+        /* default */ static StepPlan exit(int exitCode) {
+            return new StepPlan(null, null, exitCode, NO_TIMEOUT_OVERRUN);
         }
     }
 
@@ -703,7 +788,7 @@ final class CoreFlowRuntime { // NOPMD
         clearParkedLookupMiss(instance.key());
         if (!cleanupOnly) {
             failedFlows.increment();
-            terminalStateCatalog.put(instance.key(), FlowState.FAILED_ROLLEDBACK);
+            terminalStateCatalog.recordTerminal(instance.key(), FlowState.FAILED_ROLLEDBACK);
         }
         if (!staleLifecycle) {
             persistSnapshot(instance, FlowState.FAILED_ROLLEDBACK, stepIndex);
@@ -723,7 +808,7 @@ final class CoreFlowRuntime { // NOPMD
         instance.state(FlowState.COMPLETED);
         clearParkedLookupMiss(instance.key());
         if (!cleanupOnly) {
-            terminalStateCatalog.put(instance.key(), FlowState.COMPLETED);
+            terminalStateCatalog.recordTerminal(instance.key(), FlowState.COMPLETED);
         }
         releaseInstanceClaims(instance, staleLifecycle);
         if (!cleanupOnly) {
@@ -746,6 +831,12 @@ final class CoreFlowRuntime { // NOPMD
 
     private void deleteSnapshot(RuntimeFlowInstance instance, boolean staleLifecycle) {
         if (staleLifecycle || snapshotStore == null) {
+            return;
+        }
+        // FLOW-107: in bounded-catalog mode the durable snapshot is the idempotency fence
+        // for COMPLETED entries that may have been evicted from the in-memory catalog.
+        // Retain the snapshot here; lifetime is governed by DIST-303 saga TTL retention.
+        if (terminalStateCatalog.isBounded()) {
             return;
         }
         try {
@@ -796,7 +887,7 @@ final class CoreFlowRuntime { // NOPMD
         @Override
         public Optional<FlowContext> lookupParked(long instanceIdMost, long instanceIdLeast) {
             FlowKey key = new FlowKey(instanceIdMost, instanceIdLeast);
-            if (terminalStateCatalog.containsKey(key)) {
+            if (terminalStateCatalog.isTerminal(key)) {
                 return Optional.empty();
             }
             RuntimeFlowInstance parked = parkedInstances.get(key);
@@ -822,6 +913,81 @@ final class CoreFlowRuntime { // NOPMD
                         "Unsupported FlowExecutionPlan implementation: " + plan.getClass().getName());
             }
             return corePlan;
+        }
+    }
+
+    /**
+     * In-memory idempotency fence for terminal flow instances.
+     *
+     * <p>Two operating modes selected at construction by {@link FlowEngineConfig#terminalCatalogMaxSize()}:
+     * <ul>
+     *   <li><b>{@code maxSize == 0} — unbounded.</b> Backed by {@link ConcurrentHashMap}; entries
+     *       accumulate for the lifetime of the engine. Backward-compatible with v0.6 behavior.</li>
+     *   <li><b>{@code maxSize  > 0} — bounded LRU.</b> Backed by {@link LinkedHashMap} with
+     *       access-order; the least-recently-accessed entry is evicted when the cap is reached.
+     *       Snapshot deletion is suppressed in this mode (see {@link #deleteSnapshot}) so that
+     *       the durable {@link FlowSnapshotStore} retains the COMPLETED row as the persistent
+     *       idempotency fence; long-running runtimes therefore stay memory-bounded without
+     *       weakening idempotency.</li>
+     * </ul>
+     *
+     * <p>Lookups in bounded mode go through {@code synchronized} on a dedicated lock — the path is
+     * cold (resubmit guard, called once per schedule attempt), so the lock cost is acceptable; a
+     * read-write lock can be introduced if profiling later shows contention.
+     */
+    private static final class TerminalStateCatalog {
+
+        private final int maxSize;
+        private final Map<FlowKey, FlowState> map;
+        private final Object lock = new Object();
+
+        /* default */ TerminalStateCatalog(int maxSize) {
+            this.maxSize = maxSize;
+            if (maxSize == 0) {
+                this.map = new ConcurrentHashMap<>();
+            } else {
+                this.map = new LinkedHashMap<>(16, 0.75f, true) {
+                    private static final long serialVersionUID = 1L;
+                    @Override
+                    protected boolean removeEldestEntry(Map.Entry<FlowKey, FlowState> eldest) {
+                        return size() > maxSize;
+                    }
+                };
+            }
+        }
+
+        /* default */ boolean isBounded() {
+            return maxSize > 0;
+        }
+
+        /* default */ boolean isTerminal(FlowKey key) {
+            if (maxSize == 0) {
+                return map.containsKey(key);
+            }
+            synchronized (lock) {
+                // get() — not containsKey — to mark the entry as recently accessed under accessOrder=true.
+                return map.get(key) != null;
+            }
+        }
+
+        /* default */ void recordTerminal(FlowKey key, FlowState state) {
+            if (maxSize == 0) {
+                map.put(key, state);
+                return;
+            }
+            synchronized (lock) {
+                map.put(key, state);
+            }
+        }
+
+        /* default */ void clear() {
+            if (maxSize == 0) {
+                map.clear();
+                return;
+            }
+            synchronized (lock) {
+                map.clear();
+            }
         }
     }
 }

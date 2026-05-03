@@ -473,6 +473,12 @@ final class NativeTcpStream implements TransportStream {
         return ensureTlsReady(true);
     }
 
+    // PERF-062: try-with-resources is intentionally NOT used here. The success path transfers
+    // ownership of `plaintext` to the caller (returned at refcount 1, freed by the queue
+    // consumer); only the failure path closes via the `transferred` ownership flag. A
+    // try-with-resources would force an extra retain()/close() ceremony per TLS record on the
+    // hot ingress path. Same pattern in decryptIngress below.
+    @SuppressWarnings("PMD.UseTryWithResources")
     /* default */ LoanedBuffer readTlsIngressFromFd() {
         if (tlsEngine == null) {
             return null;
@@ -517,6 +523,7 @@ final class NativeTcpStream implements TransportStream {
         }
     }
 
+    @SuppressWarnings("PMD.UseTryWithResources") // see readTlsIngressFromFd above — transferred-flag ownership
     /* default */ LoanedBuffer decryptIngress(LoanedBuffer ciphertext, int length) {
         // PERF-062: fast-fail before allocation when offerIngress would reject.
         // Saves the network buffer borrow + TLS unwrap on backpressured / closing-stream paths.

@@ -89,6 +89,7 @@ public final class CoreFlowEngine implements FlowEngine {
         if (!closeInitiated.compareAndSet(false, true)) {
             return;
         }
+        long startNanos = System.nanoTime();
         for (Map.Entry<EventBus, SubscriptionToken> entry : choreographySubscriptions) {
             try {
                 entry.getKey().unsubscribe(entry.getValue());
@@ -98,7 +99,7 @@ public final class CoreFlowEngine implements FlowEngine {
         }
         choreographySubscriptions.clear();
         runtime.close();
-        FlowEngineShutdownEvent.emit(config, runtime.stats());
+        FlowEngineShutdownEvent.emit(config, runtime.stats(), System.nanoTime() - startNanos);
     }
 
     @Override

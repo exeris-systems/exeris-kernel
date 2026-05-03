@@ -9,6 +9,7 @@
 package eu.exeris.kernel.spi.flow;
 
 import java.util.Objects;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Immutable configuration for the {@link FlowEngine}.
@@ -39,9 +40,29 @@ import java.util.Objects;
  * @param partitionBytes         total bytes to claim for the flow memory partition (Enterprise)
  * @param persistenceEnabled     whether flow snapshot persistence via SPI is enabled
  * @param compensationEnabled    whether backward compensation (saga rollback) is enabled
+ * @param terminalCatalogMaxSize maximum number of entries retained in the in-memory terminal-state
+ *                               catalog used as the idempotency fence for COMPLETED /
+ *                               FAILED_ROLLEDBACK resubmits; {@code 0} = unbounded (default,
+ *                               backward-compatible). When {@code > 0}, the catalog evicts the
+ *                               least-recently-accessed entry; the engine then falls back to the
+ *                               durable {@link eu.exeris.kernel.spi.flow.model.FlowSnapshotStore}
+ *                               (when {@code persistenceEnabled = true}) to honor the idempotency
+ *                               fence — see {@code flow.md} §Lifecycle. (since 0.7.0)
+ * @param defaultSagaTimeoutShortNanos baseline timeout for short-lived (transactional) sagas;
+ *                                     {@link #DEFAULT_SAGA_TIMEOUT_SHORT_NANOS} = 30 s. Exposed for
+ *                                     callers that classify saga lifetimes when constructing a
+ *                                     {@link eu.exeris.kernel.spi.flow.model.FlowContext}; the engine
+ *                                     itself enforces whatever {@code timeoutNanos} the context carries.
+ *                                     (since 0.7.0)
+ * @param defaultSagaTimeoutLongNanos  baseline timeout for long-running (business-process) sagas;
+ *                                     {@link #DEFAULT_SAGA_TIMEOUT_LONG_NANOS} = 30 days. Exposed for
+ *                                     callers that classify saga lifetimes when constructing a
+ *                                     {@link eu.exeris.kernel.spi.flow.model.FlowContext}.
+ *                                     (since 0.7.0)
  *
  * @since 0.5.0
  */
+@SuppressWarnings("PMD.ExcessiveParameterList") // 14 fields — flat-record config carrier;
 public record FlowEngineConfig(
         String  engineName,
         int     maxConcurrentFlows,
@@ -53,8 +74,18 @@ public record FlowEngineConfig(
         String  partitionName,
         long    partitionBytes,
         boolean persistenceEnabled,
-        boolean compensationEnabled
+        boolean compensationEnabled,
+        int     terminalCatalogMaxSize,
+        long    defaultSagaTimeoutShortNanos,
+        long    defaultSagaTimeoutLongNanos
 ) {
+
+    /** Default short-lived (transactional) saga timeout — 30 seconds. @since 0.7.0 */
+    public static final long DEFAULT_SAGA_TIMEOUT_SHORT_NANOS = TimeUnit.SECONDS.toNanos(30L);
+
+    /** Default long-running (business-process) saga timeout — 30 days. @since 0.7.0 */
+    public static final long DEFAULT_SAGA_TIMEOUT_LONG_NANOS = TimeUnit.DAYS.toNanos(30L);
+
 
     /** Compact constructor — validates invariants eagerly (fail-fast bootstrap). */
     public FlowEngineConfig {
@@ -90,6 +121,52 @@ public record FlowEngineConfig(
                     + "(Enterprise ring buffer), got: " + schedulerQueueCapacity);
         }
         validatePartition(partitionName, partitionBytes);
+        if (terminalCatalogMaxSize < 0) {
+            throw new IllegalArgumentException(
+                    "terminalCatalogMaxSize must be >= 0, got: " + terminalCatalogMaxSize);
+        }
+        if (defaultSagaTimeoutShortNanos <= 0) {
+            throw new IllegalArgumentException(
+                    "defaultSagaTimeoutShortNanos must be > 0, got: " + defaultSagaTimeoutShortNanos);
+        }
+        if (defaultSagaTimeoutLongNanos <= 0) {
+            throw new IllegalArgumentException(
+                    "defaultSagaTimeoutLongNanos must be > 0, got: " + defaultSagaTimeoutLongNanos);
+        }
+        if (defaultSagaTimeoutLongNanos < defaultSagaTimeoutShortNanos) {
+            throw new IllegalArgumentException(
+                    "defaultSagaTimeoutLongNanos (" + defaultSagaTimeoutLongNanos
+                    + ") must be >= defaultSagaTimeoutShortNanos (" + defaultSagaTimeoutShortNanos + ')');
+        }
+    }
+
+    /**
+     * Backward-compatible 11-arg constructor — preserves the v0.6 call shape so existing callers
+     * (community bootstrap, tests, external operators) compile unchanged. Defaults the new 0.7
+     * fields to: {@code terminalCatalogMaxSize = 0} (unbounded — preserves prior behavior),
+     * {@link #DEFAULT_SAGA_TIMEOUT_SHORT_NANOS}, and {@link #DEFAULT_SAGA_TIMEOUT_LONG_NANOS}.
+     *
+     * @since 0.7.0
+     */
+    public FlowEngineConfig(
+            String  engineName,
+            int     maxConcurrentFlows,
+            long    timeoutDurationNanos,
+            int     maxSteps,
+            int     maxTransitions,
+            int     maxExecutionPlans,
+            int     schedulerQueueCapacity,
+            String  partitionName,
+            long    partitionBytes,
+            boolean persistenceEnabled,
+            boolean compensationEnabled
+    ) {
+        this(engineName, maxConcurrentFlows, timeoutDurationNanos, maxSteps, maxTransitions,
+             maxExecutionPlans, schedulerQueueCapacity, partitionName, partitionBytes,
+             persistenceEnabled, compensationEnabled,
+             0,
+             DEFAULT_SAGA_TIMEOUT_SHORT_NANOS,
+             DEFAULT_SAGA_TIMEOUT_LONG_NANOS);
     }
 
     private static void validatePartition(String name, long bytes) {
@@ -122,7 +199,10 @@ public record FlowEngineConfig(
                 null,               // no off-heap partition — Community heap path
                 0L,                 // partitionBytes=0 → heap-only
                 false,              // persistence disabled by default for Community
-                true
+                true,
+                0,                  // unbounded terminal catalog (backward-compatible default)
+                DEFAULT_SAGA_TIMEOUT_SHORT_NANOS,
+                DEFAULT_SAGA_TIMEOUT_LONG_NANOS
         );
     }
 
@@ -145,7 +225,10 @@ public record FlowEngineConfig(
                 "flow",
                 32L * 1024 * 1024,  // 32 MB off-heap partition
                 true,
-                true
+                true,
+                100_000,            // bounded LRU terminal catalog — Enterprise long-running runtime
+                DEFAULT_SAGA_TIMEOUT_SHORT_NANOS,
+                DEFAULT_SAGA_TIMEOUT_LONG_NANOS
         );
     }
 }

@@ -90,8 +90,25 @@ public final class FlowEngineException extends ExerisKernelException {
      * @since 0.7.0
      */
     public static FlowEngineException optimisticLockConflict(String engineName, long incomingSchemaVersion) {
+        return optimisticLockConflict(engineName, incomingSchemaVersion, null);
+    }
+
+    /**
+     * Cause-preserving variant of {@link #optimisticLockConflict(String, long)}. Used when the
+     * conflict surfaces through an underlying driver exception — for example, a composite-PK
+     * integrity-constraint violation raised by a concurrent INSERT race-loser in a durable
+     * binding. The original {@code SQLException}-shaped chain is preserved for diagnostics;
+     * the caller still observes the same OCC contract from ADR-013 §5.
+     *
+     * @param engineName            the engine name
+     * @param incomingSchemaVersion the schemaVersion the caller attempted to write
+     * @param cause                 underlying driver exception that surfaced the conflict; may be {@code null}
+     * @since 0.7.0
+     */
+    public static FlowEngineException optimisticLockConflict(
+            String engineName, long incomingSchemaVersion, Throwable cause) {
         int contextValue = (int) Math.min(incomingSchemaVersion, Integer.MAX_VALUE);
-        return new FlowEngineException(KernelErrorCodes.EX_FLOW_7002, MSG_ENGINE_FAILURE, null,
+        return new FlowEngineException(KernelErrorCodes.EX_FLOW_7002, MSG_ENGINE_FAILURE, cause,
                 engineName, "OPTIMISTIC_LOCK_CONFLICT", REASON_STALE_VERSION, contextValue);
     }
 }
