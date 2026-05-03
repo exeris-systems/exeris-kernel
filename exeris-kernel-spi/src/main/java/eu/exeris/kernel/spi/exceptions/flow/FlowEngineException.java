@@ -19,11 +19,13 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  * <ul>
  *   <li>index 0 – {@code String} engineName</li>
  *   <li>index 1 – {@code String} phase — one of: {@code "START"}, {@code "STOP"},
- *       {@code "COMPILE"}, {@code "SCHEDULE"}</li>
+ *       {@code "COMPILE"}, {@code "SCHEDULE"}, {@code "OPTIMISTIC_LOCK_CONFLICT"} (since 0.7)</li>
  *   <li>index 2 – {@code String} staticReasonCode — stable identifier, never user-supplied
- *       (e.g. {@code "STARTUP_FAILED"}, {@code "COMPILE_FAILED"}, {@code "QUEUE_FULL"})</li>
+ *       (e.g. {@code "STARTUP_FAILED"}, {@code "COMPILE_FAILED"}, {@code "QUEUE_FULL"},
+ *       {@code "STALE_VERSION"})</li>
  *   <li>index 3 – {@code int} contextValue — phase-specific numeric context
- *       (e.g. current queue depth for SCHEDULE phase); {@code -1} when not applicable</li>
+ *       (e.g. current queue depth for SCHEDULE phase, incoming schemaVersion for
+ *       OPTIMISTIC_LOCK_CONFLICT); {@code -1} when not applicable</li>
  * </ul>
  *
  * @since 0.5.0
@@ -34,6 +36,7 @@ public final class FlowEngineException extends ExerisKernelException {
     private static final String REASON_STARTUP      = "STARTUP_FAILED";
     private static final String REASON_COMPILE      = "COMPILE_FAILED";
     private static final String REASON_QUEUE_FULL   = "QUEUE_FULL";
+    private static final String REASON_STALE_VERSION = "STALE_VERSION";
 
     public FlowEngineException(String message) {
         super(KernelErrorCodes.EX_FLOW_7002, message, (Throwable) null);
@@ -69,6 +72,27 @@ public final class FlowEngineException extends ExerisKernelException {
     public static FlowEngineException schedulerFull(String engineName, int queueDepth) {
         return new FlowEngineException(KernelErrorCodes.EX_FLOW_7002, MSG_ENGINE_FAILURE, null,
                 engineName, "SCHEDULE", REASON_QUEUE_FULL, queueDepth);
+    }
+
+    /**
+     * Creates an exception for an optimistic-lock conflict on a durable snapshot store
+     * (see ADR-013). Raised when a durable {@code FlowSnapshotStore} implementation
+     * finds the on-disk {@code schemaVersion} no longer matches the incoming snapshot's
+     * version — another kernel advanced the saga first.
+     *
+     * <p>rawArgs layout: {@code [engineName, "OPTIMISTIC_LOCK_CONFLICT", "STALE_VERSION",
+     * incomingSchemaVersion]}. The version is bound to {@code int}; saga rows that exceed
+     * {@code Integer.MAX_VALUE} versions are not anticipated within the operational
+     * lifetime, but if needed callers may clamp via {@link Math#min}.
+     *
+     * @param engineName            the engine name
+     * @param incomingSchemaVersion the schemaVersion the caller attempted to write
+     * @since 0.7.0
+     */
+    public static FlowEngineException optimisticLockConflict(String engineName, long incomingSchemaVersion) {
+        int contextValue = (int) Math.min(incomingSchemaVersion, Integer.MAX_VALUE);
+        return new FlowEngineException(KernelErrorCodes.EX_FLOW_7002, MSG_ENGINE_FAILURE, null,
+                engineName, "OPTIMISTIC_LOCK_CONFLICT", REASON_STALE_VERSION, contextValue);
     }
 }
 

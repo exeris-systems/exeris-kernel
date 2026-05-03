@@ -761,6 +761,10 @@ final class CoreFlowRuntime { // NOPMD
         }
         clearParkedLookupMiss(instance.key());
         snapshotStore.save(instance.toSnapshot(state, stepIndex));
+        // ADR-013 §5: durable stores advance schema_version by one on every accepted write.
+        // Mirror that increment locally so the next save carries the now-current expected
+        // version. In-memory bindings ignore schemaVersion, so the bump is harmless there.
+        instance.markPersisted();
     }
 
     private final class Scheduler implements FlowScheduler {

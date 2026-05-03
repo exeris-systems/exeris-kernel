@@ -8,6 +8,7 @@
  */
 package eu.exeris.kernel.spi.flow.model;
 
+import java.util.List;
 import java.util.Optional;
 
 // ScopedValue is referenced in Javadoc only (@see KernelProviders#FLOW_SNAPSHOT_STORE)
@@ -83,5 +84,34 @@ public interface FlowSnapshotStore {
      * @return {@code true} if a snapshot exists
      */
     boolean exists(long instanceIdMost, long instanceIdLeast);
+
+    /**
+     * Returns every snapshot whose {@link FlowSnapshot#state()} is currently
+     * {@link FlowState#PARKED}. Used by the engine on startup and by the choreography
+     * wake fallback path to enumerate cross-restart parked instances (see ADR-013).
+     *
+     * <h2>Default Contract</h2>
+     * <p>The default implementation returns an empty list, which is the correct semantics
+     * for in-memory stores that do not survive restart. Durable, distributed store
+     * implementations MUST override this method to enumerate every parked snapshot so
+     * the engine can resume choreography on the cross-restart fallback path.
+     *
+     * <h2>Call Site</h2>
+     * <p>Cold path. Invoked at engine startup (one-shot) and on choreography wake when the
+     * in-memory parked-instance index misses (rare). Implementations MAY return a fully
+     * materialized list; pagination is not required for v0.7.
+     *
+     * <h2>Thread Safety</h2>
+     * <p>Implementations MUST be thread-safe. The returned list MUST be a snapshot —
+     * concurrent mutations to the store after the call returns MUST NOT be reflected in
+     * the result.
+     *
+     * @return list of parked snapshots; empty list if the store has none or does not
+     *         track parked instances
+     * @since 0.7.0
+     */
+    default List<FlowSnapshot> listParked() {
+        return List.of();
+    }
 }
 
