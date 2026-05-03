@@ -12,6 +12,8 @@ import eu.exeris.kernel.spi.config.ConfigProvider;
 import eu.exeris.kernel.spi.crypto.KernelCryptoProvider;
 import eu.exeris.kernel.spi.events.EventEngine;
 import eu.exeris.kernel.spi.events.EventProvider;
+import eu.exeris.kernel.spi.events.EventStreamAppender;
+import eu.exeris.kernel.spi.events.EventStreamReader;
 import eu.exeris.kernel.spi.exceptions.security.PrincipalContextMissingException;
 import eu.exeris.kernel.spi.exceptions.security.StorageContextMissingException;
 import eu.exeris.kernel.spi.flow.FlowEngine;
@@ -266,6 +268,30 @@ public final class KernelProviders {
      * @see eu.exeris.kernel.spi.events.EventProvider
      */
     public static final ScopedValue<EventEngine> EVENT_ENGINE = ScopedValue.newInstance();
+
+    /**
+     * Optional {@link EventStreamReader} for replay over the durable event log
+     * (since 0.7.0). Bound by the bootstrapper before {@link EventEngine#start()} when
+     * a binding (e.g. PostgreSQL outbox replay, Kafka consumer-seek driver) is on the
+     * classpath. Application code should consult {@link #eventStreamReader()} and treat
+     * an empty {@link Optional} as "broker does not support replay" — never as a hard error.
+     *
+     * @since 0.7.0
+     * @see EventStreamReader
+     */
+    public static final ScopedValue<EventStreamReader> EVENT_STREAM_READER = ScopedValue.newInstance();
+
+    /**
+     * Optional {@link EventStreamAppender} for direct durable append (since 0.7.0).
+     * Bound by the bootstrapper before {@link EventEngine#start()} when a binding
+     * (e.g. Kafka producer with explicit partition control) is on the classpath. Most
+     * callers route through the transactional outbox; direct use is reserved for sites
+     * that need topic/partition routing.
+     *
+     * @since 0.7.0
+     * @see EventStreamAppender
+     */
+    public static final ScopedValue<EventStreamAppender> EVENT_STREAM_APPENDER = ScopedValue.newInstance();
 
     // =========================================================================
     // Flow Slots (L4 Saga / Flow Orchestration)
@@ -555,6 +581,32 @@ public final class KernelProviders {
      */
     public static EventProvider eventProvider() {
         return EVENT_PROVIDER.get();
+    }
+
+    /**
+     * Returns the optional {@link EventStreamReader} from the current scope.
+     *
+     * @return an {@link Optional} containing the reader if a binding is present and
+     *         the slot was bound; empty otherwise
+     * @since 0.7.0
+     */
+    public static Optional<EventStreamReader> eventStreamReader() {
+        return EVENT_STREAM_READER.isBound()
+                ? Optional.of(EVENT_STREAM_READER.get())
+                : Optional.empty();
+    }
+
+    /**
+     * Returns the optional {@link EventStreamAppender} from the current scope.
+     *
+     * @return an {@link Optional} containing the appender if a binding is present and
+     *         the slot was bound; empty otherwise
+     * @since 0.7.0
+     */
+    public static Optional<EventStreamAppender> eventStreamAppender() {
+        return EVENT_STREAM_APPENDER.isBound()
+                ? Optional.of(EVENT_STREAM_APPENDER.get())
+                : Optional.empty();
     }
 
     /**

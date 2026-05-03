@@ -40,11 +40,15 @@ operates on local memory, a PostgreSQL partition, or a Kafka cluster. (The SPI i
 - **`CommunityEventBusOutboxBrokerPort`** — Outbox delivery port that publishes to the local in-memory `CommunityEventBus` (NOT to Kafka/Redpanda)
 - **`CommunityEventProvider`** — `ServiceLoader` entry point
 
+**Implemented in 0.7 (Sprint 5a — SPI groundwork):**
+- `EventStreamReader` / `EventStreamAppender` / `EventStream` / `StreamId` SPI contracts (`exeris-kernel-spi`) — implementation-blind replay/append surface targeted at the upcoming Kafka driver and the existing PostgreSQL outbox path. `KernelProviders.EVENT_STREAM_READER` / `KernelProviders.EVENT_STREAM_APPENDER` ScopedValue slots are wired for bootstrapper hand-off.
+- `AbstractEventRegistryTck` (EVENT-205a) — binding-agnostic contract for `EX-EVENT-6003` ordinal conflict with `rawArgs == [eventType, ordinal]`. Community binding green.
+
 **Not yet implemented:**
-- Kafka or Redpanda driver — **no binding exists in the repository**
-- `EventStreamReader` / `EventStreamAppender` SPI contracts
-- Per-subscription retry configuration on `EventBus`
-- Operator-triggered DLQ replay API (`EventEngine.replayFromDlq(dlqId)`)
+- Kafka or Redpanda driver — **no binding exists in the repository** (planned: Sprint 5b — `exeris-kernel-community-kafka` module + Core `KafkaSessionOrchestrator` + `KafkaEventEngine` + `AbstractKafkaEventEngineTck`).
+- `AbstractEventBackpressureTck` for `EX-EVENT-6002` — deferred to Sprint 5b. The current Community `EventQueue` blocks on full via `LinkedBlockingDeque.putLast()`; aligning with the doc'd throw-on-full contract requires a `EventEngineConfig.busPublishFailFast` knob to preserve backward compatibility.
+- Per-subscription retry configuration on `EventBus`.
+- Operator-triggered DLQ replay API (`EventEngine.replayFromDlq(dlqId)`).
 
 ---
 
@@ -108,7 +112,7 @@ in the `EventDescriptor` primitive layout.
 **What Events SPI DOES:**
 
 1. Define `EventDescriptor` (primitive-only routing metadata) and `EventPayload` (ref-counted off-heap bytes).
-2. Provide `EventStreamReader` and `EventStreamAppender` interfaces *(Target State — not yet implemented)*.
+2. Provide `EventStreamReader` and `EventStreamAppender` interfaces (since 0.7.0, EVENT-203) plus the `StreamId` / `EventStream` carriers used to query and stream events. Implementation-blind — bindings (PostgreSQL outbox, Kafka driver, Enterprise off-heap log) provide the cursor.
 3. Define `EventRegistry` ordinal contract for O(1) type routing.
 4. Define conflict-resolution routing via `EventDescriptor.flags` (PERSISTENT, ORDERED, ASYNC, BROADCAST). Note: optimistic concurrency version enforcement is a Persistence SPI concern (`PersistenceEngine.append(streamId, expectedVersion, …)`), not an Events routing concern.
 
@@ -238,29 +242,40 @@ fields: `eventType (String)`, `streamIdHigh (long)`, `streamIdLow (long)`, `reas
 
 ## Event Replay API
 
-> **Target State — not yet implemented.** `EventStreamReader`, `EventStreamAppender`, `StreamId`, and
-> `EventStream` SPI contracts do not yet exist in `exeris-kernel-spi`. This section describes a planned
-> capability.
-
-The `EventStreamReader` SPI supports replay from a specific position in the Event Store.
-This enables CQRS projection rebuilds without external tooling.
+The `EventStreamReader` / `EventStreamAppender` SPI (since 0.7.0, EVENT-203) defines a binding-agnostic replay and direct-append surface that brokers (PostgreSQL outbox, Kafka, Enterprise off-heap log) implement and bootstrappers wire via `KernelProviders.EVENT_STREAM_READER` / `KernelProviders.EVENT_STREAM_APPENDER`. Application code consults `KernelProviders.eventStreamReader()` / `KernelProviders.eventStreamAppender()` and treats an empty `Optional` as "broker does not support this capability" — never as a hard error.
 
 ```java
 public interface EventStreamReader extends AutoCloseable {
-    // Replay all events from a specific timestamp (inclusive)
+    // Replay all events for a specific stream from a timestamp (inclusive)
     EventStream replayFrom(StreamId streamId, Instant fromTimestamp);
 
-    // Replay from a specific event version/offset
+    // Replay from a specific stream version (broker-defined offset semantics)
     EventStream replayFromVersion(StreamId streamId, long fromVersion);
 
-    // Replay all events for an aggregate type (cross-stream)
+    // Cross-stream replay of every event of a given type (projection rebuild)
     EventStream replayByType(String eventType, Instant fromTimestamp);
+
+    @Override void close(); // releases shared driver resources; idempotent
 }
+
+@FunctionalInterface
+public interface EventStreamAppender {
+    // Same RAII ownership transfer as EventBus.publish(...)
+    void append(StreamId streamId, EventDescriptor descriptor, EventPayload payload);
+}
+
+public record StreamId(long streamIdHigh, long streamIdLow, String streamType) { ... }
 ```
 
-**Zero-allocation replay path:** Events are streamed directly from the PostgreSQL WAL or Kafka
-topic into `LoanedBuffer` slabs — no intermediate `List<Event>` materialisation.
-`EventStream` implements `Iterable<EventPayload>` and closes each payload on `Iterator.next()`.
+`StreamId` is wire-compatible with `EventDescriptor.streamIdHigh()` / `streamIdLow()` so the same routing index serves both descriptor dispatch and stream-scoped queries.
+
+**Zero-allocation replay path:** Events are streamed directly from the PostgreSQL WAL or Kafka topic into `LoanedBuffer` slabs — no intermediate `List<Event>` materialisation. `EventStream extends Iterable<EventPayload>, AutoCloseable`; each payload arrives at refCount 1 and the consumer closes it (no broadcast retain protocol on replay). The cursor is released via `EventStream.close()`.
+
+**Bindings (status):**
+
+- PostgreSQL outbox replay — planned (no current binding).
+- Kafka driver — planned for Sprint 5b in the new `exeris-kernel-community-kafka` module.
+- Enterprise off-heap log — out-of-repo, target-state.
 
 ---
 
@@ -311,9 +326,9 @@ operational differences relevant to a future Exeris Kafka/Redpanda driver:
 - `EventDescriptor` scalarization: verify no heap objects are created during descriptor construction.
 - `EventPayload` ref-count correctness: N subscribers → ref-count N; last `close()` → pool return.
 - `EventRegistry` ordinal conflicts: `EX-EVENT-6003` thrown on duplicate registration.
-  > **(TCK gap — not yet implemented)**
+  > **Closed in 0.7 (EVENT-205a).** Covered by `AbstractEventRegistryTck`; Community binding `CommunityEventRegistryTckTest` green. Asserts both error code and `rawArgs == [String eventType, int ordinal]` per the documented Glass-Box layout.
 - Backpressure: `EX-EVENT-6002` thrown with correct `rawArgs` when queue is at capacity.
-  > **(TCK gap — not yet implemented)**
+  > **(TCK gap — deferred to Sprint 5b.)** Reconciliation requires `EventEngineConfig.busPublishFailFast` because the current Community `EventQueue` blocks on full via `LinkedBlockingDeque.putLast()` (safe for virtual threads, but inconsistent with the throw-on-full contract documented above).
 
 ### Integration Tests (TCK)
 
