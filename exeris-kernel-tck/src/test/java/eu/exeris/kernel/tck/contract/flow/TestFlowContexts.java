@@ -18,13 +18,16 @@ import java.util.UUID;
 final class TestFlowContexts {
     private TestFlowContexts() {}
     static FlowContext create(String instanceId, String definitionName) {
+        return createWithState(instanceId, definitionName, FlowState.RUNNING);
+    }
+    static FlowContext createWithState(String instanceId, String definitionName, FlowState state) {
         UUID uuid = UUID.nameUUIDFromBytes(instanceId.getBytes(StandardCharsets.UTF_8));
         return new FlowContext() {
             @Override public long instanceIdMost()    { return uuid.getMostSignificantBits(); }
             @Override public long instanceIdLeast()   { return uuid.getLeastSignificantBits(); }
             @Override public String definitionName()  { return definitionName; }
             @Override public int currentStep()        { return 0; }
-            @Override public FlowState state()        { return FlowState.RUNNING; }
+            @Override public FlowState state()        { return state; }
             @Override public long timeoutNanos()      { return System.nanoTime() + 30_000_000_000L; }
         };
     }

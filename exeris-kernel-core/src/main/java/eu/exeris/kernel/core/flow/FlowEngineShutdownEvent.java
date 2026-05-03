@@ -52,7 +52,11 @@ final class FlowEngineShutdownEvent extends Event {
     @Description("Whether compensation support was enabled for this engine")
     /* default */ boolean compensationEnabled;
 
-    /* default */ static void emit(FlowEngineConfig config, FlowEngineStats stats) {
+    @Label("Shutdown Duration (ns)")
+    @Description("Wall-clock time elapsed inside FlowEngine.close() — drain + interrupt + join")
+    /* default */ long shutdownDurationNs;
+
+    /* default */ static void emit(FlowEngineConfig config, FlowEngineStats stats, long shutdownDurationNs) {
         FlowEngineShutdownEvent event = new FlowEngineShutdownEvent();
         if (!event.isEnabled()) {
             return;
@@ -65,6 +69,7 @@ final class FlowEngineShutdownEvent extends Event {
         event.failedFlows = stats.failedFlows();
         event.persistenceEnabled = config.persistenceEnabled();
         event.compensationEnabled = config.compensationEnabled();
+        event.shutdownDurationNs = shutdownDurationNs;
         event.commit();
     }
 }

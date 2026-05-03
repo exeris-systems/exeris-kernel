@@ -61,6 +61,18 @@ import java.util.Optional;
  *
  * @since 0.7.0
  */
+@SuppressWarnings({
+        // Durable JDBC store inherently exposes the full FlowSnapshotStore SPI plus internal
+        // helpers for the two-step UPDATE-then-INSERT pattern. Decomposition is tracked under
+        // Sprint 8 SQ-006 (alongside CoreFlowRuntime) — premature splitting here would
+        // fragment the OCC contract documented in ADR-013 §5.
+        "PMD.GodClass",
+        "PMD.TooManyMethods",
+        "PMD.CyclomaticComplexity",
+        // `ps` / `rs` / `sp` are the de-facto JDBC convention (PreparedStatement / ResultSet /
+        // stack-pointer); renaming them to longer identifiers obscures rather than clarifies.
+        "PMD.ShortVariable"
+})
 public final class JdbcFlowSnapshotStore implements FlowSnapshotStore {
 
     private static final String SQL_INSERT =
@@ -109,7 +121,16 @@ public final class JdbcFlowSnapshotStore implements FlowSnapshotStore {
         this.engineName = Objects.requireNonNull(engineName, "engineName");
     }
 
+    // The two-step UPSERT (UPDATE-CAS → distinguish absent vs stale → INSERT) plus
+    // commit/rollback ladder yields ~7 decision points; splitting further fragments
+    // the transactional boundary that ADR-013 §5 hangs the OCC contract on. The class-level
+    // `PMD.CyclomaticComplexity` suppression covers this method.
+    //
+    // `catch (FlowEngineException occ)` is intentional: the OCC failure raised by
+    // `optimisticLockConflict` MUST trigger rollback and re-throw without wrapping.
+    // This is transactional control flow, not error-control-flow misuse.
     @Override
+    @SuppressWarnings("PMD.ExceptionAsFlowControl")
     public void save(FlowSnapshot snapshot) {
         Objects.requireNonNull(snapshot, "snapshot");
         try (Connection conn = dataSource.getConnection()) {
@@ -152,7 +173,8 @@ public final class JdbcFlowSnapshotStore implements FlowSnapshotStore {
             insertSnapshot(conn, snapshot);
         } catch (SQLException pkViolation) {
             if (isIntegrityConstraintViolation(pkViolation)) {
-                throw FlowEngineException.optimisticLockConflict(engineName, snapshot.schemaVersion());
+                throw FlowEngineException.optimisticLockConflict(
+                        engineName, snapshot.schemaVersion(), pkViolation);
             }
             throw pkViolation;
         }
@@ -260,6 +282,7 @@ public final class JdbcFlowSnapshotStore implements FlowSnapshotStore {
      * Binds the eight payload columns (definition_name through opaque_state) starting at
      * the given JDBC parameter index. Used by both INSERT (offset 3) and UPDATE (offset 1).
      */
+    @SuppressWarnings("PMD.AssignmentInOperand") // idx++ is the canonical JDBC binding pattern
     private static void bindSnapshotPayload(PreparedStatement ps, FlowSnapshot snapshot,
                                             int startIndex) throws SQLException {
         int idx = startIndex;
@@ -313,6 +336,9 @@ public final class JdbcFlowSnapshotStore implements FlowSnapshotStore {
         return result;
     }
 
+    // ResultSet.getTimestamp returns java.sql.Timestamp by JDBC contract; we convert
+    // to Instant on the next line, never holding the Timestamp beyond decoding.
+    @SuppressWarnings("PMD.ReplaceJavaUtilDate")
     private static FlowSnapshot readSnapshot(ResultSet rs) throws SQLException {
         long instanceIdMost = rs.getLong("instance_id_most");
         long instanceIdLeast = rs.getLong("instance_id_least");
