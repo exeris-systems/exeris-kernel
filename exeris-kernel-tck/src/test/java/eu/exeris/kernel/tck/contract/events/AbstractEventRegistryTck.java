@@ -148,7 +148,7 @@ public abstract class AbstractEventRegistryTck {
         }
 
         @Test
-        @DisplayName("Same name with a different ordinal throws EX-EVENT-6003")
+        @DisplayName("Same name with a different ordinal throws EX-EVENT-6003 with rawArgs [name, newOrdinal]")
         void sameNameDifferentOrdinalThrowsConflict() {
             registry.register(EventTypeSpec.of(TYPE_USER_CREATED, ORDINAL_USER_CREATED));
 
@@ -159,11 +159,14 @@ public abstract class AbstractEventRegistryTck {
                         EventRegistryException registryEx = (EventRegistryException) ex;
                         assertThat(registryEx.errorCode())
                                 .isEqualTo(KernelErrorCodes.EX_EVENT_6003);
+                        // rawArgs MUST identify the *new* (conflicting) registration so operators
+                        // can distinguish from the existing entry. A buggy impl that reports the
+                        // pre-existing ordinal in slot 1 would silently mislead diagnostics —
+                        // assert both slots, not just rawArgs[0].
                         assertThat(registryEx.rawArgs())
-                                .as("rawArgs index 0 MUST be the conflicting type name")
-                                .isNotEmpty();
-                        assertThat(registryEx.rawArgs()[0])
-                                .isEqualTo(TYPE_USER_CREATED);
+                                .as("rawArgs MUST follow the [String eventType, int ordinal] layout "
+                                        + "carrying the conflicting registration")
+                                .containsExactly(TYPE_USER_CREATED, ORDINAL_ORDER_PLACED);
                     });
         }
     }

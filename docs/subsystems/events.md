@@ -46,6 +46,7 @@ operates on local memory, a PostgreSQL partition, or a Kafka cluster. (The SPI i
 
 **Not yet implemented:**
 - Kafka or Redpanda driver — **no binding exists in the repository** (planned: Sprint 5b — `exeris-kernel-community-kafka` module + Core `KafkaSessionOrchestrator` + `KafkaEventEngine` + `AbstractKafkaEventEngineTck`).
+- `AbstractEventStreamReaderTck` and `AbstractEventStreamAppenderTck` — the SPI contracts ship in 0.7 (Sprint 5a) but the abstract TCK suites and Community bindings are deferred to Sprint 5b together with the first concrete binding (Kafka driver) so the assertions can verify real cursor / append behaviour rather than a stub.
 - `AbstractEventBackpressureTck` for `EX-EVENT-6002` — deferred to Sprint 5b. The current Community `EventQueue` blocks on full via `LinkedBlockingDeque.putLast()`; aligning with the doc'd throw-on-full contract requires a `EventEngineConfig.busPublishFailFast` knob to preserve backward compatibility.
 - Per-subscription retry configuration on `EventBus`.
 - Operator-triggered DLQ replay API (`EventEngine.replayFromDlq(dlqId)`).
