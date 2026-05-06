@@ -20,15 +20,26 @@ import java.util.function.Consumer;
 /**
  * Community: heap-backed, bounded {@link EventQueue} using {@link LinkedBlockingDeque}.
  *
- * <h2>Back-pressure</h2>
- * <p>When the deque is full, {@link #push} parks the calling virtual thread (safe for VTs)
- * via {@code LinkedBlockingDeque.putLast()} — structured blocking, not busy-spin.
- * This ensures publishers never silently lose events due to overflow.
+ * <h2>Back-pressure (since 0.7.0 — EVENT-205b)</h2>
+ * <p>Two operating modes selected by the {@code busPublishFailFast} bit on
+ * {@link eu.exeris.kernel.spi.events.EventEngineConfig}:
+ * <ul>
+ *   <li><b>Blocking (default — backward-compat).</b> {@link #push} parks the calling virtual
+ *       thread via {@link LinkedBlockingDeque#putLast(Object)} when the queue is full —
+ *       safe for VTs (no carrier pinning), publishers never lose events.</li>
+ *   <li><b>Fail-fast (since 0.7.0).</b> {@link #push} uses
+ *       {@link LinkedBlockingDeque#offerLast(Object)} and returns {@code false} when the
+ *       queue is at capacity. {@link CommunityEventEngine} then translates {@code false}
+ *       into {@link eu.exeris.kernel.spi.exceptions.events.EventBusException#publishOverflow(String, long, long)
+ *       EventBusException.publishOverflow} carrying {@code rawArgs == [eventType, queueDepth, queueCapacity]}.</li>
+ * </ul>
  *
  * <h2>Payload Ownership</h2>
  * <p>On each {@link #push}, the queue retains the payload (increments refCount) before
  * enqueuing. On {@link #drain} or {@link #poll}, the dequeued payload is handed to
  * the caller's sink — ownership transfers; the sink must call {@code payload.close()}.
+ * On a failed push (full or interrupted), the queue closes its own retain so the
+ * caller's reference count is unchanged.
  *
  * @since 0.5.0
  */
@@ -36,20 +47,34 @@ final class CommunityEventQueue implements EventQueue {
 
     private final BlockingDeque<Entry> deque;
     private final int                  capacity;
+    private final boolean              failFastOnFull;
 
     private record Entry(EventDescriptor descriptor, EventPayload payload) {}
 
     /* default */ CommunityEventQueue(int capacity) {
-        this.capacity = capacity;
-        this.deque    = new LinkedBlockingDeque<>(capacity);
+        this(capacity, false);
+    }
+
+    /* default */ CommunityEventQueue(int capacity, boolean failFastOnFull) {
+        this.capacity       = capacity;
+        this.deque          = new LinkedBlockingDeque<>(capacity);
+        this.failFastOnFull = failFastOnFull;
     }
 
     @Override
     @SuppressWarnings("PMD.AvoidCatchingGenericException")
     public boolean push(EventDescriptor descriptor, EventPayload payload) {
         payload.retain();
+        Entry entry = new Entry(descriptor, payload);
         try {
-            deque.putLast(new Entry(descriptor, payload));
+            if (failFastOnFull) {
+                if (!deque.offerLast(entry)) {
+                    payload.close();
+                    return false;
+                }
+                return true;
+            }
+            deque.putLast(entry);
             return true;
         } catch (InterruptedException _) {
             payload.close();

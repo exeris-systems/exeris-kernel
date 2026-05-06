@@ -33,9 +33,19 @@ import java.util.Objects;
  * @param slabPayloadLarge    number of large payload slab slots (64 KB, Enterprise)
  * @param outboxEnabled       whether the transactional outbox writer is enabled
  * @param outboxBatchSize     maximum events written per outbox flush cycle
+ * @param busPublishFailFast  when {@code true}, persistent {@link EventBus#publish} fails fast with
+ *                            {@link eu.exeris.kernel.spi.exceptions.events.EventBusException}
+ *                            ({@code EX-EVENT-6002}, rawArgs {@code [eventType, queueDepth, queueCapacity]})
+ *                            on a full queue instead of blocking the caller. Default {@code false}
+ *                            preserves the historical blocking-on-VT semantic. Brokers that map this
+ *                            knob onto a producer-side overflow signal (e.g. Kafka producer
+ *                            {@code buffer.memory} exhaustion) raise the same code with the same
+ *                            rawArgs layout. (since 0.7.0)
  *
  * @since 0.5.0
  */
+// 12 fields — flat-record config carrier; nesting would obscure ServiceLoader mapping
+@SuppressWarnings("PMD.ExcessiveParameterList")
 public record EventEngineConfig(
         String  engineName,
         int     queueCapacity,
@@ -47,7 +57,8 @@ public record EventEngineConfig(
         int     slabPayloadMedium,
         int     slabPayloadLarge,
         boolean outboxEnabled,
-        int     outboxBatchSize
+        int     outboxBatchSize,
+        boolean busPublishFailFast
 ) {
 
     /**
@@ -71,6 +82,31 @@ public record EventEngineConfig(
             throw new IllegalArgumentException(
                     "outboxBatchSize must be > 0 when outboxEnabled is true, got: " + outboxBatchSize);
         }
+    }
+
+    /**
+     * Backward-compatible 11-arg constructor — preserves the v0.6 call shape so existing callers
+     * (Community bootstrap, tests) compile unchanged. Defaults the new 0.7 field to:
+     * {@code busPublishFailFast = false} (historical blocking-on-VT semantic).
+     *
+     * @since 0.7.0
+     */
+    public EventEngineConfig(
+            String  engineName,
+            int     queueCapacity,
+            int     batchSize,
+            String  partitionName,
+            long    partitionBytes,
+            int     slabDescriptorCount,
+            int     slabPayloadSmall,
+            int     slabPayloadMedium,
+            int     slabPayloadLarge,
+            boolean outboxEnabled,
+            int     outboxBatchSize
+    ) {
+        this(engineName, queueCapacity, batchSize, partitionName, partitionBytes,
+             slabDescriptorCount, slabPayloadSmall, slabPayloadMedium, slabPayloadLarge,
+             outboxEnabled, outboxBatchSize, false);
     }
 
     /**
@@ -133,7 +169,8 @@ public record EventEngineConfig(
                 0L,
                 0, 0, 0, 0,
                 true,
-                500
+                500,
+                false  // busPublishFailFast — preserves v0.6 blocking-on-VT semantic
         );
     }
 
@@ -158,7 +195,8 @@ public record EventEngineConfig(
                 10_000,
                 1_000,
                 true,
-                4_096
+                4_096,
+                true   // busPublishFailFast — Enterprise prefers explicit overflow signalling
         );
     }
 }

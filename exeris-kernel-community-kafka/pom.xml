@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>eu.exeris</groupId>
+        <artifactId>exeris-kernel-parent</artifactId>
+        <version>0.7.0-SNAPSHOT</version>
+        <relativePath>../exeris-kernel-parent/pom.xml</relativePath>
+    </parent>
+    <artifactId>exeris-kernel-community-kafka</artifactId>
+
+    <name>Exeris Kernel :: Community :: Kafka</name>
+    <description>
+        Community Kafka / Redpanda EventEngine binding (since 0.7.0).
+        Isolates kafka-clients (and its transitives — zstd-jni, lz4-java, snappy-java,
+        jackson-databind) so single-node operators of exeris-kernel-community do NOT
+        ship a Kafka client on their classpath. See ADR-008 (Open-Core boundary) and
+        v0.7 EVENT-204.
+    </description>
+
+    <properties>
+        <includedGroups/>
+        <!--
+            Integration tests with Testcontainers Kafka run only when explicitly enabled:
+              mvn -pl exeris-kernel-community-kafka test -Dgroups=integration
+            Default Surefire runs exclude them so the unit suite stays fast and Docker-free.
+        -->
+        <excludedGroups>integration</excludedGroups>
+    </properties>
+
+    <dependencies>
+        <!-- SPI contracts (The Wall) -->
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-kernel-spi</artifactId>
+        </dependency>
+        <!-- Core orchestration (OutboxBrokerPort, OutboxOrchestrator, future KafkaSessionOrchestrator) -->
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-kernel-core</artifactId>
+        </dependency>
+        <!-- Community: provider+engine wiring; Community-internal helpers -->
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-kernel-community</artifactId>
+        </dependency>
+
+        <!-- The Kafka client itself — Community-Kafka-internal, not exposed to single-node operators. -->
+        <dependency>
+            <groupId>org.apache.kafka</groupId>
+            <artifactId>kafka-clients</artifactId>
+        </dependency>
+
+        <!-- Logging surface kept consistent with other Community modules. -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+        </dependency>
+
+        <!-- TCK abstract suites for binding parity -->
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-kernel-tck</artifactId>
+            <classifier>tests</classifier>
+            <type>test-jar</type>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- Test framework -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- Testcontainers Kafka 3.x for integration tests (only run with -Dgroups=integration) -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>kafka</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.2.5</version>
+                <configuration>
+                    <argLine>@{coverage.argLine} ${jvm.args}</argLine>
+                    <groups>${includedGroups}</groups>
+                    <excludedGroups>${excludedGroups}</excludedGroups>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>
