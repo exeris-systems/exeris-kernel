@@ -12,11 +12,10 @@
  *
  * <h2>Module Boundary (ADR-008)</h2>
  * <p>This package and its sub-packages are the <em>only</em> place where
- * {@code org.apache.kafka.clients} types are allowed in the kernel reactor. The Core
- * orchestration layer ({@code eu.exeris.kernel.core.events.kafka}, planned for
- * Sprint 5b proper) defines narrow contracts that this binding implements with
- * the Kafka client; the SPI module ({@code eu.exeris.kernel.spi.events}) names
- * neither the client nor the orchestrator and remains implementation-blind.
+ * {@code org.apache.kafka.clients} types are allowed in the kernel reactor. Core's
+ * {@code OutboxBrokerPort} contract is implemented here by {@link KafkaEventBrokerPort}
+ * via an {@code IntFunction<String> ordinalToTopic} resolver — Core never sees a Kafka
+ * type. The SPI module ({@code eu.exeris.kernel.spi.events}) is implementation-blind.
  *
  * <h2>Why a Separate Module</h2>
  * <p>Single-node operators of {@code exeris-kernel-community} should NOT pay the
@@ -26,13 +25,26 @@
  * operators who need Kafka add {@code exeris-kernel-community-kafka} to the
  * classpath; everyone else gets the lean Community jar.
  *
- * <h2>Status (0.7 Sprint 5b1)</h2>
- * <p>This module ships as a build-system-ready skeleton: reactor wiring, BOM entry,
- * dependency declaration, and Testcontainers-Kafka test scope are in place. The
- * concrete {@code KafkaEventEngine}, {@code KafkaEventProvider}, session
- * orchestration, and {@code AbstractKafkaEventEngineTck} land in Sprint 5b proper
- * (EVENT-204 / EVENT-206) once the Core {@code KafkaSessionOrchestrator} interface
- * is finalised.
+ * <h2>Status (0.7 Sprint 5b)</h2>
+ * <p>The Kafka driver ships as a working binding: {@link KafkaEventConfig},
+ * {@link KafkaEventCodec} (48-byte fixed wire header + payload tail),
+ * {@link KafkaEventBrokerPort} (Core {@code OutboxBrokerPort} adapter — built but not
+ * yet wired into a runtime path; reserved for the outbox-driven delivery follow-up),
+ * {@link KafkaEventEngine} ({@code KafkaPublishBus} + virtual-thread {@code ConsumerLoop}
+ * + {@code NoOpQueue}), and {@link KafkaEventProvider} (ServiceLoader, priority 100 —
+ * outranks the in-memory Community provider). Coverage:
+ * {@link eu.exeris.kernel.tck.contract.events.AbstractKafkaEventEngineTck}
+ * (publish/consume roundtrip + idempotent close, Testcontainers Kafka 3.x).
+ *
+ * <h2>Deferred</h2>
+ * <ul>
+ *   <li>Replay (seek by timestamp / offset) and the
+ *       {@code EventStreamReader} / {@code EventStreamAppender} bindings.</li>
+ *   <li>Outbox-orchestrator-driven delivery wiring on top of {@link KafkaEventBrokerPort}.</li>
+ *   <li>{@code enable.auto.commit=false} with manual commit-after-handler (today the
+ *       loop runs auto-commit, which yields at-most-once semantics on consume).</li>
+ *   <li>Consumer-rebalance behavior under in-flight choreography (TCK extension).</li>
+ * </ul>
  *
  * @since 0.7.0
  */

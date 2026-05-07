@@ -61,8 +61,8 @@
 ## 9) TCK Obligations
 - `AbstractDistributedFlowSnapshotStoreTck` (introduced in Sprint 3 alongside `JdbcFlowSnapshotStore`) codifies: save/load round-trip, delete semantics, parked-enumeration returning only `PARKED` rows, cross-restart simulation, concurrent-save CAS resolution, and `EX-FLOW-7002` on stale-version writes.
 - `AbstractSagaRecoveryTck` extension covers cross-restart choreography wake under persistence-enabled engines.
-- `AbstractKafkaEventEngineTck` (Sprint 5) covers consumer-rebalance behavior under in-flight choreography.
-- Community bindings: `CommunityJdbcFlowSnapshotStoreTckTest` (Postgres via Testcontainers, optional H2 fallback for developer-loop speed) and `CommunityKafkaEventEngineTckTest` (Kafka 3.x via Testcontainers).
+- `AbstractKafkaEventEngineTck` (Sprint 5b) covers publish/consume roundtrip with bit-exact `EventDescriptor` preservation and idempotent close. Consumer-rebalance behavior under in-flight choreography is a TCK extension deferred to a follow-up sprint and remains a load-bearing claim for §7's carrier-pinning rule.
+- Community bindings: `CommunityJdbcFlowSnapshotStoreTckTest` (Postgres via Testcontainers, optional H2 fallback for developer-loop speed) and `CommunityKafkaEventEngineTckIT` (Kafka 3.x via Testcontainers, `@Tag("integration")`).
 - Enterprise bindings: parity obligation declared; out-of-repo verification.
 - Contract changes are incomplete until abstract suites and both binding layers validate observable behavior.
 

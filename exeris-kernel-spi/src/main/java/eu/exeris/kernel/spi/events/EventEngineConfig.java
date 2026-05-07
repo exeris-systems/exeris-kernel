@@ -33,14 +33,17 @@ import java.util.Objects;
  * @param slabPayloadLarge    number of large payload slab slots (64 KB, Enterprise)
  * @param outboxEnabled       whether the transactional outbox writer is enabled
  * @param outboxBatchSize     maximum events written per outbox flush cycle
- * @param busPublishFailFast  when {@code true}, persistent {@link EventBus#publish} fails fast with
+ * @param busPublishFailFast  selects the overflow policy for persistent {@link EventBus#publish}.
+ *                            {@code false} → blocking mode: the publisher's virtual thread parks
+ *                            on a full queue (never drops, can stall under sustained saturation).
+ *                            {@code true} → fail-fast mode: the call raises
  *                            {@link eu.exeris.kernel.spi.exceptions.events.EventBusException}
- *                            ({@code EX-EVENT-6002}, rawArgs {@code [eventType, queueDepth, queueCapacity]})
- *                            on a full queue instead of blocking the caller. Default {@code false}
- *                            preserves the historical blocking-on-VT semantic. Brokers that map this
- *                            knob onto a producer-side overflow signal (e.g. Kafka producer
- *                            {@code buffer.memory} exhaustion) raise the same code with the same
- *                            rawArgs layout. (since 0.7.0)
+ *                            with code {@code EX-EVENT-6002} and rawArgs
+ *                            {@code [eventType, queueDepth, queueCapacity]} the moment the queue
+ *                            would overflow. Brokers that map the same knob onto a producer-side
+ *                            overflow signal (e.g. Kafka producer {@code buffer.memory}
+ *                            exhaustion) raise the same code with the same rawArgs layout.
+ *                            (since 0.7.0)
  *
  * @since 0.5.0
  */
@@ -85,9 +88,8 @@ public record EventEngineConfig(
     }
 
     /**
-     * Backward-compatible 11-arg constructor — preserves the v0.6 call shape so existing callers
-     * (Community bootstrap, tests) compile unchanged. Defaults the new 0.7 field to:
-     * {@code busPublishFailFast = false} (historical blocking-on-VT semantic).
+     * Convenience 11-arg constructor — for callers that do not care about the publish-overflow
+     * policy. Defaults {@code busPublishFailFast = false} (blocking mode: never-drop).
      *
      * @since 0.7.0
      */
@@ -170,7 +172,7 @@ public record EventEngineConfig(
                 0, 0, 0, 0,
                 true,
                 500,
-                false  // busPublishFailFast — preserves v0.6 blocking-on-VT semantic
+                false  // busPublishFailFast — blocking mode: parks the publisher on a full queue
         );
     }
 

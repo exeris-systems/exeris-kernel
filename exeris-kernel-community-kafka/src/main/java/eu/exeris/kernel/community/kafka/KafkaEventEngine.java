@@ -66,11 +66,21 @@ import java.util.concurrent.atomic.AtomicReference;
  * worlds without exposing Kafka types upstream.
  *
  * <h2>MVP Scope</h2>
- * <p>This first release covers publish + consume roundtrip, at-least-once via {@code acks=all}
- * (when {@link KafkaEventConfig#requireAllAcks()} is true), and a virtual-thread poll loop
- * that auto-commits offsets after each batch. Replay (seek by timestamp / offset),
+ * <p>This first release covers publish + consume roundtrip, at-least-once on <em>produce</em>
+ * via {@code acks=all} (when {@link KafkaEventConfig#requireAllAcks()} is true), and a
+ * virtual-thread poll loop that runs with {@code enable.auto.commit=true}. Note that
+ * auto-commit yields <em>at-most-once</em> semantics on the consume side: if a local
+ * subscriber's handler crashes after the consumer publishes onto the in-process delegate
+ * but before the offset commit can be replayed, the event is lost. A future revision will
+ * flip to {@code enable.auto.commit=false} with manual commit-after-handler.
+ *
+ * <p>Replay (seek by timestamp / offset),
  * {@link eu.exeris.kernel.spi.events.EventStreamReader} / {@code EventStreamAppender}
- * implementations, and DLQ rebalance handling are deferred to a follow-up.
+ * implementations, DLQ rebalance handling, and the
+ * {@link KafkaEventBrokerPort}-driven outbox-orchestrator delivery path
+ * (the adapter ships in this PR but is not yet wired into a runtime path —
+ * {@link KafkaPublishBus} goes producer&nbsp;→&nbsp;consumer directly) are all deferred
+ * to a follow-up.
  *
  * @since 0.7.0
  */
@@ -103,7 +113,8 @@ public final class KafkaEventEngine implements EventEngine {
         this.producer      = createProducer(kafkaConfig);
         this.publishBus    = new KafkaPublishBus(producer, registry, kafkaConfig,
                                                  localDelegate, publishedTotal);
-        this.loop          = new ConsumerLoop(kafkaConfig, registry, localDelegate);
+        this.loop          = new ConsumerLoop(spiConfig.engineName(), kafkaConfig,
+                                              registry, localDelegate);
     }
 
     @Override
@@ -199,11 +210,17 @@ public final class KafkaEventEngine implements EventEngine {
             Objects.requireNonNull(payload,    "payload");
             // Kafka surfaces driver errors as KafkaException (RuntimeException); the bus
             // contract is to wrap them in EventBusException. payload.close() is auto-run
-            // via try-with-resources to satisfy the RAII ownership transfer.
+            // via try-with-resources to satisfy the RAII ownership transfer. publishedTotal
+            // is incremented only after producer.send returns so failed publishes do not
+            // inflate the counter.
             try (payload) {
-                publishedTotal.incrementAndGet();
                 ProducerRecord<byte[], byte[]> record = buildRecord(descriptor, payload);
                 producer.send(record);
+                publishedTotal.incrementAndGet();
+            } catch (EventBusException ex) {
+                // buildRecord can throw EventBusException for unregistered ordinals — propagate
+                // it unchanged; the generic Kafka-failure wrap below would mask the real cause.
+                throw ex;
             } catch (RuntimeException ex) { //NOPMD AvoidCatchingGenericException
                 throw new EventBusException("Kafka producer.send failed", ex);
             }
@@ -215,9 +232,11 @@ public final class KafkaEventEngine implements EventEngine {
             Objects.requireNonNull(descriptor, "descriptor");
             Objects.requireNonNull(payload,    "payload");
             try (payload) {
-                publishedTotal.incrementAndGet();
                 ProducerRecord<byte[], byte[]> record = buildRecord(descriptor, payload);
                 producer.send(record).get();
+                publishedTotal.incrementAndGet();
+            } catch (EventBusException ex) {
+                throw ex;
             } catch (ExecutionException ex) {
                 throw new EventBusException("Kafka producer.send failed", ex);
             } catch (RuntimeException ex) { //NOPMD AvoidCatchingGenericException — KafkaException is RuntimeException
@@ -263,6 +282,7 @@ public final class KafkaEventEngine implements EventEngine {
 
     private static final class ConsumerLoop implements EventLoop {
 
+        private final String              engineName;
         private final KafkaEventConfig    config;
         private final KafkaEventRegistry  registry;
         private final EventBus            localDelegate;
@@ -271,9 +291,11 @@ public final class KafkaEventEngine implements EventEngine {
         private final AtomicLong          processedTotal = new AtomicLong(0L);
         private final Set<String>         subscribedTopics = new HashSet<>();
 
-        private ConsumerLoop(KafkaEventConfig config,
+        private ConsumerLoop(String engineName,
+                             KafkaEventConfig config,
                              KafkaEventRegistry registry,
                              EventBus localDelegate) {
+            this.engineName    = engineName;
             this.config        = config;
             this.registry      = registry;
             this.localDelegate = localDelegate;
@@ -339,8 +361,16 @@ public final class KafkaEventEngine implements EventEngine {
                         dispatch(record);
                     }
                 }
-            } catch (RuntimeException _) { //NOPMD AvoidCatchingGenericException — KafkaException is a RuntimeException
-                // Best-effort: log path would emit JFR; for MVP we exit the loop cleanly.
+            } catch (RuntimeException ex) { //NOPMD AvoidCatchingGenericException — KafkaException is a RuntimeException
+                // Operators rely on this JFR event to detect silent consumer-thread death;
+                // without it isRunning() simply flips false and events stop arriving with no
+                // further signal. Payload is secret-safe — bootstrap.servers / credentials are
+                // never included.
+                KafkaConsumerLoopFailedEvent.emit(
+                        engineName,
+                        config.consumerGroupId(),
+                        ex.getClass().getName(),
+                        ex.getMessage());
             } finally {
                 running.set(false);
             }
@@ -377,22 +407,23 @@ public final class KafkaEventEngine implements EventEngine {
 
     // =========================================================================
     // Internal: NoOpQueue — degenerate EventQueue (Kafka drives delivery, not local queue)
+    //
+    // The Kafka driver does not use a local EventQueue — Kafka itself is the durable queue
+    // and KafkaPublishBus.publish goes producer → consumer directly. NoOpQueue.push therefore
+    // fails loud rather than silently returning true: any caller that reaches it has reached
+    // it by mistake (the SPI's queue() slot is a contract leak for this driver). Callers that
+    // expect a queue-backed engine should use the in-memory CommunityEventEngine instead.
     // =========================================================================
 
-    private static final class NoOpQueue implements EventQueue {
+    private record NoOpQueue(int capacity) implements EventQueue {
 
-        private final int capacity;
-
-        private NoOpQueue(int capacity) {
-            this.capacity = capacity;
-        }
+        private static final String BYPASS_MESSAGE =
+                "KafkaEventEngine bypasses the local EventQueue (Kafka itself is the durable "
+                + "queue); publish via bus() instead of queue().push(...).";
 
         @Override
         public boolean push(EventDescriptor descriptor, EventPayload payload) {
-            // Kafka driver bypasses the local queue — pushes are a no-op (events flow through
-            // the producer + consumer loop). Keep the payload refCount intact so callers still
-            // see the documented contract.
-            return true;
+            throw new UnsupportedOperationException(BYPASS_MESSAGE);
         }
 
         @Override
@@ -408,11 +439,6 @@ public final class KafkaEventEngine implements EventEngine {
         @Override
         public int size() {
             return 0;
-        }
-
-        @Override
-        public int capacity() {
-            return capacity;
         }
     }
 }

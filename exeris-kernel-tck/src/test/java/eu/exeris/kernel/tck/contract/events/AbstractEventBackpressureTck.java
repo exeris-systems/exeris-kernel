@@ -32,8 +32,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <h2>EVENT-205b — Closing the Backpressure TCK Gap</h2>
  * <p>{@code events.md} has long flagged {@code EX-EVENT-6002} as a TCK gap. This suite is the
- * binding-agnostic contract that every {@link EventEngine} implementation built with a
- * <em>fail-fast</em> {@link EventEngineConfig} must satisfy when the bus queue is at capacity.
+ * binding-agnostic contract that every <em>queueing-bus</em> {@link EventEngine} implementation
+ * built with a <em>fail-fast</em> {@link EventEngineConfig} must satisfy when the bus queue is at
+ * capacity. Drivers that bypass the local queue entirely (e.g. the Kafka driver, where the broker
+ * itself is the durable queue) are out of scope for this contract — overflow surfaces via
+ * driver-native error paths there, not via {@code EX-EVENT-6002} on the local queue.
  *
  * <h2>Verified Constraints</h2>
  * <ol>

@@ -18,12 +18,16 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
+import java.lang.foreign.MemorySegment;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 
 /**
  * TCK: Abstract base for Kafka {@link EventEngine} contract verification (since 0.7.0).
@@ -34,9 +38,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <ol>
  *   <li>A persistent event published via {@link eu.exeris.kernel.spi.events.EventBus#publish}
  *       reaches a local subscriber after the broker roundtrip — the subscriber sees the event,
- *       the descriptor primitives are preserved bit-for-bit, and the payload bytes are intact.</li>
- *   <li>Multiple events on the same {@code streamId} are delivered in order to a single
- *       subscriber (by virtue of Kafka's per-key partition routing).</li>
+ *       the descriptor primitives are preserved bit-for-bit, and the payload bytes survive
+ *       verbatim (empty + non-empty tails).</li>
+ *   <li>Every event published for a given {@code streamId} surfaces at the local subscriber
+ *       (set-equality / no drops). Strict per-stream ordering is preserved at the Kafka
+ *       partition level by per-key routing, but the in-memory bus dispatches each event onto
+ *       its own virtual thread — so subscriber-observed order is unspecified by this TCK.</li>
  *   <li>Engine close is idempotent and stops the consumer poll loop deterministically.</li>
  * </ol>
  *
@@ -86,11 +93,16 @@ public abstract class AbstractKafkaEventEngineTck {
         AtomicReference<EventDescriptor> capturedDescriptor = new AtomicReference<>();
         AtomicReference<Integer> capturedLength = new AtomicReference<>();
 
+        // Filter by streamId — the shared Kafka container plus fresh-group-id + earliest reset
+        // means this consumer also sees events from prior tests on the same topic.
         engine.bus().subscribe(TYPE_KAFKA_PROBE, (descriptor, payload) -> {
             try (payload) {
+                if (descriptor.streamIdHigh() != streamId.getMostSignificantBits()
+                        || descriptor.streamIdLow() != streamId.getLeastSignificantBits()) {
+                    return;
+                }
                 capturedDescriptor.set(descriptor);
                 capturedLength.set(payload.length());
-            } finally {
                 received.countDown();
             }
         });
@@ -125,8 +137,132 @@ public abstract class AbstractKafkaEventEngineTck {
     @Timeout(value = 60, unit = TimeUnit.SECONDS)
     @DisplayName("close() is idempotent and stops the consumer poll loop")
     void closeIdempotent() {
-        engine.close();
-        engine.close();
+        assertThatCode(() -> {
+            engine.close();
+            engine.close();
+        })
+                .as("Engine close MUST be idempotent — the second close() is a no-op")
+                .doesNotThrowAnyException();
         engine = null; // tearDown should not double-close
+    }
+
+    @Test
+    @Timeout(value = 60, unit = TimeUnit.SECONDS)
+    @DisplayName("non-empty payload bytes survive the broker hop verbatim")
+    void nonEmptyPayloadRoundtrip() throws Exception {
+        UUID eventId  = UUID.randomUUID();
+        UUID streamId = UUID.randomUUID();
+        byte[] expected = new byte[256];
+        for (int i = 0; i < expected.length; i++) {
+            expected[i] = (byte) ((i * 31) & 0xFF);
+        }
+
+        CountDownLatch received = new CountDownLatch(1);
+        AtomicReference<byte[]> captured = new AtomicReference<>();
+
+        // Filter by streamId so this test's subscriber doesn't see events from prior tests on
+        // the shared Kafka topic (auto.offset.reset=earliest + fresh group id replays history).
+        engine.bus().subscribe(TYPE_KAFKA_PROBE, (descriptor, payload) -> {
+            try (payload) {
+                if (descriptor.streamIdHigh() != streamId.getMostSignificantBits()
+                        || descriptor.streamIdLow() != streamId.getLeastSignificantBits()) {
+                    return;
+                }
+                MemorySegment segment = payload.segment();
+                byte[] copy = new byte[payload.length()];
+                MemorySegment.copy(segment, 0L, MemorySegment.ofArray(copy), 0L, copy.length);
+                captured.set(copy);
+                received.countDown();
+            }
+        });
+
+        EventDescriptor sent = EventDescriptor.of(
+                eventId.getMostSignificantBits(),  eventId.getLeastSignificantBits(),
+                streamId.getMostSignificantBits(), streamId.getLeastSignificantBits(),
+                ORDINAL_KAFKA_PROBE,
+                EventDescriptor.FLAG_PERSISTENT,
+                System.currentTimeMillis());
+        engine.bus().publish(sent, heapPayload(expected));
+
+        assertThat(received.await(45, TimeUnit.SECONDS))
+                .as("non-empty payload roundtrip MUST deliver within 45 s")
+                .isTrue();
+        assertThat(captured.get())
+                .as("payload bytes MUST survive the broker hop verbatim")
+                .containsExactly(expected);
+    }
+
+    @Test
+    @Timeout(value = 90, unit = TimeUnit.SECONDS)
+    @DisplayName("all events for a given streamId reach the local subscriber (set equality)")
+    void sameStreamIdAllDelivered() throws Exception {
+        UUID streamId = UUID.randomUUID();
+        int eventCount = 8;
+
+        CountDownLatch received = new CountDownLatch(eventCount);
+        List<Integer> deliveredTags = java.util.Collections.synchronizedList(new ArrayList<>());
+
+        // Filter by streamId so prior tests on the shared topic don't contaminate the count.
+        // NB: per-stream STRICT ORDER is preserved at the Kafka partition level (per-key
+        // partitioning) but the in-memory EventBus dispatches each event onto its own virtual
+        // thread, which means subscriber-side arrival order does not necessarily match send
+        // order. The contract verified here is set equality + delivery completeness; ordering
+        // verification belongs at the consumer-loop boundary, not the subscriber.
+        engine.bus().subscribe(TYPE_KAFKA_PROBE, (descriptor, payload) -> {
+            try (payload) {
+                if (descriptor.streamIdHigh() != streamId.getMostSignificantBits()
+                        || descriptor.streamIdLow() != streamId.getLeastSignificantBits()) {
+                    return;
+                }
+                MemorySegment segment = payload.segment();
+                byte[] tag = new byte[payload.length()];
+                MemorySegment.copy(segment, 0L, MemorySegment.ofArray(tag), 0L, tag.length);
+                if (tag.length == 1) {
+                    deliveredTags.add(Byte.toUnsignedInt(tag[0]));
+                }
+                received.countDown();
+            }
+        });
+
+        for (int i = 0; i < eventCount; i++) {
+            UUID eventId = UUID.randomUUID();
+            EventDescriptor sent = EventDescriptor.of(
+                    eventId.getMostSignificantBits(),  eventId.getLeastSignificantBits(),
+                    streamId.getMostSignificantBits(), streamId.getLeastSignificantBits(),
+                    ORDINAL_KAFKA_PROBE,
+                    EventDescriptor.FLAG_PERSISTENT,
+                    System.currentTimeMillis());
+            engine.bus().publish(sent, heapPayload(new byte[] {(byte) i}));
+        }
+
+        assertThat(received.await(60, TimeUnit.SECONDS))
+                .as("all %d same-stream events MUST be delivered within 60 s", eventCount)
+                .isTrue();
+
+        List<Integer> expected = new ArrayList<>(eventCount);
+        for (int i = 0; i < eventCount; i++) {
+            expected.add(i);
+        }
+        assertThat(deliveredTags)
+                .as("every event published for the streamId MUST surface at the subscriber "
+                        + "(no drops, no duplicates per single-handler delivery)")
+                .containsExactlyInAnyOrderElementsOf(expected);
+    }
+
+    private static EventPayload heapPayload(byte[] bytes) {
+        return new EventPayload() {
+            private final java.util.concurrent.atomic.AtomicInteger refCount =
+                    new java.util.concurrent.atomic.AtomicInteger(1);
+            @Override public MemorySegment segment() { return MemorySegment.ofArray(bytes); }
+            @Override public int  length()    { return bytes.length; }
+            @Override public int  refCount()  { return refCount.get(); }
+            @Override public boolean isAlive() { return refCount.get() > 0; }
+            @Override public void retain() {
+                refCount.updateAndGet(v -> v == 0 ? 0 : v + 1);
+            }
+            @Override public void close() {
+                refCount.updateAndGet(v -> v == 0 ? 0 : v - 1);
+            }
+        };
     }
 }
