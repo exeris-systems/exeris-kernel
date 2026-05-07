@@ -46,6 +46,24 @@ public abstract class AbstractFlowChoreographyTck {
     /** Creates a configured but not yet started {@link EventEngine}. */
     protected abstract EventEngine createEventEngine();
 
+    /**
+     * Maximum wall-clock time, in milliseconds, the abstract suite waits for a choreography
+     * event to traverse the bus and reach the {@code FlowChoreographyBridge}. Tuned for
+     * in-memory transports by default; broker-backed bindings (e.g. Testcontainers Kafka)
+     * override to absorb consumer-rebalance + auto-create-topic latency.
+     */
+    protected long choreographyRoundtripTimeoutMs() {
+        return 4_000L;
+    }
+
+    /**
+     * Settle period for the Ignore-decision test — how long the suite waits before
+     * asserting that no scheduler side-effect occurred. Override for slower transports.
+     */
+    protected long choreographyIgnoreSettleMs() {
+        return 100L;
+    }
+
     private FlowEngine engine;
     private EventEngine eventEngine;
     private EventBus bus;
@@ -116,9 +134,9 @@ public abstract class AbstractFlowChoreographyTck {
     // -------------------------------------------------------------------------
 
     @Test
-    @Timeout(value = 5, unit = TimeUnit.SECONDS)
+    @Timeout(value = 180, unit = TimeUnit.SECONDS)
     @DisplayName("Wake decision — mapper wakes a parked flow when event arrives")
-    void wakeDecision_wakesParkedFlow() throws InterruptedException {
+    protected void wakeDecision_wakesParkedFlow() throws InterruptedException {
         AtomicBoolean parked = new AtomicBoolean(false);
         UUID instanceId = UUID.randomUUID();
         String eventType = "WakeEvent-" + instanceId;
@@ -126,7 +144,8 @@ public abstract class AbstractFlowChoreographyTck {
 
         engine.scheduler().schedule(plan, heapContext(instanceId, "wake-test-" + instanceId));
 
-        long deadline = System.currentTimeMillis() + 4_000;
+        long roundtripBudgetMs = choreographyRoundtripTimeoutMs();
+        long deadline = System.currentTimeMillis() + roundtripBudgetMs;
         while (engine.stats().parkedFlows() < 1 && System.currentTimeMillis() < deadline) {
             Thread.sleep(10);
         }
@@ -145,7 +164,7 @@ public abstract class AbstractFlowChoreographyTck {
 
         bus.publish(descriptorForOrdinal(ordinal), EventPayload.empty());
 
-        long wakeDeadline = System.currentTimeMillis() + 4_000;
+        long wakeDeadline = System.currentTimeMillis() + roundtripBudgetMs;
         while (engine.stats().parkedFlows() > 0 && System.currentTimeMillis() < wakeDeadline) {
             Thread.sleep(10);
         }
@@ -155,7 +174,7 @@ public abstract class AbstractFlowChoreographyTck {
     }
 
     @Test
-    @Timeout(value = 5, unit = TimeUnit.SECONDS)
+    @Timeout(value = 180, unit = TimeUnit.SECONDS)
     @DisplayName("Start decision — mapper schedules a new flow instance from event")
     void startDecision_schedulesNewFlow() throws InterruptedException {
         UUID instanceId = UUID.randomUUID();
@@ -173,7 +192,7 @@ public abstract class AbstractFlowChoreographyTck {
 
         bus.publish(descriptorForOrdinal(ordinal), EventPayload.empty());
 
-        long startDeadline = System.currentTimeMillis() + 4_000;
+        long startDeadline = System.currentTimeMillis() + choreographyRoundtripTimeoutMs();
         while (engine.stats().completedFlows() < 1 && System.currentTimeMillis() < startDeadline) {
             Thread.sleep(10);
         }
@@ -183,7 +202,7 @@ public abstract class AbstractFlowChoreographyTck {
     }
 
     @Test
-    @Timeout(value = 3, unit = TimeUnit.SECONDS)
+    @Timeout(value = 180, unit = TimeUnit.SECONDS)
     @DisplayName("Ignore decision — has no side-effects on scheduler state")
     void ignoreDecision_hasNoSideEffects() throws InterruptedException {
         long statsBefore = engine.stats().activeFlows();
@@ -196,7 +215,7 @@ public abstract class AbstractFlowChoreographyTck {
                 bus);
 
         bus.publish(descriptorForOrdinal(ordinal), EventPayload.empty());
-        Thread.sleep(100);
+        Thread.sleep(choreographyIgnoreSettleMs());
 
         assertThat(engine.stats().activeFlows())
                 .as("Ignore decision must not change active flow count")
