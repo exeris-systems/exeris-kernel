@@ -15,6 +15,7 @@ import eu.exeris.kernel.spi.exceptions.events.EventRegistryException;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Heap-backed thread-safe {@link EventRegistry} implementation used by the Kafka driver.
@@ -30,6 +31,7 @@ final class KafkaEventRegistry implements EventRegistry {
 
     private final ConcurrentMap<String, EventTypeSpec> byName    = new ConcurrentHashMap<>();
     private final ConcurrentMap<Integer, String>       byOrdinal = new ConcurrentHashMap<>();
+    private final AtomicInteger                        version   = new AtomicInteger();
 
     @Override
     public void register(EventTypeSpec spec) {
@@ -46,6 +48,10 @@ final class KafkaEventRegistry implements EventRegistry {
             }
             throw EventRegistryException.duplicateConflict(spec.name(), spec.ordinal());
         }
+        // Validation passed — bump the version. Idempotent re-registrations also bump (rare in
+        // practice; the cost is one extra Kafka subscribe with the same topic set, which the
+        // client treats as a no-op).
+        version.incrementAndGet();
     }
 
     @Override
@@ -66,5 +72,15 @@ final class KafkaEventRegistry implements EventRegistry {
     /** Reverse lookup used by the Kafka publish path to compute topic names from ordinals. */
     /* default */ String nameOfOrdinal(int ordinal) {
         return byOrdinal.get(ordinal);
+    }
+
+    /**
+     * Monotonically-increasing counter bumped on every successful {@link #register(EventTypeSpec)}
+     * that mutates state. The Kafka {@code ConsumerLoop} reads this once per poll and skips the
+     * subscription rebuild allocation when the value is unchanged — keeping the steady-state
+     * poll path zero-allocation.
+     */
+    /* default */ int registeredVersion() {
+        return version.get();
     }
 }

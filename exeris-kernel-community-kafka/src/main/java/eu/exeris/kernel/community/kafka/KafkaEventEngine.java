@@ -214,8 +214,8 @@ public final class KafkaEventEngine implements EventEngine {
             // is incremented only after producer.send returns so failed publishes do not
             // inflate the counter.
             try (payload) {
-                ProducerRecord<byte[], byte[]> record = buildRecord(descriptor, payload);
-                producer.send(record);
+                ProducerRecord<byte[], byte[]> producerRecord = buildRecord(descriptor, payload);
+                producer.send(producerRecord);
                 publishedTotal.incrementAndGet();
             } catch (EventBusException ex) {
                 // buildRecord can throw EventBusException for unregistered ordinals — propagate
@@ -232,8 +232,8 @@ public final class KafkaEventEngine implements EventEngine {
             Objects.requireNonNull(descriptor, "descriptor");
             Objects.requireNonNull(payload,    "payload");
             try (payload) {
-                ProducerRecord<byte[], byte[]> record = buildRecord(descriptor, payload);
-                producer.send(record).get();
+                ProducerRecord<byte[], byte[]> producerRecord = buildRecord(descriptor, payload);
+                producer.send(producerRecord).get();
                 publishedTotal.incrementAndGet();
             } catch (EventBusException ex) {
                 throw ex;
@@ -290,6 +290,7 @@ public final class KafkaEventEngine implements EventEngine {
         private final AtomicBoolean       running = new AtomicBoolean(false);
         private final AtomicLong          processedTotal = new AtomicLong(0L);
         private final Set<String>         subscribedTopics = new HashSet<>();
+        private int                       lastRegisteredVersion = -1;
 
         private ConsumerLoop(String engineName,
                              KafkaEventConfig config,
@@ -357,8 +358,8 @@ public final class KafkaEventEngine implements EventEngine {
                 while (running.get() && !Thread.currentThread().isInterrupted()) {
                     refreshSubscriptions(consumer);
                     ConsumerRecords<byte[], byte[]> batch = consumer.poll(config.consumerPollTimeout());
-                    for (ConsumerRecord<byte[], byte[]> record : batch) {
-                        dispatch(record);
+                    for (ConsumerRecord<byte[], byte[]> consumerRecord : batch) {
+                        dispatch(consumerRecord);
                     }
                 }
             } catch (RuntimeException ex) { //NOPMD AvoidCatchingGenericException — KafkaException is a RuntimeException
@@ -376,9 +377,17 @@ public final class KafkaEventEngine implements EventEngine {
             }
         }
 
+        // Fast exit on unchanged registry version: the steady-state poll path (registry stable)
+        // hits this method ~4x/sec per engine and previously allocated a fresh HashSet plus a
+        // Set.copyOf() inside registry.registeredTypes() on every call. The version counter is
+        // bumped only when register() truly mutates state, so unchanged === no allocation.
         private void refreshSubscriptions(KafkaConsumer<byte[], byte[]> consumer) {
+            int currentVersion = registry.registeredVersion();
+            if (currentVersion == lastRegisteredVersion) {
+                return;
+            }
             Set<String> registered = registry.registeredTypes();
-            Set<String> desired = new HashSet<>(registered.size());
+            Set<String> desired = HashSet.newHashSet(registered.size());
             for (String type : registered) {
                 desired.add(config.topicFor(type));
             }
@@ -387,13 +396,14 @@ public final class KafkaEventEngine implements EventEngine {
                 subscribedTopics.clear();
                 subscribedTopics.addAll(desired);
             }
+            lastRegisteredVersion = currentVersion;
         }
 
         // PMD.CloseResource — payload ownership is transferred to localDelegate.publish()
         // per the EventBus RAII broadcast protocol; close happens in handlers.
         @SuppressWarnings("PMD.CloseResource")
-        private void dispatch(ConsumerRecord<byte[], byte[]> record) {
-            byte[] frame = record.value();
+        private void dispatch(ConsumerRecord<byte[], byte[]> consumerRecord) {
+            byte[] frame = consumerRecord.value();
             if (frame == null || frame.length == 0) {
                 return;
             }

@@ -98,9 +98,9 @@ public final class KafkaEventBrokerPort implements OutboxBrokerPort {
         }
         byte[] key   = streamKey(descriptor);
         byte[] value = KafkaEventCodec.encode(descriptor, entry.payload());
-        ProducerRecord<byte[], byte[]> record = new ProducerRecord<>(topic, key, value);
+        ProducerRecord<byte[], byte[]> producerRecord = new ProducerRecord<>(topic, key, value);
         try {
-            producer.send(record).get();
+            producer.send(producerRecord).get();
             return true;
         } catch (InterruptedException _) {
             Thread.currentThread().interrupt();
