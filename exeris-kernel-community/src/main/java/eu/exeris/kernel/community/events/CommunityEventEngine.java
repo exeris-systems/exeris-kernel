@@ -37,6 +37,7 @@ final class CommunityEventEngine implements EventEngine {
     private final CommunityEventLoop loop;
     private final EventBus bus;
     private final OutboxOrchestrator outboxOrchestrator;
+    private final boolean failFastOnFull;
 
     private final AtomicBoolean started = new AtomicBoolean(false);
     private final AtomicLong publishedTotal = new AtomicLong(0L);
@@ -44,11 +45,12 @@ final class CommunityEventEngine implements EventEngine {
     /* default */ CommunityEventEngine(EventEngineConfig config) {
         Objects.requireNonNull(config, "config");
         this.registry = new CommunityEventRegistry();
-        this.queue = new CommunityEventQueue(config.queueCapacity());
+        this.failFastOnFull = config.busPublishFailFast();
+        this.queue = new CommunityEventQueue(config.queueCapacity(), failFastOnFull);
         this.loop = new CommunityEventLoop(registry, queue, config.batchSize());
 
         InMemoryEventBus delegateBus = new InMemoryEventBus(registry);
-        this.bus = new PersistentQueueingBus(delegateBus, queue, registry, publishedTotal);
+        this.bus = new PersistentQueueingBus(delegateBus, queue, registry, publishedTotal, failFastOnFull);
         this.outboxOrchestrator = buildOutboxOrchestrator(config, delegateBus, registry);
     }
 
@@ -140,16 +142,19 @@ final class CommunityEventEngine implements EventEngine {
         private final EventQueue queue;
         private final CommunityEventRegistry registry;
         private final AtomicLong publishedTotal;
+        private final boolean failFastOnFull;
 
         private PersistentQueueingBus(
                 EventBus delegate,
                 EventQueue queue,
                 CommunityEventRegistry registry,
-                AtomicLong publishedTotal) {
+                AtomicLong publishedTotal,
+                boolean failFastOnFull) {
             this.delegate = Objects.requireNonNull(delegate, "delegate");
             this.queue = Objects.requireNonNull(queue, "queue");
             this.registry = Objects.requireNonNull(registry, "registry");
             this.publishedTotal = Objects.requireNonNull(publishedTotal, "publishedTotal");
+            this.failFastOnFull = failFastOnFull;
         }
 
         @Override
@@ -182,13 +187,9 @@ final class CommunityEventEngine implements EventEngine {
             }
 
             try {
-                boolean queued = queue.push(descriptor, payload);
-                if (!queued) {
-                    // push() returns false only on InterruptedException (interrupt flag already restored by queue).
-                    // Bus took ownership but cannot deliver — close the caller's ref before propagating.
+                if (!queue.push(descriptor, payload)) {
                     payload.close();
-                    throw new EventBusException("Interrupted while enqueueing persistent event '"
-                            + registry.nameOfOrdinal(descriptor.eventTypeOrdinal()) + "'");
+                    throw failedPushException(descriptor);
                 }
             } catch (EventBusException ex) {
                 throw ex;
@@ -199,6 +200,20 @@ final class CommunityEventEngine implements EventEngine {
                 throw new EventBusException("Failed to enqueue persistent event '"
                         + registry.nameOfOrdinal(descriptor.eventTypeOrdinal()) + "'", ex);
             }
+        }
+
+        /**
+         * EVENT-205b: build the right {@code EX-EVENT-6002} variant for a failed push.
+         * Fail-fast mode uses the typed factory carrying the documented Glass-Box rawArgs
+         * {@code [eventType, queueDepth, queueCapacity]}; legacy mode falls back to the
+         * message-only constructor (interrupt path).
+         */
+        private EventBusException failedPushException(EventDescriptor descriptor) {
+            String eventType = registry.nameOfOrdinal(descriptor.eventTypeOrdinal());
+            if (failFastOnFull) {
+                return EventBusException.publishOverflow(eventType, queue.size(), queue.capacity());
+            }
+            return new EventBusException("Interrupted while enqueueing persistent event '" + eventType + '\'');
         }
     }
 }
