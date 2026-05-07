@@ -11,8 +11,11 @@ package eu.exeris.kernel.community.kafka;
 import eu.exeris.kernel.spi.events.EventDescriptor;
 import eu.exeris.kernel.spi.events.EventPayload;
 
+import java.lang.foreign.MemoryLayout;
+import java.lang.foreign.MemoryLayout.PathElement;
 import java.lang.foreign.MemorySegment;
-import java.nio.ByteBuffer;
+import java.lang.foreign.ValueLayout;
+import java.lang.invoke.VarHandle;
 import java.nio.ByteOrder;
 
 /**
@@ -47,31 +50,87 @@ final class KafkaEventCodec {
     /** Fixed-size header preceding the payload bytes. */
     /* default */ static final int HEADER_SIZE = 48;
 
+    // ── MemoryLayout — single source of truth for header field offsets ───────
+    // BIG_ENDIAN matches the existing Kafka wire format and the Postgres outbox encoder.
+    // *_UNALIGNED variants are required because heap-backed segments produced by
+    // MemorySegment.ofArray(byte[]) carry a 1-byte alignment constraint; the default
+    // JAVA_LONG / JAVA_INT layouts demand 8 / 4-byte alignment and would throw at runtime.
+    // VarHandles are static finals — initialised once at class-load, zero hot-path overhead.
+    private static final ValueLayout.OfLong  LONG_BE_UNALIGNED =
+            ValueLayout.JAVA_LONG_UNALIGNED.withOrder(ByteOrder.BIG_ENDIAN);
+    private static final ValueLayout.OfInt   INT_BE_UNALIGNED  =
+            ValueLayout.JAVA_INT_UNALIGNED.withOrder(ByteOrder.BIG_ENDIAN);
+
+    // Field-name constants — single source of truth for layout + VarHandle path lookup.
+    private static final String F_EVENT_ID_HIGH      = "eventIdHigh";
+    private static final String F_EVENT_ID_LOW       = "eventIdLow";
+    private static final String F_STREAM_ID_HIGH     = "streamIdHigh";
+    private static final String F_STREAM_ID_LOW      = "streamIdLow";
+    private static final String F_EVENT_TYPE_ORDINAL = "eventTypeOrdinal";
+    private static final String F_FLAGS              = "flags";
+    private static final String F_OCCURRED_AT        = "occurredAtEpochMs";
+
+    private static final MemoryLayout HEADER_LAYOUT = MemoryLayout.structLayout(
+            LONG_BE_UNALIGNED.withName(F_EVENT_ID_HIGH),
+            LONG_BE_UNALIGNED.withName(F_EVENT_ID_LOW),
+            LONG_BE_UNALIGNED.withName(F_STREAM_ID_HIGH),
+            LONG_BE_UNALIGNED.withName(F_STREAM_ID_LOW),
+            INT_BE_UNALIGNED.withName(F_EVENT_TYPE_ORDINAL),
+            INT_BE_UNALIGNED.withName(F_FLAGS),
+            LONG_BE_UNALIGNED.withName(F_OCCURRED_AT)
+    );
+
+    private static final VarHandle VH_EVENT_ID_HIGH       =
+            HEADER_LAYOUT.varHandle(PathElement.groupElement(F_EVENT_ID_HIGH));
+    private static final VarHandle VH_EVENT_ID_LOW        =
+            HEADER_LAYOUT.varHandle(PathElement.groupElement(F_EVENT_ID_LOW));
+    private static final VarHandle VH_STREAM_ID_HIGH      =
+            HEADER_LAYOUT.varHandle(PathElement.groupElement(F_STREAM_ID_HIGH));
+    private static final VarHandle VH_STREAM_ID_LOW       =
+            HEADER_LAYOUT.varHandle(PathElement.groupElement(F_STREAM_ID_LOW));
+    private static final VarHandle VH_EVENT_TYPE_ORDINAL  =
+            HEADER_LAYOUT.varHandle(PathElement.groupElement(F_EVENT_TYPE_ORDINAL));
+    private static final VarHandle VH_FLAGS               =
+            HEADER_LAYOUT.varHandle(PathElement.groupElement(F_FLAGS));
+    private static final VarHandle VH_OCCURRED_AT         =
+            HEADER_LAYOUT.varHandle(PathElement.groupElement(F_OCCURRED_AT));
+
+    // Separate 16-byte layout for the partition-key UUID so its offsets start at 0
+    // (the header layout's stream-id fields live at offsets 16/24, not 0/8).
+    private static final MemoryLayout STREAM_KEY_LAYOUT = MemoryLayout.structLayout(
+            LONG_BE_UNALIGNED.withName(F_STREAM_ID_HIGH),
+            LONG_BE_UNALIGNED.withName(F_STREAM_ID_LOW)
+    );
+    private static final VarHandle VH_KEY_STREAM_ID_HIGH  =
+            STREAM_KEY_LAYOUT.varHandle(PathElement.groupElement(F_STREAM_ID_HIGH));
+    private static final VarHandle VH_KEY_STREAM_ID_LOW   =
+            STREAM_KEY_LAYOUT.varHandle(PathElement.groupElement(F_STREAM_ID_LOW));
+
     private KafkaEventCodec() {
         // utility
     }
 
     /**
      * Encodes {@code (descriptor, payload)} into a fresh {@code byte[]} suitable for a
-     * Kafka {@code ProducerRecord} value.
+     * Kafka {@code ProducerRecord} value. Header bytes are stamped via VarHandle directly
+     * onto the wrapped {@link MemorySegment} — no transient {@link java.nio.ByteBuffer}
+     * wrapper allocation on the publish hot path.
      */
     /* default */ static byte[] encode(EventDescriptor descriptor, EventPayload payload) {
         int payloadLength = payload.length();
         byte[] frame = new byte[HEADER_SIZE + payloadLength];
-        ByteBuffer buffer = ByteBuffer.wrap(frame).order(ByteOrder.BIG_ENDIAN);
-        buffer.putLong(descriptor.eventIdHigh());
-        buffer.putLong(descriptor.eventIdLow());
-        buffer.putLong(descriptor.streamIdHigh());
-        buffer.putLong(descriptor.streamIdLow());
-        buffer.putInt(descriptor.eventTypeOrdinal());
-        buffer.putInt(descriptor.flags());
-        buffer.putLong(descriptor.occurredAtEpochMs());
+        MemorySegment dst = MemorySegment.ofArray(frame);
+        VH_EVENT_ID_HIGH.set(dst,      0L, descriptor.eventIdHigh());
+        VH_EVENT_ID_LOW.set(dst,       0L, descriptor.eventIdLow());
+        VH_STREAM_ID_HIGH.set(dst,     0L, descriptor.streamIdHigh());
+        VH_STREAM_ID_LOW.set(dst,      0L, descriptor.streamIdLow());
+        VH_EVENT_TYPE_ORDINAL.set(dst, 0L, descriptor.eventTypeOrdinal());
+        VH_FLAGS.set(dst,              0L, descriptor.flags());
+        VH_OCCURRED_AT.set(dst,        0L, descriptor.occurredAtEpochMs());
         if (payloadLength > 0) {
-            MemorySegment src = payload.segment();
-            // MemorySegment.asByteBuffer is not always available for off-heap segments without a
-            // wrapping arena; copy via toArray which works for both heap- and native-backed segments.
-            byte[] payloadBytes = src.toArray(java.lang.foreign.ValueLayout.JAVA_BYTE);
-            System.arraycopy(payloadBytes, 0, frame, HEADER_SIZE, payloadLength);
+            // Copy payload bytes directly segment-to-segment — works for heap- and
+            // native-backed source segments without a temporary toArray() allocation.
+            MemorySegment.copy(payload.segment(), 0L, dst, HEADER_SIZE, payloadLength);
         }
         return frame;
     }
@@ -89,18 +148,15 @@ final class KafkaEventCodec {
                     "Kafka frame is shorter than the fixed header (" + HEADER_SIZE
                     + " bytes): got " + frame.length);
         }
-        ByteBuffer buffer = ByteBuffer.wrap(frame).order(ByteOrder.BIG_ENDIAN);
-        long eventIdHigh    = buffer.getLong();
-        long eventIdLow     = buffer.getLong();
-        long streamIdHigh   = buffer.getLong();
-        long streamIdLow    = buffer.getLong();
-        int  eventTypeOrd   = buffer.getInt();
-        int  flags          = buffer.getInt();
-        long occurredAtMs   = buffer.getLong();
+        MemorySegment src = MemorySegment.ofArray(frame);
         return new EventDescriptor(
-                eventIdHigh, eventIdLow,
-                streamIdHigh, streamIdLow,
-                eventTypeOrd, flags, occurredAtMs);
+                (long) VH_EVENT_ID_HIGH.get(src,      0L),
+                (long) VH_EVENT_ID_LOW.get(src,       0L),
+                (long) VH_STREAM_ID_HIGH.get(src,     0L),
+                (long) VH_STREAM_ID_LOW.get(src,      0L),
+                (int)  VH_EVENT_TYPE_ORDINAL.get(src, 0L),
+                (int)  VH_FLAGS.get(src,              0L),
+                (long) VH_OCCURRED_AT.get(src,        0L));
     }
 
     /**
@@ -115,5 +171,20 @@ final class KafkaEventCodec {
         byte[] payload = new byte[payloadLength];
         System.arraycopy(frame, HEADER_SIZE, payload, 0, payloadLength);
         return payload;
+    }
+
+    /**
+     * Encodes the 16-byte big-endian stream UUID used as the Kafka partition key.
+     * Same stream → same key bytes → same partition (per Kafka's default partitioner) →
+     * ordered consumer delivery for a given saga / aggregate. Uses the shared
+     * {@link VarHandle} layout so no transient {@link java.nio.ByteBuffer} wrapper is
+     * allocated on the publish hot path.
+     */
+    /* default */ static byte[] streamKey(EventDescriptor descriptor) {
+        byte[] key = new byte[Long.BYTES * 2];
+        MemorySegment dst = MemorySegment.ofArray(key);
+        VH_KEY_STREAM_ID_HIGH.set(dst, 0L, descriptor.streamIdHigh());
+        VH_KEY_STREAM_ID_LOW.set(dst,  0L, descriptor.streamIdLow());
+        return key;
     }
 }

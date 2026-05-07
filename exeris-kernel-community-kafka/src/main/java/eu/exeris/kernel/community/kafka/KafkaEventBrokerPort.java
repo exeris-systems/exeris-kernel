@@ -14,7 +14,6 @@ import eu.exeris.kernel.spi.events.EventDescriptor;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 
-import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.ExecutionException;
@@ -96,7 +95,7 @@ public final class KafkaEventBrokerPort implements OutboxBrokerPort {
             // No registered name — treat as a soft failure; orchestrator will DLQ on max-retries.
             return false;
         }
-        byte[] key   = streamKey(descriptor);
+        byte[] key   = KafkaEventCodec.streamKey(descriptor);
         byte[] value = KafkaEventCodec.encode(descriptor, entry.payload());
         ProducerRecord<byte[], byte[]> producerRecord = new ProducerRecord<>(topic, key, value);
         try {
@@ -108,17 +107,5 @@ public final class KafkaEventBrokerPort implements OutboxBrokerPort {
         } catch (ExecutionException | RuntimeException _) {
             return false;
         }
-    }
-
-    /**
-     * Returns the Kafka partition key — a 16-byte big-endian rendering of the stream UUID.
-     * Same stream → same partition → ordered consumer delivery for a given saga / aggregate.
-     */
-    private static byte[] streamKey(EventDescriptor descriptor) {
-        byte[] key = new byte[Long.BYTES * 2];
-        ByteBuffer.wrap(key)
-                .putLong(descriptor.streamIdHigh())
-                .putLong(descriptor.streamIdLow());
-        return key;
     }
 }

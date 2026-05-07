@@ -32,7 +32,6 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 
-import java.nio.ByteBuffer;
 import java.util.HashSet;
 import java.util.Objects;
 import java.util.Properties;
@@ -236,10 +235,10 @@ public final class KafkaEventEngine implements EventEngine {
                 producer.send(producerRecord).get();
                 publishedTotal.incrementAndGet();
             } catch (EventBusException ex) {
+                // Surface unregistered-ordinal failures unchanged — generic Kafka-failure wrap
+                // below would mask the real cause.
                 throw ex;
-            } catch (ExecutionException ex) {
-                throw new EventBusException("Kafka producer.send failed", ex);
-            } catch (RuntimeException ex) { //NOPMD AvoidCatchingGenericException — KafkaException is RuntimeException
+            } catch (ExecutionException | RuntimeException ex) { //NOPMD KafkaException is RuntimeException
                 throw new EventBusException("Kafka producer.send failed", ex);
             }
         }
@@ -262,17 +261,9 @@ public final class KafkaEventEngine implements EventEngine {
                         + descriptor.eventTypeOrdinal());
             }
             String topic = config.topicFor(typeName);
-            byte[] key   = streamKey(descriptor);
+            byte[] key   = KafkaEventCodec.streamKey(descriptor);
             byte[] value = KafkaEventCodec.encode(descriptor, payload);
             return new ProducerRecord<>(topic, key, value);
-        }
-
-        private static byte[] streamKey(EventDescriptor descriptor) {
-            byte[] key = new byte[Long.BYTES * 2];
-            ByteBuffer.wrap(key)
-                    .putLong(descriptor.streamIdHigh())
-                    .putLong(descriptor.streamIdLow());
-            return key;
         }
     }
 
@@ -421,8 +412,12 @@ public final class KafkaEventEngine implements EventEngine {
     // The Kafka driver does not use a local EventQueue — Kafka itself is the durable queue
     // and KafkaPublishBus.publish goes producer → consumer directly. NoOpQueue.push therefore
     // fails loud rather than silently returning true: any caller that reaches it has reached
-    // it by mistake (the SPI's queue() slot is a contract leak for this driver). Callers that
-    // expect a queue-backed engine should use the in-memory CommunityEventEngine instead.
+    // it by mistake (the SPI's queue() slot is a contract leak for this driver). The chosen
+    // failure mode is EventBusException — the kernel's documented refusal exception that
+    // generic callers already catch from bus().publish(...) — rather than
+    // UnsupportedOperationException, which sits outside the SPI's declared error hierarchy.
+    // Callers that expect a queue-backed engine should use the in-memory CommunityEventEngine
+    // instead.
     // =========================================================================
 
     private record NoOpQueue(int capacity) implements EventQueue {
@@ -433,7 +428,7 @@ public final class KafkaEventEngine implements EventEngine {
 
         @Override
         public boolean push(EventDescriptor descriptor, EventPayload payload) {
-            throw new UnsupportedOperationException(BYPASS_MESSAGE);
+            throw new EventBusException(BYPASS_MESSAGE);
         }
 
         @Override
