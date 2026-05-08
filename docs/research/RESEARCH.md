@@ -95,7 +95,7 @@ Do **not** open a research branch for:
 ## Required Shape of a Research Document
 
 Every concrete research document should follow the structure defined in
-`docs/research/RESEARCH-TEMPLATE.md`.
+the canonical template at `exeris-docs/templates/RESEARCH-TEMPLATE.md`.
 
 At minimum, a research document must contain:
 
@@ -352,7 +352,7 @@ Decision section.
 ## Recommended Branch Lifecycle
 
 1. Create `research/[slug]`
-2. Add `research.md` from `docs/research/RESEARCH-TEMPLATE.md`
+2. Add `research.md` from `exeris-docs/templates/RESEARCH-TEMPLATE.md`
 3. Define hypothesis and methodology before large prototype work
 4. Collect evidence and update implementation notes continuously
 5. Record results
@@ -382,8 +382,8 @@ Use:
 `# Research: [Short Title]`
 
 ### Main branch documentation
-- `docs/research/RESEARCH.md` — framework and portfolio
-- `docs/research/RESEARCH-TEMPLATE.md` — canonical template
+- `docs/research/RESEARCH.md` — framework and portfolio (kernel-local)
+- `exeris-docs/templates/RESEARCH-TEMPLATE.md` — canonical template (platform-wide)
 
 ### Branch-local document
 Prefer:
@@ -424,9 +424,9 @@ A research effort that never reaches a disposition is incomplete.
 
 ## Template
 
-Use the canonical template in:
+Use the canonical platform-wide template in:
 
-- `docs/research/RESEARCH-TEMPLATE.md`
+- `exeris-docs/templates/RESEARCH-TEMPLATE.md`
 
 for all new research branches.
 
@@ -434,7 +434,7 @@ for all new research branches.
 
 ## References
 
-- `docs/research/RESEARCH-TEMPLATE.md`
+- `exeris-docs/templates/RESEARCH-TEMPLATE.md`
 - `docs/architecture.md`
 - `docs/performance-contract.md`
 - `docs/adr/ADR-007*`

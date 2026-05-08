@@ -9,7 +9,7 @@
 /**
  * Core: Graph subsystem orchestration (L2 Data Synthesis).
  *
- * <h2>Package Layout (ADR-012)</h2>
+ * <h2>Package Layout (Graph Engine SPI Refactor)</h2>
  * <ul>
  *   <li>{@link eu.exeris.kernel.core.graph.GraphBootstrap} — ServiceLoader bootstrap,
  *       selects the highest-priority {@link eu.exeris.kernel.spi.graph.GraphProvider}</li>

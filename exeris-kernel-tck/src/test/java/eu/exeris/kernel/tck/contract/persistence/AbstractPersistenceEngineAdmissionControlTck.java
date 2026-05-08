@@ -27,7 +27,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
  * TCK: Abstract contract for {@link PersistenceEngine#canServiceRequest()} admission control.
  *
  * <h2>Contract Semantics</h2>
- * <p>Per ADR-010, admission control gates prevent thread park storms when the underlying
+ * <p>Per the Persistence SPI Refactor, admission control gates prevent thread park storms when the underlying
  * connection pool is saturated. This TCK verifies that:
  * <ul>
  *   <li>{@code canServiceRequest()} returns {@code true} when pool has available capacity</li>
