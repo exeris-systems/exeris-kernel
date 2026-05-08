@@ -1,13 +1,13 @@
 # ADR-005: JFR-First Telemetry Strategy
 
-| Atrybut         | Wartość                                                                                       |
-|:----------------|:----------------------------------------------------------------------------------------------|
-| **Status**      | **PROPOSED** (drafted 2026-05-08; decision date 2026-02-22)                                   |
-| **Deciders**    | Arkadiusz Przychocki                                                                          |
-| **Date**        | 2026-02-22                                                                                    |
-| **Scope**       | kernel/observability                                                                          |
-| **Owning Repo** | `exeris-kernel`                                                                               |
-| **Driven By**   | ADR-007 update (2026-02-22) — Next-Gen Runtime Architecture refinement                        |
+| Atrybut         | Wartość                                                                                                    |
+|:----------------|:-----------------------------------------------------------------------------------------------------------|
+| **Status**      | **ACCEPTED** (drafted 2026-05-08; decision date 2026-02-22)                                                |
+| **Deciders**    | Arkadiusz Przychocki                                                                                       |
+| **Date**        | 2026-02-22                                                                                                 |
+| **Scope**       | kernel/observability                                                                                       |
+| **Owning Repo** | `exeris-kernel`                                                                                            |
+| **Driven By**   | ADR-007 update (2026-02-22) — Next-Gen Runtime Architecture refinement                                     |
 | **Compliance**  | [Strategic Pillar: No-Waste Compute](../whitepaper.md), [Performance Contract](../performance-contract.md) |
 
 ## Context and Problem Statement
