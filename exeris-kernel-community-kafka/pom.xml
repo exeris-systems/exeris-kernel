@@ -97,6 +97,23 @@
             <artifactId>kafka</artifactId>
             <scope>test</scope>
         </dependency>
+
+        <!--
+            Postgres for cross-engine choreography ITs (Sprint 6c — DIST-302 closure):
+            two FlowEngines share a JdbcFlowSnapshotStore via the same Hikari pool, so a
+            wake event arriving at the engine that did NOT park the saga can fall back to
+            the durable snapshot store and resume it.
+        -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
