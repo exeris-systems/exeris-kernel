@@ -900,7 +900,17 @@ final class CoreFlowRuntime { // NOPMD
                 clearParkedLookupMiss(key);
                 return Optional.of(live.contextView());
             }
+            // In-memory miss → fall back to durable snapshot store. Distributed-saga JFR
+            // contract (ADR-013 §8): emit WakeOnLoadFallbackEvent so operators can monitor
+            // cross-engine wake patterns and slow durable-store reads.
+            long fallbackStartNanos = System.nanoTime();
             RuntimeFlowInstance restored = restoreParkedFromSnapshot(key);
+            WakeOnLoadFallbackEvent.emit(
+                    config.engineName(),
+                    instanceIdMost,
+                    instanceIdLeast,
+                    restored != null,
+                    System.nanoTime() - fallbackStartNanos);
             return restored == null ? Optional.empty() : Optional.of(restored.contextView());
         }
 
