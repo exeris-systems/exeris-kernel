@@ -226,8 +226,8 @@ class CommunityJdbcFlowSnapshotStoreTckIT extends AbstractDistributedFlowSnapsho
     @Test
     @Tag("integration")
     @Timeout(value = 30, unit = TimeUnit.SECONDS)
-    @DisplayName("emits OptimisticLockConflictEvent (INSERT_TOCTOU) when a first-writer INSERT race loses on PK")
-    void emitsOccEventOnInsertToctou() throws Exception {
+    @DisplayName("emits OptimisticLockConflictEvent (UPDATE_STALE) when a duplicate save from a different store loses the UPDATE")
+    void emitsOccEventOnDuplicateSaveTakenAsUpdateStale() throws Exception {
         truncateSagaState();
         JdbcFlowSnapshotStore winnerStore = new JdbcFlowSnapshotStore(pool, "occ-jfr-insert-winner");
         JdbcFlowSnapshotStore loserStore  = new JdbcFlowSnapshotStore(pool, "occ-jfr-insert-loser");
@@ -248,24 +248,27 @@ class CommunityJdbcFlowSnapshotStoreTckIT extends AbstractDistributedFlowSnapsho
             });
             rs.startAsync();
 
-            // The loser's snapshot has its own SCHEMA_VERSION_INITIAL; the existsInTransaction
-            // probe sees the row only after a separate connection's commit, so the path
-            // taken depends on transaction scheduling. Both UPDATE_STALE and INSERT_TOCTOU
-            // surface as OPTIMISTIC_LOCK_CONFLICT — pin INSERT_TOCTOU explicitly by routing
-            // through a fresh store instance whose connection has not seen the prior commit
-            // until it begins its own UPDATE attempt.
+            // Sequential setup: winnerStore.save commits (schemaVersion bumped to 2) before the
+            // loser's transaction starts. tryOptimisticUpdate WHERE schema_version = 1 affects 0
+            // rows, then existsInTransaction sees the committed winner row under READ COMMITTED
+            // and the UPDATE_STALE branch fires deterministically — the INSERT_TOCTOU branch
+            // requires a true concurrent first-writer race (two transactions both passing the
+            // existsInTransaction=false check before either commits) which would need a barrier
+            // injected between tryOptimisticUpdate and insertOrRemapPkConflict; that scenario
+            // is intentionally out of scope for this PR (see PR #94 review).
             FlowSnapshot duplicate = newSnapshot(id, FlowState.PARKED, 0, FlowSnapshot.SCHEMA_VERSION_INITIAL);
             assertThatThrownBy(() -> loserStore.save(duplicate))
-                    .as("duplicate first-writer INSERT MUST raise EX-FLOW-7002")
+                    .as("duplicate save MUST raise EX-FLOW-7002")
                     .isInstanceOf(FlowEngineException.class);
 
             assertThat(eventReceived.await(5, TimeUnit.SECONDS))
-                    .as("OptimisticLockConflict JFR event MUST be emitted on the INSERT-race path")
+                    .as("OptimisticLockConflict JFR event MUST be emitted on the UPDATE_STALE path")
                     .isTrue();
             RecordedEvent event = captured.get();
             assertThat(event.getString("phase"))
-                    .as("phase must be one of the two documented race-loser flavors")
-                    .isIn("UPDATE_STALE", "INSERT_TOCTOU");
+                    .as("a duplicate save against a committed row deterministically takes UPDATE_STALE; "
+                            + "see test Javadoc for why INSERT_TOCTOU is not reachable from this setup")
+                    .isEqualTo("UPDATE_STALE");
             assertThat(event.getString("engineName")).isEqualTo("occ-jfr-insert-loser");
         }
     }
