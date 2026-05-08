@@ -14,7 +14,6 @@ import eu.exeris.kernel.spi.events.EventEngineConfig;
 import eu.exeris.kernel.spi.flow.FlowEngine;
 import eu.exeris.kernel.spi.flow.FlowEngineConfig;
 import eu.exeris.kernel.tck.contract.flow.AbstractFlowChoreographyTck;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.testcontainers.containers.KafkaContainer;
@@ -90,32 +89,4 @@ class CommunityKafkaFlowChoreographyTckIT extends AbstractFlowChoreographyTck {
         return 5_000L;
     }
 
-    /**
-     * <strong>Deferred to Sprint 6b.</strong>
-     *
-     * <p>The wake-decision contract verifies in-memory in
-     * {@code CommunityFlowChoreographyTckTest} but consistently fails under Kafka
-     * transport even with a 90 s roundtrip budget — the saga remains parked after
-     * the wake event is published, while the Start / Ignore / RAII paths in the
-     * same suite all pass, so basic Kafka delivery to the bridge is working.
-     *
-     * <p>Working hypothesis (to validate in Sprint 6b): a state-lookup race between
-     * the consumer-loop dispatch thread and the engine's {@code parkedInstances}
-     * index population — the Kafka roundtrip introduces enough latency that the
-     * bridge reaches {@code scheduler.lookupParked(...)} after the saga has moved
-     * out of the in-memory parked map but before the durable snapshot store would
-     * back-fill the lookup. The existing in-memory binding never observes this
-     * because synchronous dispatch reaches {@code lookupParked} while the saga is
-     * still definitively parked.
-     *
-     * <p>Sprint 6b will (a) add JFR tracing to the bridge handler so we can confirm
-     * exactly when {@code lookupParked} runs vs. when the saga state changes, and
-     * (b) wire {@code JdbcFlowSnapshotStore} into this IT so the snapshot fallback
-     * path in {@code lookupParked} has a real durable store to consult.
-     */
-    @Override
-    @Disabled("Sprint 6b: Kafka wake-decision exposes a state-lookup race; investigation deferred")
-    protected void wakeDecision_wakesParkedFlow() {
-        // Disabled override — body intentionally empty. See Javadoc.
-    }
 }

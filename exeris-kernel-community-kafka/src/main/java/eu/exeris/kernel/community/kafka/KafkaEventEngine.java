@@ -40,6 +40,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.LockSupport;
 
 /**
  * Community Kafka {@link EventEngine} binding (since 0.7.0).
@@ -346,8 +347,19 @@ public final class KafkaEventEngine implements EventEngine {
             props.put("auto.offset.reset",  "earliest");
 
             try (KafkaConsumer<byte[], byte[]> consumer = new KafkaConsumer<>(props)) {
+                long pollNanos = config.consumerPollTimeout().toNanos();
                 while (running.get() && !Thread.currentThread().isInterrupted()) {
                     refreshSubscriptions(consumer);
+                    // KafkaConsumer.poll() throws IllegalStateException when called with no
+                    // subscriptions and no manual assignments (kafka-clients 3.x behavior).
+                    // Pre-subscribed-state is normal during engine warm-up: start() launches
+                    // the consumer loop before any caller has registered an event type.
+                    // Park on a no-op tick of the same duration as poll() so the loop stays
+                    // responsive to a register() that bumps the registry version.
+                    if (subscribedTopics.isEmpty()) {
+                        LockSupport.parkNanos(pollNanos);
+                        continue;
+                    }
                     ConsumerRecords<byte[], byte[]> batch = consumer.poll(config.consumerPollTimeout());
                     for (ConsumerRecord<byte[], byte[]> consumerRecord : batch) {
                         dispatch(consumerRecord);

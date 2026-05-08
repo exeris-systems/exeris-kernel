@@ -249,6 +249,68 @@ public abstract class AbstractKafkaEventEngineTck {
                 .containsExactlyInAnyOrderElementsOf(expected);
     }
 
+    /**
+     * Regression: an EventEngine started before any event type is registered MUST NOT
+     * crash its consumer loop, and a subsequent register + publish MUST still deliver.
+     *
+     * <p>kafka-clients 3.x throws {@code IllegalStateException} on {@code consumer.poll()}
+     * when the consumer has neither subscribed to any topics nor manually assigned any
+     * partitions. The Kafka driver therefore must guard the steady-state poll path so
+     * that {@code engine.start()} → ... → {@code registry.register(...)} ordering is safe
+     * regardless of whether the consumer-loop virtual thread reaches its first poll
+     * before or after the registry mutation.
+     */
+    @Test
+    @Timeout(value = 60, unit = TimeUnit.SECONDS)
+    @DisplayName("Engine started before any registry entry survives the consumer-loop warm-up")
+    void startWithoutRegistrationsThenRegisterAndPublish() throws Exception {
+        // The shared field engine has been pre-registered + started by setUp; close it and
+        // build a fresh engine that we control end-to-end. tearDown will see engine=null
+        // and skip the duplicate close.
+        engine.close();
+        engine = null;
+
+        EventEngine fresh = createEngine();
+        fresh.start();
+        // Give the consumer-loop VT enough time to run its first poll iteration with an
+        // empty subscription set — that is exactly the path that previously crashed it.
+        Thread.sleep(750L);
+        assertThat(fresh.loop().isRunning())
+                .as("consumer loop must remain running after the first empty-subscription tick")
+                .isTrue();
+
+        try {
+            String regressionType = "KafkaTckProbe-empty-subscribe";
+            int regressionOrdinal = 30_002;
+            fresh.registry().register(EventTypeSpec.ofPersistent(regressionType, regressionOrdinal));
+
+            CountDownLatch received = new CountDownLatch(1);
+            UUID streamId = UUID.randomUUID();
+            fresh.bus().subscribe(regressionType, (descriptor, payload) -> {
+                try (payload) {
+                    if (descriptor.streamIdHigh() == streamId.getMostSignificantBits()
+                            && descriptor.streamIdLow() == streamId.getLeastSignificantBits()) {
+                        received.countDown();
+                    }
+                }
+            });
+
+            EventDescriptor sent = EventDescriptor.of(
+                    UUID.randomUUID().getMostSignificantBits(), UUID.randomUUID().getLeastSignificantBits(),
+                    streamId.getMostSignificantBits(), streamId.getLeastSignificantBits(),
+                    regressionOrdinal,
+                    EventDescriptor.FLAG_PERSISTENT,
+                    System.currentTimeMillis());
+            fresh.bus().publish(sent, EventPayload.empty());
+
+            assertThat(received.await(45, TimeUnit.SECONDS))
+                    .as("event registered+published after a warm-up tick MUST still reach the subscriber")
+                    .isTrue();
+        } finally {
+            fresh.close();
+        }
+    }
+
     private static EventPayload heapPayload(byte[] bytes) {
         return new EventPayload() {
             private final java.util.concurrent.atomic.AtomicInteger refCount =
