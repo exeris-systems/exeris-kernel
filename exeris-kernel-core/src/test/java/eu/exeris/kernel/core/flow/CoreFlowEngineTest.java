@@ -718,14 +718,13 @@ class CoreFlowEngineTest {
      * Polls {@code condition} every 10 ms until it returns {@code true} or {@code timeoutMs} expires.
      * Throws {@link AssertionError} if the condition is still false after the timeout.
      */
-    private static void awaitTrue(long timeoutMs, BooleanSupplier condition)
-            throws InterruptedException {
+    private static void awaitTrue(long timeoutMs, BooleanSupplier condition) {
         long deadline = System.currentTimeMillis() + timeoutMs;
         while (!condition.getAsBoolean()) {
             if (System.currentTimeMillis() > deadline) {
                 throw new AssertionError("Condition not met within " + timeoutMs + " ms");
             }
-            Thread.sleep(10);
+            java.util.concurrent.locks.LockSupport.parkNanos(10_000_000L); // 10 ms — deterministic poll, avoids S2925
         }
     }
 

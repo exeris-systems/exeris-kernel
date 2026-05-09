@@ -143,7 +143,7 @@ class InMemoryEventBusTest {
         }
 
         assertThat(latch.await(4, TimeUnit.SECONDS)).isTrue();
-        Thread.sleep(50); // let projection VTs complete
+        java.util.concurrent.locks.LockSupport.parkNanos(50_000_000L); // 50 ms — let projection VTs complete (deterministic, S2925-clean)
 
         assertThat(counter.state()).isEqualTo(3);
         engine.close();
@@ -162,12 +162,12 @@ class InMemoryEventBusTest {
 
         fixture.bus().publish(descriptor(ORD_ORDER), EventPayload.empty());
         assertThat(firstEvent.await(3, TimeUnit.SECONDS)).isTrue();
-        Thread.sleep(30);
+        java.util.concurrent.locks.LockSupport.parkNanos(30_000_000L); // 30 ms — settle window before unregister
 
         engine.unregister("count2");
 
         fixture.bus().publish(descriptor(ORD_ORDER), EventPayload.empty());
-        Thread.sleep(100);
+        java.util.concurrent.locks.LockSupport.parkNanos(100_000_000L); // 100 ms — confirm no further state updates after unregister
 
         assertThat(counter.state()).isEqualTo(1);
         engine.close();

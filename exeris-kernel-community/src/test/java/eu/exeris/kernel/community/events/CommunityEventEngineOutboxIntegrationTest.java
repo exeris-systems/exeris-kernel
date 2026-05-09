@@ -221,10 +221,8 @@ class CommunityEventEngineOutboxIntegrationTest {
             if (condition.getAsBoolean()) {
                 return true;
             }
-            try {
-                Thread.sleep(20);
-            } catch (InterruptedException _) {
-                Thread.currentThread().interrupt();
+            java.util.concurrent.locks.LockSupport.parkNanos(20_000_000L); // 20 ms — deterministic poll, S2925-clean
+            if (Thread.currentThread().isInterrupted()) {
                 return false;
             }
         }

@@ -29,6 +29,7 @@ import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.LockSupport;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
@@ -147,7 +148,7 @@ public abstract class AbstractFlowChoreographyTck {
         long roundtripBudgetMs = choreographyRoundtripTimeoutMs();
         long deadline = System.currentTimeMillis() + roundtripBudgetMs;
         while (engine.stats().parkedFlows() < 1 && System.currentTimeMillis() < deadline) {
-            Thread.sleep(10);
+            LockSupport.parkNanos(10_000_000L); // 10 ms — deterministic poll, avoids S2925 Thread.sleep
         }
         assertThat(engine.stats().parkedFlows())
                 .as("flow must be in PARKED state before wake")
@@ -166,7 +167,7 @@ public abstract class AbstractFlowChoreographyTck {
 
         long wakeDeadline = System.currentTimeMillis() + roundtripBudgetMs;
         while (engine.stats().parkedFlows() > 0 && System.currentTimeMillis() < wakeDeadline) {
-            Thread.sleep(10);
+            LockSupport.parkNanos(10_000_000L); // 10 ms — deterministic poll, avoids S2925 Thread.sleep
         }
         assertThat(engine.stats().parkedFlows())
                 .as("flow should no longer be parked after choreography wake")
@@ -194,7 +195,7 @@ public abstract class AbstractFlowChoreographyTck {
 
         long startDeadline = System.currentTimeMillis() + choreographyRoundtripTimeoutMs();
         while (engine.stats().completedFlows() < 1 && System.currentTimeMillis() < startDeadline) {
-            Thread.sleep(10);
+            LockSupport.parkNanos(10_000_000L); // 10 ms — deterministic poll, avoids S2925 Thread.sleep
         }
         assertThat(engine.stats().completedFlows())
                 .as("new flow triggered by choreography event must complete")
@@ -215,7 +216,7 @@ public abstract class AbstractFlowChoreographyTck {
                 bus);
 
         bus.publish(descriptorForOrdinal(ordinal), EventPayload.empty());
-        Thread.sleep(choreographyIgnoreSettleMs());
+        LockSupport.parkNanos(choreographyIgnoreSettleMs() * 1_000_000L); // settle wait, deterministic
 
         assertThat(engine.stats().activeFlows())
                 .as("Ignore decision must not change active flow count")

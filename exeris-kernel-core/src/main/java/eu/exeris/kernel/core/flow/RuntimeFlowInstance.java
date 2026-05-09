@@ -53,47 +53,56 @@ final class RuntimeFlowInstance implements RuntimeFlowContextStateView { // NOPM
     // multiple persist paths, and AtomicLong removes the dependency on caller discipline.
     private final AtomicLong schemaVersion;
 
-    private RuntimeFlowInstance(FlowKey key,
-                                String definitionName,
-                                long lifecycleGeneration,
-                                CoreFlowExecutionPlan plan,
-                                FlowState state,
-                                int currentStep,
-                                long timeoutNanos,
-                                int[] compensationStack,
-                                int stackPointer,
-                                long schemaVersion) {
-        this.key = key;
-        this.definitionName = definitionName;
-        this.lifecycleGeneration = lifecycleGeneration;
-        this.contextView = new RuntimeFlowContext(key, definitionName, this);
-        this.plan = plan;
-        this.state = state;
-        this.currentStep = currentStep;
-        this.timeoutNanos = timeoutNanos;
-        this.compensationStack = compensationStack;
-        this.stackPointer = stackPointer;
-        this.schemaVersion = new AtomicLong(schemaVersion);
+    /**
+     * Carrier for {@link RuntimeFlowInstance} construction parameters. Groups identity,
+     * persisted state, and the compensation stack into a single Valhalla-ready record so
+     * the constructor stays under the SonarQube S107 arity limit (≤ 7) without losing the
+     * deeply-immutable seed semantics.
+     */
+    private record Seed(FlowKey key,
+                        String definitionName,
+                        long lifecycleGeneration,
+                        CoreFlowExecutionPlan plan,
+                        FlowState state,
+                        int currentStep,
+                        long timeoutNanos,
+                        int[] compensationStack,
+                        int stackPointer,
+                        long schemaVersion) { }
+
+    private RuntimeFlowInstance(Seed seed) {
+        this.key = seed.key();
+        this.definitionName = seed.definitionName();
+        this.lifecycleGeneration = seed.lifecycleGeneration();
+        this.contextView = new RuntimeFlowContext(seed.key(), seed.definitionName(), this);
+        this.plan = seed.plan();
+        this.state = seed.state();
+        this.currentStep = seed.currentStep();
+        this.timeoutNanos = seed.timeoutNanos();
+        this.compensationStack = seed.compensationStack();
+        this.stackPointer = seed.stackPointer();
+        this.schemaVersion = new AtomicLong(seed.schemaVersion());
     }
 
     public static RuntimeFlowInstance fromContext(
             CoreFlowExecutionPlan plan,
             FlowContext context,
             long lifecycleGeneration) {
-        return new RuntimeFlowInstance(
+        long timeoutNanos = context.timeoutNanos() > 0
+                ? context.timeoutNanos()
+                : System.nanoTime() + plan.timeoutDurationNanos();
+        return new RuntimeFlowInstance(new Seed(
                 FlowKey.from(context),
                 context.definitionName(),
                 lifecycleGeneration,
                 plan,
                 context.state(),
                 Math.max(0, context.currentStep()),
-                context.timeoutNanos() > 0
-                        ? context.timeoutNanos()
-                        : System.nanoTime() + plan.timeoutDurationNanos(),
+                timeoutNanos,
                 new int[Math.max(4, plan.stepCount())],
                 0,
                 FlowSnapshot.SCHEMA_VERSION_INITIAL
-        );
+        ));
     }
 
     public static RuntimeFlowInstance fromSnapshot(
@@ -111,7 +120,7 @@ final class RuntimeFlowInstance implements RuntimeFlowContextStateView { // NOPM
         int[] compensationStack = snapshotStack.length == 0
                 ? new int[Math.max(4, plan.stepCount())]
                 : snapshotStack;
-        return new RuntimeFlowInstance(
+        return new RuntimeFlowInstance(new Seed(
                 new FlowKey(snapshot.instanceIdMost(), snapshot.instanceIdLeast()),
                 snapshot.definitionName(),
                 lifecycleGeneration,
@@ -122,7 +131,7 @@ final class RuntimeFlowInstance implements RuntimeFlowContextStateView { // NOPM
                 compensationStack,
                 snapshot.stackPointer(),
                 snapshot.schemaVersion()
-        );
+        ));
     }
 
     public FlowKey key() {

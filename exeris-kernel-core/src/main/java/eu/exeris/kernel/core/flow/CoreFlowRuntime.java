@@ -708,6 +708,7 @@ final class CoreFlowRuntime { // NOPMD
         persistSnapshot(instance, FlowState.PARKED, stepIndex);
     }
 
+    // step action is a user-supplied SPI callback; any Exception is a step failure (Errors propagate)
     @SuppressWarnings("PMD.AvoidCatchingGenericException")
     private FlowOutcome executeStep(RuntimeFlowInstance instance, int stepIndex, FlowStepAction action) {
         try {
@@ -717,7 +718,7 @@ final class CoreFlowRuntime { // NOPMD
                 fail(instance, stepIndex);
             }
             return outcome;
-        } catch (Throwable cause) {
+        } catch (Exception cause) {
             FlowStepFailedEvent.emit(
                     instance.definitionName(),
                     stepIndex,
@@ -766,7 +767,8 @@ final class CoreFlowRuntime { // NOPMD
                 compensationsRun.increment();
             }
             descriptor.compensation().execute(instance.contextView());
-        } catch (Throwable compensationCause) { // NOPMD AvoidCatchingGenericException -- cleanup must continue
+        // cleanup must continue across all per-step compensation failures (Errors still propagate)
+        } catch (Exception compensationCause) { //NOPMD AvoidCatchingGenericException
             FlowStepFailedEvent.emit(
                     instance.definitionName(),
                     compensationStep,

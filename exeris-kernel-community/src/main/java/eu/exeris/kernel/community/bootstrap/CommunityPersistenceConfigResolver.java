@@ -39,10 +39,7 @@ public final class CommunityPersistenceConfigResolver {
     private static int computeAdaptivePoolSize() {
         int cores = Runtime.getRuntime().availableProcessors();
         // cores * 2 capped at 32, minimum 2
-        return Math.max(
-            Math.min(cores * 2, 32),
-            2
-        );
+        return Math.clamp(cores * 2, 2, 32);
     }
 
     /**
