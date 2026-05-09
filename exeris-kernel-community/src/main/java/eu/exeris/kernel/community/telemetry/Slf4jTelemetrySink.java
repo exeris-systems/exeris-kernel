@@ -8,6 +8,8 @@
  */
 package eu.exeris.kernel.community.telemetry;
 
+import eu.exeris.kernel.spi.config.KernelProfile;
+import eu.exeris.kernel.spi.exceptions.ExceptionDisclosure;
 import eu.exeris.kernel.spi.exceptions.ExerisKernelException;
 import eu.exeris.kernel.spi.telemetry.EventLevel;
 import eu.exeris.kernel.spi.telemetry.KernelEvent;
@@ -17,6 +19,7 @@ import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 
 import java.util.Objects;
+import java.util.function.Supplier;
 
 /**
  * Community fallback {@link TelemetrySink} that emits structured JSON through SLF4J.
@@ -61,15 +64,25 @@ public final class Slf4jTelemetrySink implements TelemetrySink {
 
     private final LogAdapter logger;
     private final MdcAdapter mdc;
+    private final Supplier<KernelProfile> profileResolver;
     private volatile boolean closed;
 
     public Slf4jTelemetrySink() {
-        this(new Slf4jLogAdapter(LoggerFactory.getLogger(Slf4jTelemetrySink.class)), new Slf4jMdcAdapter());
+        this(new Slf4jLogAdapter(LoggerFactory.getLogger(Slf4jTelemetrySink.class)),
+                new Slf4jMdcAdapter(),
+                ExceptionDisclosure::activeProfile);
     }
 
     /* default */ Slf4jTelemetrySink(LogAdapter logger, MdcAdapter mdc) {
+        // Test-only default: pin DEV so existing serialization fixtures remain meaningful.
+        // Production uses the no-arg constructor which resolves the profile from scope.
+        this(logger, mdc, () -> KernelProfile.DEV);
+    }
+
+    /* default */ Slf4jTelemetrySink(LogAdapter logger, MdcAdapter mdc, Supplier<KernelProfile> profileResolver) {
         this.logger = logger;
         this.mdc = mdc;
+        this.profileResolver = profileResolver;
     }
 
     @Override
@@ -85,14 +98,18 @@ public final class Slf4jTelemetrySink implements TelemetrySink {
         String resolvedLevelName = resolvedLevel.name();
         String timestamp = event.timestamp().toString();
         ExerisKernelException exception = event.exception();
+        KernelProfile profile = profileResolver.get();
+        Throwable disclosedThrowable = (exception != null && ExceptionDisclosure.discloseStackTrace(profile))
+                ? exception
+                : null;
 
         MdcScope mdcScope = pushMdc(code, resolvedLevelName, component, timestamp);
         try {
-            String json = buildJsonLine(resolvedLevelName, code, component, timestamp, exception);
+            String json = buildJsonLine(resolvedLevelName, code, component, timestamp, exception, profile);
             switch (resolvedLevel) {
-                case INFO -> logger.info(json, exception);
-                case WARN -> logger.warn(json, exception);
-                case ERROR -> logger.error(json, exception);
+                case INFO -> logger.info(json, disclosedThrowable);
+                case WARN -> logger.warn(json, disclosedThrowable);
+                case ERROR -> logger.error(json, disclosedThrowable);
             }
         } finally {
             mdcScope.close();
@@ -157,9 +174,13 @@ public final class Slf4jTelemetrySink implements TelemetrySink {
             String code,
             String component,
             String timestamp,
-            ExerisKernelException exception) {
-        String message = buildStructuredMessage(exception);
-        String rawArgs = buildStructuredRawArgsJson(exception != null ? exception.rawArgs() : null);
+            ExerisKernelException exception,
+            KernelProfile profile) {
+        String message = buildStructuredMessage(exception, profile);
+        Object[] disclosed = exception == null
+                ? null
+                : ExceptionDisclosure.discloseRawArgs(exception, profile);
+        String rawArgs = buildStructuredRawArgsJson(disclosed);
         return "{"
                 + "\"timestamp\":\"" + escapeJson(timestamp) + "\","
                 + "\"level\":\"" + escapeJson(resolvedLevelName) + "\","
@@ -170,13 +191,13 @@ public final class Slf4jTelemetrySink implements TelemetrySink {
                 + "}";
     }
 
-    private static String buildStructuredMessage(ExerisKernelException exception) {
+    private static String buildStructuredMessage(ExerisKernelException exception, KernelProfile profile) {
         if (exception == null) {
             return "";
         }
-        String message = exception.getMessage();
-        if (message != null && !message.isBlank()) {
-            return message;
+        String disclosed = ExceptionDisclosure.discloseMessage(exception, profile);
+        if (disclosed != null && !disclosed.isBlank()) {
+            return disclosed;
         }
         String fallback = exception.getClass().getSimpleName();
         return fallback != null ? fallback : "";

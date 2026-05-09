@@ -23,9 +23,7 @@ formatting. It implements:
   int`, `Enum`) instead of concatenated Strings, enabling binary crash logs to be structured and processed efficiently.
 - **Centralized Error Mapper Registry:** Translates internal Kernel states to **Abstract Transport Codes**, which
   drivers later translate into protocol-specific responses (e.g., HTTP 503 or HTTP/3 `H3_EXCESSIVE_LOAD`).
-- **Environment-Aware Disclosure:** PROD shows minimal info; DEV exposes full stack trace.
-
-> **Note: Target-state. Not yet implemented in the active kernel modules.** Current implementation exposes the same level of detail regardless of environment.
+- **Environment-Aware Disclosure:** PROD/TEST surface only the opaque `errorCode` + `traceId` envelope and suppress stack traces; DEV surfaces the original message, `rawArgs`, and full stack trace. The redaction policy lives in `eu.exeris.kernel.spi.exceptions.ExceptionDisclosure` and is consumed by every Community sink that produces operator-visible artifacts (see [Disclosure rendering](#disclosure-rendering) below).
 - **Distributed Tracing:** Every exception automatically captures a UUID `traceId`.
 
 ---
@@ -223,6 +221,37 @@ public class ErrorMapperRegistry {
 
 ---
 
+## Disclosure rendering
+
+Operator-visible artifacts (log lines, HTTP error bodies, console output) MUST be shaped by `eu.exeris.kernel.spi.exceptions.ExceptionDisclosure` so that no operational primitive leaks unless the active profile permits it. The helper is intentionally a static utility: redaction is a rendering concern at the sink boundary, never a hot-path decision.
+
+| Helper | Contract |
+|:--|:--|
+| `discloseMessage(ex, profile)` | DEV → original `getMessage()`. PROD/TEST → `"<errorCode> [traceId=<uuid>]"` envelope (correlation preserved, primitives redacted). |
+| `discloseRawArgs(ex, profile)` | DEV → original `rawArgs()` array reference (Glass-Box binary contract unchanged). PROD/TEST → `EMPTY_ARGS` sentinel. |
+| `discloseStackTrace(profile)` | Tracks `KernelProfile.enablesFullErrorDisclosure()`. SLF4J-style sinks consult this to decide whether to forward the throwable to the underlying logger. |
+| `activeProfile()` | Reads `KernelProviders.CURRENT_CONFIG.kernelSettings().profile()`. Falls back to `KernelProfile.PROD` when the slot is unbound (early bootstrap, unit tests outside a kernel scope) — PROD is the safe default. |
+
+**Profile mapping** (from `KernelProfile`):
+
+| Profile | `enablesFullErrorDisclosure` | Operator visible artifact |
+|:--|:--|:--|
+| `DEV` | `true` | message + rawArgs + stack trace |
+| `TEST` | `false` | opaque envelope, redacted rawArgs, no stack trace |
+| `PROD` | `false` | opaque envelope, redacted rawArgs, no stack trace |
+
+Community bindings:
+
+- `Slf4jTelemetrySink` resolves the active profile per emit and shapes the JSON line + throwable forwarding accordingly. The package-private 2-arg test constructor pins DEV so that existing serialization fixtures remain meaningful; production callers use the no-arg constructor which delegates to `ExceptionDisclosure::activeProfile`.
+- `ConsoleSink` and `FileSink` are diagnostic-only paths; their disclosure adoption is tracked as Sprint 7 follow-up if a production deployment requires their output to be redacted.
+
+TCK obligations:
+
+- `AbstractDisclosureModeTck` (in `exeris-kernel-tck`) verifies the SPI helper across DEV/TEST/PROD and the unbound-scope fallback. Every binding that re-exports the helper must extend the abstract.
+- `Slf4jTelemetrySinkDisclosureTest` (in `exeris-kernel-community`) pins the sink-level integration: PROD/TEST suppress the throwable and replace `rawArgs` with `[]`; DEV forwards both.
+
+---
+
 ## Testing Strategy
 
 ### Unit Tests
@@ -234,7 +263,7 @@ public class ErrorMapperRegistry {
 ### Integration Tests
 
 - Full exception flow: throw → `ErrorMapperRegistry.map()` → respond via active Transport Driver. **(Target-state / not yet implemented)**
-- Environment-aware disclosure: DEV exposes stack trace, PROD returns opaque error code only. **(Target-state / not yet implemented)**
+- Environment-aware disclosure: DEV exposes stack trace, PROD returns opaque error code only. Pinned by `AbstractDisclosureModeTck` (helper contract) and `Slf4jTelemetrySinkDisclosureTest` (sink boundary).
 - Binary Glass-Box round-trip: `rawArgs[]` serialized → deserialized → fields match source primitives. **(Target-state / not yet implemented)**
 
 ---

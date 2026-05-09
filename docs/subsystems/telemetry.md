@@ -382,6 +382,7 @@ canonical EX-* fields into MDC for downstream log pipelines.
 | **SLF4J version**         | SLF4J API 2.x                                                                                                     |
 | **Dependency model**      | `exeris-kernel-community` declares `slf4j-api`; binding remains application-owned                                |
 | **JSON semantics**        | JSON body with `timestamp`, `level`, `code`, `component`, `message`, `rawArgs`; MDC mirrors EX-* fields         |
+| **Disclosure shaping**    | Per-emit, resolves the active `KernelProfile` via `ExceptionDisclosure::activeProfile`. PROD/TEST replace `message` with the opaque `"<errorCode> [traceId=<uuid>]"` envelope, set `rawArgs` to `[]`, and suppress the throwable forwarded to SLF4J (no stack trace). DEV forwards everything. See `docs/subsystems/exceptions.md#disclosure-rendering`. |
 
 ---
 
