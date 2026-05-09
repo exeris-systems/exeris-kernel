@@ -239,7 +239,7 @@ with deterministic hard timeouts at each layer boundary (see Diagram 2).
 - Defines `BootstrapSelector` (immutable record: which subsystems to activate)
 - Defines `BootstrapPhase` enum (`FOUNDATION`, `SERVICES`, `RUNTIME`)
 - Config is NOT a Subsystem — resolved by `KernelBootstrap` via `ServiceLoader<ConfigProvider>` before the orchestrator runs
-- Health state is tracked by `KernelHealthMonitor` (Core), not an SPI type
+- Health state is tracked by `KernelHealthMonitor` (Core). The class implements the SPI read-only contract `eu.exeris.kernel.spi.bootstrap.HealthProbe` (introduced in 0.7.0) so HTTP handlers, sidecar reporters, and Enterprise observers can consume probe state without coupling to the Core orchestrator class.
 
 ### What Bootstrap Core **does**
 
@@ -350,48 +350,66 @@ at all times.
 
 ## Kubernetes Health Probes
 
-> **Status: 🚧 Planned (TRL-4 target). No embedded HTTP health server exists in the current TRL-3 prototype.**
-> The design below describes the target behavior. Operators deploying TRL-3 builds should rely on process-level
-> liveness checks (e.g., `exec` probes or TCP socket probes) until the health server is implemented.
+> **Status (0.7.0):** Probe state and an HTTP handler are implemented; an auto-bound embedded HTTP health server on a dedicated port is still **🚧 Planned (TRL-4 target)**. Operators wire the handler into their HTTP server engine themselves until the auto-bind landing.
 
-Bootstrap will register an embedded HTTP health server on a dedicated, non-data-plane port. The server will bind
-before the Boot DAG executes — K8s can observe lifecycle state from the very first millisecond.
+### Probe contract
 
-| Probe            | Path            | Port (default) | Behaviour                                                                                                          |
-|:-----------------|:----------------|:--------------:|:-------------------------------------------------------------------------------------------------------------------|
-| **Liveness**     | `/health/live`  | `9090`         | Returns `HTTP 200 {"status":"UP"}` once `KernelBootstrap` has transitioned past `INIT`. Returns `HTTP 503` only if the JVM is in `FAILED` state (unrecoverable). Never returns 503 during normal boot — K8s must not restart a pod that is still starting. |
-| **Readiness**    | `/health/ready` | `9090`         | Returns `HTTP 200 {"status":"READY"}` **only** after all L4 subsystems have reached `READY` state (Boot DAG complete). Returns `HTTP 503 {"status":"STARTING"}` during boot. K8s routes traffic to this pod only when the readiness probe is 200. |
-| **Startup probe**| `/health/ready` | `9090`         | Use as K8s `startupProbe` target. Prevents liveness probe from timing out during a slow cold start (native lib loading). |
+`KernelHealthMonitor` (Core) implements `eu.exeris.kernel.spi.bootstrap.HealthProbe` and exposes two snapshots:
 
-**Kubernetes manifest snippet:**
+- **Readiness** — UP only when the kernel has transitioned to `STARTED` and every required subsystem is `RUNNING`. Returns `STARTING` while the Boot DAG is in progress, while a required subsystem is still initializing, and during `SHUTTING_DOWN`. Returns `FAILED` after `FAILED` state.
+- **Liveness** — UP after the kernel has transitioned to `INITIALIZED`. Returns `STARTING` before that point. Returns `DOWN` only after `FAILED` state.
+
+### `HealthEndpointHandler` (Community)
+
+`eu.exeris.kernel.community.health.HealthEndpointHandler` is an `HttpHandler` that surfaces the probe over HTTP. Construct it with any `HealthProbe` implementation (the orchestrator-owned `KernelHealthMonitor` is the canonical caller) and register it with the HTTP server engine:
+
+```java
+HealthEndpointHandler health = new HealthEndpointHandler(orchestrator.healthMonitor());
+httpServerEngine.setHandler(health);   // or compose into an application router
+httpServerEngine.start();
+```
+
+| Probe         | Default path             | Healthy            | Not healthy                                            |
+|:--------------|:-------------------------|:-------------------|:-------------------------------------------------------|
+| **Readiness** | `/healthz/readiness`     | `200 OK`           | `503 Service Unavailable`                              |
+| **Liveness**  | `/healthz/liveness`      | `200 OK`           | `503 Service Unavailable`                              |
+
+Custom paths are available via `new HealthEndpointHandler(probe, readinessPath, livenessPath)`. The textual probe status (`READY`, `STARTING`, `UP`, `DOWN`, `FAILED`) is mirrored into the response header `X-Exeris-Health` for human diagnostics — Kubernetes probes evaluate the status code only, so responses are bodyless.
+
+The handler returns:
+- `404 Not Found` for paths that match neither probe, without invoking the probe;
+- `405 Method Not Allowed` with `Allow: GET` for non-`GET` methods on a probe path.
+
+The contract is pinned by `eu.exeris.kernel.tck.contract.health.AbstractHealthEndpointTck` plus the Community binding `CommunityHealthEndpointTckTest`. End-to-end behavior with the real `KernelHealthMonitor` is pinned by `HealthEndpointHandlerKernelMonitorIntegrationTest`.
+
+### Kubernetes manifest snippet
 
 ```yaml
 livenessProbe:
   httpGet:
-    path: /health/live
-    port: 9090
-  initialDelaySeconds: 0     # Probe starts immediately
+    path: /healthz/liveness
+    port: 8080                     # data-plane port, until the auto-bound health port lands
+  initialDelaySeconds: 0
   periodSeconds: 5
   failureThreshold: 3
 
 readinessProbe:
   httpGet:
-    path: /health/ready
-    port: 9090
+    path: /healthz/readiness
+    port: 8080
   initialDelaySeconds: 0
   periodSeconds: 2
-  failureThreshold: 60       # 60 × 2s = 120s max tolerated boot time
+  failureThreshold: 60             # 60 × 2s = 120s max tolerated boot time
 
 startupProbe:
   httpGet:
-    path: /health/ready
-    port: 9090
+    path: /healthz/readiness
+    port: 8080
   failureThreshold: 30
-  periodSeconds: 5           # 30 × 5s = 150s budget before K8s kills the pod
+  periodSeconds: 5                 # 30 × 5s = 150s cold-start budget
 ```
 
-> **Port override:** The health port is configurable via `exeris.bootstrap.healthPort` (default `9090`).
-> The data-plane transport port is configured separately — never share ports between health and data traffic.
+> **Dedicated port (planned, TRL-4):** A future revision will auto-bind the handler on a dedicated, non-data-plane port (`exeris.bootstrap.healthPort`, default `9090`) so probes can observe lifecycle state from the very first millisecond — even before the data-plane transport binds. Until then, operators register the handler with the application HTTP engine and probe the data-plane port.
 
 ---
 

@@ -8,6 +8,8 @@
  */
 package eu.exeris.kernel.core.bootstrap.health;
 
+import eu.exeris.kernel.spi.bootstrap.HealthProbe;
+
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
@@ -16,11 +18,15 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /**
  * Core bootstrap health registry for K8s-like readiness/liveness probes.
  *
+ * <p>Implements the read-only {@link HealthProbe} SPI contract so that HTTP
+ * handlers and out-of-band reporters can consume probe state without coupling
+ * to this Core class.
+ *
  * <p>This class intentionally exposes state only through immutable snapshots.
  * It can be queried concurrently from probe threads while bootstrap transitions
  * subsystem states.
  */
-public final class KernelHealthMonitor {
+public final class KernelHealthMonitor implements HealthProbe {
 
     private static final String STATUS_STARTING = "STARTING";
     private static final String STATUS_READY = "READY";
@@ -69,6 +75,7 @@ public final class KernelHealthMonitor {
     }
 
     /** Readiness: UP only when kernel is started and every required subsystem is RUNNING. */
+    @Override
     public ProbeSnapshot readiness() {
         if (kernelFailed.get()) {
             return new ProbeSnapshot(STATUS_FAILED, false);
@@ -89,6 +96,7 @@ public final class KernelHealthMonitor {
     }
 
     /** Liveness: UP after kernel init, DOWN only when kernel entered failed state. */
+    @Override
     public ProbeSnapshot liveness() {
         if (kernelFailed.get()) {
             return new ProbeSnapshot(STATUS_DOWN, false);
@@ -104,9 +112,6 @@ public final class KernelHealthMonitor {
         STARTED,
         SHUTTING_DOWN,
         FAILED
-    }
-
-    public record ProbeSnapshot(String status, boolean healthy) {
     }
 
     private record SubsystemHealth(boolean requiredForReadiness, SubsystemState state) {
