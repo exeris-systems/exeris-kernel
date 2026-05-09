@@ -337,6 +337,57 @@ When the ring is full, `emit()` discards the incoming event (drop-newest), incre
 
 ---
 
+## Operational metrics export — Prometheus (since 0.7.0)
+
+Operators scraping kernel metrics use the Prometheus pull model. The kernel ships two Community classes:
+
+- **`eu.exeris.kernel.community.metrics.PrometheusMetricsSink`** — `TelemetrySink` that records counter/gauge/latency calls in concurrent maps and produces a Prometheus 0.0.4 text exposition snapshot on demand via `exposeText()`.
+- **`eu.exeris.kernel.community.metrics.PrometheusMetricsHandler`** — `HttpHandler` that serves `GET /metrics` (path configurable) returning the snapshot as the HTTP response body. Path-mismatch → `404`; non-`GET` → `405` with `Allow: GET`. Pair with `HealthEndpointHandler` on the same HTTP engine.
+
+### Why pull, not push
+
+| Aspect | Prometheus pull (chosen) | OTLP push |
+|:--|:--|:--|
+| Client state | None — each scrape is stateless | Long-lived gRPC client + retry buffer |
+| Dependencies | None beyond JDK | `opentelemetry-exporter-otlp` + Protobuf |
+| Failure mode | Scraper observes scrape failure directly | Push retries can mask sustained failure |
+| K8s integration | Pod annotation / `ServiceMonitor` | OpenTelemetry Collector sidecar |
+
+The Community baseline ships pull because it adds zero new runtime dependencies and integrates with standard Kubernetes scraping out of the box. An Enterprise binding may add an OTLP exporter later without modifying this sink.
+
+### Metric mapping
+
+| `TelemetrySink` call | Prometheus type | Exposition shape |
+|:--|:--|:--|
+| `increment(name, delta)` | `counter` | `name <total>` |
+| `gauge(name, value)` | `gauge` | `name <last_value>` |
+| `latency(name, nanoseconds)` | `summary` | `name_count <count>` + `name_sum <sum>` (no quantiles in baseline) |
+
+Latency without quantiles is intentional — streaming quantile sketches add allocation pressure on the hot path. Operators compute averages via PromQL: `rate(name_sum[1m]) / rate(name_count[1m])`. Quantile support is tracked as a 0.8+ enhancement once a low-allocation sketch (e.g., DDSketch) is selected.
+
+### Naming sanitisation
+
+Caller-supplied names are mapped to the Prometheus name regex `[a-zA-Z_:][a-zA-Z0-9_:]*` — characters outside the set are replaced with `_`, and a leading digit/invalid first character is prefixed with `_`. The original name remains the lookup key in the concurrent maps so multiple `increment` calls on the same logical metric continue to accumulate as expected.
+
+### Wiring example
+
+```java
+PrometheusMetricsSink metrics = new PrometheusMetricsSink();
+List<TelemetrySink> sinks = List.of(metrics, new JfrTelemetrySink());
+
+// ... bind sinks via KernelProviders.TELEMETRY_SINKS …
+
+PrometheusMetricsHandler handler = new PrometheusMetricsHandler(metrics, allocator);
+httpServerEngine.setHandler(handler);   // or compose into an application router
+```
+
+### Validation
+
+- `PrometheusMetricsSinkTest` covers counter/gauge/latency exposition, sanitisation, deterministic ordering, concurrent updates (16 VTs × 1000 increments), and `close()` semantics.
+- `PrometheusMetricsHandlerTest` covers routing (200/404/405), Content-Type, Content-Length, and custom paths.
+
+---
+
 ## L0 Crash Observability — Memory-Mapped Crash Buffer (TRL-4 Requirement)
 
 The Glass-Box in-RAM buffer used during L0 (pre-JFR) boot provides **zero durability** on a hard JVM crash.
