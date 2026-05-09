@@ -65,7 +65,14 @@ final class RuntimeFlowInstance implements RuntimeFlowContextStateView { // NOPM
      * it is <em>not</em> a Valhalla value-type candidate; the carrier is intentionally
      * private and consumed within a single constructor frame so no escape can race the
      * subsequent in-place mutation.
+     *
+     * <p>{@code java:S6218}: the default record {@code equals}/{@code hashCode}/
+     * {@code toString} compare {@code int[]} by identity rather than by content. This is
+     * acceptable here because {@code Seed} is a private one-shot carrier — never compared,
+     * hashed, or logged. Suppressing rather than overriding keeps the carrier lean and
+     * avoids accidental array copies on a path that runs once per flow instance.
      */
+    @SuppressWarnings("java:S6218")
     private record Seed(FlowKey key,
                         String definitionName,
                         long lifecycleGeneration,

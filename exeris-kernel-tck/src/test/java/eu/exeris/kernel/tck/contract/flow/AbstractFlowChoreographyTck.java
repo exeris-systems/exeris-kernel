@@ -216,11 +216,26 @@ public abstract class AbstractFlowChoreographyTck {
                 bus);
 
         bus.publish(descriptorForOrdinal(ordinal), EventPayload.empty());
-        LockSupport.parkNanos(choreographyIgnoreSettleMs() * 1_000_000L); // settle wait, deterministic
+        settleWindow(choreographyIgnoreSettleMs() * 1_000_000L);
 
         assertThat(engine.stats().activeFlows())
                 .as("Ignore decision must not change active flow count")
                 .isEqualTo(statsBefore);
+    }
+
+    /**
+     * Bounded settle window. A straight-line {@link LockSupport#parkNanos(long)} call may
+     * return early on a spurious wake-up or interrupt and shorten the wait, which would
+     * cause the next assertion to fire before background threads complete. Spinning until
+     * a {@code nanoTime} deadline guarantees the full duration regardless of how many times
+     * {@code parkNanos} returns.
+     */
+    private static void settleWindow(long nanos) {
+        long deadline = System.nanoTime() + nanos;
+        long remaining;
+        while ((remaining = deadline - System.nanoTime()) > 0L) {
+            LockSupport.parkNanos(remaining);
+        }
     }
 
     @Test
