@@ -55,9 +55,16 @@ final class RuntimeFlowInstance implements RuntimeFlowContextStateView { // NOPM
 
     /**
      * Carrier for {@link RuntimeFlowInstance} construction parameters. Groups identity,
-     * persisted state, and the compensation stack into a single Valhalla-ready record so
-     * the constructor stays under the SonarQube S107 arity limit (≤ 7) without losing the
-     * deeply-immutable seed semantics.
+     * persisted state, and the compensation stack into a single record so the constructor
+     * stays under the SonarQube S107 arity limit (≤ 7).
+     *
+     * <p>The {@code int[] compensationStack} component is shared by reference with the
+     * surrounding instance — this preserves the historical ownership semantics (the array
+     * is mutated in place by {@code pushCompensation()} / {@code compensationStepAt()})
+     * and keeps the bootstrap allocation-free. Because the record holds a mutable array
+     * it is <em>not</em> a Valhalla value-type candidate; the carrier is intentionally
+     * private and consumed within a single constructor frame so no escape can race the
+     * subsequent in-place mutation.
      */
     private record Seed(FlowKey key,
                         String definitionName,
