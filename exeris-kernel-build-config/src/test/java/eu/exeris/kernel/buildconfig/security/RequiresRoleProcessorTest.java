@@ -157,12 +157,8 @@ class RequiresRoleProcessorTest {
         JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
         assertThat(compiler).as("system Java compiler must be available").isNotNull();
 
-        StandardJavaFileManager fileManager =
-                compiler.getStandardFileManager(null, null, java.nio.charset.StandardCharsets.UTF_8);
         Path classes = workDir.resolve("classes");
         Files.createDirectories(classes);
-        fileManager.setLocation(StandardLocation.CLASS_OUTPUT, List.of(classes.toFile()));
-        fileManager.setLocation(StandardLocation.SOURCE_OUTPUT, List.of(workDir.toFile()));
 
         List<JavaFileObject> units = sources.stream()
                 .map(InMemorySource::new)
@@ -170,17 +166,22 @@ class RequiresRoleProcessorTest {
                 .toList();
 
         StringBuilder diagnostics = new StringBuilder();
-        boolean ok = compiler.getTask(
-                null,
-                fileManager,
-                diagnostic -> diagnostics.append(diagnostic.getKind())
-                        .append(": ").append(diagnostic.getMessage(null)).append('\n'),
-                List.of("-proc:full", "--release", "26"),
-                null,
-                units
-        ).call();
+        boolean ok;
+        try (StandardJavaFileManager fileManager =
+                     compiler.getStandardFileManager(null, null, java.nio.charset.StandardCharsets.UTF_8)) {
+            fileManager.setLocation(StandardLocation.CLASS_OUTPUT, List.of(classes.toFile()));
+            fileManager.setLocation(StandardLocation.SOURCE_OUTPUT, List.of(workDir.toFile()));
 
-        fileManager.close();
+            ok = compiler.getTask(
+                    null,
+                    fileManager,
+                    diagnostic -> diagnostics.append(diagnostic.getKind())
+                            .append(": ").append(diagnostic.getMessage(null)).append('\n'),
+                    List.of("-proc:full", "--release", "26"),
+                    null,
+                    units
+            ).call();
+        }
         return new ProcessorRun(ok, diagnostics.toString());
     }
 
@@ -200,11 +201,13 @@ class RequiresRoleProcessorTest {
             return content;
         }
 
+        private static final String URI_SEPARATOR = "/";
+
         private static String extractName(String source) {
             // Pull "package foo.bar; ... class|interface|@interface|enum Name" → foo/bar/Name
             String pkg = lineMatching(source, "package ");
             String pkgPath = pkg == null ? "" : pkg.substring("package ".length(), pkg.indexOf(';'))
-                    .trim().replace('.', '/') + "/";
+                    .trim().replace(".", URI_SEPARATOR) + URI_SEPARATOR;
             String typeLine = Stream.of("public class ", "class ", "interface ",
                             "public interface ", "public @interface ", "@interface ",
                             "public enum ", "enum ")

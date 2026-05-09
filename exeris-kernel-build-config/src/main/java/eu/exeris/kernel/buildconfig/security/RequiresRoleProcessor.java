@@ -27,7 +27,6 @@ import javax.tools.JavaFileObject;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -77,7 +76,7 @@ import java.util.TreeMap;
  * {@code eu.exeris.kernel.spi.security.KernelRoles}.
  */
 @SupportedAnnotationTypes(RequiresRoleProcessor.REQUIRES_ROLE_FQN)
-@SupportedSourceVersion(SourceVersion.RELEASE_25)
+@SupportedSourceVersion(SourceVersion.RELEASE_26)
 public final class RequiresRoleProcessor extends AbstractProcessor {
 
     /** Fully-qualified name of the SPI annotation processed by this implementation. */
@@ -92,6 +91,13 @@ public final class RequiresRoleProcessor extends AbstractProcessor {
     private static final String GENERATED_PACKAGE = "eu.exeris.kernel.security.generated";
     private static final String GENERATED_SIMPLE_NAME = "RoleCheckRegistry";
     private static final long ROLE_MASK_WIDTH = 64L;
+
+    // Repeated literals extracted to keep generated source layout consistent and to
+    // satisfy SonarQube S1192 (duplicated literal warnings).
+    private static final String FOUR_SPACES = "    ";
+    private static final String EIGHT_SPACES = "        ";
+    private static final String CLOSE_BLOCK = FOUR_SPACES + "}";
+    private static final String CLOSE_ARRAY_LITERAL = FOUR_SPACES + "};";
 
     /**
      * Canonical kernel-owned role-name → bit-position mapping. Mirrors
@@ -120,46 +126,50 @@ public final class RequiresRoleProcessor extends AbstractProcessor {
                 collect(roundEnv.getElementsAnnotatedWith(annotation));
             }
         }
-        if (!roundEnv.processingOver() || generated || methods.isEmpty()) {
-            return true;
+        if (roundEnv.processingOver() && !generated && !methods.isEmpty()) {
+            try {
+                emit();
+            } catch (IOException ex) {
+                processingEnv.getMessager().printMessage(
+                        Diagnostic.Kind.ERROR,
+                        "RequiresRoleProcessor: failed to write " + GENERATED_CLASS_FQN
+                                + " — " + ex.getMessage());
+            }
+            generated = true;
         }
-        try {
-            emit();
-        } catch (IOException ex) {
-            processingEnv.getMessager().printMessage(
-                    Diagnostic.Kind.ERROR,
-                    "RequiresRoleProcessor: failed to write " + GENERATED_CLASS_FQN + " — " + ex.getMessage());
-        }
-        generated = true;
         return true;
     }
 
     private void collect(Set<? extends Element> elements) {
-        Messager messager = processingEnv.getMessager();
         for (Element element : elements) {
-            ElementKind kind = element.getKind();
-            if (kind != ElementKind.METHOD && kind != ElementKind.CLASS && kind != ElementKind.INTERFACE) {
-                messager.printMessage(Diagnostic.Kind.WARNING,
-                        "@RequiresRole on unsupported element kind " + kind + " — ignored", element);
-                continue;
-            }
-            AnnotationMirror mirror = findMirror(element);
-            if (mirror == null) {
-                continue;
-            }
-            List<String> roles = readStringArray(mirror, "value");
-            if (roles.isEmpty()) {
-                messager.printMessage(Diagnostic.Kind.ERROR,
-                        "@RequiresRole.value() must declare at least one role", element);
-                continue;
-            }
-            boolean matchAll = "ALL".equals(readEnumValue(mirror, "match", "ANY"));
-            String methodKey = methodKey(element);
-            methods.add(new MethodDescriptor(methodKey, List.copyOf(roles), matchAll));
-            for (String role : roles) {
-                if (!SYSTEM_ROLE_BITS.containsKey(role)) {
-                    applicationRoleBits.computeIfAbsent(role, _ -> -1);
-                }
+            collectOne(element);
+        }
+    }
+
+    private void collectOne(Element element) {
+        Messager messager = processingEnv.getMessager();
+        ElementKind kind = element.getKind();
+        if (kind != ElementKind.METHOD && kind != ElementKind.CLASS && kind != ElementKind.INTERFACE) {
+            messager.printMessage(Diagnostic.Kind.WARNING,
+                    "@RequiresRole on unsupported element kind " + kind + " — ignored", element);
+            return;
+        }
+        AnnotationMirror mirror = findMirror(element);
+        if (mirror == null) {
+            return;
+        }
+        List<String> roles = readStringArray(mirror, "value");
+        if (roles.isEmpty()) {
+            messager.printMessage(Diagnostic.Kind.ERROR,
+                    "@RequiresRole.value() must declare at least one role", element);
+            return;
+        }
+        boolean matchAll = "ALL".equals(readEnumValue(mirror, "match", "ANY"));
+        String methodKey = methodKey(element);
+        methods.add(new MethodDescriptor(methodKey, List.copyOf(roles), matchAll));
+        for (String role : roles) {
+            if (!SYSTEM_ROLE_BITS.containsKey(role)) {
+                applicationRoleBits.putIfAbsent(role, -1);
             }
         }
     }
@@ -182,7 +192,10 @@ public final class RequiresRoleProcessor extends AbstractProcessor {
         List<? extends AnnotationValue> entries = (List<? extends AnnotationValue>) value.getValue();
         List<String> out = new ArrayList<>(entries.size());
         for (AnnotationValue entry : entries) {
-            out.add(entry.getValue().toString());
+            Object raw = entry.getValue();
+            if (raw != null) {
+                out.add(raw.toString());
+            }
         }
         return out;
     }
@@ -193,6 +206,9 @@ public final class RequiresRoleProcessor extends AbstractProcessor {
             return fallback;
         }
         Object raw = value.getValue();
+        if (raw == null) {
+            return fallback;
+        }
         if (raw instanceof VariableElement enumConstant) {
             return enumConstant.getSimpleName().toString();
         }
@@ -264,84 +280,104 @@ public final class RequiresRoleProcessor extends AbstractProcessor {
         writer.println();
         writeMethodIdConstants(writer);
         writer.println();
-        writeMaskArrays(writer);
+        writeAnyMaskArray(writer);
+        writer.println();
+        writeAllMaskArray(writer);
+        writer.println();
+        writeMatchDiscriminatorArray(writer);
+        writer.println();
+        writeMethodNamesArray(writer);
         writer.println();
         writeRoleNameMap(writer);
         writer.println();
         writeAccessors(writer);
         writer.println();
-        writer.println("    private " + GENERATED_SIMPLE_NAME + "() {");
-        writer.println("        // generated registry — not instantiable");
-        writer.println("    }");
+        writer.println(FOUR_SPACES + "private " + GENERATED_SIMPLE_NAME + "() {");
+        writer.println(EIGHT_SPACES + "// generated registry — not instantiable");
+        writer.println(CLOSE_BLOCK);
         writer.println("}");
     }
 
     private void writeMethodIdConstants(PrintWriter writer) {
         for (int index = 0; index < methods.size(); index++) {
-            writer.println("    /** " + escapeJavadoc(methods.get(index).methodKey) + " */");
-            writer.println("    public static final int M_" + index + " = " + index + ";");
+            writer.println(FOUR_SPACES + "/** " + escapeJavadoc(methods.get(index).methodKey) + " */");
+            writer.println(FOUR_SPACES + "public static final int M_" + index + " = " + index + ";");
         }
     }
 
-    private void writeMaskArrays(PrintWriter writer) {
-        writer.println("    private static final long[] REQUIRED_ANY = {");
+    private void writeAnyMaskArray(PrintWriter writer) {
+        writer.println(FOUR_SPACES + "private static final long[] REQUIRED_ANY = {");
         for (int index = 0; index < methods.size(); index++) {
             MethodDescriptor descriptor = methods.get(index);
-            long mask = descriptor.matchAll ? 0L : mask(descriptor.roles);
-            writer.println("        " + maskLiteral(mask) + (index < methods.size() - 1 ? "," : ""));
+            long maskValue = descriptor.matchAll ? 0L : mask(descriptor.roles);
+            writer.println(EIGHT_SPACES + maskLiteral(maskValue) + entrySeparator(index));
         }
-        writer.println("    };");
-        writer.println();
-        writer.println("    private static final long[] REQUIRED_ALL = {");
+        writer.println(CLOSE_ARRAY_LITERAL);
+    }
+
+    private void writeAllMaskArray(PrintWriter writer) {
+        writer.println(FOUR_SPACES + "private static final long[] REQUIRED_ALL = {");
         for (int index = 0; index < methods.size(); index++) {
             MethodDescriptor descriptor = methods.get(index);
-            long mask = descriptor.matchAll ? mask(descriptor.roles) : 0L;
-            writer.println("        " + maskLiteral(mask) + (index < methods.size() - 1 ? "," : ""));
+            long maskValue = descriptor.matchAll ? mask(descriptor.roles) : 0L;
+            writer.println(EIGHT_SPACES + maskLiteral(maskValue) + entrySeparator(index));
         }
-        writer.println("    };");
-        writer.println();
-        writer.println("    private static final boolean[] MATCH_IS_ALL = {");
+        writer.println(CLOSE_ARRAY_LITERAL);
+    }
+
+    private void writeMatchDiscriminatorArray(PrintWriter writer) {
+        writer.println(FOUR_SPACES + "private static final boolean[] MATCH_IS_ALL = {");
         for (int index = 0; index < methods.size(); index++) {
-            writer.println("        " + methods.get(index).matchAll
-                    + (index < methods.size() - 1 ? "," : ""));
+            writer.println(EIGHT_SPACES + methods.get(index).matchAll + entrySeparator(index));
         }
-        writer.println("    };");
-        writer.println();
-        writer.println("    private static final String[] METHOD_NAMES = {");
+        writer.println(CLOSE_ARRAY_LITERAL);
+    }
+
+    private void writeMethodNamesArray(PrintWriter writer) {
+        writer.println(FOUR_SPACES + "private static final String[] METHOD_NAMES = {");
         for (int index = 0; index < methods.size(); index++) {
-            writer.println("        \"" + escapeString(methods.get(index).methodKey) + "\""
-                    + (index < methods.size() - 1 ? "," : ""));
+            writer.println(EIGHT_SPACES + "\"" + escapeString(methods.get(index).methodKey) + "\""
+                    + entrySeparator(index));
         }
-        writer.println("    };");
+        writer.println(CLOSE_ARRAY_LITERAL);
+    }
+
+    private String entrySeparator(int index) {
+        return index < methods.size() - 1 ? "," : "";
     }
 
     private void writeRoleNameMap(PrintWriter writer) {
-        writer.println("    private static final java.util.Map<String, Integer> ROLE_BITS;");
-        writer.println("    static {");
-        writer.println("        java.util.HashMap<String, Integer> bits = new java.util.HashMap<>();");
+        writer.println(FOUR_SPACES + "private static final java.util.Map<String, Integer> ROLE_BITS;");
+        writer.println(FOUR_SPACES + "static {");
+        writer.println(EIGHT_SPACES + "java.util.HashMap<String, Integer> bits = new java.util.HashMap<>();");
         for (Map.Entry<String, Integer> entry : new TreeMap<>(SYSTEM_ROLE_BITS).entrySet()) {
-            writer.println("        bits.put(\"" + escapeString(entry.getKey()) + "\", "
+            writer.println(EIGHT_SPACES + "bits.put(\"" + escapeString(entry.getKey()) + "\", "
                     + entry.getValue() + ");");
         }
         for (Map.Entry<String, Integer> entry : applicationRoleBits.entrySet()) {
-            writer.println("        bits.put(\"" + escapeString(entry.getKey()) + "\", "
+            writer.println(EIGHT_SPACES + "bits.put(\"" + escapeString(entry.getKey()) + "\", "
                     + entry.getValue() + ");");
         }
-        writer.println("        ROLE_BITS = java.util.Map.copyOf(bits);");
-        writer.println("    }");
+        writer.println(EIGHT_SPACES + "ROLE_BITS = java.util.Map.copyOf(bits);");
+        writer.println(CLOSE_BLOCK);
     }
 
     private void writeAccessors(PrintWriter writer) {
-        writer.println("    public static int methodCount() { return " + methods.size() + "; }");
-        writer.println("    public static long requiredAny(int methodId) { return REQUIRED_ANY[methodId]; }");
-        writer.println("    public static long requiredAll(int methodId) { return REQUIRED_ALL[methodId]; }");
-        writer.println("    public static boolean matchIsAll(int methodId) { return MATCH_IS_ALL[methodId]; }");
-        writer.println("    public static String methodName(int methodId) { return METHOD_NAMES[methodId]; }");
-        writer.println("    public static java.util.Set<String> roleNames() { return ROLE_BITS.keySet(); }");
-        writer.println("    public static int roleNameToBit(String role) {");
-        writer.println("        Integer bit = ROLE_BITS.get(role);");
-        writer.println("        return bit == null ? -1 : bit;");
-        writer.println("    }");
+        writer.println(FOUR_SPACES + "public static int methodCount() { return " + methods.size() + "; }");
+        writer.println(FOUR_SPACES + "public static long requiredAny(int methodId) "
+                + "{ return REQUIRED_ANY[methodId]; }");
+        writer.println(FOUR_SPACES + "public static long requiredAll(int methodId) "
+                + "{ return REQUIRED_ALL[methodId]; }");
+        writer.println(FOUR_SPACES + "public static boolean matchIsAll(int methodId) "
+                + "{ return MATCH_IS_ALL[methodId]; }");
+        writer.println(FOUR_SPACES + "public static String methodName(int methodId) "
+                + "{ return METHOD_NAMES[methodId]; }");
+        writer.println(FOUR_SPACES + "public static java.util.Set<String> roleNames() "
+                + "{ return ROLE_BITS.keySet(); }");
+        writer.println(FOUR_SPACES + "public static int roleNameToBit(String role) {");
+        writer.println(EIGHT_SPACES + "Integer bit = ROLE_BITS.get(role);");
+        writer.println(EIGHT_SPACES + "return bit == null ? -1 : bit;");
+        writer.println(CLOSE_BLOCK);
     }
 
     private static String maskLiteral(long mask) {
@@ -356,19 +392,6 @@ public final class RequiresRoleProcessor extends AbstractProcessor {
         return value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
-    /**
-     * Snapshot of one annotated method's binding intent. Mutable list/key are
-     * enclosed by the processor instance — never escapes to caller-visible API.
-     */
-    private record MethodDescriptor(String methodKey, List<String> roles, boolean matchAll) {
-
-        @SuppressWarnings("unused") // ensures LinkedHashMap import is exercised in tests
-        Map<String, Object> debugView() {
-            Map<String, Object> view = new LinkedHashMap<>();
-            view.put("method", methodKey);
-            view.put("roles", roles);
-            view.put("matchAll", matchAll);
-            return view;
-        }
-    }
+    /** Snapshot of one annotated method's binding intent. */
+    private record MethodDescriptor(String methodKey, List<String> roles, boolean matchAll) { }
 }
