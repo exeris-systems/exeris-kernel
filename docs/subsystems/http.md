@@ -86,6 +86,7 @@ HTTP abstract TCK suites present:
 - `AbstractHttpHandlerTck`
 - `AbstractHttpExchangeTck`
 - `AbstractHttpProviderLoopbackTck` — verifies real transport round-trip; bound at Community tier (`CommunityHttpProviderLoopbackTckTest`)
+- `AbstractHealthEndpointTck` (since 0.7.0) — pins the readiness/liveness endpoint contract for any `HttpHandler` binding that surfaces a `HealthProbe`. Bound at Community tier (`CommunityHealthEndpointTckTest`).
 
 These verify SPI-level HTTP contract behavior and ServiceLoader/provider semantics.
 
@@ -146,3 +147,11 @@ Current `exeris-kernel-core` HTTP package focuses on codec/wire primitives:
 - Root Maven modules are currently: `build-config`, `bom`, `parent`, `spi`, `tck`, `core`, `community`.
 - Documentation and design discussions that mention dedicated `exeris-kernel-http` module
   should be treated as target/roadmap unless that module appears in the root reactor.
+
+---
+
+## Operational Endpoints
+
+### `HealthEndpointHandler` (Community, since 0.7.0)
+
+`eu.exeris.kernel.community.health.HealthEndpointHandler` is an `HttpHandler` that surfaces an SPI `HealthProbe` (canonically `KernelHealthMonitor`) over HTTP for Kubernetes-style readiness/liveness probes. Default paths: `/healthz/readiness`, `/healthz/liveness`. Status code carries the probe verdict (`200` healthy / `503` not). The textual status from the probe snapshot is mirrored into the `X-Exeris-Health` response header. Non-matching paths return `404`; non-`GET` methods on a probe path return `405` with `Allow: GET`. Full operational contract — including the K8s manifest snippet — lives in [`bootstrap.md` § Kubernetes Health Probes](bootstrap.md#kubernetes-health-probes).
