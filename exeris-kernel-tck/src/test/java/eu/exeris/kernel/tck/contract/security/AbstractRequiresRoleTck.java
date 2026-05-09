@@ -44,7 +44,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * <pre>{@code
  * class CommunityRequiresRoleTckTest extends AbstractRequiresRoleTck {
  *     @Override
- *     protected BiFunction<Integer, PrincipalContext, Boolean> isAllowed(RoleRegistry registry) {
+ *     protected BiPredicate<Integer, PrincipalContext> isAllowed(RoleRegistry registry) {
  *         return (methodId, principal) -> RoleCheckEnforcer.isAllowed(methodId, principal, registry);
  *     }
  *
