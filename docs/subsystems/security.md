@@ -190,10 +190,12 @@ token lifetime. The following contract governs token lifecycle in the Kernel:
 ## `@RequiresRole` Processing — No Reflection on Hot Path
 
 > **Status (0.7.0):** SPI annotation surface (`@RequiresRole`, `RoleMatch`, `KernelRoles`) is implemented
-> as of Sprint 8a. The APT processor in `exeris-kernel-build-config`, the generated `RoleCheckRegistry`,
-> the `LazyConstant` loader, the `principal.roleMask()` carrier, and the runtime admission hook ship in
-> Sprint 8b. Until then, `@RequiresRole` annotations are valid declarations but no enforcement is wired —
-> use `CitadelGuard.requireRole(...)` for runtime checks.
+> as of Sprint 8a. The APT processor (`eu.exeris.kernel.buildconfig.security.RequiresRoleProcessor`)
+> ships in Sprint 8b-i and emits `eu.exeris.kernel.security.generated.RoleCheckRegistry` at compile time.
+> The `LazyConstant<RoleCheckRegistry>` loader, the `principal.roleMask()` carrier, the runtime admission
+> hook, and the `AbstractRequiresRoleTck` ship in Sprint 8b-ii. Until then, `@RequiresRole` annotations
+> emit a generated registry but no runtime check consumes it — use `CitadelGuard.requireRole(...)` for
+> runtime checks.
 
 ### SPI surface (since 0.7.0)
 
@@ -210,13 +212,21 @@ the kernel-owned system roles (`ROLE_SYSTEM`, `ROLE_ADMIN`, `ROLE_OPERATOR`, `RO
 roles are assigned bits `[8, 64)` by the APT processor at build time. ADR-014 covers the binding
 contract end-to-end.
 
-### Target mechanism (Sprint 8b)
+### APT processor (since 0.7.0, Sprint 8b-i)
 
 `@RequiresRole` annotations are **NOT processed via runtime reflection**. The mechanism is:
 
-1. **Compile-time annotation processor (APT):** An annotation processor in `exeris-kernel-build-config`
-   generates a static `RoleCheckRegistry` class at compile time. For each annotated method, a `long` bitmask
-   encoding the required roles is emitted into the registry.
+1. **Compile-time annotation processor (APT):** `RequiresRoleProcessor` in
+   `exeris-kernel-build-config` scans every `@RequiresRole`-annotated METHOD/TYPE
+   in a compilation unit and emits a single source file
+   `eu.exeris.kernel.security.generated.RoleCheckRegistry`. Method IDs are
+   assigned in alphabetical order of the fully-qualified declaring type +
+   member name (deterministic across rebuilds). Role bits follow `KernelRoles`
+   for the canonical four system roles (bits `[0, 8)`); application-defined
+   role names get bits `[8, 64)` assigned alphabetically. The processor reads
+   the annotation by FQN string and declares no project-scope dependency on
+   `exeris-kernel-spi` — that would create a reactor cycle (SPI consumes
+   build-config rulesets via plugin classpath).
 2. **Runtime lookup:** At admission time, the transport layer performs a single `long` bitmask AND operation
    between the principal's role bitmask (extracted from the JWT at parse time) and the required role bitmask
    from the registry. This is O(1) and allocation-free.
