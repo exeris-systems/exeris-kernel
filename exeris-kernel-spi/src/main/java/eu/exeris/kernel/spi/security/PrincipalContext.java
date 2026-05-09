@@ -208,6 +208,29 @@ public interface PrincipalContext {
         return owned.contains(role1) || owned.contains(role2) || owned.contains(role3);
     }
 
+    /**
+     * Pre-computed role bitmask aligned with the build-time role-bit assignment
+     * captured in the generated {@code RoleCheckRegistry} (see ADR-014 §3, §5).
+     *
+     * <p>The bitmask is the runtime carrier behind {@code @RequiresRole} checks
+     * — a {@code RoleCheckEnforcer} performs a single primitive AND/EQ between
+     * this value and the per-method required mask. Implementations populate the
+     * mask at authentication time by translating the principal's role names
+     * through {@code roleNameToBit(...)} on the registry.
+     *
+     * <p>Default returns {@code 0L} so existing principal implementations remain
+     * source-compatible. A {@code 0L} mask makes every {@code @RequiresRole}
+     * check on a non-empty required mask deny, which is the correct fail-closed
+     * default.
+     *
+     * @return packed role bitmask; {@code 0L} when the principal has no
+     *         registry-resolved roles
+     * @since 0.7.0
+     */
+    default long roleMask() {
+        return 0L;
+    }
+
     // =====================================================================
     // Scopes — "What can this token do?"
     // =====================================================================

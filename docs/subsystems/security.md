@@ -2,8 +2,8 @@
 
 **Physical Layout:**
 
-- SPI: `eu.exeris.kernel.spi.security.*` (PrincipalContext, StorageContext, SecurityProvider, AuthenticationResult, ImmutablePrincipal, ImmutableStorageContext, KernelIsolationClaims, credentials/KernelPasswordEncoder, credentials/PasswordEncoderConfig, **`@RequiresRole` + `RoleMatch` + `KernelRoles`** since 0.7.0)
-  > **Note:** the `@RequiresRole` SPI annotation surface ships in 0.7.0 (Sprint 8a). The APT processor that generates `RoleCheckRegistry` and the runtime admission integration ship in Sprint 8b.
+- SPI: `eu.exeris.kernel.spi.security.*` (PrincipalContext, StorageContext, SecurityProvider, AuthenticationResult, ImmutablePrincipal, ImmutableStorageContext, KernelIsolationClaims, credentials/KernelPasswordEncoder, credentials/PasswordEncoderConfig, **`@RequiresRole` + `RoleMatch` + `KernelRoles` + `RoleRegistry` + `PrincipalContext.roleMask()`** since 0.7.0)
+  > **Note:** the SPI surface for compile-time RBAC ships in 0.7.0 — annotation + role-bit catalogue (Sprint 8a), `RoleRegistry` interface + `roleMask()` carrier (Sprint 8b-ii). The APT processor in `exeris-kernel-build-config` ships in Sprint 8b-i; the Core `RoleCheckEnforcer` runtime decision helper ships in Sprint 8b-ii. Wiring the generated registry into a `LazyConstant` bootstrap loader and auto-binding the enforcer into the transport admission path remain operator concerns until the auto-bind landing.
 - Community: `eu.exeris.kernel.community.security.*` (`CommunitySecurityProvider`, `Argon2idPasswordEncoder`, `CommunityJwksValidator`)
 - Core: `eu.exeris.kernel.core.security.*` (Token Extractors, ScopedValue Orchestration)
 
@@ -49,7 +49,7 @@ zero-leak, hyper-density concurrency with immutable identity at every layer. It 
 
 1. Define the `PrincipalContext` interface. Roles are open-form string constants, not a closed enum.
 2. Provide the `KernelProviders.PRINCIPAL_CONTEXT` and `KernelProviders.STORAGE_CONTEXT` ScopedValue slots.
-3. Expose the `@RequiresRole` annotation type, the `RoleMatch` enum, and the canonical `KernelRoles` system-role bit mapping for declarative RBAC (since 0.7.0). The annotation is `@Retention(SOURCE)` — consumed at compile time only by the APT processor (planned for Sprint 8b).
+3. Expose the `@RequiresRole` annotation type, the `RoleMatch` enum, the canonical `KernelRoles` system-role bit mapping (Sprint 8a), the read-only `RoleRegistry` runtime contract and the `PrincipalContext.roleMask()` carrier (Sprint 8b-ii) for declarative RBAC. The annotation is `@Retention(SOURCE)` — consumed at compile time only by the APT processor.
 
 **What Security Core DOES:**
 
@@ -190,13 +190,21 @@ token lifetime. The following contract governs token lifecycle in the Kernel:
 
 ## `@RequiresRole` Processing — No Reflection on Hot Path
 
-> **Status (0.7.0):** SPI annotation surface (`@RequiresRole`, `RoleMatch`, `KernelRoles`) is implemented
-> as of Sprint 8a. The APT processor (`eu.exeris.kernel.buildconfig.security.RequiresRoleProcessor`)
-> ships in Sprint 8b-i and emits `eu.exeris.kernel.security.generated.RoleCheckRegistry` at compile time.
-> The `LazyConstant<RoleCheckRegistry>` loader, the `principal.roleMask()` carrier, the runtime admission
-> hook, and the `AbstractRequiresRoleTck` ship in Sprint 8b-ii. Until then, `@RequiresRole` annotations
-> emit a generated registry but no runtime check consumes it — use `CitadelGuard.requireRole(...)` for
-> runtime checks.
+> **Status (0.7.0):**
+>
+> - SPI annotation surface (`@RequiresRole`, `RoleMatch`, `KernelRoles`) — Sprint 8a.
+> - APT processor (`eu.exeris.kernel.buildconfig.security.RequiresRoleProcessor`) emitting
+>   `eu.exeris.kernel.security.generated.RoleCheckRegistry` — Sprint 8b-i.
+> - SPI runtime carriers (`RoleRegistry` interface, `PrincipalContext.roleMask()` default) and
+>   the Core `RoleCheckEnforcer` decision helper plus `AbstractRequiresRoleTck` —
+>   Sprint 8b-ii.
+> - Operator-side wiring (load the generated registry through a `LazyConstant`, populate
+>   `principal.roleMask()` at authentication time via `registry.roleNameToBit(...)`, and call
+>   `RoleCheckEnforcer.check(methodId, principal, registry)` from the transport admission path)
+>   remains explicit until the auto-bind landing.
+>
+> Dynamic role decisions continue to use `CitadelGuard.requireRole(...)` — both paths emit
+> `EX-SEC-2003` so operators see uniform telemetry.
 
 ### SPI surface (since 0.7.0)
 
@@ -234,12 +242,34 @@ contract end-to-end.
 3. **No `Class.getAnnotation()` on hot path:** Zero reflection calls occur after JVM startup. The APT-generated
    registry is loaded once via `LazyConstant.of(...)` at first access.
 
-```
-Hot-path check (RoleMatch.ANY): (principal.roleMask() & registry.requiredMask(methodId)) != 0L
-Hot-path check (RoleMatch.ALL): (principal.roleMask() & registry.requiredMask(methodId)) == registry.requiredMask(methodId)
+```text
+Hot-path check (RoleMatch.ANY): (principal.roleMask() & registry.requiredAny(methodId)) != 0L
+Hot-path check (RoleMatch.ALL): (principal.roleMask() & registry.requiredAll(methodId)) == registry.requiredAll(methodId)
 ```
 
 If this check fails, `EX-SEC-2003` is thrown before any business logic executes.
+
+### Runtime decision (since 0.7.0, Sprint 8b-ii)
+
+`eu.exeris.kernel.core.security.RoleCheckEnforcer` is the canonical Core helper that
+performs the per-request RBAC decision. Both call sites are allocation-free on the
+accept path:
+
+```java
+// 1. Predicate form — useful for guard expressions
+boolean ok = RoleCheckEnforcer.isAllowed(methodId, principal, registry);
+
+// 2. Throwing form — used at admission boundaries (HTTP, command handlers, ...)
+RoleCheckEnforcer.check(methodId, principal, registry);
+// raises InsufficientPrivilegesException (EX-SEC-2003) on deny
+```
+
+`registry` is any `RoleRegistry` implementation — typically the generated
+`RoleCheckRegistry` adapted into the SPI interface, or any operator-supplied source.
+`principal.roleMask()` is the precomputed long that the authentication layer wires
+by translating the principal's claim role names through `registry.roleNameToBit(...)`.
+The TCK contract is pinned by `AbstractRequiresRoleTck`; the Community binding is
+`CommunityRequiresRoleTckTest` in `exeris-kernel-community`.
 
 ---
 
