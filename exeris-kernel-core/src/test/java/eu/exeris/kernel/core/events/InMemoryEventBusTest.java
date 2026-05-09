@@ -23,6 +23,7 @@ import org.junit.jupiter.api.Timeout;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.LockSupport;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -143,7 +144,7 @@ class InMemoryEventBusTest {
         }
 
         assertThat(latch.await(4, TimeUnit.SECONDS)).isTrue();
-        Thread.sleep(50); // let projection VTs complete
+        settleWindow(50_000_000L); // 50 ms — let projection VTs complete (bounded against spurious wake-ups)
 
         assertThat(counter.state()).isEqualTo(3);
         engine.close();
@@ -162,18 +163,33 @@ class InMemoryEventBusTest {
 
         fixture.bus().publish(descriptor(ORD_ORDER), EventPayload.empty());
         assertThat(firstEvent.await(3, TimeUnit.SECONDS)).isTrue();
-        Thread.sleep(30);
+        settleWindow(30_000_000L); // 30 ms — settle window before unregister (bounded against spurious wake-ups)
 
         engine.unregister("count2");
 
         fixture.bus().publish(descriptor(ORD_ORDER), EventPayload.empty());
-        Thread.sleep(100);
+        settleWindow(100_000_000L); // 100 ms — confirm no further state updates after unregister
 
         assertThat(counter.state()).isEqualTo(1);
         engine.close();
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────
+
+    /**
+     * Bounded settle window. A straight-line {@link LockSupport#parkNanos(long)} call may return
+     * early on a spurious wake-up or interrupt and shorten the wait, which would cause the next
+     * assertion to fire before background virtual threads complete. Spinning until a nanoTime
+     * deadline guarantees the full duration regardless of how many times {@code parkNanos}
+     * returns.
+     */
+    private static void settleWindow(long nanos) {
+        long deadline = System.nanoTime() + nanos;
+        long remaining;
+        while ((remaining = deadline - System.nanoTime()) > 0L) {
+            LockSupport.parkNanos(remaining);
+        }
+    }
 
     private static EventDescriptor descriptor(int ordinal) {
         return new EventDescriptor(1L, 2L, 3L, 4L, ordinal, EventDescriptor.FLAG_ASYNC,

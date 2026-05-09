@@ -138,12 +138,13 @@ public abstract class AbstractRequiresRoleTck {
         PrincipalContext defaultPrincipal = ImmutablePrincipal.system(
                 UUID.randomUUID(),
                 Set.of("ROLE_ADMIN")); // role names present but no roleMask override
+        java.util.function.BiConsumer<Integer, PrincipalContext> checker = check(registry);
 
         assertThat(defaultPrincipal.roleMask())
                 .as("ImmutablePrincipal must keep the SPI default of 0L until callers explicitly populate it")
                 .isZero();
         assertThat(isAllowed(registry).test(METHOD_ANY, defaultPrincipal)).isFalse();
-        assertThatThrownBy(() -> check(registry).accept(METHOD_ANY, defaultPrincipal))
+        assertThatThrownBy(() -> checker.accept(METHOD_ANY, defaultPrincipal))
                 .isInstanceOf(InsufficientPrivilegesException.class)
                 .extracting(thrown -> ((InsufficientPrivilegesException) thrown).errorCode())
                 .isEqualTo(KernelErrorCodes.EX_SEC_2003);
@@ -154,10 +155,11 @@ public abstract class AbstractRequiresRoleTck {
     void checkRaisesOnDenyAndReturnsSilentlyOnAccept() {
         RoleRegistry registry = new StubRegistry();
         PrincipalContext admin = principalWithMask(1L << BIT_ADMIN);
+        java.util.function.BiConsumer<Integer, PrincipalContext> checker = check(registry);
 
-        check(registry).accept(METHOD_ANY, admin);   // accept — must not throw
+        checker.accept(METHOD_ANY, admin);   // accept — must not throw
 
-        assertThatThrownBy(() -> check(registry).accept(METHOD_ALL, admin))
+        assertThatThrownBy(() -> checker.accept(METHOD_ALL, admin))
                 .isInstanceOf(InsufficientPrivilegesException.class)
                 .satisfies(thrown -> assertThat(((InsufficientPrivilegesException) thrown).errorCode())
                         .isEqualTo(KernelErrorCodes.EX_SEC_2003))

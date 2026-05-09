@@ -4,21 +4,28 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 public final class Main {
+
+    private static final Logger LOGGER = Logger.getLogger(Main.class.getName());
+    private static final String LOG_PREFIX_ERROR = "[jfr-reporter] ERROR: ";
+    private static final String LOG_PREFIX_WARN  = "[jfr-reporter] WARN: ";
 
     private Main() {}
 
     public static void main(String[] args) throws Exception {
         if (args.length % 2 != 0) {
-            System.err.println("[jfr-reporter] ERROR: each --<option> must be followed by a value.");
+            LOGGER.log(Level.SEVERE, () -> LOG_PREFIX_ERROR + "each --<option> must be followed by a value.");
             printUsage();
             System.exit(1);
         }
         Map<String, String> opts = new LinkedHashMap<>();
         for (int i = 0; i < args.length; i += 2) {
+            final int idx = i;
             if (!args[i].startsWith("--")) {
-                System.err.println("[jfr-reporter] ERROR: expected --<option> but got: " + args[i]);
+                LOGGER.log(Level.SEVERE, () -> LOG_PREFIX_ERROR + "expected --<option> but got: " + args[idx]);
                 printUsage();
                 System.exit(1);
             }
@@ -30,7 +37,7 @@ public final class Main {
         addModuleDir(moduleDirs, opts, "community");
 
         if (moduleDirs.isEmpty()) {
-            System.err.println("[jfr-reporter] ERROR: no valid --core or --community directories found.");
+            LOGGER.log(Level.SEVERE, () -> LOG_PREFIX_ERROR + "no valid --core or --community directories found.");
             System.exit(1);
         }
 
@@ -48,11 +55,11 @@ public final class Main {
         if (Files.isDirectory(p)) {
             moduleDirs.put(key, p);
         } else {
-            System.err.println("[jfr-reporter] WARN: --" + key + " path not found or not a directory: " + p);
+            LOGGER.log(Level.WARNING, () -> LOG_PREFIX_WARN + "--" + key + " path not found or not a directory: " + p);
         }
     }
 
     private static void printUsage() {
-        System.err.println("Usage: jfr-reporter [--core <dir>] [--community <dir>] --commit <sha> --branch <name> [--out <dir>]");
+        LOGGER.info(() -> "Usage: jfr-reporter [--core <dir>] [--community <dir>] --commit <sha> --branch <name> [--out <dir>]");
     }
 }

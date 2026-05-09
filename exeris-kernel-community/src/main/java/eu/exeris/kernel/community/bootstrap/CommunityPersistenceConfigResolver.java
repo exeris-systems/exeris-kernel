@@ -38,11 +38,9 @@ public final class CommunityPersistenceConfigResolver {
      */
     private static int computeAdaptivePoolSize() {
         int cores = Runtime.getRuntime().availableProcessors();
-        // cores * 2 capped at 32, minimum 2
-        return Math.max(
-            Math.min(cores * 2, 32),
-            2
-        );
+        // cores * 2 capped at 32, minimum 2 — widen one operand so the multiplication
+        // is performed in long arithmetic (java:S2184); the clamped result fits int.
+        return (int) Math.clamp((long) cores * 2L, 2L, 32L);
     }
 
     /**
