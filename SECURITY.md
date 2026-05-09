@@ -24,7 +24,7 @@ Security-sensitive behavior is governed by the repository architecture, subsyste
 - `docs/subsystems/crypto.md`
 - `docs/subsystems/transport.md`
 - `docs/subsystems/persistence.md`
-- `docs/adr/ADR-012 Security Trust Model Upgrade for Resource-Server Validation and Fail-Closed Runtime.md`
+- `docs/adr/ADR-012-security-trust-model-upgrade-for-resource-server-validation-and-fail-closed-runtime.md`
 - `docs/modules/01-spi.md`
 - `docs/modules/02-core.md`
 - `docs/modules/03-community.md`
