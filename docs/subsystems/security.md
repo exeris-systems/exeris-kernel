@@ -2,8 +2,8 @@
 
 **Physical Layout:**
 
-- SPI: `eu.exeris.kernel.spi.security.*` (PrincipalContext, StorageContext, SecurityProvider, AuthenticationResult, ImmutablePrincipal, ImmutableStorageContext, KernelIsolationClaims, credentials/KernelPasswordEncoder, credentials/PasswordEncoderConfig)
-  > **Note:** `@RequiresRole` is planned only.
+- SPI: `eu.exeris.kernel.spi.security.*` (PrincipalContext, StorageContext, SecurityProvider, AuthenticationResult, ImmutablePrincipal, ImmutableStorageContext, KernelIsolationClaims, credentials/KernelPasswordEncoder, credentials/PasswordEncoderConfig, **`@RequiresRole` + `RoleMatch` + `KernelRoles`** since 0.7.0)
+  > **Note:** the `@RequiresRole` SPI annotation surface ships in 0.7.0 (Sprint 8a). The APT processor that generates `RoleCheckRegistry` and the runtime admission integration ship in Sprint 8b.
 - Community: `eu.exeris.kernel.community.security.*` (`CommunitySecurityProvider`, `Argon2idPasswordEncoder`, `CommunityJwksValidator`)
 - Core: `eu.exeris.kernel.core.security.*` (Token Extractors, ScopedValue Orchestration)
 
@@ -49,7 +49,7 @@ zero-leak, hyper-density concurrency with immutable identity at every layer. It 
 
 1. Define the `PrincipalContext` interface. Roles are open-form string constants, not a closed enum.
 2. Provide the `KernelProviders.PRINCIPAL_CONTEXT` and `KernelProviders.STORAGE_CONTEXT` ScopedValue slots.
-3. Expose `@RequiresRole` annotations for declarative RBAC (planned only — not yet implemented).
+3. Expose the `@RequiresRole` annotation type, the `RoleMatch` enum, and the canonical `KernelRoles` system-role bit mapping for declarative RBAC (since 0.7.0). The annotation is `@Retention(SOURCE)` — consumed at compile time only by the APT processor (planned for Sprint 8b).
 
 **What Security Core DOES:**
 
@@ -189,24 +189,43 @@ token lifetime. The following contract governs token lifecycle in the Kernel:
 
 ## `@RequiresRole` Processing — No Reflection on Hot Path
 
-> **Status: Planned — not yet implemented in this repo.** The `@RequiresRole` annotation and the
-> `RoleCheckRegistry` APT-generated class do not exist in the current SPI or `exeris-kernel-build-config`.
-> The description below is the target design. Do not reference these types until the corresponding
-> SPI/APT implementation lands.
+> **Status (0.7.0):** SPI annotation surface (`@RequiresRole`, `RoleMatch`, `KernelRoles`) is implemented
+> as of Sprint 8a. The APT processor in `exeris-kernel-build-config`, the generated `RoleCheckRegistry`,
+> the `LazyConstant` loader, the `principal.roleMask()` carrier, and the runtime admission hook ship in
+> Sprint 8b. Until then, `@RequiresRole` annotations are valid declarations but no enforcement is wired —
+> use `CitadelGuard.requireRole(...)` for runtime checks.
 
-`@RequiresRole` annotations are **NOT processed via runtime reflection**. The target mechanism is:
+### SPI surface (since 0.7.0)
+
+```java
+@RequiresRole({"ROLE_ADMIN"})                                  // any admin → permitted
+@RequiresRole({"ROLE_ADMIN", "ROLE_OPERATOR"})                 // admin OR operator
+@RequiresRole(value = {"ROLE_ADMIN", "ROLE_AUDITOR"}, match = RoleMatch.ALL)
+                                                               // both required
+```
+
+Live in `eu.exeris.kernel.spi.security`. The annotation is `@Retention(SOURCE)` — consumed at compile
+time only — so reflection at runtime can never observe it. `KernelRoles` reserves bits `[0, 8)` for
+the kernel-owned system roles (`ROLE_SYSTEM`, `ROLE_ADMIN`, `ROLE_OPERATOR`, `ROLE_USER`); application
+roles are assigned bits `[8, 64)` by the APT processor at build time. ADR-014 covers the binding
+contract end-to-end.
+
+### Target mechanism (Sprint 8b)
+
+`@RequiresRole` annotations are **NOT processed via runtime reflection**. The mechanism is:
 
 1. **Compile-time annotation processor (APT):** An annotation processor in `exeris-kernel-build-config`
    generates a static `RoleCheckRegistry` class at compile time. For each annotated method, a `long` bitmask
    encoding the required roles is emitted into the registry.
-2. **Runtime lookup:** At admission time, the transport layer performs a single `int` bitmask AND operation
+2. **Runtime lookup:** At admission time, the transport layer performs a single `long` bitmask AND operation
    between the principal's role bitmask (extracted from the JWT at parse time) and the required role bitmask
    from the registry. This is O(1) and allocation-free.
 3. **No `Class.getAnnotation()` on hot path:** Zero reflection calls occur after JVM startup. The APT-generated
    registry is loaded once via `LazyConstant.of(...)` at first access.
 
 ```
-Hot-path check: (principal.roleMask() & registry.requiredMask(methodId)) != 0
+Hot-path check (RoleMatch.ANY): (principal.roleMask() & registry.requiredMask(methodId)) != 0L
+Hot-path check (RoleMatch.ALL): (principal.roleMask() & registry.requiredMask(methodId)) == registry.requiredMask(methodId)
 ```
 
 If this check fails, `EX-SEC-2003` is thrown before any business logic executes.
