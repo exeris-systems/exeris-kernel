@@ -55,7 +55,7 @@
 
 ## 8) Error and Telemetry Contract
 - New error condition: `EX-FLOW-7002 / phase=OPTIMISTIC_LOCK_CONFLICT` (see §5). No new error code is introduced; the existing `EX-FLOW-7002` taxonomy is reused with a new `phase` value.
-- JFR contract: distributed saga events MUST emit JFR-first telemetry on wake-on-load fallback, optimistic-lock conflicts, and parked-enumeration latency. Existing flow lifecycle JFR events (`FlowEngineShutdownEvent`, `FlowTimeoutEvent`) cover steady-state observability.
+- JFR contract: distributed saga events MUST emit JFR-first telemetry on wake-on-load fallback, optimistic-lock conflicts, and parked-enumeration latency. Existing flow lifecycle JFR events (`FlowEngineShutdownEvent`, `FlowTimeoutEvent`) cover steady-state observability. Implemented in Sprint 6 telemetry follow-up: `eu.exeris.kernel.flow.WakeOnLoadFallback` (Core, emitted on every `lookupParked` fallback to the snapshot store with `restored` boolean and `loadDurationNanos`) and `eu.exeris.kernel.flow.OptimisticLockConflict` (Community/JDBC, emitted on `UPDATE_STALE` and `INSERT_TOCTOU` race-loser paths with the loaded `schemaVersion`). Parked-enumeration latency JFR is deferred until a Core caller of `listParked` exists.
 - Payloads are secret-safe: no payload bytes from `opaqueState`, no JDBC connection strings, no Kafka credentials in emitted diagnostics. `EX-FLOW-7002` rawArgs carries only structural context (engineName, phase, reasonCode, contextVal).
 
 ## 9) TCK Obligations

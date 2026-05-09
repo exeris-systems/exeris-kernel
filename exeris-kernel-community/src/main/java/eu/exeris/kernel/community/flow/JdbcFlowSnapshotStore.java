@@ -140,6 +140,10 @@ public final class JdbcFlowSnapshotStore implements FlowSnapshotStore {
                 int affected = tryOptimisticUpdate(conn, snapshot);
                 if (affected == 0) {
                     if (existsInTransaction(conn, snapshot.instanceIdMost(), snapshot.instanceIdLeast())) {
+                        OptimisticLockConflictEvent.emit(
+                                engineName,
+                                OptimisticLockConflictEvent.PHASE_UPDATE_STALE,
+                                snapshot.schemaVersion());
                         throw FlowEngineException.optimisticLockConflict(engineName, snapshot.schemaVersion());
                     }
                     insertOrRemapPkConflict(conn, snapshot);
@@ -173,6 +177,10 @@ public final class JdbcFlowSnapshotStore implements FlowSnapshotStore {
             insertSnapshot(conn, snapshot);
         } catch (SQLException pkViolation) {
             if (isIntegrityConstraintViolation(pkViolation)) {
+                OptimisticLockConflictEvent.emit(
+                        engineName,
+                        OptimisticLockConflictEvent.PHASE_INSERT_TOCTOU,
+                        snapshot.schemaVersion());
                 throw FlowEngineException.optimisticLockConflict(
                         engineName, snapshot.schemaVersion(), pkViolation);
             }
