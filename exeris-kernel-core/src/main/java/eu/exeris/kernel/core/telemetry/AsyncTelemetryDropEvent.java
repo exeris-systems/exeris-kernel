@@ -29,6 +29,7 @@ import jdk.jfr.StackTrace;
 @Category({"Exeris Kernel", "Telemetry"})
 @Description("Emitted when AsyncTelemetrySink drops an event because the bounded ring is full.")
 @StackTrace(false)
+@SuppressWarnings("unused") // fields are read by the JFR runtime via reflection
 final class AsyncTelemetryDropEvent extends Event {
 
     @Label("Sink Name")

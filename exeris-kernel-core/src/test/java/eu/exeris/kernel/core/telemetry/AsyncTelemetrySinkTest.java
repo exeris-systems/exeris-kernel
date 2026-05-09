@@ -38,7 +38,7 @@ class AsyncTelemetrySinkTest {
         CapturingSink sinkA = new CapturingSink(deliveredA);
         CapturingSink sinkB = new CapturingSink(deliveredB);
 
-        try (AsyncTelemetrySink async = new AsyncTelemetrySink(List.of(sinkA, sinkB))) {
+        try (AsyncTelemetrySink async = AsyncTelemetrySink.start(List.of(sinkA, sinkB))) {
             async.emit(KernelEvent.info("EX-TEL-1001", "AsyncTest"));
 
             assertThat(deliveredA.await(DELIVERY_TIMEOUT_NANOS, TimeUnit.NANOSECONDS)).isTrue();
@@ -59,7 +59,7 @@ class AsyncTelemetrySinkTest {
 
         // capacity=2 → after the consumer pulls 1 event and blocks, two more can sit in the ring,
         // and any further emits must be dropped.
-        try (AsyncTelemetrySink async = new AsyncTelemetrySink(List.of(slowSink), 2,
+        try (AsyncTelemetrySink async = AsyncTelemetrySink.start(List.of(slowSink), 2,
                 Duration.ofMillis(500L))) {
             async.emit(KernelEvent.info("EX-TEL-2001", "AsyncTest"));
             // Wait until the consumer has actually picked up the first event and is blocked.
@@ -89,7 +89,7 @@ class AsyncTelemetrySinkTest {
     void closeDrainsPendingEvents() {
         CapturingSink sink = new CapturingSink(null);
 
-        try (AsyncTelemetrySink async = new AsyncTelemetrySink(List.of(sink), 1024,
+        try (AsyncTelemetrySink async = AsyncTelemetrySink.start(List.of(sink), 1024,
                 Duration.ofSeconds(2L))) {
             for (int i = 0; i < 100; i++) {
                 async.emit(KernelEvent.info("EX-TEL-3" + String.format("%03d", i), "AsyncTest"));
@@ -106,7 +106,7 @@ class AsyncTelemetrySinkTest {
     void metricsAreForwardedSynchronously() {
         RecordingMetricsSink sink = new RecordingMetricsSink();
 
-        try (AsyncTelemetrySink async = new AsyncTelemetrySink(List.of(sink))) {
+        try (AsyncTelemetrySink async = AsyncTelemetrySink.start(List.of(sink))) {
             async.increment("kernel.bootstrap", 1L);
             async.gauge("kernel.heap.bytes", 4096L);
             async.latency("kernel.flush.nanos", 12345L);
@@ -121,14 +121,14 @@ class AsyncTelemetrySinkTest {
     @Test
     @DisplayName("emit() after close() is a no-op")
     @Timeout(value = 5, unit = TimeUnit.SECONDS)
-    void emitAfterCloseIsNoop() throws InterruptedException {
+    void emitAfterCloseIsNoop() {
         CapturingSink sink = new CapturingSink(null);
-        AsyncTelemetrySink async = new AsyncTelemetrySink(List.of(sink));
+        AsyncTelemetrySink async = AsyncTelemetrySink.start(List.of(sink));
         async.close();
-
+        // After close() returns, the consumer VT has stopped (drain awaited via the
+        // internal CountDownLatch with a 2 s timeout). Any subsequent emit() must
+        // therefore be observed as a no-op without us having to wait further.
         async.emit(KernelEvent.info("EX-TEL-4001", "AsyncTest"));
-        // Give a moment for any spurious delivery to land — should not happen.
-        Thread.sleep(50L);
 
         assertThat(sink.eventCodes).isEmpty();
     }
@@ -136,10 +136,10 @@ class AsyncTelemetrySinkTest {
     @Test
     @DisplayName("Constructor rejects empty downstream list and non-positive capacity")
     void constructorRejectsInvalidArgs() {
-        assertThatThrownBy(() -> new AsyncTelemetrySink(List.of()))
+        assertThatThrownBy(() -> AsyncTelemetrySink.start(List.of()))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("downstream");
-        assertThatThrownBy(() -> new AsyncTelemetrySink(List.of(new CapturingSink(null)), 0,
+        assertThatThrownBy(() -> AsyncTelemetrySink.start(List.of(new CapturingSink(null)), 0,
                 Duration.ofMillis(100L)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("capacity");
@@ -153,7 +153,7 @@ class AsyncTelemetrySinkTest {
         CapturingSink sinkB = new CapturingSink(deliveredB);
         TelemetrySink sinkA = new ThrowingSink();
 
-        try (AsyncTelemetrySink async = new AsyncTelemetrySink(List.of(sinkA, sinkB))) {
+        try (AsyncTelemetrySink async = AsyncTelemetrySink.start(List.of(sinkA, sinkB))) {
             async.emit(KernelEvent.info("EX-TEL-5001", "AsyncTest"));
 
             assertThat(deliveredB.await(DELIVERY_TIMEOUT_NANOS, TimeUnit.NANOSECONDS))
@@ -225,7 +225,7 @@ class AsyncTelemetrySinkTest {
             consumerEnteredEmit.countDown();
             try {
                 unblock.await();
-            } catch (InterruptedException ex) {
+            } catch (InterruptedException _) {
                 Thread.currentThread().interrupt();
             }
             processedCount.incrementAndGet();

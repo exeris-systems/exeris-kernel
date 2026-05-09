@@ -34,9 +34,9 @@ import java.util.concurrent.atomic.LongAdder;
  *
  * <h2>Lifecycle</h2>
  * <pre>
- *   new AsyncTelemetrySink(sinks, capacity)  → consumer VT started
- *   sink.emit(event)                          → enqueue (drop-newest if full)
- *   sink.close()                              → drain pending events, join VT
+ *   AsyncTelemetrySink.start(sinks, capacity, drainTimeout)  → consumer VT started
+ *   sink.emit(event)                                          → enqueue (drop-newest if full)
+ *   sink.close()                                              → drain pending events, join VT
  * </pre>
  *
  * <h2>Drop policy</h2>
@@ -63,7 +63,8 @@ import java.util.concurrent.atomic.LongAdder;
 @SuppressWarnings({
     "PMD.CloseResource",                  // wrapped sinks are owned externally; close() closes them once
     "PMD.AvoidCatchingGenericException",  // fan-out swallows RuntimeException to keep the consumer alive
-    "PMD.CyclomaticComplexity"            // constructor + drain loop validation paths are intentional
+    "PMD.CyclomaticComplexity",           // constructor + drain loop validation paths are intentional
+    "PMD.TooManyMethods"                  // TelemetrySink contract surface + 2-arg/3-arg start() factories
 })
 public final class AsyncTelemetrySink implements TelemetrySink {
 
@@ -84,23 +85,33 @@ public final class AsyncTelemetrySink implements TelemetrySink {
     private final CountDownLatch consumerStopped = new CountDownLatch(1);
     private final LongAdder droppedCount = new LongAdder();
 
-    /**
-     * Creates an async sink with default capacity and drain timeout.
-     *
-     * @param downstream non-null, non-empty list of sinks to fan out to
-     */
-    public AsyncTelemetrySink(List<TelemetrySink> downstream) {
-        this(downstream, DEFAULT_CAPACITY, DEFAULT_DRAIN_TIMEOUT);
+    private AsyncTelemetrySink(List<TelemetrySink> downstream, int capacity, Duration drainTimeout) {
+        this.downstream = List.copyOf(downstream);
+        this.ring = new ArrayBlockingQueue<>(capacity);
+        this.capacity = capacity;
+        this.drainTimeout = drainTimeout;
+        this.consumer = Thread.ofVirtual().name(SINK_NAME + "-consumer").unstarted(this::drain);
     }
 
     /**
-     * Creates an async sink with custom capacity and drain timeout.
+     * Creates and starts an async sink with default capacity and drain timeout.
+     *
+     * @param downstream non-null, non-empty list of sinks to fan out to
+     * @return a started sink ready to accept events
+     */
+    public static AsyncTelemetrySink start(List<TelemetrySink> downstream) {
+        return start(downstream, DEFAULT_CAPACITY, DEFAULT_DRAIN_TIMEOUT);
+    }
+
+    /**
+     * Creates and starts an async sink with custom capacity and drain timeout.
      *
      * @param downstream   non-null, non-empty list of sinks to fan out to
      * @param capacity     ring capacity in events; must be {@code > 0}
      * @param drainTimeout maximum time {@link #close()} will wait for in-flight events
+     * @return a started sink ready to accept events
      */
-    public AsyncTelemetrySink(List<TelemetrySink> downstream, int capacity, Duration drainTimeout) {
+    public static AsyncTelemetrySink start(List<TelemetrySink> downstream, int capacity, Duration drainTimeout) {
         Objects.requireNonNull(downstream, "downstream");
         Objects.requireNonNull(drainTimeout, "drainTimeout");
         if (downstream.isEmpty()) {
@@ -109,12 +120,9 @@ public final class AsyncTelemetrySink implements TelemetrySink {
         if (capacity <= 0) {
             throw new IllegalArgumentException("capacity must be positive, was " + capacity);
         }
-        this.downstream = List.copyOf(downstream);
-        this.ring = new ArrayBlockingQueue<>(capacity);
-        this.capacity = capacity;
-        this.drainTimeout = drainTimeout;
-        this.consumer = Thread.ofVirtual().name(SINK_NAME + "-consumer").unstarted(this::drain);
-        this.consumer.start();
+        AsyncTelemetrySink sink = new AsyncTelemetrySink(downstream, capacity, drainTimeout);
+        sink.consumer.start();
+        return sink;
     }
 
     /** Returns the configured ring capacity (informational; useful for diagnostics). */
@@ -178,7 +186,7 @@ public final class AsyncTelemetrySink implements TelemetrySink {
                 // will be closed below regardless so no resource leak.
                 Thread.currentThread().interrupt();
             }
-        } catch (InterruptedException ex) {
+        } catch (InterruptedException _) {
             Thread.currentThread().interrupt();
         }
         for (TelemetrySink sink : downstream) {
@@ -189,24 +197,31 @@ public final class AsyncTelemetrySink implements TelemetrySink {
     private void drain() {
         try {
             while (!closed.get() || !ring.isEmpty()) {
-                KernelEvent event;
-                try {
-                    event = ring.poll(50L, TimeUnit.MILLISECONDS);
-                } catch (InterruptedException ex) {
-                    // Either close() asked us to stop or a spurious interrupt — keep draining
-                    // remaining items, then exit on the next loop check.
-                    if (closed.get() && ring.isEmpty()) {
-                        return;
-                    }
-                    continue;
+                KernelEvent event = pollNext();
+                if (event != null) {
+                    fanOut(event);
                 }
-                if (event == null) {
-                    continue;
-                }
-                fanOut(event);
             }
         } finally {
             consumerStopped.countDown();
+        }
+    }
+
+    /**
+     * Polls the ring with a bounded timeout. Returns {@code null} on timeout, or when an
+     * interrupt arrives — in the latter case the interrupt status is preserved on the
+     * thread so that the next blocking call observes the cancellation, and the loop
+     * predicate in {@link #drain()} decides whether to exit.
+     */
+    private KernelEvent pollNext() {
+        try {
+            return ring.poll(50L, TimeUnit.MILLISECONDS);
+        } catch (InterruptedException _) {
+            Thread.currentThread().interrupt();
+            // Clear the interrupt status now that we've recorded the cancellation
+            // intent — otherwise the next ring.poll() would short-circuit forever.
+            Thread.interrupted();
+            return null;
         }
     }
 
@@ -214,7 +229,7 @@ public final class AsyncTelemetrySink implements TelemetrySink {
         for (TelemetrySink sink : downstream) {
             try {
                 sink.emit(event);
-            } catch (RuntimeException ex) {
+            } catch (RuntimeException _) {
                 // A misbehaving sink must not poison the consumer thread or starve other sinks.
                 // We swallow the exception here; downstream telemetry frameworks will surface it
                 // through their own diagnostic channels (e.g., SLF4J error log, JFR fail event).

@@ -32,7 +32,7 @@ class CoreAsyncTelemetryRingBufferTckTest extends AbstractTelemetryRingBufferTck
     protected TelemetrySink createSink() {
         // Capacity above emissionCount() so the contract test exercises the wrapper
         // rather than its drop policy (the latter has its own dedicated unit test).
-        return new AsyncTelemetrySink(List.of(new NoOpSink()),
+        return AsyncTelemetrySink.start(List.of(new NoOpSink()),
                 emissionCount() * 2,
                 Duration.ofSeconds(2L));
     }
