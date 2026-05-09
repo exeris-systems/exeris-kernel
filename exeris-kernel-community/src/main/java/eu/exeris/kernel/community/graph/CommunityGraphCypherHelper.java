@@ -8,7 +8,6 @@
  */
 package eu.exeris.kernel.community.graph;
 
-import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.exceptions.graph.GraphQueryException;
 import eu.exeris.kernel.spi.graph.model.GraphEdgeDescriptor;
 import eu.exeris.kernel.spi.graph.model.GraphTraversal;
@@ -16,197 +15,97 @@ import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import org.neo4j.driver.Result;
 import org.neo4j.driver.Session;
 import org.neo4j.driver.Transaction;
-import org.neo4j.driver.Value;
 
-import java.lang.foreign.MemorySegment;
-import java.lang.foreign.ValueLayout;
-import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Function;
-import java.util.regex.Pattern;
 
-// Backend adapter intentionally mirrors the GraphSession surface for the Cypher dialect.
-// GodClass: adapter must implement the complete CommunityGraphBackend interface — all Cypher
-// read/write operations share one session boundary; extraction would break transactional cohesion.
-@SuppressWarnings({"PMD.TooManyMethods", "PMD.CyclomaticComplexity", "PMD.GodClass"})
-final class CommunityGraphCypherHelper implements CommunityGraphBackend {
+/**
+ * Cypher backend orchestrator (QA-008). Owns the Neo4j session/transaction lifecycle and
+ * dispatches every {@link CommunityGraphBackend} call to a {@link CommunityGraphCypherReader}
+ * (read-only) or a {@link CommunityGraphCypherWriter} (mutations). The reader and writer
+ * share this orchestrator as their {@link CypherExecutor}, so transactional cohesion is
+ * preserved across reads and writes against a single session.
+ *
+ * @since 0.7.0
+ */
+// CommunityGraphBackend is wide; orchestrator implements every method via delegation
+// to Reader/Writer or via direct transaction-lifecycle handling, so the per-method
+// branching is uniformly small (highest method CC = 5) but accumulates across the
+// 13-method backend surface.
+@SuppressWarnings({"PMD.TooManyMethods", "PMD.CyclomaticComplexity"})
+final class CommunityGraphCypherHelper implements CommunityGraphBackend, CypherExecutor {
+
     private static final String PMD_AVOID_CATCHING_GENERIC_EXCEPTION = "PMD.AvoidCatchingGenericException";
     private static final String CYPHER_BACKEND_QUERY_TYPE = "CYPHER_BACKEND";
-    private static final String CYPHER_IDENTIFIER_QUERY_TYPE = "CYPHER_IDENTIFIER";
-    private static final String CYPHER_EXECUTION_DETAIL = "Failed to execute Cypher operation";
-    private static final String ROOT_NODE_QUERY_TYPE = "ROOT_NODE";
-    private static final String PARAM_SOURCE_ID = "sourceId";
-    private static final String PARAM_TARGET_ID = "targetId";
-    private static final String PARAM_PROPERTIES = "properties";
-    private static final Pattern CYPHER_IDENTIFIER_PATTERN = Pattern.compile("^[A-Za-z]\\w*$");
 
-    private final CommunityGraphDialect dialect;
     private final CommunityNeo4jClient neo4jClient;
+    private final CommunityGraphCypherReader reader;
+    private final CommunityGraphCypherWriter writer;
     private Session cypherSession;
     private Transaction cypherTransaction;
 
     /* default */ CommunityGraphCypherHelper(CommunityGraphDialect dialect, CommunityNeo4jClient neo4jClient) {
-        this.dialect = Objects.requireNonNull(dialect, "dialect must not be null");
+        Objects.requireNonNull(dialect, "dialect must not be null");
         this.neo4jClient = neo4jClient;
+        this.reader = new CommunityGraphCypherReader(dialect, this);
+        this.writer = new CommunityGraphCypherWriter(this);
     }
 
+    // ─── CommunityGraphBackend — read delegation ─────────────────────────────────
+
     @Override
-    @SuppressWarnings(PMD_AVOID_CATCHING_GENERIC_EXCEPTION)
     public List<UUID> traverseBreadthFirst(GraphTraversal traversal) {
-        String query = dialect.buildMultiHopQuery(traversal.edgeDescriptor(), 1, traversal.maxDepth());
-        Map<String, Object> params = Map.of(PARAM_SOURCE_ID, traversal.startNodeId().toString());
-        try {
-            return executeCypherRead(query, params, result -> {
-                List<UUID> ids = new ArrayList<>();
-                while (result.hasNext()) {
-                    ids.add(asUuid(result.next().get("id"), "BFS"));
-                }
-                return ids;
-            });
-        } catch (RuntimeException cause) {
-            throw new GraphQueryException("BFS", CYPHER_EXECUTION_DETAIL, cause);
-        }
+        return reader.traverseBreadthFirst(traversal);
     }
 
     @Override
     public LoanedBuffer streamBfsJson(GraphTraversal traversal) {
-        List<UUID> bfs = traverseBreadthFirst(traversal);
-        byte[] jsonBytes = CommunityGraphBufferOps.toUuidJsonArray(bfs);
-        LoanedBuffer buffer = KernelProviders.allocator().allocateNetwork(jsonBytes.length);
-        MemorySegment.copy(jsonBytes, 0, buffer.segment(), ValueLayout.JAVA_BYTE, 0, jsonBytes.length);
-        buffer.setSize(jsonBytes.length);
-        return buffer;
+        return reader.streamBfsJson(traversal);
     }
+
+    @Override
+    public UUID getRootNode() {
+        return reader.getRootNode();
+    }
+
+    @Override
+    public void loadAdjacency(GraphEdgeDescriptor edge, CommunityPathFinder.Builder builder) {
+        reader.loadAdjacency(edge, builder);
+    }
+
+    // ─── CommunityGraphBackend — write delegation ────────────────────────────────
 
     @Override
     public void createEdge(GraphEdgeDescriptor edge, UUID sourceId, UUID targetId,
                     double weight, String properties) {
-        String sourceLabel = requireIdentifier(edge.sourceNode());
-        String relationType = requireIdentifier(edge.edgeType());
-        String targetLabel = requireIdentifier(edge.targetNode());
-        String query = """
-                MERGE (source:%s {id: $sourceId})
-                MERGE (target:%s {id: $targetId})
-                CREATE (source)-[r:%s]->(target)
-                SET r.weight = $weight,
-                    r.%s = $%s
-                """.formatted(sourceLabel, targetLabel, relationType,
-                PARAM_PROPERTIES, PARAM_PROPERTIES);
-        executeCypherWrite(query, edgeParameters(sourceId, targetId, weight, properties));
+        writer.createEdge(edge, sourceId, targetId, weight, properties);
     }
 
     @Override
     public void upsertEdge(GraphEdgeDescriptor edge, UUID sourceId, UUID targetId,
                     double weight, String properties) {
-        String sourceLabel = requireIdentifier(edge.sourceNode());
-        String relationType = requireIdentifier(edge.edgeType());
-        String targetLabel = requireIdentifier(edge.targetNode());
-        String query = """
-                MERGE (source:%s {id: $sourceId})
-                MERGE (target:%s {id: $targetId})
-                MERGE (source)-[r:%s]->(target)
-                SET r.weight = $weight,
-                    r.%s = $%s
-                """.formatted(sourceLabel, targetLabel, relationType,
-                PARAM_PROPERTIES, PARAM_PROPERTIES);
-        executeCypherWrite(query, edgeParameters(sourceId, targetId, weight, properties));
+        writer.upsertEdge(edge, sourceId, targetId, weight, properties);
     }
 
     @Override
     public void deleteEdge(GraphEdgeDescriptor edge, UUID sourceId, UUID targetId) {
-        String sourceLabel = requireIdentifier(edge.sourceNode());
-        String relationType = requireIdentifier(edge.edgeType());
-        String targetLabel = requireIdentifier(edge.targetNode());
-        String query = """
-                MATCH (source:%s {id: $sourceId})-[r:%s]->(target:%s {id: $targetId})
-                DELETE r
-                """.formatted(sourceLabel, relationType, targetLabel);
-        executeCypherWrite(query, Map.of(
-                PARAM_SOURCE_ID, sourceId.toString(),
-                PARAM_TARGET_ID, targetId.toString()
-        ));
+        writer.deleteEdge(edge, sourceId, targetId);
     }
 
     @Override
     public void upsertNode(String label, UUID nodeId, LoanedBuffer properties) {
-        String nodeLabel = requireIdentifier(label);
-        String query = """
-                MERGE (n:%s {id: $nodeId})
-                SET n.%s = $%s
-                """.formatted(nodeLabel, PARAM_PROPERTIES, PARAM_PROPERTIES);
-        executeCypherWrite(query, Map.of(
-                "nodeId", nodeId.toString(),
-            PARAM_PROPERTIES, CommunityGraphBufferOps.decodeProperties(properties)
-        ));
+        writer.upsertNode(label, nodeId, properties);
     }
 
     @Override
     public void deleteNode(String label, UUID nodeId) {
-        String nodeLabel = requireIdentifier(label);
-        String query = """
-                MATCH (n:%s {id: $nodeId})
-                DETACH DELETE n
-                """.formatted(nodeLabel);
-        executeCypherWrite(query, Map.of("nodeId", nodeId.toString()));
+        writer.deleteNode(label, nodeId);
     }
 
-    @Override
-    @SuppressWarnings(PMD_AVOID_CATCHING_GENERIC_EXCEPTION)
-    public UUID getRootNode() {
-        String query = "MATCH (n:ROOT) RETURN n.id AS id LIMIT 1";
-        try {
-            return executeCypherRead(query, Map.of(), result -> {
-                if (!result.hasNext()) {
-                    throw new GraphQueryException(ROOT_NODE_QUERY_TYPE, "Root node not found");
-                }
-                return asUuid(result.next().get("id"), ROOT_NODE_QUERY_TYPE);
-            });
-        } catch (GraphQueryException cause) {
-            throw cause;
-        } catch (RuntimeException cause) {
-            throw new GraphQueryException(ROOT_NODE_QUERY_TYPE, CYPHER_EXECUTION_DETAIL, cause);
-        }
-    }
-
-    @Override
-    @SuppressWarnings(PMD_AVOID_CATCHING_GENERIC_EXCEPTION)
-    public void loadAdjacency(GraphEdgeDescriptor edge, CommunityPathFinder.Builder builder) {
-        String sourceLabel = requireIdentifier(edge.sourceNode());
-        String relationType = requireIdentifier(edge.edgeType());
-        String targetLabel = requireIdentifier(edge.targetNode());
-        String query = """
-                MATCH (source:%s)-[r:%s]->(target:%s)
-                RETURN source.id AS source_id,
-                       target.id AS target_id,
-                       coalesce(r.weight, 1.0) AS weight,
-                       r.%s AS %s
-                """.formatted(sourceLabel, relationType, targetLabel,
-                PARAM_PROPERTIES, PARAM_PROPERTIES);
-
-        try {
-            executeCypherRead(query, Map.of(), result -> {
-                while (result.hasNext()) {
-                    org.neo4j.driver.Record row = result.next();
-                    UUID sourceId = asUuid(row.get("source_id"), edge.edgeType());
-                    UUID targetId = asUuid(row.get("target_id"), edge.edgeType());
-                    double weight = row.get("weight").asDouble(1.0);
-                    String properties = toPropertyString(row.get(PARAM_PROPERTIES));
-                    builder.addEdge(sourceId, targetId, weight, properties);
-                    if (edge.bidirectional() || edge.direction() == GraphEdgeDescriptor.Direction.BOTH) {
-                        builder.addEdge(targetId, sourceId, weight, properties);
-                    }
-                }
-                return null;
-            });
-        } catch (RuntimeException cause) {
-            throw new GraphQueryException(edge.edgeType(),
-                    "Failed to load adjacency for shortest path", cause);
-        }
-    }
+    // ─── CommunityGraphBackend — transaction lifecycle ───────────────────────────
 
     @Override
     @SuppressWarnings({PMD_AVOID_CATCHING_GENERIC_EXCEPTION, "PMD.NullAssignment"})
@@ -278,6 +177,37 @@ final class CommunityGraphCypherHelper implements CommunityGraphBackend {
         }
     }
 
+    // ─── CypherExecutor — session/transaction-aware run ──────────────────────────
+
+    @Override
+    public <T> T executeRead(String query, Map<String, Object> params, Function<Result, T> readerFn) {
+        if (cypherTransaction != null) {
+            return readerFn.apply(cypherTransaction.run(query, params));
+        }
+        try (Session session = openCypherSession()) {
+            return readerFn.apply(session.run(query, params));
+        }
+    }
+
+    @Override
+    @SuppressWarnings(PMD_AVOID_CATCHING_GENERIC_EXCEPTION)
+    public void executeWrite(String query, Map<String, Object> params) {
+        try {
+            if (cypherTransaction != null) {
+                cypherTransaction.run(query, params).consume();
+                return;
+            }
+            try (Session session = openCypherSession()) {
+                session.run(query, params).consume();
+            }
+        } catch (RuntimeException cause) {
+            throw new GraphQueryException(CYPHER_BACKEND_QUERY_TYPE,
+                    CommunityGraphCypherReader.CYPHER_EXECUTION_DETAIL, cause);
+        }
+    }
+
+    // ─── Internals ───────────────────────────────────────────────────────────────
+
     private Session openCypherSession() {
         return requireNeo4jClient().openSession();
     }
@@ -288,78 +218,6 @@ final class CommunityGraphCypherHelper implements CommunityGraphBackend {
                     "Neo4j client is not configured for Cypher backend");
         }
         return neo4jClient;
-    }
-
-    private <T> T executeCypherRead(String query, Map<String, Object> params, Function<Result, T> reader) {
-        if (cypherTransaction != null) {
-            return reader.apply(cypherTransaction.run(query, params));
-        }
-        try (Session session = openCypherSession()) {
-            return reader.apply(session.run(query, params));
-        }
-    }
-
-    @SuppressWarnings(PMD_AVOID_CATCHING_GENERIC_EXCEPTION)
-    private void executeCypherWrite(String query, Map<String, Object> params) {
-        try {
-            if (cypherTransaction != null) {
-                cypherTransaction.run(query, params).consume();
-                return;
-            }
-            try (Session session = openCypherSession()) {
-                session.run(query, params).consume();
-            }
-        } catch (RuntimeException cause) {
-            throw new GraphQueryException(CYPHER_BACKEND_QUERY_TYPE, CYPHER_EXECUTION_DETAIL, cause);
-        }
-    }
-
-    private static Map<String, Object> edgeParameters(UUID sourceId, UUID targetId,
-                                                      double weight, String properties) {
-        Map<String, Object> params = new HashMap<>();
-        params.put(PARAM_SOURCE_ID, sourceId.toString());
-        params.put(PARAM_TARGET_ID, targetId.toString());
-        params.put("weight", weight);
-        params.put(PARAM_PROPERTIES, properties != null ? properties : "{}");
-        return params;
-    }
-
-    @SuppressWarnings(PMD_AVOID_CATCHING_GENERIC_EXCEPTION)
-    private static String toPropertyString(Value value) {
-        if (value == null || value.isNull()) {
-            return "{}";
-        }
-        try {
-            return value.asString();
-        } catch (RuntimeException _) {
-            return value.toString();
-        }
-    }
-
-    @SuppressWarnings(PMD_AVOID_CATCHING_GENERIC_EXCEPTION)
-    private static UUID asUuid(Value value, String queryType) {
-        if (value == null || value.isNull()) {
-            throw new GraphQueryException(queryType, "Cypher query returned null UUID");
-        }
-        String raw;
-        try {
-            raw = value.asString();
-        } catch (RuntimeException _) {
-            raw = String.valueOf(value.asObject());
-        }
-        try {
-            return UUID.fromString(raw);
-        } catch (IllegalArgumentException cause) {
-            throw new GraphQueryException(queryType, "Cypher query returned invalid UUID", cause);
-        }
-    }
-
-    private static String requireIdentifier(String identifier) {
-        if (identifier == null || !CYPHER_IDENTIFIER_PATTERN.matcher(identifier).matches()) {
-            throw new GraphQueryException(CYPHER_IDENTIFIER_QUERY_TYPE,
-                    "Invalid Cypher identifier: expected [A-Za-z][A-Za-z0-9_]*");
-        }
-        return identifier;
     }
 
     @SuppressWarnings("PMD.NullAssignment")
