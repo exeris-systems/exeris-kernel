@@ -99,17 +99,21 @@ public final class PrometheusMetricsHandler implements HttpHandler {
             MemorySegment segment = body.segment();
             MemorySegment.copy(payload, 0, segment, java.lang.foreign.ValueLayout.JAVA_BYTE, 0, payload.length);
             body.setSize(payload.length);
+            // Ownership of `body` transfers to the engine only on a successful entry into
+            // the write path (HttpExchange.respond contract: "engine takes ownership ...
+            // after the write completes"). If respond() throws — e.g.,
+            // IllegalStateException for a second call — the engine never took ownership,
+            // so the catch below must close the buffer to avoid a leak.
+            exchange.respond(new HttpResponse(
+                    HttpStatus.OK,
+                    request.version(),
+                    List.of(
+                            new HttpHeader("Content-Type", PrometheusMetricsSink.CONTENT_TYPE),
+                            new HttpHeader("Content-Length", Integer.toString(payload.length))),
+                    body));
         } catch (RuntimeException releaseAndRethrow) {
             body.close();
             throw releaseAndRethrow;
         }
-
-        exchange.respond(new HttpResponse(
-                HttpStatus.OK,
-                request.version(),
-                List.of(
-                        new HttpHeader("Content-Type", PrometheusMetricsSink.CONTENT_TYPE),
-                        new HttpHeader("Content-Length", Integer.toString(payload.length))),
-                body));
     }
 }

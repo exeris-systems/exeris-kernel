@@ -17,6 +17,7 @@ import eu.exeris.kernel.spi.http.HttpResponse;
 import eu.exeris.kernel.spi.http.HttpStatus;
 import eu.exeris.kernel.spi.http.HttpTypedResponse;
 import eu.exeris.kernel.spi.http.HttpVersion;
+import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.memory.MemoryProviderConfig;
 import org.junit.jupiter.api.AfterAll;
@@ -102,6 +103,29 @@ class PrometheusMetricsHandlerTest {
     }
 
     @Test
+    @DisplayName("PR #98 review: body buffer is released when respond() throws (no leak)")
+    void respondThrowsClosesBody() {
+        PrometheusMetricsSink sink = new PrometheusMetricsSink();
+        sink.increment("k", 1L);
+        PrometheusMetricsHandler handler = new PrometheusMetricsHandler(sink, allocator);
+
+        ThrowingRespondExchange exchange = new ThrowingRespondExchange(
+                request(HttpMethod.GET, "/metrics"));
+
+        assertThatThrownBy(() -> handler.handle(exchange))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("simulated downstream failure");
+
+        assertThat(exchange.capturedBody)
+                .as("handler must have offered the body to respond()")
+                .isNotNull();
+        assertThat(exchange.capturedBody.refCount())
+                .as("body refCount must be 0 after respond() throws — caller still owns it "
+                        + "so the catch in handle() is responsible for releasing it")
+                .isZero();
+    }
+
+    @Test
     @DisplayName("Constructor rejects null/blank/relative paths")
     void constructorValidation() {
         PrometheusMetricsSink sink = new PrometheusMetricsSink();
@@ -176,6 +200,36 @@ class PrometheusMetricsHandlerTest {
                 }
             }
             return Optional.empty();
+        }
+    }
+
+    /**
+     * Exchange whose {@code respond(HttpResponse)} throws after capturing the body, modeling
+     * the SPI contract where the engine never took ownership: the caller (handler) must
+     * release the buffer in its catch block.
+     */
+    private static final class ThrowingRespondExchange implements HttpExchange {
+        private final HttpRequest request;
+        private LoanedBuffer capturedBody;
+
+        ThrowingRespondExchange(HttpRequest request) {
+            this.request = request;
+        }
+
+        @Override
+        public HttpRequest request() {
+            return request;
+        }
+
+        @Override
+        public void respond(HttpResponse response) {
+            this.capturedBody = response.body();
+            throw new IllegalStateException("simulated downstream failure");
+        }
+
+        @Override
+        public void respond(HttpTypedResponse response) {
+            throw new UnsupportedOperationException();
         }
     }
 }
