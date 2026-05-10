@@ -127,6 +127,68 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+  transport-stress-gate:
+    # TCK-064 (v0.8 Sprint 0): dedicated job for @Tag("stress") transport tests.
+    # The default `Build & TCK Verification` job excludes the stress group because the
+    # constrained 2-vCPU GitHub Actions runner historically deadlocked under thread
+    # pressure (see ROADMAP TCK-064). v0.8 Sprint 0 closed the deadlock by replacing
+    # `Thread.onSpinWait()` busy-waits with `LockSupport.parkNanos` in client/server
+    # echo loops and post-test verification deadlines (`NativeTcpTransportStressTest`).
+    # The TCK pinning teardown now exposes a configurable drain budget via
+    # `-Dexeris.tck.transport.drainTimeoutSeconds=N` for constrained runners.
+    name: Transport Stress Gate
+    runs-on: ubuntu-latest
+    needs: build-and-verify
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Cache JDK tarball
+        id: jdk-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/jdk.tar.gz
+          key: ${{ env.JDK_CACHE_KEY }}
+
+      - name: Fetch JDK
+        if: steps.jdk-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          wget -q -O ${{ runner.temp }}/jdk.tar.gz ${{ env.JDK_URL }}
+          echo "${{ env.JDK_SHA256 }}  ${{ runner.temp }}/jdk.tar.gz" | sha256sum -c
+
+      - name: Inject JDK into Runner
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'jdkfile'
+          jdkFile: ${{ runner.temp }}/jdk.tar.gz
+          java-version: ${{ env.JDK_VER }}
+          architecture: x64
+          cache: maven
+
+      - name: Run transport stress gate
+        # 30s drain budget gives the constrained runner room to flush pending writes
+        # under thread pressure; local development runs keep the strict 5s default.
+        run: |
+          mvn -pl exeris-kernel-community -am install -DskipTests -B -e
+          mvn -pl exeris-kernel-community \
+            -DincludedGroups=stress \
+            -DexcludedGroups= \
+            -Dexeris.tck.transport.drainTimeoutSeconds=30 \
+            test -B -e
+
+      - name: Upload transport stress JFR recordings
+        if: always() && (github.event_name == 'push' || github.event_name == 'schedule') && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: jfr-transport-stress-${{ github.run_number }}
+          path: exeris-kernel-community/target/*.jfr
+          if-no-files-found: warn
+          retention-days: 14
+
   benchmarks:
     name: JMH Benchmarks (Community + Core)
     # TODO: point runs-on to a dedicated bare-metal runner when available

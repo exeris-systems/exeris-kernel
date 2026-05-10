@@ -169,17 +169,26 @@ public abstract class TransportCarrierPinningTck extends AbstractSubsystemCarrie
     protected void tearDownSubsystem() {
         int usedSlots = vtIndex.get();
         if (streams != null && buffers != null) {
+            // TCK-064 (Sprint 0 v0.8): drain budget is now configurable. Default is 5s for local
+            // development boxes (>= 4 cores), but constrained CI runners (e.g. 2 vCPU GitHub
+            // Actions) need a wider window — under thread pressure the reactor key release that
+            // ends `hasPendingData()` may itself queue behind the test thread for several
+            // hundred ms per spin-cycle. Operators set the system property directly; the
+            // built-in default keeps the contract assertion strict where it can be honoured.
+            long drainSeconds = Long.getLong("exeris.tck.transport.drainTimeoutSeconds", 5L);
             for (int i = 0; i < streams.length; i++) {
                 TransportStream s = streams[i];
                 if (s == null) continue;
                 if (i < usedSlots) {
-                    long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+                    long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(drainSeconds);
                     while (s.hasPendingData()) {
                         if (System.nanoTime() > deadline) {
                             Assertions.fail(
                                     "Timeout waiting for TransportStream[" + i + "] pending data "
-                                            + "to drain during TCK teardown. Implementation must complete "
-                                            + "all queued writes within 5 seconds.");
+                                            + "to drain during TCK teardown after " + drainSeconds
+                                            + "s. Implementation must complete queued writes within "
+                                            + "the configured budget (override via "
+                                            + "-Dexeris.tck.transport.drainTimeoutSeconds=N).");
                         }
                         LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(10));
                     }

@@ -34,6 +34,7 @@ import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.Future;
+import java.util.concurrent.locks.LockSupport;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -174,9 +175,12 @@ class NativeTcpTransportStressTest {
             }
 
             int expectedTotal = NUM_CLIENTS * MESSAGES_PER_CLIENT;
-            long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(500);
+            // TCK-064: 500 ms was tight under 2-vCPU CI where the server reactor may not have
+            // drained the last batch yet. 5 s is generous enough for constrained runners and
+            // still bounded for fast local boxes; the assert below remains strict on count.
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
             while (messageCount.get() < expectedTotal && System.nanoTime() < deadline) {
-                Thread.onSpinWait();
+                LockSupport.parkNanos(1_000_000L);
             }
             assertThat(messageCount.get())
                 .withFailMessage("Server did not receive expected message count")
@@ -236,9 +240,10 @@ class NativeTcpTransportStressTest {
             }
 
             // Verify server received all messages (6 total: 2 clients × 3 messages)
-            long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(500);
+            // TCK-064: same widened deadline as stressTest10ClientsWith4Reactors.
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
             while (messageCount.get() < 6 && System.nanoTime() < deadline) {
-                Thread.onSpinWait();
+                LockSupport.parkNanos(1_000_000L);
             }
             assertThat(messageCount.get())
                 .withFailMessage("Server did not receive expected message count")
@@ -255,6 +260,12 @@ class NativeTcpTransportStressTest {
      */
     private static void readFully(TransportStream stream, MemorySegment target, int expectedBytes) {
         int total = 0;
+        // TCK-064 (Sprint 0 v0.8): under constrained-CI thread pressure (2 vCPU GitHub Actions),
+        // `Thread.onSpinWait()` was a JIT spin-loop hint that did NOT yield the CPU — it asked
+        // the kernel to keep us hot on a starved core, starving the server reactor that owed us
+        // bytes. The result was a multi-minute deadlock observed at line 173. `LockSupport.parkNanos`
+        // releases the core to the reactor for at least the requested interval; on a healthy box
+        // the park returns essentially immediately, so the local <500 ms baseline is preserved.
         while (total < expectedBytes) {
             int n = stream.read(target.asSlice(total), expectedBytes - total);
             if (n < 0) {
@@ -262,7 +273,7 @@ class NativeTcpTransportStressTest {
                         "Stream EOF before full payload arrived: read " + total + "/" + expectedBytes + " bytes");
             }
             if (n == 0) {
-                Thread.onSpinWait();
+                LockSupport.parkNanos(1_000L);
                 continue;
             }
             total += n;
@@ -309,7 +320,9 @@ class NativeTcpTransportStressTest {
                     return;
                 }
                 if (read == 0) {
-                    Thread.onSpinWait();
+                    // TCK-064: server echo loop must not busy-spin on n=0 — under 2-vCPU CI it
+                    // starves the client reactor of the CPU needed to push the next packet.
+                    LockSupport.parkNanos(1_000L);
                     continue;
                 }
                 inbound.setSize(read);
