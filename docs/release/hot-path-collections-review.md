@@ -82,15 +82,15 @@ This document discharges the review without code changes. Each candidate path is
 
 ## 4. JCTools fit matrix
 
-| Path                                     | Domain key            | Producers | Consumers | JCTools fit? | Decision (v0.7) |
-|:-----------------------------------------|:----------------------|:---------:|:---------:|:------------:|:----------------|
-| Flow live/parked instance maps           | Value (FlowKey)       | many      | many      | No (identity-disqualified) | Keep CHM |
-| Flow plan catalog                        | Value (String name)   | few       | many      | No (identity-disqualified) | Keep CHM |
-| Idempotency guard inner step-claim map   | Value (Integer)       | one/inst  | one/inst  | No (identity-disqualified) | Keep CHM; v0.8 packed-bitmap candidate |
-| NIC reactor pending-requests queue       | Carrier-internal record | many    | one       | **Yes (MPSC)**            | Already PERF-063 |
-| NIC stream outbound queue                | Carrier-internal record | many    | one       | **Yes (MPSC)**            | Already PERF-063 (parity) |
-| NIC reactor `pendingWriteInterest`       | Reference (SocketChannel) | many | one       | Identity admissible       | Keep CHM keyset; v0.8 watch-item |
-| Outbox flush staging list                | n/a (single thread)   | one       | one       | No (single-threaded)      | Keep ArrayList |
+| Path                                   | Domain key                | Prod | Cons | JCTools fit             | Decision (v0.7)                       |
+|:---------------------------------------|:--------------------------|:----:|:----:|:------------------------|:--------------------------------------|
+| Flow live/parked instance maps         | Value (FlowKey)           | many | many | No — identity-disq.     | Keep CHM                              |
+| Flow plan catalog                      | Value (String name)       | few  | many | No — identity-disq.     | Keep CHM                              |
+| Idempotency guard inner step-claim map | Value (Integer)           | 1/i  | 1/i  | No — identity-disq.     | Keep CHM; v0.8 packed-bitmap watch    |
+| NIC reactor pending-requests queue     | Carrier record            | many | one  | **Yes — MPSC**          | Already PERF-063                      |
+| NIC stream outbound queue              | Carrier record            | many | one  | **Yes — MPSC**          | Already PERF-063 (parity)             |
+| NIC reactor `pendingWriteInterest`     | Reference (SocketChannel) | many | one  | Identity admissible     | Keep CHM keyset; v0.8 watch           |
+| Outbox flush staging list              | n/a (single thread)       | one  | one  | No — single-threaded    | Keep ArrayList                        |
 
 ## 5. Conclusion
 
@@ -108,7 +108,7 @@ These are recorded for the v0.8 quality batch and intentionally **not** schedule
 
 ## 7. Exit criteria mapping
 
-| Sprint 8 exit criterion (v0.7 map §"Exit criteria") | Discharge |
-|:-----------------------------------------------------|:----------|
-| Hot-Path Collections Review — design note **or** PR merged | This document, merged via Sprint 8e PR. |
-| SPI/Core contracts unchanged                          | No SPI or Core contract surface modified; review is read-only and recorded as a release artifact. |
+| Sprint 8 exit criterion (v0.7 map §"Exit criteria")        | Discharge                                                                                          |
+|:-----------------------------------------------------------|:---------------------------------------------------------------------------------------------------|
+| Hot-Path Collections Review — design note **or** PR merged | This document, merged via Sprint 8e PR.                                                            |
+| SPI/Core contracts unchanged                               | No SPI or Core contract surface modified; review is read-only and recorded as a release artifact. |
