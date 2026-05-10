@@ -27,7 +27,7 @@ package eu.exeris.kernel.spi.security;
  * deployment ever exceeds 64 roles.
  *
  * @see RequiresRole
- * @see <a href="../../../../../../docs/adr/ADR-014%20RequiresRole%20Compile-Time%20RBAC%20Generation.md">ADR-014</a>
+ * @see <a href="../../../../../../docs/adr/ADR-014-requiresrole-compile-time-rbac-generation.md">ADR-014</a>
  * @since 0.7.0
  */
 public final class KernelRoles {
