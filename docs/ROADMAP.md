@@ -329,6 +329,8 @@ See also: [Telemetry Subsystem](./subsystems/telemetry.md) — Design Principles
 
 **Merge Gate:** Any adoption must remain Community-internal, keep SPI/Core contracts unchanged, and show measurable benefit under representative profiling.
 
+**Status (v0.7 Sprint 8e):** discharged via design note `docs/release/hot-path-collections-review.md`. No replacement justified for v0.7 beyond the previously merged PERF-063 NIC reactor MPSC queue; idempotency-guard packed-bitmap and `pendingWriteInterest` identity-keyset recorded as v0.8 watch-items.
+
 ---
 
 ### Telemetry: Operational Metrics Export Baseline
