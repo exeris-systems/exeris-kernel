@@ -1,6 +1,6 @@
 # ADR-007: Next-Gen Runtime Architecture (Exeris Kernel)
 
-| Atrybut        | Wartość                                                |
+| Attribute      | Value                                                  |
 |:---------------|:-------------------------------------------------------|
 | **Status**     | **ACCEPTED**                                           |
 | **Deciders**   | Arkadiusz Przychocki                                   |
