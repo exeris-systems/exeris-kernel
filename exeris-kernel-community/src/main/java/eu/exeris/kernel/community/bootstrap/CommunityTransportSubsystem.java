@@ -9,6 +9,7 @@
 package eu.exeris.kernel.community.bootstrap;
 
 import eu.exeris.kernel.community.transport.CommunityReactorCountResolver;
+import eu.exeris.kernel.core.bootstrap.BootstrapProviderSelector;
 import eu.exeris.kernel.spi.bootstrap.BootstrapPhase;
 import eu.exeris.kernel.spi.config.ConfigProvider;
 import eu.exeris.kernel.spi.context.KernelProviders;
@@ -20,7 +21,6 @@ import eu.exeris.kernel.spi.transport.TransportProvider;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
-import java.util.ServiceLoader;
 import java.util.function.UnaryOperator;
 
 final class CommunityTransportSubsystem extends AbstractCommunitySubsystem {
@@ -49,14 +49,10 @@ final class CommunityTransportSubsystem extends AbstractCommunitySubsystem {
     @Override
     public void initialize() {
         ConfigProvider configProvider = KernelProviders.CURRENT_CONFIG.get();
-        transportProvider = ServiceLoader.load(TransportProvider.class)
-                .stream()
-                .map(ServiceLoader.Provider::get)
-                .sorted(Comparator.comparingInt(TransportProvider::priority)
-                        .reversed()
-                        .thenComparing(p -> p.getClass().getName()))
-                .filter(TransportProvider::isAvailable)
-                .findFirst()
+        transportProvider = BootstrapProviderSelector.loadHighestPriority(
+                        TransportProvider.class,
+                        Comparator.comparingInt(TransportProvider::priority),
+                        TransportProvider::isAvailable)
                 .orElse(null);
 
         if (transportProvider == null) {

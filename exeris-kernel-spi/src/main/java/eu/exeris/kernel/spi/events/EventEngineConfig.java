@@ -33,9 +33,22 @@ import java.util.Objects;
  * @param slabPayloadLarge    number of large payload slab slots (64 KB, Enterprise)
  * @param outboxEnabled       whether the transactional outbox writer is enabled
  * @param outboxBatchSize     maximum events written per outbox flush cycle
+ * @param busPublishFailFast  selects the overflow policy for persistent {@link EventBus#publish}.
+ *                            {@code false} → blocking mode: the publisher's virtual thread parks
+ *                            on a full queue (never drops, can stall under sustained saturation).
+ *                            {@code true} → fail-fast mode: the call raises
+ *                            {@link eu.exeris.kernel.spi.exceptions.events.EventBusException}
+ *                            with code {@code EX-EVENT-6002} and rawArgs
+ *                            {@code [eventType, queueDepth, queueCapacity]} the moment the queue
+ *                            would overflow. Brokers that map the same knob onto a producer-side
+ *                            overflow signal (e.g. Kafka producer {@code buffer.memory}
+ *                            exhaustion) raise the same code with the same rawArgs layout.
+ *                            (since 0.7.0)
  *
  * @since 0.5.0
  */
+// 12 fields — flat-record config carrier; nesting would obscure ServiceLoader mapping
+@SuppressWarnings("PMD.ExcessiveParameterList")
 public record EventEngineConfig(
         String  engineName,
         int     queueCapacity,
@@ -47,7 +60,8 @@ public record EventEngineConfig(
         int     slabPayloadMedium,
         int     slabPayloadLarge,
         boolean outboxEnabled,
-        int     outboxBatchSize
+        int     outboxBatchSize,
+        boolean busPublishFailFast
 ) {
 
     /**
@@ -71,6 +85,30 @@ public record EventEngineConfig(
             throw new IllegalArgumentException(
                     "outboxBatchSize must be > 0 when outboxEnabled is true, got: " + outboxBatchSize);
         }
+    }
+
+    /**
+     * Convenience 11-arg constructor — for callers that do not care about the publish-overflow
+     * policy. Defaults {@code busPublishFailFast = false} (blocking mode: never-drop).
+     *
+     * @since 0.7.0
+     */
+    public EventEngineConfig(
+            String  engineName,
+            int     queueCapacity,
+            int     batchSize,
+            String  partitionName,
+            long    partitionBytes,
+            int     slabDescriptorCount,
+            int     slabPayloadSmall,
+            int     slabPayloadMedium,
+            int     slabPayloadLarge,
+            boolean outboxEnabled,
+            int     outboxBatchSize
+    ) {
+        this(engineName, queueCapacity, batchSize, partitionName, partitionBytes,
+             slabDescriptorCount, slabPayloadSmall, slabPayloadMedium, slabPayloadLarge,
+             outboxEnabled, outboxBatchSize, false);
     }
 
     /**
@@ -133,7 +171,8 @@ public record EventEngineConfig(
                 0L,
                 0, 0, 0, 0,
                 true,
-                500
+                500,
+                false  // busPublishFailFast — blocking mode: parks the publisher on a full queue
         );
     }
 
@@ -158,7 +197,8 @@ public record EventEngineConfig(
                 10_000,
                 1_000,
                 true,
-                4_096
+                4_096,
+                true   // busPublishFailFast — Enterprise prefers explicit overflow signalling
         );
     }
 }

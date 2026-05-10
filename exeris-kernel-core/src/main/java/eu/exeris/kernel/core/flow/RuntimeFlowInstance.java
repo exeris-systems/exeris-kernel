@@ -18,6 +18,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 
 @SuppressWarnings("PMD.PublicMemberInNonPublicType")
 final class RuntimeFlowInstance implements RuntimeFlowContextStateView { // NOPMD
@@ -40,45 +41,82 @@ final class RuntimeFlowInstance implements RuntimeFlowContextStateView { // NOPM
     private volatile long timeoutNanos;
     private int[] compensationStack;
     private int stackPointer;
+    // ADR-013 §5: optimistic-lock version that round-trips with the durable snapshot store.
+    // fromContext seeds this to FlowSnapshot.SCHEMA_VERSION_INITIAL (new instance — never
+    // saved); fromSnapshot reads back the loaded version so subsequent saves stay aligned
+    // with the on-disk row. Bumped via markPersisted() after every accepted save (INSERT
+    // and UPDATE both advance by one in any compliant durable store).
+    //
+    // AtomicLong rather than volatile long: read-modify-write on volatile is not atomic
+    // (java:S3078) and we cannot rely on the per-instance monitor for every call site of
+    // markPersisted() to make the increment safe — the durable-store contract permits
+    // multiple persist paths, and AtomicLong removes the dependency on caller discipline.
+    private final AtomicLong schemaVersion;
 
-    private RuntimeFlowInstance(FlowKey key,
-                                String definitionName,
-                                long lifecycleGeneration,
-                                CoreFlowExecutionPlan plan,
-                                FlowState state,
-                                int currentStep,
-                                long timeoutNanos,
-                                int[] compensationStack,
-                                int stackPointer) {
-        this.key = key;
-        this.definitionName = definitionName;
-        this.lifecycleGeneration = lifecycleGeneration;
-        this.contextView = new RuntimeFlowContext(key, definitionName, this);
-        this.plan = plan;
-        this.state = state;
-        this.currentStep = currentStep;
-        this.timeoutNanos = timeoutNanos;
-        this.compensationStack = compensationStack;
-        this.stackPointer = stackPointer;
+    /**
+     * Carrier for {@link RuntimeFlowInstance} construction parameters. Groups identity,
+     * persisted state, and the compensation stack into a single record so the constructor
+     * stays under the SonarQube S107 arity limit (≤ 7).
+     *
+     * <p>The {@code int[] compensationStack} component is shared by reference with the
+     * surrounding instance — this preserves the historical ownership semantics (the array
+     * is mutated in place by {@code pushCompensation()} / {@code compensationStepAt()})
+     * and keeps the bootstrap allocation-free. Because the record holds a mutable array
+     * it is <em>not</em> a Valhalla value-type candidate; the carrier is intentionally
+     * private and consumed within a single constructor frame so no escape can race the
+     * subsequent in-place mutation.
+     *
+     * <p>{@code java:S6218}: the default record {@code equals}/{@code hashCode}/
+     * {@code toString} compare {@code int[]} by identity rather than by content. This is
+     * acceptable here because {@code Seed} is a private one-shot carrier — never compared,
+     * hashed, or logged. Suppressing rather than overriding keeps the carrier lean and
+     * avoids accidental array copies on a path that runs once per flow instance.
+     */
+    @SuppressWarnings("java:S6218")
+    private record Seed(FlowKey key,
+                        String definitionName,
+                        long lifecycleGeneration,
+                        CoreFlowExecutionPlan plan,
+                        FlowState state,
+                        int currentStep,
+                        long timeoutNanos,
+                        int[] compensationStack,
+                        int stackPointer,
+                        long schemaVersion) { }
+
+    private RuntimeFlowInstance(Seed seed) {
+        this.key = seed.key();
+        this.definitionName = seed.definitionName();
+        this.lifecycleGeneration = seed.lifecycleGeneration();
+        this.contextView = new RuntimeFlowContext(seed.key(), seed.definitionName(), this);
+        this.plan = seed.plan();
+        this.state = seed.state();
+        this.currentStep = seed.currentStep();
+        this.timeoutNanos = seed.timeoutNanos();
+        this.compensationStack = seed.compensationStack();
+        this.stackPointer = seed.stackPointer();
+        this.schemaVersion = new AtomicLong(seed.schemaVersion());
     }
 
     public static RuntimeFlowInstance fromContext(
             CoreFlowExecutionPlan plan,
             FlowContext context,
             long lifecycleGeneration) {
-        return new RuntimeFlowInstance(
+        long timeoutNanos = context.timeoutNanos() > 0
+                ? context.timeoutNanos()
+                : System.nanoTime() + plan.timeoutDurationNanos();
+        return new RuntimeFlowInstance(new Seed(
                 FlowKey.from(context),
                 context.definitionName(),
                 lifecycleGeneration,
                 plan,
                 context.state(),
                 Math.max(0, context.currentStep()),
-                context.timeoutNanos() > 0
-                        ? context.timeoutNanos()
-                        : System.nanoTime() + plan.timeoutDurationNanos(),
+                timeoutNanos,
                 new int[Math.max(4, plan.stepCount())],
-                0
-        );
+                0,
+                FlowSnapshot.SCHEMA_VERSION_INITIAL
+        ));
     }
 
     public static RuntimeFlowInstance fromSnapshot(
@@ -96,7 +134,7 @@ final class RuntimeFlowInstance implements RuntimeFlowContextStateView { // NOPM
         int[] compensationStack = snapshotStack.length == 0
                 ? new int[Math.max(4, plan.stepCount())]
                 : snapshotStack;
-        return new RuntimeFlowInstance(
+        return new RuntimeFlowInstance(new Seed(
                 new FlowKey(snapshot.instanceIdMost(), snapshot.instanceIdLeast()),
                 snapshot.definitionName(),
                 lifecycleGeneration,
@@ -105,8 +143,9 @@ final class RuntimeFlowInstance implements RuntimeFlowContextStateView { // NOPM
                 snapshot.currentStep(),
                 timeoutNanos,
                 compensationStack,
-                snapshot.stackPointer()
-        );
+                snapshot.stackPointer(),
+                snapshot.schemaVersion()
+        ));
     }
 
     public FlowKey key() {
@@ -234,8 +273,28 @@ final class RuntimeFlowInstance implements RuntimeFlowContextStateView { // NOPM
                 timeoutInstant(),
                 stack,
                 stackPointer,
-                EMPTY_OPAQUE_STATE
+                EMPTY_OPAQUE_STATE,
+                schemaVersion.get()
         );
+    }
+
+    /**
+     * Returns the optimistic-lock version expected by the durable snapshot store
+     * for the next save (ADR-013 §5).
+     */
+    public long schemaVersion() {
+        return schemaVersion.get();
+    }
+
+    /**
+     * Advances the local view of {@code schemaVersion} after a successful save.
+     * Compliant durable stores advance the on-disk version by exactly one on every
+     * accepted write (INSERT or UPDATE), so the caller bumps locally by one
+     * regardless of which path the store took. The bump is atomic via {@link AtomicLong},
+     * so this method is safe under concurrent persist paths without external locking.
+     */
+    public void markPersisted() {
+        schemaVersion.incrementAndGet();
     }
 
     public RuntimeFlowContext contextView() {

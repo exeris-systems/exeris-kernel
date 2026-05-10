@@ -30,6 +30,7 @@ import eu.exeris.kernel.spi.transport.TransportConnection;
 import eu.exeris.kernel.spi.transport.TransportEngine;
 import eu.exeris.kernel.spi.transport.TransportMode;
 import eu.exeris.kernel.spi.transport.TransportStats;
+import org.jctools.queues.MpscUnboundedArrayQueue;
 
 import java.io.IOException;
 import java.lang.foreign.Arena;
@@ -51,7 +52,6 @@ import java.util.Objects;
 import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -1194,7 +1194,13 @@ public final class NativeTcpCarrier implements TransportEngine {
 
         private final int index;
         private final Selector selector;
-        private final Queue<ReactorRequest> pendingRequests = new ConcurrentLinkedQueue<>();
+        // PERF-063: MpscUnboundedArrayQueue replaces ConcurrentLinkedQueue. Multiple producer
+        // threads (any caller of enqueueRegistration / enqueueWriteInterest / cancelKey) feed a
+        // single consumer (the reactor thread in runLoop). MPSC semantics match exactly; chunked
+        // allocation (size 128) avoids per-element node alloc churn under burst arrivals; offer()
+        // on the unbounded variant always returns true so no backpressure handling is required at
+        // the call site (parity with the existing pattern in NativeTcpStream's outboundQueue).
+        private final Queue<ReactorRequest> pendingRequests = new MpscUnboundedArrayQueue<>(128);
         private final Set<SocketChannel> pendingWriteInterest = ConcurrentHashMap.newKeySet();
         private final AtomicBoolean wakeupPending = new AtomicBoolean(false);
 

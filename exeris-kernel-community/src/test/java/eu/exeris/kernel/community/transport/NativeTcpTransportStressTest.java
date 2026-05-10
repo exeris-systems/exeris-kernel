@@ -40,6 +40,40 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+/**
+ * Community TCP multi-carrier stress and concurrency tests.
+ *
+ * <h2>TCK-064 investigation status (Sprint 2 v0.7)</h2>
+ *
+ * <p>The {@code stressTest10ClientsWith4Reactors} method previously deadlocked under
+ * constrained CI environments (2 vCPU GitHub Actions runners) past the 2-minute Future
+ * timeout, while the same test passed deterministically locally in {@code <500 ms}
+ * across 5/5 runs. The investigation considered three hypotheses:
+ *
+ * <ol>
+ *   <li><b>Thread-pressure deadlock</b> — 10 client engines × 1 reactor + 4 server
+ *       reactors + 10 ForkJoinPool workers competing on 2 vCPUs. Mitigation deferred
+ *       to a future structural rewrite (single client engine + N streams pattern) so
+ *       the platform-thread count drops from ~24 to ~6.</li>
+ *   <li><b>{@code pendingRequests} ordering anomaly</b> — partially addressed by
+ *       PERF-063 (Sprint 2): {@code ConcurrentLinkedQueue} replaced with
+ *       {@link org.jctools.queues.MpscUnboundedArrayQueue}, whose single-consumer
+ *       guarantees are stronger than CLQ's under reactor wakeup contention.</li>
+ *   <li><b>Short-read assumption</b> — addressed below: {@code stream.read} is now
+ *       called in a short-read loop because TCP does not guarantee a single-shot
+ *       read of {@code MESSAGE_SIZE} bytes, particularly under load when receive
+ *       windows fragment.</li>
+ * </ol>
+ *
+ * <p>Tagged {@code @Tag("stress")} and excluded from the default Surefire run.
+ * Operators should wire a dedicated {@code transport-stress-gate} CI job
+ * ({@code -DincludedGroups=stress}) on a nightly schedule, optionally with
+ * {@code stress-ng --cpu N} on the runner to amplify thread-pressure conditions
+ * for hypothesis (1) regression coverage.
+ *
+ * @see eu.exeris.kernel.community.transport.NativeTcpCarrier
+ * @since 0.5.0 (TCK-064 documentation update: 0.7.0)
+ */
 @DisplayName("Community TCP: multi-carrier stress & concurrency")
 class NativeTcpTransportStressTest {
 
@@ -98,8 +132,11 @@ class NativeTcpTransportStressTest {
                                     stream.write(buf.segment(), MESSAGE_SIZE);
 
                                     try (LoanedBuffer response = ALLOCATOR.allocateNetwork(MESSAGE_SIZE)) {
-                                        int read = stream.read(response.segment(), MESSAGE_SIZE);
-                                        assertThat(read).isEqualTo(MESSAGE_SIZE);
+                                        // TCK-064: short-read loop. TCP read may return < MESSAGE_SIZE
+                                        // under fragmented receive windows; loop until the full payload
+                                        // arrives or the stream closes. Asserting equality on a single
+                                        // read was hypothesis (3) for the constrained-CI deadlock.
+                                        readFully(stream, response.segment(), MESSAGE_SIZE);
 
                                         byte[] echoed = new byte[MESSAGE_SIZE];
                                         response.segment().asSlice(0, MESSAGE_SIZE).asByteBuffer().get(echoed);
@@ -180,8 +217,8 @@ class NativeTcpTransportStressTest {
                             stream.write(buf.segment(), MESSAGE_SIZE);
 
                             try (LoanedBuffer response = ALLOCATOR.allocateNetwork(MESSAGE_SIZE)) {
-                                int read = stream.read(response.segment(), MESSAGE_SIZE);
-                                assertThat(read).isEqualTo(MESSAGE_SIZE);
+                                // TCK-064: short-read loop (see top-of-file Javadoc).
+                                readFully(stream, response.segment(), MESSAGE_SIZE);
                             }
                         }
                     }
@@ -206,6 +243,29 @@ class NativeTcpTransportStressTest {
             assertThat(messageCount.get())
                 .withFailMessage("Server did not receive expected message count")
                 .isEqualTo(6);
+        }
+    }
+
+    /**
+     * TCK-064: short-read loop. {@link TransportStream#read(MemorySegment, int)} is a
+     * single-shot read returning whatever is available (TCP receive-window slice), so
+     * a single call is not guaranteed to deliver {@code expectedBytes}. This helper
+     * loops, advancing into the target segment via {@link MemorySegment#asSlice(long)},
+     * until the full payload arrives or the peer closes the stream.
+     */
+    private static void readFully(TransportStream stream, MemorySegment target, int expectedBytes) {
+        int total = 0;
+        while (total < expectedBytes) {
+            int n = stream.read(target.asSlice(total), expectedBytes - total);
+            if (n < 0) {
+                throw new IllegalStateException(
+                        "Stream EOF before full payload arrived: read " + total + "/" + expectedBytes + " bytes");
+            }
+            if (n == 0) {
+                Thread.onSpinWait();
+                continue;
+            }
+            total += n;
         }
     }
 

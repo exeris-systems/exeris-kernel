@@ -23,6 +23,7 @@ import jdk.jfr.consumer.RecordingFile;
 final class JfrDirectoryReader {
 
     private static final Logger LOGGER = Logger.getLogger(JfrDirectoryReader.class.getName());
+    private static final String LOG_PREFIX = "[jfr-reporter] ";
 
     private static final Set<String> ALLOC_TYPES = Set.of(
             "jdk.ObjectAllocationInNewTLAB",
@@ -48,7 +49,8 @@ final class JfrDirectoryReader {
                 String subsystem = extractSubsystem(jfrFile.getFileName().toString());
                 List<AllocEvent> events = readFile(jfrFile);
                 result.computeIfAbsent(subsystem, k -> new ArrayList<>()).addAll(events);
-                LOGGER.info(() -> "[jfr-reporter]   " + jfrFile.getFileName() + " → subsystem=" + subsystem + " events=" + events.size());
+                final int count = events.size();
+                LOGGER.info(() -> LOG_PREFIX + "  " + jfrFile.getFileName() + " → subsystem=" + subsystem + " events=" + count);
             }
         }
         return result;
@@ -74,7 +76,7 @@ final class JfrDirectoryReader {
             }
         } catch (IOException ex) {
             LOGGER.log(Level.WARNING, ex,
-                    () -> "[jfr-reporter] WARN: failed to read " + jfrFile);
+                    () -> LOG_PREFIX + "WARN: failed to read " + jfrFile);
         }
         return events;
     }

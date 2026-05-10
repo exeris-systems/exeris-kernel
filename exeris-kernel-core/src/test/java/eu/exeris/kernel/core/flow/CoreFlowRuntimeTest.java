@@ -45,6 +45,7 @@ class CoreFlowRuntimeTest {
 
     private static final String STEP_FAILED_EVENT = "eu.exeris.kernel.flow.StepFailed";
     private static final String SHUTDOWN_EVENT = "eu.exeris.kernel.flow.Shutdown";
+    private static final String WAKE_FALLBACK_EVENT = "eu.exeris.kernel.flow.WakeOnLoadFallback";
 
     @Test
     @Timeout(value = 10, unit = TimeUnit.SECONDS)
@@ -309,6 +310,107 @@ class CoreFlowRuntimeTest {
             assertThat(resumed.await(3, TimeUnit.SECONDS))
                     .as("the parked flow must resume after lookup-based wake on rebuilt runtime")
                     .isTrue();
+        }
+    }
+
+    @Test
+    @Timeout(value = 10, unit = TimeUnit.SECONDS)
+    @DisplayName("emits WakeOnLoadFallbackEvent on snapshot-fallback path with restored=true")
+    void emitsWakeOnLoadFallbackEventOnSnapshotFallback() throws Exception {
+        InMemorySnapshotStore snapshotStore = new InMemorySnapshotStore();
+        CountDownLatch parked = new CountDownLatch(1);
+        CountDownLatch eventReceived = new CountDownLatch(1);
+        AtomicReference<RecordedEvent> captured = new AtomicReference<>();
+
+        FlowContext parkedContext;
+        FlowDefinition definition;
+
+        try (CoreFlowEngine engine = startedEngine(true, snapshotStore)) {
+            definition = engine.plans().newDefinition("jfr-wake-fallback")
+                    .step("park", _ -> {
+                        parked.countDown();
+                        return FlowOutcome.PARK;
+                    }, null)
+                    .step("resume", _ -> FlowOutcome.CONTINUE, null)
+                    .build();
+
+            FlowExecutionPlan plan = engine.plans().compile(definition);
+            parkedContext = context("jfr-wake-fallback-instance", definition.name());
+            engine.scheduler().schedule(plan, parkedContext);
+
+            assertThat(parked.await(3, TimeUnit.SECONDS))
+                    .as("flow must reach PARKED before restart")
+                    .isTrue();
+            awaitTrue(3_000, () -> snapshotStore.exists(
+                    parkedContext.instanceIdMost(), parkedContext.instanceIdLeast()));
+        }
+
+        try (CoreFlowEngine rebuilt = startedEngine(true, snapshotStore);
+             RecordingStream rs = new RecordingStream()) {
+
+            rs.enable(WAKE_FALLBACK_EVENT);
+            rs.onEvent(WAKE_FALLBACK_EVENT, event -> {
+                if (captured.compareAndSet(null, event)) {
+                    eventReceived.countDown();
+                }
+            });
+            rs.startAsync();
+
+            rebuilt.plans().compile(definition);
+            Optional<FlowContext> restored = rebuilt.scheduler().lookupParked(
+                    parkedContext.instanceIdMost(), parkedContext.instanceIdLeast());
+            assertThat(restored)
+                    .as("snapshot fallback should restore the parked saga")
+                    .isPresent();
+
+            assertThat(eventReceived.await(3, TimeUnit.SECONDS))
+                    .as("WakeOnLoadFallback JFR event must be emitted on the fallback path")
+                    .isTrue();
+            RecordedEvent event = captured.get();
+            assertThat(event.getString("engineName")).isNotBlank();
+            assertThat(event.getLong("instanceIdMost")).isEqualTo(parkedContext.instanceIdMost());
+            assertThat(event.getLong("instanceIdLeast")).isEqualTo(parkedContext.instanceIdLeast());
+            assertThat(event.getBoolean("restored"))
+                    .as("snapshot store had the row, restored MUST be true")
+                    .isTrue();
+            assertThat(event.getLong("loadDurationNanos"))
+                    .as("load duration MUST be a non-negative wall-clock measurement")
+                    .isGreaterThanOrEqualTo(0L);
+        }
+    }
+
+    @Test
+    @Timeout(value = 10, unit = TimeUnit.SECONDS)
+    @DisplayName("emits WakeOnLoadFallbackEvent with restored=false for an unknown instance")
+    void emitsWakeOnLoadFallbackEventWhenSnapshotMissing() throws Exception {
+        InMemorySnapshotStore snapshotStore = new InMemorySnapshotStore();
+        CountDownLatch eventReceived = new CountDownLatch(1);
+        AtomicReference<RecordedEvent> captured = new AtomicReference<>();
+
+        try (CoreFlowEngine engine = startedEngine(true, snapshotStore);
+             RecordingStream rs = new RecordingStream()) {
+
+            rs.enable(WAKE_FALLBACK_EVENT);
+            rs.onEvent(WAKE_FALLBACK_EVENT, event -> {
+                if (captured.compareAndSet(null, event)) {
+                    eventReceived.countDown();
+                }
+            });
+            rs.startAsync();
+
+            UUID unknown = UUID.randomUUID();
+            Optional<FlowContext> result = engine.scheduler().lookupParked(
+                    unknown.getMostSignificantBits(), unknown.getLeastSignificantBits());
+            assertThat(result)
+                    .as("a wake event for an unknown instance MUST surface as Optional.empty()")
+                    .isEmpty();
+
+            assertThat(eventReceived.await(3, TimeUnit.SECONDS))
+                    .as("WakeOnLoadFallback JFR event must still be emitted on a snapshot miss")
+                    .isTrue();
+            assertThat(captured.get().getBoolean("restored"))
+                    .as("snapshot store had no row, restored MUST be false")
+                    .isFalse();
         }
     }
 

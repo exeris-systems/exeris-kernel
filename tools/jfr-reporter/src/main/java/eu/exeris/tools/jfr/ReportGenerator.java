@@ -20,11 +20,15 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.logging.Logger;
 
 final class ReportGenerator {
 
+    private static final Logger LOGGER = Logger.getLogger(ReportGenerator.class.getName());
+
     private static final String FIELD_CLASS      = "class";
-    private static final String LOG_PREFIX_WROTE = "[jfr-reporter] Wrote ";
+    private static final String LOG_PREFIX       = "[jfr-reporter] ";
+    private static final String LOG_PREFIX_WROTE = LOG_PREFIX + "Wrote ";
     private static final String FIELD_COUNT      = "count";
 
     private final Map<String, Path> moduleDirs;
@@ -41,11 +45,11 @@ final class ReportGenerator {
     }
 
     void generate() throws IOException {
-        System.out.println("[jfr-reporter] Generating reports → " + outDir);
+        LOGGER.info(() -> LOG_PREFIX + "Generating reports → " + outDir);
 
         Map<String, Map<String, List<AllocEvent>>> allModuleEvents = new LinkedHashMap<>();
         for (Map.Entry<String, Path> entry : moduleDirs.entrySet()) {
-            System.out.println("[jfr-reporter] Reading module '" + entry.getKey() + "' from " + entry.getValue());
+            LOGGER.info(() -> LOG_PREFIX + "Reading module '" + entry.getKey() + "' from " + entry.getValue());
             allModuleEvents.put(entry.getKey(), JfrDirectoryReader.readDirectory(entry.getValue()));
         }
 
@@ -91,7 +95,7 @@ final class ReportGenerator {
         }
 
         writeJfrSummary(allModuleEvents);
-        System.out.println("[jfr-reporter] Done.");
+        LOGGER.info(() -> LOG_PREFIX + "Done.");
     }
 
     private void writeEvidence(Map<String, Map<String, List<AllocEvent>>> allModuleEvents) throws IOException {
@@ -127,7 +131,7 @@ final class ReportGenerator {
 
         mapper.writerWithDefaultPrettyPrinter()
                 .writeValue(outDir.resolve("evidence.json").toFile(), root);
-        System.out.println("[jfr-reporter] Wrote evidence.json");
+        LOGGER.info(() -> LOG_PREFIX_WROTE + "evidence.json");
     }
 
     private String verdict(String module, long productionCount) {
@@ -162,13 +166,15 @@ final class ReportGenerator {
             }
             gen.writeEndArray();
         }
-        System.out.println(LOG_PREFIX_WROTE + module + "/timeline.json (" + sorted.size() + " events)");
+        final int count = sorted.size();
+        LOGGER.info(() -> LOG_PREFIX_WROTE + module + "/timeline.json (" + count + " events)");
     }
 
     private void writeStacks(String module, Path moduleOutDir, Map<String, List<String>> stacksMap) throws IOException {
         mapper.writerWithDefaultPrettyPrinter()
                 .writeValue(moduleOutDir.resolve("stacks.json").toFile(), stacksMap);
-        System.out.println(LOG_PREFIX_WROTE + module + "/stacks.json (" + stacksMap.size() + " stacks)");
+        final int count = stacksMap.size();
+        LOGGER.info(() -> LOG_PREFIX_WROTE + module + "/stacks.json (" + count + " stacks)");
     }
 
     private void writeAllocTopClasses(String module, Path moduleOutDir, List<AllocEvent> events) throws IOException {
@@ -194,7 +200,8 @@ final class ReportGenerator {
 
         mapper.writerWithDefaultPrettyPrinter()
                 .writeValue(moduleOutDir.resolve("alloc-top-classes.json").toFile(), topClasses);
-        System.out.println(LOG_PREFIX_WROTE + module + "/alloc-top-classes.json (" + topClasses.size() + " classes)");
+        final int count = topClasses.size();
+        LOGGER.info(() -> LOG_PREFIX_WROTE + module + "/alloc-top-classes.json (" + count + " classes)");
     }
 
     private void writeJfrSummary(Map<String, Map<String, List<AllocEvent>>> allModuleEvents) throws IOException {
@@ -238,7 +245,7 @@ final class ReportGenerator {
 
         mapper.writerWithDefaultPrettyPrinter()
                 .writeValue(outDir.resolve("jfr-summary.json").toFile(), root);
-        System.out.println("[jfr-reporter] Wrote jfr-summary.json");
+        LOGGER.info(() -> LOG_PREFIX_WROTE + "jfr-summary.json");
     }
 
     private String resolveStackId(List<String> frames,

@@ -6,7 +6,7 @@
 	<parent>
 		<groupId>eu.exeris</groupId>
 		<artifactId>exeris-kernel-root</artifactId>
-		<version>0.6.0</version>
+		<version>0.7.0</version>
 		<relativePath>../pom.xml</relativePath>
 	</parent>
 
@@ -14,10 +14,61 @@
 	<packaging>jar</packaging>
 
 	<name>Exeris Kernel - Build Config</name>
-	<description>Strict Code Quality Rules (Checkstyle, PMD) for Exeris Kernel (Java 26+)</description>
+	<description>Strict Code Quality Rules (Checkstyle, PMD) + APT processors for Exeris Kernel (Java 26+)</description>
 
 	<properties>
 		<maven.deploy.skip>false</maven.deploy.skip>
 		<pmd.skip>true</pmd.skip>
+		<maven.compiler.release>26</maven.compiler.release>
 	</properties>
+
+	<dependencyManagement>
+		<dependencies>
+			<dependency>
+				<groupId>eu.exeris</groupId>
+				<artifactId>exeris-kernel-bom</artifactId>
+				<version>${project.version}</version>
+				<type>pom</type>
+				<scope>import</scope>
+			</dependency>
+		</dependencies>
+	</dependencyManagement>
+
+	<dependencies>
+		<!--
+		  build-config never depends on SPI: SPI consumes build-config's
+		  checkstyle/PMD rulesets via plugin classpath, so any project-scope
+		  SPI dependency creates a reactor cycle. The @RequiresRole APT
+		  processor reads annotations via FQN strings (no Class<?> reference).
+		  Tests synthesise the annotation type alongside their fixtures.
+		-->
+		<dependency>
+			<groupId>org.junit.jupiter</groupId>
+			<artifactId>junit-jupiter</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.assertj</groupId>
+			<artifactId>assertj-core</artifactId>
+			<scope>test</scope>
+		</dependency>
+	</dependencies>
+
+	<build>
+		<plugins>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-compiler-plugin</artifactId>
+				<version>3.14.1</version>
+				<configuration>
+					<release>${maven.compiler.release}</release>
+				</configuration>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-surefire-plugin</artifactId>
+				<version>3.2.5</version>
+			</plugin>
+		</plugins>
+	</build>
 </project>

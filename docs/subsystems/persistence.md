@@ -193,7 +193,7 @@ public interface StorageContext {
     IsolationStrategy strategy();
     Optional<String> schemaName();
     Optional<String> dataSourceKey();
-    Map<String, Object> attributes();
+    Map<String, String> attributes();
 }
 ```
 
@@ -256,8 +256,13 @@ are the responsibility of the application layer or a dedicated migration tool.
 
 > **Exception — internal kernel tables:** The Community tier includes an opt-in migration path
 > (`persistence.run.migrations=true`) that executes built-in SQL scripts to create internal kernel
-> tables (`exeris_outbox`, `exeris_outbox_dlq`). This applies only to Kernel-owned tables and is
-> explicitly disabled by default.
+> tables (`exeris_outbox`, `exeris_outbox_dlq`, `exeris_saga_state` since 0.7). This applies only to
+> Kernel-owned tables and is explicitly disabled by default. The migration list is maintained in
+> `CommunityPersistenceEngine.MIGRATION_RESOURCES`; new internal tables follow the
+> `db/migration/V{version}__{name}.sql` naming convention. The runner is intentionally minimal
+> (string split on `;`, idempotent `CREATE TABLE IF NOT EXISTS`); it is not a Flyway substitute.
+> Application schemas continue to be the operator's responsibility (see the recommendation table
+> below).
 
 | Concern                             | Recommendation                                                                                           |
 |:------------------------------------|:---------------------------------------------------------------------------------------------------------|

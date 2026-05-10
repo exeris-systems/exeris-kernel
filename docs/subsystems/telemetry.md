@@ -61,7 +61,7 @@ carries a `rawArgs: Object[]` payload that encodes domain context as **raw primi
 | Zero string formatting on hot-path | `rawArgs[]` are never concatenated inside `ExerisKernelException`                  |
 | JFR-First                          | Every critical lifecycle event emits a typed `@jdk.jfr.Event` subclass             |
 | Pluggable sinks                    | `TelemetrySink` SPI — Community: JFR/SLF4J/Console/File sinks                     |
-| Async dispatch *(planned)*         | Planned Core-internal dispatcher will fan out to registered `TelemetrySink` instances off the caller's critical path while preserving the zero-allocation contract via pre-allocated routing structures; the current reference sink (`JfrTelemetrySink`) emits synchronously on the caller thread. |
+| Async dispatch *(implemented since 0.7.0)* | `eu.exeris.kernel.core.telemetry.AsyncTelemetrySink` (Core-internal) wraps a list of downstream sinks. Producers enqueue into a bounded heap ring; a dedicated virtual-thread consumer drains the ring and fans out to every wrapped sink. Synchronous fan-out via `KernelProviders.TELEMETRY_SINKS` remains the baseline — the async wrapper is opt-in. See [Async dispatch](#async-dispatch) below. |
 | Structured error codes             | `EX-[DOMAIN]-[ID]` format enables log-scraper pattern matching without regex       |
 
 ---
@@ -212,6 +212,7 @@ Every critical lifecycle transition MUST emit a typed JFR event. No `Logger.info
 | `TelemetryJfrEvents.TransportBindJfrEvent` *(eu.exeris.kernel.core.telemetry.jfr)* | On transport bind / engine-start lifecycle (EX-NET-4001/4005) | `errorCode`, `transportName`, `port`, `component` |
 | `StreamShedEvent` *(eu.exeris.kernel.core.transport.jfr)* | On every PAQS load-shed | `streamId`, `priority`, `shedReason`, `engineName`, `activeStreamCount` |
 | `TelemetryJfrEvents.CarrierPinnedJfrEvent` *(eu.exeris.kernel.core.telemetry.jfr)* | Virtual thread pins carrier > threshold (EX-RUN-3002) | `errorCode`, `blockTimeMs`, `component` |
+| `AsyncTelemetryDropEvent` *(eu.exeris.kernel.core.telemetry; since 0.7.0)* | Emitted on every drop by `AsyncTelemetrySink` when the bounded ring is full | `sinkName`, `eventCode`, `totalDrops`, `ringCapacity` |
 | `CommunityTlsHandshakeEvent` *(implemented, community module; present in this repo)* | Each `SSL_do_handshake` invocation | `complete`, `opensslError` |
 | `TlsPhaseTransitionEvent` *(planned, TRL‑4 target; not yet implemented)* | Every `TlsStateMachine` phase transition | `sslPtr`, `fromPhase`, `toPhase` |
 | `TlsEngineCloseEvent` *(planned, TRL‑4 target; not yet implemented)* | `OffHeapTlsEngine` → CLOSED | `sslPtr`, `graceful`, `finalPhase` |
@@ -294,6 +295,96 @@ KernelProviders.TELEMETRY_SINKS.get()
 // ❌ BANNED (static singleton — violates The Wall):
 TelemetryRouter.emitMetric(metric);
 ```
+
+---
+
+## Async dispatch
+
+`AsyncTelemetrySink` (since 0.7.0) is the Core-internal asynchronous dispatcher that decouples the caller's critical path from sink fan-out. The synchronous fan-out over `KernelProviders.TELEMETRY_SINKS` remains the baseline — the async wrapper is opt-in for sites that benefit from amortising slow downstream sinks (e.g., SLF4J appenders).
+
+### Pipeline
+
+```
+producer thread →  AsyncTelemetrySink.emit()
+                       │
+                       ▼
+                bounded ring (heap, capacity configurable, default 4096)
+                       │
+                       ▼
+                 dedicated VT consumer ──fan-out──→  JfrTelemetrySink
+                                                  →  Slf4jTelemetrySink
+                                                  →  …
+```
+
+### Drop policy
+
+When the ring is full, `emit()` discards the incoming event (drop-newest), increments a `LongAdder` drop counter, and emits an `AsyncTelemetryDropEvent` JFR event with `sinkName`, `eventCode`, `totalDrops`, `ringCapacity`. Operators monitor this event to detect runaway emission rates and to size the ring appropriately. Drop-newest is preferred over drop-oldest because the oldest frames carry the causal context most useful for diagnosing the burst that caused the overflow.
+
+### Metrics pass-through
+
+`increment` / `gauge` / `latency` calls are forwarded synchronously to all wrapped sinks. These calls are already cheap (primitive args only) and asynchronous dispatch would add overhead without measurable benefit.
+
+### Lifecycle
+
+- Construction starts the VT consumer immediately.
+- `close()` stops accepting new events, interrupts the consumer to wake it from `poll`, and waits up to the configured drain timeout (default 2 s) for in-flight events. A misbehaving downstream sink that throws is logged-and-skipped — it cannot starve the consumer or other sinks.
+
+### Validation gates
+
+- `AsyncTelemetrySinkTest` (Core unit) covers correctness: fan-out delivery, drop counter on overflow, drain on close, metric pass-through, throwing-sink isolation, post-close emit no-op.
+- `CoreAsyncTelemetryRingBufferTckTest` extends `AbstractTelemetryRingBufferTck` to prove the wrapper sustains 100k events/s with no exceptions and a sub-100 ms close-flush.
+- `CoreTelemetryZeroAllocTckTest` continues to pin the underlying `JfrTelemetrySink` allocation discipline; the async wrapper inherits the contract for the caller path.
+
+---
+
+## Operational metrics export — Prometheus (since 0.7.0)
+
+Operators scraping kernel metrics use the Prometheus pull model. The kernel ships two Community classes:
+
+- **`eu.exeris.kernel.community.metrics.PrometheusMetricsSink`** — `TelemetrySink` that records counter/gauge/latency calls in concurrent maps and produces a Prometheus 0.0.4 text exposition snapshot on demand via `exposeText()`.
+- **`eu.exeris.kernel.community.metrics.PrometheusMetricsHandler`** — `HttpHandler` that serves `GET /metrics` (path configurable) returning the snapshot as the HTTP response body. Path-mismatch → `404`; non-`GET` → `405` with `Allow: GET`. Pair with `HealthEndpointHandler` on the same HTTP engine.
+
+### Why pull, not push
+
+| Aspect | Prometheus pull (chosen) | OTLP push |
+|:--|:--|:--|
+| Client state | None — each scrape is stateless | Long-lived gRPC client + retry buffer |
+| Dependencies | None beyond JDK | `opentelemetry-exporter-otlp` + Protobuf |
+| Failure mode | Scraper observes scrape failure directly | Push retries can mask sustained failure |
+| K8s integration | Pod annotation / `ServiceMonitor` | OpenTelemetry Collector sidecar |
+
+The Community baseline ships pull because it adds zero new runtime dependencies and integrates with standard Kubernetes scraping out of the box. An Enterprise binding may add an OTLP exporter later without modifying this sink.
+
+### Metric mapping
+
+| `TelemetrySink` call | Prometheus type | Exposition shape |
+|:--|:--|:--|
+| `increment(name, delta)` | `counter` | `name <total>` |
+| `gauge(name, value)` | `gauge` | `name <last_value>` |
+| `latency(name, nanoseconds)` | `summary` | `name_count <count>` + `name_sum <sum>` (no quantiles in baseline) |
+
+Latency without quantiles is intentional — streaming quantile sketches add allocation pressure on the hot path. Operators compute averages via PromQL: `rate(name_sum[1m]) / rate(name_count[1m])`. Quantile support is tracked as a 0.8+ enhancement once a low-allocation sketch (e.g., DDSketch) is selected.
+
+### Naming sanitisation
+
+Caller-supplied names are mapped to the Prometheus name regex `[a-zA-Z_:][a-zA-Z0-9_:]*` — characters outside the set are replaced with `_`, and a leading digit/invalid first character is prefixed with `_`. The original name remains the lookup key in the concurrent maps so multiple `increment` calls on the same logical metric continue to accumulate as expected.
+
+### Wiring example
+
+```java
+PrometheusMetricsSink metrics = new PrometheusMetricsSink();
+List<TelemetrySink> sinks = List.of(metrics, new JfrTelemetrySink());
+
+// ... bind sinks via KernelProviders.TELEMETRY_SINKS …
+
+PrometheusMetricsHandler handler = new PrometheusMetricsHandler(metrics, allocator);
+httpServerEngine.setHandler(handler);   // or compose into an application router
+```
+
+### Validation
+
+- `PrometheusMetricsSinkTest` covers counter/gauge/latency exposition, sanitisation, deterministic ordering, concurrent updates (16 VTs × 1000 increments), and `close()` semantics.
+- `PrometheusMetricsHandlerTest` covers routing (200/404/405), Content-Type, Content-Length, and custom paths.
 
 ---
 
@@ -382,6 +473,7 @@ canonical EX-* fields into MDC for downstream log pipelines.
 | **SLF4J version**         | SLF4J API 2.x                                                                                                     |
 | **Dependency model**      | `exeris-kernel-community` declares `slf4j-api`; binding remains application-owned                                |
 | **JSON semantics**        | JSON body with `timestamp`, `level`, `code`, `component`, `message`, `rawArgs`; MDC mirrors EX-* fields         |
+| **Disclosure shaping**    | Per-emit, resolves the active `KernelProfile` via `ExceptionDisclosure::activeProfile`. PROD/TEST replace `message` with the opaque `"<errorCode> [traceId=<uuid>]"` envelope, set `rawArgs` to `[]`, and suppress the throwable forwarded to SLF4J (no stack trace). DEV forwards everything. See `docs/subsystems/exceptions.md#disclosure-rendering`. |
 
 ---
 
@@ -435,7 +527,7 @@ Without it, L0 crash data is lost on a hard JVM crash.
 > | `AbstractJfrTelemetrySinkTck` | ✓ | **MISSING** — Community wrapper not bound to typed JFR TCK |
 > | `TelemetryZeroAllocTck` | ✓ | **MISSING** |
 > | `TelemetryCarrierPinningTck` | — | **MISSING** |
-> | `AbstractTelemetryRingBufferTck` | — | **MISSING** |
+> | `AbstractTelemetryRingBufferTck` | ✓ (`CoreAsyncTelemetryRingBufferTckTest`, since 0.7.0) | **MISSING** |
 >
 > Community TCK bindings for `AbstractJfrTelemetrySinkTck`, `TelemetryZeroAllocTck`, `TelemetryCarrierPinningTck`, and `AbstractTelemetryRingBufferTck` are open TCK debt.
 

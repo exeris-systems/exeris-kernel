@@ -2,8 +2,8 @@
 
 **Physical Layout:**
 
-- SPI: `eu.exeris.kernel.spi.security.*` (PrincipalContext, StorageContext, SecurityProvider, AuthenticationResult, ImmutablePrincipal, ImmutableStorageContext, KernelIsolationClaims, credentials/KernelPasswordEncoder, credentials/PasswordEncoderConfig)
-  > **Note:** `@RequiresRole` is planned only.
+- SPI: `eu.exeris.kernel.spi.security.*` (PrincipalContext, StorageContext, SecurityProvider, AuthenticationResult, ImmutablePrincipal, ImmutableStorageContext, KernelIsolationClaims, credentials/KernelPasswordEncoder, credentials/PasswordEncoderConfig, **`@RequiresRole` + `RoleMatch` + `KernelRoles` + `RoleRegistry` + `PrincipalContext.roleMask()`** since 0.7.0)
+  > **Note:** the SPI surface for compile-time RBAC ships in 0.7.0 — annotation + role-bit catalogue (Sprint 8a), `RoleRegistry` interface + `roleMask()` carrier (Sprint 8b-ii). The APT processor in `exeris-kernel-build-config` ships in Sprint 8b-i; the Core `RoleCheckEnforcer` runtime decision helper ships in Sprint 8b-ii. Wiring the generated registry into a `LazyConstant` bootstrap loader and auto-binding the enforcer into the transport admission path remain operator concerns until the auto-bind landing.
 - Community: `eu.exeris.kernel.community.security.*` (`CommunitySecurityProvider`, `Argon2idPasswordEncoder`, `CommunityJwksValidator`)
 - Core: `eu.exeris.kernel.core.security.*` (Token Extractors, ScopedValue Orchestration)
 
@@ -49,7 +49,7 @@ zero-leak, hyper-density concurrency with immutable identity at every layer. It 
 
 1. Define the `PrincipalContext` interface. Roles are open-form string constants, not a closed enum.
 2. Provide the `KernelProviders.PRINCIPAL_CONTEXT` and `KernelProviders.STORAGE_CONTEXT` ScopedValue slots.
-3. Expose `@RequiresRole` annotations for declarative RBAC (planned only — not yet implemented).
+3. Expose the `@RequiresRole` annotation type, the `RoleMatch` enum, the canonical `KernelRoles` system-role bit mapping (Sprint 8a), the read-only `RoleRegistry` runtime contract and the `PrincipalContext.roleMask()` carrier (Sprint 8b-ii) for declarative RBAC. The annotation is `@Retention(SOURCE)` — consumed at compile time only by the APT processor.
 
 **What Security Core DOES:**
 
@@ -57,12 +57,12 @@ zero-leak, hyper-density concurrency with immutable identity at every layer. It 
 2. Bind `PrincipalContext` and `StorageContext` via `ScopedValue.where(...)` for the duration of the request.
 3. Coordinate with the Persistence subsystem to enforce Row-Level Security (RLS).
 4. `CitadelGuard` — sentinel-pool RBAC enforcement gate with `preAllocate(String role)` / `seal()` / `requireRole(String role)`. Sealed at bootstrap READY transition.
-5. `StorageContextBridge` — derives a SHARED `StorageContext` from a `PrincipalContext`.
-6. Fail-closed: when the `PrincipalContext` ScopedValue is unbound at the call site, `StorageContextBridge.derive()` raises `PrincipalContextMissingException` (`EX-SEC-2001`) and the request is rejected at the security boundary before any persistence interaction.
+5. `StorageContextBridge` — derives a SHARED `StorageContext` from a `PrincipalContext` (SHARED-only derivation contract per ADR-010 §4a; full SEPARATED_SCHEMA/DEDICATED derivation comes from `SecurityProvider.authenticate()`). Fail-closed: when the `PrincipalContext` ScopedValue is unbound at the call site, `StorageContextBridge.derive()` raises `PrincipalContextMissingException` (`EX-SEC-2001`) and the request is rejected at the security boundary before any persistence interaction.
 
-> **TCK status:** `CitadelGuard` is now covered by the shared `AbstractCitadelGuardTck` contract plus Community/Core bindings.
-
-> **TCK status:** `StorageContextBridge.derive()` is now covered by a standalone `AbstractStorageContextBridgeTck`, including SHARED derivation and fail-closed handling for missing principal context.
+> **TCK status:**
+>
+> - `CitadelGuard` is now covered by the shared `AbstractCitadelGuardTck` contract plus Community/Core bindings.
+> - `StorageContextBridge.derive()` is now covered by a standalone `AbstractStorageContextBridgeTck`, including SHARED derivation and fail-closed handling for missing principal context.
 
 ---
 
@@ -190,27 +190,86 @@ token lifetime. The following contract governs token lifecycle in the Kernel:
 
 ## `@RequiresRole` Processing — No Reflection on Hot Path
 
-> **Status: Planned — not yet implemented in this repo.** The `@RequiresRole` annotation and the
-> `RoleCheckRegistry` APT-generated class do not exist in the current SPI or `exeris-kernel-build-config`.
-> The description below is the target design. Do not reference these types until the corresponding
-> SPI/APT implementation lands.
+> **Status (0.7.0):**
+>
+> - SPI annotation surface (`@RequiresRole`, `RoleMatch`, `KernelRoles`) — Sprint 8a.
+> - APT processor (`eu.exeris.kernel.buildconfig.security.RequiresRoleProcessor`) emitting
+>   `eu.exeris.kernel.security.generated.RoleCheckRegistry` — Sprint 8b-i.
+> - SPI runtime carriers (`RoleRegistry` interface, `PrincipalContext.roleMask()` default) and
+>   the Core `RoleCheckEnforcer` decision helper plus `AbstractRequiresRoleTck` —
+>   Sprint 8b-ii.
+> - Operator-side wiring (load the generated registry through a `LazyConstant`, populate
+>   `principal.roleMask()` at authentication time via `registry.roleNameToBit(...)`, and call
+>   `RoleCheckEnforcer.check(methodId, principal, registry)` from the transport admission path)
+>   remains explicit until the auto-bind landing.
+>
+> Dynamic role decisions continue to use `CitadelGuard.requireRole(...)` — both paths emit
+> `EX-SEC-2003` so operators see uniform telemetry.
 
-`@RequiresRole` annotations are **NOT processed via runtime reflection**. The target mechanism is:
+### SPI surface (since 0.7.0)
 
-1. **Compile-time annotation processor (APT):** An annotation processor in `exeris-kernel-build-config`
-   generates a static `RoleCheckRegistry` class at compile time. For each annotated method, a `long` bitmask
-   encoding the required roles is emitted into the registry.
-2. **Runtime lookup:** At admission time, the transport layer performs a single `int` bitmask AND operation
+```java
+@RequiresRole({"ROLE_ADMIN"})                                  // any admin → permitted
+@RequiresRole({"ROLE_ADMIN", "ROLE_OPERATOR"})                 // admin OR operator
+@RequiresRole(value = {"ROLE_ADMIN", "ROLE_AUDITOR"}, match = RoleMatch.ALL)
+                                                               // both required
+```
+
+Live in `eu.exeris.kernel.spi.security`. The annotation is `@Retention(SOURCE)` — consumed at compile
+time only — so reflection at runtime can never observe it. `KernelRoles` reserves bits `[0, 8)` for
+the kernel-owned system roles (`ROLE_SYSTEM`, `ROLE_ADMIN`, `ROLE_OPERATOR`, `ROLE_USER`); application
+roles are assigned bits `[8, 64)` by the APT processor at build time. ADR-014 covers the binding
+contract end-to-end.
+
+### APT processor (since 0.7.0, Sprint 8b-i)
+
+`@RequiresRole` annotations are **NOT processed via runtime reflection**. The mechanism is:
+
+1. **Compile-time annotation processor (APT):** `RequiresRoleProcessor` in
+   `exeris-kernel-build-config` scans every `@RequiresRole`-annotated METHOD/TYPE
+   in a compilation unit and emits a single source file
+   `eu.exeris.kernel.security.generated.RoleCheckRegistry`. Method IDs are
+   assigned in alphabetical order of the fully-qualified declaring type +
+   member name (deterministic across rebuilds). Role bits follow `KernelRoles`
+   for the canonical four system roles (bits `[0, 8)`); application-defined
+   role names get bits `[8, 64)` assigned alphabetically. The processor reads
+   the annotation by FQN string and declares no project-scope dependency on
+   `exeris-kernel-spi` — that would create a reactor cycle (SPI consumes
+   build-config rulesets via plugin classpath).
+2. **Runtime lookup:** At admission time, the transport layer performs a single `long` bitmask AND operation
    between the principal's role bitmask (extracted from the JWT at parse time) and the required role bitmask
    from the registry. This is O(1) and allocation-free.
 3. **No `Class.getAnnotation()` on hot path:** Zero reflection calls occur after JVM startup. The APT-generated
    registry is loaded once via `LazyConstant.of(...)` at first access.
 
-```
-Hot-path check: (principal.roleMask() & registry.requiredMask(methodId)) != 0
+```text
+Hot-path check (RoleMatch.ANY): (principal.roleMask() & registry.requiredAny(methodId)) != 0L
+Hot-path check (RoleMatch.ALL): (principal.roleMask() & registry.requiredAll(methodId)) == registry.requiredAll(methodId)
 ```
 
 If this check fails, `EX-SEC-2003` is thrown before any business logic executes.
+
+### Runtime decision (since 0.7.0, Sprint 8b-ii)
+
+`eu.exeris.kernel.core.security.RoleCheckEnforcer` is the canonical Core helper that
+performs the per-request RBAC decision. Both call sites are allocation-free on the
+accept path:
+
+```java
+// 1. Predicate form — useful for guard expressions
+boolean ok = RoleCheckEnforcer.isAllowed(methodId, principal, registry);
+
+// 2. Throwing form — used at admission boundaries (HTTP, command handlers, ...)
+RoleCheckEnforcer.check(methodId, principal, registry);
+// raises InsufficientPrivilegesException (EX-SEC-2003) on deny
+```
+
+`registry` is any `RoleRegistry` implementation — typically the generated
+`RoleCheckRegistry` adapted into the SPI interface, or any operator-supplied source.
+`principal.roleMask()` is the precomputed long that the authentication layer wires
+by translating the principal's claim role names through `registry.roleNameToBit(...)`.
+The TCK contract is pinned by `AbstractRequiresRoleTck`; the Community binding is
+`CommunityRequiresRoleTckTest` in `exeris-kernel-community`.
 
 ---
 

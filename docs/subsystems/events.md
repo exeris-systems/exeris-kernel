@@ -6,6 +6,7 @@
 - Core: `eu.exeris.kernel.core.events.*` (Outbox Orchestrator, Projections)
 - Drivers:
     - **`community`**: Standard Heap/NIO (PostgreSQL Event Store, JVM-heap Pub/Sub)
+    - **`community-kafka`**: Apache Kafka 3.x driver (`KafkaEventEngine` + `KafkaEventBrokerPort` adapter for the existing Outbox Orchestrator)
 
 **Layer:** L3 (Logic Engines)
 **Status:** Validated Architectural Prototype (TRL-3)
@@ -38,13 +39,35 @@ operates on local memory, a PostgreSQL partition, or a Kafka cluster. (The SPI i
 - **`CommunityJdbcEventStore`** — PostgreSQL-backed `EventStore` (JDBC, via `PersistenceEngine`)
 - **`CommunityJdbcOutboxEventStoreAdapter`** — adapts `CommunityJdbcEventStore` for the Outbox pattern
 - **`CommunityEventBusOutboxBrokerPort`** — Outbox delivery port that publishes to the local in-memory `CommunityEventBus` (NOT to Kafka/Redpanda)
-- **`CommunityEventProvider`** — `ServiceLoader` entry point
+- **`CommunityEventProvider`** — `ServiceLoader` discovery for the Community in-memory binding.
 
-**Not yet implemented:**
-- Kafka or Redpanda driver — **no binding exists in the repository**
-- `EventStreamReader` / `EventStreamAppender` SPI contracts
-- Per-subscription retry configuration on `EventBus`
-- Operator-triggered DLQ replay API (`EventEngine.replayFromDlq(dlqId)`)
+**Implemented in 0.7 (Sprint 5a — SPI groundwork):**
+
+- `EventStreamReader` / `EventStreamAppender` / `EventStream` / `StreamId` SPI contracts (`exeris-kernel-spi`) — implementation-blind replay/append surface targeted at the upcoming Kafka driver and the existing PostgreSQL outbox path. `KernelProviders.EVENT_STREAM_READER` / `KernelProviders.EVENT_STREAM_APPENDER` ScopedValue slots are wired for bootstrapper hand-off.
+- `AbstractEventRegistryTck` (EVENT-205a) — binding-agnostic contract for `EX-EVENT-6003` ordinal conflict with `rawArgs == [eventType, ordinal]`. Community binding green.
+
+**Implemented in 0.7 (Sprint 5b1 — backpressure + abstract TCKs + module skeleton):**
+
+- `EventEngineConfig.busPublishFailFast` (since 0.7.0) — when `true`, persistent `EventBus.publish` raises `EX-EVENT-6002` with the documented Glass-Box `rawArgs == [eventType, queueDepth, queueCapacity]` instead of blocking the publishing virtual thread on a full queue. Default `false` preserves the v0.6 blocking-on-VT semantic; `EventEngineConfig.enterpriseDefaults()` flips it on. `CommunityEventQueue` selects `LinkedBlockingDeque.offerLast` (non-blocking) vs `putLast` (blocking) at construction time based on this flag; `CommunityEventEngine.PersistentQueueingBus` translates a `false` push into `EventBusException.publishOverflow(...)`.
+- `AbstractEventBackpressureTck` (EVENT-205b) + `CommunityEventBackpressureTckTest` — closes the long-standing `EX-EVENT-6002` TCK gap. Asserts both error code and the `[String, long, long]` rawArgs layout.
+- `AbstractEventStreamReaderTck` and `AbstractEventStreamAppenderTck` — the abstract suites land here so any binding (Kafka 5b2, Postgres outbox replay, Enterprise off-heap log) inherits the same contract: replay-roundtrip non-null streams, idempotent close, single-owner payload hand-off (refCount=1), and append ownership-transfer + null-arg defence. Concrete bindings are still deferred (no driver yet).
+- `exeris-kernel-community-kafka` — new submodule scaffolded with reactor + BOM wiring, `kafka-clients 3.9.x` declaration, and Testcontainers Kafka 3.x in the test scope. Operators of single-node `exeris-kernel-community` keep their lean classpath; Kafka users add this jar.
+
+**Implemented in 0.7 (Sprint 5b2 — Kafka driver):**
+
+- `KafkaEventConfig` — driver-specific knobs (bootstrap servers, consumer group id, topic prefix, `requireAllAcks`, `producerLingerMs`, consumer poll timeout). `defaults(bootstrapServers, groupId)` factory + `topicFor(eventType)` topic-naming helper.
+- `KafkaEventCodec` — fixed 48-byte wire header (`eventIdHigh/Low`, `streamIdHigh/Low`, `ordinal`, `flags`, `occurredAtMs`) followed by the payload tail. `encode()` / `decodeDescriptor()` / `decodePayloadBytes()` keep `EventDescriptor` primitives bit-exact across the broker hop.
+- `KafkaEventBrokerPort` — Core `OutboxBrokerPort` adapter wrapping `org.apache.kafka.clients.producer.KafkaProducer<byte[],byte[]>`; takes an `IntFunction<String> ordinalToTopic` resolver (Wall-friendly: Core never sees Kafka classes). `brokerId() = "kafka"`.
+- `KafkaEventEngine` — `EventEngine` implementation with three composed actors: `KafkaPublishBus` (publish-via-producer, subscribe-delegated to an in-process `InMemoryEventBus`), `ConsumerLoop` (single virtual-thread `KafkaConsumer` poll loop with dynamic subscription refresh per registered ordinal — quiesces on `LockSupport.parkNanos(pollTimeout)` while the registry has no entries, since `KafkaConsumer.poll()` throws `IllegalStateException` on an unsubscribed consumer in kafka-clients 3.x), and `NoOpQueue` (degenerate — Kafka itself is the durable queue, so the local `EventQueue` slot is bypassed).
+- `KafkaEventRegistry` + `KafkaHeapEventPayload` — package-private heap-backed registry with `nameOfOrdinal(int)` reverse lookup (used by the codec for topic resolution) and an `AtomicInteger`-backed payload owner for the consumer loop hand-off.
+- `KafkaEventProvider` (`META-INF/services/eu.exeris.kernel.spi.events.EventProvider`, priority `100` — outranks Community in-memory `0`) reads `events.kafka.bootstrap-servers` / `group-id` / `topic-prefix` / `require-all-acks` / `producer-linger-ms` / `consumer-poll-timeout-ms` from `KernelProviders.config()`. Tests/TCK use the `KafkaEventProvider.create(spi, kafka)` factory which short-circuits the lookup.
+- `AbstractKafkaEventEngineTck` (EVENT-206) + `CommunityKafkaEventEngineTckIT` (`@Tag("integration") @Testcontainers`, `confluentinc/cp-kafka:7.6.1`) — asserts publish/consume roundtrip with bit-exact descriptor preservation, idempotent close, and start-before-register warm-up safety (engine started with no registry entries must not crash the consumer loop and must still deliver after a later register+publish). Green in ~6 s on the local toolchain.
+- `CommunityKafkaFlowChoreographyTckIT` (DIST-302 smoke) drives `AbstractFlowChoreographyTck` (Wake / Start / Ignore / RAII) over a Testcontainers Kafka broker; `CommunityCrossEngineChoreographyIT` (DIST-302 closure, Sprint 6c) wires two `FlowEngine`s against a shared `JdbcFlowSnapshotStore` (Postgres) plus the same Kafka broker and proves a saga parked on Service A is woken and completed on Service B via the snapshot fallback in `lookupParked`.
+
+**Not yet implemented (later):**
+
+- Per-subscription retry configuration on `EventBus`.
+- Operator-triggered DLQ replay API (`EventEngine.replayFromDlq(dlqId)`).
 
 ---
 
@@ -67,12 +90,24 @@ the payload immediately — eliminating silent leaks from dead events.
 
 ### 3. Zero-Copy Native Flow
 
-`EventPayload` bytes travel from the producer's `LoanedBuffer` directly through the `EventBus` to subscribers with RAII ref-count lifecycle — no heap serialization on the dispatch path. When the Outbox is enabled, the Community implementation delivers events to the in-memory `EventBus` after the database commit. A future distributed broker driver (Kafka/Redpanda) would preserve this zero-copy contract end-to-end; that driver is not yet implemented.
+`EventPayload` bytes travel from the producer's `LoanedBuffer` directly through the `EventBus` to subscribers with RAII ref-count lifecycle — no heap serialization on the dispatch path. When the Outbox is enabled, the Community implementation delivers events to the in-memory `EventBus` after the database commit. The Sprint 5b2 Kafka driver (`KafkaEventEngine` + `KafkaEventBrokerPort`) preserves the same RAII contract on the local hops; the broker hop itself is a fixed-layout byte copy through `KafkaEventCodec` (48-byte header + payload tail) and therefore avoids JSON / reflection on the hot path. Enterprise off-heap log driver remains out-of-repo.
 
 ### 4. Backpressure by Design
 
-`EventQueue` enforces Backpressure semantics. When the queue is full, publishers receive `EX-EVENT-6002`
-instead of silently blocking a Carrier Thread or triggering unbounded heap growth.
+`EventQueue` enforces Backpressure semantics. Two operating modes selected by
+`EventEngineConfig.busPublishFailFast` (since 0.7.0):
+
+- **`busPublishFailFast = false` (default — v0.6 backward-compat).** Persistent publishes block the
+  publishing virtual thread on a full queue (`LinkedBlockingDeque.putLast`). Safe for VTs (no
+  carrier pinning); never silently drops events but can stall the publisher under sustained
+  saturation.
+- **`busPublishFailFast = true` (Enterprise default; opt-in for Community).** Persistent publishes
+  raise `EX-EVENT-6002` carrying `rawArgs == [String eventType, long queueDepth, long queueCapacity]`
+  the moment the queue would overflow — the publisher's `StructuredTaskScope` joiner can then
+  decide whether to fail-fast or shed the event. The Sprint 5b2 Kafka driver bypasses the local
+  `EventQueue` (`NoOpQueue` slot) and lets the producer surface broker-side overflow directly via
+  the standard Kafka producer error path; a future revision can map producer-side `buffer.memory`
+  exhaustion onto `EX-EVENT-6002` to keep the single-knob semantics end-to-end.
 
 ---
 
@@ -98,7 +133,7 @@ in the `EventDescriptor` primitive layout.
 | Backend              | Best For             | Technical Advantage                                           |
 |:---------------------|:---------------------|:--------------------------------------------------------------|
 | **PostgreSQL**       | Local Event Sourcing | ACID-compliant atomic commits with entities                   |
-| **Kafka / Redpanda** | Distributed Systems *(Target State — driver not yet implemented)* | Native Off-Heap Page Cache, Zero-Copy streaming — planned, no Community binding exists |
+| **Kafka / Redpanda** | Distributed Systems  | Native Off-Heap Page Cache, Zero-Copy streaming. Community Kafka 3.x binding shipped in 0.7 (`exeris-kernel-community-kafka`); Redpanda is wire-compatible via the same `KafkaEventProvider` |
 | **In-Memory**        | Testing / Ephemeral  | Zero latency, non-persistent                                  |
 
 ---
@@ -108,7 +143,7 @@ in the `EventDescriptor` primitive layout.
 **What Events SPI DOES:**
 
 1. Define `EventDescriptor` (primitive-only routing metadata) and `EventPayload` (ref-counted off-heap bytes).
-2. Provide `EventStreamReader` and `EventStreamAppender` interfaces *(Target State — not yet implemented)*.
+2. Provide `EventStreamReader` and `EventStreamAppender` interfaces (since 0.7.0, EVENT-203) plus the `StreamId` / `EventStream` carriers used to query and stream events. Implementation-blind — bindings (PostgreSQL outbox, Kafka driver, Enterprise off-heap log) provide the cursor.
 3. Define `EventRegistry` ordinal contract for O(1) type routing.
 4. Define conflict-resolution routing via `EventDescriptor.flags` (PERSISTENT, ORDERED, ASYNC, BROADCAST). Note: optimistic concurrency version enforcement is a Persistence SPI concern (`PersistenceEngine.append(streamId, expectedVersion, …)`), not an Events routing concern.
 
@@ -238,29 +273,40 @@ fields: `eventType (String)`, `streamIdHigh (long)`, `streamIdLow (long)`, `reas
 
 ## Event Replay API
 
-> **Target State — not yet implemented.** `EventStreamReader`, `EventStreamAppender`, `StreamId`, and
-> `EventStream` SPI contracts do not yet exist in `exeris-kernel-spi`. This section describes a planned
-> capability.
-
-The `EventStreamReader` SPI supports replay from a specific position in the Event Store.
-This enables CQRS projection rebuilds without external tooling.
+The `EventStreamReader` / `EventStreamAppender` SPI (since 0.7.0, EVENT-203) defines a binding-agnostic replay and direct-append surface that brokers (PostgreSQL outbox, Kafka, Enterprise off-heap log) implement and bootstrappers wire via `KernelProviders.EVENT_STREAM_READER` / `KernelProviders.EVENT_STREAM_APPENDER`. Application code consults `KernelProviders.eventStreamReader()` / `KernelProviders.eventStreamAppender()` and treats an empty `Optional` as "broker does not support this capability" — never as a hard error.
 
 ```java
 public interface EventStreamReader extends AutoCloseable {
-    // Replay all events from a specific timestamp (inclusive)
+    // Replay all events for a specific stream from a timestamp (inclusive)
     EventStream replayFrom(StreamId streamId, Instant fromTimestamp);
 
-    // Replay from a specific event version/offset
+    // Replay from a specific stream version (broker-defined offset semantics)
     EventStream replayFromVersion(StreamId streamId, long fromVersion);
 
-    // Replay all events for an aggregate type (cross-stream)
+    // Cross-stream replay of every event of a given type (projection rebuild)
     EventStream replayByType(String eventType, Instant fromTimestamp);
+
+    @Override void close(); // releases shared driver resources; idempotent
 }
+
+@FunctionalInterface
+public interface EventStreamAppender {
+    // Same RAII ownership transfer as EventBus.publish(...)
+    void append(StreamId streamId, EventDescriptor descriptor, EventPayload payload);
+}
+
+public record StreamId(long streamIdHigh, long streamIdLow, String streamType) { ... }
 ```
 
-**Zero-allocation replay path:** Events are streamed directly from the PostgreSQL WAL or Kafka
-topic into `LoanedBuffer` slabs — no intermediate `List<Event>` materialisation.
-`EventStream` implements `Iterable<EventPayload>` and closes each payload on `Iterator.next()`.
+`StreamId` is wire-compatible with `EventDescriptor.streamIdHigh()` / `streamIdLow()` so the same routing index serves both descriptor dispatch and stream-scoped queries.
+
+**Zero-allocation replay path:** Events are streamed directly from the PostgreSQL WAL or Kafka topic into `LoanedBuffer` slabs — no intermediate `List<Event>` materialisation. `EventStream extends Iterable<EventPayload>, AutoCloseable`; each payload arrives at refCount 1 and the consumer closes it (no broadcast retain protocol on replay). The cursor is released via `EventStream.close()`.
+
+**Bindings (status):**
+
+- PostgreSQL outbox replay — planned (no current binding).
+- Kafka driver — **shipped in 0.7 Sprint 5b2** (`exeris-kernel-community-kafka`). `KafkaEventEngine` exposes the consumer roundtrip via its in-process `EventBus` delegate today; a dedicated `EventStreamReader`/`EventStreamAppender` wiring on top of `KafkaEventBrokerPort` is a follow-up.
+- Enterprise off-heap log — out-of-repo, target-state.
 
 ---
 
@@ -283,15 +329,16 @@ must implement their own idempotency using the event UUID as the deduplication k
 
 ---
 
-## Redpanda vs. Kafka — Semantic Differences (Target State — Not Yet Implemented)
+## Redpanda vs. Kafka — Semantic Differences
 
-> **Target State — not yet implemented.** No Kafka or Redpanda driver exists in the current
-> repository. The `EventEngine` SPI is designed to be broker-agnostic so that a future driver
-> can implement either broker without changing application code. The table below documents the
-> planned operational differences for reference when that driver is developed.
+> **Status (0.7).** The Apache Kafka 3.x driver shipped in Sprint 5b2 (`exeris-kernel-community-kafka`).
+> Redpanda is wire-compatible with Kafka 3.x and works against the same `KafkaEventProvider` — point
+> `events.kafka.bootstrap-servers` at a Redpanda broker, no driver change required. A dedicated
+> Redpanda binding is therefore explicitly out-of-scope. The table below documents the operational
+> differences operators should plan for.
 
-Both brokers can be supported via the same `EventEngine` SPI. The following table highlights
-operational differences relevant to a future Exeris Kafka/Redpanda driver:
+Both brokers are supported via the same `KafkaEventProvider`. The following table highlights
+operational differences relevant when targeting Kafka vs. Redpanda:
 
 | Behaviour              | Apache Kafka                                       | Redpanda                                              |
 |:-----------------------|:---------------------------------------------------|:------------------------------------------------------|
@@ -311,16 +358,16 @@ operational differences relevant to a future Exeris Kafka/Redpanda driver:
 - `EventDescriptor` scalarization: verify no heap objects are created during descriptor construction.
 - `EventPayload` ref-count correctness: N subscribers → ref-count N; last `close()` → pool return.
 - `EventRegistry` ordinal conflicts: `EX-EVENT-6003` thrown on duplicate registration.
-  > **(TCK gap — not yet implemented)**
+  > **Closed in 0.7 (EVENT-205a).** Covered by `AbstractEventRegistryTck`; Community binding `CommunityEventRegistryTckTest` green. Asserts both error code and `rawArgs == [String eventType, int ordinal]` per the documented Glass-Box layout.
 - Backpressure: `EX-EVENT-6002` thrown with correct `rawArgs` when queue is at capacity.
-  > **(TCK gap — not yet implemented)**
+  > **Closed in 0.7 Sprint 5b1 (EVENT-205b).** Covered by `AbstractEventBackpressureTck`; Community binding `CommunityEventBackpressureTckTest` green when the engine is configured with `busPublishFailFast = true`. Asserts both `EX-EVENT-6002` error code and the `[String eventType, long queueDepth, long queueCapacity]` rawArgs layout.
 
 ### Integration Tests (TCK)
 
 - **Outbox Guarantee:** Disconnect the broker mid-flight; verify events are not lost in the DB outbox.
-- **Provider Switching:** Run the same TCK suite against PostgreSQL. *(Kafka/Redpanda provider switching TCK: planned — no driver available yet.)*
+- **Provider Switching:** Run the same TCK suite against PostgreSQL and against the Sprint 5b2 Kafka driver. *(Kafka roundtrip + bit-exact descriptor preservation: closed by `AbstractKafkaEventEngineTck` / `CommunityKafkaEventEngineTckIT` — Testcontainers `confluentinc/cp-kafka:7.6.1`.)*
 - **Order Integrity:** Verify events for the same `StreamId` are processed in strict sequence.
-  > **(TCK gap — not yet implemented)**
+  > **(TCK gap — not yet implemented for the in-memory bus; the Kafka driver inherits per-key partition ordering from the broker by routing on `streamId` as the message key.)**
 - **Zero Subscriber Fast-Free:** Publish to a bus with zero subscribers; verify `payload.refCount() == 0`
   and slab is immediately returned to the pool (no silent leak).
 

@@ -259,7 +259,7 @@ public final class OutboxOrchestrator implements AutoCloseable {
         List<EventDescriptor> toDeliver = new ArrayList<>(batch.size());
         try {
             int rawPublished = brokerPort.publish(batch);
-            int published = Math.max(0, Math.min(rawPublished, batch.size()));
+            int published = Math.clamp(rawPublished, 0, batch.size());
             failed = batch.size() - published;
 
             for (int i = 0; i < published; i++) {

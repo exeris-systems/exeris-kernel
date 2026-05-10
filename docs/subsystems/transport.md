@@ -82,6 +82,29 @@ The Community carrier transfers bytes from the network socket directly into off-
 
 ---
 
+## Provider Selection — Descending Priority + First-Available
+
+`CommunityTransportSubsystem` resolves a `TransportProvider` at bootstrap via the shared
+`BootstrapProviderSelector.loadHighestPriority(...)` helper with the availability filter
+`TransportProvider::isAvailable`. Selection semantics:
+
+1. **Discovery:** all `TransportProvider` implementations on the classpath are loaded via `ServiceLoader`.
+2. **Availability filter:** providers for which `isAvailable()` returns `false` are removed from the
+   candidate set. Platform-conditional providers (e.g., io_uring on Linux only, IOCP on Windows only)
+   gate themselves here. The default `isAvailable()` returns `true`.
+3. **Descending priority + deterministic tie-break:** remaining candidates are ranked by
+   `priority()` (higher wins). On ties, the implementation class name (alphabetical, last wins under
+   `Stream.max`) breaks the tie deterministically across JVMs and ServiceLoader orderings.
+4. **First-available wins:** the highest-priority available provider is selected. If the candidate
+   set is empty, no transport engine is created and the subsystem stays in `DISABLED` mode.
+
+This means an unavailable higher-priority provider (e.g., io_uring on a non-Linux host) does NOT
+shadow an available lower-priority provider (e.g., NIO Community baseline). The selection contract
+is exercised by `BootstrapProviderSelectorTest` and validated end-to-end through the
+`CommunityTransportSubsystemLifecycleTckTest` binding.
+
+---
+
 ## Error Codes
 
 > **Source of truth:** `KernelErrorCodes.java` in `exeris-kernel-spi`.
@@ -295,6 +318,47 @@ for client IP preservation behind load balancers (HAProxy, NGINX, AWS NLB, GCP L
 
 - **Carrier Stress:** `MpscArrayQueue` (Agrona) throughput under millions of network events per second with
   zero `CarrierPinnedEvent` emissions.
+
+---
+
+## Implementation Notes — Class Decomposition Assessment (HEUR-061)
+
+`NativeTcpCarrier` (~1.4k LOC, 146 declared members) and `NativeTcpStream` (~1.2k LOC, 133 declared members) cross the CLAUDE.md "≈5 collaborators" heuristic threshold. A v0.6 PR-review carry-over (HEUR-061) asked whether they should be decomposed along reactor / FD-owner / PAQS-dispatch responsibility lines.
+
+**Assessment outcome (v0.7 Sprint 2): keep current single-file shape; do not refactor in this sprint.**
+
+**Responsibility lines (informational map, not extraction targets):**
+
+`NativeTcpCarrier`:
+
+- **Engine lifecycle + config** — `TransportConfig` / `MemoryAllocator` / `KernelCryptoProvider` injection, `running` / `closed` AtomicBooleans, acceptor thread, stream/connection counters.
+- **FFM socket backend selection + validation** — `SocketBackendMode` enum, `SocketBackendSelection` record, PosixHybrid / NIO fallback, `validateServerSocketBootstrap*` / `validateClientSocketBackend*` probes, Windows `bestEffortWsaCleanup`.
+- **Reactor loop** — `ReactorLoop` inner class: `Selector`, `pendingRequests` MPSC queue (PERF-063 — `MpscUnboundedArrayQueue`), `drainPendingRequests`, key dispatch.
+- **Acceptor / connection bootstrap** — `runAcceptorLoop`, `acceptPendingConnections`, `tryReserveConnectionSlot`, `buildAcceptedStream`, `registerAndHandshakeConnection`.
+- **Client-side ingress/writer pumps** — `runClientIngressLoop`, `runClientWriterLoop` Virtual Thread pumps with idle backoff.
+- **PAQS-dispatch read/flush path** — `readIngress`, `flushStream`, `adaptTlsIfNeeded`, `closeKeyStream`.
+
+`NativeTcpStream`:
+
+- Stream open/close state machine and FD-owner integration.
+- Outbound queue (`MpscUnboundedArrayQueue`) and write loop with TLS layering.
+- Inbound queue (`SpscArrayQueue` / `SpscUnboundedArrayQueue`) and read loop with TLS layering.
+- Backpressure / queue-depth bookkeeping for PAQS interaction.
+
+**Why not extract now:**
+
+1. **Tight coupling cost**: `ReactorLoop` is an inner class deliberately — its operational surface (`channelRuntimeRegistry`, `streamByChannel`, `closeKeyStream`, `readIngress`, `flushStream`) is intimate with carrier state. Promoting it to a top-level class requires ~10 callback / port references injected through the constructor, which trades an inner class for a callback-heavy delegate without measurable readability gain. Same risk applies to FD-owner / PAQS-dispatch extraction.
+2. **Active development collision risk**: v0.7 Sprint 5 (Kafka EventEngine), Sprint 6 (distributed integration), and PERF-061 / PERF-062 (HTTP/2 frame writer + TLS ingress slab) all touch transport hot paths. Decomposition during this window adds merge surface to every concurrent PR.
+3. **Sibling precedent**: SQ-006 raised the analogous question for `CoreFlowRuntime` and was deferred with a design note rather than a refactor PR. The same disposition applies here.
+4. **Heuristic vs hard rule**: the ">5 collaborators" rule is a signal, not a hard gate (CLAUDE.md §C heuristics). Class size alone does not justify forced decomposition when the cost outweighs the benefit.
+
+**When to revisit:**
+
+- If a future sprint introduces a second carrier (e.g., io_uring) that needs to share reactor/FD-owner code — at that point extraction yields a real reuse benefit.
+- If profiling data shows that the current class layout regresses inlining or escape analysis on the hot path (no current evidence).
+- If the file size exceeds ~2k LOC after Sprint 5/6 changes — at that scale revisit with profiling data and a measured refactor PR.
+
+Tracking: revisit alongside any io_uring / FFM-native carrier work (currently planned post-v0.7).
 
 ---
 

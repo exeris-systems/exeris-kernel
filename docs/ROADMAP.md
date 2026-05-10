@@ -213,6 +213,8 @@ Remove enterprise milestones from the open-core release path and keep out-of-rep
 
 ## Known Gaps / Future Work planned for v0.7
 
+> **Closeout (v0.7.0 release readiness — Sprint 8f, 2026-05-10):** all entries below are annotated with their delivery status. Items not closed in v0.7 are explicitly re-triaged into "Known Gaps / Future Work planned for v0.8". See `docs/release/v0.7.0-release-notes.md` and `CHANGELOG.md` for the per-EPIC narrative.
+
 ### Bootstrap / HTTP: Embedded Health Endpoint for Community Runtime
 
 **Gap:** Community runtime still lacks a clearly defined, first-class embedded health endpoint model for production-style readiness/liveness integration.
@@ -222,6 +224,8 @@ Remove enterprise milestones from the open-core release path and keep out-of-rep
 **Resolution:** Provide an embedded health endpoint for Community runtime with explicit readiness/liveness semantics and correct interaction with bootstrap and degraded runtime state.
 
 **Merge Gate:** Health endpoint behavior covered by HTTP/bootstrap tests and documented operational contract.
+
+**Status (v0.7):** **DELIVERED** in Sprint 7b — `HealthEndpointHandler` + `HealthProbe` SPI integrated with the Community embedded HTTP runtime.
 
 ---
 
@@ -239,6 +243,8 @@ Remove enterprise milestones from the open-core release path and keep out-of-rep
 
 See also: [Security Subsystem](./subsystems/security.md) — `@RequiresRole` Processing.
 
+**Status (v0.7):** **DELIVERED** under ADR-014 in Sprints 8a / 8b-i / 8b-ii. SPI annotation surface (Sprint 8a), APT processor generating `RoleCheckRegistry` in `exeris-kernel-build-config` (Sprint 8b-i), runtime decision via `RoleCheckEnforcer.isAllowed` with zero-allocation TCK coverage (Sprint 8b-ii). Operator wiring (`LazyConstant<RoleCheckRegistry>` bootstrap loader, `ImmutablePrincipal.roleMask()` integration) deferred to v0.8.
+
 ---
 
 ### Telemetry: Core-Internal Async Dispatch Not Yet Implemented
@@ -254,6 +260,8 @@ See also: [Security Subsystem](./subsystems/security.md) — `@RequiresRole` Pro
 **Merge Gate:** Validate async path with both `AbstractTelemetryRingBufferTck` (dispatch/ring contract) and `TelemetryZeroAllocTck` (caller-path allocation discipline). Keep synchronous path as supported baseline until async gate passes.
 
 See also: [Telemetry Subsystem](./subsystems/telemetry.md) — Design Principles.
+
+**Status (v0.7):** **DELIVERED** in Sprint 7c — `AsyncTelemetrySink` dispatcher with bounded ring and explicit drop policy; `AbstractTelemetryRingBufferTck` and `TelemetryZeroAllocTck` Community bindings green.
 
 ---
 
@@ -276,6 +284,8 @@ See also: [Telemetry Subsystem](./subsystems/telemetry.md) — Design Principles
 - SQ-009 Clean up `tools/jfr-reporter` SonarCloud issues.
 - SQ-010 Replace `Thread.sleep()` with deterministic synchronization in tests.
 - SQ-011 Document empty method stubs in tests.
+
+**Status (v0.7):** **DELIVERED (mostly)**. SQ-005..011 closed in Sprint 8c (catch narrowing, `Math.clamp` adoption with `S2184` overflow guard, `tools/jfr-reporter` SonarCloud cleanup, `Thread.sleep` → `LockSupport.parkNanos` + bounded settle-window, S5778 single-throwing-call discipline, S6218 record-array equality suppressions). QA-008 closed in Sprint 8d (`CommunityGraphCypherHelper` decomposed into `CypherExecutor` + Reader + Writer + Identifier helpers). QA-009 **partial** — the aspirational ≤ 100 target re-triaged to v0.8 as QA-010..018 (nine remaining `GodClass` decompositions, one PR each).
 
 ---
 
@@ -317,6 +327,8 @@ See also: [Telemetry Subsystem](./subsystems/telemetry.md) — Design Principles
 
 - HEUR-061 Two Community transport files exceed 1k LOC after the v0.6.0 rewrite: `NativeTcpCarrier.java` (1376) and `NativeTcpStream.java` (1229). CLAUDE.md `>5 collaborators` heuristic flags both. Evaluate decomposition along reactor / FD-owner / PAQS-dispatch responsibility lines, analogous to SQ-006 for `CoreFlowRuntime`.
 
+**Status (v0.7):** **DELIVERED**. P1 TCK-061 closed in Sprint 1 (`BootstrapProviderSelector` enforces `TransportProvider.isAvailable()`). P2 PERF-061..064 closed in Sprint 2 (HTTP/2 reusable buffer; TLS plaintext slab; NIC reactor `MpscUnboundedArrayQueue`; `LongAdder.reset` race fix via baseline snapshot per generation). TCK-062 (`FlowEngineShutdownEvent`) and TCK-063 (restart-aware semantics) lifted in Sprint 4. TCK-064 transport stress harness rework + `transport-stress-gate` CI job added in Sprint 2. DOC-061..064 (persistence/transport/security/crypto) corrected in Sprint 1. HEUR-061 transport class decomposition reviewed in Sprint 2; remaining transport `GodClass` items folded into v0.8 QA-010..018 batch.
+
 ---
 
 ### Runtime: Hot-Path Collections Review
@@ -328,6 +340,8 @@ See also: [Telemetry Subsystem](./subsystems/telemetry.md) — Design Principles
 **Resolution:** Evaluate specialized runtime collections only where profiling shows real contention. Identity-based maps such as JCTools `NonBlockingIdentityHashMap` are not a fit for Flow registries/catalogs because those paths use value-semantic keys for restart, wake, and idempotency lookups; queue-oriented JCTools structures may still be assessed for bounded internal handoff paths as an implementation detail only.
 
 **Merge Gate:** Any adoption must remain Community-internal, keep SPI/Core contracts unchanged, and show measurable benefit under representative profiling.
+
+**Status (v0.7 Sprint 8e):** discharged via design note `docs/release/hot-path-collections-review.md`. No replacement justified for v0.7 beyond the previously merged PERF-063 NIC reactor MPSC queue; idempotency-guard packed-bitmap and `pendingWriteInterest` identity-keyset recorded as v0.8 watch-items.
 
 ---
 
@@ -341,6 +355,8 @@ See also: [Telemetry Subsystem](./subsystems/telemetry.md) — Design Principles
 
 **Merge Gate:** Export contract documented and covered by integration tests.
 
+**Status (v0.7):** **DELIVERED** in Sprint 7d — Prometheus export baseline; OTLP path remains open as a v0.8/v0.9 optional addition.
+
 ---
 
 ### Flow: Durable Community Snapshot Store
@@ -353,6 +369,8 @@ See also: [Telemetry Subsystem](./subsystems/telemetry.md) — Design Principles
 
 **Merge Gate:** Restart/recovery tests pass for durable Community snapshot storage.
 
+**Status (v0.7):** **DELIVERED** under EPIC-1 in Sprints 3 and 4 — `JdbcFlowSnapshotStore` + `exeris_saga_state` DDL + auto-DDL bootstrap (Sprint 3); `lookupParked` snapshot fallback, bounded terminal-state catalog, saga TTL enforcement, `FlowEngineShutdownEvent` JFR (Sprint 4). `AbstractDistributedFlowSnapshotStoreTck` + `AbstractSagaRecoveryTck` Community Testcontainers PostgreSQL bindings green. ADR-013 signed off.
+
 ---
 
 ### Events: Core Scenario Hardening
@@ -364,6 +382,8 @@ See also: [Telemetry Subsystem](./subsystems/telemetry.md) — Design Principles
 **Resolution:** Prioritize outbox correctness, projection stability, event/Flow interaction, and visibility of queue/backpressure/retry behavior. Avoid broadening Events scope into full-platform work before practical runtime scenarios are stable.
 
 **Merge Gate:** Runtime scenario tests for outbox/projection/Flow integration pass in CI.
+
+**Status (v0.7):** **DELIVERED** in Sprints 5–6. Sprint 5a closed EVENT-202 SPI audit, EVENT-203 `EventStreamReader` / `EventStreamAppender` skeletons, and EVENT-205 registry/backpressure TCK. Sprint 5b shipped EVENT-204 (Community Kafka driver in new `exeris-kernel-community-kafka` module) and EVENT-206 (`AbstractKafkaEventEngineTck` + Testcontainers Kafka 3.x). Sprint 6a–6c closed DIST-302 cross-engine choreography handoff. Distributed-saga JFR events emitted per ADR-013 §8 (Sprint 6 telemetry). Outbox runtime hardening continues into v0.8 backpressure/projection follow-ups.
 
 ---
 
@@ -380,6 +400,8 @@ See also: [Telemetry Subsystem](./subsystems/telemetry.md) — Design Principles
 **Merge Gate:** Dedicated disclosure-mode abstract TCK and Community binding must pass before milestone close.
 
 See also: [Exceptions Subsystem](./subsystems/exceptions.md) — Overview.
+
+**Status (v0.7):** **DELIVERED** in Sprint 7a — `EnvironmentDisclosurePolicy` + `AbstractDisclosureModeTck` and Community binding green; PROD opaque codes vs. DEV stack-trace surface separated.
 
 ---
 
@@ -405,9 +427,13 @@ The Events subsystem documents Kafka and Redpanda as supported backends with zer
 
 See also: [Events Subsystem](./subsystems/events.md) — Multi-Provider Strategy, Zero-Copy Native Flow.
 
+**Status (v0.7):** **DELIVERED** under EPIC-2 in Sprints 5a–5b. Community-tier Kafka driver in `exeris-kernel-community-kafka`; `AbstractKafkaEventEngineTck` Testcontainers binding green. Core-shared session-orchestration model recorded in EVENT-201 decision (2026-04-27). Enterprise FFM-backed path remains an out-of-repo obligation per the open-core model.
+
 ---
 
 ### Flow + Events: Distributed Saga State and Orchestration — Implementation Backlog
+
+> **Status (v0.7):** **DELIVERED.** EPIC-1 (FLOW-101..108) closed across Sprints 1, 3, 4. EPIC-2 (EVENT-201..206) closed in Sprints 5a–5b. EPIC-3 (DIST-301..303) closed across Sprints 4 and 6 with ADR-013 sign-off. EPIC-4 (TCK-401, TCK-402) closed in Sprint 1. The detailed line items below remain as historical record of the v0.7 backlog scope.
 
 > **Doc Impact:** `ADR_REVIEW_POSSIBLE` — this backlog formalises a change from the current architectural assumption ("saga state is in-process / heap-only") to "saga state may be distributed across restarts and services". A new ADR is required (see DIST-301) before implementation begins on any cross-service saga state work.
 >
@@ -742,6 +768,56 @@ See also: [Events Subsystem](./subsystems/events.md) — Multi-Provider Strategy
 ---
 
 ## Known Gaps / Future Work planned for v0.8
+
+### Quality: PMD Suppression Reduction Continuation (QA-010..018)
+
+**Gap:** The aspirational v0.7 target of ≤ 100 PMD suppressions in main code was not reached. QA-008 closed one `GodClass` (`CommunityGraphCypherHelper`) in Sprint 8d using the `Executor` + Reader + Writer + Identifier helpers pattern; nine remaining `GodClass`-flagged classes still carry suppressions.
+
+**Owner:** Cross-cutting quality backlog.
+
+**Resolution:** Apply the QA-008 decomposition pattern to each remaining `GodClass`, one PR per class, preserving transactional/lifecycle cohesion via shared service interfaces:
+
+- QA-010 `CommunityPersistenceEngine`
+- QA-011 `CommunityHttpRequestProcessor`
+- QA-012 `Slf4jTelemetrySink`
+- QA-013 `NativeTcpCarrier`
+- QA-014 `OutboxOrchestrator`
+- QA-015 `CommunityHttpClientEngine`
+- QA-016 `NativeTcpStream`
+- QA-017 `JdbcFlowSnapshotStore`
+- QA-018 `CommunityHttp2SessionProcessor` and `SubsystemOrchestrator`
+
+**Merge Gate:** Each PR closes at minimum one `GodClass` suppression; cumulative effect must move the main-source suppression count toward the ≤ 100 target. Re-evaluate the target at v0.8 close.
+
+---
+
+### Runtime: Hot-Path Collections Watch-Items (Sprint 8e carry-over)
+
+**Gap:** The Sprint 8e Hot-Path Collections Review (`docs/release/hot-path-collections-review.md`) discharged the v0.7 gate with no replacements but recorded three watch-items for v0.8 if a future profile shows real contention.
+
+**Owner:** Core / Flow / Transport subsystem.
+
+**Resolution:** Each watch-item is gated on a measured profile signal — do not implement speculatively:
+
+- **Idempotency-guard inner-map → packed `volatile long[]` bitmap** once plan-compile-time step count is reachable from `CoreIdempotencyGuard`. Removes inner `ConcurrentHashMap` and `Integer` autobox; gated on a measured allocation hit on the dispatch path.
+- **`pendingWriteInterest` identity keyset** (NIC reactor) only if a stress profile shows the CHM keyset as a hot CAS site.
+- **Parked-lookup miss-cache as ring buffer** only if the lock-guarded `ArrayDeque` shows up under contended bridge-miss workloads.
+
+**Merge Gate:** Any adoption must remain Community-internal, keep SPI/Core contracts unchanged, and show measurable benefit under representative profiling — same gate as the parent "Runtime: Hot-Path Collections Review" entry.
+
+---
+
+### Security: `@RequiresRole` Operator Wiring
+
+**Gap:** ADR-014 compile-time RBAC machinery is in place (Sprints 8a / 8b-i / 8b-ii) but the operator-side wiring deferred from Sprint 8b-ii has not landed: the `LazyConstant<RoleCheckRegistry>` bootstrap loader, automatic discovery and wiring of the APT-generated registry into runtime, and `ImmutablePrincipal.roleMask()` integration with the CitadelGuard fast path.
+
+**Owner:** Core / Bootstrap / Security subsystem.
+
+**Resolution:** Wire the APT-generated `RoleCheckRegistry` into the runtime via a `LazyConstant` bootstrap loader so consumers do not need to construct the registry manually. Integrate `ImmutablePrincipal.roleMask()` so `@RequiresRole`-annotated entry points resolve through the bitmask path without falling back to `CitadelGuard.requireRole`.
+
+**Merge Gate:** Bootstrap regression tests pass with autoload; zero-allocation TCK continues to pass on the wired path.
+
+---
 
 ### HTTP/2: Community Lifecycle Hardening
 

@@ -473,6 +473,12 @@ final class NativeTcpStream implements TransportStream {
         return ensureTlsReady(true);
     }
 
+    // PERF-062: try-with-resources is intentionally NOT used here. The success path transfers
+    // ownership of `plaintext` to the caller (returned at refcount 1, freed by the queue
+    // consumer); only the failure path closes via the `transferred` ownership flag. A
+    // try-with-resources would force an extra retain()/close() ceremony per TLS record on the
+    // hot ingress path. Same pattern in decryptIngress below.
+    @SuppressWarnings("PMD.UseTryWithResources")
     /* default */ LoanedBuffer readTlsIngressFromFd() {
         if (tlsEngine == null) {
             return null;
@@ -480,39 +486,73 @@ final class NativeTcpStream implements TransportStream {
         if (!ensureTlsReady(false)) {
             return null;
         }
+        // PERF-062: fast-fail before allocation when offerIngress would reject.
+        // Saves the slab borrow + TLS unwrap on closing-stream / backpressured paths.
+        if (closed.get()) {
+            return null;
+        }
+        if (QUEUE_BACKPRESSURE_ENABLED && inboundQueueDepth.get() >= INBOUND_QUEUE_CAPACITY) {
+            return null;
+        }
 
-        try (LoanedBuffer ciphertextPlaceholder = allocator.allocateInfrastructure(1);
-             LoanedBuffer plaintext = allocator.allocateCarrierSlab(0)) {
+        LoanedBuffer ciphertextPlaceholder = allocator.allocateInfrastructure(1);
+        LoanedBuffer plaintext = allocator.allocateCarrierSlab(0);
+        // PERF-062: ownership-transfer flag replaces the prior retain()/auto-close ceremony.
+        // The successful return path keeps the buffer alive at refcount 1 without an extra
+        // retain+close pair; the unsuccessful path closes the slab in finally.
+        boolean transferred = false;
+        try {
             ciphertextPlaceholder.setSize(0);
             TlsStatus status;
             synchronized (tlsLock) {
                 status = tlsEngine.unwrap(ciphertextPlaceholder, plaintext);
             }
             if (status == TlsStatus.OK && plaintext.size() > 0) {
-                plaintext.retain();
+                transferred = true;
                 return plaintext;
             }
             if (status == TlsStatus.CLOSED) {
                 markRemoteClosed();
             }
             return null;
+        } finally {
+            ciphertextPlaceholder.close();
+            if (!transferred) {
+                plaintext.close();
+            }
         }
     }
 
+    @SuppressWarnings("PMD.UseTryWithResources") // see readTlsIngressFromFd above — transferred-flag ownership
     /* default */ LoanedBuffer decryptIngress(LoanedBuffer ciphertext, int length) {
-        try (LoanedBuffer plain = allocator.allocateNetwork(length)) {
+        // PERF-062: fast-fail before allocation when offerIngress would reject.
+        // Saves the network buffer borrow + TLS unwrap on backpressured / closing-stream paths.
+        if (closed.get()) {
+            return null;
+        }
+        if (QUEUE_BACKPRESSURE_ENABLED && inboundQueueDepth.get() >= INBOUND_QUEUE_CAPACITY) {
+            return null;
+        }
+        LoanedBuffer plain = allocator.allocateNetwork(length);
+        // PERF-062: ownership-transfer flag — see readTlsIngressFromFd for rationale.
+        boolean transferred = false;
+        try {
             TlsStatus status;
             synchronized (tlsLock) {
                 status = tlsEngine.unwrap(ciphertext, plain);
             }
             if (status == TlsStatus.OK && plain.size() > 0) {
-                plain.retain();
+                transferred = true;
                 return plain;
             }
             if (status == TlsStatus.CLOSED) {
                 close();
             }
             return null;
+        } finally {
+            if (!transferred) {
+                plain.close();
+            }
         }
     }
 
