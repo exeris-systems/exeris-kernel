@@ -70,12 +70,27 @@ public abstract class AbstractDistributedFlowSnapshotStoreTck {
     /**
      * Returns a brand-new store instance sharing the same underlying database as
      * {@code current}. Used to simulate a kernel restart while the data persists.
+     *
+     * <p><b>Contract parameter.</b> The abstract base does not consume {@code current} —
+     * concrete implementations such as {@code CommunityJdbcFlowSnapshotStoreTckTest} use it to
+     * extract the shared {@code DataSource} (or container handle) from the previous store so the
+     * "reopened" store reads from the same database. Static analyzers flag this as an unused
+     * parameter; the suppression below is intentional.
      */
+    @SuppressWarnings("java:S1172")
     protected abstract FlowSnapshotStore reopenStore(FlowSnapshotStore current);
 
-    /** Optional: implementations may override to release resources (close pool, etc.). */
+    /**
+     * Optional: implementations may override to release resources (close pool, etc.).
+     *
+     * <p><b>Contract parameter.</b> The default no-op does not consume {@code current};
+     * implementations that own a connection pool, container, or any external resource use it to
+     * close that resource between TCK runs. Static analyzers flag this as an unused parameter
+     * on the default body — the suppression below is intentional.
+     */
+    @SuppressWarnings("java:S1172")
     protected void disposeStore(FlowSnapshotStore current) {
-        // no-op by default
+        // no-op by default; overridden in implementations that own external resources
     }
 
     @BeforeEach
