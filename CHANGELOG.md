@@ -47,7 +47,7 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 - `@RequiresRole` annotation in `exeris-kernel-spi` (Sprint 8a, ADR-014 §3).
 - APT processor in `exeris-kernel-build-config` generating `RoleCheckRegistry` for compile-time bitmask O(1) checks (Sprint 8b-i, ADR-014 §3 + §8).
 - Runtime decision integration with `RoleCheckEnforcer.isAllowed`; zero-allocation hot-path TCK (Sprint 8b-ii, ADR-014 §5–§6).
-- ADR-014 *@RequiresRole Compile-Time RBAC* signed off (Sprint 1, decision recorded 2026-04-27).
+- ADR-014 *@RequiresRole Compile-Time RBAC* signed off (Sprint 8a, decision recorded 2026-04-27).
 
 ### Changed / Quality
 
