@@ -65,8 +65,10 @@ class PrometheusMetricsHandlerTest {
                 .contains("kernel_bootstrap_total 1")
                 .contains("kernel_heap_bytes 4096");
         assertThat(exchange.header("Content-Length"))
-                .hasValueSatisfying(value ->
-                        assertThat(Integer.parseInt(value)).isEqualTo(exchange.body().length()));
+                .hasValueSatisfying(value -> {
+                    assertThat(value).isNotNull().as("Content-Length must be a digit string").matches("\\d+");
+                    assertThat(Integer.parseInt(value)).isEqualTo(exchange.body().length());
+                });
     }
 
     @Test

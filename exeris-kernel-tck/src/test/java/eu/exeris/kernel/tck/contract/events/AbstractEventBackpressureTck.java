@@ -22,6 +22,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
+import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
@@ -140,11 +141,15 @@ public abstract class AbstractEventBackpressureTck {
                 .as("Persistent publish past queueCapacity=%d MUST raise EX-EVENT-6002 within "
                         + QUEUE_CAPACITY + "+1 attempts", QUEUE_CAPACITY)
                 .isNotNull();
-        assertThat(overflow.errorCode())
+        // requireNonNull is redundant after the AssertJ isNotNull() above — both fail the test on
+        // null — but it gives static analyzers (CodeQL, code-quality bot) the explicit non-null
+        // proof they need to stop warning on overflow.errorCode() / overflow.rawArgs() below.
+        EventBusException nonNullOverflow = Objects.requireNonNull(overflow);
+        assertThat(nonNullOverflow.errorCode())
                 .as("errorCode MUST be %s", KernelErrorCodes.EX_EVENT_6002)
                 .isEqualTo(KernelErrorCodes.EX_EVENT_6002);
 
-        Object[] rawArgs = overflow.rawArgs();
+        Object[] rawArgs = nonNullOverflow.rawArgs();
         assertThat(rawArgs)
                 .as("rawArgs MUST follow the [String eventType, long queueDepth, long queueCapacity] layout")
                 .hasSize(3);
