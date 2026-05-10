@@ -80,8 +80,23 @@ class NativeTcpTransportStressTest {
 
     private static MemoryAllocator ALLOCATOR;
 
-    private static final int SERVER_REACTOR_COUNT = 4;
-    private static final int NUM_CLIENTS = 10;
+    // TCK-064 (v0.8 Sprint 0): scale knobs for constrained-CI runners.
+    // Defaults remain 10 / 4 (matches v0.7 baseline); CI on 2-vCPU GitHub Actions
+    // overrides via -Dexeris.tck.transport.stress.clients=3
+    //                -Dexeris.tck.transport.stress.serverReactors=2
+    //                -Dexeris.tck.transport.stress.clientTimeoutSeconds=30
+    // Rationale: 10 clients × 1 reactor + 4 server reactors + 10 ForkJoinPool workers
+    // = 14 threads × 2 vCPU = 7× CPU oversubscription. Local <500 ms baseline runs
+    // hot enough to mask the issue; constrained CI cannot make forward progress on
+    // the carrier reactor under that ratio. Independent of the scale knobs, the
+    // per-client timeout is bounded so CI fails fast (max wallclock = clients × timeout)
+    // instead of the 20 min sequential 2-min timeout cycle observed pre-fix.
+    private static final int NUM_CLIENTS =
+            Integer.getInteger("exeris.tck.transport.stress.clients", 10);
+    private static final int SERVER_REACTOR_COUNT =
+            Integer.getInteger("exeris.tck.transport.stress.serverReactors", 4);
+    private static final long CLIENT_TIMEOUT_SECONDS =
+            Long.getLong("exeris.tck.transport.stress.clientTimeoutSeconds", 30L);
     private static final int MESSAGES_PER_CLIENT = 5;
     private static final int MESSAGE_SIZE = 512;
 
@@ -164,7 +179,7 @@ class NativeTcpTransportStressTest {
                 boolean allDone = true;
                 for (Future<?> future : futures) {
                     try {
-                        future.get(2, TimeUnit.MINUTES);
+                        future.get(CLIENT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
                     } catch (TimeoutException _) {
                         allDone = false;
                         future.cancel(true);
