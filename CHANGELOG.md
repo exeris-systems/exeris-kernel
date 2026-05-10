@@ -6,7 +6,7 @@ This file is intentionally terse: it lists what landed, with a pointer to the re
 
 Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project versions follow [SemVer](https://semver.org/spec/v2.0.0.html), with the pre-1.0 caveat that minor versions may carry observable contract additions while remaining backwards-compatible at the SPI level.
 
-## [0.7.0] — 2026-05 (release-readiness candidate; merge to `main` pending)
+## [0.7.0] — 2026-05-10
 
 ### Added — Distributed saga state (EPIC-1)
 
