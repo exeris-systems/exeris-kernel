@@ -6,7 +6,6 @@
 | **Deciders**   | Arkadiusz Przychocki                                           |
 | **Date**       | 2026-03-10                                                     |
 | **Revised**    | 2026-03-13                                                     |
-| **Driven By**  | RFC-2026-03-10: HTTP Codec Placement & Open-Core Boundary      |
 | **Compliance** | [Strategic Pillar: Open-Core Adoption & Glass-Box](../whitepaper.md) |
 
 > **Revision note (2026-03-13)**  

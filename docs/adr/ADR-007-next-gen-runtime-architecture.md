@@ -1,11 +1,10 @@
 # ADR-007: Next-Gen Runtime Architecture (Exeris Kernel)
 
-| Atrybut        | Wartość                                                |
+| Attribute      | Value                                                  |
 |:---------------|:-------------------------------------------------------|
 | **Status**     | **ACCEPTED**                                           |
 | **Deciders**   | Arkadiusz Przychocki                                   |
 | **Date**       | 2025-12-11 (Updated: 2026-02-22)                       |
-| **Driven By**  | RFC-2025-12-11: Next-Gen Runtime Architecture          |
 | **Compliance** | [Strategic Pillar: No-Waste Compute](../whitepaper.md) |
 
 ## Context and Problem Statement

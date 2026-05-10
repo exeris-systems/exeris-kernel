@@ -5,7 +5,6 @@
 | **Status**     | **ACCEPTED**                                                   |
 | **Deciders**   | Arkadiusz Przychocki                                           |
 | **Date**       | 2026-03-05                                                     |
-| **Driven By**  | RFC-2026-03-05: Open-Core Boundary Redefinition                |
 | **Compliance** | [Strategic Pillar: Open-Core Adoption & Glass-Box](../whitepaper.md) |
 
 ## Context and Problem Statement
