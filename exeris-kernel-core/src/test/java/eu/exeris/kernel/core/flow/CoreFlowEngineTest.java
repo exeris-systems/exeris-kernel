@@ -213,8 +213,16 @@ class CoreFlowEngineTest {
             }
         }
 
+        // 512 race iterations of schedule/park/wake on a single context drive the
+        // FlowScheduler hard enough that the post-loop settle conditions can take
+        // tens of seconds on a constrained 2-vCPU CI runner (the same JDK 26+35
+        // schedule-pressure window that motivated the v0.8 Sprint 0a VT carrier
+        // bump). Local 12-core boxes settle in well under a second. The post-loop
+        // budget is therefore 30 s instead of 5 s — enough headroom for CI without
+        // masking a real race regression (a regression would block indefinitely,
+        // not "almost finish in 6 s"). The method-level @Timeout matches.
         @Test
-        @Timeout(value = 10, unit = TimeUnit.SECONDS)
+        @Timeout(value = 90, unit = TimeUnit.SECONDS)
         @DisplayName("immediate schedule, park, and wake on the same context is race-safe")
         void immediateScheduleParkWakeOnSameContextIsRaceSafe() throws InterruptedException {
             try (CoreFlowEngine engine = startedEngine(false)) {
@@ -246,7 +254,7 @@ class CoreFlowEngineTest {
                     }
                 }
 
-                awaitTrue(5_000, () -> engine.stats().completedFlows() >= 1
+                awaitTrue(30_000, () -> engine.stats().completedFlows() >= 1
                         || engine.scheduler().lookupParked(
                                 context.instanceIdMost(),
                                 context.instanceIdLeast()).isPresent());
@@ -256,7 +264,7 @@ class CoreFlowEngineTest {
                         context.instanceIdLeast());
                 if (parked.isPresent()) {
                     engine.scheduler().wake(parked.orElseThrow());
-                    awaitTrue(5_000, () -> engine.stats().completedFlows() >= 1);
+                    awaitTrue(30_000, () -> engine.stats().completedFlows() >= 1);
                 }
 
                 assertThat(engine.stats().failedFlows()).isZero();
