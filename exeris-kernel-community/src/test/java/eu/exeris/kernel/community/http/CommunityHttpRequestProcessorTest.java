@@ -110,7 +110,7 @@ class CommunityHttpRequestProcessorTest {
             MemorySegment.copy(MemorySegment.ofArray(preface), 0, buffer.segment(), 0, preface.length);
             buffer.setSize(preface.length);
 
-            assertThat(CommunityHttpRequestProcessor.isHttp2PriorKnowledgePreface(buffer.segment(), buffer.size()))
+            assertThat(CommunityHttpH2cUpgradeDetector.isHttp2PriorKnowledgePreface(buffer.segment(), buffer.size()))
                     .isTrue();
         }
     }
@@ -122,7 +122,7 @@ class CommunityHttpRequestProcessorTest {
             MemorySegment.copy(MemorySegment.ofArray(request), 0, buffer.segment(), 0, request.length);
             buffer.setSize(request.length);
 
-            assertThat(CommunityHttpRequestProcessor.isHttp2PriorKnowledgePreface(buffer.segment(), buffer.size()))
+            assertThat(CommunityHttpH2cUpgradeDetector.isHttp2PriorKnowledgePreface(buffer.segment(), buffer.size()))
                     .isFalse();
         }
     }
@@ -133,7 +133,7 @@ class CommunityHttpRequestProcessorTest {
                 new HttpHeader("cOnNeCtIoN", "keep-alive, UpGrAdE"),
                 new HttpHeader("UpGrAdE", "H2C"));
 
-        assertThat(CommunityHttpRequestProcessor.isH2cUpgradeIntent(headers)).isTrue();
+        assertThat(CommunityHttpH2cUpgradeDetector.isH2cUpgradeIntent(headers)).isTrue();
     }
 
     @Test
@@ -142,7 +142,7 @@ class CommunityHttpRequestProcessorTest {
                 new HttpHeader("Connection", "keep-alive"),
                 new HttpHeader("Upgrade", "h2c"));
 
-        assertThat(CommunityHttpRequestProcessor.isH2cUpgradeIntent(headers)).isFalse();
+        assertThat(CommunityHttpH2cUpgradeDetector.isH2cUpgradeIntent(headers)).isFalse();
     }
 
     @Test
