@@ -10,33 +10,34 @@ package eu.exeris.kernel.community.http;
 
 import eu.exeris.kernel.community.persistence.PersistenceSessionBox;
 import eu.exeris.kernel.core.http.http1.Http1Codec;
-import eu.exeris.kernel.core.http.jfr.HttpAggregateBufferForcedReleaseEvent;
-import eu.exeris.kernel.core.http.jfr.HttpAggregateBufferHeldEvent;
 import eu.exeris.kernel.core.security.SecurityInterceptor;
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.http.HttpConfig;
 import eu.exeris.kernel.spi.http.HttpHandler;
-import eu.exeris.kernel.spi.http.HttpHeader;
 import eu.exeris.kernel.spi.http.HttpRequest;
 import eu.exeris.kernel.spi.http.HttpResponseBodyEncoderRegistry;
-import eu.exeris.kernel.spi.http.HttpVersion;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.persistence.PersistenceEngine;
 import eu.exeris.kernel.spi.transport.TransportStream;
 
 import java.lang.foreign.MemorySegment;
-import java.lang.foreign.ValueLayout;
-import java.nio.charset.StandardCharsets;
-import java.util.List;
 import java.util.Objects;
 
+// Cohesion baseline post-QA-011 (v0.8 Sprint 1): h2c/HTTP-2 upgrade detection and
+// aggregate-buffer telemetry were extracted to dedicated helpers
+// (CommunityHttpH2cUpgradeDetector, CommunityHttpAggregateTelemetry). The remaining
+// suppressions reflect intrinsic processor responsibilities: the request loop is the
+// natural integration point that catches generic stream errors (graceful close
+// detection is testable and locked in `isExpectedStreamClose`), the
+// try-with-resources lifecycle on `TransportStream` / `ProcessingState` is
+// purposeful (CloseResource suppression covers the buffer flyweight that is shared
+// across loop iterations by design), and the keep-alive iteration / read-aggregate
+// branching dominates the residual cyclomatic complexity.
 @SuppressWarnings({
     "PMD.AvoidCatchingGenericException",
     "PMD.CloseResource",
-    "PMD.CyclomaticComplexity",
-    "PMD.GodClass",
-    "PMD.TooManyMethods"
+    "PMD.CyclomaticComplexity"
 })
 public final class CommunityHttpRequestProcessor {
 
@@ -51,25 +52,16 @@ public final class CommunityHttpRequestProcessor {
 
     private static final System.Logger LOG =
             System.getLogger(CommunityHttpRequestProcessor.class.getName());
-    private static final String HEADER_CONNECTION = "Connection";
-    private static final String HEADER_UPGRADE = "Upgrade";
-    private static final String H2C_TOKEN = "h2c";
-    private static final String UPGRADE_TOKEN = "upgrade";
     private static final int READ_CHUNK_BYTES = 8 * 1024;
     private static final int INITIAL_HTTP1_AGGREGATE_BYTES = 16 * 1024;
     private static final int MAX_AGGREGATE_BYTES = 1 * 1024 * 1024;
-    private static final byte[] HTTP2_PRIOR_KNOWLEDGE_PREFACE =
-            "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n".getBytes(StandardCharsets.US_ASCII);
-    
-    // Phase 1C: HTTP buffer lifecycle tracking
-    private static final long BUFFER_AGE_WARNING_THRESHOLD_MS = 100;
-    private static final double PIPELINED_FRACTION_THRESHOLD = 0.05; // If pipelined < 5%, force release
 
     private final MemoryAllocator allocator;
     private final HttpResponseBodyEncoderRegistry encoderRegistry;
     private final HttpConfig config;
     private final CommunityHttpRequestDispatcher requestDispatcher;
     private final CommunityHttp2SessionProcessor http2SessionProcessor;
+    private final CommunityHttpH2cUpgradeDetector upgradeDetector;
 
     /* default */ CommunityHttpRequestProcessor(MemoryAllocator allocator,
                                                 HttpResponseBodyEncoderRegistry encoderRegistry) {
@@ -101,6 +93,7 @@ public final class CommunityHttpRequestProcessor {
                 this.requestDispatcher,
                 READ_CHUNK_BYTES,
                 MAX_AGGREGATE_BYTES);
+        this.upgradeDetector = new CommunityHttpH2cUpgradeDetector(this.config, this.http2SessionProcessor);
     }
 
     // Aggregate buffer lifecycle is intentionally stateful across loop iterations to
@@ -138,16 +131,17 @@ public final class CommunityHttpRequestProcessor {
             return false;
         }
 
-        if (isH2cEnabled() && isH2cUpgradeIntent(readResult.headers())) {
+        if (upgradeDetector.isH2cEnabled()
+                && CommunityHttpH2cUpgradeDetector.isH2cUpgradeIntent(readResult.headers())) {
             if (LOG.isLoggable(System.Logger.Level.INFO)) {
                 LOG.log(System.Logger.Level.INFO,
                         "HTTP/1.1 h2c upgrade requested; switching to HTTP/2 frame-loop mode");
             }
-            handleHttp1UpgradeToH2c(readResult, stream, handler, state);
+            upgradeDetector.handleHttp1UpgradeToH2c(readResult, stream, handler, state);
             return false;
         }
 
-        trackPipelinedRequest(state);
+        state.recordRequest();
         handleRequest(readResult, state.aggregate(), stream, handler);
 
         state.updateBufferedBytes(CommunityHttp1RequestReader.retainUnreadBytes(
@@ -157,27 +151,9 @@ public final class CommunityHttpRequestProcessor {
             return false;
         }
 
-        applyAggregateTelemetryAndRelease(state);
+        CommunityHttpAggregateTelemetry.applyAndRelease(state, MAX_AGGREGATE_BYTES);
         state.releaseAggregateIfIdle();
         return true;
-    }
-
-    private static void trackPipelinedRequest(ProcessingState state) {
-        state.recordRequest();
-    }
-
-    private static void applyAggregateTelemetryAndRelease(ProcessingState state) {
-        long aggregateAgeMs = aggregateAgeMillis(state.aggregateAllocationTimeNs());
-        if (!shouldEmitAggregateHeldTelemetry(aggregateAgeMs)) {
-            return;
-        }
-
-        double pipelinedFraction = pipelinedFraction(state.totalRequestCount(), state.pipelinedRequestCount());
-        emitAggregateHeldTelemetry(aggregateAgeMs, state.bufferedBytes(), pipelinedFraction);
-        if (shouldForceReleaseAggregate(pipelinedFraction, state.bufferedBytes())) {
-            emitForcedReleaseTelemetry(state.bufferedBytes(), pipelinedFraction);
-            state.forceReleaseAggregate();
-        }
     }
 
     private void handleRequest(ReadResult readResult,
@@ -198,44 +174,6 @@ public final class CommunityHttpRequestProcessor {
             bodyBuffer.setSize(bodyLength);
             dispatchRequest(readResult, bodyBuffer, stream, handler);
         }
-    }
-
-    private static long aggregateAgeMillis(long aggregateAllocationTimeNs) {
-        return (System.nanoTime() - aggregateAllocationTimeNs) / 1_000_000;
-    }
-
-    private static boolean shouldEmitAggregateHeldTelemetry(long aggregateAgeMs) {
-        return aggregateAgeMs > BUFFER_AGE_WARNING_THRESHOLD_MS;
-    }
-
-    private static double pipelinedFraction(long totalRequestCount, long pipelinedRequestCount) {
-        return totalRequestCount > 0
-                ? (double) pipelinedRequestCount / totalRequestCount
-                : 0.0;
-    }
-
-    private static void emitAggregateHeldTelemetry(long aggregateAgeMs,
-                                                   long bufferedBytes,
-                                                   double pipelinedFraction) {
-        HttpAggregateBufferHeldEvent.emit(
-                aggregateAgeMs,
-                (int) bufferedBytes,
-                MAX_AGGREGATE_BYTES,
-                pipelinedFraction
-        );
-    }
-
-    private static boolean shouldForceReleaseAggregate(double pipelinedFraction, long bufferedBytes) {
-        return pipelinedFraction < PIPELINED_FRACTION_THRESHOLD && bufferedBytes == 0;
-    }
-
-    private static void emitForcedReleaseTelemetry(long bufferedBytes, double pipelinedFraction) {
-        HttpAggregateBufferForcedReleaseEvent.emit(
-                "low_pipelined_fraction",
-                (int) bufferedBytes,
-                PIPELINED_FRACTION_THRESHOLD,
-                pipelinedFraction
-        );
     }
 
     private static boolean isExpectedStreamClose(RuntimeException streamError) {
@@ -277,7 +215,7 @@ public final class CommunityHttpRequestProcessor {
         LoanedBuffer aggregate = state.aggregate();
         long total = bufferedBytes;
 
-        if (shouldHandlePriorKnowledge(stream, handler, state, total)) {
+        if (upgradeDetector.shouldHandlePriorKnowledge(stream, handler, state, total)) {
             return null;
         }
 
@@ -303,7 +241,7 @@ public final class CommunityHttpRequestProcessor {
                 total += read;
                 aggregate.setSize(total);
 
-                if (shouldHandlePriorKnowledge(stream, handler, state, total)) {
+                if (upgradeDetector.shouldHandlePriorKnowledge(stream, handler, state, total)) {
                     return null;
                 }
 
@@ -316,93 +254,5 @@ public final class CommunityHttpRequestProcessor {
         return null;
     }
 
-
-    private boolean isH2cEnabled() {
-        return config.h2cUpgradeEnabled() && supportsHttp2(config.maxVersion());
-    }
-
-    private static boolean supportsHttp2(HttpVersion maxVersion) {
-        return maxVersion == HttpVersion.HTTP_2 || maxVersion == HttpVersion.HTTP_3;
-    }
-
-    private boolean shouldHandlePriorKnowledge(TransportStream stream,
-                                               HttpHandler handler,
-                                               ProcessingState state,
-                                               long totalBytes) {
-        if (!supportsHttp2(config.maxVersion())) {
-            return false;
-        }
-        LoanedBuffer aggregate = state.aggregate();
-        if (!isHttp2PriorKnowledgePreface(aggregate.segment(), totalBytes)) {
-            return false;
-        }
-        handleHttp2PriorKnowledge(stream, handler, state, totalBytes);
-        return true;
-    }
-
-    private void handleHttp2PriorKnowledge(TransportStream stream,
-                                           HttpHandler handler,
-                                           ProcessingState state,
-                                           long totalBytes) {
-        http2SessionProcessor.handlePriorKnowledge(
-                stream,
-                handler,
-                state,
-                totalBytes,
-                HTTP2_PRIOR_KNOWLEDGE_PREFACE.length);
-    }
-
-    private void handleHttp1UpgradeToH2c(ReadResult readResult,
-                                         TransportStream stream,
-                                         HttpHandler handler,
-                                         ProcessingState state) {
-        http2SessionProcessor.handleUpgrade(readResult, stream, handler, state);
-    }
-
-    /* default */ static boolean isHttp2PriorKnowledgePreface(MemorySegment segment, long totalBytes) {
-        if (totalBytes < HTTP2_PRIOR_KNOWLEDGE_PREFACE.length) {
-            return false;
-        }
-        for (int index = 0; index < HTTP2_PRIOR_KNOWLEDGE_PREFACE.length; index++) {
-            byte actual = segment.get(ValueLayout.JAVA_BYTE, index);
-            if (actual != HTTP2_PRIOR_KNOWLEDGE_PREFACE[index]) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    /* default */ static boolean isH2cUpgradeIntent(List<HttpHeader> headers) {
-        boolean hasUpgradeH2c = false;
-        boolean hasConnectionUpgrade = false;
-        for (HttpHeader header : headers) {
-            if (header.nameEqualsIgnoreCase(HEADER_UPGRADE)
-                    && containsCsvTokenIgnoreCase(header.value(), H2C_TOKEN)) {
-                hasUpgradeH2c = true;
-            }
-            if (header.nameEqualsIgnoreCase(HEADER_CONNECTION)
-                    && containsCsvTokenIgnoreCase(header.value(), UPGRADE_TOKEN)) {
-                hasConnectionUpgrade = true;
-            }
-        }
-        return hasUpgradeH2c && hasConnectionUpgrade;
-    }
-
-    private static boolean containsCsvTokenIgnoreCase(String headerValue, String token) {
-        int start = 0;
-        int length = headerValue.length();
-        while (start < length) {
-            int end = headerValue.indexOf(',', start);
-            if (end < 0) {
-                end = length;
-            }
-            String candidate = headerValue.substring(start, end).trim();
-            if (candidate.equalsIgnoreCase(token)) {
-                return true;
-            }
-            start = end + 1;
-        }
-        return false;
-    }
 
 }
