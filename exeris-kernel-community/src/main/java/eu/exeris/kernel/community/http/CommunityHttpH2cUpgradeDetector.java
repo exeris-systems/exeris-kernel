@@ -57,14 +57,14 @@ final class CommunityHttpH2cUpgradeDetector {
     private static final String HEADER_UPGRADE = "Upgrade";
     private static final String H2C_TOKEN = "h2c";
     private static final String UPGRADE_TOKEN = "upgrade";
-    /* default */ static final byte[] HTTP2_PRIOR_KNOWLEDGE_PREFACE =
+    private static final byte[] HTTP2_PRIOR_KNOWLEDGE_PREFACE =
             "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n".getBytes(StandardCharsets.US_ASCII);
 
     private final HttpConfig config;
     private final CommunityHttp2SessionProcessor http2SessionProcessor;
 
-    CommunityHttpH2cUpgradeDetector(HttpConfig config,
-                                    CommunityHttp2SessionProcessor http2SessionProcessor) {
+    /* default */ CommunityHttpH2cUpgradeDetector(HttpConfig config,
+                                                  CommunityHttp2SessionProcessor http2SessionProcessor) {
         this.config = Objects.requireNonNull(config, "config");
         this.http2SessionProcessor = Objects.requireNonNull(http2SessionProcessor, "http2SessionProcessor");
     }
@@ -73,7 +73,7 @@ final class CommunityHttpH2cUpgradeDetector {
      * Returns {@code true} when {@link HttpConfig#h2cUpgradeEnabled()} is set and the
      * configured {@link HttpConfig#maxVersion()} allows HTTP/2 negotiation.
      */
-    boolean isH2cEnabled() {
+    /* default */ boolean isH2cEnabled() {
         return config.h2cUpgradeEnabled() && supportsHttp2(config.maxVersion());
     }
 
@@ -83,10 +83,16 @@ final class CommunityHttpH2cUpgradeDetector {
      * untouched and returns {@code false}. The {@code maxVersion} policy gates the
      * detection — older configs see this method short-circuit to {@code false}.
      */
-    boolean shouldHandlePriorKnowledge(TransportStream stream,
-                                       HttpHandler handler,
-                                       ProcessingState state,
-                                       long totalBytes) {
+    @SuppressWarnings("PMD.CloseResource")
+    // The LoanedBuffer returned by state.aggregate() is the flyweight whose lifecycle
+    // is owned by ProcessingState across the keep-alive loop iterations; closing it
+    // here would break the request-loop invariant. The aggregate is closed by
+    // ProcessingState.close() through the try-with-resources in
+    // CommunityHttpRequestProcessor.process.
+    /* default */ boolean shouldHandlePriorKnowledge(TransportStream stream,
+                                                     HttpHandler handler,
+                                                     ProcessingState state,
+                                                     long totalBytes) {
         if (!supportsHttp2(config.maxVersion())) {
             return false;
         }
@@ -109,10 +115,10 @@ final class CommunityHttpH2cUpgradeDetector {
      * {@link #isH2cUpgradeIntent(List)} and that h2c upgrade is enabled via
      * {@link #isH2cEnabled()}.
      */
-    void handleHttp1UpgradeToH2c(ReadResult readResult,
-                                 TransportStream stream,
-                                 HttpHandler handler,
-                                 ProcessingState state) {
+    /* default */ void handleHttp1UpgradeToH2c(ReadResult readResult,
+                                               TransportStream stream,
+                                               HttpHandler handler,
+                                               ProcessingState state) {
         http2SessionProcessor.handleUpgrade(readResult, stream, handler, state);
     }
 
@@ -123,7 +129,7 @@ final class CommunityHttpH2cUpgradeDetector {
      * heap allocation that a {@code byte[]} copy + {@code Arrays.equals} would cost on
      * the request hot path.
      */
-    static boolean isHttp2PriorKnowledgePreface(MemorySegment segment, long totalBytes) {
+    /* default */ static boolean isHttp2PriorKnowledgePreface(MemorySegment segment, long totalBytes) {
         if (totalBytes < HTTP2_PRIOR_KNOWLEDGE_PREFACE.length) {
             return false;
         }
@@ -142,7 +148,7 @@ final class CommunityHttpH2cUpgradeDetector {
      * values may be CSV lists per RFC 7230 §6.7, so each value is split on commas
      * before token comparison.
      */
-    static boolean isH2cUpgradeIntent(List<HttpHeader> headers) {
+    /* default */ static boolean isH2cUpgradeIntent(List<HttpHeader> headers) {
         boolean hasUpgradeH2c = false;
         boolean hasConnectionUpgrade = false;
         for (HttpHeader header : headers) {

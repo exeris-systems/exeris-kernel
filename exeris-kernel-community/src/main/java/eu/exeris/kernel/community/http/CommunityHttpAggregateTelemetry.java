@@ -65,7 +65,7 @@ final class CommunityHttpAggregateTelemetry {
      * @param maxAggregateBytes   the configured aggregate ceiling — emitted in the
      *                            "held" event so dashboards can show the held fraction
      */
-    static void applyAndRelease(ProcessingState state, int maxAggregateBytes) {
+    /* default */ static void applyAndRelease(ProcessingState state, int maxAggregateBytes) {
         long aggregateAgeMs = aggregateAgeMillis(state.aggregateAllocationTimeNs());
         if (!shouldEmitAggregateHeldTelemetry(aggregateAgeMs)) {
             return;
