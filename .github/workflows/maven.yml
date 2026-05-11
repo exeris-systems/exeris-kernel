@@ -2,9 +2,9 @@ name: Exeris L0 Citadel CI
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "development/**" ]   # RC trunk branches (development/0.8, development/0.9, ...) also trigger build + SNAPSHOT publish
   pull_request:
-    branches: [ "main" ]
+    branches: [ "main", "development/**" ]   # validate PRs targeting RC trunks before merge
   schedule:
     - cron: '0 2 * * *'   # nightly at 02:00 UTC on default branch (main)
 
@@ -64,10 +64,20 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-      # Publish to GitHub Packages only on push to main (not on PRs).
-      # GitHub Packages is immutable: a 409 means this version is already published — not a real failure.
+      # Publish to GitHub Packages on push to main (release versions like 0.7.0) AND on push
+      # to any RC trunk (development/0.8, development/0.9, ...) where the POM carries a
+      # `-SNAPSHOT` qualifier. The same step handles both: Maven routes release versions to
+      # <repository> and SNAPSHOTs to <snapshotRepository> (both pointing at GitHub Packages
+      # in this repo, but the URL choice is Maven's, not the workflow's).
+      #
+      # GitHub Packages mutability:
+      #   * Release versions are IMMUTABLE — a 409 on retry means the version is already
+      #     published, which is not a real failure (covered by continue-on-error).
+      #   * SNAPSHOTs are MUTABLE — every push to an RC trunk overwrites the previous
+      #     SNAPSHOT artifact so downstream consumers (e.g. exeris-spring-runtime) always
+      #     pull the latest RC trunk HEAD.
       - name: Publish to GitHub Packages
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/development/'))
         continue-on-error: true
         run: |
           mvn deploy -B -e \
