@@ -8,10 +8,9 @@
  */
 package eu.exeris.kernel.community.kafka;
 
-import com.zaxxer.hikari.HikariConfig;
-import com.zaxxer.hikari.HikariDataSource;
 import eu.exeris.kernel.community.flow.CommunityFlowProvider;
 import eu.exeris.kernel.community.flow.JdbcFlowSnapshotStore;
+import eu.exeris.kernel.community.persistence.CommunityPersistenceProvider;
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.events.EventBus;
 import eu.exeris.kernel.spi.events.EventDescriptor;
@@ -25,6 +24,9 @@ import eu.exeris.kernel.spi.flow.FlowEngineConfig;
 import eu.exeris.kernel.spi.flow.model.FlowExecutionPlan;
 import eu.exeris.kernel.spi.flow.model.FlowOutcome;
 import eu.exeris.kernel.spi.flow.model.FlowSnapshotStore;
+import eu.exeris.kernel.spi.persistence.PersistenceConfig;
+import eu.exeris.kernel.spi.persistence.PersistenceConnection;
+import eu.exeris.kernel.spi.persistence.PersistenceEngine;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -38,15 +40,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.UncheckedIOException;
-import java.nio.charset.StandardCharsets;
-import java.sql.Connection;
-import java.sql.SQLException;
-import java.sql.Statement;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -96,40 +90,39 @@ class CommunityCrossEngineChoreographyIT {
     static final KafkaContainer KAFKA = new KafkaContainer(
             DockerImageName.parse("confluentinc/cp-kafka:7.6.1"));
 
-    private static HikariDataSource pool;
+    private static PersistenceEngine engine;
 
     @BeforeAll
-    static void bootstrap() throws SQLException {
-        HikariConfig cfg = new HikariConfig();
-        cfg.setJdbcUrl(POSTGRES.getJdbcUrl());
-        cfg.setUsername(POSTGRES.getUsername());
-        cfg.setPassword(POSTGRES.getPassword());
-        cfg.setMaximumPoolSize(8);
-        pool = new HikariDataSource(cfg);
-
-        String migrationSql = readMigrationResource("db/migration/V0.7.0__create_saga_state.sql");
-        try (Connection conn = pool.getConnection()) {
-            for (String stmt : splitStatements(migrationSql)) {
-                try (Statement s = conn.createStatement()) {
-                    s.execute(stmt);
-                }
-            }
-        }
+    static void bootstrap() {
+        PersistenceConfig cfg = new PersistenceConfig(
+                POSTGRES.getJdbcUrl(),
+                POSTGRES.getUsername(),
+                POSTGRES.getPassword(),
+                8,                       // maxPoolSize
+                1,                       // minIdleConnections
+                5_000L,                  // connectionTimeoutMs
+                60_000L,                 // idleTimeoutMs
+                600_000L,                // maxLifetimeMs
+                false,                   // useTls
+                false,                   // rlsEnabled
+                false,                   // perTenantPooling
+                0,                       // maxTenantPools
+                Map.of("run.migrations", "true"));
+        engine = new CommunityPersistenceProvider().createEngine(cfg);
     }
 
     @AfterAll
     static void teardown() {
-        if (pool != null) {
-            pool.close();
-            pool = null;
+        if (engine != null) {
+            engine.close();
+            engine = null;
         }
     }
 
     @AfterEach
-    void truncate() throws SQLException {
-        try (Connection conn = pool.getConnection();
-             Statement s = conn.createStatement()) {
-            s.execute("TRUNCATE TABLE exeris_saga_state");
+    void truncate() {
+        try (PersistenceConnection conn = engine.openConnection()) {
+            conn.executeUpdate("TRUNCATE TABLE exeris_saga_state");
         }
     }
 
@@ -137,7 +130,7 @@ class CommunityCrossEngineChoreographyIT {
     @Timeout(value = 120, unit = TimeUnit.SECONDS)
     @DisplayName("Saga parked on Service A is woken on Service B via shared snapshot store")
     void crossEngineWakeViaSnapshotFallback() throws Exception {
-        FlowSnapshotStore sharedStore = new JdbcFlowSnapshotStore(pool, "cross-engine-IT");
+        FlowSnapshotStore sharedStore = new JdbcFlowSnapshotStore(engine, "cross-engine-IT");
         AtomicReference<Throwable> outcome = new AtomicReference<>();
         java.lang.ScopedValue
                 .where(KernelProviders.FLOW_SNAPSHOT_STORE, sharedStore)
@@ -307,49 +300,4 @@ class CommunityCrossEngineChoreographyIT {
         }
     }
 
-    private static String readMigrationResource(String resourcePath) {
-        ClassLoader cl = Thread.currentThread().getContextClassLoader();
-        try (InputStream in = cl.getResourceAsStream(resourcePath)) {
-            if (in == null) {
-                throw new IllegalStateException("Missing SQL migration resource: " + resourcePath);
-            }
-            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
-        } catch (IOException ioEx) {
-            throw new UncheckedIOException("Failed to read migration: " + resourcePath, ioEx);
-        }
-    }
-
-    private static List<String> splitStatements(String sql) {
-        List<String> out = new ArrayList<>();
-        StringBuilder current = new StringBuilder();
-        boolean inLineComment = false;
-        for (int i = 0; i < sql.length(); i++) {
-            char c = sql.charAt(i);
-            if (inLineComment) {
-                if (c == '\n') {
-                    inLineComment = false;
-                }
-                continue;
-            }
-            if (c == '-' && i + 1 < sql.length() && sql.charAt(i + 1) == '-') {
-                inLineComment = true;
-                i++;
-                continue;
-            }
-            if (c == ';') {
-                String trimmed = current.toString().trim();
-                if (!trimmed.isEmpty()) {
-                    out.add(trimmed);
-                }
-                current.setLength(0);
-                continue;
-            }
-            current.append(c);
-        }
-        String tail = current.toString().trim();
-        if (!tail.isEmpty()) {
-            out.add(tail);
-        }
-        return out;
-    }
 }

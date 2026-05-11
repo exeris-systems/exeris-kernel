@@ -8,6 +8,7 @@
  */
 package eu.exeris.kernel.spi.persistence;
 
+import java.time.Instant;
 import java.util.UUID;
 
 /**
@@ -161,6 +162,29 @@ public interface PersistenceStatement extends AutoCloseable {
      * @return this statement (fluent)
      */
     PersistenceStatement bindBytes(int index, byte[] value);
+
+    /**
+     * Binds a {@link Instant} value at the given parameter index. {@code null}
+     * is treated as SQL NULL (typed as {@code TIMESTAMP WITH TIME ZONE}).
+     *
+     * <p><b>Community:</b> Delegates to {@code PreparedStatement.setTimestamp(index + 1,
+     * Timestamp.from(value))}; allocates one {@code java.sql.Timestamp} per call.
+     *
+     * <p><b>Enterprise:</b> Writes 8 bytes (microseconds since Postgres epoch
+     * 2000-01-01 UTC, big-endian) directly to the off-heap Bind message buffer.
+     * Zero heap allocation on the hot path.
+     *
+     * <p>The {@code Instant.MAX ↔ SQL NULL} convention used by {@code FlowSnapshot.timeout()}
+     * is a caller-side concern — this binder treats {@code null} as NULL and any other
+     * {@code Instant} value (including {@code Instant.MAX}) as the binary timestamp.
+     * See ADR-015 §5.
+     *
+     * @param index zero-based parameter index
+     * @param value Instant value (may be {@code null} — treated as SQL NULL)
+     * @return this statement (fluent)
+     * @since 0.8.0
+     */
+    PersistenceStatement bindInstant(int index, Instant value);
 
     /**
      * Binds a SQL NULL at the given parameter index.

@@ -22,6 +22,7 @@ import eu.exeris.kernel.tck.contract.persistence.PersistenceZeroAllocTck;
 import org.junit.jupiter.api.DisplayName;
 
 import java.lang.foreign.MemorySegment;
+import java.time.Instant;
 import java.util.UUID;
 
 /**
@@ -243,7 +244,10 @@ class CorePersistenceZeroAllocTckTest extends PersistenceZeroAllocTck {
         @Override public String  getString(int col)         { return SENTINEL_STRING; }
         @Override public byte[]  getBytes(int col)          { return SENTINEL_BYTES; }
         @Override public UUID    getUuid(int col)           { return SENTINEL_UUID; }
+        @Override public Instant getInstant(int col)        { return SENTINEL_INSTANT; }
         @Override public int     columnCount()              { return 1; }
+
+        private static final Instant SENTINEL_INSTANT = Instant.ofEpochSecond(0L);
     }
 
     // =========================================================================
@@ -267,6 +271,7 @@ class CorePersistenceZeroAllocTckTest extends PersistenceZeroAllocTck {
         @Override public PersistenceStatement bindBytes(int idx, byte[] v)    { return this; }
         @Override public PersistenceStatement bindNull(int idx)               { return this; }
         @Override public PersistenceStatement bindUuid(int idx, UUID v)       { return this; }
+        @Override public PersistenceStatement bindInstant(int idx, Instant v) { return this; }
         @Override public QueryResult executeQuery()  { return ConstantConnection.RESULT; }
         @Override public long executeUpdate()        { return 0L; }
         @Override public void close()               { /* no-op */ }

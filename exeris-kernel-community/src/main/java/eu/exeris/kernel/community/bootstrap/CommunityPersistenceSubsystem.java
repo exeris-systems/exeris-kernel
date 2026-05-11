@@ -62,6 +62,11 @@ final class CommunityPersistenceSubsystem extends AbstractCommunitySubsystem {
                 DEFAULT_MIN_IDLE_CONNECTIONS,
                 DEFAULT_MAX_TENANT_POOLS);
         persistenceEngine = PersistenceBootstrap.load(persistenceProvider, config, interceptors(config));
+        // Community-internal handoff: subsystems whose initialize() runs in a later phase
+        // (e.g. flow during RUNTIME) cannot yet see PERSISTENCE_ENGINE via ScopedValue.
+        // The bootstrap-services registry bridges that gap without exposing internals
+        // across the SPI boundary. See ADR-015 §4 and CommunityBootstrapServices Javadoc.
+        CommunityBootstrapServices.setSharedPersistenceEngine(persistenceEngine);
     }
 
     @Override
@@ -72,6 +77,7 @@ final class CommunityPersistenceSubsystem extends AbstractCommunitySubsystem {
     @Override
     public void stop() {
         markRunning(false);
+        CommunityBootstrapServices.clearSharedPersistenceEngine();
         if (persistenceEngine != null) {
             persistenceEngine.close();
         }

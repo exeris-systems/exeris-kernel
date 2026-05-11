@@ -23,6 +23,7 @@ import eu.exeris.kernel.tck.contract.persistence.AbstractTransactionalExecutorTc
 import org.junit.jupiter.api.DisplayName;
 
 import java.lang.foreign.MemorySegment;
+import java.time.Instant;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentLinkedDeque;
 
@@ -283,6 +284,7 @@ class TransactionOrchestratorTckTest extends AbstractTransactionalExecutorTck {
         @Override public String  getString(int col)         { return String.valueOf(value); }
         @Override public byte[]  getBytes(int col)          { return null; }
         @Override public UUID    getUuid(int col)           { return null; }
+        @Override public Instant getInstant(int col)        { return null; }
         @Override public int     columnCount()              { return 1; }
     }
 
@@ -315,6 +317,7 @@ class TransactionOrchestratorTckTest extends AbstractTransactionalExecutorTck {
         @Override public PersistenceStatement bindBytes(int idx, byte[] v)   { return this; }
         @Override public PersistenceStatement bindNull(int idx)              { return this; }
         @Override public PersistenceStatement bindUuid(int idx, UUID v)      { return this; }
+        @Override public PersistenceStatement bindInstant(int idx, Instant v){ return this; }
         @Override public QueryResult executeQuery()  { return conn.executeQuery(sql); }
         @Override public long executeUpdate()        { return conn.executeUpdate(sql); }
         @Override public void close()                { /* no-op */ }

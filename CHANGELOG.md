@@ -6,6 +6,26 @@ This file is intentionally terse: it lists what landed, with a pointer to the re
 
 Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project versions follow [SemVer](https://semver.org/spec/v2.0.0.html), with the pre-1.0 caveat that minor versions may carry observable contract additions while remaining backwards-compatible at the SPI level.
 
+## [Unreleased] — 0.8.0-SNAPSHOT
+
+### Fixed — Flow snapshot store wiring gap (Sprint 0b)
+
+- `CommunityFlowSubsystem.initialize()` now selects `JdbcFlowSnapshotStore` when a Community `PersistenceEngine` is bootstrapped alongside, instead of always falling back to the in-memory `CommunityFlowSnapshotStore`. Parked saga snapshots now survive a kernel restart whenever `flow.persistenceEnabled=true` and a JDBC-backed engine is present (ADR-015 §1). The in-memory store remains the fallback when no engine is available.
+- `JdbcFlowSnapshotStore` constructor migrated from `javax.sql.DataSource` to the `PersistenceEngine` SPI — the durable store now routes all connection acquisition through `engine.openConnection()` and the `PersistenceStatement` / `QueryResult` SPI surface (ADR-015 §3).
+
+### Added — Persistence SPI extensions (ADR-015)
+
+- `PersistenceStatement.bindInstant(int, Instant)` — typed `Instant` binder with `null` → SQL NULL semantics (encoded as `TIMESTAMP WITH TIME ZONE` NULL in Community).
+- `RowCursor.getInstant(int)` — typed `Instant` reader returning `null` for SQL NULL (reference-typed; no NPE coercion). Caller maps NULL to a sentinel value (e.g. `Instant.MAX` for "no timeout") at the call site.
+- Both methods are additive — existing SPI implementations only require a forward-compatible compile-time addition; no behavioural change at the call site for non-timestamp columns.
+
+### Sprint 0a — TCK-064 transport stress + Surefire IO corruption fixes
+
+- Configurable test-scale knobs on `NativeTcpTransportStressTest` (`exeris.tck.transport.stress.clients` / `serverReactors` / `clientTimeoutSeconds`) — enable operators to scale the stress matrix without recompilation.
+- Configurable drain budget on `TransportCarrierPinningTck` (`exeris.tck.transport.drainTimeoutSeconds`) — accommodates constrained CI runners under thread pressure (default 5s for local boxes, override to 30s on 2-vCPU GitHub Actions).
+- New `transport-stress-gate` CI job (`.github/workflows/maven.yml`) bumps VT carrier pool to `parallelism=16 / maxPoolSize=64` — works around blocking-`recv()` pinning in the Panama FFM ingress pump (mid-test jstack diagnosis: client ingress VTs pin carriers on `recv()` syscall; default 2-vCPU CI carrier pool exhausts before all clients connect). Production fix (non-blocking `recv()` + selector wakeup) deferred to Sprint 6 transport hardening.
+- HotSpot `-Xlog:jfr+startup=off` in root POM — suppresses native log stream that bypassed Surefire IO redirect and surfaced as "Corrupted channel" warnings.
+
 ## [0.7.0] — 2026-05-10
 
 ### Added — Distributed saga state (EPIC-1)
