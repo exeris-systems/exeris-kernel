@@ -55,6 +55,12 @@ import java.util.List;
  *
  * @since 0.8.0
  */
+// CyclomaticComplexity: the class total is dominated by the SQL splitter
+// (`splitSqlStatements` + `stripLineComments` + `addStatement`) — a single-quote-aware
+// per-character scanner that cannot be meaningfully decomposed without fragmenting the
+// state machine. The contract is locked behind `CommunityPersistenceEngineMigrationTest`,
+// the highest per-method complexity stays at 9 (still inside the project default).
+@SuppressWarnings("PMD.CyclomaticComplexity")
 final class CommunityPersistenceMigrationRunner {
 
     private CommunityPersistenceMigrationRunner() {
@@ -74,8 +80,8 @@ final class CommunityPersistenceMigrationRunner {
      * @throws PersistenceProviderException when a resource cannot be read or any
      *         statement fails to execute; the underlying cause is preserved.
      */
-    static void runIfEnabled(boolean enabled,
-                             DataSource dataSource,
+    /* default */ static void runIfEnabled(boolean enabled,
+                                           DataSource dataSource,
                              List<String> resources,
                              String providerId,
                              String connectionUrl) {

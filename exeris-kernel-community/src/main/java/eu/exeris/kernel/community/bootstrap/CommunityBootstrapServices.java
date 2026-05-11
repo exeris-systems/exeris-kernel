@@ -45,15 +45,24 @@ final class CommunityBootstrapServices {
         // utility — no instances
     }
 
-    static void setSharedPersistenceEngine(PersistenceEngine engine) {
+    /* default */ static void setSharedPersistenceEngine(PersistenceEngine engine) {
         sharedPersistenceEngine = engine;
     }
 
-    static PersistenceEngine getSharedPersistenceEngine() {
+    /* default */ static PersistenceEngine getSharedPersistenceEngine() {
         return sharedPersistenceEngine;
     }
 
-    static void clearSharedPersistenceEngine() {
+    // NullAssignment is intentional: clearing the registry is the lifecycle inverse
+    // of `setSharedPersistenceEngine` and explicitly signals the absence of a
+    // PersistenceEngine to subsequent calls of `getSharedPersistenceEngine`. An
+    // alternative would be an `Optional<PersistenceEngine>` field, but that adds
+    // wrapper allocations on every read for no semantic gain — the registry has
+    // exactly one writer (CommunityPersistenceSubsystem) and the reader path
+    // already null-checks the returned engine before constructing
+    // JdbcFlowSnapshotStore vs. falling back to the in-memory store.
+    @SuppressWarnings("PMD.NullAssignment")
+    /* default */ static void clearSharedPersistenceEngine() {
         sharedPersistenceEngine = null;
     }
 }

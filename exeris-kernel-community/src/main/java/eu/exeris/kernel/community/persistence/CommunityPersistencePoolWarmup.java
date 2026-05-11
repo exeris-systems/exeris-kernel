@@ -57,7 +57,7 @@ final class CommunityPersistencePoolWarmup {
      * @throws PersistenceProviderException when an acquired connection fails validation
      *         or pool acquisition itself raises an SQL error.
      */
-    static void prewarm(HikariDataSource sharedPool, PersistenceConfig config) {
+    /* default */ static void prewarm(HikariDataSource sharedPool, PersistenceConfig config) {
         int warmupConnections = config.poolWarmupConnections();
         if (!config.poolWarmupEnabled() || warmupConnections <= 0) {
             return;

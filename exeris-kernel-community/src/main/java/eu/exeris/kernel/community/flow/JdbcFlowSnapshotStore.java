@@ -128,6 +128,14 @@ public final class JdbcFlowSnapshotStore implements FlowSnapshotStore {
     // resolution).
     private static final String SQLSTATE_CLASS_INTEGRITY = "23";
 
+    /**
+     * Affected-row count returned by {@code PersistenceStatement.executeUpdate()} when
+     * the optimistic UPDATE-CAS did not match any row — either the row is absent or its
+     * {@code schema_version} no longer matches the incoming snapshot. The save path
+     * distinguishes the two cases via {@link #existsInTransaction}; see ADR-013 §5.
+     */
+    private static final long NO_ROWS_AFFECTED = 0L;
+
     private final PersistenceEngine engine;
     private final String engineName;
 
@@ -152,7 +160,7 @@ public final class JdbcFlowSnapshotStore implements FlowSnapshotStore {
             conn.beginTransaction();
             try {
                 long affected = tryOptimisticUpdate(conn, snapshot);
-                if (affected == 0L) {
+                if (affected == NO_ROWS_AFFECTED) {
                     if (existsInTransaction(conn, snapshot.instanceIdMost(), snapshot.instanceIdLeast())) {
                         OptimisticLockConflictEvent.emit(
                                 engineName,
