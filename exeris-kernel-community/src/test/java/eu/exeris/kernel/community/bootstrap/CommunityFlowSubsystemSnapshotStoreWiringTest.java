@@ -29,7 +29,7 @@ import java.util.function.Supplier;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * ADR-015 §7 — locks the wiring invariant for {@code FLOW_SNAPSHOT_STORE}:
+ * ADR-022 §7 — locks the wiring invariant for {@code FLOW_SNAPSHOT_STORE}:
  * the JDBC-backed durable store is selected when a {@link PersistenceEngine}
  * is registered with {@link CommunityBootstrapServices}; the in-memory store
  * is the fallback when no engine is available; nothing is bound at all when
@@ -40,7 +40,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@link CommunityFlowSnapshotStore} regardless of persistence availability,
  * silently demoting durable saga state to heap state.
  */
-@DisplayName("CommunityFlowSubsystem snapshot store wiring (ADR-015)")
+@DisplayName("CommunityFlowSubsystem snapshot store wiring (ADR-022)")
 class CommunityFlowSubsystemSnapshotStoreWiringTest {
 
     @AfterEach

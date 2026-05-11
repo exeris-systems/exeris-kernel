@@ -189,7 +189,7 @@ public interface RowCursor {
      * <p>Unlike primitive getters, this reference-typed accessor returns {@code null}
      * for SQL NULL rather than throwing. Callers that map NULL to a sentinel (e.g.
      * {@code Instant.MAX} for "no timeout") MUST perform that mapping at the call site.
-     * See ADR-015 §5 for the NULL-handling contract.
+     * See ADR-022 §5 for the NULL-handling contract.
      *
      * @param column zero-based column index
      * @return Instant value, or {@code null} if SQL NULL

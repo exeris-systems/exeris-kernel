@@ -19,7 +19,7 @@ import eu.exeris.kernel.spi.persistence.PersistenceEngine;
  * <p>This indirection exists because the {@code Subsystem} contract is "implementation-blind":
  * a subsystem cannot reach into another subsystem's instance fields directly. The handoff
  * must happen through a Community-internal channel that does not leak across the SPI boundary
- * (see ADR-015 §4 — "wiring must happen inside the Community kernel, not by exposing
+ * (see ADR-022 §4 — "wiring must happen inside the Community kernel, not by exposing
  * implementation detail through PersistenceEngine").
  *
  * <h2>Lifecycle</h2>

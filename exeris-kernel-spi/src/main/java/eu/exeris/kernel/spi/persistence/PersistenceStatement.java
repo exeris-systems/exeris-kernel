@@ -177,7 +177,7 @@ public interface PersistenceStatement extends AutoCloseable {
      * <p>The {@code Instant.MAX ↔ SQL NULL} convention used by {@code FlowSnapshot.timeout()}
      * is a caller-side concern — this binder treats {@code null} as NULL and any other
      * {@code Instant} value (including {@code Instant.MAX}) as the binary timestamp.
-     * See ADR-015 §5.
+     * See ADR-022 §5.
      *
      * @param index zero-based parameter index
      * @param value Instant value (may be {@code null} — treated as SQL NULL)

@@ -1,4 +1,4 @@
-# ADR-015: Persistence SPI Extension — Instant Binders and Readers
+# ADR-022: Persistence SPI Extension — Instant Binders and Readers
 
 | Attribute      | Value                                                                                  |
 |:---------------|:---------------------------------------------------------------------------------------|

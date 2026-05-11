@@ -64,7 +64,7 @@ final class CommunityFlowSubsystem extends AbstractCommunitySubsystem {
      * the Community-internal {@link CommunityBootstrapServices} registry — {@code
      * KernelProviders.PERSISTENCE_ENGINE} is not yet visible at this point in bootstrap
      * because {@code providerBindings()} composition runs after every subsystem's
-     * {@code initialize()} (see ADR-015 §4 and Subsystem SPI Javadoc).
+     * {@code initialize()} (see ADR-022 §4 and Subsystem SPI Javadoc).
      */
     private static FlowSnapshotStore resolveSnapshotStore(String engineName) {
         PersistenceEngine engine = CommunityBootstrapServices.getSharedPersistenceEngine();

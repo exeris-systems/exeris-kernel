@@ -65,7 +65,7 @@ final class CommunityPersistenceSubsystem extends AbstractCommunitySubsystem {
         // Community-internal handoff: subsystems whose initialize() runs in a later phase
         // (e.g. flow during RUNTIME) cannot yet see PERSISTENCE_ENGINE via ScopedValue.
         // The bootstrap-services registry bridges that gap without exposing internals
-        // across the SPI boundary. See ADR-015 §4 and CommunityBootstrapServices Javadoc.
+        // across the SPI boundary. See ADR-022 §4 and CommunityBootstrapServices Javadoc.
         CommunityBootstrapServices.setSharedPersistenceEngine(persistenceEngine);
     }
 

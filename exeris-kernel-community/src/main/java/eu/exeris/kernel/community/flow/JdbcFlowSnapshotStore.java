@@ -31,7 +31,7 @@ import java.util.Optional;
  * Durable JDBC implementation of {@link FlowSnapshotStore} backed by the
  * {@code exeris_saga_state} table (see ADR-013, FLOW-103).
  *
- * <h2>SPI-Routed Connection Acquisition (ADR-015)</h2>
+ * <h2>SPI-Routed Connection Acquisition (ADR-022)</h2>
  * <p>This implementation acquires connections through the {@link PersistenceEngine}
  * SPI rather than a raw {@code javax.sql.DataSource}. The engine owns request-scoped
  * session reuse, RLS interceptors, and tenant-pool resolution; the snapshot store
