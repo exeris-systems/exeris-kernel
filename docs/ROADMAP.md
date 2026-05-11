@@ -492,6 +492,8 @@ See also: [Events Subsystem](./subsystems/events.md) — Multi-Provider Strategy
 >
 > **Unblocks:** FLOW-103, FLOW-104.
 
+> **[REVISITED — 2026-05-11 / v0.8 Sprint 0b — ADR-022]** The "raw JDBC, no `PersistenceEngine`" call from 2026-04-27 stood until v0.8 Sprint 0b uncovered a wiring gap: `CommunityFlowSubsystem.initialize()` always bound the in-memory store regardless of JDBC availability because `JdbcFlowSnapshotStore` constructor required a raw `DataSource` and the `PersistenceEngine`-owned pool could not be exposed without breaking the swappable-engine contract. The decision was **reversed**: `JdbcFlowSnapshotStore` now consumes `PersistenceEngine.openConnection()`. Two additive SPI methods (`PersistenceStatement.bindInstant`, `RowCursor.getInstant`) were added under ADR-022 to support the timestamp columns that the previous raw-JDBC path used. The original rationale ("no managed transaction composition required") was correct in isolation; what the original decision missed was that routing through the SPI is the only way to wire the JDBC store from the bootstrap layer without leaking the pool. The placement decision (Community module, not a new module) **remains valid**.
+
 ---
 
 **FLOW-103 — [IMPL] `exeris_saga_state` DDL schema and auto-DDL bootstrap**

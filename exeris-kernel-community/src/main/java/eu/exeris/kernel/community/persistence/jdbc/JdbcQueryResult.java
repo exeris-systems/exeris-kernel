@@ -19,6 +19,8 @@ import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.sql.Timestamp;
+import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -322,6 +324,17 @@ final class JdbcQueryResult implements QueryResult {
                     return uuid;
                 }
                 return UUID.fromString(obj.toString());
+            } catch (SQLException sqlEx) {
+                throw mapSql(sqlEx);
+            }
+        }
+
+        @Override
+        public Instant getInstant(int column) {
+            checkBounds(column);
+            try {
+                Timestamp ts = resultSet.getTimestamp(column + 1);
+                return ts == null ? null : ts.toInstant();
             } catch (SQLException sqlEx) {
                 throw mapSql(sqlEx);
             }

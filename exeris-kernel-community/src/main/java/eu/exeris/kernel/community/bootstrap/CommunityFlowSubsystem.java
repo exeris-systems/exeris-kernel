@@ -9,6 +9,7 @@
 package eu.exeris.kernel.community.bootstrap;
 
 import eu.exeris.kernel.community.flow.CommunityFlowSnapshotStore;
+import eu.exeris.kernel.community.flow.JdbcFlowSnapshotStore;
 import eu.exeris.kernel.core.flow.FlowBootstrap;
 import eu.exeris.kernel.spi.bootstrap.BootstrapPhase;
 import eu.exeris.kernel.spi.config.ConfigProvider;
@@ -17,6 +18,7 @@ import eu.exeris.kernel.spi.flow.FlowEngine;
 import eu.exeris.kernel.spi.flow.FlowEngineConfig;
 import eu.exeris.kernel.spi.flow.FlowProvider;
 import eu.exeris.kernel.spi.flow.model.FlowSnapshotStore;
+import eu.exeris.kernel.spi.persistence.PersistenceEngine;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -51,8 +53,25 @@ final class CommunityFlowSubsystem extends AbstractCommunitySubsystem {
         flowProvider = bootstrap.provider();
         flowEngine = bootstrap.engine();
         if (config.persistenceEnabled()) {
-            snapshotStore = new CommunityFlowSnapshotStore();
+            snapshotStore = resolveSnapshotStore(config.engineName());
         }
+    }
+
+    /**
+     * Selects the JDBC-backed {@link JdbcFlowSnapshotStore} when a {@link PersistenceEngine}
+     * was bound by {@link CommunityPersistenceSubsystem} during the SERVICES phase, otherwise
+     * falls back to the heap {@link CommunityFlowSnapshotStore}. The handoff happens through
+     * the Community-internal {@link CommunityBootstrapServices} registry — {@code
+     * KernelProviders.PERSISTENCE_ENGINE} is not yet visible at this point in bootstrap
+     * because {@code providerBindings()} composition runs after every subsystem's
+     * {@code initialize()} (see ADR-022 §4 and Subsystem SPI Javadoc).
+     */
+    private static FlowSnapshotStore resolveSnapshotStore(String engineName) {
+        PersistenceEngine engine = CommunityBootstrapServices.getSharedPersistenceEngine();
+        if (engine != null) {
+            return new JdbcFlowSnapshotStore(engine, engineName);
+        }
+        return new CommunityFlowSnapshotStore();
     }
 
     @Override
