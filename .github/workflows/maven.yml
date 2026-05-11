@@ -127,6 +127,85 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+  transport-stress-gate:
+    # TCK-064 (v0.8 Sprint 0): dedicated job for @Tag("stress") transport tests.
+    # The default `Build & TCK Verification` job excludes the stress group because the
+    # constrained 2-vCPU GitHub Actions runner historically deadlocked under thread
+    # pressure (see ROADMAP TCK-064). v0.8 Sprint 0 closed the deadlock by replacing
+    # `Thread.onSpinWait()` busy-waits with `LockSupport.parkNanos` in client/server
+    # echo loops and post-test verification deadlines (`NativeTcpTransportStressTest`).
+    # The TCK pinning teardown now exposes a configurable drain budget via
+    # `-Dexeris.tck.transport.drainTimeoutSeconds=N` for constrained runners.
+    name: Transport Stress Gate
+    runs-on: ubuntu-latest
+    needs: build-and-verify
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Cache JDK tarball
+        id: jdk-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/jdk.tar.gz
+          key: ${{ env.JDK_CACHE_KEY }}
+
+      - name: Fetch JDK
+        if: steps.jdk-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          wget -q -O ${{ runner.temp }}/jdk.tar.gz ${{ env.JDK_URL }}
+          echo "${{ env.JDK_SHA256 }}  ${{ runner.temp }}/jdk.tar.gz" | sha256sum -c
+
+      - name: Inject JDK into Runner
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'jdkfile'
+          jdkFile: ${{ runner.temp }}/jdk.tar.gz
+          java-version: ${{ env.JDK_VER }}
+          architecture: x64
+          cache: maven
+
+      - name: Run transport stress gate
+        # TCK-064 root cause (v0.8 Sprint 0): client ingress VTs in this codebase mount
+        # onto the JDK virtual-thread carrier pool and call a blocking native `recv()`
+        # via Panama FFM (NativeTcpStream.trySocketSeamRead → socketHandles.recv()).
+        # That pins the carrier thread for the duration of the syscall — and on a
+        # 2-vCPU GitHub Actions runner the default carrier pool size is 2, so a
+        # handful of clients trivially exhaust the pool. Server-side echo VTs then
+        # cannot mount, no echo data flows, clients block on `recv()` forever.
+        #
+        # Bumping `jdk.virtualThreadScheduler.parallelism` (steady-state carriers)
+        # and `maxPoolSize` (peak carriers) eliminates the starvation: with 16 baseline
+        # / 64 peak carriers, the same 10 client × 4 server reactor stress passes in
+        # ~0.3 s under taskset -c 0,1. The ROADMAP carry-over for v0.8 transport
+        # hardening (Sprint 6 / non-blocking ingress) is the proper long-term fix —
+        # this knob is the CI-side workaround that lets the gate fire today.
+        #
+        # Drain budget 30 s covers the wider tail under thread pressure; local
+        # development keeps the strict 5 s default.
+        run: |
+          mvn -pl exeris-kernel-community -am install -DskipTests -B -e
+          mvn -pl exeris-kernel-community \
+            -DincludedGroups=stress \
+            -DexcludedGroups= \
+            -Dexeris.tck.transport.drainTimeoutSeconds=30 \
+            -Djdk.virtualThreadScheduler.parallelism=16 \
+            -Djdk.virtualThreadScheduler.maxPoolSize=64 \
+            test -B -e
+
+      - name: Upload transport stress JFR recordings
+        if: always() && (github.event_name == 'push' || github.event_name == 'schedule') && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: jfr-transport-stress-${{ github.run_number }}
+          path: exeris-kernel-community/target/*.jfr
+          if-no-files-found: warn
+          retention-days: 14
+
   benchmarks:
     name: JMH Benchmarks (Community + Core)
     # TODO: point runs-on to a dedicated bare-metal runner when available
