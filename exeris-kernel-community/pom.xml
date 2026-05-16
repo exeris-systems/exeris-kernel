@@ -34,6 +34,16 @@
               mvn test -Dtest=NativeTcpTransportStressTest (targeted-test-run profile)
         -->
         <excludedGroups>flamegraph,integration,stress</excludedGroups>
+
+        <!--
+            v0.8 Sprint 6 (Coverage C-P0-01): LINE coverage floor for the Community bundle.
+            Current measurement: ~69% from unit suite + IntegrationTest-named tests.
+            Several @Tag("integration") tests live in this module but only the
+            persistence-rls-gate CI job runs them (separate jacoco.exec). Ratchet at
+            0.55 — keeps headroom for the IT-coverage-not-merged gap, but blocks
+            unit-suite regressions.
+        -->
+        <jacoco.line.minimum>0.55</jacoco.line.minimum>
     </properties>
 
     <dependencies>

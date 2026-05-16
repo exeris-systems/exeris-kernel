@@ -19,6 +19,15 @@
         WatermarkManager, ResourceArbiter. Depends only on exeris-kernel-spi.
     </description>
 
+    <properties>
+        <!--
+            v0.8 Sprint 6 (Coverage C-P0-01): LINE coverage floor for the Core bundle.
+            Current measurement: ~74% (deepest test coverage in the reactor — TCK
+            backing + JFR event sites). Ratchet at 0.65 — regressions blocked.
+        -->
+        <jacoco.line.minimum>0.65</jacoco.line.minimum>
+    </properties>
+
     <dependencies>
         <!-- SPI contracts — The Wall -->
         <dependency>

@@ -15,6 +15,16 @@
     <name>Exeris Kernel :: SPI</name>
     <description>The "Invisible Wall" — agnostic L0/L1/L2 contracts and RAII memory protocols.</description>
 
+    <properties>
+        <!--
+            v0.8 Sprint 6 (Coverage C-P0-01): LINE coverage floor for the SPI bundle.
+            Current measurement: ~36% (records / enums / interface skeletons inflate
+            the denominator). Ratchet at 0.30 — regressions blocked, headroom for
+            organic improvement.
+        -->
+        <jacoco.line.minimum>0.30</jacoco.line.minimum>
+    </properties>
+
     <dependencies>
         <!--
             Zero-Magic Test Guard (Architectural Mandate):
