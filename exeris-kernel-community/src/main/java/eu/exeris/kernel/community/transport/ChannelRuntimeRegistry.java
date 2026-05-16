@@ -20,7 +20,7 @@ final class ChannelRuntimeRegistry {
 
     final ConcurrentMap<SocketChannel, ChannelRuntimeState> runtimeByChannel = new ConcurrentHashMap<>();
     final ConcurrentMap<SocketChannel, NativeTcpStream> streamByChannel = new ConcurrentHashMap<>();
-    final ConcurrentMap<SocketChannel, NativeTcpCarrier.ReactorLoop> channelOwner = new ConcurrentHashMap<>();
+    final ConcurrentMap<SocketChannel, NativeTcpReactor> channelOwner = new ConcurrentHashMap<>();
 
     ChannelRuntimeState registerRuntime(NativeTcpStream stream, SocketChannel channel) {
         ChannelRuntimeState runtime = new ChannelRuntimeState(channel, stream, channelOwner);
@@ -50,15 +50,15 @@ final class ChannelRuntimeRegistry {
         private final SocketChannel channel;
         private final NativeTcpStream stream;
         private final String socketBackend;
-        private final ConcurrentMap<SocketChannel, NativeTcpCarrier.ReactorLoop> channelOwner;
-        private final AtomicReference<NativeTcpCarrier.ReactorLoop> owner = new AtomicReference<>();
+        private final ConcurrentMap<SocketChannel, NativeTcpReactor> channelOwner;
+        private final AtomicReference<NativeTcpReactor> owner = new AtomicReference<>();
         private final AtomicReference<Thread> clientIngressThread = new AtomicReference<>();
         private final AtomicReference<Thread> clientWriterThread = new AtomicReference<>();
         private final AtomicBoolean lifecycleCleanup = new AtomicBoolean(false);
 
         private ChannelRuntimeState(SocketChannel channel,
                                     NativeTcpStream stream,
-                                    ConcurrentMap<SocketChannel, NativeTcpCarrier.ReactorLoop> channelOwner) {
+                                    ConcurrentMap<SocketChannel, NativeTcpReactor> channelOwner) {
             this.channel = channel;
             this.stream = stream;
             this.socketBackend = stream.plainSocketBackendName();
@@ -77,7 +77,7 @@ final class ChannelRuntimeRegistry {
             return socketBackend;
         }
 
-        void bindOwner(NativeTcpCarrier.ReactorLoop newOwner) {
+        void bindOwner(NativeTcpReactor newOwner) {
             owner.set(newOwner);
             channelOwner.put(channel, newOwner);
         }
@@ -86,11 +86,11 @@ final class ChannelRuntimeRegistry {
             stream.markRegistrationPending();
         }
 
-        NativeTcpCarrier.ReactorLoop owner() {
+        NativeTcpReactor owner() {
             return owner.get();
         }
 
-        NativeTcpCarrier.ReactorLoop detachOwner() {
+        NativeTcpReactor detachOwner() {
             return owner.getAndSet(null);
         }
 
