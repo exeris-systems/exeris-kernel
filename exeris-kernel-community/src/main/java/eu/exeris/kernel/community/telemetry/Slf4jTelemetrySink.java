@@ -8,10 +8,10 @@
  */
 package eu.exeris.kernel.community.telemetry;
 
+import eu.exeris.kernel.community.telemetry.Slf4jTelemetryLogLevelResolver.LogLevel;
 import eu.exeris.kernel.spi.config.KernelProfile;
 import eu.exeris.kernel.spi.exceptions.ExceptionDisclosure;
 import eu.exeris.kernel.spi.exceptions.ExerisKernelException;
-import eu.exeris.kernel.spi.telemetry.EventLevel;
 import eu.exeris.kernel.spi.telemetry.KernelEvent;
 import eu.exeris.kernel.spi.telemetry.TelemetrySink;
 import org.slf4j.Logger;
@@ -44,23 +44,24 @@ import java.util.function.Supplier;
  * only at the outermost emit boundary (try/finally) and is an intrinsic edge concern
  * of SLF4J structured logging — not kernel context propagation.</p>
  *
+ * <h2>Decomposition (v0.8 Sprint 1 QA-012)</h2>
+ * <p>JSON line construction is delegated to {@link Slf4jTelemetryJsonWriter}; log-level
+ * routing is delegated to {@link Slf4jTelemetryLogLevelResolver}. This sink owns the
+ * emit lifecycle (closed-flag guard, MDC scope, log adapter routing) and the
+ * test-facing adapter/scope interfaces. The split closes {@code PMD.GodClass} +
+ * {@code PMD.TooManyMethods} + {@code PMD.CyclomaticComplexity} suppressions
+ * previously held on this class.
+ *
  * @since 0.5.0
  */
 @SuppressWarnings({
-    "PMD.CyclomaticComplexity",
-    "PMD.TooManyMethods",
-    "PMD.GodClass",         // high WMC from JSON serialization; no clean decomposition without allocation
-    "PMD.UseTryWithResources",
-    "PMD.CloseResource",
-    "PMD.AvoidDuplicateLiterals",
-    "PMD.UseVarargs",
-    "PMD.ImplicitFunctionalInterface"
+    "PMD.UseTryWithResources",   // MDC scope close order is explicit (LIFO) — try-with-resources cannot express.
+    "PMD.CloseResource"          // MdcScope is an AutoCloseable lambda — PMD doesn't track lambda close semantics.
 })
 public final class Slf4jTelemetrySink implements TelemetrySink {
 
     private static final String DEFAULT_CODE = "EX-UNK-0000";
     private static final String SINK_NAME = "ExerisCommunity/Slf4jTelemetrySink";
-    private static final char FIRST_PRINTABLE_ASCII = 0x20;
 
     private final LogAdapter logger;
     private final MdcAdapter mdc;
@@ -94,7 +95,7 @@ public final class Slf4jTelemetrySink implements TelemetrySink {
 
         String code = sanitizeCode(event.code());
         String component = sanitizeNullable(event.component());
-        LogLevel resolvedLevel = resolveLogLevel(event.level(), code);
+        LogLevel resolvedLevel = Slf4jTelemetryLogLevelResolver.resolve(event.level(), code);
         String resolvedLevelName = resolvedLevel.name();
         String timestamp = event.timestamp().toString();
         ExerisKernelException exception = event.exception();
@@ -105,7 +106,8 @@ public final class Slf4jTelemetrySink implements TelemetrySink {
 
         MdcScope mdcScope = pushMdc(code, resolvedLevelName, component, timestamp);
         try {
-            String json = buildJsonLine(resolvedLevelName, code, component, timestamp, exception, profile);
+            String json = Slf4jTelemetryJsonWriter.buildJsonLine(
+                    resolvedLevelName, code, component, timestamp, exception, profile);
             switch (resolvedLevel) {
                 case INFO -> logger.info(json, disclosedThrowable);
                 case WARN -> logger.warn(json, disclosedThrowable);
@@ -169,152 +171,6 @@ public final class Slf4jTelemetrySink implements TelemetrySink {
         closed = true;
     }
 
-    private static String buildJsonLine(
-            String resolvedLevelName,
-            String code,
-            String component,
-            String timestamp,
-            ExerisKernelException exception,
-            KernelProfile profile) {
-        String message = buildStructuredMessage(exception, profile);
-        Object[] disclosed = exception == null
-                ? null
-                : ExceptionDisclosure.discloseRawArgs(exception, profile);
-        String rawArgs = buildStructuredRawArgsJson(disclosed);
-        return "{"
-                + "\"timestamp\":\"" + escapeJson(timestamp) + "\","
-                + "\"level\":\"" + escapeJson(resolvedLevelName) + "\","
-                + "\"code\":\"" + escapeJson(code) + "\","
-                + "\"component\":\"" + escapeJson(component) + "\","
-                + "\"message\":\"" + escapeJson(message) + "\","
-                + "\"rawArgs\":" + rawArgs
-                + "}";
-    }
-
-    private static String buildStructuredMessage(ExerisKernelException exception, KernelProfile profile) {
-        if (exception == null) {
-            return "";
-        }
-        String disclosed = ExceptionDisclosure.discloseMessage(exception, profile);
-        if (disclosed != null && !disclosed.isBlank()) {
-            return disclosed;
-        }
-        String fallback = exception.getClass().getSimpleName();
-        return fallback != null ? fallback : "";
-    }
-
-    private static LogLevel resolveLogLevel(EventLevel eventLevel, String code) {
-        LogLevel mappedByEvent = mapEventLevel(eventLevel);
-        LogLevel mappedByCode = mapCodeLevel(code);
-        return mappedByEvent.ordinal() >= mappedByCode.ordinal() ? mappedByEvent : mappedByCode;
-    }
-
-    private static LogLevel mapEventLevel(EventLevel eventLevel) {
-        return switch (eventLevel) {
-            case INFO -> LogLevel.INFO;
-            case WARN -> LogLevel.WARN;
-            case ERROR, FATAL -> LogLevel.ERROR;
-        };
-    }
-
-    private static LogLevel mapCodeLevel(String code) {
-        if (code.startsWith("EX-MEM-") || code.startsWith("EX-BOOT-") || code.startsWith("EX-SEC-")
-                || code.startsWith("EX-PERS-") || code.startsWith("EX-CFG-")
-                || code.startsWith("EX-GRPH-") || code.startsWith("EX-HTTP-")) {
-            return LogLevel.ERROR;
-        }
-        if (code.startsWith("EX-NET-") || code.startsWith("EX-RUN-")
-                || code.startsWith("EX-EVENT-") || code.startsWith("EX-FLOW-")) {
-            return LogLevel.WARN;
-        }
-        return LogLevel.INFO;
-    }
-
-    private static String buildStructuredRawArgsJson(Object[] rawArgs) {
-        if (rawArgs == null || rawArgs.length == 0) {
-            return "[]";
-        }
-        StringBuilder builder = new StringBuilder(rawArgs.length * 16);
-        builder.append('[');
-        for (int index = 0; index < rawArgs.length; index++) {
-            if (index > 0) {
-                builder.append(',');
-            }
-            appendStructuredRawArg(builder, rawArgs[index]);
-        }
-        builder.append(']');
-        return builder.toString();
-    }
-
-    private static void appendStructuredRawArg(StringBuilder builder, Object value) {
-        if (value == null) {
-            builder.append("null");
-            return;
-        }
-        if (value instanceof Boolean || value instanceof Byte || value instanceof Short
-                || value instanceof Integer || value instanceof Long) {
-            builder.append(value);
-            return;
-        }
-        if (value instanceof Float floatValue) {
-            appendFiniteOrString(builder, floatValue, Float.isFinite(floatValue));
-            return;
-        }
-        if (value instanceof Double doubleValue) {
-            appendFiniteOrString(builder, doubleValue, Double.isFinite(doubleValue));
-            return;
-        }
-        if (value instanceof String stringValue) {
-            appendJsonString(builder, stringValue);
-            return;
-        }
-        if (value instanceof Character characterValue) {
-            appendJsonString(builder, characterValue.toString());
-            return;
-        }
-        if (value instanceof Enum<?> enumValue) {
-            appendJsonString(builder, enumValue.name());
-            return;
-        }
-        if (value.getClass().isArray()) {
-            appendStructuredArray(builder, value);
-            return;
-        }
-        appendJsonString(builder, "[unsupported]");
-    }
-
-    private static void appendFiniteOrString(StringBuilder builder, float value, boolean isFinite) {
-        if (isFinite) {
-            builder.append(value);
-        } else {
-            appendJsonString(builder, Float.toString(value));
-        }
-    }
-
-    private static void appendFiniteOrString(StringBuilder builder, double value, boolean isFinite) {
-        if (isFinite) {
-            builder.append(value);
-        } else {
-            appendJsonString(builder, Double.toString(value));
-        }
-    }
-
-    private static void appendStructuredArray(StringBuilder builder, Object array) {
-        int length = java.lang.reflect.Array.getLength(array);
-        builder.append('[');
-        for (int index = 0; index < length; index++) {
-            if (index > 0) {
-                builder.append(',');
-            }
-            appendStructuredRawArg(builder, java.lang.reflect.Array.get(array, index));
-        }
-        builder.append(']');
-    }
-
-    private static void appendJsonString(StringBuilder builder, String value) {
-        builder.append('"').append(escapeJson(value)).append('"');
-    }
-
     private static String sanitizeCode(String code) {
         if (code == null || code.isBlank()) {
             return DEFAULT_CODE;
@@ -326,44 +182,6 @@ public final class Slf4jTelemetrySink implements TelemetrySink {
         return value == null ? "" : value;
     }
 
-    private static String escapeJson(String value) {
-        StringBuilder escaped = new StringBuilder(value.length() + 8);
-        for (int index = 0; index < value.length(); index++) {
-            char current = value.charAt(index);
-            switch (current) {
-                case '"' -> escaped.append("\\\"");
-                case '\\' -> escaped.append("\\\\");
-                case '\b' -> escaped.append("\\b");
-                case '\f' -> escaped.append("\\f");
-                case '\n' -> escaped.append("\\n");
-                case '\r' -> escaped.append("\\r");
-                case '\t' -> escaped.append("\\t");
-                default -> {
-                    if (current < FIRST_PRINTABLE_ASCII) {
-                        appendUnicodeEscape(escaped, current);
-                    } else {
-                        escaped.append(current);
-                    }
-                }
-            }
-        }
-        return escaped.toString();
-    }
-
-    private static void appendUnicodeEscape(StringBuilder builder, char value) {
-        builder.append("\\u00");
-        int high = (value >> 4) & 0x0F;
-        int low = value & 0x0F;
-        builder.append((char) (high < 10 ? '0' + high : 'a' + high - 10))
-               .append((char) (low < 10 ? '0' + low : 'a' + low - 10));
-    }
-
-    /* default */ enum LogLevel {
-        INFO,
-        WARN,
-        ERROR
-    }
-
     /* default */ interface LogAdapter {
         void info(String message, Throwable throwable);
 
@@ -372,11 +190,13 @@ public final class Slf4jTelemetrySink implements TelemetrySink {
         void error(String message, Throwable throwable);
     }
 
-    /* default */ interface MdcAdapter {
+    /* default */ @FunctionalInterface
+    interface MdcAdapter {
         MdcScope put(String key, String value);
     }
 
-    /* default */ interface MdcScope extends AutoCloseable {
+    /* default */ @FunctionalInterface
+    interface MdcScope extends AutoCloseable {
 
         @Override
         void close();
