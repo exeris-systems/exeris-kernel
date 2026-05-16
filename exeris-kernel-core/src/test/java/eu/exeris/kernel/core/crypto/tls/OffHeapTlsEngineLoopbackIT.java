@@ -23,7 +23,6 @@ import eu.exeris.kernel.spi.memory.MemoryStats;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.condition.EnabledOnOs;
@@ -75,7 +74,13 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  *
  * @since 0.5.0
  */
-@Tag("integration")
+// v0.8 Sprint 6 (Coverage C-P0-02): @Tag("integration") removed — the class
+// name ends in "IT" so Maven Failsafe picks it up automatically on `mvn verify`
+// regardless of tags. The tag was misleading because it suggested the IT was
+// dead from CI (it ran via Failsafe all along). Keeping the JUnit tag would
+// still cause `mvn -DexcludedGroups=integration ...` opt-outs to drop the test
+// on Surefire-only paths even though Failsafe runs it; removing the tag aligns
+// observable behavior with the Failsafe-based execution model.
 @EnabledOnOs(OS.LINUX)
 @Timeout(value = 30, unit = TimeUnit.SECONDS)
 @DisplayName("IT: OffHeapTlsEngine — TLS 1.3 loopback handshake + round-trip")
