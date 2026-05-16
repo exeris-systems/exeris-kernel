@@ -28,23 +28,16 @@ import eu.exeris.kernel.spi.transport.TransportConnection;
 import eu.exeris.kernel.spi.transport.TransportEngine;
 import eu.exeris.kernel.spi.transport.TransportMode;
 import eu.exeris.kernel.spi.transport.TransportStats;
-import org.jctools.queues.MpscUnboundedArrayQueue;
-
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.channels.AsynchronousCloseException;
-import java.nio.channels.CancelledKeyException;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
 import java.util.ArrayList;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
-import java.util.Queue;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -65,7 +58,6 @@ import java.util.concurrent.locks.LockSupport;
     "PMD.ExceptionAsFlowControl",
     "PMD.AvoidCatchingGenericException",
     "PMD.CloseResource",
-    "PMD.CognitiveComplexity",
     "PMD.LawOfDemeter",
     "PMD.AvoidInstantiatingObjectsInLoops"
 })
@@ -102,7 +94,7 @@ public final class NativeTcpCarrier implements TransportEngine {
     private volatile ServerSocketChannel serverChannel;
     private volatile Thread acceptorThread;
     private volatile PaqsScheduler paqs;
-    private final List<ReactorLoop> reactors = new ArrayList<>();
+    private final List<NativeTcpReactor> reactors = new ArrayList<>();
     private final AtomicInteger nextReactorIndex = new AtomicInteger(0);
 
     private final ChannelRuntimeRegistry channelRuntimeRegistry = new ChannelRuntimeRegistry();
@@ -114,7 +106,7 @@ public final class NativeTcpCarrier implements TransportEngine {
             channelRuntimeRegistry.runtimeByChannel;
     private final ConcurrentMap<SocketChannel, NativeTcpStream> streamByChannel =
             channelRuntimeRegistry.streamByChannel;
-    private final ConcurrentMap<SocketChannel, ReactorLoop> channelOwner =
+    private final ConcurrentMap<SocketChannel, NativeTcpReactor> channelOwner =
             channelRuntimeRegistry.channelOwner;
 
     /* default */ NativeTcpCarrier(TransportConfig config,
@@ -190,10 +182,10 @@ public final class NativeTcpCarrier implements TransportEngine {
             }
         }
 
-        for (ReactorLoop reactor : reactors) {
+        for (NativeTcpReactor reactor : reactors) {
             reactor.wakeup();
         }
-        for (ReactorLoop reactor : reactors) {
+        for (NativeTcpReactor reactor : reactors) {
             reactor.join(2_000L);
         }
 
@@ -308,6 +300,10 @@ public final class NativeTcpCarrier implements TransportEngine {
         }
     }
 
+    /* default */ boolean isRunning() {
+        return running.get();
+    }
+
     /* default */ String requestedSocketBackend() {
         return backend.requestedSocketBackend();
     }
@@ -358,7 +354,7 @@ public final class NativeTcpCarrier implements TransportEngine {
             int reactorCount = Math.max(1, config.reactorCount());
             reactors.clear();
             for (int i = 0; i < reactorCount; i++) {
-                reactors.add(new ReactorLoop(i, Selector.open()));
+                reactors.add(new NativeTcpReactor(this, i, Selector.open()));
             }
             nextReactorIndex.set(0);
 
@@ -366,7 +362,7 @@ public final class NativeTcpCarrier implements TransportEngine {
             serverChannel.configureBlocking(true);
             serverChannel.bind(new InetSocketAddress(config.bindAddress(), config.port()), listenerBacklog());
 
-            for (ReactorLoop reactor : reactors) {
+            for (NativeTcpReactor reactor : reactors) {
                 reactor.start();
             }
 
@@ -394,10 +390,10 @@ public final class NativeTcpCarrier implements TransportEngine {
         }
     }
 
-    private void handleAsyncFailure(String stage, Exception error) {
+    /* default */ void handleAsyncFailure(String stage, Exception error) {
         boolean wasRunning = running.getAndSet(false);
         closeQuietly(serverChannel);
-        for (ReactorLoop reactor : reactors) {
+        for (NativeTcpReactor reactor : reactors) {
             reactor.wakeup();
         }
         if (wasRunning) {
@@ -418,7 +414,7 @@ public final class NativeTcpCarrier implements TransportEngine {
         }
     }
 
-    private void closeKeyStream(SelectionKey key) {
+    /* default */ void closeKeyStream(SelectionKey key) {
         if (!(key.channel() instanceof SocketChannel channel)) {
             return;
         }
@@ -499,7 +495,7 @@ public final class NativeTcpCarrier implements TransportEngine {
                                                    NativeTcpStream stream,
                                                    SocketChannel currentChannel) {
         ChannelRuntimeRegistry.ChannelRuntimeState runtime = registerRuntime(stream, currentChannel);
-        ReactorLoop owner = selectReactor();
+        NativeTcpReactor owner = selectReactor();
         runtime.markRegistrationPending();
         runtime.bindOwner(owner);
         owner.enqueueRegistration(currentChannel);
@@ -529,7 +525,7 @@ public final class NativeTcpCarrier implements TransportEngine {
         return true;
     }
 
-    private ReactorLoop selectReactor() {
+    private NativeTcpReactor selectReactor() {
         int size = reactors.size();
         if (size == 0) {
             throw new IllegalStateException("No reactor loops initialized");
@@ -547,11 +543,11 @@ public final class NativeTcpCarrier implements TransportEngine {
         return channelRuntimeRegistry.resolveRuntime(channel);
     }
 
-    private NativeTcpStream resolveStream(SocketChannel channel) {
+    /* default */ NativeTcpStream resolveStream(SocketChannel channel) {
         return channelRuntimeRegistry.resolveStream(channel);
     }
 
-    private void readIngress(SocketChannel channel) {
+    /* default */ void readIngress(SocketChannel channel) {
         NativeTcpStream stream = resolveStream(channel);
         if (stream == null) {
             return;
@@ -595,7 +591,7 @@ public final class NativeTcpCarrier implements TransportEngine {
         return stream.decryptIngress(slab, read);
     }
 
-    private void flushStream(SocketChannel channel, SelectionKey key) {
+    /* default */ void flushStream(SocketChannel channel, SelectionKey key) {
         NativeTcpStream stream = resolveStream(channel);
         if (stream == null) {
             key.interestOps(SelectionKey.OP_READ);
@@ -611,7 +607,7 @@ public final class NativeTcpCarrier implements TransportEngine {
 
     private void requestWriteInterest(SocketChannel channel) {
         ChannelRuntimeRegistry.ChannelRuntimeState runtime = resolveRuntime(channel);
-        ReactorLoop owner = runtime != null ? runtime.owner() : channelOwner.get(channel);
+        NativeTcpReactor owner = runtime != null ? runtime.owner() : channelOwner.get(channel);
         if (owner == null) {
             return;
         }
@@ -621,7 +617,7 @@ public final class NativeTcpCarrier implements TransportEngine {
     private void onStreamClosed(SocketChannel channel) {
         ChannelRuntimeRegistry.ChannelRuntimeState runtime = runtimeByChannel.remove(channel);
         if (runtime == null) {
-            ReactorLoop owner = channelOwner.remove(channel);
+            NativeTcpReactor owner = channelOwner.remove(channel);
             if (owner != null) {
                 owner.cancelKey(channel);
             }
@@ -632,7 +628,7 @@ public final class NativeTcpCarrier implements TransportEngine {
             return;
         }
 
-        ReactorLoop owner = runtime.detachOwner();
+        NativeTcpReactor owner = runtime.detachOwner();
         if (owner != null) {
             owner.cancelKey(channel);
         }
@@ -771,7 +767,7 @@ public final class NativeTcpCarrier implements TransportEngine {
         streamByChannel.clear();
         channelOwner.clear();
 
-        for (ReactorLoop reactor : reactors) {
+        for (NativeTcpReactor reactor : reactors) {
             reactor.closeSelector();
         }
         reactors.clear();
@@ -804,203 +800,4 @@ public final class NativeTcpCarrier implements TransportEngine {
         }
     }
 
-    private enum ReactorRequestType {
-        REGISTER,
-        ENABLE_WRITE,
-        CANCEL
-    }
-
-    private record ReactorRequest(ReactorRequestType type, SocketChannel channel) {
-    }
-
-    // CommentDefaultAccessModifier: package-private loop enables same-package transport diagnostics/tests.
-    @SuppressWarnings("PMD.CommentDefaultAccessModifier")
-    final class ReactorLoop {
-
-        private final int index;
-        private final Selector selector;
-        // PERF-063: MpscUnboundedArrayQueue replaces ConcurrentLinkedQueue. Multiple producer
-        // threads (any caller of enqueueRegistration / enqueueWriteInterest / cancelKey) feed a
-        // single consumer (the reactor thread in runLoop). MPSC semantics match exactly; chunked
-        // allocation (size 128) avoids per-element node alloc churn under burst arrivals; offer()
-        // on the unbounded variant always returns true so no backpressure handling is required at
-        // the call site (parity with the existing pattern in NativeTcpStream's outboundQueue).
-        private final Queue<ReactorRequest> pendingRequests = new MpscUnboundedArrayQueue<>(128);
-        private final Set<SocketChannel> pendingWriteInterest = ConcurrentHashMap.newKeySet();
-        private final AtomicBoolean wakeupPending = new AtomicBoolean(false);
-
-        private volatile Thread thread;
-
-        private ReactorLoop(int index, Selector selector) {
-            this.index = index;
-            this.selector = selector;
-        }
-
-        private void start() {
-            this.thread = Thread.ofPlatform()
-                    .name("carrier/native-tcp/reactor/" + index)
-                    .start(this::runLoop);
-        }
-
-        private void enqueueRegistration(SocketChannel channel) {
-            enqueueRequest(new ReactorRequest(ReactorRequestType.REGISTER, channel));
-        }
-
-        private void enqueueWriteInterest(SocketChannel channel) {
-            enqueueRequest(new ReactorRequest(ReactorRequestType.ENABLE_WRITE, channel));
-        }
-
-        private void cancelKey(SocketChannel channel) {
-            enqueueRequest(new ReactorRequest(ReactorRequestType.CANCEL, channel));
-        }
-
-        private void wakeup() {
-            signalSelector();
-        }
-
-        private void enqueueRequest(ReactorRequest request) {
-            pendingRequests.offer(request);
-            signalSelector();
-        }
-
-        private void signalSelector() {
-            if (wakeupPending.compareAndSet(false, true)) {
-                selector.wakeup();
-            }
-        }
-
-        private void join(long timeoutMs) {
-            Thread localThread = thread;
-            if (localThread == null) {
-                return;
-            }
-            try {
-                localThread.join(timeoutMs);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-        }
-
-        private void closeSelector() {
-            closeQuietly(selector);
-        }
-
-        private void runLoop() {
-            while (running.get()) {
-                try {
-                    boolean drainedRequests = drainPendingRequests();
-                    if (!running.get()) {
-                        return;
-                    }
-
-                    if (drainedRequests) {
-                        selector.selectNow();
-                    } else {
-                        selector.select(100L);
-                    }
-
-                    drainPendingRequests();
-                    Iterator<SelectionKey> iterator = selector.selectedKeys().iterator();
-                    while (iterator.hasNext()) {
-                        SelectionKey key = iterator.next();
-                        iterator.remove();
-
-                        try {
-                            if (!key.isValid()) {
-                                continue;
-                            }
-                            if (key.isReadable()) {
-                                readIngress((SocketChannel) key.channel());
-                            }
-                            if (key.isWritable()) {
-                                flushStream((SocketChannel) key.channel(), key);
-                            }
-                        } catch (CancelledKeyException _) {
-                            // channel closed concurrently by VT handler path
-                        } catch (RuntimeException _) {
-                            closeKeyStream(key);
-                        }
-                    }
-                } catch (IOException e) {
-                    if (running.get()) {
-                        handleAsyncFailure("reactor/" + index, e);
-                    }
-                    return;
-                }
-            }
-        }
-
-        private boolean drainPendingRequests() {
-            boolean drainedAny = false;
-            ReactorRequest request = pendingRequests.poll();
-            while (request != null) {
-                drainedAny = true;
-                processPendingRequest(request);
-                request = pendingRequests.poll();
-            }
-
-            wakeupPending.set(false);
-            if (!pendingRequests.isEmpty()) {
-                signalSelector();
-                return true;
-            }
-            return drainedAny;
-        }
-
-        private void processPendingRequest(ReactorRequest request) {
-            SocketChannel channel = request.channel();
-            switch (request.type()) {
-                case REGISTER -> registerChannel(channel);
-                case ENABLE_WRITE -> enableWriteInterest(channel);
-                case CANCEL -> cancelSelection(channel);
-            }
-        }
-
-        private void registerChannel(SocketChannel channel) {
-            try {
-                if (channel.isOpen()) {
-                    NativeTcpStream stream = resolveStream(channel);
-                    boolean enableWriteOnRegister = pendingWriteInterest.remove(channel)
-                            || (stream != null && stream.hasPendingData());
-                    int interestOps = enableWriteOnRegister
-                            ? SelectionKey.OP_READ | SelectionKey.OP_WRITE
-                            : SelectionKey.OP_READ;
-                    channel.register(selector, interestOps);
-                    if (stream != null) {
-                        stream.markRegistrationReady();
-                    }
-                } else {
-                    pendingWriteInterest.remove(channel);
-                }
-            } catch (IOException e) {
-                pendingWriteInterest.remove(channel);
-                NativeTcpStream stream = streamByChannel.get(channel);
-                if (stream != null) {
-                    stream.close();
-                }
-            }
-        }
-
-        private void enableWriteInterest(SocketChannel channel) {
-            SelectionKey key = channel.keyFor(selector);
-            if (key == null || !key.isValid()) {
-                pendingWriteInterest.add(channel);
-                return;
-            }
-            pendingWriteInterest.remove(channel);
-            try {
-                key.interestOps(key.interestOps() | SelectionKey.OP_WRITE | SelectionKey.OP_READ);
-            } catch (RuntimeException _) {
-                pendingWriteInterest.add(channel);
-            }
-        }
-
-        private void cancelSelection(SocketChannel channel) {
-            pendingWriteInterest.remove(channel);
-            SelectionKey key = channel.keyFor(selector);
-            if (key != null) {
-                key.cancel();
-            }
-        }
-    }
 }
