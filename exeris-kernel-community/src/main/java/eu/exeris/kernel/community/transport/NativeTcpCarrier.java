@@ -14,8 +14,6 @@ import eu.exeris.kernel.core.memory.WatermarkManager;
 import eu.exeris.kernel.core.transport.scheduler.AdmissionController;
 import eu.exeris.kernel.core.transport.scheduler.PaqsScheduler;
 import eu.exeris.kernel.core.transport.scheduler.StreamLoadShedder;
-import eu.exeris.kernel.core.transport.syscall.CoreSyscallLoader;
-import eu.exeris.kernel.core.transport.syscall.SyscallHandles;
 import eu.exeris.kernel.spi.crypto.CryptoProviderConfig;
 import eu.exeris.kernel.spi.crypto.KernelCryptoProvider;
 import eu.exeris.kernel.spi.crypto.TlsEngine;
@@ -33,10 +31,6 @@ import eu.exeris.kernel.spi.transport.TransportStats;
 import org.jctools.queues.MpscUnboundedArrayQueue;
 
 import java.io.IOException;
-import java.lang.foreign.Arena;
-import java.lang.foreign.MemorySegment;
-import java.lang.foreign.ValueLayout;
-import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.channels.AsynchronousCloseException;
 import java.nio.channels.CancelledKeyException;
@@ -47,7 +41,6 @@ import java.nio.channels.SocketChannel;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Locale;
 import java.util.Objects;
 import java.util.Queue;
 import java.util.Set;
@@ -80,25 +73,6 @@ public final class NativeTcpCarrier implements TransportEngine {
 
     private static final System.Logger LOG = System.getLogger(NativeTcpCarrier.class.getName());
     private static final String ENGINE_NAME = "CommunityNativeTcpCarrier";
-    private static final String SOCKET_BACKEND_PROPERTY = "exeris.community.transport.socket.backend";
-    private static final String SOCKET_BACKEND_ENV = "EXERIS_COMMUNITY_TRANSPORT_SOCKET_BACKEND";
-    private static final String SOCKET_BACKEND_ENV_ALIAS = "SOCKET_BACKEND_ENV";
-    private static final String SOCKET_BACKEND_AUTO = "auto";
-    private static final String SOCKET_BACKEND_NIO = "nio";
-    private static final String SOCKET_BACKEND_POSIX_HYBRID = "posix-hybrid";
-    private static final String ACTIVE_NIO_FALLBACK_DETAIL = "continuing on the active NIO fallback.";
-    private static final String LOOPBACK_HOST = InetAddress.getLoopbackAddress().getHostAddress();
-    private static final byte LOOPBACK_FIRST_OCTET = 127;
-    private static final byte LOOPBACK_SECOND_OCTET = 0;
-    private static final byte LOOPBACK_THIRD_OCTET = 0;
-    private static final byte LOOPBACK_FOURTH_OCTET = 1;
-    private static final int AF_INET = 2;
-    private static final int SOCK_STREAM = 1;
-    private static final int DEFAULT_IP_PROTOCOL = 0;
-    private static final int SOCKADDR_IN_SIZE = 16;
-    private static final boolean SOCKADDR_INCLUDES_LENGTH = usesBsdSockaddrLayout();
-    private static final boolean IS_WINDOWS_RUNTIME =
-            System.getProperty("os.name", "").toLowerCase(Locale.ROOT).startsWith("windows");
     private static final long CLIENT_TLS_INGRESS_IDLE_BACKOFF_INITIAL_NANOS = 250_000L;
     private static final long CLIENT_TLS_INGRESS_IDLE_BACKOFF_MAX_NANOS = 2_000_000L;
     private static final long CLIENT_WRITER_BACKOFF_INITIAL_NANOS = 250_000L;
@@ -110,17 +84,10 @@ public final class NativeTcpCarrier implements TransportEngine {
     private final MemoryAllocator allocator;
     private final KernelCryptoProvider cryptoProvider;
     private final CryptoProviderConfig cryptoConfig;
-    private final SocketBackendMode requestedSocketBackend;
-    private final Arena socketBackendArena;
-    private final SyscallHandles socketHandles;
-    private final boolean ffmSocketBackendArmed;
+    private final NativeTcpSocketBackend backend;
 
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final AtomicBoolean closed = new AtomicBoolean(false);
-    private final AtomicBoolean serverSocketValidationAttempted = new AtomicBoolean(false);
-    private final AtomicBoolean serverSocketValidationSuccessful = new AtomicBoolean(false);
-    private final AtomicBoolean clientSocketValidationAttempted = new AtomicBoolean(false);
-    private final AtomicBoolean clientSocketValidationSuccessful = new AtomicBoolean(false);
 
     private final AtomicLong streamSeq = new AtomicLong(1);
     private final AtomicLong connectionSeq = new AtomicLong(1);
@@ -158,17 +125,13 @@ public final class NativeTcpCarrier implements TransportEngine {
         this.allocator = Objects.requireNonNull(allocator, "allocator must not be null");
         this.cryptoProvider = cryptoProvider;
         this.cryptoConfig = cryptoConfig;
-        SocketBackendSelection backendSelection = SocketBackendSelection.resolve();
-        this.requestedSocketBackend = backendSelection.requestedMode();
-        this.socketBackendArena = backendSelection.socketBackendArena();
-        this.socketHandles = backendSelection.socketHandles();
-        this.ffmSocketBackendArmed = backendSelection.ffmSocketBackendArmed();
+        this.backend = new NativeTcpSocketBackend();
         LOG.log(System.Logger.Level.INFO, () ->
                 "[NativeTcpCarrier] Community socket backend mode="
-                        + backendSelection.requestedMode().configValue()
-                        + ", active=" + activeSocketBackend()
-                        + ", ffmArmed=" + backendSelection.ffmSocketBackendArmed()
-                        + " - " + backendSelection.detail());
+                        + backend.requestedSocketBackend()
+                        + ", active=" + backend.activeSocketBackend()
+                        + ", ffmArmed=" + backend.isFfmSocketBackendArmed()
+                        + " - " + backend.detail());
     }
 
     @Override
@@ -254,7 +217,7 @@ public final class NativeTcpCarrier implements TransportEngine {
         SocketChannel channel = null;
         TlsEngine tlsEngine = null;
         try {
-            validateClientSocketBackendOnce(host, port);
+            backend.validateClientSocketBackendOnce(allocator, host, port);
             channel = SocketChannel.open();
             channel.configureBlocking(true);
             channel.connect(new InetSocketAddress(host, port));
@@ -279,7 +242,7 @@ public final class NativeTcpCarrier implements TransportEngine {
                     tlsEngine,
                     () -> requestClientWriteFlush(connectedChannel),
                     () -> onStreamClosed(connectedChannel),
-                    socketHandles);
+                    backend.socketHandles());
             if (tlsEngine instanceof eu.exeris.kernel.community.crypto.CommunityTlsEngine) {
                 stream.markTlsBoundFromCarrier();
             }
@@ -338,52 +301,31 @@ public final class NativeTcpCarrier implements TransportEngine {
         if (!closed.compareAndSet(false, true)) {
             return;
         }
-        Arena arena = socketBackendArena;
-        try (arena) {
-            try {
-                stop();
-            } finally {
-                bestEffortWsaCleanup(socketHandles);
-            }
-        }
-    }
-
-    private static void bestEffortWsaCleanup(SyscallHandles handles) {
-        if (handles == null || !handles.hasWsaCleanup()) {
-            return;
-        }
         try {
-            handles.wsaCleanup().invokeExact();
-        } catch (Throwable _) {
-            // best effort
+            stop();
+        } finally {
+            backend.close();
         }
     }
 
     /* default */ String requestedSocketBackend() {
-        return requestedSocketBackend.configValue();
+        return backend.requestedSocketBackend();
     }
 
     /* default */ String activeSocketBackend() {
-        if (requestedSocketBackend == SocketBackendMode.NIO) {
-            return SOCKET_BACKEND_NIO;
-        }
-        return isPosixHybridBackendActive() ? SOCKET_BACKEND_POSIX_HYBRID : SOCKET_BACKEND_NIO;
-    }
-
-    private boolean isPosixHybridBackendActive() {
-        return ffmSocketBackendArmed;
+        return backend.activeSocketBackend();
     }
 
     /* default */ boolean isFfmSocketBackendArmed() {
-        return ffmSocketBackendArmed;
+        return backend.isFfmSocketBackendArmed();
     }
 
     /* default */ boolean isServerSocketValidationSuccessful() {
-        return serverSocketValidationSuccessful.get();
+        return backend.isServerSocketValidationSuccessful();
     }
 
     /* default */ boolean isClientSocketValidationSuccessful() {
-        return clientSocketValidationSuccessful.get();
+        return backend.isClientSocketValidationSuccessful();
     }
 
     /* default */ int listenerBacklog() {
@@ -412,7 +354,7 @@ public final class NativeTcpCarrier implements TransportEngine {
 
     private void startServerRuntime() {
         try {
-            validateServerSocketBootstrapOnce();
+            backend.validateServerSocketBootstrapOnce(allocator);
             int reactorCount = Math.max(1, config.reactorCount());
             reactors.clear();
             for (int i = 0; i < reactorCount; i++) {
@@ -542,7 +484,7 @@ public final class NativeTcpCarrier implements TransportEngine {
                 tlsEngine,
                 () -> requestWriteInterest(channel),
                 () -> onStreamClosed(channel),
-                socketHandles);
+                backend.socketHandles());
         if (tlsEngine instanceof eu.exeris.kernel.community.crypto.CommunityTlsEngine) {
             stream.markTlsBoundFromCarrier();
         }
@@ -813,172 +755,6 @@ public final class NativeTcpCarrier implements TransportEngine {
         communityTlsEngine.bindFileDescriptor(SocketChannelFdAccess.requireFd(channel));
     }
 
-    private void validateServerSocketBootstrapOnce() {
-        if (!ffmSocketBackendArmed || !serverSocketValidationAttempted.compareAndSet(false, true)) {
-            return;
-        }
-        serverSocketValidationSuccessful.set(runServerSocketValidationProbe());
-        if (!serverSocketValidationSuccessful.get()) {
-            LOG.log(System.Logger.Level.DEBUG,
-                    "Core socket seam could not be validated for the server path; continuing on the active NIO path.");
-        }
-    }
-
-    private void validateClientSocketBackendOnce(String host, int port) {
-        if (!ffmSocketBackendArmed || !clientSocketValidationAttempted.compareAndSet(false, true)) {
-            return;
-        }
-        clientSocketValidationSuccessful.set(runClientSocketValidationProbe(host, port));
-        if (!clientSocketValidationSuccessful.get()) {
-            LOG.log(System.Logger.Level.DEBUG, () ->
-                    "Core socket seam could not be validated for the client path " + host + ':' + port
-                            + "; continuing on the active NIO path.");
-        }
-    }
-
-    private SyscallHandles resolvedSocketHandlesForValidation() {
-        if (!ffmSocketBackendArmed) {
-            return null;
-        }
-        SyscallHandles handles = this.socketHandles;
-        return handles != null && handles.supportsPlainSocketIo() ? handles : null;
-    }
-
-    private boolean runServerSocketValidationProbe() {
-        SyscallHandles handles = resolvedSocketHandlesForValidation();
-        return handles != null && validateServerSocketBootstrap(handles);
-    }
-
-    private boolean runClientSocketValidationProbe(String host, int port) {
-        SyscallHandles handles = resolvedSocketHandlesForValidation();
-        return handles != null && validateClientSocketConnect(handles, host, port);
-    }
-
-    private boolean validateServerSocketBootstrap(SyscallHandles handles) {
-        int socketFd = -1;
-        try (LoanedBuffer scratch = allocator.allocateInfrastructure(SOCKADDR_IN_SIZE)) {
-            socketFd = openPosixStreamSocket(handles);
-            MemorySegment sockaddr = scratch.segment().asSlice(0, SOCKADDR_IN_SIZE);
-            writeIpv4Sockaddr(sockaddr,
-                    0,
-                    LOOPBACK_FIRST_OCTET,
-                    LOOPBACK_SECOND_OCTET,
-                    LOOPBACK_THIRD_OCTET,
-                    LOOPBACK_FOURTH_OCTET);
-            return bindSocket(handles, socketFd, sockaddr) == 0
-                    && listenSocket(handles, socketFd) == 0;
-        } catch (RuntimeException _) {
-            LOG.log(System.Logger.Level.DEBUG,
-                    "Core socket server bootstrap probe failed; compatibility fallback remains active.");
-            return false;
-        } finally {
-            closePosixSocketQuietly(handles, socketFd);
-        }
-    }
-
-    private boolean validateClientSocketConnect(SyscallHandles handles, String host, int port) {
-        int socketFd = -1;
-        try (ServerSocketChannel probeListener = ServerSocketChannel.open();
-             LoanedBuffer scratch = allocator.allocateInfrastructure(SOCKADDR_IN_SIZE)) {
-            probeListener.bind(new InetSocketAddress(LOOPBACK_HOST, 0));
-            int probePort = ((InetSocketAddress) probeListener.getLocalAddress()).getPort();
-
-            socketFd = openPosixStreamSocket(handles);
-            MemorySegment sockaddr = scratch.segment().asSlice(0, SOCKADDR_IN_SIZE);
-            writeIpv4Sockaddr(sockaddr,
-                    probePort,
-                    LOOPBACK_FIRST_OCTET,
-                    LOOPBACK_SECOND_OCTET,
-                    LOOPBACK_THIRD_OCTET,
-                    LOOPBACK_FOURTH_OCTET);
-            if (connectSocket(handles, socketFd, sockaddr) != 0) {
-                return false;
-            }
-
-            try (SocketChannel accepted = probeListener.accept()) {
-                return accepted != null;
-            }
-        } catch (IOException | RuntimeException _) {
-            LOG.log(System.Logger.Level.DEBUG, () ->
-                    "Core socket client probe failed for " + host + ':' + port
-                            + "; compatibility fallback remains active.");
-            return false;
-        } finally {
-            closePosixSocketQuietly(handles, socketFd);
-        }
-    }
-
-    private static void writeIpv4Sockaddr(MemorySegment target,
-                                          int port,
-                                          byte firstOctet,
-                                          byte secondOctet,
-                                          byte thirdOctet,
-                                          byte fourthOctet) {
-        target.fill((byte) 0);
-        if (SOCKADDR_INCLUDES_LENGTH) {
-            target.set(ValueLayout.JAVA_BYTE, 0, (byte) SOCKADDR_IN_SIZE);
-            target.set(ValueLayout.JAVA_BYTE, 1, (byte) AF_INET);
-        } else {
-            target.set(ValueLayout.JAVA_SHORT, 0, (short) AF_INET);
-        }
-        target.set(ValueLayout.JAVA_BYTE, 2, (byte) ((port >>> 8) & 0xFF));
-        target.set(ValueLayout.JAVA_BYTE, 3, (byte) (port & 0xFF));
-        target.set(ValueLayout.JAVA_BYTE, 4, firstOctet);
-        target.set(ValueLayout.JAVA_BYTE, 5, secondOctet);
-        target.set(ValueLayout.JAVA_BYTE, 6, thirdOctet);
-        target.set(ValueLayout.JAVA_BYTE, 7, fourthOctet);
-    }
-
-    private static boolean usesBsdSockaddrLayout() {
-        String osName = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
-        return osName.contains("mac")
-                || osName.contains("darwin")
-                || osName.contains("bsd");
-    }
-
-    private static int openPosixStreamSocket(SyscallHandles handles) {
-        try {
-            return (int) handles.socket().invokeExact(AF_INET, SOCK_STREAM, DEFAULT_IP_PROTOCOL);
-        } catch (Throwable ex) {
-            throw new IllegalStateException("Core socket() probe failed", ex);
-        }
-    }
-
-    private static int bindSocket(SyscallHandles handles, int socketFd, MemorySegment sockaddr) {
-        try {
-            return (int) handles.bind().invokeExact(socketFd, sockaddr, SOCKADDR_IN_SIZE);
-        } catch (Throwable ex) {
-            throw new IllegalStateException("Core bind() probe failed", ex);
-        }
-    }
-
-    private static int connectSocket(SyscallHandles handles, int socketFd, MemorySegment sockaddr) {
-        try {
-            return (int) handles.connect().invokeExact(socketFd, sockaddr, SOCKADDR_IN_SIZE);
-        } catch (Throwable ex) {
-            throw new IllegalStateException("Core connect() probe failed", ex);
-        }
-    }
-
-    private static int listenSocket(SyscallHandles handles, int socketFd) {
-        try {
-            return (int) handles.listen().invokeExact(socketFd, 1);
-        } catch (Throwable ex) {
-            throw new IllegalStateException("Core listen() probe failed", ex);
-        }
-    }
-
-    private static void closePosixSocketQuietly(SyscallHandles handles, int socketFd) {
-        if (socketFd < 0) {
-            return;
-        }
-        try {
-            int _ = (int) handles.close().invokeExact(socketFd);
-        } catch (Throwable _) {
-            // best effort cleanup on the validation probe path
-        }
-    }
-
     private void closeSelectorAndChannels() {
         for (ChannelRuntimeRegistry.ChannelRuntimeState runtime : new ArrayList<>(runtimeByChannel.values())) {
             runtime.stream().close();
@@ -1026,157 +802,6 @@ public final class NativeTcpCarrier implements TransportEngine {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
-    }
-
-    private enum SocketBackendMode {
-        AUTO(SOCKET_BACKEND_AUTO),
-        NIO(SOCKET_BACKEND_NIO),
-        POSIX_HYBRID(SOCKET_BACKEND_POSIX_HYBRID);
-
-        private final String configValue;
-
-        SocketBackendMode(String configValue) {
-            this.configValue = configValue;
-        }
-
-        private String configValue() {
-            return configValue;
-        }
-
-        private static SocketBackendMode resolveConfiguredMode() {
-            String configured = System.getProperty(SOCKET_BACKEND_PROPERTY);
-            if (configured == null || configured.isBlank()) {
-                configured = System.getProperty(SOCKET_BACKEND_ENV_ALIAS);
-            }
-            if (configured == null || configured.isBlank()) {
-                configured = System.getenv(SOCKET_BACKEND_ENV);
-            }
-            if (configured == null || configured.isBlank()) {
-                configured = System.getenv(SOCKET_BACKEND_ENV_ALIAS);
-            }
-            if (configured == null || configured.isBlank()) {
-                return AUTO;
-            }
-            return switch (configured.trim().toLowerCase(Locale.ROOT)) {
-                case SOCKET_BACKEND_AUTO -> AUTO;
-                case SOCKET_BACKEND_NIO -> NIO;
-                case SOCKET_BACKEND_POSIX_HYBRID -> POSIX_HYBRID;
-                default -> {
-                    String invalidMode = configured;
-                    LOG.log(System.Logger.Level.WARNING, () ->
-                            "Unknown Community socket backend mode '" + invalidMode + "'; defaulting to auto.");
-                    yield AUTO;
-                }
-            };
-        }
-    }
-
-    private record SocketBackendSelection(SocketBackendMode requestedMode,
-                                          Arena socketBackendArena,
-                                          SyscallHandles socketHandles,
-                                          boolean ffmSocketBackendArmed,
-                                          String detail) {
-
-        private static SocketBackendSelection resolve() {
-            SocketBackendMode configuredMode = SocketBackendMode.resolveConfiguredMode();
-            if (configuredMode == SocketBackendMode.NIO) {
-                return new SocketBackendSelection(
-                        configuredMode,
-                        null,
-                        null,
-                        false,
-                        "NIO backend pinned explicitly; Core syscall load skipped.");
-            }
-            if (IS_WINDOWS_RUNTIME) {
-                String detail = configuredMode == SocketBackendMode.POSIX_HYBRID
-                        ? resolveRequestedFallbackDetail(true, true)
-                        : resolveAutoFallbackDetail(true, true);
-                return new SocketBackendSelection(configuredMode, null, null, false, detail);
-            }
-
-            //CHECKSTYLE:OFF
-            // Direct shared-arena allocation: the Community carrier is the sole owner of
-            // the socket backend seam lifetime. Shared scope is required because resolved
-            // syscall handles are used across transport threads, and carrier.close()
-            // deterministically closes this arena.
-            Arena arena = Arena.ofShared();
-            //CHECKSTYLE:ON
-            SyscallHandles handles = null;
-            try {
-                handles = CoreSyscallLoader.load(arena);
-            } catch (IllegalCallerException | IllegalStateException | UnsupportedOperationException ex) {
-                LOG.log(System.Logger.Level.DEBUG,
-                        "[NativeTcpCarrier] Community-owned Core socket load unavailable; continuing on NIO fallback.",
-                        ex);
-            }
-
-            if (handles == null) {
-                closeQuietly(arena);
-                String detail;
-                if (configuredMode == SocketBackendMode.POSIX_HYBRID) {
-                    detail = "Core socket seam was requested explicitly but is unavailable; "
-                            + ACTIVE_NIO_FALLBACK_DETAIL;
-                } else {
-                    detail = "Core socket seam probe unavailable on this platform; "
-                            + ACTIVE_NIO_FALLBACK_DETAIL;
-                }
-                return new SocketBackendSelection(configuredMode, null, null, false, detail);
-            }
-
-            boolean plainSocketIoAvailable = handles.supportsPlainSocketIo();
-            boolean fdAccessAvailable = SocketChannelFdAccess.isRuntimeFdAccessAvailable();
-            boolean winsockModel = handles.hasIoctlsocket();
-            boolean seamArmed = plainSocketIoAvailable && fdAccessAvailable && !winsockModel;
-            String detail = resolveDetail(configuredMode, seamArmed, plainSocketIoAvailable, winsockModel);
-            return new SocketBackendSelection(configuredMode, arena, handles, seamArmed, detail);
-        }
-
-        private static String resolveDetail(SocketBackendMode configuredMode,
-                                            boolean seamArmed,
-                                            boolean plainSocketIoAvailable,
-                                            boolean winsockModel) {
-            if (seamArmed) {
-                return "Core socket seam armed for plain TCP traffic; "
-                        + "selector ownership and NIO fallback remain intact.";
-            }
-            if (configuredMode == SocketBackendMode.POSIX_HYBRID) {
-                return resolveRequestedFallbackDetail(plainSocketIoAvailable, winsockModel);
-            }
-            return resolveAutoFallbackDetail(plainSocketIoAvailable, winsockModel);
-        }
-
-        private static String resolveRequestedFallbackDetail(boolean plainSocketIoAvailable,
-                                                             boolean winsockModel) {
-            if (!plainSocketIoAvailable) {
-                return "Core socket seam was requested explicitly but is unavailable; "
-                        + ACTIVE_NIO_FALLBACK_DETAIL;
-            }
-            if (winsockModel) {
-                return "Core socket seam was requested explicitly but this platform uses the Winsock model; "
-                        + ACTIVE_NIO_FALLBACK_DETAIL;
-            }
-            return "Core socket seam was requested explicitly but "
-                    + "SocketChannel FD access is blocked by runtime openness; "
-                    + "add the required --add-opens flags or "
-                    + ACTIVE_NIO_FALLBACK_DETAIL;
-        }
-
-        private static String resolveAutoFallbackDetail(boolean plainSocketIoAvailable,
-                                                        boolean winsockModel) {
-            if (!plainSocketIoAvailable) {
-                return "Core socket seam resolved without plain socket syscall support; "
-                        + ACTIVE_NIO_FALLBACK_DETAIL;
-            }
-            if (winsockModel) {
-                return "Core socket seam resolved on a Winsock platform; "
-                        + ACTIVE_NIO_FALLBACK_DETAIL;
-            }
-            return "Core socket seam resolved but SocketChannel FD access "
-                    + "is blocked by runtime openness; "
-                    + "add the required --add-opens flags or "
-                    + ACTIVE_NIO_FALLBACK_DETAIL;
-        }
-
     }
 
     private enum ReactorRequestType {
