@@ -8,16 +8,6 @@
  */
 package eu.exeris.kernel.core.events.outbox;
 
-import eu.exeris.kernel.core.events.jfr.OutboxBatchFlushedEvent;
-import eu.exeris.kernel.core.events.jfr.OutboxDlqEvent;
-import eu.exeris.kernel.core.events.jfr.OutboxStateTransitionEvent;
-import eu.exeris.kernel.spi.events.EventDescriptor;
-import eu.exeris.kernel.spi.events.EventPayload;
-import jdk.jfr.FlightRecorder;
-
-import java.lang.invoke.MethodHandles;
-import java.lang.invoke.VarHandle;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.StructuredTaskScope;
@@ -54,72 +44,39 @@ import java.util.concurrent.locks.LockSupport;
  * {@code join()}, and {@code close()} are all invoked by that same internal owner
  * thread, satisfying the Java 26 owner-thread rule.
  *
- * <h2>VarHandle State Transitions</h2>
- * <p>State is stored in a {@code volatile int} field. All transitions use
- * {@link VarHandle#compareAndSet} or {@link VarHandle#getAndSet} — O(1), lock-free,
- * no {@code synchronized}.
+ * <h2>Decomposition (v0.8 Sprint 1 QA-014)</h2>
+ * <p>State transitions and the {@link java.lang.invoke.VarHandle} CAS primitive
+ * live in {@link OutboxStateMachine}; batch flush + retry + DLQ delivery live in
+ * {@link OutboxBatchFlusher}. This orchestrator owns only lifecycle (start/stop/
+ * close), the owner virtual thread and {@code StructuredTaskScope} wiring,
+ * the poll-flush tick loop, and the fluent builder.
  *
  * @since 0.5.0
  */
-// TooManyMethods, CyclomaticComplexity, GodClass: state machine + outbox lifecycle + builder
-// cannot be split without introducing artificial coordination abstractions.
-// ATFD driven by necessary port interfaces (eventStore, brokerPort) + VarHandle state access.
-@SuppressWarnings({
-    "PMD.TooManyMethods",
-    "PMD.AvoidCatchingGenericException", 
-    "PMD.CyclomaticComplexity", 
-    "PMD.GodClass"
-})
 public final class OutboxOrchestrator implements AutoCloseable {
 
-    // ── State machine ordinals ────────────────────────────────────────────────
-    private static final int STATE_IDLE     = 0;
-    private static final int STATE_POLLING  = 1;
-    private static final int STATE_FLUSHING = 2;
-    private static final int STATE_WAITING  = 3;
-    private static final int STATE_RETRYING = 4;
-    private static final int STATE_STOPPED  = 5;
-
-    private static final int SINGLE_EVENT_PUBLISHED = 1;
-
-    private static final String[] STATE_NAMES =
-            {"IDLE", "POLLING", "FLUSHING", "WAITING", "RETRYING", "STOPPED"};
-
-    private static final VarHandle STATE_VH;
-
-    static {
-        try {
-            STATE_VH = MethodHandles.lookup()
-                    .findVarHandle(OutboxOrchestrator.class, "state", int.class);
-        } catch (ReflectiveOperationException ex) {
-            throw new ExceptionInInitializerError(ex);
-        }
-    }
-
-    // ── Configuration ─────────────────────────────────────────────────────────
     private final OutboxEventStore eventStore;
-    private final OutboxBrokerPort brokerPort;
     private final int              batchSize;
     private final long             pollIntervalNanos;
-    private final int              maxRetries;
 
-    // ── Mutable state — all access via VarHandle or AtomicBoolean ─────────────
-    @SuppressWarnings("PMD.UnusedPrivateField")
-    private volatile int        state   = STATE_IDLE;
     private final AtomicBoolean running = new AtomicBoolean(false);
+    private final OutboxStateMachine stateMachine;
+    private final OutboxBatchFlusher batchFlusher;
 
-    // ── Loop scope (owned by the thread that called start()) ──────────────────
     private volatile Thread ownerThread;
 
-    @SuppressWarnings("PMD.LawOfDemeter")
+    @SuppressWarnings("PMD.LawOfDemeter") // builder field access is the canonical Builder pattern.
     private OutboxOrchestrator(Builder builder) {
-        OutboxEventStore store = builder.eventStore;
-        OutboxBrokerPort port  = builder.brokerPort;
-        this.eventStore        = store;
-        this.brokerPort        = port;
+        this.eventStore        = builder.eventStore;
         this.batchSize         = builder.batchSize;
         this.pollIntervalNanos = builder.pollIntervalNanos;
-        this.maxRetries        = builder.maxRetries;
+        this.stateMachine      = new OutboxStateMachine(running::get);
+        this.batchFlusher      = new OutboxBatchFlusher(
+                builder.eventStore,
+                builder.brokerPort,
+                stateMachine,
+                builder.maxRetries,
+                builder.pollIntervalNanos);
     }
 
     // =========================================================================
@@ -141,12 +98,12 @@ public final class OutboxOrchestrator implements AutoCloseable {
         if (!running.compareAndSet(false, true)) {
             return;
         }
-        if ((int) STATE_VH.getVolatile(this) == STATE_STOPPED) {
+        if (stateMachine.isStopped()) {
             running.set(false);
             throw new IllegalStateException(
                     "OutboxOrchestrator cannot be restarted after stop(); create a new instance.");
         }
-        transitionTo(STATE_POLLING, 0);
+        stateMachine.transitionTo(OutboxStateMachine.POLLING, 0);
 
         // Owner VT — the sole thread that may call fork/join/close on the scope.
         // Exempt from StructuredTaskScope rule per docs/modules/02-core.md §3(b):
@@ -161,15 +118,14 @@ public final class OutboxOrchestrator implements AutoCloseable {
         if (!running.compareAndSet(true, false)) {
             return;
         }
-        int prev = (int) STATE_VH.getAndSet(this, STATE_STOPPED);
-        emitTransition(STATE_NAMES[prev], STATE_NAMES[STATE_STOPPED], 0);
+        stateMachine.forceTransitionToStopped();
 
         Thread owner = this.ownerThread;
         if (owner != null) {
             owner.interrupt();
             try {
                 owner.join();
-            } catch (InterruptedException ex) {
+            } catch (InterruptedException _) {
                 Thread.currentThread().interrupt();
             }
         }
@@ -186,7 +142,7 @@ public final class OutboxOrchestrator implements AutoCloseable {
      * @return one of: IDLE, POLLING, FLUSHING, WAITING, RETRYING, STOPPED
      */
     public String currentState() {
-        return STATE_NAMES[(int) STATE_VH.getVolatile(this)];
+        return stateMachine.currentStateName();
     }
 
     // =========================================================================
@@ -209,186 +165,45 @@ public final class OutboxOrchestrator implements AutoCloseable {
             });
             try {
                 scope.join();
-            } catch (InterruptedException ex) {
+            } catch (InterruptedException _) {
                 Thread.currentThread().interrupt();
             }
         }
     }
 
-    // =========================================================================
-    // Internal — loop body
-    // =========================================================================
-
     private void runLoop() {
         while (running.get()) {
-            if ((int) STATE_VH.getVolatile(this) == STATE_STOPPED) {
+            if (stateMachine.isStopped()) {
                 break;
             }
             executeTick();
         }
     }
 
-    @SuppressWarnings("PMD.LawOfDemeter")
+    @SuppressWarnings({
+        "PMD.AvoidCatchingGenericException", // tick body must wrap broker/store RuntimeException defensively.
+        "PMD.LawOfDemeter"                   // batch.size() on List parameter is the canonical pattern.
+    })
     private void executeTick() {
         try {
             List<OutboxBrokerPort.OutboxEntry> batch = eventStore.pollPending(batchSize);
             int batchCount = batch.size();
 
             if (batchCount == 0) {
-                transitionTo(STATE_WAITING, 0);
+                stateMachine.transitionTo(OutboxStateMachine.WAITING, 0);
                 LockSupport.parkNanos(pollIntervalNanos);
-                transitionTo(STATE_POLLING, 0);
+                stateMachine.transitionTo(OutboxStateMachine.POLLING, 0);
                 return;
             }
 
-            transitionTo(STATE_FLUSHING, batchCount);
-            flushBatch(batch);
-            transitionTo(STATE_POLLING, 0);
+            stateMachine.transitionTo(OutboxStateMachine.FLUSHING, batchCount);
+            batchFlusher.flush(batch);
+            stateMachine.transitionTo(OutboxStateMachine.POLLING, 0);
 
-        } catch (RuntimeException ex) {
-            transitionTo(STATE_WAITING, 0);
+        } catch (RuntimeException _) {
+            stateMachine.transitionTo(OutboxStateMachine.WAITING, 0);
             LockSupport.parkNanos(pollIntervalNanos);
-            transitionTo(STATE_POLLING, 0);
-        }
-    }
-
-    private void flushBatch(List<OutboxBrokerPort.OutboxEntry> batch) {
-        long startNanos = System.nanoTime();
-        int  failed     = batch.size(); // assume all failed until broker confirms
-
-        List<EventDescriptor> toDeliver = new ArrayList<>(batch.size());
-        try {
-            int rawPublished = brokerPort.publish(batch);
-            int published = Math.clamp(rawPublished, 0, batch.size());
-            failed = batch.size() - published;
-
-            for (int i = 0; i < published; i++) {
-                toDeliver.add(batch.get(i).descriptor());
-            }
-            if (!toDeliver.isEmpty()) {
-                eventStore.markDelivered(toDeliver);
-            }
-
-            if (failed > 0) {
-                handlePartialFailure(batch, published);
-            }
-        } catch (RuntimeException ex) {
-            // broker.publish() threw — entire batch failed; failed is already batch.size()
-            handlePartialFailure(batch, 0);
-            throw ex;
-        } finally {
-            closeEntryPayloads(batch);
-            emitBatchFlushed(batch.size() - failed, System.nanoTime() - startNanos, failed);
-        }
-    }
-
-    private void handlePartialFailure(List<OutboxBrokerPort.OutboxEntry> batch, int successCount) {
-        transitionTo(STATE_RETRYING, 0);
-        for (int i = successCount; i < batch.size(); i++) {
-            OutboxBrokerPort.OutboxEntry entry = batch.get(i);
-            try {
-                boolean recovered = retryEntry(entry);
-                if (!recovered) {
-                    emitDlqTransition(entry, "max retries exhausted");
-                    eventStore.moveToDlq(entry.descriptor(), entry.payload(), "max retries exhausted");
-                }
-            } catch (RuntimeException ex) {
-                String message = ex.getMessage();
-                String reason = (message == null || message.isBlank()) ? "exception" : message;
-                emitDlqTransition(entry, reason);
-                eventStore.moveToDlq(entry.descriptor(), entry.payload(), reason);
-            }
-        }
-    }
-
-    private void emitDlqTransition(OutboxBrokerPort.OutboxEntry entry, String reason) {
-        if (!FlightRecorder.isInitialized()) {
-            return;
-        }
-        OutboxDlqEvent dlqEvt = new OutboxDlqEvent();
-        if (dlqEvt.isEnabled()) {
-            dlqEvt.eventType    = String.valueOf(entry.descriptor().eventTypeOrdinal());
-            dlqEvt.streamIdHigh = entry.descriptor().streamIdHigh();
-            dlqEvt.streamIdLow  = entry.descriptor().streamIdLow();
-            dlqEvt.reason       = reason;
-            dlqEvt.retryCount   = maxRetries;
-            dlqEvt.commit();
-        }
-    }
-
-    private boolean retryEntry(OutboxBrokerPort.OutboxEntry entry) {
-        List<OutboxBrokerPort.OutboxEntry> single = List.of(entry);
-        for (int attempt = 1; attempt <= maxRetries; attempt++) {
-            try {
-                if (brokerPort.publish(single) == SINGLE_EVENT_PUBLISHED) {
-                    eventStore.markDelivered(List.of(entry.descriptor()));
-                    return true;
-                }
-            } catch (RuntimeException ex) {
-                // retry on next attempt
-            }
-            LockSupport.parkNanos(pollIntervalNanos * attempt);
-        }
-        return false;
-    }
-
-    @SuppressWarnings("PMD.CloseResource")
-    private static void closeEntryPayloads(List<OutboxBrokerPort.OutboxEntry> batch) {
-        for (OutboxBrokerPort.OutboxEntry entry : batch) {
-            EventPayload payload = entry.payload();
-            if (payload != null && payload.isAlive()) {
-                payload.close();
-            }
-        }
-    }
-
-    // ── State transitions ─────────────────────────────────────────────────────
-
-    private void transitionTo(int next, int polledCount) {
-        if (next != STATE_STOPPED && !running.get()) {
-            return;
-        }
-
-        while (true) {
-            int prev = (int) STATE_VH.getVolatile(this);
-            if (next != STATE_STOPPED && prev == STATE_STOPPED) {
-                return;
-            }
-            if (prev == next) {
-                return;
-            }
-            if (STATE_VH.compareAndSet(this, prev, next)) {
-                emitTransition(STATE_NAMES[prev], STATE_NAMES[next], polledCount);
-                return;
-            }
-        }
-    }
-
-    // ── JFR helpers ──────────────────────────────────────────────────────────
-
-    private static void emitTransition(String prev, String next, int polled) {
-        if (!FlightRecorder.isInitialized()) {
-            return;
-        }
-        OutboxStateTransitionEvent evt = new OutboxStateTransitionEvent();
-        if (evt.isEnabled()) {
-            evt.previousState = prev;
-            evt.nextState     = next;
-            evt.polledCount   = polled;
-            evt.commit();
-        }
-    }
-
-    private static void emitBatchFlushed(int size, long durationNanos, int failed) {
-        if (!FlightRecorder.isInitialized()) {
-            return;
-        }
-        OutboxBatchFlushedEvent evt = new OutboxBatchFlushedEvent();
-        if (evt.isEnabled()) {
-            evt.batchSize          = size;
-            evt.flushDurationNanos = durationNanos;
-            evt.failedCount        = failed;
-            evt.commit();
+            stateMachine.transitionTo(OutboxStateMachine.POLLING, 0);
         }
     }
 
