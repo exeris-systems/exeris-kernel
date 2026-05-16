@@ -29,6 +29,16 @@
             Default Surefire runs exclude them so the unit suite stays fast and Docker-free.
         -->
         <excludedGroups>integration</excludedGroups>
+
+        <!--
+            v0.8 Sprint 6 (Coverage C-P0-01): LINE coverage floor for the Kafka bundle.
+            Current measurement: ~28% from unit suite only. The 10 Testcontainers
+            IT-tests revived in this same Sprint (kafka-integration-gate) run in a
+            separate CI job with their own jacoco.exec — IT coverage is not merged
+            into this floor. Ratchet at 0.20 — blocks unit-suite regressions while
+            the IT-merge follow-up is pending.
+        -->
+        <jacoco.line.minimum>0.20</jacoco.line.minimum>
     </properties>
 
     <dependencies>

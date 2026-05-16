@@ -76,8 +76,14 @@ jobs:
         #     not transient flake). 90 s is ~3× the prior bump to absorb the JDK
         #     26+35 schedule pressure tail; happy path drain is sub-second so the
         #     widened budget only kicks in under worst-case CI contention.
+        #
+        # v0.8 Sprint 6 (Coverage C-P0-01): -Pcoverage activates JaCoCo agent +
+        # report + per-module <check> rule enforcement. Per-module LINE coverage
+        # floors live in each module's <jacoco.line.minimum> property
+        # (ratcheted ~5-9 pp below current baseline).
         run: |
           mvn clean verify -B -e \
+            -P coverage \
             -Djdk.virtualThreadScheduler.parallelism=16 \
             -Djdk.virtualThreadScheduler.maxPoolSize=64 \
             -Dexeris.tck.transport.drainTimeoutSeconds=90
