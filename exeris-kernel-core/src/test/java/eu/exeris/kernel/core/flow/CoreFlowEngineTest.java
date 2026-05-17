@@ -226,12 +226,6 @@ class CoreFlowEngineTest {
         //   - 60 s / 180 s introduced by PR after #125 — even the 30 s post-loop
         //     budget exceeded under peak CI pressure on the SECOND awaitTrue
         //     (line ~277 in this file), specifically the post-wake settle window.
-        //     The first awaitTrue having already consumed up to its own 30 s, the
-        //     second wake-recovery settle can also need tens of seconds — sum
-        //     plus the iteration body forced @Timeout from 90 s → 180 s. ~2×
-        //     expansion is enough headroom for CI without masking a real race
-        //     regression (a regression would block indefinitely, not "almost
-        //     finish in 75 s").
         @Test
         @Timeout(value = 180, unit = TimeUnit.SECONDS)
         @DisplayName("immediate schedule, park, and wake on the same context is race-safe")

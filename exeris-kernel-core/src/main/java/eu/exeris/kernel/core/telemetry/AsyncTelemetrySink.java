@@ -10,16 +10,17 @@ package eu.exeris.kernel.core.telemetry;
 
 import eu.exeris.kernel.spi.telemetry.KernelEvent;
 import eu.exeris.kernel.spi.telemetry.TelemetrySink;
+import org.jctools.queues.MessagePassingQueue;
+import org.jctools.queues.MpscArrayQueue;
 
 import java.time.Duration;
 import java.util.List;
 import java.util.Objects;
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.LongAdder;
+import java.util.concurrent.locks.LockSupport;
 
 /**
  * Core-internal asynchronous {@link TelemetrySink} that decouples the caller's
@@ -76,8 +77,17 @@ public final class AsyncTelemetrySink implements TelemetrySink {
 
     private static final String SINK_NAME = "ExerisCore/AsyncTelemetrySink";
 
+    /** Idle-poll park budget when the ring is empty. Matches the legacy ABQ poll timeout. */
+    private static final long IDLE_PARK_NANOS = 50L * 1_000_000L;
+
     private final List<TelemetrySink> downstream;
-    private final BlockingQueue<KernelEvent> ring;
+    /**
+     * Lock-free MPSC ring backing the producer/consumer split (PERF-070).
+     * Many producer threads call {@link #emit(KernelEvent)} → wait-free offer;
+     * exactly one consumer (the dedicated VT in {@link #drain()}) polls and
+     * fans out to downstream sinks.
+     */
+    private final MessagePassingQueue<KernelEvent> ring;
     private final int capacity;
     private final Duration drainTimeout;
     private final Thread consumer;
@@ -87,7 +97,9 @@ public final class AsyncTelemetrySink implements TelemetrySink {
 
     private AsyncTelemetrySink(List<TelemetrySink> downstream, int capacity, Duration drainTimeout) {
         this.downstream = List.copyOf(downstream);
-        this.ring = new ArrayBlockingQueue<>(capacity);
+        // MpscArrayQueue rounds capacity up to nearest power of 2 internally — the configured
+        // value remains the operator-visible budget for drop-newest accounting.
+        this.ring = new MpscArrayQueue<>(capacity);
         this.capacity = capacity;
         this.drainTimeout = drainTimeout;
         this.consumer = Thread.ofVirtual().name(SINK_NAME + "-consumer").unstarted(this::drain);
@@ -144,7 +156,17 @@ public final class AsyncTelemetrySink implements TelemetrySink {
         if (!ring.offer(event)) {
             droppedCount.increment();
             AsyncTelemetryDropEvent.emit(SINK_NAME, event.code(), droppedCount.sum(), capacity);
+            return;
         }
+        // Wake the consumer if it's parked on an empty ring. LockSupport.unpark is
+        // permit-counted (single permit max), so producer-side over-signal is harmless;
+        // when the consumer is actively draining, the call is a cheap no-op kernel hop.
+        // Required because MpscArrayQueue.offer is wait-free but does NOT signal a
+        // blocking consumer (unlike ArrayBlockingQueue.offer which woke ABQ's internal
+        // condition variable). Without this unpark, events sat in the ring up to the
+        // full IDLE_PARK_NANOS budget — observed as multi-second fan-out latency
+        // under CoreFlowEngineTest's 512-iteration schedule/park/wake load (PR #139).
+        LockSupport.unpark(consumer);
     }
 
     @Override
@@ -197,9 +219,11 @@ public final class AsyncTelemetrySink implements TelemetrySink {
     private void drain() {
         try {
             while (!closed.get() || !ring.isEmpty()) {
-                KernelEvent event = pollNext();
+                KernelEvent event = ring.poll();
                 if (event != null) {
                     fanOut(event);
+                } else {
+                    parkIdle();
                 }
             }
         } finally {
@@ -208,20 +232,22 @@ public final class AsyncTelemetrySink implements TelemetrySink {
     }
 
     /**
-     * Polls the ring with a bounded timeout. Returns {@code null} on timeout, or when an
-     * interrupt arrives — in the latter case the interrupt status is preserved on the
-     * thread so that the next blocking call observes the cancellation, and the loop
-     * predicate in {@link #drain()} decides whether to exit.
+     * Parks the consumer when the ring is empty. Bounded to {@link #IDLE_PARK_NANOS}
+     * (50 ms) to preserve the legacy idle-wake cadence of the prior
+     * {@code ArrayBlockingQueue.poll(50, MILLISECONDS)} implementation.
+     *
+     * <p>{@link #close()} interrupts the consumer to break out of the park promptly.
+     * The interrupt status is cleared after observing the cancellation so that the
+     * next loop iteration can re-check {@link #closed} / {@code ring.isEmpty()} and
+     * decide whether to exit.
      */
-    private KernelEvent pollNext() {
-        try {
-            return ring.poll(50L, TimeUnit.MILLISECONDS);
-        } catch (InterruptedException _) {
+    private void parkIdle() {
+        LockSupport.parkNanos(IDLE_PARK_NANOS);
+        if (Thread.interrupted()) {
+            // Cancellation observed via interrupt — re-set status so the loop predicate
+            // sees the closed flag (set by close() before interrupting us) on next pass.
             Thread.currentThread().interrupt();
-            // Clear the interrupt status now that we've recorded the cancellation
-            // intent — otherwise the next ring.poll() would short-circuit forever.
             Thread.interrupted();
-            return null;
         }
     }
 
