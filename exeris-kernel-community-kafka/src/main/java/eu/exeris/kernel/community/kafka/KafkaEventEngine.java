@@ -111,7 +111,8 @@ public final class KafkaEventEngine implements EventEngine {
         this.localDelegate = new InMemoryEventBus(registry);
         this.queue         = new NoOpQueue(spiConfig.queueCapacity());
         this.producer      = createProducer(kafkaConfig);
-        this.publishBus    = new KafkaPublishBus(producer, registry, kafkaConfig,
+        this.publishBus    = new KafkaPublishBus(spiConfig.engineName(),
+                                                 producer, registry, kafkaConfig,
                                                  localDelegate, publishedTotal);
         this.loop          = new ConsumerLoop(spiConfig.engineName(), kafkaConfig,
                                               registry, localDelegate);
@@ -186,17 +187,22 @@ public final class KafkaEventEngine implements EventEngine {
 
     private static final class KafkaPublishBus implements EventBus {
 
+        private static final String UNKNOWN_TOPIC = "<unknown>";
+
+        private final String                   engineName;
         private final Producer<byte[], byte[]> producer;
         private final KafkaEventRegistry       registry;
         private final KafkaEventConfig         config;
         private final EventBus                 localDelegate;
         private final AtomicLong               publishedTotal;
 
-        private KafkaPublishBus(Producer<byte[], byte[]> producer,
+        private KafkaPublishBus(String engineName,
+                                Producer<byte[], byte[]> producer,
                                 KafkaEventRegistry registry,
                                 KafkaEventConfig config,
                                 EventBus localDelegate,
                                 AtomicLong publishedTotal) {
+            this.engineName     = engineName;
             this.producer       = producer;
             this.registry       = registry;
             this.config         = config;
@@ -222,6 +228,14 @@ public final class KafkaEventEngine implements EventEngine {
                 // it unchanged; the generic Kafka-failure wrap below would mask the real cause.
                 throw ex;
             } catch (RuntimeException ex) { //NOPMD AvoidCatchingGenericException
+                // JFR-091: post-mortem trail for publish-side failures (timeout, broker
+                // disconnect, authorisation, etc.). Topic resolved best-effort — if the
+                // ordinal is unregistered (rare on this path since buildRecord would have
+                // thrown EventBusException first), emit "<unknown>" rather than masking the
+                // real Kafka failure with a registry NPE.
+                KafkaPublishFailedEvent.emit(engineName, resolveTopicSafe(descriptor),
+                        descriptor.eventTypeOrdinal(), "publish",
+                        ex.getClass().getName(), String.valueOf(ex.getMessage()));
                 throw new EventBusException("Kafka producer.send failed", ex);
             }
         }
@@ -240,8 +254,23 @@ public final class KafkaEventEngine implements EventEngine {
                 // below would mask the real cause.
                 throw ex;
             } catch (ExecutionException | RuntimeException ex) { //NOPMD KafkaException is RuntimeException
+                // JFR-091: same publish-side failure post-mortem as publish() above; "publishAndAwait"
+                // mode differentiates the two call paths in operator JFR analysis.
+                KafkaPublishFailedEvent.emit(engineName, resolveTopicSafe(descriptor),
+                        descriptor.eventTypeOrdinal(), "publishAndAwait",
+                        ex.getClass().getName(), String.valueOf(ex.getMessage()));
                 throw new EventBusException("Kafka producer.send failed", ex);
             }
+        }
+
+        /**
+         * Best-effort topic resolution for failure-side JFR emission — returns
+         * {@code "<unknown>"} when the ordinal is not registered, so JFR emit never NPEs
+         * inside the catch block and the real cause exception propagates unchanged.
+         */
+        private String resolveTopicSafe(EventDescriptor descriptor) {
+            String typeName = registry.nameOfOrdinal(descriptor.eventTypeOrdinal());
+            return (typeName == null || typeName.isBlank()) ? UNKNOWN_TOPIC : config.topicFor(typeName);
         }
 
         @Override
