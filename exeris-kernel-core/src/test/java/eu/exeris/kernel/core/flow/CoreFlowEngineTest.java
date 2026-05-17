@@ -226,19 +226,8 @@ class CoreFlowEngineTest {
         //   - 60 s / 180 s introduced by PR after #125 — even the 30 s post-loop
         //     budget exceeded under peak CI pressure on the SECOND awaitTrue
         //     (line ~277 in this file), specifically the post-wake settle window.
-        //   - 120 s / 300 s introduced by PR #139 (Sprint 3 PERF-070 follow-up) —
-        //     60 s exhausted on a clean PR after the #135 CI dedup landed and
-        //     left a single PR-event Build & TCK run as the merge gate. With no
-        //     duplicate push-event run absorbing the flake lottery, the test must
-        //     itself tolerate peak 2-vCPU + JDK 26+35 pressure (~75 s observed
-        //     for the post-wake settle on one of the consumer's drain iterations).
-        //     2× expansion (60 → 120) plus 1.67× @Timeout (180 → 300) buys margin
-        //     without masking a real race regression (a regression would block
-        //     indefinitely, not "almost finish in 140 s"). Root-cause fix is the
-        //     Sprint 7 non-blocking client-ingress refactor that retires the whole
-        //     race-budget hotfix sequence.
         @Test
-        @Timeout(value = 300, unit = TimeUnit.SECONDS)
+        @Timeout(value = 180, unit = TimeUnit.SECONDS)
         @DisplayName("immediate schedule, park, and wake on the same context is race-safe")
         void immediateScheduleParkWakeOnSameContextIsRaceSafe() throws InterruptedException {
             try (CoreFlowEngine engine = startedEngine(false)) {
@@ -270,7 +259,7 @@ class CoreFlowEngineTest {
                     }
                 }
 
-                awaitTrue(120_000, () -> engine.stats().completedFlows() >= 1
+                awaitTrue(60_000, () -> engine.stats().completedFlows() >= 1
                         || engine.scheduler().lookupParked(
                                 context.instanceIdMost(),
                                 context.instanceIdLeast()).isPresent());
@@ -280,7 +269,7 @@ class CoreFlowEngineTest {
                         context.instanceIdLeast());
                 if (parked.isPresent()) {
                     engine.scheduler().wake(parked.orElseThrow());
-                    awaitTrue(120_000, () -> engine.stats().completedFlows() >= 1);
+                    awaitTrue(60_000, () -> engine.stats().completedFlows() >= 1);
                 }
 
                 assertThat(engine.stats().failedFlows()).isZero();

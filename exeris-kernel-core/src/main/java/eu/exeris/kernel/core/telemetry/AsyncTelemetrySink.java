@@ -156,7 +156,17 @@ public final class AsyncTelemetrySink implements TelemetrySink {
         if (!ring.offer(event)) {
             droppedCount.increment();
             AsyncTelemetryDropEvent.emit(SINK_NAME, event.code(), droppedCount.sum(), capacity);
+            return;
         }
+        // Wake the consumer if it's parked on an empty ring. LockSupport.unpark is
+        // permit-counted (single permit max), so producer-side over-signal is harmless;
+        // when the consumer is actively draining, the call is a cheap no-op kernel hop.
+        // Required because MpscArrayQueue.offer is wait-free but does NOT signal a
+        // blocking consumer (unlike ArrayBlockingQueue.offer which woke ABQ's internal
+        // condition variable). Without this unpark, events sat in the ring up to the
+        // full IDLE_PARK_NANOS budget — observed as multi-second fan-out latency
+        // under CoreFlowEngineTest's 512-iteration schedule/park/wake load (PR #139).
+        LockSupport.unpark(consumer);
     }
 
     @Override
