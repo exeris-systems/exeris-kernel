@@ -6,7 +6,7 @@
  * Commercial resale of this software as a competing product is prohibited.
  * See LICENSE-COMMUNITY in the repository root for the full text.
  */
-package eu.exeris.kernel.transport.http3.client;
+package eu.exeris.kernel.community.http.client;
 
 import eu.exeris.kernel.community.http.CommunityHttpProvider;
 import eu.exeris.kernel.community.memory.CommunityMemoryProvider;
@@ -44,8 +44,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-@DisplayName("Community: ExerisWebClient integration (loopback HttpServerEngine round-trip)")
-class ExerisWebClientIntegrationTest {
+@DisplayName("Community: CommunityWebClient integration (loopback HttpServerEngine round-trip)")
+class CommunityWebClientIntegrationTest {
 
     private static final MemoryAllocator ALLOCATOR =
             new CommunityMemoryProvider().createAllocator(MemoryProviderConfig.defaults());
@@ -140,9 +140,9 @@ class ExerisWebClientIntegrationTest {
                     exchange.respond(HttpResponse.noBody(HttpStatus.NOT_FOUND, HttpVersion.HTTP_1_1)));
 
             assertThatThrownBy(() -> client.get("/widget/missing", Map.class))
-                    .isInstanceOf(ExerisWebClient.WebClientException.class)
+                    .isInstanceOf(CommunityWebClient.WebClientException.class)
                     .satisfies(ex -> {
-                        ExerisWebClient.WebClientException wce = (ExerisWebClient.WebClientException) ex;
+                        CommunityWebClient.WebClientException wce = (CommunityWebClient.WebClientException) ex;
                         assertThat(wce.status()).isEqualTo(404);
                         assertThat(wce.isNotFound()).isTrue();
                     });
@@ -160,9 +160,9 @@ class ExerisWebClientIntegrationTest {
                     "text/plain"));
 
             assertThatThrownBy(() -> client.get("/widget/broken", Map.class))
-                    .isInstanceOf(ExerisWebClient.WebClientException.class)
+                    .isInstanceOf(CommunityWebClient.WebClientException.class)
                     .satisfies(ex -> {
-                        ExerisWebClient.WebClientException wce = (ExerisWebClient.WebClientException) ex;
+                        CommunityWebClient.WebClientException wce = (CommunityWebClient.WebClientException) ex;
                         assertThat(wce.status()).isEqualTo(500);
                         assertThat(wce.isNotFound()).isFalse();
                         assertThat(wce.responseBody()).isEqualTo("boom");
@@ -174,7 +174,7 @@ class ExerisWebClientIntegrationTest {
     @DisplayName("Constructor rejects null engine (Objects.requireNonNull contract)")
     void constructorRejectsNullEngine() {
         assertThatNullPointerException()
-                .isThrownBy(() -> new ExerisWebClient(null, ALLOCATOR, MAPPER));
+                .isThrownBy(() -> new CommunityWebClient(null, ALLOCATOR, MAPPER));
     }
 
     @Test
@@ -192,7 +192,7 @@ class ExerisWebClientIntegrationTest {
         });
     }
 
-    private void runScopedTest(Consumer<ExerisWebClient> testCase) {
+    private void runScopedTest(Consumer<CommunityWebClient> testCase) {
         java.lang.ScopedValue.where(KernelProviders.MEMORY_ALLOCATOR, ALLOCATOR).run(() -> {
             int port = nextFreePort();
             try (HttpServerEngine server = provider.createServerEngine(serverConfig(port));
@@ -209,7 +209,7 @@ class ExerisWebClientIntegrationTest {
 
                 server.start();
                 engine.start();
-                ExerisWebClient client = new ExerisWebClient(engine, ALLOCATOR, MAPPER);
+                CommunityWebClient client = new CommunityWebClient(engine, ALLOCATOR, MAPPER);
 
                 testCase.accept(client);
             }

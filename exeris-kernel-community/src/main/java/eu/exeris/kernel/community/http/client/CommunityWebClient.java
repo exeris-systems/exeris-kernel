@@ -6,7 +6,7 @@
  * Commercial resale of this software as a competing product is prohibited.
  * See LICENSE-COMMUNITY in the repository root for the full text.
  */
-package eu.exeris.kernel.transport.http3.client;
+package eu.exeris.kernel.community.http.client;
 
 import eu.exeris.kernel.spi.http.HttpClientEngine;
 import eu.exeris.kernel.spi.http.HttpHeader;
@@ -48,13 +48,15 @@ import java.util.Objects;
  * callers never see the response buffer directly.
  *
  * <h2>Decision rationale</h2>
- * <p>See ADR-026 for the package-name (historical {@code http3} retained for
- * generator stability), tier-placement (Community module — Jackson already on
- * classpath), and rejected alternatives.
+ * <p>See ADR-026 (Amendment 2026-05-17) for the placement decision:
+ * tier-correct ({@code community.http.client} — HTTP/3 is enterprise-only per
+ * ADR-016), namespace-aligned ({@code .community.} segment), and
+ * {@code Community*}-prefixed; the original {@code transport.http3.client}
+ * package was superseded.
  *
  * @since 0.8.0
  */
-public final class ExerisWebClient {
+public final class CommunityWebClient {
 
     private static final HttpVersion DEFAULT_VERSION = HttpVersion.HTTP_1_1;
     private static final String CONTENT_TYPE = "content-type";
@@ -83,7 +85,7 @@ public final class ExerisWebClient {
      * @param mapper    Jackson {@link ObjectMapper} — application-owned (modules,
      *                  naming strategies, date handlers are caller's choice)
      */
-    public ExerisWebClient(HttpClientEngine engine, MemoryAllocator allocator, ObjectMapper mapper) {
+    public CommunityWebClient(HttpClientEngine engine, MemoryAllocator allocator, ObjectMapper mapper) {
         this.engine = Objects.requireNonNull(engine, "engine must not be null");
         this.allocator = Objects.requireNonNull(allocator, "allocator must not be null");
         this.mapper = Objects.requireNonNull(mapper, "mapper must not be null");
@@ -221,7 +223,7 @@ public final class ExerisWebClient {
     }
 
     /**
-     * Thrown by {@link ExerisWebClient} when the response status is non-2xx or
+     * Thrown by {@link CommunityWebClient} when the response status is non-2xx or
      * when JSON serialisation / deserialisation fails. Carries the wire status
      * and the raw response body for caller diagnostics.
      *
