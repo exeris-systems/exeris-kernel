@@ -35,6 +35,17 @@
             <artifactId>exeris-kernel-spi</artifactId>
         </dependency>
 
+        <!--
+            JCTools — lock-free queues. Used in AsyncTelemetrySink (PERF-070):
+            MpscArrayQueue replaces ArrayBlockingQueue so producers no longer
+            contend on the ABQ lock under multi-VT emission load.
+            Version managed by exeris-kernel-bom.
+        -->
+        <dependency>
+            <groupId>org.jctools</groupId>
+            <artifactId>jctools-core</artifactId>
+        </dependency>
+
         <!-- TCK abstract test contracts — test scope only -->
         <dependency>
             <groupId>eu.exeris</groupId>
