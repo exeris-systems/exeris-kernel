@@ -1,8 +1,18 @@
 name: Exeris L0 Citadel CI
 
 on:
+  # Push events trigger CI only on long-lived branches (main + RC trunks) — these
+  # carry the SNAPSHOT publish responsibility. Feature branches under
+  # development/feat/** are excluded here; they get validated once via the
+  # pull_request event when a PR is opened. This avoids running every gate
+  # twice on the same SHA (push + PR), which doubled GHA minutes and doubled
+  # the flake chance on the Transport Stress Gate under 2-vCPU schedule
+  # pressure (see v0.8 Sprint 1 CI hotfix v6 + Sprint 3 PR #133/#134).
   push:
-    branches: [ "main", "development/**" ]   # RC trunk branches (development/0.8, development/0.9, ...) also trigger build + SNAPSHOT publish
+    branches:
+      - main
+      - 'development/**'
+      - '!development/feat/**'
   pull_request:
     branches: [ "main", "development/**" ]   # validate PRs targeting RC trunks before merge
   schedule:
