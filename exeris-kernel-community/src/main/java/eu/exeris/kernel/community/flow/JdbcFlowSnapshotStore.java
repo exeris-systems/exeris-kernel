@@ -12,16 +12,12 @@ import eu.exeris.kernel.spi.exceptions.flow.FlowEngineException;
 import eu.exeris.kernel.spi.exceptions.persistence.PersistenceProviderException;
 import eu.exeris.kernel.spi.flow.model.FlowSnapshot;
 import eu.exeris.kernel.spi.flow.model.FlowSnapshotStore;
-import eu.exeris.kernel.spi.flow.model.FlowState;
 import eu.exeris.kernel.spi.persistence.PersistenceConnection;
 import eu.exeris.kernel.spi.persistence.PersistenceEngine;
 import eu.exeris.kernel.spi.persistence.PersistenceStatement;
 import eu.exeris.kernel.spi.persistence.QueryResult;
-import eu.exeris.kernel.spi.persistence.RowCursor;
 
-import java.nio.ByteBuffer;
 import java.sql.SQLException;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -69,18 +65,12 @@ import java.util.Optional;
  *
  * @since 0.7.0
  */
-@SuppressWarnings({
-        // Durable JDBC store inherently exposes the full FlowSnapshotStore SPI plus internal
-        // helpers for the two-step UPDATE-then-INSERT pattern. Decomposition is tracked under
-        // Sprint 8 SQ-006 (alongside CoreFlowRuntime) — premature splitting here would
-        // fragment the OCC contract documented in ADR-013 §5.
-        "PMD.GodClass",
-        "PMD.TooManyMethods",
-        "PMD.CyclomaticComplexity",
-        // `ps` / `rs` / `sp` are the de-facto JDBC convention (PreparedStatement / ResultSet /
-        // stack-pointer); renaming them to longer identifiers obscures rather than clarifies.
-        "PMD.ShortVariable"
-})
+// QA-017 extracted JdbcFlowSnapshotCodec (binding + BYTEA compensation-stack pack/unpack +
+// row decoder). Residual store retains the FlowSnapshotStore SPI surface, the two-step
+// UPDATE-then-INSERT OCC orchestration (ADR-013 §5), and the integrity-violation race
+// remapping — splitting these further would fragment the transactional boundary the OCC
+// contract hangs on.
+@SuppressWarnings({"PMD.CyclomaticComplexity"})
 public final class JdbcFlowSnapshotStore implements FlowSnapshotStore {
 
     private static final String SQL_INSERT =
@@ -212,9 +202,9 @@ public final class JdbcFlowSnapshotStore implements FlowSnapshotStore {
      * cause chain because the SPI wraps the original {@code SQLException} inside a
      * {@code PersistenceProviderException}.
      */
-    private static boolean isIntegrityConstraintViolation(Throwable ex) {
-        for (Throwable cur = ex; cur != null; cur = cur.getCause()) {
-            if (cur instanceof SQLException sql) {
+    private static boolean isIntegrityConstraintViolation(Throwable thrown) {
+        for (Throwable current = thrown; current != null; current = current.getCause()) {
+            if (current instanceof SQLException sql) {
                 String state = sql.getSQLState();
                 if (state != null && state.startsWith(SQLSTATE_CLASS_INTEGRITY)) {
                     return true;
@@ -230,9 +220,9 @@ public final class JdbcFlowSnapshotStore implements FlowSnapshotStore {
              PersistenceStatement stmt = conn.prepare(SQL_SELECT_BY_PK)) {
             stmt.bindLong(0, instanceIdMost);
             stmt.bindLong(1, instanceIdLeast);
-            try (QueryResult qr = stmt.executeQuery()) {
-                if (qr.next()) {
-                    return Optional.of(readSnapshot(qr.row()));
+            try (QueryResult result = stmt.executeQuery()) {
+                if (result.next()) {
+                    return Optional.of(JdbcFlowSnapshotCodec.readSnapshot(result.row()));
                 }
                 return Optional.empty();
             }
@@ -266,10 +256,10 @@ public final class JdbcFlowSnapshotStore implements FlowSnapshotStore {
     public List<FlowSnapshot> listParked() {
         try (PersistenceConnection conn = engine.openConnection();
              PersistenceStatement stmt = conn.prepare(SQL_LIST_PARKED);
-             QueryResult qr = stmt.executeQuery()) {
+             QueryResult result = stmt.executeQuery()) {
             List<FlowSnapshot> parked = new ArrayList<>();
-            while (qr.next()) {
-                parked.add(readSnapshot(qr.row()));
+            while (result.next()) {
+                parked.add(JdbcFlowSnapshotCodec.readSnapshot(result.row()));
             }
             return parked;
         } catch (PersistenceProviderException ppe) {
@@ -281,7 +271,7 @@ public final class JdbcFlowSnapshotStore implements FlowSnapshotStore {
         try (PersistenceStatement stmt = conn.prepare(SQL_UPDATE_OCC)) {
             // SET clause bindings (0..7): definition_name, current_step, state,
             // last_update, timeout_at, compensation_stack, stack_pointer, opaque_state.
-            bindSnapshotPayload(stmt, snapshot, 0);
+            JdbcFlowSnapshotCodec.bindSnapshotPayload(stmt, snapshot, 0);
             // WHERE clause bindings (8..10): instance_id_most, instance_id_least, schema_version.
             stmt.bindLong(8, snapshot.instanceIdMost());
             stmt.bindLong(9, snapshot.instanceIdLeast());
@@ -296,7 +286,7 @@ public final class JdbcFlowSnapshotStore implements FlowSnapshotStore {
             stmt.bindLong(1, snapshot.instanceIdLeast());
             // definition_name, current_step, state, last_update, timeout_at,
             // compensation_stack, stack_pointer, opaque_state -> bindings 2..9.
-            bindSnapshotPayload(stmt, snapshot, 2);
+            JdbcFlowSnapshotCodec.bindSnapshotPayload(stmt, snapshot, 2);
             // ADR-013 §5: advance the on-disk version by exactly one on every accepted
             // write — INSERT and UPDATE share this semantic, so the caller can blindly
             // bump its local schemaVersion by 1 after any successful save.
@@ -305,100 +295,13 @@ public final class JdbcFlowSnapshotStore implements FlowSnapshotStore {
         }
     }
 
-    /**
-     * Binds the eight payload columns (definition_name through opaque_state) starting at
-     * the given parameter index. Used by both INSERT (offset 2) and UPDATE (offset 0).
-     */
-    @SuppressWarnings("PMD.AssignmentInOperand") // idx++ is the canonical JDBC binding pattern
-    private static void bindSnapshotPayload(PersistenceStatement stmt, FlowSnapshot snapshot,
-                                            int startIndex) {
-        int idx = startIndex;
-        stmt.bindString(idx++, snapshot.definitionName());
-        stmt.bindInt(idx++, snapshot.currentStep());
-        stmt.bindString(idx++, snapshot.state().name());
-        stmt.bindInstant(idx++, snapshot.lastUpdate());
-        // Instant.MAX cannot fit in TIMESTAMPTZ (4713 BC..294276 AD); encode as NULL and
-        // decode back to Instant.MAX in readSnapshot. Matches RuntimeFlowInstance.fromSnapshot
-        // semantics for "no timeout".
-        Instant timeout = snapshot.timeout();
-        if (Instant.MAX.equals(timeout)) {
-            stmt.bindInstant(idx++, null);
-        } else {
-            stmt.bindInstant(idx++, timeout);
-        }
-        stmt.bindBytes(idx++, packCompensationStack(snapshot));
-        stmt.bindInt(idx++, snapshot.stackPointer());
-        byte[] opaque = snapshot.opaqueState();
-        if (opaque.length == 0) {
-            stmt.bindBytes(idx, null);
-        } else {
-            stmt.bindBytes(idx, opaque);
-        }
-    }
-
-    private static byte[] packCompensationStack(FlowSnapshot snapshot) {
-        int sp = snapshot.stackPointer();
-        if (sp == 0) {
-            return new byte[0];
-        }
-        int[] stack = snapshot.compensationStack();
-        byte[] bytes = new byte[sp * 4];
-        ByteBuffer buf = ByteBuffer.wrap(bytes);
-        for (int i = 0; i < sp; i++) {
-            buf.putInt(stack[i]);
-        }
-        return bytes;
-    }
-
-    private static int[] unpackCompensationStack(byte[] bytes) {
-        if (bytes == null || bytes.length == 0) {
-            return new int[0];
-        }
-        int count = bytes.length / 4;
-        int[] result = new int[count];
-        ByteBuffer buf = ByteBuffer.wrap(bytes);
-        for (int i = 0; i < count; i++) {
-            result[i] = buf.getInt();
-        }
-        return result;
-    }
-
-    // Column order MUST match SELECT_BY_PK / SELECT_LIST_PARKED column lists exactly:
-    //   0: instance_id_most       1: instance_id_least    2: definition_name
-    //   3: current_step           4: state                5: last_update
-    //   6: timeout_at             7: compensation_stack   8: stack_pointer
-    //   9: opaque_state          10: schema_version
-    private static FlowSnapshot readSnapshot(RowCursor row) {
-        long instanceIdMost = row.getLong(0);
-        long instanceIdLeast = row.getLong(1);
-        String definitionName = row.getString(2);
-        int currentStep = row.getInt(3);
-        FlowState state = FlowState.valueOf(row.getString(4));
-        Instant lastUpdate = row.getInstant(5);
-        Instant timeoutValue = row.getInstant(6);
-        Instant timeout = timeoutValue == null ? Instant.MAX : timeoutValue;
-        int[] compensationStack = unpackCompensationStack(row.getBytes(7));
-        int stackPointer = row.getInt(8);
-        byte[] opaqueState = row.getBytes(9);
-        if (opaqueState == null) {
-            opaqueState = new byte[0];
-        }
-        long schemaVersion = row.getLong(10);
-        return new FlowSnapshot(
-                instanceIdMost, instanceIdLeast,
-                definitionName, currentStep, state,
-                lastUpdate, timeout,
-                compensationStack, stackPointer,
-                opaqueState, schemaVersion);
-    }
-
     private static boolean existsInTransaction(PersistenceConnection conn,
                                                long instanceIdMost, long instanceIdLeast) {
         try (PersistenceStatement stmt = conn.prepare(SQL_EXISTS)) {
             stmt.bindLong(0, instanceIdMost);
             stmt.bindLong(1, instanceIdLeast);
-            try (QueryResult qr = stmt.executeQuery()) {
-                return qr.next();
+            try (QueryResult result = stmt.executeQuery()) {
+                return result.next();
             }
         }
     }
