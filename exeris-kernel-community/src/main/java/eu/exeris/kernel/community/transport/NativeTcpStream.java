@@ -12,7 +12,6 @@ import eu.exeris.kernel.community.crypto.CommunityTlsEngine;
 import eu.exeris.kernel.community.crypto.SocketChannelFdAccess;
 import eu.exeris.kernel.core.transport.jfr.TransportIngressQueueDepthEvent;
 import eu.exeris.kernel.core.transport.jfr.TransportQueueBackpressureAlertEvent;
-import eu.exeris.kernel.core.transport.syscall.SyscallErrno;
 import eu.exeris.kernel.core.transport.syscall.SyscallHandles;
 import eu.exeris.kernel.spi.crypto.TlsEngine;
 import eu.exeris.kernel.spi.crypto.TlsStatus;
@@ -27,7 +26,6 @@ import org.jctools.queues.SpscUnboundedArrayQueue;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
-import java.nio.ByteBuffer;
 import java.nio.channels.SocketChannel;
 import java.util.Objects;
 import java.util.Queue;
@@ -43,17 +41,28 @@ import java.util.concurrent.locks.LockSupport;
  * <p>Ingress is slab-backed: carrier loop reads directly to {@link LoanedBuffer} and
  * enqueues slabs for the stream VT.
  *
+ * <h2>Decomposition (v0.8 Sprint 3 QA-016)</h2>
+ * <p>Plain-socket I/O dispatch (core-socket seam vs NIO fallback) lives in
+ * {@link NativeTcpStreamPlainSocketIo}; single-consumer-gate helpers live in
+ * {@link NativeTcpStreamConsumerGate}; outbound pending-write records (plain
+ * + lazy ciphertext + offsets) live in {@link NativeTcpStreamPendingWrite}.
+ * This class retains the {@link TransportStream} interface, carrier-facing
+ * callbacks, TLS handshake state machine, inbound state, and close
+ * orchestration.
+ *
  * @since 0.5.0
  */
+// QA-016 extracted 3 seams (PlainSocketIo, ConsumerGate, PendingWrite); residual TLS handshake state +
+// inbound/outbound machinery remains cohesive. QA-016b can extract inbound state if WMC threshold
+// drives a follow-up split.
 @SuppressWarnings({
     "PMD.GodClass",
-    "PMD.CyclomaticComplexity",
-    "PMD.TooManyMethods",
-    "PMD.CloseResource",
-    "PMD.AvoidDeeplyNestedIfStmts",
-    "PMD.AvoidBranchingStatementAsLastInLoop",
-    "PMD.AvoidCatchingGenericException",
-    "PMD.NullAssignment"
+    "PMD.CyclomaticComplexity",                // multi-state read/drain/handshake loops are intrinsically cohesive.
+    "PMD.TooManyMethods",                      // lifecycle + carrier callbacks + handshake + close orchestration.
+    "PMD.CloseResource",                       // LoanedBuffer ownership transfers via retain (PERF-062).
+    "PMD.AvoidBranchingStatementAsLastInLoop", // continue-then-return idiom in advanceInbound state machine.
+    "PMD.AvoidCatchingGenericException",       // best-effort cleanup paths must absorb RuntimeException.
+    "PMD.NullAssignment"                       // currentInbound reset to null after close() to release reference.
 })
 final class NativeTcpStream implements TransportStream {
 
@@ -65,8 +74,7 @@ final class NativeTcpStream implements TransportStream {
     private static final long REGISTRATION_TIMEOUT_MILLIS = 5_000L;
     private static final long CLOSE_OUTBOUND_CONSUMER_BACKOFF_NANOS = 100_000L;
     private static final int CLOSE_OUTBOUND_CONSUMER_DRAIN_ATTEMPTS = 32;
-    private static final int POSIX_SOCKET_IO_FLAGS = 0;
-    
+
     // Phase 1B: TLS ingress queue monitoring thresholds and backpressure control
     private static final boolean QUEUE_BACKPRESSURE_ENABLED =
             Boolean.parseBoolean(System.getProperty("exeris.transport.queueBackpressureEnabled", "false"));
@@ -81,6 +89,10 @@ final class NativeTcpStream implements TransportStream {
     private static final int DRAIN_OK      = 1;
     private static final int DRAIN_STALLED = 2;
 
+    private static final int INBOUND_ADVANCE_NEEDS_MORE_DATA = -1;
+    private static final int INBOUND_ADVANCE_RETRY = 0;
+    private static final int INBOUND_ADVANCE_READY = 1;
+
     private final String engineName;
     private final long streamId;
     private final SocketChannel channel;
@@ -91,12 +103,15 @@ final class NativeTcpStream implements TransportStream {
     private final Runnable closeCallback;
     private final SyscallHandles socketHandles;
     private final int plainSocketHandle;
-    private final PlainSocketBackend plainSocketBackend;
+    private final NativeTcpStreamPlainSocketIo.Backend plainSocketBackend;
+    private final NativeTcpStreamPendingWrite.TlsContext pendingWriteTlsContext;
+    private final NativeTcpStreamPendingWrite.TryWriter pendingWriteTryWriter;
 
     private final AtomicBoolean closeRequested = new AtomicBoolean(false);
     private final AtomicBoolean closed = new AtomicBoolean(false);
     private final AtomicBoolean remoteClosed = new AtomicBoolean(false);
-    private final Queue<PendingWrite> outboundQueue = new MpscUnboundedArrayQueue<>(JCTOOLS_QUEUE_CHUNK_SIZE);
+    private final Queue<NativeTcpStreamPendingWrite> outboundQueue =
+            new MpscUnboundedArrayQueue<>(JCTOOLS_QUEUE_CHUNK_SIZE);
     private final Queue<LoanedBuffer> inboundQueue = QUEUE_BACKPRESSURE_ENABLED
             ? new SpscArrayQueue<>(INBOUND_QUEUE_CAPACITY)
             : new SpscUnboundedArrayQueue<>(JCTOOLS_QUEUE_CHUNK_SIZE);
@@ -152,7 +167,7 @@ final class NativeTcpStream implements TransportStream {
             "writeInterestCallback must not be null");
         this.closeCallback = Objects.requireNonNull(closeCallback, "closeCallback must not be null");
         this.socketHandles = socketHandles;
-        this.plainSocketBackend = PlainSocketBackend.resolve(channel, tlsEngine, socketHandles);
+        this.plainSocketBackend = NativeTcpStreamPlainSocketIo.Backend.resolve(channel, tlsEngine, socketHandles);
         this.plainSocketHandle = plainSocketBackend.usesCoreSocketSeam()
                 ? SocketChannelFdAccess.requireFd(channel)
                 : -1;
@@ -161,6 +176,10 @@ final class NativeTcpStream implements TransportStream {
                     "NativeTcpStream only supports socket-owner TLS engines (CommunityTlsEngine); "
                     + "buffer-owner engines are not supported");
         }
+        this.pendingWriteTlsContext = tlsEngine == null
+                ? null
+                : new NativeTcpStreamPendingWrite.TlsContext(tlsEngine, tlsLock, allocator);
+        this.pendingWriteTryWriter = this::tryWrite;
     }
 
     @Override
@@ -176,7 +195,7 @@ final class NativeTcpStream implements TransportStream {
         }
 
         Thread currentThread = Thread.currentThread();
-        acquireSingleConsumer(runtime.inboundConsumer(), currentThread, "inbound");
+        NativeTcpStreamConsumerGate.acquireSingleConsumer(runtime.inboundConsumer(), currentThread, "inbound");
         try {
             if (closed.get()) {
                 return closedReadOutcome();
@@ -193,16 +212,16 @@ final class NativeTcpStream implements TransportStream {
                     return closedReadOutcome();
                 }
                 int inboundState = advanceInbound();
-                if (inboundState == -1) {
+                if (inboundState == INBOUND_ADVANCE_NEEDS_MORE_DATA) {
                     return -1;
                 }
-                if (inboundState == 0) {
+                if (inboundState == INBOUND_ADVANCE_RETRY) {
                     continue;
                 }
                 return copyFromInbound(target, maxBytes);
             }
         } finally {
-            releaseSingleConsumer(runtime.inboundConsumer(), currentThread);
+            NativeTcpStreamConsumerGate.releaseSingleConsumer(runtime.inboundConsumer(), currentThread);
         }
     }
 
@@ -212,24 +231,32 @@ final class NativeTcpStream implements TransportStream {
      */
     private int advanceInbound() {
         if (currentInbound == null) {
-            LoanedBuffer next = inboundQueue.poll();
-            if (next == null) {
-                if (remoteClosed.get()) {
-                    return -1;
-                }
-                awaitReadableIngress();
-                return 0;
+            int adoptResult = adoptNextInboundFromQueue();
+            if (adoptResult != INBOUND_ADVANCE_READY) {
+                return adoptResult;
             }
-            decrementDepth(inboundQueueDepth);
-            currentInbound = next;
-            currentInboundOffset = 0;
         }
         int available = (int) currentInbound.size() - currentInboundOffset;
         if (available <= 0) {
             closeCurrentInbound();
-            return 0;
+            return INBOUND_ADVANCE_RETRY;
         }
-        return 1;
+        return INBOUND_ADVANCE_READY;
+    }
+
+    private int adoptNextInboundFromQueue() {
+        LoanedBuffer next = inboundQueue.poll();
+        if (next == null) {
+            if (remoteClosed.get()) {
+                return INBOUND_ADVANCE_NEEDS_MORE_DATA;
+            }
+            awaitReadableIngress();
+            return INBOUND_ADVANCE_RETRY;
+        }
+        decrementDepth(inboundQueueDepth);
+        currentInbound = next;
+        currentInboundOffset = 0;
+        return INBOUND_ADVANCE_READY;
     }
 
     /**
@@ -298,7 +325,7 @@ final class NativeTcpStream implements TransportStream {
 
         ensureTlsReady(true);
         Thread observedConsumer = runtime.outboundConsumer().get();
-        PendingWrite pendingWrite = new PendingWrite(buffer, length);
+        NativeTcpStreamPendingWrite pendingWrite = newPendingWrite(buffer, length);
         boolean queueWasEmpty = enqueuePendingWrite(pendingWrite, false);
         if (!queueWasEmpty) {
             Thread activeConsumer = runtime.outboundConsumer().get();
@@ -454,11 +481,9 @@ final class NativeTcpStream implements TransportStream {
             return 0;
         }
         if (plainSocketBackend.usesCoreSocketSeam()) {
-            return trySocketSeamRead(target, maxBytes);
+            return NativeTcpStreamPlainSocketIo.seamRead(socketHandles, plainSocketHandle, target, maxBytes, streamId);
         }
-        ByteBuffer targetBuffer = target.asSlice(0, maxBytes).asByteBuffer();
-        targetBuffer.clear();
-        return channel.read(targetBuffer);
+        return NativeTcpStreamPlainSocketIo.nioFallbackRead(channel, target, maxBytes);
     }
 
     /* default */ boolean usesFdOwnerTls() {
@@ -558,13 +583,13 @@ final class NativeTcpStream implements TransportStream {
 
     /* default */ boolean flushPendingWrites() {
         Thread currentThread = Thread.currentThread();
-        if (!tryAcquireSingleConsumer(runtime.outboundConsumer(), currentThread)) {
+        if (!NativeTcpStreamConsumerGate.tryAcquireSingleConsumer(runtime.outboundConsumer(), currentThread)) {
             return false;
         }
         try {
             return drainPendingWrites();
         } finally {
-            releaseSingleConsumer(runtime.outboundConsumer(), currentThread);
+            NativeTcpStreamConsumerGate.releaseSingleConsumer(runtime.outboundConsumer(), currentThread);
         }
     }
 
@@ -583,7 +608,7 @@ final class NativeTcpStream implements TransportStream {
             return outboundQueue.peek() == null;
         }
 
-        PendingWrite pending = outboundQueue.peek();
+        NativeTcpStreamPendingWrite pending = outboundQueue.peek();
         while (pending != null) {
             int result = drainSinglePendingWrite(pending);
             if (result == DRAIN_CLOSED) {
@@ -602,27 +627,31 @@ final class NativeTcpStream implements TransportStream {
         return true;
     }
 
-    private int drainSinglePendingWrite(PendingWrite pending) {
+    private NativeTcpStreamPendingWrite newPendingWrite(LoanedBuffer buffer, int length) {
+        return new NativeTcpStreamPendingWrite(buffer, length, pendingWriteTlsContext, pendingWriteTryWriter);
+    }
+
+    private int drainSinglePendingWrite(NativeTcpStreamPendingWrite pending) {
         if (tlsEngine == null) {
             return tryDrainPlainWrite(pending) ? DRAIN_OK : DRAIN_STALLED;
         }
         return drainTlsPending(pending);
     }
 
-    private void completeQueueHeadAfterDrain(PendingWrite expectedHead) {
-        PendingWrite completed = outboundQueue.poll();
+    private void completeQueueHeadAfterDrain(NativeTcpStreamPendingWrite expectedHead) {
+        NativeTcpStreamPendingWrite completed = outboundQueue.poll();
         if (!Objects.equals(completed, expectedHead)) {
             throw new IllegalStateException("Outbound queue head changed during flush for stream " + streamId);
         }
         closePendingWriteAfterPoll(completed);
     }
 
-    private void closePendingWriteAfterPoll(PendingWrite pendingWrite) {
+    private void closePendingWriteAfterPoll(NativeTcpStreamPendingWrite pendingWrite) {
         decrementDepth(outboundQueueDepth);
         pendingWrite.close();
     }
 
-    private int drainTlsPending(PendingWrite pending) {
+    private int drainTlsPending(NativeTcpStreamPendingWrite pending) {
         TlsStatus status = pending.prepareCipher();
         if (status == TlsStatus.CLOSED) {
             close();
@@ -634,7 +663,7 @@ final class NativeTcpStream implements TransportStream {
         return tryDrainCipherWrite(pending) ? DRAIN_OK : DRAIN_STALLED;
     }
 
-    private boolean tryDrainPlainWrite(PendingWrite pending) {
+    private boolean tryDrainPlainWrite(NativeTcpStreamPendingWrite pending) {
         try {
             return pending.writePlain();
         } catch (IOException e) {
@@ -645,7 +674,7 @@ final class NativeTcpStream implements TransportStream {
         }
     }
 
-    private boolean tryDrainCipherWrite(PendingWrite pending) {
+    private boolean tryDrainCipherWrite(NativeTcpStreamPendingWrite pending) {
         try {
             return pending.writeCipher();
         } catch (IOException e) {
@@ -725,60 +754,10 @@ final class NativeTcpStream implements TransportStream {
             return 0;
         }
         if (plainSocketBackend.usesCoreSocketSeam()) {
-            return trySocketSeamWrite(source, offset, length);
+            return NativeTcpStreamPlainSocketIo.seamWriteWithNioFallback(
+                    socketHandles, plainSocketHandle, channel, source, offset, length, streamId);
         }
-        MemorySegment slice = source.asSlice(offset, length);
-        ByteBuffer sourceBuffer = slice.asByteBuffer();
-        return channel.write(sourceBuffer);
-    }
-
-    private int trySocketSeamRead(MemorySegment target, int maxBytes) throws IOException {
-        try {
-            long result = (long) socketHandles.recv().invokeExact(
-                    plainSocketHandle,
-                    target.asSlice(0, maxBytes),
-                    (long) maxBytes,
-                    POSIX_SOCKET_IO_FLAGS);
-            if (result > 0) {
-                return (int) result;
-            }
-            if (result == 0) {
-                return -1;
-            }
-            int errno = SyscallErrno.currentSocketErrno(socketHandles);
-            if (SyscallErrno.isRetryable(errno)) {
-                return 0;
-            }
-            throw new IOException("Core socket recv() failed with errno=" + errno + " for stream " + streamId);
-        } catch (IOException ex) {
-            throw ex;
-        } catch (Throwable ex) {
-            throw new IOException("Core socket recv() invocation failed for stream " + streamId, ex);
-        }
-    }
-
-    private int trySocketSeamWrite(MemorySegment source, int offset, int length) throws IOException {
-        try {
-            long result = (long) socketHandles.send().invokeExact(
-                    plainSocketHandle,
-                    source.asSlice(offset, length),
-                    (long) length,
-                    POSIX_SOCKET_IO_FLAGS);
-            if (result >= 0) {
-                return (int) result;
-            }
-            int errno = SyscallErrno.currentSocketErrno(socketHandles);
-            if (SyscallErrno.isRetryable(errno)) {
-                return 0;
-            }
-            throw new IOException("Core socket send() failed with errno=" + errno + " for stream " + streamId);
-        } catch (IOException ex) {
-            throw ex;
-        } catch (Throwable _) {
-            MemorySegment slice = source.asSlice(offset, length);
-            ByteBuffer sourceBuffer = slice.asByteBuffer();
-            return channel.write(sourceBuffer);
-        }
+        return NativeTcpStreamPlainSocketIo.nioFallbackWrite(channel, source, offset, length);
     }
 
     private void ensureOpen() {
@@ -885,14 +864,14 @@ final class NativeTcpStream implements TransportStream {
 
     private void cleanupInboundIfOwnedByCurrentThreadOrIdle() {
         Thread currentThread = Thread.currentThread();
-        if (!tryAcquireSingleConsumer(runtime.inboundConsumer(), currentThread)) {
+        if (!NativeTcpStreamConsumerGate.tryAcquireSingleConsumer(runtime.inboundConsumer(), currentThread)) {
             return;
         }
         try {
             closeCurrentInbound();
             drainInboundQueue();
         } finally {
-            releaseSingleConsumer(runtime.inboundConsumer(), currentThread);
+            NativeTcpStreamConsumerGate.releaseSingleConsumer(runtime.inboundConsumer(), currentThread);
         }
     }
 
@@ -904,11 +883,11 @@ final class NativeTcpStream implements TransportStream {
             MemorySegment.copy(source, offset, buffered.segment(), 0, length);
             buffered.setSize(length);
             buffered.retain();
-            enqueuePendingWrite(new PendingWrite(buffered, length), true);
+            enqueuePendingWrite(newPendingWrite(buffered, length), true);
         }
     }
 
-    private boolean enqueuePendingWrite(PendingWrite pendingWrite, boolean signalWriteInterest) {
+    private boolean enqueuePendingWrite(NativeTcpStreamPendingWrite pendingWrite, boolean signalWriteInterest) {
         int previousDepth = outboundQueueDepth.getAndIncrement();
         boolean offered = outboundQueue.offer(pendingWrite);
         if (!offered) {
@@ -940,13 +919,13 @@ final class NativeTcpStream implements TransportStream {
 
     private void cleanupOutboundIfOwnedByCurrentThreadOrIdle() {
         Thread currentThread = Thread.currentThread();
-        if (!tryAcquireSingleConsumer(runtime.outboundConsumer(), currentThread)) {
+        if (!NativeTcpStreamConsumerGate.tryAcquireSingleConsumer(runtime.outboundConsumer(), currentThread)) {
             return;
         }
         try {
             drainOutboundQueue();
         } finally {
-            releaseSingleConsumer(runtime.outboundConsumer(), currentThread);
+            NativeTcpStreamConsumerGate.releaseSingleConsumer(runtime.outboundConsumer(), currentThread);
         }
     }
 
@@ -1013,30 +992,6 @@ final class NativeTcpStream implements TransportStream {
         closeCallback.run();
     }
 
-    private static void acquireSingleConsumer(AtomicReference<Thread> consumerRef,
-                                              Thread currentThread,
-                                              String queueName) {
-        Thread owner = consumerRef.get();
-        if (Objects.equals(owner, currentThread)) {
-            return;
-        }
-        if (!consumerRef.compareAndSet(null, currentThread)) {
-            throw new IllegalStateException(
-                    "Concurrent " + queueName + " queue consumer detected for stream thread "
-                            + currentThread.getName());
-        }
-    }
-
-    private static boolean tryAcquireSingleConsumer(AtomicReference<Thread> consumerRef, Thread currentThread) {
-        Thread owner = consumerRef.get();
-        return Objects.equals(owner, currentThread)
-                || (owner == null && consumerRef.compareAndSet(null, currentThread));
-    }
-
-    private static void releaseSingleConsumer(AtomicReference<Thread> consumerRef, Thread currentThread) {
-        consumerRef.compareAndSet(currentThread, null);
-    }
-
     private void closeCurrentInbound() {
         if (currentInbound != null) {
             currentInbound.close();
@@ -1055,7 +1010,7 @@ final class NativeTcpStream implements TransportStream {
     }
 
     private void drainOutboundQueue() {
-        PendingWrite pending = outboundQueue.poll();
+        NativeTcpStreamPendingWrite pending = outboundQueue.poll();
         while (pending != null) {
             closePendingWriteAfterPoll(pending);
             pending = outboundQueue.poll();
@@ -1069,37 +1024,6 @@ final class NativeTcpStream implements TransportStream {
     private static void logBestEffortCleanupFailure(String stage, RuntimeException error) {
         if (LOG.isLoggable(System.Logger.Level.DEBUG)) {
             LOG.log(System.Logger.Level.DEBUG, "Best-effort cleanup failed at stage: " + stage, error);
-        }
-    }
-
-    private enum PlainSocketBackend {
-        CORE_SOCKET_SEAM("core-socket-seam"),
-        NIO_FALLBACK("nio-fallback");
-
-        private final String configValue;
-
-        PlainSocketBackend(String configValue) {
-            this.configValue = configValue;
-        }
-
-        private boolean usesCoreSocketSeam() {
-            return this == CORE_SOCKET_SEAM;
-        }
-
-        private String configValue() {
-            return configValue;
-        }
-
-        private static PlainSocketBackend resolve(SocketChannel channel,
-                                                  TlsEngine tlsEngine,
-                                                  SyscallHandles socketHandles) {
-            if (tlsEngine != null
-                    || socketHandles == null
-                    || !socketHandles.supportsPlainSocketIo()
-                    || socketHandles.hasIoctlsocket()) {
-                return NIO_FALLBACK;
-            }
-            return SocketChannelFdAccess.canResolveFd(channel) ? CORE_SOCKET_SEAM : NIO_FALLBACK;
         }
     }
 
@@ -1195,75 +1119,4 @@ final class NativeTcpStream implements TransportStream {
         }
     }
 
-    private final class PendingWrite implements AutoCloseable {
-
-        private LoanedBuffer plainBuffer;
-        private final int plainLength;
-        private int plainOffset;
-        private LoanedBuffer cipherBuffer;
-        private int cipherLength;
-        private int cipherOffset;
-
-        private PendingWrite(LoanedBuffer plainBuffer, int plainLength) {
-            this.plainBuffer = plainBuffer;
-            this.plainLength = plainLength;
-            this.plainBuffer.setSize(plainLength);
-        }
-
-        private boolean writePlain() throws IOException {
-            int written = tryWrite(plainBuffer.segment(), plainOffset, plainLength - plainOffset);
-            if (written > 0) {
-                plainOffset += written;
-            }
-            return plainOffset >= plainLength;
-        }
-
-        private TlsStatus prepareCipher() {
-            if (cipherBuffer != null) {
-                return TlsStatus.OK;
-            }
-            try (LoanedBuffer cipher = allocator.allocateNetwork(plainLength + 1024)) {
-                TlsStatus status;
-                synchronized (tlsLock) {
-                    status = tlsEngine.wrap(plainBuffer, cipher);
-                }
-                if (status != TlsStatus.OK) {
-                    return status;
-                }
-                if (cipher.size() > 0) {
-                    cipher.retain();
-                    cipherBuffer = cipher;
-                    cipherLength = (int) cipher.size();
-                }
-                return TlsStatus.OK;
-            }
-        }
-
-        private boolean writeCipher() throws IOException {
-            if (cipherLength == 0) {
-                return true;
-            }
-            int written = tryWrite(cipherBuffer.segment(), cipherOffset, cipherLength - cipherOffset);
-            if (written > 0) {
-                cipherOffset += written;
-            }
-            return cipherOffset >= cipherLength;
-        }
-
-        private long bytesWritten() {
-            return cipherBuffer != null ? cipherOffset : plainOffset;
-        }
-
-        @Override
-        public void close() {
-            if (cipherBuffer != null) {
-                cipherBuffer.close();
-                cipherBuffer = null;
-            }
-            if (plainBuffer != null) {
-                plainBuffer.close();
-                plainBuffer = null;
-            }
-        }
-    }
 }
