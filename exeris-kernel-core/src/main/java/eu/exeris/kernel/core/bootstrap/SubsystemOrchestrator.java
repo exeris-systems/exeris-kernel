@@ -23,17 +23,12 @@ import eu.exeris.kernel.spi.exceptions.bootstrap.SubsystemCircularDependencyExce
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.Deque;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.PriorityQueue;
-import java.util.ServiceLoader;
 import java.util.Set;
 import java.util.concurrent.StructuredTaskScope;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -86,14 +81,19 @@ import java.util.function.UnaryOperator;
  * @see SubsystemCircularDependencyException
  * @see BootstrapJfrEvents
  */
-// CouplingBetweenObjects, TooManyMethods, CyclomaticComplexity: inherent to a lifecycle
-// orchestrator that coordinates discovery, topological sort, phased init, and shutdown.
-// Extracting further would create leaky micro-classes with no independent value.
+// QA-018b extracted SubsystemRegistryLoader (ServiceLoader discovery + selector closure) and
+// SubsystemTopologicalSorter (Kahn's BFS + DependencyGraph). Residual orchestrator owns
+// lifecycle (initialize/start/shutdown), subsystem-state callbacks, phased start strategies
+// (sequential vs parallel via StructuredTaskScope), failure policy + transitive removal, and
+// cycle-side-effects (JFR + entropy banner) on top of the pure sorter.
+//
+// Retained suppressions:
+// - TooManyMethods, CyclomaticComplexity: inherent to a lifecycle orchestrator coordinating
+//   discovery → sort → phased init → start → shutdown.
+// - LawOfDemeter: chained calls on Subsystem / SubsystemException are intrinsic to the lifecycle.
 @SuppressWarnings({
-    "PMD.CouplingBetweenObjects",
     "PMD.TooManyMethods",
     "PMD.CyclomaticComplexity",
-    "PMD.GodClass",
     "PMD.LawOfDemeter"
 })
 public final class SubsystemOrchestrator {
@@ -251,19 +251,19 @@ public final class SubsystemOrchestrator {
         KernelProfile profile = config.kernelSettings().get().profile();
 
         // 1. Build registry from all SubsystemProviders (priority-sorted)
-        Map<String, Subsystem> registry = buildRegistry(config);
+        Map<String, Subsystem> registry = SubsystemRegistryLoader.loadRegistry(config, classLoader, LOG);
         LOG.log(System.Logger.Level.INFO,
                 "{0} subsystem(s) in registry: {1}", registry.size(), registry.keySet());
 
         // 2. Apply selector — compute transitive closure
-        List<Subsystem> selected = applySelector(registry);
+        List<Subsystem> selected = SubsystemRegistryLoader.applySelectorClosure(selector, registry);
         LOG.log(System.Logger.Level.INFO,
                 "Selector resolved {0} subsystem(s): {1}",
                 selected.size(),
                 selected.stream().map(Subsystem::name).collect(java.util.stream.Collectors.joining(", ")));
 
         // 3. Topological sort — Kahn's BFS, throws on cycle
-        topologicalSort(selected);
+        sortAndAdoptTopologicalOrder(selected);
 
         for (Subsystem subsystem : orderedSubsystems) {
             boolean required = subsystem.phase() == BootstrapPhase.FOUNDATION || !subsystem.isOptional();
@@ -462,229 +462,63 @@ public final class SubsystemOrchestrator {
     }
 
     // =========================================================================
-    // SPI resolution
-    // =========================================================================
-
-    /**
-     * Loads all {@link SubsystemProvider}s, sorts by priority descending, then
-     * merges into a name-keyed registry.
-     * Higher-priority provider wins on name collision (Enterprise over Community).
-     */
-    private Map<String, Subsystem> buildRegistry(ConfigProvider config) {
-        List<SubsystemProvider> providers = new ArrayList<>();
-        ServiceLoader.load(SubsystemProvider.class, classLoader).forEach(providers::add);
-        providers.sort(Comparator
-            .comparingInt(SubsystemProvider::priority)
-            .reversed()
-            .thenComparing(provider -> Objects.toString(provider.moduleName(), ""))
-            .thenComparing(provider -> provider.getClass().getName()));
-
-        if (providers.isEmpty()) {
-            LOG.log(System.Logger.Level.WARNING,
-                    "No SubsystemProvider registered — kernel starts with zero subsystems");
-            return Map.of();
-        }
-
-        Map<String, Subsystem> registry = new LinkedHashMap<>();
-        for (SubsystemProvider provider : providers) {
-            LOG.log(System.Logger.Level.INFO,
-                    "  SubsystemProvider: {0} (priority={1})",
-                    provider.moduleName(), provider.priority());
-            for (Subsystem subsystem : provider.getSubsystems(config)) {
-                if (registry.putIfAbsent(subsystem.name(), subsystem) == null) {
-                    LOG.log(System.Logger.Level.DEBUG, "    + [{0}]", subsystem.name());
-                } else {
-                    LOG.log(System.Logger.Level.DEBUG,
-                            "    [{0}] shadowed by higher-priority provider",
-                            subsystem.name());
-                }
-            }
-        }
-        return registry;
-    }
-
-    // =========================================================================
-    // Selector closure resolution — BFS fixed-point expansion
-    // =========================================================================
-
-    private List<Subsystem> applySelector(Map<String, Subsystem> registry)
-            throws BootstrapException {
-
-        if (selector.isAll()) {
-            return new ArrayList<>(registry.values());
-        }
-
-        Set<String> closure   = new LinkedHashSet<>();
-        Deque<String> toVisit = new ArrayDeque<>(selector.requestedNames());
-
-        while (!toVisit.isEmpty()) {
-            String name = toVisit.poll();
-            if (!closure.add(name)) {
-                continue;
-            }
-
-            Subsystem candidate = registry.get(name);
-            if (candidate == null) {
-                throw new BootstrapException(
-                        "Selector requests subsystem '" + name
-                        + "' which is not provided by any SubsystemProvider on the classpath.");
-            }
-
-            for (String dep : candidate.dependsOn()) {
-                if (!closure.contains(dep)) {
-                    toVisit.add(dep);
-                }
-            }
-        }
-
-        return registry.values().stream()
-                .filter(subsystem -> closure.contains(subsystem.name()))
-                .collect(java.util.stream.Collectors.toCollection(ArrayList::new));
-    }
-
-    // =========================================================================
-    // Topological Sort — Kahn's BFS, O(V+E)
+    // Topological Sort — delegates to SubsystemTopologicalSorter (QA-018b)
     //
-    // CYCLE DETECTION: If the sorted result contains fewer subsystems than the
-    // input, a cycle exists. We emit a JFR event, print the entropy manifest,
-    // and throw SubsystemCircularDependencyException — L0 FAIL_FAST, no recovery.
+    // CYCLE DETECTION: the sorter throws SubsystemCircularDependencyException
+    // on cycles. The orchestrator catches it here to attach side-effecting
+    // diagnostics (JFR event + ENTROPY INTERVENTION banner) before re-throwing
+    // — L0 FAIL_FAST, no recovery.
     // =========================================================================
 
-    /**
-     * Internal, Valhalla-ready value carrier for Kahn's adjacency data.
-     *
-     * @param inDegree   subsystem name → count of unsatisfied incoming edges
-     * @param dependents subsystem name → list of names that depend on it
-     */
-    private record DependencyGraph(
-            Map<String, Integer> inDegree,
-            Map<String, List<String>> dependents) {
-    }
-
-    @SuppressWarnings("PMD.AvoidInstantiatingObjectsInLoops") // computeIfAbsent pattern; allocation only on first dep
-    private DependencyGraph buildDependencyGraph(Map<String, Subsystem> byName)
+    private void sortAndAdoptTopologicalOrder(List<Subsystem> subsystems)
             throws BootstrapException {
-        Map<String, Integer> inDegree = new HashMap<>();
-        Map<String, List<String>> dependents = new HashMap<>();
-
-        for (Subsystem subsystem : byName.values()) {
-            inDegree.putIfAbsent(subsystem.name(), 0);
-            for (String dep : subsystem.dependsOn()) {
-                if (!byName.containsKey(dep)) {
-                    throw new BootstrapException(
-                            "Subsystem '" + subsystem.name() + "' depends on missing subsystem '"
-                            + dep + "' in active registry. [EX-BOOT-0002]");
-                }
-                dependents.computeIfAbsent(dep, ignored -> new ArrayList<>())
-                        .add(subsystem.name());
-                inDegree.merge(subsystem.name(), 1, Integer::sum);
-            }
+        List<Subsystem> result;
+        try {
+            result = SubsystemTopologicalSorter.sort(subsystems);
+        } catch (SubsystemCircularDependencyException cycle) {
+            announceCircularDependency(cycle.cycleMembers());
+            throw cycle;
         }
-        return new DependencyGraph(inDegree, dependents);
-    }
-
-    /**
-     * Topologically sorts {@code subsystems} using Kahn's BFS and populates
-     * {@link #orderedSubsystems}.
-     *
-     * <p><b>Cycle Detection — L0 Hard Kill:</b> If {@code result.size() != input.size()},
-     * one or more cycles exist. The orchestrator:
-     * <ol>
-     *   <li>Identifies the exact cycle members (nodes that never reached in-degree 0).</li>
-     *   <li>Emits {@link BootstrapJfrEvents#emitCircularDependency} for post-mortem JFR.</li>
-     *   <li>Prints the {@code 🜁 ENTROPY INTERVENTION} manifest to stderr.</li>
-     *   <li>Throws {@link SubsystemCircularDependencyException#forCycle} — fatal,
-     *       cannot be suppressed by {@link FailurePolicy#DEGRADE}.</li>
-     * </ol>
-     *
-     * @throws SubsystemCircularDependencyException immediately on cycle detection
-     * @throws BootstrapException                   on duplicate subsystem names
-     */
-    private void topologicalSort(List<Subsystem> subsystems)
-            throws BootstrapException {
-
-        // Build name → Subsystem map; detect duplicate names upfront
-        Map<String, Subsystem> byName = new LinkedHashMap<>();
-        for (Subsystem subsystem : subsystems) {
-            if (byName.put(subsystem.name(), subsystem) != null) {
-                throw new BootstrapException(
-                        "Duplicate subsystem name: '" + subsystem.name() + "'. "
-                        + "Two SubsystemProviders registered a subsystem with the same name.");
-            }
-        }
-
-        DependencyGraph graph = buildDependencyGraph(byName);
-
-        // Seed BFS queue with all zero-in-degree nodes
-        java.util.Queue<String> queue = new PriorityQueue<>();
-        graph.inDegree().entrySet().stream()
-                .filter(e -> e.getValue() == 0)
-                .map(Map.Entry::getKey)
-                .forEach(queue::add);
-
-        List<Subsystem> result = new ArrayList<>(subsystems.size());
-        while (!queue.isEmpty()) {
-            String name = queue.poll();
-            result.add(byName.get(name));
-            for (String dependent : graph.dependents().getOrDefault(name, List.of())) {
-                if (graph.inDegree().merge(dependent, -1, Integer::sum) == 0) {
-                    queue.add(dependent);
-                }
-            }
-        }
-
-        // ── CYCLE DETECTION ──────────────────────────────────────────────────
-        if (result.size() != subsystems.size()) {
-            // Nodes that never reached in-degree 0 are the cycle participants
-            Set<String> cycleMembers = new LinkedHashSet<>(byName.keySet());
-            result.forEach(resolved -> cycleMembers.remove(resolved.name()));
-
-            // Emit JFR event BEFORE throwing — captured in any active recording
-            BootstrapJfrEvents.emitCircularDependency(cycleMembers);
-
-            // 🜁 ENTROPY INTERVENTION
-            LOG.log(System.Logger.Level.ERROR, "");
-            LOG.log(System.Logger.Level.ERROR,
-                    E_PURPLE + E_BOLD + E_BLINK
-                    + "  [ \uD83C\uDF01 E N T R O P Y   I N T E R V E N T I O N ]"
-                    + E_RESET);
-            LOG.log(System.Logger.Level.ERROR,
-                    E_CYAN
-                    + "  \"D\u0336e\u0337t\u0337e\u0337r\u0337m\u0336i\u0336n\u0336i\u0336s"
-                    + "\u0336t\u0336i\u0336c\u0336 \u0336s\u0337y\u0336s\u0337t\u0336e\u0337m"
-                    + "\u0337s\u0336 \u0337a\u0337r\u0336e\u0337 \u0337b\u0337e\u0336a\u0337u"
-                    + "\u0337t\u0336i\u0336f\u0336u\u0336l\u0336.\u0337 \u0337T\u0336o\u0336o"
-                    + "\u0336 \u0336b\u0336a\u0337d\u0337 \u0336t\u0336h\u0337e\u0337y\u0336 "
-                    + "\u0336a\u0336r\u0337e\u0336 \u0337t\u0336e\u0336m\u0337p\u0337o\u0336r"
-                    + "\u0336a\u0337r\u0337y\u0336.\""
-                    + E_RESET);
-            LOG.log(System.Logger.Level.ERROR, "");
-            LOG.log(System.Logger.Level.ERROR,
-                    E_PURPLE + "  FATAL ANOMALY  :  " + KernelErrorCodes.EX_BOOT_0001
-                    + "  (Circular Dependency)" + E_RESET);
-            LOG.log(System.Logger.Level.ERROR,
-                    E_PURPLE + "  The strict topological order has collapsed into a paradox."
-                    + E_RESET);
-            LOG.log(System.Logger.Level.ERROR,
-                    E_PURPLE + "  Cycle detected in modules: {0}" + E_RESET, cycleMembers);
-            LOG.log(System.Logger.Level.ERROR, "");
-            LOG.log(System.Logger.Level.ERROR,
-                    E_CYAN + "  System decay accelerated."
-                    + " Halting JVM to prevent state corruption." + E_RESET);
-            LOG.log(System.Logger.Level.ERROR, "");
-
-            // Pre-allocated path — forCycle() returns SENTINEL when members is empty,
-            // otherwise allocates exactly one diagnostic instance. Zero heap churn
-            // on a code path that terminates the JVM immediately after.
-            throw SubsystemCircularDependencyException.forCycle(cycleMembers);
-        }
-        // ─────────────────────────────────────────────────────────────────────
 
         LOG.log(System.Logger.Level.INFO, "Init order: {0}",
                 result.stream()
                         .map(Subsystem::name)
                         .collect(java.util.stream.Collectors.joining(" -> ")));
         orderedSubsystems.addAll(result);
+    }
+
+    private void announceCircularDependency(Set<String> cycleMembers) {
+        BootstrapJfrEvents.emitCircularDependency(cycleMembers);
+
+        LOG.log(System.Logger.Level.ERROR, "");
+        LOG.log(System.Logger.Level.ERROR,
+                E_PURPLE + E_BOLD + E_BLINK
+                + "  [ 🌁 E N T R O P Y   I N T E R V E N T I O N ]"
+                + E_RESET);
+        LOG.log(System.Logger.Level.ERROR,
+                E_CYAN
+                + "  \"D̶e̷t̷e̷r̷m̶i̶n̶i̶s"
+                + "̶t̶i̶c̶ ̶s̷y̶s̷t̶e̷m"
+                + "̷s̶ ̷a̷r̶e̷ ̷b̷e̶a̷u"
+                + "̷t̶i̶f̶u̶l̶.̷ ̷T̶o̶o"
+                + "̶ ̶b̶a̷d̷ ̶t̶h̷e̷y̶ "
+                + "̶a̶r̷e̶ ̷t̶e̶m̷p̷o̶r"
+                + "̶a̷r̷y̶.\""
+                + E_RESET);
+        LOG.log(System.Logger.Level.ERROR, "");
+        LOG.log(System.Logger.Level.ERROR,
+                E_PURPLE + "  FATAL ANOMALY  :  " + KernelErrorCodes.EX_BOOT_0001
+                + "  (Circular Dependency)" + E_RESET);
+        LOG.log(System.Logger.Level.ERROR,
+                E_PURPLE + "  The strict topological order has collapsed into a paradox."
+                + E_RESET);
+        LOG.log(System.Logger.Level.ERROR,
+                E_PURPLE + "  Cycle detected in modules: {0}" + E_RESET, cycleMembers);
+        LOG.log(System.Logger.Level.ERROR, "");
+        LOG.log(System.Logger.Level.ERROR,
+                E_CYAN + "  System decay accelerated."
+                + " Halting JVM to prevent state corruption." + E_RESET);
+        LOG.log(System.Logger.Level.ERROR, "");
     }
 
     // =========================================================================
