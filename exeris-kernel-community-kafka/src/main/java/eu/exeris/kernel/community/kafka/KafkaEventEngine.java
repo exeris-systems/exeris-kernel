@@ -411,8 +411,11 @@ public final class KafkaEventEngine implements EventEngine {
                 return;
             }
             EventDescriptor descriptor = KafkaEventCodec.decodeDescriptor(frame);
-            byte[] payloadBytes = KafkaEventCodec.decodePayloadBytes(frame);
-            KafkaHeapEventPayload payload = KafkaHeapEventPayload.wrap(payloadBytes);
+            // PERF-071: zero-copy payload tail — slice over the consumer record's value array,
+            // no fresh byte[] + arraycopy. Slice keeps the frame array reachable for GC for
+            // the lifetime of the payload's reference count.
+            KafkaHeapEventPayload payload =
+                    KafkaHeapEventPayload.wrap(KafkaEventCodec.decodePayloadSegment(frame));
             localDelegate.publish(descriptor, payload);
             processedTotal.incrementAndGet();
         }
