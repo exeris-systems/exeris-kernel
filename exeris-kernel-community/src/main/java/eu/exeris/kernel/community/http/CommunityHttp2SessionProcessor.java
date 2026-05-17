@@ -8,19 +8,12 @@
  */
 package eu.exeris.kernel.community.http;
 
-import eu.exeris.kernel.core.http.hpack.HpackDecoder;
-import eu.exeris.kernel.core.http.hpack.HpackDynamicTable;
-import eu.exeris.kernel.core.http.hpack.HpackEncoder;
 import eu.exeris.kernel.core.http.http2.Http2ErrorCode;
-import eu.exeris.kernel.core.http.http2.Http2FrameCodec;
 import eu.exeris.kernel.core.http.http2.Http2FrameEncoder;
 import eu.exeris.kernel.core.http.http2.Http2FrameParser;
 import eu.exeris.kernel.core.http.http2.Http2FrameType;
-import eu.exeris.kernel.core.http.http2.Http2HeaderBlockAssembler;
 import eu.exeris.kernel.spi.http.HttpConfig;
 import eu.exeris.kernel.spi.http.HttpHandler;
-import eu.exeris.kernel.spi.http.HttpHeader;
-import eu.exeris.kernel.spi.http.HttpMethod;
 import eu.exeris.kernel.spi.http.HttpRequest;
 import eu.exeris.kernel.spi.http.HttpResponse;
 import eu.exeris.kernel.spi.http.HttpResponseBodyEncoderRegistry;
@@ -31,23 +24,26 @@ import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.transport.TransportStream;
 
 import java.lang.foreign.MemorySegment;
-import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
 import java.util.Objects;
 
+// QA-018a extracted 4 seams: Http2SessionContext (HPACK + assembler + per-stream state),
+// PendingRequestHeaders (HPACK-decode accumulator), CommunityHttp2ControlFrames (SETTINGS/PING/
+// RST_STREAM/GOAWAY writers), and CommunityHttp2FrameFragments (pad/priority extraction).
+// Residual processor retains the frame-loop, frame dispatcher, headers/data frame handlers,
+// response writer, and ingress read loop.
+// Retained suppressions:
+// - GodClass / TooManyMethods: residual WMC=72; frame-loop + dispatcher + frame handlers +
+//   response writer remain cohesive; further split deferred.
+// - AvoidCatchingGenericException: frame-loop catches RuntimeException to surface PROTOCOL_ERROR via GOAWAY.
+// - CloseResource: LoanedBuffer ownership transfers via response.body() pipeline.
+// - CyclomaticComplexity: frame-dispatcher switch + frame loop are intrinsically cohesive.
 @SuppressWarnings({
+        "PMD.GodClass",
+        "PMD.TooManyMethods",
         "PMD.AvoidCatchingGenericException",
         "PMD.CloseResource",
-        "PMD.CouplingBetweenObjects",
-        "PMD.CyclomaticComplexity",
-        "PMD.ExcessiveImports",
-        "PMD.GodClass",
-        "PMD.TooManyMethods"
+        "PMD.CyclomaticComplexity"
 })
 final class CommunityHttp2SessionProcessor {
 
@@ -55,21 +51,12 @@ final class CommunityHttp2SessionProcessor {
             System.getLogger(CommunityHttp2SessionProcessor.class.getName());
 
     private static final String CRLF = "\r\n";
-    private static final String HEADER_CONTENT_LENGTH = "Content-Length";
-    private static final String UPGRADE_TOKEN = "upgrade";
     private static final long HTTP2_FRAME_LOOP_INVALID = -1L;
     private static final long HTTP2_FRAME_LOOP_STOP = -2L;
-    private static final int HTTP2_MAX_DYNAMIC_TABLE_SIZE = 4096;
-    private static final int HTTP2_MAX_HEADER_LIST_SIZE = 65_536;
     private static final int HTTP2_MAX_HEADER_BLOCK_BYTES = 65_536;
     private static final int HTTP2_MAX_FRAME_PAYLOAD_BYTES = 16 * 1024;
     private static final int HTTP2_FLAG_END_STREAM = 0x01;
     private static final int HTTP2_FLAG_END_HEADERS = 0x04;
-    private static final int HTTP2_FLAG_PADDED = 0x08;
-    private static final int HTTP2_SETTINGS_HEADER_TABLE_SIZE = 0x01;
-    private static final int HTTP2_PADDED_LENGTH_FIELD_BYTES = 1;
-    private static final int HTTP2_PRIORITY_FIELD_BYTES = 5;
-    private static final int H2_HANDSHAKE_BUFFER_BYTES = 64;
 
     private final MemoryAllocator allocator;
     private final HttpResponseBodyEncoderRegistry encoderRegistry;
@@ -101,7 +88,7 @@ final class CommunityHttp2SessionProcessor {
             LOG.log(System.Logger.Level.INFO,
                     "HTTP/2 prior-knowledge preface detected; entering h2c request frame-loop mode");
         }
-        sendHttp2ServerSettings(stream);
+        CommunityHttp2ControlFrames.sendServerSettings(allocator, stream);
         try (Http2SessionContext session = Http2SessionContext.create(allocator)) {
             processBufferedHttp2Frames(stream, handler, session, state, totalBytes, initialFrameOffset);
         }
@@ -114,7 +101,7 @@ final class CommunityHttp2SessionProcessor {
         LoanedBuffer aggregate = state.aggregate();
         writeHttp11UpgradeResponse(stream);
         long bufferedHttp2Bytes = CommunityHttpBufferOps.retainUnreadBytes(aggregate, readResult.consumedBytes());
-        sendHttp2ServerSettings(stream);
+        CommunityHttp2ControlFrames.sendServerSettings(allocator, stream);
         try (Http2SessionContext session = Http2SessionContext.create(allocator)) {
             processBufferedHttp2Frames(stream, handler, session, state, bufferedHttp2Bytes, 0);
         }
@@ -147,7 +134,8 @@ final class CommunityHttp2SessionProcessor {
                 return;
             }
             if (offset == HTTP2_FRAME_LOOP_INVALID) {
-                sendHttp2GoAway(stream, session.lastProcessedStreamId(), Http2ErrorCode.PROTOCOL_ERROR);
+                CommunityHttp2ControlFrames.sendGoAway(
+                        allocator, stream, session.lastProcessedStreamId(), Http2ErrorCode.PROTOCOL_ERROR);
                 return;
             }
 
@@ -156,13 +144,14 @@ final class CommunityHttp2SessionProcessor {
             bufferedBytes = unreadBytes;
 
             if (bufferedBytes >= maxAggregateBytes) {
-                sendHttp2GoAway(stream, session.lastProcessedStreamId(), Http2ErrorCode.FRAME_SIZE_ERROR);
+                CommunityHttp2ControlFrames.sendGoAway(
+                        allocator, stream, session.lastProcessedStreamId(), Http2ErrorCode.FRAME_SIZE_ERROR);
                 return;
             }
 
             int read = readHttp2Bytes(stream, state, bufferedBytes);
             if (read < 0) {
-                sendHttp2GoAwayNoError(stream);
+                CommunityHttp2ControlFrames.sendGoAwayNoError(allocator, stream);
                 return;
             }
             if (read > 0) {
@@ -221,8 +210,8 @@ final class CommunityHttp2SessionProcessor {
                     throw new IllegalStateException("Invalid SETTINGS stream");
                 }
                 if (!header.isAck()) {
-                    applyHttp2SettingsFromPeer(session, aggregate, payloadOffset, header.length());
-                    sendHttp2SettingsAck(stream);
+                    session.applyPeerSettings(aggregate, payloadOffset, header.length());
+                    CommunityHttp2ControlFrames.sendSettingsAck(allocator, stream);
                 }
                 yield true;
             }
@@ -231,7 +220,7 @@ final class CommunityHttp2SessionProcessor {
                     throw new IllegalStateException("Invalid PING frame");
                 }
                 if (!header.isAck()) {
-                    sendHttp2PingAck(stream, aggregate, payloadOffset);
+                    CommunityHttp2ControlFrames.sendPingAck(allocator, stream, aggregate, payloadOffset);
                 }
                 yield true;
             }
@@ -254,34 +243,6 @@ final class CommunityHttp2SessionProcessor {
         };
     }
 
-    private void applyHttp2SettingsFromPeer(Http2SessionContext session,
-                                            LoanedBuffer aggregate,
-                                            long payloadOffset,
-                                            int payloadLength) {
-        if (payloadLength == 0) {
-            return;
-        }
-        if (payloadLength % 6 != 0) {
-            throw new IllegalStateException("Invalid SETTINGS payload length");
-        }
-        for (int offset = 0; offset < payloadLength; offset += 6) {
-            long cursor = payloadOffset + offset;
-            int settingId = ((aggregate.segment().get(ValueLayout.JAVA_BYTE, cursor) & 0xFF) << 8)
-                    | (aggregate.segment().get(ValueLayout.JAVA_BYTE, cursor + 1) & 0xFF);
-            long settingValue = ((aggregate.segment().get(ValueLayout.JAVA_BYTE, cursor + 2) & 0xFFL) << 24)
-                    | ((aggregate.segment().get(ValueLayout.JAVA_BYTE, cursor + 3) & 0xFFL) << 16)
-                    | ((aggregate.segment().get(ValueLayout.JAVA_BYTE, cursor + 4) & 0xFFL) << 8)
-                    | (aggregate.segment().get(ValueLayout.JAVA_BYTE, cursor + 5) & 0xFFL);
-            if (settingId == HTTP2_SETTINGS_HEADER_TABLE_SIZE) {
-                session.applyPeerHeaderTableSize(settingValue);
-            } else if (settingId == 0x05
-                    && settingValue >= Http2FrameCodec.MIN_MAX_FRAME_SIZE
-                    && settingValue <= Http2FrameCodec.MAX_MAX_FRAME_SIZE) {
-                session.applyPeerMaxFrameSize((int) settingValue);
-            }
-        }
-    }
-
     private boolean handleHttp2HeadersFrame(TransportStream stream,
                                             HttpHandler handler,
                                             Http2SessionContext session,
@@ -292,10 +253,12 @@ final class CommunityHttp2SessionProcessor {
             throw new IllegalStateException("Invalid HEADERS stream");
         }
         if (session.isAwaitingContinuation()) {
-            sendHttp2GoAway(stream, session.lastProcessedStreamId(), Http2ErrorCode.PROTOCOL_ERROR);
+            CommunityHttp2ControlFrames.sendGoAway(
+                    allocator, stream, session.lastProcessedStreamId(), Http2ErrorCode.PROTOCOL_ERROR);
             return false;
         }
-        HeaderFragment fragment = extractHeadersFragment(aggregate, payloadOffset, header);
+        CommunityHttp2FrameFragments.Fragment fragment =
+                CommunityHttp2FrameFragments.extractHeadersFragment(aggregate, payloadOffset, header);
         session.setPendingEndStream(header.isEndStream());
         session.beginHeaders(header, aggregate.segment(), fragment.offset(), fragment.length());
         if (session.isAwaitingContinuation()) {
@@ -330,15 +293,16 @@ final class CommunityHttp2SessionProcessor {
 
         Http2RequestStreamState requestStream = session.requestStream(header.streamId());
         if (requestStream == null) {
-            sendHttp2RstStreamRefused(stream, header.streamId());
+            CommunityHttp2ControlFrames.sendRstStreamRefused(allocator, stream, header.streamId());
             return;
         }
 
-        HeaderFragment dataFragment = extractDataFragment(aggregate, payloadOffset, header);
+        CommunityHttp2FrameFragments.Fragment dataFragment =
+                CommunityHttp2FrameFragments.extractDataFragment(aggregate, payloadOffset, header);
         int nextBodyBytes = requestStream.bodyBytes() + dataFragment.length();
         long maxBodyBytes = config.maxRequestBodyBytes();
         if (maxBodyBytes >= 0 && nextBodyBytes > maxBodyBytes) {
-            sendHttp2RstStreamCancel(stream, header.streamId());
+            CommunityHttp2ControlFrames.sendRstStreamCancel(allocator, stream, header.streamId());
             session.resetRequestStream(header.streamId());
             return;
         }
@@ -350,7 +314,7 @@ final class CommunityHttp2SessionProcessor {
 
         Http2RequestStreamState finished = session.takeRequestStream(header.streamId());
         if (finished == null) {
-            sendHttp2RstStreamRefused(stream, header.streamId());
+            CommunityHttp2ControlFrames.sendRstStreamRefused(allocator, stream, header.streamId());
             return;
         }
         dispatchHttp2Request(stream, handler, session, finished.streamId(), finished.request(), finished.detachBody());
@@ -503,136 +467,6 @@ final class CommunityHttp2SessionProcessor {
         stream.write(outboundFrame.segment(), (int) written);
     }
 
-    private void sendHttp2PingAck(TransportStream stream,
-                                  LoanedBuffer aggregate,
-                                  long payloadOffset) {
-        try (LoanedBuffer outbound = allocator.allocateNetwork(H2_HANDSHAKE_BUFFER_BYTES)) {
-            Http2FrameEncoder.writeHeader(
-                    outbound.segment(),
-                    0,
-                    8,
-                    Http2FrameType.PING.code(),
-                    0x01,
-                    0);
-            MemorySegment.copy(
-                    aggregate.segment(),
-                    payloadOffset,
-                    outbound.segment(),
-                    Http2FrameParser.FRAME_HEADER_SIZE,
-                    8);
-            long written = Http2FrameParser.FRAME_HEADER_SIZE + 8L;
-            outbound.setSize(written);
-            stream.write(outbound.segment(), (int) written);
-        }
-    }
-
-    private void sendHttp2ServerSettings(TransportStream stream) {
-        try (LoanedBuffer outbound = allocator.allocateNetwork(H2_HANDSHAKE_BUFFER_BYTES)) {
-            long written = Http2FrameEncoder.writeSettings(outbound.segment(), 0, 0, false);
-            outbound.setSize(written);
-            stream.write(outbound.segment(), (int) written);
-        }
-    }
-
-    private void sendHttp2SettingsAck(TransportStream stream) {
-        try (LoanedBuffer outbound = allocator.allocateNetwork(H2_HANDSHAKE_BUFFER_BYTES)) {
-            long written = Http2FrameEncoder.writeSettings(outbound.segment(), 0, 0, true);
-            outbound.setSize(written);
-            stream.write(outbound.segment(), (int) written);
-        }
-    }
-
-    private void sendHttp2RstStreamRefused(TransportStream stream, int streamId) {
-        try (LoanedBuffer outbound = allocator.allocateNetwork(H2_HANDSHAKE_BUFFER_BYTES)) {
-            long written = Http2FrameEncoder.writeRstStream(
-                    outbound.segment(),
-                    0,
-                    streamId,
-                    Http2ErrorCode.REFUSED_STREAM.code());
-            outbound.setSize(written);
-            stream.write(outbound.segment(), (int) written);
-        }
-    }
-
-    private void sendHttp2RstStreamCancel(TransportStream stream, int streamId) {
-        try (LoanedBuffer outbound = allocator.allocateNetwork(H2_HANDSHAKE_BUFFER_BYTES)) {
-            long written = Http2FrameEncoder.writeRstStream(
-                    outbound.segment(),
-                    0,
-                    streamId,
-                    Http2ErrorCode.CANCEL.code());
-            outbound.setSize(written);
-            stream.write(outbound.segment(), (int) written);
-        }
-    }
-
-    private void sendHttp2GoAwayNoError(TransportStream stream) {
-        sendHttp2GoAway(stream, 0, Http2ErrorCode.NO_ERROR);
-    }
-
-    private void sendHttp2GoAway(TransportStream stream, int lastStreamId, Http2ErrorCode errorCode) {
-        try (LoanedBuffer outbound = allocator.allocateNetwork(H2_HANDSHAKE_BUFFER_BYTES)) {
-            long written = Http2FrameEncoder.writeGoAway(
-                    outbound.segment(), 0, lastStreamId, errorCode.code());
-            outbound.setSize(written);
-            stream.write(outbound.segment(), (int) written);
-        }
-    }
-
-    private HeaderFragment extractHeadersFragment(LoanedBuffer aggregate,
-                                                  long payloadOffset,
-                                                  Http2FrameParser.FrameHeader header) {
-        long fragmentOffset = payloadOffset;
-        int fragmentLength = header.length();
-        int padLength = 0;
-
-        if (header.isPadded()) {
-            if (fragmentLength < HTTP2_PADDED_LENGTH_FIELD_BYTES) {
-                throw new IllegalStateException("Invalid PADDED HEADERS frame");
-            }
-            padLength = aggregate.segment().get(ValueLayout.JAVA_BYTE, fragmentOffset) & 0xFF;
-            fragmentOffset += HTTP2_PADDED_LENGTH_FIELD_BYTES;
-            fragmentLength -= HTTP2_PADDED_LENGTH_FIELD_BYTES;
-        }
-
-        if (header.isPriority()) {
-            if (fragmentLength < HTTP2_PRIORITY_FIELD_BYTES) {
-                throw new IllegalStateException("Invalid PRIORITY section in HEADERS frame");
-            }
-            fragmentOffset += HTTP2_PRIORITY_FIELD_BYTES;
-            fragmentLength -= HTTP2_PRIORITY_FIELD_BYTES;
-        }
-
-        if (padLength > fragmentLength) {
-            throw new IllegalStateException("Invalid HEADERS padding");
-        }
-        fragmentLength -= padLength;
-        return new HeaderFragment(fragmentOffset, fragmentLength);
-    }
-
-    private HeaderFragment extractDataFragment(LoanedBuffer aggregate,
-                                               long payloadOffset,
-                                               Http2FrameParser.FrameHeader header) {
-        long fragmentOffset = payloadOffset;
-        int fragmentLength = header.length();
-        int padLength = 0;
-
-        if ((header.flags() & HTTP2_FLAG_PADDED) != 0) {
-            if (fragmentLength < HTTP2_PADDED_LENGTH_FIELD_BYTES) {
-                throw new IllegalStateException("Invalid PADDED DATA frame");
-            }
-            padLength = aggregate.segment().get(ValueLayout.JAVA_BYTE, fragmentOffset) & 0xFF;
-            fragmentOffset += HTTP2_PADDED_LENGTH_FIELD_BYTES;
-            fragmentLength -= HTTP2_PADDED_LENGTH_FIELD_BYTES;
-        }
-
-        if (padLength > fragmentLength) {
-            throw new IllegalStateException("Invalid DATA padding");
-        }
-        fragmentLength -= padLength;
-        return new HeaderFragment(fragmentOffset, fragmentLength);
-    }
-
     private int readHttp2Bytes(TransportStream stream,
                                ProcessingState state,
                                long bufferedBytes) {
@@ -645,252 +479,4 @@ final class CommunityHttp2SessionProcessor {
         return stream.read(aggregate.segment().asSlice(bufferedBytes, chunk), chunk);
     }
 
-    private record HeaderFragment(long offset, int length) {
-    }
-
-    private static final class Http2SessionContext implements AutoCloseable {
-        private final HpackDynamicTable encodeTable;
-        private final HpackDecoder decoder;
-        private final HpackEncoder encoder;
-        private final Http2FrameCodec codec;
-        private final Http2HeaderBlockAssembler assembler;
-        private final Map<Integer, Http2RequestStreamState> requestStreams;
-        private boolean pendingEndStream;
-        private int lastProcessedStreamId;
-
-        private Http2SessionContext(HpackDynamicTable encodeTable,
-                                    HpackDecoder decoder,
-                                    HpackEncoder encoder,
-                                    Http2FrameCodec codec,
-                                    Http2HeaderBlockAssembler assembler) {
-            this.encodeTable = encodeTable;
-            this.decoder = decoder;
-            this.encoder = encoder;
-            this.codec = codec;
-            this.assembler = assembler;
-            this.requestStreams = new HashMap<>();
-            this.pendingEndStream = false;
-            this.lastProcessedStreamId = 0;
-        }
-
-        private static Http2SessionContext create(MemoryAllocator allocator) {
-            HpackDynamicTable decodeTable = new HpackDynamicTable(HTTP2_MAX_DYNAMIC_TABLE_SIZE);
-            HpackDynamicTable encodeTable = new HpackDynamicTable(HTTP2_MAX_DYNAMIC_TABLE_SIZE);
-            HpackDecoder decoder = new HpackDecoder(decodeTable, allocator, HTTP2_MAX_HEADER_LIST_SIZE);
-            HpackEncoder encoder = new HpackEncoder(encodeTable, allocator, false);
-            Http2FrameCodec codec = new Http2FrameCodec();
-            Http2HeaderBlockAssembler assembler = new Http2HeaderBlockAssembler(allocator);
-            return new Http2SessionContext(encodeTable, decoder, encoder, codec, assembler);
-        }
-
-        private void applyPeerHeaderTableSize(long headerTableSize) {
-            encodeTable.setMaxSize(headerTableSize);
-        }
-
-        private Http2FrameCodec codec() {
-            return codec;
-        }
-
-        private void applyPeerMaxFrameSize(int maxFrameSize) {
-            codec.setMaxFrameSize(maxFrameSize);
-        }
-
-        private boolean isAwaitingContinuation() {
-            return assembler.isAwaitingContinuation();
-        }
-
-        private void setPendingEndStream(boolean endStream) {
-            this.pendingEndStream = endStream;
-        }
-
-        private boolean pendingEndStream() {
-            return pendingEndStream;
-        }
-
-        private void beginHeaders(Http2FrameParser.FrameHeader header,
-                                  MemorySegment payload,
-                                  long dataOffset,
-                                  int dataLength) {
-            assembler.beginHeaders(header, payload, dataOffset, dataLength);
-        }
-
-        private void appendContinuation(Http2FrameParser.FrameHeader header,
-                                        MemorySegment payload,
-                                        long dataOffset,
-                                        int dataLength) {
-            assembler.appendContinuation(header, payload, dataOffset, dataLength);
-        }
-
-        private void validateContinuationMode(Http2FrameParser.FrameHeader header) {
-            assembler.validateContinuationMode(header);
-        }
-
-        private Http2DecodedRequest decodePendingRequest() {
-            if (!assembler.isComplete()) {
-                return new Http2DecodedRequest(0, null, "", List.of(), false);
-            }
-            int streamId = assembler.currentStreamId();
-            PendingRequestHeaders pendingHeaders = new PendingRequestHeaders();
-            MemorySegment block = assembler.completeBlock();
-            try {
-                decoder.decode(block, 0, (int) block.byteSize(),
-                        (name, value, _) -> pendingHeaders.accept(name, value));
-            } catch (RuntimeException _) {
-                pendingHeaders.invalidate();
-            }
-            assembler.reset();
-            pendingEndStream = false;
-            return pendingHeaders.toDecodedRequest(streamId);
-        }
-
-        private void openRequestStream(Http2DecodedRequest request) {
-            Http2RequestStreamState previous = requestStreams.put(
-                    request.streamId(),
-                    new Http2RequestStreamState(request.streamId(), request));
-            if (previous != null) {
-                previous.close();
-            }
-        }
-
-        private Http2RequestStreamState requestStream(int streamId) {
-            return requestStreams.get(streamId);
-        }
-
-        private Http2RequestStreamState takeRequestStream(int streamId) {
-            return requestStreams.remove(streamId);
-        }
-
-        private void resetRequestStream(int streamId) {
-            Http2RequestStreamState removed = requestStreams.remove(streamId);
-            if (removed != null) {
-                removed.close();
-            }
-        }
-
-        private long encodeResponseHeaders(MemorySegment target, HttpResponse response) {
-            long position = 0;
-            position = encoder.encodeHeader(
-                    target,
-                    position,
-                    ":status",
-                    Integer.toString(response.status().code()),
-                    false);
-
-            boolean hasContentLength = false;
-            for (HttpHeader header : response.headers()) {
-                if (header.nameEqualsIgnoreCase(HEADER_CONTENT_LENGTH)) {
-                    hasContentLength = true;
-                }
-                if (isConnectionSpecificHeader(header.name()) || header.name().startsWith(":")) {
-                    continue;
-                }
-                position = encoder.encodeHeader(
-                        target,
-                        position,
-                        header.name().toLowerCase(Locale.ROOT),
-                        header.value(),
-                        false);
-            }
-
-            LoanedBuffer body = response.body();
-            if (!hasContentLength) {
-                int bodyBytes = body == null ? 0 : (int) body.size();
-                position = encoder.encodeHeader(target, position, "content-length", Integer.toString(bodyBytes), false);
-            }
-            return position;
-        }
-
-        private void clearPendingIfStreamMatches(int streamId) {
-            if (assembler.currentStreamId() == streamId) {
-                assembler.reset();
-                pendingEndStream = false;
-            }
-        }
-
-        private int lastProcessedStreamId() {
-            return lastProcessedStreamId;
-        }
-
-        private void setLastProcessedStreamId(int lastProcessedStreamId) {
-            this.lastProcessedStreamId = Math.max(this.lastProcessedStreamId, lastProcessedStreamId);
-        }
-
-        private static boolean isConnectionSpecificHeader(String headerName) {
-            return "connection".equalsIgnoreCase(headerName)
-                    || "keep-alive".equalsIgnoreCase(headerName)
-                    || "proxy-connection".equalsIgnoreCase(headerName)
-                    || UPGRADE_TOKEN.equalsIgnoreCase(headerName)
-                    || "transfer-encoding".equalsIgnoreCase(headerName);
-        }
-
-        @Override
-        public void close() {
-            assembler.reset();
-            for (Http2RequestStreamState requestStream : requestStreams.values()) {
-                requestStream.close();
-            }
-            requestStreams.clear();
-        }
-    }
-
-    private static final class PendingRequestHeaders {
-        private String methodToken;
-        private String path;
-        private boolean valid = true;
-        private boolean sawRegularHeader;
-        private final List<HttpHeader> requestHeaders = new ArrayList<>();
-
-        private void accept(String name, String value) {
-            if (!valid) {
-                return;
-            }
-            if (name.startsWith(":")) {
-                acceptPseudoHeader(name, value);
-                return;
-            }
-            sawRegularHeader = true;
-            if (Http2SessionContext.isConnectionSpecificHeader(name)) {
-                valid = false;
-                return;
-            }
-            requestHeaders.add(new HttpHeader(name, value));
-        }
-
-        private void invalidate() {
-            valid = false;
-        }
-
-        private Http2DecodedRequest toDecodedRequest(int streamId) {
-            HttpMethod method = parseHttp2Method(methodToken);
-            String resolvedPath = path == null ? "" : path;
-            boolean requestValid = valid && method != null && !resolvedPath.isEmpty();
-            return new Http2DecodedRequest(streamId, method, resolvedPath, List.copyOf(requestHeaders), requestValid);
-        }
-
-        private void acceptPseudoHeader(String name, String value) {
-            if (sawRegularHeader) {
-                valid = false;
-                return;
-            }
-            switch (name) {
-                case ":method" -> methodToken = value;
-                case ":path" -> path = value;
-                case ":authority", ":scheme" -> {
-                    // Accepted but not required for this processing path.
-                }
-                default -> valid = false;
-            }
-        }
-
-        private static HttpMethod parseHttp2Method(String methodToken) {
-            if (methodToken == null || methodToken.isBlank()) {
-                return null;
-            }
-            try {
-                return HttpMethod.valueOf(methodToken);
-            } catch (IllegalArgumentException _) {
-                return null;
-            }
-        }
-    }
 }
