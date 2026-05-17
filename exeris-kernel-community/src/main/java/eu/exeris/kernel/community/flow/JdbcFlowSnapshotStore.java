@@ -67,10 +67,14 @@ import java.util.Optional;
  */
 // QA-017 extracted JdbcFlowSnapshotCodec (binding + BYTEA compensation-stack pack/unpack +
 // row decoder). Residual store retains the FlowSnapshotStore SPI surface, the two-step
-// UPDATE-then-INSERT OCC orchestration (ADR-013 §5), and the integrity-violation race
-// remapping — splitting these further would fragment the transactional boundary the OCC
-// contract hangs on.
-@SuppressWarnings({"PMD.CyclomaticComplexity"})
+// UPDATE-then-INSERT OCC orchestration (ADR-013 §5), the integrity-violation race remapping,
+// and the JFR-091 generic-failure diagnostics (extractSqlState + emit FlowSnapshotSaveFailedEvent).
+// Splitting further would fragment the transactional boundary the OCC contract hangs on.
+//
+// TooManyMethods retained: JFR-091 added FlowSnapshotSaveFailedEvent + extractSqlState helper,
+// pushing the method count back over the PMD threshold that QA-017 had closed. Acceptable cost
+// for the operator-facing diagnostic surface.
+@SuppressWarnings({"PMD.CyclomaticComplexity", "PMD.TooManyMethods"})
 public final class JdbcFlowSnapshotStore implements FlowSnapshotStore {
 
     private static final String SQL_INSERT =
@@ -166,6 +170,14 @@ public final class JdbcFlowSnapshotStore implements FlowSnapshotStore {
                 throw occ;
             } catch (PersistenceProviderException ppe) {
                 conn.rollback();
+                // JFR-091: post-mortem trail for non-OCC save failures (driver timeout,
+                // deadlock, connection lost, schema drift, etc.). OCC race losers already
+                // emit OptimisticLockConflictEvent on the FlowEngineException catch above.
+                FlowSnapshotSaveFailedEvent.emit(
+                        engineName,
+                        extractSqlState(ppe),
+                        ppe.getClass().getName(),
+                        String.valueOf(ppe.getMessage()));
                 throw new FlowEngineException("Failed to save flow snapshot", ppe);
             }
         }
@@ -212,6 +224,25 @@ public final class JdbcFlowSnapshotStore implements FlowSnapshotStore {
             }
         }
         return false;
+    }
+
+    /**
+     * Extracts the first non-null SQLSTATE found while walking the cause chain.
+     * Used by {@link FlowSnapshotSaveFailedEvent} (JFR-091) for operator-facing
+     * diagnostics. Returns {@link FlowSnapshotSaveFailedEvent#SQLSTATE_UNKNOWN}
+     * when no {@link SQLException} carries a SQLSTATE — keeps the JFR field
+     * present (never null) for analyser tooling.
+     */
+    private static String extractSqlState(Throwable thrown) {
+        for (Throwable current = thrown; current != null; current = current.getCause()) {
+            if (current instanceof SQLException sql) {
+                String state = sql.getSQLState();
+                if (state != null && !state.isBlank()) {
+                    return state;
+                }
+            }
+        }
+        return FlowSnapshotSaveFailedEvent.SQLSTATE_UNKNOWN;
     }
 
     @Override
