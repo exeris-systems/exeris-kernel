@@ -144,6 +144,18 @@ Three additions land in 0.7 to support distributed saga state per ADR-013:
 
 In-memory bindings (`CommunityFlowSnapshotStore`, test stores) continue to ignore `schemaVersion`; the `markPersisted()` increment is harmless for them. Enterprise binding inherits the same SPI contract and TCK obligations on parity (`AbstractDistributedFlowSnapshotStoreTck`).
 
+### HikariCP statement-cache requirement (DOC-090, v0.8 Sprint 5)
+
+`JdbcFlowSnapshotStore.save` re-prepares two statements on every saga write — `SQL_UPDATE_OCC` (the OCC-guarded UPDATE) and `SQL_INSERT` (the first-writer INSERT on UPDATE → 0 rows). Without a driver-side prepared-statement cache the JDBC driver re-parses both per save and PostgreSQL never promotes them to server-side prepared form, so each accepted save pays full parse cost. The Community Hikari binding (`CommunityHikariSupport.applyDataSourceProperties`) sets these as **opt-out defaults**:
+
+| Property | Default | Status |
+|:--|:--|:--|
+| `cachePrepStmts` | `true` | **HARD requirement** — do not disable. |
+| `prepStmtCacheSize` | `250` | Recommended; covers OCC + outbox + RLS paths. Override smaller only for memory-constrained deployments. |
+| `prepStmtCacheSqlLimit` | `2048` | Recommended per-statement SQL length cap. Override smaller only if the operator audited their longest SQL emitted by the binding. |
+
+The same defaults apply to the outbox-orchestrator pump and the RLS-interceptor session-set path — both also re-prepare a small fixed statement set per request. Operators can override every value via `PersistenceConfig.properties()`; the Community binding's check-then-default pattern (matching how `ssl=true` and `defaultRowFetchSize=50` are applied) ensures user-supplied properties always win. The `JdbcFlowSnapshotStore` class-level Javadoc cross-references this section as the source of truth.
+
 ---
 
 ## Error Codes
