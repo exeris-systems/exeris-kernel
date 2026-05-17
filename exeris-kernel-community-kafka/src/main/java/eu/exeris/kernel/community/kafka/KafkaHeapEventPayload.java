@@ -21,24 +21,44 @@ import java.util.concurrent.atomic.AtomicInteger;
  * <p>Functionally identical to {@code CommunityHeapEventPayload}; duplicated here so the Kafka
  * module does not depend on a package-private Community internal. The reference-count machinery
  * is preserved for symmetry with the broadcast RAII protocol — {@link #retain()} and
- * {@link #close()} adjust an {@link AtomicInteger}, and the underlying {@code byte[]} is GC'd
- * when the count reaches zero.
+ * {@link #close()} adjust an {@link AtomicInteger}, and the underlying buffer is released for
+ * GC when the count reaches zero.
+ *
+ * <p>PERF-071: the payload now holds a {@link MemorySegment} directly (typically a zero-copy
+ * slice over the Kafka consumer record's value array — see
+ * {@link KafkaEventCodec#decodePayloadSegment(byte[])}). {@link #segment()} returns the held
+ * segment as-is — no per-call {@link MemorySegment#ofArray(byte[])} wrapper allocation.
  *
  * @since 0.7.0
  */
 final class KafkaHeapEventPayload implements EventPayload {
 
-    private final byte[] bytes;
+    private final MemorySegment segment;
+    private final int length;
     private final AtomicInteger refCount;
 
-    private KafkaHeapEventPayload(byte[] bytes) {
-        this.bytes    = Objects.requireNonNull(bytes, "bytes");
+    private KafkaHeapEventPayload(MemorySegment segment) {
+        this.segment  = Objects.requireNonNull(segment, "segment");
+        this.length   = Math.toIntExact(segment.byteSize());
         this.refCount = new AtomicInteger(1);
     }
 
-    /** Wraps an already-allocated heap array; the array becomes payload-owned. */
+    /**
+     * Wraps a (typically slice-of-frame) {@link MemorySegment}; the segment becomes
+     * payload-owned. Zero-copy production path: the segment is a slice over the
+     * Kafka consumer record's value array — no extra allocation, no array copy.
+     */
+    /* default */ static KafkaHeapEventPayload wrap(MemorySegment segment) {
+        return new KafkaHeapEventPayload(segment);
+    }
+
+    /**
+     * Convenience wrapper for byte-array inputs (tests + legacy paths). Wraps the
+     * array as a {@link MemorySegment} and delegates to {@link #wrap(MemorySegment)}.
+     * The production decode path uses the segment-typed factory directly.
+     */
     /* default */ static KafkaHeapEventPayload wrap(byte[] bytes) {
-        return new KafkaHeapEventPayload(bytes);
+        return wrap(MemorySegment.ofArray(Objects.requireNonNull(bytes, "bytes")));
     }
 
     @Override
@@ -46,12 +66,12 @@ final class KafkaHeapEventPayload implements EventPayload {
         if (refCount.get() == 0) {
             throw new IllegalStateException("KafkaHeapEventPayload accessed after release");
         }
-        return MemorySegment.ofArray(bytes);
+        return segment;
     }
 
     @Override
     public int length() {
-        return bytes.length;
+        return length;
     }
 
     @Override
