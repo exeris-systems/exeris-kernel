@@ -99,6 +99,23 @@ final class CommunityHikariSupport {
                 && !CommunityHikariUtils.containsKeyIgnoreCase(properties, "defaultRowFetchSize")) {
             properties.put("defaultRowFetchSize", "50");
         }
+        // DOC-090 (v0.8 Sprint 5): JDBC driver-side prepared-statement cache. Required for
+        // JdbcFlowSnapshotStore + outbox + RLS-interceptor paths to amortise SQL parse cost
+        // across the two-step OCC UPDATE-then-INSERT pattern. The first-writer's UPDATE_OCC
+        // and INSERT statements are re-prepared every save without the cache; PostgreSQL also
+        // promotes cached statements to server-side prepared form (saving a parse round trip
+        // per save). Defaults match the Spring Boot reference set (size=250, sqlLimit=2048)
+        // and stay overridable via PersistenceConfig.properties() — operators can dial them
+        // down for memory-constrained deployments without removing the requirement.
+        if (!CommunityHikariUtils.containsKeyIgnoreCase(properties, "cachePrepStmts")) {
+            properties.put("cachePrepStmts", "true");
+        }
+        if (!CommunityHikariUtils.containsKeyIgnoreCase(properties, "prepStmtCacheSize")) {
+            properties.put("prepStmtCacheSize", "250");
+        }
+        if (!CommunityHikariUtils.containsKeyIgnoreCase(properties, "prepStmtCacheSqlLimit")) {
+            properties.put("prepStmtCacheSqlLimit", "2048");
+        }
         properties.forEach(hikariConfig::addDataSourceProperty);
     }
 

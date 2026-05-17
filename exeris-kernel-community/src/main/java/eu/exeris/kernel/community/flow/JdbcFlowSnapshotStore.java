@@ -63,6 +63,26 @@ import java.util.Optional;
  *       constructed this store.</li>
  * </ul>
  *
+ * <h2>HikariCP Statement-Cache Requirement (DOC-090, v0.8 Sprint 5)</h2>
+ * <p>This store relies on the underlying {@link PersistenceEngine}'s JDBC pool
+ * having driver-side prepared-statement caching enabled. The two-step UPSERT
+ * re-prepares the same {@code SQL_UPDATE_OCC} + {@code SQL_INSERT} statements
+ * on every saga write; without statement caching each save pays the SQL parse
+ * cost twice (UPDATE then INSERT on first-writer) and PostgreSQL never
+ * promotes them to server-side prepared form. The Community Hikari binding
+ * sets these as opt-out defaults in
+ * {@code CommunityHikariSupport.applyDataSourceProperties}:
+ * <ul>
+ *   <li>{@code cachePrepStmts=true}  — enable the cache (HARD requirement).</li>
+ *   <li>{@code prepStmtCacheSize=250} — entries; covers OCC + outbox + RLS paths.</li>
+ *   <li>{@code prepStmtCacheSqlLimit=2048} — per-statement SQL length cap.</li>
+ * </ul>
+ * Operators can override via {@code PersistenceConfig.properties()} (e.g., dial
+ * sizes down for memory-constrained deployments) but must keep
+ * {@code cachePrepStmts=true} — turning it off changes the OCC contract's
+ * performance envelope dramatically. See {@code docs/subsystems/flow.md}
+ * Persistence section.
+ *
  * @since 0.7.0
  */
 // QA-017 extracted JdbcFlowSnapshotCodec (binding + BYTEA compensation-stack pack/unpack +
