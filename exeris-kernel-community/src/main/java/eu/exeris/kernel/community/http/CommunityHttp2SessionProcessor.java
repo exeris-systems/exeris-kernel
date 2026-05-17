@@ -38,12 +38,18 @@ import java.util.Objects;
 // - AvoidCatchingGenericException: frame-loop catches RuntimeException to surface PROTOCOL_ERROR via GOAWAY.
 // - CloseResource: LoanedBuffer ownership transfers via response.body() pipeline.
 // - CyclomaticComplexity: frame-dispatcher switch + frame loop are intrinsically cohesive.
+// - CouplingBetweenObjects (HTTP-112): the processor coordinates the full HTTP/2 frame
+//   pipeline — types include the session context, four CommunityHttp2* sibling utilities,
+//   five Core http2/hpack types, and the StreamAdmission enum. Coupling=21 (threshold 20)
+//   reflects this orchestration role; QA-018a already extracted everything semantically
+//   splittable, so further splitting would fragment the frame-loop entry point.
 @SuppressWarnings({
         "PMD.GodClass",
         "PMD.TooManyMethods",
         "PMD.AvoidCatchingGenericException",
         "PMD.CloseResource",
-        "PMD.CyclomaticComplexity"
+        "PMD.CyclomaticComplexity",
+        "PMD.CouplingBetweenObjects"
 })
 final class CommunityHttp2SessionProcessor {
 
@@ -256,6 +262,21 @@ final class CommunityHttp2SessionProcessor {
             CommunityHttp2ControlFrames.sendGoAway(
                     allocator, stream, session.lastProcessedStreamId(), Http2ErrorCode.PROTOCOL_ERROR);
             return false;
+        }
+        // HTTP-112 (v0.8 Sprint 5): RFC 7540 §5.1.1 stream-id monotonicity + §5.1.2
+        // SETTINGS_MAX_CONCURRENT_STREAMS cap. INVALID_ID is a connection-fatal protocol
+        // error (GOAWAY + close loop); OVER_CAP is a per-stream refusal that keeps the
+        // connection open for other streams (RST_STREAM REFUSED_STREAM + skip body).
+        Http2SessionContext.StreamAdmission admission =
+                session.admitClientStreamId(header.streamId());
+        if (admission == Http2SessionContext.StreamAdmission.REJECT_INVALID_ID) {
+            CommunityHttp2ControlFrames.sendGoAway(
+                    allocator, stream, session.lastProcessedStreamId(), Http2ErrorCode.PROTOCOL_ERROR);
+            return false;
+        }
+        if (admission == Http2SessionContext.StreamAdmission.REJECT_OVER_CAP) {
+            CommunityHttp2ControlFrames.sendRstStreamRefused(allocator, stream, header.streamId());
+            return true;
         }
         CommunityHttp2FrameFragments.Fragment fragment =
                 CommunityHttp2FrameFragments.extractHeadersFragment(aggregate, payloadOffset, header);

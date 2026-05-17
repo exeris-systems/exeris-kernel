@@ -68,14 +68,29 @@ final class Http2SessionContext implements AutoCloseable {
     private static final String HEADER_CONTENT_LENGTH = "Content-Length";
     private static final String UPGRADE_TOKEN = "upgrade";
 
+    /**
+     * Default max concurrent client-initiated streams per connection (RFC 7540 §5.1.2).
+     * Matches the recommended floor in §6.5.2 — operators tuning for high-fanout workloads
+     * can raise this via a future SETTINGS extension; for v0.8 it's a fixed conservative
+     * cap that protects the server from stream-table exhaustion (HTTP-112).
+     */
+    private static final int HTTP2_DEFAULT_MAX_CONCURRENT_STREAMS = 100;
+
     private final HpackDynamicTable encodeTable;
     private final HpackDecoder decoder;
     private final HpackEncoder encoder;
     private final Http2FrameCodec codec;
     private final Http2HeaderBlockAssembler assembler;
     private final Map<Integer, Http2RequestStreamState> requestStreams;
+    private final int maxConcurrentStreams;
     private boolean pendingEndStream;
     private int lastProcessedStreamId;
+    /**
+     * Highest peer-initiated stream-id observed so far on this connection. Used to enforce
+     * RFC 7540 §5.1.1 (client-initiated stream IDs MUST be odd and strictly increasing).
+     * Zero means "no stream opened yet"; the first acceptable client stream is id 1.
+     */
+    private int lastClientStreamId;
 
     private Http2SessionContext(HpackDynamicTable encodeTable,
                                 HpackDecoder decoder,
@@ -88,8 +103,10 @@ final class Http2SessionContext implements AutoCloseable {
         this.codec = codec;
         this.assembler = assembler;
         this.requestStreams = new HashMap<>();
+        this.maxConcurrentStreams = HTTP2_DEFAULT_MAX_CONCURRENT_STREAMS;
         this.pendingEndStream = false;
         this.lastProcessedStreamId = 0;
+        this.lastClientStreamId = 0;
     }
 
     /* default */ static Http2SessionContext create(MemoryAllocator allocator) {
@@ -150,6 +167,55 @@ final class Http2SessionContext implements AutoCloseable {
 
     /* default */ boolean pendingEndStream() {
         return pendingEndStream;
+    }
+
+    /**
+     * Admission decision for a newly-arriving peer-initiated HEADERS frame's stream-id
+     * (HTTP-112, v0.8 Sprint 5). Captures the three cases RFC 7540 distinguishes between
+     * an acceptable new stream and the two refuse-reasons:
+     *
+     * <ul>
+     *   <li>{@link #ACCEPT} — odd id, strictly greater than {@code lastClientStreamId},
+     *       and {@code requestStreams.size() < maxConcurrentStreams}. The session
+     *       advances {@code lastClientStreamId}; caller proceeds with HEADERS decode.</li>
+     *   <li>{@link #REJECT_INVALID_ID} — RFC 7540 §5.1.1 violation: even id (server-side
+     *       reserved) OR id ≤ {@code lastClientStreamId}. Caller MUST send GOAWAY
+     *       PROTOCOL_ERROR and close the connection.</li>
+     *   <li>{@link #REJECT_OVER_CAP} — RFC 7540 §5.1.2 cap exceeded. Caller MUST send
+     *       RST_STREAM REFUSED_STREAM for this stream-id and skip the HEADERS body. The
+     *       connection stays open; other streams continue normally.</li>
+     * </ul>
+     */
+    /* default */ enum StreamAdmission {
+        ACCEPT,
+        REJECT_INVALID_ID,
+        REJECT_OVER_CAP
+    }
+
+    /**
+     * Validates {@code streamId} against RFC 7540 §5.1.1 (peer-initiated IDs MUST be odd
+     * and strictly increasing) and §5.1.2 ({@code SETTINGS_MAX_CONCURRENT_STREAMS} cap).
+     * On {@link StreamAdmission#ACCEPT} the session advances its
+     * {@code lastClientStreamId} watermark; the caller is responsible for any subsequent
+     * error-frame emission on the two reject paths.
+     */
+    /* default */ StreamAdmission admitClientStreamId(int streamId) {
+        if ((streamId & 1) == 0 || streamId <= lastClientStreamId) {
+            return StreamAdmission.REJECT_INVALID_ID;
+        }
+        if (requestStreams.size() >= maxConcurrentStreams) {
+            return StreamAdmission.REJECT_OVER_CAP;
+        }
+        lastClientStreamId = streamId;
+        return StreamAdmission.ACCEPT;
+    }
+
+    /* default */ int maxConcurrentStreams() {
+        return maxConcurrentStreams;
+    }
+
+    /* default */ int lastClientStreamId() {
+        return lastClientStreamId;
     }
 
     /* default */ void beginHeaders(Http2FrameParser.FrameHeader header,
