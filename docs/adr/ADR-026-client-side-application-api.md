@@ -146,7 +146,6 @@ If/when a second `WebClient`-shaped class lands (e.g., `EnterpriseWebClient` ove
 
 ### Neutral / open
 
-- A **future H3 client engine** (Enterprise) can plug into `CommunityWebClient` via the SPI surface — but a dedicated `EnterpriseWebClient` is the cleaner symmetric placement once H3 lands. Decision deferred.
 - A `KernelProviders.WEB_CLIENT` `ScopedValue` binding could publish a default client for subsystem consumers, but is **out of scope for 0.8.0**. Application code or codegen output constructs `CommunityWebClient` explicitly today. ScopedValue binding deferred to v0.9 or later if a use case emerges.
 
 ## Alternatives considered

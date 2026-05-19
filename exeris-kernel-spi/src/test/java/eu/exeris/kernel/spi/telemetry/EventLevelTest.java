@@ -17,13 +17,13 @@ import static org.assertj.core.api.Assertions.assertThat;
  * L0 Contract: {@link EventLevel} ordinal stability.
  *
  * <h2>Why ordinals matter here</h2>
- * <p>The {@code BinaryBlackBoxSink} serialises the level as a single byte using
+ * <p>The {@code BinaryGlassBoxSink} serialises the level as a single byte using
  * {@code ordinal()} to avoid heap-allocating the enum name. Any reordering
  * silently maps INFO events to FATAL and vice-versa in binary telemetry dumps.
  *
  * @since 0.5.0
  */
-@DisplayName("L0: EventLevel — ordinal stability (BinaryBlackBoxSink byte contract)")
+@DisplayName("L0: EventLevel — ordinal stability (BinaryGlassBoxSink byte contract)")
 class EventLevelTest {
 
     @Test
@@ -51,7 +51,7 @@ class EventLevelTest {
     }
 
     @Test
-    @DisplayName("Total count == 4 — new level requires BinaryBlackBoxSink decoder review")
+    @DisplayName("Total count == 4 — new level requires BinaryGlassBoxSink decoder review")
     void totalCount() {
         assertThat(EventLevel.values()).hasSize(4);
     }
