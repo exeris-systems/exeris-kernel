@@ -30,7 +30,7 @@ import org.junit.jupiter.api.DisplayName;
  * framework-internal per-emission state.
  *
  * <h2>Zero-GC path</h2>
- * <p>The true zero-allocation sink is the Enterprise {@code BinaryBlackBoxSink},
+ * <p>The true zero-allocation sink is the Enterprise {@code BinaryGlassBoxSink},
  * which writes fixed-width crash-log structs to an off-heap ring buffer via
  * {@code MemorySegment}. That sink will carry {@code supportsZeroGcHotPath=true}.
  *

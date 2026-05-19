@@ -28,7 +28,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
  *
  * <h2>What is verified (telemetry.md)</h2>
  * <blockquote>
- * "BinaryBlackBoxSink (Enterprise): ring-buffer does not overflow under 100k events/s;
+ * "BinaryGlassBoxSink (Enterprise): ring-buffer does not overflow under 100k events/s;
  * flush latency &lt; 1 ms P99."
  * </blockquote>
  *
@@ -161,7 +161,7 @@ public abstract class AbstractTelemetryRingBufferTck {
         assertThat(flushMs)
                 .as("Sink.close() (final flush) MUST complete within 100ms after emitting %d events. " +
                                 "Actual: %d ms. " +
-                                "Enterprise BinaryBlackBoxSink: async flush via StructuredTaskScope background thread. " +
+                                "Enterprise BinaryGlassBoxSink: async flush via StructuredTaskScope background thread. " +
                                 "Community JFR sink: JFR framework handles flush on recording stop.",
                         burstSize, flushMs)
                 .isLessThanOrEqualTo(100L);

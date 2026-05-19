@@ -39,7 +39,7 @@
  * <ul>
  *   <li><strong>Community</strong> — console sink (structured text) and a Flight Recorder sink
  *       that emits structured kernel events as Flight Recorder events; low-overhead, heap-only</li>
- *   <li><strong>Enterprise</strong> — {@code BinaryBlackBoxSink}: reads
+ *   <li><strong>Enterprise</strong> — {@code BinaryGlassBoxSink}: reads
  *       {@link eu.exeris.kernel.spi.exceptions.ExerisKernelException#rawArgs()} as a typed
  *       binary struct and writes directly to an off-heap ring buffer — zero GC overhead
  *       even under saturation</li>

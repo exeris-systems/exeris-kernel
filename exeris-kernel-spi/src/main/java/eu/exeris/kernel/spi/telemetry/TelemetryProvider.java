@@ -45,7 +45,7 @@ public interface TelemetryProvider {
     List<TelemetrySink> createSinks(TelemetryConfig config);
 
     /**
-     * Display name used in bootstrap JFR events (e.g., {@code "ExerisEnterprise/BlackBox"}).
+     * Display name used in bootstrap JFR events (e.g., {@code "ExerisEnterprise/BinaryGlassBox"}).
      */
     String providerName();
 

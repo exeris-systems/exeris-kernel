@@ -22,7 +22,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <h2>What This Proves</h2>
  * <p>These tests pin the exact string values of all error code constants.
  * Any rename, reformatting, or domain-tag change will break this test, triggering
- * a mandatory review of all dependent BinaryBlackBoxSink decoders in the Enterprise tier.
+ * a mandatory review of all dependent BinaryGlassBoxSink decoders in the Enterprise tier.
  *
  * <h2>Format</h2>
  * <p>Every constant MUST match {@code EX-[A-Z]+-\d+} (uppercase domain, numeric suffix).
