@@ -10,6 +10,7 @@ package eu.exeris.kernel.spi.http;
 
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -98,5 +99,33 @@ public record HttpRequest(
      */
     public static HttpRequest noBody(HttpMethod method, String path, HttpVersion version, List<HttpHeader> headers) {
         return new HttpRequest(method, path, version, headers, null);
+    }
+
+    /**
+     * Returns a derived {@link HttpRequest} whose header list is the existing
+     * {@link #headers()} followed by {@code additional}, preserving immutability
+     * and body-buffer ownership (the body reference is carried over by reference;
+     * no buffer copy).
+     *
+     * <p>Used by the client-side façade ({@code KernelWebClient.execute}) to merge
+     * encoder-supplied {@code content-type} with façade-supplied
+     * {@code accept}/{@code content-length}, and by {@code HttpClientRequestEnricher}
+     * chains (ADR-032) that append tenant / principal / trace headers.
+     *
+     * <p>When {@code additional} is empty, returns {@code this} unchanged.
+     *
+     * @param additional headers to append after the existing list; non-null, may be empty
+     * @return derived request with merged headers, or {@code this} when {@code additional} is empty
+     * @since 0.8.0
+     */
+    public HttpRequest withAdditionalHeaders(List<HttpHeader> additional) {
+        Objects.requireNonNull(additional, "additional must not be null");
+        if (additional.isEmpty()) {
+            return this;
+        }
+        List<HttpHeader> merged = new ArrayList<>(headers.size() + additional.size());
+        merged.addAll(headers);
+        merged.addAll(additional);
+        return new HttpRequest(method, path, version, List.copyOf(merged), body);
     }
 }
