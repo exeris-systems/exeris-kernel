@@ -9,7 +9,10 @@
 package eu.exeris.kernel.community.http.client;
 
 import eu.exeris.kernel.community.http.CommunityHttpProvider;
+import eu.exeris.kernel.community.http.CommunityJsonRequestBodyEncoder;
+import eu.exeris.kernel.community.http.CommunityJsonResponseBodyDecoder;
 import eu.exeris.kernel.community.memory.CommunityMemoryProvider;
+import eu.exeris.kernel.core.http.client.KernelWebClient;
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.http.HttpClientEngine;
 import eu.exeris.kernel.spi.http.HttpConfig;
@@ -18,7 +21,11 @@ import eu.exeris.kernel.spi.http.HttpHeader;
 import eu.exeris.kernel.spi.http.HttpMethod;
 import eu.exeris.kernel.spi.http.HttpMode;
 import eu.exeris.kernel.spi.http.HttpProvider;
+import eu.exeris.kernel.spi.http.HttpRequestBodyEncoder;
+import eu.exeris.kernel.spi.http.HttpRequestBodyEncoderRegistry;
 import eu.exeris.kernel.spi.http.HttpResponse;
+import eu.exeris.kernel.spi.http.HttpResponseBodyDecoder;
+import eu.exeris.kernel.spi.http.HttpResponseBodyDecoderRegistry;
 import eu.exeris.kernel.spi.http.HttpServerEngine;
 import eu.exeris.kernel.spi.http.HttpStatus;
 import eu.exeris.kernel.spi.http.HttpVersion;
@@ -44,13 +51,20 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-@DisplayName("Community: CommunityWebClient integration (loopback HttpServerEngine round-trip)")
-class CommunityWebClientIntegrationTest {
+@DisplayName("Community: KernelWebClient integration (loopback HttpServerEngine round-trip)")
+class KernelWebClientIntegrationTest {
 
     private static final MemoryAllocator ALLOCATOR =
             new CommunityMemoryProvider().createAllocator(MemoryProviderConfig.defaults());
 
     private static final ObjectMapper MAPPER = JsonMapper.builder().build();
+
+    private static final HttpRequestBodyEncoderRegistry REQUEST_ENCODERS =
+            HttpRequestBodyEncoderRegistry.of(
+                    List.<HttpRequestBodyEncoder>of(new CommunityJsonRequestBodyEncoder(MAPPER)));
+    private static final HttpResponseBodyDecoderRegistry RESPONSE_DECODERS =
+            HttpResponseBodyDecoderRegistry.of(
+                    List.<HttpResponseBodyDecoder>of(new CommunityJsonResponseBodyDecoder(MAPPER)));
 
     private final HttpProvider provider = new CommunityHttpProvider();
     private final AtomicReference<HandlerHook> handlerHook = new AtomicReference<>();
@@ -91,7 +105,8 @@ class CommunityWebClientIntegrationTest {
                         Map.of("id", "1", "name", "Cogwheel"));
             });
 
-            @SuppressWarnings("unchecked") Map<String, Object> created = client.post("/widget", Map.of("name", "Cogwheel"), Map.class);
+            @SuppressWarnings("unchecked") Map<String, Object> created =
+                    client.post("/widget", Map.of("name", "Cogwheel"), Map.class);
 
             assertThat(created).containsEntry("id", "1").containsEntry("name", "Cogwheel");
         });
@@ -110,7 +125,8 @@ class CommunityWebClientIntegrationTest {
                 respondWithJson(exchange, HttpStatus.OK, Map.of("id", "42", "name", "Updated"));
             });
 
-            @SuppressWarnings("unchecked") Map<String, Object> updated = client.patch("/widget/42", Map.of("name", "Updated"), Map.class);
+            @SuppressWarnings("unchecked") Map<String, Object> updated =
+                    client.patch("/widget/42", Map.of("name", "Updated"), Map.class);
 
             assertThat(updated).containsEntry("id", "42").containsEntry("name", "Updated");
         });
@@ -140,9 +156,9 @@ class CommunityWebClientIntegrationTest {
                     exchange.respond(HttpResponse.noBody(HttpStatus.NOT_FOUND, HttpVersion.HTTP_1_1)));
 
             assertThatThrownBy(() -> client.get("/widget/missing", Map.class))
-                    .isInstanceOf(CommunityWebClient.WebClientException.class)
+                    .isInstanceOf(KernelWebClient.WebClientException.class)
                     .satisfies(ex -> {
-                        CommunityWebClient.WebClientException wce = (CommunityWebClient.WebClientException) ex;
+                        KernelWebClient.WebClientException wce = (KernelWebClient.WebClientException) ex;
                         assertThat(wce.status()).isEqualTo(404);
                         assertThat(wce.isNotFound()).isTrue();
                     });
@@ -160,9 +176,9 @@ class CommunityWebClientIntegrationTest {
                     "text/plain"));
 
             assertThatThrownBy(() -> client.get("/widget/broken", Map.class))
-                    .isInstanceOf(CommunityWebClient.WebClientException.class)
+                    .isInstanceOf(KernelWebClient.WebClientException.class)
                     .satisfies(ex -> {
-                        CommunityWebClient.WebClientException wce = (CommunityWebClient.WebClientException) ex;
+                        KernelWebClient.WebClientException wce = (KernelWebClient.WebClientException) ex;
                         assertThat(wce.status()).isEqualTo(500);
                         assertThat(wce.isNotFound()).isFalse();
                         assertThat(wce.responseBody()).isEqualTo("boom");
@@ -174,7 +190,7 @@ class CommunityWebClientIntegrationTest {
     @DisplayName("Constructor rejects null engine (Objects.requireNonNull contract)")
     void constructorRejectsNullEngine() {
         assertThatNullPointerException()
-                .isThrownBy(() -> new CommunityWebClient(null, ALLOCATOR, MAPPER));
+                .isThrownBy(() -> new KernelWebClient(null, ALLOCATOR, REQUEST_ENCODERS, RESPONSE_DECODERS));
     }
 
     @Test
@@ -192,7 +208,7 @@ class CommunityWebClientIntegrationTest {
         });
     }
 
-    private void runScopedTest(Consumer<CommunityWebClient> testCase) {
+    private void runScopedTest(Consumer<KernelWebClient> testCase) {
         java.lang.ScopedValue.where(KernelProviders.MEMORY_ALLOCATOR, ALLOCATOR).run(() -> {
             int port = nextFreePort();
             try (HttpServerEngine server = provider.createServerEngine(serverConfig(port));
@@ -209,7 +225,7 @@ class CommunityWebClientIntegrationTest {
 
                 server.start();
                 engine.start();
-                CommunityWebClient client = new CommunityWebClient(engine, ALLOCATOR, MAPPER);
+                KernelWebClient client = new KernelWebClient(engine, ALLOCATOR, REQUEST_ENCODERS, RESPONSE_DECODERS);
 
                 testCase.accept(client);
             }

@@ -1,12 +1,17 @@
 # ADR-026: Client-Side Application API — `CommunityWebClient`
 
-**Status:** Accepted
+**Status:** Superseded by ADR-034 (2026-05-19)
 **Date:** 2026-05-16
 **Amended:** 2026-05-17 — corrected placement, class name, and rationale (see "Amendment 2026-05-17" below); original Sprint 2 PR #129 decision is superseded by this amendment.
+**Superseded:** 2026-05-19 — see "Superseded by ADR-034" below; the `CommunityWebClient` facade is removed in lockstep with the introduction of the symmetric client-side body codec SPI and the tier-neutral `KernelWebClient` facade in `exeris-kernel-core`.
 **Owner:** kernel/transport
 **Visibility:** public
 **Scope:** kernel/transport (per-repo)
 **Authors:** Arkadiusz Przychocki
+
+## Superseded by ADR-034 (2026-05-19)
+
+[ADR-034 — Client-Side Body Codec SPI + `KernelWebClient` facade](ADR-034-client-side-body-codec-spi.md) supersedes this decision. The Amendment 2026-05-17 fix landed `CommunityWebClient` in the correct tier-aligned location for a driver-shaped class, but a fourth structural problem surfaced on 2026-05-19: the `Community*` symbol is referenced by `exeris-tooling/KernelClientGenerator` (a tier-neutral codegen tool) and therefore leaked tier identity into every application source file emitted by the tooling. ADR-034 closes that gap by (1) introducing a symmetric client-side body codec SPI (`HttpRequestBodyEncoder` / `HttpResponseBodyDecoder` and friends) parallel to the existing server-side `HttpResponseBodyEncoder` pattern, and (2) lifting the facade out of `exeris-kernel-community` into `exeris-kernel-core` as `KernelWebClient` — tier-neutral, Jackson-free, and the canonical reference target for the generator. `CommunityWebClient` is removed in the lockstep PR set described in ADR-034 §Implementation Plan. The rationale below remains useful as historical context for the placement decision and the Sprint 2/3 lessons learned.
 
 ## Amendment 2026-05-17
 
