@@ -305,11 +305,11 @@ final class CommunityPersistenceEngine implements PersistenceEngine, PhysicalCon
     }
 
     /* default */ boolean canServiceRequest(CommunityHikariSupport.AdmissionSnapshot snapshot) {
-        return admissionController.canServiceRequest(snapshot, closed);
+        return admissionController.canServiceRequest(snapshot, closed, CommunityAdmissionConfig.CURRENT);
     }
 
     /* default */ String decisionReason(CommunityHikariSupport.AdmissionSnapshot snapshot) {
-        return admissionController.decisionReason(snapshot, closed);
+        return admissionController.decisionReason(snapshot, closed, CommunityAdmissionConfig.CURRENT);
     }
 
     @Override
