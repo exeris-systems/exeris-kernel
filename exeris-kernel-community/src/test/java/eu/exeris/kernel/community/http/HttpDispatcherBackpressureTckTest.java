@@ -9,6 +9,7 @@
 package eu.exeris.kernel.community.http;
 
 import eu.exeris.kernel.community.memory.CommunityMemoryProvider;
+import eu.exeris.kernel.community.persistence.CommunityAdmissionConfig;
 import eu.exeris.kernel.community.persistence.CommunityPersistenceProvider;
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.http.HttpConfig;
@@ -35,6 +36,11 @@ import org.junit.jupiter.api.Test;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -61,10 +67,73 @@ class HttpDispatcherBackpressureTckTest {
     private static final MemoryAllocator ALLOCATOR =
             new CommunityMemoryProvider().createAllocator(MemoryProviderConfig.defaults());
 
+    // ADR-035: strict allowance (ratio 0) restores the pre-035 "shed on first queued acquire"
+    // contract, so a saturated pool with a single forming waiter deterministically closes the gate.
+    private static final CommunityAdmissionConfig STRICT_ADMISSION =
+            new CommunityAdmissionConfig(0.90d, 0.85d, 0.90d, 1L, 0.15d, 3, 0.0d);
+    private static final Duration QUEUE_WAIT_TIMEOUT = Duration.ofSeconds(2);
+
     @AfterAll
     @SuppressWarnings("unused")
     static void closeAllocator() {
         ALLOCATOR.close();
+    }
+
+    /**
+     * Drives {@code engine} into a closed-gate state under {@link #STRICT_ADMISSION}: fully drains
+     * the pool and spawns a virtual thread that blocks on acquire so that {@code pendingAcquires > 0}.
+     * Runs {@code whileClosed} with the gate closed, then releases everything and restores config.
+     */
+    private static void withClosedAdmissionGate(PersistenceEngine engine, Runnable whileClosed)
+            throws InterruptedException {
+        CommunityAdmissionConfig previous = CommunityAdmissionConfig.CURRENT;
+        CommunityAdmissionConfig.CURRENT = STRICT_ADMISSION;
+        int maxPoolSize = engine.stats().maxConnections();
+        List<PersistenceConnection> held = new ArrayList<>();
+        CountDownLatch waiterStarted = new CountDownLatch(1);
+        Thread waiter = Thread.ofVirtual().unstarted(() -> {
+            waiterStarted.countDown();
+            try {
+                engine.openConnection().close(); // blocks: pool is fully drained
+            } catch (RuntimeException _) {
+                // acquire timeout on cleanup is fine
+            }
+        });
+        try {
+            for (int i = 0; i < maxPoolSize; i++) {
+                held.add(engine.openConnection());
+            }
+            waiter.start();
+            assertThat(waiterStarted.await(1, TimeUnit.SECONDS)).isTrue();
+            awaitPendingAcquires(engine);
+            whileClosed.run();
+        } finally {
+            held.forEach(c -> {
+                try {
+                    c.close();
+                } catch (Exception _) {
+                    // best-effort
+                }
+            });
+            waiter.join(2000);
+            CommunityAdmissionConfig.CURRENT = previous;
+        }
+    }
+
+    private static void awaitPendingAcquires(PersistenceEngine engine) {
+        long deadline = System.nanoTime() + QUEUE_WAIT_TIMEOUT.toNanos();
+        while (System.nanoTime() < deadline) {
+            if (engine.stats().pendingAcquires() > 0) {
+                return;
+            }
+            try {
+                Thread.sleep(5L);
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+                throw new AssertionError("Interrupted awaiting pending acquires", ex);
+            }
+        }
+        throw new AssertionError("Timed out waiting for pending acquires > 0");
     }
 
     /**
@@ -75,8 +144,8 @@ class HttpDispatcherBackpressureTckTest {
      * which triggers HTTP 503 responses in the dispatcher.
      */
     @Test
-    @DisplayName("Persistence pool saturation triggers admission gate closure")
-    void testBackpressureGate_RejectsWhenPoolSaturated() {
+    @DisplayName("Persistence pool saturation + forming queue triggers admission gate closure (strict)")
+    void testBackpressureGate_RejectsWhenPoolSaturated() throws InterruptedException {
         // Setup: Create a small pool for easy saturation
         PersistenceConfig config = PersistenceConfig.production(
                 "jdbc:h2:mem:exeris_integration_backpressure_" + System.nanoTime() + ";DB_CLOSE_DELAY=-1",
@@ -93,48 +162,17 @@ class HttpDispatcherBackpressureTckTest {
             assertThat(initialStats.activeConnections()).isZero();
             assertThat(engine.canServiceRequest()).isTrue();
 
-            // Action: Saturate the pool to 90%
-            int maxPoolSize = initialStats.maxConnections();
-            int threshold90 = (int) Math.ceil(maxPoolSize * 0.9);
-
-            var connections = new java.util.ArrayList<PersistenceConnection>();
-            for (int i = 0; i < threshold90; i++) {
-                connections.add(engine.openConnection());
-            }
-
-            try {
-                // Assertion 1: Pool is now at/near 90% saturation
-                EngineStats saturatedStats = engine.stats();
-                assertThat(saturatedStats.activeConnections())
-                        .as("Active connections should be at threshold level")
-                        .isGreaterThanOrEqualTo(threshold90);
-
-                // Assertion 2: Admission gate is now closed (returns false)
-                boolean canService = engine.canServiceRequest();
-                assertThat(canService)
-                        .as("Admission gate should be closed at 90%+ saturation")
-                        .isFalse();
-
-                // Assertion 3: This gate closure would trigger 503 in HTTP dispatcher
-                // (The actual HTTP 503 routing is verified in e2e/integration tests)
-                // This test just confirms the gate works and is accessible
-
-            } finally {
-                // Cleanup
-                connections.forEach(c -> {
-                    try {
-                        c.close();
-                    } catch (Exception _) {
-                        // Best-effort close in test cleanup.
-                    }
-                });
-            }
+            // ADR-035: full pool + a forming queue under strict allowance closes the gate.
+            withClosedAdmissionGate(engine, () ->
+                    assertThat(engine.canServiceRequest())
+                            .as("Admission gate should be closed with full pool and a forming queue")
+                            .isFalse());
         }
     }
 
     @Test
     @DisplayName("CommunityHttpRequestProcessor returns 503 with Retry-After when admission gate closed")
-    void testProcessorReturns503WithRetryAfterWhenAdmissionGateClosed() {
+    void testProcessorReturns503WithRetryAfterWhenAdmissionGateClosed() throws InterruptedException {
         PersistenceConfig config = PersistenceConfig.production(
                 "jdbc:h2:mem:exeris_processor_backpressure_" + System.nanoTime() + ";DB_CLOSE_DELAY=-1",
                 "sa",
@@ -145,13 +183,8 @@ class HttpDispatcherBackpressureTckTest {
         );
 
         try (PersistenceEngine engine = new CommunityPersistenceProvider().createEngine(config)) {
-            int threshold90 = (int) Math.ceil(engine.stats().maxConnections() * 0.9);
-            var heldConnections = new java.util.ArrayList<PersistenceConnection>();
-            for (int i = 0; i < threshold90; i++) {
-                heldConnections.add(engine.openConnection());
-            }
-
-            assertThat(engine.canServiceRequest()).isFalse();
+            withClosedAdmissionGate(engine, () -> {
+                assertThat(engine.canServiceRequest()).isFalse();
 
                 HttpConfig httpConfig = new HttpConfig(
                     HttpMode.SERVER,
@@ -186,13 +219,6 @@ class HttpDispatcherBackpressureTckTest {
                 assertThat(response).contains("Retry-After: 1");
                 } finally {
                 server.close();
-                }
-
-            heldConnections.forEach(c -> {
-                try {
-                    c.close();
-                } catch (Exception _) {
-                    // Best-effort close in test cleanup.
                 }
             });
         }

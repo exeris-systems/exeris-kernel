@@ -26,29 +26,33 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 /**
  * TCK: Abstract contract for {@link PersistenceEngine#canServiceRequest()} admission control.
  *
- * <h2>Contract Semantics</h2>
- * <p>Per the Persistence SPI Refactor, admission control gates prevent thread park storms when the underlying
- * connection pool is saturated. This TCK verifies that:
+ * <h2>Contract Semantics (universal, post ADR-035)</h2>
+ * <p>Admission control gates prevent thread park storms when the underlying connection pool is
+ * saturated. The cross-tier contract this TCK verifies is intentionally weak — only the
+ * tier-invariant guarantees:
  * <ul>
- *   <li>{@code canServiceRequest()} returns {@code true} when pool has available capacity</li>
- *   <li>{@code canServiceRequest()} returns {@code false} when pool is forming a queue</li>
- *   <li>{@code canServiceRequest()} returns {@code false} when pool is near saturation (&gt;90%)</li>
+ *   <li>{@code canServiceRequest()} returns {@code true} when the pool has available capacity</li>
  *   <li>{@code canServiceRequest()} returns {@code false} or throws {@code PersistenceProviderException}
  *   after engine shutdown</li>
+ *   <li>The decision is stable and non-throwing while a queue is forming</li>
+ *   <li>The decision flips back to {@code true} once capacity is released</li>
  *   <li>Admission gate is fast (&lt;1ms) on hot path (zero-alloc guarantee)</li>
- *   <li>Multiple calls to {@code canServiceRequest()} are consistent</li>
+ *   <li>Multiple calls to {@code canServiceRequest()} are consistent in the same state</li>
  * </ul>
  *
- * <h2>Tier-Specific Heuristics</h2>
- * <p>Community tier (HikariCP):
+ * <h2>Shedding is a tunable tier policy, not a universal contract (ADR-035)</h2>
+ * <p>Prior to ADR-035 this TCK mandated that a forming queue (idle==0 &amp;&amp; queued&gt;0) or
+ * &gt;90% saturation shed immediately. That was a Community-specific heuristic, not a cross-tier
+ * invariant, and it caused pathological 503 storms on CPU-constrained pools (pool size ≈ 2)
+ * whose queue drained sub-millisecond. The <em>exact</em> shed trigger is now implementation- and
+ * configuration-defined:
  * <ul>
- *   <li>Returns {@code false} if idle == 0 AND queued > 0 (prevent cascade)</li>
- *   <li>Returns {@code false} if active >= (max * 0.9) (conservative 10% buffer)</li>
- *   <li>Returns {@code true} otherwise</li>
+ *   <li>Community (HikariCP): sheds once pending acquires exceed a pool-size-scaled allowance
+ *       ({@code queueDepthAllowanceRatio}); the strict pre-035 "shed on first waiter" behavior is
+ *       still available via configuration. These tier-specific assertions live in the Community
+ *       admission tests.</li>
+ *   <li>Enterprise: may shed predictively from native driver hints (e.g., io_uring SQE availability).</li>
  * </ul>
- *
- * <p>Enterprise tier may implement more sophisticated predictive gating based on native
- * driver hints (e.g., io_uring SQE availability).
  *
  */
 public abstract class AbstractPersistenceEngineAdmissionControlTck {
@@ -105,13 +109,15 @@ public abstract class AbstractPersistenceEngineAdmissionControlTck {
         }
 
         /**
-         * TEST 2: Returns false when idle == 0 AND queued > 0
-         * Precondition: Pool saturated (active == max, idle == 0) with threads queued
-         * Rationale: Queue forming indicates pool cannot accept new work; accepting would cascade
+         * TEST 2: Decision is stable and non-throwing while a queue is forming.
+         * Precondition: Pool saturated (active == max, idle == 0) with a thread queued.
+         * Rationale (ADR-035): whether a forming queue sheds is a tunable tier policy, not a
+         * universal contract — so this TCK only asserts the cross-tier invariant (no crash,
+         * consistent decision). Tier-specific shed thresholds are verified in the Community tests.
          */
         @Test
-        @DisplayName("canServiceRequest() returns false when idle zero and queue forming")
-        void testCanServiceRequestReturnsFalse_WhenIdleZeroAndQueued() throws InterruptedException {
+        @DisplayName("canServiceRequest() is stable and non-throwing while a queue is forming")
+        void testCanServiceRequest_StableWhileQueueForming() throws InterruptedException {
             EngineStats stats = engine.stats();
             int maxPoolSize = stats.maxConnections();
 
@@ -155,13 +161,13 @@ public abstract class AbstractPersistenceEngineAdmissionControlTck {
                         .as("Queue should have at least one thread waiting")
                         .isGreaterThan(0);
 
-                // Action: Check if canServiceRequest() rejects when queue is forming
-                boolean canService = engine.canServiceRequest();
-
-                // Assertion
-                assertThat(canService)
-                        .as("Pool should reject new requests when queue is forming (idle==0 AND queued>0)")
-                        .isFalse();
+                // Action & Assertion (ADR-035): the universal contract only requires the decision to
+                // be stable and non-throwing here — the shed trigger is tier/config-defined.
+                boolean first = engine.canServiceRequest();
+                boolean second = engine.canServiceRequest();
+                assertThat(first)
+                        .as("Decision while a queue is forming must be consistent")
+                        .isEqualTo(second);
 
                 // Cleanup: Release one connection so the waiting thread can proceed
                 connections.get(0).close();
@@ -179,13 +185,16 @@ public abstract class AbstractPersistenceEngineAdmissionControlTck {
         }
 
         /**
-         * TEST 3: Returns false when active >= (max * 0.9)
-         * Precondition: Pool at 90%+ saturation
-         * Rationale: Proactive rejection prevents pushing pool to absolute limits
+         * TEST 3: Decision is non-throwing and consistent at high saturation with no queue.
+         * Precondition: Pool at 90%+ saturation, no acquires queued.
+         * Rationale (ADR-035): saturation alone (with no queue forming) no longer mandates a shed —
+         * a new request simply becomes the first waiter and acquires as capacity frees. Whether a
+         * tier sheds proactively is implementation-defined; the universal contract only requires a
+         * stable, non-throwing decision.
          */
         @Test
-        @DisplayName("canServiceRequest() returns false when active at 90% saturation")
-        void testCanServiceRequestReturnsFalse_WhenActiveNear90Percent() {
+        @DisplayName("canServiceRequest() is stable and non-throwing at 90% saturation (no queue)")
+        void testCanServiceRequest_StableAtHighSaturation() {
             EngineStats stats = engine.stats();
             int maxPoolSize = stats.maxConnections();
             int threshold90Percent = (int) Math.ceil(maxPoolSize * 0.9);
@@ -203,13 +212,12 @@ public abstract class AbstractPersistenceEngineAdmissionControlTck {
                 assertThat(saturatedStats.saturation())
                         .isGreaterThanOrEqualTo(0.9);
 
-                // Action
-                boolean canService = engine.canServiceRequest();
-
-                // Assertion
-                assertThat(canService)
-                        .as("Pool should conservatively reject requests at 90%+ saturation")
-                        .isFalse();
+                // Action & Assertion (ADR-035): value is tier-defined; require only stability.
+                boolean first = engine.canServiceRequest();
+                boolean second = engine.canServiceRequest();
+                assertThat(first)
+                        .as("Decision at high saturation must be consistent")
+                        .isEqualTo(second);
             } finally {
                 connections.forEach(c -> {
                     try {
@@ -338,17 +346,15 @@ public abstract class AbstractPersistenceEngineAdmissionControlTck {
             }
 
             try {
-                boolean saturatedDecision = engine.canServiceRequest();
-                assertThat(saturatedDecision).isFalse();
-
-                // Release connections
+                // ADR-035: saturation with no queue is tier-defined; the universal invariant is
+                // that capacity availability admits. Release a connection and assert admit.
                 connections.get(0).close();
                 connections.remove(0);
 
                 // Now we should have capacity
                 boolean afterReleaseDecision = engine.canServiceRequest();
                 assertThat(afterReleaseDecision)
-                        .as("Decision should flip to true after releasing connections")
+                        .as("Decision should be true when capacity is available")
                         .isTrue();
             } finally {
                 connections.forEach(c -> {
@@ -380,13 +386,16 @@ public abstract class AbstractPersistenceEngineAdmissionControlTck {
             int maxPoolSize = stats.maxConnections();
             assertThat(maxPoolSize).isGreaterThanOrEqualTo(1);
 
-            // With 1 connection, reaching 90% means that 1 active connection rejects
+            // ADR-035: with 1 connection active and no queue, the decision is tier-defined; assert
+            // only that it is non-throwing and consistent (Community admits; strict shed is covered
+            // by the Community admission tests).
             if (maxPoolSize == 1) {
                 try (var conn = engine.openConnection()) {
                     EngineStats withConn = engine.stats();
                     assertThat(withConn.activeConnections()).isEqualTo(1);
-                    boolean canService = engine.canServiceRequest();
-                    assertThat(canService).isFalse();
+                    boolean first = engine.canServiceRequest();
+                    boolean second = engine.canServiceRequest();
+                    assertThat(first).isEqualTo(second);
                 }
             }
         }

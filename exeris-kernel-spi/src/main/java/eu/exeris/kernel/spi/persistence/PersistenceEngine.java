@@ -121,20 +121,27 @@ public interface PersistenceEngine extends AutoCloseable {
     /**
      * Query whether this engine can service a new request without thread starvation.
      *
-     * <p>This method is called by HTTP dispatcher to implement admission control and prevent
+     * <p>This method is called by the HTTP dispatcher to implement admission control and prevent
      * thread park storms when the underlying connection pool is saturated. Implementations
-     * MUST return {@code false} (or throw) immediately if the pool cannot accept new work
-     * within the No Waste Compute latency bound (≤5ms p50).
+     * SHOULD return {@code false} (or throw) when admitting new work would exceed the No Waste
+     * Compute latency bound (≤5ms p50) — i.e. under a queue deep enough that the expected
+     * acquire wait is no longer bounded.
      *
-     * <p>Per ADR-010, this is a SPI-level gating mechanism to preserve fairness and prevent
-     * cascading thread starvation (ThreadPark storms) observed when HTTP sender is faster than
-     * persistence layer can consume.
+     * <p>Per ADR-035, this is a SPI-level gating mechanism to preserve fairness and prevent
+     * cascading thread starvation (ThreadPark storms) observed when the HTTP sender is faster
+     * than the persistence layer can consume. The <em>exact</em> shed trigger is implementation-
+     * and configuration-defined: shedding on a forming queue is a tunable tier policy, not a
+     * universal contract. The cross-tier invariants are only that capacity availability admits,
+     * a closed engine sheds, and the decision is non-blocking and consistent.
      *
      * <p><b>Semantics (Tier-specific)</b>:
      * <ul>
-     *   <li><b>Community</b>: Returns {@code false} if idle connections are zero and at least one
-     *       acquire is pending (queue forming), or if active connections are at or above 90% of
-     *       the configured maximum. Returns {@code true} otherwise.
+     *   <li><b>Community</b>: Admits while pending acquires stay within a pool-size-scaled
+     *       allowance ({@code persistence.admission.queueDepthAllowanceRatio}); sheds once the
+     *       queue exceeds it. A full pool with no (or a shallow) queue is admitted — the request
+     *       simply queues briefly on the connection-acquire path. The pre-ADR-035 strict
+     *       "shed on first queued acquire / ≥90% saturation" behavior is recovered by setting the
+     *       allowance ratio to {@code 0}. Thresholds are operator-tunable (hot-reload in Enterprise).
      *   <li><b>Enterprise</b>: Implements exponential backoff with native driver telemetry
      *       (e.g., io_uring SQE availability). May return {@code false} predictively before
      *       absolute saturation to maintain fairness.

@@ -108,15 +108,51 @@ The Persistence subsystem provides **SPI-level admission control** to prevent th
 ```java
 /**
  * Query whether this engine can service a new request without thread starvation.
- * Called by HTTP layer to implement admission control.
+ * Called by the HTTP layer to implement admission control.
  *
- * Returns false if:
- * - Pool has no idle connections AND queue is forming (idle==0 && queued>0)
- * - Active connections >= 90% of maxPoolSize (proactive buffer)
- * - Engine is shutting down
+ * Sheds (returns false) when admitting would exceed the No-Waste-Compute latency
+ * bound — i.e. under a queue deep enough that the expected acquire wait is unbounded —
+ * or when the engine is shutting down. The exact shed trigger is tier/config-defined.
  */
 boolean canServiceRequest();
 ```
+
+### Recalibrated semantics (ADR-035)
+
+Prior to ADR-035 the Community gate shed on the *first* queued acquire (`idle==0 && queued>0`)
+or at `active/max ≥ 0.90`. On a CPU-constrained profile the adaptive pool collapses to ~2
+connections, so a modest client burst tripped the gate and shed the overwhelming majority of an
+otherwise trivial workload as `503` (a real benchmark regression vs v0.5, which queued briefly
+and returned 0 errors).
+
+The gate now admits while pending acquires stay within a **pool-size-scaled allowance** and sheds
+only once the queue is genuinely deep:
+
+```
+allowance = ceil(maxPoolSize × queueDepthAllowanceRatio)   // default ratio 8.0
+shed (full/saturated pool) ⇔ pendingAcquires > allowance
+```
+
+A full pool with no (or a shallow) queue is **admitted** — the request queues briefly on the
+connection-acquire path. This restores availability on small pools while keeping backpressure for a
+genuinely deep queue. Setting `queueDepthAllowanceRatio=0` recovers the strict pre-035 behavior.
+
+### Tunable thresholds (`persistence.admission.*`)
+
+| Key | Default | Meaning |
+|---|---|---|
+| `persistence.admission.queueDepthAllowanceRatio` | `8.0` | pending acquires tolerated per unit of pool size before shedding; `0` = strict pre-035 |
+| `persistence.admission.hardSaturationThreshold` | `0.90` | `active/max` at which a queued pool sheds |
+| `persistence.admission.guardBandThreshold` | `0.85` | early-fairness band entry ratio |
+| `persistence.admission.fairnessStressThreshold` | `0.90` | fairness ratio declaring sustained stress |
+| `persistence.admission.fairnessQueueDepthThreshold` | `1` | queue depth considered for fairness stress |
+| `persistence.admission.earlyGuardBandHeadroomRatio` | `0.15` | headroom fraction for early guard-band reject |
+| `persistence.admission.earlyGuardBandHeadroomCap` | `3` | absolute cap on the early guard-band window |
+
+**Tier split (per the `@Dynamic` contract):** Community resolves these once at bootstrap and does
+not hot-reload (`ConfigProvider.watch` is a no-op); Enterprise swaps the live config atomically on
+file change. The thresholds live entirely in Community (`CommunityAdmissionConfig`) — no SPI field
+is added, so The Wall is untouched.
 
 ### HTTP Integration: 503 Service Unavailable
 
@@ -129,17 +165,21 @@ Content-Length: 0
 
 This prevents:
 - Unbounded thread creation
-- Connection pool queue buildup
+- Connection pool queue buildup beyond the allowance
 - Cascading latency spikes (fairness inversion)
 
 ### TCK Compliance
 
-All implementations must satisfy `AbstractPersistenceEngineAdmissionControlTck`:
-- Returns true when pool has idle capacity
-- Returns false when idle==0 && queue forming
-- Returns false when active >= 90% max
-- Returns false after engine shutdown
+`AbstractPersistenceEngineAdmissionControlTck` verifies the **cross-tier** invariants only
+(shedding on a forming queue is a tunable tier policy, not a universal contract):
+- Returns true when the pool has idle capacity
+- Returns false (or throws) after engine shutdown
+- Decision is non-blocking and consistent in the same state
+- Decision flips to admit when capacity is released
 - Zero-allocation on hot path (JFR verified)
+
+Tier-specific shed thresholds (strict reject machine; recalibrated small-pool admit / deep-queue
+shed) are covered by the Community admission tests.
 
 ---
 

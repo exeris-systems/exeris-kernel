@@ -8,6 +8,7 @@
  */
 package eu.exeris.kernel.community.bootstrap;
 
+import eu.exeris.kernel.community.persistence.CommunityAdmissionConfig;
 import eu.exeris.kernel.community.persistence.RlsConnectionInterceptor;
 import eu.exeris.kernel.core.persistence.PersistenceBootstrap;
 import eu.exeris.kernel.spi.bootstrap.BootstrapPhase;
@@ -53,6 +54,17 @@ final class CommunityPersistenceSubsystem extends AbstractCommunitySubsystem {
     @Override
     public void initialize() {
         ConfigProvider configProvider = KernelProviders.CURRENT_CONFIG.get();
+        // ADR-035: resolve tunable admission thresholds once at bootstrap, then register a
+        // hot-reload watch. Community's watch() is a no-op (startup-only); Enterprise swaps
+        // CURRENT atomically on file change via the @Dynamic watcher. The admission controller
+        // reads CommunityAdmissionConfig.CURRENT at each decision, so a swap takes effect on
+        // the next call with no locks. seal() runs after all initialize() calls (KernelBootstrap),
+        // so this registration is always before the registry is sealed.
+        CommunityAdmissionConfig.CURRENT = CommunityAdmissionConfig.fromConfigProvider(configProvider);
+        configProvider.watch(
+                CommunityAdmissionConfig.CONFIG_FILE,
+                CommunityAdmissionConfig.KEY_PREFIX,
+                _ -> CommunityAdmissionConfig.CURRENT = CommunityAdmissionConfig.fromConfigProvider(configProvider));
         persistenceProvider = resolveProvider();
         PersistenceConfig config = CommunityPersistenceConfigResolver.buildPersistenceConfig(
                 configProvider,

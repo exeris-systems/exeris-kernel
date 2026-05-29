@@ -93,112 +93,106 @@ class CommunityPersistenceEngineFairnessTest {
             }
         }
 
+        // ADR-035: the deterministic reject-reason machine still fires under a STRICT allowance
+        // (queueDepthAllowanceRatio=0 restores the pre-035 "shed on first queued acquire" contract).
+        // These tests pin the reason-pairing logic against the controller directly so they do not
+        // depend on the process-global CommunityAdmissionConfig.CURRENT.
+        private static final CommunityAdmissionConfig STRICT =
+                new CommunityAdmissionConfig(0.90d, 0.85d, 0.90d, 1L, 0.15d, 3, 0.0d);
+
         @Test
-        @DisplayName("Rejects in guard band when queued and fairness is degraded")
-        void rejectsInGuardBand_whenQueuedAndFairnessDegraded() {
-            try (CommunityPersistenceEngine engine = createCommunityTestEngine(20)) {
-                CommunityHikariSupport.AdmissionSnapshot hardRejectSnapshot =
-                        new CommunityHikariSupport.AdmissionSnapshot(18, 0, 2, 20);
-                for (int i = 0; i < 40; i++) {
-                    assertThat(engine.canServiceRequest(hardRejectSnapshot)).isFalse();
-                }
+        @DisplayName("STRICT: rejects in guard band when queued with low headroom (REJECT_GUARD_BAND_FAIRNESS)")
+        void rejectsInGuardBand_whenQueuedAndLowHeadroom() {
+            CommunityPersistenceAdmissionController controller = new CommunityPersistenceAdmissionController();
+            // (active=17, idle=0, queued=3, max=20): sat=0.85 (guard band), headroom=3 => early reject.
+            CommunityHikariSupport.AdmissionSnapshot guardBandSnapshot =
+                    new CommunityHikariSupport.AdmissionSnapshot(17, 0, 3, 20);
 
-                CommunityHikariSupport.AdmissionSnapshot guardBandSnapshot =
-                        new CommunityHikariSupport.AdmissionSnapshot(17, 3, 1, 20);
-
-                assertThat(engine.canServiceRequest(guardBandSnapshot)).isFalse();
-                assertThat(engine.decisionReason(guardBandSnapshot))
-                        .isEqualTo("REJECT_GUARD_BAND_FAIRNESS");
-            }
+            assertThat(controller.canServiceRequest(guardBandSnapshot, false, STRICT)).isFalse();
+            assertThat(controller.decisionReason(guardBandSnapshot, false, STRICT))
+                    .isEqualTo("REJECT_GUARD_BAND_FAIRNESS");
         }
 
         @Test
-        @DisplayName("Rejects earlier in guard band when queue forms with low headroom and no fairness warmup")
-        void rejectsInGuardBand_whenQueuedAndLowHeadroomWithoutWarmup() {
-            try (CommunityPersistenceEngine engine = createCommunityTestEngine(20)) {
-                CommunityHikariSupport.AdmissionSnapshot snapshot =
-                        new CommunityHikariSupport.AdmissionSnapshot(17, 0, 3, 20);
-
-                assertThat(engine.canServiceRequest(snapshot)).isFalse();
-                assertThat(engine.decisionReason(snapshot))
-                        .isEqualTo("REJECT_GUARD_BAND_FAIRNESS");
-            }
-        }
-
-        @Test
-        @DisplayName("Uses deterministic REJECT_HARD_SATURATION reason at >=90% saturation")
+        @DisplayName("STRICT: deterministic REJECT_HARD_SATURATION at >=90% saturation with a queue")
         void rejectsHardSaturation_withDeterministicReason() {
-            try (CommunityPersistenceEngine engine = createCommunityTestEngine(10)) {
-                CommunityHikariSupport.AdmissionSnapshot snapshot =
-                        new CommunityHikariSupport.AdmissionSnapshot(9, 0, 1, 10);
+            CommunityPersistenceAdmissionController controller = new CommunityPersistenceAdmissionController();
+            // (active=9, idle=0, queued=2, max=10): sat=0.90 (hard), queued > allowance(0) => reject.
+            CommunityHikariSupport.AdmissionSnapshot snapshot =
+                    new CommunityHikariSupport.AdmissionSnapshot(9, 0, 2, 10);
 
-                assertThat(engine.canServiceRequest(snapshot)).isFalse();
-                assertThat(engine.decisionReason(snapshot)).isEqualTo("REJECT_HARD_SATURATION");
-            }
+            assertThat(controller.canServiceRequest(snapshot, false, STRICT)).isFalse();
+            assertThat(controller.decisionReason(snapshot, false, STRICT)).isEqualTo("REJECT_HARD_SATURATION");
         }
 
         @Test
-        @DisplayName("Preserves decision/reason pairing across guard-band and saturation transitions")
-        void preservesDecisionReasonPairing_acrossBoundaryTransitions() {
-            try (CommunityPersistenceEngine engine = createCommunityTestEngine(20)) {
-                CommunityHikariSupport.AdmissionSnapshot hardSaturationSnapshot =
-                        new CommunityHikariSupport.AdmissionSnapshot(18, 0, 2, 20);
-                for (int i = 0; i < 40; i++) {
-                    assertThat(engine.canServiceRequest(hardSaturationSnapshot)).isFalse();
-                }
-
-                CommunityHikariSupport.AdmissionSnapshot guardBandSnapshot =
-                        new CommunityHikariSupport.AdmissionSnapshot(17, 3, 1, 20);
-                assertThat(engine.canServiceRequest(guardBandSnapshot)).isFalse();
-                assertThat(engine.decisionReason(guardBandSnapshot))
-                        .isEqualTo("REJECT_GUARD_BAND_FAIRNESS");
-
-                assertThat(engine.canServiceRequest(hardSaturationSnapshot)).isFalse();
-                assertThat(engine.decisionReason(hardSaturationSnapshot))
-                        .isEqualTo("REJECT_HARD_SATURATION");
-
-                CommunityHikariSupport.AdmissionSnapshot healthySnapshot =
-                        new CommunityHikariSupport.AdmissionSnapshot(2, 4, 0, 20);
-                assertThat(engine.canServiceRequest(healthySnapshot)).isTrue();
-                assertThat(engine.decisionReason(healthySnapshot)).isEqualTo("ACCEPT");
-            }
-        }
-
-        @Test
-        @DisplayName("Uses deterministic REJECT_NO_CAPACITY reason when queue forms below guard band")
+        @DisplayName("STRICT: deterministic REJECT_NO_CAPACITY when queue forms below guard band")
         void rejectsNoCapacity_withDeterministicReason() {
-            try (CommunityPersistenceEngine engine = createCommunityTestEngine(10)) {
-                CommunityHikariSupport.AdmissionSnapshot snapshot =
-                        new CommunityHikariSupport.AdmissionSnapshot(2, 0, 4, 10);
+            CommunityPersistenceAdmissionController controller = new CommunityPersistenceAdmissionController();
+            // (active=2, idle=0, queued=4, max=10): sat=0.20 (below guard band), queued > allowance(0).
+            CommunityHikariSupport.AdmissionSnapshot snapshot =
+                    new CommunityHikariSupport.AdmissionSnapshot(2, 0, 4, 10);
 
-                assertThat(engine.canServiceRequest(snapshot)).isFalse();
-                assertThat(engine.decisionReason(snapshot)).isEqualTo("REJECT_NO_CAPACITY");
-            }
+            assertThat(controller.canServiceRequest(snapshot, false, STRICT)).isFalse();
+            assertThat(controller.decisionReason(snapshot, false, STRICT)).isEqualTo("REJECT_NO_CAPACITY");
         }
 
         @Test
-        @DisplayName("Uses deterministic REJECT_ENGINE_CLOSED reason when engine is closed")
+        @DisplayName("Deterministic REJECT_ENGINE_CLOSED reason when engine is closed")
         void rejectsEngineClosed_withDeterministicReason() {
-            try (CommunityPersistenceEngine engine = createCommunityTestEngine(4)) {
-                CommunityHikariSupport.AdmissionSnapshot snapshot =
-                        new CommunityHikariSupport.AdmissionSnapshot(0, 0, 0, 4);
-                engine.close();
+            CommunityPersistenceAdmissionController controller = new CommunityPersistenceAdmissionController();
+            CommunityHikariSupport.AdmissionSnapshot snapshot =
+                    new CommunityHikariSupport.AdmissionSnapshot(0, 0, 0, 4);
 
-                assertThat(engine.canServiceRequest(snapshot)).isFalse();
-                assertThat(engine.decisionReason(snapshot)).isEqualTo("REJECT_ENGINE_CLOSED");
-            }
+            assertThat(controller.canServiceRequest(snapshot, true, STRICT)).isFalse();
+            assertThat(controller.decisionReason(snapshot, true, STRICT)).isEqualTo("REJECT_ENGINE_CLOSED");
         }
 
         @Test
-        @DisplayName("Uses deterministic ACCEPT reason when capacity is available")
+        @DisplayName("Deterministic ACCEPT reason when capacity is available")
         void accepts_withDeterministicReason() {
-            try (CommunityPersistenceEngine engine = createCommunityTestEngine(10)) {
+            CommunityPersistenceEngine engine = createCommunityTestEngine(10);
+            try {
                 CommunityHikariSupport.AdmissionSnapshot snapshot =
                         new CommunityHikariSupport.AdmissionSnapshot(2, 4, 0, 10);
 
                 assertThat(engine.canServiceRequest(snapshot)).isTrue();
                 assertThat(engine.decisionReason(snapshot)).isEqualTo("ACCEPT");
+            } finally {
+                engine.close();
             }
+        }
+
+        // ADR-035 regression guard: this is the constrained-benchmark scenario. A tiny pool
+        // (max=2 under -XX:ActiveProcessorCount=1) with a transient queue from a high client
+        // count must ADMIT (deferring to the acquire timeout) rather than shed — restoring the
+        // pre-v0.6.0 0% error rate. allowance = ceil(2 * 8.0) = 16, so queued <= 16 is admitted.
+        @Test
+        @DisplayName("DEFAULT: small saturated pool with transient queue admits (benchmark regression guard)")
+        void defaultConfig_smallPoolTransientQueue_admits() {
+            CommunityPersistenceAdmissionController controller = new CommunityPersistenceAdmissionController();
+            // (active=2, idle=0, queued=14, max=2): pool full, 14 waiting — 16-conn wrk burst, 2-slot pool.
+            CommunityHikariSupport.AdmissionSnapshot burst =
+                    new CommunityHikariSupport.AdmissionSnapshot(2, 0, 14, 2);
+
+            assertThat(controller.canServiceRequest(burst, false, CommunityAdmissionConfig.DEFAULT)).isTrue();
+            assertThat(controller.decisionReason(burst, false, CommunityAdmissionConfig.DEFAULT))
+                    .isEqualTo("ACCEPT");
+        }
+
+        // ADR-035: backpressure is still real — once the queue exceeds the pool-scaled allowance,
+        // even the default config sheds.
+        @Test
+        @DisplayName("DEFAULT: queue beyond the pool-scaled allowance still sheds (backpressure intact)")
+        void defaultConfig_deepQueue_sheds() {
+            CommunityPersistenceAdmissionController controller = new CommunityPersistenceAdmissionController();
+            // (active=2, idle=0, queued=20, max=2): pool full, 20 waiting > allowance(16) => shed.
+            CommunityHikariSupport.AdmissionSnapshot deep =
+                    new CommunityHikariSupport.AdmissionSnapshot(2, 0, 20, 2);
+
+            assertThat(controller.canServiceRequest(deep, false, CommunityAdmissionConfig.DEFAULT)).isFalse();
+            assertThat(controller.decisionReason(deep, false, CommunityAdmissionConfig.DEFAULT))
+                    .isEqualTo("REJECT_HARD_SATURATION");
         }
     }
 
