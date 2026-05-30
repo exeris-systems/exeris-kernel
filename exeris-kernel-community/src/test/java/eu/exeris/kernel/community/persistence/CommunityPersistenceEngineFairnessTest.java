@@ -97,8 +97,7 @@ class CommunityPersistenceEngineFairnessTest {
         // (queueDepthAllowanceRatio=0 restores the pre-035 "shed on first queued acquire" contract).
         // These tests pin the reason-pairing logic against the controller directly so they do not
         // depend on the process-global CommunityAdmissionConfig.CURRENT.
-        private static final CommunityAdmissionConfig STRICT =
-                new CommunityAdmissionConfig(0.90d, 0.85d, 0.90d, 1L, 0.15d, 3, 0.0d);
+        private static final CommunityAdmissionConfig STRICT = CommunityAdmissionConfig.STRICT;
 
         @Test
         @DisplayName("STRICT: rejects in guard band when queued with low headroom (REJECT_GUARD_BAND_FAIRNESS)")

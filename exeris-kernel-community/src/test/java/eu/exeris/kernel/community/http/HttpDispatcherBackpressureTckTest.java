@@ -69,8 +69,7 @@ class HttpDispatcherBackpressureTckTest {
 
     // ADR-035: strict allowance (ratio 0) restores the pre-035 "shed on first queued acquire"
     // contract, so a saturated pool with a single forming waiter deterministically closes the gate.
-    private static final CommunityAdmissionConfig STRICT_ADMISSION =
-            new CommunityAdmissionConfig(0.90d, 0.85d, 0.90d, 1L, 0.15d, 3, 0.0d);
+    private static final CommunityAdmissionConfig STRICT_ADMISSION = CommunityAdmissionConfig.STRICT;
     private static final Duration QUEUE_WAIT_TIMEOUT = Duration.ofSeconds(2);
 
     @AfterAll

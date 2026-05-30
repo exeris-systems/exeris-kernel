@@ -51,7 +51,7 @@ import eu.exeris.kernel.spi.config.Dynamic;
  *                                     sub-millisecond queries while restoring availability on
  *                                     tiny pools. Set to {@code 0.0} to restore the strict
  *                                     pre-035 "shed on first waiter" contract.
- * @since 0.8.0
+ * @since 0.7.1
  * @see CommunityPersistenceAdmissionController
  * @see Dynamic
  */
@@ -75,6 +75,15 @@ public record CommunityAdmissionConfig(
      */
     public static final CommunityAdmissionConfig DEFAULT = new CommunityAdmissionConfig(
             0.90d, 0.85d, 0.90d, 1L, 0.15d, 3, 8.0d);
+
+    /**
+     * Strict pre-ADR-035 admission behavior: identical thresholds to {@link #DEFAULT} but with
+     * {@code queueDepthAllowanceRatio=0}, so a full/saturated pool sheds on the first queued
+     * acquire. Operators recover this via {@code persistence.admission.queueDepthAllowanceRatio=0};
+     * it is also the configuration that exercises the deterministic reject-reason machine in tests.
+     */
+    public static final CommunityAdmissionConfig STRICT = new CommunityAdmissionConfig(
+            0.90d, 0.85d, 0.90d, 1L, 0.15d, 3, 0.0d);
 
     /**
      * Live, hot-reloadable admission configuration. Read at the admission decision call site.
