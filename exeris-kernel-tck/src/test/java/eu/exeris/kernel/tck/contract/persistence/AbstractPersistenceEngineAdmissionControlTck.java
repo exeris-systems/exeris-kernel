@@ -54,6 +54,13 @@ import static org.assertj.core.api.Assertions.assertThatCode;
  *   <li>Enterprise: may shed predictively from native driver hints (e.g., io_uring SQE availability).</li>
  * </ul>
  *
+ * <p><b>Binding obligation (not enforced here).</b> Because this suite no longer asserts any shed
+ * direction other than {@code close()}, a binding that always admits under load would still pass it.
+ * Shedding under a genuinely deep queue is a per-binding obligation recorded in ADR-035 §Consequences:
+ * the Community tier proves it via {@code CommunityAdmissionConfig.STRICT} (the strict pre-035 reject
+ * machine) in its own admission tests, and any Enterprise binding MUST carry an equivalent tier-specific
+ * shed test. A future refinement may add an opt-in shed-direction hook to this abstract suite.
+ *
  */
 public abstract class AbstractPersistenceEngineAdmissionControlTck {
 

@@ -86,8 +86,28 @@ universal SPI contract to a tunable, tier-specific policy.**
   with a shallow queue now admits and queues briefly rather than fast-failing 503. Operators who relied on the
   aggressive shed can restore it with `queueDepthAllowanceRatio=0`.
 - Residual risk: for genuinely slow queries, a proportional allowance can let expected wait approach
-  `ratio × serviceTime`. Mitigated by tunability and the retained fairness/wait-time stress signal; a future
-  refinement may gate on observed `queueWaitP95` rather than depth.
+  `ratio × serviceTime`. Mitigated by tunability; under a *tightened* ratio the fairness/wait-time stress
+  signal also re-arms (see next bullet). A future refinement may gate on observed `queueWaitP95` rather
+  than depth, which would let the fairness path act independently of `queueDepthAllowanceRatio`.
+- **Fairness/guard-band machinery is intentionally dormant under the default ratio.** Both the
+  `REJECT_HARD_SATURATION` and `REJECT_GUARD_BAND_FAIRNESS` branches in
+  `CommunityPersistenceAdmissionController` are gated behind `queued > queueDepthAllowance(maxPool)`, so at
+  `queueDepthAllowanceRatio=8.0` the `FairnessTracker.indicatesAdmissionStress(...)` and early-guard-band
+  reject only become reachable once the queue is ~8× the pool — by which point the hard-saturation branch
+  almost always fires first. This is deliberate, not an oversight: in the ADR-035 model the pool-scaled
+  allowance *is* the unified shed signal, and queue-depth-based fairness cannot be separated from it without
+  re-introducing the constrained-profile 503 regression (a fresh `FairnessTracker` masks this in unit tests;
+  sustained load in the live benchmark does not). The fairness/guard-band path is therefore meaningful only
+  under a tightened ratio (e.g. `0`, which is the strict pre-035 reject machine exercised by the Community
+  tests). Re-arming it independently of queue depth is the `queueWaitP95` follow-up above.
+- **Enterprise binding obligation (TCK scope).** `AbstractPersistenceEngineAdmissionControlTck` was relaxed to
+  the cross-tier invariants only (capacity → admit; closed → shed/throw; non-blocking; consistent; flips to
+  admit on release). It no longer asserts *any* shed direction other than `close()`, so a binding that always
+  returns `true` under load would pass it. Shedding under a genuinely deep queue is a **binding obligation**,
+  not a universal contract: the Community tier proves it via `CommunityAdmissionConfig.STRICT`; any Enterprise
+  binding MUST carry an equivalent tier-specific shed test (and may shed predictively from native driver
+  hints). A future TCK refinement may add an opt-in shed-direction hook so bindings can declare and verify
+  this against the abstract suite.
 - The fix corrects a dangling reference: `PersistenceEngine#canServiceRequest` previously cited "ADR-010",
   which is actually *Host Runtime Model* (exeris-spring-runtime); it now cites this ADR.
 
