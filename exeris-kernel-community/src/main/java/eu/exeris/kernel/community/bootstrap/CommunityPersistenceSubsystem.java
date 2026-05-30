@@ -11,6 +11,8 @@ package eu.exeris.kernel.community.bootstrap;
 import eu.exeris.kernel.community.persistence.CommunityAdmissionConfig;
 import eu.exeris.kernel.community.persistence.RlsConnectionInterceptor;
 import eu.exeris.kernel.core.persistence.PersistenceBootstrap;
+import eu.exeris.kernel.core.telemetry.JfrCommitGate;
+import eu.exeris.kernel.core.telemetry.JfrEventCommitter;
 import eu.exeris.kernel.spi.bootstrap.BootstrapPhase;
 import eu.exeris.kernel.spi.config.ConfigProvider;
 import eu.exeris.kernel.spi.context.KernelProviders;
@@ -35,6 +37,10 @@ final class CommunityPersistenceSubsystem extends AbstractCommunitySubsystem {
 
     private PersistenceProvider persistenceProvider;
     private PersistenceEngine persistenceEngine;
+    // ADR-035 / VT-JFR safety: commits admission + connection-acquire JFR events off the request
+    // virtual thread (JDK 26+35 carrier-bound-buffer crash). Owned here because this subsystem owns
+    // the admission path that emits them; lifetime bounded to RUNNING.
+    private JfrEventCommitter jfrCommitter;
 
     @Override
     public String name() {
@@ -78,12 +84,21 @@ final class CommunityPersistenceSubsystem extends AbstractCommunitySubsystem {
 
     @Override
     public void start() {
+        // Install the off-thread JFR committer before marking running, so the first admission
+        // decision already routes its commit onto the platform thread.
+        jfrCommitter = JfrEventCommitter.start();
+        JfrCommitGate.install(jfrCommitter);
         markRunning(persistenceEngine != null);
     }
 
     @Override
     public void stop() {
         markRunning(false);
+        // Clear the gate first (no new events enqueue), then drain in-flight on the platform thread.
+        JfrCommitGate.clear();
+        if (jfrCommitter != null) {
+            jfrCommitter.close();
+        }
         if (persistenceEngine != null) {
             persistenceEngine.close();
         }

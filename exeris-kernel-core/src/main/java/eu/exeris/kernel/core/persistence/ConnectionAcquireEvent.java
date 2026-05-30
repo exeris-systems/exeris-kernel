@@ -8,6 +8,8 @@
  */
 package eu.exeris.kernel.core.persistence;
 
+import eu.exeris.kernel.core.telemetry.JfrCommitGate;
+
 import jdk.jfr.Category;
 import jdk.jfr.Description;
 import jdk.jfr.Event;
@@ -26,18 +28,21 @@ import jdk.jfr.StackTrace;
  * ConnectionAcquireEvent.commitAcquire(providerId, tenantKey, fromPool, startNs);
  * }</pre>
  *
- * <h2>Virtual-thread safety — why single-phase</h2>
+ * <h2>Virtual-thread safety — single-phase <em>and</em> off-thread commit</h2>
  * <p>The pool checkout this event measures is a <em>blocking</em> operation. On a
  * virtual thread a blocking park unmounts the carrier, and the thread may remount
  * on a different carrier when the connection is handed out. JFR's {@code EventWriter}
- * is carrier-bound: an {@link Event} instance whose {@code begin()} ran on the
- * pre-park carrier but whose {@code commit()} runs on the post-park carrier flushes
- * against a stale {@code JfrBuffer}, crashing the JVM in
- * {@code JfrStorage::flush_regular_buffer} (observed on JDK 26 GA, build 26+35).
- * To stay safe the event is constructed <em>and</em> committed entirely
- * <em>after</em> the checkout returns — never held across the unmount/remount
- * boundary. Acquire latency is carried explicitly in {@link #acquireLatencyNs}
- * rather than via JFR's begin/end duration.
+ * is carrier-bound, so a {@code commit()} on the remounted carrier can flush a stale
+ * {@code JfrBuffer}, crashing the JVM in {@code JfrStorage::flush_regular_buffer}
+ * (observed on JDK 26 GA, build 26+35).
+ * <p>Single-phase construction (the event is built entirely <em>after</em> the checkout
+ * returns, latency carried in {@link #acquireLatencyNs} rather than JFR begin/end) is
+ * <em>necessary but not sufficient</em>: the staleness is established by the earlier
+ * park/remount, not by a begin/commit straddle, so this event crashed in production
+ * despite being single-phase. The actual {@code commit()} is therefore handed to a
+ * dedicated platform thread via {@link JfrCommitGate} / {@code JfrEventCommitter};
+ * the field-populated event is constructed on the caller (safe — pure heap writes) and
+ * committed off the request virtual thread.
  *
  * <h2>Hot-Path Guard</h2>
  * <p>{@link #commitAcquire} guards on {@link FlightRecorder#isInitialized()} and
@@ -99,6 +104,10 @@ public final class ConnectionAcquireEvent extends Event {
         event.tenantKey        = tenantKey;
         event.fromPool         = fromPool;
         event.acquireLatencyNs = System.nanoTime() - startNs;
-        event.commit();
+        // VT-JFR safety: commit off the request virtual thread (see class Javadoc / JfrCommitGate).
+        // Inline commit only as a fallback when no committer is installed (tests / pre-bootstrap).
+        if (!JfrCommitGate.offer(event)) {
+            event.commit();
+        }
     }
 }
