@@ -8,6 +8,10 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ## [Unreleased] — 0.8.0-SNAPSHOT
 
+### Performance — Zero-allocation ingress read (Sprint 6 PERF-072)
+
+- `NativeTcpStreamPlainSocketIo` seam and NIO read paths no longer allocate a redundant `NativeMemorySegmentImpl` wrapper per read: `target.asSlice(0, maxBytes)` is elided to `target` when `maxBytes == target.byteSize()` (always true for the carrier's full-slab ingress read). Egress sub-range slices are unchanged. Community-internal; no SPI/Core contract change. See `docs/ROADMAP.md` → "Transport: Zero-Allocation Ingress Read".
+
 ### Fixed — Flow snapshot store wiring gap (Sprint 0b)
 
 - `CommunityFlowSubsystem.initialize()` now selects `JdbcFlowSnapshotStore` when a Community `PersistenceEngine` is bootstrapped alongside, instead of always falling back to the in-memory `CommunityFlowSnapshotStore`. Parked saga snapshots now survive a kernel restart whenever `flow.persistenceEnabled=true` and a JDBC-backed engine is present (ADR-022 §1). The in-memory store remains the fallback when no engine is available.
