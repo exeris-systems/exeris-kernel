@@ -132,12 +132,22 @@ Current `exeris-kernel-core` HTTP package focuses on codec/wire primitives:
 - `hpack.*`
 - `hpack.huffman.*`
 
-**Community tier is implemented.** The following production HTTP classes exist in `eu.exeris.kernel.community.http`:
+**Community tier is implemented.** Since the v0.8 Sprint 3 ADR-026 amendment (2026-05-17) the Community HTTP source tree is split into `shared/` / `client/` / `server/` / `h2/` subpackages under `eu.exeris.kernel.community.http`; the production classes are:
 - `CommunityHttpProvider`, `CommunityHttpServerEngine`, `CommunityHttpClientEngine`
 - `CommunityHttpRequestProcessor`, `CommunityHttpTransportFactory`
-- `CommunityHttpExchange`, `Http2DecodedRequest`, `Http2RequestStreamState`
+- `CommunityHttpExchange`, `Http2DecodedRequest`, `Http2RequestStreamState`, `Http2SessionContext`, `CommunityHttp2SessionProcessor`
 - `InMemoryHttp2Exchange`, `JsonBodyEncoder`
 - `CommunityHttpLifecycleEvent` (JFR)
+- `eu.exeris.kernel.community.http.client.CommunityWebClient` + `WebClientException` (since v0.8 Sprint 2, ADR-026) — typed HTTP verbs + Jackson 3 JSON binding façade on top of `HttpClientEngine`; the SPI surface consumed by `exeris-tooling`'s `KernelClientGenerator` for typed per-entity clients.
+
+### HTTP/2 stream admission (since v0.8 Sprint 5, HTTP-112)
+
+`Http2SessionContext.admitClientStreamId(int)` enforces two RFC 7540 invariants that the Community h2c session previously did not validate:
+
+- **§5.1.1 stream-id monotonicity** — peer-initiated stream IDs MUST be odd and strictly greater than the previous client-initiated ID. Even IDs (server-reserved) and stale/equal IDs return `REJECT_INVALID_ID`; `CommunityHttp2SessionProcessor` responds with `GOAWAY(PROTOCOL_ERROR)` and stops the frame loop (connection-fatal).
+- **§5.1.2 `SETTINGS_MAX_CONCURRENT_STREAMS` cap** — when the request-stream table is full, admission returns `REJECT_OVER_CAP`; the processor responds with per-stream `RST_STREAM(REFUSED_STREAM)` and keeps the connection alive for other streams. The watermark advances only on `ACCEPT`, so an OVER_CAP id may be re-admitted later when the table drains.
+- **Default cap:** `HTTP2_DEFAULT_MAX_CONCURRENT_STREAMS = 100` (RFC 7540 §6.5.2 recommended floor). A future SETTINGS extension can raise it.
+- **Coverage:** `Http2SessionContextAdmissionTest` (7 pure-function cases, no I/O).
 
 ---
 

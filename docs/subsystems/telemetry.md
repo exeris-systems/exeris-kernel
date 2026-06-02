@@ -220,8 +220,12 @@ Every critical lifecycle transition MUST emit a typed JFR event. No `Logger.info
 | `TlsHandshakeFailureEvent` *(planned, TRL‑4 target; not yet implemented)* | Handshake exception | `errorCode`, `peerAddress`, `failureReason` |
 | `ConfigHotReloadEvent` *(planned, TRL‑4 target; not yet implemented)* | `@Dynamic` config key updated | `configKey`, `providerName`, `succeeded` |
 | `OutboxDlqTransferEvent` *(planned, TRL‑4 target; not yet implemented)* | Outbox record moved to DLQ after max retries | `eventType`, `outboxRecordId`, `attempt` |
-| `SagaLifecycleEvent` *(planned, TRL‑4 target; not yet implemented)* | Saga state transition | `sagaType`, `status`, `durationNanos`, `stepIndex` || `TelemetryJfrEvents.KernelMetricJfrEvent` | `eu.exeris.kernel.telemetry.KernelMetric` | emitted on `increment()` / `gauge()` calls | `metricName`, `metricType (COUNTER/GAUGE)`, `value` |
-| `TelemetryJfrEvents.KernelLatencyJfrEvent` | `eu.exeris.kernel.telemetry.KernelLatency` | emitted on `latency()` calls | `metricName`, `nanoseconds` |
+| `SagaLifecycleEvent` *(planned, TRL‑4 target; not yet implemented)* | Saga state transition | `sagaType`, `status`, `durationNanos`, `stepIndex` |
+| `TelemetryJfrEvents.KernelMetricJfrEvent` *(eu.exeris.kernel.telemetry.KernelMetric)* | Emitted on `increment()` / `gauge()` calls | `metricName`, `metricType (COUNTER/GAUGE)`, `value` |
+| `TelemetryJfrEvents.KernelLatencyJfrEvent` *(eu.exeris.kernel.telemetry.KernelLatency)* | Emitted on `latency()` calls | `metricName`, `nanoseconds` |
+| `CommunityEventQueueOverflowEvent` *(eu.exeris.kernel.events.CommunityEventQueueOverflow; community module, since v0.8 Sprint 5 — EVENT-111)* | `CommunityEventQueue.push` refuses a fail-fast publish because the queue is at capacity (paired with `EX-EVENT-6002`) | `engineName`, `eventType`, `queueDepth`, `queueCapacity` |
+| `KafkaPublishFailedEvent` *(eu.exeris.kernel.events.kafka.PublishFailed; community-kafka module, pkg-private, since v0.8 Sprint 5 — JFR-091)* | `KafkaEventEngine.KafkaPublishBus` `publish` / `publishAndAwait` catch block, before wrapping as `EventBusException`. Payload bytes NEVER logged (Glass-Box secret-safe). | `engineName`, `topic`, `eventTypeOrdinal`, `publishMode`, `exceptionClass`, `exceptionMessage` |
+| `FlowSnapshotSaveFailedEvent` *(eu.exeris.kernel.flow.FlowSnapshotSaveFailed; community module, public, since v0.8 Sprint 5 — JFR-091)* | `JdbcFlowSnapshotStore.save` non-OCC `PersistenceProviderException` rollback path. OCC race losers continue to emit `OptimisticLockConflictEvent` (no overlap). | `engineName`, `sqlState` (`SQLSTATE_UNKNOWN` sentinel when no `SQLException` in cause chain), `exceptionClass`, `exceptionMessage` |
 ### JFR Event Pattern (Zero-Allocation)
 
 ```java
