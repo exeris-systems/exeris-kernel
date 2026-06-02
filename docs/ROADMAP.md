@@ -809,6 +809,18 @@ See also: [Events Subsystem](./subsystems/events.md) — Multi-Provider Strategy
 
 ---
 
+### Transport: Zero-Allocation Ingress Read — Elide Per-Read Segment Slice (Sprint 6 PERF-072)
+
+**Gap:** The plain-socket ingress read path allocates a fresh heap `NativeMemorySegmentImpl` wrapper on **every** read. `NativeTcpCarrier.readIngress` calls `NativeTcpStream.readPlainIngress(slab.segment(), (int) slab.capacity())`, where `slab.capacity() == slab.segment().byteSize()` (`AbstractLoanedBuffer.capacity()`). Both seam and NIO read paths in `NativeTcpStreamPlainSocketIo` then evaluate `target.asSlice(0, maxBytes)` — but since `maxBytes == target.byteSize()`, the slice is base- and length-identical to `target`: a pure wrapper allocation with no semantic effect. A constrained `entity-read-by-id` JFR profile (`-XX:+UseSerialGC -XX:ActiveProcessorCount=1 -Xmx192m`, ~3.1k rps) attributed ~2,400 `ObjectAllocationSample` hits to `asSliceNoCheck`/`dup` under `trySocketSeamRead → readPlainIngress → readIngress`. STW pause is negligible (37 ms over 46 s) but the run was CPU-throttled 465/547 cgroup periods, so allocation→GC CPU (470 ms) competes directly with request servicing — reducing it tightens the throttled tail rather than the pause budget.
+
+**Owner:** Transport subsystem (`exeris-kernel-community`).
+
+**Resolution:** Guard the slice so it materialises only for a genuine sub-range: `MemorySegment dst = maxBytes == target.byteSize() ? target : target.asSlice(0, maxBytes)`, passing `dst` to the `recv` downcall (length is already a separate argument, so the full segment is safe) and to the NIO-fallback `asByteBuffer()`. The guard is also semantically required on the NIO path — a `ByteBuffer` over the full segment would have `capacity == byteSize`, letting `channel.read()` overrun `maxBytes`; eliding only on equality keeps behaviour identical. Egress `send`/write paths pass a real `(offset, length)` sub-range and are intentionally left unchanged.
+
+**Merge Gate:** Community-internal only — no SPI/Core contract change, ownership and loaned-buffer lifecycle unchanged. Existing transport read/write coverage stays green (`NativeTcpClientServerE2eIntegrationTest`, stream wakeup tests). Validation: a re-run of the constrained `entity-read-by-id` JFR shows `NativeMemorySegmentImpl`/`asSliceNoCheck`/`dup` samples under the ingress read path drop to ~0; a JMH `-prof gc` harness over `readIngress` asserts `gc.alloc.rate.norm ≈ 0 B/op` on the seam-read path.
+
+---
+
 ### Security: `@RequiresRole` Operator Wiring
 
 **Gap:** ADR-014 compile-time RBAC machinery is in place (Sprints 8a / 8b-i / 8b-ii) but the operator-side wiring deferred from Sprint 8b-ii has not landed: the `LazyConstant<RoleCheckRegistry>` bootstrap loader, automatic discovery and wiring of the APT-generated registry into runtime, and `ImmutablePrincipal.roleMask()` integration with the CitadelGuard fast path.

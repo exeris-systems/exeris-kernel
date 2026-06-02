@@ -92,9 +92,15 @@ final class NativeTcpStreamPlainSocketIo {
                                       int maxBytes,
                                       long streamId) throws IOException {
         try {
+            // Zero-alloc ingress (PERF-072): the carrier always reads the full loaned slab
+            // (maxBytes == segment byteSize), so asSlice(0, maxBytes) would allocate a fresh
+            // NativeMemorySegmentImpl wrapper identical to target on every read. Pass target
+            // directly in that case — recv() takes the length as a separate argument, so the
+            // wrapper is a pure no-op. Slice only for a genuine sub-range.
+            MemorySegment dst = maxBytes == target.byteSize() ? target : target.asSlice(0, maxBytes);
             long result = (long) socketHandles.recv().invokeExact(
                     plainSocketHandle,
-                    target.asSlice(0, maxBytes),
+                    dst,
                     (long) maxBytes,
                     POSIX_SOCKET_IO_FLAGS);
             if (result > 0) {
@@ -159,7 +165,12 @@ final class NativeTcpStreamPlainSocketIo {
     /* default */ static int nioFallbackRead(SocketChannel channel,
                                              MemorySegment target,
                                              int maxBytes) throws IOException {
-        ByteBuffer targetBuffer = target.asSlice(0, maxBytes).asByteBuffer();
+        // Zero-alloc ingress (PERF-072): elide the redundant asSlice wrapper when the caller
+        // reads the full segment. The guard is also semantically required here — a ByteBuffer
+        // over the full segment would have capacity == byteSize, letting channel.read() overrun
+        // maxBytes; only elide when they are equal (slice and full segment are then identical).
+        MemorySegment readInto = maxBytes == target.byteSize() ? target : target.asSlice(0, maxBytes);
+        ByteBuffer targetBuffer = readInto.asByteBuffer();
         targetBuffer.clear();
         return channel.read(targetBuffer);
     }
