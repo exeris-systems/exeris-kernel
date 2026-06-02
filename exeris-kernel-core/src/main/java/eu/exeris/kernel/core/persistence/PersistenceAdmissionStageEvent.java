@@ -8,6 +8,8 @@
  */
 package eu.exeris.kernel.core.persistence;
 
+import eu.exeris.kernel.core.telemetry.JfrCommitGate;
+
 import jdk.jfr.Category;
 import jdk.jfr.Event;
 import jdk.jfr.EventType;
@@ -45,7 +47,10 @@ public final class PersistenceAdmissionStageEvent {
         evt.queueWaitP95Ms = payload.queueWaitP95Ms();
         evt.accepted = payload.accepted();
         evt.decisionReason = payload.decisionReason();
-        evt.commit();
+        // VT-JFR safety: commit off the request virtual thread (see AdmissionDecisionEvent / JfrCommitGate).
+        if (!JfrCommitGate.offer(evt)) {
+            evt.commit();
+        }
     }
 
     public record Payload(String providerId,

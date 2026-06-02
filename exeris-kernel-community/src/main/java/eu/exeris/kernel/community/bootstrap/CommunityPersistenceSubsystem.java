@@ -8,8 +8,11 @@
  */
 package eu.exeris.kernel.community.bootstrap;
 
+import eu.exeris.kernel.community.persistence.CommunityAdmissionConfig;
 import eu.exeris.kernel.community.persistence.RlsConnectionInterceptor;
 import eu.exeris.kernel.core.persistence.PersistenceBootstrap;
+import eu.exeris.kernel.core.telemetry.JfrCommitGate;
+import eu.exeris.kernel.core.telemetry.JfrEventCommitter;
 import eu.exeris.kernel.spi.bootstrap.BootstrapPhase;
 import eu.exeris.kernel.spi.config.ConfigProvider;
 import eu.exeris.kernel.spi.context.KernelProviders;
@@ -34,6 +37,10 @@ final class CommunityPersistenceSubsystem extends AbstractCommunitySubsystem {
 
     private PersistenceProvider persistenceProvider;
     private PersistenceEngine persistenceEngine;
+    // ADR-035 / VT-JFR safety: commits admission + connection-acquire JFR events off the request
+    // virtual thread (JDK 26+35 carrier-bound-buffer crash). Owned here because this subsystem owns
+    // the admission path that emits them; lifetime bounded to RUNNING.
+    private JfrEventCommitter jfrCommitter;
 
     @Override
     public String name() {
@@ -53,6 +60,17 @@ final class CommunityPersistenceSubsystem extends AbstractCommunitySubsystem {
     @Override
     public void initialize() {
         ConfigProvider configProvider = KernelProviders.CURRENT_CONFIG.get();
+        // ADR-035: resolve tunable admission thresholds once at bootstrap, then register a
+        // hot-reload watch. Community's watch() is a no-op (startup-only); Enterprise swaps
+        // CURRENT atomically on file change via the @Dynamic watcher. The admission controller
+        // reads CommunityAdmissionConfig.CURRENT at each decision, so a swap takes effect on
+        // the next call with no locks. seal() runs after all initialize() calls (KernelBootstrap),
+        // so this registration is always before the registry is sealed.
+        CommunityAdmissionConfig.CURRENT = CommunityAdmissionConfig.fromConfigProvider(configProvider);
+        configProvider.watch(
+                CommunityAdmissionConfig.CONFIG_FILE,
+                CommunityAdmissionConfig.KEY_PREFIX,
+                _ -> CommunityAdmissionConfig.CURRENT = CommunityAdmissionConfig.fromConfigProvider(configProvider));
         persistenceProvider = resolveProvider();
         PersistenceConfig config = CommunityPersistenceConfigResolver.buildPersistenceConfig(
                 configProvider,
@@ -71,12 +89,21 @@ final class CommunityPersistenceSubsystem extends AbstractCommunitySubsystem {
 
     @Override
     public void start() {
+        // Install the off-thread JFR committer before marking running, so the first admission
+        // decision already routes its commit onto the platform thread.
+        jfrCommitter = JfrEventCommitter.start();
+        JfrCommitGate.install(jfrCommitter);
         markRunning(persistenceEngine != null);
     }
 
     @Override
     public void stop() {
         markRunning(false);
+        // Clear the gate first (no new events enqueue), then drain in-flight on the platform thread.
+        JfrCommitGate.clear();
+        if (jfrCommitter != null) {
+            jfrCommitter.close();
+        }
         CommunityBootstrapServices.clearSharedPersistenceEngine();
         if (persistenceEngine != null) {
             persistenceEngine.close();
