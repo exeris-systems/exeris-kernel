@@ -8,6 +8,16 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ## [Unreleased] — 0.8.0-SNAPSHOT
 
+### Security — @RequiresRole runtime wiring (Sprint 4 SEC-080)
+
+- `eu.exeris.kernel.core.security.GeneratedRoleRegistryLoader` (new, Core) resolves the build-time generated `eu.exeris.kernel.security.generated.RoleCheckRegistry` reflectively (by FQN string — no compile edge on `exeris-kernel-build-config`, preserving the processor's reactor-cycle avoidance) and binds its five static accessors (`requiredAny`/`requiredAll`/`matchIsAll`/`methodCount`/`roleNameToBit`) to `MethodHandle`s once at bootstrap, exposed as a `RoleRegistry`. The per-request accessors use `invokeExact` — no `Method.invoke`, allocation-free. ADR-014 §3.
+- When no `@RequiresRole` is compiled anywhere (the common case) the loader returns a **fail-closed empty registry** singleton (`methodCount() == 0`, all required masks `0L`, `matchIsAll == false`, `roleNameToBit == -1`) — never allow-all. A `ClassNotFoundException` or signature mismatch both fall through to the same fail-closed empty registry.
+- New one-shot JFR event `eu.exeris.kernel.security.RoleRegistryLoaded` (`@StackTrace(false)`, single-phase commit) records whether the generated class was found and its `methodCount`, letting operators distinguish "no annotations" from "load failed".
+- `SecurityInterceptor` gains a `(SecurityProvider, RoleRegistry)` constructor (the existing single-arg constructor now delegates with the fail-closed empty registry). On `intercept(...)` / `interceptPreAuthenticated(...)`, when `methodCount() > 0` it resolves the principal's role names through `registry.roleNameToMask(...)` and binds a new Core-internal `MaskedPrincipal` (delegating `PrincipalContext` wrapper) carrying the precomputed `roleMask()`; an empty registry binds the original principal unchanged (no allocation, mask stays `0L`). `runAsSystem(...)` is left untouched so a pre-masked system principal is never wrapped or downgraded.
+- `CommunityHttpRequestProcessor` wires the bootstrap-loaded registry into the constructed `SecurityInterceptor`.
+- No SPI change: `RoleRegistry`, `PrincipalContext.roleMask()`, and `RoleCheckEnforcer` are unchanged — Sprint 4 only makes the enforcer's inputs live. New TCK coverage: `AbstractGeneratedRoleRegistryLoaderTck` + `AbstractRoleMaskPopulationTck` with Community bindings; existing `AbstractRequiresRoleTck` stays green.
+- **Descoped (Sprint 4 finding):** the kernel HTTP dispatcher remains scope/path-based; kernel-edge URL→`methodId` enforcement for path-routed handlers is a codegen concern owned by `exeris-tooling` (cross-repo), not `CommunityHttpRequestDispatcher`. See `docs/subsystems/security.md`.
+
 ### Performance — Zero-allocation ingress read (Sprint 6 PERF-072)
 
 - `NativeTcpStreamPlainSocketIo` seam and NIO read paths no longer allocate a redundant `NativeMemorySegmentImpl` wrapper per read: `target.asSlice(0, maxBytes)` is elided to `target` when `maxBytes == target.byteSize()` (always true for the carrier's full-slab ingress read). Egress sub-range slices are unchanged. Community-internal; no SPI/Core contract change. See `docs/ROADMAP.md` → "Transport: Zero-Allocation Ingress Read".

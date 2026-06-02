@@ -10,6 +10,7 @@ package eu.exeris.kernel.community.http;
 
 import eu.exeris.kernel.community.persistence.PersistenceSessionBox;
 import eu.exeris.kernel.core.http.http1.Http1Codec;
+import eu.exeris.kernel.core.security.GeneratedRoleRegistryLoader;
 import eu.exeris.kernel.core.security.SecurityInterceptor;
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.http.HttpConfig;
@@ -76,7 +77,9 @@ public final class CommunityHttpRequestProcessor {
         this.config = Objects.requireNonNull(config, "config must not be null");
 
         SecurityInterceptor securityInterceptor = KernelProviders.SECURITY_PROVIDER.isBound()
-                ? new SecurityInterceptor(KernelProviders.SECURITY_PROVIDER.get())
+                ? new SecurityInterceptor(
+                        KernelProviders.SECURITY_PROVIDER.get(),
+                        GeneratedRoleRegistryLoader.load())
                 : null;
         PersistenceEngine persistenceEngine = KernelProviders.PERSISTENCE_ENGINE.isBound()
                 ? KernelProviders.PERSISTENCE_ENGINE.get()

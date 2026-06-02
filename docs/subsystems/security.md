@@ -198,10 +198,33 @@ token lifetime. The following contract governs token lifecycle in the Kernel:
 > - SPI runtime carriers (`RoleRegistry` interface, `PrincipalContext.roleMask()` default) and
 >   the Core `RoleCheckEnforcer` decision helper plus `AbstractRequiresRoleTck` —
 >   Sprint 8b-ii.
-> - Operator-side wiring (load the generated registry through a `LazyConstant`, populate
->   `principal.roleMask()` at authentication time via `registry.roleNameToBit(...)`, and call
->   `RoleCheckEnforcer.check(methodId, principal, registry)` from the transport admission path)
->   remains explicit until the auto-bind landing.
+> - Runtime wiring (Sprint 4 SEC-080): the Core `GeneratedRoleRegistryLoader` resolves the
+>   generated `RoleCheckRegistry` reflectively (by FQN string, no compile edge — preserves the
+>   processor's reactor-cycle avoidance) and binds its five static accessors to `MethodHandle`s
+>   once at bootstrap, exposed as a `RoleRegistry`. When no `@RequiresRole` is compiled anywhere
+>   the loader returns a **fail-closed empty registry** (`methodCount() == 0`, all masks `0L`),
+>   never allow-all. A one-shot `eu.exeris.kernel.security.RoleRegistryLoaded` JFR event records
+>   whether the generated class was found and its `methodCount`, so operators distinguish
+>   "no annotations" from "load failed". `SecurityInterceptor` consumes the loaded registry: when
+>   `methodCount() > 0` it resolves the authenticated principal's role names through
+>   `registry.roleNameToMask(...)` and binds a Core-internal `MaskedPrincipal` carrying the
+>   precomputed `roleMask()`; when the registry is empty the original principal is bound unchanged
+>   (no allocation, mask stays `0L`). `RoleCheckEnforcer` is unchanged — Sprint 4 only made its
+>   inputs live (loadable registry + masked principal in scope).
+>
+> **Loader mechanism note:** the brief originally anticipated a `LazyConstant`-backed load. The
+> loader is eager-at-bootstrap instead (constructed once on the `CommunityHttpRequestProcessor`
+> construction path, a platform thread) — there is no per-request lazy access to amortise, and
+> eager binding keeps the JFR bootstrap signal deterministic.
+>
+> **Kernel-edge methodId enforcement is descoped from the kernel (Sprint 4 finding).** The
+> Community HTTP dispatcher remains scope/path-based; it does **not** map a request URL to a
+> compile-time `methodId`. Calling `RoleCheckEnforcer.check(methodId, ...)` at the edge for a
+> path-routed handler requires a generated URL→methodId routing table, which is a **codegen
+> concern owned by `exeris-tooling` (cross-repo)**, not the kernel dispatcher. Sprint 4 delivers
+> the loader, the `roleMask` population seam, the live `RoleCheckEnforcer` inputs, and TCK
+> coverage (`AbstractGeneratedRoleRegistryLoaderTck`, `AbstractRoleMaskPopulationTck`); it
+> deliberately does not add URL→methodId routing to `CommunityHttpRequestDispatcher`.
 >
 > Dynamic role decisions continue to use `CitadelGuard.requireRole(...)` — both paths emit
 > `EX-SEC-2003` so operators see uniform telemetry.
@@ -240,7 +263,10 @@ contract end-to-end.
    between the principal's role bitmask (extracted from the JWT at parse time) and the required role bitmask
    from the registry. This is O(1) and allocation-free.
 3. **No `Class.getAnnotation()` on hot path:** Zero reflection calls occur after JVM startup. The APT-generated
-   registry is loaded once via `LazyConstant.of(...)` at first access.
+   registry is resolved once at bootstrap by `eu.exeris.kernel.core.security.GeneratedRoleRegistryLoader`
+   (reflective `Class.forName` by FQN, then `MethodHandle` binding of the five static accessors). The
+   per-request accessors invoke the bound handles via `invokeExact` — no `Method.invoke`, allocation-free.
+   When the class is absent the loader returns a fail-closed empty registry (Sprint 4 SEC-080).
 
 ```text
 Hot-path check (RoleMatch.ANY): (principal.roleMask() & registry.requiredAny(methodId)) != 0L
