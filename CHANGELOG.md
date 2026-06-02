@@ -25,6 +25,31 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 - Configurable drain budget on `TransportCarrierPinningTck` (`exeris.tck.transport.drainTimeoutSeconds`) — accommodates constrained CI runners under thread pressure (default 5s for local boxes, override to 30s on 2-vCPU GitHub Actions).
 - New `transport-stress-gate` CI job (`.github/workflows/maven.yml`) bumps VT carrier pool to `parallelism=16 / maxPoolSize=64` — works around blocking-`recv()` pinning in the Panama FFM ingress pump (mid-test jstack diagnosis: client ingress VTs pin carriers on `recv()` syscall; default 2-vCPU CI carrier pool exhausts before all clients connect). Production fix (non-blocking `recv()` + selector wakeup) deferred to Sprint 6 transport hardening.
 - HotSpot `-Xlog:jfr+startup=off` in root POM — suppresses native log stream that bypassed Surefire IO redirect and surfaced as "Corrupted channel" warnings.
+## [0.7.1] — 2026-05-30
+
+Patch release. Persistence admission-control recalibration (ADR-035) plus a JFR/virtual-thread
+crash fix on the connection-acquire path. No new SPI surface; one SPI Javadoc contract relaxation
+(`PersistenceEngine#canServiceRequest` MUST → SHOULD). See `docs/adr/ADR-035-persistence-admission-control-tunability.md`.
+
+### Fixed
+
+- Connection-acquire JFR event now commits single-phase, avoiding a carrier-bound `EventWriter`
+  SIGSEGV when a virtual thread unmounts mid-event under an active Recording (`ConnectionAcquireEvent`).
+- Constrained-profile (`-XX:ActiveProcessorCount=1`, 16-client) `entity-read-by-id` regression to
+  ~92% `503`s since v0.6.0: the admission gate shed on the first queued acquire while the adaptive pool
+  collapsed to 2 connections. The gate now admits while pending acquires stay within a pool-size-scaled
+  allowance and sheds only on a genuinely deep queue (ADR-035).
+
+### Changed
+
+- Community admission thresholds are operator-tunable (`persistence.admission.*`) via a new
+  `CommunityAdmissionConfig` `@Dynamic` record (first production `@Dynamic` consumer; startup-only in
+  Community, hot-reload in Enterprise). Default `queueDepthAllowanceRatio=8.0`; set `0` to restore the
+  strict pre-035 "shed on first waiter" behavior (`CommunityAdmissionConfig.STRICT`).
+- `AbstractPersistenceEngineAdmissionControlTck` relaxed to cross-tier invariants only; tier-specific
+  shed thresholds moved to the Community admission tests. Shedding under a deep queue is now a per-binding
+  obligation recorded in ADR-035 §Consequences (Enterprise binding must carry an equivalent shed test).
+- `PersistenceEngine#canServiceRequest` Javadoc: dangling "ADR-010" reference corrected to ADR-035.
 
 ## [0.7.0] — 2026-05-10
 

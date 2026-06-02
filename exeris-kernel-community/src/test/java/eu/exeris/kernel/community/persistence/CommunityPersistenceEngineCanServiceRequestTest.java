@@ -65,21 +65,22 @@ class CommunityPersistenceEngineCanServiceRequestTest {
         }
 
         @Test
-        @DisplayName("Returns false when pool is 90% saturated")
-        void returnsFalse_whenPoolSaturated90Percent() {
+        @DisplayName("ADR-035: admits at 100% saturation when no queue is forming")
+        void admits_whenSaturatedButNoQueue() {
             try (PersistenceEngine engine = createTestEngine(4)) {
-                // Pool size = 4, so 90% = 3.6, meaning we need 4 active connections
-                // to trigger the rejection (since active >= max * 0.9)
+                // Pool size = 4, fully drained, but NO acquires are queued.
                 try (var conn1 = engine.openConnection();
                      var conn2 = engine.openConnection();
                      var conn3 = engine.openConnection();
                      var conn4 = engine.openConnection()) {
-                    // Now pool has 4 active connections (100% of max)
                     var stats = engine.stats();
                     assertThat(stats.activeConnections()).isEqualTo(4);
                     assertThat(stats.saturation()).isGreaterThanOrEqualTo(0.9);
-                    // Should reject new requests
-                    assertThat(engine.canServiceRequest()).isFalse();
+                    assertThat(stats.pendingAcquires()).isZero();
+                    // ADR-035: saturation alone (no queue) no longer sheds — a new request becomes
+                    // the first waiter and acquires as capacity frees. Shedding only kicks in once
+                    // the queue exceeds the pool-scaled allowance (covered by the fairness tests).
+                    assertThat(engine.canServiceRequest()).isTrue();
                 }
             }
         }
@@ -152,15 +153,15 @@ class CommunityPersistenceEngineCanServiceRequestTest {
     class EdgeCases {
 
         @Test
-        @DisplayName("Handles very small pool size (1 connection)")
+        @DisplayName("ADR-035: small pool (1) at 100% with no queue still admits")
         void handlesSmallPoolSize() {
             try (PersistenceEngine engine = createTestEngine(1)) {
-                // With pool size 1, any active connection should trigger rejection
                 try (var conn = engine.openConnection()) {
                     var stats = engine.stats();
                     assertThat(stats.maxConnections()).isEqualTo(1);
-                    // 1 active connection out of 1 max = 100% > 90%
-                    assertThat(engine.canServiceRequest()).isFalse();
+                    assertThat(stats.pendingAcquires()).isZero();
+                    // ADR-035: full pool with no queue admits (the next request just queues briefly).
+                    assertThat(engine.canServiceRequest()).isTrue();
                 }
             }
         }

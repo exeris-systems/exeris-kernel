@@ -19,22 +19,18 @@ final class CommunityPersistenceAdmissionController {
     private static final String ADMISSION_REJECT_GUARD_BAND_FAIRNESS = "REJECT_GUARD_BAND_FAIRNESS";
     private static final String ADMISSION_REJECT_ENGINE_CLOSED = "REJECT_ENGINE_CLOSED";
     private static final String ADMISSION_REJECT_NO_CAPACITY = "REJECT_NO_CAPACITY";
-    private static final double HARD_SATURATION_THRESHOLD = 0.90d;
-    private static final double GUARD_BAND_THRESHOLD = 0.85d;
-    private static final double FAIRNESS_STRESS_THRESHOLD = 0.90d;
-    private static final long FAIRNESS_QUEUE_DEPTH_THRESHOLD = 1L;
-    private static final double EARLY_GUARD_BAND_HEADROOM_RATIO = 0.15d;
-    private static final int EARLY_GUARD_BAND_HEADROOM_CAP = 3;
     private static final long QUEUE_WAIT_TELEMETRY_THRESHOLD_MS = 0L;
 
     private final FairnessTracker fairnessTracker = new FairnessTracker();
 
-    /* default */ boolean canServiceRequest(CommunityHikariSupport.AdmissionSnapshot snapshot, boolean closed) {
+    /* default */ boolean canServiceRequest(CommunityHikariSupport.AdmissionSnapshot snapshot,
+                                            boolean closed,
+                                            CommunityAdmissionConfig config) {
         int active = snapshot.activeConnections();
         int queued = snapshot.pendingAcquires();
         int idle = snapshot.idleConnections();
         int max = snapshot.maxConnections();
-        String decisionReason = evaluateAdmissionReason(active, queued, idle, max, closed);
+        String decisionReason = evaluateAdmissionReason(active, queued, idle, max, closed, config);
         boolean accepted = ADMISSION_ACCEPT.equals(decisionReason);
         double saturation = admissionSaturation(active, max, decisionReason);
 
@@ -56,41 +52,51 @@ final class CommunityPersistenceAdmissionController {
         return accepted;
     }
 
-    /* default */ String decisionReason(CommunityHikariSupport.AdmissionSnapshot snapshot, boolean closed) {
+    /* default */ String decisionReason(CommunityHikariSupport.AdmissionSnapshot snapshot,
+                                        boolean closed,
+                                        CommunityAdmissionConfig config) {
         return evaluateAdmissionReason(
                 snapshot.activeConnections(),
                 snapshot.pendingAcquires(),
                 snapshot.idleConnections(),
                 snapshot.maxConnections(),
-                closed);
+                closed,
+                config);
     }
 
-    private String evaluateAdmissionReason(int active, int queued, int idle, int max, boolean closed) {
+    // ADR-035: a full or saturated pool no longer sheds on the first queued acquire. It admits
+    // (deferring to the connection-acquire timeout) until pending acquires exceed a pool-size-scaled
+    // allowance, then sheds — preserving backpressure under a genuinely deep queue while restoring
+    // availability for small pools whose queue drains within the No-Waste-Compute latency bound.
+    private String evaluateAdmissionReason(int active, int queued, int idle, int max, boolean closed,
+                                           CommunityAdmissionConfig config) {
         if (closed) {
             return ADMISSION_REJECT_ENGINE_CLOSED;
         }
         if (max <= 0) {
             return ADMISSION_REJECT_NO_CAPACITY;
         }
+        boolean queueExceedsAllowance = queued > config.queueDepthAllowance(max);
         double saturation = (double) active / (double) max;
-        if (saturation >= HARD_SATURATION_THRESHOLD) {
+        if (saturation >= config.hardSaturationThreshold() && queueExceedsAllowance) {
             return ADMISSION_REJECT_HARD_SATURATION;
         }
-        if (saturation >= GUARD_BAND_THRESHOLD
-                && queued > 0
-                && (shouldRejectEarlyInGuardBand(active, queued, max)
+        if (saturation >= config.guardBandThreshold()
+                && queueExceedsAllowance
+                && (shouldRejectEarlyInGuardBand(active, queued, max, config)
                 || fairnessTracker.indicatesAdmissionStress(
-                        FAIRNESS_STRESS_THRESHOLD,
-                        FAIRNESS_QUEUE_DEPTH_THRESHOLD))) {
+                        config.fairnessStressThreshold(),
+                        config.fairnessQueueDepthThreshold()))) {
             return ADMISSION_REJECT_GUARD_BAND_FAIRNESS;
         }
-        if (idle <= 0 && queued > 0) {
+        if (idle <= 0 && queueExceedsAllowance) {
             return ADMISSION_REJECT_NO_CAPACITY;
         }
         return ADMISSION_ACCEPT;
     }
 
-    private boolean shouldRejectEarlyInGuardBand(int active, int queued, int max) {
+    private boolean shouldRejectEarlyInGuardBand(int active, int queued, int max,
+                                                 CommunityAdmissionConfig config) {
         if (queued <= 0 || max <= 0) {
             return false;
         }
@@ -99,9 +105,9 @@ final class CommunityPersistenceAdmissionController {
             return false;
         }
         int lowHeadroomThreshold = Math.clamp(
-                (int) Math.ceil(max * EARLY_GUARD_BAND_HEADROOM_RATIO),
+                (int) Math.ceil(max * config.earlyGuardBandHeadroomRatio()),
                 1,
-                EARLY_GUARD_BAND_HEADROOM_CAP);
+                config.earlyGuardBandHeadroomCap());
         return remainingHeadroom <= lowHeadroomThreshold && queued >= remainingHeadroom;
     }
 
