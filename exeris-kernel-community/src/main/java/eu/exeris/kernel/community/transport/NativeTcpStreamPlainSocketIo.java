@@ -92,15 +92,9 @@ final class NativeTcpStreamPlainSocketIo {
                                       int maxBytes,
                                       long streamId) throws IOException {
         try {
-            // Zero-alloc ingress (PERF-072): the carrier always reads the full loaned slab
-            // (maxBytes == segment byteSize), so asSlice(0, maxBytes) would allocate a fresh
-            // NativeMemorySegmentImpl wrapper identical to target on every read. Pass target
-            // directly in that case — recv() takes the length as a separate argument, so the
-            // wrapper is a pure no-op. Slice only for a genuine sub-range.
-            MemorySegment dst = maxBytes == target.byteSize() ? target : target.asSlice(0, maxBytes);
             long result = (long) socketHandles.recv().invokeExact(
                     plainSocketHandle,
-                    dst,
+                    readDestination(target, maxBytes),
                     (long) maxBytes,
                     POSIX_SOCKET_IO_FLAGS);
             if (result > 0) {
@@ -165,12 +159,10 @@ final class NativeTcpStreamPlainSocketIo {
     /* default */ static int nioFallbackRead(SocketChannel channel,
                                              MemorySegment target,
                                              int maxBytes) throws IOException {
-        // Zero-alloc ingress (PERF-072): elide the redundant asSlice wrapper when the caller
-        // reads the full segment. The guard is also semantically required here — a ByteBuffer
-        // over the full segment would have capacity == byteSize, letting channel.read() overrun
-        // maxBytes; only elide when they are equal (slice and full segment are then identical).
-        MemorySegment readInto = maxBytes == target.byteSize() ? target : target.asSlice(0, maxBytes);
-        ByteBuffer targetBuffer = readInto.asByteBuffer();
+        // Zero-alloc ingress (PERF-072): the guard in readDestination is also semantically
+        // required here — a ByteBuffer over the full segment would have capacity == byteSize,
+        // letting channel.read() overrun maxBytes; eliding only on equality keeps it identical.
+        ByteBuffer targetBuffer = readDestination(target, maxBytes).asByteBuffer();
         targetBuffer.clear();
         return channel.read(targetBuffer);
     }
@@ -185,5 +177,18 @@ final class NativeTcpStreamPlainSocketIo {
         MemorySegment slice = source.asSlice(offset, length);
         ByteBuffer sourceBuffer = slice.asByteBuffer();
         return channel.write(sourceBuffer);
+    }
+
+    /**
+     * Selects the destination segment for a read of up to {@code maxBytes}.
+     *
+     * <p>Zero-alloc ingress (PERF-072): the carrier always reads the full loaned slab
+     * ({@code maxBytes == target.byteSize()}), where {@code target.asSlice(0, maxBytes)}
+     * would be base- and length-identical to {@code target} — a pure {@code NativeMemorySegmentImpl}
+     * wrapper allocated on every read. Return {@code target} directly in that case; the syscall
+     * length is passed separately, so the slice is a no-op. Slice only for a genuine sub-range.
+     */
+    private static MemorySegment readDestination(MemorySegment target, int maxBytes) {
+        return maxBytes == target.byteSize() ? target : target.asSlice(0, maxBytes);
     }
 }
