@@ -114,14 +114,16 @@ final class CommunityHikariSupport {
     ) throws SQLException {
         Objects.requireNonNull(onClose, "onClose must not be null");
         long startNs = System.nanoTime();
-        ConnectionAcquireEvent event = ConnectionAcquireEvent.beginAcquire();
         boolean success = false;
+        // The checkout below can park (and unmount) a virtual thread. The JFR event is
+        // committed single-phase after it returns — never held across the unmount — to
+        // avoid a carrier-bound EventWriter flushing a stale buffer. See ConnectionAcquireEvent.
         try (ConnectionLease lease = ConnectionLease.open(pool)) {
             JdbcPersistenceConnection connection = lease.transferToJdbc(onClose);
             success = true;
             return connection;
         } finally {
-            ConnectionAcquireEvent.endAcquire(event, providerId, tenantKey, success, startNs);
+            ConnectionAcquireEvent.commitAcquire(providerId, tenantKey, success, startNs);
         }
     }
 

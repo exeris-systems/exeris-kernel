@@ -831,6 +831,18 @@ See also: [Events Subsystem](./subsystems/events.md) — Multi-Provider Strategy
 
 ---
 
+### Persistence: Latency-Keyed Admission Fairness Gate (ADR-035 follow-up)
+
+**Gap:** ADR-035 recalibrated Community admission so a full pool sheds only once `pendingAcquires > ceil(maxPool × queueDepthAllowanceRatio)` (default ratio `8.0`). Because *all* shed branches in `CommunityPersistenceAdmissionController` — including `REJECT_GUARD_BAND_FAIRNESS` and the early-guard-band check — are gated behind that single queue-depth allowance, the fairness/guard-band machinery (`FairnessTracker.indicatesAdmissionStress`, `shouldRejectEarlyInGuardBand`) is effectively dormant under the default ratio: it only re-arms when an operator lowers `queueDepthAllowanceRatio`, which *also* sheds the small-pool burst the recalibration exists to admit. The two shed signals (depth-based backpressure and fairness) cannot be tuned apart through one scalar knob. See ADR-035 §Consequences ("Fairness/guard-band machinery is intentionally dormant under the default ratio").
+
+**Owner:** Core / Persistence subsystem.
+
+**Resolution:** Gate the fairness/guard-band shed path on an observed wait-time signal (`queueWaitP95`, already computed by `FairnessTracker.computeSnapshot()` and emitted on `AdmissionDecisionEvent`) instead of on `queueDepthAllowance`. This lets sustained fairness inversion shed independently of `queueDepthAllowanceRatio`, so depth-based small-pool availability and latency-based fairness become separately tunable. Keep the decision non-blocking and zero-allocation on the hot path; expose any new threshold as a `persistence.admission.*` key consistent with the ADR-035 tunable surface.
+
+**Merge Gate:** Community admission tests prove fairness sheds under sustained `queueWaitP95` stress while the default `queueDepthAllowanceRatio=8.0` still admits a transient small-pool burst (the constrained-benchmark regression guard stays green). No SPI field added — The Wall unchanged. Enterprise binding obligation per ADR-035 still applies.
+
+---
+
 ### Flow: Production Correctness Hardening
 
 **Gap:** Flow has proven product importance, but durability/recovery and E2E correctness confidence still need to move from exploratory evidence to production-candidate confidence.

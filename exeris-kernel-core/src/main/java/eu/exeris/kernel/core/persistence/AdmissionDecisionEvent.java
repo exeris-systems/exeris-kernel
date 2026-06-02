@@ -8,6 +8,8 @@
  */
 package eu.exeris.kernel.core.persistence;
 
+import eu.exeris.kernel.core.telemetry.JfrCommitGate;
+
 import jdk.jfr.Category;
 import jdk.jfr.Description;
 import jdk.jfr.Event;
@@ -77,7 +79,12 @@ public final class AdmissionDecisionEvent {
         evt.queueDepthP95 = payload.queueDepthP95();
         evt.queueWaitP95Ms = payload.queueWaitP95Ms();
         evt.decisionReason = payload.decisionReason();
-        evt.commit();
+        // VT-JFR safety: commit off the request virtual thread via the platform-thread committer.
+        // Falls back to inline commit only when no committer is installed (tests / pre-bootstrap,
+        // where the caller is a platform thread and inline commit is safe).
+        if (!JfrCommitGate.offer(evt)) {
+            evt.commit();
+        }
     }
 
     /**
