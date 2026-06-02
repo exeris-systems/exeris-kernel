@@ -8,6 +8,15 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ## [Unreleased] — 0.8.0-SNAPSHOT
 
+### Fixed — Non-blocking client ingress (Sprint 7 TCK-064)
+
+- Production fix for the TCK-064 virtual-thread carrier-pinning stall on the Community TCP **client** ingress path. Previously each outbound stream ran a virtual thread that looped on a **blocking** native `recv()` via Panama FFM: the plain client `SocketChannel` was left in blocking mode after `connect()`, so the seam's `EAGAIN → 0` retry branch was unreachable and the carrier thread was pinned for the syscall duration. On a 2-vCPU runner (default carrier pool = 2) a handful of clients exhausted the pool and deadlocked.
+- `NativeTcpCarrier.connect()` now flips the connected channel to **non-blocking** unconditionally (not just for TLS-FD) before registration, and registers the client channel on a **client-side reactor** — CLIENT/DUAL engines stand up the same reactor model previously reserved for SERVER/DUAL. Client ingress is now reactor-driven (OP_READ) against a non-blocking FD; no virtual thread blocks on `recv()`.
+- Client **egress** is unified onto the reactor key (`requestWriteInterest` → reactor arms OP_WRITE → `flushStream`), matching the server path. The separate per-stream client ingress/writer virtual-thread pumps (`runClientIngressLoop`, `runClientWriterLoop`, `requestClientWriteFlush`) and their `ChannelRuntimeRegistry` thread plumbing were deleted, removing the split-ownership hazard of a writer VT racing the reactor on one FD.
+- CLIENT/DUAL outbound runtime intentionally uses a **single** reactor (server reactor count is unchanged) to avoid spawning surplus reactor platform threads that would oversubscribe constrained cores and re-introduce VT-carrier starvation.
+- Community-internal transport change only — no SPI/Core contract change (The Wall, ADR-006), no admission/ADR-010 interaction.
+- CI: removed the `-Djdk.virtualThreadScheduler.parallelism=16 / maxPoolSize=64` workaround and the escalated `-Dexeris.tck.transport.drainTimeoutSeconds` overrides from both the `build-and-verify` and `transport-stress-gate` jobs in `.github/workflows/maven.yml`. `CommunityTransportCarrierPinningTckTest` (+ MultiReactor2/4 variants) and `NativeTcpTransportStressTest` pass at the default VT carrier pool and the strict default drain budget.
+
 ### Security — @RequiresRole runtime wiring (Sprint 4 SEC-080)
 
 - `eu.exeris.kernel.core.security.GeneratedRoleRegistryLoader` (new, Core) resolves the build-time generated `eu.exeris.kernel.security.generated.RoleCheckRegistry` reflectively (by FQN string — no compile edge on `exeris-kernel-build-config`, preserving the processor's reactor-cycle avoidance) and binds its five static accessors (`requiredAny`/`requiredAll`/`matchIsAll`/`methodCount`/`roleNameToBit`) to `MethodHandle`s once at bootstrap, exposed as a `RoleRegistry`. The per-request accessors use `invokeExact` — no `Method.invoke`, allocation-free. ADR-014 §3.
