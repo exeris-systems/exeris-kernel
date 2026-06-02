@@ -217,4 +217,52 @@ public final class SecurityJfrEvents {
         event.hasTenant = hasTenant;
         event.commit();
     }
+
+    // =========================================================================
+    // Event: RoleRegistryLoaded (bootstrap, one-shot)
+    // =========================================================================
+
+    /**
+     * Emitted once at bootstrap when the generated {@code RoleCheckRegistry} is
+     * resolved (or found absent). Lets operators distinguish "no
+     * {@code @RequiresRole} compiled" ({@code found == false}) from "registry
+     * loaded with N methods" ({@code found == true}, {@code methodCount == N}),
+     * and from a load failure (also {@code found == false}). Carries no secrets.
+     */
+    @Name("eu.exeris.kernel.security.RoleRegistryLoaded")
+    @Label("Role Registry Loaded")
+    @Category({"Exeris Kernel", "Security"})
+    @Description("Emitted once at bootstrap when the generated @RequiresRole RoleCheckRegistry is resolved")
+    @StackTrace(false)
+    public static final class RoleRegistryLoadedEvent extends Event {
+
+        @Label("Generated Class Found")
+        @Description("Whether the generated RoleCheckRegistry class was resolved on the classpath")
+        public boolean generatedClassFound;
+
+        @Label("Method Count")
+        @Description("Number of @RequiresRole-annotated entry points compiled into the registry")
+        public int methodCount;
+    }
+
+    /**
+     * Emits a {@link RoleRegistryLoadedEvent}. Single-phase commit — bootstrap
+     * runs on a platform thread, but we still avoid begin()/work/commit()
+     * straddle per the VT-JFR lore.
+     *
+     * @param generatedClassFound whether the generated class was resolved
+     * @param methodCount         number of annotated entry points ({@code 0} when absent)
+     */
+    public static void emitRoleRegistryLoaded(boolean generatedClassFound, int methodCount) {
+        if (!FlightRecorder.isInitialized()) {
+            return;
+        }
+        var event = new RoleRegistryLoadedEvent();
+        if (!event.isEnabled()) {
+            return;
+        }
+        event.generatedClassFound = generatedClassFound;
+        event.methodCount = methodCount;
+        event.commit();
+    }
 }

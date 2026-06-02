@@ -15,6 +15,7 @@ import eu.exeris.kernel.spi.exceptions.security.SecurityAuthenticationException;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.security.AuthenticationResult;
 import eu.exeris.kernel.spi.security.PrincipalContext;
+import eu.exeris.kernel.spi.security.RoleRegistry;
 import eu.exeris.kernel.spi.security.SecurityProvider;
 import eu.exeris.kernel.spi.security.StorageContext;
 
@@ -79,10 +80,16 @@ import java.util.Objects;
 @SuppressWarnings({"java:S6548", "java:S6206"})
 public final class SecurityInterceptor {
 
+    /** Sentinel mask meaning "no registry-resolved roles" — the fail-closed default. */
+    private static final long EMPTY_MASK = 0L;
+
     private final SecurityProvider provider;
+    private final RoleRegistry roleRegistry;
 
     /**
-     * Constructs a {@code SecurityInterceptor} backed by the given provider.
+     * Constructs a {@code SecurityInterceptor} backed by the given provider and
+     * the fail-closed {@linkplain GeneratedRoleRegistryLoader#empty() empty}
+     * role registry.
      *
      * <p>Typically called once during bootstrap, after
      * {@link java.util.ServiceLoader} selects the highest-priority
@@ -94,7 +101,28 @@ public final class SecurityInterceptor {
      *                 must not be {@code null}
      */
     public SecurityInterceptor(SecurityProvider provider) {
+        this(provider, GeneratedRoleRegistryLoader.empty());
+    }
+
+    /**
+     * Constructs a {@code SecurityInterceptor} backed by the given provider and
+     * a build-time {@link RoleRegistry} (ADR-014 §5).
+     *
+     * <p>When {@code roleRegistry.methodCount() > 0} the interceptor resolves
+     * the authenticated principal's role names against the registry and binds a
+     * {@link MaskedPrincipal} carrying the precomputed {@code roleMask()} into
+     * the request scope, so downstream {@code @RequiresRole} checks resolve to a
+     * primitive {@code AND}/{@code EQ}. When the registry is empty (no
+     * {@code @RequiresRole} compiled anywhere) the original principal is bound
+     * unchanged — no allocation, mask stays {@code 0L}, fail-closed.
+     *
+     * @param provider     the security provider; must not be {@code null}
+     * @param roleRegistry the build-time role registry; must not be {@code null}
+     *                     (pass {@link GeneratedRoleRegistryLoader#empty()} when none)
+     */
+    public SecurityInterceptor(SecurityProvider provider, RoleRegistry roleRegistry) {
         this.provider = Objects.requireNonNull(provider, "provider must not be null");
+        this.roleRegistry = Objects.requireNonNull(roleRegistry, "roleRegistry must not be null");
     }
 
     /**
@@ -140,7 +168,7 @@ public final class SecurityInterceptor {
             throw ex;
         }
 
-        PrincipalContext principal = result.principal();
+        PrincipalContext principal = enrichWithRoleMask(result.principal());
         StorageContext   storage   = result.storage();
 
         SecurityJfrEvents.emitPrincipalBound(
@@ -156,6 +184,33 @@ public final class SecurityInterceptor {
                 .run(requestHandler);
 
         return true;
+    }
+
+    /**
+     * Resolves the principal's role names against the registry into a precomputed
+     * {@code roleMask} and wraps the principal in a {@link MaskedPrincipal}.
+     *
+     * <p>When the registry carries no {@code @RequiresRole} entry points
+     * ({@code methodCount() == 0}) the original principal is returned unchanged —
+     * no allocation, mask stays {@code 0L}. A principal that already exposes a
+     * non-zero {@code roleMask()} (e.g. a pre-masked system principal) is left
+     * untouched so it is never double-wrapped or downgraded.
+     *
+     * @param principal the authenticated principal
+     * @return the principal to bind into the request scope
+     */
+    private PrincipalContext enrichWithRoleMask(PrincipalContext principal) {
+        if (roleRegistry.methodCount() == 0 || principal.roleMask() != EMPTY_MASK) {
+            return principal;
+        }
+        long mask = EMPTY_MASK;
+        for (String role : principal.roles()) {
+            mask |= roleRegistry.roleNameToMask(role);
+        }
+        if (mask == EMPTY_MASK) {
+            return principal;
+        }
+        return new MaskedPrincipal(principal, mask);
     }
 
     /**
@@ -253,7 +308,7 @@ public final class SecurityInterceptor {
         );
 
         ScopedValue
-                .where(KernelProviders.PRINCIPAL_CONTEXT, principal)
+                .where(KernelProviders.PRINCIPAL_CONTEXT, enrichWithRoleMask(principal))
                 .where(KernelProviders.STORAGE_CONTEXT, storage)
                 .run(requestHandler);
 
