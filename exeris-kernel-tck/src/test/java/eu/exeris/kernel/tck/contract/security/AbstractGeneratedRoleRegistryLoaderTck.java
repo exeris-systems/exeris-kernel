@@ -121,12 +121,43 @@ public abstract class AbstractGeneratedRoleRegistryLoaderTck {
         assertThat(registry.roleNameToBit("ROLE_GHOST"))
                 .as("unknown roles surface as -1 so callers fail closed")
                 .isEqualTo(-1);
+        // All five SPI accessors must round-trip through the reflective binding,
+        // not only the ANY/roleName pair. Method 0 of the fixture is an ANY method,
+        // so its ALL mask is 0L and matchIsAll is false — assert both so a binding
+        // that mis-wired the requiredAll/matchIsAll MethodHandles is caught.
+        assertThat(registry.requiredAny(0))
+                .as("ANY mask round-trips to ROLE_ADMIN's single bit")
+                .isEqualTo(1L << 1);
+        assertThat(registry.requiredAll(0))
+                .as("an ANY method has an empty ALL mask")
+                .isZero();
+        assertThat(registry.matchIsAll(0))
+                .as("an ANY method must report matchIsAll == false")
+                .isFalse();
         // Method 0 of the fixture requires ROLE_ADMIN (ANY): a principal masked
         // for ROLE_ADMIN is allowed, an empty-mask principal is denied.
         PrincipalContext adminMask = maskOnly(registry.roleNameToMask("ROLE_ADMIN"));
         PrincipalContext noMask = maskOnly(0L);
         assertThat(isAllowed(0, adminMask, registry)).isTrue();
         assertThat(isAllowed(0, noMask, registry)).isFalse();
+    }
+
+    @Test
+    @DisplayName("Present registry with a method-id out of range fails fast, never allows")
+    void presentRegistryMethodIdOutOfRangeFailsFast() {
+        RoleRegistry registry = loadPresent();
+        int outOfRange = registry.methodCount(); // first index past the compiled table
+
+        // ADVERSARIAL: a method-id beyond the compiled table is a programming/wiring
+        // error. The reflective registry indexes a backing array, so the bound
+        // MethodHandle propagates the ArrayIndexOutOfBoundsException unchanged. The
+        // contract pins fail-FAST (a thrown RuntimeException), never a silent
+        // permissive mask that a fail-open regression might return.
+        PrincipalContext adminMask = maskOnly(registry.roleNameToMask("ROLE_ADMIN"));
+        org.assertj.core.api.Assertions
+                .assertThatThrownBy(() -> isAllowed(outOfRange, adminMask, registry))
+                .as("out-of-range method-id must surface as a thrown error, never an implicit allow")
+                .isInstanceOf(RuntimeException.class);
     }
 
     private static PrincipalContext maskOnly(long mask) {

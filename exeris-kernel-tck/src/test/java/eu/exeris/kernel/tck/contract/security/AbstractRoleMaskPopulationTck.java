@@ -86,6 +86,77 @@ public abstract class AbstractRoleMaskPopulationTck {
     }
 
     @Test
+    @DisplayName("Unknown role names contribute 0 to the mask (fail-closed, no -1 garbage)")
+    void unknownRolesContributeZero() {
+        RoleRegistry registry = new SingleMethodAdminRegistry();
+        // ADVERSARIAL: ROLE_GHOST is unknown to the registry (roleNameToBit == -1).
+        // The population loop must OR in its single-bit mask of 0L, never a garbage
+        // bit derived from a -1 shift. The resulting mask must be exactly ADMIN's bit.
+        PrincipalContext principal = ImmutablePrincipal.system(
+                UUID.randomUUID(), Set.of("ROLE_ADMIN", "ROLE_GHOST"));
+        AtomicReference<PrincipalContext> bound = new AtomicReference<>();
+
+        boolean invoked = runIntercept(registry, principal,
+                () -> bound.set(KernelProviders.PRINCIPAL_CONTEXT.get()));
+
+        assertThat(invoked).isTrue();
+        assertThat(bound.get().roleMask())
+                .as("unknown role must contribute 0, leaving only ROLE_ADMIN's bit set")
+                .isEqualTo(1L << BIT_ADMIN);
+    }
+
+    @Test
+    @DisplayName("Masked accessors delegate every field to the wrapped principal")
+    void wrappedPrincipalDelegatesAllAccessors() {
+        RoleRegistry registry = new SingleMethodAdminRegistry();
+        UUID principalId = UUID.randomUUID();
+        UUID tenantId = UUID.randomUUID();
+        // Tenant + scopes populated so a wrapper that only forwarded roleMask()/roles()
+        // but dropped tenantId()/scopes() (broken delegate) is caught.
+        PrincipalContext principal = ImmutablePrincipal.ofTenant(
+                principalId, tenantId, Set.of("ROLE_ADMIN"), Set.of("read:orders", "write:orders"));
+        AtomicReference<PrincipalContext> bound = new AtomicReference<>();
+
+        boolean invoked = runIntercept(registry, principal,
+                () -> bound.set(KernelProviders.PRINCIPAL_CONTEXT.get()));
+
+        assertThat(invoked).isTrue();
+        PrincipalContext masked = bound.get();
+        assertThat(masked)
+                .as("a non-empty registry with resolvable roles must wrap the principal")
+                .isNotSameAs(principal);
+        assertThat(masked.roleMask()).isEqualTo(1L << BIT_ADMIN);
+        assertThat(masked.principalId()).as("principalId must delegate").isEqualTo(principalId);
+        assertThat(masked.tenantId()).as("tenantId must delegate").contains(tenantId);
+        assertThat(masked.roles()).as("roles must delegate").containsExactly("ROLE_ADMIN");
+        assertThat(masked.scopes()).as("scopes must delegate")
+                .containsExactlyInAnyOrder("read:orders", "write:orders");
+    }
+
+    @Test
+    @DisplayName("A pre-masked principal is bound unchanged, never downgraded")
+    void preMaskedPrincipalNeverDowngraded() {
+        RoleRegistry registry = new SingleMethodAdminRegistry();
+        // ADVERSARIAL: principal already carries a precomputed mask (e.g. a trusted
+        // gateway or resumed session). Enrichment must leave it untouched — same
+        // instance, same mask — and never recompute/overwrite it with a smaller value.
+        long preset = (1L << BIT_ADMIN) | (1L << 5);
+        PrincipalContext preMasked = new FixedMaskPrincipal(preset);
+        AtomicReference<PrincipalContext> bound = new AtomicReference<>();
+
+        boolean invoked = runIntercept(registry, preMasked,
+                () -> bound.set(KernelProviders.PRINCIPAL_CONTEXT.get()));
+
+        assertThat(invoked).isTrue();
+        assertThat(bound.get())
+                .as("a pre-masked principal must be bound as the original instance")
+                .isSameAs(preMasked);
+        assertThat(bound.get().roleMask())
+                .as("the pre-existing mask must be preserved bit-for-bit")
+                .isEqualTo(preset);
+    }
+
+    @Test
     @DisplayName("Empty registry leaves the principal unwrapped with a 0L mask")
     void leavesPrincipalUntouchedWhenRegistryEmpty() {
         RoleRegistry empty = new EmptyRegistry();
@@ -100,6 +171,38 @@ public abstract class AbstractRoleMaskPopulationTck {
                 .as("empty registry must bind the original principal instance, not a wrapper")
                 .isSameAs(principal);
         assertThat(bound.get().roleMask()).isZero();
+    }
+
+    /**
+     * Principal carrying a precomputed {@code roleMask()} — the shape a trusted
+     * gateway or resumed session presents. Used to assert the no-downgrade
+     * invariant in {@link #preMaskedPrincipalNeverDowngraded()}.
+     */
+    private record FixedMaskPrincipal(long mask) implements PrincipalContext {
+        @Override
+        public UUID principalId() {
+            return new UUID(0L, 0L);
+        }
+
+        @Override
+        public java.util.Optional<UUID> tenantId() {
+            return java.util.Optional.empty();
+        }
+
+        @Override
+        public Set<String> roles() {
+            return Set.of("ROLE_ADMIN");
+        }
+
+        @Override
+        public Set<String> scopes() {
+            return Set.of();
+        }
+
+        @Override
+        public long roleMask() {
+            return mask;
+        }
     }
 
     /** Registry with a single ANY method requiring {@code ROLE_ADMIN}. */
