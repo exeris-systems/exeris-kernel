@@ -43,8 +43,6 @@ final class ChannelRuntimeRegistry {
         return runtime != null ? runtime.stream() : streamByChannel.get(channel);
     }
 
-    // TooManyMethods: state accessors/mutators stay colocated for atomic channel runtime ownership.
-    @SuppressWarnings("PMD.TooManyMethods")
     static final class ChannelRuntimeState {
 
         private final SocketChannel channel;
@@ -52,8 +50,6 @@ final class ChannelRuntimeRegistry {
         private final String socketBackend;
         private final ConcurrentMap<SocketChannel, NativeTcpReactor> channelOwner;
         private final AtomicReference<NativeTcpReactor> owner = new AtomicReference<>();
-        private final AtomicReference<Thread> clientIngressThread = new AtomicReference<>();
-        private final AtomicReference<Thread> clientWriterThread = new AtomicReference<>();
         private final AtomicBoolean lifecycleCleanup = new AtomicBoolean(false);
 
         private ChannelRuntimeState(SocketChannel channel,
@@ -92,26 +88,6 @@ final class ChannelRuntimeRegistry {
 
         NativeTcpReactor detachOwner() {
             return owner.getAndSet(null);
-        }
-
-        void bindClientIngressThread(Thread thread) {
-            clientIngressThread.set(thread);
-        }
-
-        Thread detachClientIngressThread() {
-            return clientIngressThread.getAndSet(null);
-        }
-
-        void bindClientWriterThread(Thread thread) {
-            clientWriterThread.set(thread);
-        }
-
-        Thread clientWriterThread() {
-            return clientWriterThread.get();
-        }
-
-        Thread detachClientWriterThread() {
-            return clientWriterThread.getAndSet(null);
         }
 
         boolean beginLifecycleCleanup() {

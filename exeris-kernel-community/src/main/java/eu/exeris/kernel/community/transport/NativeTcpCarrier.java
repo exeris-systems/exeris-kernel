@@ -42,7 +42,6 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.locks.LockSupport;
 
 /**
  * Community native TCP carrier with FD-owner reactor and VT-per-stream dispatch via PAQS.
@@ -65,10 +64,6 @@ public final class NativeTcpCarrier implements TransportEngine {
 
     private static final System.Logger LOG = System.getLogger(NativeTcpCarrier.class.getName());
     private static final String ENGINE_NAME = "CommunityNativeTcpCarrier";
-    private static final long CLIENT_TLS_INGRESS_IDLE_BACKOFF_INITIAL_NANOS = 250_000L;
-    private static final long CLIENT_TLS_INGRESS_IDLE_BACKOFF_MAX_NANOS = 2_000_000L;
-    private static final long CLIENT_WRITER_BACKOFF_INITIAL_NANOS = 250_000L;
-    private static final long CLIENT_WRITER_BACKOFF_MAX_NANOS = 2_000_000L;
     private static final int MIN_LISTENER_BACKLOG = 64;
     private static final int MAX_LISTENER_BACKLOG = 1_024;
 
@@ -158,6 +153,11 @@ public final class NativeTcpCarrier implements TransportEngine {
                 }
                 initPaqs();
                 startServerRuntime();
+            } else {
+                // CLIENT mode: there is no acceptor/PAQS, but outbound channels still need a reactor
+                // to drive non-blocking ingress and egress (TCK-064). Stand up the reactor loop(s)
+                // here so connect() can register channels against them.
+                startClientRuntime();
             }
         } catch (RuntimeException ex) {
             running.set(false);
@@ -211,13 +211,16 @@ public final class NativeTcpCarrier implements TransportEngine {
         try {
             backend.validateClientSocketBackendOnce(allocator, host, port);
             channel = SocketChannel.open();
+            // Connect blocking (avoids OP_CONNECT handling), then flip the connected channel to
+            // non-blocking UNCONDITIONALLY before reactor registration. This is the TCK-064 root
+            // cause fix: a blocking plain client FD makes seamRead's EAGAIN->0 path unreachable, so
+            // native recv() blocks and pins the VT carrier. Non-blocking recv yields cleanly to the
+            // reactor instead. TLS-FD channels were already flipped here; plain channels now are too.
             channel.configureBlocking(true);
             channel.connect(new InetSocketAddress(host, port));
+            channel.configureBlocking(false);
             tlsEngine = createTlsEngineIfEnabled();
             bindTlsFdIfRequired(tlsEngine, channel);
-            if (tlsEngine instanceof eu.exeris.kernel.community.crypto.CommunityTlsEngine) {
-                channel.configureBlocking(false);
-            }
             final SocketChannel connectedChannel = channel;
 
             NativeTcpConnection connection = new NativeTcpConnection(
@@ -232,7 +235,7 @@ public final class NativeTcpCarrier implements TransportEngine {
                     connection,
                     allocator,
                     tlsEngine,
-                    () -> requestClientWriteFlush(connectedChannel),
+                    () -> requestWriteInterest(connectedChannel),
                     () -> onStreamClosed(connectedChannel),
                     backend.socketHandles());
             if (tlsEngine instanceof eu.exeris.kernel.community.crypto.CommunityTlsEngine) {
@@ -241,8 +244,7 @@ public final class NativeTcpCarrier implements TransportEngine {
 
             connection.bindSingleStream(stream);
             ChannelRuntimeRegistry.ChannelRuntimeState runtime = registerRuntime(stream, connectedChannel);
-            startClientIngressPump(runtime);
-            startClientWriterPump(runtime);
+            registerClientChannel(runtime, connectedChannel);
             activeConnections.incrementAndGet();
             activeStreams.incrementAndGet();
             totalAccepted.incrementAndGet();
@@ -348,27 +350,47 @@ public final class NativeTcpCarrier implements TransportEngine {
                 engineName());
     }
 
+    /**
+     * Builds and starts {@code reactorCount} reactor loops, replacing any prior set.
+     * Shared by SERVER/DUAL bootstrap and CLIENT bootstrap so both roles drive the same
+     * non-blocking selector model.
+     */
+    private void startReactors(int reactorCount) throws IOException {
+        reactors.clear();
+        for (int i = 0; i < reactorCount; i++) {
+            reactors.add(new NativeTcpReactor(this, i, Selector.open()));
+        }
+        nextReactorIndex.set(0);
+        for (NativeTcpReactor reactor : reactors) {
+            reactor.start();
+        }
+    }
+
     private void startServerRuntime() {
         try {
             backend.validateServerSocketBootstrapOnce(allocator);
-            int reactorCount = Math.max(1, config.reactorCount());
-            reactors.clear();
-            for (int i = 0; i < reactorCount; i++) {
-                reactors.add(new NativeTcpReactor(this, i, Selector.open()));
-            }
-            nextReactorIndex.set(0);
 
             serverChannel = ServerSocketChannel.open();
             serverChannel.configureBlocking(true);
             serverChannel.bind(new InetSocketAddress(config.bindAddress(), config.port()), listenerBacklog());
 
-            for (NativeTcpReactor reactor : reactors) {
-                reactor.start();
-            }
+            startReactors(Math.max(1, config.reactorCount()));
 
             acceptorThread = Thread.ofPlatform()
                     .name("carrier/native-tcp/acceptor")
                     .start(this::runAcceptorLoop);
+        } catch (IOException e) {
+            throw TransportException.engineStartFailure(engineName(), config.port(), e);
+        }
+    }
+
+    private void startClientRuntime() {
+        try {
+            // CLIENT/DUAL outbound paths multiplex a small number of channels; a single reactor
+            // is sufficient and intentionally avoids spawning surplus reactor platform threads.
+            // Surplus client reactors would oversubscribe constrained cores (2-vCPU CI) and starve
+            // the VT carriers running stream handlers — the same class of stall TCK-064 fixes.
+            startReactors(1);
         } catch (IOException e) {
             throw TransportException.engineStartFailure(engineName(), config.port(), e);
         }
@@ -525,6 +547,24 @@ public final class NativeTcpCarrier implements TransportEngine {
         return true;
     }
 
+    /**
+     * Registers an outbound (client) channel with a reactor exactly like an accepted server
+     * channel: bind the owner, mark registration pending, and enqueue the REGISTER request so the
+     * reactor arms OP_READ (and OP_WRITE when there is already-queued data) on its own thread. This
+     * is the TCK-064 fix — client ingress is now reactor-driven against a non-blocking FD instead of
+     * a blocking native {@code recv()} on a VT (which pinned the carrier). Egress is unified onto the
+     * same key via {@link #requestWriteInterest}: the stream's write callback arms OP_WRITE and the
+     * reactor thread runs {@link #flushStream}. No separate ingress/writer VT survives for either
+     * plain or TLS-FD client channels.
+     */
+    private void registerClientChannel(ChannelRuntimeRegistry.ChannelRuntimeState runtime,
+                                       SocketChannel channel) {
+        NativeTcpReactor owner = selectReactor();
+        runtime.markRegistrationPending();
+        runtime.bindOwner(owner);
+        owner.enqueueRegistration(channel);
+    }
+
     private NativeTcpReactor selectReactor() {
         int size = reactors.size();
         if (size == 0) {
@@ -633,107 +673,12 @@ public final class NativeTcpCarrier implements TransportEngine {
             owner.cancelKey(channel);
         }
 
-        Thread clientIngressThread = runtime.detachClientIngressThread();
-        if (clientIngressThread != null) {
-            interruptAndJoin(clientIngressThread);
-        }
-        Thread clientWriterThread = runtime.detachClientWriterThread();
-        if (clientWriterThread != null) {
-            interruptAndJoin(clientWriterThread);
-        }
-
         streamByChannel.remove(channel, runtime.stream());
         channelOwner.remove(channel);
 
         if (runtime.beginLifecycleCleanup()) {
             activeStreams.decrementAndGet();
             activeConnections.decrementAndGet();
-        }
-    }
-
-    private void requestClientWriteFlush(SocketChannel channel) {
-        ChannelRuntimeRegistry.ChannelRuntimeState runtime = resolveRuntime(channel);
-        if (runtime == null) {
-            return;
-        }
-        Thread writer = runtime.clientWriterThread();
-        if (writer != null) {
-            LockSupport.unpark(writer);
-        }
-    }
-
-    private void startClientIngressPump(ChannelRuntimeRegistry.ChannelRuntimeState runtime) {
-        Thread thread = Thread.ofVirtual()
-                .name("carrier/native-tcp-client-ingress/" + runtime.stream().streamId())
-                .start(() -> runClientIngressLoop(runtime.channel(), runtime.stream()));
-        runtime.bindClientIngressThread(thread);
-    }
-
-    private void startClientWriterPump(ChannelRuntimeRegistry.ChannelRuntimeState runtime) {
-        Thread thread = Thread.ofVirtual()
-                .name("carrier/native-tcp-client-writer/" + runtime.stream().streamId())
-                .start(() -> runClientWriterLoop(runtime.stream()));
-        runtime.bindClientWriterThread(thread);
-    }
-
-    private void runClientIngressLoop(SocketChannel channel, NativeTcpStream stream) {
-        long idleBackoffNanos = CLIENT_TLS_INGRESS_IDLE_BACKOFF_INITIAL_NANOS;
-        while (running.get()) {
-            try {
-                if (stream.isClosed()) {
-                    return;
-                }
-
-                if (stream.usesFdOwnerTls()) {
-                    LoanedBuffer offered = stream.readTlsIngressFromFd();
-                    if (offered != null) {
-                        stream.offerIngress(offered);
-                        idleBackoffNanos = CLIENT_TLS_INGRESS_IDLE_BACKOFF_INITIAL_NANOS;
-                        continue;
-                    }
-                    if (stream.isClosed()) {
-                        return;
-                    }
-                    LockSupport.parkNanos(idleBackoffNanos);
-                    idleBackoffNanos = Math.min(
-                            idleBackoffNanos << 1,
-                            CLIENT_TLS_INGRESS_IDLE_BACKOFF_MAX_NANOS);
-                    continue;
-                }
-
-                readIngress(channel);
-                idleBackoffNanos = CLIENT_TLS_INGRESS_IDLE_BACKOFF_INITIAL_NANOS;
-            } catch (RuntimeException _) {
-                stream.markRemoteClosed();
-                return;
-            }
-        }
-    }
-
-    private void runClientWriterLoop(NativeTcpStream stream) {
-        long writeBackoffNanos = CLIENT_WRITER_BACKOFF_INITIAL_NANOS;
-        while (running.get() && !stream.isClosed()) {
-            try {
-                stream.signalWriteReady();
-                if (stream.hasPendingData()) {
-                    boolean drained = stream.flushPendingWrites();
-                    if (drained) {
-                        writeBackoffNanos = CLIENT_WRITER_BACKOFF_INITIAL_NANOS;
-                        continue;
-                    }
-                    LockSupport.parkNanos(writeBackoffNanos);
-                    writeBackoffNanos = Math.min(writeBackoffNanos << 1, CLIENT_WRITER_BACKOFF_MAX_NANOS);
-                    continue;
-                }
-                writeBackoffNanos = CLIENT_WRITER_BACKOFF_INITIAL_NANOS;
-                LockSupport.park();
-                if (Thread.interrupted() && (!running.get() || stream.isClosed())) {
-                    return;
-                }
-            } catch (RuntimeException _) {
-                stream.close();
-                return;
-            }
         }
     }
 
@@ -754,14 +699,6 @@ public final class NativeTcpCarrier implements TransportEngine {
     private void closeSelectorAndChannels() {
         for (ChannelRuntimeRegistry.ChannelRuntimeState runtime : new ArrayList<>(runtimeByChannel.values())) {
             runtime.stream().close();
-            Thread ingressThread = runtime.detachClientIngressThread();
-            if (ingressThread != null) {
-                ingressThread.interrupt();
-            }
-            Thread writerThread = runtime.detachClientWriterThread();
-            if (writerThread != null) {
-                writerThread.interrupt();
-            }
         }
         runtimeByChannel.clear();
         streamByChannel.clear();
@@ -785,18 +722,6 @@ public final class NativeTcpCarrier implements TransportEngine {
             closeable.close();
         } catch (Exception ignored) {
             // best effort
-        }
-    }
-
-    private static void interruptAndJoin(Thread thread) {
-        thread.interrupt();
-        if (Objects.equals(thread, Thread.currentThread())) {
-            return;
-        }
-        try {
-            thread.join(200L);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
         }
     }
 
