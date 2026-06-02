@@ -54,7 +54,7 @@ Who is affected: agent-tooling consumers (bridge, third-party MCP clients), plat
 | **Zero-allocation hot-path discipline** | `docs/performance-contract.md`               | Diagnostic methods must be cold-path only. Calls per minute, not per request. Returns may allocate, calls must not be inside request loops. |
 | **Open-core split**                     | ADR-008                                      | SPI surface is `public`. Enterprise overlay extends, never replaces, the Community implementation.                                          |
 | **TCK obligation**                      | TCK-first review skill                       | New SPI ⇒ `AbstractKernelDiagnosticsTck` plus Community binding evidence; Enterprise must run the same TCK plus its overlay-specific cases. |
-| **Append-only stability**               | ADR-023 / ADR-024 (cap composition contract) | Once shipped, the SPI grows by adding methods + records, never by changing signatures of existing ones. JSON schema is the wire contract.   |
+| **Append-only stability**               | ADR-024 (cap composition contract)           | Once shipped, the SPI grows by adding methods + records, never by changing signatures of existing ones. JSON schema is the wire contract.   |
 | **Cross-repo readiness**                | `exeris-ai-bridge/ROADMAP.md` §0.4.0         | A child-process CLI (`exeris-kernel-diagnostics-cli`) must ship from `exeris-kernel-community` so the Node-side adapter can `spawn()` it.   |
 
 ### Data gathered
