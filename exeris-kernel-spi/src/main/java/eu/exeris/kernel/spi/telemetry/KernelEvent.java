@@ -19,7 +19,7 @@ import java.time.Instant;
  * <p>The {@code exception} field carries the raw {@code Object[]} payload via
  * {@link ExerisKernelException#rawArgs()} — never format it to a String on the hot path.
  * Community sinks may call {@link ExerisKernelException#getMessage()} only in low-frequency
- * diagnostic paths (console / file). Enterprise {@code BinaryBlackBoxSink} reads
+ * diagnostic paths (console / file). Enterprise {@code BinaryGlassBoxSink} reads
  * {@code rawArgs()} directly into off-heap mmap buffers.
  *
  * <h2>Valhalla Readiness</h2>

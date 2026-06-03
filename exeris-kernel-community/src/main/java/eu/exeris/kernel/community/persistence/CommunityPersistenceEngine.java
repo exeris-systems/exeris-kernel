@@ -21,16 +21,9 @@ import eu.exeris.kernel.spi.persistence.PersistenceEngine;
 import eu.exeris.kernel.spi.persistence.PersistenceHealthStatus;
 import eu.exeris.kernel.spi.security.StorageContext;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.UncheckedIOException;
-import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.SQLException;
-import java.sql.Statement;
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -55,8 +48,22 @@ import java.util.concurrent.atomic.AtomicReference;
  *
  * @since 0.5.0
  */
-@SuppressWarnings({"PMD.CyclomaticComplexity", "PMD.TooManyMethods", "PMD.CouplingBetweenObjects",
-        "PMD.GodClass"})
+// Cohesion baseline post-QA-010 (v0.8 Sprint 1): migration bootstrap and pool warm-up
+// were extracted to dedicated helpers (CommunityPersistenceMigrationRunner,
+// CommunityPersistencePoolWarmup). The remaining cyclomatic complexity is dominated
+// by the per-request connection-acquisition decision tree (request-scope vs physical,
+// tenant pool selection, interceptor chain).
+//
+// Residual GodClass / TooManyMethods suppressions reflect the central role the engine
+// plays in the SPI integration surface — it is the single class that has to thread
+// the request-scope session-box, the per-tenant pool registry, the interceptor chain,
+// and the admission controller through one PersistenceEngine façade. Further
+// decomposition (lifecycle vs. acquisition vs. admission) is a candidate for v0.8
+// Sprint 3 Quality batch II if the WMC=75 / method count remains above the gate
+// threshold after Sprint 1 closes. The `PMD.CouplingBetweenObjects` suppression from
+// the QA-010 pass was removed in this PR — PMD reports it as unnecessary against
+// the post-decomposition surface.
+@SuppressWarnings({"PMD.CyclomaticComplexity", "PMD.GodClass", "PMD.TooManyMethods"})
 final class CommunityPersistenceEngine implements PersistenceEngine, PhysicalConnectionSource {
 
     private static final String ENGINE_CLOSED_MESSAGE = "CommunityPersistenceEngine is closed";
@@ -106,50 +113,13 @@ final class CommunityPersistenceEngine implements PersistenceEngine, PhysicalCon
                 "BlockingTCP"
         );
 
-        maybeRunMigrations();
-        prewarmSharedPool();
-    }
-    /**
-     * Pre-warm the shared connection pool by acquiring N connections simultaneously,
-     * then returning them all. Holding all N at once forces HikariCP to create them
-     * concurrently, so the idle pool is fully populated before the first request arrives.
-     * Fail-fast on error to surface DB unavailability at startup.
-     */
-    private void prewarmSharedPool() {
-        int warmupConnections = config.poolWarmupConnections();
-        if (!config.poolWarmupEnabled() || warmupConnections <= 0) {
-            return;
-        }
-        int targetConnections = Math.min(warmupConnections, config.maxPoolSize());
-        List<Connection> heldConnections = new ArrayList<>(targetConnections);
-        try {
-            acquireWarmupConnections(targetConnections, heldConnections);
-        } catch (SQLException sqlEx) {
-            throw PersistenceProviderException.bootstrapFailure(
-                    CommunityPersistenceConstants.PROVIDER_ID,
-                    config.connectionUrl(),
-                    sqlEx);
-        } finally {
-            releaseConnectionsQuietly(heldConnections);
-        }
-    }
-
-    private void acquireWarmupConnections(int warmupConnections,
-                                          List<Connection> heldConnections) throws SQLException {
-        for (int i = 0; i < warmupConnections; i++) {
-            Connection connection = sharedPool.getConnection(); // NOPMD CloseResource -- held for warm-up
-            heldConnections.add(connection);
-            validateWarmupConnection(connection);
-        }
-    }
-
-    private void validateWarmupConnection(Connection connection) throws SQLException {
-        if (!connection.isValid(5)) {
-            throw PersistenceProviderException.bootstrapFailure(
-                    CommunityPersistenceConstants.PROVIDER_ID,
-                    config.connectionUrl(),
-                    new IllegalStateException("Connection validation returned false during pool warm-up"));
-        }
+        CommunityPersistenceMigrationRunner.runIfEnabled(
+                Boolean.parseBoolean(config.properties().getOrDefault(RUN_MIGRATIONS_KEY, "false")),
+                sharedPool,
+                MIGRATION_RESOURCES,
+                CommunityPersistenceConstants.PROVIDER_ID,
+                config.connectionUrl());
+        CommunityPersistencePoolWarmup.prewarm(sharedPool, config);
     }
 
     // =========================================================================
@@ -322,20 +292,6 @@ final class CommunityPersistenceEngine implements PersistenceEngine, PhysicalCon
         closeSharedPoolSafely();
     }
 
-    @SuppressWarnings("PMD.CloseResource")
-    private void releaseConnectionsQuietly(List<Connection> connections) {
-        for (Connection connection : connections) {
-            if (connection == null) {
-                continue;
-            }
-            try {
-                connection.close();
-            } catch (SQLException _) {
-                // best-effort return to pool
-            }
-        }
-    }
-
     private CommunityTenantPoolRegistry.PoolShutdownPlan preparePoolShutdown() {
         synchronized (lifecycleLock) {
             if (closed) {
@@ -446,117 +402,6 @@ final class CommunityPersistenceEngine implements PersistenceEngine, PhysicalCon
                     + "got connectionTimeoutMs="
                             + config.connectionTimeoutMs() + ", maxPoolSize=" + config.maxPoolSize());
         }
-    }
-
-    private void maybeRunMigrations() {
-        if (!Boolean.parseBoolean(config.properties().getOrDefault(RUN_MIGRATIONS_KEY, "false"))) {
-            return;
-        }
-        List<String> resources = new ArrayList<>(MIGRATION_RESOURCES);
-        resources.sort(Comparator.naturalOrder());
-        try (Connection connection = sharedPool.getConnection()) {
-            runMigrationsInTransaction(connection, resources);
-        } catch (SQLException | IllegalStateException | UncheckedIOException ex) {
-            throw PersistenceProviderException.bootstrapFailure(
-                    CommunityPersistenceConstants.PROVIDER_ID,
-                    config.connectionUrl(),
-                    ex);
-        }
-    }
-
-    private void runMigrationsInTransaction(Connection connection,
-                                            List<String> resources) throws SQLException {
-        connection.setAutoCommit(false);
-        boolean committed = false;
-        try {
-            for (String resource : resources) {
-                executeMigrationScript(connection, resource);
-            }
-            connection.commit();
-            committed = true;
-        } finally {
-            restoreAutoCommit(connection, committed);
-        }
-    }
-
-    private void restoreAutoCommit(Connection connection, boolean committed) throws SQLException {
-        try {
-            if (!committed) {
-                connection.rollback();
-            }
-        } finally {
-            connection.setAutoCommit(true);
-        }
-    }
-
-    private void executeMigrationScript(Connection connection, String resourcePath) throws SQLException {
-        String migrationSql = readMigrationResource(resourcePath);
-        for (String statementSql : splitSqlStatements(migrationSql)) {
-            try (Statement statement = connection.createStatement()) {
-                statement.execute(statementSql);
-            }
-        }
-    }
-
-    @SuppressWarnings("PMD.LawOfDemeter")
-    private static String readMigrationResource(String resourcePath) {
-        ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
-        try (InputStream inputStream = classLoader.getResourceAsStream(resourcePath)) {
-            if (inputStream == null) {
-                throw new IllegalStateException("Missing SQL migration resource: " + resourcePath);
-            }
-            byte[] bytes = inputStream.readAllBytes();
-            return new String(bytes, StandardCharsets.UTF_8);
-        } catch (IOException ioEx) {
-            throw new UncheckedIOException("Failed to read SQL migration resource: " + resourcePath, ioEx);
-        }
-    }
-
-    private static List<String> splitSqlStatements(String sql) {
-        if (sql == null || sql.isBlank()) {
-            return List.of();
-        }
-        StringBuilder current = new StringBuilder(sql.length());
-        List<String> statements = new ArrayList<>();
-        boolean inSingleQuote = false;
-
-        for (int i = 0; i < sql.length(); i++) {
-            char currentChar = sql.charAt(i);
-            if (currentChar == '\'' && (i == 0 || sql.charAt(i - 1) != '\\')) {
-                inSingleQuote = !inSingleQuote;
-            }
-            if (currentChar == ';' && !inSingleQuote) {
-                addStatement(statements, current);
-                current.setLength(0);
-                continue;
-            }
-            current.append(currentChar);
-        }
-        addStatement(statements, current);
-        return Collections.unmodifiableList(statements);
-    }
-
-    private static void addStatement(List<String> statements, StringBuilder current) {
-        String candidate = stripLineComments(current.toString()).trim();
-        if (!candidate.isEmpty()) {
-            statements.add(candidate);
-        }
-    }
-
-    private static String stripLineComments(String sql) {
-        String[] lines = sql.split("\\R");
-        StringBuilder builder = new StringBuilder(sql.length());
-        for (String line : lines) {
-            String trimmed = line.stripLeading();
-            if (trimmed.startsWith("--")) {
-                continue;
-            }
-            if (!builder.isEmpty()) {
-                builder.append('\n');
-            }
-            builder.append(line);
-        }
-        return builder.toString();
     }
 
     private int computeActiveConnections() {

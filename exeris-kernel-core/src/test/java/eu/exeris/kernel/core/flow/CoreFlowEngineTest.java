@@ -213,8 +213,21 @@ class CoreFlowEngineTest {
             }
         }
 
+        // 512 race iterations of schedule/park/wake on a single context drive the
+        // FlowScheduler hard enough that the post-loop settle conditions can take
+        // tens of seconds on a constrained 2-vCPU CI runner (the same JDK 26+35
+        // schedule-pressure window that motivated the v0.8 Sprint 0a VT carrier
+        // bump). Local 12-core boxes settle in well under a second.
+        //
+        // Budget escalation history:
+        //   - 5 s post-loop budget / 10 s @Timeout (v0.7 baseline; passes locally).
+        //   - 30 s / 90 s introduced by PR #123 alongside the v0.8 Sprint 1 CI
+        //     hotfix v4 series for 2-vCPU GitHub Actions runners.
+        //   - 60 s / 180 s introduced by PR after #125 — even the 30 s post-loop
+        //     budget exceeded under peak CI pressure on the SECOND awaitTrue
+        //     (line ~277 in this file), specifically the post-wake settle window.
         @Test
-        @Timeout(value = 10, unit = TimeUnit.SECONDS)
+        @Timeout(value = 180, unit = TimeUnit.SECONDS)
         @DisplayName("immediate schedule, park, and wake on the same context is race-safe")
         void immediateScheduleParkWakeOnSameContextIsRaceSafe() throws InterruptedException {
             try (CoreFlowEngine engine = startedEngine(false)) {
@@ -246,7 +259,7 @@ class CoreFlowEngineTest {
                     }
                 }
 
-                awaitTrue(5_000, () -> engine.stats().completedFlows() >= 1
+                awaitTrue(60_000, () -> engine.stats().completedFlows() >= 1
                         || engine.scheduler().lookupParked(
                                 context.instanceIdMost(),
                                 context.instanceIdLeast()).isPresent());
@@ -256,7 +269,7 @@ class CoreFlowEngineTest {
                         context.instanceIdLeast());
                 if (parked.isPresent()) {
                     engine.scheduler().wake(parked.orElseThrow());
-                    awaitTrue(5_000, () -> engine.stats().completedFlows() >= 1);
+                    awaitTrue(60_000, () -> engine.stats().completedFlows() >= 1);
                 }
 
                 assertThat(engine.stats().failedFlows()).isZero();

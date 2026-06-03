@@ -19,6 +19,8 @@ import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.sql.Timestamp;
+import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -322,6 +324,23 @@ final class JdbcQueryResult implements QueryResult {
                     return uuid;
                 }
                 return UUID.fromString(obj.toString());
+            } catch (SQLException sqlEx) {
+                throw mapSql(sqlEx);
+            }
+        }
+
+        // ResultSet.getTimestamp returns java.sql.Timestamp by JDBC contract (which extends
+        // java.util.Date as a JDBC API artefact). Convert immediately to Instant on the
+        // next line — the Timestamp reference is never held beyond the decode and never
+        // exposed across the SPI boundary, so the java.time-vs-java.util.Date concern
+        // PMD raises does not apply to the call site.
+        @SuppressWarnings("PMD.ReplaceJavaUtilDate")
+        @Override
+        public Instant getInstant(int column) {
+            checkBounds(column);
+            try {
+                Timestamp timestamp = resultSet.getTimestamp(column + 1);
+                return timestamp == null ? null : timestamp.toInstant();
             } catch (SQLException sqlEx) {
                 throw mapSql(sqlEx);
             }

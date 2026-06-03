@@ -16,7 +16,21 @@ import eu.exeris.kernel.spi.transport.TransportStream;
 import eu.exeris.kernel.tck.contract.transport.TransportCarrierPinningTck;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 
+// MultiReactor variants of the carrier-pinning TCK drive multiple server reactor
+// threads contending for a single virtual-thread carrier pool. On the constrained
+// 2-vCPU GitHub Actions runner this is a true stress scenario — even with the
+// Sprint 0a VT scheduler bump (parallelism=16/maxPoolSize=64) and the 30 s drain
+// budget mirrored into the main `build-and-verify` job, the drain pipeline still
+// times out under thread pressure when two or more reactors mount onto the same
+// pool. The single-reactor `CommunityTransportCarrierPinningTckTest` carries the
+// baseline contract invariant in the main job; the multi-reactor variants run
+// only in the dedicated `transport-stress-gate` job (`@Tag("stress")` selector),
+// where the same VT scheduler bump applies and the higher drain budget is
+// expected. Once the v0.8 Sprint 7 non-blocking-ingress refactor lands these can
+// drop the tag and rejoin the main matrix.
+@Tag("stress")
 @DisplayName("Community: Transport Carrier Pinning TCK (MultiReactor=2)")
 class CommunityTransportCarrierPinningMultiReactor2TckTest extends TransportCarrierPinningTck {
 

@@ -5,7 +5,7 @@
 
     <groupId>eu.exeris</groupId>
     <artifactId>exeris-kernel-root</artifactId>
-    <version>0.7.1</version>
+    <version>0.8.0</version>
     <packaging>pom</packaging>
 
     <name>Exeris Kernel :: Root</name>
@@ -34,6 +34,16 @@
 
         <jdk.preview.enable>--enable-preview</jdk.preview.enable>
         <coverage.argLine/>
+
+        <!--
+            v0.8 Sprint 6 (Coverage C-P0-01): default JaCoCo LINE coverage floor
+            applied to every module that produces a jacoco.exec. Per-module
+            overrides live in each module's <properties>. Default (0.20) is a
+            floor that any module with source must meet; modules without their
+            own tests (tck, community-testkit) skip the check naturally because
+            no jacoco.exec is produced.
+        -->
+        <jacoco.line.minimum>0.20</jacoco.line.minimum>
         <jvm.args>
             -XX:+UnlockExperimentalVMOptions
             -XX:+UseZGC
@@ -103,6 +113,38 @@
                                         <format>XML</format>
                                         <format>HTML</format>
                                     </formats>
+                                </configuration>
+                            </execution>
+                            <!--
+                                v0.8 Sprint 6 (Coverage C-P0-01 absorption): enforce LINE
+                                coverage floor per module. Each module-with-source sets its
+                                own ${jacoco.line.minimum} in <properties> (ratchet pattern —
+                                threshold slightly below current coverage so regressions are
+                                caught while existing baseline passes). Modules without their
+                                own tests (tck, community-testkit, parent, bom) produce no
+                                jacoco.exec — the check goal then no-ops silently. The check
+                                runs only when -Pcoverage is active (default CI main job).
+                            -->
+                            <execution>
+                                <id>jacoco-check</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>check</goal>
+                                </goals>
+                                <configuration>
+                                    <rules>
+                                        <rule>
+                                            <element>BUNDLE</element>
+                                            <limits>
+                                                <limit>
+                                                    <counter>LINE</counter>
+                                                    <value>COVEREDRATIO</value>
+                                                    <minimum>${jacoco.line.minimum}</minimum>
+                                                </limit>
+                                            </limits>
+                                        </rule>
+                                    </rules>
+                                    <haltOnFailure>true</haltOnFailure>
                                 </configuration>
                             </execution>
                         </executions>

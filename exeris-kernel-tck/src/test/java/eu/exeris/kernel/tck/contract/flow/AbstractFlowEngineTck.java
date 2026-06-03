@@ -486,6 +486,219 @@ public abstract class AbstractFlowEngineTck {
         }
     }
 
+    // =========================================================================
+    // FLOW-110 — Outcome transition correctness (CONTINUE / COMPLETE / FAIL / throw)
+    // =========================================================================
+
+    /**
+     * FLOW-110: per-{@link FlowOutcome} transition correctness, asserted purely through
+     * observable engine state — {@code engine.stats()} lifecycle counters and step-execution
+     * counters. No new SPI: the resolved/unresolved classification uses a <b>test-local</b>
+     * helper ({@link #isResolved(FlowState)}), not an SPI predicate.
+     *
+     * <p>Coverage focuses on the genuinely new ground; ordering of compensation is already
+     * fixed by {@code AbstractSagaRecoveryTck.SagaCompensationTest} and is referenced, not
+     * duplicated. The two primary new obligations are:
+     * <ul>
+     *   <li>a <b>thrown {@link RuntimeException}</b> from a step (distinct from an explicit
+     *       {@link FlowOutcome#FAIL}) drives the same FAIL → COMPENSATING → FAILED_ROLLEDBACK
+     *       path and emits {@code eu.exeris.kernel.flow.StepFailed};</li>
+     *   <li><b>terminal idempotency for {@code FAILED_ROLLEDBACK}</b> — re-scheduling a
+     *       rolled-back context re-runs no step and does not leave the terminal state
+     *       (the existing terminal-idempotency test fences only {@code COMPLETED}).</li>
+     * </ul>
+     */
+    @Nested
+    @DisplayName("FlowEngine outcome-transition correctness")
+    class OutcomeTransitions {
+
+        private static final String STEP_FAILED_EVENT = "eu.exeris.kernel.flow.StepFailed";
+
+        @BeforeEach
+        void startEngine() {
+            engine.start();
+        }
+
+        /**
+         * Test-local terminal classification — NOT an SPI predicate. Unresolved states
+         * ({@code RUNNING}, {@code PARKED}, {@code COMPENSATING}) may still transition;
+         * resolved states ({@code COMPLETED}, {@code FAILED_ROLLEDBACK}) are terminal.
+         */
+        private boolean isResolved(FlowState state) {
+            return state == FlowState.COMPLETED || state == FlowState.FAILED_ROLLEDBACK;
+        }
+
+        @Test
+        @Timeout(value = 10, unit = TimeUnit.SECONDS)
+        @DisplayName("CONTINUE advances to the next step (non-terminal mid-flight, then COMPLETED)")
+        void continueAdvancesToNextStep() {
+            AtomicInteger step0 = new AtomicInteger();
+            AtomicInteger step1 = new AtomicInteger();
+
+            FlowDefinition def = engine.plans().newDefinition("continue-flow")
+                    .step("first",  _ -> { step0.incrementAndGet(); return FlowOutcome.CONTINUE; }, null)
+                    .step("second", _ -> { step1.incrementAndGet(); return FlowOutcome.CONTINUE; }, null)
+                    .transition(0, 1)
+                    .build();
+            FlowExecutionPlan plan = engine.plans().compile(def);
+
+            engine.scheduler().schedule(plan, TestFlowContexts.create(
+                    UUID.randomUUID().toString(), "continue-flow"));
+
+            assertThat(awaitCondition(() -> engine.stats().completedFlows() >= 1L, 5))
+                    .as("CONTINUE must advance step 0 → step 1 and reach COMPLETED")
+                    .isTrue();
+            assertThat(step0.get()).as("step 0 executes once").isEqualTo(1);
+            assertThat(step1.get())
+                    .as("CONTINUE from step 0 MUST advance to and execute step 1")
+                    .isEqualTo(1);
+        }
+
+        @Test
+        @Timeout(value = 10, unit = TimeUnit.SECONDS)
+        @DisplayName("COMPLETE short-circuits: immediate COMPLETED, downstream step never runs")
+        void completeShortCircuitsDownstream() {
+            AtomicInteger downstream = new AtomicInteger();
+
+            FlowDefinition def = engine.plans().newDefinition("complete-flow")
+                    .step("short-circuit", _ -> FlowOutcome.COMPLETE, null)
+                    .step("never-runs",    _ -> { downstream.incrementAndGet(); return FlowOutcome.CONTINUE; }, null)
+                    .transition(0, 1)
+                    .build();
+            FlowExecutionPlan plan = engine.plans().compile(def);
+
+            engine.scheduler().schedule(plan, TestFlowContexts.create(
+                    UUID.randomUUID().toString(), "complete-flow"));
+
+            assertThat(awaitCondition(() -> engine.stats().completedFlows() >= 1L, 5))
+                    .as("COMPLETE MUST transition immediately to COMPLETED (flow.md:23 short-circuit)")
+                    .isTrue();
+            // Give any erroneous downstream dispatch time to manifest.
+            LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(200L));
+            assertThat(downstream.get())
+                    .as("COMPLETE MUST short-circuit — the downstream step counter MUST stay 0")
+                    .isZero();
+            assertThat(engine.stats().failedFlows())
+                    .as("COMPLETE is a success outcome — no failed flow recorded")
+                    .isZero();
+        }
+
+        @Test
+        @Timeout(value = 10, unit = TimeUnit.SECONDS)
+        @DisplayName("FlowOutcome.FAIL drives FAILED_ROLLEDBACK via COMPENSATING (ordering: see SagaCompensationTest)")
+        void explicitFailDrivesRollback() {
+            AtomicInteger compensated = new AtomicInteger();
+
+            FlowDefinition def = engine.plans().newDefinition("explicit-fail-flow")
+                    .step("do",  _ -> FlowOutcome.CONTINUE,
+                            _ -> { compensated.incrementAndGet(); return FlowOutcome.CONTINUE; })
+                    .step("boom", _ -> FlowOutcome.FAIL, null)
+                    .transition(0, 1)
+                    .build();
+            FlowExecutionPlan plan = engine.plans().compile(def);
+
+            engine.scheduler().schedule(plan, TestFlowContexts.create(
+                    UUID.randomUUID().toString(), "explicit-fail-flow"));
+
+            assertThat(awaitCondition(() -> engine.stats().failedFlows() >= 1L, 5))
+                    .as("Explicit FAIL MUST drive the flow to FAILED_ROLLEDBACK")
+                    .isTrue();
+            assertThat(compensated.get())
+                    .as("FAIL MUST run the upstream compensation (reverse ordering covered by "
+                            + "AbstractSagaRecoveryTck.SagaCompensationTest)")
+                    .isEqualTo(1);
+        }
+
+        @Test
+        @Timeout(value = 10, unit = TimeUnit.SECONDS)
+        @DisplayName("NEW: thrown RuntimeException (not FlowOutcome.FAIL) follows the FAIL path and emits StepFailed")
+        void thrownExceptionDrivesFailPathAndEmitsStepFailed() throws Exception {
+            CountDownLatch stepFailedReceived = new CountDownLatch(1);
+            AtomicInteger compensated = new AtomicInteger();
+
+            try (RecordingStream rs = new RecordingStream()) {
+                rs.enable(STEP_FAILED_EVENT);
+                rs.onEvent(STEP_FAILED_EVENT, _ -> stepFailedReceived.countDown());
+                rs.startAsync();
+
+                FlowDefinition def = engine.plans().newDefinition("thrown-exception-flow")
+                        .step("reserve", _ -> FlowOutcome.CONTINUE,
+                                _ -> { compensated.incrementAndGet(); return FlowOutcome.CONTINUE; })
+                        // A thrown RuntimeException, NOT an explicit FlowOutcome.FAIL.
+                        .step("explode", _ -> { throw new IllegalStateException("boom-from-step"); }, null)
+                        .transition(0, 1)
+                        .build();
+                FlowExecutionPlan plan = engine.plans().compile(def);
+
+                engine.scheduler().schedule(plan, TestFlowContexts.create(
+                        UUID.randomUUID().toString(), "thrown-exception-flow"));
+
+                assertThat(awaitCondition(() -> engine.stats().failedFlows() >= 1L, 5))
+                        .as("A thrown step exception MUST drive the flow to FAILED_ROLLEDBACK, "
+                                + "identically to an explicit FlowOutcome.FAIL")
+                        .isTrue();
+                assertThat(stepFailedReceived.await(3, TimeUnit.SECONDS))
+                        .as("A thrown step exception MUST emit eu.exeris.kernel.flow.StepFailed (flow.md:85)")
+                        .isTrue();
+                assertThat(compensated.get())
+                        .as("A thrown step exception MUST drive COMPENSATING — upstream compensation runs")
+                        .isEqualTo(1);
+            }
+        }
+
+        @Test
+        @Timeout(value = 10, unit = TimeUnit.SECONDS)
+        @DisplayName("NEW: terminal idempotency for FAILED_ROLLEDBACK — re-schedule re-runs nothing, stays terminal")
+        void failedRolledBackIsTerminalIdempotent() {
+            AtomicInteger stepExec    = new AtomicInteger();
+            AtomicInteger compExec    = new AtomicInteger();
+
+            FlowDefinition def = engine.plans().newDefinition("terminal-idem-fail-flow")
+                    .step("charge", _ -> {
+                        stepExec.incrementAndGet();
+                        return FlowOutcome.FAIL;
+                    }, _ -> { compExec.incrementAndGet(); return FlowOutcome.CONTINUE; })
+                    .build();
+            FlowExecutionPlan plan = engine.plans().compile(def);
+            FlowContext ctx = TestFlowContexts.create(
+                    UUID.randomUUID().toString(), "terminal-idem-fail-flow");
+
+            engine.scheduler().schedule(plan, ctx);
+            assertThat(awaitCondition(() -> engine.stats().failedFlows() >= 1L, 5))
+                    .as("First schedule MUST reach FAILED_ROLLEDBACK")
+                    .isTrue();
+            int stepAfterFirst = stepExec.get();
+            int compAfterFirst = compExec.get();
+            long failedAfterFirst = engine.stats().failedFlows();
+
+            // Re-schedule the SAME terminal (FAILED_ROLLEDBACK) context — duplicate replay.
+            engine.scheduler().schedule(plan, ctx);
+            LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(300L));
+
+            assertThat(stepExec.get())
+                    .as("Re-scheduling a FAILED_ROLLEDBACK context MUST NOT re-run the step")
+                    .isEqualTo(stepAfterFirst);
+            assertThat(compExec.get())
+                    .as("Re-scheduling a FAILED_ROLLEDBACK context MUST NOT re-run compensation")
+                    .isEqualTo(compAfterFirst);
+            assertThat(engine.stats().failedFlows())
+                    .as("Re-scheduling a terminal FAILED_ROLLEDBACK context MUST NOT mint a new failure "
+                            + "(state stays resolved/terminal)")
+                    .isEqualTo(failedAfterFirst);
+        }
+
+        @Test
+        @DisplayName("Test-local terminal classification helper — resolved vs unresolved (no SPI predicate)")
+        void terminalClassificationHelperIsTestLocal() {
+            // Documents the resolved/unresolved partition without leaking a predicate into the SPI.
+            assertThat(isResolved(FlowState.RUNNING)).isFalse();
+            assertThat(isResolved(FlowState.PARKED)).isFalse();
+            assertThat(isResolved(FlowState.COMPENSATING)).isFalse();
+            assertThat(isResolved(FlowState.COMPLETED)).isTrue();
+            assertThat(isResolved(FlowState.FAILED_ROLLEDBACK)).isTrue();
+        }
+    }
+
     private static boolean awaitCondition(BooleanSupplier condition, int timeoutSeconds) {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(timeoutSeconds);
         while (System.nanoTime() < deadline) {

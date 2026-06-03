@@ -7,7 +7,7 @@
     <parent>
         <groupId>eu.exeris</groupId>
         <artifactId>exeris-kernel-root</artifactId>
-        <version>0.7.1</version>
+        <version>0.8.0</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
@@ -19,6 +19,21 @@
         Main Parent POM for Kernel modules.
         Imports the BOM and enforces strict Code Quality gates (Checkstyle, PMD).
     </description>
+
+    <licenses>
+        <license>
+            <name>Apache License, Version 2.0</name>
+            <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
+            <distribution>repo</distribution>
+            <comments>
+                The Exeris Kernel open-core sources are distributed under the Apache License,
+                Version 2.0, with the Commons Clause condition restricting commercial resale
+                of the software as a competing product. See LICENSE-COMMUNITY in the
+                repository root for the combined text and SPDX identifier
+                "Apache-2.0 WITH Commons-Clause".
+            </comments>
+        </license>
+    </licenses>
 
     <properties>
         <exec.maven.plugin.version>3.5.0</exec.maven.plugin.version>

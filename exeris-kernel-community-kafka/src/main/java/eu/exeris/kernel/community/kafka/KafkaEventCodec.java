@@ -39,9 +39,11 @@ import java.nio.ByteOrder;
  * <h2>Allocation Discipline</h2>
  * <p>Encoding allocates a fresh {@code byte[]} sized exactly {@code HEADER_SIZE + payload.length()}
  * — Kafka's {@code ProducerRecord} owns this buffer until the broker acknowledges. Decoding
- * unwraps the consumer-supplied {@code byte[]} and copies the payload tail into a fresh
- * heap-backed {@link EventPayload} delivered to handlers; the descriptor reads primitives
- * directly off the buffer with zero allocation.
+ * is zero-copy on the hot path: {@link #decodeDescriptor(byte[])} reads primitives directly
+ * via {@link VarHandle}, and {@link #decodePayloadSegment(byte[])} (PERF-071) returns a
+ * {@link MemorySegment} slice over the consumer-supplied frame — no payload-bytes
+ * allocation, no {@code System.arraycopy}. The legacy {@link #decodePayloadBytes(byte[])}
+ * remains for byte-level test assertions and delegates to the slice API.
  *
  * @since 0.7.0
  */
@@ -160,8 +162,37 @@ final class KafkaEventCodec {
     }
 
     /**
+     * Returns the payload tail as a zero-copy {@link MemorySegment} slice over the
+     * consumer-supplied {@code frame} array (PERF-071).
+     *
+     * <p>The returned segment shares its backing storage with the input array — no
+     * payload bytes are copied and no fresh {@code byte[]} is allocated. The slice
+     * is read-only-by-convention; consumers MUST treat the segment as immutable for
+     * the lifetime of the event delivery (matches {@link EventPayload#segment()}
+     * contract).
+     *
+     * <p>The frame array's lifetime is owned by the calling Kafka consumer record;
+     * holding the returned segment keeps that array reachable for GC purposes.
+     */
+    /* default */ static MemorySegment decodePayloadSegment(byte[] frame) {
+        if (frame.length < HEADER_SIZE) {
+            throw new IllegalArgumentException(
+                    "Kafka frame is shorter than the fixed header (" + HEADER_SIZE
+                    + " bytes): got " + frame.length);
+        }
+        int payloadLength = frame.length - HEADER_SIZE;
+        if (payloadLength == 0) {
+            return MemorySegment.NULL.asSlice(0L, 0L);
+        }
+        return MemorySegment.ofArray(frame).asSlice(HEADER_SIZE, payloadLength);
+    }
+
+    /**
      * Returns the payload bytes by copying the tail of the frame into a fresh heap array.
-     * The returned array can be wrapped in a {@code CommunityHeapEventPayload} for handler delivery.
+     *
+     * <p>Retained as a byte-level test convenience and for callers that need an
+     * independently-owned {@code byte[]}. The production decode hot path uses
+     * {@link #decodePayloadSegment(byte[])} (PERF-071) to avoid the copy.
      */
     /* default */ static byte[] decodePayloadBytes(byte[] frame) {
         if (frame.length == HEADER_SIZE) {

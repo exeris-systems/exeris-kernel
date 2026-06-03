@@ -11,7 +11,7 @@
 
 - Core owns flow orchestration: definition compilation, scheduling, park/wake, compensation, and runtime state transitions.
 - Community is a thin binding over the shared Core engine.
-- Community snapshot persistence is currently heap-backed and in-memory via `CommunityFlowSnapshotStore`.
+- Community snapshot persistence (since v0.8 Sprint 0b, ADR-022): `CommunityFlowSubsystem.initialize()` selects `JdbcFlowSnapshotStore` when a Community `PersistenceEngine` is bootstrapped alongside (durable, cross-restart) and falls back to the heap `CommunityFlowSnapshotStore` when no engine is available. `flow.persistenceEnabled=false` leaves the `FLOW_SNAPSHOT_STORE` ScopedValue unbound. The choice is locked in `CommunityFlowSubsystemSnapshotStoreWiringTest`.
 
 ## Runtime Behavior
 
@@ -22,12 +22,13 @@
 
 > **Note:** `FlowOutcome.COMPLETE` provides a direct short-circuit path: a step can return `COMPLETE` to transition the flow immediately to `FlowState.COMPLETED` without executing any remaining steps.
 > **Note:** `FlowBootstrapSelectedEvent` is emitted by `FlowBootstrap.loadWithProvider()` before `start()`. `FlowEngine.close()` emits `FlowEngineShutdownEvent` after runtime close and its bounded shutdown join, so the JFR payload reflects the stable shutdown counter view captured when `close()` completes. Promptly interrupted workers may still finalize snapshots afterward without changing that counter snapshot.
+> **Note (shutdown semantics):** `close()` is **not** an unbounded graceful drain — it interrupts in-flight flows and joins each worker within a bounded per-thread deadline (`CoreFlowRuntime.interruptAndJoinRunningThreads`, currently 5s/thread). PARKED checkpoints persisted before `close()` survive for restart recovery (see `AbstractSagaRecoveryTck.RestartUnderLoad`); in-flight RUNNING progress past the last checkpoint may be lost. **Known constraint:** the per-thread join is iterated sequentially, so the aggregate worst case is N×5s under wedged-interrupt, not 5s. A future `closeTimeoutNanos` config (aggregate-bounded join) is a candidate follow-up — not yet implemented. A durability/shutdown-cost JMH benchmark is deferred to `exeris-benchmarks` (backlog).
 
 ## Boundaries
 
 - SPI remains implementation-blind.
 - Core owns orchestration and runtime behavior.
-- Community stays thin: provider wiring plus the current in-memory snapshot store.
+- Community stays thin: provider wiring plus snapshot-store resolution — JDBC-backed (`JdbcFlowSnapshotStore` through `PersistenceEngine`) when persistence is available, in-memory (`CommunityFlowSnapshotStore`) otherwise.
 
 | Scenario                                           | Kernel Behaviour                                                                                         |
 |:---------------------------------------------------|:---------------------------------------------------------------------------------------------------------|
@@ -87,6 +88,7 @@ Flow can be driven by external events through the choreography bridge:
 | `FlowTimeoutEvent` (since 0.7) | `eu.exeris.kernel.flow.Timeout` | `CoreFlowRuntime.runStep()` when a flow's absolute deadline has passed; the engine then drives compensation and routes the instance to `FAILED_ROLLEDBACK` | `engineName`, `definitionName`, `instanceIdMost`, `instanceIdLeast`, `currentStep`, `overrunNanos` |
 | `WakeOnLoadFallbackEvent` (since 0.7) | `eu.exeris.kernel.flow.WakeOnLoadFallback` | `CoreFlowRuntime` `lookupParked` snapshot-store fallback path — emitted on every miss in the in-memory `parkedInstances`/`liveInstances` indices; the `restored` flag distinguishes a successful cross-engine restore from a stale wake event for an unknown instance (ADR-013 §8) | `engineName`, `instanceIdMost`, `instanceIdLeast`, `restored`, `loadDurationNanos` |
 | `OptimisticLockConflictEvent` (since 0.7) | `eu.exeris.kernel.flow.OptimisticLockConflict` | `JdbcFlowSnapshotStore.save()` race-loser branches — `phase=UPDATE_STALE` for stale-`schemaVersion` UPDATE losers, `phase=INSERT_TOCTOU` for first-writer INSERT race losers remapped from integrity-constraint violations (ADR-013 §5/§8) | `engineName`, `phase`, `loadedSchemaVersion` |
+| `FlowSnapshotSaveFailedEvent` (since v0.8 Sprint 5, JFR-091) | `eu.exeris.kernel.flow.FlowSnapshotSaveFailed` | `JdbcFlowSnapshotStore.save()` non-OCC `PersistenceProviderException` rollback path — the **non-OCC** sibling of `OptimisticLockConflictEvent`. OCC race losers continue to emit `OptimisticLockConflictEvent` and never overlap with this event. Public visibility — application code may install `RecordingStream` consumers (matches `OptimisticLockConflictEvent`). | `engineName`, `sqlState` (`SQLSTATE_UNKNOWN` sentinel when no `SQLException` in cause chain), `exceptionClass`, `exceptionMessage` |
 
 ---
 
@@ -140,9 +142,21 @@ Three additions land in 0.7 to support distributed saga state per ADR-013:
 
 - **`FlowSnapshotStore.listParked()`** — returns every snapshot whose state is `PARKED`. The default returns `List.of()` (correct for in-memory stores that do not survive restart). Durable stores (`JdbcFlowSnapshotStore`) override to enumerate every parked row so the engine can resume choreography on the cross-restart fallback path. Cold path; pagination is not required for v0.7.
 - **`FlowSnapshot.schemaVersion: long`** — monotonic optimistic-locking version. New snapshots use `FlowSnapshot.SCHEMA_VERSION_INITIAL` (`1L`); on every accepted save (INSERT or UPDATE) the durable store advances the on-disk version by exactly one. The runtime engine round-trips this version through `RuntimeFlowInstance.schemaVersion()` / `markPersisted()` so subsequent saves carry the up-to-date expected version. Stale-version writes are rejected with `EX-FLOW-7002` `phase=OPTIMISTIC_LOCK_CONFLICT` (`reasonCode=STALE_VERSION`, `contextVal=incomingSchemaVersion`).
-- **`JdbcFlowSnapshotStore`** (Community) — durable JDBC implementation backed by the `exeris_saga_state` table (created via `db/migration/V0.7.0__create_saga_state.sql`). Constructor-injected `DataSource` (HikariCP in Community); raw JDBC, no `PersistenceEngine` dependency. The save path is a portable two-step UPDATE-then-INSERT: an UPDATE with a CAS guard on `schema_version` is attempted first; on affected-rows = 0 the implementation distinguishes "row absent" (→ INSERT) from "row present with stale version" (→ raise `EX-FLOW-7002`). `compensation_stack` is packed into `BYTEA` (4 bytes per int, big-endian) for cross-database portability — H2 does not support native `INT[]`. `state` is stored as TEXT (`FlowState.name()`); `last_update` and `timeout_at` as `TIMESTAMPTZ`; `Instant.MAX` is encoded as NULL and decoded back to `Instant.MAX` because it falls outside the TIMESTAMPTZ range (4713 BC..294276 AD).
+- **`JdbcFlowSnapshotStore`** (Community) — durable JDBC implementation backed by the `exeris_saga_state` table (created via `db/migration/V0.7.0__create_saga_state.sql`). Since v0.8 Sprint 0b (ADR-022) the constructor takes a `PersistenceEngine` (not a raw `DataSource`); all connection acquisition flows through `engine.openConnection()` and all I/O uses the `PersistenceStatement` / `QueryResult` SPI surface. The save path is a portable two-step UPDATE-then-INSERT: an UPDATE with a CAS guard on `schema_version` is attempted first; on affected-rows = 0 the implementation distinguishes "row absent" (→ INSERT) from "row present with stale version" (→ raise `EX-FLOW-7002`). `compensation_stack` is packed into `BYTEA` (4 bytes per int, big-endian) for cross-database portability — H2 does not support native `INT[]`. `state` is stored as TEXT (`FlowState.name()`); `last_update` and `timeout_at` as `TIMESTAMPTZ` via the additive `PersistenceStatement.bindInstant` / `RowCursor.getInstant` SPI methods (ADR-022 §3); `Instant.MAX` is encoded as NULL and decoded back to `Instant.MAX` because it falls outside the TIMESTAMPTZ range (4713 BC..294276 AD).
 
 In-memory bindings (`CommunityFlowSnapshotStore`, test stores) continue to ignore `schemaVersion`; the `markPersisted()` increment is harmless for them. Enterprise binding inherits the same SPI contract and TCK obligations on parity (`AbstractDistributedFlowSnapshotStoreTck`).
+
+### HikariCP statement-cache requirement (DOC-090, v0.8 Sprint 5)
+
+`JdbcFlowSnapshotStore.save` re-prepares two statements on every saga write — `SQL_UPDATE_OCC` (the OCC-guarded UPDATE) and `SQL_INSERT` (the first-writer INSERT on UPDATE → 0 rows). Without a driver-side prepared-statement cache the JDBC driver re-parses both per save and PostgreSQL never promotes them to server-side prepared form, so each accepted save pays full parse cost. The Community Hikari binding (`CommunityHikariSupport.applyDataSourceProperties`) sets these as **opt-out defaults**:
+
+| Property | Default | Status |
+|:--|:--|:--|
+| `cachePrepStmts` | `true` | **HARD requirement** — do not disable. |
+| `prepStmtCacheSize` | `250` | Recommended; covers OCC + outbox + RLS paths. Override smaller only for memory-constrained deployments. |
+| `prepStmtCacheSqlLimit` | `2048` | Recommended per-statement SQL length cap. Override smaller only if the operator audited their longest SQL emitted by the binding. |
+
+The same defaults apply to the outbox-orchestrator pump and the RLS-interceptor session-set path — both also re-prepare a small fixed statement set per request. Operators can override every value via `PersistenceConfig.properties()`; the Community binding's check-then-default pattern (matching how `ssl=true` and `defaultRowFetchSize=50` are applied) ensures user-supplied properties always win. The `JdbcFlowSnapshotStore` class-level Javadoc cross-references this section as the source of truth.
 
 ---
 
@@ -165,10 +179,10 @@ In-memory bindings (`CommunityFlowSnapshotStore`, test stores) continue to ignor
 
 | TCK Suite | Module | Description |
 |:---------|:-------|:------------|
-| `AbstractFlowEngineTck` | `exeris-kernel-tck` | Full flow lifecycle: submit, run, park, wake, complete, compensate; JFR shutdown event (TCK-062), restart-aware semantics (TCK-063), saga timeout enforcement (DIST-303) |
+| `AbstractFlowEngineTck` | `exeris-kernel-tck` | Full flow lifecycle: submit, run, park, wake, complete, compensate; JFR shutdown event (TCK-062), restart-aware semantics (TCK-063), saga timeout enforcement (DIST-303), per-outcome transition correctness incl. thrown-exception FAIL path + `FAILED_ROLLEDBACK` terminal idempotency (FLOW-110, `OutcomeTransitions`) |
 | `AbstractFlowSchedulerTck` | `exeris-kernel-tck` | Scheduler contract: schedule, cancel, peek parked, drain |
 | `AbstractFlowChoreographyTck` | `exeris-kernel-tck` | Choreography mapper registration and event-driven wake |
-| `AbstractSagaRecoveryTck` | `exeris-kernel-tck` | Crash-recovery replay semantics from snapshot store |
+| `AbstractSagaRecoveryTck` | `exeris-kernel-tck` | Crash-recovery replay semantics from snapshot store; restart-under-load (N=16 concurrent parked instances survive force-close, resume, no re-exec/orphans, counter reset) (FLOW-110, `RestartUnderLoad`) |
 | `AbstractIdempotencyGuardTck` | `exeris-kernel-tck` | Step-level deduplication contract for `IdempotencyGuard` |
 | `FlowZeroAllocTck` | `exeris-kernel-tck` | Zero-allocation assertion on hot flow scheduling path |
 | `FlowCarrierPinningTck` | `exeris-kernel-tck` | Flow orchestration does not pin Virtual Thread carrier |

@@ -104,7 +104,11 @@ the payload immediately — eliminating silent leaks from dead events.
 - **`busPublishFailFast = true` (Enterprise default; opt-in for Community).** Persistent publishes
   raise `EX-EVENT-6002` carrying `rawArgs == [String eventType, long queueDepth, long queueCapacity]`
   the moment the queue would overflow — the publisher's `StructuredTaskScope` joiner can then
-  decide whether to fail-fast or shed the event. The Sprint 5b2 Kafka driver bypasses the local
+  decide whether to fail-fast or shed the event. On every fail-fast refusal `CommunityEventQueue`
+  also emits `CommunityEventQueueOverflowEvent` (JFR name `eu.exeris.kernel.events.CommunityEventQueueOverflow`,
+  fields `engineName, eventType, queueDepth, queueCapacity`; EVENT-111, v0.8 Sprint 5) so operators
+  can attribute overflow rates to specific event types and track backpressure trends — the per-call
+  `EventBusException` leaves no post-mortem trail. The Sprint 5b2 Kafka driver bypasses the local
   `EventQueue` (`NoOpQueue` slot) and lets the producer surface broker-side overflow directly via
   the standard Kafka producer error path; a future revision can map producer-side `buffer.memory`
   exhaustion onto `EX-EVENT-6002` to keep the single-knob semantics end-to-end.
@@ -305,7 +309,7 @@ public record StreamId(long streamIdHigh, long streamIdLow, String streamType) {
 **Bindings (status):**
 
 - PostgreSQL outbox replay — planned (no current binding).
-- Kafka driver — **shipped in 0.7 Sprint 5b2** (`exeris-kernel-community-kafka`). `KafkaEventEngine` exposes the consumer roundtrip via its in-process `EventBus` delegate today; a dedicated `EventStreamReader`/`EventStreamAppender` wiring on top of `KafkaEventBrokerPort` is a follow-up.
+- Kafka driver — **shipped in 0.7 Sprint 5b2** (`exeris-kernel-community-kafka`). `KafkaEventEngine` exposes the consumer roundtrip via its in-process `EventBus` delegate today; a dedicated `EventStreamReader`/`EventStreamAppender` wiring on top of `KafkaEventBrokerPort` is a follow-up. Publish-side failures (since v0.8 Sprint 5, JFR-091) emit `KafkaPublishFailedEvent` (JFR name `eu.exeris.kernel.events.kafka.PublishFailed`, fields `engineName, topic, eventTypeOrdinal, publishMode, exceptionClass, exceptionMessage`) before the engine wraps the cause as `EventBusException`. **Payload bytes are never logged** (Glass-Box secret-safe contract); the `topic` lookup is best-effort and falls back to `"<unknown>"` on unregistered ordinals so the JFR emit never NPEs inside the catch block.
 - Enterprise off-heap log — out-of-repo, target-state.
 
 ---

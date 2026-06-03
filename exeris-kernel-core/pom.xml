@@ -7,7 +7,7 @@
     <parent>
         <groupId>eu.exeris</groupId>
         <artifactId>exeris-kernel-parent</artifactId>
-        <version>0.7.1</version>
+        <version>0.8.0</version>
         <relativePath>../exeris-kernel-parent/pom.xml</relativePath>
     </parent>
 
@@ -19,11 +19,31 @@
         WatermarkManager, ResourceArbiter. Depends only on exeris-kernel-spi.
     </description>
 
+    <properties>
+        <!--
+            v0.8 Sprint 6 (Coverage C-P0-01): LINE coverage floor for the Core bundle.
+            Current measurement: ~74% (deepest test coverage in the reactor — TCK
+            backing + JFR event sites). Ratchet at 0.65 — regressions blocked.
+        -->
+        <jacoco.line.minimum>0.65</jacoco.line.minimum>
+    </properties>
+
     <dependencies>
         <!-- SPI contracts — The Wall -->
         <dependency>
             <groupId>eu.exeris</groupId>
             <artifactId>exeris-kernel-spi</artifactId>
+        </dependency>
+
+        <!--
+            JCTools — lock-free queues. Used in AsyncTelemetrySink (PERF-070):
+            MpscArrayQueue replaces ArrayBlockingQueue so producers no longer
+            contend on the ABQ lock under multi-VT emission load.
+            Version managed by exeris-kernel-bom.
+        -->
+        <dependency>
+            <groupId>org.jctools</groupId>
+            <artifactId>jctools-core</artifactId>
         </dependency>
 
         <!-- TCK abstract test contracts — test scope only -->

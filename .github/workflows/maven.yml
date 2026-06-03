@@ -1,10 +1,20 @@
 name: Exeris L0 Citadel CI
 
 on:
+  # Push events trigger CI only on long-lived branches (main + RC trunks) — these
+  # carry the SNAPSHOT publish responsibility. Feature branches under
+  # development/feat/** are excluded here; they get validated once via the
+  # pull_request event when a PR is opened. This avoids running every gate
+  # twice on the same SHA (push + PR), which doubled GHA minutes and doubled
+  # the flake chance on the Transport Stress Gate under 2-vCPU schedule
+  # pressure (see v0.8 Sprint 1 CI hotfix v6 + Sprint 3 PR #133/#134).
   push:
-    branches: [ "main" ]
+    branches:
+      - main
+      - 'development/**'
+      - '!development/feat/**'
   pull_request:
-    branches: [ "main" ]
+    branches: [ "main", "development/**" ]   # validate PRs targeting RC trunks before merge
   schedule:
     - cron: '0 2 * * *'   # nightly at 02:00 UTC on default branch (main)
 
@@ -51,7 +61,24 @@ jobs:
           cache: maven
 
       - name: Build & Run TCK Verification
-        run: mvn clean verify -B -e
+        # v0.8 Sprint 7 (TCK-064 production fix): the VT-scheduler workaround
+        # (parallelism=16 / maxPoolSize=64) was removed once client ingress became
+        # non-blocking and reactor-driven. Previously the single-reactor
+        # CommunityTransportCarrierPinningTckTest exhausted the default 2-thread VT
+        # carrier pool because each client stream ran a VT that blocked in a native
+        # recv() (FFM-pinned the carrier). Client channels now flip to non-blocking
+        # after connect() and register on a dedicated client-side reactor, so no VT
+        # blocks on recv() and the default carrier pool is sufficient. The drain
+        # budget is restored toward the strict 5 s default; happy-path drain is
+        # sub-second.
+        #
+        # v0.8 Sprint 6 (Coverage C-P0-01): -Pcoverage activates JaCoCo agent +
+        # report + per-module <check> rule enforcement. Per-module LINE coverage
+        # floors live in each module's <jacoco.line.minimum> property
+        # (ratcheted ~5-9 pp below current baseline).
+        run: |
+          mvn clean verify -B -e \
+            -P coverage
 
       - name: Upload TCK JFR recordings
         if: always() && (github.event_name == 'push' || github.event_name == 'schedule') && github.ref == 'refs/heads/main'
@@ -64,10 +91,20 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-      # Publish to GitHub Packages only on push to main (not on PRs).
-      # GitHub Packages is immutable: a 409 means this version is already published — not a real failure.
+      # Publish to GitHub Packages on push to main (release versions like 0.7.0) AND on push
+      # to any RC trunk (development/0.8, development/0.9, ...) where the POM carries a
+      # `-SNAPSHOT` qualifier. The same step handles both: Maven routes release versions to
+      # <repository> and SNAPSHOTs to <snapshotRepository> (both pointing at GitHub Packages
+      # in this repo, but the URL choice is Maven's, not the workflow's).
+      #
+      # GitHub Packages mutability:
+      #   * Release versions are IMMUTABLE — a 409 on retry means the version is already
+      #     published, which is not a real failure (covered by continue-on-error).
+      #   * SNAPSHOTs are MUTABLE — every push to an RC trunk overwrites the previous
+      #     SNAPSHOT artifact so downstream consumers (e.g. exeris-spring-runtime) always
+      #     pull the latest RC trunk HEAD.
       - name: Publish to GitHub Packages
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/development/'))
         continue-on-error: true
         run: |
           mvn deploy -B -e \
@@ -127,6 +164,76 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+  kafka-integration-gate:
+    # v0.8 Sprint 6 (Coverage C-P0-02 absorption): dedicated job that runs the
+    # Kafka @Tag("integration") tests in exeris-kernel-community-kafka. The
+    # module only configures Surefire (no Failsafe), and its default
+    # <excludedGroups>integration</excludedGroups> drops the 3 IT-tests from
+    # every reactor build:
+    #   - CommunityKafkaEventEngineTckIT
+    #   - CommunityKafkaFlowChoreographyTckIT
+    #   - CommunityCrossEngineChoreographyIT
+    # All three spin Testcontainers (Kafka + Postgres) and exercise the broker
+    # path under real wire conditions. Without this gate they exist in tree
+    # but never run on CI — coverage % is ~0% on the kafka subsystem.
+    #
+    # Mirrors persistence-rls-gate exactly: override -DincludedGroups=integration
+    # and clear -DexcludedGroups= so Surefire picks them up.
+    #
+    # Sprint 3 cont. (CI sequencing): chains after persistence-rls-gate (not
+    # parallel) so integration gates don't all kick off simultaneously. Order:
+    # build-and-verify → persistence-rls-gate → kafka-integration-gate
+    # → transport-stress-gate. Trades wall-clock for predictable scheduling.
+    name: Kafka Integration Gate
+    runs-on: ubuntu-latest
+    needs: persistence-rls-gate
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Cache JDK tarball
+        id: jdk-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/jdk.tar.gz
+          key: ${{ env.JDK_CACHE_KEY }}
+
+      - name: Fetch JDK
+        if: steps.jdk-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          wget -q -O ${{ runner.temp }}/jdk.tar.gz ${{ env.JDK_URL }}
+          echo "${{ env.JDK_SHA256 }}  ${{ runner.temp }}/jdk.tar.gz" | sha256sum -c
+
+      - name: Inject JDK into Runner
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'jdkfile'
+          jdkFile: ${{ runner.temp }}/jdk.tar.gz
+          java-version: ${{ env.JDK_VER }}
+          architecture: x64
+          cache: maven
+
+      - name: Run kafka integration gate
+        run: |
+          mvn -pl exeris-kernel-community-kafka -am install -DskipTests -B -e
+          mvn -pl exeris-kernel-community-kafka \
+            -DincludedGroups=integration \
+            -DexcludedGroups= \
+            test -B -e
+
+      - name: Upload kafka JFR recordings
+        if: always() && (github.event_name == 'push' || github.event_name == 'schedule') && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: jfr-kafka-${{ github.run_number }}
+          path: exeris-kernel-community-kafka/target/*.jfr
+          if-no-files-found: warn
+          retention-days: 14
+
   transport-stress-gate:
     # TCK-064 (v0.8 Sprint 0): dedicated job for @Tag("stress") transport tests.
     # The default `Build & TCK Verification` job excludes the stress group because the
@@ -136,9 +243,14 @@ jobs:
     # echo loops and post-test verification deadlines (`NativeTcpTransportStressTest`).
     # The TCK pinning teardown now exposes a configurable drain budget via
     # `-Dexeris.tck.transport.drainTimeoutSeconds=N` for constrained runners.
+    #
+    # Sprint 3 cont. (CI sequencing): chains after kafka-integration-gate (last in
+    # the integration-gate chain). Order: build-and-verify → persistence-rls-gate
+    # → kafka-integration-gate → transport-stress-gate. Sequencing isolates each
+    # gate's scheduler pressure — no two stress-prone jobs run simultaneously.
     name: Transport Stress Gate
     runs-on: ubuntu-latest
-    needs: build-and-verify
+    needs: kafka-integration-gate
     permissions:
       contents: read
 
@@ -170,31 +282,20 @@ jobs:
           cache: maven
 
       - name: Run transport stress gate
-        # TCK-064 root cause (v0.8 Sprint 0): client ingress VTs in this codebase mount
-        # onto the JDK virtual-thread carrier pool and call a blocking native `recv()`
-        # via Panama FFM (NativeTcpStream.trySocketSeamRead → socketHandles.recv()).
-        # That pins the carrier thread for the duration of the syscall — and on a
-        # 2-vCPU GitHub Actions runner the default carrier pool size is 2, so a
-        # handful of clients trivially exhaust the pool. Server-side echo VTs then
-        # cannot mount, no echo data flows, clients block on `recv()` forever.
-        #
-        # Bumping `jdk.virtualThreadScheduler.parallelism` (steady-state carriers)
-        # and `maxPoolSize` (peak carriers) eliminates the starvation: with 16 baseline
-        # / 64 peak carriers, the same 10 client × 4 server reactor stress passes in
-        # ~0.3 s under taskset -c 0,1. The ROADMAP carry-over for v0.8 transport
-        # hardening (Sprint 6 / non-blocking ingress) is the proper long-term fix —
-        # this knob is the CI-side workaround that lets the gate fire today.
-        #
-        # Drain budget 30 s covers the wider tail under thread pressure; local
-        # development keeps the strict 5 s default.
+        # v0.8 Sprint 7 (TCK-064 production fix): the VT-scheduler workaround and the
+        # 180 s drain escalation were removed. TCK-064's root cause was client ingress
+        # VTs blocking in a native recv() via Panama FFM, which pinned the carrier
+        # thread; on a 2-vCPU runner (default carrier pool = 2) a handful of clients
+        # exhausted the pool and stalled. The Sprint 7 fix makes client channels
+        # non-blocking after connect() and reactor-driven (no VT blocks on recv()), so
+        # the stress + multi-reactor variants pass at the default carrier pool with the
+        # strict drain budget. The MultiReactor{2,4} variants stay @Tag("stress") and
+        # run here; the single-reactor baseline runs in build-and-verify.
         run: |
           mvn -pl exeris-kernel-community -am install -DskipTests -B -e
           mvn -pl exeris-kernel-community \
             -DincludedGroups=stress \
             -DexcludedGroups= \
-            -Dexeris.tck.transport.drainTimeoutSeconds=30 \
-            -Djdk.virtualThreadScheduler.parallelism=16 \
-            -Djdk.virtualThreadScheduler.maxPoolSize=64 \
             test -B -e
 
       - name: Upload transport stress JFR recordings

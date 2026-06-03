@@ -8,6 +8,8 @@
  */
 package eu.exeris.kernel.spi.http;
 
+import java.util.Optional;
+
 /**
  * SPI: Pluggable HTTP engine factory — the single entry-point through which the
  * kernel bootstrapper creates {@link HttpServerEngine} and {@link HttpClientEngine}.
@@ -119,6 +121,55 @@ public interface HttpProvider {
      */
     default HttpResponseBodyEncoderRegistry responseBodyEncoderRegistry() {
         return HttpResponseBodyEncoderRegistry.empty();
+    }
+
+    /**
+     * Returns the optional client-side typed request body encoder registry
+     * exposed by this provider, if any.
+     *
+     * <p>Default implementation returns {@link Optional#empty()} — providers that
+     * ship default body encoders (e.g., Community Jackson JSON) override this to
+     * expose them via the {@link HttpKernelProviders#HTTP_REQUEST_BODY_ENCODER_REGISTRY}
+     * bootstrap channel.
+     *
+     * @return optional registry; empty when the provider does not contribute defaults
+     * @since 0.8.0
+     */
+    default Optional<HttpRequestBodyEncoderRegistry> requestBodyEncoderRegistry() {
+        return Optional.empty();
+    }
+
+    /**
+     * Returns the optional client-side typed response body decoder registry
+     * exposed by this provider, if any.
+     *
+     * <p>Default implementation returns {@link Optional#empty()} — providers that
+     * ship default body decoders (e.g., Community Jackson JSON) override this to
+     * expose them via the {@link HttpKernelProviders#HTTP_RESPONSE_BODY_DECODER_REGISTRY}
+     * bootstrap channel.
+     *
+     * @return optional registry; empty when the provider does not contribute defaults
+     * @since 0.8.0
+     */
+    default Optional<HttpResponseBodyDecoderRegistry> responseBodyDecoderRegistry() {
+        return Optional.empty();
+    }
+
+    /**
+     * Returns the optional server-side typed request body decoder registry
+     * exposed by this provider, if any.
+     *
+     * <p>Default implementation returns {@link Optional#empty()} — providers that
+     * ship default body decoders (e.g., Community Jackson JSON) override this to
+     * expose them via the {@link HttpKernelProviders#HTTP_REQUEST_BODY_DECODER_REGISTRY}
+     * bootstrap channel, which generated request handlers read to decode typed
+     * request bodies (ADR-036).
+     *
+     * @return optional registry; empty when the provider does not contribute defaults
+     * @since 0.8.0
+     */
+    default Optional<HttpRequestBodyDecoderRegistry> requestBodyDecoderRegistry() {
+        return Optional.empty();
     }
 }
 

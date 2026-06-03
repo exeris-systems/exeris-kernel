@@ -8,12 +8,14 @@
  */
 package eu.exeris.kernel.community.flow;
 
-import com.zaxxer.hikari.HikariConfig;
-import com.zaxxer.hikari.HikariDataSource;
+import eu.exeris.kernel.community.persistence.CommunityPersistenceProvider;
 import eu.exeris.kernel.spi.exceptions.flow.FlowEngineException;
 import eu.exeris.kernel.spi.flow.model.FlowSnapshot;
 import eu.exeris.kernel.spi.flow.model.FlowSnapshotStore;
 import eu.exeris.kernel.spi.flow.model.FlowState;
+import eu.exeris.kernel.spi.persistence.PersistenceConfig;
+import eu.exeris.kernel.spi.persistence.PersistenceConnection;
+import eu.exeris.kernel.spi.persistence.PersistenceEngine;
 import eu.exeris.kernel.tck.contract.flow.AbstractDistributedFlowSnapshotStoreTck;
 import jdk.jfr.consumer.RecordedEvent;
 import jdk.jfr.consumer.RecordingStream;
@@ -27,17 +29,8 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
-import javax.sql.DataSource;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.UncheckedIOException;
-import java.nio.charset.StandardCharsets;
-import java.sql.Connection;
-import java.sql.SQLException;
-import java.sql.Statement;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -64,107 +57,53 @@ class CommunityJdbcFlowSnapshotStoreTckIT extends AbstractDistributedFlowSnapsho
     @Container
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16");
 
-    private static HikariDataSource pool;
+    private static PersistenceEngine engine;
 
     @BeforeAll
-    static void bootstrap() throws SQLException {
-        HikariConfig cfg = new HikariConfig();
-        cfg.setJdbcUrl(POSTGRES.getJdbcUrl());
-        cfg.setUsername(POSTGRES.getUsername());
-        cfg.setPassword(POSTGRES.getPassword());
-        cfg.setMaximumPoolSize(8);
-        pool = new HikariDataSource(cfg);
-
-        String migrationSql = readMigrationResource("db/migration/V0.7.0__create_saga_state.sql");
-        try (Connection conn = pool.getConnection()) {
-            for (String stmt : splitStatements(migrationSql)) {
-                try (Statement s = conn.createStatement()) {
-                    s.execute(stmt);
-                }
-            }
-        }
+    static void bootstrap() {
+        PersistenceConfig cfg = new PersistenceConfig(
+                POSTGRES.getJdbcUrl(),
+                POSTGRES.getUsername(),
+                POSTGRES.getPassword(),
+                8,                       // maxPoolSize
+                1,                       // minIdleConnections
+                5_000L,                  // connectionTimeoutMs
+                60_000L,                 // idleTimeoutMs
+                600_000L,                // maxLifetimeMs
+                false,                   // useTls
+                false,                   // rlsEnabled
+                false,                   // perTenantPooling
+                0,                       // maxTenantPools
+                Map.of("run.migrations", "true"));
+        engine = new CommunityPersistenceProvider().createEngine(cfg);
     }
 
     @AfterAll
     static void teardown() {
-        if (pool != null) {
-            pool.close();
-            pool = null;
+        if (engine != null) {
+            engine.close();
+            engine = null;
         }
     }
 
     @Override
     protected FlowSnapshotStore createStore() {
         truncateSagaState();
-        return new JdbcFlowSnapshotStore(pool, "tck-engine");
+        return new JdbcFlowSnapshotStore(engine, "tck-engine");
     }
 
     @Override
     protected FlowSnapshotStore reopenStore(FlowSnapshotStore current) {
-        // Same DataSource (i.e., same database) but a fresh store instance — the
-        // contract is "data outlives a kernel restart", which the shared pool simulates
-        // without bouncing the container.
-        return new JdbcFlowSnapshotStore(pool, "tck-engine-restarted");
+        // Same engine (i.e., same database) but a fresh store instance — the
+        // contract is "data outlives a kernel restart", which the shared engine
+        // simulates without bouncing the container.
+        return new JdbcFlowSnapshotStore(engine, "tck-engine-restarted");
     }
 
     private static void truncateSagaState() {
-        try (Connection conn = pool.getConnection();
-             Statement s = conn.createStatement()) {
-            s.execute("TRUNCATE TABLE exeris_saga_state");
-        } catch (SQLException ex) {
-            throw new IllegalStateException("Failed to truncate exeris_saga_state", ex);
+        try (PersistenceConnection conn = engine.openConnection()) {
+            conn.executeUpdate("TRUNCATE TABLE exeris_saga_state");
         }
-    }
-
-    private static String readMigrationResource(String resourcePath) {
-        ClassLoader cl = Thread.currentThread().getContextClassLoader();
-        try (InputStream in = cl.getResourceAsStream(resourcePath)) {
-            if (in == null) {
-                throw new IllegalStateException("Missing SQL migration resource: " + resourcePath);
-            }
-            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
-        } catch (IOException ioEx) {
-            throw new UncheckedIOException("Failed to read migration: " + resourcePath, ioEx);
-        }
-    }
-
-    private static List<String> splitStatements(String sql) {
-        List<String> out = new ArrayList<>();
-        StringBuilder current = new StringBuilder();
-        boolean inLineComment = false;
-        for (int i = 0; i < sql.length(); i++) {
-            char c = sql.charAt(i);
-            if (inLineComment) {
-                if (c == '\n') {
-                    inLineComment = false;
-                }
-                continue;
-            }
-            if (c == '-' && i + 1 < sql.length() && sql.charAt(i + 1) == '-') {
-                inLineComment = true;
-                i++;
-                continue;
-            }
-            if (c == ';') {
-                String trimmed = current.toString().trim();
-                if (!trimmed.isEmpty()) {
-                    out.add(trimmed);
-                }
-                current.setLength(0);
-                continue;
-            }
-            current.append(c);
-        }
-        String tail = current.toString().trim();
-        if (!tail.isEmpty()) {
-            out.add(tail);
-        }
-        return out;
-    }
-
-    @SuppressWarnings({"PMD.UnusedPrivateMethod", "unused"})
-    private static DataSource sharedDataSource() {
-        return pool;
     }
 
     // ------------------------------------------------------------------------
@@ -181,7 +120,7 @@ class CommunityJdbcFlowSnapshotStoreTckIT extends AbstractDistributedFlowSnapsho
     @DisplayName("emits OptimisticLockConflictEvent (UPDATE_STALE) when stale schemaVersion loses an UPDATE")
     void emitsOccEventOnUpdateStale() throws Exception {
         truncateSagaState();
-        JdbcFlowSnapshotStore freshStore = new JdbcFlowSnapshotStore(pool, "occ-jfr-update-stale");
+        JdbcFlowSnapshotStore freshStore = new JdbcFlowSnapshotStore(engine, "occ-jfr-update-stale");
         UUID id = UUID.randomUUID();
 
         FlowSnapshot initial = newSnapshot(id, FlowState.PARKED, 0, FlowSnapshot.SCHEMA_VERSION_INITIAL);
@@ -229,8 +168,8 @@ class CommunityJdbcFlowSnapshotStoreTckIT extends AbstractDistributedFlowSnapsho
     @DisplayName("emits OptimisticLockConflictEvent (UPDATE_STALE) when a duplicate save from a different store loses the UPDATE")
     void emitsOccEventOnDuplicateSaveTakenAsUpdateStale() throws Exception {
         truncateSagaState();
-        JdbcFlowSnapshotStore winnerStore = new JdbcFlowSnapshotStore(pool, "occ-jfr-insert-winner");
-        JdbcFlowSnapshotStore loserStore  = new JdbcFlowSnapshotStore(pool, "occ-jfr-insert-loser");
+        JdbcFlowSnapshotStore winnerStore = new JdbcFlowSnapshotStore(engine, "occ-jfr-insert-winner");
+        JdbcFlowSnapshotStore loserStore  = new JdbcFlowSnapshotStore(engine, "occ-jfr-insert-loser");
         UUID id = UUID.randomUUID();
 
         FlowSnapshot first = newSnapshot(id, FlowState.PARKED, 0, FlowSnapshot.SCHEMA_VERSION_INITIAL);

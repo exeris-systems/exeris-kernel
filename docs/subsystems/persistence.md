@@ -8,6 +8,10 @@
   > `RowCursor`, `QueryResult`, `PersistenceStatement`, `BulkInserter`, `EngineStats`, 
   > `TransactionIsolation`; codec sub-package: `codec.EntityEncoder`, `codec.EntityDecoder` 
   > (zero-copy off-heap encode/decode contract, TCK: `AbstractEntityCodecTck`).
+  > Since v0.8 (ADR-022): additive `PersistenceStatement.bindInstant(int, Instant)` and
+  > `RowCursor.getInstant(int)` for typed timestamp binding/reading on `TIMESTAMP WITH TIME ZONE`
+  > columns. `null` maps to SQL NULL on the binder; `getInstant` returns `null` for SQL NULL
+  > (reference-typed opt-out from the primitive-getter NPE convention).
 - Core: `eu.exeris.kernel.core.persistence.*` (Transaction Manager, Initializers)
   > The Outbox Poller resides in the Events subsystem (`eu.exeris.kernel.core.events.outbox.*`). 
   > Persistence provides the `EventStore` SPI consumed by the Outbox Orchestrator.

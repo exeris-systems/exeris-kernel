@@ -7,7 +7,7 @@
     <parent>
         <groupId>eu.exeris</groupId>
         <artifactId>exeris-kernel-parent</artifactId>
-        <version>0.7.1</version>
+        <version>0.8.0</version>
         <relativePath>../exeris-kernel-parent/pom.xml</relativePath>
     </parent>
     <artifactId>exeris-kernel-community-kafka</artifactId>
@@ -29,6 +29,16 @@
             Default Surefire runs exclude them so the unit suite stays fast and Docker-free.
         -->
         <excludedGroups>integration</excludedGroups>
+
+        <!--
+            v0.8 Sprint 6 (Coverage C-P0-01): LINE coverage floor for the Kafka bundle.
+            Current measurement: ~28% from unit suite only. The 10 Testcontainers
+            IT-tests revived in this same Sprint (kafka-integration-gate) run in a
+            separate CI job with their own jacoco.exec — IT coverage is not merged
+            into this floor. Ratchet at 0.20 — blocks unit-suite regressions while
+            the IT-merge follow-up is pending.
+        -->
+        <jacoco.line.minimum>0.20</jacoco.line.minimum>
     </properties>
 
     <dependencies>
@@ -126,6 +136,24 @@
                     <argLine>@{coverage.argLine} ${jvm.args}</argLine>
                     <groups>${includedGroups}</groups>
                     <excludedGroups>${excludedGroups}</excludedGroups>
+                    <!--
+                        v0.8 Sprint 6 (Coverage C-P0-02): pick up *IT.java in addition to the
+                        Surefire defaults so the kafka-integration-gate CI job (which calls
+                        `-DincludedGroups=integration -DexcludedGroups=` against this module)
+                        actually discovers CommunityKafkaEventEngineTckIT /
+                        CommunityKafkaFlowChoreographyTckIT / CommunityCrossEngineChoreographyIT.
+                        Default Surefire 3.2.5 includes only *Test.java / *Tests.java / Test*.java /
+                        *TestCase.java; the three IT files end in IT and were silently dead
+                        before this include addition. Default tag-exclusion still skips them
+                        on `mvn test` without the integration group override.
+                    -->
+                    <includes>
+                        <include>**/Test*.java</include>
+                        <include>**/*Test.java</include>
+                        <include>**/*Tests.java</include>
+                        <include>**/*TestCase.java</include>
+                        <include>**/*IT.java</include>
+                    </includes>
                 </configuration>
             </plugin>
         </plugins>

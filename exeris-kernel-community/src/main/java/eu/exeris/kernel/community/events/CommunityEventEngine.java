@@ -8,6 +8,7 @@
  */
 package eu.exeris.kernel.community.events;
 
+import eu.exeris.kernel.community.events.jfr.CommunityEventQueueOverflowEvent;
 import eu.exeris.kernel.core.events.InMemoryEventBus;
 import eu.exeris.kernel.core.events.outbox.OutboxBrokerPort;
 import eu.exeris.kernel.core.events.outbox.OutboxEventStore;
@@ -50,7 +51,8 @@ final class CommunityEventEngine implements EventEngine {
         this.loop = new CommunityEventLoop(registry, queue, config.batchSize());
 
         InMemoryEventBus delegateBus = new InMemoryEventBus(registry);
-        this.bus = new PersistentQueueingBus(delegateBus, queue, registry, publishedTotal, failFastOnFull);
+        this.bus = new PersistentQueueingBus(config.engineName(), delegateBus, queue,
+                registry, publishedTotal, failFastOnFull);
         this.outboxOrchestrator = buildOutboxOrchestrator(config, delegateBus, registry);
     }
 
@@ -138,6 +140,7 @@ final class CommunityEventEngine implements EventEngine {
 
     private static final class PersistentQueueingBus implements EventBus {
 
+        private final String engineName;
         private final EventBus delegate;
         private final EventQueue queue;
         private final CommunityEventRegistry registry;
@@ -145,11 +148,13 @@ final class CommunityEventEngine implements EventEngine {
         private final boolean failFastOnFull;
 
         private PersistentQueueingBus(
+                String engineName,
                 EventBus delegate,
                 EventQueue queue,
                 CommunityEventRegistry registry,
                 AtomicLong publishedTotal,
                 boolean failFastOnFull) {
+            this.engineName = Objects.requireNonNull(engineName, "engineName");
             this.delegate = Objects.requireNonNull(delegate, "delegate");
             this.queue = Objects.requireNonNull(queue, "queue");
             this.registry = Objects.requireNonNull(registry, "registry");
@@ -207,10 +212,17 @@ final class CommunityEventEngine implements EventEngine {
          * Fail-fast mode uses the typed factory carrying the documented Glass-Box rawArgs
          * {@code [eventType, queueDepth, queueCapacity]}; legacy mode falls back to the
          * message-only constructor (interrupt path).
+         *
+         * <p>EVENT-111 (v0.8 Sprint 5): also emit
+         * {@link CommunityEventQueueOverflowEvent} on the fail-fast branch so operator
+         * dashboards can attribute overflow rates to specific engine + event-type pairs
+         * — the publishing-caller exception is per-call and leaves no post-mortem trail.
          */
         private EventBusException failedPushException(EventDescriptor descriptor) {
             String eventType = registry.nameOfOrdinal(descriptor.eventTypeOrdinal());
             if (failFastOnFull) {
+                CommunityEventQueueOverflowEvent.emit(
+                        engineName, eventType, queue.size(), queue.capacity());
                 return EventBusException.publishOverflow(eventType, queue.size(), queue.capacity());
             }
             return new EventBusException("Interrupted while enqueueing persistent event '" + eventType + '\'');

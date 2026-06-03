@@ -16,7 +16,9 @@ import eu.exeris.kernel.spi.persistence.QueryResult;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Timestamp;
 import java.sql.Types;
+import java.time.Instant;
 import java.util.UUID;
 
 /**
@@ -152,6 +154,21 @@ final class JdbcPersistenceStatement implements PersistenceStatement {
                 prepStmt.setNull(index + 1, Types.BINARY);
             } else {
                 prepStmt.setBytes(index + 1, value);
+            }
+            return this;
+        } catch (SQLException sqlEx) {
+            throw mapSql(sqlEx);
+        }
+    }
+
+    @Override
+    public PersistenceStatement bindInstant(int index, Instant value) {
+        ensureOpen();
+        try {
+            if (value == null) {
+                prepStmt.setNull(index + 1, Types.TIMESTAMP_WITH_TIMEZONE);
+            } else {
+                prepStmt.setTimestamp(index + 1, Timestamp.from(value));
             }
             return this;
         } catch (SQLException sqlEx) {

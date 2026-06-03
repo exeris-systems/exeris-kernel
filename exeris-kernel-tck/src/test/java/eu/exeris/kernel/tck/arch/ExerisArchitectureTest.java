@@ -10,7 +10,6 @@ package eu.exeris.kernel.tck.arch;
 
 import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.junit.AnalyzeClasses;
-import com.tngtech.archunit.junit.ArchIgnore;
 import com.tngtech.archunit.junit.ArchTest;
 import com.tngtech.archunit.lang.ArchRule;
 
@@ -21,7 +20,6 @@ import static org.assertj.core.api.Assertions.assertThat;
  * ArchUnit — The Static Judge.
  */
 
-@ArchIgnore(reason = "ASM bytecode parser does not yet fully support JDK 26 (Classfile version 70). Re-enable once ArchUnit updates its ASM dependency.")
 @AnalyzeClasses(packages = "eu.exeris.kernel")
 public class ExerisArchitectureTest {
 

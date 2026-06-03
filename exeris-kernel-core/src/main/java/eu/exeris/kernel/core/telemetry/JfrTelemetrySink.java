@@ -42,7 +42,7 @@ import jdk.jfr.FlightRecorder;
  * is active but the specific event type is disabled by the active configuration.
  *
  * <h2>Tier boundary</h2>
- * <p>Zero-GC emission belongs to the Enterprise {@code BinaryBlackBoxSink} which
+ * <p>Zero-GC emission belongs to the Enterprise {@code BinaryGlassBoxSink} which
  * writes fixed-width crash-log structs to an off-heap ring buffer via
  * {@code MemorySegment}. This sink is Community — bounded allocations, JFR-only.
  *

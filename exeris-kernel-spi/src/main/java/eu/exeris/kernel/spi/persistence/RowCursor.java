@@ -9,6 +9,7 @@
 package eu.exeris.kernel.spi.persistence;
 
 import java.lang.foreign.MemorySegment;
+import java.time.Instant;
 import java.util.UUID;
 
 /**
@@ -176,6 +177,25 @@ public interface RowCursor {
      * @return UUID value, or {@code null} if SQL NULL
      */
     UUID getUuid(int column);
+
+    /**
+     * Returns the column value as a {@link Instant} (UTC, no zone offset).
+     *
+     * <p><b>⚠ ALLOCATING:</b> Creates a new Instant object. Community implementations
+     * delegate to {@code ResultSet.getTimestamp(...).toInstant()} (two heap allocations).
+     * Enterprise implementations decode 8 bytes from the off-heap result buffer and
+     * allocate exactly one Instant per call.
+     *
+     * <p>Unlike primitive getters, this reference-typed accessor returns {@code null}
+     * for SQL NULL rather than throwing. Callers that map NULL to a sentinel (e.g.
+     * {@code Instant.MAX} for "no timeout") MUST perform that mapping at the call site.
+     * See ADR-022 §5 for the NULL-handling contract.
+     *
+     * @param column zero-based column index
+     * @return Instant value, or {@code null} if SQL NULL
+     * @since 0.8.0
+     */
+    Instant getInstant(int column);
 
     // =========================================================================
     // Metadata

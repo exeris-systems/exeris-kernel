@@ -141,10 +141,25 @@ public abstract class GraphChurnRatioTck {
         });
 
         // Sum allocated bytes from all eu.exeris.* allocation events.
-        // Direct getLong() call — fails fast if the JFR event schema changes or
-        // the "allocationSize" field is missing, preventing silent false negatives.
+        // jdk.ObjectAllocation{InNewTLAB,OutsideTLAB} carry "allocationSize" (exact
+        // bytes for that allocation); jdk.ObjectAllocationSample — the low-overhead
+        // sampler that dominates recordings on modern JDKs — carries no
+        // "allocationSize" but exposes "weight" (the sampler's estimate of total
+        // allocation pressure attributed to that event). Read whichever the event
+        // type provides; fail fast only if neither is present, which would signal a
+        // genuine JFR schema change rather than the expected sampler/TLAB difference.
         long allocatedBytes = result.exerisAllocations().stream()
-                .mapToLong(e -> e.getLong("allocationSize"))
+                .mapToLong(e -> {
+                    if (e.hasField("allocationSize")) {
+                        return e.getLong("allocationSize");
+                    }
+                    if (e.hasField("weight")) {
+                        return e.getLong("weight");
+                    }
+                    throw new AssertionError(
+                            "JFR allocation event has neither 'allocationSize' nor 'weight': "
+                                    + e.getEventType().getName());
+                })
                 .sum();
         double actualRatio    = dataBytes > 0
                 ? (double) allocatedBytes / dataBytes

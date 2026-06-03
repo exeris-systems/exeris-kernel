@@ -212,7 +212,7 @@ connections of user X"). Leaving it at the default 10 prevents runaway traversal
 - **Carrier Pinning:** JFR-based validation that driver I/O does not stall Virtual Threads
   (`CarrierPinnedEvent` must not fire during standard traversal).
 
-> **TCK gap:** `GraphChurnRatioTck` and `ExecutionGraphZeroAllocTck` have no Community-tier concrete bindings in `exeris-kernel-community/src/test/`. Community churn ratio enforcement (`EX-GRPH-5005`) is currently not gated in CI for the Community implementation.
+> **TCK bindings:** Both `ExecutionGraphZeroAllocTck` and `GraphChurnRatioTck` now have Community-tier concrete bindings in `exeris-kernel-community/src/test/`. `CommunityExecutionGraphZeroAllocTckTest` runs in the main `build-and-verify` lane (in-process shortest-path hot path, no database). `CommunityGraphChurnRatioTckIT` is `@Tag("integration")` (live Neo4j via Testcontainers) and runs in the `persistence-rls-gate` CI job — gating Community churn-to-data ratio (`EX-GRPH-5005`) below the documented 20x threshold.
 
 ---
 

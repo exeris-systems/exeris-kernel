@@ -118,6 +118,16 @@ final class CommunityHttpSubsystem implements Subsystem {
         bindings.add(CommunityCarrierBindings.binding(HttpKernelProviders.HTTP_PROVIDER, provider));
         if (serverEngine != null) {
             bindings.add(CommunityCarrierBindings.binding(HttpKernelProviders.HTTP_SERVER_ENGINE, serverEngine));
+            // ADR-036: bind the server-side request body decoder registry into the kernel
+            // scope so generated request handlers can resolve it via
+            // HttpKernelProviders.httpRequestBodyDecoderRegistry(). Unlike the response
+            // encoder (constructor-threaded into the engine), the generated handler has no
+            // kernel-provided construction seam and must read the ScopedValue slot — this
+            // carrier enricher is the natural server-scope seam (same channel that binds
+            // HTTP_SERVER_ENGINE; inherited by every per-request dispatch virtual thread).
+            provider.requestBodyDecoderRegistry().ifPresent(registry -> bindings.add(
+                    CommunityCarrierBindings.binding(
+                            HttpKernelProviders.HTTP_REQUEST_BODY_DECODER_REGISTRY, registry)));
         }
         if (clientEngine != null) {
             bindings.add(CommunityCarrierBindings.binding(HttpKernelProviders.HTTP_CLIENT_ENGINE, clientEngine));
