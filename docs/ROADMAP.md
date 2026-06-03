@@ -791,6 +791,8 @@ See also: [Events Subsystem](./subsystems/events.md) — Multi-Provider Strategy
 
 **Merge Gate:** Each PR closes at minimum one `GodClass` suppression; cumulative effect must move the main-source suppression count toward the ≤ 100 target. Re-evaluate the target at v0.8 close.
 
+**Status (v0.8):** **DELIVERED** in Sprint 1 / Sprint 3 — all nine decompositions landed (QA-010 `CommunityPersistenceEngine`, QA-011 `CommunityHttpRequestProcessor`, QA-012 `Slf4jTelemetrySink`, QA-013 `NativeTcpCarrier` → `NativeTcpSocketBackend`/`NativeTcpProbe` + `NativeTcpReactor`, QA-014 `OutboxOrchestrator`, QA-015 `CommunityHttpClientEngine`, QA-016 `NativeTcpStream`, QA-017 `JdbcFlowSnapshotStore` codec extract, QA-018 `CommunityHttp2SessionProcessor` four seams + `SubsystemOrchestrator` with ADR-026 amendment record). Refactor-only; per-PR detail in git log.
+
 ---
 
 ### Runtime: Hot-Path Collections Watch-Items (Sprint 8e carry-over)
@@ -807,6 +809,8 @@ See also: [Events Subsystem](./subsystems/events.md) — Multi-Provider Strategy
 
 **Merge Gate:** Any adoption must remain Community-internal, keep SPI/Core contracts unchanged, and show measurable benefit under representative profiling — same gate as the parent "Runtime: Hot-Path Collections Review" entry.
 
+**Status (v0.8):** **CARRIED** — each watch-item is gated on a measured profile signal that did not materialise in v0.8 (do-not-implement-speculatively). Re-evaluated at v0.9. (PERF-072 ingress-read elision below is the one allocation win that *was* signalled and landed.)
+
 ---
 
 ### Transport: Zero-Allocation Ingress Read — Elide Per-Read Segment Slice (Sprint 6 PERF-072)
@@ -818,6 +822,8 @@ See also: [Events Subsystem](./subsystems/events.md) — Multi-Provider Strategy
 **Resolution:** Guard the slice so it materialises only for a genuine sub-range: `MemorySegment dst = maxBytes == target.byteSize() ? target : target.asSlice(0, maxBytes)`, passing `dst` to the `recv` downcall (length is already a separate argument, so the full segment is safe) and to the NIO-fallback `asByteBuffer()`. The guard is also semantically required on the NIO path — a `ByteBuffer` over the full segment would have `capacity == byteSize`, letting `channel.read()` overrun `maxBytes`; eliding only on equality keeps behaviour identical. Egress `send`/write paths pass a real `(offset, length)` sub-range and are intentionally left unchanged.
 
 **Merge Gate:** Community-internal only — no SPI/Core contract change, ownership and loaned-buffer lifecycle unchanged. Existing transport read/write coverage stays green (`NativeTcpClientServerE2eIntegrationTest`, stream wakeup tests). Validation: a re-run of the constrained `entity-read-by-id` JFR shows `NativeMemorySegmentImpl`/`asSliceNoCheck`/`dup` samples under the ingress read path drop to ~0; a JMH `-prof gc` harness over `readIngress` asserts `gc.alloc.rate.norm ≈ 0 B/op` on the seam-read path.
+
+**Status (v0.8):** **DELIVERED** in Sprint 6 (PERF-072) — the full-slab `asSlice` wrapper is elided on the ingress read path; egress sub-range slices unchanged. Community-internal, no SPI/Core change.
 
 ---
 
@@ -831,6 +837,8 @@ See also: [Events Subsystem](./subsystems/events.md) — Multi-Provider Strategy
 
 **Merge Gate:** Bootstrap regression tests pass with autoload; zero-allocation TCK continues to pass on the wired path.
 
+**Status (v0.8):** **DELIVERED** in Sprint 4 (SEC-080, ADR-014 §3) — `GeneratedRoleRegistryLoader` resolves the APT-generated `RoleCheckRegistry` reflectively (FQN, no compile edge), binds its accessors to `MethodHandle`s once at bootstrap as a `RoleRegistry`, fail-closed empty singleton when no `@RequiresRole` is compiled. `SecurityInterceptor` populates `roleMask` via a Core-internal `MaskedPrincipal`; `RoleRegistryLoaded` JFR added. **Descoped:** kernel-edge URL→`methodId` enforcement is an `exeris-tooling` codegen concern (dispatcher is path/scope-based), not `CommunityHttpRequestDispatcher`. New TCKs: `AbstractGeneratedRoleRegistryLoaderTck` + `AbstractRoleMaskPopulationTck`.
+
 ---
 
 ### HTTP/2: Community Lifecycle Hardening
@@ -842,6 +850,8 @@ See also: [Events Subsystem](./subsystems/events.md) — Multi-Provider Strategy
 **Resolution:** Harden stream table ownership, stream lifecycle transitions, GOAWAY/drain behavior, and concurrency controls on the Community transport path.
 
 **Merge Gate:** Lifecycle and shutdown/drain behavior validated by regression/integration tests.
+
+**Status (v0.8):** **PARTIAL** — RFC 7540 §5.1.1/§5.1.2 stream-identifier admission landed in Sprint 5 (HTTP-112, `Http2SessionContextAdmissionTest`) and the h2c upgrade path was fixed (see next entry). Deeper GOAWAY/drain ownership and concurrency-control hardening remain ongoing.
 
 ---
 
@@ -864,6 +874,11 @@ Prior-knowledge HTTP/2 (`handlePriorKnowledge` lines 88-101) is unaffected — i
 3. **TCK — adversarial h2c upgrade scenarios.** Extend `AbstractHttpServerEngineTck` (or `AbstractHttpProviderTck` if more appropriate) with a parameterized h2c upgrade scenario that performs the full `curl --http2`-equivalent flow over an in-process socket: HTTP/1.1 `POST` with `Upgrade: h2c`, `Connection: Upgrade`, `HTTP2-Settings: <base64url>`; expect `101 Switching Protocols`; send preface + (no further frames, the request body already crossed in HTTP/1.1 form); expect response on stream 1 carrying `END_STREAM`. Additional adversarial cases: corrupted preface (`PRI * HTTP/9.9...`), missing preface (TCP close before 24 bytes received), malformed `HTTP2-Settings` payload (odd byte length, unknown setting IDs handled per the existing `Http2SessionContext` rules).
 
 **Merge Gate:** `curl --http2 http://localhost:<port>/...` against a `CommunityHttpServerEngine` returns the expected response (no `GOAWAY error=1`); h2c upgrade TCK scenarios green (positive + adversarial); HTTP/2 prior-knowledge tests remain green (no regression on the unaffected path); stream identifier accounting per RFC 7540 §5.1.1 verified via TCK assertion that stream 3 sent by the client immediately after upgrade is accepted while stream 2 is rejected with `PROTOCOL_ERROR`.
+
+**Status (v0.8):** **DELIVERED** in Sprint 6 (HTTP-137) — `CommunityHttpH2cUpgradeDetector` extracts `HTTP2-Settings`; the processor consumes the connection preface, applies peer SETTINGS, and synthesises the original request as stream 1 per RFC 7540 §3.2. Cleartext `curl --http2` no longer fails with `GOAWAY error=1`; prior-knowledge / ALPN paths unaffected.
+
+---
+
 ### Persistence: Latency-Keyed Admission Fairness Gate (ADR-035 follow-up)
 
 **Gap:** ADR-035 recalibrated Community admission so a full pool sheds only once `pendingAcquires > ceil(maxPool × queueDepthAllowanceRatio)` (default ratio `8.0`). Because *all* shed branches in `CommunityPersistenceAdmissionController` — including `REJECT_GUARD_BAND_FAIRNESS` and the early-guard-band check — are gated behind that single queue-depth allowance, the fairness/guard-band machinery (`FairnessTracker.indicatesAdmissionStress`, `shouldRejectEarlyInGuardBand`) is effectively dormant under the default ratio: it only re-arms when an operator lowers `queueDepthAllowanceRatio`, which *also* sheds the small-pool burst the recalibration exists to admit. The two shed signals (depth-based backpressure and fairness) cannot be tuned apart through one scalar knob. See ADR-035 §Consequences ("Fairness/guard-band machinery is intentionally dormant under the default ratio").
@@ -873,6 +888,8 @@ Prior-knowledge HTTP/2 (`handlePriorKnowledge` lines 88-101) is unaffected — i
 **Resolution:** Gate the fairness/guard-band shed path on an observed wait-time signal (`queueWaitP95`, already computed by `FairnessTracker.computeSnapshot()` and emitted on `AdmissionDecisionEvent`) instead of on `queueDepthAllowance`. This lets sustained fairness inversion shed independently of `queueDepthAllowanceRatio`, so depth-based small-pool availability and latency-based fairness become separately tunable. Keep the decision non-blocking and zero-allocation on the hot path; expose any new threshold as a `persistence.admission.*` key consistent with the ADR-035 tunable surface.
 
 **Merge Gate:** Community admission tests prove fairness sheds under sustained `queueWaitP95` stress while the default `queueDepthAllowanceRatio=8.0` still admits a transient small-pool burst (the constrained-benchmark regression guard stays green). No SPI field added — The Wall unchanged. Enterprise binding obligation per ADR-035 still applies.
+
+**Status (v0.8):** **CARRIED TO v0.9** — Sprint 0b forward-ported the ADR-035 admission **tunability** (`persistence.admission.*`, depth-allowance shedding) from v0.7.1, but the latency-keyed (`queueWaitP95`) fairness/guard-band shed gate described here is not yet implemented; it remains a v0.9 follow-up.
 
 ---
 
@@ -886,6 +903,8 @@ Prior-knowledge HTTP/2 (`handlePriorKnowledge` lines 88-101) is unaffected — i
 
 **Merge Gate:** Restart/recovery and outcome correctness suites become mandatory CI gates.
 
+**Status (v0.8):** **DELIVERED** in Sprint 7 (FLOW-110) — restart-under-load and outcome-correctness (unresolved vs failed vs compensated) Flow TCK suites added and promoted to mandatory CI gates. No SPI change. Follow-up: the `closeTimeoutNanos` aggregate-bound drain-semantics refinement carries to v0.9.
+
 ---
 
 ### Events: Backpressure and Projection Confidence
@@ -898,6 +917,8 @@ Prior-knowledge HTTP/2 (`handlePriorKnowledge` lines 88-101) is unaffected — i
 
 **Merge Gate:** Backpressure and projection consistency tests pass at community target load.
 
+**Status (v0.8):** **PARTIAL** — Sprint 5 added bounded-queue overflow visibility (EVENT-111 `CommunityEventQueueOverflowEvent` JFR) and Sprint 6 made the Kafka integration tests a CI gate (C-P0-02). The broader projection-consistency / retry / dead-letter-visibility-under-load hardening remains open and carries forward.
+
 ---
 
 ### Graph: Baseline Production Hardening
@@ -909,6 +930,8 @@ Prior-knowledge HTTP/2 (`handlePriorKnowledge` lines 88-101) is unaffected — i
 **Resolution:** Prioritize baseline driver stability, correctness tests for exercised PGQ/Bolt paths, resource-usage visibility, and CI coverage for real product scenarios. Avoid broadening Graph scope beyond practical paths already in use.
 
 **Merge Gate:** Baseline Graph correctness/stability tests pass in CI.
+
+**Status (v0.8):** **DELIVERED** in Sprint 7 (GRAPH-111) — `ExecutionGraphZeroAllocTck` and `GraphChurnRatioTck` bound with Community bindings (`CommunityExecutionGraphZeroAllocTckTest`, `CommunityGraphChurnRatioTckIT`); fixed a latent JDK-26 `ObjectAllocationSample` defect in the abstract churn TCK. No SPI change.
 
 ---
 
@@ -923,6 +946,8 @@ Prior-knowledge HTTP/2 (`handlePriorKnowledge` lines 88-101) is unaffected — i
 - **TOOL-139 `KernelHandlerGenerator` rewrite (cross-repo `exeris-tooling`).** Replace the inline `MAPPER.readValue` path in `buildParseBody` with `requestBodyDecoderRegistry.resolve(type, contentType).decode(body, type, ctx)`, dropping the static Jackson field + `JacksonException` constant from emitted code and letting the decoder consume the off-heap segment directly (eliminates the `byte[] + String` double-allocation on server ingress). Lockstep — a generated-output contract change; lands as a separate `exeris-tooling` PR sequenced after kernel-side SPI publication. Plus e2e fixture update + `docs/adr/ADR-036.link.md` stub. `exeris-kernel-enterprise` gets a one-line `ADR-036.link.md` stub.
 
 **Merge Gate:** SPI triplet + `CommunityJsonRequestBodyDecoder` + `AbstractHttpRequestBodyDecoderTck` Community binding green and CI-bound; ADR-036 reserved in `~/exeris-systems/exeris-docs/adr-index.md` before content (done 2026-06-03); `exeris-tooling` generator PR opened and reviewed (does not block the kernel merge — the generator update lands in a subsequent kernel-snapshot consumption cycle, per the Sprint 6 HTTP-130..136 / TOOL-136 precedent).
+
+**Status (v0.8):** **DELIVERED** in Sprint 7 (HTTP-138, ADR-036) — `HttpRequestBodyDecoder` + `HttpRequestBodyDecoderRegistry` + `HttpRequestDecodingContext` landed in `eu.exeris.kernel.spi.http`, completing the fourth (and final) body-codec quadrant. Community driver `CommunityJsonRequestBodyDecoder` keeps Jackson behind the SPI; `JsonBodyCodecs` extracted for dedup. `AbstractHttpRequestBodyDecoderTck` + Community binding CI-bound. The Wall held. **Lockstep CARRIED TO v0.9 (snapshot-gated):** the `exeris-tooling` `KernelHandlerGenerator` rewrite (TOOL-139, #67) and the `exeris-kernel-enterprise` ADR-036 stub (#30) consume the published SPI in a later snapshot cycle.
 
 ---
 
@@ -1003,6 +1028,8 @@ Prior-knowledge HTTP/2 (`handlePriorKnowledge` lines 88-101) is unaffected — i
 - **TOOL-136 `KernelClientGenerator` emission update (cross-repo `exeris-tooling`).** Update `exeris-tooling/exeris-codegen-java/src/main/java/eu/exeris/tooling/codegen/java/kernel/KernelClientGenerator.java` to emit `UriTemplate.of("/api/v1/widgets/{id}").resolve("id", id)` in place of `BASE_PATH + "/" + id` (lines 107, 173, 185 in current source) and `QueryParams.empty().add("page", page).add("size", size).render()` in place of `BASE_PATH + "?page=" + page + "&size=" + size` (line 131). Generator's `WEB_CLIENT` `ClassName` constant already migrated to `CommunityWebClient` via ADR-026 amendment; this change pins the emitted code to the new SPI primitives without touching that import. Lands as a separate PR in `exeris-tooling`, sequenced after the kernel-side SPI publication.
 
 **Merge Gate:** All three new SPI primitives have abstract TCKs + Community bindings green; `CommunityWebClientIntegrationTest` covers four-arg-constructor with enricher; ADR-032 registered in `~/exeris-systems/exeris-docs/adr-index.md` before content lands; `exeris-tooling/KernelClientGenerator` PR opened and reviewed (does not block kernel merge — generator update lands in a subsequent kernel-snapshot consumption cycle).
+
+**Status (v0.8):** **PARTIAL** — Delivered in Sprint 6: HTTP-133 `HttpClientRequestEnricher` SPI + `AbstractHttpClientRequestEnricherTck` + **ADR-032**; HTTP-132 `WebClientException` status predicates (`isNotFound`/`isClientError`/`isServerError`/`isConflict`/`isValidationError`/…). The verb facade itself was re-placed by **ADR-034** as the tier-neutral `KernelWebClient` in **Core** (`eu.exeris.kernel.core.http.client`), superseding the ADR-026 `CommunityWebClient` placement, and ships alongside the client-side body-codec SPI (`HttpRequestBodyEncoder` / `HttpResponseBodyDecoder` + registries + contexts). **CARRIED TO v0.9:** HTTP-130 `UriTemplate` SPI and HTTP-131 `QueryParams` SPI were **not** implemented (no such types in the source tree), and the HTTP-134 `CommunityKernelContextEnricher` default-bundled enricher did not land (only the enricher SPI + TCK). The TOOL-136 generator emission update follows the same snapshot-gated lockstep.
 
 ---
 
@@ -1088,6 +1115,8 @@ Prior-knowledge HTTP/2 (`handlePriorKnowledge` lines 88-101) is unaffected — i
 
 **Merge Gate:** `mvn verify` in the default CI job fails when any module drops below its declared threshold; per-module XML report + aggregate XML are uploaded as CI artifacts; thresholds documented in `docs/quality/coverage-gates.md`.
 
+**Status (v0.8):** **DELIVERED** in Sprint 6 (Coverage C-P0-01) — `-Pcoverage` activates the JaCoCo agent + per-module `<check>` rule enforcement in the default `build-and-verify` job (`.github/workflows/maven.yml`); per-module LINE floors live in each module's `<jacoco.line.minimum>`.
+
 ---
 
 ### Test Coverage: Kafka Integration CI Gate (v0.8 Fast-Win #2)
@@ -1100,6 +1129,8 @@ Prior-knowledge HTTP/2 (`handlePriorKnowledge` lines 88-101) is unaffected — i
 
 **Merge Gate:** Job is required on PR merge for `exeris-kernel-community-kafka` paths; first green run includes all 3 Kafka ITs visible in CI logs; broken-choreography canary regression (simulated by reverting a `CrossEngineFlow` snapshot store change) fails the gate as expected.
 
+**Status (v0.8):** **DELIVERED** in Sprint 6 (Coverage C-P0-02) — `kafka-integration-gate` job added to `.github/workflows/maven.yml`, mirroring `persistence-rls-gate`; runs all three `exeris-kernel-community-kafka` `@Tag("integration")` Testcontainers tests and uploads JFR recordings.
+
 ---
 
 ### Test Coverage: Core Integration CI Gate / OpenSSL TLS Loopback IT in Default CI (v0.8 Fast-Win #3)
@@ -1111,6 +1142,8 @@ Prior-knowledge HTTP/2 (`handlePriorKnowledge` lines 88-101) is unaffected — i
 **Resolution:** Add a `core-integration-gate` GitHub Actions job that mirrors `persistence-rls-gate` for `exeris-kernel-core` module — `mvn -pl exeris-kernel-core -DincludedGroups=integration -DexcludedGroups= test`. Linux-only via the existing `@EnabledOnOs(LINUX)` + `@EnabledIfSystemProperty(named="exeris.tls.testOpenssl", matches="true")` (or equivalent) gating already present on the test class. Upload JFR recordings to artifact retention same as the other gates. Alternative implementation (no new job): drop the `@Tag("integration")` tag from `OffHeapTlsEngineLoopbackIT` and rely on the existing environment-gate annotations to skip it where OpenSSL is unavailable — this lets the existing `build-and-verify` job pick it up.
 
 **Merge Gate:** OpenSSL TLS 1.3 loopback test runs and passes on every PR; a deliberate `SSL_VERIFY_PEER` regression (canary revert) fails the gate; JFR `TlsHandshakeEvent` and `TlsBindingEvent` records are present in the uploaded artifact.
+
+**Status (v0.8):** **CARRIED TO v0.9** — no `core-integration-gate` job exists in `.github/workflows/maven.yml` and `OffHeapTlsEngineLoopbackIT` still carries `@Tag("integration")`, so the OpenSSL TLS 1.3 loopback IT runs nowhere in default CI. Fast-Win #3 not yet absorbed.
 
 ---
 

@@ -6,7 +6,63 @@ This file is intentionally terse: it lists what landed, with a pointer to the re
 
 Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project versions follow [SemVer](https://semver.org/spec/v2.0.0.html), with the pre-1.0 caveat that minor versions may carry observable contract additions while remaining backwards-compatible at the SPI level.
 
-## [Unreleased] — 0.8.0-SNAPSHOT
+## [0.8.0] — 2026-06-03
+
+Production-correctness release. Completes the HTTP body-codec matrix (all four
+{request,response}×{encode,decode} quadrants now have SPI seams), introduces a
+tier-neutral `KernelWebClient` facade in Core, wires compile-time RBAC into the
+runtime decision path, and hardens the Transport / Flow / Graph paths with new
+TCK suites — plus a non-blocking reactor-driven client ingress fix that removes
+the virtual-thread carrier-pinning stall under constrained cores.
+
+See `docs/release/v0.8.0-release-notes.md` for the per-stream narrative, the full
+SPI surface delta, the gate posture, and the carry-over to v0.9. Per-PR detail is
+in the git log. Compare: `v0.7.1...v0.8.0`
+(`https://github.com/exeris-systems/exeris-kernel/compare/v0.7.1...v0.8.0`).
+
+### Added — HTTP body-codec matrix completion (Sprint 6/7, ADR-034 + ADR-036)
+
+- Client-side body codec SPI (ADR-034): `HttpRequestBodyEncoder` (outbound payload
+  encode) and `HttpResponseBodyDecoder` (inbound payload decode), each with a
+  descending-priority `*Registry` and an encode/decode `*Context` record, in
+  `eu.exeris.kernel.spi.http`. With the pre-existing `HttpResponseBodyEncoder`
+  (0.5.0, ADR-009) this closes three of the four codec quadrants.
+- `KernelWebClient` — tier-neutral typed HTTP-verb facade in **Core**
+  (`eu.exeris.kernel.core.http.client`), composing `HttpClientEngine` +
+  request-encoder/response-decoder registries + an `HttpClientRequestEnricher`.
+  Supersedes the ADR-026 `CommunityWebClient` placement so generated client code
+  no longer encodes tier identity in its symbols (ADR-034 §Decision). Its
+  `WebClientException` carries status predicates (`isNotFound`/`isClientError`/
+  `isServerError`/`isConflict`/`isValidationError`/…).
+- Server-side request body decode SPI (ADR-036, Sprint 7 HTTP-138): the fourth and
+  final quadrant — `HttpRequestBodyDecoder` + `HttpRequestBodyDecoderRegistry` +
+  `HttpRequestDecodingContext` (`method, path, headers, allocator`), mirroring the
+  response-decoder triplet. Community driver `CommunityJsonRequestBodyDecoder`
+  keeps Jackson behind the SPI; `JsonBodyCodecs` extracted to dedup the JSON
+  codec helpers. `AbstractHttpRequestBodyDecoderTck` + Community binding,
+  CI-bound. The lockstep `exeris-tooling` generator rewrite (TOOL-139) and the
+  Enterprise stub are snapshot-gated and land in a later consumption cycle.
+- `HttpClientRequestEnricher` SPI (ADR-032, Sprint 6) — implementation-blind
+  `enrich(HttpRequest)` functional interface with `noop()` / `chain(List)`
+  factories, for implicit outbound context propagation (tenant / principal
+  identity; future W3C `traceparent`). Immutable rebuild, zero body interaction,
+  CR/LF/NUL header-value rejection. `AbstractHttpClientRequestEnricherTck`.
+
+### Added — Diagnostics SPI decision (Sprint 6, ADR-033)
+
+- ADR-033 (`KernelDiagnostics` SPI — read-only out-of-process runtime
+  introspection) accepted, driven by RFC-2026-05-18, with the ADR-025 link stub.
+  The SPI itself (`eu.exeris.kernel.spi.diagnostics`), the Community provider and
+  the CLI artefact are scoped to v0.9 — only the decision record lands here.
+
+### Changed — HTTP/2 admission and h2c upgrade conformance (Sprint 5/6)
+
+- HTTP-112: RFC 7540 §5.1.1/§5.1.2 stream-identifier admission on the Community
+  HTTP/2 path (odd-ascending client stream IDs; `PROTOCOL_ERROR` on violations).
+- HTTP-137: cleartext h2c `Upgrade` path now consumes the connection preface,
+  applies the peer `HTTP2-Settings`, and synthesises the original request as
+  stream 1 per RFC 7540 §3.2 — `curl --http2` against a cleartext endpoint no
+  longer fails with `GOAWAY error=1`. Prior-knowledge / ALPN HTTP/2 unaffected.
 
 ### Fixed — Non-blocking client ingress (Sprint 7 TCK-064)
 
@@ -48,6 +104,54 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 - Configurable drain budget on `TransportCarrierPinningTck` (`exeris.tck.transport.drainTimeoutSeconds`) — accommodates constrained CI runners under thread pressure (default 5s for local boxes, override to 30s on 2-vCPU GitHub Actions).
 - New `transport-stress-gate` CI job (`.github/workflows/maven.yml`) bumps VT carrier pool to `parallelism=16 / maxPoolSize=64` — works around blocking-`recv()` pinning in the Panama FFM ingress pump (mid-test jstack diagnosis: client ingress VTs pin carriers on `recv()` syscall; default 2-vCPU CI carrier pool exhausts before all clients connect). Production fix (non-blocking `recv()` + selector wakeup) deferred to Sprint 6 transport hardening.
 - HotSpot `-Xlog:jfr+startup=off` in root POM — suppresses native log stream that bypassed Surefire IO redirect and surfaced as "Corrupted channel" warnings.
+
+### Changed — Production-correctness TCK hardening (Sprint 7 GRAPH-111 + FLOW-110)
+
+- GRAPH-111: bound `ExecutionGraphZeroAllocTck` and `GraphChurnRatioTck` with
+  Community bindings (`CommunityExecutionGraphZeroAllocTckTest`,
+  `CommunityGraphChurnRatioTckIT`); also fixed a latent JDK-26
+  `ObjectAllocationSample` defect in the abstract churn TCK. No SPI change.
+- FLOW-110: added restart-under-load and outcome-correctness (unresolved vs
+  failed vs compensated) Flow TCK suites and made them CI gates. No SPI change.
+
+### Performance — Async telemetry + Kafka decode (Sprint 3)
+
+- PERF-070: `AsyncTelemetrySink` ring migrated from `ArrayBlockingQueue` to an
+  Agrona `MpscArrayQueue` for lock-free multi-producer enqueue.
+- PERF-071: `KafkaEventCodec` zero-copy decode path (decode directly off the
+  consumer record buffer; no intermediate copy).
+
+### Observability — Save/publish JFR + event-queue overflow (Sprint 5)
+
+- JFR-091: publish-side JFR instrumentation plus a non-OCC save-side JFR event on
+  the persistence path.
+- EVENT-111: `CommunityEventQueueOverflowEvent` JFR (single-phase commit,
+  `@StackTrace(false)`) records bounded-queue overflow drops for operator
+  visibility.
+- DOC-090: HikariCP prepared-statement cache defaults documented + Javadoc.
+
+### Changed — Persistence admission tunability forward-port (Sprint 0b, ADR-035)
+
+- Forward-ported the ADR-035 admission-control recalibration from `main` (v0.7.1)
+  onto the 0.8.0 line: operator-tunable `persistence.admission.*` knobs via
+  `CommunityAdmissionConfig`, depth-allowance shedding, and the
+  `PersistenceEngine#canServiceRequest` Javadoc MUST→SHOULD relaxation. Also
+  forward-ported the VT-JFR single-phase-commit fix for the connection-acquire
+  event. See `docs/adr/ADR-035-persistence-admission-control-tunability.md`.
+
+### Internal — Quality / decomposition / CI (Sprint 1/3/6)
+
+- `GodClass` decompositions QA-010..018, one PR per class
+  (`CommunityPersistenceEngine`, `CommunityHttpRequestProcessor`,
+  `Slf4jTelemetrySink`, `NativeTcpCarrier` → `NativeTcpSocketBackend`/`Probe` +
+  `NativeTcpReactor`, `OutboxOrchestrator`, `CommunityHttpClientEngine`,
+  `NativeTcpStream`, `JdbcFlowSnapshotStore` codec extract,
+  `CommunityHttp2SessionProcessor` seams, `SubsystemOrchestrator` +
+  ADR-026 amendment record). Refactor-only — see git log for per-PR detail.
+- Supply chain: `kafka-clients` → 4.0.0 with license stanza (SEC-100/BUILD-101).
+- CI: SNAPSHOT publish to GitHub Packages; JaCoCo per-module + `-Pcoverage`
+  (C-P0-01); revived Kafka integration tests in CI (C-P0-02); plus CI hotfixes.
+
 ## [0.7.1] — 2026-05-30
 
 Patch release. Persistence admission-control recalibration (ADR-035) plus a JFR/virtual-thread
