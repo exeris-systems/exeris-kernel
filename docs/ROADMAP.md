@@ -1286,6 +1286,18 @@ Prior-knowledge HTTP/2 (`handlePriorKnowledge` lines 88-101) is unaffected — i
 
 ---
 
+### HTTP Client: Generic-Element Decode (`TypeReference`-style facade overload) — deferred from v0.8
+
+**Gap:** The body-codec decode SPIs take a raw `Class<?> targetType` (`HttpResponseBodyDecoder.decode(LoanedBuffer, Class<?>, …)` client-read; `HttpRequestBodyDecoder` server-read). A raw `Class` cannot carry a parameterized element type: decoding a `findAll` → `List<Widget>` response by passing `List.class` loses `Widget` to type erasure, so the Jackson driver yields `List<LinkedHashMap>` rather than `List<Widget>`. Any `KernelWebClient` call — and any generated client operation — returning a generic container (`List<T>`, `Map<K, V>`, nested generics) cannot recover the element type through the `Class<?>` seam. The single-object path (`findById → Widget.class`) is unaffected; this is a real limitation only on collection/parameterized returns.
+
+**Owner:** HTTP / Transport subsystem (kernel facade — `KernelWebClient`).
+
+**Resolution:** Add a generics-carrying **overload on the kernel facade** decode path — a kernel-neutral type token (analogous to Jackson `TypeReference<T>`, but implementation-blind so no Jackson type crosses the SPI boundary) that preserves the full parameterized type to the resolved decoder. This is a **facade-side overload on `KernelWebClient`, NOT a codec change in `exeris-tooling`**: the generator keeps emitting the decode call and only switches collection-returning operations to the token overload; the kernel owns the type-carrying seam and the driver's Jackson binding consumes the resolved generic type. The existing `Class<?>` path stays as the default for non-generic returns. Decide whether the token threads through the decode SPI (a parallel `decode(LoanedBuffer, <type-token>, …)`) or is resolved to a parameterized `java.lang.reflect.Type` at the facade and handed to the driver — keep it implementation-blind either way.
+
+**Merge Gate:** A `List<Widget>` round-trip (plus one `Map` / nested-generic case) decodes to the correct element type via the facade token overload; the `Class<?>` path is unchanged for non-generic types; no Jackson `TypeReference` (or any driver type) appears in an SPI signature (The Wall). Naturally rides alongside the Symmetric Body Codec multi-binding work above — same decode surface, same facade seam.
+
+---
+
 ### HTTP Client: Retry / Backoff Policy SPI — deferred from v0.8
 
 **Gap:** `CommunityWebClient` performs no implicit retry per ADR-026's explicit scoping decision ("retry policy is the caller's concern; failures map to `WebClientException` exactly once with full diagnostic context"). Application code wanting "5xx retry with exponential backoff + jitter + max attempts" must hand-write the loop on every call site. The TypeScript side of the ecosystem ships a structured `RetryConfig` (`retryableStatuses`, `backoffMultiplier`, `maxAttempts`) that the kernel deliberately did not mirror at 0.8.0 because the semantic decisions are non-trivial.
