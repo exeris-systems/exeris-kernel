@@ -912,6 +912,20 @@ Prior-knowledge HTTP/2 (`handlePriorKnowledge` lines 88-101) is unaffected — i
 
 ---
 
+### HTTP Server: Request Body Decode SPI — Completing the Codec Matrix (Sprint 7 HTTP-138 + ADR-036)
+
+**Gap:** The HTTP body-codec surface is a 2×2 matrix — {request, response} × {encode, decode}. Three quadrants have SPI seams: `HttpRequestBodyEncoder` (0.8.0, ADR-034 — client sends), `HttpResponseBodyEncoder` (0.5.0, ADR-009 — server sends), `HttpResponseBodyDecoder` (0.8.0, ADR-034 — client reads). The fourth — server-side request-body **decode** — has none. `exeris-tooling/KernelHandlerGenerator.buildParseBody` inlines a static Jackson `MAPPER` + `JacksonException` catch into every generated controller (`LoanedBuffer → byte[] → String → readValue`): a build-time Wall breach (a concrete codec symbol baked into application source) plus a double-allocation on the server ingress hot path. The client side resolves cleanly from a registry (`KernelWebClient.decodeSuccessBody`); the server has no symmetric seam, so the asymmetry is real and has a design consequence.
+
+**Owner:** kernel/transport. **Decision:** ADR-036 (server-side request body decoder SPI), resolution site (B) — the generated handler resolves; the kernel router stays type-blind.
+
+**Resolution:**
+- **HTTP-138 SPI triplet + driver (kernel).** Add `eu.exeris.kernel.spi.http.HttpRequestBodyDecoder` (`supports(Class<?>, String)`, `decode(LoanedBuffer, Class<?>, HttpRequestDecodingContext)`, `priority()`), `HttpRequestBodyDecoderRegistry` (`@FunctionalInterface resolve` + `empty()` + `of(List)` descending-priority stable sort), and the `HttpRequestDecodingContext` record (`method, path, headers, allocator`) — mirroring the response-decoder triplet verbatim, generics-free with a single confined cast at the resolution site. Wiring mirrors ADR-034: `HttpProvider.requestBodyDecoderRegistry()` default + `HttpKernelProviders.HTTP_REQUEST_BODY_DECODER_REGISTRY` ScopedValue slot + `Optional` accessor; bootstrap via `CommunityHttpProvider`. Community driver `CommunityJsonRequestBodyDecoder` keeps Jackson in the driver (SPI never sees `ObjectMapper` — The Wall, ADR-006). Observable status mapping is preserved by the generated handler (decode failure → `400`, unresolved decoder → `5xx`; no new `415` negotiation — deferred v0.9). `AbstractHttpRequestBodyDecoderTck` + Community binding, CI-bound (no orphan).
+- **TOOL-139 `KernelHandlerGenerator` rewrite (cross-repo `exeris-tooling`).** Replace the inline `MAPPER.readValue` path in `buildParseBody` with `requestBodyDecoderRegistry.resolve(type, contentType).decode(body, type, ctx)`, dropping the static Jackson field + `JacksonException` constant from emitted code and letting the decoder consume the off-heap segment directly (eliminates the `byte[] + String` double-allocation on server ingress). Lockstep — a generated-output contract change; lands as a separate `exeris-tooling` PR sequenced after kernel-side SPI publication. Plus e2e fixture update + `docs/adr/ADR-036.link.md` stub. `exeris-kernel-enterprise` gets a one-line `ADR-036.link.md` stub.
+
+**Merge Gate:** SPI triplet + `CommunityJsonRequestBodyDecoder` + `AbstractHttpRequestBodyDecoderTck` Community binding green and CI-bound; ADR-036 reserved in `~/exeris-systems/exeris-docs/adr-index.md` before content (done 2026-06-03); `exeris-tooling` generator PR opened and reviewed (does not block the kernel merge — the generator update lands in a subsequent kernel-snapshot consumption cycle, per the Sprint 6 HTTP-130..136 / TOOL-136 precedent).
+
+---
+
 ### Documentation Truthfulness Audit
 
 **Gap:** By production-candidate phase, documentation must distinguish clearly between what is implemented, supported, preview, and deferred. Historical planned wording becomes misleading if left in place.

@@ -154,5 +154,22 @@ public interface HttpProvider {
     default Optional<HttpResponseBodyDecoderRegistry> responseBodyDecoderRegistry() {
         return Optional.empty();
     }
+
+    /**
+     * Returns the optional server-side typed request body decoder registry
+     * exposed by this provider, if any.
+     *
+     * <p>Default implementation returns {@link Optional#empty()} — providers that
+     * ship default body decoders (e.g., Community Jackson JSON) override this to
+     * expose them via the {@link HttpKernelProviders#HTTP_REQUEST_BODY_DECODER_REGISTRY}
+     * bootstrap channel, which generated request handlers read to decode typed
+     * request bodies (ADR-036).
+     *
+     * @return optional registry; empty when the provider does not contribute defaults
+     * @since 0.8.0
+     */
+    default Optional<HttpRequestBodyDecoderRegistry> requestBodyDecoderRegistry() {
+        return Optional.empty();
+    }
 }
 
