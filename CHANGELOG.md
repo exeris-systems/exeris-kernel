@@ -150,7 +150,7 @@ in the git log. Compare: `v0.7.1...v0.8.0`
   `NativeTcpStream`, `JdbcFlowSnapshotStore` codec extract,
   `CommunityHttp2SessionProcessor` seams, `SubsystemOrchestrator` +
   ADR-026 amendment record). Refactor-only — see git log for per-PR detail.
-- Supply chain: `kafka-clients` → 4.0.0 with license stanza (SEC-100/BUILD-101).
+- Supply chain: `kafka-clients` → 4.0.2 (SEC-100/BUILD-101 + CVE-2026-35554 producer buffer-pool race fix).
 - CI: SNAPSHOT publish to GitHub Packages; JaCoCo per-module + `-Pcoverage`
   (C-P0-01); revived Kafka integration tests in CI (C-P0-02); plus CI hotfixes.
 

@@ -1155,7 +1155,7 @@ Prior-knowledge HTTP/2 (`handlePriorKnowledge` lines 88-101) is unaffected — i
 
 **Merge Gate:** OpenSSL TLS 1.3 loopback test runs and passes on every PR; a deliberate `SSL_VERIFY_PEER` regression (canary revert) fails the gate; JFR `TlsHandshakeEvent` and `TlsBindingEvent` records are present in the uploaded artifact.
 
-**Status (v0.8):** **CARRIED TO v0.9** — no `core-integration-gate` job exists in `.github/workflows/maven.yml` and `OffHeapTlsEngineLoopbackIT` still carries `@Tag("integration")`, so the OpenSSL TLS 1.3 loopback IT runs nowhere in default CI. Fast-Win #3 not yet absorbed.
+**Status (v0.8):** **PARTIAL** — the *no-new-job* alternative (Resolution option B) was taken: `@Tag("integration")` was dropped from `OffHeapTlsEngineLoopbackIT` (Sprint 6 C-P0-02), so the default `build-and-verify` job now picks the IT up, gated by its `@EnabledOnOs(LINUX)` + OpenSSL env-property annotations (it executes where the runner has OpenSSL configured, skips otherwise). The dedicated `core-integration-gate` job (option A) was **not** added — so there is still no unconditional OpenSSL gate. Treat the always-on dedicated gate as carried to v0.9.
 
 ---
 

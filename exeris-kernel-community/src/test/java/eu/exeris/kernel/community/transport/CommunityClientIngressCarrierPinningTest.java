@@ -134,9 +134,8 @@ class CommunityClientIngressCarrierPinningTest {
             client.start();
             rec.start();
 
-            List<Thread> vts = new ArrayList<>(CLIENT_COUNT);
             for (int i = 0; i < CLIENT_COUNT; i++) {
-                vts.add(Thread.ofVirtual()
+                Thread.ofVirtual()
                         .name("tck064-client-recv-", i)
                         .start(() -> {
                             try {
@@ -147,7 +146,7 @@ class CommunityClientIngressCarrierPinningTest {
                             } finally {
                                 done.countDown();
                             }
-                        }));
+                        });
             }
 
             boolean allDone = done.await(COMPLETION_TIMEOUT_SECONDS, TimeUnit.SECONDS);
