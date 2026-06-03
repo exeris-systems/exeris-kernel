@@ -11,10 +11,8 @@ package eu.exeris.kernel.community.http;
 import eu.exeris.kernel.spi.http.HttpRequestBodyDecoder;
 import eu.exeris.kernel.spi.http.HttpRequestDecodingContext;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
-import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 
-import java.lang.foreign.MemorySegment;
 import java.util.Objects;
 
 /**
@@ -44,11 +42,6 @@ import java.util.Objects;
  */
 public final class CommunityJsonRequestBodyDecoder implements HttpRequestBodyDecoder {
 
-    private static final String APPLICATION_JSON = "application/json";
-    private static final String APPLICATION_PREFIX = "application/";
-    private static final String JSON_SUFFIX = "+json";
-    private static final long EMPTY_SIZE = 0L;
-
     private final ObjectMapper mapper;
 
     /**
@@ -62,39 +55,12 @@ public final class CommunityJsonRequestBodyDecoder implements HttpRequestBodyDec
 
     @Override
     public boolean supports(Class<?> targetType, String contentType) {
-        if (targetType == null) {
-            return false;
-        }
-        if (contentType == null || contentType.isEmpty()) {
-            // Client omitted content-type — tolerate per decoder contract.
-            return true;
-        }
-        // Strip parameters (e.g. "application/json; charset=utf-8").
-        int semi = contentType.indexOf(';');
-        String base = (semi < 0 ? contentType : contentType.substring(0, semi)).trim();
-        // application/json exact match OR application/*+json structured syntax suffix (RFC 6838 §4.2.8).
-        return APPLICATION_JSON.equalsIgnoreCase(base)
-                || (base.regionMatches(true, 0, APPLICATION_PREFIX, 0, APPLICATION_PREFIX.length())
-                        && base.regionMatches(true, base.length() - JSON_SUFFIX.length(),
-                                JSON_SUFFIX, 0, JSON_SUFFIX.length()));
+        return targetType != null && JsonBodyCodecs.isJsonCompatible(contentType);
     }
 
     @Override
     public Object decode(LoanedBuffer body, Class<?> targetType, HttpRequestDecodingContext context) {
-        Objects.requireNonNull(body, "body must not be null");
-        Objects.requireNonNull(targetType, "targetType must not be null");
         Objects.requireNonNull(context, "context must not be null");
-        long size = body.size();
-        if (size == EMPTY_SIZE) {
-            return null;
-        }
-        byte[] bytes = new byte[Math.toIntExact(size)];
-        MemorySegment.copy(body.segment(), 0L, MemorySegment.ofArray(bytes), 0L, size);
-        try {
-            return mapper.readValue(bytes, targetType);
-        } catch (JacksonException ex) {
-            throw new IllegalStateException(
-                    "JSON deserialization failed for target type " + targetType.getName(), ex);
-        }
+        return JsonBodyCodecs.readValue(mapper, body, targetType);
     }
 }
