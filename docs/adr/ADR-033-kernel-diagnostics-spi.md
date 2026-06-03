@@ -1,8 +1,10 @@
 # ADR-033: `KernelDiagnostics` SPI — Read-Only Runtime Introspection for Agent and CLI Adapters
 
-**Status:** Accepted
+**Status:** Accepted (decision-only — SPI implementation deferred to v0.9)
 **Date:** 2026-05-18
 **Owner:** kernel/diagnostics
+
+> **Implementation rollout:** This ADR records the *decision* only. No code ships with it in v0.8.0 — the `eu.exeris.kernel.spi.diagnostics` package, the `CommunityKernelDiagnosticsProvider`, the `AbstractKernelDiagnosticsTck`, and the `exeris-kernel-diagnostics-cli` artefact all land in **v0.9** (tracked in `docs/ROADMAP.md`). The contract below is accepted as the target shape; treat it as design intent until the v0.9 implementation PR lands.
 **Visibility:** public
 **Scope:** cross-repo (kernel SPI + Community implementation + Community CLI artefact; Enterprise overlay; AI-bridge consumer)
 **Authors:** Arkadiusz Przychocki
