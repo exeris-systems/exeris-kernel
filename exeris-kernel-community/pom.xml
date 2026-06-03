@@ -32,8 +32,16 @@
               mvn test -DincludedGroups=flamegraph -DexcludedGroups=
               mvn test -DincludedGroups=stress    -DexcludedGroups=
               mvn test -Dtest=NativeTcpTransportStressTest (targeted-test-run profile)
+
+            transport-pinning-recv (TCK-064 client RECV carrier-pinning regression) is
+            also excluded from the default Surefire execution, but UNLIKE flamegraph/stress
+            it is NOT skipped in CI: it runs in a dedicated forked Surefire execution
+            (id=transport-pinning-recv) below, pinned to the faithful 2-vCPU carrier model
+            (-Djdk.virtualThreadScheduler.parallelism=2 / maxPoolSize=2). It must run in its
+            own fork because the scarce-carrier VT-scheduler args would otherwise distort
+            every other test in the default execution.
         -->
-        <excludedGroups>flamegraph,integration,stress</excludedGroups>
+        <excludedGroups>flamegraph,integration,stress,transport-pinning-recv</excludedGroups>
 
         <!--
             v0.8 Sprint 6 (Coverage C-P0-01): LINE coverage floor for the Community bundle.
@@ -181,6 +189,38 @@
                     <!-- Exclude @Tag("flamegraph") tests from regular CI runs -->
                     <excludedGroups>${excludedGroups}</excludedGroups>
                 </configuration>
+                <executions>
+                    <!--
+                        TCK-064 regression: the client RECV carrier-pinning test
+                        (CommunityClientIngressCarrierPinningTest, @Tag("transport-pinning-recv"))
+                        must run under the faithful 2-vCPU carrier model so the scarce-carrier
+                        deadlock would re-manifest if a client recv path ever blocks a carrier
+                        again. parallelism=2/maxPoolSize=2 forces exactly two VT carriers; the
+                        client-stream count (32) far exceeds that. Run in its own fork so these
+                        scheduler args never leak into the default test execution.
+                    -->
+                    <execution>
+                        <id>transport-pinning-recv</id>
+                        <phase>test</phase>
+                        <goals>
+                            <goal>test</goal>
+                        </goals>
+                        <configuration>
+                            <argLine>@{coverage.argLine} ${jvm.args} --add-opens java.base/sun.nio.ch=ALL-UNNAMED --add-opens java.base/java.io=ALL-UNNAMED -Djdk.virtualThreadScheduler.parallelism=2 -Djdk.virtualThreadScheduler.maxPoolSize=2</argLine>
+                            <includes>
+                                <include>**/CommunityClientIngressCarrierPinningTest.java</include>
+                            </includes>
+                            <!--
+                                Re-include the transport-pinning-recv tag here (the plugin-level
+                                ${excludedGroups} excludes it for the default execution). The
+                                other heavy tags stay excluded so this fork runs ONLY the recv
+                                regression class.
+                            -->
+                            <groups>transport-pinning-recv</groups>
+                            <excludedGroups>flamegraph,integration,stress</excludedGroups>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>

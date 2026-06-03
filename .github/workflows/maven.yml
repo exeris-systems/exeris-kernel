@@ -61,31 +61,16 @@ jobs:
           cache: maven
 
       - name: Build & Run TCK Verification
-        # Carrier-pool flags: the main verify pass runs every Community TCK that is not
-        # tagged as @Tag("stress"). The single-reactor
-        # CommunityTransportCarrierPinningTckTest is the baseline carrier-pinning
-        # contract — it runs here under the 2-vCPU GitHub Actions runner and would
-        # exhaust the default 2-thread VT carrier pool (FFM-pinned client-ingress VTs,
-        # see Sprint 0a TCK-064) without the same flag triplet that the dedicated
-        # transport-stress-gate job already applies. Mirroring the flags here keeps
-        # the single-reactor baseline green on CI; the multi-reactor variants
-        # (CommunityTransportCarrierPinningMultiReactor{2,4}TckTest) were retagged in
-        # this same PR as @Tag("stress") because their 2-vCPU contention is a true
-        # stress scenario rather than baseline contract verification — they run only
-        # in transport-stress-gate where the higher drain budget already lives.
-        # Local dev runs (no -D flags) keep the strict 5 s default. The proper
-        # production fix is the v0.8 Sprint 7 non-blocking-ingress refactor — once
-        # shipped these workarounds and the stress tagging can be dropped together.
-        #
-        # Drain budget escalation history:
-        #   - 5  s default (v0.7 baseline; passes locally on 12-core dev boxes).
-        #   - 30 s introduced by PR #121 alongside the VT scheduler flags above.
-        #   - 90 s introduced by PR after #124 — baseline CommunityTransportCarrier
-        #     PinningTckTest still exceeded the 30 s drain post-teardown under
-        #     2-vCPU peak schedule pressure (systematic, reproducible across reruns,
-        #     not transient flake). 90 s is ~3× the prior bump to absorb the JDK
-        #     26+35 schedule pressure tail; happy path drain is sub-second so the
-        #     widened budget only kicks in under worst-case CI contention.
+        # v0.8 Sprint 7 (TCK-064 production fix): the VT-scheduler workaround
+        # (parallelism=16 / maxPoolSize=64) was removed once client ingress became
+        # non-blocking and reactor-driven. Previously the single-reactor
+        # CommunityTransportCarrierPinningTckTest exhausted the default 2-thread VT
+        # carrier pool because each client stream ran a VT that blocked in a native
+        # recv() (FFM-pinned the carrier). Client channels now flip to non-blocking
+        # after connect() and register on a dedicated client-side reactor, so no VT
+        # blocks on recv() and the default carrier pool is sufficient. The drain
+        # budget is restored toward the strict 5 s default; happy-path drain is
+        # sub-second.
         #
         # v0.8 Sprint 6 (Coverage C-P0-01): -Pcoverage activates JaCoCo agent +
         # report + per-module <check> rule enforcement. Per-module LINE coverage
@@ -93,10 +78,7 @@ jobs:
         # (ratcheted ~5-9 pp below current baseline).
         run: |
           mvn clean verify -B -e \
-            -P coverage \
-            -Djdk.virtualThreadScheduler.parallelism=16 \
-            -Djdk.virtualThreadScheduler.maxPoolSize=64 \
-            -Dexeris.tck.transport.drainTimeoutSeconds=90
+            -P coverage
 
       - name: Upload TCK JFR recordings
         if: always() && (github.event_name == 'push' || github.event_name == 'schedule') && github.ref == 'refs/heads/main'
@@ -300,40 +282,20 @@ jobs:
           cache: maven
 
       - name: Run transport stress gate
-        # TCK-064 root cause (v0.8 Sprint 0): client ingress VTs in this codebase mount
-        # onto the JDK virtual-thread carrier pool and call a blocking native `recv()`
-        # via Panama FFM (NativeTcpStream.trySocketSeamRead → socketHandles.recv()).
-        # That pins the carrier thread for the duration of the syscall — and on a
-        # 2-vCPU GitHub Actions runner the default carrier pool size is 2, so a
-        # handful of clients trivially exhaust the pool. Server-side echo VTs then
-        # cannot mount, no echo data flows, clients block on `recv()` forever.
-        #
-        # Bumping `jdk.virtualThreadScheduler.parallelism` (steady-state carriers)
-        # and `maxPoolSize` (peak carriers) eliminates the starvation: with 16 baseline
-        # / 64 peak carriers, the same 10 client × 4 server reactor stress passes in
-        # ~0.3 s under taskset -c 0,1. The ROADMAP carry-over for v0.8 transport
-        # hardening (Sprint 6 / non-blocking ingress) is the proper long-term fix —
-        # this knob is the CI-side workaround that lets the gate fire today.
-        #
-        # Drain budget 180 s for the stress-gate specifically — wider than the
-        # 90 s main build-and-verify budget because MultiReactor{2,4} stress
-        # tests deliberately contend for the carrier pool, and 90 s proved
-        # systematically insufficient under 2-vCPU CI peak pressure:
-        #   - PR #125 bumped main + stress from 30 s → 90 s.
-        #   - PR #126 / #127 / #129 build runs all hit
-        #     CommunityTransportCarrierPinningMultiReactor2TckTest at 90 s
-        #     drain on stress-gate; main job at 90 s remained green.
-        #     → Conclusion: the stress-gate tail is consistently wider than
-        #     the baseline single-reactor pinning test.
-        # Local development keeps the strict 5 s default.
+        # v0.8 Sprint 7 (TCK-064 production fix): the VT-scheduler workaround and the
+        # 180 s drain escalation were removed. TCK-064's root cause was client ingress
+        # VTs blocking in a native recv() via Panama FFM, which pinned the carrier
+        # thread; on a 2-vCPU runner (default carrier pool = 2) a handful of clients
+        # exhausted the pool and stalled. The Sprint 7 fix makes client channels
+        # non-blocking after connect() and reactor-driven (no VT blocks on recv()), so
+        # the stress + multi-reactor variants pass at the default carrier pool with the
+        # strict drain budget. The MultiReactor{2,4} variants stay @Tag("stress") and
+        # run here; the single-reactor baseline runs in build-and-verify.
         run: |
           mvn -pl exeris-kernel-community -am install -DskipTests -B -e
           mvn -pl exeris-kernel-community \
             -DincludedGroups=stress \
             -DexcludedGroups= \
-            -Dexeris.tck.transport.drainTimeoutSeconds=180 \
-            -Djdk.virtualThreadScheduler.parallelism=16 \
-            -Djdk.virtualThreadScheduler.maxPoolSize=64 \
             test -B -e
 
       - name: Upload transport stress JFR recordings
