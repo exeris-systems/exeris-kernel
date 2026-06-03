@@ -27,7 +27,10 @@ import java.util.Collection;
  *   <li>{@link FlowProvider#createEngine} — created by the bootstrapper (no I/O, no threads).</li>
  *   <li>{@link #start()} — initialises all components (allocates resources, pre-warms slab pools).</li>
  *   <li>Runtime — subsystems call {@link #plans()}, {@link #scheduler()}, etc.</li>
- *   <li>{@link #close()} — graceful shutdown (drains pending flows, releases memory).</li>
+ *   <li>{@link #close()} — interrupts in-flight flows and joins them within a bounded
+ *       per-thread deadline, then releases memory. PARKED checkpoints persisted before
+ *       {@code close()} survive for restart recovery; in-flight RUNNING progress past the
+ *       last checkpoint may be lost.</li>
  * </ol>
  *
  * <h2>Tier Behaviour</h2>
@@ -132,7 +135,10 @@ public interface FlowEngine extends AutoCloseable {
     void start();
 
     /**
-     * Gracefully shuts down the engine, draining pending flows and releasing off-heap memory.
+     * Shuts down the engine: interrupts in-flight flows and joins each worker within a
+     * bounded per-thread deadline, then releases off-heap memory. This is not an unbounded
+     * graceful drain — PARKED checkpoints persisted before {@code close()} survive for
+     * restart recovery, but in-flight RUNNING progress past the last checkpoint may be lost.
      * Emits a {@code FlowEngineShutdownEvent} JFR event.
      */
     @Override

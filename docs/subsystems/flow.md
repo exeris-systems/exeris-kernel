@@ -22,6 +22,7 @@
 
 > **Note:** `FlowOutcome.COMPLETE` provides a direct short-circuit path: a step can return `COMPLETE` to transition the flow immediately to `FlowState.COMPLETED` without executing any remaining steps.
 > **Note:** `FlowBootstrapSelectedEvent` is emitted by `FlowBootstrap.loadWithProvider()` before `start()`. `FlowEngine.close()` emits `FlowEngineShutdownEvent` after runtime close and its bounded shutdown join, so the JFR payload reflects the stable shutdown counter view captured when `close()` completes. Promptly interrupted workers may still finalize snapshots afterward without changing that counter snapshot.
+> **Note (shutdown semantics):** `close()` is **not** an unbounded graceful drain — it interrupts in-flight flows and joins each worker within a bounded per-thread deadline (`CoreFlowRuntime.interruptAndJoinRunningThreads`, currently 5s/thread). PARKED checkpoints persisted before `close()` survive for restart recovery (see `AbstractSagaRecoveryTck.RestartUnderLoad`); in-flight RUNNING progress past the last checkpoint may be lost. **Known constraint:** the per-thread join is iterated sequentially, so the aggregate worst case is N×5s under wedged-interrupt, not 5s. A future `closeTimeoutNanos` config (aggregate-bounded join) is a candidate follow-up — not yet implemented. A durability/shutdown-cost JMH benchmark is deferred to `exeris-benchmarks` (backlog).
 
 ## Boundaries
 
@@ -178,10 +179,10 @@ The same defaults apply to the outbox-orchestrator pump and the RLS-interceptor 
 
 | TCK Suite | Module | Description |
 |:---------|:-------|:------------|
-| `AbstractFlowEngineTck` | `exeris-kernel-tck` | Full flow lifecycle: submit, run, park, wake, complete, compensate; JFR shutdown event (TCK-062), restart-aware semantics (TCK-063), saga timeout enforcement (DIST-303) |
+| `AbstractFlowEngineTck` | `exeris-kernel-tck` | Full flow lifecycle: submit, run, park, wake, complete, compensate; JFR shutdown event (TCK-062), restart-aware semantics (TCK-063), saga timeout enforcement (DIST-303), per-outcome transition correctness incl. thrown-exception FAIL path + `FAILED_ROLLEDBACK` terminal idempotency (FLOW-110, `OutcomeTransitions`) |
 | `AbstractFlowSchedulerTck` | `exeris-kernel-tck` | Scheduler contract: schedule, cancel, peek parked, drain |
 | `AbstractFlowChoreographyTck` | `exeris-kernel-tck` | Choreography mapper registration and event-driven wake |
-| `AbstractSagaRecoveryTck` | `exeris-kernel-tck` | Crash-recovery replay semantics from snapshot store |
+| `AbstractSagaRecoveryTck` | `exeris-kernel-tck` | Crash-recovery replay semantics from snapshot store; restart-under-load (N=16 concurrent parked instances survive force-close, resume, no re-exec/orphans, counter reset) (FLOW-110, `RestartUnderLoad`) |
 | `AbstractIdempotencyGuardTck` | `exeris-kernel-tck` | Step-level deduplication contract for `IdempotencyGuard` |
 | `FlowZeroAllocTck` | `exeris-kernel-tck` | Zero-allocation assertion on hot flow scheduling path |
 | `FlowCarrierPinningTck` | `exeris-kernel-tck` | Flow orchestration does not pin Virtual Thread carrier |

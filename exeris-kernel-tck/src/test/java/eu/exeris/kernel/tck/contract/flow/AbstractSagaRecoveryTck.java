@@ -25,6 +25,8 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -98,6 +100,17 @@ public abstract class AbstractSagaRecoveryTck {
      * Must be the same store used by both {@link #createEngine()} and {@link #rebuildEngine()}.
      */
     protected abstract FlowSnapshotStore snapshotStore();
+
+    /**
+     * Number of concurrent flow instances driven through the restart-under-load
+     * scenario ({@link RestartUnderLoad}). Mirrors
+     * {@code AbstractFlowSchedulerTck.avalancheScheduleCount()} so bindings can tune N.
+     *
+     * <p>The default ({@value} ) MUST stay deterministic on a 2-vCPU runner — larger N
+     * is a benchmark, not a contract gate. Enterprise ring-buffer-bounded bindings may
+     * override down, never up for the always-on unit lane.
+     */
+    protected int restartLoadCount() { return 16; }
 
     // =========================================================================
     // Lifecycle
@@ -201,6 +214,182 @@ public abstract class AbstractSagaRecoveryTck {
             assertThat(step0Exec.get())
                     .as("step0 (validate) MUST NOT re-execute after resume — idempotency guard")
                     .isEqualTo(1);
+        }
+    }
+
+    // =========================================================================
+    // FLOW-110 — Restart under load (N concurrent contexts survive force-close)
+    // =========================================================================
+
+    /**
+     * FLOW-110: the mid-saga kill contract scaled to N concurrent instances on a single
+     * definition. Half are driven to {@link FlowState#PARKED} mid-flow, half are left
+     * {@link FlowState#RUNNING} at a no-op continue step at the moment of force-close.
+     *
+     * <p>The scenario asserts, in one batch:
+     * <ul>
+     *   <li>every PARKED snapshot survives {@code close()} and is loadable at its park step;</li>
+     *   <li>the rebuilt engine resumes every parked instance to {@link FlowState#COMPLETED};</li>
+     *   <li><b>idempotency fence</b> — the pre-park step does not re-execute after resume;</li>
+     *   <li><b>counter reset</b> — the rebuilt engine's {@code stats()} starts a fresh
+     *       generation at zero;</li>
+     *   <li><b>no orphans</b> — no generation-1 worker virtual thread survives into
+     *       generation-2 (the {@code close()} interrupt+join completed).</li>
+     * </ul>
+     *
+     * <p>N is bounded by {@link #restartLoadCount()} (default 16) and MUST stay deterministic
+     * on a 2-vCPU runner — TCK-064 deadlocked a transport stress gate under thread pressure
+     * on exactly such a runner; this gate keeps N small on purpose.
+     */
+    @Nested
+    @DisplayName("Restart under load — N concurrent flows survive force-close and resume")
+    class RestartUnderLoad {
+
+        private static final String DEF_NAME = "restart-under-load-saga";
+        private static final String WORKER_THREAD_PREFIX = "exeris-flow-";
+
+        @Test
+        @Timeout(value = 30, unit = TimeUnit.SECONDS)
+        @DisplayName("N parked snapshots survive close(); all resume to COMPLETED; no re-exec, no orphans, counters reset")
+        void parkedFleetSurvivesForceCloseAndResumes() {
+            int n = restartLoadCount();
+            assertThat(n).as("restartLoadCount() must be positive").isGreaterThan(0);
+
+            // Per-instance execution counters keyed by instance UUID-most.
+            java.util.Map<Long, AtomicInteger> step0Exec = new java.util.concurrent.ConcurrentHashMap<>();
+            java.util.Map<Long, AtomicInteger> step2Exec = new java.util.concurrent.ConcurrentHashMap<>();
+            // Instances selected to PARK at step 1 (the rest fall through CONTINUE at step 1).
+            java.util.Set<Long> parkSet = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+            FlowStepAction step0 = ctx -> {
+                step0Exec.computeIfAbsent(ctx.instanceIdMost(), _ -> new AtomicInteger()).incrementAndGet();
+                return FlowOutcome.CONTINUE;
+            };
+            // Step 1 is the divergence point: parked half PARKs, running half falls through.
+            FlowStepAction step1 = ctx ->
+                    parkSet.contains(ctx.instanceIdMost()) ? FlowOutcome.PARK : FlowOutcome.CONTINUE;
+            FlowStepAction step2 = ctx -> {
+                step2Exec.computeIfAbsent(ctx.instanceIdMost(), _ -> new AtomicInteger()).incrementAndGet();
+                return FlowOutcome.CONTINUE;
+            };
+
+            FlowDefinition def = engine.plans().newDefinition(DEF_NAME)
+                    .step("validate", step0, null)
+                    .step("gate",     step1, null)
+                    .step("ship",     step2, null)
+                    .transition(0, 1)
+                    .transition(1, 2)
+                    .build();
+
+            FlowExecutionPlan plan = engine.plans().compile(def);
+
+            List<FlowContext> all       = new ArrayList<>(n);
+            List<FlowContext> parked    = new ArrayList<>();
+            for (int i = 0; i < n; i++) {
+                FlowContext ctx = TestFlowContexts.create(
+                        UUID.randomUUID().toString(), DEF_NAME);
+                all.add(ctx);
+                if ((i & 1) == 0) {          // ~half driven to PARK
+                    parkSet.add(ctx.instanceIdMost());
+                    parked.add(ctx);
+                }
+            }
+
+            for (FlowContext ctx : all) {
+                engine.scheduler().schedule(plan, ctx);
+            }
+
+            // Wait until the whole parked fleet has checkpointed.
+            assertThat(awaitCondition(() -> parked.stream().allMatch(this::parkedAtStep1), 10))
+                    .as("All %d PARKED instances MUST checkpoint at step 1 before force-close", parked.size())
+                    .isTrue();
+
+            // Force-close generation 1 — simulates JVM kill. The interrupt+bounded join
+            // must complete (no generation-1 worker survives into generation 2).
+            engine.close();
+            engine = null;
+
+            // (a) every parked snapshot survived and is at its park step.
+            for (FlowContext ctx : parked) {
+                Optional<FlowSnapshot> snap = loadSnapshot(ctx);
+                assertThat(snap)
+                        .as("PARKED checkpoint for %s MUST survive force-close", ctx.instanceIdMost())
+                        .isPresent();
+                assertThat(snap.get().currentStep())
+                        .as("Checkpoint for %s MUST be at step 1 (gate)", ctx.instanceIdMost())
+                        .isEqualTo(1);
+                assertThat(snap.get().state())
+                        .as("Checkpoint for %s MUST be PARKED", ctx.instanceIdMost())
+                        .isEqualTo(FlowState.PARKED);
+            }
+
+            // (e) no orphan generation-1 worker VT survives the close() join. close() joins
+            // synchronously, but VT teardown after join-return is racy by a few microseconds —
+            // assert it settles to zero rather than sampling a single instant.
+            assertThat(awaitCondition(() -> liveWorkerThreadCount() == 0L, 5))
+                    .as("No generation-1 flow worker VT (%s*) may survive close()", WORKER_THREAD_PREFIX)
+                    .isTrue();
+
+            // Rebuild generation 2 on the same store, recompile the definition, wake the fleet.
+            engine = rebuildEngine();
+            engine.start();
+
+            // (d) counter reset — a fresh generation starts at zero.
+            assertThat(engine.stats().completedFlows())
+                    .as("Rebuilt engine completedFlows MUST start at 0 (new lifecycle generation)")
+                    .isZero();
+            assertThat(engine.stats().activeFlows())
+                    .as("Rebuilt engine activeFlows MUST start at 0")
+                    .isZero();
+
+            engine.plans().compile(def);
+            for (FlowContext ctx : parked) {
+                engine.scheduler().wake(ctx);
+            }
+
+            // (b) every parked instance resumes and reaches COMPLETED. In unbounded-catalog
+            // mode (the TCK default) the durable snapshot is DELETED on complete(), so the
+            // observable terminal proof is twofold: the rebuilt-generation completedFlows
+            // counter reaches the parked fleet size AND the checkpoint disappears from the store.
+            int expectedCompleted = parked.size();
+            assertThat(awaitCondition(
+                    () -> engine.stats().completedFlows() >= expectedCompleted, 15))
+                    .as("Rebuilt engine MUST drive all %d resumed instances to COMPLETED", expectedCompleted)
+                    .isTrue();
+
+            for (FlowContext ctx : parked) {
+                assertThat(loadSnapshot(ctx))
+                        .as("COMPLETED checkpoint for %s MUST be reclaimed from the store on complete()",
+                                ctx.instanceIdMost())
+                        .isEmpty();
+            }
+
+            // (c) idempotency fence — step0 (pre-park) executed exactly once per parked
+            // instance across BOTH generations; the post-park step2 ran exactly once.
+            for (FlowContext ctx : parked) {
+                long key = ctx.instanceIdMost();
+                assertThat(step0Exec.getOrDefault(key, new AtomicInteger()).get())
+                        .as("step0 (validate) MUST NOT re-execute after resume for %s — idempotency fence", key)
+                        .isEqualTo(1);
+                assertThat(step2Exec.getOrDefault(key, new AtomicInteger()).get())
+                        .as("step2 (ship) MUST execute exactly once after wake for %s", key)
+                        .isEqualTo(1);
+            }
+        }
+
+        private boolean parkedAtStep1(FlowContext ctx) {
+            Optional<FlowSnapshot> snap = loadSnapshot(ctx);
+            return snap.isPresent()
+                    && snap.get().state() == FlowState.PARKED
+                    && snap.get().currentStep() == 1;
+        }
+
+        private static long liveWorkerThreadCount() {
+            return Thread.getAllStackTraces().keySet().stream()
+                    .filter(Thread::isAlive)
+                    .map(Thread::getName)
+                    .filter(name -> name != null && name.startsWith(WORKER_THREAD_PREFIX))
+                    .count();
         }
     }
 
