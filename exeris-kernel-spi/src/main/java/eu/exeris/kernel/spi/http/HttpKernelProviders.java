@@ -119,6 +119,21 @@ public final class HttpKernelProviders {
     public static final ScopedValue<HttpResponseBodyDecoderRegistry> HTTP_RESPONSE_BODY_DECODER_REGISTRY =
             ScopedValue.newInstance();
 
+    /**
+     * Optional server-side typed request body decoder registry
+     * ({@link HttpRequestBodyDecoderRegistry}).
+     *
+     * <p>Bound during HTTP bootstrap when the configured provider exposes one
+     * (see {@link HttpProvider#requestBodyDecoderRegistry()}). Generated request
+     * handlers read this slot to decode typed request bodies (ADR-036); handlers
+     * that never decode a body (read-only resources) do not require it to be bound.
+     * Use {@link #httpRequestBodyDecoderRegistry()} to read defensively.
+     *
+     * @since 0.8.0
+     */
+    public static final ScopedValue<HttpRequestBodyDecoderRegistry> HTTP_REQUEST_BODY_DECODER_REGISTRY =
+            ScopedValue.newInstance();
+
     private HttpKernelProviders() {
         // Static ScopedValue slots only — never instantiated.
     }
@@ -188,6 +203,19 @@ public final class HttpKernelProviders {
     public static Optional<HttpResponseBodyDecoderRegistry> httpResponseBodyDecoderRegistry() {
         return HTTP_RESPONSE_BODY_DECODER_REGISTRY.isBound()
                 ? Optional.of(HTTP_RESPONSE_BODY_DECODER_REGISTRY.get())
+                : Optional.empty();
+    }
+
+    /**
+     * Returns the optional server-side typed request body decoder registry,
+     * if one was bound during HTTP bootstrap.
+     *
+     * @return an {@link Optional} containing the registry when bound, or empty otherwise
+     * @since 0.8.0
+     */
+    public static Optional<HttpRequestBodyDecoderRegistry> httpRequestBodyDecoderRegistry() {
+        return HTTP_REQUEST_BODY_DECODER_REGISTRY.isBound()
+                ? Optional.of(HTTP_REQUEST_BODY_DECODER_REGISTRY.get())
                 : Optional.empty();
     }
 }

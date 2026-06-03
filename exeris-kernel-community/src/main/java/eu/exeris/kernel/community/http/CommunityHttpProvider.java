@@ -11,6 +11,7 @@ package eu.exeris.kernel.community.http;
 import eu.exeris.kernel.spi.http.HttpClientEngine;
 import eu.exeris.kernel.spi.http.HttpConfig;
 import eu.exeris.kernel.spi.http.HttpProvider;
+import eu.exeris.kernel.spi.http.HttpRequestBodyDecoderRegistry;
 import eu.exeris.kernel.spi.http.HttpRequestBodyEncoderRegistry;
 import eu.exeris.kernel.spi.http.HttpResponseBodyDecoderRegistry;
 import eu.exeris.kernel.spi.http.HttpResponseBodyEncoderRegistry;
@@ -31,6 +32,8 @@ public final class CommunityHttpProvider implements HttpProvider {
             HttpRequestBodyEncoderRegistry.of(List.of(new CommunityJsonRequestBodyEncoder(DEFAULT_MAPPER)));
     private static final HttpResponseBodyDecoderRegistry RESPONSE_BODY_DECODER_REGISTRY =
             HttpResponseBodyDecoderRegistry.of(List.of(new CommunityJsonResponseBodyDecoder(DEFAULT_MAPPER)));
+    private static final HttpRequestBodyDecoderRegistry REQUEST_BODY_DECODER_REGISTRY =
+            HttpRequestBodyDecoderRegistry.of(List.of(new CommunityJsonRequestBodyDecoder(DEFAULT_MAPPER)));
 
     private static HttpResponseBodyEncoderRegistry buildDefaultRegistry() {
         JsonBodyEncoder encoder = new JsonBodyEncoder(DEFAULT_MAPPER);
@@ -50,6 +53,11 @@ public final class CommunityHttpProvider implements HttpProvider {
     @Override
     public Optional<HttpResponseBodyDecoderRegistry> responseBodyDecoderRegistry() {
         return Optional.of(RESPONSE_BODY_DECODER_REGISTRY);
+    }
+
+    @Override
+    public Optional<HttpRequestBodyDecoderRegistry> requestBodyDecoderRegistry() {
+        return Optional.of(REQUEST_BODY_DECODER_REGISTRY);
     }
 
     @Override
