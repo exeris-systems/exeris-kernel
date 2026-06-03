@@ -8,8 +8,10 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ## [0.8.0] — 2026-06-03
 
-Production-correctness release. Completes the HTTP body-codec matrix (all four
-{request,response}×{encode,decode} quadrants now have SPI seams), introduces a
+Production-correctness release. Completes the HTTP body-codec **SPI** matrix (all
+four {request,response}×{encode,decode} quadrants now have SPI seams; the
+server-side generator that consumes the new request decoder is a later cycle),
+introduces a
 tier-neutral `KernelWebClient` facade in Core, wires compile-time RBAC into the
 runtime decision path, and hardens the Transport / Flow / Graph paths with new
 TCK suites — plus a non-blocking reactor-driven client ingress fix that removes
@@ -20,7 +22,7 @@ SPI surface delta, the gate posture, and the carry-over to v0.9. Per-PR detail i
 in the git log. Compare: `v0.7.1...v0.8.0`
 (`https://github.com/exeris-systems/exeris-kernel/compare/v0.7.1...v0.8.0`).
 
-### Added — HTTP body-codec matrix completion (Sprint 6/7, ADR-034 + ADR-036)
+### Added — HTTP body-codec SPI matrix — fourth quadrant (Sprint 6/7, ADR-034 + ADR-036)
 
 - Client-side body codec SPI (ADR-034): `HttpRequestBodyEncoder` (outbound payload
   encode) and `HttpResponseBodyDecoder` (inbound payload decode), each with a
