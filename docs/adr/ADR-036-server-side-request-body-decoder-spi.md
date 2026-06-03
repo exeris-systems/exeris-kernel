@@ -83,7 +83,7 @@ Contract clauses inherited **verbatim** from `HttpResponseBodyDecoder` (see `Htt
 - **Generics-free by design.** `decode` returns `Object` and accepts `Class<?>`, not `<T>`. The single `@SuppressWarnings("unchecked")` cast lives at the resolution call-site (the generated handler — §2), exactly as the client side confines it to `KernelWebClient.decodeSuccessBody` (`KernelWebClient.java:234`, ADR-034 §3). A generics-free SPI surface eases alternative bindings (Jackson `TypeReference`, Protobuf descriptors) without `<T>` propagation.
 - **Never sees `Void.class`.** The resolution site short-circuits bodyless / `Void` requests before invoking the decoder (the generated handler only calls `parseBody` for verbs that carry an entity body — `handleCreate` / `handleUpdate`).
 - **Content-type tolerance.** Implementations MUST tolerate `contentType == null` or empty (client omitted the header); the registry may still route a decoder claiming support for `targetType`.
-- **Driver exception wrapping.** Implementations MUST wrap binding-specific exceptions (Jackson `JacksonException`) into a generic `RuntimeException` (typically `IllegalStateException`) before returning. No driver-specific exception type crosses the SPI boundary.
+- **Driver exception wrapping.** Implementations MUST wrap binding-specific exceptions (Jackson `JacksonException`) into a **JDK-standard `java.*` `RuntimeException`** (the Community driver uses `IllegalStateException`) before returning. No driver-package exception type — not even a driver-defined `RuntimeException` subclass — may cross the SPI boundary; the contract is testable-as-written (`AbstractHttpRequestBodyDecoderTck` asserts the thrown type's package `startsWith("java.")` and `doesNotStartWith("tools.jackson")`).
 - **Body ownership.** Implementations MUST NOT close, retain, or otherwise extend the lifetime of the `LoanedBuffer`. The caller (the generated handler) owns the buffer's lifecycle — the request body buffer is owned by the transport/codec and released when the exchange ends, per the existing `HttpRequest` contract the generator already documents (`KernelHandlerGenerator.java:261`).
 
 `HttpRequestDecodingContext` carries `(method, path, headers, allocator)` — the server-side mirror of `HttpResponseDecodingContext`'s `(status, headers, allocator)` (see `HttpResponseDecodingContext.java:29`). The status field is replaced by `method` + `path` because the decoder runs on the inbound request, not on a response. The context carries **no Core types** — no `HttpExchange`, no router carrier — so the SPI surface stays implementation-blind (The Wall, ADR-006).
@@ -179,14 +179,17 @@ Jackson 3 descends to the driver; the SPI never sees `ObjectMapper` (The Wall �
 
 `AbstractHttpRequestBodyDecoderTck`, mirroring `AbstractHttpResponseBodyDecoderTck` (`exeris-kernel-tck/src/test/java/eu/exeris/kernel/tck/contract/http/AbstractHttpResponseBodyDecoderTck.java`). It asserts:
 
-- `supports()` content-type matrix — `application/json`, `application/*+json`, and `null`/empty tolerance;
-- round-trip decode of a known type;
-- empty-body tolerance;
-- null-content-type tolerance;
-- Jackson-exception-wrapped-as-`RuntimeException` opacity (no driver type escapes);
-- priority ordering via two stub decoders.
+- `supports()` content-type matrix — `application/json`, `application/*+json`, unrelated type → false, and `null`/empty tolerance;
+- round-trip decode of a known type, with buffer-ownership invariants (refCount / liveness unchanged — decoder neither closes nor retains);
+- empty-body tolerance — asserted as *tolerance only* (decoder returns `null`, does not throw), **not** as a contract the caller relies on: the generated handler short-circuits `Void`/bodyless requests before the decoder (§2), so this branch is defensive;
+- null/empty-content-type tolerance at `decode()` time;
+- driver-exception opacity — asserts the thrown type's package `startsWith("java.")` and `doesNotStartWith("tools.jackson")` (The Wall, testable-as-written per §1);
+- priority ordering and tie-by-registration via two SPI-only stub decoders through `HttpRequestBodyDecoderRegistry.of(...)` (no driver type on the TCK surface);
+- null-argument rejection (body / targetType / context).
 
-Bound in Community against `CommunityJsonRequestBodyDecoder` and **actually registered in CI** — no orphan `Abstract*Tck` (memory: `project_v080_coverage_audit` — unbound `Abstract*Tck` bases are a standing P0; this one ships bound).
+**TCK scope boundary.** This kernel-side TCK verifies only the **SPI-boundary contract** (a present decoder decodes or throws a `java.*` `RuntimeException`; the registry resolves by priority). It deliberately does **not** assert the HTTP status mapping (decode-failure → 400, unresolved → 5xx) — per §2 that mapping is the *generated handler's* job, not the SPI's, and it is exercised by the generator e2e fixture in `exeris-tooling` (TOOL-139 / Engineering Protocol step 3), not here. The Community binding additionally carries one tier-specific `@Nested` wiring check that the `HTTP_REQUEST_BODY_DECODER_REGISTRY` slot is unbound outside the kernel scope and resolvable inside it (the read path the generated handler depends on).
+
+Bound in Community against `CommunityJsonRequestBodyDecoder` and **actually registered in CI** — no orphan `Abstract*Tck` (memory: `project_v080_coverage_audit` — unbound `Abstract*Tck` bases are a standing P0; this one ships bound, 19 cases green in the default `build-and-verify` lane).
 
 ## Consequences
 
