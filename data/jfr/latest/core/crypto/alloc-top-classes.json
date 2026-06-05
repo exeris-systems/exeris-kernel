@@ -1,36 +1,36 @@
 [ {
-  "class" : "java.lang.String",
-  "count" : 2,
-  "bytes" : 261600,
+  "class" : "[Ljava.util.HashMap$Node;",
+  "count" : 6,
+  "bytes" : 1169912,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "[B",
+  "count" : 1,
+  "bytes" : 61128,
   "category" : "JVM_NOISE"
 }, {
   "class" : "java.util.HashMap",
-  "count" : 2,
-  "bytes" : 261624,
+  "count" : 1,
+  "bytes" : 261560,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "[Ljava.util.HashMap$Node;",
-  "count" : 2,
-  "bytes" : 504744,
+  "class" : "java.lang.String",
+  "count" : 1,
+  "bytes" : 261568,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "java.lang.VirtualThread",
-  "count" : 2,
-  "bytes" : 522848,
+  "class" : "java.lang.StringBuilder",
+  "count" : 1,
+  "bytes" : 261544,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "eu.exeris.kernel.tck.contract.AbstractSubsystemCarrierPinningTck$$Lambda.0x000000001729f960",
+  "count" : 1,
+  "bytes" : 261560,
+  "category" : "TEST_HARNESS"
+}, {
+  "class" : "java.lang.ThreadBuilders$VirtualThreadBuilder",
+  "count" : 1,
+  "bytes" : 261536,
   "category" : "LOOM_RUNTIME"
-}, {
-  "class" : "java.util.ArrayList$Itr",
-  "count" : 1,
-  "bytes" : 261560,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "java.util.LinkedHashMap",
-  "count" : 1,
-  "bytes" : 261560,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "java.util.concurrent.ForkJoinTask$AdaptedRunnableAction",
-  "count" : 1,
-  "bytes" : 261552,
-  "category" : "JVM_NOISE"
 } ]
