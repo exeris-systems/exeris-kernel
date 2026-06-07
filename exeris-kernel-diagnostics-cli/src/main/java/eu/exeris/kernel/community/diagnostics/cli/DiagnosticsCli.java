@@ -38,8 +38,9 @@ import java.util.ServiceLoader;
  *
  * <h2>Model</h2>
  * <p>A consumer (e.g. {@code exeris-ai-bridge}) {@code spawn()}s this process. It boots the kernel in
- * <b>read-only inspect mode</b> ({@link KernelBootstrap#inspect(Runnable)} — initialize +
- * {@code buildKernelScope}, never {@code start()}; no ports, no connections), resolves the highest-priority
+ * <b>read-only inspect mode</b> ({@link KernelBootstrap#inspect(Runnable)} — resolves the subsystem
+ * topology only: load + selector closure + topological sort, never {@code initialize()} or
+ * {@code start()}; no ports, no connections, no infrastructure), resolves the highest-priority
  * {@link KernelDiagnosticsProvider} via {@link ServiceLoader} (Community = 0, Enterprise overlay = 100 on
  * the same binary), and serves newline-delimited JSON: one request object per line on stdin, one response
  * object per line on stdout. No network surface; trusts the spawning process (auth-free local mode).

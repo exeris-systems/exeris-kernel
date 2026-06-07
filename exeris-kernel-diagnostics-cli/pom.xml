@@ -16,7 +16,8 @@
     <description>
         Standalone executable exposing the KernelDiagnostics SPI (ADR-033) over stdio JSON for
         out-of-process consumers (exeris-ai-bridge). Boots the kernel in read-only inspect mode
-        (initialize + buildKernelScope, no start) and serves the four-method surface. The Enterprise
+        (resolve subsystem topology only — no initialize/start, no infrastructure) and serves the
+        four-method surface. The Enterprise
         overlay rides the same binary via ServiceLoader (no separate enterprise CLI).
     </description>
 

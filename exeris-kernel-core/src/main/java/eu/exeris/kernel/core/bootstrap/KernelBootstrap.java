@@ -161,7 +161,6 @@ public final class KernelBootstrap {
         ConfigProvider resolvedConfig = resolveConfigProvider();
         KernelConfigRegistry configRegistry = new KernelConfigRegistry();
         ConfigProvider config = new RegistryBackedConfigProvider(resolvedConfig, configRegistry);
-        DynamicConfigFileWatcher configWatcher = DynamicConfigFileWatcher.forRegistry(configRegistry);
 
         // ── Step 3: Emit ConfigSettingsResolved JFR ───────────────────────────
         // Trigger lazy initialization NOW so the duration is captured in the event.
@@ -187,6 +186,8 @@ public final class KernelBootstrap {
             ScopedValue.where(KernelProviders.CURRENT_CONFIG, config)
                     .call(() -> {
                         if (fullBoot) {
+                            DynamicConfigFileWatcher configWatcher =
+                                    DynamicConfigFileWatcher.forRegistry(configRegistry);
                             runBootInsideScope(orchestrator, config, configRegistry, configWatcher, body);
                         } else {
                             runInspectInsideScope(orchestrator, config, body);
