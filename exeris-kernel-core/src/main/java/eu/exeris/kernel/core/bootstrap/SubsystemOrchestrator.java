@@ -286,6 +286,24 @@ public final class SubsystemOrchestrator {
     }
 
     /**
+     * Resolves the selected, topologically-sorted subsystem inventory <b>without initializing or
+     * starting any subsystem</b> — load registry → selector closure → Kahn sort only. Read-only
+     * introspection support for the {@code KernelDiagnostics} SPI (ADR-033): no
+     * {@code Subsystem.initialize()} is invoked, so no infrastructure (DB drivers, ports, native
+     * libraries) is touched. The returned subsystems report {@code isRunning() == false}, which is the
+     * honest answer for a static composition snapshot.
+     *
+     * @param config the active kernel config
+     * @return the selected subsystems in bootstrap (topological) order; never {@code null}
+     */
+    public List<Subsystem> resolveTopology(ConfigProvider config) throws BootstrapException {
+        Map<String, Subsystem> registry = SubsystemRegistryLoader.loadRegistry(config, classLoader, LOG);
+        List<Subsystem> selected = SubsystemRegistryLoader.applySelectorClosure(selector, registry);
+        sortAndAdoptTopologicalOrder(selected);
+        return List.copyOf(orderedSubsystems);
+    }
+
+    /**
      * Phase 2 — calls {@link Subsystem#start()} grouped by {@link BootstrapPhase}.
      * FOUNDATION starts sequentially; SERVICES and RUNTIME start in parallel via
      * {@link StructuredTaskScope}.

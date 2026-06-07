@@ -20,9 +20,6 @@ import eu.exeris.kernel.spi.diagnostics.ProviderDescriptor;
 import eu.exeris.kernel.spi.diagnostics.ProvidersSnapshot;
 import eu.exeris.kernel.spi.diagnostics.SubsystemDescriptor;
 import eu.exeris.kernel.spi.diagnostics.SubsystemSnapshot;
-import eu.exeris.kernel.spi.telemetry.TelemetryConfig;
-import eu.exeris.kernel.spi.telemetry.TelemetryProvider;
-import eu.exeris.kernel.spi.telemetry.TelemetrySink;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -42,14 +39,17 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /**
  * TCK for the {@link KernelDiagnostics} SPI (ADR-033).
  *
- * <p>Subclasses supply a provider's {@link KernelDiagnostics} via {@link #diagnostics()}. The TCK binds
- * a known kernel state through the public {@code KernelProviders} {@link java.lang.ScopedValue} slots and
- * asserts the four-method surface against it (records shape, {@code schemaVersion}, {@code Optional}
- * semantics, immutability, and degraded behaviour outside a scope), plus a pinned JSON wire-schema
- * fixture that guards the append-only contract (ADR-033 Obligation 5).
+ * <p>Subclasses supply a provider's {@link KernelDiagnostics} via {@link #diagnostics()}. The TCK binds a
+ * known subsystem inventory through the public {@link KernelProviders#SUBSYSTEMS} {@link java.lang.ScopedValue}
+ * slot and asserts the subsystem-derived surface ({@link KernelDiagnostics#getBootstrapDag()},
+ * {@link KernelDiagnostics#listCapabilities()}, {@link KernelDiagnostics#describeSubsystem(String)}) against
+ * it (records shape, {@code schemaVersion}, {@code Optional} semantics, immutability, degraded behaviour
+ * when unbound). {@link KernelDiagnostics#listProviders()} is provider discovery (implementation-defined,
+ * not slot-bound), so it is asserted only for well-formedness. A pinned JSON wire-schema fixture guards the
+ * append-only contract (ADR-033 Obligation 5).
  *
- * <p><b>Snapshot non-atomicity</b> (ADR-033 Obligation 7) is acknowledged, not tested: each call stamps
- * its own {@code capturedAt} and a multi-call view may straddle a transition by design.
+ * <p><b>Snapshot non-atomicity</b> (ADR-033 Obligation 7) is acknowledged, not tested: each call stamps its
+ * own {@code capturedAt} and a multi-call view may straddle a transition by design.
  *
  * @since 0.9.0
  */
@@ -69,18 +69,15 @@ public abstract class AbstractKernelDiagnosticsTck {
     private static final Subsystem TRANSPORT =
             new FakeSubsystem("transport", BootstrapPhase.SERVICES, List.of("memory"), true, true);
     private static final List<Subsystem> SUBSYSTEMS = List.of(MEMORY, TRANSPORT);
-    private static final TelemetryProvider FAKE_TELEMETRY = new FakeTelemetryProvider();
 
     /**
      * @return the {@link KernelDiagnostics} under test (stateless; reads ScopedValue slots per call)
      */
     protected abstract KernelDiagnostics diagnostics();
 
-    /** Runs {@code body} inside a kernel scope binding the known subsystems + one telemetry provider. */
+    /** Runs {@code body} inside a scope binding the known subsystem inventory. */
     private void inBoundScope(Runnable body) {
-        ScopedValue.where(KernelProviders.SUBSYSTEMS, SUBSYSTEMS)
-                .where(KernelProviders.TELEMETRY_PROVIDER, FAKE_TELEMETRY)
-                .run(body);
+        ScopedValue.where(KernelProviders.SUBSYSTEMS, SUBSYSTEMS).run(body);
     }
 
     @Nested
@@ -106,7 +103,7 @@ public abstract class AbstractKernelDiagnosticsTck {
     }
 
     @Nested
-    @DisplayName("Bound kernel scope reflects the running state")
+    @DisplayName("Bound subsystem inventory drives the snapshots")
     class BoundScope {
 
         @Test
@@ -156,16 +153,22 @@ public abstract class AbstractKernelDiagnosticsTck {
                 assertThat(missing.subsystem()).isEmpty();
             });
         }
+    }
+
+    @Nested
+    @DisplayName("Provider discovery")
+    class Providers {
 
         @Test
-        @DisplayName("listProviders includes each bound provider with name, type and priority")
-        void providers() {
-            inBoundScope(() -> {
-                ProvidersSnapshot snap = diagnostics().listProviders();
-                ProviderDescriptor telemetry = snap.providers().stream()
-                        .filter(p -> p.spiType().equals("telemetry")).findFirst().orElseThrow();
-                assertThat(telemetry.providerName()).isEqualTo("ExerisTest/Telemetry");
-                assertThat(telemetry.priority()).isEqualTo(7);
+        @DisplayName("listProviders returns well-formed descriptors via discovery")
+        void wellFormed() {
+            ProvidersSnapshot snap = diagnostics().listProviders();
+            assertThat(snap.schemaVersion()).isEqualTo(KernelDiagnostics.SCHEMA_VERSION);
+            assertThat(snap.providers()).allSatisfy(p -> {
+                assertThat(p.providerName()).isNotBlank();
+                assertThat(p.spiType()).isNotBlank();
+                assertThat(p.priority()).isGreaterThanOrEqualTo(0);
+                assertThat(p.displayName()).isNotNull();
             });
         }
     }
@@ -175,14 +178,15 @@ public abstract class AbstractKernelDiagnosticsTck {
     class Unbound {
 
         @Test
-        @DisplayName("all methods return non-null, empty snapshots when slots are unbound")
+        @DisplayName("subsystem-derived snapshots are empty when the inventory slot is unbound")
         void emptyWhenUnbound() {
             KernelDiagnostics d = diagnostics();
-            assertThat(d.listProviders().providers()).isEmpty();
             assertThat(d.listCapabilities().capabilities()).isEmpty();
             assertThat(d.getBootstrapDag().nodes()).isEmpty();
             assertThat(d.describeSubsystem("memory").subsystem()).isEmpty();
-            assertThat(d.listProviders().schemaVersion()).isEqualTo(KernelDiagnostics.SCHEMA_VERSION);
+            // listProviders is discovery-based, not slot-bound: still non-null regardless of scope.
+            assertThat(d.listProviders().providers()).isNotNull();
+            assertThat(d.getBootstrapDag().schemaVersion()).isEqualTo(KernelDiagnostics.SCHEMA_VERSION);
         }
     }
 
@@ -285,24 +289,6 @@ public abstract class AbstractKernelDiagnosticsTck {
         @Override
         public boolean isOptional() {
             return optional;
-        }
-    }
-
-    /** Minimal {@link TelemetryProvider}; only name/priority are read by diagnostics. */
-    private static final class FakeTelemetryProvider implements TelemetryProvider {
-        @Override
-        public List<TelemetrySink> createSinks(TelemetryConfig config) {
-            return List.of();
-        }
-
-        @Override
-        public String providerName() {
-            return "ExerisTest/Telemetry";
-        }
-
-        @Override
-        public int priority() {
-            return 7;
         }
     }
 }

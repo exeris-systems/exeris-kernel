@@ -14,12 +14,14 @@ import eu.exeris.kernel.core.bootstrap.jfr.KernelStartEvent;
 import eu.exeris.kernel.core.config.DynamicConfigFileWatcher;
 import eu.exeris.kernel.core.config.KernelConfigRegistry;
 import eu.exeris.kernel.spi.bootstrap.BootstrapSelector;
+import eu.exeris.kernel.spi.bootstrap.Subsystem;
 import eu.exeris.kernel.spi.config.ConfigProvider;
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.exceptions.bootstrap.SubsystemCircularDependencyException;
 
 import java.io.IOException;
 import java.util.Comparator;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.ServiceLoader;
@@ -124,8 +126,32 @@ public final class KernelBootstrap {
      * @param kernelMain the top-level kernel runnable (your application entry point)
      * @throws BootstrapException if config resolution or subsystem boot fails
      */
-    @SuppressWarnings("PMD.CloseResource")
     public void boot(Runnable kernelMain) throws BootstrapException {
+        runKernel(true, kernelMain);
+    }
+
+    /**
+     * Boots the kernel for <em>read-only static introspection</em> and runs {@code inspector}.
+     *
+     * <p>Resolves config and the orchestrator like {@link #boot(Runnable)}, then
+     * {@link SubsystemOrchestrator#resolveTopology(ConfigProvider)} loads + selector-filters +
+     * topologically-sorts the subsystem inventory and binds it to {@link KernelProviders#SUBSYSTEMS} —
+     * <b>without calling {@code Subsystem.initialize()} or {@code start()}</b>. No infrastructure is
+     * touched (no DB drivers, ports, or native libraries), so the {@code KernelDiagnostics} SPI (ADR-033)
+     * can describe the static composition of <em>any</em> kernel build, infra-free. Provider discovery is
+     * done by the diagnostics provider via {@link java.util.ServiceLoader}, independent of this scope.
+     * {@code isRunning()} reports {@code false} for every subsystem — the honest answer for a static
+     * composition snapshot.
+     *
+     * @param inspector the read-only introspection runnable
+     * @throws BootstrapException if config resolution or topology resolution fails
+     */
+    public void inspect(Runnable inspector) throws BootstrapException {
+        runKernel(false, inspector);
+    }
+
+    @SuppressWarnings("PMD.CloseResource")
+    private void runKernel(boolean fullBoot, Runnable body) throws BootstrapException {
 
         // ── Step 1: Emit KernelStart JFR — the first anchor in the waterfall ─
         KernelStartEvent.emit(KERNEL_VERSION, failurePolicy.name(), selector.toString());
@@ -160,7 +186,11 @@ public final class KernelBootstrap {
         try {
             ScopedValue.where(KernelProviders.CURRENT_CONFIG, config)
                     .call(() -> {
-                        runBootInsideScope(orchestrator, config, configRegistry, configWatcher, kernelMain);
+                        if (fullBoot) {
+                            runBootInsideScope(orchestrator, config, configRegistry, configWatcher, body);
+                        } else {
+                            runInspectInsideScope(orchestrator, config, body);
+                        }
                         return null;
                     });
         } catch (SubsystemCircularDependencyException ex) {
@@ -259,6 +289,19 @@ public final class KernelBootstrap {
             // Phase D: always shut down in reverse-topological order
             orchestrator.shutdown();
         }
+    }
+
+    /**
+     * Read-only counterpart of {@link #runBootInsideScope}: resolves the subsystem topology
+     * (no {@code initialize()} / {@code start()}), binds {@link KernelProviders#SUBSYSTEMS}, and runs the
+     * inspector inside that scope. Nothing is initialized, so there is nothing to shut down.
+     */
+    private static void runInspectInsideScope(SubsystemOrchestrator orchestrator,
+                                              ConfigProvider config,
+                                              Runnable inspector)
+            throws SubsystemOrchestrator.BootstrapException {
+        List<Subsystem> subsystems = orchestrator.resolveTopology(config);
+        ScopedValue.where(KernelProviders.SUBSYSTEMS, subsystems).run(inspector);
     }
 
     private static void startConfigWatcher(DynamicConfigFileWatcher configWatcher)
