@@ -16,6 +16,7 @@ import eu.exeris.kernel.spi.bootstrap.Subsystem;
 import eu.exeris.kernel.spi.bootstrap.SubsystemProvider;
 import eu.exeris.kernel.spi.config.ConfigProvider;
 import eu.exeris.kernel.spi.config.KernelProfile;
+import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 import eu.exeris.kernel.spi.exceptions.SubsystemException;
 import eu.exeris.kernel.spi.exceptions.bootstrap.SubsystemCircularDependencyException;
@@ -427,7 +428,11 @@ public final class SubsystemOrchestrator {
         // composedEnricher lambda has a valid Carrier to call .where() on.
         // The sentinel slot is never read by application code.
         ScopedValue<Boolean> seed = ScopedValue.newInstance();
-        ScopedValue.Carrier  base = ScopedValue.where(seed, Boolean.TRUE);
+        // Also bind the active subsystem inventory so the in-process KernelDiagnostics SPI (ADR-033)
+        // can describe the bootstrap DAG / composition / subsystem detail on its cold read path,
+        // without reaching into Core or treating the orchestrator's public methods as a shadow SPI.
+        ScopedValue.Carrier  base = ScopedValue.where(seed, Boolean.TRUE)
+                .where(KernelProviders.SUBSYSTEMS, List.copyOf(subsystems()));
         // Defensive check: return base when composedEnricher is null.
         if (composedEnricher == null) {
             return base;

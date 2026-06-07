@@ -8,6 +8,7 @@
  */
 package eu.exeris.kernel.spi.context;
 
+import eu.exeris.kernel.spi.bootstrap.Subsystem;
 import eu.exeris.kernel.spi.config.ConfigProvider;
 import eu.exeris.kernel.spi.crypto.KernelCryptoProvider;
 import eu.exeris.kernel.spi.events.EventEngine;
@@ -503,6 +504,24 @@ public final class KernelProviders {
      * @since 0.5.0
      */
     public static final ScopedValue<StorageContext> STORAGE_CONTEXT = ScopedValue.newInstance();
+
+    /**
+     * The active subsystem inventory, in the orchestrator's topological order.
+     *
+     * <p>Bound once by the bootstrap when the kernel scope is built, so in-process, read-only
+     * introspection (the {@code KernelDiagnostics} SPI — ADR-033) can describe the bootstrap DAG,
+     * the resolved composition, and per-subsystem detail without reaching into
+     * {@code exeris-kernel-core} (which would break The Wall) or treating {@code SubsystemOrchestrator}
+     * public methods as a shadow SPI. Read it only on the cold diagnostic path; never on a request
+     * hot path. May be unbound on a kernel that registered no subsystem bindings — callers must
+     * tolerate {@link ScopedValue#isBound()} returning {@code false}. Treat the returned
+     * {@link Subsystem} instances as read-only: never invoke their lifecycle methods
+     * ({@code initialize()} / {@code start()} / {@code stop()}); lifecycle is owned solely by the
+     * bootstrap orchestrator.
+     *
+     * @since 0.9.0
+     */
+    public static final ScopedValue<List<Subsystem>> SUBSYSTEMS = ScopedValue.newInstance();
 
     private KernelProviders() {
         // Utility class — static ScopedValue slots only, never instantiated.

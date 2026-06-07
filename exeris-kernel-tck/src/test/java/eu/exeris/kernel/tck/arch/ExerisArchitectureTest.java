@@ -93,4 +93,13 @@ public class ExerisArchitectureTest {
             .should().dependOnClassesThat().haveFullyQualifiedName("sun.misc.Unsafe")
             .allowEmptyShould(true)
             .because("sun.misc.Unsafe is banned. Use FFM API.");
+
+    @ArchTest
+    static final ArchRule diagnosticsSpiIsEventFree = noClasses()
+            .that().resideInAPackage("eu.exeris.kernel.spi.diagnostics..")
+            .should().dependOnClassesThat().resideInAnyPackage(
+                    "eu.exeris.telemetry.spec..", "jdk.jfr..")
+            .allowEmptyShould(true)
+            .because("ADR-033 Obligation 10 / ADR-039: the diagnostics SPI carries state, not events;"
+                    + " event surfaces stay on the JFR / Glass-Box wire side.");
 }
