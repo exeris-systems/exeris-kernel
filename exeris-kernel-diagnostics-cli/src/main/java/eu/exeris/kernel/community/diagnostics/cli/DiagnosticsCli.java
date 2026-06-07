@@ -60,7 +60,7 @@ public final class DiagnosticsCli {
     private final KernelDiagnostics diagnostics;
     private final ObjectMapper mapper;
 
-    DiagnosticsCli(KernelDiagnostics diagnostics, ObjectMapper mapper) {
+    /* default */ DiagnosticsCli(KernelDiagnostics diagnostics, ObjectMapper mapper) {
         this.diagnostics = Objects.requireNonNull(diagnostics, "diagnostics");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
     }
@@ -81,7 +81,7 @@ public final class DiagnosticsCli {
     }
 
     /** Jackson mapper configured for the wire schema: ISO-8601 instants, {@code Optional} support. */
-    static ObjectMapper newMapper() {
+    /* default */ static ObjectMapper newMapper() {
         return new ObjectMapper()
                 .registerModule(new JavaTimeModule())
                 .registerModule(new Jdk8Module())
@@ -89,7 +89,7 @@ public final class DiagnosticsCli {
     }
 
     /** Resolves the winning provider (highest {@link KernelDiagnosticsProvider#priority()}). */
-    static KernelDiagnostics loadDiagnostics() {
+    /* default */ static KernelDiagnostics loadDiagnostics() {
         return ServiceLoader.load(KernelDiagnosticsProvider.class).stream()
                 .map(ServiceLoader.Provider::get)
                 .max(Comparator.comparingInt(KernelDiagnosticsProvider::priority))
@@ -98,18 +98,18 @@ public final class DiagnosticsCli {
                 .create();
     }
 
-    /** Reads NDJSON requests from {@code in} and writes NDJSON responses to {@code out} until EOF. */
-    void serve(InputStream in, OutputStream out) throws IOException {
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8));
-             BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(out, StandardCharsets.UTF_8))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                if (line.isBlank()) {
-                    continue;
+    /** Reads NDJSON requests from {@code input} and writes NDJSON responses to {@code output} until EOF. */
+    /* default */ void serve(InputStream input, OutputStream output) throws IOException {
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(input, StandardCharsets.UTF_8));
+             BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(output, StandardCharsets.UTF_8))) {
+            String line = reader.readLine();
+            while (line != null) {
+                if (!line.isBlank()) {
+                    writer.write(handle(line));
+                    writer.write('\n');
+                    writer.flush();
                 }
-                writer.write(handle(line));
-                writer.write('\n');
-                writer.flush();
+                line = reader.readLine();
             }
         }
     }
@@ -118,7 +118,7 @@ public final class DiagnosticsCli {
      * Handles one request line and returns the JSON response line. Never throws — malformed input,
      * unknown methods, and serialization failures are returned as {@code {"error":"…"}}.
      */
-    String handle(String requestLine) {
+    /* default */ String handle(String requestLine) {
         try {
             JsonNode request = mapper.readTree(requestLine);
             String method = request.path("method").asText("");
