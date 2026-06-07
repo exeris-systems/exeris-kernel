@@ -484,11 +484,11 @@ kernel guarantees durability of written bytes even on a hard JVM crash.
 
 | Property        | Value                                                                                               |
 |:----------------|:----------------------------------------------------------------------------------------------------|
-| **Default path** | `/tmp/exeris-crash/kernel-<pid>.bin`                                                               |
+| **Default path** | `/tmp/exeris-crash/kernel-<pid>.ring`                                                              |
 | **Override ENV** | `EXERIS_CRASH_DIR` — if set, replaces `/tmp/exeris-crash/`                                        |
 | **File size**    | Fixed-size, pre-allocated at L0 boot (default: 4 MB). Never grown dynamically.                    |
 | **Format**       | Binary Glass-Box frames (same layout as `GlassBoxSerializer` ring buffer — see `telemetry.md`)    |
-| **Lifecycle**    | Created at L0 init, closed (and optionally renamed to `kernel-<pid>-<timestamp>.bin`) on graceful shutdown. Survives JVM crash. |
+| **Lifecycle**    | Created at L0 init, closed (and optionally renamed to `kernel-<pid>-<timestamp>.ring`) on graceful shutdown. Survives JVM crash. |
 | **Permissions**  | Owner read/write only (`0600`). File is not rotated — a new PID gets a new file.                  |
 
 ### Durability Contract
@@ -505,16 +505,22 @@ may be lost. Operators requiring power-loss durability must ensure OS-level jour
 For graceful JVM crashes (`SIGSEGV`, uncaught exception), the OS signal handler will typically flush
 dirty pages before process termination — but this is a best-effort OS behaviour, not a contract.
 
-The operator recovery tool (`exeris-decoder`) is designed to tolerate partial frames at the end of the
+The canonical open crash-file decoder is designed to tolerate partial frames at the end of the
 crash buffer (ring-wrap corruption) and skip undecodable frames silently.
 
 ### Operator Recovery
 
-The `exeris-decoder` CLI tool reads the binary `kernel-<pid>.bin` file and decodes each Glass-Box frame
-into human-readable error reports using the `rawArgs` binary layout defined in `telemetry.md`.
+The kernel is producer-only here: the L0 buffer writes `.ring` files in the shared `exeris-telemetry-spec`
+wire format. Decoding is done by the **single canonical open decoder** — the open subset of the
+`exeris-enterprise-observability` decoder/forensics path (`FrameDecoder`, `FrameValidator`,
+`CrashBufferReader`), which reads the binary `kernel-<pid>.ring` file and decodes each Glass-Box frame into
+human-readable error reports using the `rawArgs` binary layout defined in `telemetry.md`. The kernel ships
+no duplicate decoder. The file=open / live=enterprise decoder cut is recorded in
+[ADR-039](../adr/ADR-039-open-core-observability-boundary.md) (Open-Core Observability Boundary); the
+state-vs-event split (state via `KernelDiagnostics`, events via this binary format) is recorded in ADR-033.
 
 ```
-$ exeris-decoder /tmp/exeris-crash/kernel-12345.bin
+$ exeris-decode /tmp/exeris-crash/kernel-12345.ring
 [0000ns] EX-BOOT-0001: DAG cycle detected — cycleMembers=[Security, Flow]
 [0042ns] EX-MEM-1002: Arena leak detected — segmentAddress=0x7f3a00000000, segmentByteSize=65536
 ```

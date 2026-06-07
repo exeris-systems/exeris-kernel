@@ -403,47 +403,55 @@ memory-mapped file. Full contract is defined in `docs/subsystems/bootstrap.md#l0
 - The crash buffer uses the **same binary frame format** as `GlassBoxSerializer` (see Binary Struct Mapping above).
 - Frames written to the mapped buffer use `VarHandle.releaseFence()` — not `msync` — to remain on the zero-syscall path.
   The OS page-dirty mechanism handles durability asynchronously.
-- The `exeris-decoder` CLI reuses the `GlassBoxSerializer` schema registry to decode both in-process JFR
-  events and post-crash binary frames — single source of truth for the `rawArgs` layout table.
+- The crash buffer produces `.ring` files in the **shared `exeris-telemetry-spec` wire format**; the canonical
+  open crash-file decoder (the open subset of the `exeris-enterprise-observability` decoder/forensics path)
+  reads them — the kernel does not ship a second, kernel-local decoder. See the `Crash-file decoding` section below.
 - **This is a hard TRL-4 requirement.** Exeris deployments without crash buffer support are limited to TRL-3 certification.
 
 ---
 
-## `exeris-decoder` CLI — Crash Buffer Analysis Tool
+## Crash-file decoding — Canonical Open Decoder
 
-> **Status: Planned, Not Yet Wired Into This Repo**
-> The `exeris-decoder` tool and its Maven plugin goal are part of the TRL-4 roadmap.
-> Neither the standalone JAR nor the `exeris-kernel-build-config:decode` plugin goal exist in the
-> current codebase. Do not attempt to reference them in build pipelines until the TRL-4 implementation lands.
+> **Status: Planned / TRL-4**
+> The open-core **L0 crash-buffer producer** is not yet implemented in this repo — when it lands it will
+> write `.ring` files in the shared `exeris-telemetry-spec` wire format. Do not reference a decode step in
+> build pipelines until the producer ships.
 
-`exeris-decoder` decodes Glass-Box binary crash buffer files (`kernel-<pid>.bin`) into human-readable
-error reports using the `rawArgs` binary layout defined in the Error Code Registry above.
+There is **exactly one canonical crash-file decoder** for the shared `.ring` wire format, and the kernel
+does **not** ship a second, kernel-local implementation. The crash-FILE decode path is the **open** subset
+of the `exeris-enterprise-observability` decoder/forensics tooling — `FrameDecoder`, `FrameValidator`, and
+`CrashBufferReader` / scanner / timeline-reconstructor — consuming the neutral `exeris-telemetry-spec`
+schema. The **live**-stream decode path is the Enterprise side. This file=open /
+live=enterprise cut is recorded in [ADR-039](../adr/ADR-039-open-core-observability-boundary.md)
+(Open-Core Observability Boundary).
 
-### Distribution
+The kernel's role is producer-only: the L0 crash buffer emits `.ring` files in the shared format, and the
+canonical open decoder reads them. The kernel shares the `rawArgs` binary layout (Error Code Registry
+above) with that decoder via `exeris-telemetry-spec` — there is no kernel-owned schema registry fork.
 
-`exeris-decoder` is planned to be distributed as:
-- A **standalone executable JAR** bundled in `exeris-kernel-core` → `target/exeris-decoder.jar`
-- A **Maven plugin goal** (`exeris-kernel-build-config:decode`) for integration with build pipelines
+State vs events: live runtime *state* is read out-of-process through the `KernelDiagnostics` SPI
+(ADR-033); crash *frames* / events stay in this binary Glass-Box format over `exeris-telemetry-spec`.
+The two surfaces do not overlap.
 
-It has zero runtime dependencies beyond JDK 26.
+### Optional build-time decode goal
+
+If a Maven decode goal is desired for build pipelines, it MUST **wrap** the canonical open decoder rather
+than reimplement it — it does not exist in the current codebase and is not part of the kernel reactor.
 
 ### Usage
 
 ```bash
-# Decode a crash buffer file
-java -jar exeris-decoder.jar /tmp/exeris-crash/kernel-12345.bin
+# Decode a crash-buffer file with the canonical open decoder (exeris-enterprise-observability CLI)
+exeris-decode /tmp/exeris-crash/kernel-12345.ring
 
 # Decode with verbose rawArgs layout
-java -jar exeris-decoder.jar --verbose /tmp/exeris-crash/kernel-12345.bin
+exeris-decode --verbose /tmp/exeris-crash/kernel-12345.ring
 
-# Decode from Windows crash directory
-java -jar exeris-decoder.jar %TEMP%\exeris-crash\kernel-12345.bin
+# Decode from a Windows crash directory
+exeris-decode %TEMP%\exeris-crash\kernel-12345.ring
 
 # Filter by error domain
-java -jar exeris-decoder.jar --filter EX-MEM /tmp/exeris-crash/kernel-12345.bin
-
-# Decode a live JFR recording (same schema)
-java -jar exeris-decoder.jar --jfr boot.jfr
+exeris-decode --filter EX-MEM /tmp/exeris-crash/kernel-12345.ring
 ```
 
 ### Output Format
@@ -495,7 +503,7 @@ completes. This creates a deliberate gap: L0 subsystems cannot emit JFR events t
 
 **L0 failure observability:** Any `ExerisKernelException` thrown during L0 (Config, Memory, Exceptions init)
 is written to the pre-allocated Glass-Box in-RAM ring buffer. If JVM crashes before L1 completes, this
-buffer is only durable if the TRL-4 memory-mapped crash buffer is active (`/tmp/exeris-crash/kernel-<pid>.bin`).
+buffer is only durable if the TRL-4 memory-mapped crash buffer is active (`/tmp/exeris-crash/kernel-<pid>.ring`).
 Without it, L0 crash data is lost on a hard JVM crash.
 
 ---

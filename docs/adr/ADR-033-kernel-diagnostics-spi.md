@@ -9,7 +9,7 @@
 **Scope:** cross-repo (kernel SPI + Community implementation + Community CLI artefact; Enterprise overlay; AI-bridge consumer)
 **Authors:** Arkadiusz Przychocki
 **Driven By:** [RFC-2026-05-18 Kernel Diagnostics SPI](../rfc/RFC-2026-05-18-kernel-diagnostics-spi.md) (ACCEPTED 2026-05-18)
-**Cross-references:** ADR-005 (JFR-first telemetry), ADR-006 (Spring-Free Kernel Boundary — "The Wall"), ADR-007 (Next-Gen Runtime Architecture), ADR-008 (Open-Core Strategy), ADR-018 (Observability Tooling Repo Split), ADR-020 (Open-Core Documentation Boundary), ADR-024 (Capability Composition Model), ADR-025 (AI Agent Bridge)
+**Cross-references:** ADR-005 (JFR-first telemetry), ADR-006 (Spring-Free Kernel Boundary — "The Wall"), ADR-007 (Next-Gen Runtime Architecture), ADR-008 (Open-Core Strategy), ADR-018 (Observability Tooling Repo Split), ADR-020 (Open-Core Documentation Boundary), ADR-024 (Capability Composition Model), ADR-025 (AI Agent Bridge), [ADR-039](ADR-039-open-core-observability-boundary.md) (Open-Core Observability Boundary — the public/open-core anchor for the state/event split)
 
 ## Context
 
@@ -63,6 +63,16 @@ Each top-level snapshot record carries a `schemaVersion` string field and an `In
 8. **Subsystem-name shape.** `describeSubsystem(String name)` takes a free-form `String` (matches `SubsystemOrchestrator.subsystem(String)` 1:1). Promotion to a closed enum is deferred to kernel 1.0 GA, when the set of subsystems is locked. The Javadoc names today's exhaustive set: `memory`, `crypto`, `persistence`, `graph`, `transport`, `events`, `flow`, `http`, `security`.
 9. **TCK obligation.** `AbstractKernelDiagnosticsTck` ships in `exeris-kernel-tck` with the SPI. It exercises the four-method surface against a known-fixture kernel (records returned shape, `schemaVersion`, `Optional<>` field semantics, snapshot non-atomicity acknowledged). Community provider in `exeris-kernel-community-testkit` runs the TCK in CI; Enterprise provider runs the same TCK plus overlay-specific cases in `exeris-kernel-enterprise` CI (ADR-008 open-core loading symmetry).
 10. **No event surface here.** `KernelDiagnostics` does not expose any "tail events" / "subscribe" / "watch" method. Live event streaming consumers go through JFR (Community) or the Enterprise Glass-Box binary stream over `exeris-telemetry-spec` consumed by `exeris-enterprise-observability` (ADR-018). This is the hybrid model from RFC-2026-05-18 §Option C, locked in.
+
+> **v0.9 implementation guardrail (Obligation 10, structural enforcement).** The state/event separation
+> must be enforced **structurally**, not just in prose: an ArchUnit / boundary rule that the
+> `eu.exeris.kernel.spi.diagnostics.*` package MUST NOT import `eu.exeris.telemetry.spec.*`, JFR
+> `@Event` / `jdk.jfr.Event` types, or any frame / `rawArgs` type. The rule lands **with** the Sprint 1
+> SPI code (the package does not exist yet, so the rule cannot land earlier). It is added as a new
+> `@ArchTest` rule to the existing **live** ArchUnit suite `ExerisArchitectureTest`
+> (`exeris-kernel-tck/src/test/java/eu/exeris/kernel/tck/arch/`), which already enforces the SPI-purity
+> rules (`noImplLeaksInSpi`, `noThreadLocal`, `noUnsafe`, …) and runs in CI on JDK 26 GA — no separate
+> harness is needed.
 
 ## Consequences
 
