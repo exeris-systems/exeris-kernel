@@ -50,7 +50,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
  * @since 0.5.0
  */
 @DisplayName("ExerisKernelException — Glass-Box rawArgs binary contract")
-class ExerisKernelExceptionBlackBoxTckTest {
+class ExerisKernelExceptionGlassBoxTckTest {
 
     // =========================================================================
     // EX-[DOMAIN]-[ID] error code format

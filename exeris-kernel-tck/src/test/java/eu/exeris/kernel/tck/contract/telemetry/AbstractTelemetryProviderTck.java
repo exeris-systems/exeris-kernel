@@ -201,7 +201,7 @@ public abstract class AbstractTelemetryProviderTck {
                     false,
                     true,
                     null,
-                    base.blackBoxOffHeapBytes(),
+                    base.glassBoxOffHeapBytes(),
                     base.maxEventQueueDepth());
 
             List<TelemetrySink> sinks = provider.createSinks(jfrEnabledConfig);
@@ -227,7 +227,7 @@ public abstract class AbstractTelemetryProviderTck {
                     true,
                     false,
                     null,
-                    base.blackBoxOffHeapBytes(),
+                    base.glassBoxOffHeapBytes(),
                     base.maxEventQueueDepth());
 
             List<TelemetrySink> sinks = provider.createSinks(jfrDisabledConfig);

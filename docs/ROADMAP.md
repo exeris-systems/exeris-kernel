@@ -395,7 +395,7 @@ See also: [Telemetry Subsystem](./subsystems/telemetry.md) — Design Principles
 
 **Owner:** Core / Exceptions subsystem.
 
-**Resolution:** Implement environment-aware disclosure configuration and extend exception mapping tests to assert PROD/DEV behavior. `ExerisKernelExceptionBlackBoxTckTest` already covers rawArgs contract; add a dedicated abstract TCK for disclosure mode behavior.
+**Resolution:** Implement environment-aware disclosure configuration and extend exception mapping tests to assert PROD/DEV behavior. `ExerisKernelExceptionGlassBoxTckTest` already covers rawArgs contract; add a dedicated abstract TCK for disclosure mode behavior.
 
 **Merge Gate:** Dedicated disclosure-mode abstract TCK and Community binding must pass before milestone close.
 
