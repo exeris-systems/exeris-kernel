@@ -21,6 +21,7 @@ import eu.exeris.kernel.spi.diagnostics.ProvidersSnapshot;
 import eu.exeris.kernel.spi.diagnostics.SubsystemDescriptor;
 import eu.exeris.kernel.spi.diagnostics.SubsystemSnapshot;
 import eu.exeris.kernel.spi.events.EventProvider;
+import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 import eu.exeris.kernel.spi.flow.FlowProvider;
 import eu.exeris.kernel.spi.graph.GraphProvider;
 import eu.exeris.kernel.spi.memory.MemoryProvider;
@@ -78,6 +79,7 @@ final class CommunityKernelDiagnostics implements KernelDiagnostics {
                 GraphProvider::providerName, GraphProvider::priority);
         discover(providers, SecurityProvider.class, "security",
                 SecurityProvider::providerName, SecurityProvider::priority);
+        CommunityKernelDiagnosticsEvent.emit(KernelErrorCodes.EX_DIAG_1001, "listProviders");
         return ProvidersSnapshot.capture(providers);
     }
 
@@ -91,6 +93,7 @@ final class CommunityKernelDiagnostics implements KernelDiagnostics {
                     subsystem.dependsOn(),
                     subsystem.isOptional()));
         }
+        CommunityKernelDiagnosticsEvent.emit(KernelErrorCodes.EX_DIAG_1002, "listCapabilities");
         return CompositionSnapshot.capture(capabilities);
     }
 
@@ -100,6 +103,7 @@ final class CommunityKernelDiagnostics implements KernelDiagnostics {
         for (Subsystem subsystem : subsystems()) {
             nodes.add(toDagNode(subsystem));
         }
+        CommunityKernelDiagnosticsEvent.emit(KernelErrorCodes.EX_DIAG_1003, "getBootstrapDag");
         return BootstrapDagSnapshot.capture(nodes);
     }
 
@@ -110,6 +114,7 @@ final class CommunityKernelDiagnostics implements KernelDiagnostics {
                 .filter(s -> name.equals(s.name()))
                 .findFirst()
                 .map(CommunityKernelDiagnostics::toDescriptor);
+        CommunityKernelDiagnosticsEvent.emit(KernelErrorCodes.EX_DIAG_1004, "describeSubsystem");
         return SubsystemSnapshot.capture(name, detail);
     }
 
