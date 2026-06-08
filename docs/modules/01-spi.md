@@ -70,3 +70,9 @@ graph TD
 - HTTP contracts are currently part of `exeris-kernel-spi` under `eu.exeris.kernel.spi.http`.
 - There is no separate `exeris-kernel-spi-http` module in the root reactor.
 - SPI HTTP remains a pure contract layer: no wire-codec logic and no transport-specific implementation details.
+
+## Stability
+
+Every SPI surface in this module is classified in the [SPI Stability Matrix](../stability-matrix.md)
+as `stable`, `preview`, or `experimental`. That matrix is the authoritative declaration; this module
+doc does not restate per-package levels.

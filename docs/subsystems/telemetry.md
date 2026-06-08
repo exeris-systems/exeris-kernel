@@ -564,3 +564,11 @@ Without it, L0 crash data is lost on a hard JVM crash.
 Community bindings: `JfrTelemetrySinkTckTest`, `CommunityTelemetryProviderTckTest`, `FileSinkTckTest`, `Slf4jTelemetrySinkTckTest`, `ConsoleSinkTckTest` in `exeris-kernel-community`.
 
 > **Gap:** `AbstractTelemetryRingBufferTck` has no Community-tier concrete binding. No Community concrete test exists in `exeris-kernel-community/src/test/`.
+
+---
+
+## Stability
+
+This subsystem's SPI surface (`eu.exeris.kernel.spi.telemetry.*`) is classified **stable** in the
+[SPI Stability Matrix](../stability-matrix.md). See the matrix for the semver policy and TCK
+coverage status.

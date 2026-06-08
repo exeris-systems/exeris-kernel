@@ -533,5 +533,11 @@ $ exeris-decode /tmp/exeris-crash/kernel-12345.ring
 - Each frame is written with `VarHandle.releaseFence()` after the last field to ensure ordering.
 - The buffer wraps around on overflow (ring semantics) — oldest frames are overwritten.
 
+---
 
+## Stability
+
+This subsystem's SPI surface (`eu.exeris.kernel.spi.bootstrap.*`) is classified **stable** in the
+[SPI Stability Matrix](../stability-matrix.md). See the matrix for the semver policy and TCK
+coverage status.
 

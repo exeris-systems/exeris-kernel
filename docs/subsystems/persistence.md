@@ -379,3 +379,11 @@ identity via `StorageContext`, leaning into Virtual Threads for lock-free blocki
 enforcement to PostgreSQL's native RLS, it provides a simple, hyper-fast, and extremely flexible storage layer.
 Together with the Security subsystem (Citadel), it forms the **L1 Integrity Barrier** — the boundary that guarantees
 no unauthorized data ever reaches the application layer and no unguarded mutation ever reaches persistent storage.
+
+---
+
+## Stability
+
+This subsystem's SPI surface (`eu.exeris.kernel.spi.persistence.*`) is classified **stable** in the
+[SPI Stability Matrix](../stability-matrix.md). See the matrix for the semver policy and TCK
+coverage status.

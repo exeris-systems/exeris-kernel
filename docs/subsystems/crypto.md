@@ -393,3 +393,11 @@ or `mvn install`. OpenSSL 3.x must be present on the CI host for Linux targets.
 > **TCK gap:** No Community binding exists for `CryptoZeroAllocTck`. As of current state, Community tier
 > zero-allocation on the TLS hot path (per ADR-008) is documented but not TCK-enforced at the Community
 > binding level.
+
+---
+
+## Stability
+
+This subsystem's SPI surface (`eu.exeris.kernel.spi.crypto.*`) is classified **preview** in the
+[SPI Stability Matrix](../stability-matrix.md): the OpenSSL 4 migration and FIPS workstream active in
+v0.9 may touch the binding/ABI surface. See the matrix for the semver policy and TCK coverage status.

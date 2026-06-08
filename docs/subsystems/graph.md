@@ -223,3 +223,11 @@ By enforcing the No-Arena Policy, it extends the L0 Memory Contract to L2 — ev
 graph driver is visible to `GlobalMemoryArbiter`, auditable via JFR, and subject to backpressure. The unified
 MATCH DSL decouples business intent from backend implementation, enabling seamless migration from high-allocation
 Community drivers without changing a single line of business code.
+
+---
+
+## Stability
+
+This subsystem's SPI surface (`eu.exeris.kernel.spi.graph.*`) is classified **preview** in the
+[SPI Stability Matrix](../stability-matrix.md): baseline hardening is still pending. See the matrix
+for the semver policy and TCK coverage status.

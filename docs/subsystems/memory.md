@@ -331,3 +331,11 @@ flowchart TD
 The Memory subsystem provides the foundation for hyper-density execution. By enforcing the `LoanedBuffer` pattern
 through SPI and resolving allocator implementations via `ServiceLoader`, it ensures that off-heap memory lifecycle is explicit and GC-independent, 
 regardless of which allocator is active.
+
+---
+
+## Stability
+
+This subsystem's SPI surface (`eu.exeris.kernel.spi.memory.*`) is classified **stable** in the
+[SPI Stability Matrix](../stability-matrix.md). See the matrix for the semver policy and TCK
+coverage status.
