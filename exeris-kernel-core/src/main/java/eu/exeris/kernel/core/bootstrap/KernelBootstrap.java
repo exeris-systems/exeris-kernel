@@ -150,7 +150,6 @@ public final class KernelBootstrap {
         runKernel(false, inspector);
     }
 
-    @SuppressWarnings("PMD.CloseResource")
     private void runKernel(boolean fullBoot, Runnable body) throws BootstrapException {
 
         // ── Step 1: Emit KernelStart JFR — the first anchor in the waterfall ─
