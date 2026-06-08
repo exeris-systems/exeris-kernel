@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>eu.exeris</groupId>
+        <artifactId>exeris-kernel-parent</artifactId>
+        <version>0.9.0-SNAPSHOT</version>
+        <relativePath>../exeris-kernel-parent/pom.xml</relativePath>
+    </parent>
+    <artifactId>exeris-kernel-diagnostics-cli</artifactId>
+
+    <name>Exeris Kernel :: Diagnostics CLI</name>
+    <description>
+        Standalone executable exposing the KernelDiagnostics SPI (ADR-033) over stdio JSON for
+        out-of-process consumers (exeris-ai-bridge). Boots the kernel in read-only inspect mode
+        (resolve subsystem topology only — no initialize/start, no infrastructure) and serves the
+        four-method surface. The Enterprise
+        overlay rides the same binary via ServiceLoader (no separate enterprise CLI).
+    </description>
+
+    <properties>
+        <jackson.version>2.18.7</jackson.version>
+        <!-- Thin executable harness: main()/serve() are integration-shaped (stdio + in-process
+             kernel boot); the request-dispatch logic (handle) is unit-tested. -->
+        <jacoco.line.minimum>0.0</jacoco.line.minimum>
+    </properties>
+
+    <dependencies>
+        <!-- Brings spi + core + the Community providers to bootstrap and introspect. -->
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-kernel-community</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <version>${jackson.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.datatype</groupId>
+            <artifactId>jackson-datatype-jsr310</artifactId>
+            <version>${jackson.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.datatype</groupId>
+            <artifactId>jackson-datatype-jdk8</artifactId>
+            <version>${jackson.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>3.6.0</version>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals><goal>shade</goal></goals>
+                        <configuration>
+                            <createDependencyReducedPom>false</createDependencyReducedPom>
+                            <transformers>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                    <mainClass>eu.exeris.kernel.community.diagnostics.cli.DiagnosticsCli</mainClass>
+                                </transformer>
+                                <!-- Merge META-INF/services across all shaded jars so ServiceLoader
+                                     still finds every provider (config, subsystems, diagnostics, …). -->
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                            </transformers>
+                            <filters>
+                                <filter>
+                                    <artifact>*:*</artifact>
+                                    <excludes>
+                                        <exclude>META-INF/*.SF</exclude>
+                                        <exclude>META-INF/*.DSA</exclude>
+                                        <exclude>META-INF/*.RSA</exclude>
+                                    </excludes>
+                                </filter>
+                            </filters>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

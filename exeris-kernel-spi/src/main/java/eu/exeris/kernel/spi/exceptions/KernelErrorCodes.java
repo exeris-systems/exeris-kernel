@@ -804,6 +804,26 @@ public final class KernelErrorCodes {
     public static final String EX_RUN_3002 = "EX-RUN-3002";
 
     // -----------------------------------------------------------------------
+    // EX-DIAG – KernelDiagnostics SPI introspection audit (ADR-033)
+    // -----------------------------------------------------------------------
+    //
+    // INFO-level audit codes (NOT exceptions): each out-of-process KernelDiagnostics
+    // call emits one JFR event so operators can audit who introspected the kernel.
+    // Cold path — emission allocation is acceptable (ADR-033 Obligation 2).
+
+    /** {@link eu.exeris.kernel.spi.diagnostics.KernelDiagnostics#listProviders()} was invoked. */
+    public static final String EX_DIAG_1001 = "EX-DIAG-1001";
+
+    /** {@link eu.exeris.kernel.spi.diagnostics.KernelDiagnostics#listCapabilities()} was invoked. */
+    public static final String EX_DIAG_1002 = "EX-DIAG-1002";
+
+    /** {@link eu.exeris.kernel.spi.diagnostics.KernelDiagnostics#getBootstrapDag()} was invoked. */
+    public static final String EX_DIAG_1003 = "EX-DIAG-1003";
+
+    /** {@link eu.exeris.kernel.spi.diagnostics.KernelDiagnostics#describeSubsystem(String)} was invoked. */
+    public static final String EX_DIAG_1004 = "EX-DIAG-1004";
+
+    // -----------------------------------------------------------------------
     // Constructor – utility class, no instantiation
     // -----------------------------------------------------------------------
 
