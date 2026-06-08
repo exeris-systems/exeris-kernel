@@ -165,3 +165,14 @@ Current `exeris-kernel-core` HTTP package focuses on codec/wire primitives:
 ### `HealthEndpointHandler` (Community, since 0.7.0)
 
 `eu.exeris.kernel.community.health.HealthEndpointHandler` is an `HttpHandler` that surfaces an SPI `HealthProbe` (canonically `KernelHealthMonitor`) over HTTP for Kubernetes-style readiness/liveness probes. Default paths: `/healthz/readiness`, `/healthz/liveness`. Status code carries the probe verdict (`200` healthy / `503` not). The textual status from the probe snapshot is mirrored into the `X-Exeris-Health` response header. Non-matching paths return `404`; non-`GET` methods on a probe path return `405` with `Allow: GET`. Full operational contract — including the K8s manifest snippet — lives in [`bootstrap.md` § Kubernetes Health Probes](bootstrap.md#kubernetes-health-probes).
+
+---
+
+## Stability
+
+This subsystem's SPI surface (`eu.exeris.kernel.spi.http.*`) is classified **mixed** in the
+[SPI Stability Matrix](../stability-matrix.md): `HttpClientEngine`, `HttpServerEngine`,
+`HttpProvider`, and `HttpClientRequestEnricher` are **stable**, while the body-codec quadrant
+(`HttpRequestBodyEncoder` / `HttpRequestBodyDecoder` / `HttpResponseBodyDecoder`, ADR-034) is held
+at **preview** until the server-side generator loop that consumes the request decoder closes. See
+the matrix's `…spi.http` per-surface breakdown for the semver policy and TCK coverage status.

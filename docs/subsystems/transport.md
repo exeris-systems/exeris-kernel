@@ -367,3 +367,11 @@ Tracking: revisit alongside any io_uring / FFM-native carrier work (currently pl
 The Transport subsystem is the high-performance gateway of the Exeris Kernel. With a Panama FFM TCP carrier and PAQS-enforced shedding, it delivers a zero-object-churn ingress path on every platform. The PAQS Scheduler makes this deterministic under load — shed decisions
 are made at the network edge in O(1) time, before a single byte of unauthorized or low-priority traffic
 consumes heap, CPU, or a Virtual Thread.
+
+---
+
+## Stability
+
+This subsystem's SPI surface (`eu.exeris.kernel.spi.transport.*`) is classified **stable** in the
+[SPI Stability Matrix](../stability-matrix.md). See the matrix for the semver policy and TCK
+coverage status.

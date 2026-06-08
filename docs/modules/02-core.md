@@ -134,3 +134,8 @@ graph LR
     CORETEST --> FIXTURE[CoreHttpProviderFixture\n(test-only)]
     COREMAIN[exeris-kernel-core main\nhttp1/http2/hpack codecs] --> RUNTIME[Driver tiers\nCommunity/Enterprise]
 ```
+
+## Stability
+
+Core implementations bind to SPI surfaces whose maturity is declared in the
+[SPI Stability Matrix](../stability-matrix.md).

@@ -78,3 +78,8 @@ flowchart TD
 3. **Strict Zero-Copy NIC→DB:** Bytes must travel from NIC to the DB driver without ever crossing into the JVM Heap.
 4. **Hardware Awareness:** Code here is allowed to optimize based on CPU Cache Lines (padding), NUMA nodes, and OS Page
    Sizes.
+
+## Stability
+
+Enterprise overlay providers (priority 100) correspond to the 'Enterprise overlay' column of the
+[SPI Stability Matrix](../stability-matrix.md). (Cross-repo; out of open-core scope.)

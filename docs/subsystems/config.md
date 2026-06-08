@@ -354,3 +354,13 @@ filesystem watching, Vault-native secret injection, and a strict CWE-532 redacti
 zero-overhead, K8s-ready configuration mechanism that does not block Carrier Threads, does not leak secrets into
 telemetry, and fails deterministically before the first network frame is ever accepted.
 
+---
+
+## Stability
+
+This subsystem's SPI surface (`eu.exeris.kernel.spi.config.*`) is classified **stable** in the
+[SPI Stability Matrix](../stability-matrix.md): `ConfigProvider` / `KernelProfile` / `Dynamic` are
+mature 0.5.0 contracts. The additive `@Immutable` annotation arriving in v0.9 Sprint 5 will be
+marked **preview** on landing until its TCK lands. See the matrix for the semver policy and TCK
+coverage status.
+

@@ -193,3 +193,11 @@ Community bindings: `CommunityFlowEngineTckTest`, `CommunityFlowSchedulerTckTest
 End-to-end cross-engine recovery (DIST-302 closure, since 0.7 Sprint 6c) is covered by `CommunityCrossEngineChoreographyIT` in `exeris-kernel-community-kafka`: two `FlowEngine`s share a `JdbcFlowSnapshotStore` and a Kafka broker. Service A schedules a saga that PARKs (snapshot persisted); Service A's `EventEngine` is then closed so it cannot consume the wake event. Service B publishes the wake event over Kafka, its `FlowChoreographyBridge` finds nothing in B's in-memory parked-instance index, falls back to the shared snapshot store, restores the saga, and completes it locally — proving the snapshot fallback path runs end-to-end against a real durable store with real broker delivery.
 
 > **Gap:** `AbstractIdempotencyGuardTck` and `FlowZeroAllocTck` have no Community-tier concrete binding in `exeris-kernel-community/src/test/`. The `IdempotencyGuard` contract is covered only by unit-level tests; no community provider binding extends `AbstractIdempotencyGuardTck`. Tracking: see `docs/ROADMAP.md`.
+
+---
+
+## Stability
+
+This subsystem's SPI surface (`eu.exeris.kernel.spi.flow.*`) is classified **stable** in the
+[SPI Stability Matrix](../stability-matrix.md). See the matrix for the semver policy and TCK
+coverage status.

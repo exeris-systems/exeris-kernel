@@ -274,3 +274,11 @@ The Exceptions subsystem provides type-safe, traced, and environment-aware error
 standard, the `rawArgs` binary contract, and CWE-532 privacy rules, it ensures that even under 1M RPS load the Kernel
 leaves a perfect, zero-allocation forensic trail — without coupling itself to any specific network protocol or database
 driver.
+
+---
+
+## Stability
+
+This subsystem's SPI surface (`eu.exeris.kernel.spi.exceptions.*`) is classified **stable** in the
+[SPI Stability Matrix](../stability-matrix.md). See the matrix for the semver policy and TCK
+coverage status.

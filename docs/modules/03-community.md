@@ -110,3 +110,8 @@ The Community tier is an engineering-grade, production-ready engine — not a cr
 Garbage Collector from the network hot-path entirely (the bottleneck for 95% of applications). The upgrade path to
 Enterprise targets the remaining bottlenecks: OS-level syscall overhead (solved by `io_uring`) and heap-bound DB
 drivers (solved by the native persistence driver).
+
+## Stability
+
+Community providers (priority 0) implement SPI surfaces classified in the
+[SPI Stability Matrix](../stability-matrix.md).
