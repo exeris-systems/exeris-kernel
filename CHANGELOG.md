@@ -6,6 +6,33 @@ This file is intentionally terse: it lists what landed, with a pointer to the re
 
 Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project versions follow [SemVer](https://semver.org/spec/v2.0.0.html), with the pre-1.0 caveat that minor versions may carry observable contract additions while remaining backwards-compatible at the SPI level.
 
+## [0.8.1] — 2026-06-08
+
+Patch release. Backwards-compatible SPI addition; no contract removals.
+
+### Added — tier-blind connection unwrap seam (ADR-017 JDBC bridge)
+
+- `PersistenceConnection.unwrap(Class<T>)` — a default, implementation-blind seam
+  (`java.sql.Wrapper` idiom, but the SPI names no driver type) returning
+  `Optional<T>`. Lets integration bridges reach a provider-specific backing object
+  without the SPI referencing JDBC. The Community JDBC connection unwraps to
+  `java.sql.Connection`; the per-request forwarding wrapper delegates the unwrap to
+  its backing connection so the seam survives request-session wrapping.
+
+### Fixed
+
+- Request-session `PersistenceConnection` (the non-owning forwarding wrapper bound
+  by the HTTP dispatcher) now forwards `unwrap(Class)` to its backing connection
+  instead of opaquely hiding it. This is the kernel-side SPI enablement: a
+  forwarding wrapper no longer severs the unwrap seam, so a provider-specific
+  backing object remains reachable while a request session is active. (End-to-end
+  JDBC-bridge wiring is completed by the corresponding `exeris-spring-runtime`
+  consumer; this release ships only the kernel SPI surface.)
+- `KernelStart` JFR now reports the real artifact version. The bootstrap version
+  stamp is sourced from a Maven-filtered `exeris-kernel.properties`
+  (`kernel.version=${project.version}`) instead of a hand-maintained constant that
+  had drifted to `0.7.0-SNAPSHOT`; falls back to `unknown` outside a Maven build.
+
 ## [0.8.0] — 2026-06-03
 
 Production-correctness release. Completes the HTTP body-codec **SPI** matrix (all
