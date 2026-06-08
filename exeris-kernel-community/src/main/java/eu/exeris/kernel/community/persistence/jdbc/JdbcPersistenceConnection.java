@@ -20,6 +20,7 @@ import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -219,9 +220,12 @@ public final class JdbcPersistenceConnection implements PersistenceConnection {
      * @since 0.8.1
      */
     @Override
-    public <T> java.util.Optional<T> unwrap(Class<T> type) {
+    public <T> Optional<T> unwrap(Class<T> type) {
+        // Exact match only: a request for java.sql.Connection reaches the backing driver
+        // connection. Supertype requests (Wrapper, AutoCloseable) intentionally fall through
+        // to the default, which resolves to the wrapper itself — never the raw connection.
         if (type == Connection.class) {
-            return java.util.Optional.of(type.cast(conn));
+            return Optional.of(type.cast(conn));
         }
         return PersistenceConnection.super.unwrap(type);
     }

@@ -22,10 +22,12 @@ Patch release. Backwards-compatible SPI addition; no contract removals.
 ### Fixed
 
 - Request-session `PersistenceConnection` (the non-owning forwarding wrapper bound
-  by the HTTP dispatcher) is now reachable by the JDBC compatibility bridge: it
-  forwards `unwrap(Class)` to the backing connection instead of opaquely hiding it.
-  Previously the bridge could not obtain the underlying `java.sql.Connection`
-  whenever a request session was active.
+  by the HTTP dispatcher) now forwards `unwrap(Class)` to its backing connection
+  instead of opaquely hiding it. This is the kernel-side SPI enablement: a
+  forwarding wrapper no longer severs the unwrap seam, so a provider-specific
+  backing object remains reachable while a request session is active. (End-to-end
+  JDBC-bridge wiring is completed by the corresponding `exeris-spring-runtime`
+  consumer; this release ships only the kernel SPI surface.)
 - `KernelStart` JFR now reports the real artifact version. The bootstrap version
   stamp is sourced from a Maven-filtered `exeris-kernel.properties`
   (`kernel.version=${project.version}`) instead of a hand-maintained constant that

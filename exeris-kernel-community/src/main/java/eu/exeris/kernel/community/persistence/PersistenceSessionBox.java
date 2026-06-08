@@ -16,6 +16,7 @@ import eu.exeris.kernel.spi.persistence.QueryResult;
 import eu.exeris.kernel.spi.persistence.TransactionIsolation;
 
 import java.util.Objects;
+import java.util.Optional;
 
 /**
  * Lazy per-request persistence session holder for {@code ScopedValue} binding.
@@ -235,12 +236,12 @@ public final class PersistenceSessionBox {
         }
 
         @Override
-        public <T> java.util.Optional<T> unwrap(Class<T> type) {
+        public <T> Optional<T> unwrap(Class<T> type) {
             // Forward the unwrap seam to the backing connection so integration
             // bridges (e.g. the JDBC compat bridge, ADR-017) survive request-scope
             // wrapping. The wrapper itself takes precedence when assignable.
             if (type.isInstance(this)) {
-                return java.util.Optional.of(type.cast(this));
+                return Optional.of(type.cast(this));
             }
             return delegate.unwrap(type);
         }
