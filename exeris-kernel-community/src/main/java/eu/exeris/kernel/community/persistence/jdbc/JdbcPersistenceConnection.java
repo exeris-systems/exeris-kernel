@@ -204,6 +204,29 @@ public final class JdbcPersistenceConnection implements PersistenceConnection {
     // =========================================================================
 
     /**
+     * Unwraps to the backing {@link Connection} for the JDBC compatibility bridge.
+     *
+     * <p>SPI seam (ADR-017): exposes the underlying {@code java.sql.Connection}
+     * via the tier-blind {@link PersistenceConnection#unwrap(Class)} contract,
+     * so integration bridges can reach the driver connection even through
+     * request-scoped forwarding wrappers — without the SPI naming JDBC.
+     * Falls back to the default behaviour ({@code this} when assignable) for
+     * any other requested type.
+     *
+     * <p>Ownership is not transferred: the returned {@link Connection} stays
+     * owned by this instance; callers MUST NOT close it directly.
+     *
+     * @since 0.8.1
+     */
+    @Override
+    public <T> java.util.Optional<T> unwrap(Class<T> type) {
+        if (type == Connection.class) {
+            return java.util.Optional.of(type.cast(conn));
+        }
+        return PersistenceConnection.super.unwrap(type);
+    }
+
+    /**
      * Returns the raw JDBC {@link Connection} backing this instance.
      *
      * <p><strong>Community infrastructure use only.</strong> Approved callers:

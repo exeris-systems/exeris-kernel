@@ -555,6 +555,31 @@ class JdbcPersistenceConnectionTest {
         }
     }
 
+    @Nested
+    @DisplayName("unwrap(Class) — SPI JDBC seam (ADR-017)")
+    class Unwrap {
+
+        @Test
+        @DisplayName("unwrap(Connection.class) returns the backing JDBC connection")
+        void unwrapConnectionReturnsBacking() {
+            assertThat(connection.unwrap(Connection.class)).containsSame(mockConn);
+        }
+
+        @Test
+        @DisplayName("unwrap(PersistenceConnection.class) returns this connection")
+        void unwrapSelfTypeReturnsThis() {
+            assertThat(connection.unwrap(
+                    eu.exeris.kernel.spi.persistence.PersistenceConnection.class))
+                    .containsSame(connection);
+        }
+
+        @Test
+        @DisplayName("unwrap of an unrelated type returns empty")
+        void unwrapUnrelatedTypeReturnsEmpty() {
+            assertThat(connection.unwrap(String.class)).isEmpty();
+        }
+    }
+
     private static void await(CountDownLatch latch) {
         try {
             latch.await();

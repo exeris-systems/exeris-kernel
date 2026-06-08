@@ -50,6 +50,7 @@ import eu.exeris.kernel.spi.exceptions.persistence.PersistenceProviderException;
  * @see QueryResult
  * @since 0.5.0
  */
+@SuppressWarnings("PMD.TooManyMethods") // SPI contract surface — method count is intrinsic
 public interface PersistenceConnection extends AutoCloseable {
 
     // =========================================================================
@@ -176,6 +177,44 @@ public interface PersistenceConnection extends AutoCloseable {
      */
     default java.util.Optional<BulkInserter> openBulkInserter(String table) {
         return java.util.Optional.empty(); // Community default: no COPY support
+    }
+
+    // =========================================================================
+    // Implementation Access (tier-blind unwrap)
+    // =========================================================================
+
+    /**
+     * Unwraps this connection to an implementation-specific facility, if supported.
+     *
+     * <p>This is the SPI-level seam for integration bridges that must reach a
+     * provider-specific backing object without the SPI naming any driver type.
+     * It follows the {@link java.sql.Wrapper} idiom but stays
+     * <strong>implementation-blind</strong>: the SPI does not reference JDBC,
+     * off-heap buffers, or any tier-specific class. Each provider decides what,
+     * if anything, it exposes.
+     *
+     * <p><b>Community:</b> The JDBC-backed connection unwraps to
+     * {@code java.sql.Connection} (consumed by the JDBC compatibility bridge —
+     * see ADR-017). Request-scoped forwarding wrappers delegate the unwrap to
+     * their backing connection so the seam survives per-request session wrapping.
+     * <p><b>Enterprise:</b> May unwrap to a wire-protocol session handle, or
+     * return {@link java.util.Optional#empty()} when no compatible facility exists.
+     *
+     * <p>The default implementation returns this connection when it is itself an
+     * instance of {@code type}, and {@link java.util.Optional#empty()} otherwise.
+     * Unwrapping never transfers ownership: the returned object's lifecycle stays
+     * bound to this connection — callers MUST NOT close it directly.
+     *
+     * @param type the requested facility type; never {@code null}
+     * @param <T>  the facility type
+     * @return an {@link java.util.Optional} holding the unwrapped instance, or
+     *         empty if this provider exposes no such facility
+     * @since 0.8.1
+     */
+    default <T> java.util.Optional<T> unwrap(Class<T> type) {
+        return type.isInstance(this)
+                ? java.util.Optional.of(type.cast(this))
+                : java.util.Optional.empty();
     }
 
     // =========================================================================
