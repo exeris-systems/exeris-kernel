@@ -1262,6 +1262,8 @@ Prior-knowledge HTTP/2 (`handlePriorKnowledge` lines 88-101) is unaffected — i
 
 **Merge Gate:** RFC accepted with one preferred option called out and dissenting positions documented; no kernel code changes in this gate (research / decision track only). Implementation gate deferred to v0.10.
 
+**Status (v0.9):** **DELIVERED** in Sprint 3 — `docs/rfc/RFC-2026-06-08-identity-provider-spi-shape.md` (ACCEPTED). Three axes decided: **structural** = dedicated `IdentityProvider` SPI (`eu.exeris.kernel.spi.security.identity`) with `SecurityProvider` as a thin dispatcher (mirrors the ADR-034/036 registry/driver shape); **first driver** = OIDC+JWKS (`CommunityOidcIdentityProvider`, mostly a refactor of today's `CommunityJwksValidator`); **outbound** = parsed-identity headers (ADR-032 status quo) for v0.10, outbound-credential seam reserved. Dissenting positions (PASETO-first / federation-first / custom-claim-first; structural extend-in-place; outbound pass-through / token-exchange) recorded. Claims→`PrincipalContext` mapping, multi-IDP issuer-dispatch + `StorageContext.isolationKey` routing, failure-mode → `EX-SEC-2002` (fail-closed, terminal-deny, no fall-through), and TCK strategy (`AbstractIdentityProviderTck` + extended `AbstractSecurityProviderTck`) all scoped. **ADR-040 reserved** in `exeris-docs/adr-index.md` (PROPOSED — content + SPI implementation in v0.10). v0.9 Sprint 4 JWKS rotation is a load-bearing dependency. Zero kernel code this sprint.
+
 ---
 
 ### Config: `@Immutable` Annotation Enforcement for Config Keys
