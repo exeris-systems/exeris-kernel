@@ -1,21 +1,21 @@
 [ {
-  "t" : 1780640405463,
+  "t" : 1780918089098,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "[Ljava.util.HashMap$Node;",
+  "class" : "[B",
   "thread" : "main",
-  "size" : 261512,
+  "size" : 261544,
   "stackId" : "stk_0001",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1780640405465,
+  "t" : 1780918089101,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "eu.exeris.kernel.core.security.jfr.SecurityJfrEvents$StorageContextDerivedEvent",
   "thread" : "main",
-  "size" : 261552,
+  "size" : 261568,
   "stackId" : "stk_0002",
   "category" : "TEST_HARNESS"
 }, {
-  "t" : 1780640405465,
+  "t" : 1780918089101,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "eu.exeris.kernel.core.security.jfr.SecurityJfrEvents$StorageContextDerivedEvent",
   "thread" : "main",
@@ -23,7 +23,7 @@
   "stackId" : "stk_0002",
   "category" : "TEST_HARNESS"
 }, {
-  "t" : 1780640405469,
+  "t" : 1780918089105,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "eu.exeris.kernel.core.security.jfr.SecurityJfrEvents$StorageContextDerivedEvent",
   "thread" : "main",
@@ -31,7 +31,7 @@
   "stackId" : "stk_0002",
   "category" : "TEST_HARNESS"
 }, {
-  "t" : 1780640405469,
+  "t" : 1780918089105,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "eu.exeris.kernel.core.security.jfr.SecurityJfrEvents$StorageContextDerivedEvent",
   "thread" : "main",
@@ -39,19 +39,19 @@
   "stackId" : "stk_0002",
   "category" : "TEST_HARNESS"
 }, {
-  "t" : 1780640405472,
+  "t" : 1780918089106,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "[Ljava.util.HashMap$Node;",
+  "class" : "java.util.HashMap$Node",
   "thread" : "main",
   "size" : 261560,
   "stackId" : "stk_0003",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1780640405472,
+  "t" : 1780918089106,
   "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "[Ljava.util.HashMap$Node;",
+  "class" : "java.util.HashMap$Node",
   "thread" : "main",
-  "size" : 80,
+  "size" : 40,
   "stackId" : "stk_0003",
   "category" : "JVM_NOISE"
 } ]
