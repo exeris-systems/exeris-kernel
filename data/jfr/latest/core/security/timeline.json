@@ -1,21 +1,21 @@
 [ {
-  "t" : 1780918089098,
+  "t" : 1780985248376,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "[B",
+  "class" : "java.util.LinkedHashMap$Entry",
   "thread" : "main",
-  "size" : 261544,
+  "size" : 261552,
   "stackId" : "stk_0001",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1780918089101,
+  "t" : 1780985248378,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "eu.exeris.kernel.core.security.jfr.SecurityJfrEvents$StorageContextDerivedEvent",
   "thread" : "main",
-  "size" : 261568,
+  "size" : 261544,
   "stackId" : "stk_0002",
   "category" : "TEST_HARNESS"
 }, {
-  "t" : 1780918089101,
+  "t" : 1780985248378,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "eu.exeris.kernel.core.security.jfr.SecurityJfrEvents$StorageContextDerivedEvent",
   "thread" : "main",
@@ -23,15 +23,15 @@
   "stackId" : "stk_0002",
   "category" : "TEST_HARNESS"
 }, {
-  "t" : 1780918089105,
+  "t" : 1780985248382,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "eu.exeris.kernel.core.security.jfr.SecurityJfrEvents$StorageContextDerivedEvent",
   "thread" : "main",
-  "size" : 261560,
+  "size" : 261544,
   "stackId" : "stk_0002",
   "category" : "TEST_HARNESS"
 }, {
-  "t" : 1780918089105,
+  "t" : 1780985248382,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "eu.exeris.kernel.core.security.jfr.SecurityJfrEvents$StorageContextDerivedEvent",
   "thread" : "main",
@@ -39,19 +39,19 @@
   "stackId" : "stk_0002",
   "category" : "TEST_HARNESS"
 }, {
-  "t" : 1780918089106,
+  "t" : 1780985248384,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.HashMap$Node",
+  "class" : "java.util.HashMap",
   "thread" : "main",
-  "size" : 261560,
+  "size" : 261544,
   "stackId" : "stk_0003",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1780918089106,
+  "t" : 1780985248384,
   "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.util.HashMap$Node",
+  "class" : "java.util.HashMap",
   "thread" : "main",
-  "size" : 40,
+  "size" : 64,
   "stackId" : "stk_0003",
   "category" : "JVM_NOISE"
 } ]
