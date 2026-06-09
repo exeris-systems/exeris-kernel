@@ -1366,6 +1366,27 @@ This workstream pairs with the §"Off-Heap Key Material Zeroization" item above:
 
 ---
 
+### Quality: Test Coverage & TCK Hardening
+
+**Gap:** A 2026-06-09 re-measure put aggregate coverage at **68.4% line / 55.3% branch**, with the JaCoCo gate enforcing **LINE only** (branch entirely unguarded), and **8 `Abstract*Tck` contract bases unbound** (defined with real `@Test` methods but no concrete binding → running nowhere). Adversarial cases (`alg=none`, HS/RS confusion, request smuggling, Rapid Reset) exist as one-off unit tests but are not codified as portable, provider-binding contracts. For a runtime of this maturity the edge-case levers are branch coverage and bound contracts, not raw line %.
+
+**Owner:** Quality / TCK. Sequenced TCK-breadth-first (founder decision 2026-06-09): correctness contracts before raw %.
+
+**Resolution (phased):**
+
+1. **Phase 1 — bind the bindable unbound contracts.** Add concrete binding subclasses for the `Abstract*Tck` bases whose production implementation already exists, so their dormant `@Test` methods run in CI against shipping code.
+2. **Phase 2 — codify adversarial cases as portable contracts.** Promote one-off security/HTTP negative tests into `Abstract*Tck` requirements: `alg=none` / HS-RS confusion / embedded `jwk`/`jku`/`x5u` rejection in `AbstractSecurityProviderTck`; request smuggling / Rapid Reset (CVE-2023-44487) / pseudo-header duplication in the HTTP server TCKs; TLS-floor / `SSL_VERIFY_PEER` in the crypto TCK.
+3. **Phase 3 — coverage mechanics.** Add a BRANCH minimum to the JaCoCo gate at the current measured level then ratchet; merge IT-gated `jacoco.exec` (persistence-rls / kafka-integration gates) into the aggregate report (accounting fix — lifts artificially-depressed flow/kafka numbers without new tests); add cheap SPI carrier/exception unit tests.
+4. **Phase 4 (separate) — `IsolationStrategyContract` fail-OPEN → fail-closed** (requires TCK + impl + ADR-012 amendment).
+
+**Pending-feature (deliberately unbound, NOT a test gap):** `AbstractEventStreamReaderTck` / `AbstractEventStreamAppenderTck` (blocked on a durability driver) and `AbstractHttpClientRequestEnricherTck` (blocked on a concrete ADR-032 enricher impl — the SPI + `noop()` exist, no driver landed). These bind when their feature ships.
+
+**Merge Gate:** Each bound TCK passes against the shipping implementation (a red bound TCK is a contract-violation finding, not a reason to weaken the test); branch gate added and ratcheted; aggregate trends toward 85% line / branch.
+
+**Status (v0.9):** Phase 1 **DELIVERED** — bound 3 of 5 bindable contracts (**28 dormant `@Test` now running in CI, all green, zero contract violations surfaced**): `AbstractBootstrapOrchestratorTck` (against the real `SubsystemTopologicalSorter`), `AbstractProviderBindingLifecycleTck`, and `AbstractRowCursorTck` (against `CommunityPersistenceEngine` over H2 — note the contract's native-segment-release clause is vacuous for the JDBC binding, which allocates no `MemoryAllocator` segments; that clause is exercised only by a future native/Enterprise `RowCursor` binding). `AbstractGracefulShutdownTck` and the generic `AbstractCarrierPinningTck` are **deferred to a follow-up**: both require a fully-started multi-engine kernel over the native TCP transport (100k-VT drain / 10k-VT pinning spike) — heavy end-to-end fixtures that would be flaky or vacuous if forced; per-subsystem carrier-pinning is already covered transitively by the bound `AbstractSubsystemCarrierPinningTck` hierarchy. Phases 2–4 remain.
+
+---
+
 ## Known Gaps / Future Work planned for v0.10
 
 ### Security: `IdentityProvider` SPI + First Driver
