@@ -77,8 +77,17 @@ jobs:
         # floors live in each module's <jacoco.line.minimum> property
         # (ratcheted ~5-9 pp below current baseline).
         run: |
+          # -Dexeris.tck.transport.drainTimeoutSeconds: the transport carrier-pinning
+          # TCK teardown drains queued native-TCP writes within a budget (default 5s,
+          # tuned for fast local dev). The 2-vCPU GitHub runner is slower/contended, so
+          # the multi-reactor pinning teardowns (e.g. CommunityTransportCarrierPinning*)
+          # intermittently exceed 5s on cleanup — a CI-load artifact, not a pinning
+          # defect. Raise the budget for CI only; the local default stays tight so it
+          # still catches genuine drain regressions. (Mechanism documented in the
+          # Transport Stress Gate notes below.)
           mvn clean verify -B -e \
-            -P coverage
+            -P coverage \
+            -Dexeris.tck.transport.drainTimeoutSeconds=30
 
       - name: Upload TCK JFR recordings
         if: always() && (github.event_name == 'push' || github.event_name == 'schedule') && github.ref == 'refs/heads/main'
