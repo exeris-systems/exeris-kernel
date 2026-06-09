@@ -307,6 +307,178 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+  tls-openssl-matrix:
+    # v0.9 Sprint 4b (OpenSSL 4.0 migration): proves the crypto/TLS stack against BOTH
+    # supported OpenSSL majors. CoreOpenSslLoader now binds SSL_CTX_new_ex unconditionally
+    # and accepts the band 3.x..4.x; this matrix pins each major from a source build and
+    # forces the TLS tests to HARD-RUN against it (no assumeTrue skip — the pinned lib is
+    # present, so a skip here would be a silent gap).
+    #
+    # The env overrides EXERIS_OPENSSL_SSL_PATH / EXERIS_OPENSSL_CRYPTO_PATH bypass the
+    # candidate ordering for deterministic per-major selection. N = SONAME major (3 or 4).
+    #
+    # CACHE KEY (the #1 false-green risk): the key embeds the exact OpenSSL version AND a
+    # hash of the literal configure flags. A stale cache serving an old 3.x to the 4.0 entry
+    # would make the 4.0 job pass against 3.x — a false green. Bumping the version or the
+    # flags invalidates the cache automatically.
+    name: TLS OpenSSL ${{ matrix.openssl_version }}
+    runs-on: ubuntu-latest
+    needs: build-and-verify
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - openssl_version: "3.5.6"
+            openssl_tag: "openssl-3.5.6"
+            soname_major: "3"
+          - openssl_version: "4.0.0"
+            openssl_tag: "openssl-4.0.0"
+            soname_major: "4"
+
+    env:
+      # Literal configure flags — also fed into the cache key hash so a flag change busts it.
+      OPENSSL_CONFIGURE_FLAGS: "no-tests no-docs --openssldir=/opt/openssl-${{ matrix.openssl_version }}/ssl"
+      OPENSSL_PREFIX: "/opt/openssl-${{ matrix.openssl_version }}"
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Cache JDK tarball
+        id: jdk-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/jdk.tar.gz
+          key: ${{ env.JDK_CACHE_KEY }}
+
+      - name: Fetch JDK
+        if: steps.jdk-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          wget -q -O ${{ runner.temp }}/jdk.tar.gz ${{ env.JDK_URL }}
+          echo "${{ env.JDK_SHA256 }}  ${{ runner.temp }}/jdk.tar.gz" | sha256sum -c
+
+      - name: Inject JDK into Runner
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'jdkfile'
+          jdkFile: ${{ runner.temp }}/jdk.tar.gz
+          java-version: ${{ env.JDK_VER }}
+          architecture: x64
+          cache: maven
+
+      - name: Cache OpenSSL ${{ matrix.openssl_version }} build
+        id: openssl-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.OPENSSL_PREFIX }}
+          # Key embeds the EXACT version + a hash of the literal configure flags string.
+          # A stale 3.x cache cannot satisfy the 4.0.0 entry: the version differs, so the
+          # key differs, so the cache misses and a fresh 4.0.0 is built.
+          key: openssl-${{ matrix.openssl_version }}-${{ hashFiles('.github/workflows/maven.yml') }}-v1-${{ env.OPENSSL_CONFIGURE_FLAGS }}
+
+      - name: Build OpenSSL ${{ matrix.openssl_version }} from source
+        if: steps.openssl-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch "${{ matrix.openssl_tag }}" \
+            https://github.com/openssl/openssl openssl-src
+          cd openssl-src
+          ./Configure --prefix="${{ env.OPENSSL_PREFIX }}" --libdir=lib64 \
+            ${{ env.OPENSSL_CONFIGURE_FLAGS }}
+          make -j"$(nproc)"
+          make install_sw
+          # Fail-fast sanity: confirm the SONAME major actually built matches the matrix.
+          test -f "${{ env.OPENSSL_PREFIX }}/lib64/libssl.so.${{ matrix.soname_major }}"
+          test -f "${{ env.OPENSSL_PREFIX }}/lib64/libcrypto.so.${{ matrix.soname_major }}"
+
+      - name: Verify pinned OpenSSL SONAME
+        run: |
+          set -euo pipefail
+          ls -l "${{ env.OPENSSL_PREFIX }}/lib64/libssl.so.${{ matrix.soname_major }}"
+          ls -l "${{ env.OPENSSL_PREFIX }}/lib64/libcrypto.so.${{ matrix.soname_major }}"
+
+      - name: Install kernel artifacts for OpenSSL ${{ matrix.openssl_version }}
+        run: |
+          mvn -pl exeris-kernel-core,exeris-kernel-community -am install -DskipTests -B -e
+
+      # ---------------------------------------------------------------------------
+      # MERGE-GATE INTEGRITY NOTE (v0.9 Sprint 4b hardening, finding #1):
+      # The crypto/TLS selection is SPLIT into three explicit invocations rather than
+      # one shared `-DincludedGroups=integration` call. That single-call form only
+      # worked by accident: `<groups>${includedGroups}</groups>` is wired ONLY in
+      # exeris-kernel-community/pom.xml (+ kafka), NOT in core/parent/root. So in core
+      # the flag was a no-op (the untagged Core* guards ran via -Dtest), while in
+      # community only @Tag("integration") ran. If someone later standardized surefire
+      # by adding <groups>${includedGroups}</groups> to parent/core, the flag would
+      # suddenly EXCLUDE every untagged core test — including the
+      # CoreOpenSslPinnedVersionAssertionTest 4.0-vs-fallback-3.x false-green guard.
+      # The split removes that dependency on the undeclared pom asymmetry: the core
+      # guards run as plain Surefire selection (no group flags), the loopback IT runs
+      # via Failsafe (verify phase), and the community @Tag("integration") loopback
+      # runs with the group flag scoped to the one module that honors it.
+      # ---------------------------------------------------------------------------
+      - name: Run core crypto/TLS guards against OpenSSL ${{ matrix.openssl_version }}
+        # HARD-RUN: the pinned lib is present and selected via env override, so the
+        # assumeTrue guards in these suites do not trigger — any skip would be a real gap.
+        # These are UNTAGGED Surefire tests selected purely by -Dtest (NO group flags):
+        # core Surefire deliberately does NOT honor includedGroups (see merge-gate note).
+        #
+        # -Dexeris.test.expectedOpenSslMajor pins the SONAME major so
+        # CoreOpenSslPinnedVersionAssertionTest hard-proves the JVM actually bound the intended
+        # major. Without it, an env-path miss would silently fall back to the host's system 3.x
+        # and the 4.0 matrix entry would false-green. The test SKIPS when the property is unset
+        # (local dev), so it is harmless outside this matrix.
+        env:
+          EXERIS_OPENSSL_SSL_PATH: "${{ env.OPENSSL_PREFIX }}/lib64/libssl.so.${{ matrix.soname_major }}"
+          EXERIS_OPENSSL_CRYPTO_PATH: "${{ env.OPENSSL_PREFIX }}/lib64/libcrypto.so.${{ matrix.soname_major }}"
+        run: |
+          mvn -pl exeris-kernel-core \
+            -Dexeris.test.expectedOpenSslMajor=${{ matrix.soname_major }} \
+            -Dtest='CoreOpenSslRuntimeTest,CoreOpenSslVersionGateTest,CoreOpenSslPinnedVersionAssertionTest,OpenSslLoadEventTest,CoreOffHeapTlsEngineTckTest,CoreOffHeapTlsEngineZeroAllocTckTest' \
+            test -B -e
+
+      - name: Run core TLS loopback IT against OpenSSL ${{ matrix.openssl_version }}
+        # Belt-and-braces end-to-end proof (finding #2): the loopback IT is a Failsafe
+        # test (**/*IT.java, integration-test/verify phase). It was previously listed
+        # under `-Dtest` on a `test`-phase invocation, so it NEVER ran. Run it explicitly
+        # via the verify phase + -Dit.test so the full SSL_accept/SSL_connect round-trip
+        # is exercised against each pinned major. The assumeTrue OpenSSL guard does not
+        # skip here because the pinned lib is present via the env override.
+        env:
+          EXERIS_OPENSSL_SSL_PATH: "${{ env.OPENSSL_PREFIX }}/lib64/libssl.so.${{ matrix.soname_major }}"
+          EXERIS_OPENSSL_CRYPTO_PATH: "${{ env.OPENSSL_PREFIX }}/lib64/libcrypto.so.${{ matrix.soname_major }}"
+        run: |
+          mvn -pl exeris-kernel-core \
+            -Dsurefire.skip=true \
+            -Dit.test=OffHeapTlsEngineLoopbackIT \
+            verify -B -e
+
+      - name: Run community TLS loopback integration against OpenSSL ${{ matrix.openssl_version }}
+        # Community @Tag("integration") loopback — the group flag is scoped to the one
+        # module whose pom wires <groups>${includedGroups}</groups>, so it behaves as
+        # intended here (unlike the cross-module single-call form).
+        env:
+          EXERIS_OPENSSL_SSL_PATH: "${{ env.OPENSSL_PREFIX }}/lib64/libssl.so.${{ matrix.soname_major }}"
+          EXERIS_OPENSSL_CRYPTO_PATH: "${{ env.OPENSSL_PREFIX }}/lib64/libcrypto.so.${{ matrix.soname_major }}"
+        run: |
+          mvn -pl exeris-kernel-community \
+            -DincludedGroups=integration \
+            -DexcludedGroups= \
+            -Dtest='CommunityTlsEngineLoopbackIntegrationTest' \
+            test -B -e
+
+      - name: Upload OpenSSL ${{ matrix.openssl_version }} TLS JFR recordings
+        if: always() && (github.event_name == 'push' || github.event_name == 'schedule') && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: jfr-tls-openssl-${{ matrix.openssl_version }}-${{ github.run_number }}
+          path: exeris-kernel-*/target/*.jfr
+          if-no-files-found: warn
+          retention-days: 14
+
   benchmarks:
     name: JMH Benchmarks (Community + Core)
     # TODO: point runs-on to a dedicated bare-metal runner when available
