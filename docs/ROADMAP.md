@@ -1332,6 +1332,8 @@ Prior-knowledge HTTP/2 (`handlePriorKnowledge` lines 88-101) is unaffected — i
 
 **Merge Gate:** Build green on both OpenSSL 3.5 LTS and OpenSSL 4.0 in CI; ADR-008 reflects the new baseline; no behavioral regression in existing TLS TCK suites; `OpenSslLoadEvent` observable in JFR recordings of a normal startup.
 
+**Status (v0.9):** **DELIVERED** in Sprint 4b — `CoreOpenSslLoader` migrated the CTX constructor from `SSL_CTX_new` to the provider-aware `SSL_CTX_new_ex` (FIPS-ready `libctx` / `propq` seam, NULL for now); library candidate lists gained `.so.4` SONAMEs resolved newest-major-first (explicit env override still wins); the version gate was hardened to `OPENSSL_version_major` / `OPENSSL_version_minor` with an accepted band of `3 <= major <= 4` plus a per-library `ssl` / `crypto` major-match guard. The supported floor is **retained at 3.0.0** to keep the FIPS-validated 3.1.2 build loadable. `OpenSslLoadEvent` (version + resolved paths) lands in JFR; the CI smoke matrix builds OpenSSL 3.5.6 and 4.0.0 from source, both required. ADR-008 §1 was descriptively refreshed within the same boundary (no new ADR). The FIPS provider, a dedicated 3.1.2 CI job, and the libctx-injection overload are **deferred to Workstream F** (which will carry its own reserved ADR).
+
 ---
 
 ### Cryptography: Off-Heap Key Material Zeroization

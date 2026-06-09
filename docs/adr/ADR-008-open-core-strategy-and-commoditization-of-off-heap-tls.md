@@ -39,8 +39,12 @@ three physical tiers.
 The off-heap TLS engine is extracted into `exeris-kernel-core` as shared infrastructure. This is the
 architectural source of truth for all TLS operations, regardless of tier:
 
-- `CoreOpenSslLoader` — Panama FFM symbol resolution for OpenSSL 3.x (`SSL_read`, `SSL_write`,
-  `SSL_do_handshake`, `SSL_CTX_new`, etc.)
+- `CoreOpenSslLoader` — Panama FFM symbol resolution for OpenSSL 3.0–4.x (`SSL_read`, `SSL_write`,
+  `SSL_do_handshake`, `SSL_CTX_new_ex`, etc.). The supported base-library range is 3.0–4.x: the
+  floor stays at 3.0.0 to keep the FIPS-validated 3.1.2 build loadable, while 3.5 LTS and 4.0 are
+  the CI-tested targets. The CTX constructor resolved here is `SSL_CTX_new_ex` — it supersedes the
+  legacy `SSL_CTX_new` within the same Core boundary (the `_ex` variant additionally carries the
+  `libctx` / `propq` seam for a future FIPS provider; both are NULL today).
 - `CoreSslHandles` — Valhalla-ready record carrier for all resolved `MethodHandle` instances.
 - `TlsStateMachine` — lock-free `VarHandle` CAS state machine governing `TlsPhase` transitions.
 - `NativeCipherContext` — off-heap lifecycle wrapper for `SSL*` and `SSL_CTX*` native pointers.
@@ -74,8 +78,11 @@ by **Kernel-Bypass I/O and the QUIC protocol stack**:
   application-side UDP datagram path to the OpenSSL QUIC stack with zero copies.
   `networkBioPtr` is injected with incoming UDP packets; `internalBioPtr` is passed to
   `SSL_set_bio` on the QUIC connection object.
-- `EnterpriseQuicSslLoader` — resolves QUIC-specific OpenSSL symbols (`SSL_CTX_new_ex`,
-  `OSSL_QUIC_client_method`, `SSL_provide_quic_data`, `SSL_process_quic_post_handshake`).
+- `EnterpriseQuicSslLoader` — resolves QUIC-specific OpenSSL symbols (`OSSL_QUIC_client_method`,
+  `SSL_provide_quic_data`, `SSL_process_quic_post_handshake`). Note: `SSL_CTX_new_ex` is now a Core
+  symbol — it is the CTX constructor for the off-heap TLS TCP path, resolved in `CoreOpenSslLoader`.
+  The Enterprise QUIC loader may resolve `SSL_CTX_new_ex` separately for the QUIC connection object,
+  which remains true; the symbol is no longer Enterprise-exclusive.
 - `QuicSslHandles` — record carrier for QUIC-specific `MethodHandle` instances. Separate from
   `CoreSslHandles` to maintain The Wall: QUIC symbols must not contaminate the Core layer.
 - `io_uring` TCP transport (`transport/iouring/tcp/`) — SQ/CQ ring-based TCP, kernel-bypass
@@ -151,3 +158,10 @@ Any future capability that introduces new OpenSSL symbols for TCP must land in `
 (`CoreOpenSslLoader` / `CoreSslHandles`). Any capability specific to QUIC BIO or `io_uring` ring
 management must land in `exeris-kernel-enterprise`. Violations of this boundary are a Wall breach
 and must be rejected in code review.
+
+> **Repository-state note (2026-06-09, v0.9 Sprint 4b):** The Core TLS loader migrated from
+> `SSL_CTX_new` to the provider-aware `SSL_CTX_new_ex` (libctx / propq NULL for now) and its
+> supported base-library range was widened to OpenSSL 3.0–4.x (floor 3.0.0 retained for the
+> FIPS-validated 3.1.2 build; 3.5 LTS + 4.0 are the CI-tested targets). This is additive within the
+> existing ADR-008 boundary — descriptive only, not a decision change. The FIPS provider, a dedicated
+> 3.1.2 CI job, and the libctx-injection overload are deferred to a later Workstream F.

@@ -78,7 +78,7 @@ public final class CoreSslHandles {
     public record CtxHandles(
             MethodHandle sslServerMethod,
             MethodHandle sslClientMethod,
-            MethodHandle sslCtxNew,
+            MethodHandle sslCtxNewEx,
             MethodHandle sslCtxFree,
             MethodHandle sslCtxUseCertificateFile,
             MethodHandle sslCtxUsePrivateKeyFile,
@@ -88,7 +88,7 @@ public final class CoreSslHandles {
             MethodHandle sslCtxSetAlpnSelectCb) {
 
         /**
-         * {@code TLS_server_method()} → native method pointer for {@code SSL_CTX_new}.
+         * {@code TLS_server_method()} → native method pointer for {@code SSL_CTX_new_ex}.
          * Returns the pointer to the server-side TLS 1.3 method structure.
          */
         public long invokeServerMethod() {
@@ -101,7 +101,7 @@ public final class CoreSslHandles {
         }
 
         /**
-         * {@code TLS_client_method()} → native method pointer for {@code SSL_CTX_new}.
+         * {@code TLS_client_method()} → native method pointer for {@code SSL_CTX_new_ex}.
          * Returns the pointer to the client-side TLS 1.3 method structure.
          */
         public long invokeClientMethod() {
@@ -114,14 +114,23 @@ public final class CoreSslHandles {
         }
 
         /**
-         * {@code SSL_CTX_new(methodPtr)} → ctx pointer or 0.
+         * {@code SSL_CTX_new_ex(libctx, propq, methodPtr)} → ctx pointer or 0.
+         *
+         * <p>The {@code libctx} and {@code propq} arguments are passed as {@code 0L}
+         * (NULL): the default library context and default property query. They are an
+         * opaque seam for a future caller that may supply a non-default library context;
+         * Core treats them as plain pointers and attaches no further meaning.
+         *
+         * @param methodPtr the {@code TLS_*_method()} pointer
+         * @return the {@code SSL_CTX*} pointer, or 0 on failure
+         * @since 0.9.0
          */
         public long invokeCtxNew(long methodPtr) {
             try {
-                return (long) sslCtxNew.invokeExact(methodPtr);
+                return (long) sslCtxNewEx.invokeExact(0L, 0L, methodPtr);
             } catch (Throwable t) { //NOPMD AvoidCatchingGenericException — FFM invokeExact declares Throwable
                 FfmErrors.rethrowIfError(t);
-                throw new TlsException("SSL_CTX_new failed", t);
+                throw new TlsException("SSL_CTX_new_ex failed", t);
             }
         }
 
