@@ -21,8 +21,15 @@ import java.util.Objects;
  *
  * <p>It is intentionally free of any wire-format, key-algorithm or transport vocabulary
  * (no JWKS / RSA / HTTP terms). It is slated for promotion to
- * {@code eu.exeris.kernel.spi.security.identity} in v0.9+ alongside the
+ * {@code eu.exeris.kernel.spi.security.identity} in v0.10 alongside the
  * {@code IdentityProvider} SPI (ADR-040), so it must remain format-blind.
+ *
+ * <p><b>Configuration coupling:</b> {@link #overlapWindow()} and {@link #staleFetchBudget()}
+ * are independent knobs, but configuring {@code overlapWindow > staleFetchBudget} widens
+ * acceptance: a retired generation can remain inside its overlap window even after the
+ * current generation has gone stale, so a failed refresh serves the stale-but-in-overlap
+ * material instead of denying. The default ({@code overlap < budget}) keeps the two
+ * decoupled — deny dominates once the budget is exceeded.
  *
  * @param overlapWindow    how long a retired generation still verifies after a newer
  *                         generation is installed; must be non-null and non-negative
@@ -48,18 +55,6 @@ public record KeyRotationPolicy(Duration overlapWindow, Duration staleFetchBudge
         if (staleFetchBudget.isNegative()) {
             throw new IllegalArgumentException("staleFetchBudget must not be negative");
         }
-    }
-
-    /**
-     * Creates a policy from an explicit overlap window and stale-fetch budget.
-     *
-     * @param overlap   overlap window for retired generations
-     * @param stale     stale-fetch budget for the current generation
-     * @return a validated policy
-     * @since 0.9.0
-     */
-    public static KeyRotationPolicy withWindows(Duration overlap, Duration stale) {
-        return new KeyRotationPolicy(overlap, stale);
     }
 
     /**

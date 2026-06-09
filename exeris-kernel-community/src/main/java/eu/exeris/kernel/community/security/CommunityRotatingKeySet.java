@@ -12,8 +12,6 @@ import eu.exeris.kernel.spi.exceptions.security.SecurityAuthenticationException;
 
 import java.security.interfaces.RSAPublicKey;
 import java.time.Clock;
-import java.time.Duration;
-import java.time.Instant;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
@@ -51,12 +49,13 @@ import java.util.concurrent.atomic.AtomicReference;
     private static final String ERR_ROTATED_OUT = "kid-rotated-out";
 
     private static final String PHASE_ROTATION = "ROTATION";
-    private static final String PHASE_CUTOVER = "CUTOVER";
+    private static final String PHASE_CUTOVER_DENY = "CUTOVER_DENY";
     private static final String PHASE_STALE_DENY = "STALE_DENY";
 
     private final KeySetSource source;
-    private final KeyRotationPolicy policy;
     private final Clock clock;
+    private final long staleBudgetMillis;
+    private final long overlapMillis;
     private final Object refreshLock = new Object();
     private final AtomicReference<Generations> generations;
 
@@ -65,18 +64,21 @@ import java.util.concurrent.atomic.AtomicReference;
                                           KeyRotationPolicy policy,
                                           Clock clock) {
         this.source = Objects.requireNonNull(source, "source must not be null");
-        this.policy = Objects.requireNonNull(policy, "policy must not be null");
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
+        Objects.requireNonNull(policy, "policy must not be null");
+        this.staleBudgetMillis = policy.staleFetchBudget().toMillis();
+        this.overlapMillis = policy.overlapWindow().toMillis();
         Map<String, RSAPublicKey> current =
                 Map.copyOf(Objects.requireNonNull(initialKeys, "initialKeys must not be null"));
-        this.generations = new AtomicReference<>(new Generations(current, clock.instant(), null, null));
+        this.generations = new AtomicReference<>(new Generations(current, clock.millis(), null, 0L));
     }
 
     @Override
     public RSAPublicKey resolve(String kid) {
+        // Hot path: compare epoch-millis (no Instant/Duration allocation per request).
         Generations gens = generations.get();
 
-        if (isStale(gens.currentInstalledAt())) {
+        if (isStale(gens.currentInstalledAtMillis(), clock.millis())) {
             gens = attemptRefresh();
         }
 
@@ -87,35 +89,33 @@ import java.util.concurrent.atomic.AtomicReference;
 
         RSAPublicKey previous = gens.previous() == null ? null : gens.previous().get(kid);
         if (previous != null) {
-            if (withinOverlap(gens.previousInstalledAt())) {
+            if (withinOverlap(gens.previousInstalledAtMillis(), clock.millis())) {
                 return previous;
             }
+            // Per-request deny: the kid lives only in a retired generation whose overlap
+            // window has closed. Emitted on every such attempt (an old token in a loop will
+            // re-emit), so the phase is named as a deny, not a one-shot transition.
             CommunityJwksKeyRotationEvent.emit(
-                    PHASE_CUTOVER, null, kid, gens.current().size(), gens.previous().size());
+                    PHASE_CUTOVER_DENY, null, kid, gens.current().size(), gens.previous().size());
             throw new SecurityAuthenticationException(JWT_TYPE, ERR_ROTATED_OUT);
         }
 
         return null;
     }
 
-    private boolean isStale(Instant currentInstalledAt) {
-        Duration age = Duration.between(currentInstalledAt, clock.instant());
-        return age.compareTo(policy.staleFetchBudget()) > 0;
+    private boolean isStale(long installedAtMillis, long nowMillis) {
+        return nowMillis - installedAtMillis > staleBudgetMillis;
     }
 
-    private boolean withinOverlap(Instant previousInstalledAt) {
-        if (previousInstalledAt == null) {
-            return false;
-        }
-        Duration age = Duration.between(previousInstalledAt, clock.instant());
-        return age.compareTo(policy.overlapWindow()) <= 0;
+    private boolean withinOverlap(long installedAtMillis, long nowMillis) {
+        return nowMillis - installedAtMillis <= overlapMillis;
     }
 
     private Generations attemptRefresh() {
         synchronized (refreshLock) {
             Generations gens = generations.get();
             // Another thread may have refreshed while we waited on the lock.
-            if (!isStale(gens.currentInstalledAt())) {
+            if (!isStale(gens.currentInstalledAtMillis(), clock.millis())) {
                 return gens;
             }
 
@@ -130,11 +130,11 @@ import java.util.concurrent.atomic.AtomicReference;
                 return denyIfStaleBeyondOverlap(gens);
             }
 
-            Instant now = clock.instant();
+            long now = clock.millis();
             if (fresh.equals(gens.current())) {
                 // Same material — refresh the stamp, do not rotate or evict previous.
                 Generations refreshed = new Generations(
-                        gens.current(), now, gens.previous(), gens.previousInstalledAt());
+                        gens.current(), now, gens.previous(), gens.previousInstalledAtMillis());
                 generations.compareAndSet(gens, refreshed);
                 return generations.get();
             }
@@ -149,8 +149,10 @@ import java.util.concurrent.atomic.AtomicReference;
     }
 
     private Generations denyIfStaleBeyondOverlap(Generations gens) {
-        boolean previousStillOpen = withinOverlap(gens.previousInstalledAt());
-        if (isStale(gens.currentInstalledAt()) && !previousStillOpen) {
+        long now = clock.millis();
+        boolean previousStillOpen =
+                gens.previous() != null && withinOverlap(gens.previousInstalledAtMillis(), now);
+        if (isStale(gens.currentInstalledAtMillis(), now) && !previousStillOpen) {
             int prevCount = gens.previous() == null ? 0 : gens.previous().size();
             CommunityJwksKeyRotationEvent.emit(
                     PHASE_STALE_DENY, null, null, gens.current().size(), prevCount);
@@ -161,12 +163,13 @@ import java.util.concurrent.atomic.AtomicReference;
 
     /**
      * Immutable holder for the current and (optional) previous key generations, each with
-     * the instant it was installed. Swapped atomically — never mutated in place.
+     * the epoch-millis instant it was installed ({@code previousInstalledAtMillis} is unused
+     * when {@code previous} is {@code null}). Swapped atomically — never mutated in place.
      */
     private record Generations(
             Map<String, RSAPublicKey> current,
-            Instant currentInstalledAt,
+            long currentInstalledAtMillis,
             Map<String, RSAPublicKey> previous,
-            Instant previousInstalledAt) {
+            long previousInstalledAtMillis) {
     }
 }

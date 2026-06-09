@@ -20,8 +20,11 @@ import jdk.jfr.StackTrace;
  * JFR event for Community-tier JWKS verification-key rotation lifecycle.
  *
  * <h2>JFR-First Contract</h2>
- * <p>Emitted on successful refresh/rotation, on observed cutover (overlap expiry), and on
- * stale-fetch deny. Zero overhead when JFR is not recording ({@link #isEnabled()} check).
+ * <p>Phases: {@code ROTATION} (a new generation replaces the current one — one event per
+ * actual rotation), {@code CUTOVER_DENY} (a per-request deny: a kid resolves only to a
+ * retired generation whose overlap window has closed), and {@code STALE_DENY} (a per-request
+ * deny: refresh failed and the current generation is past its stale-fetch budget). Zero
+ * overhead when JFR is not recording ({@link #isEnabled()} check).
  *
  * <h2>Secret-Safe</h2>
  * <p>Carries only opaque {@code kid} labels and integer key counts — never key material

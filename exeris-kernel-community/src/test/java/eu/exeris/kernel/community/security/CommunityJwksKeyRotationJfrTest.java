@@ -36,7 +36,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * "emit a {@code JwksKeyRotationEvent} JFR record at fetch / rotation / cutover".
  *
  * <p>Drives {@link CommunityRotatingKeySet} directly through the three observable phases
- * ({@code ROTATION}, {@code CUTOVER}, {@code STALE_DENY}) against a controllable
+ * ({@code ROTATION}, {@code CUTOVER_DENY}, {@code STALE_DENY}) against a controllable
  * {@link Clock} and a fail-injectable {@link KeySetSource}. Uses a synchronous
  * {@link Recording} dump (not {@code RecordingStream}) for deterministic assertions —
  * and the event is committed single-phase, never straddling a blocking op on a
@@ -68,7 +68,7 @@ class CommunityJwksKeyRotationJfrTest {
             source.armNewKeySet(Map.of(ROTATED_KID, key));
             assertThat(keySet.resolve(ROTATED_KID)).isSameAs(key);
 
-            // (2) CUTOVER: the old kid lives only in the retiring generation; advance past
+            // (2) CUTOVER_DENY: the old kid lives only in the retiring generation; advance past
             // the overlap window so it is denied (current stays fresh, no refresh fires).
             clock.advance(Duration.ofMinutes(11L));
             assertThatThrownBy(() -> keySet.resolve(TestJwt.TEST_KID))
@@ -90,7 +90,7 @@ class CommunityJwksKeyRotationJfrTest {
                 .toList();
 
         assertThat(events).extracting(e -> e.getString("phase"))
-                .contains("ROTATION", "CUTOVER", "STALE_DENY");
+                .contains("ROTATION", "CUTOVER_DENY", "STALE_DENY");
         // Secret-safe: the declared surface is only opaque labels and counts — no key material.
         assertThat(events.getFirst().getEventType().getFields())
                 .extracting(jdk.jfr.ValueDescriptor::getName)
