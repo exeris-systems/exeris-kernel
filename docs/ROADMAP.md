@@ -1280,6 +1280,18 @@ Prior-knowledge HTTP/2 (`handlePriorKnowledge` lines 88-101) is unaffected — i
 
 ---
 
+### Transport: `TransportStream.reset(long errorCode)` SPI — Transport-Agnostic Stream Abort
+
+**Gap:** `eu.exeris.kernel.spi.transport.TransportStream` exposes `read`/`write`/`queueWrite`/`close` but has **no transport-agnostic stream-abort method**. A downstream consumer that needs to forcibly abort a single stream (e.g. an HTTP/3 handler issuing `RESET_STREAM` on an uncaught-exception cleanup path) is therefore forced into an `instanceof` reach-through to a concrete transport type to reach its reset/abort primitive. This works while exactly one transport implements a given protocol, but it bypasses the SPI and makes adding a second carrier for the same protocol (e.g. a non-`io_uring` fallback or a memory-loop test transport) risky — the reach-through silently fails to dispatch to the new carrier. Tracked from the H3 failure-isolation work (downstream issue #23).
+
+**Owner:** Transport subsystem.
+
+**Resolution:** Add `void reset(long errorCode)` to `TransportStream` — *"forcibly abort the stream with the given protocol error code, then close it; implementations map the code to the underlying transport's reset mechanism (RFC 9000 §20.1 QUIC `RESET_STREAM`, RFC 9113 §7 HTTP/2 `RST_STREAM`, abortive close for raw TCP); idempotent."* Bind it in the Community transport stream implementations (HTTP/2 stream → `RST_STREAM` frame with the error code; raw TCP stream → abortive close, code advisory). Add an `Abstract*Tck` reset contract (idempotency, post-reset `close()` is a no-op, post-reset I/O rejected). The error code is a caller-supplied `long` — The Wall (ADR-008) holds: the contract exposes no `io_uring`/QUIC/native detail. **Scope is the abort capability only**; promoting other transport-specific reach-throughs (`concludeSendSide`, `releaseDispatch`, etc.) is explicitly out of scope — each needs its own SPI surface review and should be split if pursued. Landing this unblocks a downstream Enterprise cleanup that removes the temporary `instanceof` reach-through introduced for H3 failure isolation.
+
+**Merge Gate:** `reset(long)` on the SPI with Javadoc'd protocol-mapping contract; Community binding(s) green; `Abstract*Tck` covers idempotency + post-reset semantics; ArchUnit/boundary check confirms no native/QUIC vocabulary entered the SPI.
+
+---
+
 ### HTTP Client: Symmetric Body Codec SPI (Multi-Binding) — deferred from v0.8
 
 **Gap:** `CommunityWebClient` hardcodes Jackson 3 as the JSON binder per ADR-026's deliberate scoping decision. There is no SPI seam for alternative binders — Jackson 2 (legacy applications stuck on the older line), Gson / Moshi (different ecosystems), or binary protocols (CBOR / Protobuf for service-to-service paths that want zero-allocation encoding). The server-side codec pair `HttpResponseBodyEncoder` + `HttpResponseBodyEncoderRegistry` (since 0.5.0) exists for inbound traffic but has no client-side counterpart. v0.8 Sprint 6 (HTTP-130..136) deliberately deferred this gap on YAGNI grounds — designing the codec contract without a second binding to validate against would lock in the wrong shape.
