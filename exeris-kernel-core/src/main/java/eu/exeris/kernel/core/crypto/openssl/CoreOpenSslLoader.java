@@ -177,9 +177,6 @@ public final class CoreOpenSslLoader {
         OpenSslVersion version = verifyOpenSslVersion(linker, lookup);
         assertSameMajor(linker, ssl.lookup(), crypto.lookup());
 
-        OpenSslLoadEvent.emit(version.major(), version.minor(), version.text(),
-                "SSL_CTX_new_ex", ssl.path(), crypto.path());
-
         CoreSslHandles.CtxHandles ctx = new CoreSslHandles.CtxHandles(
                 req(linker, lookup, "TLS_server_method",
                         FunctionDescriptor.of(JAVA_LONG)),
@@ -201,6 +198,13 @@ public final class CoreOpenSslLoader {
                         FunctionDescriptor.of(JAVA_INT, JAVA_LONG, ADDRESS, JAVA_INT)),
                 opt(linker, lookup, "SSL_CTX_set_alpn_select_cb",
                         FunctionDescriptor.ofVoid(JAVA_LONG, JAVA_LONG, JAVA_LONG)));
+
+        // Emit the "successful load" JFR event only AFTER SSL_CTX_new_ex is actually bound
+        // (single-phase, guarded inside OpenSslLoadEvent). Emitting before req(...,
+        // "SSL_CTX_new_ex", ...) could surface a "success" event ahead of a binding that
+        // could (theoretically) throw CryptoBootstrapException for a missing symbol.
+        OpenSslLoadEvent.emit(version.major(), version.minor(), version.text(),
+                "SSL_CTX_new_ex", ssl.path(), crypto.path());
 
         CoreSslHandles.HandshakeHandles handshake = new CoreSslHandles.HandshakeHandles(
                 req(linker, lookup, "SSL_new",

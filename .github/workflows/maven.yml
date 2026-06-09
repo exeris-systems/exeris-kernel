@@ -377,7 +377,7 @@ jobs:
           # Key embeds the EXACT version + a hash of the literal configure flags string.
           # A stale 3.x cache cannot satisfy the 4.0.0 entry: the version differs, so the
           # key differs, so the cache misses and a fresh 4.0.0 is built.
-          key: openssl-${{ matrix.openssl_version }}-${{ hashFiles('.github/workflows/maven.yml') }}-${{ hashFiles('**/.openssl-flags') }}-v1-${{ env.OPENSSL_CONFIGURE_FLAGS }}
+          key: openssl-${{ matrix.openssl_version }}-${{ hashFiles('.github/workflows/maven.yml') }}-v1-${{ env.OPENSSL_CONFIGURE_FLAGS }}
 
       - name: Build OpenSSL ${{ matrix.openssl_version }} from source
         if: steps.openssl-cache.outputs.cache-hit != 'true'
@@ -400,10 +400,31 @@ jobs:
           ls -l "${{ env.OPENSSL_PREFIX }}/lib64/libssl.so.${{ matrix.soname_major }}"
           ls -l "${{ env.OPENSSL_PREFIX }}/lib64/libcrypto.so.${{ matrix.soname_major }}"
 
-      - name: Run crypto/TLS TCK against OpenSSL ${{ matrix.openssl_version }}
+      - name: Install kernel artifacts for OpenSSL ${{ matrix.openssl_version }}
+        run: |
+          mvn -pl exeris-kernel-core,exeris-kernel-community -am install -DskipTests -B -e
+
+      # ---------------------------------------------------------------------------
+      # MERGE-GATE INTEGRITY NOTE (v0.9 Sprint 4b hardening, finding #1):
+      # The crypto/TLS selection is SPLIT into three explicit invocations rather than
+      # one shared `-DincludedGroups=integration` call. That single-call form only
+      # worked by accident: `<groups>${includedGroups}</groups>` is wired ONLY in
+      # exeris-kernel-community/pom.xml (+ kafka), NOT in core/parent/root. So in core
+      # the flag was a no-op (the untagged Core* guards ran via -Dtest), while in
+      # community only @Tag("integration") ran. If someone later standardized surefire
+      # by adding <groups>${includedGroups}</groups> to parent/core, the flag would
+      # suddenly EXCLUDE every untagged core test — including the
+      # CoreOpenSslPinnedVersionAssertionTest 4.0-vs-fallback-3.x false-green guard.
+      # The split removes that dependency on the undeclared pom asymmetry: the core
+      # guards run as plain Surefire selection (no group flags), the loopback IT runs
+      # via Failsafe (verify phase), and the community @Tag("integration") loopback
+      # runs with the group flag scoped to the one module that honors it.
+      # ---------------------------------------------------------------------------
+      - name: Run core crypto/TLS guards against OpenSSL ${{ matrix.openssl_version }}
         # HARD-RUN: the pinned lib is present and selected via env override, so the
         # assumeTrue guards in these suites do not trigger — any skip would be a real gap.
-        # -DincludedGroups=integration so the @Tag("integration") loopback suite runs too.
+        # These are UNTAGGED Surefire tests selected purely by -Dtest (NO group flags):
+        # core Surefire deliberately does NOT honor includedGroups (see merge-gate note).
         #
         # -Dexeris.test.expectedOpenSslMajor pins the SONAME major so
         # CoreOpenSslPinnedVersionAssertionTest hard-proves the JVM actually bound the intended
@@ -414,12 +435,39 @@ jobs:
           EXERIS_OPENSSL_SSL_PATH: "${{ env.OPENSSL_PREFIX }}/lib64/libssl.so.${{ matrix.soname_major }}"
           EXERIS_OPENSSL_CRYPTO_PATH: "${{ env.OPENSSL_PREFIX }}/lib64/libcrypto.so.${{ matrix.soname_major }}"
         run: |
-          mvn -pl exeris-kernel-core,exeris-kernel-community -am install -DskipTests -B -e
-          mvn -pl exeris-kernel-core,exeris-kernel-community \
+          mvn -pl exeris-kernel-core \
+            -Dexeris.test.expectedOpenSslMajor=${{ matrix.soname_major }} \
+            -Dtest='CoreOpenSslRuntimeTest,CoreOpenSslVersionGateTest,CoreOpenSslPinnedVersionAssertionTest,OpenSslLoadEventTest,CoreOffHeapTlsEngineTckTest,CoreOffHeapTlsEngineZeroAllocTckTest' \
+            test -B -e
+
+      - name: Run core TLS loopback IT against OpenSSL ${{ matrix.openssl_version }}
+        # Belt-and-braces end-to-end proof (finding #2): the loopback IT is a Failsafe
+        # test (**/*IT.java, integration-test/verify phase). It was previously listed
+        # under `-Dtest` on a `test`-phase invocation, so it NEVER ran. Run it explicitly
+        # via the verify phase + -Dit.test so the full SSL_accept/SSL_connect round-trip
+        # is exercised against each pinned major. The assumeTrue OpenSSL guard does not
+        # skip here because the pinned lib is present via the env override.
+        env:
+          EXERIS_OPENSSL_SSL_PATH: "${{ env.OPENSSL_PREFIX }}/lib64/libssl.so.${{ matrix.soname_major }}"
+          EXERIS_OPENSSL_CRYPTO_PATH: "${{ env.OPENSSL_PREFIX }}/lib64/libcrypto.so.${{ matrix.soname_major }}"
+        run: |
+          mvn -pl exeris-kernel-core \
+            -Dsurefire.skip=true \
+            -Dit.test=OffHeapTlsEngineLoopbackIT \
+            verify -B -e
+
+      - name: Run community TLS loopback integration against OpenSSL ${{ matrix.openssl_version }}
+        # Community @Tag("integration") loopback — the group flag is scoped to the one
+        # module whose pom wires <groups>${includedGroups}</groups>, so it behaves as
+        # intended here (unlike the cross-module single-call form).
+        env:
+          EXERIS_OPENSSL_SSL_PATH: "${{ env.OPENSSL_PREFIX }}/lib64/libssl.so.${{ matrix.soname_major }}"
+          EXERIS_OPENSSL_CRYPTO_PATH: "${{ env.OPENSSL_PREFIX }}/lib64/libcrypto.so.${{ matrix.soname_major }}"
+        run: |
+          mvn -pl exeris-kernel-community \
             -DincludedGroups=integration \
             -DexcludedGroups= \
-            -Dexeris.test.expectedOpenSslMajor=${{ matrix.soname_major }} \
-            -Dtest='CoreOpenSslRuntimeTest,CoreOpenSslVersionGateTest,CoreOpenSslPinnedVersionAssertionTest,OpenSslLoadEventTest,CoreOffHeapTlsEngineTckTest,CoreOffHeapTlsEngineZeroAllocTckTest,OffHeapTlsEngineLoopbackIT,CommunityTlsEngineLoopbackIntegrationTest' \
+            -Dtest='CommunityTlsEngineLoopbackIntegrationTest' \
             test -B -e
 
       - name: Upload OpenSSL ${{ matrix.openssl_version }} TLS JFR recordings
