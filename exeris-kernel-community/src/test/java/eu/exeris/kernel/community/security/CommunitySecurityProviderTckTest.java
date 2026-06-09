@@ -16,6 +16,13 @@ import eu.exeris.kernel.tck.contract.security.AbstractSecurityProviderTck;
 import org.junit.jupiter.api.DisplayName;
 
 import java.lang.foreign.MemorySegment;
+import java.security.interfaces.RSAPublicKey;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
+import java.util.Map;
 
 @DisplayName("Community: SecurityProvider TCK")
 class CommunitySecurityProviderTckTest extends AbstractSecurityProviderTck {
@@ -120,6 +127,102 @@ class CommunitySecurityProviderTckTest extends AbstractSecurityProviderTck {
         return TestJwt.builder()
                 .claim(KernelIsolationClaims.ISOLATION_STRATEGY, "UNKNOWN_STRATEGY_XYZ")
                 .toBuffer();
+    }
+
+    @Override
+    protected RotationHarness createRotationHarness() {
+        return new CommunityRotationHarness();
+    }
+
+    /**
+     * Drives {@link CommunityRotatingKeySet} with a controllable clock and a fail-injectable
+     * {@link KeySetSource}. The "new" generation uses a distinct kid so the old-kid token
+     * falls to the retiring (previous) generation after rotation.
+     */
+    private static final class CommunityRotationHarness implements RotationHarness {
+
+        private static final String ROTATED_KID = "rotated-key-2";
+
+        private final MutableClock clock = new MutableClock(Instant.parse("2026-01-01T00:00:00Z"));
+        private final SecurityProvider provider;
+        private boolean newKeySetArmed;
+        private boolean failArmed;
+
+        private CommunityRotationHarness() {
+            Map<String, RSAPublicKey> initial = TestJwt.keySet();
+            KeySetSource source = () -> {
+                if (failArmed) {
+                    throw new KeySetRefreshException("refresh-failed");
+                }
+                if (newKeySetArmed) {
+                    return Map.of(ROTATED_KID, TestJwt.testPublicKey());
+                }
+                return initial;
+            };
+            CommunityRotatingKeySet keySet = new CommunityRotatingKeySet(
+                    initial, source, KeyRotationPolicy.defaults(), clock);
+            this.provider = CommunitySecurityProvider.withKeyResolver(
+                    keySet, TestJwt.EXPECTED_ISSUER, TestJwt.EXPECTED_AUDIENCE);
+        }
+
+        @Override
+        public SecurityProvider provider() {
+            return provider;
+        }
+
+        @Override
+        public void advanceClock(Duration amount) {
+            clock.advance(amount);
+        }
+
+        @Override
+        public void installNewKeySet() {
+            newKeySetArmed = true;
+        }
+
+        @Override
+        public void failNextRefresh() {
+            failArmed = true;
+        }
+
+        @Override
+        public LoanedBuffer tokenUnderOriginalKid() {
+            return TestJwt.builder().kid(TestJwt.TEST_KID).expiresInSeconds(86_400L).toBuffer();
+        }
+
+        @Override
+        public void close() {
+            // No native resources to release.
+        }
+    }
+
+    /** Test-only mutable {@link Clock} for deterministic time travel in rotation cases. */
+    private static final class MutableClock extends Clock {
+
+        private Instant instant;
+
+        private MutableClock(Instant start) {
+            this.instant = start;
+        }
+
+        private void advance(Duration amount) {
+            this.instant = this.instant.plus(amount);
+        }
+
+        @Override
+        public ZoneId getZone() {
+            return ZoneOffset.UTC;
+        }
+
+        @Override
+        public Clock withZone(ZoneId zone) {
+            return this;
+        }
+
+        @Override
+        public Instant instant() {
+            return instant;
+        }
     }
 
     private static final class NegativeSizeLoanedBuffer implements LoanedBuffer {

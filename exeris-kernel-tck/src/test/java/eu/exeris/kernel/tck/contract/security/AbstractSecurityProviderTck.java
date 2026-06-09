@@ -20,6 +20,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
 import java.util.Comparator;
 import java.util.ServiceLoader;
 import java.util.concurrent.StructuredTaskScope;
@@ -27,6 +28,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
  * TCK: Abstract base for {@link SecurityProvider} contract verification.
@@ -259,6 +261,62 @@ public abstract class AbstractSecurityProviderTck {
      * Caller owns the buffer lifecycle.
      */
     protected abstract LoanedBuffer createTokenWithUnrecognizedStrategy();
+
+    // =========================================================================
+    // Optional rotation harness — default-skip for non-rotating subclasses
+    // =========================================================================
+
+    /**
+     * Drives the key-rotation contract for a provider that supports a rotating verification
+     * key set with a controllable clock and a fail-injectable refresh source.
+     *
+     * <p>Implementations are entirely owned by the binding module (which has visibility of
+     * the concrete community rotation seams). The TCK references only this interface and the
+     * SPI {@link SecurityProvider}.
+     */
+    protected interface RotationHarness extends AutoCloseable {
+
+        /** The provider wired with the rotating key set under test. */
+        SecurityProvider provider();
+
+        /** Advances the harness clock by the given amount (deterministic time travel). */
+        void advanceClock(Duration amount);
+
+        /**
+         * Arms the refresh source to deliver a brand-new key set (a new {@code kid -> key}
+         * generation) on the next stale-triggered refresh, causing a rotation.
+         */
+        void installNewKeySet();
+
+        /**
+         * Arms the refresh source so that the next stale-triggered refresh fails
+         * (signals refresh failure rather than returning a snapshot).
+         */
+        void failNextRefresh();
+
+        /**
+         * Mints a freshly-signed, otherwise-valid token under the ORIGINAL (pre-rotation)
+         * {@code kid}. The JWT {@code exp} is far enough in the future that wall-clock
+         * expiry never interferes with the rotation assertions.
+         */
+        LoanedBuffer tokenUnderOriginalKid();
+
+        @Override
+        void close();
+    }
+
+    /**
+     * Supplies a {@link RotationHarness} for the rotation contract cases.
+     *
+     * <p>Default returns {@code null} — non-rotating subclasses are skipped cleanly via
+     * {@link org.junit.jupiter.api.Assumptions}. Rotating subclasses override this to wire
+     * a provider with a controllable clock and fail-injectable source.
+     *
+     * @return a fresh rotation harness, or {@code null} if rotation is not supported
+     */
+    protected RotationHarness createRotationHarness() {
+        return null;
+    }
 
     private SecurityProvider provider;
 
@@ -763,6 +821,95 @@ public abstract class AbstractSecurityProviderTck {
                                 + "prevents strategy claim injection attacks")
                         .isEqualTo(StorageContext.IsolationStrategy.SHARED);
             }
+        }
+    }
+
+    // =========================================================================
+    // JWKS key rotation contract (overlap window + stale-fetch budget) — ADR-012
+    // =========================================================================
+
+    @Nested
+    @DisplayName("JWKS key rotation contract (overlap + stale-fetch, fail-closed)")
+    class JwksKeyRotationContract {
+
+        @Test
+        @DisplayName("overlap-fresh: old-kid token still authenticates within overlap window")
+        void overlapFreshStillAuthenticates() {
+            try (RotationHarness harness = createRotationHarness()) {
+                assumeTrue(harness != null, "Provider does not support key rotation");
+
+                harness.installNewKeySet();
+                // Cross the stale-fetch budget to trigger a rotation, but stay inside overlap.
+                harness.advanceClock(Duration.ofMinutes(90L));
+
+                try (LoanedBuffer token = harness.tokenUnderOriginalKid()) {
+                    AuthenticationResult result = harness.provider().authenticate(token);
+                    assertThat(result)
+                            .as("old-kid token must still verify while overlap window is open")
+                            .isNotNull();
+                    assertThat(result.principal()).isNotNull();
+                }
+            }
+        }
+
+        @Test
+        @DisplayName("cutover-deny: old-kid token rejected (EX-SEC-2002) once overlap expires")
+        void cutoverDeniesAfterOverlap() {
+            try (RotationHarness harness = createRotationHarness()) {
+                assumeTrue(harness != null, "Provider does not support key rotation");
+
+                harness.installNewKeySet();
+                // Trigger rotation, then advance well past the overlap window.
+                harness.advanceClock(Duration.ofMinutes(90L));
+                try (LoanedBuffer warmup = harness.tokenUnderOriginalKid()) {
+                    harness.provider().authenticate(warmup);
+                }
+                harness.advanceClock(Duration.ofMinutes(90L));
+
+                try (LoanedBuffer token = harness.tokenUnderOriginalKid()) {
+                    assertThatThrownBy(() -> harness.provider().authenticate(token))
+                            .as("post-cutover old-kid token MUST be denied, never fail-open")
+                            .isInstanceOfSatisfying(SecurityAuthenticationException.class, ex -> {
+                                assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_SEC_2002);
+                                assertReasonIs(ex, "kid-rotated-out");
+                            });
+                }
+            }
+        }
+
+        @Test
+        @DisplayName("stale-fetch-deny: failed refresh past stale budget → deterministic deny (EX-SEC-2002)")
+        void staleFetchDeniesDeterministically() {
+            try (RotationHarness harness = createRotationHarness()) {
+                assumeTrue(harness != null, "Provider does not support key rotation");
+
+                harness.failNextRefresh();
+                harness.advanceClock(Duration.ofMinutes(90L));
+
+                try (LoanedBuffer token = harness.tokenUnderOriginalKid()) {
+                    assertThatThrownBy(() -> harness.provider().authenticate(token))
+                            .as("stale key set with failed refresh MUST deny deterministically, never fail-open")
+                            .isInstanceOfSatisfying(SecurityAuthenticationException.class, ex -> {
+                                assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_SEC_2002);
+                                assertReasonIs(ex, "jwks-stale");
+                            });
+                }
+            }
+        }
+
+        /**
+         * Asserts the deny carries the expected secret-safe reason in the
+         * {@code rawArgs[1]} telemetry slot (see {@link SecurityAuthenticationException}),
+         * discriminating cutover deny from stale-fetch deny at the contract level.
+         */
+        private void assertReasonIs(SecurityAuthenticationException ex, String expectedReason) {
+            Object[] raw = ex.rawArgs();
+            assertThat(raw)
+                    .as("deny must carry secret-safe telemetry args [tokenType, reason]")
+                    .hasSizeGreaterThanOrEqualTo(2);
+            assertThat((String) raw[1])
+                    .as("deny reason must be the expected secret-safe label")
+                    .isEqualTo(expectedReason);
         }
     }
 }
