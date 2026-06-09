@@ -30,10 +30,6 @@ class CoreProviderBindingLifecycleTckTest extends AbstractProviderBindingLifecyc
 
     @Override
     protected List<Subsystem> runSort(List<Subsystem> input) {
-        try {
-            return SubsystemTopologicalSorter.sort(input);
-        } catch (SubsystemOrchestrator.BootstrapException ex) {
-            throw new IllegalArgumentException(ex.getMessage(), ex);
-        }
+        return BootstrapSortAdapter.runSort(input);
     }
 }

@@ -38,12 +38,6 @@ class CoreBootstrapOrchestratorRealSortTckTest extends AbstractBootstrapOrchestr
 
     @Override
     protected List<Subsystem> runSort(List<Subsystem> input) {
-        try {
-            return SubsystemTopologicalSorter.sort(input);
-        } catch (SubsystemOrchestrator.BootstrapException ex) {
-            // Unknown/duplicate dependency — surface as unchecked to satisfy the contract,
-            // which asserts a RuntimeException for unresolved dependencies.
-            throw new IllegalArgumentException(ex.getMessage(), ex);
-        }
+        return BootstrapSortAdapter.runSort(input);
     }
 }
