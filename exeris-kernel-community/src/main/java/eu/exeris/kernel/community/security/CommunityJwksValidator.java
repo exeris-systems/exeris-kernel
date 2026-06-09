@@ -39,13 +39,19 @@ final class CommunityJwksValidator {
     private static final String JWT_TYPE = "JWT";
     private static final String ERR_CLAIMS_MISSING = "claims-missing";
 
-    private final Map<String, RSAPublicKey> keysByKid;
+    private final JwksKeyResolver keyResolver;
     private final String expectedIssuer;
     private final String expectedAudience;
 
     /* default */ CommunityJwksValidator(
             Map<String, RSAPublicKey> keysByKid, String expectedIssuer, String expectedAudience) {
-        this.keysByKid = Map.copyOf(Objects.requireNonNull(keysByKid, "keysByKid must not be null"));
+        this(new StaticJwksKeyResolver(Objects.requireNonNull(keysByKid, "keysByKid must not be null")),
+                expectedIssuer, expectedAudience);
+    }
+
+    /* default */ CommunityJwksValidator(
+            JwksKeyResolver keyResolver, String expectedIssuer, String expectedAudience) {
+        this.keyResolver = Objects.requireNonNull(keyResolver, "keyResolver must not be null");
         this.expectedIssuer = Objects.requireNonNull(expectedIssuer, "expectedIssuer must not be null");
         this.expectedAudience = Objects.requireNonNull(expectedAudience, "expectedAudience must not be null");
     }
@@ -58,7 +64,7 @@ final class CommunityJwksValidator {
             throw new SecurityAuthenticationException(JWT_TYPE, "missing-kid");
         }
 
-        RSAPublicKey publicKey = keysByKid.get(kid);
+        RSAPublicKey publicKey = keyResolver.resolve(kid);
         if (publicKey == null) {
             throw new SecurityAuthenticationException(JWT_TYPE, "unknown-kid");
         }

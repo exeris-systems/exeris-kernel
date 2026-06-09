@@ -1240,13 +1240,15 @@ Prior-knowledge HTTP/2 (`handlePriorKnowledge` lines 88-101) is unaffected — i
 
 ### Security: JWKS Key Rotation with Overlap Window
 
-**Gap:** The comprehensive technical document targets JWKS key rotation with an explicit overlap window and cutover deadline so a tenant's signing keys can be rotated without dropping in-flight validations, combined with the ADR-012 invariant that JWKS endpoint outage equals deterministic deny. The current `CommunityRemoteJwksValidator` resolves keys per request without an explicit overlap window or staleness budget.
+**Gap:** The comprehensive technical document targets JWKS key rotation with an explicit overlap window and cutover deadline so a tenant's signing keys can be rotated without dropping in-flight validations, combined with the ADR-012 invariant that JWKS endpoint outage equals deterministic deny. The current `CommunityJwksValidator` resolves a `kid` against a static, immutable `kid -> RSA public key` map fixed at construction — there is no overlap window, staleness budget, or refresh path.
 
 **Owner:** Security subsystem.
 
 **Resolution:** Add a `JwksRotationPolicy` SPI carrying the overlap window length and cutover deadline; cache the previous key-set for the overlap duration so signatures produced under the old `kid` continue to verify until the deadline; emit a `JwksKeyRotationEvent` JFR record at fetch / rotation / cutover; deterministically deny on JWKS endpoint outage past the configured stale-window, consistent with the failure-mode plan for cached JWKS keys.
 
 **Merge Gate:** Abstract TCK covers overlap-window behaviour, cutover deny, and stale-fetch deny; Community binding green; security-audit checklist signed for rotation correctness.
+
+**Status (v0.9):** **DELIVERED** in Sprint 4 — Community-only per the Sprint 3 IdentityProvider RFC (no SPI surface this milestone; the rotation timing policy promotes to `eu.exeris.kernel.spi.security.identity` in v0.10 alongside `IdentityProvider`/ADR-040). Shipped: a format-blind `KeyRotationPolicy` (overlap window + stale-fetch budget) and `CommunityRotatingKeySet` (current + retiring key generation, `Clock`-driven overlap/cutover, deterministic deny on stale refresh past budget — ADR-012 fail-closed, never fail-open), composed into `CommunityJwksValidator` behind a `JwksKeyResolver` seam so the static-map path is byte-for-byte unchanged. Deny reasons `kid-rotated-out` / `jwks-stale` map to `EX-SEC-2002` (secret-safe). `CommunityJwksKeyRotationEvent` JFR emits `ROTATION` / `CUTOVER` / `STALE_DENY` (opaque kid labels + counts only — no key material). `AbstractSecurityProviderTck` gains the overlap-fresh / cutover-deny / stale-fetch-deny merge-gate triplet (reason-string asserted), Community binding green, plus a JFR-emission test. Real OIDC/JWKS HTTP fetch remains the v0.10 `CommunityOidcIdentityProvider` deliverable that consumes this rotation seam.
 
 ---
 
