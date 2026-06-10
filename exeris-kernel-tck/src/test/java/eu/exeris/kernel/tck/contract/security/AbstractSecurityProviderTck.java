@@ -171,6 +171,34 @@ public abstract class AbstractSecurityProviderTck {
     }
 
     /**
+     * Creates a {@link LoanedBuffer} containing an <b>unsecured</b> token whose header declares
+     * {@code "alg":"none"} (the classic signature-stripping downgrade attack).
+     * The provider MUST deny this token — an unsigned token is never trusted.
+     * Caller owns the buffer lifecycle.
+     * <p>Default: delegates to {@link #createInvalidTokenBuffer()} so the contract is meaningful
+     * even for bindings that cannot mint an {@code alg=none} token; security bindings SHOULD
+     * override with a real unsecured token to exercise the algorithm gate directly.
+     */
+    protected LoanedBuffer createAlgNoneTokenBuffer() {
+        return createInvalidTokenBuffer();
+    }
+
+    /**
+     * Creates a {@link LoanedBuffer} containing a token signed with a <i>symmetric</i> MAC
+     * (e.g. HS256) keyed on the bytes of the provider's published <i>asymmetric</i> public key
+     * (the RS256-&gt;HS256 algorithm-confusion attack). The {@code kid} resolves to a known key
+     * so the token reaches the algorithm gate.
+     * The provider MUST deny this token — a provider that pins an asymmetric algorithm never
+     * verifies a symmetric MAC against its public key.
+     * Caller owns the buffer lifecycle.
+     * <p>Default: delegates to {@link #createInvalidTokenBuffer()}; security bindings SHOULD
+     * override with a real confusion token.
+     */
+    protected LoanedBuffer createAlgConfusionTokenBuffer() {
+        return createInvalidTokenBuffer();
+    }
+
+    /**
      * Returns a scope expected to be granted for the principal returned from
      * {@link #createValidTokenBuffer()} authentication.
      */
@@ -526,6 +554,47 @@ public abstract class AbstractSecurityProviderTck {
         void repeatedIndeterminateAttemptsAreDeterministicallyDenied() {
             for (int i = 0; i < 5; i++) {
                 try (LoanedBuffer token = createIndeterminateTokenBuffer()) {
+                    assertThatThrownBy(() -> provider.authenticate(token))
+                            .isInstanceOfSatisfying(SecurityAuthenticationException.class, ex ->
+                                    assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_SEC_2002));
+                }
+            }
+        }
+    }
+
+    // =========================================================================
+    // Algorithm-confusion / downgrade adversarial contract
+    // =========================================================================
+
+    @Nested
+    @DisplayName("authenticate() — algorithm confusion / downgrade")
+    class AlgorithmConfusionContract {
+
+        @Test
+        @DisplayName("rejects an unsecured alg=none token (signature-stripping downgrade)")
+        void rejectsAlgNoneToken() {
+            try (LoanedBuffer token = createAlgNoneTokenBuffer()) {
+                assertThatThrownBy(() -> provider.authenticate(token))
+                        .isInstanceOfSatisfying(SecurityAuthenticationException.class, ex ->
+                                assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_SEC_2002));
+            }
+        }
+
+        @Test
+        @DisplayName("rejects an HS256-over-public-key token (RS256->HS256 confusion)")
+        void rejectsAlgConfusionToken() {
+            try (LoanedBuffer token = createAlgConfusionTokenBuffer()) {
+                assertThatThrownBy(() -> provider.authenticate(token))
+                        .isInstanceOfSatisfying(SecurityAuthenticationException.class, ex ->
+                                assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_SEC_2002));
+            }
+        }
+
+        @Test
+        @DisplayName("algorithm-confusion denial is deterministic across repeated attempts")
+        void confusionDenialIsDeterministic() {
+            for (int i = 0; i < 5; i++) {
+                try (LoanedBuffer token = createAlgConfusionTokenBuffer()) {
                     assertThatThrownBy(() -> provider.authenticate(token))
                             .isInstanceOfSatisfying(SecurityAuthenticationException.class, ex ->
                                     assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_SEC_2002));

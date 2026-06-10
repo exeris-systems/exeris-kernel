@@ -300,11 +300,19 @@ jobs:
         # the stress + multi-reactor variants pass at the default carrier pool with the
         # strict drain budget. The MultiReactor{2,4} variants stay @Tag("stress") and
         # run here; the single-reactor baseline runs in build-and-verify.
+        #
+        # v0.9 Sprint 4c: under peak 2-vCPU scheduler pressure the MultiReactor4
+        # teardown drain still occasionally exceeds the strict 5 s default (the reactor
+        # key release that ends hasPendingData() queues behind the test thread). The
+        # configurable drain budget is widened to 30 s here to match build-and-verify —
+        # the contract stays strict locally (>= 4 cores), CI gets the constrained-runner
+        # window. This is a runner-pressure accommodation, not a relaxed contract.
         run: |
           mvn -pl exeris-kernel-community -am install -DskipTests -B -e
           mvn -pl exeris-kernel-community \
             -DincludedGroups=stress \
             -DexcludedGroups= \
+            -Dexeris.tck.transport.drainTimeoutSeconds=30 \
             test -B -e
 
       - name: Upload transport stress JFR recordings
