@@ -3,28 +3,30 @@ name: Claude Code Review
 on:
   pull_request:
     types: [opened, synchronize, ready_for_review, reopened]
-    # Optional: Only run on specific file changes
-    # paths:
-    #   - "**/*.java"
-    #   - "**/pom.xml"
 
 jobs:
   claude-review:
-    # Optional: Filter by PR author
-    # if: |
-    #   github.event.pull_request.user.login == 'external-contributor' ||
-    #   github.event.pull_request.author_association == 'FIRST_TIME_CONTRIBUTOR'
-
     runs-on: ubuntu-latest
+    # Permissions:
+    #   - `pull-requests: write` is required so Claude can actually post the review
+    #     (without it the action runs and produces no visible output).
+    #   - `contents: read` is enough — the review job does not push commits.
+    #   - `id-token: write` is required for the action's OIDC-based app-token exchange.
+    #
+    # Pattern mirrors `exeris-tooling` / `exeris-spring-runtime` (the canonical Exeris
+    # setup that delivers reviews end-to-end). The previous variant of this file used
+    # `plugin_marketplaces` + `plugins: code-review@claude-code-plugins`, which ran
+    # cleanly but never posted comments — the plugin path does not enable the
+    # comment-posting MCP tools by default. The inline-prompt path with an explicit
+    # `--allowedTools` allow-list does. See `claude_args` below.
     permissions:
       contents: read
       pull-requests: write
-      issues: write
       id-token: write
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 1
 
@@ -33,15 +35,75 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          plugin_marketplaces: |
-            https://github.com/anthropics/claude-code.git
-          plugins: |
-            code-review@claude-code-plugins
+
+          track_progress: true
+
           prompt: |
-            /code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number }}
-          # Optional: pass advanced flags to the Claude CLI
-          # claude_args: |
-          #   --max-turns 10
-          #   --model claude-opus-4-7
-          # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
-          # or https://docs.claude.com/en/docs/claude-code/cli-reference for available options
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+
+            Review this PR. The repo is `exeris-kernel` — the open-core runtime
+            kernel: an SPI tier (`exeris-kernel-spi`), a driver-agnostic Core
+            (`exeris-kernel-core`), Community drivers (`exeris-kernel-community*`),
+            and a contract TCK (`exeris-kernel-tck`). Java 26 (GA) with preview
+            features enabled (`--enable-preview`), built with Maven.
+
+            Source-of-truth docs (in precedence order):
+            1. `docs/modules/*.md`, `docs/subsystems/*.md` — placement + behavior
+            2. `docs/adr/*.md` — boundaries, lifecycle model, module split
+            3. `docs/whitepaper.md`, `docs/architecture.md`,
+               `docs/performance-contract.md` — when relevant
+            4. `CLAUDE.md` — repo-wide guardrails for AI reviewers (read this first)
+
+            Focus on (in priority order):
+            1. **The Wall (ADR-006) — boundary integrity.** `exeris-kernel-spi` and
+               `exeris-kernel-core` MUST be Spring-free and framework-DI-free. The
+               SPI MUST stay implementation-blind — no driver/native/`io_uring`/QUIC/
+               FIPS vocabulary or types leak into SPI contracts. Core MUST remain
+               driver-agnostic and orchestrate only through SPI contracts. Flag any
+               leak in either direction.
+            2. **Open-core placement.** Is the change in the right tier? Community
+               concrete classes use the `Community*` prefix. Logic that belongs in a
+               driver must not land in Core; SPI surface additions need justification.
+            3. **No Waste Compute / hot-path discipline.** Zero-allocation on runtime
+               hot paths; prefer `MemorySegment` / `LoanedBuffer` / `VarHandle`. All
+               native memory has an explicit owner and deterministic lifecycle
+               (`MemoryAllocator` / `LoanedBuffer` / approved native wrappers, not
+               ad-hoc Arenas). Banned on hot paths unless contract-justified:
+               `ExecutorService`/`Executors`/`CompletableFuture` (replacing structured
+               orchestration), `java.io.*`/`Socket`/`ByteBuffer` (in zero-copy paths),
+               `sun.misc.Unsafe`, checked exceptions on hot state-machine paths.
+            4. **Java 26 runtime idioms.** `ScopedValue` (NOT `ThreadLocal`) for
+               context propagation; `StructuredTaskScope` for orchestration concurrency;
+               Panama FFM for native interop; carriers Valhalla-ready (records /
+               immutable final, no identity-sensitive ops).
+            5. **JFR-first telemetry.** Lifecycle/failure points (bootstrap, allocation
+               failure, bind/start, state transitions) emit JFR events. Emission is
+               lightweight, payloads are secret-safe (NO key/token bytes, no raw args),
+               and commits are SINGLE-PHASE — never begin()->blocking-op->commit() on a
+               virtual thread (carrier-bound `EventWriter` → SIGSEGV on JDK 26).
+            6. **TCK-first discipline.** Any change to observable SPI behavior or a
+               provider binding needs executable `Abstract*Tck` coverage plus a
+               concrete binding (Community in-repo; Enterprise obligation declared). A
+               red bound TCK is a contract-violation finding, not a reason to weaken
+               the test. Watch for fail-OPEN contract anchors (security defaults must
+               be deterministic deny per ADR-012, never fall-through).
+            7. **ADR / contract impact.** If the change alters a boundary, lifecycle
+               model, module split, or architecture intent, flag the need for an ADR or
+               subsystem-doc update — don't just edit code. ADR numbering is GLOBAL
+               across `exeris-*` (reserved in `exeris-docs/adr-index.md`).
+            8. **Correctness** — bugs, edge cases, broken contracts, merge artefacts.
+            9. **Scope** — does the diff match the PR title/description? Anything in
+               scope that's missing? Anything out of scope that should be split?
+
+            Skip cosmetic nits unless they affect the above. Be specific: cite
+            `file:line`. Lead with blockers, then in-scope improvements, then
+            non-blocking suggestions. End with a clear verdict
+            (LGTM / Approve with nits / Request changes).
+
+            Post your review as a single PR review (not many separate comments).
+            Use inline comments only when they materially help — `file:line` in the
+            text body is usually clearer.
+
+          claude_args: |
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh api:*),Bash(git log:*),Bash(git show:*),Bash(git diff:*),Bash(git status:*),Bash(git branch:*),Bash(git remote:*)"
