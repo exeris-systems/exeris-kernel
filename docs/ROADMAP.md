@@ -883,7 +883,7 @@ Prior-knowledge HTTP/2 (`handlePriorKnowledge` lines 88-101) is unaffected — i
 
 **Gap:** `CommunityHttp2SessionProcessor` handles each inbound `RST_STREAM` per-frame (`CommunityHttp2SessionProcessor.java:243`), and `Http2SessionContext.resetRequestStream` frees the stream's concurrency slot. There is **no per-window `RST_STREAM` budget** — a peer can open-then-immediately-reset streams without bound (the freed slot means `SETTINGS_MAX_CONCURRENT_STREAMS` is never reached), forcing unbounded request setup/teardown work. This is CVE-2023-44487 (the 2023 HTTP/2 Rapid Reset DoS). Surfaced by the v0.9 Sprint 4c Phase 2 adversarial sweep.
 
-**Layer note — distinct from `TransportStream.reset(long)` (issue #23):** this is an **inbound HTTP/2 codec** flood defense (peer floods *us* with `RST_STREAM` *frames* over one TCP stream); the transport-stream abort SPI is an **outbound transport-layer** capability (QUIC stream reset / TCP abortive close). Same word, different layer and direction — neither blocks the other. See the "Transport-Agnostic Stream Abort" entry.
+**Layer note — distinct from `TransportStream.reset(long)` (downstream issue #23):** this is an **inbound HTTP/2 codec** flood defense (peer floods *us* with `RST_STREAM` *frames* over one TCP stream); the transport-stream abort SPI is an **outbound transport-layer** capability (QUIC stream reset / TCP abortive close). Same word, different layer and direction — neither blocks the other. See the "Transport-Agnostic Stream Abort" entry.
 
 **Owner:** HTTP subsystem (Community codec).
 

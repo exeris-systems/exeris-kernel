@@ -177,6 +177,10 @@ public final class TestJwt {
          * <p>Models the classic {@code alg=none} downgrade attack: an attacker strips the
          * signature and declares the token unsigned, hoping the verifier skips signature
          * checking. A conforming kernel validator MUST reject it.
+         *
+         * <p>Serialized as a {@link com.nimbusds.jwt.PlainJWT} with a fixed {@code {"alg":"none"}}
+         * header, so {@link #kid(String)} / {@link #noKid()} are <b>ignored</b> in this mode — the
+         * unsecured header carries no {@code kid}.
          */
         public Builder algNone() {
             this.algNone = true;
