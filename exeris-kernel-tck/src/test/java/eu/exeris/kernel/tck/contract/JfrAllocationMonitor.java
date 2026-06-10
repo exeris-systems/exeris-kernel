@@ -11,6 +11,7 @@ package eu.exeris.kernel.tck.contract;
 import jdk.jfr.Recording;
 import jdk.jfr.consumer.RecordedClass;
 import jdk.jfr.consumer.RecordedEvent;
+import jdk.jfr.consumer.RecordedThread;
 import jdk.jfr.consumer.RecordingFile;
 
 import java.io.IOException;
@@ -169,6 +170,12 @@ public final class JfrAllocationMonitor {
         String fileName = config.testClassName() + "-" + config.subsystemName() + "-" + timestamp + ".jfr";
         Path recordingFile = reportsDir.resolve(fileName);
 
+        // The workload runs synchronously on THIS thread; scope the allocation accounting to it so a
+        // concurrent/leaked background thread (e.g. a transport carrier reactor from a prior test
+        // still draining) cannot contaminate the measurement with its own eu.exeris.* allocations.
+        // JFR records all threads globally — we filter collected events by the workload thread id.
+        long workloadThreadId = Thread.currentThread().threadId();
+
         try (Recording rec = new Recording()) {
             enableAllocationEvents(rec);
             rec.setDestination(recordingFile);
@@ -179,7 +186,7 @@ public final class JfrAllocationMonitor {
             rec.stop();
         }
 
-        List<RecordedEvent> exerisAllocs = collectExerisAllocations(recordingFile);
+        List<RecordedEvent> exerisAllocs = collectExerisAllocations(recordingFile, workloadThreadId);
         return new Result(exerisAllocs, recordingFile);
     }
 
@@ -236,10 +243,19 @@ public final class JfrAllocationMonitor {
     }
 
     /**
-     * Reads a JFR recording and returns all allocation events where the allocated
-     * object type belongs to the {@code eu.exeris.*} package hierarchy.
+     * Reads a JFR recording and returns the {@code eu.exeris.*} allocation events attributed to the
+     * workload thread.
+     *
+     * <p>Events from other threads (e.g. a leaked transport carrier reactor still draining from a
+     * prior test) are excluded — the zero/bounded-allocation contract concerns the measured hot
+     * path, which runs on {@code workloadThreadId}, not unrelated background activity that happens
+     * to overlap the recording window.
+     *
+     * @param jfrFile          the recording to read
+     * @param workloadThreadId {@link Thread#threadId()} of the thread that ran the workload
      */
-    static List<RecordedEvent> collectExerisAllocations(Path jfrFile) throws IOException {
+    static List<RecordedEvent> collectExerisAllocations(Path jfrFile, long workloadThreadId)
+            throws IOException {
         List<RecordedEvent> result = new ArrayList<>();
         try (RecordingFile jfr = new RecordingFile(jfrFile)) {
             while (jfr.hasMoreEvents()) {
@@ -249,8 +265,11 @@ public final class JfrAllocationMonitor {
                         || "jdk.ObjectAllocationOutsideTLAB".equals(type)
                         || "jdk.ObjectAllocationSample".equals(type)) {
                     RecordedClass objectClass = e.getValue("objectClass");
+                    RecordedThread eventThread = e.getThread();
                     if (objectClass != null
-                            && objectClass.getName().startsWith(EXERIS_PACKAGE)) {
+                            && objectClass.getName().startsWith(EXERIS_PACKAGE)
+                            && eventThread != null
+                            && eventThread.getJavaThreadId() == workloadThreadId) {
                         result.add(e);
                     }
                 }

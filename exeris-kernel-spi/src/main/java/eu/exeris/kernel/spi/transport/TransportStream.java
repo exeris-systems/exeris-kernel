@@ -162,4 +162,30 @@ public interface TransportStream extends AutoCloseable {
      */
     @Override
     void close();
+
+    /**
+     * Forcibly aborts this stream with the given protocol error code, then terminates it.
+     *
+     * <p>Unlike {@link #close()} (a graceful end-of-stream that drains queued writes), {@code reset}
+     * is an <em>abortive</em> termination: any outbound data still queued via {@link #queueWrite}
+     * is abandoned (after this call {@link #hasPendingData()} is {@code false}), and the underlying
+     * transport's stream-reset mechanism is engaged — implementations map {@code errorCode} to that
+     * mechanism (an abortive close for raw TCP; for a transport whose protocol stream <em>is</em> a
+     * transport stream, its native stream-reset frame). The code is a caller-supplied {@code long}
+     * carrying no transport-specific meaning at this contract level.
+     *
+     * <p>This method exists so callers can abort a single stream <em>polymorphically</em>, without
+     * reaching through to a concrete transport type. It is <strong>idempotent</strong> and composes
+     * with {@link #close()}: after {@code reset}, a subsequent {@code close()} (or {@code reset})
+     * is a no-op, and any further {@link #read}/{@link #write}/{@link #queueWrite} is rejected.
+     *
+     * <p>The default implementation performs a best-effort graceful {@link #close()} — adequate for
+     * transports without a distinct abort primitive. Transports that can signal a true stream reset
+     * (abortive TCP close, native protocol stream-reset) <strong>SHOULD</strong> override it.
+     *
+     * @param errorCode caller-supplied protocol error code (advisory; transport-mapped)
+     */
+    default void reset(long errorCode) {
+        close();
+    }
 }

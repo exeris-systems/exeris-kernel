@@ -24,6 +24,7 @@ import java.lang.foreign.ValueLayout;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.LockSupport;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -202,6 +203,84 @@ public abstract class AbstractTransportStreamTck {
                 assertThatThrownBy(() -> writer.write(seg, 1))
                         .isInstanceOf(IllegalStateException.class);
             }
+        }
+    }
+
+    // =========================================================================
+    // reset() abortive-termination contract (TransportStream#reset)
+    // =========================================================================
+
+    @Nested
+    @DisplayName("reset() abortive termination")
+    class ResetContract {
+
+        @Test
+        @DisplayName("reset() abandons queued writes — hasPendingData() clears")
+        @Timeout(value = 5, unit = TimeUnit.SECONDS)
+        void resetAbandonsPendingData() {
+            TransportStream writer = streams.writer();
+            LoanedBuffer buf = allocator.allocate(AllocationHint.MICRO);
+            buf.segment().set(ValueLayout.JAVA_BYTE, 0, (byte) 0x7E);
+            writer.queueWrite(buf, 1);
+
+            writer.reset(0L);
+
+            // The owning carrier reactor may complete the discard asynchronously, so poll.
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3);
+            while (writer.hasPendingData() && System.nanoTime() < deadline) {
+                LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(5));
+            }
+            assertThat(writer.hasPendingData())
+                    .as("reset() MUST abandon queued writes (no drain wait) — hasPendingData() "
+                            + "must clear, otherwise close()/teardown hangs")
+                    .isFalse();
+        }
+
+        @Test
+        @DisplayName("reset() is idempotent and composes with close()")
+        void resetIsIdempotentAndComposesWithClose() {
+            TransportStream writer = streams.writer();
+            writer.reset(0L);
+            assertThatCode(() -> writer.reset(7L)).doesNotThrowAnyException();
+            assertThatCode(writer::close).doesNotThrowAnyException();
+        }
+
+        @Test
+        @DisplayName("read() after reset() is rejected")
+        @Timeout(value = 5, unit = TimeUnit.SECONDS)
+        void readAfterResetThrows() {
+            TransportStream writer = streams.writer();
+            // No queued write here: with an idle outbound consumer, reset() terminates the stream
+            // synchronously (closed == true), so a subsequent read() observes the closed state.
+            writer.reset(0L);
+            try (LoanedBuffer buf = allocator.allocate(AllocationHint.MICRO)) {
+                MemorySegment seg = buf.segment();
+                assertThatThrownBy(() -> writer.read(seg, 1))
+                        .as("read() on a stream that has been reset MUST be rejected")
+                        .isInstanceOf(IllegalStateException.class);
+            }
+        }
+
+        @Test
+        @DisplayName("write() after reset() is rejected")
+        void writeAfterResetThrows() {
+            TransportStream writer = streams.writer();
+            writer.reset(0L);
+            try (LoanedBuffer buf = allocator.allocate(AllocationHint.MICRO)) {
+                MemorySegment seg = buf.segment();
+                assertThatThrownBy(() -> writer.write(seg, 1))
+                        .isInstanceOf(IllegalStateException.class);
+            }
+        }
+
+        @Test
+        @DisplayName("queueWrite() after reset() is rejected (and the buffer is released)")
+        void queueWriteAfterResetThrows() {
+            TransportStream writer = streams.writer();
+            writer.reset(0L);
+            LoanedBuffer buf = allocator.allocate(AllocationHint.MICRO);
+            assertThatThrownBy(() -> writer.queueWrite(buf, 1))
+                    .isInstanceOf(IllegalStateException.class);
         }
     }
 
