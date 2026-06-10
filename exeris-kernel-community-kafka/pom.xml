@@ -39,6 +39,9 @@
             the IT-merge follow-up is pending.
         -->
         <jacoco.line.minimum>0.20</jacoco.line.minimum>
+        <!-- BRANCH baseline 2026-06-10: 16.0% (16/100), unit-only (Kafka IT not merged).
+             Ratchet ~6 pp below. -->
+        <jacoco.branch.minimum>0.10</jacoco.branch.minimum>
     </properties>
 
     <dependencies>

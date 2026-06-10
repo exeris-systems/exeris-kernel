@@ -52,6 +52,9 @@
             unit-suite regressions.
         -->
         <jacoco.line.minimum>0.55</jacoco.line.minimum>
+        <!-- BRANCH baseline 2026-06-10: 57.3% (1940/3385), unit-only (IT not merged).
+             Ratchet ~7 pp below. -->
+        <jacoco.branch.minimum>0.50</jacoco.branch.minimum>
     </properties>
 
     <dependencies>

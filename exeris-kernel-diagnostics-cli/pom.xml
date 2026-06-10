@@ -26,6 +26,9 @@
         <!-- Thin executable harness: main()/serve() are integration-shaped (stdio + in-process
              kernel boot); the request-dispatch logic (handle) is unit-tested. -->
         <jacoco.line.minimum>0.0</jacoco.line.minimum>
+        <!-- Ungated like LINE: thin executable harness, only 12 branches total —
+             a one-branch change swings the ratio ~8 pp, too volatile to gate. -->
+        <jacoco.branch.minimum>0.0</jacoco.branch.minimum>
     </properties>
 
     <dependencies>
