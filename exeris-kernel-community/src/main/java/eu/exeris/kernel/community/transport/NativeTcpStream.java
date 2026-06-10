@@ -438,9 +438,14 @@ final class NativeTcpStream implements TransportStream {
         }
         // Terminate now if this thread owns (or no one owns) the outbound consumer; otherwise the
         // owning carrier reactor completes the abort on its next cycle (closeRequested + the
-        // resetRequested gate in finishCloseIfDrained). Signal write interest so it wakes promptly.
+        // resetRequested gate in finishCloseIfDrained).
         finishCloseIfDrained();
-        writeInterestCallback.run();
+        if (!closed.get()) {
+            // The carrier reactor still owns the consumer slot — wake it to finalize the deferred
+            // abort. If finishCloseIfDrained() already closed the stream, the channel is
+            // deregistered and no wake is needed.
+            writeInterestCallback.run();
+        }
     }
 
     /* default */ void offerIngress(LoanedBuffer ingressBuffer) {
@@ -695,6 +700,10 @@ final class NativeTcpStream implements TransportStream {
             return DRAIN_CLOSED;
         }
         if (status != TlsStatus.OK) {
+            // Same fail-closed discipline as the IOException paths: an unrecoverable TLS WRAP
+            // status must not leave the queued write stuck (hasPendingData() would stay true and
+            // hang teardown). We hold the single-consumer slot here, so the discard is safe.
+            abortOnUnrecoverableWriteFailure();
             throw TransportException.sendFailure(engineName, pending.bytesWritten(), null);
         }
         return tryDrainCipherWrite(pending) ? DRAIN_OK : DRAIN_STALLED;

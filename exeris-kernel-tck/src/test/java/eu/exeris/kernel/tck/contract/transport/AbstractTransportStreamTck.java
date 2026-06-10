@@ -246,6 +246,22 @@ public abstract class AbstractTransportStreamTck {
         }
 
         @Test
+        @DisplayName("read() after reset() is rejected")
+        @Timeout(value = 5, unit = TimeUnit.SECONDS)
+        void readAfterResetThrows() {
+            TransportStream writer = streams.writer();
+            // No queued write here: with an idle outbound consumer, reset() terminates the stream
+            // synchronously (closed == true), so a subsequent read() observes the closed state.
+            writer.reset(0L);
+            try (LoanedBuffer buf = allocator.allocate(AllocationHint.MICRO)) {
+                MemorySegment seg = buf.segment();
+                assertThatThrownBy(() -> writer.read(seg, 1))
+                        .as("read() on a stream that has been reset MUST be rejected")
+                        .isInstanceOf(IllegalStateException.class);
+            }
+        }
+
+        @Test
         @DisplayName("write() after reset() is rejected")
         void writeAfterResetThrows() {
             TransportStream writer = streams.writer();
