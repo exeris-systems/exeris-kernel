@@ -12,8 +12,10 @@ import com.nimbusds.jose.JOSEException;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSHeader;
 import com.nimbusds.jose.JWSSigner;
+import com.nimbusds.jose.crypto.MACSigner;
 import com.nimbusds.jose.crypto.RSASSASigner;
 import com.nimbusds.jwt.JWTClaimsSet;
+import com.nimbusds.jwt.PlainJWT;
 import com.nimbusds.jwt.SignedJWT;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 
@@ -118,6 +120,8 @@ public final class TestJwt {
         private boolean expired;
         private boolean tamperSignature;
         private boolean omitKid;
+        private boolean algNone;
+        private boolean hmacConfusion;
         private final Map<String, String> customClaims = new LinkedHashMap<>();
 
         private Builder() {
@@ -168,6 +172,35 @@ public final class TestJwt {
         }
 
         /**
+         * Produces an <b>unsecured</b> JWT ({@code "alg":"none"}, empty signature segment).
+         *
+         * <p>Models the classic {@code alg=none} downgrade attack: an attacker strips the
+         * signature and declares the token unsigned, hoping the verifier skips signature
+         * checking. A conforming kernel validator MUST reject it.
+         */
+        public Builder algNone() {
+            this.algNone = true;
+            this.hmacConfusion = false;
+            return this;
+        }
+
+        /**
+         * Produces a token signed with <b>HS256</b> using the bytes of the RSA <i>public</i>
+         * key as the HMAC secret.
+         *
+         * <p>Models the RS256-&gt;HS256 algorithm-confusion attack: the verifier is expected
+         * to treat the published RSA public key as an asymmetric verification key, but an
+         * attacker re-signs the token with HMAC keyed on those same (public) bytes, hoping
+         * the verifier validates it as a symmetric MAC. The {@code kid} is retained so the
+         * token reaches the algorithm gate. A conforming validator that pins RS256 MUST reject.
+         */
+        public Builder hmacConfusion() {
+            this.hmacConfusion = true;
+            this.algNone = false;
+            return this;
+        }
+
+        /**
          * Adds a custom claim to the JWT payload.
          *
          * @param key   claim name (must not be {@code null})
@@ -188,42 +221,56 @@ public final class TestJwt {
          */
         public String serialize() {
             try {
-                JWSHeader.Builder headerBuilder = new JWSHeader.Builder(JWSAlgorithm.RS256);
+                JWTClaimsSet claims = buildClaims();
+
+                if (algNone) {
+                    // Unsecured JWT: header {"alg":"none"}, empty signature segment.
+                    return new PlainJWT(claims).serialize();
+                }
+
+                JWSAlgorithm alg = hmacConfusion ? JWSAlgorithm.HS256 : JWSAlgorithm.RS256;
+                JWSHeader.Builder headerBuilder = new JWSHeader.Builder(alg);
                 if (!omitKid) {
                     headerBuilder.keyID(kid);
                 }
-                JWSHeader header = headerBuilder.build();
-
-                Instant issuedAt = Instant.now();
-                Instant expiry = expired
-                    ? issuedAt.minusSeconds(60L)
-                    : issuedAt.plusSeconds(expiresInSeconds);
-
-                JWTClaimsSet.Builder claimsBuilder = new JWTClaimsSet.Builder()
-                    .subject(subject)
-                    .issuer(issuer)
-                    .audience(List.of(audience))
-                    .issueTime(Timestamp.from(issuedAt))
-                    .expirationTime(Timestamp.from(expiry));
-                for (Map.Entry<String, String> entry : customClaims.entrySet()) {
-                    claimsBuilder.claim(entry.getKey(), entry.getValue());
-                }
-                JWTClaimsSet claims = claimsBuilder.build();
-
-                SignedJWT jwt = new SignedJWT(header, claims);
-                JWSSigner signer = new RSASSASigner(TEST_KEY_PAIR.getPrivate());
-                jwt.sign(signer);
+                SignedJWT jwt = new SignedJWT(headerBuilder.build(), claims);
+                jwt.sign(signerFor());
 
                 String serialized = jwt.serialize();
-
                 if (tamperSignature) {
                     serialized = tamperSignatureSegment(serialized);
                 }
-
                 return serialized;
             } catch (JOSEException ex) {
                 throw new IllegalStateException("Failed to sign test JWT", ex);
             }
+        }
+
+        private JWTClaimsSet buildClaims() {
+            Instant issuedAt = Instant.now();
+            Instant expiry = expired
+                ? issuedAt.minusSeconds(60L)
+                : issuedAt.plusSeconds(expiresInSeconds);
+
+            JWTClaimsSet.Builder claimsBuilder = new JWTClaimsSet.Builder()
+                .subject(subject)
+                .issuer(issuer)
+                .audience(List.of(audience))
+                .issueTime(Timestamp.from(issuedAt))
+                .expirationTime(Timestamp.from(expiry));
+            for (Map.Entry<String, String> entry : customClaims.entrySet()) {
+                claimsBuilder.claim(entry.getKey(), entry.getValue());
+            }
+            return claimsBuilder.build();
+        }
+
+        private JWSSigner signerFor() throws JOSEException {
+            if (hmacConfusion) {
+                // RS256->HS256 confusion: HMAC keyed on the RSA public key's encoded bytes
+                // (>= 256 bits, satisfying the HS256 minimum-secret requirement).
+                return new MACSigner(TEST_KEY_PAIR.getPublic().getEncoded());
+            }
+            return new RSASSASigner(TEST_KEY_PAIR.getPrivate());
         }
 
         /**

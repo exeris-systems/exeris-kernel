@@ -83,6 +83,16 @@ class CommunitySecurityProviderTckTest extends AbstractSecurityProviderTck {
     }
 
     @Override
+    protected LoanedBuffer createAlgNoneTokenBuffer() {
+        return TestJwt.builder().kid(TestJwt.TEST_KID).algNone().toBuffer();
+    }
+
+    @Override
+    protected LoanedBuffer createAlgConfusionTokenBuffer() {
+        return TestJwt.builder().kid(TestJwt.TEST_KID).hmacConfusion().toBuffer();
+    }
+
+    @Override
     protected LoanedBuffer createTokenWithSeparatedSchemaStrategy() {
         return TestJwt.builder()
                 .claim(KernelIsolationClaims.ISOLATION_STRATEGY, "SEPARATED_SCHEMA")
