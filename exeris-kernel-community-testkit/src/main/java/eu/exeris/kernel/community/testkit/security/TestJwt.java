@@ -107,7 +107,10 @@ public final class TestJwt {
     /**
      * Builder for test JWTs.
      */
-    @SuppressWarnings("PMD.TooManyMethods")
+    // Fluent test-fixture builder: many small mutator methods (highest individual complexity 7)
+    // sum to a high class-total cyclomatic score — inherent to the builder shape, not a
+    // maintainability concern. Suppressed for the same reason as TooManyMethods.
+    @SuppressWarnings({"PMD.TooManyMethods", "PMD.CyclomaticComplexity"})
     public static final class Builder {
 
         private static final int COMPACT_JWT_SEGMENT_COUNT = 3;
