@@ -217,6 +217,12 @@ public final class JfrAllocationMonitor {
         // pre-size state to warm-up+steady iterations. Residual JFR-sampler noise on the thread is
         // absorbed by the per-iteration-rate assertion (see assertZeroExerisAllocations).
         ThreadMXBean threadMx = threadAllocationBean();
+        // Per-thread allocation tracking is on by default on HotSpot; if a prior test disabled it,
+        // enable it transiently and RESTORE afterward so we don't leave a sticky global JVM mutation.
+        boolean restoreAllocTracking = threadMx != null && !threadMx.isThreadAllocatedMemoryEnabled();
+        if (restoreAllocTracking) {
+            threadMx.setThreadAllocatedMemoryEnabled(true);
+        }
         long allocatedBytesDelta;
 
         try (Recording rec = new Recording()) {
@@ -226,11 +232,17 @@ public final class JfrAllocationMonitor {
 
             long allocBefore = threadAllocatedBytes(threadMx, workloadThreadId);
             workload.run(config.hotPathIterations());
-            allocatedBytesDelta = (allocBefore == ALLOCATED_BYTES_UNAVAILABLE)
+            long allocAfter = threadAllocatedBytes(threadMx, workloadThreadId);
+            allocatedBytesDelta = (allocBefore == ALLOCATED_BYTES_UNAVAILABLE
+                    || allocAfter == ALLOCATED_BYTES_UNAVAILABLE)
                     ? ALLOCATED_BYTES_UNAVAILABLE
-                    : threadAllocatedBytes(threadMx, workloadThreadId) - allocBefore;
+                    : allocAfter - allocBefore;
 
             rec.stop();
+        } finally {
+            if (restoreAllocTracking) {
+                threadMx.setThreadAllocatedMemoryEnabled(false);
+            }
         }
 
         List<RecordedEvent> exerisAllocs = collectExerisAllocations(recordingFile, workloadThreadId);
@@ -238,12 +250,8 @@ public final class JfrAllocationMonitor {
     }
 
     private static ThreadMXBean threadAllocationBean() {
-        if (ManagementFactory.getThreadMXBean() instanceof ThreadMXBean bean
-                && bean.isThreadAllocatedMemorySupported()) {
-            bean.setThreadAllocatedMemoryEnabled(true);
-            return bean;
-        }
-        return null;
+        return (ManagementFactory.getThreadMXBean() instanceof ThreadMXBean bean
+                && bean.isThreadAllocatedMemorySupported()) ? bean : null;
     }
 
     private static long threadAllocatedBytes(ThreadMXBean bean, long threadId) {
