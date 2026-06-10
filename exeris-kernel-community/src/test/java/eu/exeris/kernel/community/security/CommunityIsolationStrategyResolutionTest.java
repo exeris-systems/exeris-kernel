@@ -11,6 +11,7 @@ package eu.exeris.kernel.community.security;
 import eu.exeris.kernel.community.testkit.security.TestJwt;
 import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 import eu.exeris.kernel.spi.exceptions.security.SecurityAuthenticationException;
+import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.security.AuthenticationResult;
 import eu.exeris.kernel.spi.security.KernelIsolationClaims;
 import eu.exeris.kernel.spi.security.StorageContext;
@@ -54,14 +55,18 @@ class CommunityIsolationStrategyResolutionTest {
     }
 
     private static AuthenticationResult authenticate(TestJwt.Builder builder) {
-        return provider().authenticate(builder.toBuffer());
+        try (LoanedBuffer token = builder.toBuffer()) {
+            return provider().authenticate(token);
+        }
     }
 
     private static void assertDenied(TestJwt.Builder builder) {
         CommunitySecurityProvider provider = provider();
-        assertThatThrownBy(() -> provider.authenticate(builder.toBuffer()))
-                .isInstanceOfSatisfying(SecurityAuthenticationException.class, ex ->
-                        assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_SEC_2002));
+        try (LoanedBuffer token = builder.toBuffer()) {
+            assertThatThrownBy(() -> provider.authenticate(token))
+                    .isInstanceOfSatisfying(SecurityAuthenticationException.class, ex ->
+                            assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_SEC_2002));
+        }
     }
 
     @Test
