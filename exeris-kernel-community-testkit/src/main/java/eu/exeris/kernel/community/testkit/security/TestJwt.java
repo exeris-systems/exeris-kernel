@@ -123,6 +123,7 @@ public final class TestJwt {
         private boolean algNone;
         private boolean hmacConfusion;
         private final Map<String, String> customClaims = new LinkedHashMap<>();
+        private final Map<String, Object> rawClaims = new LinkedHashMap<>();
 
         private Builder() {
         }
@@ -218,6 +219,21 @@ public final class TestJwt {
         }
 
         /**
+         * Adds a claim with a non-string JSON value (number, boolean, list, map). Used to mint
+         * wrong-typed claims for adversarial fail-closed tests (e.g. a numeric
+         * {@code ISOLATION_STRATEGY} that a string-typed reader rejects as malformed).
+         *
+         * @param key   claim name (must not be {@code null})
+         * @param value raw claim value
+         * @return this builder
+         */
+        public Builder claimRaw(String key, Object value) {
+            Objects.requireNonNull(key, "key must not be null");
+            rawClaims.put(key, value);
+            return this;
+        }
+
+        /**
          * Builds the serialized JWT string.
          *
          * @return compact serialization (header.payload.signature)
@@ -263,6 +279,9 @@ public final class TestJwt {
                 .issueTime(Timestamp.from(issuedAt))
                 .expirationTime(Timestamp.from(expiry));
             for (Map.Entry<String, String> entry : customClaims.entrySet()) {
+                claimsBuilder.claim(entry.getKey(), entry.getValue());
+            }
+            for (Map.Entry<String, Object> entry : rawClaims.entrySet()) {
                 claimsBuilder.claim(entry.getKey(), entry.getValue());
             }
             return claimsBuilder.build();
