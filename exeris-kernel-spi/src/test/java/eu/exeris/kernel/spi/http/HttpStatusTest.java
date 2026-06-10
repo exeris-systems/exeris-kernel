@@ -102,6 +102,7 @@ class HttpStatusTest {
         void isErrorBoundary() {
             assertThat(new HttpStatus(399, "x").isError()).isFalse();
             assertThat(new HttpStatus(400, "x").isError()).isTrue();
+            assertThat(new HttpStatus(599, "x").isError()).isTrue();
         }
     }
 }
