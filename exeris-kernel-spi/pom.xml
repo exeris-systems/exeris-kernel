@@ -23,6 +23,9 @@
             organic improvement.
         -->
         <jacoco.line.minimum>0.30</jacoco.line.minimum>
+        <!-- BRANCH baseline after the Phase 3 SPI carrier/enum tests: 30.0% (230/766),
+             up from 22.1%. Ratchet ~8 pp below. -->
+        <jacoco.branch.minimum>0.22</jacoco.branch.minimum>
     </properties>
 
     <dependencies>

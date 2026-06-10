@@ -45,6 +45,18 @@
             no jacoco.exec is produced.
         -->
         <jacoco.line.minimum>0.20</jacoco.line.minimum>
+
+        <!--
+            v0.9 Sprint 4c Phase 3 (coverage mechanics): BRANCH coverage floor,
+            previously unguarded (the v0.8 audit's blind spot — line could hold
+            while branch silently rotted). Same ratchet model as LINE: per-module
+            overrides sit ~5-9 pp below the measured 2026-06-10 baseline so the
+            existing suite passes while a regression trips the gate. Branch ratios
+            run lower than line, hence a lower default. Modules with no jacoco.exec
+            (tck, community-testkit) skip the check; the thin diagnostics-cli is
+            deliberately ungated (0.0) like its LINE floor.
+        -->
+        <jacoco.branch.minimum>0.15</jacoco.branch.minimum>
         <jvm.args>
             -XX:+UnlockExperimentalVMOptions
             -XX:+UseZGC
@@ -141,6 +153,11 @@
                                                     <counter>LINE</counter>
                                                     <value>COVEREDRATIO</value>
                                                     <minimum>${jacoco.line.minimum}</minimum>
+                                                </limit>
+                                                <limit>
+                                                    <counter>BRANCH</counter>
+                                                    <value>COVEREDRATIO</value>
+                                                    <minimum>${jacoco.branch.minimum}</minimum>
                                                 </limit>
                                             </limits>
                                         </rule>
