@@ -26,6 +26,7 @@ import org.jctools.queues.SpscUnboundedArrayQueue;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
+import java.net.StandardSocketOptions;
 import java.nio.channels.SocketChannel;
 import java.util.Objects;
 import java.util.Queue;
@@ -110,6 +111,8 @@ final class NativeTcpStream implements TransportStream {
     private final AtomicBoolean closeRequested = new AtomicBoolean(false);
     private final AtomicBoolean closed = new AtomicBoolean(false);
     private final AtomicBoolean remoteClosed = new AtomicBoolean(false);
+    // Set by reset(long): abandon queued writes (no drain wait) and terminate abortively (RST).
+    private final AtomicBoolean resetRequested = new AtomicBoolean(false);
     private final Queue<NativeTcpStreamPendingWrite> outboundQueue =
             new MpscUnboundedArrayQueue<>(JCTOOLS_QUEUE_CHUNK_SIZE);
     private final Queue<LoanedBuffer> inboundQueue = QUEUE_BACKPRESSURE_ENABLED
@@ -406,6 +409,40 @@ final class NativeTcpStream implements TransportStream {
         finishCloseIfDrained();
     }
 
+    @Override
+    public void reset(long errorCode) {
+        // Idempotent abortive termination (TransportStream#reset). Distinct from close():
+        // queued writes are abandoned (not drained) and the socket is closed with SO_LINGER 0
+        // so the peer observes a RST rather than a graceful FIN. errorCode is advisory for TCP.
+        if (!resetRequested.compareAndSet(false, true)) {
+            return;
+        }
+        closeRequested.set(true);
+        try {
+            channel.setOption(StandardSocketOptions.SO_LINGER, 0);
+        } catch (IOException | RuntimeException _) {
+            // Best effort: if SO_LINGER can't be set, the terminal close falls back to FIN.
+        }
+        // Unpark any reader/writer/registration waiter so they observe the closed state and bail.
+        Thread readerThread = runtime.streamVt().getAndSet(null);
+        if (readerThread != null) {
+            LockSupport.unpark(readerThread);
+        }
+        Thread writerThread = runtime.writeWaiter().getAndSet(null);
+        if (writerThread != null) {
+            LockSupport.unpark(writerThread);
+        }
+        Thread registrationThread = runtime.registrationGate().clearWaiter();
+        if (registrationThread != null) {
+            LockSupport.unpark(registrationThread);
+        }
+        // Terminate now if this thread owns (or no one owns) the outbound consumer; otherwise the
+        // owning carrier reactor completes the abort on its next cycle (closeRequested + the
+        // resetRequested gate in finishCloseIfDrained). Signal write interest so it wakes promptly.
+        finishCloseIfDrained();
+        writeInterestCallback.run();
+    }
+
     /* default */ void offerIngress(LoanedBuffer ingressBuffer) {
         if (closed.get()) {
             try (ingressBuffer) {
@@ -670,6 +707,7 @@ final class NativeTcpStream implements TransportStream {
             if (closed.get()) {
                 return true;
             }
+            abortOnUnrecoverableWriteFailure();
             throw TransportException.sendFailure(engineName, pending.bytesWritten(), e);
         }
     }
@@ -681,8 +719,28 @@ final class NativeTcpStream implements TransportStream {
             if (closed.get()) {
                 return true;
             }
+            abortOnUnrecoverableWriteFailure();
             throw TransportException.sendFailure(engineName, pending.bytesWritten(), e);
         }
+    }
+
+    /**
+     * Reacts to an unrecoverable outbound-write {@link IOException} by abandoning the queued
+     * writes and marking the stream for abortive termination.
+     *
+     * <p>Without this, a failed write would leave the pending entry in the queue forever:
+     * {@link #hasPendingData()} would stay {@code true} and {@link #close()} (and any drain-bounded
+     * teardown) would hang until its timeout. This runs on the carrier reactor thread while it
+     * holds the single-consumer slot (via {@code flushPendingWrites}), so {@link #drainOutboundQueue}
+     * is safe to call directly — but {@code finishCloseIfDrained()} MUST NOT be invoked here, as its
+     * nested consumer-slot acquire/release would prematurely free the slot held by the caller. The
+     * terminal channel close therefore runs later on the {@link #close()} / teardown path, which by
+     * then sees no pending data and the {@code resetRequested} flag (abortive close).
+     */
+    private void abortOnUnrecoverableWriteFailure() {
+        resetRequested.set(true);
+        closeRequested.set(true);
+        drainOutboundQueue();
     }
 
     private void writeDirect(MemorySegment source, int length) {
@@ -942,7 +1000,8 @@ final class NativeTcpStream implements TransportStream {
         if (owner != null && !Objects.equals(owner, currentThread)) {
             return;
         }
-        if (!closeRequested.get() || hasPendingData()) {
+        // A graceful close waits for queued writes to drain; an abortive reset abandons them.
+        if (!closeRequested.get() || (hasPendingData() && !resetRequested.get())) {
             return;
         }
         if (!closed.compareAndSet(false, true)) {
@@ -976,20 +1035,30 @@ final class NativeTcpStream implements TransportStream {
             logBestEffortCleanupFailure("cleanupOutbound", error);
         }
 
-        try {
-            channel.shutdownOutput();
-        } catch (IOException | RuntimeException _) {
-            // best effort half-close before full close
-        }
+        closeChannelQuietly();
 
+        connection.markClosedByCarrier();
+        closeCallback.run();
+    }
+
+    /**
+     * Best-effort terminal close of the underlying channel. A graceful close half-closes the output
+     * first (FIN); an abortive {@link #reset(long)} skips the half-close so the SO_LINGER-0 close
+     * emits a RST instead.
+     */
+    private void closeChannelQuietly() {
+        if (!resetRequested.get()) {
+            try {
+                channel.shutdownOutput();
+            } catch (IOException | RuntimeException _) {
+                // best effort half-close before full close
+            }
+        }
         try {
             channel.close();
         } catch (IOException _) {
             // best effort close
         }
-
-        connection.markClosedByCarrier();
-        closeCallback.run();
     }
 
     private void closeCurrentInbound() {
