@@ -217,7 +217,9 @@ public abstract class AbstractSecurityProviderTck {
     /**
      * Creates a {@link LoanedBuffer} containing a valid token with NO isolation strategy claim.
      * The provider MUST return a {@link StorageContext} with
-     * {@link StorageContext.IsolationStrategy#SHARED} strategy (fail-closed default).
+     * {@link StorageContext.IsolationStrategy#SHARED} strategy (legitimate default — no isolation
+     * intent expressed; this is the only permissive fall-through, distinct from the terminal-deny
+     * applied to a declared-but-broken strategy, per ADR-012 §4a amended).
      *
      * <p>Default: delegates to {@link #createValidTokenBuffer()}, since a standard valid token
      * carries no isolation claim.
@@ -264,8 +266,10 @@ public abstract class AbstractSecurityProviderTck {
      * Creates a {@link LoanedBuffer} containing a token with the {@code SEPARATED_SCHEMA}
      * isolation strategy claim but WITHOUT a schema name claim.
      *
-     * <p>The provider MUST fail closed — return a {@link StorageContext} with
-     * {@link StorageContext.IsolationStrategy#SHARED} strategy.
+     * <p>The provider MUST <b>deny</b> this token ({@link SecurityAuthenticationException},
+     * {@code EX-SEC-2002}). A declared strong strategy with a missing required sub-claim must NOT
+     * be downgraded to {@link StorageContext.IsolationStrategy#SHARED} — that is fail-OPEN
+     * (silently weakening the provisioned isolation tier) per S-P0-07 / ADR-012 §4a (amended).
      * Caller owns the buffer lifecycle.
      */
     protected abstract LoanedBuffer createTokenWithSeparatedSchemaMissingSchemaName();
@@ -274,9 +278,9 @@ public abstract class AbstractSecurityProviderTck {
      * Creates a {@link LoanedBuffer} containing a token with the {@code DEDICATED}
      * isolation strategy claim but WITHOUT a datasource key claim.
      *
-     * <p>The provider MUST fail closed — return a {@link StorageContext} with
-     * {@link StorageContext.IsolationStrategy#SHARED} strategy.
-     * Caller owns the buffer lifecycle.
+     * <p>The provider MUST <b>deny</b> this token ({@link SecurityAuthenticationException},
+     * {@code EX-SEC-2002}) — not downgrade to {@link StorageContext.IsolationStrategy#SHARED}
+     * (S-P0-07 / ADR-012 §4a amended). Caller owns the buffer lifecycle.
      */
     protected abstract LoanedBuffer createTokenWithDedicatedMissingDataSourceKey();
 
@@ -284,8 +288,9 @@ public abstract class AbstractSecurityProviderTck {
      * Creates a {@link LoanedBuffer} containing a token with an unrecognised, non-empty
      * isolation strategy claim value (e.g. {@code "SUPER_TENANT"} or {@code "BYPASS_RLS"}).
      *
-     * <p>The provider MUST fail closed — return a {@link StorageContext} with
-     * {@link StorageContext.IsolationStrategy#SHARED} strategy.
+     * <p>The provider MUST <b>deny</b> this token ({@link SecurityAuthenticationException},
+     * {@code EX-SEC-2002}). A strategy the kernel cannot honour must be rejected, not downgraded to
+     * {@link StorageContext.IsolationStrategy#SHARED} (S-P0-07 / ADR-012 §4a amended).
      * Caller owns the buffer lifecycle.
      */
     protected abstract LoanedBuffer createTokenWithUnrecognizedStrategy();
@@ -817,12 +822,13 @@ public abstract class AbstractSecurityProviderTck {
     class IsolationStrategyContract {
 
         @Test
-        @DisplayName("absent isolation claim \u2192 SHARED strategy (fail-closed default)")
+        @DisplayName("absent isolation claim \u2192 SHARED strategy (legitimate default)")
         void assert_authenticate_returns_shared_when_no_isolation_claim() {
             try (LoanedBuffer token = createTokenWithNoIsolationClaim()) {
                 StorageContext storage = provider.authenticate(token).storage();
                 assertThat(storage.strategy())
-                        .as("absent isolation claim MUST produce SHARED strategy (fail-closed)")
+                        .as("absent isolation claim MUST produce SHARED strategy (legitimate default, "
+                                + "no isolation intent \u2014 NOT a fail-closed denial; ADR-012 \u00a74a amended)")
                         .isEqualTo(StorageContext.IsolationStrategy.SHARED);
             }
         }
@@ -858,37 +864,41 @@ public abstract class AbstractSecurityProviderTck {
         }
 
         @Test
-        @DisplayName("SEPARATED_SCHEMA claim without schema name \u2192 fails closed to SHARED")
-        void assert_authenticate_fails_closed_to_shared_on_missing_schema_claim() {
+        @DisplayName("SEPARATED_SCHEMA claim without schema name \u2192 terminal deny (EX-SEC-2002)")
+        void assert_authenticate_denies_on_missing_schema_claim() {
             try (LoanedBuffer token = createTokenWithSeparatedSchemaMissingSchemaName()) {
-                StorageContext storage = provider.authenticate(token).storage();
-                assertThat(storage.strategy())
-                        .as("SEPARATED_SCHEMA without schema name MUST fail closed to SHARED \u2014 "
-                                + "prevents escaping RLS by omitting the required secondary claim")
-                        .isEqualTo(StorageContext.IsolationStrategy.SHARED);
+                assertThatThrownBy(() -> provider.authenticate(token))
+                        .as("a declared SEPARATED_SCHEMA strategy with a missing/blank schema name "
+                                + "MUST be denied, NOT silently downgraded to SHARED \u2014 downgrade is "
+                                + "fail-OPEN (weakens the provisioned isolation tier) per S-P0-07 / "
+                                + "ADR-012 \u00a74a (amended)")
+                        .isInstanceOfSatisfying(SecurityAuthenticationException.class, ex ->
+                                assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_SEC_2002));
             }
         }
 
         @Test
-        @DisplayName("DEDICATED claim without datasource key \u2192 fails closed to SHARED")
-        void assert_authenticate_fails_closed_to_shared_on_missing_datasource_key_claim() {
+        @DisplayName("DEDICATED claim without datasource key \u2192 terminal deny (EX-SEC-2002)")
+        void assert_authenticate_denies_on_missing_datasource_key_claim() {
             try (LoanedBuffer token = createTokenWithDedicatedMissingDataSourceKey()) {
-                StorageContext storage = provider.authenticate(token).storage();
-                assertThat(storage.strategy())
-                        .as("DEDICATED without datasource key MUST fail closed to SHARED")
-                        .isEqualTo(StorageContext.IsolationStrategy.SHARED);
+                assertThatThrownBy(() -> provider.authenticate(token))
+                        .as("a declared DEDICATED strategy with a missing/blank datasource key MUST "
+                                + "be denied, NOT downgraded to SHARED (fail-OPEN) \u2014 S-P0-07")
+                        .isInstanceOfSatisfying(SecurityAuthenticationException.class, ex ->
+                                assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_SEC_2002));
             }
         }
 
         @Test
-        @DisplayName("unrecognized strategy value \u2192 fails closed to SHARED")
-        void assert_authenticate_fails_closed_to_shared_on_unrecognized_strategy() {
+        @DisplayName("unrecognized strategy value \u2192 terminal deny (EX-SEC-2002)")
+        void assert_authenticate_denies_on_unrecognized_strategy() {
             try (LoanedBuffer token = createTokenWithUnrecognizedStrategy()) {
-                StorageContext storage = provider.authenticate(token).storage();
-                assertThat(storage.strategy())
-                        .as("Unrecognised strategy value MUST fail closed to SHARED \u2014 "
-                                + "prevents strategy claim injection attacks")
-                        .isEqualTo(StorageContext.IsolationStrategy.SHARED);
+                assertThatThrownBy(() -> provider.authenticate(token))
+                        .as("a declared-but-unrecognised strategy value cannot be honoured and MUST "
+                                + "be denied \u2014 downgrading to SHARED grants a session on an injection "
+                                + "probe instead of rejecting it (S-P0-07 / ADR-012 \u00a74a amended)")
+                        .isInstanceOfSatisfying(SecurityAuthenticationException.class, ex ->
+                                assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_SEC_2002));
             }
         }
     }

@@ -105,49 +105,52 @@ final class CommunityJwksValidator {
         try {
             strategyStr = claims.getStringClaim(KernelIsolationClaims.ISOLATION_STRATEGY);
         } catch (ParseException _) {
-            // Claim present but wrong type — fail-closed
-            return ImmutableStorageContext.shared(
-                    subjectUuid.getMostSignificantBits(), subjectUuid.getLeastSignificantBits());
+            // S-P0-07 / ADR-012 §4a (amended): a declared isolation claim present but wrong-typed
+            // is malformed security input — terminal deny, never a silent downgrade to SHARED.
+            throw new SecurityAuthenticationException(JWT_TYPE, "isolation-malformed");
         }
 
         if (strategyStr == null || strategyStr.isBlank()) {
-            return ImmutableStorageContext.shared(
-                    subjectUuid.getMostSignificantBits(), subjectUuid.getLeastSignificantBits());
+            // No isolation strategy declared → SHARED keyed on the subject is the legitimate
+            // baseline (no intent expressed). This is the ONLY permissive fall-through.
+            return sharedFor(subjectUuid);
         }
 
         return switch (strategyStr) {
-            case "SEPARATED_SCHEMA" -> {
-                String schemaName = null;
-                try {
-                    schemaName = claims.getStringClaim(KernelIsolationClaims.SCHEMA_NAME);
-                } catch (ParseException _) {
-                    // ignored
-                }
-                if (schemaName == null || schemaName.isBlank()) {
-                    // Missing schema claim — fail-closed
-                    yield ImmutableStorageContext.shared(
-                            subjectUuid.getMostSignificantBits(), subjectUuid.getLeastSignificantBits());
-                }
-                yield ImmutableStorageContext.separatedSchema(subject, schemaName);
-            }
-            case "DEDICATED" -> {
-                String dataSourceKey = null;
-                try {
-                    dataSourceKey = claims.getStringClaim(KernelIsolationClaims.DATASOURCE_KEY);
-                } catch (ParseException _) {
-                    // ignored
-                }
-                if (dataSourceKey == null || dataSourceKey.isBlank()) {
-                    // Missing datasource key claim — fail-closed
-                    yield ImmutableStorageContext.shared(
-                            subjectUuid.getMostSignificantBits(), subjectUuid.getLeastSignificantBits());
-                }
-                yield ImmutableStorageContext.dedicated(subject, dataSourceKey);
-            }
-            // Unrecognised strategy value — fail-closed
-            default -> ImmutableStorageContext.shared(
-                    subjectUuid.getMostSignificantBits(), subjectUuid.getLeastSignificantBits());
+            case "SHARED" -> sharedFor(subjectUuid);
+            case "SEPARATED_SCHEMA" -> ImmutableStorageContext.separatedSchema(
+                    subject, requireSubClaim(claims, KernelIsolationClaims.SCHEMA_NAME));
+            case "DEDICATED" -> ImmutableStorageContext.dedicated(
+                    subject, requireSubClaim(claims, KernelIsolationClaims.DATASOURCE_KEY));
+            // A declared-but-unrecognised strategy cannot be honoured → terminal deny, NOT a
+            // downgrade to SHARED (the weakest tier). Producing SHARED here was fail-OPEN (S-P0-07).
+            default -> throw new SecurityAuthenticationException(JWT_TYPE, "isolation-unknown-strategy");
         };
+    }
+
+    private static ImmutableStorageContext sharedFor(UUID subjectUuid) {
+        return ImmutableStorageContext.shared(
+                subjectUuid.getMostSignificantBits(), subjectUuid.getLeastSignificantBits());
+    }
+
+    /**
+     * Resolves a required isolation sub-claim ({@code SCHEMA_NAME} / {@code DATASOURCE_KEY}) for a
+     * declared strong strategy. A missing, blank, or wrong-typed sub-claim is a terminal deny —
+     * downgrading to SHARED would silently weaken the tenant's provisioned isolation tier
+     * (S-P0-07; ADR-012 §4a amended, §5 fail-closed). The reason code is secret-safe — it never
+     * carries the claim value.
+     */
+    private static String requireSubClaim(JWTClaimsSet claims, String claimName) {
+        String value;
+        try {
+            value = claims.getStringClaim(claimName);
+        } catch (ParseException _) {
+            throw new SecurityAuthenticationException(JWT_TYPE, "isolation-incomplete");
+        }
+        if (value == null || value.isBlank()) {
+            throw new SecurityAuthenticationException(JWT_TYPE, "isolation-incomplete");
+        }
+        return value;
     }
 
     private static SignedJWT parseJwt(String compactJwt) {

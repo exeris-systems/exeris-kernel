@@ -60,17 +60,17 @@ class CoreSecurityProviderTckTest extends AbstractSecurityProviderTck {
 
     @Override
     protected LoanedBuffer createTokenWithSeparatedSchemaMissingSchemaName() {
-        return new StubLoanedBuffer(1L); // fixture returns GLOBAL (SHARED) for any unrecognised size > 0
+        return new StubLoanedBuffer(10L); // fixture denies (ADR-012 §4a amended): incomplete sub-claim
     }
 
     @Override
     protected LoanedBuffer createTokenWithDedicatedMissingDataSourceKey() {
-        return new StubLoanedBuffer(1L); // fixture returns GLOBAL (SHARED)
+        return new StubLoanedBuffer(11L); // fixture denies: incomplete sub-claim
     }
 
     @Override
     protected LoanedBuffer createTokenWithUnrecognizedStrategy() {
-        return new StubLoanedBuffer(1L); // fixture returns GLOBAL (SHARED)
+        return new StubLoanedBuffer(12L); // fixture denies: unrecognized strategy value
     }
 
     private static final class StubLoanedBuffer implements LoanedBuffer {
