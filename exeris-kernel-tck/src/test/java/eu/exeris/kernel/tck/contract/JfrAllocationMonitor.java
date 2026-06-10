@@ -8,6 +8,7 @@
  */
 package eu.exeris.kernel.tck.contract;
 
+import com.sun.management.ThreadMXBean;
 import jdk.jfr.Recording;
 import jdk.jfr.consumer.RecordedClass;
 import jdk.jfr.consumer.RecordedEvent;
@@ -15,9 +16,9 @@ import jdk.jfr.consumer.RecordedThread;
 import jdk.jfr.consumer.RecordingFile;
 
 import java.io.IOException;
+import java.lang.management.ManagementFactory;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -44,9 +45,23 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   <li><b>Steady-state</b> — the <em>only</em> window that counts. The
  *       monitor captures {@code jdk.ObjectAllocationInNewTLAB},
  *       {@code jdk.ObjectAllocationOutsideTLAB}, and
- *       {@code jdk.ObjectAllocationSample} events, then filters by
- *       {@code objectClass.getName().startsWith("eu.exeris.")}.</li>
+ *       {@code jdk.ObjectAllocationSample} (throttle disabled) events, filters
+ *       by {@code objectClass.getName().startsWith("eu.exeris.")} and by the
+ *       workload thread, AND records the exact per-thread allocated-bytes delta.</li>
  * </ol>
+ *
+ * <h2>Two Signals (issue #178)</h2>
+ * <p>The JFR event stream tells you <em>what</em> allocated, but
+ * {@code ObjectAllocationInNewTLAB} only fires on a TLAB refill — small steady
+ * allocations inside an already-active TLAB emit no event, so a JFR-only
+ * "zero" can be a false pass. {@code ObjectAllocationSample} mitigates this
+ * (it samples across the heap; the throttle is disabled to capture every
+ * sample point), but sampling is still probabilistic. The authoritative
+ * absence-proof is therefore the {@code ThreadMXBean.getThreadAllocatedBytes}
+ * delta: exact, TLAB-granularity-immune. {@link #assertZeroExerisAllocations}
+ * asserts <em>both</em> (zero {@code eu.exeris.*} events <em>and</em> zero
+ * allocated bytes); the bytes check is skipped only when the JVM cannot report
+ * per-thread allocation.
  *
  * <h2>Filter Strategy: objectClass, not Stack Trace</h2>
  * <p>Stack-trace filtering is fragile under C2 inlining — an inlined frame
@@ -116,21 +131,38 @@ public final class JfrAllocationMonitor {
         }
     }
 
+    /** Sentinel for {@link Result#allocatedBytesDelta} when the JVM cannot report per-thread bytes. */
+    public static final long ALLOCATED_BYTES_UNAVAILABLE = -1L;
+
     /**
      * Result of a JFR allocation measurement.
      *
-     * @param exerisAllocations all detected {@code eu.exeris.*} allocation events
-     * @param recordingFile     path to the .jfr file (kept for JMC inspection)
+     * @param exerisAllocations   all detected {@code eu.exeris.*} allocation events on the workload
+     *                            thread (JFR-sampled — see the class Javadoc on residual sampling
+     *                            limits)
+     * @param allocatedBytesDelta total bytes allocated by the workload thread across the
+     *                            steady-state {@code workload.run()}, from
+     *                            {@code ThreadMXBean.getThreadAllocatedBytes} — a JFR-independent
+     *                            cross-check immune to TLAB-refill granularity (issue #178).
+     *                            {@link #ALLOCATED_BYTES_UNAVAILABLE} if the JVM does not support
+     *                            per-thread allocation accounting.
+     * @param hotPathIterations   steady-state iteration count, used to assert a per-iteration
+     *                            allocation <em>rate</em> (one-time setup noise is tolerated)
+     * @param recordingFile       path to the .jfr file (kept for JMC inspection)
      */
     public record Result(
             List<RecordedEvent> exerisAllocations,
+            long allocatedBytesDelta,
+            int hotPathIterations,
             Path recordingFile
     ) {
         /**
-         * Returns a human-readable summary of allocated class names and counts.
+         * Returns a human-readable summary of allocated class names and counts, plus the
+         * JFR-independent thread-allocated-bytes delta.
          */
         public String summary() {
-            return summariseClasses(exerisAllocations);
+            return summariseClasses(exerisAllocations)
+                    + " | thread-allocated-bytes-delta=" + allocatedBytesDelta;
         }
     }
 
@@ -176,18 +208,50 @@ public final class JfrAllocationMonitor {
         // JFR records all threads globally — we filter collected events by the workload thread id.
         long workloadThreadId = Thread.currentThread().threadId();
 
+        // JFR-independent cross-check (issue #178): ThreadMXBean reports exact per-thread allocated
+        // bytes, immune to the TLAB-refill granularity that makes the JFR event stream under-report
+        // small steady allocations. Bracketed TIGHTLY around workload.run() (inside rec.start()/
+        // rec.stop() would fold the recording's own ~hundreds-of-KB calling-thread allocations into
+        // the delta). The workload is run exactly once here — the monitor's two-phase
+        // (warm-up + steady) contract is preserved; a third replay would overflow workloads that
+        // pre-size state to warm-up+steady iterations. Residual JFR-sampler noise on the thread is
+        // absorbed by the per-iteration-rate assertion (see assertZeroExerisAllocations).
+        ThreadMXBean threadMx = threadAllocationBean();
+        long allocatedBytesDelta;
+
         try (Recording rec = new Recording()) {
             enableAllocationEvents(rec);
             rec.setDestination(recordingFile);
             rec.start();
 
+            long allocBefore = threadAllocatedBytes(threadMx, workloadThreadId);
             workload.run(config.hotPathIterations());
+            allocatedBytesDelta = (allocBefore == ALLOCATED_BYTES_UNAVAILABLE)
+                    ? ALLOCATED_BYTES_UNAVAILABLE
+                    : threadAllocatedBytes(threadMx, workloadThreadId) - allocBefore;
 
             rec.stop();
         }
 
         List<RecordedEvent> exerisAllocs = collectExerisAllocations(recordingFile, workloadThreadId);
-        return new Result(exerisAllocs, recordingFile);
+        return new Result(exerisAllocs, allocatedBytesDelta, config.hotPathIterations(), recordingFile);
+    }
+
+    private static ThreadMXBean threadAllocationBean() {
+        if (ManagementFactory.getThreadMXBean() instanceof ThreadMXBean bean
+                && bean.isThreadAllocatedMemorySupported()) {
+            bean.setThreadAllocatedMemoryEnabled(true);
+            return bean;
+        }
+        return null;
+    }
+
+    private static long threadAllocatedBytes(ThreadMXBean bean, long threadId) {
+        if (bean == null) {
+            return ALLOCATED_BYTES_UNAVAILABLE;
+        }
+        long bytes = bean.getThreadAllocatedBytes(threadId);
+        return bytes < 0 ? ALLOCATED_BYTES_UNAVAILABLE : bytes;
     }
 
     // =========================================================================
@@ -195,8 +259,13 @@ public final class JfrAllocationMonitor {
     // =========================================================================
 
     /**
-     * Asserts the Enterprise zero-allocation contract: zero {@code eu.exeris.*} heap
-     * objects in the steady-state phase.
+     * Asserts the Enterprise zero-allocation contract: zero heap allocation in the steady-state
+     * phase.
+     *
+     * <p>Two independent signals are checked (issue #178): the {@code eu.exeris.*} JFR allocation
+     * events (attribute <em>what</em> allocated, but under-report small steady allocations that fit
+     * inside an active TLAB), and the {@code ThreadMXBean} per-thread allocated-bytes delta (exact,
+     * TLAB-granularity-immune — proves the absence). A truly zero-allocation hot path satisfies both.
      */
     public static void assertZeroExerisAllocations(Result result, String hotPathDescription) {
         assertThat(result.exerisAllocations())
@@ -206,6 +275,25 @@ public final class JfrAllocationMonitor {
                                 + "instances on the hot path.\nDetected classes: %s",
                         hotPathDescription, result.summary())
                 .isEmpty();
+
+        // JFR-independent proof (issue #178): a zero-allocation hot path has no per-iteration
+        // allocation. We assert the thread-allocated-bytes delta stays below the iteration count —
+        // i.e. an average < 1 byte/iteration. The smallest heap object is ~16 bytes, so any genuine
+        // per-iteration allocation blows far past this bound, while a small fixed one-time cost
+        // (lazy init / re-resolve in the steady phase that warm-up didn't cover) is tolerated. This
+        // catches the small steady allocations the TLAB-refill-granular JFR events miss. Skipped
+        // only when the JVM cannot report per-thread allocation (ALLOCATED_BYTES_UNAVAILABLE).
+        if (result.allocatedBytesDelta() != ALLOCATED_BYTES_UNAVAILABLE) {
+            assertThat(result.allocatedBytesDelta())
+                    .as("Enterprise hot path (%s) must have no per-iteration allocation "
+                                    + "(ThreadMXBean cross-check, immune to TLAB-refill granularity): "
+                                    + "thread-allocated-bytes delta must stay below the iteration count "
+                                    + "(avg < 1 byte/iteration). A delta at/above it with zero eu.exeris.* "
+                                    + "JFR events means the hot path allocates per call (possibly JDK "
+                                    + "temporaries) the event stream under-reported.\nDetected: %s",
+                            hotPathDescription, result.summary())
+                    .isLessThan(result.hotPathIterations());
+        }
     }
 
     /**
@@ -237,9 +325,14 @@ public final class JfrAllocationMonitor {
     // =========================================================================
 
     private static void enableAllocationEvents(Recording rec) {
-        rec.enable("jdk.ObjectAllocationInNewTLAB").withThreshold(Duration.ZERO);
-        rec.enable("jdk.ObjectAllocationOutsideTLAB").withThreshold(Duration.ZERO);
-        rec.enable("jdk.ObjectAllocationSample").withThreshold(Duration.ZERO);
+        // Allocation events have no duration, so withThreshold(...) was a no-op on all three
+        // (issue #178). InNewTLAB/OutsideTLAB only fire on a TLAB refill / large allocation, so
+        // small steady allocations inside an active TLAB emit no event — ObjectAllocationSample
+        // (JEP 349) samples across the heap and catches those, but it is governed by `throttle`
+        // (a rate), not a threshold. Disable the throttle to capture every sample point.
+        rec.enable("jdk.ObjectAllocationInNewTLAB");
+        rec.enable("jdk.ObjectAllocationOutsideTLAB");
+        rec.enable("jdk.ObjectAllocationSample").with("throttle", "off");
     }
 
     /**
