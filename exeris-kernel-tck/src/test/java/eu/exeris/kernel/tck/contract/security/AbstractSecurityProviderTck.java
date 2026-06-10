@@ -217,7 +217,9 @@ public abstract class AbstractSecurityProviderTck {
     /**
      * Creates a {@link LoanedBuffer} containing a valid token with NO isolation strategy claim.
      * The provider MUST return a {@link StorageContext} with
-     * {@link StorageContext.IsolationStrategy#SHARED} strategy (fail-closed default).
+     * {@link StorageContext.IsolationStrategy#SHARED} strategy (legitimate default — no isolation
+     * intent expressed; this is the only permissive fall-through, distinct from the terminal-deny
+     * applied to a declared-but-broken strategy, per ADR-012 §4a amended).
      *
      * <p>Default: delegates to {@link #createValidTokenBuffer()}, since a standard valid token
      * carries no isolation claim.
@@ -820,12 +822,13 @@ public abstract class AbstractSecurityProviderTck {
     class IsolationStrategyContract {
 
         @Test
-        @DisplayName("absent isolation claim \u2192 SHARED strategy (fail-closed default)")
+        @DisplayName("absent isolation claim \u2192 SHARED strategy (legitimate default)")
         void assert_authenticate_returns_shared_when_no_isolation_claim() {
             try (LoanedBuffer token = createTokenWithNoIsolationClaim()) {
                 StorageContext storage = provider.authenticate(token).storage();
                 assertThat(storage.strategy())
-                        .as("absent isolation claim MUST produce SHARED strategy (fail-closed)")
+                        .as("absent isolation claim MUST produce SHARED strategy (legitimate default, "
+                                + "no isolation intent \u2014 NOT a fail-closed denial; ADR-012 \u00a74a amended)")
                         .isEqualTo(StorageContext.IsolationStrategy.SHARED);
             }
         }
