@@ -1197,6 +1197,51 @@ Prior-knowledge HTTP/2 (`handlePriorKnowledge` lines 88-101) is unaffected — i
 
 ---
 
+### Diagnostics: JVM Runtime Ergonomics Snapshot (Introspective) + Recommended-Flags Baseline Doc
+
+**Gap:** The kernel surfaces no read-only view of the JVM and container environment it
+actually runs in: GC in use and heap geometry vs the cgroup `memory.max`,
+`ActiveProcessorCount` vs `cpu.max` quota, large-pages state, CDS/AOT archive presence,
+`cpuset` vs available cores. Operators diagnosing throughput problems have no
+kernel-surfaced signal that the deployment is CPU-throttled or memory-squeezed by its own
+container limits — the constrained `entity-read-by-id` JFR profile (Sprint 6 PERF-072
+context) showed 465/547 cgroup periods throttled, competing directly with request
+servicing, and nothing in the diagnostics surface would have said so. The Enterprise
+preflight track (`exeris-kernel-enterprise` EPIC-E8, item E8.23) needs the same snapshot
+shape; per ADR-008 the *introspective* surface belongs open-core while the *actionable*
+tuning advisor (recommendation ladder, thresholds) stays Enterprise-private.
+
+**Owner:** Diagnostics / Telemetry subsystem (kernel-architect lead).
+
+**Resolution:**
+
+1. **Snapshot type** — extend the ADR-033 snapshot family with `RuntimeErgonomicsSnapshot`
+   (append-only `schemaVersion` growth, same policy as the existing records): GC name,
+   heap max/committed, container limits read via cgroup-v2 self-inspection
+   (`/proc/self/cgroup`: `cpu.max`, `memory.max`, `cpuset.cpus.effective`),
+   `availableProcessors`, large-pages/THP state, CDS/AOT presence. Strictly observational —
+   no recommendation fields (those are the Enterprise advisor's surface, ADR-008).
+2. **Community provider** — populate from `java.lang.management` + procfs/cgroupfs reads in
+   `CommunityKernelDiagnosticsProvider`; graceful `UNAVAILABLE` markers on non-Linux or
+   cgroup-v1-only hosts.
+3. **Baseline doc** — `docs/operations/jvm-flags-baseline.md`: generic recommended flag
+   baseline for Community deployments (GC choice guidance, container-awareness flags,
+   large-pages prerequisites). Generic guidance only — no Enterprise-private thresholds.
+4. **TCK** — extend `AbstractKernelDiagnosticsTck` with the new snapshot's schema fixture
+   (append-only assertion) and an `UNAVAILABLE`-degradation case.
+
+**Merge Gate:** schema fixture asserts append-only growth; Community binding green
+including the degradation case; no `exeris-kernel-core` imports added to SPI (existing
+ArchUnit check covers the module); baseline doc reviewed against ADR-008 (no
+Enterprise-private tuning content).
+
+**Cross-repo dependents:** `exeris-kernel-enterprise` EPIC-E8 E8.23 (`JvmErgonomicsProbe`)
+consumes the same snapshot shape and layers the actionable `jvm.flags` advisory on top
+(Enterprise-private thresholds); E8.22/E8.24 (cgroup probe, resource-driven runtime
+geometry) read the container-limit fields as geometry inputs.
+
+---
+
 ### SPI Stability Declaration
 
 **Gap:** No formal 1.0 support/stability declaration exists yet for open-core APIs and subsystem contracts.
