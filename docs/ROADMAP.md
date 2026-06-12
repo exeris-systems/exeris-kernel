@@ -1199,8 +1199,9 @@ Prior-knowledge HTTP/2 (`handlePriorKnowledge` lines 88-101) is unaffected — i
 
 ### Diagnostics: JVM Runtime Ergonomics Snapshot (Introspective) + Recommended-Flags Baseline Doc
 
-> **Sequencing:** depends on the base `KernelDiagnostics` SPI delivery (previous entry) —
-> the snapshot is a fifth method on an interface that does not exist yet.
+> **Sequencing:** depends on the base `KernelDiagnostics` SPI (previous entry; interface
+> shipped in Sprint 1, PR #163) — the snapshot is a fifth method on that interface, so
+> this entry must land after the base SPI in the same release window.
 
 **Gap:** The kernel surfaces no read-only view of the JVM and container environment it
 actually runs in: GC in use and heap geometry vs the cgroup `memory.max`,
@@ -1254,7 +1255,10 @@ including the degradation and default-method cases; no `exeris-kernel-core` impo
 to SPI (existing ArchUnit check covers the module) and the ADR-033 §v0.9 guardrail rule
 (`eu.exeris.kernel.spi.diagnostics.*` MUST NOT import `jdk.jfr.Event` or
 `exeris-telemetry-spec` types) confirmed to cover the new snapshot type;
-`docs/subsystems/telemetry.md` registry row extended to `EX-DIAG-1005`; Enterprise
+`docs/subsystems/telemetry.md` registry row extended to `EX-DIAG-1005`; ADR-033 amended in
+the same PR: §Obligation 9 method count updated (four-method → five-method surface) and
+Engineering Protocol step 8 error-code range extended (`EX-DIAG-1001..1004` →
+`EX-DIAG-1001..1005`); Enterprise
 companion PR reviewed for ADR-033 Obligation 6 compliance — same
 `RuntimeErgonomicsSnapshot` record type, no fork, Enterprise-only threshold fields absent
 from the record itself; baseline doc reviewed against ADR-008 (no Enterprise-private
