@@ -1199,6 +1199,9 @@ Prior-knowledge HTTP/2 (`handlePriorKnowledge` lines 88-101) is unaffected — i
 
 ### Diagnostics: JVM Runtime Ergonomics Snapshot (Introspective) + Recommended-Flags Baseline Doc
 
+> **Sequencing:** depends on the base `KernelDiagnostics` SPI delivery (previous entry) —
+> the snapshot is a fifth method on an interface that does not exist yet.
+
 **Gap:** The kernel surfaces no read-only view of the JVM and container environment it
 actually runs in: GC in use and heap geometry vs the cgroup `memory.max`,
 `ActiveProcessorCount` vs `cpu.max` quota, large-pages state, CDS/AOT archive presence,
@@ -1215,30 +1218,53 @@ tuning advisor (recommendation ladder, thresholds) stays Enterprise-private.
 
 **Resolution:**
 
-1. **Snapshot type** — extend the ADR-033 snapshot family with `RuntimeErgonomicsSnapshot`
-   (append-only `schemaVersion` growth, same policy as the existing records): GC name,
-   heap max/committed, container limits read via cgroup-v2 self-inspection
-   (`/proc/self/cgroup`: `cpu.max`, `memory.max`, `cpuset.cpus.effective`),
-   `availableProcessors`, large-pages/THP state, CDS/AOT presence. Strictly observational —
-   no recommendation fields (those are the Enterprise advisor's surface, ADR-008).
-2. **Community provider** — populate from `java.lang.management` + procfs/cgroupfs reads in
-   `CommunityKernelDiagnosticsProvider`; graceful `UNAVAILABLE` markers on non-Linux or
-   cgroup-v1-only hosts.
-3. **Baseline doc** — `docs/operations/jvm-flags-baseline.md`: generic recommended flag
-   baseline for Community deployments (GC choice guidance, container-awareness flags,
-   large-pages prerequisites). Generic guidance only — no Enterprise-private thresholds.
-4. **TCK** — extend `AbstractKernelDiagnosticsTck` with the new snapshot's schema fixture
-   (append-only assertion) and an `UNAVAILABLE`-degradation case.
+1. **SPI surface** — a fifth method on `KernelDiagnostics`:
+   `getJvmErgonomics() → RuntimeErgonomicsSnapshot`. Per ADR-033 §5 (Java interface =
+   binary contract) adding a method is a binary-breaking change, so it ships with the full
+   compatibility story: a `default` implementation returning a snapshot whose optional
+   fields are all `Optional.empty()` (third-party providers stay binary-compatible), all
+   known providers (Community, Enterprise) updated in lockstep, and the matching
+   `AbstractKernelDiagnosticsTck` extension. Audit event code **`EX-DIAG-1005`** assigned
+   to the new method and registered in the telemetry error-code registry
+   (`docs/subsystems/telemetry.md` — the `CommunityKernelDiagnosticsEvent` row currently
+   reads `EX-DIAG-1001..1004` and must extend to `..1005`).
+2. **Snapshot type** — `RuntimeErgonomicsSnapshot` joins the ADR-033 snapshot family
+   (`schemaVersion` + `capturedAt`, append-only growth, same policy as the existing
+   records): GC name, heap max/committed, container limits from the cgroup-v2 unified
+   hierarchy (membership resolved via `/proc/self/cgroup`, limit values read from
+   `/sys/fs/cgroup/<path>/cpu.max`, `.../memory.max`, `.../cpuset.cpus.effective`),
+   `availableProcessors`, large-pages/THP state, CDS/AOT presence. Strictly
+   observational — no recommendation fields (those are the Enterprise advisor's surface,
+   ADR-008).
+3. **Community provider** — populate from `java.lang.management` + procfs/cgroupfs reads in
+   `CommunityKernelDiagnosticsProvider`; per ADR-033 Obligation 5, legitimately absent
+   data (non-Linux host, cgroup-v1-only hierarchy, no container limits) is modelled as
+   `Optional.empty()` on the affected fields — no new sentinel type.
+4. **Baseline doc** — `docs/operations/jvm-flags-baseline.md` (note: `docs/operations/` is
+   a new docs sub-directory introduced by this entry): generic recommended flag baseline
+   for Community deployments (GC choice guidance, container-awareness flags, large-pages
+   prerequisites). Generic guidance only — no Enterprise-private thresholds.
+5. **TCK** — extend `AbstractKernelDiagnosticsTck` with the new snapshot's schema fixture
+   (append-only assertion), the `Optional.empty()`-degradation case, and a
+   default-method-compat case (a provider that does not override `getJvmErgonomics()`
+   still satisfies the contract).
 
 **Merge Gate:** schema fixture asserts append-only growth; Community binding green
-including the degradation case; no `exeris-kernel-core` imports added to SPI (existing
-ArchUnit check covers the module); baseline doc reviewed against ADR-008 (no
-Enterprise-private tuning content).
+including the degradation and default-method cases; no `exeris-kernel-core` imports added
+to SPI (existing ArchUnit check covers the module) and the ADR-033 §v0.9 guardrail rule
+(`eu.exeris.kernel.spi.diagnostics.*` MUST NOT import `jdk.jfr.Event` or
+`exeris-telemetry-spec` types) confirmed to cover the new snapshot type;
+`docs/subsystems/telemetry.md` registry row extended to `EX-DIAG-1005`; Enterprise
+companion PR reviewed for ADR-033 Obligation 6 compliance — same
+`RuntimeErgonomicsSnapshot` record type, no fork, Enterprise-only threshold fields absent
+from the record itself; baseline doc reviewed against ADR-008 (no Enterprise-private
+tuning content).
 
 **Cross-repo dependents:** `exeris-kernel-enterprise` EPIC-E8 E8.23 (`JvmErgonomicsProbe`)
 consumes the same snapshot shape and layers the actionable `jvm.flags` advisory on top
-(Enterprise-private thresholds); E8.22/E8.24 (cgroup probe, resource-driven runtime
-geometry) read the container-limit fields as geometry inputs.
+(Enterprise-private thresholds) — lockstep provider update per Resolution item 1;
+E8.22/E8.24 (cgroup probe, resource-driven runtime geometry) read the container-limit
+fields as geometry inputs.
 
 ---
 
