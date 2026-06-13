@@ -6,7 +6,7 @@
  * Commercial resale of this software as a competing product is prohibited.
  * See LICENSE-COMMUNITY in the repository root for the full text.
  */
-package eu.exeris.kernel.community.diagnostics.cli;
+package eu.exeris.kernel.diagnostics.cli;
 
 import eu.exeris.kernel.spi.diagnostics.BootstrapDagSnapshot;
 import eu.exeris.kernel.spi.diagnostics.CompositionSnapshot;

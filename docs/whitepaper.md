@@ -127,10 +127,24 @@ The only external dependencies are the data stores (PostgreSQL, Redis) and optio
 
 ## 5. SLA / SLO Baseline Table
 
-The following figures represent **certified performance on the reference hardware** below.
-Community and Enterprise tiers are measured separately. All limits are enforced by the TCK.
+This section separates what has been **measured** from what the TCK enforces as a **design contract**: measured results first, contract targets second.
 
-**Reference hardware:** AWS `c6i.4xlarge` (16 vCPU, 32 GB RAM), Linux 5.15 kernel, Java 26 GA.
+### 5.1 Measured Results to Date
+
+**Saga compensation correctness (`e2e-shop-order-saga`, 2026-05-05, dev-laptop, loopback HTTP/1.1 — claim scope: exploratory; reproducibility artifacts published in `exeris-benchmarks`).** A five-step order saga with payment failure injected at a configured 3% rate, run against Quarkus 3 + Axon Framework and Spring Boot 3 + Axon Framework (each requiring a separate Axon Server process). Full-system totals (app + Axon Server): Exeris in-process **459 MB RSS / 66 threads / 24.7 CPU-s**, versus **~1.54 GB / ~217 threads / ~48 CPU-s** for Quarkus + Axon and **~2.16 GB / ~221 threads / ~85 CPU-s** for Spring + Axon — i.e. **3.4× lower memory / 3.3× fewer threads / ~1.9× lower CPU** vs Quarkus + Axon, and **4.7× / 3.3× / ~3.4×** vs Spring + Axon. On compensation correctness at the configured 3% failure rate: Exeris compensated **3.32%** of sagas (matching the injection within statistical noise), while both Axon stacks reported **0%** compensations — their async `202 Accepted` dispatch returns before the saga completes, leaving 1.82% (Quarkus) / 1.22% (Spring) of sagas unresolved at window close. Full write-up: B2B technical whitepaper §4.1 and the blog post "What you measure depends on where you draw the boundary" (blog.arkstack.dev).
+
+**TLS record path (JMH micro-matrix, report `20260501-123118-all` in `exeris-benchmarks/results/reports/`; publication mode: public; baseline rows `comparison_eligible`; recorded hardware profile: `linux-generic`).** The Exeris Enterprise `OffHeapTlsEngine` on the in-process Memory-BIO harness (B5) measured **~923,617 ops/s at p99 2.10 µs** — on par with the JDK `SSLEngine` baseline (B3: ~905,855 ops/s, p99 2.97 µs) and Netty tcnative (B4: ~850,225 ops/s, p99 2.72 µs). The Exeris Community FD-owner integration path (B6, real loopback socket) measured **~365,375 ops/s**: the gap versus the engine-level rows is socket-wiring overhead on the Community integration path, and per the published report B5 (Memory-BIO lens) and B6 (FD-owner) are deliberately not collapsed into a single row.
+
+**HTTP scenario throughput (`entity-read-by-id`, 2026-03-25, dev-laptop, loopback HTTP/1.1 — claim scope: exploratory).** Single-target run (wrk, 4 threads / 64 connections / 30 s): **16,635 RPS at p99 12.25 ms**, zero errors. Comparative fairness-gated re-runs on the reference profile are roadmap.
+
+All runtime-scenario measurements to date were taken on dev-laptop-class hardware over loopback and are published as exploratory (or as labeled in the per-run artifacts); the reference-profile (`perf-box-amd64`, EU bare metal) validation campaign is on the public roadmap.
+
+### 5.2 Contract Targets (TCK-Enforced Design Limits)
+
+The following figures are **TCK-enforced design limits ("the contract")**, defined against the designated reference profile below.
+Community and Enterprise tiers are measured separately.
+
+**Reference profile:** `perf-box-amd64` — EU-hosted dedicated bare metal (Hetzner AX-class: AMD x86-64, 16 hardware threads, 64 GB RAM, local NVMe; Falkenstein DE / Helsinki FI), Linux, Java 26 GA. Profile contract: `exeris-benchmarks/docs/hardware-profiles.md`; exact CPU model recorded per run.
 
 | Metric                              | Community Limit          | Enterprise Limit          | TCK Enforcement                     |
 |:------------------------------------|:------------------------:|:-------------------------:|:------------------------------------|
@@ -142,7 +156,7 @@ Community and Enterprise tiers are measured separately. All limits are enforced 
 | **Bootstrap cold start P99**        | ≤ 500 ms                 | ≤ 800 ms                   | JFR `BootstrapJfrEvents.KernelBootReadyEvent`          |
 | **Saga state transition P99**       | ≤ 5 ms (DB-bound)        | ≤ 1 µs (memory-bound)      | JMH `AbstractFlowParkWakeBenchmark`         |
 | **OpenSSL ABI symbol resolution**   | 100% (all bound symbols) | 100% (all bound symbols)   | Planned: ABI symbol TCK (OpenSSL/FFM)       |
-| **Throughput (reference HW)**       | ~2,800 RPS/vCPU          | ~8,500 RPS/vCPU            | JMH + flame graph analysis          |
+| **Throughput (reference profile)**  | ~2,800 RPS/vCPU          | ~8,500 RPS/vCPU            | JMH + flame graph analysis          |
 
 > **Measurement context for throughput:** "RPS/vCPU" measured with synthetic HTTP/1.1 workload,
 > no persistence (in-memory mock), 10k concurrent connections. Persistence-bound workloads will
