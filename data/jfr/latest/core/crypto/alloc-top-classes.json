@@ -1,31 +1,46 @@
 [ {
+  "class" : "jdk.jfr.internal.SettingsManager$InternalSetting",
+  "count" : 2,
+  "bytes" : 261576,
+  "category" : "JVM_NOISE"
+}, {
   "class" : "java.util.LinkedHashMap$Entry",
-  "count" : 4,
-  "bytes" : 1029920,
+  "count" : 2,
+  "bytes" : 363032,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "[Ljava.util.HashMap$Node;",
-  "count" : 3,
-  "bytes" : 797128,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "java.util.HashMap$KeyIterator",
+  "class" : "java.util.HashMap",
   "count" : 1,
-  "bytes" : 261560,
+  "bytes" : 277960,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "java.lang.VirtualThread",
+  "class" : "java.util.HashMap$Node",
   "count" : 1,
-  "bytes" : 261456,
-  "category" : "LOOM_RUNTIME"
+  "bytes" : 261536,
+  "category" : "JVM_NOISE"
 }, {
-  "class" : "[B",
+  "class" : "java.util.ArrayList",
   "count" : 1,
   "bytes" : 261568,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "java.lang.VirtualThread$VThreadContinuation",
+  "class" : "[Ljava.util.HashMap$Node;",
   "count" : 1,
-  "bytes" : 261512,
+  "bytes" : 261544,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "java.lang.ThreadBuilders$VirtualThreadBuilder",
+  "count" : 1,
+  "bytes" : 261536,
   "category" : "LOOM_RUNTIME"
+}, {
+  "class" : "[B",
+  "count" : 1,
+  "bytes" : 261560,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "java.util.concurrent.ConcurrentHashMap$Node",
+  "count" : 1,
+  "bytes" : 261552,
+  "category" : "JVM_NOISE"
 } ]

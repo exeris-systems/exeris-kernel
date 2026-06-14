@@ -1,21 +1,16 @@
 [ {
-  "class" : "java.util.HashMap",
+  "class" : "eu.exeris.kernel.core.security.jfr.SecurityJfrEvents$StorageContextDerivedEvent",
+  "count" : 4,
+  "bytes" : 523168,
+  "category" : "TEST_HARNESS"
+}, {
+  "class" : "java.util.LinkedHashMap$Entry",
   "count" : 2,
   "bytes" : 261576,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "jdk.jfr.events.InitialSecurityPropertyEvent",
-  "count" : 2,
-  "bytes" : 261616,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "eu.exeris.kernel.core.security.jfr.SecurityJfrEvents$StorageContextDerivedEvent",
-  "count" : 2,
-  "bytes" : 261584,
-  "category" : "TEST_HARNESS"
-}, {
-  "class" : "[B",
+  "class" : "java.util.HashMap",
   "count" : 1,
-  "bytes" : 261568,
+  "bytes" : 261512,
   "category" : "JVM_NOISE"
 } ]

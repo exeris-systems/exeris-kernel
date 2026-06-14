@@ -1,102 +1,112 @@
 [ {
   "class" : "java.lang.VirtualThread",
-  "count" : 1143,
-  "bytes" : 9983352,
-  "category" : "LOOM_RUNTIME"
-}, {
-  "class" : "jdk.internal.vm.StackChunk",
-  "count" : 105,
-  "bytes" : 1669232,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "java.lang.ThreadBuilders$VirtualThreadBuilder",
-  "count" : 66,
-  "bytes" : 3168,
-  "category" : "LOOM_RUNTIME"
-}, {
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000007b2470f0",
-  "count" : 66,
-  "bytes" : 1584,
-  "category" : "LOOM_RUNTIME"
-}, {
-  "class" : "java.util.concurrent.ConcurrentHashMap$Node",
-  "count" : 46,
-  "bytes" : 128696,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "java.lang.VirtualThread$VThreadContinuation",
-  "count" : 4,
-  "bytes" : 288,
+  "count" : 639,
+  "bytes" : 1124952,
   "category" : "LOOM_RUNTIME"
 }, {
   "class" : "java.util.concurrent.ForkJoinTask$AdaptedRunnableAction",
-  "count" : 4,
-  "bytes" : 48048,
+  "count" : 291,
+  "bytes" : 569640,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "java.util.HashMap$Node",
-  "count" : 3,
-  "bytes" : 95976,
+  "class" : "java.lang.VirtualThread$VThreadContinuation$1",
+  "count" : 190,
+  "bytes" : 656904,
+  "category" : "LOOM_RUNTIME"
+}, {
+  "class" : "java.lang.ThreadBuilders$VirtualThreadBuilder",
+  "count" : 184,
+  "bytes" : 674128,
+  "category" : "LOOM_RUNTIME"
+}, {
+  "class" : "jdk.internal.vm.StackChunk",
+  "count" : 98,
+  "bytes" : 1060464,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "[B",
-  "count" : 3,
-  "bytes" : 48008,
+  "class" : "java.util.concurrent.ConcurrentHashMap$Node",
+  "count" : 41,
+  "bytes" : 161944,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "java.util.HashMap$KeyIterator",
-  "count" : 3,
-  "bytes" : 25224256,
-  "category" : "JVM_NOISE"
+  "class" : "java.lang.VirtualThread$VThreadContinuation",
+  "count" : 18,
+  "bytes" : 107104,
+  "category" : "LOOM_RUNTIME"
 }, {
   "class" : "java.lang.Object",
-  "count" : 3,
-  "bytes" : 47992,
+  "count" : 11,
+  "bytes" : 176,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "eu.exeris.kernel.core.events.jfr.EventBusPublishEvent",
-  "count" : 2,
-  "bytes" : 80,
-  "category" : "TEST_HARNESS"
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000602470f0",
+  "count" : 11,
+  "bytes" : 62392,
+  "category" : "LOOM_RUNTIME"
 }, {
   "class" : "java.util.concurrent.CopyOnWriteArrayList$COWIterator",
-  "count" : 2,
-  "bytes" : 48,
+  "count" : 8,
+  "bytes" : 46480,
   "category" : "JVM_NOISE"
 }, {
   "class" : "java.util.HashMap",
-  "count" : 2,
-  "bytes" : 128,
+  "count" : 4,
+  "bytes" : 46568,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "[Ljdk.jfr.internal.util.TimespanUnit;",
-  "count" : 2,
-  "bytes" : 56163456,
+  "class" : "[B",
+  "count" : 4,
+  "bytes" : 185312,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "[Ljava.util.HashMap$Node;",
+  "class" : "java.util.LinkedHashMap$Entry",
+  "count" : 3,
+  "bytes" : 92640,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "java.util.ArrayList$Itr",
+  "count" : 3,
+  "bytes" : 24899632,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "java.lang.String",
+  "count" : 2,
+  "bytes" : 92664,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "java.util.LinkedHashMap",
+  "count" : 2,
+  "bytes" : 46400,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "eu.exeris.kernel.core.events.InMemoryEventBus$$Lambda.0x000000006069b1d0",
+  "count" : 2,
+  "bytes" : 33016,
+  "category" : "TEST_HARNESS"
+}, {
+  "class" : "java.util.HashMap$KeyIterator",
+  "count" : 2,
+  "bytes" : 56830672,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "jdk.jfr.internal.SettingsManager$InternalSetting",
   "count" : 1,
-  "bytes" : 68448,
+  "bytes" : 62752,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "java.util.concurrent.DelayScheduler$ScheduledForkJoinTask",
+  "count" : 1,
+  "bytes" : 96,
   "category" : "JVM_NOISE"
 }, {
   "class" : "java.util.HashSet",
   "count" : 1,
-  "bytes" : 47976,
+  "bytes" : 24,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "java.lang.String",
+  "class" : "[Ljava.util.HashMap$Node;",
   "count" : 1,
-  "bytes" : 47976,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "java.util.LinkedHashMap$Entry",
-  "count" : 1,
-  "bytes" : 47928,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "[Ljava.util.concurrent.ConcurrentHashMap$Node;",
-  "count" : 1,
-  "bytes" : 16400,
+  "bytes" : 80,
   "category" : "JVM_NOISE"
 }, {
   "class" : "[Ljava.util.concurrent.ForkJoinTask;",
@@ -104,28 +114,13 @@
   "bytes" : 32784,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "eu.exeris.kernel.community.events.CommunityEventLoop$$Lambda.0x000000007b699af8",
+  "class" : "[Ljdk.jfr.internal.util.TimespanUnit;",
   "count" : 1,
-  "bytes" : 24,
-  "category" : "PRODUCTION"
-}, {
-  "class" : "java.util.concurrent.DelayScheduler$ScheduledForkJoinTask",
-  "count" : 1,
-  "bytes" : 96,
+  "bytes" : 708216,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "java.util.LinkedHashMap",
+  "class" : "eu.exeris.kernel.tck.contract.AbstractSubsystemCarrierPinningTck$$Lambda.0x00000000604cbdc8",
   "count" : 1,
-  "bytes" : 88,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "[Ljava.lang.Object;",
-  "count" : 1,
-  "bytes" : 47920,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "java.lang.StringBuilder",
-  "count" : 1,
-  "bytes" : 47976,
-  "category" : "JVM_NOISE"
+  "bytes" : 46328,
+  "category" : "TEST_HARNESS"
 } ]
