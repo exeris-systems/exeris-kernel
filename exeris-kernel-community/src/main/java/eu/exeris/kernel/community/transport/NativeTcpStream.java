@@ -470,6 +470,10 @@ final class NativeTcpStream implements TransportStream {
      * acquire the slot and flush it — the determinism the {@code reset()}-abandon discriminator needs.
      */
     /* default */ void completeAbortAndUnpinOutboundConsumerForTest(Thread owner) {
+        assert resetRequested.get()
+                : "completeAbortAndUnpinOutboundConsumerForTest requires a prior reset() — "
+                + "completing a close while holding the consumer slot without an abort request "
+                + "would tear down a still-live stream";
         try {
             finishCloseIfDrained();
         } finally {

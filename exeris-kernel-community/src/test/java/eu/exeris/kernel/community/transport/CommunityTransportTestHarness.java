@@ -131,7 +131,7 @@ final class CommunityTransportTestHarness {
         Thread holder = Thread.ofVirtual().name("tck-egress-hold").start(() -> {
             Thread self = Thread.currentThread();
             while (!stream.tryPinOutboundConsumerForTest(self)) {
-                Thread.onSpinWait();
+                Thread.yield();
             }
             acquired.countDown();
             awaitUninterruptibly(release);
@@ -144,6 +144,11 @@ final class CommunityTransportTestHarness {
                 holder.join(TimeUnit.SECONDS.toMillis(2));
             } catch (InterruptedException interrupted) {
                 Thread.currentThread().interrupt();
+            }
+            // Surface a hung abort as a test failure rather than silently entering the
+            // peer-read loop before the queued write was discarded.
+            if (holder.isAlive()) {
+                throw new AssertionError("tck-egress-hold VT did not complete the abort within 2s");
             }
         };
     }
