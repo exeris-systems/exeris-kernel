@@ -106,6 +106,57 @@ public abstract class AbstractTransportStreamTck {
     }
 
     /**
+     * Body of {@link ResetContract#resetAbandonsQueuedWriteAtPeer}, extracted (without the
+     * {@link #expectsTrueReset()} assumption) so the TCK's own meta-test can drive it against a
+     * fake binding and prove the discriminator is non-vacuous — a binding that drains queued data
+     * on {@code reset()} MUST make this throw {@link AssertionError}. Package-private, test-only.
+     */
+    final void runResetAbandonsAtPeerDiscriminator() throws Exception {
+        TransportStream writer = streams.writer();
+        TransportStream reader = streams.reader();
+
+        try (AutoCloseable hold = holdOutboundEgress(writer)) {
+            LoanedBuffer buf = allocator.allocate(AllocationHint.MICRO);
+            buf.segment().set(ValueLayout.JAVA_BYTE, 0, (byte) 0x7E);
+            writer.queueWrite(buf, 1);   // ownership transferred; egress held → stays pending
+
+            assertThat(writer.hasPendingData())
+                    .as("precondition: with egress held the queued write must be genuinely "
+                            + "pending — if false, holdOutboundEgress() did not defeat the "
+                            + "synchronous flush")
+                    .isTrue();
+
+            writer.reset(0L);            // abort: abandon the pending byte, engage stream reset
+        }   // hold.close() completes the abort on the slot owner before any reactor can flush
+
+        // The peer MUST NOT observe the abandoned 0x7E — only EOF (-1) or a reset error.
+        try (LoanedBuffer recvBuf = allocator.allocate(AllocationHint.MICRO)) {
+            MemorySegment recvSeg = recvBuf.segment();
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3);
+            while (System.nanoTime() < deadline) {
+                int bytesRead;
+                try {
+                    bytesRead = reader.read(recvSeg, 1);
+                } catch (RuntimeException resetObserved) {
+                    return;   // RST surfaced as TransportException/IllegalStateException — abandoned. PASS.
+                }
+                if (bytesRead == -1) {
+                    return;   // EOF before any payload byte — abandoned. PASS.
+                }
+                if (bytesRead >= 1) {
+                    byte got = recvSeg.get(ValueLayout.JAVA_BYTE, 0);
+                    fail("reset() must abandon the queued write, but the peer received payload "
+                            + "byte 0x" + Integer.toHexString(got & 0xFF) + " — this binding "
+                            + "drains on reset() and must not declare expectsTrueReset()=true");
+                }
+                LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(5));
+            }
+            fail("peer neither received the abandoned byte nor observed EOF/RST within 3s "
+                    + "(reset() did not engage, or the timing window is too tight)");
+        }
+    }
+
+    /**
      * Stream pair for loopback testing.
      */
     public record StreamPair(TransportStream writer, TransportStream reader) {
@@ -286,49 +337,7 @@ public abstract class AbstractTransportStreamTck {
             Assumptions.assumeTrue(expectsTrueReset(),
                     "binding does not claim true abortive reset (reset() degrades to graceful close); "
                             + "abandon-vs-drain peer discriminator skipped — see issue #180");
-
-            TransportStream writer = streams.writer();
-            TransportStream reader = streams.reader();
-
-            try (AutoCloseable hold = holdOutboundEgress(writer)) {
-                LoanedBuffer buf = allocator.allocate(AllocationHint.MICRO);
-                buf.segment().set(ValueLayout.JAVA_BYTE, 0, (byte) 0x7E);
-                writer.queueWrite(buf, 1);   // ownership transferred; egress held → stays pending
-
-                assertThat(writer.hasPendingData())
-                        .as("precondition: with egress held the queued write must be genuinely "
-                                + "pending — if false, holdOutboundEgress() did not defeat the "
-                                + "synchronous flush")
-                        .isTrue();
-
-                writer.reset(0L);            // abort: abandon the pending byte, engage stream reset
-            }   // hold.close() completes the abort on the slot owner before any reactor can flush
-
-            // The peer MUST NOT observe the abandoned 0x7E — only EOF (-1) or a reset error.
-            try (LoanedBuffer recvBuf = allocator.allocate(AllocationHint.MICRO)) {
-                MemorySegment recvSeg = recvBuf.segment();
-                long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3);
-                while (System.nanoTime() < deadline) {
-                    int bytesRead;
-                    try {
-                        bytesRead = reader.read(recvSeg, 1);
-                    } catch (RuntimeException resetObserved) {
-                        return;   // RST surfaced as TransportException/IllegalStateException — abandoned. PASS.
-                    }
-                    if (bytesRead == -1) {
-                        return;   // EOF before any payload byte — abandoned. PASS.
-                    }
-                    if (bytesRead >= 1) {
-                        byte got = recvSeg.get(ValueLayout.JAVA_BYTE, 0);
-                        fail("reset() must abandon the queued write, but the peer received payload "
-                                + "byte 0x" + Integer.toHexString(got & 0xFF) + " — this binding "
-                                + "drains on reset() and must not declare expectsTrueReset()=true");
-                    }
-                    LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(5));
-                }
-                fail("peer neither received the abandoned byte nor observed EOF/RST within 3s "
-                        + "(reset() did not engage, or the timing window is too tight)");
-            }
+            runResetAbandonsAtPeerDiscriminator();
         }
 
         @Test
