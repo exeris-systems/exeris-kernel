@@ -116,6 +116,56 @@ final class CommunityTransportTestHarness {
         );
     }
 
+    /**
+     * Test-only egress hold for the {@code reset()}-abandon discriminator (issue #180). Pins the
+     * {@code writer}'s outbound consumer slot from a dedicated virtual thread so a subsequent
+     * {@link TransportStream#queueWrite} leaves its payload genuinely pending (no synchronous
+     * flush). The returned handle, on {@code close()}, completes the already-requested abortive
+     * {@code reset()} on the slot-owning thread — discarding the pending write before any carrier
+     * reactor can flush it — and then releases the slot.
+     */
+    static AutoCloseable holdOutboundConsumer(TransportStream writer) {
+        NativeTcpStream stream = (NativeTcpStream) writer;
+        CountDownLatch acquired = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        Thread holder = Thread.ofVirtual().name("tck-egress-hold").start(() -> {
+            Thread self = Thread.currentThread();
+            while (!stream.tryPinOutboundConsumerForTest(self)) {
+                Thread.onSpinWait();
+            }
+            acquired.countDown();
+            awaitUninterruptibly(release);
+            stream.completeAbortAndUnpinOutboundConsumerForTest(self);
+        });
+        awaitUninterruptibly(acquired);
+        return () -> {
+            release.countDown();
+            try {
+                holder.join(TimeUnit.SECONDS.toMillis(2));
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+            }
+        };
+    }
+
+    private static void awaitUninterruptibly(CountDownLatch latch) {
+        boolean interrupted = false;
+        try {
+            while (true) {
+                try {
+                    latch.await();
+                    return;
+                } catch (InterruptedException e) {
+                    interrupted = true;
+                }
+            }
+        } finally {
+            if (interrupted) {
+                Thread.currentThread().interrupt();
+            }
+        }
+    }
+
     static int nextFreePort() {
         try (ServerSocketChannel server = ServerSocketChannel.open()) {
             server.bind(new InetSocketAddress("127.0.0.1", 0));

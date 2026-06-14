@@ -13,6 +13,7 @@ import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.transport.TransportStream;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -29,6 +30,7 @@ import java.util.concurrent.locks.LockSupport;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.fail;
 
 /**
  * TCK: Abstract base for {@link TransportStream} I/O semantics verification.
@@ -61,6 +63,47 @@ public abstract class AbstractTransportStreamTck {
      * Provides a {@link MemoryAllocator} for buffer creation in tests.
      */
     protected abstract MemoryAllocator createAllocator();
+
+    /**
+     * Declares whether this binding implements TRUE abortive {@link TransportStream#reset(long)}
+     * semantics (reset as an <em>abort</em>) rather than the SPI-default best-effort graceful
+     * {@link TransportStream#close()}.
+     *
+     * <p>When {@code false} (the default), the abandon-vs-drain peer discriminator
+     * ({@code resetAbandonsQueuedWriteAtPeer}) is SKIPPED via a JUnit assumption: a binding that
+     * degrades reset to graceful close is <em>visibly exempt</em> (reported skipped) instead of
+     * silently passing abort semantics it does not provide. This is the contract gate of issue
+     * #180 — no binding may silently claim abort fidelity.
+     *
+     * <p>When {@code true}, the binding asserts that data genuinely queued but unflushed at
+     * {@code reset()} time is NOT delivered to the peer. Override to {@code true} only for a
+     * transport with a distinct abort primitive (SO_LINGER-0 abortive TCP close, QUIC RESET_STREAM),
+     * and pair it with {@link #holdOutboundEgress(TransportStream)}.
+     *
+     * @return {@code true} if this binding provides true abortive reset; {@code false} by default
+     */
+    protected boolean expectsTrueReset() {
+        return false;
+    }
+
+    /**
+     * Arranges for a subsequent {@link TransportStream#queueWrite} on {@code writer} to leave the
+     * payload GENUINELY PENDING (unflushed) rather than flushing it synchronously on the calling
+     * thread, then deterministically completes an already-requested {@link TransportStream#reset}
+     * as an abandon when the returned handle is closed.
+     *
+     * <p>Bindings whose {@code queueWrite} opportunistically flushes on the caller thread MUST
+     * override this so the abandon-vs-drain discriminator is deterministic on a constrained CI box;
+     * a volume-based socket-buffer fill is flaky and platform-dependent. The default returns a no-op
+     * handle and is only consulted from the {@link #expectsTrueReset()}-gated test, so default
+     * bindings never depend on it.
+     *
+     * @param writer the stream that will receive a queued write to be abandoned by {@code reset}
+     * @return a handle whose {@code close()} releases the hold; never {@code null}
+     */
+    protected AutoCloseable holdOutboundEgress(TransportStream writer) {
+        return () -> { };
+    }
 
     /**
      * Stream pair for loopback testing.
@@ -215,7 +258,7 @@ public abstract class AbstractTransportStreamTck {
     class ResetContract {
 
         @Test
-        @DisplayName("reset() abandons queued writes — hasPendingData() clears")
+        @DisplayName("reset() clears the pending-data flag (teardown liveness)")
         @Timeout(value = 5, unit = TimeUnit.SECONDS)
         void resetAbandonsPendingData() {
             TransportStream writer = streams.writer();
@@ -234,6 +277,58 @@ public abstract class AbstractTransportStreamTck {
                     .as("reset() MUST abandon queued writes (no drain wait) — hasPendingData() "
                             + "must clear, otherwise close()/teardown hangs")
                     .isFalse();
+        }
+
+        @Test
+        @DisplayName("reset() abandons a genuinely-pending queued write — peer does not receive it")
+        @Timeout(value = 5, unit = TimeUnit.SECONDS)
+        void resetAbandonsQueuedWriteAtPeer() throws Exception {
+            Assumptions.assumeTrue(expectsTrueReset(),
+                    "binding does not claim true abortive reset (reset() degrades to graceful close); "
+                            + "abandon-vs-drain peer discriminator skipped — see issue #180");
+
+            TransportStream writer = streams.writer();
+            TransportStream reader = streams.reader();
+
+            try (AutoCloseable hold = holdOutboundEgress(writer)) {
+                LoanedBuffer buf = allocator.allocate(AllocationHint.MICRO);
+                buf.segment().set(ValueLayout.JAVA_BYTE, 0, (byte) 0x7E);
+                writer.queueWrite(buf, 1);   // ownership transferred; egress held → stays pending
+
+                assertThat(writer.hasPendingData())
+                        .as("precondition: with egress held the queued write must be genuinely "
+                                + "pending — if false, holdOutboundEgress() did not defeat the "
+                                + "synchronous flush")
+                        .isTrue();
+
+                writer.reset(0L);            // abort: abandon the pending byte, engage stream reset
+            }   // hold.close() completes the abort on the slot owner before any reactor can flush
+
+            // The peer MUST NOT observe the abandoned 0x7E — only EOF (-1) or a reset error.
+            try (LoanedBuffer recvBuf = allocator.allocate(AllocationHint.MICRO)) {
+                MemorySegment recvSeg = recvBuf.segment();
+                long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3);
+                while (System.nanoTime() < deadline) {
+                    int bytesRead;
+                    try {
+                        bytesRead = reader.read(recvSeg, 1);
+                    } catch (RuntimeException resetObserved) {
+                        return;   // RST surfaced as TransportException/IllegalStateException — abandoned. PASS.
+                    }
+                    if (bytesRead == -1) {
+                        return;   // EOF before any payload byte — abandoned. PASS.
+                    }
+                    if (bytesRead >= 1) {
+                        byte got = recvSeg.get(ValueLayout.JAVA_BYTE, 0);
+                        fail("reset() must abandon the queued write, but the peer received payload "
+                                + "byte 0x" + Integer.toHexString(got & 0xFF) + " — this binding "
+                                + "drains on reset() and must not declare expectsTrueReset()=true");
+                    }
+                    LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(5));
+                }
+                fail("peer neither received the abandoned byte nor observed EOF/RST within 3s "
+                        + "(reset() did not engage, or the timing window is too tight)");
+            }
         }
 
         @Test
