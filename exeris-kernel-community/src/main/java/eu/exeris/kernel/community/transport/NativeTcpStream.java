@@ -194,7 +194,6 @@ final class NativeTcpStream implements TransportStream {
             throw new IllegalArgumentException("maxBytes out of range for target segment");
         }
         if (maxBytes <= 0) {
-            // SPI contract: non-positive maxBytes is a no-op (no I/O, no state change).
             return 0;
         }
 

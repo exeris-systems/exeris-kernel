@@ -183,6 +183,20 @@ public abstract class AbstractTransportStreamTck {
                 }
             }
         }
+
+        @Test
+        @DisplayName("read(target, 0) on a closed stream returns 0 (no-op takes precedence over closed-state)")
+        @Timeout(value = 5, unit = TimeUnit.SECONDS)
+        void nonPositiveMaxBytesOnClosedStreamReturnsZero() {
+            TransportStream reader = streams.reader();
+            reader.close();
+            try (LoanedBuffer recvBuf = allocator.allocate(AllocationHint.MICRO)) {
+                assertThat(reader.read(recvBuf.segment(), 0))
+                        .as("read(target, 0) on a closed stream MUST return 0, not throw — "
+                                + "the no-op contract takes precedence over the closed-state rejection")
+                        .isZero();
+            }
+        }
     }
 
     // =========================================================================

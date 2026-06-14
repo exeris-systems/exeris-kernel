@@ -63,6 +63,11 @@ public interface TransportStream extends AutoCloseable {
      * from a (possibly drained) budget. Implementations MUST NOT throw on
      * non-positive {@code maxBytes}.
      *
+     * <p>The no-op takes precedence over closed state: a non-positive request returns
+     * {@code 0} even after this stream has been closed, rather than raising the
+     * {@code IllegalStateException} that a positive-{@code maxBytes} read on a closed
+     * stream throws.
+     *
      * <h2>Zero-Copy</h2>
      * <p>Enterprise implementations fill the target segment directly from the
      * native asynchronous I/O completion buffer (zero intermediate copy). Community
