@@ -142,6 +142,50 @@ public abstract class AbstractTransportStreamTck {
     }
 
     // =========================================================================
+    // read() bounds — non-positive maxBytes contract
+    // =========================================================================
+
+    @Nested
+    @DisplayName("read() bounds")
+    class ReadBounds {
+
+        @Test
+        @DisplayName("read(target, 0) and read(target, -1) return 0 without consuming pending data")
+        @Timeout(value = 5, unit = TimeUnit.SECONDS)
+        void nonPositiveMaxBytesIsNoOp() {
+            // Arrange: put a payload in flight so the reader genuinely has data pending.
+            try (LoanedBuffer sendBuf = allocator.allocate(AllocationHint.SMALL)) {
+                MemorySegment seg = sendBuf.segment();
+                seg.set(ValueLayout.JAVA_LONG, 0, 0xFEEDFACE_CAFEBEEFL);
+                int length = Long.BYTES;
+                streams.writer().write(seg, length);
+
+                TransportStream reader = streams.reader();
+
+                try (LoanedBuffer recvBuf = allocator.allocate(AllocationHint.SMALL)) {
+                    MemorySegment recvSeg = recvBuf.segment();
+
+                    // Act + Assert: non-positive maxBytes is a no-op (no I/O, no throw, returns 0).
+                    assertThat(reader.read(recvSeg, 0))
+                            .as("read(target, 0) MUST return 0 immediately (no-op contract)")
+                            .isZero();
+                    assertThat(reader.read(recvSeg, -1))
+                            .as("read(target, -1) MUST return 0 immediately (no-op contract)")
+                            .isZero();
+
+                    // Assert: the stream remains readable and the pending payload was not consumed.
+                    int bytesRead = reader.read(recvSeg, length);
+                    assertThat(bytesRead)
+                            .as("a no-op read MUST NOT consume pending data — the payload is still readable")
+                            .isEqualTo(length);
+                    assertThat(recvSeg.get(ValueLayout.JAVA_LONG, 0))
+                            .isEqualTo(0xFEEDFACE_CAFEBEEFL);
+                }
+            }
+        }
+    }
+
+    // =========================================================================
     // queueWrite() ownership transfer
     // =========================================================================
 
