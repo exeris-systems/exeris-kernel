@@ -81,7 +81,7 @@
                             <createDependencyReducedPom>false</createDependencyReducedPom>
                             <transformers>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                                    <mainClass>eu.exeris.kernel.community.diagnostics.cli.DiagnosticsCli</mainClass>
+                                    <mainClass>eu.exeris.kernel.diagnostics.cli.DiagnosticsCli</mainClass>
                                 </transformer>
                                 <!-- Merge META-INF/services across all shaded jars so ServiceLoader
                                      still finds every provider (config, subsystems, diagnostics, …). -->
