@@ -50,14 +50,26 @@ import static java.lang.foreign.ValueLayout.JAVA_LONG;
 @SuppressWarnings({"PMD.CyclomaticComplexity", "PMD.TooManyMethods"})
 public final class CoreOpenSslLoader {
 
-    /** {@code SSL_FILETYPE_PEM = 1} from {@code openssl/ssl.h}. */
+    /**
+     * {@code SSL_FILETYPE_PEM = 1} from {@code openssl/ssl.h}.
+     * Distinct OpenSSL domain from {@link #SSL_ERROR_SSL} despite the shared value {@code 1}:
+     * this is a file-type argument, not an {@code SSL_get_error} code.
+     */
     public static final int SSL_FILETYPE_PEM   = 1;
     /** {@code SSL_VERIFY_NONE = 0} — no peer certificate verification. */
     public static final int SSL_VERIFY_NONE    = 0;
+    /**
+     * {@code SSL_ERROR_SSL = 1} — fatal protocol error (e.g. non-TLS bytes on a TLS port).
+     * An {@code SSL_get_error} return code; unrelated to {@link #SSL_FILETYPE_PEM} (same value {@code 1},
+     * different OpenSSL domain).
+     */
+    public static final int SSL_ERROR_SSL        = 1;
     /** {@code SSL_ERROR_WANT_READ = 2}. */
     public static final int SSL_ERROR_WANT_READ  = 2;
     /** {@code SSL_ERROR_WANT_WRITE = 3}. */
     public static final int SSL_ERROR_WANT_WRITE = 3;
+    /** {@code SSL_ERROR_SYSCALL = 5} — I/O error or unexpected peer EOF mid-operation. */
+    public static final int SSL_ERROR_SYSCALL    = 5;
     /** {@code SSL_ERROR_ZERO_RETURN = 6} — clean peer close. */
     public static final int SSL_ERROR_ZERO_RETURN = 6;
 

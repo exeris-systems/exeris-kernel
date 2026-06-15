@@ -16,6 +16,7 @@ import eu.exeris.kernel.core.crypto.openssl.CoreSslHandles;
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.crypto.TlsPhase;
 import eu.exeris.kernel.spi.crypto.TlsStatus;
+import eu.exeris.kernel.spi.exceptions.crypto.TlsHandshakeException;
 import eu.exeris.kernel.spi.memory.AllocationHint;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
@@ -32,6 +33,8 @@ import org.junit.jupiter.api.io.TempDir;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.net.InetSocketAddress;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
 import java.nio.file.Path;
@@ -41,6 +44,7 @@ import java.util.concurrent.StructuredTaskScope;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
@@ -448,6 +452,73 @@ class OffHeapTlsEngineLoopbackIT {
                                     .as("All decrypted bytes must equal 0xAB — mismatch offset (−1 = none)")
                                     .isEqualTo(-1L);
                         }
+                    });
+                }
+            }
+        }
+    }
+
+    // =========================================================================
+    // Test: fatal handshake error (non-TLS bytes) → terminal CLOSED + ERROR self-guard
+    // =========================================================================
+
+    /**
+     * End-to-end coverage for the phantom-handshake fix: a plain-TCP client sends
+     * non-TLS bytes (an HTTP probe) to the TLS port. {@code SSL_accept} reports
+     * {@code SSL_ERROR_SSL}, which {@link OffHeapTlsEngine#beginHandshake} must map to a
+     * terminal {@link TlsStatus#CLOSED} (not the prior retryable {@code NEED_HANDSHAKE}
+     * that busy-spun the reactor) and self-guard by forcing the engine to
+     * {@link TlsPhase#ERROR}. A re-entrant {@code beginHandshake()} must then fail fast
+     * rather than re-drive {@code SSL_accept} on the broken session.
+     */
+    @Test
+    @DisplayName("Fatal handshake (non-TLS bytes): beginHandshake → CLOSED, engine → ERROR, re-entry fails fast")
+    void garbageProbeYieldsClosedAndErrorState(@TempDir Path tempDir) throws Exception {
+        CertPair cert = generateSelfSignedCert(tempDir);
+        assumeTrue(cert != null, "openssl CLI not available — skipping loopback IT");
+
+        try (SslCtxHandle serverCtx       = buildServerCtx(cert.certPath(), cert.keyPath());
+             ServerSocketChannel serverSock = ServerSocketChannel.open();
+             SocketChannel clientSock       = SocketChannel.open()) {
+
+            serverSock.configureBlocking(true);
+            serverSock.bind(new InetSocketAddress("127.0.0.1", 0));
+            int port = ((InetSocketAddress) serverSock.getLocalAddress()).getPort();
+
+            clientSock.configureBlocking(true);
+            clientSock.connect(new InetSocketAddress("127.0.0.1", port));
+
+            try (SocketChannel acceptedSock = serverSock.accept()) {
+                int serverFd = extractFd(acceptedSock);
+                assumeTrue(serverFd > 0, "Could not extract server FD — skipping loopback IT");
+
+                // Non-TLS bytes on the TLS port: OpenSSL detects an HTTP request and returns
+                // SSL_ERROR_SSL on the first SSL_accept read.
+                ByteBuffer garbage = StandardCharsets.US_ASCII.encode("GET / HTTP/1.1\r\nHost: x\r\n\r\n");
+                while (garbage.hasRemaining()) {
+                    clientSock.write(garbage);
+                }
+
+                try (OffHeapTlsEngine serverEngine = new OffHeapTlsEngine(handles, serverCtx.ptr(), true, ALLOC);
+                     LoanedBuffer serverOut        = ALLOC.allocate(AllocationHint.MEDIUM)) {
+
+                    ScopedValue.where(KernelProviders.MEMORY_ALLOCATOR, ALLOC).run(() -> {
+                        communityBind(serverEngine, serverFd);
+
+                        TlsStatus status = serverEngine.beginHandshake(serverOut);
+
+                        assertThat(status)
+                                .as("Non-TLS bytes during handshake must map to terminal CLOSED")
+                                .isEqualTo(TlsStatus.CLOSED);
+                        assertThat(serverEngine.phase())
+                                .as("Self-guard: a fatal handshake error must force the engine to ERROR")
+                                .isEqualTo(TlsPhase.ERROR);
+                        assertThat(serverEngine.isHandshakeComplete())
+                                .as("A failed handshake must not report complete")
+                                .isFalse();
+                        assertThatThrownBy(() -> serverEngine.beginHandshake(serverOut))
+                                .as("Re-entry after a fatal error must fail fast, not re-drive SSL_accept")
+                                .isInstanceOf(TlsHandshakeException.class);
                     });
                 }
             }
