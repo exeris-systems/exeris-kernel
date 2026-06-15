@@ -345,6 +345,11 @@ public final class OffHeapTlsEngine implements TlsEngine {
                     && sslErr != CoreOpenSslLoader.SSL_ERROR_WANT_WRITE) {
                 TlsHandshakeFailureEvent.emit(ptr, serverMode,
                         KernelErrorCodes.EX_NET_2002, "SSL handshake step failed", sslErr);
+                // Self-guard: a fatal code ({@link #mapSslError} → CLOSED) leaves a broken
+                // session. Forcing ERROR makes a re-entrant beginHandshake() fail fast on the
+                // wrong-state guard rather than re-driving SSL_accept, so engine teardown no
+                // longer depends solely on the transport calling close() on the CLOSED status.
+                stateMachine.forceError();
             }
             return mapSslError(sslErr);
 
@@ -423,7 +428,14 @@ public final class OffHeapTlsEngine implements TlsEngine {
                 return TlsStatus.CLOSED;
             }
 
-            return mapSslError(sslErr);
+            TlsStatus status = mapSslError(sslErr);
+            if (status == TlsStatus.CLOSED) {
+                // Fatal read error (not a clean ZERO_RETURN) on an active session: force ERROR
+                // so a subsequent read/renegotiation fails fast on a broken session, mirroring
+                // the beginHandshake() self-guard. WANT_READ/WANT_WRITE stay non-terminal.
+                stateMachine.forceError();
+            }
+            return status;
 
         } finally {
             cipherCtx.release();
