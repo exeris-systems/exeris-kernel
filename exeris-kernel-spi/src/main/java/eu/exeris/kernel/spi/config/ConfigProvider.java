@@ -144,6 +144,27 @@ public interface ConfigProvider {
      */
     void watch(String file, String key, Consumer<Object> callback);
 
+    /**
+     * Registers a key marked {@link Immutable} as a sealed trust anchor — the inverse of
+     * {@link #watch(String, String, Consumer)}.
+     *
+     * <p>Once guarded, any on-disk change to {@code (file, key)} observed by the watcher is
+     * <b>refused</b> (the field is never updated) and surfaced as a secret-safe structured
+     * event under {@link KernelErrorCodes#EX_CFG_1004}.
+     *
+     * <p>The default implementation is a no-op: Community-tier providers do not run a
+     * hot-reload watcher, so an {@code @Immutable} key is already effectively sealed.
+     * The kernel's registry-backed provider overrides this to record the guard so the
+     * Core {@code WatchService} driver can enforce the refusal.
+     *
+     * @param file observed filename (relative to config directory); {@code null} = any
+     * @param key  dot-path key to seal (e.g., {@code "security.jwks.uri"})
+     * @see Immutable
+     */
+    default void guardImmutable(String file, String key) {
+        // Default: no-op — no hot-reload watcher, key is already sealed.
+    }
+
     // =========================================================================
     // Provider metadata
     // =========================================================================

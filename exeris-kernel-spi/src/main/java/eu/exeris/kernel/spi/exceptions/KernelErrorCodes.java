@@ -787,6 +787,20 @@ public final class KernelErrorCodes {
      */
     public static final String EX_CFG_1003 = "EX-CFG-1003";
 
+    /**
+     * Immutable config key reload refused: the {@code NIO WatchService} watcher observed
+     * an on-disk change to a key marked {@code @Immutable} (a sealed trust anchor) and
+     * refused to apply it. The previous, sealed value remains authoritative — no field is
+     * mutated. This is a security-relevant audit signal, not a runtime failure.
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} filename (relative path under the config directory)</li>
+     *   <li>index 1 – {@code String} key      (dot-path key of the sealed field; never the value)</li>
+     * </ul>
+     */
+    public static final String EX_CFG_1004 = "EX-CFG-1004";
+
     // -----------------------------------------------------------------------
     // EX-RUN – Runtime / Scheduler
     // -----------------------------------------------------------------------

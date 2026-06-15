@@ -381,6 +381,11 @@ public final class KernelBootstrap {
         }
 
         @Override
+        public void guardImmutable(String file, String key) {
+            registry.registerImmutable(file, key);
+        }
+
+        @Override
         public int priority() {
             return delegate.priority();
         }

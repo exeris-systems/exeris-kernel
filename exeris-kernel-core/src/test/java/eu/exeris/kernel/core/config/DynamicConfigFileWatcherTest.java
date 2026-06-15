@@ -8,6 +8,9 @@
  */
 package eu.exeris.kernel.core.config;
 
+import jdk.jfr.Recording;
+import jdk.jfr.consumer.RecordedEvent;
+import jdk.jfr.consumer.RecordingFile;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -18,8 +21,10 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -231,6 +236,113 @@ class DynamicConfigFileWatcherTest {
                 assertThat(received.get()).isEqualTo("true");
             } finally {
                 watcher.close();
+            }
+        }
+    }
+
+    // =========================================================================
+    // @Immutable sealed-key refusal (EX-CFG-1004)
+    // =========================================================================
+
+    @Nested
+    @DisplayName("@Immutable key refusal")
+    class ImmutableKeyRefusal {
+
+        private static final String REFUSED_EVENT =
+                "eu.exeris.kernel.config.ImmutableReloadRefused";
+
+        @Test
+        @Timeout(10)
+        @DisplayName("A sealed @Immutable key is NOT reloaded while a sibling @Dynamic key is")
+        void immutableKeyRefusedWhileSiblingReloads(@TempDir Path dir) throws Exception {
+            Path configFile = dir.resolve("secure.properties");
+            Files.writeString(configFile, "security.jwks.uri=https://issuer/jwks\napp.sentinel=1\n");
+
+            var registry          = new KernelConfigRegistry();
+            var immutableReloaded = new AtomicBoolean(false);
+            var sentinelLatch     = new CountDownLatch(1);
+
+            // The same key is sealed AND (contradictorily) registered for hot-reload — the
+            // sealed intent must win: the callback must never fire.
+            registry.registerImmutable("secure.properties", "security.jwks.uri");
+            registry.register("secure.properties", "security.jwks.uri",
+                    v -> immutableReloaded.set(true));
+            // Sibling non-sealed key — its reload tells us the file change WAS processed.
+            registry.register("secure.properties", "app.sentinel", v -> sentinelLatch.countDown());
+
+            var watcher = new DynamicConfigFileWatcher(dir, registry,
+                    DynamicConfigFileWatcher.PropertiesExtractor.INSTANCE);
+            registry.seal();
+            watcher.start();
+
+            try {
+                Files.writeString(configFile,
+                        "security.jwks.uri=https://EVIL/jwks\napp.sentinel=2\n",
+                        StandardOpenOption.TRUNCATE_EXISTING);
+
+                boolean processed = sentinelLatch.await(5, TimeUnit.SECONDS);
+                assertThat(processed)
+                        .as("the watcher must process the file change (sibling key reloaded)")
+                        .isTrue();
+                assertThat(immutableReloaded.get())
+                        .as("the sealed @Immutable key must NOT be hot-reloaded")
+                        .isFalse();
+            } finally {
+                watcher.close();
+            }
+        }
+
+        @Test
+        @Timeout(15)
+        @DisplayName("Mutating a sealed @Immutable key emits one ImmutableReloadRefused JFR event")
+        void mutatingSealedKeyEmitsRefusalEvent(@TempDir Path dir) throws Exception {
+            Path configFile = dir.resolve("secure.properties");
+            Files.writeString(configFile, "security.jwks.uri=https://issuer/jwks\napp.sentinel=1\n");
+
+            var registry      = new KernelConfigRegistry();
+            var sentinelLatch = new CountDownLatch(1);
+            registry.registerImmutable("secure.properties", "security.jwks.uri");
+            registry.register("secure.properties", "app.sentinel", v -> sentinelLatch.countDown());
+
+            try (Recording recording = new Recording()) {
+                recording.enable(REFUSED_EVENT);
+                recording.start();
+
+                var watcher = new DynamicConfigFileWatcher(dir, registry,
+                        DynamicConfigFileWatcher.PropertiesExtractor.INSTANCE);
+                registry.seal();
+                watcher.start();
+                try {
+                    Files.writeString(configFile,
+                            "security.jwks.uri=https://EVIL/jwks\napp.sentinel=2\n",
+                            StandardOpenOption.TRUNCATE_EXISTING);
+                    assertThat(sentinelLatch.await(5, TimeUnit.SECONDS))
+                            .as("file change must be processed")
+                            .isTrue();
+                } finally {
+                    watcher.close();
+                }
+
+                List<RecordedEvent> events = stopAndRead(recording).stream()
+                        .filter(e -> REFUSED_EVENT.equals(e.getEventType().getName()))
+                        .toList();
+                assertThat(events)
+                        .as("exactly one refusal event for the mutated sealed key")
+                        .hasSize(1);
+                RecordedEvent event = events.getFirst();
+                assertThat(event.getString("file")).isEqualTo("secure.properties");
+                assertThat(event.getString("key")).isEqualTo("security.jwks.uri");
+            }
+        }
+
+        private static List<RecordedEvent> stopAndRead(Recording recording) throws Exception {
+            Path dump = Files.createTempFile("immutable-refusal-event", ".jfr");
+            try {
+                recording.dump(dump);
+                recording.stop();
+                return RecordingFile.readAllEvents(dump);
+            } finally {
+                Files.deleteIfExists(dump);
             }
         }
     }

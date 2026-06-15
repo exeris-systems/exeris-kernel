@@ -65,8 +65,9 @@ this is informational and **not** a dependency of the open-core surface.
 | `…spi.util` | _internal_ | 0.5.0 | — | — | — |
 
 ¹ `config`: `ConfigProvider` / `KernelProfile` / `Dynamic` are mature 0.5.0 contracts and treated
-as `stable`. The `@Immutable` annotation + watcher-refusal semantics arriving in v0.9 Sprint 5 are
-**additive** and will be marked `preview` on landing until their TCK lands.
+as `stable`. The `@Immutable` annotation + watcher-refusal semantics (since 0.9.0, v0.9 Sprint 5) are
+**additive** and classified `preview` — enforced by `ImmutableConfigProcessor` (compile-time) and
+`DynamicConfigFileWatcher` (runtime `EX-CFG-1004` refusal), pending a dedicated `AbstractConfigProviderTck` binding.
 
 ### `…spi.http` per-surface breakdown
 
