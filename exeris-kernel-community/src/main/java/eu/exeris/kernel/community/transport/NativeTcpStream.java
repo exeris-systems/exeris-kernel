@@ -448,6 +448,39 @@ final class NativeTcpStream implements TransportStream {
         }
     }
 
+    // ---------------------------------------------------------------------
+    // Test-only seams (package-private; used by CommunityTransportTestHarness
+    // to make the AbstractTransportStreamTck reset()-abandon discriminator
+    // deterministic — see issue #180). NOT part of the production API.
+    // ---------------------------------------------------------------------
+
+    /**
+     * Test-only: pins the outbound single-consumer slot to {@code owner} so a concurrent
+     * {@link #queueWrite} cannot synchronously flush the queued write (it stays genuinely
+     * pending). Returns {@code true} once {@code owner} holds the slot.
+     */
+    /* default */ boolean tryPinOutboundConsumerForTest(Thread owner) {
+        return NativeTcpStreamConsumerGate.tryAcquireSingleConsumer(runtime.outboundConsumer(), owner);
+    }
+
+    /**
+     * Test-only: completes a deferred abortive close while {@code owner} still holds the outbound
+     * consumer slot, then releases it. Running {@link #finishCloseIfDrained()} on the slot owner
+     * discards the queued write (it is never written to the socket) before the carrier reactor can
+     * acquire the slot and flush it — the determinism the {@code reset()}-abandon discriminator needs.
+     */
+    /* default */ void completeAbortAndUnpinOutboundConsumerForTest(Thread owner) {
+        assert resetRequested.get()
+                : "completeAbortAndUnpinOutboundConsumerForTest requires a prior reset() — "
+                + "completing a close while holding the consumer slot without an abort request "
+                + "would tear down a still-live stream";
+        try {
+            finishCloseIfDrained();
+        } finally {
+            NativeTcpStreamConsumerGate.releaseSingleConsumer(runtime.outboundConsumer(), owner);
+        }
+    }
+
     /* default */ void offerIngress(LoanedBuffer ingressBuffer) {
         if (closed.get()) {
             try (ingressBuffer) {

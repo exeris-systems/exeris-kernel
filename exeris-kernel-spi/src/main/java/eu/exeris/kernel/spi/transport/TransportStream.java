@@ -190,6 +190,14 @@ public interface TransportStream extends AutoCloseable {
      * transport stream, its native stream-reset frame). The code is a caller-supplied {@code long}
      * carrying no transport-specific meaning at this contract level.
      *
+     * <p>Abandonment is observable at the <em>peer</em>: outbound data still queued via
+     * {@link #queueWrite} at {@code reset} time MUST NOT be delivered to the remote endpoint
+     * (in contrast to {@link #close()}, which drains it). A transport that cannot guarantee
+     * non-delivery does not provide true abortive reset and should retain the default graceful
+     * behavior. The {@code AbstractTransportStreamTck} discriminator that enforces this is opt-in
+     * (a binding declares true-reset support); the default {@link #close()}-based implementation is
+     * exempt rather than silently treated as conformant.
+     *
      * <p>This method exists so callers can abort a single stream <em>polymorphically</em>, without
      * reaching through to a concrete transport type. It is <strong>idempotent</strong> and composes
      * with {@link #close()}: after {@code reset}, a subsequent {@code close()} (or {@code reset})

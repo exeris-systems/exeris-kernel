@@ -11,6 +11,7 @@ package eu.exeris.kernel.community.transport;
 import eu.exeris.kernel.community.memory.CommunityMemoryProvider;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.memory.MemoryProviderConfig;
+import eu.exeris.kernel.spi.transport.TransportStream;
 import eu.exeris.kernel.tck.contract.transport.AbstractTransportStreamTck;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -35,6 +36,16 @@ class CommunityNativeTcpStreamMultiReactor2TckTest extends AbstractTransportStre
     protected StreamPair createStreamPair() {
         pair = CommunityTransportTestHarness.openLoopbackPair(allocator, false, 2);
         return new StreamPair(pair.clientStream(), pair.serverStream());
+    }
+
+    @Override
+    protected boolean expectsTrueReset() {
+        return true;   // NativeTcpStream.reset() == SO_LINGER-0 abortive close (RST)
+    }
+
+    @Override
+    protected AutoCloseable holdOutboundEgress(TransportStream writer) {
+        return CommunityTransportTestHarness.holdOutboundConsumer(writer);
     }
 
     @Override
