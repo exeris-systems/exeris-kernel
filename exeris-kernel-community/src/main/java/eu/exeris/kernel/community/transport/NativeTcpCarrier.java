@@ -474,7 +474,7 @@ public final class NativeTcpCarrier implements TransportEngine {
                 NativeTcpStream stream = buildAcceptedStream(currentChannel, connection);
                 connection.bindSingleStream(stream);
                 connectionManagedByStreamLifecycle = true;
-                registerAndHandshakeConnection(connection, stream, currentChannel);
+                registerConnection(connection, stream, currentChannel);
             } catch (RuntimeException exception) {
                 if (connection != null) {
                     connection.close();
@@ -510,41 +510,51 @@ public final class NativeTcpCarrier implements TransportEngine {
     }
 
     /**
-     * Registers the stream with a reactor, awaits TLS handshake, notifies the connection handler,
-     * and enqueues the stream in PAQS. Returns {@code false} if the connection should be rejected.
+     * Registers the stream with a reactor and arms the one-shot established hook, then returns
+     * immediately — the acceptor thread never blocks on the TLS handshake.
+     *
+     * <p>The hook ({@link #completeEstablished}) fires on the reactor thread once the connection
+     * is established: plaintext as soon as the key is armed, TLS once the reactor-driven handshake
+     * reaches ACTIVE. This deserialises handshakes that previously queued behind one another on the
+     * single acceptor thread, while preserving the {@code onConnectionEstablished} → {@code schedule}
+     * ordering. Slot accounting stays lifecycle-based (released on stream close), so a failed/aborted
+     * handshake that closes the stream releases the slot without acceptor involvement.
      */
-    private boolean registerAndHandshakeConnection(NativeTcpConnection connection,
-                                                   NativeTcpStream stream,
-                                                   SocketChannel currentChannel) {
+    private void registerConnection(NativeTcpConnection connection,
+                                    NativeTcpStream stream,
+                                    SocketChannel currentChannel) {
         ChannelRuntimeRegistry.ChannelRuntimeState runtime = registerRuntime(stream, currentChannel);
         NativeTcpReactor owner = selectReactor();
         runtime.markRegistrationPending();
         runtime.bindOwner(owner);
-        owner.enqueueRegistration(currentChannel);
+
+        // Arm the established hook BEFORE enqueueing registration so the reactor can fire it the
+        // instant a plaintext key is armed (no lost-wakeup window).
+        stream.onEstablished(() -> completeEstablished(connection, stream));
 
         activeStreams.incrementAndGet();
         totalAccepted.incrementAndGet();
 
-        if (!stream.awaitRegistrationReadyForConnection()) {
-            connection.close();
-            return false;
-        }
-        if (!stream.awaitHandshakeReadyForConnection()) {
-            connection.close();
-            return false;
-        }
+        owner.enqueueRegistration(currentChannel);
+    }
+
+    /**
+     * Fired once on the reactor thread when a connection is established: notifies the connection
+     * handler (contractually non-blocking) and schedules the stream in PAQS, in that order. Any
+     * failure closes the connection (and releases its slot via the stream close path).
+     */
+    private void completeEstablished(NativeTcpConnection connection, NativeTcpStream stream) {
         try {
             connectionHandler.onConnectionEstablished(connection);
         } catch (RuntimeException ignored) {
             connection.close();
-            return false;
+            return;
         }
         try {
             paqs.schedule(stream);
         } catch (RuntimeException ex) {
             connection.close();
         }
-        return true;
     }
 
     /**

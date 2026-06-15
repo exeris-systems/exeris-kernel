@@ -37,6 +37,7 @@ import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.LockSupport;
 import java.util.stream.Collectors;
 
@@ -258,6 +259,72 @@ class NativeTcpCarrierIngressIntegrationTest {
 
             NativeTcpCarrier carrier = (NativeTcpCarrier) engine;
             waitUntilNoOwnedChannels(carrier, Duration.ofSeconds(5));
+        } finally {
+            engine.close();
+        }
+    }
+
+    @Test
+    void connectionEstablishedFiresExactlyOnceAndBeforeStreamDispatch() throws Exception {
+        int port = nextFreePort();
+        AtomicInteger establishedCount = new AtomicInteger(0);
+        AtomicBoolean established = new AtomicBoolean(false);
+        AtomicBoolean establishedBeforeDispatch = new AtomicBoolean(false);
+        CountDownLatch handled = new CountDownLatch(1);
+
+        NativeTcpTransportProvider provider = new NativeTcpTransportProvider();
+        TransportEngine[] holder = new TransportEngine[1];
+
+        ScopedValue.where(KernelProviders.MEMORY_ALLOCATOR, ALLOCATOR)
+                .run(() -> holder[0] = provider.createEngine(new TransportConfig(
+                        TransportMode.SERVER,
+                        "127.0.0.1",
+                        port,
+                        1,
+                        null,
+                        null,
+                        1024,
+                        30_000
+                )));
+
+        TransportEngine engine = holder[0];
+        engine.setConnectionHandler(connection -> {
+            establishedCount.incrementAndGet();
+            established.set(true);
+        });
+        engine.setStreamHandler(stream -> {
+            try (stream) {
+                // onConnectionEstablished must have fired before the stream is dispatched.
+                establishedBeforeDispatch.set(established.get());
+            } finally {
+                handled.countDown();
+            }
+        });
+
+        try {
+            engine.start();
+
+            try (SocketChannel client = SocketChannel.open()) {
+                client.configureBlocking(true);
+                client.connect(new InetSocketAddress("127.0.0.1", port));
+                // Multiple writes drive multiple ingress reads; the one-shot latch must keep
+                // onConnectionEstablished firing exactly once.
+                client.write(ByteBuffer.wrap("a".getBytes(StandardCharsets.UTF_8)));
+                client.write(ByteBuffer.wrap("b".getBytes(StandardCharsets.UTF_8)));
+                client.write(ByteBuffer.wrap("c".getBytes(StandardCharsets.UTF_8)));
+
+                assertThat(handled.await(5, TimeUnit.SECONDS)).isTrue();
+            }
+
+            // Let any further ingress callbacks settle before asserting the one-shot count.
+            LockSupport.parkNanos(100_000_000L);
+
+            assertThat(establishedCount.get())
+                    .as("onConnectionEstablished must fire exactly once per connection")
+                    .isEqualTo(1);
+            assertThat(establishedBeforeDispatch.get())
+                    .as("onConnectionEstablished must precede the first stream dispatch")
+                    .isTrue();
         } finally {
             engine.close();
         }
