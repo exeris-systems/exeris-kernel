@@ -66,6 +66,15 @@ public final class NativeTcpCarrier implements TransportEngine {
     private static final String ENGINE_NAME = "CommunityNativeTcpCarrier";
     private static final int MIN_LISTENER_BACKLOG = 64;
     private static final int MAX_LISTENER_BACKLOG = 1_024;
+    /**
+     * Max TLS records drained per readable event before yielding the reactor to other keys.
+     * The fd-owner TLS path decrypts one record per {@code readTlsIngressFromFd()} call; with a
+     * level-triggered selector this otherwise costs a full reactor cycle (stream lookup, dispatch,
+     * VT wakeup) per record. Draining a bounded batch per wakeup amortises that overhead under
+     * fine-grained-read drivers (e.g. h2load) while the cap preserves fairness across connections
+     * (mirrors Netty's {@code maxMessagesPerRead}). Remaining data re-fires on the next selector pass.
+     */
+    private static final int MAX_TLS_RECORDS_PER_READ = 16;
 
     private final TransportConfig config;
     private final MemoryAllocator allocator;
@@ -608,8 +617,16 @@ public final class NativeTcpCarrier implements TransportEngine {
         }
 
         if (stream.usesFdOwnerTls()) {
-            LoanedBuffer offered = stream.readTlsIngressFromFd();
-            if (offered != null) {
+            // Drain up to MAX_TLS_RECORDS_PER_READ decrypted records in this wakeup. A null return
+            // ends the batch and covers every stop condition (WANT_READ == socket drained, inbound
+            // backpressure, or stream closed — all pre-checked inside readTlsIngressFromFd before
+            // any allocation), so the loop can neither spin nor overrun the inbound queue. Any data
+            // left after the cap re-fires on the next selector pass (level-triggered).
+            for (int drained = 0; drained < MAX_TLS_RECORDS_PER_READ; drained++) {
+                LoanedBuffer offered = stream.readTlsIngressFromFd();
+                if (offered == null) {
+                    break;
+                }
                 stream.offerIngress(offered);
             }
             return;
