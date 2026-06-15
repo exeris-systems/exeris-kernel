@@ -316,8 +316,15 @@ class NativeTcpCarrierIngressIntegrationTest {
                 assertThat(handled.await(5, TimeUnit.SECONDS)).isTrue();
             }
 
-            // Let any further ingress callbacks settle before asserting the one-shot count.
-            LockSupport.parkNanos(100_000_000L);
+            // Poll for stability rather than a fixed sleep: the count must never exceed 1
+            // (a re-fire would be caught the moment it happens) and settle at exactly 1.
+            Instant settleDeadline = Instant.now().plus(Duration.ofMillis(500));
+            while (Instant.now().isBefore(settleDeadline)) {
+                assertThat(establishedCount.get())
+                        .as("onConnectionEstablished must never fire more than once")
+                        .isLessThanOrEqualTo(1);
+                LockSupport.parkNanos(20_000_000L);
+            }
 
             assertThat(establishedCount.get())
                     .as("onConnectionEstablished must fire exactly once per connection")

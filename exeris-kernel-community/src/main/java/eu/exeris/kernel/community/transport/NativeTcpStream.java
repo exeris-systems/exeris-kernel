@@ -10,6 +10,7 @@ package eu.exeris.kernel.community.transport;
 
 import eu.exeris.kernel.community.crypto.CommunityTlsEngine;
 import eu.exeris.kernel.community.crypto.SocketChannelFdAccess;
+import eu.exeris.kernel.core.transport.jfr.ConnectionEstablishedEvent;
 import eu.exeris.kernel.core.transport.jfr.TransportIngressQueueDepthEvent;
 import eu.exeris.kernel.core.transport.jfr.TransportQueueBackpressureAlertEvent;
 import eu.exeris.kernel.core.transport.syscall.SyscallHandles;
@@ -127,6 +128,7 @@ final class NativeTcpStream implements TransportStream {
     // Replaces the acceptor thread blocking on the handshake — see fireEstablishedOnce().
     private final AtomicBoolean establishedFired = new AtomicBoolean(false);
     private volatile Runnable onEstablishedCallback;
+    private volatile long registrationReadyNanos;
     private final Object tlsLock = new Object();
     private final StreamRuntimeState runtime = new StreamRuntimeState();
     
@@ -537,6 +539,7 @@ final class NativeTcpStream implements TransportStream {
 
     /* default */ void markRegistrationReady() {
         runtime.registrationGate().markReady();
+        registrationReadyNanos = System.nanoTime();
         signalWriteReady();
         if (tlsEngine == null) {
             // Plaintext has no handshake: the connection is established the moment the reactor
@@ -564,7 +567,15 @@ final class NativeTcpStream implements TransportStream {
     private void fireEstablishedOnce() {
         Runnable callback = onEstablishedCallback;
         if (callback != null && establishedFired.compareAndSet(false, true)) {
+            long startNanos = System.nanoTime();
             callback.run();
+            // Once per connection (CAS-gated), off the request hot path. handlerDurationNanos
+            // surfaces a ConnectionHandler that blocks the reactor in violation of its contract.
+            ConnectionEstablishedEvent.emit(
+                    streamId,
+                    tlsEngine != null,
+                    Math.max(0L, startNanos - registrationReadyNanos),
+                    System.nanoTime() - startNanos);
         }
     }
 

@@ -546,13 +546,17 @@ public final class NativeTcpCarrier implements TransportEngine {
     private void completeEstablished(NativeTcpConnection connection, NativeTcpStream stream) {
         try {
             connectionHandler.onConnectionEstablished(connection);
-        } catch (RuntimeException ignored) {
+        } catch (RuntimeException handlerFailure) {
+            LOG.log(System.Logger.Level.WARNING,
+                    "ConnectionHandler.onConnectionEstablished failed; closing connection", handlerFailure);
             connection.close();
             return;
         }
         try {
             paqs.schedule(stream);
-        } catch (RuntimeException ex) {
+        } catch (RuntimeException scheduleFailure) {
+            LOG.log(System.Logger.Level.WARNING,
+                    "PAQS schedule rejected stream on establish; closing connection", scheduleFailure);
             connection.close();
         }
     }
