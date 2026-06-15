@@ -10,6 +10,7 @@ package eu.exeris.kernel.community.transport;
 
 import eu.exeris.kernel.community.crypto.CommunityTlsEngine;
 import eu.exeris.kernel.community.crypto.SocketChannelFdAccess;
+import eu.exeris.kernel.core.transport.jfr.ConnectionEstablishedEvent;
 import eu.exeris.kernel.core.transport.jfr.TransportIngressQueueDepthEvent;
 import eu.exeris.kernel.core.transport.jfr.TransportQueueBackpressureAlertEvent;
 import eu.exeris.kernel.core.transport.syscall.SyscallHandles;
@@ -122,6 +123,12 @@ final class NativeTcpStream implements TransportStream {
     private final AtomicInteger inboundQueueDepth = new AtomicInteger(0);
     private final AtomicBoolean tlsBound = new AtomicBoolean(false);
     private final AtomicBoolean tlsReady = new AtomicBoolean(false);
+    // One-shot latch + callback fired exactly once when the connection becomes established
+    // (plaintext: reactor registration armed; TLS: reactor-driven handshake reached ACTIVE).
+    // Replaces the acceptor thread blocking on the handshake — see fireEstablishedOnce().
+    private final AtomicBoolean establishedFired = new AtomicBoolean(false);
+    private volatile Runnable onEstablishedCallback;
+    private volatile long registrationReadyNanos;
     private final Object tlsLock = new Object();
     private final StreamRuntimeState runtime = new StreamRuntimeState();
     
@@ -532,7 +539,44 @@ final class NativeTcpStream implements TransportStream {
 
     /* default */ void markRegistrationReady() {
         runtime.registrationGate().markReady();
+        registrationReadyNanos = System.nanoTime();
         signalWriteReady();
+        if (tlsEngine == null) {
+            // Plaintext has no handshake: the connection is established the moment the reactor
+            // has armed the key. (TLS defers to fireEstablishedOnce() in readTlsIngressFromFd
+            // once the reactor-driven handshake reaches ACTIVE.)
+            fireEstablishedOnce();
+        }
+    }
+
+    /**
+     * Arms the one-shot established callback. Set by the carrier before the registration is
+     * enqueued so the reactor can fire it as soon as the connection is established. Replaces
+     * the former acceptor-thread {@code awaitHandshakeReadyForConnection()} block, which
+     * serialised every TLS handshake on the single acceptor thread.
+     */
+    /* default */ void onEstablished(Runnable callback) {
+        this.onEstablishedCallback = callback;
+    }
+
+    /**
+     * Fires the established callback at most once. Invoked on the reactor thread; the callback
+     * (connection-handler notification + PAQS schedule) is contractually non-blocking
+     * ({@code ConnectionHandler} runs on a carrier thread).
+     */
+    private void fireEstablishedOnce() {
+        Runnable callback = onEstablishedCallback;
+        if (callback != null && establishedFired.compareAndSet(false, true)) {
+            long startNanos = System.nanoTime();
+            callback.run();
+            // Once per connection (CAS-gated), off the request hot path. handlerDurationNanos
+            // surfaces a ConnectionHandler that blocks the reactor in violation of its contract.
+            ConnectionEstablishedEvent.emit(
+                    streamId,
+                    tlsEngine != null,
+                    Math.max(0L, startNanos - registrationReadyNanos),
+                    System.nanoTime() - startNanos);
+        }
     }
 
     /* default */ boolean isClosed() {
@@ -565,14 +609,6 @@ final class NativeTcpStream implements TransportStream {
         return tlsEngine instanceof CommunityTlsEngine;
     }
 
-    /* default */ boolean awaitRegistrationReadyForConnection() {
-        return awaitRegistrationReady(true);
-    }
-
-    /* default */ boolean awaitHandshakeReadyForConnection() {
-        return ensureTlsReady(true);
-    }
-
     // PERF-062: try-with-resources is intentionally NOT used here. The success path transfers
     // ownership of `plaintext` to the caller (returned at refcount 1, freed by the queue
     // consumer); only the failure path closes via the `transferred` ownership flag. A
@@ -586,6 +622,10 @@ final class NativeTcpStream implements TransportStream {
         if (!ensureTlsReady(false)) {
             return null;
         }
+        // TLS handshake just reached ACTIVE on the reactor thread: signal the connection as
+        // established exactly once (idempotent CAS), driving onConnectionEstablished + PAQS
+        // schedule without the acceptor ever blocking on the handshake.
+        fireEstablishedOnce();
         // PERF-062: fast-fail before allocation when offerIngress would reject.
         // Saves the slab borrow + TLS unwrap on closing-stream / backpressured paths.
         if (closed.get()) {
