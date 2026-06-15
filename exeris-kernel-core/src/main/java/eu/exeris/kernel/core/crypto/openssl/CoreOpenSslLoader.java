@@ -54,10 +54,14 @@ public final class CoreOpenSslLoader {
     public static final int SSL_FILETYPE_PEM   = 1;
     /** {@code SSL_VERIFY_NONE = 0} — no peer certificate verification. */
     public static final int SSL_VERIFY_NONE    = 0;
+    /** {@code SSL_ERROR_SSL = 1} — fatal protocol error (e.g. non-TLS bytes on a TLS port). */
+    public static final int SSL_ERROR_SSL        = 1;
     /** {@code SSL_ERROR_WANT_READ = 2}. */
     public static final int SSL_ERROR_WANT_READ  = 2;
     /** {@code SSL_ERROR_WANT_WRITE = 3}. */
     public static final int SSL_ERROR_WANT_WRITE = 3;
+    /** {@code SSL_ERROR_SYSCALL = 5} — I/O error or unexpected peer EOF mid-operation. */
+    public static final int SSL_ERROR_SYSCALL    = 5;
     /** {@code SSL_ERROR_ZERO_RETURN = 6} — clean peer close. */
     public static final int SSL_ERROR_ZERO_RETURN = 6;
 

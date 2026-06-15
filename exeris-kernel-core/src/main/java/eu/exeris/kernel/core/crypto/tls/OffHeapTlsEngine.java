@@ -649,15 +649,25 @@ public final class OffHeapTlsEngine implements TlsEngine {
      * Maps an {@code SSL_get_error} result code to a {@link TlsStatus}.
      *
      * <p>Only the two "retry" codes ({@code SSL_ERROR_WANT_READ},
-     * {@code SSL_ERROR_WANT_WRITE}) are mapped to non-error statuses.
-     * All other codes are treated as requiring a handshake retry or are considered
-     * transient during the handshake phase and return {@link TlsStatus#NEED_HANDSHAKE}.
+     * {@code SSL_ERROR_WANT_WRITE}) are non-terminal — they request more I/O.
+     * On a non-blocking fd-owner BIO, "would block" always surfaces as one of those
+     * two codes, so <em>any other</em> code (notably {@code SSL_ERROR_SSL} — a fatal
+     * protocol error such as non-TLS bytes on the TLS port — and {@code SSL_ERROR_SYSCALL}
+     * — an I/O error or unexpected peer EOF) is a terminal condition that maps to
+     * {@link TlsStatus#CLOSED}.
+     *
+     * <p>Mapping these terminal codes to {@link TlsStatus#NEED_HANDSHAKE} (the prior
+     * behaviour) caused an unbounded reactor busy-spin: a half-open or garbage probe
+     * connection stuck in {@code HANDSHAKE_IN_PROGRESS} was re-stepped on every
+     * level-triggered read, never torn down, emitting millions of phantom handshake
+     * "failure" events. Returning {@code CLOSED} lets the transport layer
+     * ({@code ensureTlsReady}/{@code unwrap}) tear the fd down after a single real failure.
      */
-    private TlsStatus mapSslError(int sslErrorCode) {
+    /* default */ static TlsStatus mapSslError(int sslErrorCode) {
         return switch (sslErrorCode) {
             case CoreOpenSslLoader.SSL_ERROR_WANT_READ  -> TlsStatus.NEED_UNWRAP;
             case CoreOpenSslLoader.SSL_ERROR_WANT_WRITE -> TlsStatus.NEED_WRAP;
-            default -> TlsStatus.NEED_HANDSHAKE;
+            default -> TlsStatus.CLOSED;
         };
     }
 
