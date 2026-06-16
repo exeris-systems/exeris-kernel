@@ -477,7 +477,14 @@ public final class DynamicConfigFileWatcher implements AutoCloseable {
         return false;
     }
 
-    private static String baselineKey(String fileName, String key) {
+    /**
+     * Composite key for {@link #immutableBaselines}. The {@code '\0'} separator is the only
+     * collision-proof choice: NUL cannot appear in a POSIX filename or a dot-notation config key,
+     * so {@code (file, key)} pairs map injectively (a space separator would let
+     * {@code ("a b","c")} collide with {@code ("a","b c")} and silently cross-seal). Package-private
+     * for the injectivity guard test — do NOT change the separator without updating that test.
+     */
+    /* default */ static String baselineKey(String fileName, String key) {
         return fileName + '\0' + key;
     }
 

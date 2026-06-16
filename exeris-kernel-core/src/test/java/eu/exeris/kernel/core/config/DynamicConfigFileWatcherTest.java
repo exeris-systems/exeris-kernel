@@ -335,6 +335,17 @@ class DynamicConfigFileWatcherTest {
             }
         }
 
+        @Test
+        @DisplayName("baselineKey is injective: a space-containing filename cannot collide with a space-containing key")
+        void baselineKeyIsCollisionSafeAcrossTheSpaceBoundary() {
+            // Pins the '\0' separator. Under a naive space separator both pairs would join to
+            // "security anchors.properties a" and silently cross-seal one trust anchor with the
+            // other's baseline. NUL keeps them distinct (it cannot occur in a POSIX filename or a
+            // dot-notation key), so this assertion holds under '\0' and fails under ' '.
+            assertThat(DynamicConfigFileWatcher.baselineKey("security anchors.properties", "a"))
+                    .isNotEqualTo(DynamicConfigFileWatcher.baselineKey("security", "anchors.properties a"));
+        }
+
         private static List<RecordedEvent> stopAndRead(Recording recording) throws Exception {
             Path dump = Files.createTempFile("immutable-refusal-event", ".jfr");
             try {
