@@ -459,6 +459,94 @@ class OffHeapTlsEngineLoopbackIT {
     }
 
     // =========================================================================
+    // Test: fd-owner unwrap ignores the ciphertext argument (locks the lever-B invariant)
+    // =========================================================================
+
+    /**
+     * Locks the contract that {@link OffHeapTlsEngine#unwrap} relies on in fd-owner BIO mode:
+     * the {@code ciphertext} argument is never read — {@code SSL_read} pulls ciphertext directly
+     * from the kernel socket via the fd BIO (see unwrap Javadoc). The Community ingress hot path
+     * (NativeTcpStream) exploits this by passing a single reusable empty placeholder instead of
+     * allocating a ciphertext buffer per record; this test guards that optimization.
+     *
+     * <p>The placeholder here is deliberately filled with garbage (0xFF) and given a non-zero size.
+     * If a future change ever made {@code unwrap} consume {@code ciphertext}, it would try to
+     * decrypt that garbage and the assertion on the recovered 0xAB payload would fail.
+     */
+    @Test
+    @DisplayName("fd-owner unwrap ignores ciphertext arg — garbage placeholder still decrypts socket data (lever B)")
+    void unwrapIgnoresCiphertextArgument(@TempDir Path tempDir) throws Exception {
+        CertPair cert = generateSelfSignedCert(tempDir);
+        assumeTrue(cert != null, "openssl CLI not available — skipping loopback IT");
+
+        final int payloadSize = 512;
+
+        try (SslCtxHandle serverCtx = buildServerCtx(cert.certPath(), cert.keyPath());
+             SslCtxHandle clientCtx = buildClientCtx();
+             ServerSocketChannel serverSock = ServerSocketChannel.open();
+             SocketChannel clientSock       = SocketChannel.open()) {
+
+            serverSock.configureBlocking(true);
+            serverSock.bind(new InetSocketAddress("127.0.0.1", 0));
+            int port = ((InetSocketAddress) serverSock.getLocalAddress()).getPort();
+
+            clientSock.configureBlocking(true);
+            clientSock.connect(new InetSocketAddress("127.0.0.1", port));
+
+            try (SocketChannel acceptedSock = serverSock.accept()) {
+                int serverFd = extractFd(acceptedSock);
+                int clientFd = extractFd(clientSock);
+
+                assumeTrue(serverFd > 0 && clientFd > 0,
+                        "Could not extract socket FDs — skipping loopback IT");
+
+                try (OffHeapTlsEngine serverEngine = new OffHeapTlsEngine(handles, serverCtx.ptr(), true, ALLOC);
+                     OffHeapTlsEngine clientEngine = new OffHeapTlsEngine(handles, clientCtx.ptr(), false, ALLOC);
+                     LoanedBuffer serverOut       = ALLOC.allocate(AllocationHint.MEDIUM);
+                     LoanedBuffer clientOut       = ALLOC.allocate(AllocationHint.MEDIUM);
+                     LoanedBuffer plaintext        = ALLOC.allocate(AllocationHint.MEDIUM);
+                     LoanedBuffer staleCiphertext = ALLOC.allocate(AllocationHint.MEDIUM);
+                     LoanedBuffer decrypted        = ALLOC.allocate(AllocationHint.MEDIUM)) {
+
+                    ScopedValue.where(KernelProviders.MEMORY_ALLOCATOR, ALLOC).run(() -> {
+                        communityBind(serverEngine, serverFd);
+                        communityBind(clientEngine, clientFd);
+                        driveHandshake(serverEngine, serverOut, clientEngine, clientOut);
+
+                        plaintext.segment().asSlice(0, payloadSize).fill((byte) 0xAB);
+                        plaintext.setSize(payloadSize);
+
+                        // fd-owner: serverOut stays size=0 — wrap() pushes ciphertext to the socket BIO.
+                        assertThat(serverEngine.wrap(plaintext, serverOut))
+                                .as("Server wrap() must succeed")
+                                .isEqualTo(TlsStatus.OK);
+
+                        // Garbage ciphertext argument with a non-zero size: a correct fd-owner
+                        // unwrap must ignore it entirely and decrypt the real socket bytes.
+                        staleCiphertext.segment().asSlice(0, 256).fill((byte) 0xFF);
+                        staleCiphertext.setSize(256);
+
+                        assertThat(clientEngine.unwrap(staleCiphertext, decrypted))
+                                .as("Client unwrap() must succeed despite garbage ciphertext arg")
+                                .isEqualTo(TlsStatus.OK);
+                        assertThat(decrypted.size())
+                                .as("Decrypted byte count must equal original payload — ciphertext arg ignored")
+                                .isEqualTo(payloadSize);
+
+                        try (LoanedBuffer patternBuf = ALLOC.allocate(AllocationHint.MEDIUM)) {
+                            patternBuf.segment().asSlice(0, decrypted.size()).fill((byte) 0xAB);
+                            assertThat(decrypted.segment().asSlice(0, decrypted.size())
+                                    .mismatch(patternBuf.segment().asSlice(0, decrypted.size())))
+                                    .as("Recovered plaintext must be the 0xAB payload, not the 0xFF garbage")
+                                    .isEqualTo(-1L);
+                        }
+                    });
+                }
+            }
+        }
+    }
+
+    // =========================================================================
     // Test: fatal handshake error (non-TLS bytes) → terminal CLOSED + ERROR self-guard
     // =========================================================================
 
