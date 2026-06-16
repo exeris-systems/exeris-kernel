@@ -56,7 +56,15 @@ It initializes before any other subsystem (including Memory) and provides:
 A file change triggers an atomic state reload in Core without a JVM restart — but **only** for keys annotated
 `@Dynamic`. Keys annotated `@Immutable` are validated once at T-minus 0 and sealed for the lifetime of the process.
 
-> **Note:** `@Immutable` is a planned annotation not yet present in the codebase. Currently, a config key is effectively immutable if it has no `@Dynamic` registration. The `@Immutable` annotation will provide explicit enforcement when implemented.
+`@Immutable` (`eu.exeris.kernel.spi.config.Immutable`, since 0.9.0) makes that seal **explicit and enforced**:
+
+- **Compile time** — the `ImmutableConfigProcessor` annotation processor in `exeris-kernel-build-config`
+  fails the build if a key carries both `@Immutable` and `@Dynamic` (contradictory intents), or if an
+  `@Immutable` field is not declared `static final`.
+- **Runtime** — when the `WatchService` driver observes an on-disk change to a sealed key, it **refuses**
+  the reload (the field is never mutated), keeps the boot-time value authoritative, and emits the secret-safe
+  `EX-CFG-1004` audit event (file + key name only — never the value). A guard is registered symmetrically to
+  `@Dynamic`: `ConfigProvider.guardImmutable(file, key)` (a no-op in Community, which runs no watcher).
 
 ### JEP 513 Validation (Flexible Constructor Bodies — Closed/Delivered in JDK 25)
 Type validation is performed via JEP 513 Flexible Constructor Bodies — environment and Vault state is validated
@@ -92,6 +100,7 @@ The secret never reaches a constructor argument if the precondition fails.
 | `EX-CFG-1001` | Missing Property       | Fatal halt (`FAIL_FAST`) at T‑0    | Log missing key name only — value cannot exist                  |
 | `EX-CFG-1002` | Type Mismatch          | Fatal halt (`FAIL_FAST`) at T‑0    | ⚠️ **REDACTED** — `actualValue` never enters logs (CWE-532)     |
 | `EX-CFG-1003` | Hot-Reload Read Error  | Warn; keep last known stable state | Trace OS file-lock contention — no value in scope               |
+| `EX-CFG-1004` | Immutable Reload Refused | Refuse; keep sealed boot value; audit | Log file + key name only — value never enters telemetry      |
 
 **Privacy-First enforcement for `EX-CFG-1002`:** The caller constructing the exception **MUST** redact or truncate
 `actualValue` before passing it to `rawArgs`. The Kernel runtime never performs this redaction automatically —
@@ -341,7 +350,11 @@ the old or new value itself. In regulated environments, this event stream is the
 
 - `FileWatcher` triggering hot-reload on file modification (`@Dynamic` keys only).
 - Concurrent read/write safety: 100 Virtual Threads reading while `FileWatcher` updates.
-- `@Immutable` keys rejected on hot-reload attempt (sealed after T-minus 0).
+- `@Immutable` keys rejected on hot-reload attempt (sealed after T-minus 0) — covered by
+  `DynamicConfigFileWatcherTest.ImmutableKeyRefusal`: a sealed key is refused while a sibling `@Dynamic`
+  key still reloads, and the `EX-CFG-1004` (`ImmutableReloadRefused`) JFR event is asserted.
+- `@Immutable` + `@Dynamic` on the same key, and non-`static-final` `@Immutable` fields, are rejected at
+  compile time — covered by `ImmutableConfigProcessorTest` in `exeris-kernel-build-config`.
 
 > **Note:** `AbstractConfigProviderTck` currently covers structural contract only (LazyConstant, banned parsers, watch() no-op contract). EX-CFG-1001 and EX-CFG-1002 path coverage lives at the unit level in `exeris-kernel-spi` tests. Full TCK coverage pending.
 
@@ -360,7 +373,21 @@ telemetry, and fails deterministically before the first network frame is ever ac
 
 This subsystem's SPI surface (`eu.exeris.kernel.spi.config.*`) is classified **stable** in the
 [SPI Stability Matrix](../stability-matrix.md): `ConfigProvider` / `KernelProfile` / `Dynamic` are
-mature 0.5.0 contracts. The additive `@Immutable` annotation arriving in v0.9 Sprint 5 will be
-marked **preview** on landing until its TCK lands. See the matrix for the semver policy and TCK
-coverage status.
+mature 0.5.0 contracts. The additive `@Immutable` annotation landed in v0.9 Sprint 5 (since 0.9.0) and is
+classified **preview** — its enforcement is exercised by `DynamicConfigFileWatcherTest` and
+`ImmutableConfigProcessorTest`, with a dedicated `AbstractConfigProviderTck` binding to follow. See the matrix
+for the semver policy and TCK coverage status.
+
+### Security-Relevant Key Catalog (`@Immutable` at GA)
+
+The following key classes are trust anchors whose runtime mutation would be a security or correctness
+hazard; they **MUST** carry `@Immutable` at 1.0 GA. The annotation and enforcement machinery ship in v0.9;
+adopting it on each production key below is tracked as GA hardening (no such key is wired to a hot-reload
+watcher today, so each is already effectively sealed):
+
+| Trust anchor class            | Example keys                                         | Why sealed                                              |
+|:------------------------------|:-----------------------------------------------------|:--------------------------------------------------------|
+| Security / identity anchors   | JWKS URI, issuer allow-list, isolation strategy      | Runtime rotation would bypass issuer / fail-closed validation (ADR-012) |
+| Tenant isolation boundaries   | `StorageContext` routing / isolation keys            | Mutation could cross-wire tenant data                   |
+| Native library paths          | OpenSSL / FFM library load locations                 | Repointing at runtime is a code-execution surface       |
 

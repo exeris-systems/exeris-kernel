@@ -87,6 +87,10 @@ public final class KernelConfigRegistry {
     private final List<Registration> registrations = new ArrayList<>();
     private final List<Registration> registrationsView = Collections.unmodifiableList(registrations);
 
+    private final List<ImmutableRegistration> immutableRegistrations = new ArrayList<>();
+    private final List<ImmutableRegistration> immutableRegistrationsView =
+            Collections.unmodifiableList(immutableRegistrations);
+
     /**
      * Sealed flag — {@code true} after bootstrap completes.
      * Prevents late registrations from Virtual Threads on the hot path.
@@ -125,6 +129,31 @@ public final class KernelConfigRegistry {
         }
     }
 
+    /**
+     * Valhalla-ready data carrier for a single {@code @Immutable} sealed-key guard.
+     *
+     * @param file config file name (relative to config dir), or {@code null} = any file
+     * @param key  dot-path key sealed against hot-reload; must be non-null
+     */
+    public record ImmutableRegistration(String file, String key) {
+
+        public ImmutableRegistration {
+            Objects.requireNonNull(key, "key must not be null");
+        }
+
+        /**
+         * Returns {@code true} if this guard covers the given (file, key) pair.
+         *
+         * @param changedFile the file that changed
+         * @param changedKey  the key inside that file
+         * @return {@code true} if this guard applies
+         */
+        public boolean matches(String changedFile, String changedKey) {
+            boolean fileMatch = file == null || file.equals(changedFile);
+            return fileMatch && key.equals(changedKey);
+        }
+    }
+
     // =========================================================================
     // Public API
     // =========================================================================
@@ -149,6 +178,57 @@ public final class KernelConfigRegistry {
         registrations.add(new Registration(file, key, callback));
         LOG.log(System.Logger.Level.DEBUG,
                 "KernelConfigRegistry: registered key=''{0}'' file=''{1}''", key, file);
+    }
+
+    /**
+     * Registers an {@code @Immutable} key as a sealed trust anchor.
+     *
+     * <p>Must only be called during single-threaded bootstrap (before {@link #seal()}).
+     * Late registrations after sealing are silently ignored (no-op) with a WARN log.
+     *
+     * <p>Once guarded, the {@link DynamicConfigFileWatcher} refuses any on-disk reload of
+     * {@code (file, key)} and emits {@code EX-CFG-1004} instead of applying it.
+     *
+     * @param file config file name relative to config dir; {@code null} = any file
+     * @param key  dot-path key to seal, e.g., {@code "security.jwks.uri"}
+     */
+    public void registerImmutable(String file, String key) {
+        if ((boolean) SEALED_HANDLE.getAcquire(this)) {
+            LOG.log(System.Logger.Level.WARNING,
+                    "KernelConfigRegistry: registerImmutable() called after seal() — ignored. key=''{0}''",
+                    key);
+            return;
+        }
+        immutableRegistrations.add(new ImmutableRegistration(file, key));
+        LOG.log(System.Logger.Level.DEBUG,
+                "KernelConfigRegistry: sealed immutable key=''{0}'' file=''{1}''", key, file);
+    }
+
+    /**
+     * Returns {@code true} if the given (file, key) pair is sealed against hot-reload by
+     * an {@code @Immutable} guard.
+     *
+     * @param file the config file that changed
+     * @param key  the dot-path key inside that file
+     * @return {@code true} if a matching {@link ImmutableRegistration} exists
+     */
+    public boolean isImmutable(String file, String key) {
+        for (ImmutableRegistration guard : immutableRegistrations) {
+            if (guard.matches(file, key)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Returns an unmodifiable snapshot of all {@code @Immutable} guards.
+     * Intended for the watcher and for diagnostics/testing — not a hot path.
+     *
+     * @return immutable list of sealed-key guards
+     */
+    public List<ImmutableRegistration> immutableRegistrations() {
+        return List.copyOf(immutableRegistrationsView);
     }
 
     /**
