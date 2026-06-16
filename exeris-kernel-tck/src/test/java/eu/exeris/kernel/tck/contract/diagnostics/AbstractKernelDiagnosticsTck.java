@@ -18,6 +18,7 @@ import eu.exeris.kernel.spi.diagnostics.DagNode;
 import eu.exeris.kernel.spi.diagnostics.KernelDiagnostics;
 import eu.exeris.kernel.spi.diagnostics.ProviderDescriptor;
 import eu.exeris.kernel.spi.diagnostics.ProvidersSnapshot;
+import eu.exeris.kernel.spi.diagnostics.RuntimeErgonomicsSnapshot;
 import eu.exeris.kernel.spi.diagnostics.SubsystemDescriptor;
 import eu.exeris.kernel.spi.diagnostics.SubsystemSnapshot;
 import org.junit.jupiter.api.DisplayName;
@@ -45,8 +46,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * {@link KernelDiagnostics#listCapabilities()}, {@link KernelDiagnostics#describeSubsystem(String)}) against
  * it (records shape, {@code schemaVersion}, {@code Optional} semantics, immutability, degraded behaviour
  * when unbound). {@link KernelDiagnostics#listProviders()} is provider discovery (implementation-defined,
- * not slot-bound), so it is asserted only for well-formedness. A pinned JSON wire-schema fixture guards the
- * append-only contract (ADR-033 Obligation 5).
+ * not slot-bound), so it is asserted only for well-formedness; {@link KernelDiagnostics#getJvmErgonomics()}
+ * is environment-derived (also not slot-bound) and is asserted for well-formedness, the
+ * {@code Optional.empty()} degradation contract, and {@code default}-method binary compatibility. A pinned
+ * JSON wire-schema fixture guards the append-only contract (ADR-033 Obligation 5).
  *
  * <p><b>Snapshot non-atomicity</b> (ADR-033 Obligation 7) is acknowledged, not tested: each call stamps its
  * own {@code capturedAt} and a multi-call view may straddle a transition by design.
@@ -62,7 +65,8 @@ public abstract class AbstractKernelDiagnosticsTck {
             ProvidersSnapshot.class, ProviderDescriptor.class,
             CompositionSnapshot.class, CapabilityDescriptor.class,
             BootstrapDagSnapshot.class, DagNode.class,
-            SubsystemSnapshot.class, SubsystemDescriptor.class);
+            SubsystemSnapshot.class, SubsystemDescriptor.class,
+            RuntimeErgonomicsSnapshot.class);
 
     private static final Subsystem MEMORY =
             new FakeSubsystem("memory", BootstrapPhase.FOUNDATION, List.of(), true, false);
@@ -85,7 +89,7 @@ public abstract class AbstractKernelDiagnosticsTck {
     class SchemaInvariants {
 
         @Test
-        @DisplayName("schemaVersion == 1.0 and capturedAt non-null on all four methods")
+        @DisplayName("schemaVersion == 1.0 and capturedAt non-null on all five methods")
         void schemaVersionAndTimestamp() {
             inBoundScope(() -> {
                 KernelDiagnostics d = diagnostics();
@@ -93,11 +97,13 @@ public abstract class AbstractKernelDiagnosticsTck {
                 assertThat(d.listCapabilities().schemaVersion()).isEqualTo(KernelDiagnostics.SCHEMA_VERSION);
                 assertThat(d.getBootstrapDag().schemaVersion()).isEqualTo(KernelDiagnostics.SCHEMA_VERSION);
                 assertThat(d.describeSubsystem("memory").schemaVersion()).isEqualTo(KernelDiagnostics.SCHEMA_VERSION);
+                assertThat(d.getJvmErgonomics().schemaVersion()).isEqualTo(KernelDiagnostics.SCHEMA_VERSION);
 
                 assertThat(d.listProviders().capturedAt()).isNotNull();
                 assertThat(d.listCapabilities().capturedAt()).isNotNull();
                 assertThat(d.getBootstrapDag().capturedAt()).isNotNull();
                 assertThat(d.describeSubsystem("memory").capturedAt()).isNotNull();
+                assertThat(d.getJvmErgonomics().capturedAt()).isNotNull();
             });
         }
     }
@@ -209,6 +215,64 @@ public abstract class AbstractKernelDiagnosticsTck {
     }
 
     @Nested
+    @DisplayName("JVM runtime ergonomics snapshot")
+    class JvmErgonomics {
+
+        @Test
+        @DisplayName("getJvmErgonomics returns a well-formed snapshot; absent data is Optional.empty(), never null")
+        void wellFormed() {
+            RuntimeErgonomicsSnapshot ergo = diagnostics().getJvmErgonomics();
+            assertThat(ergo.gcName()).isNotBlank();
+            assertThat(ergo.availableProcessors()).isPositive();
+            // Every environment-sensitive field is an Optional and is never null (empty when undeterminable).
+            assertThat(ergo.cpuQuotaMicros()).isNotNull();
+            assertThat(ergo.cpuPeriodMicros()).isNotNull();
+            assertThat(ergo.memoryMaxBytes()).isNotNull();
+            assertThat(ergo.cpusetEffective()).isNotNull();
+            assertThat(ergo.largePagesEnabled()).isNotNull();
+            assertThat(ergo.transparentHugePages()).isNotNull();
+            assertThat(ergo.classDataSharingActive()).isNotNull();
+            assertThat(ergo.aotCacheActive()).isNotNull();
+        }
+
+        @Test
+        @DisplayName("a provider that does not override getJvmErgonomics() stays binary-compatible (default method)")
+        void defaultMethodCompat() {
+            // A KernelDiagnostics that implements only the four abstract methods and inherits the default
+            // getJvmErgonomics() must still satisfy the contract: non-null, fully-degraded snapshot.
+            KernelDiagnostics legacyFourMethod = new KernelDiagnostics() {
+                @Override
+                public ProvidersSnapshot listProviders() {
+                    return ProvidersSnapshot.capture(List.of());
+                }
+
+                @Override
+                public CompositionSnapshot listCapabilities() {
+                    return CompositionSnapshot.capture(List.of());
+                }
+
+                @Override
+                public BootstrapDagSnapshot getBootstrapDag() {
+                    return BootstrapDagSnapshot.capture(List.of());
+                }
+
+                @Override
+                public SubsystemSnapshot describeSubsystem(String name) {
+                    return SubsystemSnapshot.capture(name, java.util.Optional.empty());
+                }
+            };
+            RuntimeErgonomicsSnapshot ergo = legacyFourMethod.getJvmErgonomics();
+            assertThat(ergo).isNotNull();
+            assertThat(ergo.schemaVersion()).isEqualTo(KernelDiagnostics.SCHEMA_VERSION);
+            assertThat(ergo.gcName()).isNotBlank();
+            assertThat(ergo.availableProcessors()).isPositive();
+            assertThat(ergo.cpuQuotaMicros()).isEmpty();
+            assertThat(ergo.memoryMaxBytes()).isEmpty();
+            assertThat(ergo.cpusetEffective()).isEmpty();
+        }
+    }
+
+    @Nested
     @DisplayName("Pinned JSON wire-schema fixture (append-only contract)")
     class SchemaFixture {
 
@@ -217,7 +281,7 @@ public abstract class AbstractKernelDiagnosticsTck {
         void fixtureMatchesRecords() {
             // schemaVersion MUST be the first field of every top-level snapshot (Obligation 5).
             for (Class<?> top : List.of(ProvidersSnapshot.class, CompositionSnapshot.class,
-                    BootstrapDagSnapshot.class, SubsystemSnapshot.class)) {
+                    BootstrapDagSnapshot.class, SubsystemSnapshot.class, RuntimeErgonomicsSnapshot.class)) {
                 assertThat(top.getRecordComponents()[0].getName())
                         .as("first field of %s", top.getSimpleName())
                         .isEqualTo("schemaVersion");

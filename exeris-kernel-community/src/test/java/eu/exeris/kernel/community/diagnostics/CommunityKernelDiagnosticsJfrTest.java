@@ -23,10 +23,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Verifies the JFR audit emission for {@link KernelDiagnostics} calls (ADR-033 §EP step 8,
- * codes {@code EX-DIAG-1001..1004}). Uses a synchronous {@link Recording} dump rather than an async
+ * codes {@code EX-DIAG-1001..1005}). Uses a synchronous {@link Recording} dump rather than an async
  * {@code RecordingStream} for deterministic assertions.
  */
-@DisplayName("CommunityKernelDiagnostics — JFR EX-DIAG-1001..1004 emission")
+@DisplayName("CommunityKernelDiagnostics — JFR EX-DIAG-1001..1005 emission")
 class CommunityKernelDiagnosticsJfrTest {
 
     private static final String EVENT = "eu.exeris.kernel.diagnostics.KernelDiagnostics";
@@ -44,6 +44,7 @@ class CommunityKernelDiagnosticsJfrTest {
             diagnostics.listCapabilities();
             diagnostics.getBootstrapDag();
             diagnostics.describeSubsystem("memory");
+            diagnostics.getJvmErgonomics();
             recording.stop();
             recording.dump(jfr);
         }
@@ -53,8 +54,9 @@ class CommunityKernelDiagnosticsJfrTest {
                 .toList();
 
         assertThat(events).extracting(e -> e.getString("errorCode"))
-                .contains("EX-DIAG-1001", "EX-DIAG-1002", "EX-DIAG-1003", "EX-DIAG-1004");
+                .contains("EX-DIAG-1001", "EX-DIAG-1002", "EX-DIAG-1003", "EX-DIAG-1004", "EX-DIAG-1005");
         assertThat(events).extracting(e -> e.getString("method"))
-                .contains("listProviders", "listCapabilities", "getBootstrapDag", "describeSubsystem");
+                .contains("listProviders", "listCapabilities", "getBootstrapDag", "describeSubsystem",
+                        "getJvmErgonomics");
     }
 }

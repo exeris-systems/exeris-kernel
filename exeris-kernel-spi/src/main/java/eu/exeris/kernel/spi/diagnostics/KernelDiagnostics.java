@@ -86,4 +86,25 @@ public interface KernelDiagnostics {
      * @return non-null snapshot whose {@code subsystem} is empty when no subsystem with that name exists
      */
     SubsystemSnapshot describeSubsystem(String name);
+
+    /**
+     * Read-only snapshot of the JVM and container environment the kernel runs in — GC, heap geometry,
+     * resolved processor count, cgroup-v2 CPU / memory / cpuset limits, and best-effort large-pages /
+     * THP / CDS / AOT state.
+     *
+     * <p>Strictly observational (no tuning recommendations — those are the Enterprise advisor's surface
+     * per ADR-008). Same cold-path and best-effort-atomicity discipline as the other four methods.
+     *
+     * <p>This method was added after the initial four-method surface; per ADR-033 Obligation 5 adding a
+     * method to the Java interface is a binary-breaking change for {@link KernelDiagnosticsProvider}
+     * implementations, so it ships as a {@code default} returning {@link RuntimeErgonomicsSnapshot#unknown()}
+     * (every environment-sensitive field {@link java.util.Optional#empty()}). A provider that does not
+     * override it stays binary-compatible; the Community and Enterprise providers override it with real
+     * {@code java.lang.management} + procfs/cgroupfs reads.
+     *
+     * @return non-null ergonomics snapshot; absent data is reported as {@link java.util.Optional#empty()}
+     */
+    default RuntimeErgonomicsSnapshot getJvmErgonomics() {
+        return RuntimeErgonomicsSnapshot.unknown();
+    }
 }

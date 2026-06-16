@@ -18,7 +18,7 @@ import jdk.jfr.StackTrace;
 /**
  * JFR audit event for out-of-process {@code KernelDiagnostics} calls (ADR-033 §EP step 8).
  *
- * <p>Emitted once per diagnostic method call (codes {@code EX-DIAG-1001..1004}) so operators can audit
+ * <p>Emitted once per diagnostic method call (codes {@code EX-DIAG-1001..1005}) so operators can audit
  * who introspected the kernel. INFO-flavoured, {@link StackTrace}-free. Single-phase commit
  * (construct → set → {@code commit()}); never a {@code begin()}→blocking→{@code commit()} straddle, which
  * would risk a carrier-bound {@code EventWriter} crash on a virtual thread.

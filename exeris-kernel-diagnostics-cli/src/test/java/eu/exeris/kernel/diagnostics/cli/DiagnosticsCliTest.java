@@ -46,6 +46,14 @@ class DiagnosticsCliTest {
     }
 
     @Test
+    @DisplayName("getJvmErgonomics serialises the ergonomics snapshot (default-method path on the fake)")
+    void jvmErgonomics() {
+        String out = cli.handle("{\"method\":\"getJvmErgonomics\"}");
+        assertThat(out).startsWith("{\"schemaVersion\":\"1.0\"");
+        assertThat(out).contains("\"gcName\":").contains("\"availableProcessors\":");
+    }
+
+    @Test
     @DisplayName("describeSubsystem with a known name returns the subsystem detail")
     void describeKnown() {
         String out = cli.handle("{\"method\":\"describeSubsystem\",\"name\":\"memory\"}");
