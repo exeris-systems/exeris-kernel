@@ -1512,6 +1512,34 @@ Phase 4 **DELIVERED — `IsolationStrategyContract` fail-OPEN → fail-closed (S
 
 ---
 
+### Events: Binding-Agnostic `topic` Concept on the Event Descriptor SPI
+
+**Gap:** The Open-Core event descriptor carries no `topic` concept, so the event routing target is not portable across `EventEngine` bindings. The Community in-memory `EventBus` ignores any topic notion entirely, while the `exeris-kernel-community-kafka` driver invents its own topic mapping at the binding layer — there is no shared SPI seam that both implementations honour, so the routing target is not swappable between the in-memory and Kafka bindings. The SDK `@DomainEvent.topic` annotation (owned by `exeris-sdk`) already captures author intent at design time and is carried through codegen, but it has no sink on the kernel side: the descriptor SPI offers nowhere to land it. The deliberate tiering decision (why the open-core descriptor omits `topic`) is also undocumented. Surfaced during downstream dogfooding (Stellar-Tactics multi-service build, 2026-06; finding K1 + the `@DomainEvent.topic` twin).
+
+**Owner:** Events subsystem (kernel SPI seam). The `@DomainEvent.topic` annotation itself stays owned by `exeris-sdk` — this entry covers only the kernel-side descriptor field that would consume it.
+
+**Resolution:** Either (a) **document the deliberate tiering** — record in `docs/subsystems/events.md` why the open-core event descriptor has no `topic` and that broker routing is a binding-private concern — or (b) **promote `topic` to a binding-agnostic field on the event descriptor SPI** so it becomes the shared routing target, swappable between the Community `EventBus` (which may map it to a logical channel or treat it as advisory) and the Kafka driver (which maps it to a Kafka topic). If (b): keep the field optional/additive (no breaking-change framing per pre-1.0 / TRL-3 stance), define absent/empty semantics for in-memory bindings, and wire codegen so `@DomainEvent.topic` populates it. **Encoding constraint:** `EventDescriptor` is primitive-only by contract (`events.md` §1 — composed exclusively of `long` / `int` for Valhalla scalarization and O(1) zero-allocation dispatch), so `topic` must be carried as an ordinal `int` registered in `EventRegistry` (same pattern as event-type ordinals), **not** a bare `String` field — a mixed record would lose C2 scalarizability today and block value-record migration under JEP 401. Low priority — this is primarily a documentation-or-small-SPI decision, not a runtime feature.
+
+**Merge Gate:** Decision recorded in `docs/subsystems/events.md`; if (b), the descriptor carrier change is additive and covered by an `AbstractEventEngineTck` assertion that `topic` round-trips through both the Community in-memory binding and the Kafka binding (Testcontainers), plus an end-to-end check that the SDK→codegen→SPI population path lands the captured `@DomainEvent.topic`.
+
+See also: [Events Subsystem](./subsystems/events.md).
+
+---
+
+### Multi-Tenancy: Shared-World / `Universe` Scope Tier — RFC Track
+
+**Gap:** The kernel models isolation through a single tenant-scoping primitive (`StorageContext.isolationKey`, per ADR-012). There is no scope tier above (or beside) the tenant for a *shared* world that multiple tenants observe and mutate together — e.g. a shared game universe, a common reference dataset, or a cross-tenant collaboration space. Today applications needing this force `isolationKey` to do double duty (one key meaning both "tenant" and "shared world"), which collapses the two concerns and either over-isolates (no sharing possible) or under-isolates (the tenant boundary leaks). Surfaced during downstream dogfooding (Stellar-Tactics multi-service build, 2026-06; finding K3, High).
+
+**Owner:** Security / Persistence subsystem (isolation model) + SDK/Tooling (scope expression at design time).
+
+**Resolution:** Open an RFC in `exeris-docs/` (`RFC-YYYY-MM-DD Shared-World Scope Tier.md`, per `exeris-docs/templates/RFC-TEMPLATE.md` — RFC not ADR because this is a multi-option model change touching the load-bearing ADR-012 isolation contract, with no committed decision). Scope enumerates: whether the shared-world tier is a new orthogonal dimension on `StorageContext` (e.g. `universeKey` independent of `isolationKey`) vs a reserved sentinel value of `isolationKey` vs a composite scope carrier; read/write semantics for shared vs tenant-private state; interaction with the `StorageContextBridge` derivation path and persistence isolation queries; how the security model authorizes cross-tenant access to shared scope (whether `CitadelGuard` / `PrincipalContext` need a shared-scope grant); blast-radius / fail-closed defaults so a misconfigured shared tier never silently widens tenant visibility; SDK/Tooling expression (how a domain author declares an entity shared-world vs tenant-scoped); and TCK strategy. RFC accepted → **either** amend ADR-012 (if scope stays bounded to the isolation model — reuses ADR-012's number, no reservation) **or** reserve a new ADR number in `~/exeris-systems/exeris-docs/adr-index.md` for a companion isolation-extension ADR (if the shared-world tier grows its own surface) → SPI/model change lands in a later milestone. Expected path: ADR-012 amendment.
+
+**Merge Gate:** RFC accepted with one shape selected and dissenting positions recorded; no kernel SPI commits in this gate (decision-only track). Any subsequent isolation-model change must preserve ADR-012 fail-closed guarantees, extend the relevant isolation TCK with a shared-vs-tenant access matrix, and remain additive on `StorageContext` (no breaking-change framing per pre-1.0 / TRL-3 stance).
+
+See also: ADR-012 (isolation model); [Security Subsystem](./subsystems/security.md).
+
+---
+
 ## Known Gaps / Future Work planned for v0.11
 
 ### Storage: `BlobStorageProvider` SPI
@@ -1538,6 +1566,46 @@ Phase 4 **DELIVERED — `IsolationStrategyContract` fail-OPEN → fail-closed (S
 
 ---
 
+### Runtime: Cross-Node Coordination (Leader Election / Distributed Lock) — RFC Track
+
+**Gap:** The "5 instances = the same app" deployment shape is standard scale-out, and the kernel already provides most of the substrate: stateless per-request handling (`ScopedValue` context, Flow/HTTP per request — any instance serves any request), shared durable state via Postgres (ADR-013 + ADR-022), and cross-node fan-out via the Kafka Events driver. What has **no** first-class kernel seam is cross-node *coordination*: distributed lock, leader election, and singleton execution ("only one instance runs this cron / drain / migration"). Today this can be hand-rolled over Kafka consumer groups or Postgres advisory locks, but with no SPI every application reinvents it and the correctness burden (fencing tokens, lease expiry, split-brain) lands on application code. The `JobScheduler` SPI (v0.11) already anticipates a *subset* — its durable backend carries leader-election semantics for singleton job dispatch — but a general-purpose coordination primitive usable outside scheduling does not exist. Surfaced during downstream dogfooding (Stellar-Tactics multi-node framing, 2026-06).
+
+**Owner:** Runtime / Coordination subsystem.
+
+**Resolution:** Open an RFC in `exeris-docs/` (`RFC-YYYY-MM-DD Cross-Node Coordination Seam.md`, per `exeris-docs/templates/RFC-TEMPLATE.md` — RFC not ADR because the option space is open and no decision is committed). **Design constraint, load-bearing:** keep this a thin seam over substrate the kernel already owns (Kafka consumer groups, Postgres advisory locks) — explicitly *not* a new "cluster subsystem": no membership protocol, no gossip, no embedded consensus. Scope enumerates: the minimal contract (`tryLock(key, lease)` / `renew` / `release` with a fencing token, and a `leadership(group)` observer), the backend strategies (Postgres advisory-lock driver for the no-Kafka deployment, Kafka-consumer-group driver for the eventing deployment), lease-expiry / fencing-token semantics so a paused leader cannot act after losing leadership, the relationship to `JobScheduler` leader-election (coordination becomes the shared primitive the scheduler's durable backend consumes, not a parallel mechanism), failure-mode classification (backend unreachable → fail-closed deny vs degraded single-node), and TCK strategy including an adversarial split-brain probe. RFC accepted → reserve next free ADR number in `~/exeris-systems/exeris-docs/adr-index.md` → ADR → SPI/driver in a later milestone.
+
+**Merge Gate:** RFC accepted with one shape selected and dissenting positions recorded; no kernel SPI commits in this gate (decision-only track). If a coordination seam is chosen, the implementation gate requires `AbstractCoordinationTck` (lock acquire/release, lease expiry, fencing-token monotonicity, leadership handoff, adversarial split-brain), at least one Community driver (Postgres advisory lock), `JobScheduler` singleton dispatch refactored to consume it (no duplicate leader-election path), and The Wall preserved (no framework DI; coordination must not couple Core to a concrete backend type).
+
+See also: v0.11 §"Runtime: `JobScheduler` SPI" (leader-election subset); ADR-013 / ADR-022 (Postgres-durable distributed state).
+
+---
+
+### Events: Multi-Node Delivery Boundary — Default Driver Is Single-Node (Documentation Clarity)
+
+**Gap:** The multi-node operational contract of the Events subsystem is undocumented, and the default Community Events driver is easy to mistake for cross-node. The default driver (Postgres Outbox + JVM-heap pub/sub) is **single-node**: the in-heap event bus does not cross the node boundary. The Outbox gives durable *emission* (an event survives crash and is retried), but **cross-node delivery requires the Kafka driver** (`exeris-kernel-community-kafka`) — a multi-node deployment that fans events out to peers must run on the Kafka driver, not the default. This is a real distinction operators need stated explicitly, not a code gap. Surfaced during downstream dogfooding (Stellar-Tactics multi-node framing, 2026-06).
+
+**Owner:** Events subsystem (documentation) / Docs.
+
+**Resolution:** Document the delivery boundary in `docs/subsystems/events.md` and the operator-facing docs: default driver = single-node in-heap bus + durable Outbox emission; cross-node delivery = Kafka driver; the in-heap bus never crosses the node boundary. State it alongside the multi-node substrate inventory (stateless per-request via `ScopedValue`; shared durable state via Postgres per ADR-013 / ADR-022; cross-node fan-out via Kafka) so the "what do I get out of the box for 5 instances" question has a single authoritative answer. Documentation-only; no code change.
+
+**Merge Gate:** `docs/subsystems/events.md` states the single-node-default vs Kafka-cross-node delivery boundary; the multi-node substrate inventory is recorded in one authoritative place (events.md or the operator deployment doc). No TCK / SPI change.
+
+---
+
+### HTTP Client: Service Discovery & Logical Addressing for `KernelWebClient` — RFC Track
+
+**Gap:** `KernelWebClient` (ADR-034 — the tier-neutral Core facade in `eu.exeris.kernel.core.http.client`, superseding ADR-026's `CommunityWebClient`; on the `HttpClientEngine` SPI) targets a single, statically-configured host: the caller supplies a concrete base URL and the generated typed client emits own-app / relative-host paths only. There is no seam to resolve a *logical* service name (e.g. `billing-service`) to a concrete address at call time — no static service-map config, no DNS/SRV strategy, no registry lookup, no sidecar/mesh hook. The moment an ecosystem splits into N generated applications that must call each other, every caller hard-codes peer hostnames. This is the kernel-side half of the tooling "mesh" gap (T12, owned by `exeris-tooling`): even once the generator can import a cross-app contract, the client has nowhere to resolve the target's address. Surfaced during downstream dogfooding (Stellar-Tactics multi-service split, 2026-06; finding K4, Medium; kernel touchpoint of T12).
+
+**Owner:** HTTP subsystem (client addressing). The cross-app contract import / generated-client side is owned by `exeris-tooling` (T12) and tracked there.
+
+**Resolution:** Open an RFC in `exeris-docs/` (`RFC-YYYY-MM-DD WebClient Service Addressing.md`, per `exeris-docs/templates/RFC-TEMPLATE.md` — RFC not ADR because the option space is wide and no decision is committed). Scope enumerates the resolution strategies and their boundary cost: (a) static logical-name → endpoint map in config (zero new runtime dependency, no liveness); (b) DNS / DNS-SRV resolution (standard, env-provided, no kernel registry); (c) a `ServiceResolver` SPI seam that `KernelWebClient` consults to turn a logical name into an endpoint (Community static/DNS driver; Enterprise/registry drivers out-of-repo); (d) delegate entirely to a service-mesh sidecar (kernel stays single-host; addressing is an ops concern). Cross-cutting questions: interaction with the existing `HttpClientRequestEnricher` (ADR-032) and the v0.9 IDP outbound-credential decision (identity must survive re-addressing); failure-mode classification (name unresolved / no healthy endpoint / resolution timeout); whether resolution is per-call or cached with TTL; and Wall integrity (no DI container, no `ThreadLocal`, resolution must not couple the client to a concrete registry type). RFC accepted → reserve next free ADR number in `~/exeris-systems/exeris-docs/adr-index.md` → ADR → SPI/driver lands in a later milestone.
+
+**Merge Gate:** RFC accepted with one shape selected and dissenting positions recorded; no kernel SPI commits in this gate (decision-only track). If a `ServiceResolver` seam is chosen, the subsequent implementation gate requires `AbstractServiceResolverTck` (logical-name resolve, unresolved-name failure, endpoint-health/timeout behavior), a Community binding, identity propagation preserved across resolution (ADR-032 enricher composes), and The Wall preserved (no framework DI / registry type leak into SPI / Core).
+
+See also: ADR-034 (`KernelWebClient` facade, superseding ADR-026), ADR-032 (`HttpClientRequestEnricher`); v0.9 §"Security: `IdentityProvider` SPI Direction — RFC Track" (outbound-credential touchpoint).
+
+---
+
 ## Known Gaps / Future Work planned for v0.12
 
 ### HTTP: `WebSocketProvider` SPI (or SSE-Only Commitment)
@@ -1560,7 +1628,11 @@ Phase 4 **DELIVERED — `IsolationStrategyContract` fail-OPEN → fail-closed (S
 
 **Resolution:** Open an RFC enumerating contract questions: read-through vs read-aside semantics, invalidation strategy (TTL-only vs key-level invalidate vs region-flush), `PrincipalContext` / `StorageContext` scoping (per-tenant cache regions), serialization shape for distributed backends, async vs sync `get` semantics on Loom (blocking-on-Loom is acceptable but the contract must be explicit), interaction with the existing `WatermarkManager` SHED_LOAD decisions. RFC stops at "RFC accepted with preferred shape called out"; SPI lands only when a concrete second-backend pull materializes (downstream consumer requesting Redis, or benchmark demonstrating off-heap slab win). Until then, generator emission for `cacheable` flag remains a tooling-only Caffeine wiring.
 
-**Merge Gate:** RFC accepted; no kernel SPI commits in this gate (decision-only track). SPI implementation gate deferred to a future version, conditional on real second-backend pull.
+**Binding-agnostic shape (same open-core pattern as Events `topic`, transport NIO/`io_uring`).** Specify a single `CacheProvider` SPI that is swappable across bindings exactly as K1 proposes for the Events `topic` seam: Community ships an in-process / off-heap KV implementation behind the SPI; enterprise / adapter bindings provide Redis / Hazelcast. Application code is written against the contract, not the backend. **Distributed invalidation rides the Events bus, not a separate channel:** a region flush / key invalidate is published as an event, so the cache seam reuses the multi-node substrate already in place rather than introducing a second coordination mechanism. For single-node deployments the in-heap `CommunityEventBus` is itself the channel — coherent invalidation with no Kafka dependency; Kafka is the multi-node path only (the Community binding must not require Kafka for correctness). K1 (`topic`) + `CacheProvider` + invalidation-over-events = one coherent multi-node story with zero new data-plane in the kernel.
+
+**Coherence is a `[CONTRACT]` landmine.** Local (in-process) and distributed cache backends have *different* coherence semantics; if the SPI hides this, business code written against the contract is subtly wrong after a backend swap (a stale read that never happens on Caffeine surfaces under Redis). The RFC must resolve this one of two ways: make coherence an explicit part of the contract (stated staleness / read-after-write / invalidation guarantees the caller can rely on regardless of backend), or bind invalidation to the Events bus so coherence is delivered by the same mechanism on every backend. The invalidation-over-events choice above discharges this automatically.
+
+**Merge Gate:** RFC accepted with the coherence-semantics contract resolved (explicit staleness/invalidation guarantees, or invalidation bound to the Events bus) so a backend swap cannot silently change correctness; no kernel SPI commits in this gate (decision-only track). SPI implementation gate deferred to a future version, conditional on real second-backend pull; when it lands, distributed invalidation reuses the Events bus rather than a new channel.
 
 ---
 
