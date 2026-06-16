@@ -32,11 +32,21 @@ import java.util.Optional;
  * <p>This record joins the ADR-033 snapshot family: {@code schemaVersion} first, then {@code capturedAt},
  * with append-only growth governed by {@link KernelDiagnostics#SCHEMA_VERSION}.
  *
+ * <h2>Valhalla readiness — explicit tradeoff</h2>
+ * <p>This carrier deliberately uses {@link Optional} components (an identity class today) over
+ * sentinel-{@code long}s + a presence bitmask: it is a cold-path diagnostic snapshot (never on a hot
+ * path or in an allocation budget), and the {@code Optional.empty()} degradation contract is materially
+ * clearer than sentinels. A future Valhalla value-class migration would flatten the {@code long}/{@code int}
+ * components but not the {@code Optional} ones — that is an accepted, documented cost for this record, not
+ * an oversight to re-litigate during a Valhalla sweep.
+ *
  * @param schemaVersion         the wire-schema version (see {@link KernelDiagnostics#SCHEMA_VERSION})
  * @param capturedAt            the instant this snapshot was captured (best-effort, per-call)
  * @param gcName                the active garbage collector(s), comma-joined; never blank
  * @param heapMaxBytes          the maximum heap in bytes, or {@code -1} if the JVM reports it undefined
- * @param heapCommittedBytes    the committed heap in bytes
+ *                              (also {@code -1} in the degraded {@link #unknown()} snapshot)
+ * @param heapCommittedBytes    the committed heap in bytes ({@code >= 0} on a running JVM), or {@code -1}
+ *                              in the degraded {@link #unknown()} snapshot
  * @param availableProcessors   {@link Runtime#availableProcessors()} as the JVM resolved it
  * @param cpuQuotaMicros        cgroup-v2 {@code cpu.max} quota (μs per period); empty when unlimited / absent
  * @param cpuPeriodMicros       cgroup-v2 {@code cpu.max} period (μs); empty when absent

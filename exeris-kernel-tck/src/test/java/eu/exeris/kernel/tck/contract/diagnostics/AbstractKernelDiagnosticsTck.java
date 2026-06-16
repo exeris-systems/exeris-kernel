@@ -264,6 +264,7 @@ public abstract class AbstractKernelDiagnosticsTck {
             RuntimeErgonomicsSnapshot ergo = legacyFourMethod.getJvmErgonomics();
             assertThat(ergo).isNotNull();
             assertThat(ergo.schemaVersion()).isEqualTo(KernelDiagnostics.SCHEMA_VERSION);
+            assertThat(ergo.capturedAt()).isNotNull();
             assertThat(ergo.gcName()).isNotBlank();
             assertThat(ergo.availableProcessors()).isPositive();
             assertThat(ergo.cpuQuotaMicros()).isEmpty();

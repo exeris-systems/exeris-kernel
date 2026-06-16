@@ -46,6 +46,7 @@ final class CommunityRuntimeErgonomics {
         MemoryMXBean memoryBean = ManagementFactory.getMemoryMXBean();
         MemoryUsage heap = memoryBean.getHeapMemoryUsage();
         CgroupLimits cgroup = CgroupV2Reader.read();
+        List<String> jvmArgs = inputArguments();
         return new RuntimeErgonomicsSnapshot(
                 KernelDiagnostics.SCHEMA_VERSION,
                 Instant.now(),
@@ -57,10 +58,10 @@ final class CommunityRuntimeErgonomics {
                 cgroup.cpuPeriodMicros(),
                 cgroup.memoryMaxBytes(),
                 cgroup.cpusetEffective(),
-                jvmFlag("UseLargePages"),
+                jvmFlag(jvmArgs, "UseLargePages"),
                 transparentHugePages(),
-                classDataSharingActive(),
-                aotCacheActive());
+                classDataSharingActive(jvmArgs),
+                aotCacheActive(jvmArgs));
     }
 
     private static String gcName() {
@@ -75,23 +76,23 @@ final class CommunityRuntimeErgonomics {
         return CgroupV2Reader.readFile(THP_ENABLED).map(s -> !s.contains("[never]"));
     }
 
-    private static Optional<Boolean> classDataSharingActive() {
-        Optional<Boolean> shareFlag = xshareFlag();
+    private static Optional<Boolean> classDataSharingActive(List<String> args) {
+        Optional<Boolean> shareFlag = xshareFlag(args);
         if (shareFlag.isPresent()) {
             return shareFlag;
         }
-        return hasInputArg("-XX:SharedArchiveFile=") ? Optional.of(true) : Optional.empty();
+        return hasInputArg(args, "-XX:SharedArchiveFile=") ? Optional.of(true) : Optional.empty();
     }
 
-    private static Optional<Boolean> aotCacheActive() {
-        if (hasInputArg("-XX:AOTCache=") || hasInputArg("-XX:AOTMode=")) {
+    private static Optional<Boolean> aotCacheActive(List<String> args) {
+        if (hasInputArg(args, "-XX:AOTCache=") || hasInputArg(args, "-XX:AOTMode=")) {
             return Optional.of(true);
         }
-        return jvmFlag("UseAOTCache");
+        return jvmFlag(args, "UseAOTCache");
     }
 
-    private static Optional<Boolean> xshareFlag() {
-        for (String arg : inputArguments()) {
+    private static Optional<Boolean> xshareFlag(List<String> args) {
+        for (String arg : args) {
             if (arg.startsWith("-Xshare:")) {
                 return Optional.of(!"-Xshare:off".equals(arg));
             }
@@ -100,8 +101,8 @@ final class CommunityRuntimeErgonomics {
     }
 
     /** Reads a boolean {@code -XX:+Flag} / {@code -XX:-Flag} from the JVM input arguments. */
-    private static Optional<Boolean> jvmFlag(String flag) {
-        for (String arg : inputArguments()) {
+    private static Optional<Boolean> jvmFlag(List<String> args, String flag) {
+        for (String arg : args) {
             if (arg.equals("-XX:+" + flag)) {
                 return Optional.of(true);
             }
@@ -112,8 +113,8 @@ final class CommunityRuntimeErgonomics {
         return Optional.empty();
     }
 
-    private static boolean hasInputArg(String prefix) {
-        return inputArguments().stream().anyMatch(arg -> arg.startsWith(prefix));
+    private static boolean hasInputArg(List<String> args, String prefix) {
+        return args.stream().anyMatch(arg -> arg.startsWith(prefix));
     }
 
     private static List<String> inputArguments() {

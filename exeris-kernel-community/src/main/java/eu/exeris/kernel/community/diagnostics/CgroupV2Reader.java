@@ -82,6 +82,9 @@ final class CgroupV2Reader {
                 .flatMap(CgroupV2Reader::unifiedPath)
                 .map(rel -> "/".equals(rel) ? CGROUP_ROOT : Path.of(CGROUP_ROOT.toString(), rel))
                 .filter(Files::isDirectory);
+        // Fallback to the root cgroup when no scoped v2 path resolves (e.g. cgroup-v1/v2 hybrid where the
+        // process's v2 path isn't exposed): limits read here may be system-wide, not container-scoped.
+        // Acceptable — all values are informational (ADR-008 advisor layers actionable thresholds).
         return scoped.isPresent() ? scoped : Optional.of(CGROUP_ROOT);
     }
 
