@@ -109,6 +109,13 @@ final class NativeTcpStream implements TransportStream {
     private final NativeTcpStreamPendingWrite.TlsContext pendingWriteTlsContext;
     private final NativeTcpStreamPendingWrite.TryWriter pendingWriteTryWriter;
 
+    // PERF: fd-owner BIO unwrap pulls ciphertext directly from the kernel socket and never
+    // inspects its {@code ciphertext} parameter (OffHeapTlsEngine#unwrap contract). A single
+    // per-stream empty placeholder is reused for every ingress record instead of allocating one
+    // per read, removing the dominant per-request LoanedBuffer/ReleaseAction churn on the TLS hot
+    // path. Owned by this stream; released in finishCloseIfDrained(). null for non-TLS streams.
+    private final LoanedBuffer tlsCiphertextPlaceholder;
+
     private final AtomicBoolean closeRequested = new AtomicBoolean(false);
     private final AtomicBoolean closed = new AtomicBoolean(false);
     private final AtomicBoolean remoteClosed = new AtomicBoolean(false);
@@ -190,6 +197,12 @@ final class NativeTcpStream implements TransportStream {
                 ? null
                 : new NativeTcpStreamPendingWrite.TlsContext(tlsEngine, tlsLock, allocator);
         this.pendingWriteTryWriter = this::tryWrite;
+        if (tlsEngine == null) {
+            this.tlsCiphertextPlaceholder = null;
+        } else {
+            this.tlsCiphertextPlaceholder = allocator.allocateInfrastructure(1);
+            this.tlsCiphertextPlaceholder.setSize(0);
+        }
     }
 
     @Override
@@ -635,17 +648,18 @@ final class NativeTcpStream implements TransportStream {
             return null;
         }
 
-        LoanedBuffer ciphertextPlaceholder = allocator.allocateInfrastructure(1);
+        // PERF: reuse the per-stream empty placeholder — fd-owner unwrap never reads it (see field
+        // doc). Only the plaintext slab is allocated per record; the prior per-read placeholder
+        // allocate+close pair is gone.
         LoanedBuffer plaintext = allocator.allocateCarrierSlab(0);
         // PERF-062: ownership-transfer flag replaces the prior retain()/auto-close ceremony.
         // The successful return path keeps the buffer alive at refcount 1 without an extra
         // retain+close pair; the unsuccessful path closes the slab in finally.
         boolean transferred = false;
         try {
-            ciphertextPlaceholder.setSize(0);
             TlsStatus status;
             synchronized (tlsLock) {
-                status = tlsEngine.unwrap(ciphertextPlaceholder, plaintext);
+                status = tlsEngine.unwrap(tlsCiphertextPlaceholder, plaintext);
             }
             if (status == TlsStatus.OK && plaintext.size() > 0) {
                 transferred = true;
@@ -656,7 +670,6 @@ final class NativeTcpStream implements TransportStream {
             }
             return null;
         } finally {
-            ciphertextPlaceholder.close();
             if (!transferred) {
                 plaintext.close();
             }
@@ -1090,20 +1103,7 @@ final class NativeTcpStream implements TransportStream {
             return;
         }
 
-        if (tlsEngine != null) {
-            try {
-                try (LoanedBuffer outbound = allocator.allocateNetwork(1024)) {
-                    tlsEngine.initiateShutdown(outbound);
-                }
-            } catch (RuntimeException _) {
-                // best effort
-            }
-            try {
-                tlsEngine.close();
-            } catch (RuntimeException _) {
-                // best effort
-            }
-        }
+        releaseTlsResources();
 
         try {
             cleanupInboundIfOwnedByCurrentThreadOrIdle();
@@ -1121,6 +1121,40 @@ final class NativeTcpStream implements TransportStream {
 
         connection.markClosedByCarrier();
         closeCallback.run();
+    }
+
+    /**
+     * Terminal, best-effort release of TLS-owned resources: graceful shutdown record, the engine
+     * itself, and the per-stream ciphertext placeholder (see {@link #tlsCiphertextPlaceholder}).
+     * Invoked exactly once from {@link #finishCloseIfDrained()} under its {@code closed} CAS guard.
+     */
+    private void releaseTlsResources() {
+        if (tlsEngine == null) {
+            return;
+        }
+        try {
+            try (LoanedBuffer outbound = allocator.allocateNetwork(1024)) {
+                tlsEngine.initiateShutdown(outbound);
+            }
+        } catch (RuntimeException _) {
+            // best effort
+        }
+        try {
+            tlsEngine.close();
+        } catch (RuntimeException _) {
+            // best effort
+        }
+        if (tlsCiphertextPlaceholder != null) {
+            try {
+                // Safe outside tlsLock: fd-owner unwrap never dereferences the ciphertext segment
+                // (OffHeapTlsEngine#unwrap reads the socket BIO directly). Do NOT move this under
+                // tlsLock — that lock is held on the ingress hot path, and finishCloseIfDrained()
+                // must never block on it.
+                tlsCiphertextPlaceholder.close();
+            } catch (RuntimeException _) {
+                // best effort
+            }
+        }
     }
 
     /**
