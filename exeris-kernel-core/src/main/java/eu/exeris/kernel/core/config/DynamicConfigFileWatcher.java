@@ -478,7 +478,7 @@ public final class DynamicConfigFileWatcher implements AutoCloseable {
     }
 
     private static String baselineKey(String fileName, String key) {
-        return fileName + ' ' + key;
+        return fileName + '\0' + key;
     }
 
     // =========================================================================
