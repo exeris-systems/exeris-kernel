@@ -35,8 +35,6 @@ import java.lang.foreign.MemorySegment;
 @SuppressWarnings("PMD.NullAssignment")
 final class NativeTcpStreamPendingWrite implements AutoCloseable {
 
-    private static final int TLS_WRAP_OVERHEAD_BYTES = 1024;
-
     private final TlsContext tlsContext;
     private final TryWriter tryWriter;
     private LoanedBuffer plainBuffer;
@@ -50,8 +48,15 @@ final class NativeTcpStreamPendingWrite implements AutoCloseable {
      * TLS wrap dependency surface for a single stream. {@code tlsLock} must be
      * the same monitor used by the stream for {@code unwrap} so wrap/unwrap
      * cannot interleave on the same {@link TlsEngine}.
+     *
+     * <p>{@code ciphertextPlaceholder} is the stream's reused empty ({@code size()==0})
+     * buffer. In fd-owner BIO mode — the only mode {@code NativeTcpStream} accepts —
+     * {@link TlsEngine#wrap} writes ciphertext straight to the kernel socket and never
+     * touches its ciphertext argument, so the same placeholder used by ingress unwrap is
+     * passed to {@code wrap} on egress instead of allocating a per-write cipher buffer.
      */
-    /* default */ record TlsContext(TlsEngine tlsEngine, Object tlsLock, MemoryAllocator allocator) {
+    /* default */ record TlsContext(TlsEngine tlsEngine, Object tlsLock, MemoryAllocator allocator,
+                                    LoanedBuffer ciphertextPlaceholder) {
     }
 
     /**
@@ -83,25 +88,35 @@ final class NativeTcpStreamPendingWrite implements AutoCloseable {
         return plainOffset >= plainLength;
     }
 
+    // CloseResource: ciphertextPlaceholder is borrowed (owned by NativeTcpStream, released in
+    // finishCloseIfDrained); it must NOT be closed here. The local is the shared placeholder, never
+    // a fresh allocation, so there is no resource for this method to close.
+    @SuppressWarnings("PMD.CloseResource")
     /* default */ TlsStatus prepareCipher() {
         if (cipherBuffer != null) {
             return TlsStatus.OK;
         }
-        try (LoanedBuffer cipher = tlsContext.allocator().allocateNetwork(plainLength + TLS_WRAP_OVERHEAD_BYTES)) {
-            TlsStatus status;
-            synchronized (tlsContext.tlsLock()) {
-                status = tlsContext.tlsEngine().wrap(plainBuffer, cipher);
-            }
-            if (status != TlsStatus.OK) {
-                return status;
-            }
-            if (cipher.size() > 0) {
-                cipher.retain();
-                cipherBuffer = cipher;
-                cipherLength = (int) cipher.size();
-            }
-            return TlsStatus.OK;
+        // fd-owner BIO (the only TLS engine NativeTcpStream accepts — buffer-owner engines are
+        // rejected at stream construction): wrap() pushes the ciphertext straight to the kernel
+        // socket and never touches its ciphertext argument, leaving size()==0. Reuse the per-stream
+        // empty placeholder instead of allocating plainLength+overhead per write (mirrors the ingress
+        // unwrap placeholder) — removes the dominant per-write egress LoanedBuffer/ReleaseAction churn.
+        LoanedBuffer cipher = tlsContext.ciphertextPlaceholder();
+        TlsStatus status;
+        synchronized (tlsContext.tlsLock()) {
+            status = tlsContext.tlsEngine().wrap(plainBuffer, cipher);
         }
+        if (status != TlsStatus.OK) {
+            return status;
+        }
+        if (cipher.size() > 0) {
+            // Unreachable in fd-owner BIO: a buffer-owner engine would write ciphertext into the
+            // shared placeholder, which must never be retained or sent. Fail loud, never corrupt.
+            throw new IllegalStateException(
+                    "fd-owner TLS wrap produced ciphertext in the shared placeholder (size="
+                            + cipher.size() + "); buffer-owner engines are unsupported here");
+        }
+        return TlsStatus.OK;
     }
 
     /* default */ boolean writeCipher() throws IOException {
