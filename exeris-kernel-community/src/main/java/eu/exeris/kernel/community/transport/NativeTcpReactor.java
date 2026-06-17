@@ -154,11 +154,15 @@ final class NativeTcpReactor {
                         if (!key.isValid()) {
                             continue;
                         }
+                        NativeTcpStream attached = (NativeTcpStream) key.attachment();
+                        if (attached == null) {
+                            continue;
+                        }
                         if (key.isReadable()) {
-                            host.readIngress((SocketChannel) key.channel());
+                            host.readIngress(attached);
                         }
                         if (key.isWritable()) {
-                            host.flushStream((SocketChannel) key.channel(), key);
+                            host.flushStream(attached, key);
                         }
                     } catch (CancelledKeyException _) {
                         // channel closed concurrently by VT handler path
@@ -210,7 +214,11 @@ final class NativeTcpReactor {
                 int interestOps = enableWriteOnRegister
                         ? SelectionKey.OP_READ | SelectionKey.OP_WRITE
                         : SelectionKey.OP_READ;
-                channel.register(selector, interestOps);
+                // Attach the resolved stream so the per-event dispatch reads it off the key
+                // (key.attachment()) instead of a ConcurrentHashMap lookup per readable/writable
+                // event. The runtime maps stay authoritative for off-reactor callers
+                // (requestWriteInterest / onStreamClosed) and for registration itself.
+                channel.register(selector, interestOps, stream);
                 if (stream != null) {
                     stream.markRegistrationReady();
                 }

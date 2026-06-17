@@ -601,12 +601,7 @@ public final class NativeTcpCarrier implements TransportEngine {
         return channelRuntimeRegistry.resolveStream(channel);
     }
 
-    /* default */ void readIngress(SocketChannel channel) {
-        NativeTcpStream stream = resolveStream(channel);
-        if (stream == null) {
-            return;
-        }
-
+    /* default */ void readIngress(NativeTcpStream stream) {
         if (stream.usesFdOwnerTls()) {
             LoanedBuffer offered = stream.readTlsIngressFromFd();
             if (offered != null) {
@@ -645,13 +640,7 @@ public final class NativeTcpCarrier implements TransportEngine {
         return stream.decryptIngress(slab, read);
     }
 
-    /* default */ void flushStream(SocketChannel channel, SelectionKey key) {
-        NativeTcpStream stream = resolveStream(channel);
-        if (stream == null) {
-            key.interestOps(SelectionKey.OP_READ);
-            return;
-        }
-
+    /* default */ void flushStream(NativeTcpStream stream, SelectionKey key) {
         stream.signalWriteReady();
         boolean drained = stream.flushPendingWrites();
         if (drained && !stream.hasPendingData()) {
