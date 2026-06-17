@@ -837,6 +837,9 @@ public final class KernelErrorCodes {
     /** {@link eu.exeris.kernel.spi.diagnostics.KernelDiagnostics#describeSubsystem(String)} was invoked. */
     public static final String EX_DIAG_1004 = "EX-DIAG-1004";
 
+    /** {@link eu.exeris.kernel.spi.diagnostics.KernelDiagnostics#getJvmErgonomics()} was invoked. */
+    public static final String EX_DIAG_1005 = "EX-DIAG-1005";
+
     // -----------------------------------------------------------------------
     // Constructor – utility class, no instantiation
     // -----------------------------------------------------------------------

@@ -1270,6 +1270,24 @@ consumes the same snapshot shape and layers the actionable `jvm.flags` advisory 
 E8.22/E8.24 (cgroup probe, resource-driven runtime geometry) read the container-limit
 fields as geometry inputs.
 
+**Status (v0.9):** **DELIVERED** — `getJvmErgonomics()` added to `KernelDiagnostics` as the fifth
+method, shipped as a `default` returning `RuntimeErgonomicsSnapshot.unknown()` (binary-compatible for
+third-party providers per ADR-033 Obligation 5). `RuntimeErgonomicsSnapshot` joins the snapshot family
+(`schemaVersion` first, append-only — `schemaVersion` held at `1.0` since v0.9.0 publishes the whole
+surface as the first schema): GC name, heap max/committed, `availableProcessors`, cgroup-v2 `cpu.max`
+(quota+period), `memory.max`, `cpuset.cpus.effective`, and best-effort large-pages / THP / CDS / AOT
+state — all environment-sensitive fields `Optional.empty()` when undeterminable (non-Linux / cgroup-v1 /
+no limits). `CommunityKernelDiagnostics` overrides it via `CommunityRuntimeErgonomics`
+(`java.lang.management` + defensive procfs/cgroupfs reads; never throws), emitting audit code
+**`EX-DIAG-1005`** (telemetry registry row extended `..1004` → `..1005`). The CLI gains a
+`getJvmErgonomics` NDJSON method; `AbstractKernelDiagnosticsTck` gains the well-formedness,
+`Optional.empty()`-degradation, and `default`-method-compat cases plus the append-only schema-fixture
+growth; the JFR test asserts `EX-DIAG-1005`. Generic operator guidance landed at
+`docs/operations/jvm-flags-baseline.md` (no Enterprise-private thresholds, ADR-008). ADR-033 amended in
+the same change (Obligation 9 four-method → five-method; EP step 8 `EX-DIAG-1001..1004` →
+`..1005`). Enterprise `JvmErgonomicsProbe` (EPIC-E8 E8.23) consuming the same record + layering the
+`jvm.flags` advisory is a cross-repo follow-up.
+
 ---
 
 ### SPI Stability Declaration

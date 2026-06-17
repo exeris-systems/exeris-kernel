@@ -51,8 +51,14 @@ import java.util.ServiceLoader;
  *   ← {"schemaVersion":"1.0","capturedAt":"…","providers":[…]}
  *   → {"method":"describeSubsystem","name":"transport"}
  *   ← {"schemaVersion":"1.0",…,"subsystem":{…}}
+ *   → {"method":"getJvmErgonomics"}
+ *   ← {"schemaVersion":"1.0",…,"gcName":"…","availableProcessors":…,"cpuQuotaMicros":null}
  *   ← {"error":"…"}          (on unknown method / malformed request / missing name)
  * </pre>
+ *
+ * <p><b>Optional fields serialise as JSON {@code null}, not absent keys</b> (default {@code Jdk8Module}
+ * config): an empty {@code Optional} on a snapshot (e.g. {@code cpuQuotaMicros} on a non-container host)
+ * appears as {@code "cpuQuotaMicros":null}. Consumers must treat {@code null} and an absent key alike.
  *
  * @since 0.9.0
  */
@@ -127,6 +133,7 @@ public final class DiagnosticsCli {
                 case "listProviders" -> mapper.writeValueAsString(diagnostics.listProviders());
                 case "listCapabilities" -> mapper.writeValueAsString(diagnostics.listCapabilities());
                 case "getBootstrapDag" -> mapper.writeValueAsString(diagnostics.getBootstrapDag());
+                case "getJvmErgonomics" -> mapper.writeValueAsString(diagnostics.getJvmErgonomics());
                 case "describeSubsystem" -> describeSubsystem(request);
                 case "" -> error("missing 'method'");
                 default -> error("unknown method: " + method);
