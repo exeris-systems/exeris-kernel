@@ -193,16 +193,20 @@ final class NativeTcpStream implements TransportStream {
                     "NativeTcpStream only supports socket-owner TLS engines (CommunityTlsEngine); "
                     + "buffer-owner engines are not supported");
         }
-        this.pendingWriteTlsContext = tlsEngine == null
-                ? null
-                : new NativeTcpStreamPendingWrite.TlsContext(tlsEngine, tlsLock, allocator);
-        this.pendingWriteTryWriter = this::tryWrite;
         if (tlsEngine == null) {
             this.tlsCiphertextPlaceholder = null;
         } else {
             this.tlsCiphertextPlaceholder = allocator.allocateInfrastructure(1);
             this.tlsCiphertextPlaceholder.setSize(0);
         }
+        // The same per-stream empty placeholder serves both ingress unwrap and egress wrap: in
+        // fd-owner BIO mode neither dereferences the ciphertext segment (see tlsCiphertextPlaceholder
+        // and NativeTcpStreamPendingWrite.prepareCipher). Both run under tlsLock, so no interleave.
+        this.pendingWriteTlsContext = tlsEngine == null
+                ? null
+                : new NativeTcpStreamPendingWrite.TlsContext(
+                        tlsEngine, tlsLock, tlsCiphertextPlaceholder);
+        this.pendingWriteTryWriter = this::tryWrite;
     }
 
     @Override
