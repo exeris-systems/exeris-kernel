@@ -97,6 +97,10 @@ public final class NativeTcpCarrier implements TransportEngine {
     private final AtomicLongArray tlsDrainHistogram = new AtomicLongArray(MAX_TLS_RECORDS_PER_READ + 1);
     private final AtomicLong tlsReadableEvents = new AtomicLong();
     private final AtomicLong tlsTotalRecords = new AtomicLong();
+    // PERF-RESEARCH: closeKeyStream invocation/time accounting (see closeKeyStream).
+    private final AtomicLong closeKeyInvocations = new AtomicLong();
+    private final AtomicLong closeKeyActualCloses = new AtomicLong();
+    private final AtomicLong closeKeyNanos = new AtomicLong();
 
     private final AtomicLong streamSeq = new AtomicLong(1);
     private final AtomicLong connectionSeq = new AtomicLong(1);
@@ -319,6 +323,7 @@ public final class NativeTcpCarrier implements TransportEngine {
         }
         try {
             emitTlsDrainSnapshot(true); // PERF-RESEARCH: final cumulative distribution before teardown
+            emitCloseKeyStreamSnapshot(true);
             stop();
         } finally {
             backend.close();
@@ -460,15 +465,29 @@ public final class NativeTcpCarrier implements TransportEngine {
     }
 
     /* default */ void closeKeyStream(SelectionKey key) {
-        if (!(key.channel() instanceof SocketChannel channel)) {
-            return;
+        // PERF-RESEARCH: time the whole entry so invocations x mean resolves the 15%-CPU claim.
+        long t0 = TLS_DRAIN_HISTOGRAM ? System.nanoTime() : 0L;
+        boolean actualClose = false;
+        try {
+            if (!(key.channel() instanceof SocketChannel channel)) {
+                return;
+            }
+            NativeTcpStream stream = resolveStream(channel);
+            if (stream == null) {
+                return;
+            }
+            actualClose = true;
+            stream.markRemoteClosed();
+            stream.close();
+        } finally {
+            if (TLS_DRAIN_HISTOGRAM) {
+                closeKeyNanos.addAndGet(System.nanoTime() - t0);
+                if (actualClose) {
+                    closeKeyActualCloses.incrementAndGet();
+                }
+                closeKeyInvocations.incrementAndGet();
+            }
         }
-        NativeTcpStream stream = resolveStream(channel);
-        if (stream == null) {
-            return;
-        }
-        stream.markRemoteClosed();
-        stream.close();
     }
 
     private void acceptPendingConnections() throws IOException {
@@ -676,7 +695,19 @@ public final class NativeTcpCarrier implements TransportEngine {
         long events = tlsReadableEvents.incrementAndGet();
         if ((events & (DRAIN_EMIT_INTERVAL - 1)) == 0) {
             emitTlsDrainSnapshot(false);
+            emitCloseKeyStreamSnapshot(false);
         }
+    }
+
+    private void emitCloseKeyStreamSnapshot(boolean finalSnapshot) {
+        long invocations = closeKeyInvocations.get();
+        if (invocations == 0) {
+            return;
+        }
+        long nanos = closeKeyNanos.get();
+        double meanMicros = nanos / 1_000.0 / invocations;
+        CommunityCloseKeyStreamEvent.emit(invocations, closeKeyActualCloses.get(), nanos,
+                meanMicros, finalSnapshot);
     }
 
     private void emitTlsDrainSnapshot(boolean finalSnapshot) {
