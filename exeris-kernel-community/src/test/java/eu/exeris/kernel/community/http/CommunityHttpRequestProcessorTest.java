@@ -503,6 +503,9 @@ class CommunityHttpRequestProcessorTest {
                 .toList();
         assertThat(floods).hasSize(1);
         assertThat(floods.get(0).getInt("resetCount")).isEqualTo(budget + 1);
+        // EX-HTTP-4010 rawArgs index 1 — last processed stream is the HEADERS opened just before
+        // the tripping RST_STREAM (decode sets it even without END_STREAM); matches the GOAWAY last-id.
+        assertThat(floods.get(0).getInt("lastProcessedStreamId")).isEqualTo(budget * 2 + 1);
     }
 
     private static final String RAPID_RESET_EVENT = "eu.exeris.kernel.http.Http2RapidResetFlood";
