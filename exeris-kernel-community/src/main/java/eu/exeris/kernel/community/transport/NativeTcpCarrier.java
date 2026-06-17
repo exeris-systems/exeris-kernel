@@ -66,6 +66,11 @@ public final class NativeTcpCarrier implements TransportEngine {
     private static final String ENGINE_NAME = "CommunityNativeTcpCarrier";
     private static final int MIN_LISTENER_BACKLOG = 64;
     private static final int MAX_LISTENER_BACKLOG = 1_024;
+    // Fairness cap on TLS records drained per readable event (see readIngress / PERF-062 in
+    // docs/subsystems/transport.md). Overridable for field tuning, mirroring
+    // exeris.transport.queueBackpressureEnabled.
+    private static final int MAX_TLS_RECORDS_PER_READ =
+            Integer.parseInt(System.getProperty("exeris.transport.maxTlsRecordsPerRead", "32"));
 
     private final TransportConfig config;
     private final MemoryAllocator allocator;
@@ -603,8 +608,14 @@ public final class NativeTcpCarrier implements TransportEngine {
 
     /* default */ void readIngress(NativeTcpStream stream) {
         if (stream.usesFdOwnerTls()) {
-            LoanedBuffer offered = stream.readTlsIngressFromFd();
-            if (offered != null) {
+            // PERF-062: drain all buffered TLS records in one readable event (loop until null =
+            // WANT_READ / backpressure / close), bounded by MAX_TLS_RECORDS_PER_READ for fairness.
+            // See docs/subsystems/transport.md. The level-triggered selector re-reports any remainder.
+            for (int drained = 0; drained < MAX_TLS_RECORDS_PER_READ; drained++) {
+                LoanedBuffer offered = stream.readTlsIngressFromFd();
+                if (offered == null) {
+                    return;
+                }
                 stream.offerIngress(offered);
             }
             return;
