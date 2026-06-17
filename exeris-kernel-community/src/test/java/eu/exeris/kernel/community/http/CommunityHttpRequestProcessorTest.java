@@ -524,6 +524,65 @@ class CommunityHttpRequestProcessorTest {
                 | ((goAwayPayload[6] & 0xFF) << 8) | (goAwayPayload[7] & 0xFF);
     }
 
+    @Test
+    @DisplayName("HTTP/2 response HEADERS+DATA is coalesced into a single socket write")
+    void h2ResponseHeadersAndDataCoalescedIntoOneWrite() {
+        byte[] preface = "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n".getBytes(StandardCharsets.US_ASCII);
+        byte[] hpack = encodeHpackHeaders(List.of(
+                new HttpHeader(":method", "GET"),
+                new HttpHeader(":path", "/body"),
+                new HttpHeader(":scheme", "http"),
+                new HttpHeader(":authority", "localhost")));
+
+        ByteArrayOutputStream inbound = new ByteArrayOutputStream();
+        inbound.writeBytes(preface);
+        inbound.writeBytes(emptySettingsFrame());
+        inbound.writeBytes(headersFrame(1, hpack, true, true));
+
+        byte[] body = "coalesced-response-body".getBytes(StandardCharsets.US_ASCII);
+
+        CommunityHttpRequestProcessor processor = new CommunityHttpRequestProcessor(
+                ALLOCATOR, HttpResponseBodyEncoderRegistry.empty(), HttpConfig.defaultServer());
+        CapturingTransportStream stream = new CapturingTransportStream(inbound.toByteArray());
+
+        processor.process(stream, exchange -> {
+            LoanedBuffer responseBody = ALLOCATOR.allocateNetwork(body.length);
+            responseBody.segment().asSlice(0, body.length).asByteBuffer().put(body);
+            responseBody.setSize(body.length);
+            // processor (writeHttp2Response) owns + closes the body buffer.
+            exchange.respond(new HttpResponse(HttpStatus.OK, HttpVersion.HTTP_2, List.of(), responseBody));
+        });
+
+        // Egress coalescing: the response stream-1 HEADERS and DATA frames must arrive in ONE
+        // socket write (not HEADERS in one write and DATA in another). Control frames (SETTINGS /
+        // SETTINGS-ACK) are stream 0 and excluded.
+        int responseWrites = 0;
+        boolean headersAndDataTogether = false;
+        for (byte[] segment : stream.writeSegments) {
+            List<FrameSnapshot> frames = decodeFrames(segment);
+            boolean hasHeaders = frames.stream().anyMatch(
+                    f -> f.header().frameType() == Http2FrameType.HEADERS && f.header().streamId() == 1);
+            boolean hasData = frames.stream().anyMatch(
+                    f -> f.header().frameType() == Http2FrameType.DATA && f.header().streamId() == 1);
+            if (hasHeaders || hasData) {
+                responseWrites++;
+            }
+            if (hasHeaders && hasData) {
+                headersAndDataTogether = true;
+            }
+        }
+        assertThat(headersAndDataTogether).as("HEADERS+DATA coalesced into one write").isTrue();
+        assertThat(responseWrites).as("response delivered in exactly one socket write").isEqualTo(1);
+
+        // Wire-correct: the single DATA frame on stream 1 carries the exact body bytes.
+        byte[] dataPayload = decodeFrames(stream.responseBytes()).stream()
+                .filter(f -> f.header().frameType() == Http2FrameType.DATA && f.header().streamId() == 1)
+                .map(FrameSnapshot::payload)
+                .findFirst()
+                .orElseThrow();
+        assertThat(dataPayload).isEqualTo(body);
+    }
+
     private static byte[] emptySettingsFrame() {
             return new byte[]{0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00};
     }
@@ -822,6 +881,7 @@ class CommunityHttpRequestProcessorTest {
         private final byte[] inbound;
         private int readOffset;
         private final ByteArrayOutputStream writes = new ByteArrayOutputStream();
+        private final List<byte[]> writeSegments = new ArrayList<>();
         private boolean closed;
 
         private CapturingTransportStream(String requestText) {
@@ -854,6 +914,7 @@ class CommunityHttpRequestProcessorTest {
             byte[] bytes = new byte[length];
             MemorySegment.copy(source, 0, MemorySegment.ofArray(bytes), 0, length);
             writes.writeBytes(bytes);
+            writeSegments.add(bytes);
         }
 
         @Override
