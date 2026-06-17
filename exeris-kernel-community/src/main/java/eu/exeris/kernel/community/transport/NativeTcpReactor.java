@@ -47,6 +47,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
     "PMD.AvoidCatchingGenericException", // selector loop must catch RuntimeException from key dispatch.
     "PMD.CloseResource",                 // Selector lifetime is owned by NativeTcpCarrier.closeSelectorAndChannels.
     "PMD.CyclomaticComplexity",          // reactor lifecycle (start/drain/loop/cancel) is intrinsically cohesive.
+    "PMD.GodClass",                      // WMC tipped +1 by extracting dispatchSelectedKey (lower per-method
+                                         // cognitive complexity); the reactor orchestrator stays cohesive.
     "PMD.TooManyMethods"                 // selector + MPSC queue + interest set lifecycle co-located by design.
 })
 final class NativeTcpReactor {
@@ -126,10 +128,8 @@ final class NativeTcpReactor {
         }
     }
 
-    @SuppressWarnings({
-        "PMD.CognitiveComplexity",   // selector loop drains MPSC, polls keys, dispatches READ/WRITE — flat structure.
-        "PMD.CyclomaticComplexity"   // single hot loop with key.isValid/isReadable/isWritable branches.
-    })
+    @SuppressWarnings("PMD.CognitiveComplexity") // selector loop drains MPSC + polls keys; per-key
+    // dispatch extracted to dispatchSelectedKey (PERF-073) so cyclomatic complexity no longer trips.
     private void runLoop() {
         while (host.isRunning()) {
             try {
@@ -151,19 +151,7 @@ final class NativeTcpReactor {
                     iterator.remove();
 
                     try {
-                        if (!key.isValid()) {
-                            continue;
-                        }
-                        NativeTcpStream attached = (NativeTcpStream) key.attachment();
-                        if (attached == null) {
-                            continue;
-                        }
-                        if (key.isReadable()) {
-                            host.readIngress(attached);
-                        }
-                        if (key.isWritable()) {
-                            host.flushStream(attached, key);
-                        }
+                        dispatchSelectedKey(key);
                     } catch (CancelledKeyException _) {
                         // channel closed concurrently by VT handler path
                     } catch (RuntimeException _) {
@@ -176,6 +164,30 @@ final class NativeTcpReactor {
                 }
                 return;
             }
+        }
+    }
+
+    // PERF-073: dispatch a single selected key by reading the stream off key.attachment()
+    // (set at registerChannel) instead of a per-event runtimeByChannel lookup. Extracted from
+    // runLoop so the select loop stays low-complexity.
+    private void dispatchSelectedKey(SelectionKey key) {
+        if (!key.isValid()) {
+            return;
+        }
+        NativeTcpStream attached = (NativeTcpStream) key.attachment();
+        if (attached == null) {
+            // Degenerate (stream null at register): clear write interest so the key does not
+            // re-fire writable every select cycle (matches the pre-attachment flushStream path).
+            if (key.isWritable()) {
+                key.interestOps(SelectionKey.OP_READ);
+            }
+            return;
+        }
+        if (key.isReadable()) {
+            host.readIngress(attached);
+        }
+        if (key.isWritable()) {
+            host.flushStream(attached, key);
         }
     }
 
@@ -214,10 +226,8 @@ final class NativeTcpReactor {
                 int interestOps = enableWriteOnRegister
                         ? SelectionKey.OP_READ | SelectionKey.OP_WRITE
                         : SelectionKey.OP_READ;
-                // Attach the resolved stream so the per-event dispatch reads it off the key
-                // (key.attachment()) instead of a ConcurrentHashMap lookup per readable/writable
-                // event. The runtime maps stay authoritative for off-reactor callers
-                // (requestWriteInterest / onStreamClosed) and for registration itself.
+                // PERF-073: attach the stream so runLoop reads key.attachment() instead of a
+                // per-event runtimeByChannel lookup; the maps stay authoritative for off-reactor callers.
                 channel.register(selector, interestOps, stream);
                 if (stream != null) {
                     stream.markRegistrationReady();
