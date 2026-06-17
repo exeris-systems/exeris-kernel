@@ -66,6 +66,11 @@ public final class NativeTcpCarrier implements TransportEngine {
     private static final String ENGINE_NAME = "CommunityNativeTcpCarrier";
     private static final int MIN_LISTENER_BACKLOG = 64;
     private static final int MAX_LISTENER_BACKLOG = 1_024;
+    // Fairness cap on TLS records drained per readable event (ingress loop-drain). One readable
+    // event pumps up to this many records (one SSL_read each) instead of one record per reactor
+    // iteration, so a single busy connection cannot monopolise the reactor thread; the
+    // level-triggered selector re-reports any remainder on the next select().
+    private static final int MAX_TLS_RECORDS_PER_READ = 32;
 
     private final TransportConfig config;
     private final MemoryAllocator allocator;
@@ -603,8 +608,17 @@ public final class NativeTcpCarrier implements TransportEngine {
 
     /* default */ void readIngress(NativeTcpStream stream) {
         if (stream.usesFdOwnerTls()) {
-            LoanedBuffer offered = stream.readTlsIngressFromFd();
-            if (offered != null) {
+            // Drain all TLS records buffered for this connection in one readable event (loop SSL_read
+            // until no record / backpressure) instead of one record per reactor iteration — collapses
+            // the per-record readIngress + slab-alloc + dispatch overhead that makes TLS h2 burn ~2.5x
+            // the cores of plaintext. readTlsIngressFromFd() returns null on WANT_READ, inbound-queue
+            // backpressure, or close, ending the loop; MAX_TLS_RECORDS_PER_READ bounds the per-event
+            // share so other connections on this reactor thread are not starved.
+            for (int drained = 0; drained < MAX_TLS_RECORDS_PER_READ; drained++) {
+                LoanedBuffer offered = stream.readTlsIngressFromFd();
+                if (offered == null) {
+                    return;
+                }
                 stream.offerIngress(offered);
             }
             return;
