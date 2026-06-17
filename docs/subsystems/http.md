@@ -149,6 +149,16 @@ Current `exeris-kernel-core` HTTP package focuses on codec/wire primitives:
 - **Default cap:** `HTTP2_DEFAULT_MAX_CONCURRENT_STREAMS = 100` (RFC 7540 §6.5.2 recommended floor). A future SETTINGS extension can raise it.
 - **Coverage:** `Http2SessionContextAdmissionTest` (7 pure-function cases, no I/O).
 
+### HTTP/2 Rapid Reset flood defense (CVE-2023-44487, since v0.9)
+
+The §5.1.2 concurrent-stream cap alone does **not** defend against Rapid Reset: a peer that opens a stream and immediately sends `RST_STREAM` frees the slot before the cap is ever reached, so it can drive unbounded request setup/teardown on a single connection (CVE-2023-44487, the 2023 HTTP/2 Rapid Reset DoS).
+
+- **Net rapid-reset budget** — `Http2SessionContext` keeps a per-connection net counter: each inbound `RST_STREAM` (`recordInboundRstStream()`) increments it, and each request that reaches dispatch (`recordDispatchedRequest()`) credits it back (floor 0). A peer doing legitimate work — even one that cancels streams — keeps the net count low; an open-then-reset flood that performs no work drives it past the budget.
+- **Trip** — once the net count exceeds `HTTP2_RAPID_RESET_BUDGET` (`200`, 2× the §6.5.2 concurrent-stream floor), `CommunityHttp2SessionProcessor` emits `GOAWAY(ENHANCE_YOUR_CALM)` (RFC 7540 §7, code `0x0B`) and stops the frame loop (connection-fatal).
+- **Budget knob** — codec-internal constant, **not** an `HttpConfig` SPI field (the v0.9 hardening is "no SPI change"; The Wall holds — an HTTP/2 logical stream is multiplexed over one TCP `TransportStream`, so the budget has no implementation-blind SPI seam).
+- **Telemetry** — `Http2RapidResetFloodEvent` (JFR, `eu.exeris.kernel.http.Http2RapidResetFlood`) on trip: secret-safe, carrying only the net reset count + last processed stream id (never request content); maps to `EX-HTTP-4010`.
+- **Coverage:** `Http2RapidResetSpecTest` (flood-trips-at-budget + legitimate-cancels-do-not-trip).
+
 ---
 
 ## Architectural Notes (Current State)

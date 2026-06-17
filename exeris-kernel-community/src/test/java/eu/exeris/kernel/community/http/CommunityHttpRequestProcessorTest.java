@@ -12,6 +12,7 @@ import eu.exeris.kernel.community.memory.CommunityMemoryProvider;
 import eu.exeris.kernel.core.http.hpack.HpackDecoder;
 import eu.exeris.kernel.core.http.hpack.HpackDynamicTable;
 import eu.exeris.kernel.core.http.hpack.HpackEncoder;
+import eu.exeris.kernel.core.http.http2.Http2ErrorCode;
 import eu.exeris.kernel.core.http.http2.Http2FrameParser;
 import eu.exeris.kernel.core.http.http2.Http2FrameType;
 import eu.exeris.kernel.spi.http.HttpConfig;
@@ -28,12 +29,18 @@ import eu.exeris.kernel.spi.memory.MemoryProviderConfig;
 import eu.exeris.kernel.spi.memory.MemoryStats;
 import eu.exeris.kernel.spi.transport.TransportConnection;
 import eu.exeris.kernel.spi.transport.TransportStream;
+import jdk.jfr.Recording;
+import jdk.jfr.consumer.RecordedEvent;
+import jdk.jfr.consumer.RecordingFile;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.io.ByteArrayOutputStream;
 import java.lang.foreign.MemorySegment;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -445,6 +452,73 @@ class CommunityHttpRequestProcessorTest {
 
         Http2FrameParser.FrameHeader frame4 = Http2FrameParser.parseHeaderBigEndian(outboundSegment, 35);
         assertThat(frame4.frameType()).isEqualTo(Http2FrameType.GOAWAY);
+    }
+
+    @Test
+    @DisplayName("HTTP/2 Rapid Reset flood trips GOAWAY(ENHANCE_YOUR_CALM) + secret-safe JFR event")
+    void rapidResetFloodTripsGoAwayEnhanceYourCalm(@TempDir Path tmp) throws Exception {
+        int budget = Http2SessionContext.rapidResetBudget();
+        byte[] preface = "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n".getBytes(StandardCharsets.US_ASCII);
+        byte[] hpack = encodeHpackHeaders(List.of(
+                new HttpHeader(":method", "POST"),
+                new HttpHeader(":path", "/"),
+                new HttpHeader(":scheme", "http"),
+                new HttpHeader(":authority", "localhost")));
+
+        ByteArrayOutputStream inbound = new ByteArrayOutputStream();
+        inbound.writeBytes(preface);
+        inbound.writeBytes(emptySettingsFrame());
+        // CVE-2023-44487: open a stream WITHOUT end-stream (registered, awaiting body — not
+        // dispatched, so no budget credit), then immediately reset it. budget + 1 cycles cross
+        // the per-connection net rapid-reset budget.
+        for (int i = 0; i <= budget; i++) {
+            int streamId = i * 2 + 1;
+            inbound.writeBytes(headersFrame(streamId, hpack, true, false));
+            inbound.writeBytes(rstStreamFrame(streamId, Http2ErrorCode.CANCEL.code()));
+        }
+
+        CommunityHttpRequestProcessor processor = new CommunityHttpRequestProcessor(
+                ALLOCATOR, HttpResponseBodyEncoderRegistry.empty(), HttpConfig.defaultServer());
+        CapturingTransportStream stream = new CapturingTransportStream(inbound.toByteArray());
+
+        Path jfr = tmp.resolve("rapid-reset.jfr");
+        try (Recording recording = new Recording()) {
+            recording.enable(RAPID_RESET_EVENT);
+            recording.start();
+            processor.process(stream, exchange ->
+                    exchange.respond(HttpResponse.noBody(HttpStatus.OK, HttpVersion.HTTP_2)));
+            recording.stop();
+            recording.dump(jfr);
+        }
+
+        // Externally observable defense: the connection ends with GOAWAY(ENHANCE_YOUR_CALM).
+        List<FrameSnapshot> frames = decodeFrames(stream.responseBytes());
+        FrameSnapshot last = frames.get(frames.size() - 1);
+        assertThat(last.header().frameType()).isEqualTo(Http2FrameType.GOAWAY);
+        assertThat(goAwayErrorCode(last.payload())).isEqualTo(Http2ErrorCode.ENHANCE_YOUR_CALM.code());
+
+        // Secret-safe JFR flood event: exactly one, carrying connection-scoped counts only.
+        List<RecordedEvent> floods = RecordingFile.readAllEvents(jfr).stream()
+                .filter(e -> e.getEventType().getName().equals(RAPID_RESET_EVENT))
+                .toList();
+        assertThat(floods).hasSize(1);
+        assertThat(floods.get(0).getInt("resetCount")).isEqualTo(budget + 1);
+    }
+
+    private static final String RAPID_RESET_EVENT = "eu.exeris.kernel.http.Http2RapidResetFlood";
+
+    private static byte[] rstStreamFrame(int streamId, int errorCode) {
+        byte[] payload = new byte[4];
+        payload[0] = (byte) ((errorCode >>> 24) & 0xFF);
+        payload[1] = (byte) ((errorCode >>> 16) & 0xFF);
+        payload[2] = (byte) ((errorCode >>> 8) & 0xFF);
+        payload[3] = (byte) (errorCode & 0xFF);
+        return buildFrame(Http2FrameType.RST_STREAM.code(), 0, streamId, payload);
+    }
+
+    private static int goAwayErrorCode(byte[] goAwayPayload) {
+        return ((goAwayPayload[4] & 0xFF) << 24) | ((goAwayPayload[5] & 0xFF) << 16)
+                | ((goAwayPayload[6] & 0xFF) << 8) | (goAwayPayload[7] & 0xFF);
     }
 
     private static byte[] emptySettingsFrame() {

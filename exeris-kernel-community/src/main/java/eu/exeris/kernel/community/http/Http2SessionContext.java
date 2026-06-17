@@ -76,6 +76,17 @@ final class Http2SessionContext implements AutoCloseable {
      */
     private static final int HTTP2_DEFAULT_MAX_CONCURRENT_STREAMS = 100;
 
+    /**
+     * Per-connection Rapid Reset budget (CVE-2023-44487). An inbound {@code RST_STREAM}
+     * increments {@link #rapidResetCount}; a request that reaches dispatch decrements it
+     * (floor 0). A peer doing legitimate work — even one that cancels streams — keeps the
+     * <em>net</em> count low, while an open-then-reset flood that performs no work drives it
+     * past this budget and trips {@code GOAWAY(ENHANCE_YOUR_CALM)}. Codec-internal (no SPI knob)
+     * per the v0.9 "no SPI change" scope; generous-but-finite at 2× the RFC 7540 §6.5.2
+     * concurrent-stream floor.
+     */
+    private static final int HTTP2_RAPID_RESET_BUDGET = 200;
+
     private final HpackDynamicTable encodeTable;
     private final HpackDecoder decoder;
     private final HpackEncoder encoder;
@@ -91,6 +102,11 @@ final class Http2SessionContext implements AutoCloseable {
      * Zero means "no stream opened yet"; the first acceptable client stream is id 1.
      */
     private int lastClientStreamId;
+    /**
+     * Net count of inbound {@code RST_STREAM} frames not yet offset by a dispatched request
+     * (CVE-2023-44487 rapid-reset accounting). See {@link #HTTP2_RAPID_RESET_BUDGET}.
+     */
+    private int rapidResetCount;
 
     private Http2SessionContext(HpackDynamicTable encodeTable,
                                 HpackDecoder decoder,
@@ -107,6 +123,7 @@ final class Http2SessionContext implements AutoCloseable {
         this.pendingEndStream = false;
         this.lastProcessedStreamId = 0;
         this.lastClientStreamId = 0;
+        this.rapidResetCount = 0;
     }
 
     /* default */ static Http2SessionContext create(MemoryAllocator allocator) {
@@ -278,6 +295,38 @@ final class Http2SessionContext implements AutoCloseable {
         if (removed != null) {
             removed.close();
         }
+    }
+
+    /**
+     * Records one inbound {@code RST_STREAM} frame against the Rapid Reset budget
+     * (CVE-2023-44487) and reports whether the connection has crossed it. Returns {@code true}
+     * once the net reset count exceeds {@link #HTTP2_RAPID_RESET_BUDGET}, at which point the
+     * caller MUST terminate the connection with {@code GOAWAY(ENHANCE_YOUR_CALM)}.
+     */
+    /* default */ boolean recordInboundRstStream() {
+        rapidResetCount++;
+        return rapidResetCount > HTTP2_RAPID_RESET_BUDGET;
+    }
+
+    /**
+     * Credits the Rapid Reset budget for a request that reached dispatch (real work), so a peer
+     * that interleaves genuine requests with cancels does not accumulate toward the flood trip.
+     * Floors at zero.
+     */
+    /* default */ void recordDispatchedRequest() {
+        if (rapidResetCount > 0) {
+            rapidResetCount--;
+        }
+    }
+
+    /** Net inbound reset count not yet offset by dispatched work (for JFR / TCK assertions). */
+    /* default */ int rapidResetCount() {
+        return rapidResetCount;
+    }
+
+    /** The per-connection Rapid Reset budget (CVE-2023-44487); resets beyond it trip GOAWAY. */
+    /* default */ static int rapidResetBudget() {
+        return HTTP2_RAPID_RESET_BUDGET;
     }
 
     /* default */ long encodeResponseHeaders(MemorySegment target, HttpResponse response) {

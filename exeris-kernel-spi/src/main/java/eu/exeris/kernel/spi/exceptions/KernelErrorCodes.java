@@ -399,6 +399,20 @@ public final class KernelErrorCodes {
      */
     public static final String EX_HTTP_4009 = "EX-HTTP-4009";
 
+    /**
+     * HTTP/2 Rapid Reset flood defense (CVE-2023-44487). A peer opened-then-reset streams past
+     * the per-connection rapid-reset budget without performing matching work; the connection is
+     * terminated with {@code GOAWAY(ENHANCE_YOUR_CALM)}. Secret-safe — connection-scoped counts
+     * only, never request content.
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code int} resetCount (net inbound resets at trip time)</li>
+     *   <li>index 1 – {@code int} lastProcessedStreamId</li>
+     * </ul>
+     */
+    public static final String EX_HTTP_4010 = "EX-HTTP-4010";
+
     // -----------------------------------------------------------------------
     // EX-PERS – Persistence subsystem
     // -----------------------------------------------------------------------

@@ -13,42 +13,35 @@ import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.memory.MemoryProviderConfig;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Executable specification for HTTP/2 Rapid Reset (CVE-2023-44487) flood defense.
  *
- * <p><b>Status: pending implementation.</b> This test is intentionally {@link Disabled} — it
- * encodes the attack sequence and the <i>expected</i> mitigated behavior so the contract is
- * committed before the implementation. There is currently no per-window {@code RST_STREAM}
- * budget in {@link CommunityHttp2SessionProcessor} / {@link Http2SessionContext}, so a peer can
- * open-then-immediately-reset streams without bound: each {@link Http2SessionContext#resetRequestStream(int)}
- * frees the concurrency slot, so the {@code SETTINGS_MAX_CONCURRENT_STREAMS} cap is never reached
- * and the server performs unbounded request setup/teardown work.
+ * <p>Asserts the per-connection net rapid-reset budget on {@link Http2SessionContext}: each
+ * inbound {@code RST_STREAM} ({@link Http2SessionContext#recordInboundRstStream()}) increments the
+ * net count, a dispatched request ({@link Http2SessionContext#recordDispatchedRequest()}) credits
+ * it back, and crossing {@link Http2SessionContext#rapidResetBudget()} reports a flood — the signal
+ * {@link CommunityHttp2SessionProcessor} uses to emit {@code GOAWAY(ENHANCE_YOUR_CALM)} and stop the
+ * frame loop. The plain {@code SETTINGS_MAX_CONCURRENT_STREAMS} cap is no defense here: every reset
+ * frees the slot, so the cap is never reached (the attack's whole point).
  *
  * <p><b>Layer note:</b> this is an HTTP/2 <i>codec</i> concern (inbound {@code RST_STREAM} frame
  * flood), distinct from the transport-stream abort SPI tracked as {@code TransportStream.reset(long)}
  * (downstream issue #23 / ROADMAP "Transport-Agnostic Stream Abort"). The two share the word
- * "reset" but not the layer or direction — see the ROADMAP entry for the full distinction.
- *
- * <p>When the mitigation lands (per-window reset counter + {@code GOAWAY(ENHANCE_YOUR_CALM)} once
- * the budget is exceeded, with a config knob and a JFR flood event), remove {@link Disabled} and
- * replace the {@link #rapidResetFloodIsThrottled()} body with an assertion that the session refuses
- * further admission / signals {@code GOAWAY} after the threshold.
+ * "reset" but not the layer or direction.
  *
  * @see <a href="https://www.cve.org/CVERecord?id=CVE-2023-44487">CVE-2023-44487</a>
  */
-@DisplayName("HTTP/2: Rapid Reset flood defense (CVE-2023-44487) — executable spec")
+@DisplayName("HTTP/2: Rapid Reset flood defense (CVE-2023-44487)")
 final class Http2RapidResetSpecTest {
-
-    /** A flood well above any reasonable per-connection request rate. */
-    private static final int FLOOD_CYCLES = 1_000;
 
     private MemoryAllocator allocator;
     private Http2SessionContext session;
@@ -66,24 +59,44 @@ final class Http2RapidResetSpecTest {
     }
 
     @Test
-    @Disabled("CVE-2023-44487 rapid-reset mitigation not yet implemented — see ROADMAP "
-            + "'HTTP/2: Rapid Reset (CVE-2023-44487) Flood Defense'. Enable once the per-window "
-            + "RST_STREAM budget + GOAWAY(ENHANCE_YOUR_CALM) seam exists and assert the flood is throttled.")
-    @DisplayName("a peer that opens-then-resets streams without bound MUST be throttled")
+    @DisplayName("a peer that opens-then-resets streams without bound is throttled at the budget")
     void rapidResetFloodIsThrottled() {
-        // Faithful CVE-2023-44487 pattern: open a stream, then immediately reset it, repeatedly.
-        // Each reset frees the concurrency slot, so the max-concurrent-streams cap never bites.
-        for (int i = 0; i < FLOOD_CYCLES; i++) {
+        int budget = Http2SessionContext.rapidResetBudget();
+
+        // Faithful CVE-2023-44487 pattern: open a stream, immediately reset it, repeatedly. Each
+        // reset frees the concurrency slot, so the max-concurrent-streams cap never bites — the
+        // net rapid-reset budget is the only thing that stops the flood.
+        for (int i = 0; i < budget; i++) {
             int streamId = i * 2 + 1;
             session.admitClientStreamId(streamId);
             session.openRequestStream(new Http2DecodedRequest(streamId, null, "/", List.of(), true));
             session.resetRequestStream(streamId);
+            assertFalse(session.recordInboundRstStream(),
+                    "within-budget reset #" + (i + 1) + " must not yet be flagged as a flood");
         }
 
-        // EXPECTED (post-fix): exceeding the per-window reset budget MUST stop admitting new
-        // streams / emit GOAWAY(ENHANCE_YOUR_CALM). No such seam exists yet, so the contract
-        // is unsatisfied — this test stays @Disabled until the mitigation lands.
-        fail("Rapid-reset mitigation unimplemented: session processed " + FLOOD_CYCLES
-                + " open+reset cycles without throttling (CVE-2023-44487).");
+        // The reset that crosses the budget MUST be reported as a flood (caller → GOAWAY(0x0B)).
+        int floodStreamId = budget * 2 + 1;
+        session.admitClientStreamId(floodStreamId);
+        session.openRequestStream(new Http2DecodedRequest(floodStreamId, null, "/", List.of(), true));
+        session.resetRequestStream(floodStreamId);
+        assertTrue(session.recordInboundRstStream(),
+                "the reset crossing the per-connection budget MUST trip the flood defense");
+        assertEquals(budget + 1, session.rapidResetCount(),
+                "net reset count at trip time is the budget + the tripping frame");
+    }
+
+    @Test
+    @DisplayName("legitimate cancels interleaved with real work stay under budget (no false trip)")
+    void legitimateCancelsDoNotTrip() {
+        // A well-behaved peer cancels far more streams than the budget over the connection's life,
+        // but each cancel is paired with a dispatched request — the net count never climbs.
+        for (int i = 0; i < Http2SessionContext.rapidResetBudget() * 5; i++) {
+            session.recordDispatchedRequest();
+            assertFalse(session.recordInboundRstStream(),
+                    "a reset paired with real work must never be flagged as a flood");
+        }
+        assertTrue(session.rapidResetCount() <= 1,
+                "net reset count stays floored (oscillates 0/1) when every reset is offset by a dispatch");
     }
 }
