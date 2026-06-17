@@ -64,9 +64,11 @@ final class NativeTcpStreamPendingWriteTest {
         assertThat(after - before).as("prepareCipher must not allocate on the fd-owner egress path").isZero();
         assertThat(engine.wrapCalls).isEqualTo(1);
         assertThat(placeholder.size()).as("placeholder stays empty and reusable").isZero();
-        // Idempotent (already-prepared returns OK) and writeCipher no-ops: the ciphertext is already
-        // on the socket via wrap()'s SSL_write, so there is nothing left to drain.
+        // Idempotent: a second prepareCipher() returns OK WITHOUT re-invoking wrap() (guarded by the
+        // cipherPrepared flag). Re-wrapping would re-run SSL_write on the same plaintext — silent wire
+        // corruption — so true idempotency must hold independently of the production drain loop.
         assertThat(pending.prepareCipher()).isEqualTo(TlsStatus.OK);
+        assertThat(engine.wrapCalls).as("second prepareCipher must not re-invoke wrap").isEqualTo(1);
         pending.close();
     }
 
@@ -85,7 +87,7 @@ final class NativeTcpStreamPendingWriteTest {
         LoanedBuffer plain = allocator.allocateNetwork(bytes.length);
         MemorySegment.copy(MemorySegment.ofArray(bytes), 0, plain.segment(), 0, bytes.length);
         NativeTcpStreamPendingWrite.TlsContext ctx =
-                new NativeTcpStreamPendingWrite.TlsContext(engine, new Object(), allocator, placeholder);
+                new NativeTcpStreamPendingWrite.TlsContext(engine, new Object(), placeholder);
         return new NativeTcpStreamPendingWrite(plain, bytes.length, ctx, (src, off, len) -> len);
     }
 

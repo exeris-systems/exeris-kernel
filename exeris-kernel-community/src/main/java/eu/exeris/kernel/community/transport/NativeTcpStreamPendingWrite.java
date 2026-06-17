@@ -11,7 +11,6 @@ package eu.exeris.kernel.community.transport;
 import eu.exeris.kernel.spi.crypto.TlsEngine;
 import eu.exeris.kernel.spi.crypto.TlsStatus;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
-import eu.exeris.kernel.spi.memory.MemoryAllocator;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
@@ -26,7 +25,7 @@ import java.lang.foreign.MemorySegment;
  * first drain attempt for TLS streams), and tracks offsets across partial
  * socket writes.
  *
- * <p>Construction takes a {@link TlsContext} (engine + lock + allocator) and a
+ * <p>Construction takes a {@link TlsContext} (engine + lock + ciphertext placeholder) and a
  * {@link TryWriter} dispatcher so the stream's socket-backend selection stays
  * encapsulated in {@link NativeTcpStreamPlainSocketIo}; this class never
  * touches the underlying file descriptor directly.
@@ -43,6 +42,10 @@ final class NativeTcpStreamPendingWrite implements AutoCloseable {
     private LoanedBuffer cipherBuffer;
     private int cipherLength;
     private int cipherOffset;
+    // True once wrap() has run for this write. On the fd-owner path cipherBuffer stays null
+    // (wrap writes straight to the socket), so idempotency cannot key off cipherBuffer — a second
+    // prepareCipher() would otherwise re-invoke wrap() and re-send the same plaintext.
+    private boolean cipherPrepared;
 
     /**
      * TLS wrap dependency surface for a single stream. {@code tlsLock} must be
@@ -55,7 +58,7 @@ final class NativeTcpStreamPendingWrite implements AutoCloseable {
      * touches its ciphertext argument, so the same placeholder used by ingress unwrap is
      * passed to {@code wrap} on egress instead of allocating a per-write cipher buffer.
      */
-    /* default */ record TlsContext(TlsEngine tlsEngine, Object tlsLock, MemoryAllocator allocator,
+    /* default */ record TlsContext(TlsEngine tlsEngine, Object tlsLock,
                                     LoanedBuffer ciphertextPlaceholder) {
     }
 
@@ -93,7 +96,7 @@ final class NativeTcpStreamPendingWrite implements AutoCloseable {
     // a fresh allocation, so there is no resource for this method to close.
     @SuppressWarnings("PMD.CloseResource")
     /* default */ TlsStatus prepareCipher() {
-        if (cipherBuffer != null) {
+        if (cipherPrepared) {
             return TlsStatus.OK;
         }
         // fd-owner BIO (the only TLS engine NativeTcpStream accepts — buffer-owner engines are
@@ -116,6 +119,7 @@ final class NativeTcpStreamPendingWrite implements AutoCloseable {
                     "fd-owner TLS wrap produced ciphertext in the shared placeholder (size="
                             + cipher.size() + "); buffer-owner engines are unsupported here");
         }
+        cipherPrepared = true;
         return TlsStatus.OK;
     }
 

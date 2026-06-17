@@ -205,7 +205,7 @@ final class NativeTcpStream implements TransportStream {
         this.pendingWriteTlsContext = tlsEngine == null
                 ? null
                 : new NativeTcpStreamPendingWrite.TlsContext(
-                        tlsEngine, tlsLock, allocator, tlsCiphertextPlaceholder);
+                        tlsEngine, tlsLock, tlsCiphertextPlaceholder);
         this.pendingWriteTryWriter = this::tryWrite;
     }
 
