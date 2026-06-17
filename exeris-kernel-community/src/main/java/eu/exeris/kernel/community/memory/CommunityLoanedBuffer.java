@@ -12,7 +12,6 @@ import eu.exeris.kernel.core.memory.AbstractLoanedBuffer;
 
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Community: Off-heap {@link eu.exeris.kernel.spi.memory.LoanedBuffer} backed by shared
@@ -43,7 +42,6 @@ final class CommunityLoanedBuffer extends AbstractLoanedBuffer {
     private final CommunityArenaShardPool pool;
     private final long originalCapacityBytes;
     private final int originShard;
-    private final AtomicBoolean pooledReturnDone = new AtomicBoolean(false);
 
     // =========================================================================
     // Constructor — DeclarationOrder: fields → constructor → static factories
@@ -114,7 +112,10 @@ final class CommunityLoanedBuffer extends AbstractLoanedBuffer {
 
     @Override
     protected void onRelease() {
-        if (pool != null && pooledReturnDone.compareAndSet(false, true)) {
+        // AbstractLoanedBuffer.close() invokes onRelease() exactly once — the refcount CAS only
+        // reaches the isInitialCount branch for the single thread that performs the final
+        // decrement — so no extra idempotency guard is needed for the segment return.
+        if (pool != null) {
             pool.returnSegment(originalCapacityBytes, originShard, segment);
         }
     }
