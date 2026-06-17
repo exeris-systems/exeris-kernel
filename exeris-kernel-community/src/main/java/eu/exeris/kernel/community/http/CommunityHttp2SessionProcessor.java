@@ -243,6 +243,17 @@ final class CommunityHttp2SessionProcessor {
             case RST_STREAM -> {
                 session.clearPendingIfStreamMatches(header.streamId());
                 session.resetRequestStream(header.streamId());
+                // CVE-2023-44487 (Rapid Reset): each freed slot lets the peer re-open without
+                // ever hitting SETTINGS_MAX_CONCURRENT_STREAMS, so the cap alone is no defense.
+                // The net reset budget trips GOAWAY(ENHANCE_YOUR_CALM) and stops the frame loop.
+                if (session.recordInboundRstStream()) {
+                    Http2RapidResetFloodEvent.emit(
+                            session.rapidResetCount(), session.lastProcessedStreamId());
+                    CommunityHttp2ControlFrames.sendGoAway(
+                            allocator, stream, session.lastProcessedStreamId(),
+                            Http2ErrorCode.ENHANCE_YOUR_CALM);
+                    yield false;
+                }
                 yield true;
             }
             default -> true;
@@ -367,6 +378,9 @@ final class CommunityHttp2SessionProcessor {
                                       int streamId,
                                       Http2DecodedRequest decoded,
                                       LoanedBuffer bodyBuffer) {
+        // Real work credits the Rapid Reset budget (CVE-2023-44487): a peer interleaving genuine
+        // requests with cancels nets out and never trips the flood defense.
+        session.recordDispatchedRequest();
         try (LoanedBuffer requestBody = bodyBuffer) {
             HttpRequest request = new HttpRequest(
                     decoded.method(),
