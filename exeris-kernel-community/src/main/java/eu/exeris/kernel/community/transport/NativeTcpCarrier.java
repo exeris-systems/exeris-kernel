@@ -42,6 +42,7 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicLongArray;
 
 /**
  * Community native TCP carrier with FD-owner reactor and VT-per-stream dispatch via PAQS.
@@ -72,6 +73,17 @@ public final class NativeTcpCarrier implements TransportEngine {
     private static final int MAX_TLS_RECORDS_PER_READ =
             Integer.parseInt(System.getProperty("exeris.transport.maxTlsRecordsPerRead", "32"));
 
+    // PERF-RESEARCH (research/0.9.0-tls-records-per-event): confirm-experiment (1) for the
+    // TLS-vs-plaintext CPU gap. Records the distribution of TLS records drained per readable event
+    // so we can tell whether the dominant cost is per-record segment churn (mean >= 2) or reactor
+    // iteration frequency (mean ~ 1.0 / many empty events). Default ON on this branch; not for merge.
+    private static final boolean TLS_DRAIN_HISTOGRAM =
+            Boolean.parseBoolean(System.getProperty("exeris.transport.tls.ingressDrainHistogram", "true"));
+    // Power-of-two so the emit gate is a cheap mask, not a modulo on the hot path.
+    private static final long DRAIN_EMIT_INTERVAL = 4_096L;
+    // A readable event is "multi-record" (the coalescing-pays-off signal) at >= this many records.
+    private static final int MULTI_RECORD_THRESHOLD = 2;
+
     private final TransportConfig config;
     private final MemoryAllocator allocator;
     private final KernelCryptoProvider cryptoProvider;
@@ -80,6 +92,11 @@ public final class NativeTcpCarrier implements TransportEngine {
 
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final AtomicBoolean closed = new AtomicBoolean(false);
+
+    // PERF-RESEARCH: TLS records-drained-per-readable-event distribution (see TLS_DRAIN_HISTOGRAM).
+    private final AtomicLongArray tlsDrainHistogram = new AtomicLongArray(MAX_TLS_RECORDS_PER_READ + 1);
+    private final AtomicLong tlsReadableEvents = new AtomicLong();
+    private final AtomicLong tlsTotalRecords = new AtomicLong();
 
     private final AtomicLong streamSeq = new AtomicLong(1);
     private final AtomicLong connectionSeq = new AtomicLong(1);
@@ -301,6 +318,7 @@ public final class NativeTcpCarrier implements TransportEngine {
             return;
         }
         try {
+            emitTlsDrainSnapshot(true); // PERF-RESEARCH: final cumulative distribution before teardown
             stop();
         } finally {
             backend.close();
@@ -611,13 +629,16 @@ public final class NativeTcpCarrier implements TransportEngine {
             // PERF-062: drain all buffered TLS records in one readable event (loop until null =
             // WANT_READ / backpressure / close), bounded by MAX_TLS_RECORDS_PER_READ for fairness.
             // See docs/subsystems/transport.md. The level-triggered selector re-reports any remainder.
-            for (int drained = 0; drained < MAX_TLS_RECORDS_PER_READ; drained++) {
+            int drained = 0;
+            while (drained < MAX_TLS_RECORDS_PER_READ) {
                 LoanedBuffer offered = stream.readTlsIngressFromFd();
                 if (offered == null) {
-                    return;
+                    break;
                 }
                 stream.offerIngress(offered);
+                drained++;
             }
+            recordTlsDrain(drained);
             return;
         }
 
@@ -641,6 +662,49 @@ public final class NativeTcpCarrier implements TransportEngine {
             stream.markRemoteClosed();
             stream.close();
         }
+    }
+
+    // PERF-RESEARCH: record one readable-event's drained-record count (0..MAX). Single atomic
+    // increment per readable event — no per-record cost added. Emits a cumulative JFR snapshot every
+    // DRAIN_EMIT_INTERVAL events so the last event in the recording holds the full distribution.
+    private void recordTlsDrain(int drained) {
+        if (!TLS_DRAIN_HISTOGRAM) {
+            return;
+        }
+        tlsDrainHistogram.incrementAndGet(drained);
+        tlsTotalRecords.addAndGet(drained);
+        long events = tlsReadableEvents.incrementAndGet();
+        if ((events & (DRAIN_EMIT_INTERVAL - 1)) == 0) {
+            emitTlsDrainSnapshot(false);
+        }
+    }
+
+    private void emitTlsDrainSnapshot(boolean finalSnapshot) {
+        long events = tlsReadableEvents.get();
+        if (events == 0) {
+            return;
+        }
+        long total = tlsTotalRecords.get();
+        long multi = 0;
+        StringBuilder hist = new StringBuilder(96);
+        for (int bucket = 0; bucket <= MAX_TLS_RECORDS_PER_READ; bucket++) {
+            long count = tlsDrainHistogram.get(bucket);
+            if (count == 0) {
+                continue;
+            }
+            if (bucket >= MULTI_RECORD_THRESHOLD) {
+                multi += count;
+            }
+            if (!hist.isEmpty()) {
+                hist.append(',');
+            }
+            hist.append(bucket).append(':').append(count);
+        }
+        double mean = (double) total / events;
+        double pctMulti = 100.0 * multi / events;
+        CommunityTlsIngressDrainEvent.emit(events, total, mean, pctMulti,
+                tlsDrainHistogram.get(0), tlsDrainHistogram.get(MAX_TLS_RECORDS_PER_READ),
+                hist.toString(), finalSnapshot);
     }
 
     private LoanedBuffer adaptTlsIfNeeded(NativeTcpStream stream, LoanedBuffer slab, int read) {
