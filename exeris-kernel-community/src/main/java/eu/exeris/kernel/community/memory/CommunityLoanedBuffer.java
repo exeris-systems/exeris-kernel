@@ -112,9 +112,7 @@ final class CommunityLoanedBuffer extends AbstractLoanedBuffer {
 
     @Override
     protected void onRelease() {
-        // AbstractLoanedBuffer.close() invokes onRelease() exactly once — the refcount CAS only
-        // reaches the isInitialCount branch for the single thread that performs the final
-        // decrement — so no extra idempotency guard is needed for the segment return.
+        // Single dispatch guaranteed by refcount CAS — see AbstractLoanedBuffer.onRelease().
         if (pool != null) {
             pool.returnSegment(originalCapacityBytes, originShard, segment);
         }
