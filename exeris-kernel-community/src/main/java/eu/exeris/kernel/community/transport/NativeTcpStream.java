@@ -91,6 +91,10 @@ final class NativeTcpStream implements TransportStream {
     private static final int DRAIN_OK      = 1;
     private static final int DRAIN_STALLED = 2;
 
+    // RFC 8446 §5.1 / RFC 5246 §6.2.1: a TLS record carries at most 2^14 bytes of plaintext.
+    // The ingress accumulator stops taking records once another max-size record may not fit.
+    private static final int MAX_TLS_RECORD_PLAINTEXT_BYTES = 16 * 1_024;
+
     private static final int INBOUND_ADVANCE_NEEDS_MORE_DATA = -1;
     private static final int INBOUND_ADVANCE_RETRY = 0;
     private static final int INBOUND_ADVANCE_READY = 1;
@@ -115,6 +119,13 @@ final class NativeTcpStream implements TransportStream {
     // per read, removing the dominant per-request LoanedBuffer/ReleaseAction churn on the TLS hot
     // path. Owned by this stream; released in finishCloseIfDrained(). null for non-TLS streams.
     private final LoanedBuffer tlsCiphertextPlaceholder;
+
+    // PERF (reused-ingress-slab): per-stream scratch holding one decrypted record at a time. The
+    // ingress drain decrypts each record into this reused buffer and copies its plaintext into a
+    // single accumulator slab, so a burst of N records costs one slab + one offerIngress instead of
+    // N — eliminating the per-record wrapper/ReleaseAction/pool churn. Owned by this stream; released
+    // in finishCloseIfDrained(). null for non-TLS streams.
+    private final LoanedBuffer tlsPlaintextScratch;
 
     private final AtomicBoolean closeRequested = new AtomicBoolean(false);
     private final AtomicBoolean closed = new AtomicBoolean(false);
@@ -195,9 +206,13 @@ final class NativeTcpStream implements TransportStream {
         }
         if (tlsEngine == null) {
             this.tlsCiphertextPlaceholder = null;
+            this.tlsPlaintextScratch = null;
         } else {
             this.tlsCiphertextPlaceholder = allocator.allocateInfrastructure(1);
             this.tlsCiphertextPlaceholder.setSize(0);
+            // One carrier slab (32 KB ≥ the 16 KB max TLS record) reused as the per-record decrypt
+            // scratch for the lifetime of the stream; returned to the pool in finishCloseIfDrained().
+            this.tlsPlaintextScratch = allocator.allocateCarrierSlab(0);
         }
         // The same per-stream empty placeholder serves both ingress unwrap and egress wrap: in
         // fd-owner BIO mode neither dereferences the ciphertext segment (see tlsCiphertextPlaceholder
@@ -652,32 +667,60 @@ final class NativeTcpStream implements TransportStream {
             return null;
         }
 
-        // PERF: reuse the per-stream empty placeholder — fd-owner unwrap never reads it (see field
-        // doc). Only the plaintext slab is allocated per record; the prior per-read placeholder
-        // allocate+close pair is gone.
-        LoanedBuffer plaintext = allocator.allocateCarrierSlab(0);
-        // PERF-062: ownership-transfer flag replaces the prior retain()/auto-close ceremony.
-        // The successful return path keeps the buffer alive at refcount 1 without an extra
-        // retain+close pair; the unsuccessful path closes the slab in finally.
+        // Reused-ingress-slab: drain consecutive TLS records into ONE accumulator slab. Each record
+        // is decrypted into the reused per-stream scratch (fd-owner unwrap reads the socket BIO; the
+        // ciphertext placeholder is never dereferenced) and its plaintext copied in. A burst of N
+        // records therefore costs one slab + one offerIngress instead of N — TLS records are not
+        // message boundaries, so concatenating their plaintext is transparent to the HTTP parser.
+        LoanedBuffer accumulator = allocator.allocateCarrierSlab(0);
+        long capacity = accumulator.capacity();
+        int total = 0;
+        // PERF-062: ownership-transfer flag — the success path returns the slab at refcount 1 with no
+        // retain/close ceremony; the empty/failure path closes it in finally.
         boolean transferred = false;
         try {
-            TlsStatus status;
-            synchronized (tlsLock) {
-                status = tlsEngine.unwrap(tlsCiphertextPlaceholder, plaintext);
+            while (true) {
+                int recordLen = unwrapNextTlsRecord();
+                if (recordLen <= 0) {
+                    break;
+                }
+                MemorySegment.copy(tlsPlaintextScratch.segment(), 0L, accumulator.segment(), total, recordLen);
+                total += recordLen;
+                // Stop before another max-size record could overflow the slab; the level-triggered
+                // selector (or the readIngress drain loop) re-reads any remainder.
+                if (total + MAX_TLS_RECORD_PLAINTEXT_BYTES > capacity) {
+                    break;
+                }
             }
-            if (status == TlsStatus.OK && plaintext.size() > 0) {
+            if (total > 0) {
+                accumulator.setSize(total);
                 transferred = true;
-                return plaintext;
-            }
-            if (status == TlsStatus.CLOSED) {
-                markRemoteClosed();
+                return accumulator;
             }
             return null;
         } finally {
             if (!transferred) {
-                plaintext.close();
+                accumulator.close();
             }
         }
+    }
+
+    /**
+     * Decrypts the next buffered TLS record into {@link #tlsPlaintextScratch}, returning its
+     * plaintext length, {@code 0} on WANT_READ (socket drained, nothing more buffered), or
+     * {@code -1} on a closed peer (after flagging it via {@link #markRemoteClosed()}). The caller
+     * must copy the scratch out before the next call, which overwrites it.
+     */
+    private int unwrapNextTlsRecord() {
+        TlsStatus status;
+        synchronized (tlsLock) {
+            status = tlsEngine.unwrap(tlsCiphertextPlaceholder, tlsPlaintextScratch);
+        }
+        if (status == TlsStatus.CLOSED) {
+            markRemoteClosed();
+            return -1;
+        }
+        return status == TlsStatus.OK ? (int) tlsPlaintextScratch.size() : 0;
     }
 
     @SuppressWarnings("PMD.UseTryWithResources") // see readTlsIngressFromFd above — transferred-flag ownership
@@ -1155,6 +1198,13 @@ final class NativeTcpStream implements TransportStream {
                 // tlsLock — that lock is held on the ingress hot path, and finishCloseIfDrained()
                 // must never block on it.
                 tlsCiphertextPlaceholder.close();
+            } catch (RuntimeException _) {
+                // best effort
+            }
+        }
+        if (tlsPlaintextScratch != null) {
+            try {
+                tlsPlaintextScratch.close();
             } catch (RuntimeException _) {
                 // best effort
             }
