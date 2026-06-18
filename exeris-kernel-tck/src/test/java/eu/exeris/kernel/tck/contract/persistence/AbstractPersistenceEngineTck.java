@@ -445,4 +445,54 @@ public abstract class AbstractPersistenceEngineTck {
             }
         }
     }
+
+    // =========================================================================
+    // unwrap() seam contract (tier-blind — no driver type named here)
+    // =========================================================================
+
+    @Nested
+    @DisplayName("unwrap(Class) seam contract")
+    class UnwrapSeamContract {
+
+        /** A type no PersistenceConnection should ever be assignable to. */
+        private interface UnrelatedFacility {
+        }
+
+        @Test
+        @DisplayName("unwrap(PersistenceConnection.class) returns a present, self-assignable instance")
+        void unwrapToAssignableTypeIsPresent() {
+            try (PersistenceConnection conn = engine.openConnection()) {
+                java.util.Optional<PersistenceConnection> unwrapped =
+                        conn.unwrap(PersistenceConnection.class);
+                assertThat(unwrapped)
+                        .as("default contract: unwrap to an assignable type yields a value")
+                        .isPresent();
+                assertThat(unwrapped.get()).isInstanceOf(PersistenceConnection.class);
+            }
+        }
+
+        @Test
+        @DisplayName("unwrap of an unrelated type returns empty (never null)")
+        void unwrapToUnrelatedTypeIsEmpty() {
+            try (PersistenceConnection conn = engine.openConnection()) {
+                java.util.Optional<UnrelatedFacility> unwrapped = conn.unwrap(UnrelatedFacility.class);
+                assertThat(unwrapped)
+                        .as("default contract: unwrap to an unsupported type is empty, not null")
+                        .isNotNull()
+                        .isEmpty();
+            }
+        }
+
+        @Test
+        @DisplayName("unwrap() is side-effect-free — does not transfer ownership or close the connection")
+        void unwrapDoesNotTransferOwnership() {
+            try (PersistenceConnection conn = engine.openConnection()) {
+                conn.unwrap(PersistenceConnection.class);
+                conn.unwrap(UnrelatedFacility.class);
+                assertThat(conn.isOpen())
+                        .as("unwrap must not consume or close the connection")
+                        .isTrue();
+            }
+        }
+    }
 }

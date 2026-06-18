@@ -1,6 +1,6 @@
 ---
 name: exeris-validation-gate-planner
-description: Router/Planner validation skill for Exeris Kernel. Defines required validation layers, merge gates, and optional checks based on risk and scope.
+description: Decide which validation/merge gates an Exeris Kernel change must pass (TCK, performance/memory, architecture, docs/ADR, local build) based on its risk and scope. Use when planning what must be green before merge, or to confirm no required gate is being skipped.
 ---
 
 # Exeris Validation Gate Planner

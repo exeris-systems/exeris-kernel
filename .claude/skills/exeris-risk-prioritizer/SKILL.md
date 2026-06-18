@@ -1,6 +1,6 @@
 ---
 name: exeris-risk-prioritizer
-description: Router/Planner risk skill for Exeris Kernel. Identifies primary risk, justification, and secondary risks to drive routing priority.
+description: Pick the single primary risk for an Exeris Kernel change when several compete (The-Wall/placement > observable contract drift > hot-path allocation/copy/concurrency > missing verification > docs/ADR drift). Use during triage when a change carries multiple risks and you must decide what to address first.
 ---
 
 # Exeris Risk Prioritizer

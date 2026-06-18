@@ -1,6 +1,6 @@
 ---
 name: exeris-tck-first
-description: TCK-first PR review for Exeris Kernel. Use when changes touch SPI contracts, observable behavior, or provider bindings to enforce that every contract change has executable Abstract*Tck coverage and implementation bindings in Core/Community/Enterprise.
+description: TCK-first review for Exeris Kernel. Use when a change touches SPI interfaces, value/error contracts, lifecycle/state behavior, or provider bindings — to enforce that every contract change has executable Abstract*Tck coverage plus binding tests in Core/Community/Enterprise, with semantic (not happy-path-only) assertions. Trigger on new contract surface, changed error codes, or altered observable behavior.
 ---
 
 # Exeris TCK First

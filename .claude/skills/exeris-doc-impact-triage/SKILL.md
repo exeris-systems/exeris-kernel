@@ -1,6 +1,6 @@
 ---
 name: exeris-doc-impact-triage
-description: Router/Planner docs skill for Exeris Kernel. Classifies expected documentation/ADR impact and required review level.
+description: Quick check of whether an Exeris Kernel change needs documentation/ADR updates and at what level (none / minor / docs-review / ADR-review). Use during triage to decide if a full exeris-docs-adr-check review is warranted before merging.
 ---
 
 # Exeris Doc Impact Triage

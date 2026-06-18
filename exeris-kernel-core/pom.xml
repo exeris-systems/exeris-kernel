@@ -81,6 +81,23 @@
     </dependencies>
 
     <build>
+        <resources>
+            <!-- Filter only the version stamp; keep all other resources unfiltered (no binary corruption). -->
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>true</filtering>
+                <includes>
+                    <include>exeris-kernel.properties</include>
+                </includes>
+            </resource>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>false</filtering>
+                <excludes>
+                    <exclude>exeris-kernel.properties</exclude>
+                </excludes>
+            </resource>
+        </resources>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>

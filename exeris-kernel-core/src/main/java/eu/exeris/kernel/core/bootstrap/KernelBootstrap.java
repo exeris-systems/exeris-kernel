@@ -79,8 +79,15 @@ import java.util.function.Supplier;
 })
 public final class KernelBootstrap {
 
-    /** Kernel artifact version — emitted in JFR events for traceability. */
-    private static final String KERNEL_VERSION = "0.7.0-SNAPSHOT";
+    /**
+     * Kernel artifact version — emitted in JFR events for traceability.
+     *
+     * <p>Sourced from the Maven-filtered {@code exeris-kernel.properties}
+     * ({@code kernel.version=${project.version}}) so the stamp never drifts from
+     * the POM. Falls back to {@code "unknown"} if the resource is absent or its
+     * placeholder was not filtered (e.g. classes loaded outside a Maven build).
+     */
+    private static final String KERNEL_VERSION = KernelVersion.current();
 
     private final SubsystemOrchestrator.FailurePolicy failurePolicy;
     private final BootstrapSelector                   selector;

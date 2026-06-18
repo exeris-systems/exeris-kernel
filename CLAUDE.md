@@ -82,4 +82,11 @@ When the SonarQube MCP server is available:
 ## Agents, Commands, and Skills
 - Functional subagents live in `.claude/agents/` (Architect, Implementer, TCK/Test, Performance/Memory, Docs/ADR, Router).
 - Reusable slash commands live in `.claude/commands/` (Community/Open-Core review and implementation prompts).
-- Skill packs live in `.claude/skills/` (PR-review, routing/planner, subsystem-specific lenses).
+- Skill packs live in `.claude/skills/` (PR-review lenses, routing/planner, subsystem lenses, plus the `exeris-pr-preflight` / `exeris-adr-register` / `exeris-jfr-perf-research` workflow skills).
+
+### When to use which
+These three surfaces overlap on purpose; pick by *how* you need the work done, not *what* it is:
+- **Skill** (`Skill` tool, inline) — runs the checklist in the current conversation, keeping full context. Default for review lenses, triage, and the workflow skills above. Start a PR review with `exeris-pr-review-waste-hunter`, which dispatches to the focused lenses.
+- **Agent** (`Agent` tool, delegated) — spins up a separate context window. Use for broad fan-out, read-heavy exploration, or parallel independent work where you only want the conclusion back (e.g. `exeris-architect`, `exeris-performance`).
+- **Command** (`/name`, explicit) — user-invoked Community/Open-Core prompt; reach for it when the user types the slash command.
+- Skills and agents intentionally mirror the same personas (e.g. `exeris-architect-guardrails` skill ↔ `exeris-architect` agent): same lens, different execution mode.

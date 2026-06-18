@@ -1,6 +1,6 @@
 ---
 name: exeris-subsystem-scope-detector
-description: Optional Router/Planner scope skill for Exeris Kernel. Detects impacted subsystem(s), required contract docs, and single-vs-cross subsystem scope.
+description: Identify which Exeris Kernel subsystem(s) a change touches, which contract docs to load, and whether the blast radius is single- or cross-subsystem. Use during triage when the impacted subsystem is unclear or a change may span several subsystems.
 ---
 
 # Exeris Subsystem Scope Detector

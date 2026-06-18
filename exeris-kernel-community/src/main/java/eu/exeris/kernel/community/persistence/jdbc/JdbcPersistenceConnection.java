@@ -20,6 +20,7 @@ import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -202,6 +203,32 @@ public final class JdbcPersistenceConnection implements PersistenceConnection {
     // =========================================================================
     // Helpers
     // =========================================================================
+
+    /**
+     * Unwraps to the backing {@link Connection} for the JDBC compatibility bridge.
+     *
+     * <p>SPI seam (ADR-017): exposes the underlying {@code java.sql.Connection}
+     * via the tier-blind {@link PersistenceConnection#unwrap(Class)} contract,
+     * so integration bridges can reach the driver connection even through
+     * request-scoped forwarding wrappers — without the SPI naming JDBC.
+     * Falls back to the default behaviour ({@code this} when assignable) for
+     * any other requested type.
+     *
+     * <p>Ownership is not transferred: the returned {@link Connection} stays
+     * owned by this instance; callers MUST NOT close it directly.
+     *
+     * @since 0.8.1
+     */
+    @Override
+    public <T> Optional<T> unwrap(Class<T> type) {
+        // Exact match only: a request for java.sql.Connection reaches the backing driver
+        // connection. Supertype requests (Wrapper, AutoCloseable) intentionally fall through
+        // to the default, which resolves to the wrapper itself — never the raw connection.
+        if (type == Connection.class) {
+            return Optional.of(type.cast(conn));
+        }
+        return PersistenceConnection.super.unwrap(type);
+    }
 
     /**
      * Returns the raw JDBC {@link Connection} backing this instance.

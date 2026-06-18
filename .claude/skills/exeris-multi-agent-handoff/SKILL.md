@@ -1,6 +1,6 @@
 ---
 name: exeris-multi-agent-handoff
-description: Router/Planner coordination skill for Exeris Kernel. Builds ordered handoff chains and identifies blocking dependencies between specialist steps.
+description: Order the specialist chain and surface blocking dependencies for a multi-domain Exeris Kernel task. Use when work spans architecture + implementation + verification + docs and must run in strict dependency order (e.g. placement before implementation, implementation before TCK/perf, docs/ADR sync when meaning changes).
 ---
 
 # Exeris Multi-Agent Handoff
