@@ -12,8 +12,8 @@ package eu.exeris.kernel.spi.diagnostics;
  * SPI: read-only, out-of-process-friendly introspection of kernel <em>state</em>.
  *
  * <p>This is the single public contract for reading what the kernel is composed of at runtime —
- * the discovered providers, the resolved capability composition, the bootstrap DAG, and per-subsystem
- * detail. It exists so external consumers (the AI bridge, future CLIs, Studio remote-introspection)
+ * the discovered providers, the bootstrap DAG, and per-subsystem detail. It exists so external
+ * consumers (the AI bridge, future CLIs, Studio remote-introspection)
  * stop reinventing a fragile join over {@code SubsystemOrchestrator} / provider internals, which live in
  * {@code exeris-kernel-core} and would break The Wall (ADR-006) and drift on every refactor.
  *
@@ -61,13 +61,6 @@ public interface KernelDiagnostics {
     ProvidersSnapshot listProviders();
 
     /**
-     * Snapshot of the resolved capability composition (ADR-024 {@code @Provides}/{@code @Requires}).
-     *
-     * @return non-null immutable snapshot; {@code capabilities} may be empty before bootstrap completes
-     */
-    CompositionSnapshot listCapabilities();
-
-    /**
      * Snapshot of the bootstrap dependency DAG (nodes + their declared dependencies).
      *
      * @return non-null immutable snapshot; {@code nodes} may be empty before bootstrap completes
@@ -93,7 +86,7 @@ public interface KernelDiagnostics {
      * THP / CDS / AOT state.
      *
      * <p>Strictly observational (no tuning recommendations — those are the Enterprise advisor's surface
-     * per ADR-008). Same cold-path and best-effort-atomicity discipline as the other four methods.
+     * per ADR-008). Same cold-path and best-effort-atomicity discipline as the other three methods.
      *
      * <p>This method was added after the initial four-method surface; per ADR-033 Obligation 5 adding a
      * method to the Java interface is a binary-breaking change for {@link KernelDiagnosticsProvider}

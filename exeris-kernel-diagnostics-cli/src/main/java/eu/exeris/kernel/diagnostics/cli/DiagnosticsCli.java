@@ -131,7 +131,6 @@ public final class DiagnosticsCli {
             String method = request.path("method").asText("");
             return switch (method) {
                 case "listProviders" -> mapper.writeValueAsString(diagnostics.listProviders());
-                case "listCapabilities" -> mapper.writeValueAsString(diagnostics.listCapabilities());
                 case "getBootstrapDag" -> mapper.writeValueAsString(diagnostics.getBootstrapDag());
                 case "getJvmErgonomics" -> mapper.writeValueAsString(diagnostics.getJvmErgonomics());
                 case "describeSubsystem" -> describeSubsystem(request);
