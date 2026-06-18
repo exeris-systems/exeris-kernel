@@ -1,0 +1,1144 @@
+[
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "eu.exeris.kernel.community.crypto.CommunityTlsEngineGuardBenchmark.beginHandshakeWithoutBindGuardCost",
+        "mode" : "thrpt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "/opt/hostedtoolcache/Java_jdkfile_jdk/26.0.0/x64/bin/java",
+        "jvmArgs" : [
+            "--enable-preview",
+            "-XX:+UnlockExperimentalVMOptions",
+            "-XX:+UseZGC",
+            "-Dbenchmark.jvmArgs=",
+            "--enable-native-access=ALL-UNNAMED",
+            "-Djava.library.path=/usr/java/packages/lib:/usr/lib64:/lib64:/lib:/usr/lib:/home/runner/work/exeris-kernel/exeris-kernel/exeris-kernel-community/../native-libs/linux-x86_64",
+            "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED",
+            "--add-opens=java.base/java.io=ALL-UNNAMED",
+            "-XX:StartFlightRecording=name=jmh,filename=target/jfr-reports/jmh-benchmarks.jfr,dumponexit=true,settings=default"
+        ],
+        "jdkVersion" : "26",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "26+35-2893",
+        "warmupIterations" : 3,
+        "warmupTime" : "1 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 5,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "primaryMetric" : {
+            "score" : 539278.7458063524,
+            "scoreError" : 419581.09420181386,
+            "scoreConfidence" : [
+                119697.65160453849,
+                958859.8400081662
+            ],
+            "scorePercentiles" : {
+                "0.0" : 458903.8957168129,
+                "50.0" : 461055.0605672621,
+                "90.0" : 667910.5931496295,
+                "95.0" : 667910.5931496295,
+                "99.0" : 667910.5931496295,
+                "99.9" : 667910.5931496295,
+                "99.99" : 667910.5931496295,
+                "99.999" : 667910.5931496295,
+                "99.9999" : 667910.5931496295,
+                "100.0" : 667910.5931496295
+            },
+            "scoreUnit" : "ops/s",
+            "rawData" : [
+                [
+                    648914.854663216,
+                    667910.5931496295,
+                    461055.0605672621,
+                    459609.324934841,
+                    458903.8957168129
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "eu.exeris.kernel.community.crypto.CommunityTlsEngineGuardBenchmark.fullRoundTripWrapUnwrapCost",
+        "mode" : "thrpt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "/opt/hostedtoolcache/Java_jdkfile_jdk/26.0.0/x64/bin/java",
+        "jvmArgs" : [
+            "--enable-preview",
+            "-XX:+UnlockExperimentalVMOptions",
+            "-XX:+UseZGC",
+            "-Dbenchmark.jvmArgs=",
+            "--enable-native-access=ALL-UNNAMED",
+            "-Djava.library.path=/usr/java/packages/lib:/usr/lib64:/lib64:/lib:/usr/lib:/home/runner/work/exeris-kernel/exeris-kernel/exeris-kernel-community/../native-libs/linux-x86_64",
+            "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED",
+            "--add-opens=java.base/java.io=ALL-UNNAMED",
+            "-XX:StartFlightRecording=name=jmh,filename=target/jfr-reports/jmh-benchmarks.jfr,dumponexit=true,settings=default"
+        ],
+        "jdkVersion" : "26",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "26+35-2893",
+        "warmupIterations" : 3,
+        "warmupTime" : "1 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 5,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "primaryMetric" : {
+            "score" : 68588.98095204063,
+            "scoreError" : 1102.3072098766163,
+            "scoreConfidence" : [
+                67486.67374216401,
+                69691.28816191724
+            ],
+            "scorePercentiles" : {
+                "0.0" : 68202.8924769312,
+                "50.0" : 68620.79421347087,
+                "90.0" : 68986.93991012573,
+                "95.0" : 68986.93991012573,
+                "99.0" : 68986.93991012573,
+                "99.9" : 68986.93991012573,
+                "99.99" : 68986.93991012573,
+                "99.999" : 68986.93991012573,
+                "99.9999" : 68986.93991012573,
+                "100.0" : 68986.93991012573
+            },
+            "scoreUnit" : "ops/s",
+            "rawData" : [
+                [
+                    68471.24773198178,
+                    68620.79421347087,
+                    68663.03042769352,
+                    68986.93991012573,
+                    68202.8924769312
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "eu.exeris.kernel.community.crypto.CommunityTlsEngineGuardBenchmark.notifyBoundWithoutBindGuardCost",
+        "mode" : "thrpt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "/opt/hostedtoolcache/Java_jdkfile_jdk/26.0.0/x64/bin/java",
+        "jvmArgs" : [
+            "--enable-preview",
+            "-XX:+UnlockExperimentalVMOptions",
+            "-XX:+UseZGC",
+            "-Dbenchmark.jvmArgs=",
+            "--enable-native-access=ALL-UNNAMED",
+            "-Djava.library.path=/usr/java/packages/lib:/usr/lib64:/lib64:/lib:/usr/lib:/home/runner/work/exeris-kernel/exeris-kernel/exeris-kernel-community/../native-libs/linux-x86_64",
+            "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED",
+            "--add-opens=java.base/java.io=ALL-UNNAMED",
+            "-XX:StartFlightRecording=name=jmh,filename=target/jfr-reports/jmh-benchmarks.jfr,dumponexit=true,settings=default"
+        ],
+        "jdkVersion" : "26",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "26+35-2893",
+        "warmupIterations" : 3,
+        "warmupTime" : "1 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 5,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "primaryMetric" : {
+            "score" : 525425.4284641099,
+            "scoreError" : 393253.37133031973,
+            "scoreConfidence" : [
+                132172.05713379016,
+                918678.7997944297
+            ],
+            "scorePercentiles" : {
+                "0.0" : 448172.95726253523,
+                "50.0" : 454645.4029560775,
+                "90.0" : 661186.4269896164,
+                "95.0" : 661186.4269896164,
+                "99.0" : 661186.4269896164,
+                "99.9" : 661186.4269896164,
+                "99.99" : 661186.4269896164,
+                "99.999" : 661186.4269896164,
+                "99.9999" : 661186.4269896164,
+                "100.0" : 661186.4269896164
+            },
+            "scoreUnit" : "ops/s",
+            "rawData" : [
+                [
+                    609776.6238620309,
+                    661186.4269896164,
+                    453345.73125028994,
+                    454645.4029560775,
+                    448172.95726253523
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "eu.exeris.kernel.community.crypto.CommunityTlsEngineGuardBenchmark.unwrapWithoutBindGuardCost",
+        "mode" : "thrpt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "/opt/hostedtoolcache/Java_jdkfile_jdk/26.0.0/x64/bin/java",
+        "jvmArgs" : [
+            "--enable-preview",
+            "-XX:+UnlockExperimentalVMOptions",
+            "-XX:+UseZGC",
+            "-Dbenchmark.jvmArgs=",
+            "--enable-native-access=ALL-UNNAMED",
+            "-Djava.library.path=/usr/java/packages/lib:/usr/lib64:/lib64:/lib:/usr/lib:/home/runner/work/exeris-kernel/exeris-kernel/exeris-kernel-community/../native-libs/linux-x86_64",
+            "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED",
+            "--add-opens=java.base/java.io=ALL-UNNAMED",
+            "-XX:StartFlightRecording=name=jmh,filename=target/jfr-reports/jmh-benchmarks.jfr,dumponexit=true,settings=default"
+        ],
+        "jdkVersion" : "26",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "26+35-2893",
+        "warmupIterations" : 3,
+        "warmupTime" : "1 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 5,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "primaryMetric" : {
+            "score" : 517220.6519460279,
+            "scoreError" : 441368.53896416124,
+            "scoreConfidence" : [
+                75852.11298186664,
+                958589.1909101892
+            ],
+            "scorePercentiles" : {
+                "0.0" : 430654.66853900725,
+                "50.0" : 445420.3441749175,
+                "90.0" : 688315.1479200468,
+                "95.0" : 688315.1479200468,
+                "99.0" : 688315.1479200468,
+                "99.9" : 688315.1479200468,
+                "99.99" : 688315.1479200468,
+                "99.999" : 688315.1479200468,
+                "99.9999" : 688315.1479200468,
+                "100.0" : 688315.1479200468
+            },
+            "scoreUnit" : "ops/s",
+            "rawData" : [
+                [
+                    583484.1441287409,
+                    688315.1479200468,
+                    438228.9549674272,
+                    430654.66853900725,
+                    445420.3441749175
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "eu.exeris.kernel.community.crypto.CommunityTlsEngineGuardBenchmark.wrapWithoutBindGuardCost",
+        "mode" : "thrpt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "/opt/hostedtoolcache/Java_jdkfile_jdk/26.0.0/x64/bin/java",
+        "jvmArgs" : [
+            "--enable-preview",
+            "-XX:+UnlockExperimentalVMOptions",
+            "-XX:+UseZGC",
+            "-Dbenchmark.jvmArgs=",
+            "--enable-native-access=ALL-UNNAMED",
+            "-Djava.library.path=/usr/java/packages/lib:/usr/lib64:/lib64:/lib:/usr/lib:/home/runner/work/exeris-kernel/exeris-kernel/exeris-kernel-community/../native-libs/linux-x86_64",
+            "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED",
+            "--add-opens=java.base/java.io=ALL-UNNAMED",
+            "-XX:StartFlightRecording=name=jmh,filename=target/jfr-reports/jmh-benchmarks.jfr,dumponexit=true,settings=default"
+        ],
+        "jdkVersion" : "26",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "26+35-2893",
+        "warmupIterations" : 3,
+        "warmupTime" : "1 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 5,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "primaryMetric" : {
+            "score" : 535017.1544968602,
+            "scoreError" : 405906.5011136126,
+            "scoreConfidence" : [
+                129110.65338324761,
+                940923.6556104729
+            ],
+            "scorePercentiles" : {
+                "0.0" : 457431.42886982573,
+                "50.0" : 458913.667594283,
+                "90.0" : 663278.8348552239,
+                "95.0" : 663278.8348552239,
+                "99.0" : 663278.8348552239,
+                "99.9" : 663278.8348552239,
+                "99.99" : 663278.8348552239,
+                "99.999" : 663278.8348552239,
+                "99.9999" : 663278.8348552239,
+                "100.0" : 663278.8348552239
+            },
+            "scoreUnit" : "ops/s",
+            "rawData" : [
+                [
+                    636786.1444689753,
+                    663278.8348552239,
+                    457431.42886982573,
+                    458913.667594283,
+                    458675.6966959932
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "eu.exeris.kernel.community.events.CommunityEventBusThroughputBenchmark.publishOverhead",
+        "mode" : "thrpt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "/opt/hostedtoolcache/Java_jdkfile_jdk/26.0.0/x64/bin/java",
+        "jvmArgs" : [
+            "--enable-preview",
+            "-XX:+UnlockExperimentalVMOptions",
+            "-XX:+UseZGC",
+            "-Dbenchmark.jvmArgs=",
+            "--enable-native-access=ALL-UNNAMED",
+            "-Djava.library.path=/usr/java/packages/lib:/usr/lib64:/lib64:/lib:/usr/lib:/home/runner/work/exeris-kernel/exeris-kernel/exeris-kernel-community/../native-libs/linux-x86_64",
+            "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED",
+            "--add-opens=java.base/java.io=ALL-UNNAMED",
+            "-XX:StartFlightRecording=name=jmh,filename=target/jfr-reports/jmh-benchmarks.jfr,dumponexit=true,settings=default"
+        ],
+        "jdkVersion" : "26",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "26+35-2893",
+        "warmupIterations" : 3,
+        "warmupTime" : "1 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 5,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "primaryMetric" : {
+            "score" : 2444912.9387519667,
+            "scoreError" : 5440125.632129058,
+            "scoreConfidence" : [
+                -2995212.6933770915,
+                7885038.570881025
+            ],
+            "scorePercentiles" : {
+                "0.0" : 1413992.4878751314,
+                "50.0" : 1602730.2515524542,
+                "90.0" : 4580790.194101369,
+                "95.0" : 4580790.194101369,
+                "99.0" : 4580790.194101369,
+                "99.9" : 4580790.194101369,
+                "99.99" : 4580790.194101369,
+                "99.999" : 4580790.194101369,
+                "99.9999" : 4580790.194101369,
+                "100.0" : 4580790.194101369
+            },
+            "scoreUnit" : "ops/s",
+            "rawData" : [
+                [
+                    1414843.0210613695,
+                    1413992.4878751314,
+                    1602730.2515524542,
+                    4580790.194101369,
+                    3212208.7391695087
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "eu.exeris.kernel.community.memory.CommunityMemoryAllocatorBenchmark.acquireAndReleaseSmallBuffer",
+        "mode" : "thrpt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "/opt/hostedtoolcache/Java_jdkfile_jdk/26.0.0/x64/bin/java",
+        "jvmArgs" : [
+            "--enable-preview",
+            "-XX:+UnlockExperimentalVMOptions",
+            "-XX:+UseZGC",
+            "-Dbenchmark.jvmArgs=",
+            "--enable-native-access=ALL-UNNAMED",
+            "-Djava.library.path=/usr/java/packages/lib:/usr/lib64:/lib64:/lib:/usr/lib:/home/runner/work/exeris-kernel/exeris-kernel/exeris-kernel-community/../native-libs/linux-x86_64",
+            "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED",
+            "--add-opens=java.base/java.io=ALL-UNNAMED",
+            "-XX:StartFlightRecording=name=jmh,filename=target/jfr-reports/jmh-benchmarks.jfr,dumponexit=true,settings=default"
+        ],
+        "jdkVersion" : "26",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "26+35-2893",
+        "warmupIterations" : 3,
+        "warmupTime" : "1 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 5,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "primaryMetric" : {
+            "score" : 1.5224751693965381E7,
+            "scoreError" : 1.784024057357678E7,
+            "scoreConfidence" : [
+                -2615488.879611397,
+                3.306499226754216E7
+            ],
+            "scorePercentiles" : {
+                "0.0" : 6937479.126457181,
+                "50.0" : 1.732757130480906E7,
+                "90.0" : 1.7329955758841228E7,
+                "95.0" : 1.7329955758841228E7,
+                "99.0" : 1.7329955758841228E7,
+                "99.9" : 1.7329955758841228E7,
+                "99.99" : 1.7329955758841228E7,
+                "99.999" : 1.7329955758841228E7,
+                "99.9999" : 1.7329955758841228E7,
+                "100.0" : 1.7329955758841228E7
+            },
+            "scoreUnit" : "ops/s",
+            "rawData" : [
+                [
+                    6937479.126457181,
+                    1.732757130480906E7,
+                    1.7329955758841228E7,
+                    1.7201154061898213E7,
+                    1.7327598217821226E7
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "eu.exeris.kernel.community.memory.CommunityMemoryAllocatorBenchmark.communityAllocatorBaseline",
+        "mode" : "thrpt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "/opt/hostedtoolcache/Java_jdkfile_jdk/26.0.0/x64/bin/java",
+        "jvmArgs" : [
+            "--enable-preview",
+            "-XX:+UnlockExperimentalVMOptions",
+            "-XX:+UseZGC",
+            "-Dbenchmark.jvmArgs=",
+            "--enable-native-access=ALL-UNNAMED",
+            "-Djava.library.path=/usr/java/packages/lib:/usr/lib64:/lib64:/lib:/usr/lib:/home/runner/work/exeris-kernel/exeris-kernel/exeris-kernel-community/../native-libs/linux-x86_64",
+            "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED",
+            "--add-opens=java.base/java.io=ALL-UNNAMED",
+            "-XX:StartFlightRecording=name=jmh,filename=target/jfr-reports/jmh-benchmarks.jfr,dumponexit=true,settings=default"
+        ],
+        "jdkVersion" : "26",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "26+35-2893",
+        "warmupIterations" : 3,
+        "warmupTime" : "1 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 5,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "primaryMetric" : {
+            "score" : 1.4804613810837394E7,
+            "scoreError" : 2.0428631428891115E7,
+            "scoreConfidence" : [
+                -5624017.618053721,
+                3.523324523972851E7
+            ],
+            "scorePercentiles" : {
+                "0.0" : 5332513.429177943,
+                "50.0" : 1.729734935590996E7,
+                "90.0" : 1.7400511199408583E7,
+                "95.0" : 1.7400511199408583E7,
+                "99.0" : 1.7400511199408583E7,
+                "99.9" : 1.7400511199408583E7,
+                "99.99" : 1.7400511199408583E7,
+                "99.999" : 1.7400511199408583E7,
+                "99.9999" : 1.7400511199408583E7,
+                "100.0" : 1.7400511199408583E7
+            },
+            "scoreUnit" : "ops/s",
+            "rawData" : [
+                [
+                    5332513.429177943,
+                    1.6607601163195696E7,
+                    1.7400511199408583E7,
+                    1.729734935590996E7,
+                    1.738509390649478E7
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "eu.exeris.kernel.community.memory.CommunityMemoryAllocatorBenchmark.heapBaseline",
+        "mode" : "thrpt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "/opt/hostedtoolcache/Java_jdkfile_jdk/26.0.0/x64/bin/java",
+        "jvmArgs" : [
+            "--enable-preview",
+            "-XX:+UnlockExperimentalVMOptions",
+            "-XX:+UseZGC",
+            "-Dbenchmark.jvmArgs=",
+            "--enable-native-access=ALL-UNNAMED",
+            "-Djava.library.path=/usr/java/packages/lib:/usr/lib64:/lib64:/lib:/usr/lib:/home/runner/work/exeris-kernel/exeris-kernel/exeris-kernel-community/../native-libs/linux-x86_64",
+            "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED",
+            "--add-opens=java.base/java.io=ALL-UNNAMED",
+            "-XX:StartFlightRecording=name=jmh,filename=target/jfr-reports/jmh-benchmarks.jfr,dumponexit=true,settings=default"
+        ],
+        "jdkVersion" : "26",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "26+35-2893",
+        "warmupIterations" : 3,
+        "warmupTime" : "1 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 5,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "primaryMetric" : {
+            "score" : 2.741875646316435E8,
+            "scoreError" : 1.898761235970541E7,
+            "scoreConfidence" : [
+                2.5519995227193806E8,
+                2.9317517699134886E8
+            ],
+            "scorePercentiles" : {
+                "0.0" : 2.6631450877684936E8,
+                "50.0" : 2.762969531094745E8,
+                "90.0" : 2.7908068957730764E8,
+                "95.0" : 2.7908068957730764E8,
+                "99.0" : 2.7908068957730764E8,
+                "99.9" : 2.7908068957730764E8,
+                "99.99" : 2.7908068957730764E8,
+                "99.999" : 2.7908068957730764E8,
+                "99.9999" : 2.7908068957730764E8,
+                "100.0" : 2.7908068957730764E8
+            },
+            "scoreUnit" : "ops/s",
+            "rawData" : [
+                [
+                    2.728195312761591E8,
+                    2.764261404184268E8,
+                    2.762969531094745E8,
+                    2.6631450877684936E8,
+                    2.7908068957730764E8
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "eu.exeris.kernel.community.persistence.CommunityRowCursorThroughputBenchmark.rowCursorIteration",
+        "mode" : "thrpt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "/opt/hostedtoolcache/Java_jdkfile_jdk/26.0.0/x64/bin/java",
+        "jvmArgs" : [
+            "--enable-preview",
+            "-XX:+UnlockExperimentalVMOptions",
+            "-XX:+UseZGC",
+            "-Dbenchmark.jvmArgs=",
+            "--enable-native-access=ALL-UNNAMED",
+            "-Djava.library.path=/usr/java/packages/lib:/usr/lib64:/lib64:/lib:/usr/lib:/home/runner/work/exeris-kernel/exeris-kernel/exeris-kernel-community/../native-libs/linux-x86_64",
+            "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED",
+            "--add-opens=java.base/java.io=ALL-UNNAMED",
+            "-XX:StartFlightRecording=name=jmh,filename=target/jfr-reports/jmh-benchmarks.jfr,dumponexit=true,settings=default"
+        ],
+        "jdkVersion" : "26",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "26+35-2893",
+        "warmupIterations" : 3,
+        "warmupTime" : "1 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 5,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "primaryMetric" : {
+            "score" : 18036.901530290375,
+            "scoreError" : 593.1920950972275,
+            "scoreConfidence" : [
+                17443.70943519315,
+                18630.093625387603
+            ],
+            "scorePercentiles" : {
+                "0.0" : 17883.735663845542,
+                "50.0" : 17970.60339777979,
+                "90.0" : 18281.274765786187,
+                "95.0" : 18281.274765786187,
+                "99.0" : 18281.274765786187,
+                "99.9" : 18281.274765786187,
+                "99.99" : 18281.274765786187,
+                "99.999" : 18281.274765786187,
+                "99.9999" : 18281.274765786187,
+                "100.0" : 18281.274765786187
+            },
+            "scoreUnit" : "ops/s",
+            "rawData" : [
+                [
+                    17965.108901132884,
+                    17970.60339777979,
+                    17883.735663845542,
+                    18083.78492290746,
+                    18281.274765786187
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "eu.exeris.kernel.community.persistence.TransactionOrchestratorOverheadBenchmark.executeManaged_trivial",
+        "mode" : "thrpt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "/opt/hostedtoolcache/Java_jdkfile_jdk/26.0.0/x64/bin/java",
+        "jvmArgs" : [
+            "--enable-preview",
+            "-XX:+UnlockExperimentalVMOptions",
+            "-XX:+UseZGC",
+            "-Dbenchmark.jvmArgs=",
+            "--enable-native-access=ALL-UNNAMED",
+            "-Djava.library.path=/usr/java/packages/lib:/usr/lib64:/lib64:/lib:/usr/lib:/home/runner/work/exeris-kernel/exeris-kernel/exeris-kernel-community/../native-libs/linux-x86_64",
+            "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED",
+            "--add-opens=java.base/java.io=ALL-UNNAMED",
+            "-XX:StartFlightRecording=name=jmh,filename=target/jfr-reports/jmh-benchmarks.jfr,dumponexit=true,settings=default"
+        ],
+        "jdkVersion" : "26",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "26+35-2893",
+        "warmupIterations" : 3,
+        "warmupTime" : "1 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 5,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "primaryMetric" : {
+            "score" : 0.30816314519463806,
+            "scoreError" : 0.46765535020764226,
+            "scoreConfidence" : [
+                -0.1594922050130042,
+                0.7758184954022803
+            ],
+            "scorePercentiles" : {
+                "0.0" : 0.20784318934982962,
+                "50.0" : 0.2596689443817032,
+                "90.0" : 0.4866045465959604,
+                "95.0" : 0.4866045465959604,
+                "99.0" : 0.4866045465959604,
+                "99.9" : 0.4866045465959604,
+                "99.99" : 0.4866045465959604,
+                "99.999" : 0.4866045465959604,
+                "99.9999" : 0.4866045465959604,
+                "100.0" : 0.4866045465959604
+            },
+            "scoreUnit" : "ops/us",
+            "rawData" : [
+                [
+                    0.2596689443817032,
+                    0.20784318934982962,
+                    0.20878281174446467,
+                    0.3779162339012326,
+                    0.4866045465959604
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "eu.exeris.kernel.community.persistence.TransactionOrchestratorOverheadBenchmark.query_trivial",
+        "mode" : "thrpt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "/opt/hostedtoolcache/Java_jdkfile_jdk/26.0.0/x64/bin/java",
+        "jvmArgs" : [
+            "--enable-preview",
+            "-XX:+UnlockExperimentalVMOptions",
+            "-XX:+UseZGC",
+            "-Dbenchmark.jvmArgs=",
+            "--enable-native-access=ALL-UNNAMED",
+            "-Djava.library.path=/usr/java/packages/lib:/usr/lib64:/lib64:/lib:/usr/lib:/home/runner/work/exeris-kernel/exeris-kernel/exeris-kernel-community/../native-libs/linux-x86_64",
+            "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED",
+            "--add-opens=java.base/java.io=ALL-UNNAMED",
+            "-XX:StartFlightRecording=name=jmh,filename=target/jfr-reports/jmh-benchmarks.jfr,dumponexit=true,settings=default"
+        ],
+        "jdkVersion" : "26",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "26+35-2893",
+        "warmupIterations" : 3,
+        "warmupTime" : "1 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 5,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "primaryMetric" : {
+            "score" : 0.31318348296475973,
+            "scoreError" : 0.5970377364045034,
+            "scoreConfidence" : [
+                -0.2838542534397437,
+                0.9102212193692631
+            ],
+            "scorePercentiles" : {
+                "0.0" : 0.15074751631581537,
+                "50.0" : 0.3458609682200241,
+                "90.0" : 0.4604691094352975,
+                "95.0" : 0.4604691094352975,
+                "99.0" : 0.4604691094352975,
+                "99.9" : 0.4604691094352975,
+                "99.99" : 0.4604691094352975,
+                "99.999" : 0.4604691094352975,
+                "99.9999" : 0.4604691094352975,
+                "100.0" : 0.4604691094352975
+            },
+            "scoreUnit" : "ops/us",
+            "rawData" : [
+                [
+                    0.15074751631581537,
+                    0.15135030334853813,
+                    0.3458609682200241,
+                    0.4574895175041237,
+                    0.4604691094352975
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "eu.exeris.kernel.community.telemetry.CommunityJfrSinkBenchmark.emitInfoThroughput",
+        "mode" : "thrpt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "/opt/hostedtoolcache/Java_jdkfile_jdk/26.0.0/x64/bin/java",
+        "jvmArgs" : [
+            "--enable-preview",
+            "-XX:+UnlockExperimentalVMOptions",
+            "-XX:+UseZGC",
+            "-Dbenchmark.jvmArgs=",
+            "--enable-native-access=ALL-UNNAMED",
+            "-Djava.library.path=/usr/java/packages/lib:/usr/lib64:/lib64:/lib:/usr/lib:/home/runner/work/exeris-kernel/exeris-kernel/exeris-kernel-community/../native-libs/linux-x86_64",
+            "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED",
+            "--add-opens=java.base/java.io=ALL-UNNAMED",
+            "-XX:StartFlightRecording=name=jmh,filename=target/jfr-reports/jmh-benchmarks.jfr,dumponexit=true,settings=default"
+        ],
+        "jdkVersion" : "26",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "26+35-2893",
+        "warmupIterations" : 3,
+        "warmupTime" : "1 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 5,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "primaryMetric" : {
+            "score" : 8585815.273462594,
+            "scoreError" : 5122544.416199171,
+            "scoreConfidence" : [
+                3463270.8572634226,
+                1.3708359689661764E7
+            ],
+            "scorePercentiles" : {
+                "0.0" : 7305615.638986824,
+                "50.0" : 8428461.020230481,
+                "90.0" : 1.0339688310244078E7,
+                "95.0" : 1.0339688310244078E7,
+                "99.0" : 1.0339688310244078E7,
+                "99.9" : 1.0339688310244078E7,
+                "99.99" : 1.0339688310244078E7,
+                "99.999" : 1.0339688310244078E7,
+                "99.9999" : 1.0339688310244078E7,
+                "100.0" : 1.0339688310244078E7
+            },
+            "scoreUnit" : "ops/s",
+            "rawData" : [
+                [
+                    8428461.020230481,
+                    1.0339688310244078E7,
+                    9497494.941793129,
+                    7357816.4560584575,
+                    7305615.638986824
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "eu.exeris.kernel.community.telemetry.CommunityJfrSinkBenchmark.emitWarnThroughput",
+        "mode" : "thrpt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "/opt/hostedtoolcache/Java_jdkfile_jdk/26.0.0/x64/bin/java",
+        "jvmArgs" : [
+            "--enable-preview",
+            "-XX:+UnlockExperimentalVMOptions",
+            "-XX:+UseZGC",
+            "-Dbenchmark.jvmArgs=",
+            "--enable-native-access=ALL-UNNAMED",
+            "-Djava.library.path=/usr/java/packages/lib:/usr/lib64:/lib64:/lib:/usr/lib:/home/runner/work/exeris-kernel/exeris-kernel/exeris-kernel-community/../native-libs/linux-x86_64",
+            "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED",
+            "--add-opens=java.base/java.io=ALL-UNNAMED",
+            "-XX:StartFlightRecording=name=jmh,filename=target/jfr-reports/jmh-benchmarks.jfr,dumponexit=true,settings=default"
+        ],
+        "jdkVersion" : "26",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "26+35-2893",
+        "warmupIterations" : 3,
+        "warmupTime" : "1 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 5,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "primaryMetric" : {
+            "score" : 8522389.90518055,
+            "scoreError" : 5130877.975090837,
+            "scoreConfidence" : [
+                3391511.930089712,
+                1.3653267880271386E7
+            ],
+            "scorePercentiles" : {
+                "0.0" : 7221465.737557857,
+                "50.0" : 8391515.523538487,
+                "90.0" : 9944330.400037734,
+                "95.0" : 9944330.400037734,
+                "99.0" : 9944330.400037734,
+                "99.9" : 9944330.400037734,
+                "99.99" : 9944330.400037734,
+                "99.999" : 9944330.400037734,
+                "99.9999" : 9944330.400037734,
+                "100.0" : 9944330.400037734
+            },
+            "scoreUnit" : "ops/s",
+            "rawData" : [
+                [
+                    8391515.523538487,
+                    9944330.400037734,
+                    9825478.977187276,
+                    7229158.887581396,
+                    7221465.737557857
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "eu.exeris.kernel.community.telemetry.CommunityJfrSinkBenchmark.noOpSinkBaseline",
+        "mode" : "thrpt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "/opt/hostedtoolcache/Java_jdkfile_jdk/26.0.0/x64/bin/java",
+        "jvmArgs" : [
+            "--enable-preview",
+            "-XX:+UnlockExperimentalVMOptions",
+            "-XX:+UseZGC",
+            "-Dbenchmark.jvmArgs=",
+            "--enable-native-access=ALL-UNNAMED",
+            "-Djava.library.path=/usr/java/packages/lib:/usr/lib64:/lib64:/lib:/usr/lib:/home/runner/work/exeris-kernel/exeris-kernel/exeris-kernel-community/../native-libs/linux-x86_64",
+            "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED",
+            "--add-opens=java.base/java.io=ALL-UNNAMED",
+            "-XX:StartFlightRecording=name=jmh,filename=target/jfr-reports/jmh-benchmarks.jfr,dumponexit=true,settings=default"
+        ],
+        "jdkVersion" : "26",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "26+35-2893",
+        "warmupIterations" : 3,
+        "warmupTime" : "1 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 5,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "primaryMetric" : {
+            "score" : 1.2019121981373324E9,
+            "scoreError" : 2.5114801979021907E7,
+            "scoreConfidence" : [
+                1.1767973961583104E9,
+                1.2270270001163545E9
+            ],
+            "scorePercentiles" : {
+                "0.0" : 1.192239083055364E9,
+                "50.0" : 1.204139677585868E9,
+                "90.0" : 1.2088827284391468E9,
+                "95.0" : 1.2088827284391468E9,
+                "99.0" : 1.2088827284391468E9,
+                "99.9" : 1.2088827284391468E9,
+                "99.99" : 1.2088827284391468E9,
+                "99.999" : 1.2088827284391468E9,
+                "99.9999" : 1.2088827284391468E9,
+                "100.0" : 1.2088827284391468E9
+            },
+            "scoreUnit" : "ops/s",
+            "rawData" : [
+                [
+                    1.2088827284391468E9,
+                    1.192239083055364E9,
+                    1.1987640317723138E9,
+                    1.2055354698339703E9,
+                    1.204139677585868E9
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "eu.exeris.kernel.community.transport.CommunityTransportThroughputBenchmark.streamWriteOverhead",
+        "mode" : "thrpt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "/opt/hostedtoolcache/Java_jdkfile_jdk/26.0.0/x64/bin/java",
+        "jvmArgs" : [
+            "--enable-preview",
+            "-XX:+UnlockExperimentalVMOptions",
+            "-XX:+UseZGC",
+            "-Dbenchmark.jvmArgs=",
+            "--enable-native-access=ALL-UNNAMED",
+            "-Djava.library.path=/usr/java/packages/lib:/usr/lib64:/lib64:/lib:/usr/lib:/home/runner/work/exeris-kernel/exeris-kernel/exeris-kernel-community/../native-libs/linux-x86_64",
+            "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED",
+            "--add-opens=java.base/java.io=ALL-UNNAMED",
+            "-XX:StartFlightRecording=name=jmh,filename=target/jfr-reports/jmh-benchmarks.jfr,dumponexit=true,settings=default"
+        ],
+        "jdkVersion" : "26",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "26+35-2893",
+        "warmupIterations" : 3,
+        "warmupTime" : "1 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 5,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "primaryMetric" : {
+            "score" : 538501.353095121,
+            "scoreError" : 274186.7160667566,
+            "scoreConfidence" : [
+                264314.6370283644,
+                812688.0691618775
+            ],
+            "scorePercentiles" : {
+                "0.0" : 415042.55576657003,
+                "50.0" : 574011.2236699093,
+                "90.0" : 583974.9196535815,
+                "95.0" : 583974.9196535815,
+                "99.0" : 583974.9196535815,
+                "99.9" : 583974.9196535815,
+                "99.99" : 583974.9196535815,
+                "99.999" : 583974.9196535815,
+                "99.9999" : 583974.9196535815,
+                "100.0" : 583974.9196535815
+            },
+            "scoreUnit" : "ops/s",
+            "rawData" : [
+                [
+                    583974.9196535815,
+                    539640.5491694616,
+                    579837.5172160822,
+                    415042.55576657003,
+                    574011.2236699093
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "eu.exeris.kernel.community.bootstrap.CommunitySubsystemBootThroughputBenchmark.bootL0Graph",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "/opt/hostedtoolcache/Java_jdkfile_jdk/26.0.0/x64/bin/java",
+        "jvmArgs" : [
+            "--enable-preview",
+            "-XX:+UnlockExperimentalVMOptions",
+            "-XX:+UseZGC",
+            "-Dbenchmark.jvmArgs=",
+            "--enable-native-access=ALL-UNNAMED",
+            "-Djava.library.path=/usr/java/packages/lib:/usr/lib64:/lib64:/lib:/usr/lib:/home/runner/work/exeris-kernel/exeris-kernel/exeris-kernel-community/../native-libs/linux-x86_64",
+            "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED",
+            "--add-opens=java.base/java.io=ALL-UNNAMED",
+            "-XX:StartFlightRecording=name=jmh,filename=target/jfr-reports/jmh-benchmarks.jfr,dumponexit=true,settings=default"
+        ],
+        "jdkVersion" : "26",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "26+35-2893",
+        "warmupIterations" : 3,
+        "warmupTime" : "1 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 5,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "primaryMetric" : {
+            "score" : 0.002592788337301194,
+            "scoreError" : 0.0018164323446995853,
+            "scoreConfidence" : [
+                7.763559926016086E-4,
+                0.004409220682000779
+            ],
+            "scorePercentiles" : {
+                "0.0" : 0.0022962919258936155,
+                "50.0" : 0.0024105777724221867,
+                "90.0" : 0.003430856413211631,
+                "95.0" : 0.003430856413211631,
+                "99.0" : 0.003430856413211631,
+                "99.9" : 0.003430856413211631,
+                "99.99" : 0.003430856413211631,
+                "99.999" : 0.003430856413211631,
+                "99.9999" : 0.003430856413211631,
+                "100.0" : 0.003430856413211631
+            },
+            "scoreUnit" : "ms/op",
+            "rawData" : [
+                [
+                    0.003430856413211631,
+                    0.002445095136474971,
+                    0.0024105777724221867,
+                    0.002381120438503565,
+                    0.0022962919258936155
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "eu.exeris.kernel.community.persistence.TransactionOrchestratorOverheadBenchmark.executeManaged_trivial",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "/opt/hostedtoolcache/Java_jdkfile_jdk/26.0.0/x64/bin/java",
+        "jvmArgs" : [
+            "--enable-preview",
+            "-XX:+UnlockExperimentalVMOptions",
+            "-XX:+UseZGC",
+            "-Dbenchmark.jvmArgs=",
+            "--enable-native-access=ALL-UNNAMED",
+            "-Djava.library.path=/usr/java/packages/lib:/usr/lib64:/lib64:/lib:/usr/lib:/home/runner/work/exeris-kernel/exeris-kernel/exeris-kernel-community/../native-libs/linux-x86_64",
+            "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED",
+            "--add-opens=java.base/java.io=ALL-UNNAMED",
+            "-XX:StartFlightRecording=name=jmh,filename=target/jfr-reports/jmh-benchmarks.jfr,dumponexit=true,settings=default"
+        ],
+        "jdkVersion" : "26",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "26+35-2893",
+        "warmupIterations" : 3,
+        "warmupTime" : "1 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 5,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "primaryMetric" : {
+            "score" : 3.634267962327834,
+            "scoreError" : 4.8862058759833555,
+            "scoreConfidence" : [
+                -1.2519379136555218,
+                8.52047383831119
+            ],
+            "scorePercentiles" : {
+                "0.0" : 2.0359608303326255,
+                "50.0" : 3.7887023106060607,
+                "90.0" : 4.848182412191835,
+                "95.0" : 4.848182412191835,
+                "99.0" : 4.848182412191835,
+                "99.9" : 4.848182412191835,
+                "99.99" : 4.848182412191835,
+                "99.999" : 4.848182412191835,
+                "99.9999" : 4.848182412191835,
+                "100.0" : 4.848182412191835
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    3.7887023106060607,
+                    4.836052270837764,
+                    4.848182412191835,
+                    2.6624419876708827,
+                    2.0359608303326255
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "eu.exeris.kernel.community.persistence.TransactionOrchestratorOverheadBenchmark.query_trivial",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "/opt/hostedtoolcache/Java_jdkfile_jdk/26.0.0/x64/bin/java",
+        "jvmArgs" : [
+            "--enable-preview",
+            "-XX:+UnlockExperimentalVMOptions",
+            "-XX:+UseZGC",
+            "-Dbenchmark.jvmArgs=",
+            "--enable-native-access=ALL-UNNAMED",
+            "-Djava.library.path=/usr/java/packages/lib:/usr/lib64:/lib64:/lib:/usr/lib:/home/runner/work/exeris-kernel/exeris-kernel/exeris-kernel-community/../native-libs/linux-x86_64",
+            "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED",
+            "--add-opens=java.base/java.io=ALL-UNNAMED",
+            "-XX:StartFlightRecording=name=jmh,filename=target/jfr-reports/jmh-benchmarks.jfr,dumponexit=true,settings=default"
+        ],
+        "jdkVersion" : "26",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "26+35-2893",
+        "warmupIterations" : 3,
+        "warmupTime" : "1 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 5,
+        "measurementTime" : "1 s",
+        "measurementBatchSize" : 1,
+        "primaryMetric" : {
+            "score" : 4.256078739900142,
+            "scoreError" : 8.592695936501773,
+            "scoreConfidence" : [
+                -4.336617196601631,
+                12.848774676401915
+            ],
+            "scorePercentiles" : {
+                "0.0" : 2.252474809435343,
+                "50.0" : 3.5015470293130186,
+                "90.0" : 6.656003640090237,
+                "95.0" : 6.656003640090237,
+                "99.0" : 6.656003640090237,
+                "99.9" : 6.656003640090237,
+                "99.99" : 6.656003640090237,
+                "99.999" : 6.656003640090237,
+                "99.9999" : 6.656003640090237,
+                "100.0" : 6.656003640090237
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    6.656003640090237,
+                    6.615866464781376,
+                    3.5015470293130186,
+                    2.252474809435343,
+                    2.254501755880735
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    }
+]
+
+
