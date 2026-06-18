@@ -33,9 +33,14 @@ public abstract class AbstractHealthMonitorTck {
 
         void markSubsystemFailed(String subsystem);
 
+        void markSubsystemDegraded(String subsystem);
+
         boolean readinessUp();
 
         boolean livenessUp();
+
+        /** Diagnostic readiness status string (e.g. "READY", "STARTING", "DEGRADED", "FAILED"). */
+        String readinessStatus();
     }
 
     @Test
@@ -87,6 +92,53 @@ public abstract class AbstractHealthMonitorTck {
         monitor.markKernelStarted();
 
         assertThat(monitor.readinessUp()).isTrue();
+    }
+
+    @Test
+    @DisplayName("required subsystem degraded drops readiness with DEGRADED status, liveness stays UP")
+    void requiredDegradedDropsReadinessButNotLiveness() {
+        HealthMonitorAdapter monitor = createMonitor();
+        monitor.register("persistence", true);
+        monitor.markSubsystemRunning("persistence");
+        monitor.markKernelInitialized();
+        monitor.markKernelStarted();
+        monitor.markSubsystemDegraded("persistence");
+
+        assertThat(monitor.readinessUp()).isFalse();
+        assertThat(monitor.readinessStatus()).isEqualTo("DEGRADED");
+        assertThat(monitor.livenessUp()).isTrue();
+    }
+
+    @Test
+    @DisplayName("optional subsystem degraded does not drop readiness")
+    void optionalDegradedDoesNotDropReadiness() {
+        HealthMonitorAdapter monitor = createMonitor();
+        monitor.register("persistence", true);
+        monitor.register("events", false);
+        monitor.markSubsystemRunning("persistence");
+        monitor.markKernelInitialized();
+        monitor.markKernelStarted();
+        monitor.markSubsystemDegraded("events");
+
+        assertThat(monitor.readinessUp()).isTrue();
+        assertThat(monitor.readinessStatus()).isEqualTo("READY");
+    }
+
+    @Test
+    @DisplayName("degraded required subsystem recovers to READY (reversible)")
+    void degradedSubsystemRecoversToReady() {
+        HealthMonitorAdapter monitor = createMonitor();
+        monitor.register("persistence", true);
+        monitor.markSubsystemRunning("persistence");
+        monitor.markKernelInitialized();
+        monitor.markKernelStarted();
+
+        monitor.markSubsystemDegraded("persistence");
+        assertThat(monitor.readinessUp()).isFalse();
+
+        monitor.markSubsystemRunning("persistence");
+        assertThat(monitor.readinessUp()).isTrue();
+        assertThat(monitor.readinessStatus()).isEqualTo("READY");
     }
 
     @Test

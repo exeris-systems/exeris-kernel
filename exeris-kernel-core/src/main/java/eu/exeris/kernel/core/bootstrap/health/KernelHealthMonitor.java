@@ -31,6 +31,7 @@ public final class KernelHealthMonitor implements HealthProbe {
     private static final String STATUS_STARTING = "STARTING";
     private static final String STATUS_READY = "READY";
     private static final String STATUS_FAILED = "FAILED";
+    private static final String STATUS_DEGRADED = "DEGRADED";
     private static final String STATUS_DOWN = "DOWN";
     private static final String STATUS_UP = "UP";
 
@@ -74,7 +75,13 @@ public final class KernelHealthMonitor implements HealthProbe {
         ));
     }
 
-    /** Readiness: UP only when kernel is started and every required subsystem is RUNNING. */
+    /**
+     * Readiness: READY only when the kernel is started and every required subsystem is RUNNING.
+     * A required subsystem in {@link SubsystemState#DEGRADED} (a live-but-impaired dependency, e.g.
+     * its broker died after boot) drops readiness with a distinct {@code "DEGRADED"} status so the
+     * load balancer drains this instance; a still-coming-up required subsystem outranks it for the
+     * status label ({@code "STARTING"}). An OPTIONAL subsystem degraded never sheds readiness.
+     */
     @Override
     public ProbeSnapshot readiness() {
         if (kernelFailed.get()) {
@@ -83,16 +90,25 @@ public final class KernelHealthMonitor implements HealthProbe {
         if (!kernelStarted.get() || kernelShuttingDown.get()) {
             return new ProbeSnapshot(STATUS_STARTING, false);
         }
-        boolean allRequiredRunning = true;
+        return requiredSubsystemReadiness();
+    }
+
+    private ProbeSnapshot requiredSubsystemReadiness() {
+        boolean anyStarting = false;
+        boolean anyDegraded = false;
         for (SubsystemHealth health : subsystems.values()) {
-            if (health.requiredForReadiness() && health.state() != SubsystemState.RUNNING) {
-                allRequiredRunning = false;
-                break;
+            if (!health.requiredForReadiness() || health.state() == SubsystemState.RUNNING) {
+                continue;
             }
+            anyDegraded |= health.state() == SubsystemState.DEGRADED;
+            anyStarting |= health.state() != SubsystemState.DEGRADED;
         }
-        return allRequiredRunning
-                ? new ProbeSnapshot(STATUS_READY, true)
-                : new ProbeSnapshot(STATUS_STARTING, false);
+        if (anyStarting) {
+            return new ProbeSnapshot(STATUS_STARTING, false);
+        }
+        return anyDegraded
+                ? new ProbeSnapshot(STATUS_DEGRADED, false)
+                : new ProbeSnapshot(STATUS_READY, true);
     }
 
     /** Liveness: UP after kernel init, DOWN only when kernel entered failed state. */
@@ -121,6 +137,8 @@ public final class KernelHealthMonitor implements HealthProbe {
         REGISTERED,
         INITIALIZED,
         RUNNING,
+        /** Live but impaired (e.g. a dependency failed after boot); reversible back to RUNNING. */
+        DEGRADED,
         FAILED,
         STOPPED
     }
