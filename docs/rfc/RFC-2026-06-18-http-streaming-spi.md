@@ -81,5 +81,19 @@ This is the minimal kernel primitive that lets the SDK (`realTimeApi`/`@Action(s
 - **Roadmap:** brings the streaming primitive from ~v0.12 to **v0.10/v0.11** (v0.10 already holds the IdentityProvider SPI from RFC-2026-06-08). WebSocket remains a later, separately-justified decision.
 - **No "breaking change" framing** — pre-1.0, no external SPI consumers; this is additive SPI surface.
 
+## Open design questions for ADR-043
+
+ADR-043 is the architect sign-off + `Abstract*Tck` artifact; it cannot close without resolving these load-bearing design questions (leaving them open would produce ambiguous/contradictory implementations):
+
+1. **`HttpStreamExchange` method surface.** Define `StreamEvent` — a record (`event` / `data` / `id` / optional `retry`) mapping directly to the SSE wire format, implementation-blind and event-shaped (not a raw byte buffer); the `HttpStreamHandler` functional interface (sibling of `HttpHandler`, and its router/ServiceLoader registration); and the **disconnect signal** — preferred is `emit()` throwing `StreamClosedException` on disconnect (Loom-idiomatic: an imperative emit loop that exits on the throw, no parked-VT leak) over a separate `awaitDisconnect()`.
+2. **`emit()` flow semantics = park-the-VT.** When the egress window is full, `emit()` blocks the calling VT (exactly as `NativeTcpStream`'s write loop already does for response bodies) — not an on-heap queue (No Waste Compute). The SPI Javadoc must state this.
+3. **`emit()` `LoanedBuffer` ownership = transfer-to-engine**, identical to `HttpExchange.respond()` ("the caller MUST NOT close or retain the buffer after this call") — the zero-copy choice.
+4. **Streaming-lifecycle JFR events (ADR-005):** stream-opened, graceful-close, abortive-teardown (the #202 reactor path), backpressure-park. ADR-043 defines names/categories/`@StackTrace` policy (open/close = lifecycle; emit/backpressure = hot-path).
+5. **`EX-HTTP-*` error taxonomy** in `KernelErrorCodes`: emit-on-closed-stream, stream-open rejected by admission, backpressure timeout (if one is defined).
+6. **Router extension:** how `HttpRouter` dispatches `HttpStreamHandler` for streaming-flagged routes (typed `Map<Route, HttpStreamHandler>` vs a route-metadata `streaming` flag) — sketch the SPI contract (Wall review at implementation time).
+7. **PAQS / resource accounting for long-lived streams.** `StreamPriority` is fixed at admission and a stream holds its slot for its lifetime (minutes, not ms); N concurrent SSE streams are structurally different from N sub-ms requests. ADR-043 states the `WatermarkManager`/PAQS accounting model.
+
+**Confirmed enablers (no new Core infra):** SSE HTTP/1.1 framing is a thin `data:…\n\n` layer over the existing `Http1ChunkedEncoder` (ADR-009, `core.http.http1`); `Last-Event-ID` reconnect is readable via `HttpRequest`'s case-insensitive header accessor. **Cross-repo obligation:** Enterprise MUST bind `HttpStreamExchange` to its native/io_uring egress path (concrete, not parenthetical). **TCK:** must include a backpressure case asserting the VT parks and resumes on window credit — the path most likely to regress across tiers.
+
 ## Decision log
-- 2026-06-18 — DRAFT opened; preferred direction SSE-first + sibling `HttpStreamExchange`. Target ADR-043 reserved.
+- 2026-06-18 — DRAFT opened; preferred direction SSE-first + sibling `HttpStreamExchange`. Target ADR-043 reserved. transport.md SSE/WebSocket ordering corrected (SSE-first). Open design questions for ADR-043 enumerated per RFC review.
