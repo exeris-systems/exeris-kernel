@@ -10,11 +10,15 @@ package eu.exeris.kernel.community.bootstrap;
 
 import eu.exeris.kernel.core.bootstrap.health.KernelHealthMonitor;
 import eu.exeris.kernel.core.bootstrap.health.KernelHealthMonitor.SubsystemState;
+import jdk.jfr.consumer.RecordedEvent;
+import jdk.jfr.consumer.RecordingStream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -110,6 +114,38 @@ class CommunitySubsystemHealthWatcherTest {
         }
 
         assertThat(monitor.stateOf("persistence")).isEqualTo(SubsystemState.RUNNING);
+    }
+
+    @Test
+    @DisplayName("RUNNING→DEGRADED flip emits a SubsystemHealthTransition JFR event")
+    void degradedTransitionEmitsJfrEvent() throws InterruptedException {
+        KernelHealthMonitor monitor = new KernelHealthMonitor();
+        monitor.registerSubsystem("persistence", true);
+        monitor.markSubsystemState("persistence", SubsystemState.RUNNING);
+
+        CommunitySubsystemHealthWatcher watcher = new CommunitySubsystemHealthWatcher(monitor, INTERVAL_NANOS);
+        watcher.register("persistence", () -> false);
+
+        CountDownLatch recorded = new CountDownLatch(1);
+        AtomicReference<RecordedEvent> captured = new AtomicReference<>();
+        try (RecordingStream stream = new RecordingStream()) {
+            stream.enable("eu.exeris.kernel.bootstrap.SubsystemHealthTransition");
+            stream.onEvent("eu.exeris.kernel.bootstrap.SubsystemHealthTransition", event -> {
+                captured.set(event);
+                recorded.countDown();
+            });
+            stream.startAsync();
+
+            watcher.pollOnce(); // RUNNING → DEGRADED
+
+            assertThat(recorded.await(5, TimeUnit.SECONDS))
+                    .as("a DEGRADED transition must leave a JFR trail (ADR-005)").isTrue();
+        }
+
+        RecordedEvent event = captured.get();
+        assertThat(event.getString("subsystemName")).isEqualTo("persistence");
+        assertThat(event.getString("fromState")).isEqualTo("RUNNING");
+        assertThat(event.getString("toState")).isEqualTo("DEGRADED");
     }
 
     private static void awaitState(KernelHealthMonitor monitor, String name, SubsystemState expected) {

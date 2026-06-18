@@ -88,7 +88,7 @@ flowchart TD
 ## Diagram 1b — Subsystem State Machine
 
 Each subsystem registered in the Boot DAG transitions through this state machine independently.
-Core's `SubsystemOrchestrator` drives transitions; transitions are irreversible — there is no `RESTART`.
+Core's `SubsystemOrchestrator` drives the boot transitions, which are irreversible — there is no `RESTART`. The one reversible axis is the post-boot health state `RUNNING ↔ DEGRADED`, driven not by the orchestrator but by the Community `CommunitySubsystemHealthWatcher` (see "Kubernetes Health Probes" below): a live-but-impaired dependency degrades readiness and recovers when it returns, without ever leaving the `RUNNING`-family or killing the process.
 
 ```mermaid
 stateDiagram-v2
@@ -104,6 +104,10 @@ stateDiagram-v2
     RUNNING --> STOPPED        : stop() called\nAll resources released
     RUNNING --> FAILED         : Unrecoverable runtime error
 
+    RUNNING --> DEGRADED       : Health watcher: dependency lost\n(post-boot, reversible)
+    DEGRADED --> RUNNING       : Health watcher: dependency recovered
+    DEGRADED --> STOPPED       : stop() called
+
     STOPPED --> [*]            : Virtual Threads drained
 
     FAILED --> [*]             : Emergency JFR snapshot\nJVM exit(1) · Glass-Box buffer flushed
@@ -117,6 +121,13 @@ stateDiagram-v2
     note right of FAILED
         K8s liveness probe → HTTP 503.
         Pod replaced by ReplicaSet controller.
+    end note
+
+    note right of DEGRADED
+        Live but impaired (required dep lost post-boot).
+        K8s readiness probe → HTTP 503 (drain).
+        K8s liveness probe → HTTP 200 (not killed).
+        Watcher-driven, post-boot only, reversible.
     end note
 
     %% Note: kernel-level SHUTTING_DOWN is from KernelState, not per-subsystem state.

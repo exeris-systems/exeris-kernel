@@ -68,6 +68,7 @@ public final class CommunitySubsystemHealthWatcher {
         }
         Thread loop = Thread.ofPlatform()
                 .name("kernel/health-watcher")
+                .daemon(true)   // background infra thread — must never block JVM exit if stop() is skipped
                 .unstarted(this::runLoop);
         this.thread = loop;
         loop.start();

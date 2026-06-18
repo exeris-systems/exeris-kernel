@@ -123,7 +123,7 @@ class HealthEndpointHandlerKernelMonitorIntegrationTest {
                     .filter(expected::equals).isPresent()) {
                 return;
             }
-            Thread.onSpinWait();
+            java.util.concurrent.locks.LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(2));
         }
         assertThat(invoke(handler, READINESS).header(HealthEndpointHandler.STATUS_HEADER))
                 .as("readiness status reaches %s within deadline", expected)

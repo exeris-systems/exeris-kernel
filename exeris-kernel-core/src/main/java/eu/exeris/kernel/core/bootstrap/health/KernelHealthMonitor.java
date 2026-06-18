@@ -8,6 +8,7 @@
  */
 package eu.exeris.kernel.core.bootstrap.health;
 
+import eu.exeris.kernel.core.bootstrap.jfr.BootstrapJfrEvents;
 import eu.exeris.kernel.spi.bootstrap.HealthProbe;
 
 import java.util.Map;
@@ -69,10 +70,19 @@ public final class KernelHealthMonitor implements HealthProbe {
     public void markSubsystemState(String name, SubsystemState newState) {
         Objects.requireNonNull(name, "name");
         Objects.requireNonNull(newState, "newState");
-        subsystems.computeIfPresent(name, (ignored, previous) -> new SubsystemHealth(
-                previous.requiredForReadiness(),
-                newState
-        ));
+        SubsystemHealth[] previousHolder = new SubsystemHealth[1];
+        subsystems.computeIfPresent(name, (ignored, previous) -> {
+            previousHolder[0] = previous;
+            return new SubsystemHealth(previous.requiredForReadiness(), newState);
+        });
+        SubsystemHealth previous = previousHolder[0];
+        // JFR-first (ADR-005): a post-boot RUNNING<->DEGRADED flip has no boot lifecycle event, so
+        // emit one here so a flapping dependency leaves an SRE trail. Boot transitions don't involve
+        // DEGRADED and keep their own SubsystemInitialized/Started/Stopped events.
+        if (previous != null && previous.state() != newState
+                && (previous.state() == SubsystemState.DEGRADED || newState == SubsystemState.DEGRADED)) {
+            BootstrapJfrEvents.emitHealthTransition(name, previous.state().name(), newState.name());
+        }
     }
 
     /** Current tracked state of a subsystem, or {@code null} if it is not registered. */
@@ -107,6 +117,10 @@ public final class KernelHealthMonitor implements HealthProbe {
             if (!health.requiredForReadiness() || health.state() == SubsystemState.RUNNING) {
                 continue;
             }
+            // Any required non-RUNNING, non-DEGRADED state (still INITIALIZED/REGISTERED, or a
+            // post-boot FAILED that has not yet escalated to kernel-FAILED — checked before this
+            // method) counts as "starting": readiness is down either way, and the label favours
+            // "coming up" over "degraded" when both reasons coexist.
             anyDegraded |= health.state() == SubsystemState.DEGRADED;
             anyStarting |= health.state() != SubsystemState.DEGRADED;
         }
