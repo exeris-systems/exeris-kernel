@@ -36,8 +36,11 @@ import java.nio.channels.Selector;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -83,6 +86,8 @@ public final class NativeTcpCarrier implements TransportEngine {
     private static final long DRAIN_EMIT_INTERVAL = 4_096L;
     // A readable event is "multi-record" (the coalescing-pays-off signal) at >= this many records.
     private static final int MULTI_RECORD_THRESHOLD = 2;
+    // Cap the per-type sample message length so a pathological exception cannot bloat the JFR event.
+    private static final int DISPATCH_SAMPLE_MAX_CHARS = 200;
 
     private final TransportConfig config;
     private final MemoryAllocator allocator;
@@ -101,6 +106,11 @@ public final class NativeTcpCarrier implements TransportEngine {
     private final AtomicLong closeKeyInvocations = new AtomicLong();
     private final AtomicLong closeKeyActualCloses = new AtomicLong();
     private final AtomicLong closeKeyNanos = new AtomicLong();
+    // PERF-RESEARCH: type breakdown of RuntimeExceptions caught in the reactor select loop and
+    // funnelled into closeKeyStream — names the spin trigger (see recordDispatchException).
+    private final AtomicLong dispatchExceptionTotal = new AtomicLong();
+    private final ConcurrentMap<String, AtomicLong> dispatchExceptionCounts = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, String> dispatchExceptionSamples = new ConcurrentHashMap<>();
 
     private final AtomicLong streamSeq = new AtomicLong(1);
     private final AtomicLong connectionSeq = new AtomicLong(1);
@@ -324,6 +334,7 @@ public final class NativeTcpCarrier implements TransportEngine {
         try {
             emitTlsDrainSnapshot(true); // PERF-RESEARCH: final cumulative distribution before teardown
             emitCloseKeyStreamSnapshot(true);
+            emitDispatchExceptionSnapshot(true);
             stop();
         } finally {
             backend.close();
@@ -696,6 +707,7 @@ public final class NativeTcpCarrier implements TransportEngine {
         if ((events & (DRAIN_EMIT_INTERVAL - 1)) == 0) {
             emitTlsDrainSnapshot(false);
             emitCloseKeyStreamSnapshot(false);
+            emitDispatchExceptionSnapshot(false);
         }
     }
 
@@ -708,6 +720,56 @@ public final class NativeTcpCarrier implements TransportEngine {
         double meanMicros = nanos / 1_000.0 / invocations;
         CommunityCloseKeyStreamEvent.emit(invocations, closeKeyActualCloses.get(), nanos,
                 meanMicros, finalSnapshot);
+    }
+
+    // PERF-RESEARCH: classify a RuntimeException caught in the reactor select loop. Fast path is one
+    // CHM.get + AtomicLong.incrementAndGet once the type is seen; first sighting also stores a sample
+    // message. Called from NativeTcpReactor's catch(RuntimeException) branch, the sole closeKeyStream
+    // entry point, so its total mirrors closeKeyStream invocations and names the spin trigger.
+    /* default */ void recordDispatchException(Throwable exception) {
+        if (!TLS_DRAIN_HISTOGRAM) {
+            return;
+        }
+        dispatchExceptionTotal.incrementAndGet();
+        String type = exception.getClass().getName();
+        AtomicLong counter = dispatchExceptionCounts.get(type);
+        if (counter == null) {
+            counter = dispatchExceptionCounts.computeIfAbsent(type, _ -> new AtomicLong());
+            dispatchExceptionSamples.putIfAbsent(type, sampleMessage(exception));
+        }
+        counter.incrementAndGet();
+    }
+
+    private static String sampleMessage(Throwable exception) {
+        String message = exception.getMessage();
+        if (message == null) {
+            return "<no message>";
+        }
+        return message.length() > DISPATCH_SAMPLE_MAX_CHARS
+                ? message.substring(0, DISPATCH_SAMPLE_MAX_CHARS)
+                : message;
+    }
+
+    private void emitDispatchExceptionSnapshot(boolean finalSnapshot) {
+        long total = dispatchExceptionTotal.get();
+        if (total == 0) {
+            return;
+        }
+        List<Map.Entry<String, AtomicLong>> entries = new ArrayList<>(dispatchExceptionCounts.entrySet());
+        entries.sort(Comparator.comparingLong(
+                (Map.Entry<String, AtomicLong> entry) -> entry.getValue().get()).reversed());
+        StringBuilder breakdown = new StringBuilder(128);
+        for (Map.Entry<String, AtomicLong> entry : entries) {
+            if (!breakdown.isEmpty()) {
+                breakdown.append(';');
+            }
+            breakdown.append(entry.getKey()).append(':').append(entry.getValue().get());
+        }
+        String dominantType = entries.isEmpty() ? null : entries.get(0).getKey();
+        String dominantSample = dominantType == null
+                ? "" : dispatchExceptionSamples.getOrDefault(dominantType, "");
+        CommunityDispatchExceptionEvent.emit(total, entries.size(), breakdown.toString(),
+                dominantSample, finalSnapshot);
     }
 
     private void emitTlsDrainSnapshot(boolean finalSnapshot) {

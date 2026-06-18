@@ -154,7 +154,8 @@ final class NativeTcpReactor {
                         dispatchSelectedKey(key);
                     } catch (CancelledKeyException _) {
                         // channel closed concurrently by VT handler path
-                    } catch (RuntimeException _) {
+                    } catch (RuntimeException ex) {
+                        host.recordDispatchException(ex); // PERF-RESEARCH: name the spin trigger
                         host.closeKeyStream(key);
                     }
                 }
