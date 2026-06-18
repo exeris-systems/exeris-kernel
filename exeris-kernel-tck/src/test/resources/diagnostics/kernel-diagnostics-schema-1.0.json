@@ -3,8 +3,6 @@
   "records": {
     "ProvidersSnapshot": ["schemaVersion", "capturedAt", "providers"],
     "ProviderDescriptor": ["providerName", "spiType", "priority", "displayName"],
-    "CompositionSnapshot": ["schemaVersion", "capturedAt", "capabilities"],
-    "CapabilityDescriptor": ["name", "provides", "requires", "optional"],
     "BootstrapDagSnapshot": ["schemaVersion", "capturedAt", "nodes"],
     "DagNode": ["name", "phase", "dependsOn", "running", "optional"],
     "SubsystemSnapshot": ["schemaVersion", "capturedAt", "requestedName", "subsystem"],

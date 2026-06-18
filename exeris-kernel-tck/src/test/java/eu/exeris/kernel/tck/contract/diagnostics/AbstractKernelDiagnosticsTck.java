@@ -12,8 +12,6 @@ import eu.exeris.kernel.spi.bootstrap.BootstrapPhase;
 import eu.exeris.kernel.spi.bootstrap.Subsystem;
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.diagnostics.BootstrapDagSnapshot;
-import eu.exeris.kernel.spi.diagnostics.CapabilityDescriptor;
-import eu.exeris.kernel.spi.diagnostics.CompositionSnapshot;
 import eu.exeris.kernel.spi.diagnostics.DagNode;
 import eu.exeris.kernel.spi.diagnostics.KernelDiagnostics;
 import eu.exeris.kernel.spi.diagnostics.ProviderDescriptor;
@@ -43,7 +41,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * <p>Subclasses supply a provider's {@link KernelDiagnostics} via {@link #diagnostics()}. The TCK binds a
  * known subsystem inventory through the public {@link KernelProviders#SUBSYSTEMS} {@link java.lang.ScopedValue}
  * slot and asserts the subsystem-derived surface ({@link KernelDiagnostics#getBootstrapDag()},
- * {@link KernelDiagnostics#listCapabilities()}, {@link KernelDiagnostics#describeSubsystem(String)}) against
+ * {@link KernelDiagnostics#describeSubsystem(String)}) against
  * it (records shape, {@code schemaVersion}, {@code Optional} semantics, immutability, degraded behaviour
  * when unbound). {@link KernelDiagnostics#listProviders()} is provider discovery (implementation-defined,
  * not slot-bound), so it is asserted only for well-formedness; {@link KernelDiagnostics#getJvmErgonomics()}
@@ -63,7 +61,6 @@ public abstract class AbstractKernelDiagnosticsTck {
     /** Ordered set of wire-contract record types, used to regenerate and check the schema fixture. */
     private static final List<Class<?>> WIRE_RECORDS = List.of(
             ProvidersSnapshot.class, ProviderDescriptor.class,
-            CompositionSnapshot.class, CapabilityDescriptor.class,
             BootstrapDagSnapshot.class, DagNode.class,
             SubsystemSnapshot.class, SubsystemDescriptor.class,
             RuntimeErgonomicsSnapshot.class);
@@ -89,18 +86,16 @@ public abstract class AbstractKernelDiagnosticsTck {
     class SchemaInvariants {
 
         @Test
-        @DisplayName("schemaVersion == 1.0 and capturedAt non-null on all five methods")
+        @DisplayName("schemaVersion == 1.0 and capturedAt non-null on all four methods")
         void schemaVersionAndTimestamp() {
             inBoundScope(() -> {
                 KernelDiagnostics d = diagnostics();
                 assertThat(d.listProviders().schemaVersion()).isEqualTo(KernelDiagnostics.SCHEMA_VERSION);
-                assertThat(d.listCapabilities().schemaVersion()).isEqualTo(KernelDiagnostics.SCHEMA_VERSION);
                 assertThat(d.getBootstrapDag().schemaVersion()).isEqualTo(KernelDiagnostics.SCHEMA_VERSION);
                 assertThat(d.describeSubsystem("memory").schemaVersion()).isEqualTo(KernelDiagnostics.SCHEMA_VERSION);
                 assertThat(d.getJvmErgonomics().schemaVersion()).isEqualTo(KernelDiagnostics.SCHEMA_VERSION);
 
                 assertThat(d.listProviders().capturedAt()).isNotNull();
-                assertThat(d.listCapabilities().capturedAt()).isNotNull();
                 assertThat(d.getBootstrapDag().capturedAt()).isNotNull();
                 assertThat(d.describeSubsystem("memory").capturedAt()).isNotNull();
                 assertThat(d.getJvmErgonomics().capturedAt()).isNotNull();
@@ -125,20 +120,6 @@ public abstract class AbstractKernelDiagnosticsTck {
                 assertThat(transport.dependsOn()).containsExactly("memory");
                 assertThat(transport.running()).isTrue();
                 assertThat(transport.optional()).isTrue();
-            });
-        }
-
-        @Test
-        @DisplayName("listCapabilities reflects each subsystem's provides/requires")
-        void capabilities() {
-            inBoundScope(() -> {
-                CompositionSnapshot comp = diagnostics().listCapabilities();
-                assertThat(comp.capabilities()).extracting(CapabilityDescriptor::name)
-                        .containsExactlyInAnyOrder("memory", "transport");
-                CapabilityDescriptor transport = comp.capabilities().stream()
-                        .filter(c -> c.name().equals("transport")).findFirst().orElseThrow();
-                assertThat(transport.provides()).containsExactly("transport");
-                assertThat(transport.requires()).containsExactly("memory");
             });
         }
 
@@ -187,7 +168,6 @@ public abstract class AbstractKernelDiagnosticsTck {
         @DisplayName("subsystem-derived snapshots are empty when the inventory slot is unbound")
         void emptyWhenUnbound() {
             KernelDiagnostics d = diagnostics();
-            assertThat(d.listCapabilities().capabilities()).isEmpty();
             assertThat(d.getBootstrapDag().nodes()).isEmpty();
             assertThat(d.describeSubsystem("memory").subsystem()).isEmpty();
             // listProviders is discovery-based, not slot-bound: still non-null regardless of scope.
@@ -206,9 +186,6 @@ public abstract class AbstractKernelDiagnosticsTck {
             inBoundScope(() -> {
                 List<DagNode> nodes = diagnostics().getBootstrapDag().nodes();
                 assertThatThrownBy(() -> nodes.add(null))
-                        .isInstanceOf(UnsupportedOperationException.class);
-                List<CapabilityDescriptor> caps = diagnostics().listCapabilities().capabilities();
-                assertThatThrownBy(() -> caps.add(null))
                         .isInstanceOf(UnsupportedOperationException.class);
             });
         }
@@ -238,17 +215,12 @@ public abstract class AbstractKernelDiagnosticsTck {
         @Test
         @DisplayName("a provider that does not override getJvmErgonomics() stays binary-compatible (default method)")
         void defaultMethodCompat() {
-            // A KernelDiagnostics that implements only the four abstract methods and inherits the default
+            // A KernelDiagnostics that implements only the three abstract methods and inherits the default
             // getJvmErgonomics() must still satisfy the contract: non-null, fully-degraded snapshot.
-            KernelDiagnostics legacyFourMethod = new KernelDiagnostics() {
+            KernelDiagnostics legacyThreeMethod = new KernelDiagnostics() {
                 @Override
                 public ProvidersSnapshot listProviders() {
                     return ProvidersSnapshot.capture(List.of());
-                }
-
-                @Override
-                public CompositionSnapshot listCapabilities() {
-                    return CompositionSnapshot.capture(List.of());
                 }
 
                 @Override
@@ -261,7 +233,7 @@ public abstract class AbstractKernelDiagnosticsTck {
                     return SubsystemSnapshot.capture(name, java.util.Optional.empty());
                 }
             };
-            RuntimeErgonomicsSnapshot ergo = legacyFourMethod.getJvmErgonomics();
+            RuntimeErgonomicsSnapshot ergo = legacyThreeMethod.getJvmErgonomics();
             assertThat(ergo).isNotNull();
             assertThat(ergo.schemaVersion()).isEqualTo(KernelDiagnostics.SCHEMA_VERSION);
             assertThat(ergo.capturedAt()).isNotNull();
@@ -281,7 +253,7 @@ public abstract class AbstractKernelDiagnosticsTck {
         @DisplayName("live record components match the pinned schema fixture, schemaVersion first")
         void fixtureMatchesRecords() {
             // schemaVersion MUST be the first field of every top-level snapshot (Obligation 5).
-            for (Class<?> top : List.of(ProvidersSnapshot.class, CompositionSnapshot.class,
+            for (Class<?> top : List.of(ProvidersSnapshot.class,
                     BootstrapDagSnapshot.class, SubsystemSnapshot.class, RuntimeErgonomicsSnapshot.class)) {
                 assertThat(top.getRecordComponents()[0].getName())
                         .as("first field of %s", top.getSimpleName())

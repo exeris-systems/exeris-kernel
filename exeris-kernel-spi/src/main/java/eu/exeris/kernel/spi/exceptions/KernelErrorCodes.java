@@ -842,8 +842,10 @@ public final class KernelErrorCodes {
     /** {@link eu.exeris.kernel.spi.diagnostics.KernelDiagnostics#listProviders()} was invoked. */
     public static final String EX_DIAG_1001 = "EX-DIAG-1001";
 
-    /** {@link eu.exeris.kernel.spi.diagnostics.KernelDiagnostics#listCapabilities()} was invoked. */
-    public static final String EX_DIAG_1002 = "EX-DIAG-1002";
+    // EX-DIAG-1002 retired (pre-1.0): the listCapabilities() method it audited was removed — it
+    // restated getBootstrapDag() with each subsystem providing only itself and could not deliver the
+    // ADR-024 composition graph from runtime (that lives build-time/platform-side). The code is left
+    // as a reserved gap rather than renumbered so 1003..1005 stay stable.
 
     /** {@link eu.exeris.kernel.spi.diagnostics.KernelDiagnostics#getBootstrapDag()} was invoked. */
     public static final String EX_DIAG_1003 = "EX-DIAG-1003";

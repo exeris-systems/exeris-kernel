@@ -11,8 +11,6 @@ package eu.exeris.kernel.community.diagnostics;
 import eu.exeris.kernel.spi.bootstrap.Subsystem;
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.diagnostics.BootstrapDagSnapshot;
-import eu.exeris.kernel.spi.diagnostics.CapabilityDescriptor;
-import eu.exeris.kernel.spi.diagnostics.CompositionSnapshot;
 import eu.exeris.kernel.spi.diagnostics.DagNode;
 import eu.exeris.kernel.spi.diagnostics.KernelDiagnostics;
 import eu.exeris.kernel.spi.diagnostics.ProvidersSnapshot;
@@ -29,8 +27,8 @@ import java.util.Optional;
 /**
  * Community {@link KernelDiagnostics}.
  *
- * <p><b>Subsystem state</b> ({@link #listCapabilities()}, {@link #getBootstrapDag()},
- * {@link #describeSubsystem(String)}) is read from the {@link KernelProviders#SUBSYSTEMS}
+ * <p><b>Subsystem state</b> ({@link #getBootstrapDag()}, {@link #describeSubsystem(String)}) is read
+ * from the {@link KernelProviders#SUBSYSTEMS}
  * {@link ScopedValue} slot — bound by the bootstrap, in inspect mode <em>before</em>
  * {@code initialize()} (static composition; {@code isRunning() == false}). <b>Provider inventory</b>
  * ({@link #listProviders()}) is resolved by {@link CommunityProviderInventory} via
@@ -41,7 +39,7 @@ import java.util.Optional;
  * Linux cgroup-v2 hierarchy / procfs via {@link CommunityRuntimeErgonomics}; absent data degrades to
  * {@code Optional.empty()} rather than throwing.
  *
- * <p>All five methods are cold-path: each captures its own {@code capturedAt} and allocates fresh
+ * <p>All four methods are cold-path: each captures its own {@code capturedAt} and allocates fresh
  * records (ADR-033 Obligations 2 &amp; 7). When read outside a bound kernel scope the subsystem slot is
  * unbound and those snapshots are returned empty rather than throwing.
  *
@@ -54,20 +52,6 @@ final class CommunityKernelDiagnostics implements KernelDiagnostics {
         ProvidersSnapshot snapshot = CommunityProviderInventory.snapshot();
         CommunityKernelDiagnosticsEvent.emit(KernelErrorCodes.EX_DIAG_1001, "listProviders");
         return snapshot;
-    }
-
-    @Override
-    public CompositionSnapshot listCapabilities() {
-        List<CapabilityDescriptor> capabilities = new ArrayList<>();
-        for (Subsystem subsystem : subsystems()) {
-            capabilities.add(new CapabilityDescriptor(
-                    subsystem.name(),
-                    List.of(subsystem.name()),
-                    subsystem.dependsOn(),
-                    subsystem.isOptional()));
-        }
-        CommunityKernelDiagnosticsEvent.emit(KernelErrorCodes.EX_DIAG_1002, "listCapabilities");
-        return CompositionSnapshot.capture(capabilities);
     }
 
     @Override
