@@ -9,7 +9,6 @@
 package eu.exeris.kernel.diagnostics.cli;
 
 import eu.exeris.kernel.spi.diagnostics.BootstrapDagSnapshot;
-import eu.exeris.kernel.spi.diagnostics.CompositionSnapshot;
 import eu.exeris.kernel.spi.diagnostics.DagNode;
 import eu.exeris.kernel.spi.diagnostics.KernelDiagnostics;
 import eu.exeris.kernel.spi.diagnostics.ProviderDescriptor;
@@ -93,11 +92,6 @@ class DiagnosticsCliTest {
         public ProvidersSnapshot listProviders() {
             return ProvidersSnapshot.capture(List.of(
                     new ProviderDescriptor("ExerisTest/Telemetry", "telemetry", 0, Optional.empty())));
-        }
-
-        @Override
-        public CompositionSnapshot listCapabilities() {
-            return CompositionSnapshot.capture(List.of());
         }
 
         @Override
