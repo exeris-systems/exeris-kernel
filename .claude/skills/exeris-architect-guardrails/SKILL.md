@@ -1,6 +1,6 @@
 ---
 name: exeris-architect-guardrails
-description: Architectural PR review for Exeris Kernel. Use for every PR review to enforce docs/modules, docs/subsystems, ADR alignment, The Wall boundaries, SPI blindness, Core isolation, and dependency graph integrity.
+description: Architectural review for Exeris Kernel changes that touch module boundaries, SPI/Core/Community/Enterprise placement, dependency direction, provider wiring, or ADR-fixed structure. Use when a change adds or moves interfaces/providers, alters module layering, or risks a The-Wall breach (SPI implementation leak, Core driver leak). Not needed for pure intra-module edits with no boundary impact.
 ---
 
 # Exeris Architect Guardrails

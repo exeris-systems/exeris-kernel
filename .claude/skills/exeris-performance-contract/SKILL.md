@@ -1,6 +1,6 @@
 ---
 name: exeris-performance-contract
-description: Performance-lawyer PR review for Exeris Kernel. Use for every PR review to enforce No Waste Compute, zero-allocation hot paths, structured concurrency, off-heap discipline, and mandatory JFR lifecycle telemetry.
+description: Performance-lawyer review enforcing No Waste Compute for Exeris Kernel. Use when a change touches runtime hot paths (transport, flow, memory, persistence, bootstrap, dispatch) or can affect allocations, structured concurrency, off-heap copies, or banned APIs (ThreadLocal, ExecutorService, CompletableFuture, ByteBuffer, Unsafe). Skip for docs-only or pure test/tooling changes.
 ---
 
 # Exeris Performance Contract

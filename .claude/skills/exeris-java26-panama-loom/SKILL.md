@@ -1,6 +1,6 @@
 ---
 name: exeris-java26-panama-loom
-description: Java 26+ runtime PR review for Exeris Kernel. Use for every PR that touches concurrency, memory, native interop, and data carriers to enforce ScopedValue, StructuredTaskScope, Panama FFM, Valhalla readiness, immutable/early construction, and removal of legacy framework idioms.
+description: Java 26+ idiom review for Exeris Kernel. Use when a change touches concurrency, context propagation, native interop, memory APIs, or runtime data carriers — to enforce ScopedValue over ThreadLocal, StructuredTaskScope over ad-hoc async, Panama FFM (MemorySegment/Linker/SymbolLookup), Valhalla-ready immutable carriers, early construction, and removal of legacy framework idioms.
 ---
 
 # Exeris Java 26 Panama Loom

@@ -1,6 +1,6 @@
 ---
 name: exeris-subsystem-specialist
-description: Subsystem-focused PR review for Exeris Kernel using one skill with modes — bootstrap, memory, crypto, transport, persistence, events, flow, http, security, config. Use when you want a targeted subsystem review without creating many separate agents.
+description: Targeted single-subsystem review for Exeris Kernel via one mode-driven skill (modes: bootstrap, memory, crypto, transport, persistence, events, flow, http, security, config). Use when a change is concentrated in one subsystem and you want its contract doc loaded as the primary source of truth plus mode-specific deep checks — without spawning multiple agents. State the mode (e.g. "review this as Transport").
 ---
 
 # Exeris Subsystem Specialist

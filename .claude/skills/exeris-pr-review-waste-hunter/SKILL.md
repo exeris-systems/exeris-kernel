@@ -1,6 +1,6 @@
 ---
 name: exeris-pr-review-waste-hunter
-description: Meta PR review persona for Exeris Kernel. Use as the default review style to ruthlessly detect software inflation, enforce simplification, flag classes with >5 dependencies, reward lock-free/zero-copy/contract-pure patterns, and justify findings with architecture lore.
+description: Default entry-point for ANY Exeris Kernel PR/diff/branch review — start here. Triages software inflation, >5-dependency classes, and boundary/perf/contract risk, then dispatches to the focused lens skills (exeris-architect-guardrails, exeris-performance-contract, exeris-tck-first, exeris-jfr-telemetry-review, exeris-java26-panama-loom, exeris-subsystem-specialist) as the diff warrants. Trigger whenever asked to review, look at, audit, or assess a change.
 ---
 
 # Exeris PR Review Waste Hunter
@@ -16,6 +16,19 @@ This skill is designed as a default PR review stance.
 - Demand architectural and performance justification, not stylistic preference.
 - Explicitly praise clean lock-free, zero-copy, and contract-pure solutions.
 - Always explain "why" with references to Exeris lore/contracts.
+
+## Lens Dispatch (apply only what the diff touches)
+This skill is the entry point. After the inflation/boundary triage, invoke the focused lens skills that the diff actually warrants — do not run all of them blindly:
+- Boundary / module placement / SPI-Core-Driver / ADR-fixed structure → `exeris-architect-guardrails`
+- Hot-path alloc/copy/concurrency, banned APIs, No Waste Compute → `exeris-performance-contract`
+- Concurrency / ScopedValue / FFM / carriers / Java 26 idioms → `exeris-java26-panama-loom`
+- SPI/contract/error-code/observable behavior change → `exeris-tck-first`
+- Bootstrap/telemetry/lifecycle/exception-mapping observability → `exeris-jfr-telemetry-review`
+- Change concentrated in one subsystem → `exeris-subsystem-specialist` (state the mode)
+- Provider discovery / bootstrap DAG / ServiceLoader → `exeris-service-loader-and-bootstrap`
+- Doc/ADR drift suspected → `exeris-docs-adr-check`
+
+If unsure how to route a multi-domain change, use the triage skills first: `exeris-task-classifier` → `exeris-risk-prioritizer` → `exeris-routing-planner`.
 
 ## Canon to Load First
 - docs/whitepaper.md
