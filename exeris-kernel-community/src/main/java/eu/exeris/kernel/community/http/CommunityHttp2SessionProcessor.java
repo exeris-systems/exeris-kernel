@@ -428,17 +428,20 @@ final class CommunityHttp2SessionProcessor {
                         position = serializeDataFrames(
                                 outbound.segment(), position, streamId, bodyBuffer.segment(), bodyBytes);
                     }
-                    outbound.setSize(position);
                     stream.write(outbound.segment(), (int) position);
                 }
             }
         }
     }
 
-    /** Number of frames a payload of {@code payloadLength} bytes spans (one frame even when empty). */
+    /**
+     * Number of HTTP/2 frames a payload of {@code payloadLength} bytes spans — zero when empty, to
+     * match the serialize loops (which emit no frame for a zero-length payload). Used only to size
+     * the coalescing buffer; the actual written length is the position returned by serialization.
+     */
     private static int frameCount(int payloadLength) {
         if (payloadLength <= 0) {
-            return 1;
+            return 0;
         }
         return (payloadLength + HTTP2_MAX_FRAME_PAYLOAD_BYTES - 1) / HTTP2_MAX_FRAME_PAYLOAD_BYTES;
     }
