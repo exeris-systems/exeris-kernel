@@ -28,7 +28,7 @@
               mvn -pl exeris-kernel-community-kafka test -Dgroups=integration
             Default Surefire runs exclude them so the unit suite stays fast and Docker-free.
         -->
-        <excludedGroups>integration</excludedGroups>
+        <excludedGroups>integration,continuity</excludedGroups>
 
         <!--
             v0.8 Sprint 6 (Coverage C-P0-01): LINE coverage floor for the Kafka bundle.

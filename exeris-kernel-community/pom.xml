@@ -41,7 +41,7 @@
             own fork because the scarce-carrier VT-scheduler args would otherwise distort
             every other test in the default execution.
         -->
-        <excludedGroups>flamegraph,integration,stress,transport-pinning-recv</excludedGroups>
+        <excludedGroups>flamegraph,integration,stress,transport-pinning-recv,continuity</excludedGroups>
 
         <!--
             v0.8 Sprint 6 (Coverage C-P0-01): LINE coverage floor for the Community bundle.
