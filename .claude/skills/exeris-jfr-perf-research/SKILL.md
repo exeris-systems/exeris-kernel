@@ -14,7 +14,7 @@ Make perf conclusions reproducible and falsifiable. Past investigations burned t
 - Running JMH or HTTP load (wrk/wrk2/h2load/k6) to support a decision.
 
 ## Where work belongs
-- Perf claims, JMH harnesses, HTTP load → `exeris-benchmarks` (or `exeris-benchmarks-enterprise`). **Never** add merge gates there — benchmarks are not a guard-test repo.
+- Perf claims, JMH harnesses, HTTP load → `exeris-benchmarks` (or `exeris-benchmarks-enterprise`). **Never** add merge gates there — benchmarks are environment-sensitive (CPU, driver, NUMA, JIT warmup) and would produce flaky gates; benchmarks are not a guard-test repo.
 - The kernel change that the benchmark justifies → `exeris-kernel`, with a `research/<slug>` branch and a Research note.
 
 ## Method — non-negotiable discipline

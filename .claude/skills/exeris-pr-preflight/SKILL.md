@@ -16,7 +16,7 @@ Catch the recurring, expensive footguns that a green `mvn verify` does **not** c
 ## Mandatory Checks (in order)
 
 1. **Branch hygiene — fresh branch per task**
-   - Confirm work is on a fresh feature branch cut off `origin/development/<active-ver>` (or the current research branch), NOT on an already-merged branch or directly on `main`.
+   - Confirm work is on a fresh feature branch cut off the current active development base (the `development/<active-ver>` branch on origin; check the repo `CLAUDE.md` / README for the current name as it advances per release), or the current `research/<slug>` branch — NOT an already-merged branch or directly on `main`.
    - If multiple Claude sessions may share this tree, prefer a git worktree off a clean base — a parallel branch-switch/commit can revert uncommitted edits.
 
 2. **Lint gate is NOT in `verify` — run it explicitly**
@@ -50,6 +50,6 @@ A go/no-go summary: each check → PASS / FAIL / N/A, with the exact failing com
 
 ## Non-Negotiable Rules
 - Never equate green `mvn verify` with lint-clean.
-- Never run lint with `exeris-kernel-build-config` in scope.
+- Never include `exeris-kernel-build-config` in the `-pl` module list when running lint.
 - Never open a PR that changes a contract without TCK implications.
 - Never claim an ADR number before reserving it in the global index.

@@ -21,7 +21,7 @@ Three shapes for three question kinds (templates in `~/exeris-systems/exeris-doc
 If upstream measurement or option comparison is missing, propose Research or RFC before going straight to ADR.
 
 ## Step 1 — Reserve the number BEFORE writing content (ADR only)
-- Open `~/exeris-systems/exeris-docs/adr-index.md` and find the next free slot (numbering is chronological by decision date with reserved gap-fillers).
+- Open `adr-index.md` in the separate `exeris-docs` repo (locally `~/exeris-systems/exeris-docs/adr-index.md`; requires that repo checked out alongside the kernel) and find the next free slot (numbering is chronological by decision date with reserved gap-fillers).
 - Reserve the row there FIRST. Only then write the ADR body. NEVER write content first.
 - Scope of the registry: `exeris-*` repos plus `Corelio/` stack-level decisions. `budgetHQ/` and `pbm/` have their own internal namespaces — they do NOT enter `adr-index.md`.
 - Out of scope: refactor-only ADRs (those live in PR descriptions / commit history), and Polish-language kernel-enterprise refactor notes — never promote them.
@@ -34,6 +34,7 @@ If upstream measurement or option comparison is missing, propose Research or RFC
 
 ## Step 3 — Register the row AFTER landing
 - Add/finalize the row in `adr-index.md` as a SEPARATE commit in the `exeris-docs` repo (separate from the content commit, separate repo).
+- This step requires `exeris-docs` access. If it is not available in the current session, do NOT skip it silently — open a follow-up issue/note to register (or reserve) the number so the global namespace stays collision-safe.
 
 ## Business decisions are separate
 Legal / IP / financial / procurement decisions go in the private decision registry in `~/exeris-systems/exeris-business/`, NOT the public tech registry. Public ADRs invoke a business policy descriptively (e.g. "the IP detachment commercial policy"), never by an internal id.
