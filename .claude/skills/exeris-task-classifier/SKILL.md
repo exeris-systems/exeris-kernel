@@ -1,6 +1,6 @@
 ---
 name: exeris-task-classifier
-description: Router/Planner triage skill for Exeris Kernel. Classifies task type, scope, severity, and recommends primary agent based on primary risk.
+description: First-pass triage for a new Exeris Kernel task, PR, or request — classifies task type, scope, severity, primary risk, and which specialist agent should own it. Use at the START of work when the right owner/agent is not obvious or the scope crosses domains, before diving into implementation or review.
 ---
 
 # Exeris Task Classifier

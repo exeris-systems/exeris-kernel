@@ -1,6 +1,6 @@
 ---
 name: exeris-routing-planner
-description: Router/Planner skill for Exeris Kernel. Produces primary agent, required secondary handoffs, execution order, and minimal next action.
+description: Build the specialist handoff route for an Exeris Kernel task — primary agent, ordered secondary handoffs, a 4-6 step execution plan, and the minimal next action. Use after triage to sequence architect/implementer/tck/performance/docs-adr work for a multi-step or cross-domain change.
 ---
 
 # Exeris Routing Planner
