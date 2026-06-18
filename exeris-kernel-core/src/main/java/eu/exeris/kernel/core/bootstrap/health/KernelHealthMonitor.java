@@ -75,6 +75,13 @@ public final class KernelHealthMonitor implements HealthProbe {
         ));
     }
 
+    /** Current tracked state of a subsystem, or {@code null} if it is not registered. */
+    public SubsystemState stateOf(String name) {
+        Objects.requireNonNull(name, "name");
+        SubsystemHealth health = subsystems.get(name);
+        return health == null ? null : health.state();
+    }
+
     /**
      * Readiness: READY only when the kernel is started and every required subsystem is RUNNING.
      * A required subsystem in {@link SubsystemState#DEGRADED} (a live-but-impaired dependency, e.g.
