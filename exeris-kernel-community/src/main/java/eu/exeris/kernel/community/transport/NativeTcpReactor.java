@@ -154,7 +154,13 @@ final class NativeTcpReactor {
                         dispatchSelectedKey(key);
                     } catch (CancelledKeyException _) {
                         // channel closed concurrently by VT handler path
-                    } catch (RuntimeException _) {
+                    } catch (RuntimeException ex) {
+                        // JFR-first: surface the unrecoverable per-stream fault before abortive
+                        // teardown. A recurring fault here is the signature of a reactor spin that
+                        // a zero-alloc, stack-trace-less sentinel cause hides from exception sampling.
+                        NativeTcpStream faulted = (NativeTcpStream) key.attachment();
+                        CommunityReactorDispatchFaultEvent.emit(
+                                faulted != null ? faulted.streamId() : -1L, index, ex.getClass().getName());
                         host.closeKeyStream(key);
                     }
                 }

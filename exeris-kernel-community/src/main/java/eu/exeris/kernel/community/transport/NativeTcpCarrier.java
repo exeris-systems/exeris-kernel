@@ -66,6 +66,9 @@ public final class NativeTcpCarrier implements TransportEngine {
     private static final String ENGINE_NAME = "CommunityNativeTcpCarrier";
     private static final int MIN_LISTENER_BACKLOG = 64;
     private static final int MAX_LISTENER_BACKLOG = 1_024;
+    // Advisory TCP reset code for an abortive teardown driven by a reactor dispatch fault
+    // (see closeKeyStream). The peer observes a RST; the value carries no application semantics.
+    private static final long DISPATCH_FAULT_RESET_CODE = 0L;
     // Fairness cap on TLS records drained per readable event (see readIngress / PERF-062 in
     // docs/subsystems/transport.md). Overridable for field tuning, mirroring
     // exeris.transport.queueBackpressureEnabled.
@@ -442,6 +445,23 @@ public final class NativeTcpCarrier implements TransportEngine {
     }
 
     /* default */ void closeKeyStream(SelectionKey key) {
+        // Reached only from the reactor select-loop catch(RuntimeException) (NativeTcpReactor), i.e.
+        // on the reactor thread, after a per-key dispatch (read-ingress or flush) faulted — most
+        // often an unwrap-on-closed TlsDecryptException once the stream's TLS engine is already
+        // closed. The connection is unrecoverable, so tear it down ABORTIVELY:
+        //  1. cancel the key synchronously — removes it from this reactor's selector so the
+        //     level-triggered dead channel cannot re-fire (read OR write) and busy-spin the reactor
+        //     while teardown completes. Direct cancel honours the single-consumer key protocol
+        //     (this runs on the reactor thread); a graceful interest-narrow does not suffice because
+        //     a closed-engine stream's queued egress is undrainable and would keep OP_WRITE armed.
+        //  2. reset() rather than close(): reset abandons the undrainable queue and sets
+        //     resetRequested — the designed escape hatch (issue #180) that lets finishCloseIfDrained
+        //     bypass its drain gate, finalize, and deregister the channel, including under
+        //     slot-owner deferral via the deferred-abort wake. A graceful close() would defer
+        //     forever here.
+        if (key.isValid()) {
+            key.cancel();
+        }
         if (!(key.channel() instanceof SocketChannel channel)) {
             return;
         }
@@ -450,7 +470,7 @@ public final class NativeTcpCarrier implements TransportEngine {
             return;
         }
         stream.markRemoteClosed();
-        stream.close();
+        stream.reset(DISPATCH_FAULT_RESET_CODE);
     }
 
     private void acceptPendingConnections() throws IOException {
