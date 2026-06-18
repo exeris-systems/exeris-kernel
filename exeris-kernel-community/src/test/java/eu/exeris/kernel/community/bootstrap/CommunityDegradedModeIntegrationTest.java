@@ -40,7 +40,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @Tag("continuity")
 @Testcontainers(disabledWithoutDocker = true)
 @DisplayName("Community degraded-mode: Postgres loss drives readiness DEGRADED, liveness stays UP")
-class CommunityDegradedModeIT {
+class CommunityDegradedModeIntegrationTest {
 
     @Container
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16");
