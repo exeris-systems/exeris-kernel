@@ -8,6 +8,7 @@
  */
 package eu.exeris.kernel.core.bootstrap.health;
 
+import eu.exeris.kernel.core.bootstrap.jfr.BootstrapJfrEvents;
 import eu.exeris.kernel.spi.bootstrap.HealthProbe;
 
 import java.util.Map;
@@ -31,6 +32,7 @@ public final class KernelHealthMonitor implements HealthProbe {
     private static final String STATUS_STARTING = "STARTING";
     private static final String STATUS_READY = "READY";
     private static final String STATUS_FAILED = "FAILED";
+    private static final String STATUS_DEGRADED = "DEGRADED";
     private static final String STATUS_DOWN = "DOWN";
     private static final String STATUS_UP = "UP";
 
@@ -68,13 +70,35 @@ public final class KernelHealthMonitor implements HealthProbe {
     public void markSubsystemState(String name, SubsystemState newState) {
         Objects.requireNonNull(name, "name");
         Objects.requireNonNull(newState, "newState");
-        subsystems.computeIfPresent(name, (ignored, previous) -> new SubsystemHealth(
-                previous.requiredForReadiness(),
-                newState
-        ));
+        SubsystemHealth[] previousHolder = new SubsystemHealth[1];
+        subsystems.computeIfPresent(name, (ignored, previous) -> {
+            previousHolder[0] = previous;
+            return new SubsystemHealth(previous.requiredForReadiness(), newState);
+        });
+        SubsystemHealth previous = previousHolder[0];
+        // JFR-first (ADR-005): a post-boot RUNNING<->DEGRADED flip has no boot lifecycle event, so
+        // emit one here so a flapping dependency leaves an SRE trail. Boot transitions don't involve
+        // DEGRADED and keep their own SubsystemInitialized/Started/Stopped events.
+        if (previous != null && previous.state() != newState
+                && (previous.state() == SubsystemState.DEGRADED || newState == SubsystemState.DEGRADED)) {
+            BootstrapJfrEvents.emitHealthTransition(name, previous.state().name(), newState.name());
+        }
     }
 
-    /** Readiness: UP only when kernel is started and every required subsystem is RUNNING. */
+    /** Current tracked state of a subsystem, or {@code null} if it is not registered. */
+    public SubsystemState stateOf(String name) {
+        Objects.requireNonNull(name, "name");
+        SubsystemHealth health = subsystems.get(name);
+        return health == null ? null : health.state();
+    }
+
+    /**
+     * Readiness: READY only when the kernel is started and every required subsystem is RUNNING.
+     * A required subsystem in {@link SubsystemState#DEGRADED} (a live-but-impaired dependency, e.g.
+     * its broker died after boot) drops readiness with a distinct {@code "DEGRADED"} status so the
+     * load balancer drains this instance; a still-coming-up required subsystem outranks it for the
+     * status label ({@code "STARTING"}). An OPTIONAL subsystem degraded never sheds readiness.
+     */
     @Override
     public ProbeSnapshot readiness() {
         if (kernelFailed.get()) {
@@ -83,16 +107,29 @@ public final class KernelHealthMonitor implements HealthProbe {
         if (!kernelStarted.get() || kernelShuttingDown.get()) {
             return new ProbeSnapshot(STATUS_STARTING, false);
         }
-        boolean allRequiredRunning = true;
+        return requiredSubsystemReadiness();
+    }
+
+    private ProbeSnapshot requiredSubsystemReadiness() {
+        boolean anyStarting = false;
+        boolean anyDegraded = false;
         for (SubsystemHealth health : subsystems.values()) {
-            if (health.requiredForReadiness() && health.state() != SubsystemState.RUNNING) {
-                allRequiredRunning = false;
-                break;
+            if (!health.requiredForReadiness() || health.state() == SubsystemState.RUNNING) {
+                continue;
             }
+            // Any required non-RUNNING, non-DEGRADED state (still INITIALIZED/REGISTERED, or a
+            // post-boot FAILED that has not yet escalated to kernel-FAILED — checked before this
+            // method) counts as "starting": readiness is down either way, and the label favours
+            // "coming up" over "degraded" when both reasons coexist.
+            anyDegraded |= health.state() == SubsystemState.DEGRADED;
+            anyStarting |= health.state() != SubsystemState.DEGRADED;
         }
-        return allRequiredRunning
-                ? new ProbeSnapshot(STATUS_READY, true)
-                : new ProbeSnapshot(STATUS_STARTING, false);
+        if (anyStarting) {
+            return new ProbeSnapshot(STATUS_STARTING, false);
+        }
+        return anyDegraded
+                ? new ProbeSnapshot(STATUS_DEGRADED, false)
+                : new ProbeSnapshot(STATUS_READY, true);
     }
 
     /** Liveness: UP after kernel init, DOWN only when kernel entered failed state. */
@@ -121,6 +158,8 @@ public final class KernelHealthMonitor implements HealthProbe {
         REGISTERED,
         INITIALIZED,
         RUNNING,
+        /** Live but impaired (e.g. a dependency failed after boot); reversible back to RUNNING. */
+        DEGRADED,
         FAILED,
         STOPPED
     }

@@ -88,7 +88,7 @@ flowchart TD
 ## Diagram 1b — Subsystem State Machine
 
 Each subsystem registered in the Boot DAG transitions through this state machine independently.
-Core's `SubsystemOrchestrator` drives transitions; transitions are irreversible — there is no `RESTART`.
+Core's `SubsystemOrchestrator` drives the boot transitions, which are irreversible — there is no `RESTART`. The one reversible axis is the post-boot health state `RUNNING ↔ DEGRADED`, driven not by the orchestrator but by the Community `CommunitySubsystemHealthWatcher` (see "Kubernetes Health Probes" below): a live-but-impaired dependency degrades readiness and recovers when it returns, without ever leaving the `RUNNING`-family or killing the process.
 
 ```mermaid
 stateDiagram-v2
@@ -104,6 +104,10 @@ stateDiagram-v2
     RUNNING --> STOPPED        : stop() called\nAll resources released
     RUNNING --> FAILED         : Unrecoverable runtime error
 
+    RUNNING --> DEGRADED       : Health watcher: dependency lost\n(post-boot, reversible)
+    DEGRADED --> RUNNING       : Health watcher: dependency recovered
+    DEGRADED --> STOPPED       : stop() called
+
     STOPPED --> [*]            : Virtual Threads drained
 
     FAILED --> [*]             : Emergency JFR snapshot\nJVM exit(1) · Glass-Box buffer flushed
@@ -117,6 +121,13 @@ stateDiagram-v2
     note right of FAILED
         K8s liveness probe → HTTP 503.
         Pod replaced by ReplicaSet controller.
+    end note
+
+    note right of DEGRADED
+        Live but impaired (required dep lost post-boot).
+        K8s readiness probe → HTTP 503 (drain).
+        K8s liveness probe → HTTP 200 (not killed).
+        Watcher-driven, post-boot only, reversible.
     end note
 
     %% Note: kernel-level SHUTTING_DOWN is from KernelState, not per-subsystem state.
@@ -356,8 +367,8 @@ at all times.
 
 `KernelHealthMonitor` (Core) implements `eu.exeris.kernel.spi.bootstrap.HealthProbe` and exposes two snapshots:
 
-- **Readiness** — UP only when the kernel has transitioned to `STARTED` and every required subsystem is `RUNNING`. Returns `STARTING` while the Boot DAG is in progress, while a required subsystem is still initializing, and during `SHUTTING_DOWN`. Returns `FAILED` after `FAILED` state.
-- **Liveness** — UP after the kernel has transitioned to `INITIALIZED`. Returns `STARTING` before that point. Returns `DOWN` only after `FAILED` state.
+- **Readiness** — UP only when the kernel has transitioned to `STARTED` and every required subsystem is `RUNNING`. Returns `STARTING` while the Boot DAG is in progress, while a required subsystem is still initializing, and during `SHUTTING_DOWN`. Returns `DEGRADED` (not ready) when a **required** subsystem has gone `DEGRADED` — live but impaired after boot, e.g. its broker died — so the load balancer drains the instance; a still-initializing required subsystem outranks `DEGRADED` for the status label. A **degraded optional** subsystem never sheds readiness. Returns `FAILED` after `FAILED` state.
+- **Liveness** — UP after the kernel has transitioned to `INITIALIZED`. Returns `STARTING` before that point. Returns `DOWN` only after `FAILED` state. A `DEGRADED` subsystem never affects liveness — the process stays alive so it can recover (`DEGRADED → RUNNING` is reversible).
 
 ### `HealthEndpointHandler` (Community)
 
@@ -374,13 +385,30 @@ httpServerEngine.start();
 | **Readiness** | `/healthz/readiness`     | `200 OK`           | `503 Service Unavailable`                              |
 | **Liveness**  | `/healthz/liveness`      | `200 OK`           | `503 Service Unavailable`                              |
 
-Custom paths are available via `new HealthEndpointHandler(probe, readinessPath, livenessPath)`. The textual probe status (`READY`, `STARTING`, `UP`, `DOWN`, `FAILED`) is mirrored into the response header `X-Exeris-Health` for human diagnostics — Kubernetes probes evaluate the status code only, so responses are bodyless.
+Custom paths are available via `new HealthEndpointHandler(probe, readinessPath, livenessPath)`. The textual probe status (`READY`, `STARTING`, `DEGRADED`, `UP`, `DOWN`, `FAILED`) is mirrored into the response header `X-Exeris-Health` for human diagnostics — Kubernetes probes evaluate the status code only, so responses are bodyless. A required-subsystem `DEGRADED` surfaces as readiness `503` + `X-Exeris-Health: DEGRADED` while liveness stays `200`.
 
 The handler returns:
 - `404 Not Found` for paths that match neither probe, without invoking the probe;
 - `405 Method Not Allowed` with `Allow: GET` for non-`GET` methods on a probe path.
 
 The contract is pinned by `eu.exeris.kernel.tck.contract.health.AbstractHealthEndpointTck` plus the Community binding `CommunityHealthEndpointTckTest`. End-to-end behavior with the real `KernelHealthMonitor` is pinned by `HealthEndpointHandlerKernelMonitorIntegrationTest`.
+
+### `CommunitySubsystemHealthWatcher` (Community, host-wired)
+
+`KernelHealthMonitor` only marks a subsystem `RUNNING` at boot; it does not re-poll afterwards. To drop readiness when a dependency dies *after* boot (and restore it on recovery), `eu.exeris.kernel.community.bootstrap.CommunitySubsystemHealthWatcher` runs a background poll that reconciles each live subsystem's health into the monitor's reversible `RUNNING ↔ DEGRADED` axis. It transitions **only** that axis — never resurrecting `FAILED`/`STOPPED` nor racing the boot DAG — and treats a throwing health source as impaired.
+
+Like `HealthEndpointHandler`, the watcher is **wired by the host**, not by kernel `main` — it stays Wall-clean by knowing the *concrete* Community subsystems and pushing state through the public `markSubsystemState` (no generic subsystem-health method is added to the SPI; that is deferred to v0.10). Construct it after boot, register each subsystem's health source (e.g. persistence's `canServiceRequest()` — the same signal that deterministically denies requests under ADR-012), `start()` it, and `stop()` it on shutdown:
+
+```java
+KernelHealthMonitor monitor = bootstrap.healthMonitor();
+var watcher = new CommunitySubsystemHealthWatcher(monitor, Duration.ofSeconds(5).toNanos());
+watcher.register("persistence", persistenceEngine::canServiceRequest);
+watcher.start();                 // after the kernel reaches STARTED
+// ... on shutdown:
+watcher.stop();
+```
+
+The reconciliation + lifecycle is pinned by `CommunitySubsystemHealthWatcherTest`; the full `health-source → watcher → monitor → /healthz/readiness` path (503 + `X-Exeris-Health: DEGRADED` and recovery) by `HealthEndpointHandlerKernelMonitorIntegrationTest`.
 
 ### Kubernetes manifest snippet
 
