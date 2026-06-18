@@ -35,9 +35,9 @@ Run the kernel JVM (and Maven, if building on the box) on **JDK 26** — the bui
 
 ## Resource envelope (reference baseline — validate per workload)
 
-These are **starting baselines**, not guarantees. Validate against your workload and the measured
-runs in `exeris-benchmarks/results/` (the benchmark harness is the authority for throughput/latency
-on a given machine + driver).
+These are **starting baselines**, not guarantees. Validate against your own workload — the dedicated
+benchmark harness (the separate `exeris-benchmarks` repository, run per machine + driver) is the
+authority for measured throughput/latency; this doc deliberately quotes no fixed RPS/latency figure.
 
 | Resource | Reference baseline |
 |:---------|:-------------------|
@@ -46,7 +46,7 @@ on a given machine + driver).
 | CPU | 1 vCPU minimum; 2+ recommended (reactor + VT scheduler + DB pool) |
 | Disk | Postgres-sized; the kernel itself is near-stateless apart from JFR recordings |
 
-**Boot SLO** (per the `KernelBootReady` JFR event): prod boot ≤ 3000 ms, dev boot ≤ 1000 ms — use these as a readiness/liveness `initialDelay` lower bound.
+**Boot SLO** (performance contract, measured via the `KernelBootReady` JFR event): cold-start **P99 ≤ 500 ms (Community) / ≤ 800 ms (Enterprise)** — see [`../whitepaper.md`](../whitepaper.md). Do **not** set a nonzero probe `initialDelay`; use `initialDelaySeconds: 0` plus a `startupProbe` (the manifest in [`bootstrap.md`](../subsystems/bootstrap.md) budgets a generous cold-start window via `startupProbe` while readiness/liveness poll from t=0).
 
 ## Observability
 
@@ -65,7 +65,7 @@ Validated by the v0.9 operational-continuity suite (the `recovery-continuity-gat
 ## Known operational limits (Community)
 
 - **Single-node, NIO carrier** — no `io_uring`, no slab pools (Enterprise overlay). Best-effort performance contract.
-- **No server-initiated push yet** — HTTP is request/response; a live view polls until the SSE streaming SPI lands (v0.10/v0.11, RFC-2026-06-18). See the [Support Matrix](../support-matrix.md) → *Deferred*.
+- **No server-initiated push yet** — HTTP is request/response; a live view polls until the SSE streaming SPI lands (target v0.10/v0.11; RFC in review). See the [Support Matrix](../support-matrix.md) → *Deferred*.
 - **Caffeine** in-process cache only; no distributed cache provider.
 
 ## See also

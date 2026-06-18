@@ -24,12 +24,14 @@ Mirrors [`stability-matrix.md`](./stability-matrix.md) — that document is the 
 
 | Subsystem (`eu.exeris.kernel.spi.*`) | Status | Since |
 |:-------------------------------------|:-------|:------|
-| `memory`, `transport`, `bootstrap`, `context`, `persistence`, `flow`, `exceptions`, `telemetry`, `config` | **stable** | 0.5.0 |
+| `memory`, `transport`, `bootstrap`, `context`, `persistence`, `flow`, `exceptions`, `telemetry`, `config`¹ | **stable** | 0.5.0 |
 | `diagnostics` | **stable** | 0.9.0 (ADR-033) |
 | `http` — `HttpServerEngine`/`HttpClientEngine`/`HttpExchange`/`HttpHandler`/`HttpProvider`, `HttpClientRequestEnricher` | **stable** | 0.5.0 / 0.8.0 |
 | `http` — `HttpRequestBodyEncoder`/`Decoder`, `HttpResponseBodyDecoder` (ADR-034) | **preview** | 0.8.0 |
 | `events`, `graph`, `security`, `crypto` | **preview** | 0.5.0 |
 | `util` | _internal_ | — |
+
+¹ `config` — the core provider/registry contract is **stable**; the v0.9 `@Immutable` annotation + watcher-refusal semantics (Sprint 5) are **preview** (see [`stability-matrix.md`](./stability-matrix.md)).
 
 ## Community-tier limits
 
@@ -55,9 +57,9 @@ These are deliberately **not** in the Community kernel and live behind the Enter
 
 | Capability | Target | Driver |
 |:-----------|:-------|:-------|
-| **HTTP server-push / streaming SPI (SSE-first)** | **v0.10 / v0.11** | RFC-2026-06-18 → ADR-043 *(brought earlier than the originally-planned v0.12)* |
+| **HTTP server-push / streaming SPI (SSE-first)** | **v0.10 / v0.11** *(brought earlier than the originally-planned v0.12)* | RFC in review → ADR-043 (reserved) |
 | WebSocket (full duplex) | after SSE | follows the SSE primitive; separately justified |
-| `IdentityProvider` SPI + first driver | v0.10 | RFC-2026-06-08 → ADR-040 |
+| `IdentityProvider` SPI + first driver | v0.10 | RFC-2026-06-08 (ACCEPTED) → ADR-040 (reserved) |
 | `BlobStorageProvider`, `JobScheduler` SPI | v0.11 | new-SPI roadmap |
 | `CacheProvider` SPI | RFC-stage | new-SPI roadmap |
 | OTLP metrics export + distributed tracing | ~v0.12 | ADR-031 (kernel-gated) — no tracing logic in the kernel today |
