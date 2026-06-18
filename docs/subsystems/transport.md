@@ -264,8 +264,8 @@ constraint, not an oversight.
 
 | Protocol     | Status      | Rationale                                                                                              |
 |:-------------|:------------|:-------------------------------------------------------------------------------------------------------|
-| **WebSocket** | 🚧 Planned TRL-5 | Requires long-lived, upgradeable TCP connections. Community TCP carrier needs HTTP Upgrade handling. Will be implemented as a `StreamHandler` variant. |
-| **SSE**       | 🚧 Planned TRL-5 | Requires one-directional streaming via HTTP/1.1 chunked transfer or HTTP/2 push. Follows WebSocket implementation. |
+| **SSE**       | 🚧 Planned v0.10/v0.11 | One-directional server push via HTTP/1.1 chunked transfer (a thin framing layer over the existing `Http1ChunkedEncoder`) or HTTP/2. **SSE-first** per [RFC-2026-06-18](../rfc/RFC-2026-06-18-http-streaming-spi.md) — the minimal server-push primitive; **precedes** WebSocket. |
+| **WebSocket** | 🚧 Planned (after SSE) | Full duplex; requires an HTTP Upgrade (H1) / Extended CONNECT (H2 RFC 8441) handshake + frame protocol. Deferred to a later, separately-justified decision once a bidirectional use case is proven (see RFC-2026-06-18). |
 | **gRPC streaming** | 🚧 Planned TRL-5 | Modelled as HTTP/2 streams — follows transport carrier maturity. |
 
 For real-time push requirements at TRL-3, use the **Events subsystem (L3)** with a Kafka/Redpanda
