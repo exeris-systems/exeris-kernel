@@ -466,7 +466,7 @@ public final class NativeTcpCarrier implements TransportEngine {
 
     /* default */ void closeKeyStream(SelectionKey key) {
         // PERF-RESEARCH: time the whole entry so invocations x mean resolves the 15%-CPU claim.
-        long t0 = TLS_DRAIN_HISTOGRAM ? System.nanoTime() : 0L;
+        long startNanos = TLS_DRAIN_HISTOGRAM ? System.nanoTime() : 0L;
         boolean actualClose = false;
         try {
             if (!(key.channel() instanceof SocketChannel channel)) {
@@ -481,7 +481,7 @@ public final class NativeTcpCarrier implements TransportEngine {
             stream.close();
         } finally {
             if (TLS_DRAIN_HISTOGRAM) {
-                closeKeyNanos.addAndGet(System.nanoTime() - t0);
+                closeKeyNanos.addAndGet(System.nanoTime() - startNanos);
                 if (actualClose) {
                     closeKeyActualCloses.incrementAndGet();
                 }
