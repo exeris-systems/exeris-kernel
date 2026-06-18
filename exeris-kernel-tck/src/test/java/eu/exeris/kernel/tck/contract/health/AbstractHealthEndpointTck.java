@@ -142,6 +142,24 @@ public abstract class AbstractHealthEndpointTck {
     }
 
     @Test
+    @DisplayName("Degraded required subsystem: readiness 503 with DEGRADED status, liveness 200 UP")
+    void degradedRequiredSubsystemReadiness503LivenessOk() {
+        StubHealthProbe probe = new StubHealthProbe(
+                new ProbeSnapshot("DEGRADED", false),
+                new ProbeSnapshot("UP", true));
+
+        HttpHandler handler = newHandler(probe);
+
+        RecordingHttpExchange readiness = invoke(handler, get(READINESS_PATH));
+        RecordingHttpExchange liveness = invoke(handler, get(LIVENESS_PATH));
+
+        assertThat(readiness.status()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+        assertThat(readiness.headerValue(STATUS_HEADER)).hasValue("DEGRADED");
+        assertThat(liveness.status()).isEqualTo(HttpStatus.OK);
+        assertThat(liveness.headerValue(STATUS_HEADER)).hasValue("UP");
+    }
+
+    @Test
     @DisplayName("Both probes 503 when probe is fully unhealthy (FAILED kernel)")
     void bothProbesReturnUnavailableOnFailedKernel() {
         StubHealthProbe probe = new StubHealthProbe(
