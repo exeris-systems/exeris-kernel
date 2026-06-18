@@ -69,6 +69,7 @@ class NativeTcpCloseKeyStreamReadInterestTest {
 
             try (SocketChannel clientChannel =
                          SocketChannel.open(new InetSocketAddress("127.0.0.1", port));
+                 // accepted only to complete the TCP handshake so the client can register; never read
                  SocketChannel serverChannel = listener.accept()) {
 
                 clientChannel.configureBlocking(false);
