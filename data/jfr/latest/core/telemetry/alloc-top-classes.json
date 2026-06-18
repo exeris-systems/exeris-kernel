@@ -1,21 +1,31 @@
 [ {
   "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
-  "count" : 48,
-  "bytes" : 6279056,
+  "count" : 72,
+  "bytes" : 6269064,
   "category" : "TEST_HARNESS"
 }, {
-  "class" : "java.util.HashMap",
+  "class" : "java.util.LinkedHashMap",
   "count" : 3,
-  "bytes" : 523152,
+  "bytes" : 348216,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "[Ljava.util.HashMap$Node;",
+  "class" : "java.lang.String",
   "count" : 2,
-  "bytes" : 262824,
+  "bytes" : 174104,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "java.util.HashSet",
+  "class" : "java.util.ArrayList$Itr",
+  "count" : 2,
+  "bytes" : 15256,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "java.util.LinkedHashMap$Entry",
+  "count" : 2,
+  "bytes" : 174160,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "java.util.HashMap",
   "count" : 1,
-  "bytes" : 261568,
+  "bytes" : 174104,
   "category" : "JVM_NOISE"
 } ]
