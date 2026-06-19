@@ -1670,6 +1670,35 @@ See also: ADR-034 (`KernelWebClient` facade, superseding ADR-026), ADR-032 (`Htt
 
 ---
 
+## Platform Baseline for 1.0 GA — JDK 25 LTS + Preview-Clean Critical Path (decouple `StructuredTaskScope`)
+
+### Runtime / Platform: a 1.0 GA artifact must not require `--enable-preview` of its consumers
+
+**Gap:** The build today targets JDK 26 with `--enable-preview` enabled globally (`pom.xml` `maven.compiler.release=26` + `--enable-preview`). The **only** preview API on which the runtime depends is `StructuredTaskScope` (still preview in JDK 26, continuing the multi-release JEP 453→462→480→499→505 preview chain); every other Loom/Panama primitive the kernel stands on is already **GA**: virtual threads (JEP 444, GA in 21), `ScopedValue` (JEP 506, GA in **25 LTS**), and the Foreign Function & Memory API (JEP 454, GA in 22). `StructuredTaskScope` is on a long preview track (seventh preview in JDK 27, with the exception model still changing — `Joiner` join-exception type parameter, `FailedException` → `ExecutionException`) and its own design lead calls a JDK 29 exit from preview "optimistic". JEP 401 (value classes) is *also* only a preview in JDK 28. So neither of the two headline JDK 28 features is GA in 28.
+
+This matters because `--enable-preview` is **not** a per-library opt-in — it is a whole-compilation + whole-JVM flag, and preview bytecode is stamped (`minor_version = 0xFFFF`) and pinned to one exact major: a class built with preview on 26 will not load on 25/27/28 *even with the flag*. For an open-core artifact published to Maven Central this **inverts the dependency contract** — every downstream application would have to build and run its *entire* codebase with `--enable-preview`, be pinned to our exact JDK, and accept that all of *its* code falls under the "may change/disappear next release" preview contract. Many enterprises ban preview in production outright, which would exclude exactly the LTS segment that `exeris-kernel-enterprise` targets. **A "1.0 GA" that depends on a preview API on its critical path is internally contradictory.**
+
+**Verified scope (narrower than "the whole runtime", larger than "one bootstrap seam"):**
+- The **SPI is already preview-clean for `StructuredTaskScope`**: zero `import …StructuredTaskScope` across `exeris-kernel-spi/src/main`; every mention is descriptive javadoc (`{@code StructuredTaskScope}`, not `{@link}`), so a consumer compiling against the SPI is **not** forced into `--enable-preview` by STS. The Wall already holds here.
+- The preview *taint* lives in **shipped Core/Community bytecode**. Load-bearing `StructuredTaskScope` type usage (actual imports, verified on HEAD) is in exactly **four** default-path sites — `core/bootstrap/SubsystemOrchestrator` (parallel subsystem start), `core/events/InMemoryEventBus`, `core/events/outbox/OutboxOrchestrator`, and `community/events/CommunityEventLoop`. These compile with `--enable-preview` and ship as major-pinned bytecode.
+- **Anticipated, not yet present:** the planned `KafkaEventLoop` (ROADMAP §"Events: Kafka/Redpanda Driver — Core-Shared Implementation Model", step 4) *intends* to wrap the consumer poll cycle with `StructuredTaskScope`, but it is **not implemented** today (zero `StructuredTaskScope` in `exeris-kernel-community-kafka/src/main`). Build it on the GA structured-concurrency layer from the start so it never becomes a fifth taint site.
+
+**Resolution (target: complete before 1.0 RC; phased across v0.10–v0.12):**
+1. **Baseline at JDK 25 LTS**; compile the *default* artifacts **without** `--enable-preview`. (First confirm via audit that no *other* preview API is on the critical path or in shipped bytecode — STS is believed to be the only one; treat this as the first acceptance step.) A syntactic audit of **JEP 507** (primitive types in patterns / `instanceof` / `switch`, preview in 25/26 — the obvious second candidate given the kernel's primitive density) found **zero** usage in `*/src/main`: no primitive `instanceof`, no `case <primitive> var` type patterns, and all 37 `switch` selectors are over enum / `String` / `char` / `int` (i.e. pre-JEP-507 GA forms — no `long`/`float`/`double`/`boolean` selector). So STS remains the sole *known* preview dependency; the **definitive** confirmation is a clean no-`--enable-preview` compile of the default reactor (the gate below).
+2. **Own structured-concurrency layer behind a seam** (The Wall): a thin GA implementation — `fork` / `join-as-unit` / `cancel-on-failure` over **virtual threads** (GA 21) with **`ScopedValue`** binding-propagation re-established manually in the fork helper (`ScopedValue.where(...).call(...)` around each child, since automatic inheritance is the part ergonomically fused to STS). Re-platform the four default sites onto this layer. Owning this coordination is *on-brand* — determinism + per-phase custom JFR startup events are a feature, not a compromise.
+3. **`StructuredTaskScope`-native implementations become an opt-in adapter in a separate artifact** (e.g. `exeris-kernel-sts`, or per-subsystem) that the default jars do **not** reference even transitively and do **not** eagerly load (no `ServiceLoader` instantiation at discovery time). It is simply another impl behind the SPI that happens to carry preview-taint. STS continues to be used actively in JVM-controlled deployments (BudgetHQ, Stellar-Tactics) and in this adapter and on EA testing.
+4. **Certify on JDK 29 LTS from launch.** 28 is an STS (~6-month) release; the enterprise segment runs LTS. Since the GA primitives in 25 are also present in 29 (29 ⊇ 28 ⊇ 25 for GA features), certifying 29 is near-free — do **not** pin 1.0 solely to JDK 28. "Ready for JEP 401 value classes on 28" stays a forward-portability / marketing-position story, not a floor pin.
+
+**Note on the CLAUDE.md guardrail:** the repo strong-default "prefer `StructuredTaskScope` for orchestration concurrency" remains the *design ideal* and stays in force for JVM-controlled deployments and the opt-in adapter. This baseline is the justified exception for the **distributable default artifact**, where the preview-distribution constraint (whole-app flag + bytecode major-pinning + enterprise preview bans) outweighs the ergonomic preference. The exception is scoped to the four default sites; everywhere a JVM is controlled, STS stays preferred.
+
+**Merge Gate:** the default Core + Community reactor compiles and all TCK/CI gates pass on **JDK 25 LTS with no `--enable-preview`**; two **airtight, binary** acceptance checks are CI-enforced — (1) **no preview type in any exported SPI signature or in generated (codegen) code**, and (2) **the default artifact contains zero preview bytecode** (`minor_version 0xFFFF` scan) **and zero transitive reference to the STS adapter artifact**. The STS adapter builds separately with `--enable-preview` and is excluded from the default dependency graph. "Almost isolated" (lazy-but-co-packaged) does not pass — one eager scan or `ServiceLoader` discovery re-introduces the taint. The gate applies to **shipped bytecode only**: test and TCK fixtures continue to compile under `--enable-preview` exactly as today (they are not distributed), so STS may stay in test scope.
+
+**ADR:** the structured-concurrency-layer design + the artifact split is an architecture decision and warrants a dedicated ADR — **reserve the next free number in `~/exeris-systems/exeris-docs/adr-index.md` when the design firms up** (do not claim a number now). It ties to the existing bootstrap-orchestration-seam direction.
+
+**Status:** **NOT STARTED** — surfaced 2026-06-18 from the JEP 401 (Valhalla → JDK 28 *preview*) + `StructuredTaskScope` GA-timeline analysis. This is a **1.0-GA-blocking** baseline: until the default critical path is preview-clean on a GA LTS, the word "GA" cannot honestly be applied. Distinct from the per-feature roadmap items above because it constrains the *distribution contract*, not a single subsystem.
+
+---
+
 ## Open-Core / Community 1.0 Release Requirements
 
 Community 1.0 requires:
@@ -1687,7 +1716,8 @@ Community 1.0 requires:
 - explicit separation from proprietary Enterprise work,
 - reference deployment documentation,
 - no unresolved ambiguity in docs about what is supported vs planned vs enterprise-only,
-- TCK-complete coverage for all SPI-observable behavior introduced by roadmap items (with Community bindings and explicit out-of-repo Enterprise obligations).
+- TCK-complete coverage for all SPI-observable behavior introduced by roadmap items (with Community bindings and explicit out-of-repo Enterprise obligations),
+- **a preview-clean critical path on a GA LTS baseline (JDK 25 LTS)** — the default artifact must build and run with **no `--enable-preview`** and impose none on consumers (see "Platform Baseline for 1.0 GA").
 
 ---
 
@@ -1713,6 +1743,7 @@ Community 1.0 requires:
 - `graph`
 
 ### Cross-cutting 1.0-critical
+- JDK 25 LTS baseline + preview-clean GA critical path (decouple `StructuredTaskScope` behind a seam; STS as opt-in adapter artifact; certify on 29 LTS)
 - refactoring / PMD suppression reduction
 - SonarQube
 - docs truthfulness
