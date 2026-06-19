@@ -96,7 +96,7 @@ import java.util.concurrent.atomic.AtomicReference;
             // window has closed. Emitted on every such attempt (an old token in a loop will
             // re-emit), so the phase is named as a deny, not a one-shot transition.
             CommunityJwksKeyRotationEvent.emit(
-                    PHASE_CUTOVER_DENY, null, kid, gens.current().size(), gens.previous().size());
+                    PHASE_CUTOVER_DENY, kid, gens.current().size(), gens.previous().size());
             throw new SecurityAuthenticationException(JWT_TYPE, ERR_ROTATED_OUT);
         }
 
@@ -143,7 +143,7 @@ import java.util.concurrent.atomic.AtomicReference;
             Generations rotated = new Generations(newCurrent, now, gens.current(), now);
             generations.compareAndSet(gens, rotated);
             CommunityJwksKeyRotationEvent.emit(
-                    PHASE_ROTATION, null, null, newCurrent.size(), gens.current().size());
+                    PHASE_ROTATION, null, newCurrent.size(), gens.current().size());
             return generations.get();
         }
     }
@@ -155,7 +155,7 @@ import java.util.concurrent.atomic.AtomicReference;
         if (isStale(gens.currentInstalledAtMillis(), now) && !previousStillOpen) {
             int prevCount = gens.previous() == null ? 0 : gens.previous().size();
             CommunityJwksKeyRotationEvent.emit(
-                    PHASE_STALE_DENY, null, null, gens.current().size(), prevCount);
+                    PHASE_STALE_DENY, null, gens.current().size(), prevCount);
             throw new SecurityAuthenticationException(JWT_TYPE, ERR_STALE);
         }
         return gens;
