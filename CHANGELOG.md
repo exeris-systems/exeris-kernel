@@ -6,6 +6,27 @@ This file is intentionally terse: it lists what landed, with a pointer to the re
 
 Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project versions follow [SemVer](https://semver.org/spec/v2.0.0.html), with the pre-1.0 caveat that minor versions may carry observable contract additions while remaining backwards-compatible at the SPI level. Which SPI surfaces are `stable` / `preview` / `experimental`, and what each label commits to for semver, is declared in [`docs/stability-matrix.md`](docs/stability-matrix.md) — the authoritative source for the semver policy.
 
+## [0.9.0] — 2026-06-18
+
+Minor release. SPI-backwards-compatible apart from one pre-1.0 diagnostics trim (no external consumers). Detail + migration notes: [`docs/release/v0.9.0-release-notes.md`](docs/release/v0.9.0-release-notes.md).
+
+### Added
+- **Diagnostics SPI + CLI** — `eu.exeris.kernel.spi.diagnostics.*` (first explicitly-**stable** new surface) + `exeris-kernel-diagnostics-cli` artifact (ADR-033).
+- **`@Immutable`** config-key sealing — `spi.config.Immutable` + `ConfigProvider.guardImmutable` (preview); compile-time + watcher-refusal enforcement.
+- **`TransportStream.reset(long)`** — Wall-safe `default` (graceful); Community abortive (RST) override.
+- **`DEGRADED`** reversible subsystem-health state + Community health watcher (Core-internal — no SPI change) → readiness drains, liveness holds.
+- Tracked docs: `stability-matrix.md`, `support-matrix.md`, `operations/reference-deployment.md`.
+- Security: JWKS key rotation (Community). Crypto: OpenSSL 4 multi-version (3.0–4.x, ADR-008 refresh).
+- Operational-continuity CI gate (`recovery-continuity-gate`, Testcontainers restart/degraded ITs).
+
+### Changed
+- **Diagnostics SPI trimmed** (pre-1.0): `listCapabilities()` / `CompositionSnapshot` / `CapabilityDescriptor` removed.
+- TLS reactor efficiency: closed-engine read-spin fix (#202), egress frame coalescing (#199), ingress loop-drain (#197), reactor dispatch + atomic cleanup (#195/#196).
+
+### Direction (RFC — implementation in later versions)
+- **IdentityProvider SPI** — `RFC-2026-06-08` (ACCEPTED); ADR-040 reserved; SPI + driver in v0.10.
+- **HTTP streaming (SSE-first)** — `RFC-2026-06-18`; ADR-043 reserved; brought earlier than the planned v0.12 (target v0.10/v0.11).
+
 ## [0.8.1] — 2026-06-08
 
 Patch release. Backwards-compatible SPI addition; no contract removals.

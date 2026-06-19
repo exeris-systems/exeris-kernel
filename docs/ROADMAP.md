@@ -1195,6 +1195,8 @@ Prior-knowledge HTTP/2 (`handlePriorKnowledge` lines 88-101) is unaffected — i
 
 **Cross-repo dependents:** `exeris-ai-bridge` 0.4.0 implements `src/transport/kernel-adapter.ts` against the CLI's stdio JSON protocol (ADR-025 §Engineering Protocol item 2 binding closure). `exeris-kernel-enterprise` 0.6 ships `EnterpriseKernelDiagnosticsProvider` (priority 100) returning the same record types with Enterprise-only fields populated where the ADR-033 §Obligation 6 use-case test applies; the Enterprise overlay is mirrored as a link stub at `exeris-kernel-enterprise/docs/adr/ADR-033.link.md`. Out-of-scope here: authenticated / remote diagnostic transport (lands in `exeris-ai-bridge` 0.6+ transport-auth work), any mutation surface, `bridge:health` synthetic derived checks (aggregator concern, not kernel SPI concern).
 
+**Status (v0.9):** **DELIVERED** in Sprint 1 (ADR-033) — `eu.exeris.kernel.spi.diagnostics.*` is the first explicitly-**stable** new SPI surface; `CommunityKernelDiagnostics` + the shaded `exeris-kernel-diagnostics-cli` artifact + `AbstractKernelDiagnosticsTck` (+ pinned JSON schema fixture) landed. **Pre-1.0 trim:** `listCapabilities()` / `CompositionSnapshot` / `CapabilityDescriptor` were removed before the SPI froze (composition is a build-time/manifest concern); `EX-DIAG-1002` retired as a reserved gap.
+
 ---
 
 ### Diagnostics: JVM Runtime Ergonomics Snapshot (Introspective) + Recommended-Flags Baseline Doc
@@ -1321,6 +1323,8 @@ the same change (Obligation 9 four-method → five-method; EP step 8 `EX-DIAG-10
 
 **Merge Gate:** Support matrix reviewed and approved with release criteria.
 
+**Status (v0.9):** **DELIVERED** in Sprint 8 (#205) — `docs/support-matrix.md` published: supported runtime baseline (JDK 26, Postgres 16, Kafka 3.6/CP 7.6, OpenSSL 3.0–4.x, HTTP/1.1+h2/h2c), per-subsystem SPI status mirroring `stability-matrix.md`, Community-tier limits, Enterprise-only out-of-scope items, and deferred capabilities (incl. the streaming shift to v0.10/v0.11). Bidirectionally cross-linked with `stability-matrix.md` + `operations/reference-deployment.md`.
+
 ---
 
 ### Upgrade / Restart / Recovery Validation
@@ -1333,6 +1337,8 @@ the same change (Obligation 9 four-method → five-method; EP step 8 `EX-DIAG-10
 
 **Merge Gate:** Operational continuity suite is green on release-candidate branch.
 
+**Status (v0.9):** **DELIVERED** in Sprint 7 (#203) — reversible **`DEGRADED`** subsystem-health state in `KernelHealthMonitor` (Core-internal; `HealthProbe` untouched, The Wall held) + Community `CommunitySubsystemHealthWatcher` driving it from live subsystem health. A required-`DEGRADED` subsystem drains readiness (`503` + `X-Exeris-Health: DEGRADED`) while liveness holds; reversible to `RUNNING`. `SubsystemHealthTransition` JFR. Degraded-mode (real Postgres stop) + restart-recovery (real engine restart → parked-saga checkpoint survives) Testcontainers ITs, gated by the new **`recovery-continuity-gate`** CI job. **Carried to v0.10:** vN→vN+1 two-version upgrade fixture + outbox exactly-once dedup across restart.
+
 ---
 
 ### Reference Deployment Preparation
@@ -1344,6 +1350,8 @@ the same change (Obligation 9 four-method → five-method; EP step 8 `EX-DIAG-10
 **Resolution:** Prepare a reference deployment path with documented topology, runtime profile, resource envelope, observability setup, and known operational limits.
 
 **Merge Gate:** Reference deployment documentation and validation checklist completed.
+
+**Status (v0.9):** **DELIVERED** in Sprint 8 (#205) — `docs/operations/reference-deployment.md`: single-node Community topology (kernel + Postgres + optional Kafka/JWKS), runtime profile (JDK 26 preview, `kernel.profile=PROD`, OpenSSL 3.0–4.x), reference resource envelope (explicitly *validate per workload*; defers measured throughput to the `exeris-benchmarks` harness), observability (health probes incl. the `DEGRADED` semantics, Prometheus pull, JFR), and the restart/degraded continuity procedure. Cross-linked with `support-matrix.md` + `bootstrap.md`.
 
 ---
 
@@ -1415,6 +1423,8 @@ the same change (Obligation 9 four-method → five-method; EP step 8 `EX-DIAG-10
 
 **Merge Gate:** SPI contract validated against at least two bindings (Jackson 3 as the canonical default + one alternative — Gson, Moshi, or native Panama binary — chosen at sprint scoping based on the first external consumer's request) so the abstract TCK reflects real contract pressure, not single-implementation guesswork. Sprint scheduling gated on either (a) a concrete external consumer requesting non-Jackson binding, or (b) a benchmark demonstrating measurable zero-allocation win for a native binary codec on the request hot path.
 
+**Status (v0.9):** **DEFERRED to v0.10** (covers this + the two sibling HTTP-client entries below — Generic-Element Decode and Retry/Backoff Policy). Per the 2026-05-18 "Path B" decision, Sprint 6 was **design-only**: the codec/retry surface shape is locked by the ADR-034 family, with **zero kernel SPI commits in v0.9**. Implementation lands when a concrete external consumer or a measured zero-alloc win materialises (the merge-gate trigger above).
+
 ---
 
 ### HTTP Client: Generic-Element Decode (`TypeReference`-style facade overload) — deferred from v0.8
@@ -1470,6 +1480,8 @@ the same change (Obligation 9 four-method → five-method; EP step 8 `EX-DIAG-10
 **Resolution:** Bind `OPENSSL_cleanse` from `libcrypto` and expose it via the OpenSSL runtime facade; audit existing call-sites that hold key material (`OffHeapTlsEngine` handshake state, native cipher contexts, JWT signing material) and route their disposal through cleanse before arena release. Promote to a `SensitiveBuffer` SPI marker if additional call-sites accumulate, with `close()` contractually guaranteeing cleanse before underlying arena release.
 
 **Merge Gate:** `OPENSSL_cleanse` binding present and invoked from every identified secret-holding path on disposal; TCK assertion via a probe segment proves zeroed buffer contents after disposal for at least one representative path.
+
+**Status (v0.9):** **DEFERRED / CARRIED** — not implemented in v0.9 (no `OPENSSL_cleanse` binding landed). Carried forward; pairs naturally with the FIPS workstream below.
 
 ---
 
@@ -1637,6 +1649,8 @@ See also: ADR-034 (`KernelWebClient` facade, superseding ADR-026), ADR-032 (`Htt
 **Resolution:** Open a short RFC (single option-comparison page) deciding between (a) **SSE-only for v1.0, WebSocket post-1.0** — minimum scope, zero new SPI, ship an SSE response-writer pattern in Community plus generator emission, or (b) **`WebSocketProvider` SPI lands in v0.12** — full `WebSocketSession`, `WebSocketFrame`, `WebSocketHandler` family in `eu.exeris.kernel.spi.http.websocket`, Community NIO driver, Enterprise `io_uring` driver track. If (b), TCK covers RFC 6455 handshake compliance, frame fragmentation, ping/pong, close-code semantics, masking, and adversarial cases (oversized frame, malformed payload, partial-message split, post-close traffic). Either way, generator emission for the `realTimeApi` flag lands in `exeris-tooling/` in the same window.
 
 **Merge Gate:** RFC accepted with one shape selected and dissenting position recorded; if (b), SPI green on TCK + Community binding green + isolation-key scoping verified (per-tenant WS rooms via `StorageContext.isolationKey`); if (a), SSE pattern documented in operator-facing docs with an explicit "WebSocket = post-1.0" note in the Support Matrix (per v0.9 §"Support Matrix Finalization").
+
+**Status (RFC opened 2026-06-18 — shifted earlier than v0.12):** the RFC is `docs/rfc/RFC-2026-06-18-http-streaming-spi.md`. Preferred direction = a variant of option (a): **SSE-first** over a **sibling `HttpStreamExchange`** (not a streaming mode on `HttpExchange`; respond-once invariant preserved), with WebSocket deferred to a later, separately-justified decision. **ADR-043 reserved.** Implementation **brought earlier to v0.10/v0.11** (not v0.12) to unblock the SDK `realTimeApi` / `@Action(streaming)` chain. The eight load-bearing design questions for ADR-043 (exchange surface + disconnect-as-throw, park-the-VT `emit()`, `LoanedBuffer` transfer ownership, streaming-lifecycle JFR, `EX-HTTP-*` taxonomy, router extension, PAQS accounting, JWT-expiry-mid-stream fail-closed) are enumerated in the RFC.
 
 ---
 
