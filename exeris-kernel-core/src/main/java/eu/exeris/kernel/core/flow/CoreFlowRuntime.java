@@ -852,6 +852,26 @@ final class CoreFlowRuntime { // NOPMD
         if (snapshotStore == null) {
             return;
         }
+        // Lifecycle write-fence: a worker whose runtime is no longer active — closed/not-started or
+        // a retired generation — must not re-establish a NON-TERMINAL checkpoint in the shared
+        // snapshot store. In the multi-runtime restart model (a new CoreFlowRuntime rebuilt on the
+        // same store, as production restart and the saga-recovery TCK both do) an abandoned worker
+        // from the closed runtime can otherwise land a save(PARKED) AFTER the rebuilt runtime's
+        // complete()->deleteSnapshot() reclaim and resurrect the row, breaking the unbounded-mode
+        // "deleted on complete()" invariant (docs/subsystems/flow.md). isStaleLifecycle alone is
+        // insufficient: the abandoned worker's own generation counter is unchanged by the *other*
+        // runtime's start(), so the guard must also reject a closed/not-started runtime
+        // (started && !closed). Terminal finalizations are deliberately exempt: a late FAIL after
+        // close() MUST still persist FAILED_ROLLEDBACK on the same runtime (cleanup contract — see
+        // CoreFlowRuntimeTest.lateFailedExitAfterCloseStillReleasesClaimsAndFinalizesSnapshot), and
+        // a terminal state is not a resurrected checkpoint. The exemption is unconditional on the
+        // terminal state: in the two-runtime case a late gen-1 FAIL after gen-2's complete() reclaim
+        // may leave an orphaned FAILED_ROLLEDBACK row, but that is benign — gen-2's (and any later
+        // generation's) terminalStateCatalog records COMPLETED, so no re-execution follows.
+        // Sibling of the staleLifecycle/cleanupOnly guards on deleteSnapshot and finalizeFailedInstance.
+        if (!isActiveLifecycle(instance) && !state.isTerminal()) {
+            return;
+        }
         clearParkedLookupMiss(instance.key());
         snapshotStore.save(instance.toSnapshot(state, stepIndex));
         // ADR-013 §5: durable stores advance schema_version by one on every accepted write.
