@@ -94,7 +94,7 @@ class CommunityJwksKeyRotationJfrTest {
         // Secret-safe: the declared surface is only opaque labels and counts — no key material.
         assertThat(events.getFirst().getEventType().getFields())
                 .extracting(jdk.jfr.ValueDescriptor::getName)
-                .contains("phase", "newKid", "retiredKid", "currentKeyCount", "previousKeyCount");
+                .contains("phase", "retiredKid", "currentKeyCount", "previousKeyCount");
     }
 
     /** Source that can be armed to return a new key set or to fail the next refresh. */

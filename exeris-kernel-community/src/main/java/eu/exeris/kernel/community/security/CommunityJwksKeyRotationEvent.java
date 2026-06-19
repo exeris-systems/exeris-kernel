@@ -42,9 +42,6 @@ final class CommunityJwksKeyRotationEvent extends Event {
     @Label("Phase")
     /* default */ String phase;
 
-    @Label("New Kid")
-    /* default */ String newKid;
-
     @Label("Retired Kid")
     /* default */ String retiredKid;
 
@@ -54,7 +51,7 @@ final class CommunityJwksKeyRotationEvent extends Event {
     @Label("Previous Key Count")
     /* default */ int previousKeyCount;
 
-    /* default */ static void emit(String phase, String newKid, String retiredKid,
+    /* default */ static void emit(String phase, String retiredKid,
                                    int currentKeyCount, int previousKeyCount) {
         if (!FlightRecorder.isInitialized()) {
             return;
@@ -62,7 +59,6 @@ final class CommunityJwksKeyRotationEvent extends Event {
         CommunityJwksKeyRotationEvent event = new CommunityJwksKeyRotationEvent();
         if (event.isEnabled()) {
             event.phase = phase;
-            event.newKid = newKid;
             event.retiredKid = retiredKid;
             event.currentKeyCount = currentKeyCount;
             event.previousKeyCount = previousKeyCount;

@@ -72,8 +72,7 @@ public final class NativeTcpCarrier implements TransportEngine {
     // Fairness cap on TLS records drained per readable event (see readIngress / PERF-062 in
     // docs/subsystems/transport.md). Overridable for field tuning, mirroring
     // exeris.transport.queueBackpressureEnabled.
-    private static final int MAX_TLS_RECORDS_PER_READ =
-            Integer.parseInt(System.getProperty("exeris.transport.maxTlsRecordsPerRead", "32"));
+    private static final int MAX_TLS_RECORDS_PER_READ = readMaxTlsRecordsPerRead();
 
     private final TransportConfig config;
     private final MemoryAllocator allocator;
@@ -343,6 +342,27 @@ public final class NativeTcpCarrier implements TransportEngine {
             return MIN_LISTENER_BACKLOG;
         }
         return Math.clamp(maxConnections, MIN_LISTENER_BACKLOG, MAX_LISTENER_BACKLOG);
+    }
+
+    private static int readMaxTlsRecordsPerRead() {
+        String raw = System.getProperty("exeris.transport.maxTlsRecordsPerRead", "32");
+        try {
+            int parsed = Integer.parseInt(raw);
+            // A non-positive cap would silently disable per-readable record draining (the drain loop
+            // never iterates), starving every connection on this carrier — reject it like a malformed
+            // value rather than honouring the foot-gun.
+            if (parsed <= 0) {
+                LOG.log(System.Logger.Level.WARNING,
+                        "exeris.transport.maxTlsRecordsPerRead must be positive (was \"{0}\"); using default 32", raw);
+                return 32;
+            }
+            return parsed;
+        } catch (NumberFormatException _) {
+            // A malformed tuning flag must not fail class init — fall back to the documented default.
+            LOG.log(System.Logger.Level.WARNING,
+                    "Invalid exeris.transport.maxTlsRecordsPerRead=\"{0}\"; using default 32", raw);
+            return 32;
+        }
     }
 
     private void initPaqs() {

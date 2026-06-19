@@ -139,8 +139,10 @@ final class NativeTcpStream implements TransportStream {
     private final Object tlsLock = new Object();
     private final StreamRuntimeState runtime = new StreamRuntimeState();
     
-    // Phase 1B: Queue depth tracking for telemetry and backpressure
-    private volatile int lastQueueDepth;
+    // Phase 1B: Queue depth tracking for telemetry and backpressure. Read/written only on the
+    // reactor thread (offerIngress) and feeds an advisory JFR "trend" label only — not shared, so
+    // no volatile fence is warranted on this per-record hot path.
+    private int lastQueueDepth;
 
     private LoanedBuffer currentInbound;
     private int currentInboundOffset;

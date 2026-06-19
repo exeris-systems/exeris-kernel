@@ -210,6 +210,8 @@ public interface TransportStream extends AutoCloseable {
      * @param errorCode caller-supplied protocol error code (advisory; transport-mapped)
      */
     default void reset(long errorCode) {
+        // The default has no abort primitive and discards the advisory code; overrides map it.
+        long _ = errorCode;
         close();
     }
 }
