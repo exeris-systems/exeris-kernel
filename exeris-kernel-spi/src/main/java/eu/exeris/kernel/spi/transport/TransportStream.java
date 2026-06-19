@@ -210,8 +210,11 @@ public interface TransportStream extends AutoCloseable {
      * @param errorCode caller-supplied protocol error code (advisory; transport-mapped)
      */
     default void reset(long errorCode) {
-        // The default has no abort primitive and discards the advisory code; overrides map it.
-        long _ = errorCode;
+        // errorCode is contract for overriders (e.g. a TCP driver maps it to a protocol RST via
+        // SO_LINGER 0); the default has no abort primitive and intentionally discards it. CodeQL
+        // "useless parameter" here is a false positive — DISMISS it. Do NOT add a read-and-discard
+        // line to silence it: that only trades the finding for an "unread local variable" on the
+        // discard (the #209 -> follow-up tail-chase). The @param Javadoc documents the discard.
         close();
     }
 }
