@@ -23,6 +23,9 @@ Minor release. SPI-backwards-compatible apart from one pre-1.0 diagnostics trim 
 - **Diagnostics SPI trimmed** (pre-1.0): `listCapabilities()` / `CompositionSnapshot` / `CapabilityDescriptor` removed.
 - TLS reactor efficiency: closed-engine read-spin fix (#202), egress frame coalescing (#199), ingress loop-drain (#197), reactor dispatch + atomic cleanup (#195/#196).
 
+### Fixed
+- **Saga recovery stale-write fence** (#208) — a worker abandoned past `close()` on a closed `CoreFlowRuntime` could re-persist a `PARKED` checkpoint after a rebuilt runtime had already reclaimed the row on `complete()`, resurrecting it (surfaced as a load-sensitive flake on 2-vCPU CI). `persistSnapshot` now fences non-terminal writes from a non-active runtime (`!isActiveLifecycle && !isTerminal`); terminal finalizations are exempt.
+
 ### Direction (RFC — implementation in later versions)
 - **IdentityProvider SPI** — `RFC-2026-06-08` (ACCEPTED); ADR-040 reserved; SPI + driver in v0.10.
 - **HTTP streaming (SSE-first)** — `RFC-2026-06-18`; ADR-043 reserved; brought earlier than the planned v0.12 (target v0.10/v0.11).
