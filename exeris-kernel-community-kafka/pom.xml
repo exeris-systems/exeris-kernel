@@ -7,7 +7,7 @@
     <parent>
         <groupId>eu.exeris</groupId>
         <artifactId>exeris-kernel-parent</artifactId>
-        <version>0.8.1</version>
+        <version>0.9.0</version>
         <relativePath>../exeris-kernel-parent/pom.xml</relativePath>
     </parent>
     <artifactId>exeris-kernel-community-kafka</artifactId>
@@ -28,7 +28,7 @@
               mvn -pl exeris-kernel-community-kafka test -Dgroups=integration
             Default Surefire runs exclude them so the unit suite stays fast and Docker-free.
         -->
-        <excludedGroups>integration</excludedGroups>
+        <excludedGroups>integration,continuity</excludedGroups>
 
         <!--
             v0.8 Sprint 6 (Coverage C-P0-01): LINE coverage floor for the Kafka bundle.
@@ -39,6 +39,9 @@
             the IT-merge follow-up is pending.
         -->
         <jacoco.line.minimum>0.20</jacoco.line.minimum>
+        <!-- BRANCH baseline 2026-06-10: 16.0% (16/100), unit-only (Kafka IT not merged).
+             Ratchet ~6 pp below. -->
+        <jacoco.branch.minimum>0.10</jacoco.branch.minimum>
     </properties>
 
     <dependencies>

@@ -12,6 +12,7 @@ import eu.exeris.kernel.community.memory.CommunityMemoryProvider;
 import eu.exeris.kernel.core.http.hpack.HpackDecoder;
 import eu.exeris.kernel.core.http.hpack.HpackDynamicTable;
 import eu.exeris.kernel.core.http.hpack.HpackEncoder;
+import eu.exeris.kernel.core.http.http2.Http2ErrorCode;
 import eu.exeris.kernel.core.http.http2.Http2FrameParser;
 import eu.exeris.kernel.core.http.http2.Http2FrameType;
 import eu.exeris.kernel.spi.http.HttpConfig;
@@ -28,12 +29,18 @@ import eu.exeris.kernel.spi.memory.MemoryProviderConfig;
 import eu.exeris.kernel.spi.memory.MemoryStats;
 import eu.exeris.kernel.spi.transport.TransportConnection;
 import eu.exeris.kernel.spi.transport.TransportStream;
+import jdk.jfr.Recording;
+import jdk.jfr.consumer.RecordedEvent;
+import jdk.jfr.consumer.RecordingFile;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.io.ByteArrayOutputStream;
 import java.lang.foreign.MemorySegment;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -447,6 +454,207 @@ class CommunityHttpRequestProcessorTest {
         assertThat(frame4.frameType()).isEqualTo(Http2FrameType.GOAWAY);
     }
 
+    @Test
+    @DisplayName("HTTP/2 Rapid Reset flood trips GOAWAY(ENHANCE_YOUR_CALM) + secret-safe JFR event")
+    void rapidResetFloodTripsGoAwayEnhanceYourCalm(@TempDir Path tmp) throws Exception {
+        int budget = Http2SessionContext.rapidResetBudget();
+        byte[] preface = "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n".getBytes(StandardCharsets.US_ASCII);
+        byte[] hpack = encodeHpackHeaders(List.of(
+                new HttpHeader(":method", "POST"),
+                new HttpHeader(":path", "/"),
+                new HttpHeader(":scheme", "http"),
+                new HttpHeader(":authority", "localhost")));
+
+        ByteArrayOutputStream inbound = new ByteArrayOutputStream();
+        inbound.writeBytes(preface);
+        inbound.writeBytes(emptySettingsFrame());
+        // CVE-2023-44487: open a stream WITHOUT end-stream (registered, awaiting body — not
+        // dispatched, so no budget credit), then immediately reset it. budget + 1 cycles cross
+        // the per-connection net rapid-reset budget.
+        for (int i = 0; i <= budget; i++) {
+            int streamId = i * 2 + 1;
+            inbound.writeBytes(headersFrame(streamId, hpack, true, false));
+            inbound.writeBytes(rstStreamFrame(streamId, Http2ErrorCode.CANCEL.code()));
+        }
+
+        CommunityHttpRequestProcessor processor = new CommunityHttpRequestProcessor(
+                ALLOCATOR, HttpResponseBodyEncoderRegistry.empty(), HttpConfig.defaultServer());
+        CapturingTransportStream stream = new CapturingTransportStream(inbound.toByteArray());
+
+        Path jfr = tmp.resolve("rapid-reset.jfr");
+        try (Recording recording = new Recording()) {
+            recording.enable(RAPID_RESET_EVENT);
+            recording.start();
+            processor.process(stream, exchange ->
+                    exchange.respond(HttpResponse.noBody(HttpStatus.OK, HttpVersion.HTTP_2)));
+            recording.stop();
+            recording.dump(jfr);
+        }
+
+        // Externally observable defense: the connection ends with GOAWAY(ENHANCE_YOUR_CALM).
+        List<FrameSnapshot> frames = decodeFrames(stream.responseBytes());
+        FrameSnapshot last = frames.get(frames.size() - 1);
+        assertThat(last.header().frameType()).isEqualTo(Http2FrameType.GOAWAY);
+        assertThat(goAwayErrorCode(last.payload())).isEqualTo(Http2ErrorCode.ENHANCE_YOUR_CALM.code());
+
+        // Secret-safe JFR flood event: exactly one, carrying connection-scoped counts only.
+        List<RecordedEvent> floods = RecordingFile.readAllEvents(jfr).stream()
+                .filter(e -> e.getEventType().getName().equals(RAPID_RESET_EVENT))
+                .toList();
+        assertThat(floods).hasSize(1);
+        assertThat(floods.get(0).getInt("resetCount")).isEqualTo(budget + 1);
+        // EX-HTTP-4010 rawArgs index 1 — last processed stream is the HEADERS opened just before
+        // the tripping RST_STREAM (decode sets it even without END_STREAM); matches the GOAWAY last-id.
+        assertThat(floods.get(0).getInt("lastProcessedStreamId")).isEqualTo(budget * 2 + 1);
+    }
+
+    private static final String RAPID_RESET_EVENT = "eu.exeris.kernel.http.Http2RapidResetFlood";
+
+    private static byte[] rstStreamFrame(int streamId, int errorCode) {
+        byte[] payload = new byte[4];
+        payload[0] = (byte) ((errorCode >>> 24) & 0xFF);
+        payload[1] = (byte) ((errorCode >>> 16) & 0xFF);
+        payload[2] = (byte) ((errorCode >>> 8) & 0xFF);
+        payload[3] = (byte) (errorCode & 0xFF);
+        return buildFrame(Http2FrameType.RST_STREAM.code(), 0, streamId, payload);
+    }
+
+    private static int goAwayErrorCode(byte[] goAwayPayload) {
+        return ((goAwayPayload[4] & 0xFF) << 24) | ((goAwayPayload[5] & 0xFF) << 16)
+                | ((goAwayPayload[6] & 0xFF) << 8) | (goAwayPayload[7] & 0xFF);
+    }
+
+    @Test
+    @DisplayName("HTTP/2 response HEADERS+DATA is coalesced into a single socket write")
+    void h2ResponseHeadersAndDataCoalescedIntoOneWrite() {
+        byte[] preface = "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n".getBytes(StandardCharsets.US_ASCII);
+        byte[] hpack = encodeHpackHeaders(List.of(
+                new HttpHeader(":method", "GET"),
+                new HttpHeader(":path", "/body"),
+                new HttpHeader(":scheme", "http"),
+                new HttpHeader(":authority", "localhost")));
+
+        ByteArrayOutputStream inbound = new ByteArrayOutputStream();
+        inbound.writeBytes(preface);
+        inbound.writeBytes(emptySettingsFrame());
+        inbound.writeBytes(headersFrame(1, hpack, true, true));
+
+        byte[] body = "coalesced-response-body".getBytes(StandardCharsets.US_ASCII);
+
+        CommunityHttpRequestProcessor processor = new CommunityHttpRequestProcessor(
+                ALLOCATOR, HttpResponseBodyEncoderRegistry.empty(), HttpConfig.defaultServer());
+        CapturingTransportStream stream = new CapturingTransportStream(inbound.toByteArray());
+
+        processor.process(stream, exchange -> {
+            LoanedBuffer responseBody = ALLOCATOR.allocateNetwork(body.length);
+            responseBody.segment().asSlice(0, body.length).asByteBuffer().put(body);
+            responseBody.setSize(body.length);
+            // processor (writeHttp2Response) owns + closes the body buffer.
+            exchange.respond(new HttpResponse(HttpStatus.OK, HttpVersion.HTTP_2, List.of(), responseBody));
+        });
+
+        // Egress coalescing: the response stream-1 HEADERS and DATA frames must arrive in ONE
+        // socket write (not HEADERS in one write and DATA in another). Control frames (SETTINGS /
+        // SETTINGS-ACK) are stream 0 and excluded.
+        int responseWrites = 0;
+        boolean headersAndDataTogether = false;
+        for (byte[] segment : stream.writeSegments) {
+            List<FrameSnapshot> frames = decodeFrames(segment);
+            boolean hasHeaders = frames.stream().anyMatch(
+                    f -> f.header().frameType() == Http2FrameType.HEADERS && f.header().streamId() == 1);
+            boolean hasData = frames.stream().anyMatch(
+                    f -> f.header().frameType() == Http2FrameType.DATA && f.header().streamId() == 1);
+            if (hasHeaders || hasData) {
+                responseWrites++;
+            }
+            if (hasHeaders && hasData) {
+                headersAndDataTogether = true;
+            }
+        }
+        assertThat(headersAndDataTogether).as("HEADERS+DATA coalesced into one write").isTrue();
+        assertThat(responseWrites).as("response delivered in exactly one socket write").isEqualTo(1);
+
+        // Wire-correct: the single DATA frame on stream 1 carries the exact body bytes.
+        byte[] dataPayload = decodeFrames(stream.responseBytes()).stream()
+                .filter(f -> f.header().frameType() == Http2FrameType.DATA && f.header().streamId() == 1)
+                .map(FrameSnapshot::payload)
+                .findFirst()
+                .orElseThrow();
+        assertThat(dataPayload).isEqualTo(body);
+    }
+
+    @Test
+    @DisplayName("HTTP/2 multi-frame DATA body splits into <=16KiB frames coalesced into one write")
+    void h2MultiDataFrameBodyCoalescedAndWireCorrect() {
+        byte[] preface = "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n".getBytes(StandardCharsets.US_ASCII);
+        byte[] hpack = encodeHpackHeaders(List.of(
+                new HttpHeader(":method", "GET"),
+                new HttpHeader(":path", "/big"),
+                new HttpHeader(":scheme", "http"),
+                new HttpHeader(":authority", "localhost")));
+
+        ByteArrayOutputStream inbound = new ByteArrayOutputStream();
+        inbound.writeBytes(preface);
+        inbound.writeBytes(emptySettingsFrame());
+        inbound.writeBytes(headersFrame(1, hpack, true, true));
+
+        // 40000 B > 2 * 16384 → exactly 3 DATA frames (16384 + 16384 + 7232), exercising the
+        // serializeDataFrames loop boundary. Position-dependent bytes so any offset slip corrupts
+        // the reassembled body.
+        int maxFramePayload = 16 * 1024;
+        int bodyLen = 40_000;
+        byte[] body = new byte[bodyLen];
+        for (int i = 0; i < bodyLen; i++) {
+            body[i] = (byte) ((i * 31 + 7) & 0xFF);
+        }
+
+        CommunityHttpRequestProcessor processor = new CommunityHttpRequestProcessor(
+                ALLOCATOR, HttpResponseBodyEncoderRegistry.empty(), HttpConfig.defaultServer());
+        CapturingTransportStream stream = new CapturingTransportStream(inbound.toByteArray());
+
+        processor.process(stream, exchange -> {
+            LoanedBuffer responseBody = ALLOCATOR.allocateNetwork(body.length);
+            responseBody.segment().asSlice(0, body.length).asByteBuffer().put(body);
+            responseBody.setSize(body.length);
+            exchange.respond(new HttpResponse(HttpStatus.OK, HttpVersion.HTTP_2, List.of(), responseBody));
+        });
+
+        // All stream-1 HEADERS + DATA frames must arrive in exactly ONE socket write (coalesced),
+        // even when the body spans multiple DATA frames.
+        int responseWrites = 0;
+        int dataFramesInResponseWrite = 0;
+        for (byte[] segment : stream.writeSegments) {
+            List<FrameSnapshot> frames = decodeFrames(segment);
+            boolean hasStream1Response = frames.stream().anyMatch(f -> f.header().streamId() == 1
+                    && (f.header().frameType() == Http2FrameType.HEADERS
+                        || f.header().frameType() == Http2FrameType.DATA));
+            if (hasStream1Response) {
+                responseWrites++;
+                dataFramesInResponseWrite = (int) frames.stream().filter(
+                        f -> f.header().streamId() == 1 && f.header().frameType() == Http2FrameType.DATA).count();
+            }
+        }
+        assertThat(responseWrites).as("multi-frame response delivered in one socket write").isEqualTo(1);
+        assertThat(dataFramesInResponseWrite).as("body split into ceil(40000/16384) DATA frames").isEqualTo(3);
+
+        // Each DATA frame respects the max frame payload; concatenation equals the body (offsets);
+        // only the final DATA frame carries END_STREAM.
+        List<FrameSnapshot> dataFrames = decodeFrames(stream.responseBytes()).stream()
+                .filter(f -> f.header().frameType() == Http2FrameType.DATA && f.header().streamId() == 1)
+                .toList();
+        assertThat(dataFrames).hasSize(3);
+        ByteArrayOutputStream reassembled = new ByteArrayOutputStream();
+        for (int i = 0; i < dataFrames.size(); i++) {
+            FrameSnapshot frame = dataFrames.get(i);
+            assertThat(frame.payload().length).as("DATA frame within max frame payload")
+                    .isLessThanOrEqualTo(maxFramePayload);
+            assertThat(frame.header().isEndStream()).as("END_STREAM only on the final DATA frame")
+                    .isEqualTo(i == dataFrames.size() - 1);
+            reassembled.writeBytes(frame.payload());
+        }
+        assertThat(reassembled.toByteArray()).as("reassembled DATA payload equals original body").isEqualTo(body);
+    }
+
     private static byte[] emptySettingsFrame() {
             return new byte[]{0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00};
     }
@@ -745,6 +953,7 @@ class CommunityHttpRequestProcessorTest {
         private final byte[] inbound;
         private int readOffset;
         private final ByteArrayOutputStream writes = new ByteArrayOutputStream();
+        private final List<byte[]> writeSegments = new ArrayList<>();
         private boolean closed;
 
         private CapturingTransportStream(String requestText) {
@@ -777,6 +986,7 @@ class CommunityHttpRequestProcessorTest {
             byte[] bytes = new byte[length];
             MemorySegment.copy(source, 0, MemorySegment.ofArray(bytes), 0, length);
             writes.writeBytes(bytes);
+            writeSegments.add(bytes);
         }
 
         @Override

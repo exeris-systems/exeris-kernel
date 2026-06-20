@@ -8,6 +8,7 @@
  */
 package eu.exeris.kernel.community.health;
 
+import eu.exeris.kernel.community.bootstrap.CommunitySubsystemHealthWatcher;
 import eu.exeris.kernel.core.bootstrap.health.KernelHealthMonitor;
 import eu.exeris.kernel.spi.bootstrap.HealthProbe;
 import eu.exeris.kernel.spi.http.HttpExchange;
@@ -24,6 +25,8 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -77,6 +80,54 @@ class HealthEndpointHandlerKernelMonitorIntegrationTest {
         RecordingExchange afterFailure = invoke(handler, LIVENESS);
         assertThat(afterFailure.status()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
         assertThat(afterFailure.header(HealthEndpointHandler.STATUS_HEADER)).hasValue("DOWN");
+    }
+
+    @Test
+    @DisplayName("Health watcher drives readiness RUNNING→DEGRADED→RUNNING through the HTTP probe")
+    void watcherDrivesReadinessDegradedAndBack() {
+        KernelHealthMonitor monitor = new KernelHealthMonitor();
+        monitor.registerSubsystem("persistence", true);
+        monitor.markSubsystemState("persistence", KernelHealthMonitor.SubsystemState.RUNNING);
+        monitor.markKernelState(KernelHealthMonitor.KernelState.INITIALIZED);
+        monitor.markKernelState(KernelHealthMonitor.KernelState.STARTED);
+        HealthEndpointHandler handler = new HealthEndpointHandler(monitor);
+
+        // Stands in for CommunityPersistenceEngine#canServiceRequest(): the live health signal the
+        // watcher reconciles and the same signal that deterministically denies requests (ADR-012).
+        AtomicBoolean serving = new AtomicBoolean(true);
+        CommunitySubsystemHealthWatcher watcher =
+                new CommunitySubsystemHealthWatcher(monitor, TimeUnit.MILLISECONDS.toNanos(5));
+        watcher.register("persistence", serving::get);
+
+        assertThat(invoke(handler, READINESS).status()).isEqualTo(HttpStatus.OK);
+
+        watcher.start();
+        try {
+            serving.set(false);
+            awaitReadinessStatus(handler, "DEGRADED");
+            assertThat(invoke(handler, READINESS).status()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+            assertThat(invoke(handler, LIVENESS).status()).isEqualTo(HttpStatus.OK);
+
+            serving.set(true);
+            awaitReadinessStatus(handler, "READY");
+            assertThat(invoke(handler, READINESS).status()).isEqualTo(HttpStatus.OK);
+        } finally {
+            watcher.stop();
+        }
+    }
+
+    private static void awaitReadinessStatus(HttpHandler handler, String expected) {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
+        while (System.nanoTime() < deadline) {
+            if (invoke(handler, READINESS).header(HealthEndpointHandler.STATUS_HEADER)
+                    .filter(expected::equals).isPresent()) {
+                return;
+            }
+            java.util.concurrent.locks.LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(2));
+        }
+        assertThat(invoke(handler, READINESS).header(HealthEndpointHandler.STATUS_HEADER))
+                .as("readiness status reaches %s within deadline", expected)
+                .hasValue(expected);
     }
 
     private static RecordingExchange invoke(HttpHandler handler, String path) {

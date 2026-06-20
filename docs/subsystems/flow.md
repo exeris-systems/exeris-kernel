@@ -22,7 +22,7 @@
 
 > **Note:** `FlowOutcome.COMPLETE` provides a direct short-circuit path: a step can return `COMPLETE` to transition the flow immediately to `FlowState.COMPLETED` without executing any remaining steps.
 > **Note:** `FlowBootstrapSelectedEvent` is emitted by `FlowBootstrap.loadWithProvider()` before `start()`. `FlowEngine.close()` emits `FlowEngineShutdownEvent` after runtime close and its bounded shutdown join, so the JFR payload reflects the stable shutdown counter view captured when `close()` completes. Promptly interrupted workers may still finalize snapshots afterward without changing that counter snapshot.
-> **Note (shutdown semantics):** `close()` is **not** an unbounded graceful drain — it interrupts in-flight flows and joins each worker within a bounded per-thread deadline (`CoreFlowRuntime.interruptAndJoinRunningThreads`, currently 5s/thread). PARKED checkpoints persisted before `close()` survive for restart recovery (see `AbstractSagaRecoveryTck.RestartUnderLoad`); in-flight RUNNING progress past the last checkpoint may be lost. **Known constraint:** the per-thread join is iterated sequentially, so the aggregate worst case is N×5s under wedged-interrupt, not 5s. A future `closeTimeoutNanos` config (aggregate-bounded join) is a candidate follow-up — not yet implemented. A durability/shutdown-cost JMH benchmark is deferred to `exeris-benchmarks` (backlog).
+> **Note (shutdown semantics):** `close()` is **not** an unbounded graceful drain — it interrupts in-flight flows and joins each worker within a bounded per-thread deadline (`CoreFlowRuntime.interruptAndJoinRunningThreads`, currently 5s/thread). PARKED checkpoints persisted before `close()` survive for restart recovery (see `AbstractSagaRecoveryTck.RestartUnderLoad`); in-flight RUNNING progress past the last checkpoint may be lost. A worker abandoned past that join belongs to a now-closed runtime — a lifecycle write-fence in `persistSnapshot` (`!isActiveLifecycle && !isTerminal`) prevents such a straggler from re-persisting a `PARKED` (non-terminal) checkpoint after a rebuilt runtime has already reclaimed (deleted) the row on `complete()`, so the unbounded-mode "deleted on `complete()`" guarantee holds across restart (regression: `CoreFlowRuntimeStaleWriteFenceTest`). **Known constraint:** the per-thread join is iterated sequentially, so the aggregate worst case is N×5s under wedged-interrupt, not 5s. A future `closeTimeoutNanos` config (aggregate-bounded join) is a candidate follow-up — not yet implemented. A durability/shutdown-cost JMH benchmark is deferred to `exeris-benchmarks` (backlog).
 
 ## Boundaries
 
@@ -193,3 +193,11 @@ Community bindings: `CommunityFlowEngineTckTest`, `CommunityFlowSchedulerTckTest
 End-to-end cross-engine recovery (DIST-302 closure, since 0.7 Sprint 6c) is covered by `CommunityCrossEngineChoreographyIT` in `exeris-kernel-community-kafka`: two `FlowEngine`s share a `JdbcFlowSnapshotStore` and a Kafka broker. Service A schedules a saga that PARKs (snapshot persisted); Service A's `EventEngine` is then closed so it cannot consume the wake event. Service B publishes the wake event over Kafka, its `FlowChoreographyBridge` finds nothing in B's in-memory parked-instance index, falls back to the shared snapshot store, restores the saga, and completes it locally — proving the snapshot fallback path runs end-to-end against a real durable store with real broker delivery.
 
 > **Gap:** `AbstractIdempotencyGuardTck` and `FlowZeroAllocTck` have no Community-tier concrete binding in `exeris-kernel-community/src/test/`. The `IdempotencyGuard` contract is covered only by unit-level tests; no community provider binding extends `AbstractIdempotencyGuardTck`. Tracking: see `docs/ROADMAP.md`.
+
+---
+
+## Stability
+
+This subsystem's SPI surface (`eu.exeris.kernel.spi.flow.*`) is classified **stable** in the
+[SPI Stability Matrix](../stability-matrix.md). See the matrix for the semver policy and TCK
+coverage status.

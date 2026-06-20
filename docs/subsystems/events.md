@@ -386,3 +386,11 @@ deterministically — regardless of how many subscribers fan out or how deep the
 with the Transactional Outbox, it scales from a single-node application to a
 globally distributed event-driven mesh without changing a single line of domain logic.
 
+---
+
+## Stability
+
+This subsystem's SPI surface (`eu.exeris.kernel.spi.events.*`) is classified **preview** in the
+[SPI Stability Matrix](../stability-matrix.md): the kafka-clients 4.x carry-over may touch the
+contract. See the matrix for the semver policy and TCK coverage status.
+

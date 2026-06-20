@@ -16,6 +16,7 @@ import eu.exeris.kernel.spi.bootstrap.Subsystem;
 import eu.exeris.kernel.spi.bootstrap.SubsystemProvider;
 import eu.exeris.kernel.spi.config.ConfigProvider;
 import eu.exeris.kernel.spi.config.KernelProfile;
+import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 import eu.exeris.kernel.spi.exceptions.SubsystemException;
 import eu.exeris.kernel.spi.exceptions.bootstrap.SubsystemCircularDependencyException;
@@ -285,6 +286,24 @@ public final class SubsystemOrchestrator {
     }
 
     /**
+     * Resolves the selected, topologically-sorted subsystem inventory <b>without initializing or
+     * starting any subsystem</b> — load registry → selector closure → Kahn sort only. Read-only
+     * introspection support for the {@code KernelDiagnostics} SPI (ADR-033): no
+     * {@code Subsystem.initialize()} is invoked, so no infrastructure (DB drivers, ports, native
+     * libraries) is touched. The returned subsystems report {@code isRunning() == false}, which is the
+     * honest answer for a static composition snapshot.
+     *
+     * @param config the active kernel config
+     * @return the selected subsystems in bootstrap (topological) order; never {@code null}
+     */
+    public List<Subsystem> resolveTopology(ConfigProvider config) throws BootstrapException {
+        Map<String, Subsystem> registry = SubsystemRegistryLoader.loadRegistry(config, classLoader, LOG);
+        List<Subsystem> selected = SubsystemRegistryLoader.applySelectorClosure(selector, registry);
+        sortAndAdoptTopologicalOrder(selected);
+        return List.copyOf(orderedSubsystems);
+    }
+
+    /**
      * Phase 2 — calls {@link Subsystem#start()} grouped by {@link BootstrapPhase}.
      * FOUNDATION starts sequentially; SERVICES and RUNTIME start in parallel via
      * {@link StructuredTaskScope}.
@@ -427,7 +446,11 @@ public final class SubsystemOrchestrator {
         // composedEnricher lambda has a valid Carrier to call .where() on.
         // The sentinel slot is never read by application code.
         ScopedValue<Boolean> seed = ScopedValue.newInstance();
-        ScopedValue.Carrier  base = ScopedValue.where(seed, Boolean.TRUE);
+        // Also bind the active subsystem inventory so the in-process KernelDiagnostics SPI (ADR-033)
+        // can describe the bootstrap DAG / composition / subsystem detail on its cold read path,
+        // without reaching into Core or treating the orchestrator's public methods as a shadow SPI.
+        ScopedValue.Carrier  base = ScopedValue.where(seed, Boolean.TRUE)
+                .where(KernelProviders.SUBSYSTEMS, List.copyOf(subsystems()));
         // Defensive check: return base when composedEnricher is null.
         if (composedEnricher == null) {
             return base;

@@ -144,6 +144,27 @@ public interface ConfigProvider {
      */
     void watch(String file, String key, Consumer<Object> callback);
 
+    /**
+     * Registers a key marked {@link Immutable} as a sealed trust anchor — the inverse of
+     * {@link #watch(String, String, Consumer)}.
+     *
+     * <p>Once guarded, any on-disk change to {@code (file, key)} observed by the watcher is
+     * <b>refused</b> (the field is never updated) and surfaced as a secret-safe structured
+     * event under {@link KernelErrorCodes#EX_CFG_1004}.
+     *
+     * <p>The default implementation is a no-op: Community-tier providers do not run a
+     * hot-reload watcher, so an {@code @Immutable} key is already effectively sealed.
+     * The kernel's registry-backed provider overrides this to record the guard so the
+     * Core {@code WatchService} driver can enforce the refusal.
+     *
+     * @param file observed filename (relative to config directory); {@code null} = any
+     * @param key  dot-path key to seal (e.g., {@code "security.jwks.uri"})
+     * @see Immutable
+     */
+    default void guardImmutable(String file, String key) {
+        // Default: no-op — no hot-reload watcher, key is already sealed.
+    }
+
     // =========================================================================
     // Provider metadata
     // =========================================================================
@@ -351,11 +372,21 @@ public interface ConfigProvider {
     /**
      * Telemetry and observability settings.
      *
+     * <p><b>Reserved knobs.</b> {@code tracingEnabled} and {@code region} are <em>dormant</em>:
+     * they are parsed and carried in config, but the kernel has no distributed-tracing /
+     * OTLP emission path yet — there is no {@code TraceContext} carrier, no OTLP sink, and no
+     * span emission in SPI/Core/Community. They are forward placeholders for the kernel tracing
+     * milestone tracked in {@code docs/ROADMAP.md} §"Telemetry: OTLP Metrics Export and
+     * Distributed Tracing" (targeted ~Sprint 0.12 / v0.12 of the consolidated 1.0 GA roadmap).
+     * The only telemetry export shipping today is the Prometheus pull sink (v0.7).
+     *
      * @param jfrEnabled     whether JFR recording is active
-     * @param metricsEnabled whether Prometheus metrics endpoint is active
-     * @param tracingEnabled whether distributed tracing (OTEL) is active
+     * @param metricsEnabled whether the Prometheus metrics endpoint is active
+     * @param tracingEnabled reserved — distributed tracing (OTLP) is not implemented yet; parsed
+     *                       and carried but not acted upon (see the reserved-knobs note above)
      * @param nodeId         unique identifier for this kernel instance
-     * @param region         deployment region for distributed tracing
+     * @param region         reserved — deployment region intended for distributed tracing labels
+     *                       (dormant until the tracing milestone; see the reserved-knobs note above)
      */
     @ValueCandidate
     record TelemetrySettings(

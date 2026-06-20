@@ -77,8 +77,17 @@ jobs:
         # floors live in each module's <jacoco.line.minimum> property
         # (ratcheted ~5-9 pp below current baseline).
         run: |
+          # -Dexeris.tck.transport.drainTimeoutSeconds: the transport carrier-pinning
+          # TCK teardown drains queued native-TCP writes within a budget (default 5s,
+          # tuned for fast local dev). The 2-vCPU GitHub runner is slower/contended, so
+          # the multi-reactor pinning teardowns (e.g. CommunityTransportCarrierPinning*)
+          # intermittently exceed 5s on cleanup — a CI-load artifact, not a pinning
+          # defect. Raise the budget for CI only; the local default stays tight so it
+          # still catches genuine drain regressions. (Mechanism documented in the
+          # Transport Stress Gate notes below.)
           mvn clean verify -B -e \
-            -P coverage
+            -P coverage \
+            -Dexeris.tck.transport.drainTimeoutSeconds=30
 
       - name: Upload TCK JFR recordings
         if: always() && (github.event_name == 'push' || github.event_name == 'schedule') && github.ref == 'refs/heads/main'
@@ -234,6 +243,70 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+  recovery-continuity-gate:
+    # v0.9 Sprint 7: operational-continuity suite — @Tag("continuity") tests in
+    # exeris-kernel-community + exeris-kernel-community-kafka. The default `Build & TCK
+    # Verification` job excludes the continuity group (see <excludedGroups> in both poms)
+    # because these are Testcontainers-backed (Postgres/Kafka) restart-recovery and
+    # degraded-mode integration tests, too heavy for the default unit pass. This gate
+    # overrides -DincludedGroups=continuity and clears -DexcludedGroups= so Surefire picks
+    # them up — mirrors persistence-rls-gate / kafka-integration-gate exactly.
+    #
+    # Chains after kafka-integration-gate (sequencing isolates each gate's scheduler
+    # pressure): build-and-verify → persistence-rls-gate → kafka-integration-gate →
+    # recovery-continuity-gate → transport-stress-gate.
+    name: Recovery Continuity Gate
+    runs-on: ubuntu-latest
+    needs: kafka-integration-gate
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Cache JDK tarball
+        id: jdk-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/jdk.tar.gz
+          key: ${{ env.JDK_CACHE_KEY }}
+
+      - name: Fetch JDK
+        if: steps.jdk-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          wget -q -O ${{ runner.temp }}/jdk.tar.gz ${{ env.JDK_URL }}
+          echo "${{ env.JDK_SHA256 }}  ${{ runner.temp }}/jdk.tar.gz" | sha256sum -c
+
+      - name: Inject JDK into Runner
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'jdkfile'
+          jdkFile: ${{ runner.temp }}/jdk.tar.gz
+          java-version: ${{ env.JDK_VER }}
+          architecture: x64
+          cache: maven
+
+      - name: Run recovery/continuity gate
+        run: |
+          mvn -pl exeris-kernel-community,exeris-kernel-community-kafka -am install -DskipTests -B -e
+          mvn -pl exeris-kernel-community,exeris-kernel-community-kafka \
+            -DincludedGroups=continuity \
+            -DexcludedGroups= \
+            test -B -e
+
+      - name: Upload continuity JFR recordings
+        if: always() && (github.event_name == 'push' || github.event_name == 'schedule') && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: jfr-continuity-${{ github.run_number }}
+          path: |
+            exeris-kernel-community/target/*.jfr
+            exeris-kernel-community-kafka/target/*.jfr
+          if-no-files-found: warn
+          retention-days: 14
+
   transport-stress-gate:
     # TCK-064 (v0.8 Sprint 0): dedicated job for @Tag("stress") transport tests.
     # The default `Build & TCK Verification` job excludes the stress group because the
@@ -250,7 +323,7 @@ jobs:
     # gate's scheduler pressure — no two stress-prone jobs run simultaneously.
     name: Transport Stress Gate
     runs-on: ubuntu-latest
-    needs: kafka-integration-gate
+    needs: recovery-continuity-gate
     permissions:
       contents: read
 
@@ -291,11 +364,19 @@ jobs:
         # the stress + multi-reactor variants pass at the default carrier pool with the
         # strict drain budget. The MultiReactor{2,4} variants stay @Tag("stress") and
         # run here; the single-reactor baseline runs in build-and-verify.
+        #
+        # v0.9 Sprint 4c: under peak 2-vCPU scheduler pressure the MultiReactor4
+        # teardown drain still occasionally exceeds the strict 5 s default (the reactor
+        # key release that ends hasPendingData() queues behind the test thread). The
+        # configurable drain budget is widened to 30 s here to match build-and-verify —
+        # the contract stays strict locally (>= 4 cores), CI gets the constrained-runner
+        # window. This is a runner-pressure accommodation, not a relaxed contract.
         run: |
           mvn -pl exeris-kernel-community -am install -DskipTests -B -e
           mvn -pl exeris-kernel-community \
             -DincludedGroups=stress \
             -DexcludedGroups= \
+            -Dexeris.tck.transport.drainTimeoutSeconds=30 \
             test -B -e
 
       - name: Upload transport stress JFR recordings
@@ -304,6 +385,178 @@ jobs:
         with:
           name: jfr-transport-stress-${{ github.run_number }}
           path: exeris-kernel-community/target/*.jfr
+          if-no-files-found: warn
+          retention-days: 14
+
+  tls-openssl-matrix:
+    # v0.9 Sprint 4b (OpenSSL 4.0 migration): proves the crypto/TLS stack against BOTH
+    # supported OpenSSL majors. CoreOpenSslLoader now binds SSL_CTX_new_ex unconditionally
+    # and accepts the band 3.x..4.x; this matrix pins each major from a source build and
+    # forces the TLS tests to HARD-RUN against it (no assumeTrue skip — the pinned lib is
+    # present, so a skip here would be a silent gap).
+    #
+    # The env overrides EXERIS_OPENSSL_SSL_PATH / EXERIS_OPENSSL_CRYPTO_PATH bypass the
+    # candidate ordering for deterministic per-major selection. N = SONAME major (3 or 4).
+    #
+    # CACHE KEY (the #1 false-green risk): the key embeds the exact OpenSSL version AND a
+    # hash of the literal configure flags. A stale cache serving an old 3.x to the 4.0 entry
+    # would make the 4.0 job pass against 3.x — a false green. Bumping the version or the
+    # flags invalidates the cache automatically.
+    name: TLS OpenSSL ${{ matrix.openssl_version }}
+    runs-on: ubuntu-latest
+    needs: build-and-verify
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - openssl_version: "3.5.6"
+            openssl_tag: "openssl-3.5.6"
+            soname_major: "3"
+          - openssl_version: "4.0.0"
+            openssl_tag: "openssl-4.0.0"
+            soname_major: "4"
+
+    env:
+      # Literal configure flags — also fed into the cache key hash so a flag change busts it.
+      OPENSSL_CONFIGURE_FLAGS: "no-tests no-docs --openssldir=/opt/openssl-${{ matrix.openssl_version }}/ssl"
+      OPENSSL_PREFIX: "/opt/openssl-${{ matrix.openssl_version }}"
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Cache JDK tarball
+        id: jdk-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/jdk.tar.gz
+          key: ${{ env.JDK_CACHE_KEY }}
+
+      - name: Fetch JDK
+        if: steps.jdk-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          wget -q -O ${{ runner.temp }}/jdk.tar.gz ${{ env.JDK_URL }}
+          echo "${{ env.JDK_SHA256 }}  ${{ runner.temp }}/jdk.tar.gz" | sha256sum -c
+
+      - name: Inject JDK into Runner
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'jdkfile'
+          jdkFile: ${{ runner.temp }}/jdk.tar.gz
+          java-version: ${{ env.JDK_VER }}
+          architecture: x64
+          cache: maven
+
+      - name: Cache OpenSSL ${{ matrix.openssl_version }} build
+        id: openssl-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.OPENSSL_PREFIX }}
+          # Key embeds the EXACT version + a hash of the literal configure flags string.
+          # A stale 3.x cache cannot satisfy the 4.0.0 entry: the version differs, so the
+          # key differs, so the cache misses and a fresh 4.0.0 is built.
+          key: openssl-${{ matrix.openssl_version }}-${{ hashFiles('.github/workflows/maven.yml') }}-v1-${{ env.OPENSSL_CONFIGURE_FLAGS }}
+
+      - name: Build OpenSSL ${{ matrix.openssl_version }} from source
+        if: steps.openssl-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch "${{ matrix.openssl_tag }}" \
+            https://github.com/openssl/openssl openssl-src
+          cd openssl-src
+          ./Configure --prefix="${{ env.OPENSSL_PREFIX }}" --libdir=lib64 \
+            ${{ env.OPENSSL_CONFIGURE_FLAGS }}
+          make -j"$(nproc)"
+          make install_sw
+          # Fail-fast sanity: confirm the SONAME major actually built matches the matrix.
+          test -f "${{ env.OPENSSL_PREFIX }}/lib64/libssl.so.${{ matrix.soname_major }}"
+          test -f "${{ env.OPENSSL_PREFIX }}/lib64/libcrypto.so.${{ matrix.soname_major }}"
+
+      - name: Verify pinned OpenSSL SONAME
+        run: |
+          set -euo pipefail
+          ls -l "${{ env.OPENSSL_PREFIX }}/lib64/libssl.so.${{ matrix.soname_major }}"
+          ls -l "${{ env.OPENSSL_PREFIX }}/lib64/libcrypto.so.${{ matrix.soname_major }}"
+
+      - name: Install kernel artifacts for OpenSSL ${{ matrix.openssl_version }}
+        run: |
+          mvn -pl exeris-kernel-core,exeris-kernel-community -am install -DskipTests -B -e
+
+      # ---------------------------------------------------------------------------
+      # MERGE-GATE INTEGRITY NOTE (v0.9 Sprint 4b hardening, finding #1):
+      # The crypto/TLS selection is SPLIT into three explicit invocations rather than
+      # one shared `-DincludedGroups=integration` call. That single-call form only
+      # worked by accident: `<groups>${includedGroups}</groups>` is wired ONLY in
+      # exeris-kernel-community/pom.xml (+ kafka), NOT in core/parent/root. So in core
+      # the flag was a no-op (the untagged Core* guards ran via -Dtest), while in
+      # community only @Tag("integration") ran. If someone later standardized surefire
+      # by adding <groups>${includedGroups}</groups> to parent/core, the flag would
+      # suddenly EXCLUDE every untagged core test — including the
+      # CoreOpenSslPinnedVersionAssertionTest 4.0-vs-fallback-3.x false-green guard.
+      # The split removes that dependency on the undeclared pom asymmetry: the core
+      # guards run as plain Surefire selection (no group flags), the loopback IT runs
+      # via Failsafe (verify phase), and the community @Tag("integration") loopback
+      # runs with the group flag scoped to the one module that honors it.
+      # ---------------------------------------------------------------------------
+      - name: Run core crypto/TLS guards against OpenSSL ${{ matrix.openssl_version }}
+        # HARD-RUN: the pinned lib is present and selected via env override, so the
+        # assumeTrue guards in these suites do not trigger — any skip would be a real gap.
+        # These are UNTAGGED Surefire tests selected purely by -Dtest (NO group flags):
+        # core Surefire deliberately does NOT honor includedGroups (see merge-gate note).
+        #
+        # -Dexeris.test.expectedOpenSslMajor pins the SONAME major so
+        # CoreOpenSslPinnedVersionAssertionTest hard-proves the JVM actually bound the intended
+        # major. Without it, an env-path miss would silently fall back to the host's system 3.x
+        # and the 4.0 matrix entry would false-green. The test SKIPS when the property is unset
+        # (local dev), so it is harmless outside this matrix.
+        env:
+          EXERIS_OPENSSL_SSL_PATH: "${{ env.OPENSSL_PREFIX }}/lib64/libssl.so.${{ matrix.soname_major }}"
+          EXERIS_OPENSSL_CRYPTO_PATH: "${{ env.OPENSSL_PREFIX }}/lib64/libcrypto.so.${{ matrix.soname_major }}"
+        run: |
+          mvn -pl exeris-kernel-core \
+            -Dexeris.test.expectedOpenSslMajor=${{ matrix.soname_major }} \
+            -Dtest='CoreOpenSslRuntimeTest,CoreOpenSslVersionGateTest,CoreOpenSslPinnedVersionAssertionTest,OpenSslLoadEventTest,CoreOffHeapTlsEngineTckTest,CoreOffHeapTlsEngineZeroAllocTckTest' \
+            test -B -e
+
+      - name: Run core TLS loopback IT against OpenSSL ${{ matrix.openssl_version }}
+        # Belt-and-braces end-to-end proof (finding #2): the loopback IT is a Failsafe
+        # test (**/*IT.java, integration-test/verify phase). It was previously listed
+        # under `-Dtest` on a `test`-phase invocation, so it NEVER ran. Run it explicitly
+        # via the verify phase + -Dit.test so the full SSL_accept/SSL_connect round-trip
+        # is exercised against each pinned major. The assumeTrue OpenSSL guard does not
+        # skip here because the pinned lib is present via the env override.
+        env:
+          EXERIS_OPENSSL_SSL_PATH: "${{ env.OPENSSL_PREFIX }}/lib64/libssl.so.${{ matrix.soname_major }}"
+          EXERIS_OPENSSL_CRYPTO_PATH: "${{ env.OPENSSL_PREFIX }}/lib64/libcrypto.so.${{ matrix.soname_major }}"
+        run: |
+          mvn -pl exeris-kernel-core \
+            -Dsurefire.skip=true \
+            -Dit.test=OffHeapTlsEngineLoopbackIT \
+            verify -B -e
+
+      - name: Run community TLS loopback integration against OpenSSL ${{ matrix.openssl_version }}
+        # Community @Tag("integration") loopback — the group flag is scoped to the one
+        # module whose pom wires <groups>${includedGroups}</groups>, so it behaves as
+        # intended here (unlike the cross-module single-call form).
+        env:
+          EXERIS_OPENSSL_SSL_PATH: "${{ env.OPENSSL_PREFIX }}/lib64/libssl.so.${{ matrix.soname_major }}"
+          EXERIS_OPENSSL_CRYPTO_PATH: "${{ env.OPENSSL_PREFIX }}/lib64/libcrypto.so.${{ matrix.soname_major }}"
+        run: |
+          mvn -pl exeris-kernel-community \
+            -DincludedGroups=integration \
+            -DexcludedGroups= \
+            -Dtest='CommunityTlsEngineLoopbackIntegrationTest' \
+            test -B -e
+
+      - name: Upload OpenSSL ${{ matrix.openssl_version }} TLS JFR recordings
+        if: always() && (github.event_name == 'push' || github.event_name == 'schedule') && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: jfr-tls-openssl-${{ matrix.openssl_version }}-${{ github.run_number }}
+          path: exeris-kernel-*/target/*.jfr
           if-no-files-found: warn
           retention-days: 14
 

@@ -240,11 +240,20 @@ When PAQS sheds a stream or the Kernel initiates graceful shutdown:
 | **PAQS load shed**     | `FIN` (graceful close) — client receives `HTTP 503` |
 | **Graceful shutdown**  | `FIN` after drain timeout — no forced `RST`         |
 | **Hard shutdown timeout** | `RST` after 60 s hard timeout                   |
+| **`TransportStream.reset(long)`** | `RST` (abortive) — `SO_LINGER 0` then close; queued writes abandoned (no drain wait) |
+| **Unrecoverable outbound-write failure** | `RST` (abortive) — queued writes abandoned so teardown cannot hang |
 
 > **Why `FIN` not `RST` for load shedding?** `RST` causes immediate connection teardown on the client
 > side, which may interrupt in-flight retries and force the client to reconnect. `FIN` allows the client
 > to receive the `HTTP 503` response body, which is machine-readable and enables intelligent backoff.
 > `RST` is reserved for hard timeout scenarios only.
+>
+> **`reset(long)` vs `close()`:** `close()` is a graceful end-of-stream (`FIN`, drains queued writes);
+> `reset(long)` is the deliberate abortive primitive (`RST`, abandons queued writes) — the SPI's
+> transport-agnostic stream abort (an Enterprise QUIC binding maps it to `RESET_STREAM`). A failed
+> outbound write self-aborts via the same path. **Telemetry follow-up:** a secret-safe, single-phase
+> `StreamLifecycleEvent` for the reset transition is deferred to the security/transport
+> validation-stage JFR pass (Phase 4 N1) — the reset call sites are the intended emission points.
 
 ---
 
@@ -255,8 +264,8 @@ constraint, not an oversight.
 
 | Protocol     | Status      | Rationale                                                                                              |
 |:-------------|:------------|:-------------------------------------------------------------------------------------------------------|
-| **WebSocket** | 🚧 Planned TRL-5 | Requires long-lived, upgradeable TCP connections. Community TCP carrier needs HTTP Upgrade handling. Will be implemented as a `StreamHandler` variant. |
-| **SSE**       | 🚧 Planned TRL-5 | Requires one-directional streaming via HTTP/1.1 chunked transfer or HTTP/2 push. Follows WebSocket implementation. |
+| **SSE**       | 🚧 Planned v0.10/v0.11 | One-directional server push via HTTP/1.1 chunked transfer (a thin framing layer over the existing `Http1ChunkedEncoder`) or HTTP/2. **SSE-first** per [RFC-2026-06-18](../rfc/RFC-2026-06-18-http-streaming-spi.md) — the minimal server-push primitive; **precedes** WebSocket. |
+| **WebSocket** | 🚧 Planned (after SSE) | Full duplex; requires an HTTP Upgrade (H1) / Extended CONNECT (H2 RFC 8441) handshake + frame protocol. Deferred to a later, separately-justified decision once a bidirectional use case is proven (see RFC-2026-06-18). |
 | **gRPC streaming** | 🚧 Planned TRL-5 | Modelled as HTTP/2 streams — follows transport carrier maturity. |
 
 For real-time push requirements at TRL-3, use the **Events subsystem (L3)** with a Kafka/Redpanda
@@ -367,3 +376,11 @@ Tracking: revisit alongside any io_uring / FFM-native carrier work (currently pl
 The Transport subsystem is the high-performance gateway of the Exeris Kernel. With a Panama FFM TCP carrier and PAQS-enforced shedding, it delivers a zero-object-churn ingress path on every platform. The PAQS Scheduler makes this deterministic under load — shed decisions
 are made at the network edge in O(1) time, before a single byte of unauthorized or low-priority traffic
 consumes heap, CPU, or a Virtual Thread.
+
+---
+
+## Stability
+
+This subsystem's SPI surface (`eu.exeris.kernel.spi.transport.*`) is classified **stable** in the
+[SPI Stability Matrix](../stability-matrix.md). See the matrix for the semver policy and TCK
+coverage status.

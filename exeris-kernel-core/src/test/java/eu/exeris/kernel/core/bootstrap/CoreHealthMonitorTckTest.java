@@ -51,6 +51,11 @@ class CoreHealthMonitorTckTest extends AbstractHealthMonitorTck {
             }
 
             @Override
+            public void markSubsystemDegraded(String subsystem) {
+                monitor.markSubsystemState(subsystem, KernelHealthMonitor.SubsystemState.DEGRADED);
+            }
+
+            @Override
             public boolean readinessUp() {
                 return monitor.readiness().healthy();
             }
@@ -58,6 +63,11 @@ class CoreHealthMonitorTckTest extends AbstractHealthMonitorTck {
             @Override
             public boolean livenessUp() {
                 return monitor.liveness().healthy();
+            }
+
+            @Override
+            public String readinessStatus() {
+                return monitor.readiness().status();
             }
         };
     }

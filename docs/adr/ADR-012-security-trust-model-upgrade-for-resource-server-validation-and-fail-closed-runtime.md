@@ -5,6 +5,7 @@
 | **Status**     | **ACCEPTED**                                                                           |
 | **Deciders**   | Arkadiusz Przychocki                                                                   |
 | **Date**       | 2026-03-31                                                                             |
+| **Amended**    | 2026-06-10 — §4a/§9: incomplete/unrecognized/malformed isolation claim is now terminal-deny, not SHARED-downgrade (closes the S-P0-07 fail-OPEN storage-isolation finding) |
 | **Driven By**  | ADR-007, performance contract, subsystem contracts security/transport/persistence      |
 | **Compliance** | [Strategic Pillar: Secure Fail-Closed Resource-Server Trust](../whitepaper.md)        |
 
@@ -34,10 +35,14 @@
 ## 4a) Isolation Strategy Claim Contract
 - `KernelIsolationClaims` is the normative definition of JWT claim names for storage isolation routing; SecurityProvider implementations MUST read `KernelIsolationClaims.ISOLATION_STRATEGY`, `SCHEMA_NAME`, and `DATASOURCE_KEY` after cryptographic verification succeeds.
 - `SecurityProvider.authenticate()` MUST produce the correct `ImmutableStorageContext` variant based on the claim value:
-  - `SHARED` or absent/unrecognized → `ImmutableStorageContext.shared(tenantId)`
+  - `SHARED`, or `ISOLATION_STRATEGY` absent/blank → `ImmutableStorageContext.shared(tenantId)`
   - `SEPARATED_SCHEMA` + `x-exeris-isolation-schema` present → `ImmutableStorageContext.separatedSchema(tenantId, schemaName)`
   - `DEDICATED` + `x-exeris-isolation-datasource` present → `ImmutableStorageContext.dedicated(tenantId, dataSourceKey)`
-- Fail-closed rule: if `ISOLATION_STRATEGY` is absent, unrecognized, or the required accompanying claim (`SCHEMA_NAME` / `DATASOURCE_KEY`) is missing → produce `SHARED`; this is the deterministic-deny analog for the storage boundary.
+- **Fail-closed rule (amended 2026-06-10, S-P0-07):** the *only* permissive fall-through is a genuinely **absent/blank** `ISOLATION_STRATEGY` (no isolation intent expressed) → `SHARED` keyed on the subject. Any **declared** strategy the kernel cannot honour is a **terminal deny** (`SecurityAuthenticationException`, `EX-SEC-2002`), never a downgrade:
+  - declared `SEPARATED_SCHEMA`/`DEDICATED` with a missing / blank / wrong-typed required sub-claim → **deny**
+  - an unrecognized strategy value → **deny**
+  - a wrong-typed `ISOLATION_STRATEGY` claim → **deny**
+  - Rationale: producing `SHARED` for a declared-but-broken strategy is **fail-OPEN** — it silently downgrades the tenant to the weakest isolation tier and grants a session on malformed/injected security input. Deny reasons are secret-safe (reason code only, never the claim value). The previous "absent, unrecognized, or missing-sub-claim → SHARED" rule conflated absence (legitimate default) with declared-but-broken (must deny) and is superseded.
 - `StorageContextBridge` in Core is SHARED-only by design and MUST NOT be used when `SEPARATED_SCHEMA` or `DEDICATED` strategy is required; the bridge is a fallback for system/anonymous paths only.
 
 ## 5) Fail-Closed Lifecycle Contract
@@ -71,7 +76,7 @@
 - Community bindings must pass the abstract suites for all resource-server contract scenarios.
 - Enterprise bindings must pass the abstract suites for all resource-server contract scenarios.
 - Contract changes are incomplete until abstract suites and both binding layers validate observable behavior.
-- `AbstractSecurityProviderTck.IsolationStrategyContract` codifies all five isolation claim resolution paths (SHARED default, SEPARATED_SCHEMA, DEDICATED, fail-closed on missing sub-claim, fail-closed on unrecognized strategy value).
+- `AbstractSecurityProviderTck.IsolationStrategyContract` codifies the isolation claim resolution paths: SHARED default (absent claim), explicit SEPARATED_SCHEMA / DEDICATED happy paths, and **terminal deny (`EX-SEC-2002`)** on a missing sub-claim, on an unrecognized strategy value, and on a wrong-typed claim (amended 2026-06-10 — these were previously fail-closed-to-SHARED downgrades; see §4a).
 - `AbstractPersistenceEngineTck.DedicatedRoutingContract` codifies DEDICATED pool routing, EX-PERS-5006 on unknown key, and RLS interceptor bypass for DEDICATED strategy.
 
 ## 10) Implemented vs Planned (mandatory anti-drift block)

@@ -399,6 +399,20 @@ public final class KernelErrorCodes {
      */
     public static final String EX_HTTP_4009 = "EX-HTTP-4009";
 
+    /**
+     * HTTP/2 Rapid Reset flood defense (CVE-2023-44487). A peer opened-then-reset streams past
+     * the per-connection rapid-reset budget without performing matching work; the connection is
+     * terminated with {@code GOAWAY(ENHANCE_YOUR_CALM)}. Secret-safe — connection-scoped counts
+     * only, never request content.
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code int} resetCount (net inbound resets at trip time)</li>
+     *   <li>index 1 – {@code int} lastProcessedStreamId</li>
+     * </ul>
+     */
+    public static final String EX_HTTP_4010 = "EX-HTTP-4010";
+
     // -----------------------------------------------------------------------
     // EX-PERS – Persistence subsystem
     // -----------------------------------------------------------------------
@@ -787,6 +801,20 @@ public final class KernelErrorCodes {
      */
     public static final String EX_CFG_1003 = "EX-CFG-1003";
 
+    /**
+     * Immutable config key reload refused: the {@code NIO WatchService} watcher observed
+     * an on-disk change to a key marked {@code @Immutable} (a sealed trust anchor) and
+     * refused to apply it. The previous, sealed value remains authoritative — no field is
+     * mutated. This is a security-relevant audit signal, not a runtime failure.
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} filename (relative path under the config directory)</li>
+     *   <li>index 1 – {@code String} key      (dot-path key of the sealed field; never the value)</li>
+     * </ul>
+     */
+    public static final String EX_CFG_1004 = "EX-CFG-1004";
+
     // -----------------------------------------------------------------------
     // EX-RUN – Runtime / Scheduler
     // -----------------------------------------------------------------------
@@ -802,6 +830,31 @@ public final class KernelErrorCodes {
      * </ul>
      */
     public static final String EX_RUN_3002 = "EX-RUN-3002";
+
+    // -----------------------------------------------------------------------
+    // EX-DIAG – KernelDiagnostics SPI introspection audit (ADR-033)
+    // -----------------------------------------------------------------------
+    //
+    // INFO-level audit codes (NOT exceptions): each out-of-process KernelDiagnostics
+    // call emits one JFR event so operators can audit who introspected the kernel.
+    // Cold path — emission allocation is acceptable (ADR-033 Obligation 2).
+
+    /** {@link eu.exeris.kernel.spi.diagnostics.KernelDiagnostics#listProviders()} was invoked. */
+    public static final String EX_DIAG_1001 = "EX-DIAG-1001";
+
+    // EX-DIAG-1002 retired (pre-1.0): the listCapabilities() method it audited was removed — it
+    // restated getBootstrapDag() with each subsystem providing only itself and could not deliver the
+    // ADR-024 composition graph from runtime (that lives build-time/platform-side). The code is left
+    // as a reserved gap rather than renumbered so 1003..1005 stay stable.
+
+    /** {@link eu.exeris.kernel.spi.diagnostics.KernelDiagnostics#getBootstrapDag()} was invoked. */
+    public static final String EX_DIAG_1003 = "EX-DIAG-1003";
+
+    /** {@link eu.exeris.kernel.spi.diagnostics.KernelDiagnostics#describeSubsystem(String)} was invoked. */
+    public static final String EX_DIAG_1004 = "EX-DIAG-1004";
+
+    /** {@link eu.exeris.kernel.spi.diagnostics.KernelDiagnostics#getJvmErgonomics()} was invoked. */
+    public static final String EX_DIAG_1005 = "EX-DIAG-1005";
 
     // -----------------------------------------------------------------------
     // Constructor – utility class, no instantiation

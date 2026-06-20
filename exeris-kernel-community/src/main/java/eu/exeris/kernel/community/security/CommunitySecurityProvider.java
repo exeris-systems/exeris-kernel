@@ -50,6 +50,17 @@ public final class CommunitySecurityProvider implements SecurityProvider {
         this.jwksValidator = Objects.requireNonNull(jwksValidator, "jwksValidator must not be null");
     }
 
+    /**
+     * Opt-in factory wiring a rotating key set. Rotation is applied through the injected
+     * {@link JwksKeyResolver} (typically a {@link CommunityRotatingKeySet}); the verify
+     * pipeline (signature/issuer/audience/expiry/storage-context) is unchanged.
+     */
+    /* default */ static CommunitySecurityProvider withKeyResolver(
+            JwksKeyResolver keyResolver, String expectedIssuer, String expectedAudience) {
+        return new CommunitySecurityProvider(
+                new CommunityJwksValidator(keyResolver, expectedIssuer, expectedAudience));
+    }
+
     @Override
     public String providerId() {
         return PROVIDER_ID;

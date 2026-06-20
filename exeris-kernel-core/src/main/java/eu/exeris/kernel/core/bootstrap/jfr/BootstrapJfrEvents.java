@@ -117,6 +117,32 @@ public final class BootstrapJfrEvents {
     }
 
     // =========================================================================
+    // Event: SubsystemHealthTransition
+    // =========================================================================
+
+    /**
+     * Emitted on a post-boot subsystem health transition involving {@code DEGRADED}
+     * ({@code RUNNING ↔ DEGRADED}). Gives SREs a JFR trail for a flapping dependency that the
+     * boot lifecycle events do not cover. Cold path (the health watcher's reconcile pass, not the
+     * probe hot path), single-phase commit.
+     */
+    @Name("eu.exeris.kernel.bootstrap.SubsystemHealthTransition")
+    @Label("Subsystem Health Transition")
+    @Category({"Exeris Kernel", "Bootstrap"})
+    @StackTrace(false)
+    public static final class SubsystemHealthTransitionEvent extends Event {
+
+        @Label("Subsystem Name")
+        public String subsystemName;
+
+        @Label("From State")
+        public String fromState;
+
+        @Label("To State")
+        public String toState;
+    }
+
+    // =========================================================================
     // Event: KernelBootReady
     // =========================================================================
 
@@ -293,6 +319,27 @@ public final class BootstrapJfrEvents {
         }
         event.subsystemName = name;
         event.durationMs    = (System.nanoTime() - startNanos) / 1_000_000;
+        event.commit();
+    }
+
+    /**
+     * Records a post-boot subsystem health transition involving {@code DEGRADED}.
+     *
+     * @param name      subsystem name
+     * @param fromState previous {@code SubsystemState} name
+     * @param toState   new {@code SubsystemState} name
+     */
+    public static void emitHealthTransition(String name, String fromState, String toState) {
+        if (!FlightRecorder.isInitialized()) {
+            return;
+        }
+        var event = new SubsystemHealthTransitionEvent();
+        if (!event.isEnabled()) {
+            return;
+        }
+        event.subsystemName = name;
+        event.fromState     = fromState;
+        event.toState       = toState;
         event.commit();
     }
 

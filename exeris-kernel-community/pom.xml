@@ -7,7 +7,7 @@
     <parent>
         <groupId>eu.exeris</groupId>
         <artifactId>exeris-kernel-parent</artifactId>
-        <version>0.8.1</version>
+        <version>0.9.0</version>
         <relativePath>../exeris-kernel-parent/pom.xml</relativePath>
     </parent>
     <artifactId>exeris-kernel-community</artifactId>
@@ -41,7 +41,7 @@
             own fork because the scarce-carrier VT-scheduler args would otherwise distort
             every other test in the default execution.
         -->
-        <excludedGroups>flamegraph,integration,stress,transport-pinning-recv</excludedGroups>
+        <excludedGroups>flamegraph,integration,stress,transport-pinning-recv,continuity</excludedGroups>
 
         <!--
             v0.8 Sprint 6 (Coverage C-P0-01): LINE coverage floor for the Community bundle.
@@ -52,6 +52,9 @@
             unit-suite regressions.
         -->
         <jacoco.line.minimum>0.55</jacoco.line.minimum>
+        <!-- BRANCH baseline 2026-06-10: 57.3% (1940/3385), unit-only (IT not merged).
+             Ratchet ~7 pp below. -->
+        <jacoco.branch.minimum>0.50</jacoco.branch.minimum>
     </properties>
 
     <dependencies>

@@ -66,6 +66,13 @@ public final class NativeTcpCarrier implements TransportEngine {
     private static final String ENGINE_NAME = "CommunityNativeTcpCarrier";
     private static final int MIN_LISTENER_BACKLOG = 64;
     private static final int MAX_LISTENER_BACKLOG = 1_024;
+    // Advisory TCP reset code for an abortive teardown driven by a reactor dispatch fault
+    // (see closeKeyStream). The peer observes a RST; the value carries no application semantics.
+    private static final long DISPATCH_FAULT_RESET_CODE = 0L;
+    // Fairness cap on TLS records drained per readable event (see readIngress / PERF-062 in
+    // docs/subsystems/transport.md). Overridable for field tuning, mirroring
+    // exeris.transport.queueBackpressureEnabled.
+    private static final int MAX_TLS_RECORDS_PER_READ = readMaxTlsRecordsPerRead();
 
     private final TransportConfig config;
     private final MemoryAllocator allocator;
@@ -337,6 +344,27 @@ public final class NativeTcpCarrier implements TransportEngine {
         return Math.clamp(maxConnections, MIN_LISTENER_BACKLOG, MAX_LISTENER_BACKLOG);
     }
 
+    private static int readMaxTlsRecordsPerRead() {
+        String raw = System.getProperty("exeris.transport.maxTlsRecordsPerRead", "32");
+        try {
+            int parsed = Integer.parseInt(raw);
+            // A non-positive cap would silently disable per-readable record draining (the drain loop
+            // never iterates), starving every connection on this carrier — reject it like a malformed
+            // value rather than honouring the foot-gun.
+            if (parsed <= 0) {
+                LOG.log(System.Logger.Level.WARNING,
+                        "exeris.transport.maxTlsRecordsPerRead must be positive (was \"{0}\"); using default 32", raw);
+                return 32;
+            }
+            return parsed;
+        } catch (NumberFormatException _) {
+            // A malformed tuning flag must not fail class init — fall back to the documented default.
+            LOG.log(System.Logger.Level.WARNING,
+                    "Invalid exeris.transport.maxTlsRecordsPerRead=\"{0}\"; using default 32", raw);
+            return 32;
+        }
+    }
+
     private void initPaqs() {
         WatermarkManager watermarkManager = new WatermarkManager(allocator);
         ResourceArbiter arbiter = new ResourceArbiter(watermarkManager);
@@ -437,6 +465,23 @@ public final class NativeTcpCarrier implements TransportEngine {
     }
 
     /* default */ void closeKeyStream(SelectionKey key) {
+        // Reached only from the reactor select-loop catch(RuntimeException) (NativeTcpReactor), i.e.
+        // on the reactor thread, after a per-key dispatch (read-ingress or flush) faulted — most
+        // often an unwrap-on-closed TlsDecryptException once the stream's TLS engine is already
+        // closed. The connection is unrecoverable, so tear it down ABORTIVELY:
+        //  1. cancel the key synchronously — removes it from this reactor's selector so the
+        //     level-triggered dead channel cannot re-fire (read OR write) and busy-spin the reactor
+        //     while teardown completes. Direct cancel honours the single-consumer key protocol
+        //     (this runs on the reactor thread); a graceful interest-narrow does not suffice because
+        //     a closed-engine stream's queued egress is undrainable and would keep OP_WRITE armed.
+        //  2. reset() rather than close(): reset abandons the undrainable queue and sets
+        //     resetRequested — the designed escape hatch (issue #180) that lets finishCloseIfDrained
+        //     bypass its drain gate, finalize, and deregister the channel, including under
+        //     slot-owner deferral via the deferred-abort wake. A graceful close() would defer
+        //     forever here.
+        if (key.isValid()) {
+            key.cancel();
+        }
         if (!(key.channel() instanceof SocketChannel channel)) {
             return;
         }
@@ -445,7 +490,7 @@ public final class NativeTcpCarrier implements TransportEngine {
             return;
         }
         stream.markRemoteClosed();
-        stream.close();
+        stream.reset(DISPATCH_FAULT_RESET_CODE);
     }
 
     private void acceptPendingConnections() throws IOException {
@@ -474,7 +519,7 @@ public final class NativeTcpCarrier implements TransportEngine {
                 NativeTcpStream stream = buildAcceptedStream(currentChannel, connection);
                 connection.bindSingleStream(stream);
                 connectionManagedByStreamLifecycle = true;
-                registerAndHandshakeConnection(connection, stream, currentChannel);
+                registerConnection(connection, stream, currentChannel);
             } catch (RuntimeException exception) {
                 if (connection != null) {
                     connection.close();
@@ -510,41 +555,55 @@ public final class NativeTcpCarrier implements TransportEngine {
     }
 
     /**
-     * Registers the stream with a reactor, awaits TLS handshake, notifies the connection handler,
-     * and enqueues the stream in PAQS. Returns {@code false} if the connection should be rejected.
+     * Registers the stream with a reactor and arms the one-shot established hook, then returns
+     * immediately — the acceptor thread never blocks on the TLS handshake.
+     *
+     * <p>The hook ({@link #completeEstablished}) fires on the reactor thread once the connection
+     * is established: plaintext as soon as the key is armed, TLS once the reactor-driven handshake
+     * reaches ACTIVE. This deserialises handshakes that previously queued behind one another on the
+     * single acceptor thread, while preserving the {@code onConnectionEstablished} → {@code schedule}
+     * ordering. Slot accounting stays lifecycle-based (released on stream close), so a failed/aborted
+     * handshake that closes the stream releases the slot without acceptor involvement.
      */
-    private boolean registerAndHandshakeConnection(NativeTcpConnection connection,
-                                                   NativeTcpStream stream,
-                                                   SocketChannel currentChannel) {
+    private void registerConnection(NativeTcpConnection connection,
+                                    NativeTcpStream stream,
+                                    SocketChannel currentChannel) {
         ChannelRuntimeRegistry.ChannelRuntimeState runtime = registerRuntime(stream, currentChannel);
         NativeTcpReactor owner = selectReactor();
         runtime.markRegistrationPending();
         runtime.bindOwner(owner);
-        owner.enqueueRegistration(currentChannel);
+
+        // Arm the established hook BEFORE enqueueing registration so the reactor can fire it the
+        // instant a plaintext key is armed (no lost-wakeup window).
+        stream.onEstablished(() -> completeEstablished(connection, stream));
 
         activeStreams.incrementAndGet();
         totalAccepted.incrementAndGet();
 
-        if (!stream.awaitRegistrationReadyForConnection()) {
-            connection.close();
-            return false;
-        }
-        if (!stream.awaitHandshakeReadyForConnection()) {
-            connection.close();
-            return false;
-        }
+        owner.enqueueRegistration(currentChannel);
+    }
+
+    /**
+     * Fired once on the reactor thread when a connection is established: notifies the connection
+     * handler (contractually non-blocking) and schedules the stream in PAQS, in that order. Any
+     * failure closes the connection (and releases its slot via the stream close path).
+     */
+    private void completeEstablished(NativeTcpConnection connection, NativeTcpStream stream) {
         try {
             connectionHandler.onConnectionEstablished(connection);
-        } catch (RuntimeException ignored) {
+        } catch (RuntimeException handlerFailure) {
+            LOG.log(System.Logger.Level.WARNING,
+                    "ConnectionHandler.onConnectionEstablished failed; closing connection", handlerFailure);
             connection.close();
-            return false;
+            return;
         }
         try {
             paqs.schedule(stream);
-        } catch (RuntimeException ex) {
+        } catch (RuntimeException scheduleFailure) {
+            LOG.log(System.Logger.Level.WARNING,
+                    "PAQS schedule rejected stream on establish; closing connection", scheduleFailure);
             connection.close();
         }
-        return true;
     }
 
     /**
@@ -587,15 +646,16 @@ public final class NativeTcpCarrier implements TransportEngine {
         return channelRuntimeRegistry.resolveStream(channel);
     }
 
-    /* default */ void readIngress(SocketChannel channel) {
-        NativeTcpStream stream = resolveStream(channel);
-        if (stream == null) {
-            return;
-        }
-
+    /* default */ void readIngress(NativeTcpStream stream) {
         if (stream.usesFdOwnerTls()) {
-            LoanedBuffer offered = stream.readTlsIngressFromFd();
-            if (offered != null) {
+            // PERF-062: drain all buffered TLS records in one readable event (loop until null =
+            // WANT_READ / backpressure / close), bounded by MAX_TLS_RECORDS_PER_READ for fairness.
+            // See docs/subsystems/transport.md. The level-triggered selector re-reports any remainder.
+            for (int drained = 0; drained < MAX_TLS_RECORDS_PER_READ; drained++) {
+                LoanedBuffer offered = stream.readTlsIngressFromFd();
+                if (offered == null) {
+                    return;
+                }
                 stream.offerIngress(offered);
             }
             return;
@@ -631,13 +691,7 @@ public final class NativeTcpCarrier implements TransportEngine {
         return stream.decryptIngress(slab, read);
     }
 
-    /* default */ void flushStream(SocketChannel channel, SelectionKey key) {
-        NativeTcpStream stream = resolveStream(channel);
-        if (stream == null) {
-            key.interestOps(SelectionKey.OP_READ);
-            return;
-        }
-
+    /* default */ void flushStream(NativeTcpStream stream, SelectionKey key) {
         stream.signalWriteReady();
         boolean drained = stream.flushPendingWrites();
         if (drained && !stream.hasPendingData()) {

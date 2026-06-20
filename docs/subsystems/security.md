@@ -363,3 +363,12 @@ Community implementation: `Argon2idPasswordEncoder` (Bouncy Castle Argon2id, PHC
 ---
 
 > **Note:** ADR-012 §13 specified a required documentation update to this file. The following ADR-012 normative additions have been applied: `KernelIsolationClaims` contract, isolation claim resolution pipeline (SHARED/SEPARATED_SCHEMA/DEDICATED/fail-closed), and `StorageContextBridge` SHARED-only scope.
+
+---
+
+## Stability
+
+This subsystem's SPI surface (`eu.exeris.kernel.spi.security.*`) is classified **preview** in the
+[SPI Stability Matrix](../stability-matrix.md): JWKS rotation in v0.9 Sprint 4 changes the contract,
+and the `IdentityProvider` SPI arrives in v0.10. See the matrix for the semver policy and TCK
+coverage status.

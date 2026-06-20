@@ -20,6 +20,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
 import java.util.Comparator;
 import java.util.ServiceLoader;
 import java.util.concurrent.StructuredTaskScope;
@@ -27,6 +28,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
  * TCK: Abstract base for {@link SecurityProvider} contract verification.
@@ -169,6 +171,34 @@ public abstract class AbstractSecurityProviderTck {
     }
 
     /**
+     * Creates a {@link LoanedBuffer} containing an <b>unsecured</b> token whose header declares
+     * {@code "alg":"none"} (the classic signature-stripping downgrade attack).
+     * The provider MUST deny this token — an unsigned token is never trusted.
+     * Caller owns the buffer lifecycle.
+     * <p>Default: delegates to {@link #createInvalidTokenBuffer()} so the contract is meaningful
+     * even for bindings that cannot mint an {@code alg=none} token; security bindings SHOULD
+     * override with a real unsecured token to exercise the algorithm gate directly.
+     */
+    protected LoanedBuffer createAlgNoneTokenBuffer() {
+        return createInvalidTokenBuffer();
+    }
+
+    /**
+     * Creates a {@link LoanedBuffer} containing a token signed with a <i>symmetric</i> MAC
+     * (e.g. HS256) keyed on the bytes of the provider's published <i>asymmetric</i> public key
+     * (the RS256-&gt;HS256 algorithm-confusion attack). The {@code kid} resolves to a known key
+     * so the token reaches the algorithm gate.
+     * The provider MUST deny this token — a provider that pins an asymmetric algorithm never
+     * verifies a symmetric MAC against its public key.
+     * Caller owns the buffer lifecycle.
+     * <p>Default: delegates to {@link #createInvalidTokenBuffer()}; security bindings SHOULD
+     * override with a real confusion token.
+     */
+    protected LoanedBuffer createAlgConfusionTokenBuffer() {
+        return createInvalidTokenBuffer();
+    }
+
+    /**
      * Returns a scope expected to be granted for the principal returned from
      * {@link #createValidTokenBuffer()} authentication.
      */
@@ -187,7 +217,9 @@ public abstract class AbstractSecurityProviderTck {
     /**
      * Creates a {@link LoanedBuffer} containing a valid token with NO isolation strategy claim.
      * The provider MUST return a {@link StorageContext} with
-     * {@link StorageContext.IsolationStrategy#SHARED} strategy (fail-closed default).
+     * {@link StorageContext.IsolationStrategy#SHARED} strategy (legitimate default — no isolation
+     * intent expressed; this is the only permissive fall-through, distinct from the terminal-deny
+     * applied to a declared-but-broken strategy, per ADR-012 §4a amended).
      *
      * <p>Default: delegates to {@link #createValidTokenBuffer()}, since a standard valid token
      * carries no isolation claim.
@@ -234,8 +266,10 @@ public abstract class AbstractSecurityProviderTck {
      * Creates a {@link LoanedBuffer} containing a token with the {@code SEPARATED_SCHEMA}
      * isolation strategy claim but WITHOUT a schema name claim.
      *
-     * <p>The provider MUST fail closed — return a {@link StorageContext} with
-     * {@link StorageContext.IsolationStrategy#SHARED} strategy.
+     * <p>The provider MUST <b>deny</b> this token ({@link SecurityAuthenticationException},
+     * {@code EX-SEC-2002}). A declared strong strategy with a missing required sub-claim must NOT
+     * be downgraded to {@link StorageContext.IsolationStrategy#SHARED} — that is fail-OPEN
+     * (silently weakening the provisioned isolation tier) per S-P0-07 / ADR-012 §4a (amended).
      * Caller owns the buffer lifecycle.
      */
     protected abstract LoanedBuffer createTokenWithSeparatedSchemaMissingSchemaName();
@@ -244,9 +278,9 @@ public abstract class AbstractSecurityProviderTck {
      * Creates a {@link LoanedBuffer} containing a token with the {@code DEDICATED}
      * isolation strategy claim but WITHOUT a datasource key claim.
      *
-     * <p>The provider MUST fail closed — return a {@link StorageContext} with
-     * {@link StorageContext.IsolationStrategy#SHARED} strategy.
-     * Caller owns the buffer lifecycle.
+     * <p>The provider MUST <b>deny</b> this token ({@link SecurityAuthenticationException},
+     * {@code EX-SEC-2002}) — not downgrade to {@link StorageContext.IsolationStrategy#SHARED}
+     * (S-P0-07 / ADR-012 §4a amended). Caller owns the buffer lifecycle.
      */
     protected abstract LoanedBuffer createTokenWithDedicatedMissingDataSourceKey();
 
@@ -254,11 +288,68 @@ public abstract class AbstractSecurityProviderTck {
      * Creates a {@link LoanedBuffer} containing a token with an unrecognised, non-empty
      * isolation strategy claim value (e.g. {@code "SUPER_TENANT"} or {@code "BYPASS_RLS"}).
      *
-     * <p>The provider MUST fail closed — return a {@link StorageContext} with
-     * {@link StorageContext.IsolationStrategy#SHARED} strategy.
+     * <p>The provider MUST <b>deny</b> this token ({@link SecurityAuthenticationException},
+     * {@code EX-SEC-2002}). A strategy the kernel cannot honour must be rejected, not downgraded to
+     * {@link StorageContext.IsolationStrategy#SHARED} (S-P0-07 / ADR-012 §4a amended).
      * Caller owns the buffer lifecycle.
      */
     protected abstract LoanedBuffer createTokenWithUnrecognizedStrategy();
+
+    // =========================================================================
+    // Optional rotation harness — default-skip for non-rotating subclasses
+    // =========================================================================
+
+    /**
+     * Drives the key-rotation contract for a provider that supports a rotating verification
+     * key set with a controllable clock and a fail-injectable refresh source.
+     *
+     * <p>Implementations are entirely owned by the binding module (which has visibility of
+     * the concrete community rotation seams). The TCK references only this interface and the
+     * SPI {@link SecurityProvider}.
+     */
+    protected interface RotationHarness extends AutoCloseable {
+
+        /** The provider wired with the rotating key set under test. */
+        SecurityProvider provider();
+
+        /** Advances the harness clock by the given amount (deterministic time travel). */
+        void advanceClock(Duration amount);
+
+        /**
+         * Arms the refresh source to deliver a brand-new key set (a new {@code kid -> key}
+         * generation) on the next stale-triggered refresh, causing a rotation.
+         */
+        void installNewKeySet();
+
+        /**
+         * Arms the refresh source so that the next stale-triggered refresh fails
+         * (signals refresh failure rather than returning a snapshot).
+         */
+        void failNextRefresh();
+
+        /**
+         * Mints a freshly-signed, otherwise-valid token under the ORIGINAL (pre-rotation)
+         * {@code kid}. The JWT {@code exp} is far enough in the future that wall-clock
+         * expiry never interferes with the rotation assertions.
+         */
+        LoanedBuffer tokenUnderOriginalKid();
+
+        @Override
+        void close();
+    }
+
+    /**
+     * Supplies a {@link RotationHarness} for the rotation contract cases.
+     *
+     * <p>Default returns {@code null} — non-rotating subclasses are skipped cleanly via
+     * {@link org.junit.jupiter.api.Assumptions}. Rotating subclasses override this to wire
+     * a provider with a controllable clock and fail-injectable source.
+     *
+     * @return a fresh rotation harness, or {@code null} if rotation is not supported
+     */
+    protected RotationHarness createRotationHarness() {
+        return null;
+    }
 
     private SecurityProvider provider;
 
@@ -468,6 +559,47 @@ public abstract class AbstractSecurityProviderTck {
         void repeatedIndeterminateAttemptsAreDeterministicallyDenied() {
             for (int i = 0; i < 5; i++) {
                 try (LoanedBuffer token = createIndeterminateTokenBuffer()) {
+                    assertThatThrownBy(() -> provider.authenticate(token))
+                            .isInstanceOfSatisfying(SecurityAuthenticationException.class, ex ->
+                                    assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_SEC_2002));
+                }
+            }
+        }
+    }
+
+    // =========================================================================
+    // Algorithm-confusion / downgrade adversarial contract
+    // =========================================================================
+
+    @Nested
+    @DisplayName("authenticate() — algorithm confusion / downgrade")
+    class AlgorithmConfusionContract {
+
+        @Test
+        @DisplayName("rejects an unsecured alg=none token (signature-stripping downgrade)")
+        void rejectsAlgNoneToken() {
+            try (LoanedBuffer token = createAlgNoneTokenBuffer()) {
+                assertThatThrownBy(() -> provider.authenticate(token))
+                        .isInstanceOfSatisfying(SecurityAuthenticationException.class, ex ->
+                                assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_SEC_2002));
+            }
+        }
+
+        @Test
+        @DisplayName("rejects an HS256-over-public-key token (RS256->HS256 confusion)")
+        void rejectsAlgConfusionToken() {
+            try (LoanedBuffer token = createAlgConfusionTokenBuffer()) {
+                assertThatThrownBy(() -> provider.authenticate(token))
+                        .isInstanceOfSatisfying(SecurityAuthenticationException.class, ex ->
+                                assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_SEC_2002));
+            }
+        }
+
+        @Test
+        @DisplayName("algorithm-confusion denial is deterministic across repeated attempts")
+        void confusionDenialIsDeterministic() {
+            for (int i = 0; i < 5; i++) {
+                try (LoanedBuffer token = createAlgConfusionTokenBuffer()) {
                     assertThatThrownBy(() -> provider.authenticate(token))
                             .isInstanceOfSatisfying(SecurityAuthenticationException.class, ex ->
                                     assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_SEC_2002));
@@ -690,12 +822,13 @@ public abstract class AbstractSecurityProviderTck {
     class IsolationStrategyContract {
 
         @Test
-        @DisplayName("absent isolation claim \u2192 SHARED strategy (fail-closed default)")
+        @DisplayName("absent isolation claim \u2192 SHARED strategy (legitimate default)")
         void assert_authenticate_returns_shared_when_no_isolation_claim() {
             try (LoanedBuffer token = createTokenWithNoIsolationClaim()) {
                 StorageContext storage = provider.authenticate(token).storage();
                 assertThat(storage.strategy())
-                        .as("absent isolation claim MUST produce SHARED strategy (fail-closed)")
+                        .as("absent isolation claim MUST produce SHARED strategy (legitimate default, "
+                                + "no isolation intent \u2014 NOT a fail-closed denial; ADR-012 \u00a74a amended)")
                         .isEqualTo(StorageContext.IsolationStrategy.SHARED);
             }
         }
@@ -731,38 +864,131 @@ public abstract class AbstractSecurityProviderTck {
         }
 
         @Test
-        @DisplayName("SEPARATED_SCHEMA claim without schema name \u2192 fails closed to SHARED")
-        void assert_authenticate_fails_closed_to_shared_on_missing_schema_claim() {
+        @DisplayName("SEPARATED_SCHEMA claim without schema name \u2192 terminal deny (EX-SEC-2002)")
+        void assert_authenticate_denies_on_missing_schema_claim() {
             try (LoanedBuffer token = createTokenWithSeparatedSchemaMissingSchemaName()) {
-                StorageContext storage = provider.authenticate(token).storage();
-                assertThat(storage.strategy())
-                        .as("SEPARATED_SCHEMA without schema name MUST fail closed to SHARED \u2014 "
-                                + "prevents escaping RLS by omitting the required secondary claim")
-                        .isEqualTo(StorageContext.IsolationStrategy.SHARED);
+                assertThatThrownBy(() -> provider.authenticate(token))
+                        .as("a declared SEPARATED_SCHEMA strategy with a missing/blank schema name "
+                                + "MUST be denied, NOT silently downgraded to SHARED \u2014 downgrade is "
+                                + "fail-OPEN (weakens the provisioned isolation tier) per S-P0-07 / "
+                                + "ADR-012 \u00a74a (amended)")
+                        .isInstanceOfSatisfying(SecurityAuthenticationException.class, ex ->
+                                assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_SEC_2002));
             }
         }
 
         @Test
-        @DisplayName("DEDICATED claim without datasource key \u2192 fails closed to SHARED")
-        void assert_authenticate_fails_closed_to_shared_on_missing_datasource_key_claim() {
+        @DisplayName("DEDICATED claim without datasource key \u2192 terminal deny (EX-SEC-2002)")
+        void assert_authenticate_denies_on_missing_datasource_key_claim() {
             try (LoanedBuffer token = createTokenWithDedicatedMissingDataSourceKey()) {
-                StorageContext storage = provider.authenticate(token).storage();
-                assertThat(storage.strategy())
-                        .as("DEDICATED without datasource key MUST fail closed to SHARED")
-                        .isEqualTo(StorageContext.IsolationStrategy.SHARED);
+                assertThatThrownBy(() -> provider.authenticate(token))
+                        .as("a declared DEDICATED strategy with a missing/blank datasource key MUST "
+                                + "be denied, NOT downgraded to SHARED (fail-OPEN) \u2014 S-P0-07")
+                        .isInstanceOfSatisfying(SecurityAuthenticationException.class, ex ->
+                                assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_SEC_2002));
             }
         }
 
         @Test
-        @DisplayName("unrecognized strategy value \u2192 fails closed to SHARED")
-        void assert_authenticate_fails_closed_to_shared_on_unrecognized_strategy() {
+        @DisplayName("unrecognized strategy value \u2192 terminal deny (EX-SEC-2002)")
+        void assert_authenticate_denies_on_unrecognized_strategy() {
             try (LoanedBuffer token = createTokenWithUnrecognizedStrategy()) {
-                StorageContext storage = provider.authenticate(token).storage();
-                assertThat(storage.strategy())
-                        .as("Unrecognised strategy value MUST fail closed to SHARED \u2014 "
-                                + "prevents strategy claim injection attacks")
-                        .isEqualTo(StorageContext.IsolationStrategy.SHARED);
+                assertThatThrownBy(() -> provider.authenticate(token))
+                        .as("a declared-but-unrecognised strategy value cannot be honoured and MUST "
+                                + "be denied \u2014 downgrading to SHARED grants a session on an injection "
+                                + "probe instead of rejecting it (S-P0-07 / ADR-012 \u00a74a amended)")
+                        .isInstanceOfSatisfying(SecurityAuthenticationException.class, ex ->
+                                assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_SEC_2002));
             }
+        }
+    }
+
+    // =========================================================================
+    // JWKS key rotation contract (overlap window + stale-fetch budget) — ADR-012
+    // =========================================================================
+
+    @Nested
+    @DisplayName("JWKS key rotation contract (overlap + stale-fetch, fail-closed)")
+    class JwksKeyRotationContract {
+
+        @Test
+        @DisplayName("overlap-fresh: old-kid token still authenticates within overlap window")
+        void overlapFreshStillAuthenticates() {
+            try (RotationHarness harness = createRotationHarness()) {
+                assumeTrue(harness != null, "Provider does not support key rotation");
+
+                harness.installNewKeySet();
+                // Cross the stale-fetch budget to trigger a rotation, but stay inside overlap.
+                harness.advanceClock(Duration.ofMinutes(90L));
+
+                try (LoanedBuffer token = harness.tokenUnderOriginalKid()) {
+                    AuthenticationResult result = harness.provider().authenticate(token);
+                    assertThat(result)
+                            .as("old-kid token must still verify while overlap window is open")
+                            .isNotNull();
+                    assertThat(result.principal()).isNotNull();
+                }
+            }
+        }
+
+        @Test
+        @DisplayName("cutover-deny: old-kid token rejected (EX-SEC-2002) once overlap expires")
+        void cutoverDeniesAfterOverlap() {
+            try (RotationHarness harness = createRotationHarness()) {
+                assumeTrue(harness != null, "Provider does not support key rotation");
+
+                harness.installNewKeySet();
+                // Trigger rotation, then advance well past the overlap window.
+                harness.advanceClock(Duration.ofMinutes(90L));
+                try (LoanedBuffer warmup = harness.tokenUnderOriginalKid()) {
+                    harness.provider().authenticate(warmup);
+                }
+                harness.advanceClock(Duration.ofMinutes(90L));
+
+                try (LoanedBuffer token = harness.tokenUnderOriginalKid()) {
+                    assertThatThrownBy(() -> harness.provider().authenticate(token))
+                            .as("post-cutover old-kid token MUST be denied, never fail-open")
+                            .isInstanceOfSatisfying(SecurityAuthenticationException.class, ex -> {
+                                assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_SEC_2002);
+                                assertReasonIs(ex, "kid-rotated-out");
+                            });
+                }
+            }
+        }
+
+        @Test
+        @DisplayName("stale-fetch-deny: failed refresh past stale budget → deterministic deny (EX-SEC-2002)")
+        void staleFetchDeniesDeterministically() {
+            try (RotationHarness harness = createRotationHarness()) {
+                assumeTrue(harness != null, "Provider does not support key rotation");
+
+                harness.failNextRefresh();
+                harness.advanceClock(Duration.ofMinutes(90L));
+
+                try (LoanedBuffer token = harness.tokenUnderOriginalKid()) {
+                    assertThatThrownBy(() -> harness.provider().authenticate(token))
+                            .as("stale key set with failed refresh MUST deny deterministically, never fail-open")
+                            .isInstanceOfSatisfying(SecurityAuthenticationException.class, ex -> {
+                                assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_SEC_2002);
+                                assertReasonIs(ex, "jwks-stale");
+                            });
+                }
+            }
+        }
+
+        /**
+         * Asserts the deny carries the expected secret-safe reason in the
+         * {@code rawArgs[1]} telemetry slot (see {@link SecurityAuthenticationException}),
+         * discriminating cutover deny from stale-fetch deny at the contract level.
+         */
+        private void assertReasonIs(SecurityAuthenticationException ex, String expectedReason) {
+            Object[] raw = ex.rawArgs();
+            assertThat(raw)
+                    .as("deny must carry secret-safe telemetry args [tokenType, reason]")
+                    .hasSizeGreaterThanOrEqualTo(2);
+            assertThat((String) raw[1])
+                    .as("deny reason must be the expected secret-safe label")
+                    .isEqualTo(expectedReason);
         }
     }
 }

@@ -85,6 +85,12 @@ public abstract class AbstractLoanedBuffer implements LoanedBuffer { //NOPMD Too
 
     protected abstract MemorySegment backingSegment();
 
+    /**
+     * Called exactly once when the final reference is released. {@link #close()} dispatches it
+     * only on the single thread whose refcount CAS reaches the {@code isInitialCount} branch, so
+     * implementations MUST NOT add their own idempotency guard — single dispatch is already
+     * guaranteed by the refcount CAS.
+     */
     protected abstract void onRelease();
 
     // =========================================================================

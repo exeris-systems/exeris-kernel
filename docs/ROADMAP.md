@@ -395,7 +395,7 @@ See also: [Telemetry Subsystem](./subsystems/telemetry.md) — Design Principles
 
 **Owner:** Core / Exceptions subsystem.
 
-**Resolution:** Implement environment-aware disclosure configuration and extend exception mapping tests to assert PROD/DEV behavior. `ExerisKernelExceptionBlackBoxTckTest` already covers rawArgs contract; add a dedicated abstract TCK for disclosure mode behavior.
+**Resolution:** Implement environment-aware disclosure configuration and extend exception mapping tests to assert PROD/DEV behavior. `ExerisKernelExceptionGlassBoxTckTest` already covers rawArgs contract; add a dedicated abstract TCK for disclosure mode behavior.
 
 **Merge Gate:** Dedicated disclosure-mode abstract TCK and Community binding must pass before milestone close.
 
@@ -879,6 +879,22 @@ Prior-knowledge HTTP/2 (`handlePriorKnowledge` lines 88-101) is unaffected — i
 
 ---
 
+### HTTP/2: Rapid Reset (CVE-2023-44487) Flood Defense
+
+**Gap:** `CommunityHttp2SessionProcessor` handles each inbound `RST_STREAM` per-frame (`CommunityHttp2SessionProcessor.java:243`), and `Http2SessionContext.resetRequestStream` frees the stream's concurrency slot. There is **no per-window `RST_STREAM` budget** — a peer can open-then-immediately-reset streams without bound (the freed slot means `SETTINGS_MAX_CONCURRENT_STREAMS` is never reached), forcing unbounded request setup/teardown work. This is CVE-2023-44487 (the 2023 HTTP/2 Rapid Reset DoS). Surfaced by the v0.9 Sprint 4c Phase 2 adversarial sweep.
+
+**Layer note — distinct from `TransportStream.reset(long)` (downstream issue #23):** this is an **inbound HTTP/2 codec** flood defense (peer floods *us* with `RST_STREAM` *frames* over one TCP stream); the transport-stream abort SPI is an **outbound transport-layer** capability (QUIC stream reset / TCP abortive close). Same word, different layer and direction — neither blocks the other. See the "Transport-Agnostic Stream Abort" entry.
+
+**Owner:** HTTP subsystem (Community codec).
+
+**Resolution:** Add a per-connection sliding-window `RST_STREAM` counter to `Http2SessionContext`; once inbound resets exceed a configurable budget within the window, emit `GOAWAY(ENHANCE_YOUR_CALM)` and stop admitting new streams on the connection. Surface a config knob (default tuned to a generous-but-finite per-connection reset rate) and a secret-safe JFR flood event (counts + connection id only). The executable spec already exists: `Http2RapidResetSpecTest` (`@Disabled`) encodes the open+reset flood pattern and the expected throttle — enable it when the seam lands.
+
+**Merge Gate:** `Http2RapidResetSpecTest` enabled and green; config knob documented; JFR flood event emitted under attack and silent under normal load; no regression on legitimate `RST_STREAM` (client cancel) within budget.
+
+**Status (v0.9):** **DELIVERED** — `Http2SessionContext` gained a per-connection **net** rapid-reset budget: each inbound `RST_STREAM` (`recordInboundRstStream()`) increments a counter, each request that reaches dispatch (`recordDispatchedRequest()`) credits it back (floor 0), so a peer doing real work — even one that cancels streams — keeps the net count low while an open-then-reset flood that performs no work drives it past the budget. Crossing `HTTP2_RAPID_RESET_BUDGET` (`200`, 2× the §6.5.2 concurrent-stream floor) makes `CommunityHttp2SessionProcessor` emit `GOAWAY(ENHANCE_YOUR_CALM)` (code `0x0B`) and stop the frame loop. **Net counter, not a time window:** decoupling the flood signal from completed work satisfies "no regression on legitimate `RST_STREAM` within budget" deterministically (no wall-clock / `Clock` dependency on the codec hot path). **Budget knob:** kept a codec-internal constant rather than an `HttpConfig` SPI field — this hardening is "no SPI change" (The Wall: an HTTP/2 logical stream is multiplexed over one TCP `TransportStream`, so there is no implementation-blind SPI seam), which also avoids an orphan config knob. Secret-safe single-phase JFR `Http2RapidResetFloodEvent` (net count + last processed stream id only) maps to `EX-HTTP-4010`. `Http2RapidResetSpecTest` un-`@Disabled` — flood-trips-at-budget + legitimate-cancels-do-not-trip, green; full HTTP suite (84 tests) green; `docs/subsystems/http.md` documents the defense.
+
+---
+
 ### Persistence: Latency-Keyed Admission Fairness Gate (ADR-035 follow-up)
 
 **Gap:** ADR-035 recalibrated Community admission so a full pool sheds only once `pendingAcquires > ceil(maxPool × queueDepthAllowanceRatio)` (default ratio `8.0`). Because *all* shed branches in `CommunityPersistenceAdmissionController` — including `REJECT_GUARD_BAND_FAIRNESS` and the early-guard-band check — are gated behind that single queue-depth allowance, the fairness/guard-band machinery (`FairnessTracker.indicatesAdmissionStress`, `shouldRejectEarlyInGuardBand`) is effectively dormant under the default ratio: it only re-arms when an operator lowers `queueDepthAllowanceRatio`, which *also* sheds the small-pool burst the recalibration exists to admit. The two shed signals (depth-based backpressure and fairness) cannot be tuned apart through one scalar knob. See ADR-035 §Consequences ("Fairness/guard-band machinery is intentionally dormant under the default ratio").
@@ -1169,15 +1185,110 @@ Prior-knowledge HTTP/2 (`handlePriorKnowledge` lines 88-101) is unaffected — i
 
 **Resolution:** Implement [ADR-033](adr/ADR-033-kernel-diagnostics-spi.md) per RFC-2026-05-18:
 
-1. **New SPI module / package** `eu.exeris.kernel.spi.diagnostics` in `exeris-kernel-spi`. Public types: `KernelDiagnostics` interface (4 methods — `listProviders`, `listCapabilities`, `getBootstrapDag`, `describeSubsystem`), `KernelDiagnosticsProvider` (ServiceLoader-discovered, `priority()` open-core hook), plus immutable snapshot records (`ProvidersSnapshot`, `CompositionSnapshot`, `BootstrapDagSnapshot`, `SubsystemSnapshot`, nested descriptors). Every top-level snapshot carries `schemaVersion: String` (initial `"1.0"`, append-only growth policy) and `capturedAt: Instant`. No imports from `exeris-kernel-core`, no host-runtime types — Wall preserved.
+1. **New SPI module / package** `eu.exeris.kernel.spi.diagnostics` in `exeris-kernel-spi`. Public types: `KernelDiagnostics` interface (4 methods — `listProviders`, `getBootstrapDag`, `describeSubsystem`, `getJvmErgonomics`; the originally-planned `listCapabilities` was removed pre-1.0 — see the ADR-033 v0.9.x amendment), `KernelDiagnosticsProvider` (ServiceLoader-discovered, `priority()` open-core hook), plus immutable snapshot records (`ProvidersSnapshot`, `BootstrapDagSnapshot`, `SubsystemSnapshot`, `RuntimeErgonomicsSnapshot`, nested descriptors). Every top-level snapshot carries `schemaVersion: String` (initial `"1.0"`, append-only growth policy) and `capturedAt: Instant`. No imports from `exeris-kernel-core`, no host-runtime types — Wall preserved.
 2. **Community provider** `CommunityKernelDiagnosticsProvider` (`priority() = 0`) in `exeris-kernel-community`, reading from `KernelBootstrap` / `SubsystemOrchestrator` state. `META-INF/services/eu.exeris.kernel.spi.diagnostics.KernelDiagnosticsProvider` registration.
-3. **CLI artefact** — new Maven module `exeris-kernel-diagnostics-cli` in the `exeris-kernel-community` reactor. Shaded executable JAR, `main` = `eu.exeris.kernel.community.diagnostics.cli.DiagnosticsCli`. Reads framed JSON requests on stdin, writes JSON responses on stdout; auth-free local-spawn mode (the spawning process is trusted). No separate Enterprise CLI — the same binary picks up `EnterpriseKernelDiagnosticsProvider` (priority 100) when the Enterprise jar is on the classpath, per the ADR-008 open-core extension model.
+3. **CLI artefact** — new top-level Maven module `exeris-kernel-diagnostics-cli` in the root kernel reactor (sibling of `exeris-kernel-community`). Shaded executable JAR, `main` = `eu.exeris.kernel.diagnostics.cli.DiagnosticsCli`. Reads framed JSON requests on stdin, writes JSON responses on stdout; auth-free local-spawn mode (the spawning process is trusted). No separate Enterprise CLI — the same binary picks up `EnterpriseKernelDiagnosticsProvider` (priority 100) when the Enterprise jar is on the classpath, per the ADR-008 open-core extension model.
 4. **TCK** — `AbstractKernelDiagnosticsTck` in `exeris-kernel-tck` plus a JSON schema fixture file asserted on every CI run; Community binding green; Enterprise binding obligation documented for `exeris-kernel-enterprise` 0.6 (Obligation 9 of ADR-033).
 5. **JFR emission for diagnostic calls themselves** — codes `EX-DIAG-1001`..`EX-DIAG-1004` (one per method) emitted at INFO level so operators can audit out-of-process introspection. Zero-allocation contract holds because the call frequency is "per minute, not per request" (ADR-033 Obligation 2).
 
 **Merge Gate:** SPI module compiles green with no `exeris-kernel-core` imports (ArchUnit check); Community provider passes `AbstractKernelDiagnosticsTck`; CLI artefact shades cleanly and runs as a child process under the `exeris-ai-bridge` integration test against a fixture kernel; JSON schema fixture asserted in CI; documentation drift swept against ADR-033's ten obligations.
 
 **Cross-repo dependents:** `exeris-ai-bridge` 0.4.0 implements `src/transport/kernel-adapter.ts` against the CLI's stdio JSON protocol (ADR-025 §Engineering Protocol item 2 binding closure). `exeris-kernel-enterprise` 0.6 ships `EnterpriseKernelDiagnosticsProvider` (priority 100) returning the same record types with Enterprise-only fields populated where the ADR-033 §Obligation 6 use-case test applies; the Enterprise overlay is mirrored as a link stub at `exeris-kernel-enterprise/docs/adr/ADR-033.link.md`. Out-of-scope here: authenticated / remote diagnostic transport (lands in `exeris-ai-bridge` 0.6+ transport-auth work), any mutation surface, `bridge:health` synthetic derived checks (aggregator concern, not kernel SPI concern).
+
+**Status (v0.9):** **DELIVERED** in Sprint 1 (ADR-033) — `eu.exeris.kernel.spi.diagnostics.*` is the first explicitly-**stable** new SPI surface; `CommunityKernelDiagnostics` + the shaded `exeris-kernel-diagnostics-cli` artifact + `AbstractKernelDiagnosticsTck` (+ pinned JSON schema fixture) landed. **Pre-1.0 trim:** `listCapabilities()` / `CompositionSnapshot` / `CapabilityDescriptor` were removed before the SPI froze (composition is a build-time/manifest concern); `EX-DIAG-1002` retired as a reserved gap.
+
+---
+
+### Diagnostics: JVM Runtime Ergonomics Snapshot (Introspective) + Recommended-Flags Baseline Doc
+
+> **Sequencing:** depends on the base `KernelDiagnostics` SPI (previous entry; interface
+> shipped in Sprint 1, PR #163) — the snapshot is a fifth method on that interface, so
+> this entry must land after the base SPI in the same release window.
+
+**Gap:** The kernel surfaces no read-only view of the JVM and container environment it
+actually runs in: GC in use and heap geometry vs the cgroup `memory.max`,
+`ActiveProcessorCount` vs `cpu.max` quota, large-pages state, CDS/AOT archive presence,
+`cpuset` vs available cores. Operators diagnosing throughput problems have no
+kernel-surfaced signal that the deployment is CPU-throttled or memory-squeezed by its own
+container limits — the constrained `entity-read-by-id` JFR profile (Sprint 6 PERF-072
+context) showed 465/547 cgroup periods throttled, competing directly with request
+servicing, and nothing in the diagnostics surface would have said so. The Enterprise
+preflight track (`exeris-kernel-enterprise` EPIC-E8, item E8.23) needs the same snapshot
+shape; per ADR-008 the *introspective* surface belongs open-core while the *actionable*
+tuning advisor (recommendation ladder, thresholds) stays Enterprise-private.
+
+**Owner:** Diagnostics / Telemetry subsystem (kernel-architect lead).
+
+**Resolution:**
+
+1. **SPI surface** — a fifth method on `KernelDiagnostics`:
+   `getJvmErgonomics() → RuntimeErgonomicsSnapshot`. Per ADR-033 §5 (Java interface =
+   binary contract) adding a method is a binary-breaking change, so it ships with the full
+   compatibility story: a `default` implementation returning a snapshot whose optional
+   fields are all `Optional.empty()` (third-party providers stay binary-compatible), all
+   known providers (Community, Enterprise) updated in lockstep, and the matching
+   `AbstractKernelDiagnosticsTck` extension. Audit event code **`EX-DIAG-1005`** assigned
+   to the new method and registered in the telemetry error-code registry
+   (`docs/subsystems/telemetry.md` — the `CommunityKernelDiagnosticsEvent` row currently
+   reads `EX-DIAG-1001..1004` and must extend to `..1005`).
+2. **Snapshot type** — `RuntimeErgonomicsSnapshot` joins the ADR-033 snapshot family
+   (`schemaVersion` + `capturedAt`, append-only growth, same policy as the existing
+   records): GC name, heap max/committed, container limits from the cgroup-v2 unified
+   hierarchy (membership resolved via `/proc/self/cgroup`, limit values read from
+   `/sys/fs/cgroup/<path>/cpu.max`, `.../memory.max`, `.../cpuset.cpus.effective`),
+   `availableProcessors`, large-pages/THP state, CDS/AOT presence. Strictly
+   observational — no recommendation fields (those are the Enterprise advisor's surface,
+   ADR-008).
+3. **Community provider** — populate from `java.lang.management` + procfs/cgroupfs reads in
+   `CommunityKernelDiagnosticsProvider`; per ADR-033 Obligation 5, legitimately absent
+   data (non-Linux host, cgroup-v1-only hierarchy, no container limits) is modelled as
+   `Optional.empty()` on the affected fields — no new sentinel type.
+4. **Baseline doc** — `docs/operations/jvm-flags-baseline.md` (note: `docs/operations/` is
+   a new docs sub-directory introduced by this entry): generic recommended flag baseline
+   for Community deployments (GC choice guidance, container-awareness flags, large-pages
+   prerequisites). Generic guidance only — no Enterprise-private thresholds.
+5. **TCK** — extend `AbstractKernelDiagnosticsTck` with the new snapshot's schema fixture
+   (append-only assertion), the `Optional.empty()`-degradation case, and a
+   default-method-compat case (a provider that does not override `getJvmErgonomics()`
+   still satisfies the contract).
+
+**Merge Gate:** schema fixture asserts append-only growth; Community binding green
+including the degradation and default-method cases; no `exeris-kernel-core` imports added
+to SPI (existing ArchUnit check covers the module) and the ADR-033 §v0.9 guardrail rule
+(`eu.exeris.kernel.spi.diagnostics.*` MUST NOT import `jdk.jfr.Event` or
+`exeris-telemetry-spec` types) confirmed to cover the new snapshot type;
+`docs/subsystems/telemetry.md` registry row extended to `EX-DIAG-1005`; ADR-033 amended in
+the same PR: §Obligation 9 method count updated (four-method → five-method surface) and
+Engineering Protocol step 8 error-code range extended (`EX-DIAG-1001..1004` →
+`EX-DIAG-1001..1005`); Enterprise
+companion PR reviewed for ADR-033 Obligation 6 compliance — same
+`RuntimeErgonomicsSnapshot` record type, no fork, Enterprise-only threshold fields absent
+from the record itself; baseline doc reviewed against ADR-008 (no Enterprise-private
+tuning content).
+
+**Cross-repo dependents:** `exeris-kernel-enterprise` EPIC-E8 E8.23 (`JvmErgonomicsProbe`)
+consumes the same snapshot shape and layers the actionable `jvm.flags` advisory on top
+(Enterprise-private thresholds) — lockstep provider update per Resolution item 1;
+E8.22/E8.24 (cgroup probe, resource-driven runtime geometry) read the container-limit
+fields as geometry inputs.
+
+**Status (v0.9):** **DELIVERED** — `getJvmErgonomics()` added to `KernelDiagnostics` as the fifth
+method, shipped as a `default` returning `RuntimeErgonomicsSnapshot.unknown()` (binary-compatible for
+third-party providers per ADR-033 Obligation 5). `RuntimeErgonomicsSnapshot` joins the snapshot family
+(`schemaVersion` first, append-only — `schemaVersion` held at `1.0` since v0.9.0 publishes the whole
+surface as the first schema): GC name, heap max/committed, `availableProcessors`, cgroup-v2 `cpu.max`
+(quota+period), `memory.max`, `cpuset.cpus.effective`, and best-effort large-pages / THP / CDS / AOT
+state — all environment-sensitive fields `Optional.empty()` when undeterminable (non-Linux / cgroup-v1 /
+no limits). `CommunityKernelDiagnostics` overrides it via `CommunityRuntimeErgonomics`
+(`java.lang.management` + defensive procfs/cgroupfs reads; never throws), emitting audit code
+**`EX-DIAG-1005`** (telemetry registry row extended `..1004` → `..1005`). The CLI gains a
+`getJvmErgonomics` NDJSON method; `AbstractKernelDiagnosticsTck` gains the well-formedness,
+`Optional.empty()`-degradation, and `default`-method-compat cases plus the append-only schema-fixture
+growth; the JFR test asserts `EX-DIAG-1005`. Generic operator guidance landed at
+`docs/operations/jvm-flags-baseline.md` (no Enterprise-private thresholds, ADR-008). ADR-033 amended in
+the same change (Obligation 9 four-method → five-method; EP step 8 `EX-DIAG-1001..1004` →
+`..1005`). Enterprise `JvmErgonomicsProbe` (EPIC-E8 E8.23) consuming the same record + layering the
+`jvm.flags` advisory is a cross-repo follow-up.
 
 ---
 
@@ -1190,6 +1301,8 @@ Prior-knowledge HTTP/2 (`handlePriorKnowledge` lines 88-101) is unaffected — i
 **Resolution:** Declare which SPI/API surfaces are stable, which are preview, and which remain experimental.
 
 **Merge Gate:** Stability matrix published and referenced from module docs.
+
+**Status (v0.9):** **DELIVERED** in Sprint 2 — `docs/stability-matrix.md` published as a tracked, consumer-facing artifact: per-package maturity (`stable` / `preview` / `experimental`), since-version, anchor ADR, TCK coverage, and Enterprise-overlay status, plus the canonical semver policy and pre-1.0 / TRL-3 framing. `diagnostics` is the first explicitly-`stable` surface (ADR-033); `events` / `graph` / `security` / `crypto` held at `preview` (scheduled v0.9 contract work); `http` is `mixed` (engines + enricher `stable`, ADR-034 body-codec quadrant `preview`). All 13 `docs/subsystems/*.md` and 5 `docs/modules/*.md` carry a `## Stability` cross-reference; `CHANGELOG.md` links the matrix as the semver-policy source. Drift sweep clean (whitepaper / architecture / performance-contract enumerate no per-surface levels to sync).
 
 ---
 
@@ -1210,6 +1323,8 @@ Prior-knowledge HTTP/2 (`handlePriorKnowledge` lines 88-101) is unaffected — i
 
 **Merge Gate:** Support matrix reviewed and approved with release criteria.
 
+**Status (v0.9):** **DELIVERED** in Sprint 8 (#205) — `docs/support-matrix.md` published: supported runtime baseline (JDK 26, Postgres 16, Kafka 3.6/CP 7.6, OpenSSL 3.0–4.x, HTTP/1.1+h2/h2c), per-subsystem SPI status mirroring `stability-matrix.md`, Community-tier limits, Enterprise-only out-of-scope items, and deferred capabilities (incl. the streaming shift to v0.10/v0.11). Bidirectionally cross-linked with `stability-matrix.md` + `operations/reference-deployment.md`.
+
 ---
 
 ### Upgrade / Restart / Recovery Validation
@@ -1221,6 +1336,8 @@ Prior-knowledge HTTP/2 (`handlePriorKnowledge` lines 88-101) is unaffected — i
 **Resolution:** Validate upgrade behavior, restart behavior, recovery semantics, degraded-mode transitions, and readiness/liveness correctness across lifecycle changes.
 
 **Merge Gate:** Operational continuity suite is green on release-candidate branch.
+
+**Status (v0.9):** **DELIVERED** in Sprint 7 (#203) — reversible **`DEGRADED`** subsystem-health state in `KernelHealthMonitor` (Core-internal; `HealthProbe` untouched, The Wall held) + Community `CommunitySubsystemHealthWatcher` driving it from live subsystem health. A required-`DEGRADED` subsystem drains readiness (`503` + `X-Exeris-Health: DEGRADED`) while liveness holds; reversible to `RUNNING`. `SubsystemHealthTransition` JFR. Degraded-mode (real Postgres stop) + restart-recovery (real engine restart → parked-saga checkpoint survives) Testcontainers ITs, gated by the new **`recovery-continuity-gate`** CI job. **Carried to v0.10:** vN→vN+1 two-version upgrade fixture + outbox exactly-once dedup across restart.
 
 ---
 
@@ -1234,17 +1351,21 @@ Prior-knowledge HTTP/2 (`handlePriorKnowledge` lines 88-101) is unaffected — i
 
 **Merge Gate:** Reference deployment documentation and validation checklist completed.
 
+**Status (v0.9):** **DELIVERED** in Sprint 8 (#205) — `docs/operations/reference-deployment.md`: single-node Community topology (kernel + Postgres + optional Kafka/JWKS), runtime profile (JDK 26 preview, `kernel.profile=PROD`, OpenSSL 3.0–4.x), reference resource envelope (explicitly *validate per workload*; defers measured throughput to the `exeris-benchmarks` harness), observability (health probes incl. the `DEGRADED` semantics, Prometheus pull, JFR), and the restart/degraded continuity procedure. Cross-linked with `support-matrix.md` + `bootstrap.md`.
+
 ---
 
 ### Security: JWKS Key Rotation with Overlap Window
 
-**Gap:** The comprehensive technical document targets JWKS key rotation with an explicit overlap window and cutover deadline so a tenant's signing keys can be rotated without dropping in-flight validations, combined with the ADR-012 invariant that JWKS endpoint outage equals deterministic deny. The current `CommunityRemoteJwksValidator` resolves keys per request without an explicit overlap window or staleness budget.
+**Gap:** The comprehensive technical document targets JWKS key rotation with an explicit overlap window and cutover deadline so a tenant's signing keys can be rotated without dropping in-flight validations, combined with the ADR-012 invariant that JWKS endpoint outage equals deterministic deny. The current `CommunityJwksValidator` resolves a `kid` against a static, immutable `kid -> RSA public key` map fixed at construction — there is no overlap window, staleness budget, or refresh path.
 
 **Owner:** Security subsystem.
 
 **Resolution:** Add a `JwksRotationPolicy` SPI carrying the overlap window length and cutover deadline; cache the previous key-set for the overlap duration so signatures produced under the old `kid` continue to verify until the deadline; emit a `JwksKeyRotationEvent` JFR record at fetch / rotation / cutover; deterministically deny on JWKS endpoint outage past the configured stale-window, consistent with the failure-mode plan for cached JWKS keys.
 
 **Merge Gate:** Abstract TCK covers overlap-window behaviour, cutover deny, and stale-fetch deny; Community binding green; security-audit checklist signed for rotation correctness.
+
+**Status (v0.9):** **DELIVERED** in Sprint 4 — Community-only per the Sprint 3 IdentityProvider RFC (no SPI surface this milestone; the rotation timing policy promotes to `eu.exeris.kernel.spi.security.identity` in v0.10 alongside `IdentityProvider`/ADR-040). Shipped: a format-blind `KeyRotationPolicy` (overlap window + stale-fetch budget) and `CommunityRotatingKeySet` (current + retiring key generation, `Clock`-driven overlap/cutover, deterministic deny on stale refresh past budget — ADR-012 fail-closed, never fail-open), composed into `CommunityJwksValidator` behind a `JwksKeyResolver` seam so the static-map path is byte-for-byte unchanged. Deny reasons `kid-rotated-out` / `jwks-stale` map to `EX-SEC-2002` (secret-safe). `CommunityJwksKeyRotationEvent` JFR emits `ROTATION` (one event per actual generation rotation) / `CUTOVER_DENY` / `STALE_DENY` (per-request denies; opaque kid labels + counts only — no key material). `AbstractSecurityProviderTck` gains the overlap-fresh / cutover-deny / stale-fetch-deny merge-gate triplet (reason-string asserted), Community binding green, plus a JFR-emission test. Real OIDC/JWKS HTTP fetch remains the v0.10 `CommunityOidcIdentityProvider` deliverable that consumes this rotation seam.
 
 ---
 
@@ -1260,6 +1381,8 @@ Prior-knowledge HTTP/2 (`handlePriorKnowledge` lines 88-101) is unaffected — i
 
 **Merge Gate:** RFC accepted with one preferred option called out and dissenting positions documented; no kernel code changes in this gate (research / decision track only). Implementation gate deferred to v0.10.
 
+**Status (v0.9):** **DELIVERED** in Sprint 3 — `docs/rfc/RFC-2026-06-08-identity-provider-spi-shape.md` (ACCEPTED). Three axes decided: **structural** = dedicated `IdentityProvider` SPI (`eu.exeris.kernel.spi.security.identity`) with `SecurityProvider` as a thin dispatcher (mirrors the ADR-034/036 registry/driver shape); **first driver** = OIDC+JWKS (`CommunityOidcIdentityProvider`, mostly a refactor of today's `CommunityJwksValidator`); **outbound** = parsed-identity headers (ADR-032 status quo) for v0.10, outbound-credential seam reserved. Dissenting positions (PASETO-first / federation-first / custom-claim-first; structural extend-in-place; outbound pass-through / token-exchange) recorded. Claims→`PrincipalContext` mapping, multi-IDP issuer-dispatch + `StorageContext.isolationKey` routing, failure-mode → `EX-SEC-2002` (fail-closed, terminal-deny, no fall-through), and TCK strategy (`AbstractIdentityProviderTck` + extended `AbstractSecurityProviderTck`) all scoped. **ADR-040 reserved** in `exeris-docs/adr-index.md` (PROPOSED — content + SPI implementation in v0.10). v0.9 Sprint 4 JWKS rotation is a load-bearing dependency. Zero kernel code this sprint.
+
 ---
 
 ### Config: `@Immutable` Annotation Enforcement for Config Keys
@@ -1272,6 +1395,22 @@ Prior-knowledge HTTP/2 (`handlePriorKnowledge` lines 88-101) is unaffected — i
 
 **Merge Gate:** APT processor catches the mutually-exclusive annotation combo; runtime watcher refuses `@Immutable` re-read with a structured event; documented `@Immutable` key catalog reviewed and signed off by Security.
 
+**Status (v0.9):** **DELIVERED** in Sprint 5 — `eu.exeris.kernel.spi.config.Immutable` (RUNTIME-retained, `@Target(FIELD)`, `file`/`key`/`reason` members) seals a `static final` config key against hot-reload, the deliberate inverse of `@Dynamic`. **Compile time:** `ImmutableConfigProcessor` in `exeris-kernel-build-config` (registered via `META-INF/services`, reads annotation FQNs — no SPI reactor edge, mirrors `RequiresRoleProcessor`) fails the build on the mutually-exclusive `@Immutable`+`@Dynamic` combo and on a non-`static-final` placement (`ImmutableConfigProcessorTest`, 3 cases green). **Runtime:** `KernelConfigRegistry` gained sealed-key guards (`registerImmutable` / `isImmutable` / `immutableRegistrations`, same `VarHandle`-sealed discipline) exposed through the new symmetric SPI seam `ConfigProvider.guardImmutable(file, key)` (Community no-op; `RegistryBackedConfigProvider` records the guard). `DynamicConfigFileWatcher` captures each sealed key's boot value on `start()` (before the watcher VT spawns — no seed/event race), and on a subsequent on-disk change **refuses** the reload, preserves the sealed value, and emits the secret-safe single-phase `ImmutableReloadRefusedEvent` (**EX-CFG-1004**, file + key only — never the value); a contradictory `@Dynamic` binding that ever reached runtime is defended against (sealed intent wins). `DynamicConfigFileWatcherTest.ImmutableKeyRefusal` proves a sealed key is refused while a sibling `@Dynamic` key still reloads, and asserts the JFR event. **Catalog:** `docs/subsystems/config.md` §"Security-Relevant Key Catalog" enumerates the trust-anchor classes (security/identity anchors, tenant isolation boundaries, native library paths) that must carry `@Immutable` at GA — no production key is wired to a watcher today, so each is already effectively sealed; adopting the annotation per key is GA hardening. No new ADR (additive realization of the contract already documented in `config.md`); stability **preview** until the `AbstractConfigProviderTck` binding lands.
+
+---
+
+### Transport: `TransportStream.reset(long errorCode)` SPI — Transport-Agnostic Stream Abort
+
+**Gap:** `eu.exeris.kernel.spi.transport.TransportStream` exposes `read`/`write`/`queueWrite`/`close` but has **no transport-agnostic stream-abort method**. A downstream consumer that needs to forcibly abort a single stream (e.g. an HTTP/3 handler issuing `RESET_STREAM` on an uncaught-exception cleanup path) is therefore forced into an `instanceof` reach-through to a concrete transport type to reach its reset/abort primitive. This works while exactly one transport implements a given protocol, but it bypasses the SPI and makes adding a second carrier for the same protocol (e.g. a non-`io_uring` fallback or a memory-loop test transport) risky — the reach-through silently fails to dispatch to the new carrier. Tracked from the H3 failure-isolation work (downstream issue #23).
+
+**Owner:** Transport subsystem.
+
+**Resolution:** Add `void reset(long errorCode)` to `TransportStream` — *"forcibly abort the stream with the given protocol error code, then close it; implementations map the code to the underlying transport's stream-reset mechanism (RFC 9000 §20.1 QUIC `RESET_STREAM` where each protocol stream IS a transport stream; abortive close for raw TCP); idempotent."* Bind it in the Community transport stream implementations (raw TCP stream → abortive close, error code advisory). **Layer note — do not conflate with HTTP/2 `RST_STREAM`:** an HTTP/2 `RST_STREAM` is an *application-codec frame* multiplexed over a single TCP `TransportStream` (see `CommunityHttp2ControlFrames.sendRstStream*`), **not** a transport-stream reset; it is emitted by the HTTP/2 codec and never routes through `TransportStream.reset()`. This SPI addresses the *transport-stream* abort axis (QUIC stream reset / TCP abortive close), where the H3 `instanceof` reach-through lives — it is orthogonal to the HTTP/2 codec's existing per-stream `RST_STREAM` machinery and to inbound rapid-reset (CVE-2023-44487) flood defense. Add an `Abstract*Tck` reset contract (idempotency, post-reset `close()` is a no-op, post-reset I/O rejected). The error code is a caller-supplied `long` — The Wall (ADR-008) holds: the contract exposes no `io_uring`/QUIC/native detail. **Scope is the abort capability only**; promoting other transport-specific reach-throughs (`concludeSendSide`, `releaseDispatch`, etc.) is explicitly out of scope — each needs its own SPI surface review and should be split if pursued. Landing this unblocks a downstream Enterprise cleanup that removes the temporary `instanceof` reach-through introduced for H3 failure isolation.
+
+**Merge Gate:** `reset(long)` on the SPI with Javadoc'd protocol-mapping contract; Community binding(s) green; `Abstract*Tck` covers idempotency + post-reset semantics; ArchUnit/boundary check confirms no native/QUIC vocabulary entered the SPI.
+
+**Status (v0.9):** **DELIVERED.** `TransportStream.reset(long errorCode)` added as a Wall-safe **`default` method** (best-effort graceful `close()`) so the ~5 in-repo test-double implementers keep compiling and a true abort is opt-in by override. Community `NativeTcpStream.reset` overrides it with an abortive close — SO_LINGER 0 so the terminal channel close emits a RST (not a FIN), abandons queued writes (`hasPendingData()` clears immediately, no drain wait), unparks blocked reader/writer, and rejects post-reset I/O via the existing `closeRequested`/`closed` guards. Idempotent and composes with `close()`. `AbstractTransportStreamTck.ResetContract` (4 cases: abandons-pending, idempotent+compose, post-reset write/queueWrite rejected) is green against the real loopback `NativeTcpStream` pair (Community binding). The reset machinery reuses the proven single-consumer/`finishCloseIfDrained` discipline (the MPSC outbound queue is only ever drained by the carrier reactor). **Bundled robustness fixes** (the recurring 2-vCPU CI flake's root cause): **(1)** an unrecoverable outbound-write `IOException` now abandons the queued writes (`abortOnUnrecoverableWriteFailure`, gate-safe) before propagating — previously the pending entry stayed forever, hanging `close()`/teardown; **(2)** `JfrAllocationMonitor` now scopes allocation accounting to the workload thread id, so a leaked transport reactor thread from a prior test can no longer contaminate a zero-allocation contract (the `CitadelGuard AllocationContract` false-failure). Open follow-up: a secret-safe single-phase JFR event at reset (deferred with the broader security/transport validation-stage JFR pass, see Phase 4 N1).
+
 ---
 
 ### HTTP Client: Symmetric Body Codec SPI (Multi-Binding) — deferred from v0.8
@@ -1283,6 +1422,20 @@ Prior-knowledge HTTP/2 (`handlePriorKnowledge` lines 88-101) is unaffected — i
 **Resolution:** Introduce `HttpRequestBodyEncoder<T>` (T → `LoanedBuffer` + content-type headers) and `HttpResponseBodyDecoder<T>` (`LoanedBuffer` + `Class<T>` → T) as a symmetric pair to the existing server-side `HttpResponseBodyEncoder` in a new `eu.exeris.kernel.spi.http.codec` subpackage. Both interfaces must remain implementation-blind — no Jackson types leak across the SPI boundary. `CommunityWebClient` gains a codec-injection seam (additional constructor variant accepting the encoder + decoder pair, or a small `CodecRegistry` wrapper); the existing constructors retain the Jackson 3 default for ergonomics. Provide an `AbstractHttpBodyCodecTck` covering round-trip, error-on-mismatch, and content-type negotiation across the two TCK-bound bindings.
 
 **Merge Gate:** SPI contract validated against at least two bindings (Jackson 3 as the canonical default + one alternative — Gson, Moshi, or native Panama binary — chosen at sprint scoping based on the first external consumer's request) so the abstract TCK reflects real contract pressure, not single-implementation guesswork. Sprint scheduling gated on either (a) a concrete external consumer requesting non-Jackson binding, or (b) a benchmark demonstrating measurable zero-allocation win for a native binary codec on the request hot path.
+
+**Status (v0.9):** **DEFERRED to v0.10** (covers this + the two sibling HTTP-client entries below — Generic-Element Decode and Retry/Backoff Policy). Per the 2026-05-18 "Path B" decision, Sprint 6 was **design-only**: the codec/retry surface shape is locked by the ADR-034 family, with **zero kernel SPI commits in v0.9**. Implementation lands when a concrete external consumer or a measured zero-alloc win materialises (the merge-gate trigger above).
+
+---
+
+### HTTP Client: Generic-Element Decode (`TypeReference`-style facade overload) — deferred from v0.8
+
+**Gap:** The body-codec decode SPIs take a raw `Class<?> targetType` (`HttpResponseBodyDecoder.decode(LoanedBuffer, Class<?>, …)` client-read; `HttpRequestBodyDecoder` server-read). A raw `Class` cannot carry a parameterized element type: decoding a `findAll` → `List<Widget>` response by passing `List.class` loses `Widget` to type erasure, so the Jackson driver yields `List<LinkedHashMap>` rather than `List<Widget>`. Any `KernelWebClient` call — and any generated client operation — returning a generic container (`List<T>`, `Map<K, V>`, nested generics) cannot recover the element type through the `Class<?>` seam. The single-object path (`findById → Widget.class`) is unaffected; this is a real limitation only on collection/parameterized returns.
+
+**Owner:** HTTP / Transport subsystem (kernel facade — `KernelWebClient`).
+
+**Resolution:** Add a generics-carrying **overload on the kernel facade** decode path — a kernel-neutral type token (analogous to Jackson `TypeReference<T>`, but implementation-blind so no Jackson type crosses the SPI boundary) that preserves the full parameterized type to the resolved decoder. This is a **facade-side overload on `KernelWebClient`, NOT a codec change in `exeris-tooling`**: the generator keeps emitting the decode call and only switches collection-returning operations to the token overload; the kernel owns the type-carrying seam and the driver's Jackson binding consumes the resolved generic type. The existing `Class<?>` path stays as the default for non-generic returns. Decide whether the token threads through the decode SPI (a parallel `decode(LoanedBuffer, <type-token>, …)`) or is resolved to a parameterized `java.lang.reflect.Type` at the facade and handed to the driver — keep it implementation-blind either way.
+
+**Merge Gate:** A `List<Widget>` round-trip (plus one `Map` / nested-generic case) decodes to the correct element type via the facade token overload; the `Class<?>` path is unchanged for non-generic types; no Jackson `TypeReference` (or any driver type) appears in an SPI signature (The Wall). Naturally rides alongside the Symmetric Body Codec multi-binding work above — same decode surface, same facade seam.
 
 ---
 
@@ -1314,6 +1467,8 @@ Prior-knowledge HTTP/2 (`handlePriorKnowledge` lines 88-101) is unaffected — i
 
 **Merge Gate:** Build green on both OpenSSL 3.5 LTS and OpenSSL 4.0 in CI; ADR-008 reflects the new baseline; no behavioral regression in existing TLS TCK suites; `OpenSslLoadEvent` observable in JFR recordings of a normal startup.
 
+**Status (v0.9):** **DELIVERED** in Sprint 4b — `CoreOpenSslLoader` migrated the CTX constructor from `SSL_CTX_new` to the provider-aware `SSL_CTX_new_ex` (FIPS-ready `libctx` / `propq` seam, NULL for now); library candidate lists gained `.so.4` SONAMEs resolved newest-major-first (explicit env override still wins); the version gate was hardened to `OPENSSL_version_major` / `OPENSSL_version_minor` with an accepted band of `3 <= major <= 4` plus a per-library `ssl` / `crypto` major-match guard. The supported floor is **retained at 3.0.0** to keep the FIPS-validated 3.1.2 build loadable. `OpenSslLoadEvent` (version + resolved paths) lands in JFR; the CI smoke matrix builds OpenSSL 3.5.6 and 4.0.0 from source, both required. ADR-008 §1 was descriptively refreshed within the same boundary (no new ADR). The FIPS provider, a dedicated 3.1.2 CI job, and the libctx-injection overload are **deferred to Workstream F** (which will carry its own reserved ADR). Rationale for not adding a 3.1.2 binary CI job in 4b: gate acceptance of 3.1.2 is already pinned by the pure version-band unit test (`CoreOpenSslVersionGateTest#acceptsSupportedBand`), and in non-FIPS mode a 3.1.2 binary is ABI-redundant with the 3.5.6 job (same major 3, same `.so.3` SONAME, same `SSL_CTX_new_ex` handshake path). The 3.1.2 job earns distinct signal only in **FIPS mode** (`libctx` + validated fips provider + `propq="fips=yes"`), which is exactly Workstream F's machinery — so 3.1.2 lands there as a FIPS-mode job, testing the property that is actually unique to it.
+
 ---
 
 ### Cryptography: Off-Heap Key Material Zeroization
@@ -1325,6 +1480,8 @@ Prior-knowledge HTTP/2 (`handlePriorKnowledge` lines 88-101) is unaffected — i
 **Resolution:** Bind `OPENSSL_cleanse` from `libcrypto` and expose it via the OpenSSL runtime facade; audit existing call-sites that hold key material (`OffHeapTlsEngine` handshake state, native cipher contexts, JWT signing material) and route their disposal through cleanse before arena release. Promote to a `SensitiveBuffer` SPI marker if additional call-sites accumulate, with `close()` contractually guaranteeing cleanse before underlying arena release.
 
 **Merge Gate:** `OPENSSL_cleanse` binding present and invoked from every identified secret-holding path on disposal; TCK assertion via a probe segment proves zeroed buffer contents after disposal for at least one representative path.
+
+**Status (v0.9):** **DEFERRED / CARRIED** — not implemented in v0.9 (no `OPENSSL_cleanse` binding landed). Carried forward; pairs naturally with the FIPS workstream below.
 
 ---
 
@@ -1346,6 +1503,33 @@ This workstream pairs with the §"Off-Heap Key Material Zeroization" item above:
 
 ---
 
+### Quality: Test Coverage & TCK Hardening
+
+**Gap:** A 2026-06-09 re-measure put aggregate coverage at **68.4% line / 55.3% branch**, with the JaCoCo gate enforcing **LINE only** (branch entirely unguarded), and **8 `Abstract*Tck` contract bases unbound** (defined with real `@Test` methods but no concrete binding → running nowhere). Adversarial cases (`alg=none`, HS/RS confusion, request smuggling, Rapid Reset) exist as one-off unit tests but are not codified as portable, provider-binding contracts. For a runtime of this maturity the edge-case levers are branch coverage and bound contracts, not raw line %.
+
+**Owner:** Quality / TCK. Sequenced TCK-breadth-first (founder decision 2026-06-09): correctness contracts before raw %.
+
+**Resolution (phased):**
+
+1. **Phase 1 — bind the bindable unbound contracts.** Add concrete binding subclasses for the `Abstract*Tck` bases whose production implementation already exists, so their dormant `@Test` methods run in CI against shipping code.
+2. **Phase 2 — codify adversarial cases as portable contracts.** Promote one-off security/HTTP negative tests into `Abstract*Tck` requirements: `alg=none` / HS-RS confusion / embedded `jwk`/`jku`/`x5u` rejection in `AbstractSecurityProviderTck`; request smuggling / Rapid Reset (CVE-2023-44487) / pseudo-header duplication in the HTTP server TCKs; TLS-floor / `SSL_VERIFY_PEER` in the crypto TCK.
+3. **Phase 3 — coverage mechanics.** Add a BRANCH minimum to the JaCoCo gate at the current measured level then ratchet; merge IT-gated `jacoco.exec` (persistence-rls / kafka-integration gates) into the aggregate report (accounting fix — lifts artificially-depressed flow/kafka numbers without new tests); add cheap SPI carrier/exception unit tests.
+4. **Phase 4 (separate) — `IsolationStrategyContract` fail-OPEN → fail-closed** (requires TCK + impl + ADR-012 amendment).
+
+**Pending-feature (deliberately unbound, NOT a test gap):** `AbstractEventStreamReaderTck` / `AbstractEventStreamAppenderTck` (blocked on a durability driver) and `AbstractHttpClientRequestEnricherTck` (blocked on a concrete ADR-032 enricher impl — the SPI + `noop()` exist, no driver landed). These bind when their feature ships.
+
+**Merge Gate:** Each bound TCK passes against the shipping implementation (a red bound TCK is a contract-violation finding, not a reason to weaken the test); branch gate added and ratcheted; aggregate trends toward 85% line / branch.
+
+**Status (v0.9):** Phase 1 **DELIVERED** — bound 3 of 5 bindable contracts (**28 dormant `@Test` now running in CI, all green, zero contract violations surfaced**): `AbstractBootstrapOrchestratorTck` (against the real `SubsystemTopologicalSorter`), `AbstractProviderBindingLifecycleTck`, and `AbstractRowCursorTck` (against `CommunityPersistenceEngine` over H2 — note the contract's native-segment-release clause is vacuous for the JDBC binding, which allocates no `MemoryAllocator` segments; that clause is exercised only by a future native/Enterprise `RowCursor` binding). `AbstractGracefulShutdownTck` and the generic `AbstractCarrierPinningTck` are **deferred to a follow-up**: both require a fully-started multi-engine kernel over the native TCP transport (100k-VT drain / 10k-VT pinning spike) — heavy end-to-end fixtures that would be flaky or vacuous if forced; per-subsystem carrier-pinning is already covered transitively by the bound `AbstractSubsystemCarrierPinningTck` hierarchy.
+
+Phase 2 **DELIVERED (partial — security portable, HTTP codec-local)**: the JWT algorithm vectors became a true portable contract — `AbstractSecurityProviderTck.AlgorithmConfusionContract` asserts `alg=none` (signature-stripping downgrade) and RS256→HS256 confusion (HMAC keyed on the published RSA public key) are denied with `EX-SEC-2002`, with `TestJwt.algNone()` / `hmacConfusion()` minting the adversarial tokens; the Community binding overrides both factories (3 new `@Test`, green — `CommunityJwksValidator`'s kid→alg→signature order already pins RS256, so these lock the posture against a future `IdentityProvider` SPI regression). The HTTP/2 vectors are **codec-local, not portable TCK** — HTTP/2 frame decode has no SPI seam (The Wall holds; an HTTP/2 logical stream is multiplexed over one TCP `TransportStream`, the codec internals are Community runtime), so they land as Community tests: **pseudo-header duplication is now fixed** in `PendingRequestHeaders` (RFC 7540 §8.1.2.3 — a repeated `:path`/`:method`/`:authority` fails closed instead of last-wins overwrite, closing a request-smuggling vector) with `PendingRequestHeadersTest` covering duplicate/ordering/unknown cases. **Deferred within Phase 2:** embedded `jwk`/`jku`/`x5u` header rejection (already structurally safe — the validator resolves keys only via its own kid keyset, never honoring token-supplied keys — a confirming contract is a cheap follow-up); HTTP/1.1 CL-vs-`Transfer-Encoding` smuggling (Community ingress is HTTP/2-first; no HTTP/1.1 body-framing surface to attack); TLS-floor / `SSL_VERIFY_PEER` (needs a live-OpenSSL crypto IT, Workstream-F-adjacent). Rapid Reset (CVE-2023-44487) is a real missing mitigation, carved out as its own hardening entry (below) with an `@Disabled` executable-spec (`Http2RapidResetSpecTest`) committing the contract ahead of the fix.
+
+Phase 3 **DELIVERED (branch gate + SPI tests; IT-exec accounting deferred)**: the JaCoCo gate now enforces a **BRANCH** floor alongside LINE — a second `COVEREDRATIO` limit on the `BRANCH` counter in the root coverage profile, with per-module `${jacoco.branch.minimum}` overrides ratcheted ~6-8 pp below the 2026-06-10 unit-path baseline (spi 0.22, core 0.55, community 0.50, community-kafka 0.10, build-config 0.70; diagnostics-cli ungated like its LINE floor — only 12 branches, too volatile). Branch was the v0.8 audit's blind spot (line could hold while branch rotted); it is now gated with `haltOnFailure=true`. Three cheap, contract-meaningful SPI test classes lifted the weakest module (spi branch **22.1% → 30.0%**, +61 covered branches): `HttpStatusTest` (code-band validation + 1xx-5xx class predicates), `HttpMethodTest` (RFC 9110 safe/idempotent/typical-body semantics), `PrincipalContextDefaultsTest` (role/scope `hasAny*` short-circuit defaults via a minimal SPI-only impl). **Deferred — IT-exec accounting:** merging the persistence-rls / kafka-integration gate `jacoco.exec` into a combined report is genuine cross-job CI plumbing (artifact upload from each gate job + a `report-aggregate` step) and is carved out as its own follow-up rather than bundled into the branch-gate change; until then the community/kafka branch floors stay at the unit-only baseline (their `IT`-covered branches are real but uncounted, noted in each module pom).
+
+Phase 4 **DELIVERED — `IsolationStrategyContract` fail-OPEN → fail-closed (S-P0-07, ADR-012 §4a amended)**: the v0.8 security audit's P0 finding was that a declared `SEPARATED_SCHEMA`/`DEDICATED` strategy with a missing/blank/wrong-typed required sub-claim — or an unrecognized strategy value — was silently **downgraded to SHARED** (the weakest isolation tier). ADR-012 §4a literally codified this as the "deterministic-deny analog", but a downgrade is **fail-OPEN**, not deny. Inverted across all three layers: `CommunityJwksValidator.resolveStorageContext` now **terminal-denies** (`SecurityAuthenticationException` → `EX-SEC-2002`, secret-safe reason codes `isolation-incomplete` / `isolation-unknown-strategy` / `isolation-malformed`) for every declared-but-unhonourable strategy; the **only** permissive fall-through is a genuinely absent/blank claim → SHARED keyed on the subject. `AbstractSecurityProviderTck.IsolationStrategyContract` and the Community `CommunityIsolationStrategyResolutionTest` are inverted to assert deny (was: assert SHARED); a new explicit-`SHARED` case and a wrong-typed-claim case were added (`TestJwt.claimRaw` mints the non-string claim). ADR-012 §4a + §9 amended (2026-06-10) and superseded the old conflated rule; SECURITY.md §Storage Isolation already listed the downgrade as reportable (now consistent). This closes the v0.9 Sprint 4c coverage/TCK-hardening arc; the remaining backlog (IT-exec accounting, Rapid Reset impl, `TransportStream.reset` #23) is tracked in its own entries. **Follow-up (PR #176 review N1) — validation-stage deny JFR:** the new deny reason codes (like the pre-existing `signature-invalid` / `unknown-kid` / `expired` codes) throw `SecurityAuthenticationException` without a dedicated *validation-stage* JFR event — they are surfaced today by `SecurityInterceptor`'s catch-and-emit at the authn boundary, not at the `CommunityJwksValidator` stage. ADR-012 §8 envisions typed per-stage deny telemetry; emitting a secret-safe (reason-code-only, single-phase) JFR event at each validator deny site is a tracked follow-up covering all reason codes uniformly (not just the new isolation ones), to be done alongside the broader security-JFR pass rather than piecemeal.
+
+---
+
 ## Known Gaps / Future Work planned for v0.10
 
 ### Security: `IdentityProvider` SPI + First Driver
@@ -1357,6 +1541,34 @@ This workstream pairs with the §"Off-Heap Key Material Zeroization" item above:
 **Resolution:** Implement the SPI per the accepted RFC and reserved ADR — minimally `IdentityProvider`, `TokenValidator`, `ClaimsMapper` in `eu.exeris.kernel.spi.security.identity` — and ship the first Community driver (the default selected by RFC, expected to be OIDC + JWKS). Wire validator into the HTTP request lifecycle so a request bearing a valid token populates `PrincipalContext` via `ScopedValue` before reaching dispatcher handlers. The v0.9 JWKS rotation with overlap window becomes a load-bearing dependency. Provide `AbstractIdentityProviderTck` covering: valid token → `PrincipalContext` populated, malformed token → request rejected with structured `EX-SEC-*` error code, expired token → rejected with distinct code, IDP unreachable → fail-fast vs fail-open per RFC decision, multi-IDP composition driven by `StorageContext.isolationKey`.
 
 **Merge Gate:** ADR accepted; SPI green on TCK; first Community driver bound; integration test against an OIDC container (Keycloak or RFC-selected default) in CI; no Spring or framework DI types leak into SPI / Core packages (Wall preserved); `PrincipalContext` carrier shape unchanged (additive only — no breaking-change framing per pre-1.0 / TRL-3 stance); JFR `IdentityValidationEvent` / `IdentityRejectionEvent` carried for observability.
+
+---
+
+### Events: Binding-Agnostic `topic` Concept on the Event Descriptor SPI
+
+**Gap:** The Open-Core event descriptor carries no `topic` concept, so the event routing target is not portable across `EventEngine` bindings. The Community in-memory `EventBus` ignores any topic notion entirely, while the `exeris-kernel-community-kafka` driver invents its own topic mapping at the binding layer — there is no shared SPI seam that both implementations honour, so the routing target is not swappable between the in-memory and Kafka bindings. The SDK `@DomainEvent.topic` annotation (owned by `exeris-sdk`) already captures author intent at design time and is carried through codegen, but it has no sink on the kernel side: the descriptor SPI offers nowhere to land it. The deliberate tiering decision (why the open-core descriptor omits `topic`) is also undocumented. Surfaced during downstream dogfooding (Stellar-Tactics multi-service build, 2026-06; finding K1 + the `@DomainEvent.topic` twin).
+
+**Owner:** Events subsystem (kernel SPI seam). The `@DomainEvent.topic` annotation itself stays owned by `exeris-sdk` — this entry covers only the kernel-side descriptor field that would consume it.
+
+**Resolution:** Either (a) **document the deliberate tiering** — record in `docs/subsystems/events.md` why the open-core event descriptor has no `topic` and that broker routing is a binding-private concern — or (b) **promote `topic` to a binding-agnostic field on the event descriptor SPI** so it becomes the shared routing target, swappable between the Community `EventBus` (which may map it to a logical channel or treat it as advisory) and the Kafka driver (which maps it to a Kafka topic). If (b): keep the field optional/additive (no breaking-change framing per pre-1.0 / TRL-3 stance), define absent/empty semantics for in-memory bindings, and wire codegen so `@DomainEvent.topic` populates it. **Encoding constraint:** `EventDescriptor` is primitive-only by contract (`events.md` §1 — composed exclusively of `long` / `int` for Valhalla scalarization and O(1) zero-allocation dispatch), so `topic` must be carried as an ordinal `int` registered in `EventRegistry` (same pattern as event-type ordinals), **not** a bare `String` field — a mixed record would lose C2 scalarizability today and block value-record migration under JEP 401. Low priority — this is primarily a documentation-or-small-SPI decision, not a runtime feature.
+
+**Merge Gate:** Decision recorded in `docs/subsystems/events.md`; if (b), the descriptor carrier change is additive and covered by an `AbstractEventEngineTck` assertion that `topic` round-trips through both the Community in-memory binding and the Kafka binding (Testcontainers), plus an end-to-end check that the SDK→codegen→SPI population path lands the captured `@DomainEvent.topic`.
+
+See also: [Events Subsystem](./subsystems/events.md).
+
+---
+
+### Multi-Tenancy: Shared-World / `Universe` Scope Tier — RFC Track
+
+**Gap:** The kernel models isolation through a single tenant-scoping primitive (`StorageContext.isolationKey`, per ADR-012). There is no scope tier above (or beside) the tenant for a *shared* world that multiple tenants observe and mutate together — e.g. a shared game universe, a common reference dataset, or a cross-tenant collaboration space. Today applications needing this force `isolationKey` to do double duty (one key meaning both "tenant" and "shared world"), which collapses the two concerns and either over-isolates (no sharing possible) or under-isolates (the tenant boundary leaks). Surfaced during downstream dogfooding (Stellar-Tactics multi-service build, 2026-06; finding K3, High).
+
+**Owner:** Security / Persistence subsystem (isolation model) + SDK/Tooling (scope expression at design time).
+
+**Resolution:** Open an RFC in `exeris-docs/` (`RFC-YYYY-MM-DD Shared-World Scope Tier.md`, per `exeris-docs/templates/RFC-TEMPLATE.md` — RFC not ADR because this is a multi-option model change touching the load-bearing ADR-012 isolation contract, with no committed decision). Scope enumerates: whether the shared-world tier is a new orthogonal dimension on `StorageContext` (e.g. `universeKey` independent of `isolationKey`) vs a reserved sentinel value of `isolationKey` vs a composite scope carrier; read/write semantics for shared vs tenant-private state; interaction with the `StorageContextBridge` derivation path and persistence isolation queries; how the security model authorizes cross-tenant access to shared scope (whether `CitadelGuard` / `PrincipalContext` need a shared-scope grant); blast-radius / fail-closed defaults so a misconfigured shared tier never silently widens tenant visibility; SDK/Tooling expression (how a domain author declares an entity shared-world vs tenant-scoped); and TCK strategy. RFC accepted → **either** amend ADR-012 (if scope stays bounded to the isolation model — reuses ADR-012's number, no reservation) **or** reserve a new ADR number in `~/exeris-systems/exeris-docs/adr-index.md` for a companion isolation-extension ADR (if the shared-world tier grows its own surface) → SPI/model change lands in a later milestone. Expected path: ADR-012 amendment.
+
+**Merge Gate:** RFC accepted with one shape selected and dissenting positions recorded; no kernel SPI commits in this gate (decision-only track). Any subsequent isolation-model change must preserve ADR-012 fail-closed guarantees, extend the relevant isolation TCK with a shared-vs-tenant access matrix, and remain additive on `StorageContext` (no breaking-change framing per pre-1.0 / TRL-3 stance).
+
+See also: ADR-012 (isolation model); [Security Subsystem](./subsystems/security.md).
 
 ---
 
@@ -1386,6 +1598,46 @@ This workstream pairs with the §"Off-Heap Key Material Zeroization" item above:
 
 ---
 
+### Runtime: Cross-Node Coordination (Leader Election / Distributed Lock) — RFC Track
+
+**Gap:** The "5 instances = the same app" deployment shape is standard scale-out, and the kernel already provides most of the substrate: stateless per-request handling (`ScopedValue` context, Flow/HTTP per request — any instance serves any request), shared durable state via Postgres (ADR-013 + ADR-022), and cross-node fan-out via the Kafka Events driver. What has **no** first-class kernel seam is cross-node *coordination*: distributed lock, leader election, and singleton execution ("only one instance runs this cron / drain / migration"). Today this can be hand-rolled over Kafka consumer groups or Postgres advisory locks, but with no SPI every application reinvents it and the correctness burden (fencing tokens, lease expiry, split-brain) lands on application code. The `JobScheduler` SPI (v0.11) already anticipates a *subset* — its durable backend carries leader-election semantics for singleton job dispatch — but a general-purpose coordination primitive usable outside scheduling does not exist. Surfaced during downstream dogfooding (Stellar-Tactics multi-node framing, 2026-06).
+
+**Owner:** Runtime / Coordination subsystem.
+
+**Resolution:** Open an RFC in `exeris-docs/` (`RFC-YYYY-MM-DD Cross-Node Coordination Seam.md`, per `exeris-docs/templates/RFC-TEMPLATE.md` — RFC not ADR because the option space is open and no decision is committed). **Design constraint, load-bearing:** keep this a thin seam over substrate the kernel already owns (Kafka consumer groups, Postgres advisory locks) — explicitly *not* a new "cluster subsystem": no membership protocol, no gossip, no embedded consensus. Scope enumerates: the minimal contract (`tryLock(key, lease)` / `renew` / `release` with a fencing token, and a `leadership(group)` observer), the backend strategies (Postgres advisory-lock driver for the no-Kafka deployment, Kafka-consumer-group driver for the eventing deployment), lease-expiry / fencing-token semantics so a paused leader cannot act after losing leadership, the relationship to `JobScheduler` leader-election (coordination becomes the shared primitive the scheduler's durable backend consumes, not a parallel mechanism), failure-mode classification (backend unreachable → fail-closed deny vs degraded single-node), and TCK strategy including an adversarial split-brain probe. RFC accepted → reserve next free ADR number in `~/exeris-systems/exeris-docs/adr-index.md` → ADR → SPI/driver in a later milestone.
+
+**Merge Gate:** RFC accepted with one shape selected and dissenting positions recorded; no kernel SPI commits in this gate (decision-only track). If a coordination seam is chosen, the implementation gate requires `AbstractCoordinationTck` (lock acquire/release, lease expiry, fencing-token monotonicity, leadership handoff, adversarial split-brain), at least one Community driver (Postgres advisory lock), `JobScheduler` singleton dispatch refactored to consume it (no duplicate leader-election path), and The Wall preserved (no framework DI; coordination must not couple Core to a concrete backend type).
+
+See also: v0.11 §"Runtime: `JobScheduler` SPI" (leader-election subset); ADR-013 / ADR-022 (Postgres-durable distributed state).
+
+---
+
+### Events: Multi-Node Delivery Boundary — Default Driver Is Single-Node (Documentation Clarity)
+
+**Gap:** The multi-node operational contract of the Events subsystem is undocumented, and the default Community Events driver is easy to mistake for cross-node. The default driver (Postgres Outbox + JVM-heap pub/sub) is **single-node**: the in-heap event bus does not cross the node boundary. The Outbox gives durable *emission* (an event survives crash and is retried), but **cross-node delivery requires the Kafka driver** (`exeris-kernel-community-kafka`) — a multi-node deployment that fans events out to peers must run on the Kafka driver, not the default. This is a real distinction operators need stated explicitly, not a code gap. Surfaced during downstream dogfooding (Stellar-Tactics multi-node framing, 2026-06).
+
+**Owner:** Events subsystem (documentation) / Docs.
+
+**Resolution:** Document the delivery boundary in `docs/subsystems/events.md` and the operator-facing docs: default driver = single-node in-heap bus + durable Outbox emission; cross-node delivery = Kafka driver; the in-heap bus never crosses the node boundary. State it alongside the multi-node substrate inventory (stateless per-request via `ScopedValue`; shared durable state via Postgres per ADR-013 / ADR-022; cross-node fan-out via Kafka) so the "what do I get out of the box for 5 instances" question has a single authoritative answer. Documentation-only; no code change.
+
+**Merge Gate:** `docs/subsystems/events.md` states the single-node-default vs Kafka-cross-node delivery boundary; the multi-node substrate inventory is recorded in one authoritative place (events.md or the operator deployment doc). No TCK / SPI change.
+
+---
+
+### HTTP Client: Service Discovery & Logical Addressing for `KernelWebClient` — RFC Track
+
+**Gap:** `KernelWebClient` (ADR-034 — the tier-neutral Core facade in `eu.exeris.kernel.core.http.client`, superseding ADR-026's `CommunityWebClient`; on the `HttpClientEngine` SPI) targets a single, statically-configured host: the caller supplies a concrete base URL and the generated typed client emits own-app / relative-host paths only. There is no seam to resolve a *logical* service name (e.g. `billing-service`) to a concrete address at call time — no static service-map config, no DNS/SRV strategy, no registry lookup, no sidecar/mesh hook. The moment an ecosystem splits into N generated applications that must call each other, every caller hard-codes peer hostnames. This is the kernel-side half of the tooling "mesh" gap (T12, owned by `exeris-tooling`): even once the generator can import a cross-app contract, the client has nowhere to resolve the target's address. Surfaced during downstream dogfooding (Stellar-Tactics multi-service split, 2026-06; finding K4, Medium; kernel touchpoint of T12).
+
+**Owner:** HTTP subsystem (client addressing). The cross-app contract import / generated-client side is owned by `exeris-tooling` (T12) and tracked there.
+
+**Resolution:** Open an RFC in `exeris-docs/` (`RFC-YYYY-MM-DD WebClient Service Addressing.md`, per `exeris-docs/templates/RFC-TEMPLATE.md` — RFC not ADR because the option space is wide and no decision is committed). Scope enumerates the resolution strategies and their boundary cost: (a) static logical-name → endpoint map in config (zero new runtime dependency, no liveness); (b) DNS / DNS-SRV resolution (standard, env-provided, no kernel registry); (c) a `ServiceResolver` SPI seam that `KernelWebClient` consults to turn a logical name into an endpoint (Community static/DNS driver; Enterprise/registry drivers out-of-repo); (d) delegate entirely to a service-mesh sidecar (kernel stays single-host; addressing is an ops concern). Cross-cutting questions: interaction with the existing `HttpClientRequestEnricher` (ADR-032) and the v0.9 IDP outbound-credential decision (identity must survive re-addressing); failure-mode classification (name unresolved / no healthy endpoint / resolution timeout); whether resolution is per-call or cached with TTL; and Wall integrity (no DI container, no `ThreadLocal`, resolution must not couple the client to a concrete registry type). RFC accepted → reserve next free ADR number in `~/exeris-systems/exeris-docs/adr-index.md` → ADR → SPI/driver lands in a later milestone.
+
+**Merge Gate:** RFC accepted with one shape selected and dissenting positions recorded; no kernel SPI commits in this gate (decision-only track). If a `ServiceResolver` seam is chosen, the subsequent implementation gate requires `AbstractServiceResolverTck` (logical-name resolve, unresolved-name failure, endpoint-health/timeout behavior), a Community binding, identity propagation preserved across resolution (ADR-032 enricher composes), and The Wall preserved (no framework DI / registry type leak into SPI / Core).
+
+See also: ADR-034 (`KernelWebClient` facade, superseding ADR-026), ADR-032 (`HttpClientRequestEnricher`); v0.9 §"Security: `IdentityProvider` SPI Direction — RFC Track" (outbound-credential touchpoint).
+
+---
+
 ## Known Gaps / Future Work planned for v0.12
 
 ### HTTP: `WebSocketProvider` SPI (or SSE-Only Commitment)
@@ -1398,6 +1650,8 @@ This workstream pairs with the §"Off-Heap Key Material Zeroization" item above:
 
 **Merge Gate:** RFC accepted with one shape selected and dissenting position recorded; if (b), SPI green on TCK + Community binding green + isolation-key scoping verified (per-tenant WS rooms via `StorageContext.isolationKey`); if (a), SSE pattern documented in operator-facing docs with an explicit "WebSocket = post-1.0" note in the Support Matrix (per v0.9 §"Support Matrix Finalization").
 
+**Status (RFC opened 2026-06-18 — shifted earlier than v0.12):** the RFC is `docs/rfc/RFC-2026-06-18-http-streaming-spi.md`. Preferred direction = a variant of option (a): **SSE-first** over a **sibling `HttpStreamExchange`** (not a streaming mode on `HttpExchange`; respond-once invariant preserved), with WebSocket deferred to a later, separately-justified decision. **ADR-043 reserved.** Implementation **brought earlier to v0.10/v0.11** (not v0.12) to unblock the SDK `realTimeApi` / `@Action(streaming)` chain. The eight load-bearing design questions for ADR-043 (exchange surface + disconnect-as-throw, park-the-VT `emit()`, `LoanedBuffer` transfer ownership, streaming-lifecycle JFR, `EX-HTTP-*` taxonomy, router extension, PAQS accounting, JWT-expiry-mid-stream fail-closed) are enumerated in the RFC.
+
 ---
 
 ### Runtime: `CacheProvider` SPI — RFC Track Only
@@ -1408,7 +1662,40 @@ This workstream pairs with the §"Off-Heap Key Material Zeroization" item above:
 
 **Resolution:** Open an RFC enumerating contract questions: read-through vs read-aside semantics, invalidation strategy (TTL-only vs key-level invalidate vs region-flush), `PrincipalContext` / `StorageContext` scoping (per-tenant cache regions), serialization shape for distributed backends, async vs sync `get` semantics on Loom (blocking-on-Loom is acceptable but the contract must be explicit), interaction with the existing `WatermarkManager` SHED_LOAD decisions. RFC stops at "RFC accepted with preferred shape called out"; SPI lands only when a concrete second-backend pull materializes (downstream consumer requesting Redis, or benchmark demonstrating off-heap slab win). Until then, generator emission for `cacheable` flag remains a tooling-only Caffeine wiring.
 
-**Merge Gate:** RFC accepted; no kernel SPI commits in this gate (decision-only track). SPI implementation gate deferred to a future version, conditional on real second-backend pull.
+**Binding-agnostic shape (same open-core pattern as Events `topic`, transport NIO/`io_uring`).** Specify a single `CacheProvider` SPI that is swappable across bindings exactly as K1 proposes for the Events `topic` seam: Community ships an in-process / off-heap KV implementation behind the SPI; enterprise / adapter bindings provide Redis / Hazelcast. Application code is written against the contract, not the backend. **Distributed invalidation rides the Events bus, not a separate channel:** a region flush / key invalidate is published as an event, so the cache seam reuses the multi-node substrate already in place rather than introducing a second coordination mechanism. For single-node deployments the in-heap `CommunityEventBus` is itself the channel — coherent invalidation with no Kafka dependency; Kafka is the multi-node path only (the Community binding must not require Kafka for correctness). K1 (`topic`) + `CacheProvider` + invalidation-over-events = one coherent multi-node story with zero new data-plane in the kernel.
+
+**Coherence is a `[CONTRACT]` landmine.** Local (in-process) and distributed cache backends have *different* coherence semantics; if the SPI hides this, business code written against the contract is subtly wrong after a backend swap (a stale read that never happens on Caffeine surfaces under Redis). The RFC must resolve this one of two ways: make coherence an explicit part of the contract (stated staleness / read-after-write / invalidation guarantees the caller can rely on regardless of backend), or bind invalidation to the Events bus so coherence is delivered by the same mechanism on every backend. The invalidation-over-events choice above discharges this automatically.
+
+**Merge Gate:** RFC accepted with the coherence-semantics contract resolved (explicit staleness/invalidation guarantees, or invalidation bound to the Events bus) so a backend swap cannot silently change correctness; no kernel SPI commits in this gate (decision-only track). SPI implementation gate deferred to a future version, conditional on real second-backend pull; when it lands, distributed invalidation reuses the Events bus rather than a new channel.
+
+---
+
+## Platform Baseline for 1.0 GA — JDK 25 LTS + Preview-Clean Critical Path (decouple `StructuredTaskScope`)
+
+### Runtime / Platform: a 1.0 GA artifact must not require `--enable-preview` of its consumers
+
+**Gap:** The build today targets JDK 26 with `--enable-preview` enabled globally (`pom.xml` `maven.compiler.release=26` + `--enable-preview`). The **only** preview API on which the runtime depends is `StructuredTaskScope` (still preview in JDK 26, continuing the multi-release JEP 453→462→480→499→505 preview chain); every other Loom/Panama primitive the kernel stands on is already **GA**: virtual threads (JEP 444, GA in 21), `ScopedValue` (JEP 506, GA in **25 LTS**), and the Foreign Function & Memory API (JEP 454, GA in 22). `StructuredTaskScope` is on a long preview track (seventh preview in JDK 27, with the exception model still changing — `Joiner` join-exception type parameter, `FailedException` → `ExecutionException`) and its own design lead calls a JDK 29 exit from preview "optimistic". JEP 401 (value classes) is *also* only a preview in JDK 28. So neither of the two headline JDK 28 features is GA in 28.
+
+This matters because `--enable-preview` is **not** a per-library opt-in — it is a whole-compilation + whole-JVM flag, and preview bytecode is stamped (`minor_version = 0xFFFF`) and pinned to one exact major: a class built with preview on 26 will not load on 25/27/28 *even with the flag*. For an open-core artifact published to Maven Central this **inverts the dependency contract** — every downstream application would have to build and run its *entire* codebase with `--enable-preview`, be pinned to our exact JDK, and accept that all of *its* code falls under the "may change/disappear next release" preview contract. Many enterprises ban preview in production outright, which would exclude exactly the LTS segment that `exeris-kernel-enterprise` targets. **A "1.0 GA" that depends on a preview API on its critical path is internally contradictory.**
+
+**Verified scope (narrower than "the whole runtime", larger than "one bootstrap seam"):**
+- The **SPI is already preview-clean for `StructuredTaskScope`**: zero `import …StructuredTaskScope` across `exeris-kernel-spi/src/main`; every mention is descriptive javadoc (`{@code StructuredTaskScope}`, not `{@link}`), so a consumer compiling against the SPI is **not** forced into `--enable-preview` by STS. The Wall already holds here.
+- The preview *taint* lives in **shipped Core/Community bytecode**. Load-bearing `StructuredTaskScope` type usage (actual imports, verified on HEAD) is in exactly **four** default-path sites — `core/bootstrap/SubsystemOrchestrator` (parallel subsystem start), `core/events/InMemoryEventBus`, `core/events/outbox/OutboxOrchestrator`, and `community/events/CommunityEventLoop`. These compile with `--enable-preview` and ship as major-pinned bytecode.
+- **Anticipated, not yet present:** the planned `KafkaEventLoop` (ROADMAP §"Events: Kafka/Redpanda Driver — Core-Shared Implementation Model", step 4) *intends* to wrap the consumer poll cycle with `StructuredTaskScope`, but it is **not implemented** today (zero `StructuredTaskScope` in `exeris-kernel-community-kafka/src/main`). Build it on the GA structured-concurrency layer from the start so it never becomes a fifth taint site.
+
+**Resolution (target: complete before 1.0 RC; phased across v0.10–v0.12):**
+1. **Baseline at JDK 25 LTS**; compile the *default* artifacts **without** `--enable-preview`. (First confirm via audit that no *other* preview API is on the critical path or in shipped bytecode — STS is believed to be the only one; treat this as the first acceptance step.) A syntactic audit of **JEP 507** (primitive types in patterns / `instanceof` / `switch`, preview in 25/26 — the obvious second candidate given the kernel's primitive density) found **zero** usage in `*/src/main`: no primitive `instanceof`, no `case <primitive> var` type patterns, and all 37 `switch` selectors are over enum / `String` / `char` / `int` (i.e. pre-JEP-507 GA forms — no `long`/`float`/`double`/`boolean` selector). So STS remains the sole *known* preview dependency; the **definitive** confirmation is a clean no-`--enable-preview` compile of the default reactor (the gate below).
+2. **GA-clean substitution at the orchestration seam the bootstrap already exposes — for the distributed `main` only** (The Wall): a thin GA implementation — `fork` / `join-as-unit` / `cancel-on-failure` over **virtual threads** (GA 21) with **`ScopedValue`** binding-propagation re-established manually in the fork helper (`ScopedValue.where(...).call(...)` around each child, since automatic inheritance is the part ergonomically fused to STS). Substitute it at the four STS sites on `main` at the existing concurrency-policy method boundary (e.g. the private `startParallel` in `SubsystemOrchestrator`) — not a new injectable strategy, and `main` holds only the substitution, never two implementations side by side. This is a **temporary GA-clean cut, not a permanent replacement**: `StructuredTaskScope` stays the *intended* implementation (carried on the preview branch, step 3) and returns to `main` once STS is GA. Determinism + per-phase custom JFR startup events make the substitution a usable property in its own right, but it is not positioned as the long-term default.
+3. **The `StructuredTaskScope` version (and, later, the JEP 401 value-class version of the carriers) lives on a thin, temporary `preview` branch — the *intended* future `main`, not an adapter artifact.** Direction matters: `preview` is the richer, target kernel; `main` is its preview-clean cut (step 2), not the other way round. The preview branch builds with `--enable-preview` on the STS-target JDK and **tracks the moving STS API across releases** (26 → 27 → 28 …) — a separate build line on its own toolchain absorbs that naturally, where a same-reactor module would not (`--enable-preview` pins bytecode to one major). It is published as a separate `1.0-preview` artifact for JVM-controlled deployments (BudgetHQ, Stellar-Tactics) and EA testing. When STS — and value classes — reach GA, **`preview` replaces `main`** and the branch dissolves. Because the preview-bearing code is never on `main`, the default tree cannot be accidentally contaminated (there is nothing to pull in).
+4. **Certify on JDK 29 LTS from launch.** 28 is an STS (~6-month) release; the enterprise segment runs LTS. Since the GA primitives in 25 are also present in 29 (29 ⊇ 28 ⊇ 25 for GA features), certifying 29 is near-free — do **not** pin 1.0 solely to JDK 28. "Ready for JEP 401 value classes on 28" stays a forward-portability / marketing-position story, not a floor pin.
+
+**Note on the CLAUDE.md guardrail:** the repo strong-default "prefer `StructuredTaskScope` for orchestration concurrency" remains the *design ideal* and stays in force for JVM-controlled deployments and the `preview` branch (which is, after all, the intended future `main`). This baseline is the justified exception for the **distributable default artifact**, where the preview-distribution constraint (whole-app flag + bytecode major-pinning + enterprise preview bans) outweighs the ergonomic preference. The exception is scoped to the four sites on `main`; everywhere a JVM is controlled, STS stays preferred.
+
+**Merge Gate:** the default Core + Community reactor compiles and all TCK/CI gates pass on **JDK 25 LTS with no `--enable-preview`**; two **airtight, binary** acceptance checks are CI-enforced — (1) **no preview type in any exported SPI signature or in generated (codegen) code**, and (2) **the default `main` artifact contains zero preview bytecode** (`minor_version 0xFFFF` scan). There is no adapter dependency to exclude: the preview-bearing code is not on `main` at all (it lives on the `preview` branch), so the contamination paths that would otherwise need guarding — co-packaging, eager `ServiceLoader` discovery, a stray transitive dependency — cannot arise on the default tree. The preview branch builds separately with `--enable-preview` on the STS-target JDK. The gate applies to **shipped `main` bytecode only**: test and TCK fixtures continue to compile under `--enable-preview` exactly as today (they are not distributed), so STS may stay in test scope.
+
+**ADR:** the GA-clean orchestration substitution on `main` + the `preview`-branch distribution model (`preview` = intended future `main`) is an architecture decision and warrants a dedicated ADR — **reserve the next free number in `~/exeris-systems/exeris-docs/adr-index.md` when the design firms up** (do not claim a number now). It ties to the existing bootstrap-orchestration-seam direction.
+
+**Status:** **NOT STARTED** — surfaced 2026-06-18 from the JEP 401 (Valhalla → JDK 28 *preview*) + `StructuredTaskScope` GA-timeline analysis. This is a **1.0-GA-blocking** baseline: until the default critical path is preview-clean on a GA LTS, the word "GA" cannot honestly be applied. Distinct from the per-feature roadmap items above because it constrains the *distribution contract*, not a single subsystem.
 
 ---
 
@@ -1429,7 +1716,8 @@ Community 1.0 requires:
 - explicit separation from proprietary Enterprise work,
 - reference deployment documentation,
 - no unresolved ambiguity in docs about what is supported vs planned vs enterprise-only,
-- TCK-complete coverage for all SPI-observable behavior introduced by roadmap items (with Community bindings and explicit out-of-repo Enterprise obligations).
+- TCK-complete coverage for all SPI-observable behavior introduced by roadmap items (with Community bindings and explicit out-of-repo Enterprise obligations),
+- **a preview-clean critical path on a GA LTS baseline (JDK 25 LTS)** — the default artifact must build and run with **no `--enable-preview`** and impose none on consumers (see "Platform Baseline for 1.0 GA").
 
 ---
 
@@ -1455,6 +1743,7 @@ Community 1.0 requires:
 - `graph`
 
 ### Cross-cutting 1.0-critical
+- JDK 25 LTS baseline + preview-clean GA critical path (GA-clean substitution at the bootstrap seam on `main`; the STS / value-class version lives on a temporary `preview` branch = intended future `main`, published as `1.0-preview`; certify on 29 LTS)
 - refactoring / PMD suppression reduction
 - SonarQube
 - docs truthfulness

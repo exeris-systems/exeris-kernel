@@ -88,7 +88,7 @@ flowchart TD
 ## Diagram 1b — Subsystem State Machine
 
 Each subsystem registered in the Boot DAG transitions through this state machine independently.
-Core's `SubsystemOrchestrator` drives transitions; transitions are irreversible — there is no `RESTART`.
+Core's `SubsystemOrchestrator` drives the boot transitions, which are irreversible — there is no `RESTART`. The one reversible axis is the post-boot health state `RUNNING ↔ DEGRADED`, driven not by the orchestrator but by the Community `CommunitySubsystemHealthWatcher` (see "Kubernetes Health Probes" below): a live-but-impaired dependency degrades readiness and recovers when it returns, without ever leaving the `RUNNING`-family or killing the process.
 
 ```mermaid
 stateDiagram-v2
@@ -104,6 +104,10 @@ stateDiagram-v2
     RUNNING --> STOPPED        : stop() called\nAll resources released
     RUNNING --> FAILED         : Unrecoverable runtime error
 
+    RUNNING --> DEGRADED       : Health watcher: dependency lost\n(post-boot, reversible)
+    DEGRADED --> RUNNING       : Health watcher: dependency recovered
+    DEGRADED --> STOPPED       : stop() called
+
     STOPPED --> [*]            : Virtual Threads drained
 
     FAILED --> [*]             : Emergency JFR snapshot\nJVM exit(1) · Glass-Box buffer flushed
@@ -117,6 +121,13 @@ stateDiagram-v2
     note right of FAILED
         K8s liveness probe → HTTP 503.
         Pod replaced by ReplicaSet controller.
+    end note
+
+    note right of DEGRADED
+        Live but impaired (required dep lost post-boot).
+        K8s readiness probe → HTTP 503 (drain).
+        K8s liveness probe → HTTP 200 (not killed).
+        Watcher-driven, post-boot only, reversible.
     end note
 
     %% Note: kernel-level SHUTTING_DOWN is from KernelState, not per-subsystem state.
@@ -356,8 +367,8 @@ at all times.
 
 `KernelHealthMonitor` (Core) implements `eu.exeris.kernel.spi.bootstrap.HealthProbe` and exposes two snapshots:
 
-- **Readiness** — UP only when the kernel has transitioned to `STARTED` and every required subsystem is `RUNNING`. Returns `STARTING` while the Boot DAG is in progress, while a required subsystem is still initializing, and during `SHUTTING_DOWN`. Returns `FAILED` after `FAILED` state.
-- **Liveness** — UP after the kernel has transitioned to `INITIALIZED`. Returns `STARTING` before that point. Returns `DOWN` only after `FAILED` state.
+- **Readiness** — UP only when the kernel has transitioned to `STARTED` and every required subsystem is `RUNNING`. Returns `STARTING` while the Boot DAG is in progress, while a required subsystem is still initializing, and during `SHUTTING_DOWN`. Returns `DEGRADED` (not ready) when a **required** subsystem has gone `DEGRADED` — live but impaired after boot, e.g. its broker died — so the load balancer drains the instance; a still-initializing required subsystem outranks `DEGRADED` for the status label. A **degraded optional** subsystem never sheds readiness. Returns `FAILED` after `FAILED` state.
+- **Liveness** — UP after the kernel has transitioned to `INITIALIZED`. Returns `STARTING` before that point. Returns `DOWN` only after `FAILED` state. A `DEGRADED` subsystem never affects liveness — the process stays alive so it can recover (`DEGRADED → RUNNING` is reversible).
 
 ### `HealthEndpointHandler` (Community)
 
@@ -374,13 +385,30 @@ httpServerEngine.start();
 | **Readiness** | `/healthz/readiness`     | `200 OK`           | `503 Service Unavailable`                              |
 | **Liveness**  | `/healthz/liveness`      | `200 OK`           | `503 Service Unavailable`                              |
 
-Custom paths are available via `new HealthEndpointHandler(probe, readinessPath, livenessPath)`. The textual probe status (`READY`, `STARTING`, `UP`, `DOWN`, `FAILED`) is mirrored into the response header `X-Exeris-Health` for human diagnostics — Kubernetes probes evaluate the status code only, so responses are bodyless.
+Custom paths are available via `new HealthEndpointHandler(probe, readinessPath, livenessPath)`. The textual probe status (`READY`, `STARTING`, `DEGRADED`, `UP`, `DOWN`, `FAILED`) is mirrored into the response header `X-Exeris-Health` for human diagnostics — Kubernetes probes evaluate the status code only, so responses are bodyless. A required-subsystem `DEGRADED` surfaces as readiness `503` + `X-Exeris-Health: DEGRADED` while liveness stays `200`.
 
 The handler returns:
 - `404 Not Found` for paths that match neither probe, without invoking the probe;
 - `405 Method Not Allowed` with `Allow: GET` for non-`GET` methods on a probe path.
 
 The contract is pinned by `eu.exeris.kernel.tck.contract.health.AbstractHealthEndpointTck` plus the Community binding `CommunityHealthEndpointTckTest`. End-to-end behavior with the real `KernelHealthMonitor` is pinned by `HealthEndpointHandlerKernelMonitorIntegrationTest`.
+
+### `CommunitySubsystemHealthWatcher` (Community, host-wired)
+
+`KernelHealthMonitor` only marks a subsystem `RUNNING` at boot; it does not re-poll afterwards. To drop readiness when a dependency dies *after* boot (and restore it on recovery), `eu.exeris.kernel.community.bootstrap.CommunitySubsystemHealthWatcher` runs a background poll that reconciles each live subsystem's health into the monitor's reversible `RUNNING ↔ DEGRADED` axis. It transitions **only** that axis — never resurrecting `FAILED`/`STOPPED` nor racing the boot DAG — and treats a throwing health source as impaired.
+
+Like `HealthEndpointHandler`, the watcher is **wired by the host**, not by kernel `main` — it stays Wall-clean by knowing the *concrete* Community subsystems and pushing state through the public `markSubsystemState` (no generic subsystem-health method is added to the SPI; that is deferred to v0.10). Construct it after boot, register each subsystem's health source (e.g. persistence's `canServiceRequest()` — the same signal that deterministically denies requests under ADR-012), `start()` it, and `stop()` it on shutdown:
+
+```java
+KernelHealthMonitor monitor = bootstrap.healthMonitor();
+var watcher = new CommunitySubsystemHealthWatcher(monitor, Duration.ofSeconds(5).toNanos());
+watcher.register("persistence", persistenceEngine::canServiceRequest);
+watcher.start();                 // after the kernel reaches STARTED
+// ... on shutdown:
+watcher.stop();
+```
+
+The reconciliation + lifecycle is pinned by `CommunitySubsystemHealthWatcherTest`; the full `health-source → watcher → monitor → /healthz/readiness` path (503 + `X-Exeris-Health: DEGRADED` and recovery) by `HealthEndpointHandlerKernelMonitorIntegrationTest`.
 
 ### Kubernetes manifest snippet
 
@@ -484,11 +512,11 @@ kernel guarantees durability of written bytes even on a hard JVM crash.
 
 | Property        | Value                                                                                               |
 |:----------------|:----------------------------------------------------------------------------------------------------|
-| **Default path** | `/tmp/exeris-crash/kernel-<pid>.bin`                                                               |
+| **Default path** | `/tmp/exeris-crash/kernel-<pid>.ring`                                                              |
 | **Override ENV** | `EXERIS_CRASH_DIR` — if set, replaces `/tmp/exeris-crash/`                                        |
 | **File size**    | Fixed-size, pre-allocated at L0 boot (default: 4 MB). Never grown dynamically.                    |
 | **Format**       | Binary Glass-Box frames (same layout as `GlassBoxSerializer` ring buffer — see `telemetry.md`)    |
-| **Lifecycle**    | Created at L0 init, closed (and optionally renamed to `kernel-<pid>-<timestamp>.bin`) on graceful shutdown. Survives JVM crash. |
+| **Lifecycle**    | Created at L0 init, closed (and optionally renamed to `kernel-<pid>-<timestamp>.ring`) on graceful shutdown. Survives JVM crash. |
 | **Permissions**  | Owner read/write only (`0600`). File is not rotated — a new PID gets a new file.                  |
 
 ### Durability Contract
@@ -505,16 +533,22 @@ may be lost. Operators requiring power-loss durability must ensure OS-level jour
 For graceful JVM crashes (`SIGSEGV`, uncaught exception), the OS signal handler will typically flush
 dirty pages before process termination — but this is a best-effort OS behaviour, not a contract.
 
-The operator recovery tool (`exeris-decoder`) is designed to tolerate partial frames at the end of the
+The canonical open crash-file decoder is designed to tolerate partial frames at the end of the
 crash buffer (ring-wrap corruption) and skip undecodable frames silently.
 
 ### Operator Recovery
 
-The `exeris-decoder` CLI tool reads the binary `kernel-<pid>.bin` file and decodes each Glass-Box frame
-into human-readable error reports using the `rawArgs` binary layout defined in `telemetry.md`.
+The kernel is producer-only here: the L0 buffer writes `.ring` files in the shared `exeris-telemetry-spec`
+wire format. Decoding is done by the **single canonical open decoder** — the open subset of the
+`exeris-enterprise-observability` decoder/forensics path (`FrameDecoder`, `FrameValidator`,
+`CrashBufferReader`), which reads the binary `kernel-<pid>.ring` file and decodes each Glass-Box frame into
+human-readable error reports using the `rawArgs` binary layout defined in `telemetry.md`. The kernel ships
+no duplicate decoder. The file=open / live=enterprise decoder cut is recorded in
+[ADR-039](../adr/ADR-039-open-core-observability-boundary.md) (Open-Core Observability Boundary); the
+state-vs-event split (state via `KernelDiagnostics`, events via this binary format) is recorded in ADR-033.
 
 ```
-$ exeris-decoder /tmp/exeris-crash/kernel-12345.bin
+$ exeris-decode /tmp/exeris-crash/kernel-12345.ring
 [0000ns] EX-BOOT-0001: DAG cycle detected — cycleMembers=[Security, Flow]
 [0042ns] EX-MEM-1002: Arena leak detected — segmentAddress=0x7f3a00000000, segmentByteSize=65536
 ```
@@ -527,5 +561,11 @@ $ exeris-decoder /tmp/exeris-crash/kernel-12345.bin
 - Each frame is written with `VarHandle.releaseFence()` after the last field to ensure ordering.
 - The buffer wraps around on overflow (ring semantics) — oldest frames are overwritten.
 
+---
 
+## Stability
+
+This subsystem's SPI surface (`eu.exeris.kernel.spi.bootstrap.*`) is classified **stable** in the
+[SPI Stability Matrix](../stability-matrix.md). See the matrix for the semver policy and TCK
+coverage status.
 

@@ -117,6 +117,62 @@ class KernelConfigRegistryTest {
     }
 
     // =========================================================================
+    // @Immutable sealed-key guards
+    // =========================================================================
+
+    @Nested
+    @DisplayName("@Immutable guard contract")
+    class ImmutableGuardContract {
+
+        @Test
+        @DisplayName("registerImmutable() makes isImmutable() report the (file, key) sealed")
+        void registerImmutableIsReported() {
+            var reg = new KernelConfigRegistry();
+            reg.registerImmutable("security.properties", "security.jwks.uri");
+
+            assertThat(reg.isImmutable("security.properties", "security.jwks.uri")).isTrue();
+            assertThat(reg.isImmutable("security.properties", "other.key")).isFalse();
+            assertThat(reg.immutableRegistrations()).hasSize(1);
+        }
+
+        @Test
+        @DisplayName("A null-file guard seals the key in any file")
+        void nullFileGuardMatchesAnyFile() {
+            var reg = new KernelConfigRegistry();
+            reg.registerImmutable(null, "security.issuer");
+
+            assertThat(reg.isImmutable("a.properties", "security.issuer")).isTrue();
+            assertThat(reg.isImmutable("b.properties", "security.issuer")).isTrue();
+            assertThat(reg.isImmutable("a.properties", "unrelated")).isFalse();
+        }
+
+        @Test
+        @DisplayName("registerImmutable() after seal() is silently ignored")
+        void registerImmutableAfterSealIsIgnored() {
+            var reg = new KernelConfigRegistry();
+            reg.registerImmutable("security.properties", "k1");
+            reg.seal();
+            reg.registerImmutable("security.properties", "k2"); // must be silently ignored
+
+            assertThat(reg.immutableRegistrations())
+                    .as("Late immutable registration must be ignored after seal()")
+                    .hasSize(1);
+            assertThat(reg.isImmutable("security.properties", "k2")).isFalse();
+        }
+
+        @Test
+        @DisplayName("immutableRegistrations() returns an unmodifiable snapshot")
+        void immutableRegistrationsViewIsUnmodifiable() {
+            var reg = new KernelConfigRegistry();
+            reg.registerImmutable("security.properties", "k1");
+
+            assertThatThrownBy(() -> reg.immutableRegistrations().add(
+                    new KernelConfigRegistry.ImmutableRegistration("x", "y")))
+                    .isInstanceOf(UnsupportedOperationException.class);
+        }
+    }
+
+    // =========================================================================
     // Matching
     // =========================================================================
 

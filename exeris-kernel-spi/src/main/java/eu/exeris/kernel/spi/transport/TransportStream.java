@@ -53,6 +53,21 @@ public interface TransportStream extends AutoCloseable {
      * Returns the number of bytes actually read, or {@code -1} if the stream
      * has been cleanly closed by the remote peer (EOF).
      *
+     * <h2>Non-positive {@code maxBytes}</h2>
+     * <p>A {@code maxBytes <= 0} request returns {@code 0} immediately: no I/O is
+     * performed and no stream state changes (the stream remains readable, and a
+     * remote-close / EOF that has not yet been observed is <em>not</em> consumed —
+     * a subsequent positive-{@code maxBytes} read still reports it). This makes a
+     * zero/negative request a pure no-op rather than a blocking call, an error, or
+     * an EOF probe, so it is safe in a hot read loop that computes its request size
+     * from a (possibly drained) budget. Implementations MUST NOT throw on
+     * non-positive {@code maxBytes}.
+     *
+     * <p>The no-op takes precedence over closed state: a non-positive request returns
+     * {@code 0} even after this stream has been closed, rather than raising the
+     * {@code IllegalStateException} that a positive-{@code maxBytes} read on a closed
+     * stream throws.
+     *
      * <h2>Zero-Copy</h2>
      * <p>Enterprise implementations fill the target segment directly from the
      * native asynchronous I/O completion buffer (zero intermediate copy). Community
@@ -60,8 +75,9 @@ public interface TransportStream extends AutoCloseable {
      * connection.
      *
      * @param target   off-heap segment to read into (from {@link LoanedBuffer#segment()})
-     * @param maxBytes maximum number of bytes to read (must be ≤ {@code target.byteSize()})
-     * @return number of bytes read, or {@code -1} on EOF
+     * @param maxBytes maximum number of bytes to read (must be ≤ {@code target.byteSize()});
+     *                 a value {@code <= 0} is a no-op that returns {@code 0}
+     * @return number of bytes read, {@code 0} if {@code maxBytes <= 0}, or {@code -1} on EOF
      * @throws eu.exeris.kernel.spi.exceptions.transport.TransportException on I/O failure
      * @throws IllegalStateException if this stream has been closed
      */
@@ -162,4 +178,43 @@ public interface TransportStream extends AutoCloseable {
      */
     @Override
     void close();
+
+    /**
+     * Forcibly aborts this stream with the given protocol error code, then terminates it.
+     *
+     * <p>Unlike {@link #close()} (a graceful end-of-stream that drains queued writes), {@code reset}
+     * is an <em>abortive</em> termination: any outbound data still queued via {@link #queueWrite}
+     * is abandoned (after this call {@link #hasPendingData()} is {@code false}), and the underlying
+     * transport's stream-reset mechanism is engaged — implementations map {@code errorCode} to that
+     * mechanism (an abortive close for raw TCP; for a transport whose protocol stream <em>is</em> a
+     * transport stream, its native stream-reset frame). The code is a caller-supplied {@code long}
+     * carrying no transport-specific meaning at this contract level.
+     *
+     * <p>Abandonment is observable at the <em>peer</em>: outbound data still queued via
+     * {@link #queueWrite} at {@code reset} time MUST NOT be delivered to the remote endpoint
+     * (in contrast to {@link #close()}, which drains it). A transport that cannot guarantee
+     * non-delivery does not provide true abortive reset and should retain the default graceful
+     * behavior. The {@code AbstractTransportStreamTck} discriminator that enforces this is opt-in
+     * (a binding declares true-reset support); the default {@link #close()}-based implementation is
+     * exempt rather than silently treated as conformant.
+     *
+     * <p>This method exists so callers can abort a single stream <em>polymorphically</em>, without
+     * reaching through to a concrete transport type. It is <strong>idempotent</strong> and composes
+     * with {@link #close()}: after {@code reset}, a subsequent {@code close()} (or {@code reset})
+     * is a no-op, and any further {@link #read}/{@link #write}/{@link #queueWrite} is rejected.
+     *
+     * <p>The default implementation performs a best-effort graceful {@link #close()} — adequate for
+     * transports without a distinct abort primitive. Transports that can signal a true stream reset
+     * (abortive TCP close, native protocol stream-reset) <strong>SHOULD</strong> override it.
+     *
+     * @param errorCode caller-supplied protocol error code (advisory; transport-mapped)
+     */
+    default void reset(long errorCode) {
+        // errorCode is contract for overriders (e.g. a TCP driver maps it to a protocol RST via
+        // SO_LINGER 0); the default has no abort primitive and intentionally discards it. CodeQL
+        // "useless parameter" here is a false positive — DISMISS it. Do NOT add a read-and-discard
+        // line to silence it: that only trades the finding for an "unread local variable" on the
+        // discard (the #209 -> follow-up tail-chase). The @param Javadoc documents the discard.
+        close();
+    }
 }

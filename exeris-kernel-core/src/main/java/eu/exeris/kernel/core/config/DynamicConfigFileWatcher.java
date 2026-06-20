@@ -9,6 +9,7 @@
 package eu.exeris.kernel.core.config;
 
 import eu.exeris.kernel.core.config.jfr.DynamicReloadEvent;
+import eu.exeris.kernel.core.config.jfr.ImmutableReloadEvent;
 import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 
 import java.io.IOException;
@@ -20,7 +21,9 @@ import java.nio.file.StandardWatchEventKinds;
 import java.nio.file.WatchEvent;
 import java.nio.file.WatchKey;
 import java.nio.file.WatchService;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -65,9 +68,13 @@ import java.util.concurrent.atomic.AtomicBoolean;
 // comes from OS watch events and lifecycle rollback, not business logic; extracting
 // helper layers here would add ceremony without reducing kernel risk.
 // CloseResource: activeWatchService is closed in close() — lifecycle is explicit.
+// TooManyMethods: the method count reflects two cohesive enforcement domains on one
+// watch loop — @Dynamic reload dispatch and @Immutable refusal — plus lifecycle, not
+// inflation; splitting them across classes would fragment a single OS-event consumer.
 @SuppressWarnings({
     "PMD.CognitiveComplexity",
     "PMD.CyclomaticComplexity",
+    "PMD.TooManyMethods",
     "PMD.CloseResource"
 })
 public final class DynamicConfigFileWatcher implements AutoCloseable {
@@ -83,6 +90,17 @@ public final class DynamicConfigFileWatcher implements AutoCloseable {
     private final KernelConfigRegistry registry;
     private final RawValueExtractor    extractor;
     private final AtomicBoolean        running = new AtomicBoolean(false);
+
+    /**
+     * Boot-time on-disk values for {@code @Immutable} keys, used to detect a runtime
+     * mutation of a sealed trust anchor. Keyed by {@code file + '\0' + key}.
+     *
+     * <p>Seeded once on the thread calling {@link #start()} (before the watcher VT is
+     * spawned), then read/written exclusively on that single watcher VT. The
+     * {@code Thread.start()} happens-before edge publishes the seeded entries safely, so a
+     * plain {@link HashMap} is sufficient — no further cross-thread access occurs.
+     */
+    private final Map<String, String> immutableBaselines = new HashMap<>();
 
     private volatile WatchService activeWatchService;
     private volatile Thread       watcherVt;
@@ -190,6 +208,11 @@ public final class DynamicConfigFileWatcher implements AutoCloseable {
                     StandardWatchEventKinds.ENTRY_CREATE);
             final WatchService startedWatchService = watchService;
 
+            // Capture the boot-time value of every sealed @Immutable key on the calling
+            // thread, before the watcher VT can observe a change — so the first runtime
+            // mutation is detected and refused (no seed-vs-event race).
+            seedImmutableBaselines(registry.immutableRegistrations());
+
             Thread watcherThread = Thread.ofVirtual()
                     .name("exeris-config-watcher")
                 .start(() -> watchLoop(startedWatchService));
@@ -271,6 +294,8 @@ public final class DynamicConfigFileWatcher implements AutoCloseable {
     private void watchLoop(WatchService watchService) {
         final Iterable<KernelConfigRegistry.Registration> registrationsSnapshot =
                 registry.registrations();
+        final Iterable<KernelConfigRegistry.ImmutableRegistration> immutableSnapshot =
+                registry.immutableRegistrations();
         while (running.get()) {
             WatchKey key;
             try {
@@ -295,7 +320,7 @@ public final class DynamicConfigFileWatcher implements AutoCloseable {
                 @SuppressWarnings("unchecked")
                 Path changedPath = watchDir.resolve(((WatchEvent<Path>) event).context());
                 String fileName  = changedPath.getFileName().toString();
-                dispatchFileChange(changedPath, fileName, registrationsSnapshot);
+                dispatchFileChange(changedPath, fileName, registrationsSnapshot, immutableSnapshot);
             }
 
             if (!key.reset()) {
@@ -315,12 +340,18 @@ public final class DynamicConfigFileWatcher implements AutoCloseable {
      */
     @SuppressWarnings("unused") // retained for compatibility and test hooks
     private void dispatchFileChange(Path filePath, String fileName) {
-        dispatchFileChange(filePath, fileName, registry.registrations());
+        dispatchFileChange(filePath, fileName,
+                registry.registrations(), registry.immutableRegistrations());
     }
 
     private void dispatchFileChange(Path filePath,
                                     String fileName,
-                                    Iterable<KernelConfigRegistry.Registration> registrationsSnapshot) {
+                                    Iterable<KernelConfigRegistry.Registration> registrationsSnapshot,
+                                    Iterable<KernelConfigRegistry.ImmutableRegistration> immutableSnapshot) {
+        // Sealed trust anchors first: refuse (and audit) any runtime mutation of an
+        // @Immutable key before any @Dynamic reload in the same file is applied.
+        refuseImmutableReloads(filePath, fileName, immutableSnapshot);
+
         Set<String> seenKeys = new HashSet<>();
         for (KernelConfigRegistry.Registration registration : registrationsSnapshot) {
             if (registration.file() != null && !registration.file().equals(fileName)) {
@@ -329,6 +360,13 @@ public final class DynamicConfigFileWatcher implements AutoCloseable {
 
             String key = registration.key();
             if (!seenKeys.add(key)) {
+                continue;
+            }
+
+            // Defense in depth: the compile-time processor rejects a key carrying both
+            // @Immutable and @Dynamic, but if a contradictory binding ever reaches the
+            // runtime, the sealed intent wins — never hot-reload a guarded key.
+            if (isImmutableKey(fileName, key, immutableSnapshot)) {
                 continue;
             }
 
@@ -348,6 +386,106 @@ public final class DynamicConfigFileWatcher implements AutoCloseable {
                 DynamicReloadEvent.emitFailed(fileName, key, ex.getClass());
             }
         }
+    }
+
+    // =========================================================================
+    // @Immutable enforcement — refuse runtime mutation of sealed trust anchors
+    // =========================================================================
+
+    /**
+     * Captures the boot-time on-disk value of every concrete-file {@code @Immutable} key,
+     * so the first post-start change can be detected and refused. Guards declared against
+     * any file ({@code file == null}) are baselined lazily on first sighting.
+     */
+    private void seedImmutableBaselines(
+            Iterable<KernelConfigRegistry.ImmutableRegistration> immutableSnapshot) {
+        for (KernelConfigRegistry.ImmutableRegistration guard : immutableSnapshot) {
+            if (guard.file() == null) {
+                continue;
+            }
+            Path filePath = watchDir.resolve(guard.file());
+            if (!Files.isRegularFile(filePath)) {
+                continue;
+            }
+            try {
+                String value = extractor.extract(filePath, guard.key());
+                if (value != null) {
+                    immutableBaselines.put(baselineKey(guard.file(), guard.key()), value);
+                }
+            } catch (IOException ex) {
+                LOG.log(System.Logger.Level.DEBUG,
+                        "DynamicConfigFileWatcher: could not seed @Immutable baseline for ''{0}'' — {1}",
+                        guard.key(), ex.getMessage());
+            }
+        }
+    }
+
+    /**
+     * For each {@code @Immutable} key matching the changed file, refuses any value change:
+     * the sealed boot-time value is preserved and an {@code EX-CFG-1004} audit event is
+     * emitted. First sighting of an any-file guard seeds the baseline silently.
+     */
+    private void refuseImmutableReloads(
+            Path filePath,
+            String fileName,
+            Iterable<KernelConfigRegistry.ImmutableRegistration> immutableSnapshot) {
+        Set<String> seenKeys = new HashSet<>();
+        for (KernelConfigRegistry.ImmutableRegistration guard : immutableSnapshot) {
+            if (guard.file() != null && !guard.file().equals(fileName)) {
+                continue;
+            }
+            String key = guard.key();
+            if (!seenKeys.add(key)) {
+                continue;
+            }
+            String onDisk;
+            try {
+                onDisk = extractor.extract(filePath, key);
+            } catch (IOException ex) {
+                LOG.log(System.Logger.Level.WARNING,
+                        "DynamicConfigFileWatcher: failed to read sealed ''{0}'' in ''{1}'' — {2} [{3}]",
+                        key, fileName, ex.getMessage(), KernelErrorCodes.EX_CFG_1003);
+                continue;
+            }
+            if (onDisk == null) {
+                continue; // key absent in this file — nothing sealed here
+            }
+            String baselineKey = baselineKey(fileName, key);
+            String baseline = immutableBaselines.get(baselineKey);
+            if (baseline == null) {
+                immutableBaselines.put(baselineKey, onDisk); // seal the first observed value
+            } else if (!baseline.equals(onDisk)) {
+                LOG.log(System.Logger.Level.WARNING,
+                        "DynamicConfigFileWatcher: refused runtime reload of @Immutable key ''{0}'' "
+                                + "in ''{1}'' — sealed value preserved [{2}]",
+                        key, fileName, KernelErrorCodes.EX_CFG_1004);
+                ImmutableReloadEvent.emitRefused(fileName, key);
+                // baseline intentionally NOT updated — the key stays sealed at its boot value
+            }
+        }
+    }
+
+    private static boolean isImmutableKey(
+            String fileName,
+            String key,
+            Iterable<KernelConfigRegistry.ImmutableRegistration> immutableSnapshot) {
+        for (KernelConfigRegistry.ImmutableRegistration guard : immutableSnapshot) {
+            if (guard.matches(fileName, key)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Composite key for {@link #immutableBaselines}. The {@code '\0'} separator is the only
+     * collision-proof choice: NUL cannot appear in a POSIX filename or a dot-notation config key,
+     * so {@code (file, key)} pairs map injectively (a space separator would let
+     * {@code ("a b","c")} collide with {@code ("a","b c")} and silently cross-seal). Package-private
+     * for the injectivity guard test — do NOT change the separator without updating that test.
+     */
+    /* default */ static String baselineKey(String fileName, String key) {
+        return fileName + '\0' + key;
     }
 
     // =========================================================================

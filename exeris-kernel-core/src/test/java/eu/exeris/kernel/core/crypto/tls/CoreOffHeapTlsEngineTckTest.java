@@ -137,6 +137,18 @@ class CoreOffHeapTlsEngineTckTest extends AbstractCryptoEngineTck {
         return false;
     }
 
+    /**
+     * {@code OffHeapTlsEngine} is a fd-owner BIO: {@code beginHandshake()} cannot
+     * step before a real socket fd is bound, so it MUST fail fast with a lifecycle
+     * error rather than driving {@code SSL_accept} on an unbound {@code SSL*}.
+     * Mirrors {@code CommunityKernelCryptoProviderTckTest}; the TCK asserts the
+     * fail-fast-before-bind branch instead of a (now correctly terminal) status.
+     */
+    @Override
+    protected boolean requiresExternalBindBeforeHandshake() {
+        return true;
+    }
+
     // =========================================================================
     // Named provider — satisfies ServiceLoader public no-arg constructor contract
     // =========================================================================
@@ -170,9 +182,11 @@ class CoreOffHeapTlsEngineTckTest extends AbstractCryptoEngineTck {
                 throw new CryptoBootstrapException(providerName(),
                         "QUIC requires Enterprise Memory-BIO tier — fd-owner Core does not support QUIC");
             }
-            OffHeapTlsEngine engine = new OffHeapTlsEngine(handles, serverCtxPtr, true, allocator);
-            engine.notifyBound();
-            return engine;
+            // No notifyBound() / fd bind here: the fd-owner engine stays UNINITIALIZED so
+            // beginHandshake() fails fast (see requiresExternalBindBeforeHandshake()). Real
+            // handshake I/O is covered by OffHeapTlsEngineLoopbackIT. notifyBound() without a
+            // real fd previously masked the phantom-handshake busy-spin bug.
+            return new OffHeapTlsEngine(handles, serverCtxPtr, true, allocator);
         }
     }
 

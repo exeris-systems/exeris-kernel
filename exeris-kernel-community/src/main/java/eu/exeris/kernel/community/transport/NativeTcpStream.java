@@ -10,6 +10,7 @@ package eu.exeris.kernel.community.transport;
 
 import eu.exeris.kernel.community.crypto.CommunityTlsEngine;
 import eu.exeris.kernel.community.crypto.SocketChannelFdAccess;
+import eu.exeris.kernel.core.transport.jfr.ConnectionEstablishedEvent;
 import eu.exeris.kernel.core.transport.jfr.TransportIngressQueueDepthEvent;
 import eu.exeris.kernel.core.transport.jfr.TransportQueueBackpressureAlertEvent;
 import eu.exeris.kernel.core.transport.syscall.SyscallHandles;
@@ -26,6 +27,7 @@ import org.jctools.queues.SpscUnboundedArrayQueue;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
+import java.net.StandardSocketOptions;
 import java.nio.channels.SocketChannel;
 import java.util.Objects;
 import java.util.Queue;
@@ -107,9 +109,18 @@ final class NativeTcpStream implements TransportStream {
     private final NativeTcpStreamPendingWrite.TlsContext pendingWriteTlsContext;
     private final NativeTcpStreamPendingWrite.TryWriter pendingWriteTryWriter;
 
+    // PERF: fd-owner BIO unwrap pulls ciphertext directly from the kernel socket and never
+    // inspects its {@code ciphertext} parameter (OffHeapTlsEngine#unwrap contract). A single
+    // per-stream empty placeholder is reused for every ingress record instead of allocating one
+    // per read, removing the dominant per-request LoanedBuffer/ReleaseAction churn on the TLS hot
+    // path. Owned by this stream; released in finishCloseIfDrained(). null for non-TLS streams.
+    private final LoanedBuffer tlsCiphertextPlaceholder;
+
     private final AtomicBoolean closeRequested = new AtomicBoolean(false);
     private final AtomicBoolean closed = new AtomicBoolean(false);
     private final AtomicBoolean remoteClosed = new AtomicBoolean(false);
+    // Set by reset(long): abandon queued writes (no drain wait) and terminate abortively (RST).
+    private final AtomicBoolean resetRequested = new AtomicBoolean(false);
     private final Queue<NativeTcpStreamPendingWrite> outboundQueue =
             new MpscUnboundedArrayQueue<>(JCTOOLS_QUEUE_CHUNK_SIZE);
     private final Queue<LoanedBuffer> inboundQueue = QUEUE_BACKPRESSURE_ENABLED
@@ -119,11 +130,19 @@ final class NativeTcpStream implements TransportStream {
     private final AtomicInteger inboundQueueDepth = new AtomicInteger(0);
     private final AtomicBoolean tlsBound = new AtomicBoolean(false);
     private final AtomicBoolean tlsReady = new AtomicBoolean(false);
+    // One-shot latch + callback fired exactly once when the connection becomes established
+    // (plaintext: reactor registration armed; TLS: reactor-driven handshake reached ACTIVE).
+    // Replaces the acceptor thread blocking on the handshake — see fireEstablishedOnce().
+    private final AtomicBoolean establishedFired = new AtomicBoolean(false);
+    private volatile Runnable onEstablishedCallback;
+    private volatile long registrationReadyNanos;
     private final Object tlsLock = new Object();
     private final StreamRuntimeState runtime = new StreamRuntimeState();
     
-    // Phase 1B: Queue depth tracking for telemetry and backpressure
-    private volatile int lastQueueDepth;
+    // Phase 1B: Queue depth tracking for telemetry and backpressure. Read/written only on the
+    // reactor thread (offerIngress) and feeds an advisory JFR "trend" label only — not shared, so
+    // no volatile fence is warranted on this per-record hot path.
+    private int lastQueueDepth;
 
     private LoanedBuffer currentInbound;
     private int currentInboundOffset;
@@ -176,9 +195,19 @@ final class NativeTcpStream implements TransportStream {
                     "NativeTcpStream only supports socket-owner TLS engines (CommunityTlsEngine); "
                     + "buffer-owner engines are not supported");
         }
+        if (tlsEngine == null) {
+            this.tlsCiphertextPlaceholder = null;
+        } else {
+            this.tlsCiphertextPlaceholder = allocator.allocateInfrastructure(1);
+            this.tlsCiphertextPlaceholder.setSize(0);
+        }
+        // The same per-stream empty placeholder serves both ingress unwrap and egress wrap: in
+        // fd-owner BIO mode neither dereferences the ciphertext segment (see tlsCiphertextPlaceholder
+        // and NativeTcpStreamPendingWrite.prepareCipher). Both run under tlsLock, so no interleave.
         this.pendingWriteTlsContext = tlsEngine == null
                 ? null
-                : new NativeTcpStreamPendingWrite.TlsContext(tlsEngine, tlsLock, allocator);
+                : new NativeTcpStreamPendingWrite.TlsContext(
+                        tlsEngine, tlsLock, tlsCiphertextPlaceholder);
         this.pendingWriteTryWriter = this::tryWrite;
     }
 
@@ -187,10 +216,10 @@ final class NativeTcpStream implements TransportStream {
         if (target == null) {
             throw new IllegalArgumentException("target must not be null");
         }
-        if (maxBytes < 0 || maxBytes > target.byteSize()) {
+        if (maxBytes > target.byteSize()) {
             throw new IllegalArgumentException("maxBytes out of range for target segment");
         }
-        if (maxBytes == 0) {
+        if (maxBytes <= 0) {
             return 0;
         }
 
@@ -406,6 +435,78 @@ final class NativeTcpStream implements TransportStream {
         finishCloseIfDrained();
     }
 
+    @Override
+    public void reset(long errorCode) {
+        // Idempotent abortive termination (TransportStream#reset). Distinct from close():
+        // queued writes are abandoned (not drained) and the socket is closed with SO_LINGER 0
+        // so the peer observes a RST rather than a graceful FIN. errorCode is advisory for TCP.
+        if (!resetRequested.compareAndSet(false, true)) {
+            return;
+        }
+        closeRequested.set(true);
+        try {
+            channel.setOption(StandardSocketOptions.SO_LINGER, 0);
+        } catch (IOException | RuntimeException _) {
+            // Best effort: if SO_LINGER can't be set, the terminal close falls back to FIN.
+        }
+        // Unpark any reader/writer/registration waiter so they observe the closed state and bail.
+        Thread readerThread = runtime.streamVt().getAndSet(null);
+        if (readerThread != null) {
+            LockSupport.unpark(readerThread);
+        }
+        Thread writerThread = runtime.writeWaiter().getAndSet(null);
+        if (writerThread != null) {
+            LockSupport.unpark(writerThread);
+        }
+        Thread registrationThread = runtime.registrationGate().clearWaiter();
+        if (registrationThread != null) {
+            LockSupport.unpark(registrationThread);
+        }
+        // Terminate now if this thread owns (or no one owns) the outbound consumer; otherwise the
+        // owning carrier reactor completes the abort on its next cycle (closeRequested + the
+        // resetRequested gate in finishCloseIfDrained).
+        finishCloseIfDrained();
+        if (!closed.get()) {
+            // The carrier reactor still owns the consumer slot — wake it to finalize the deferred
+            // abort. If finishCloseIfDrained() already closed the stream, the channel is
+            // deregistered and no wake is needed.
+            writeInterestCallback.run();
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // Test-only seams (package-private; used by CommunityTransportTestHarness
+    // to make the AbstractTransportStreamTck reset()-abandon discriminator
+    // deterministic — see issue #180). NOT part of the production API.
+    // ---------------------------------------------------------------------
+
+    /**
+     * Test-only: pins the outbound single-consumer slot to {@code owner} so a concurrent
+     * {@link #queueWrite} cannot synchronously flush the queued write (it stays genuinely
+     * pending). Returns {@code true} once {@code owner} holds the slot.
+     */
+    /* default */ boolean tryPinOutboundConsumerForTest(Thread owner) {
+        return NativeTcpStreamConsumerGate.tryAcquireSingleConsumer(runtime.outboundConsumer(), owner);
+    }
+
+    /**
+     * Test-only: completes a deferred abortive close while {@code owner} still holds the outbound
+     * consumer slot, then releases it. Running {@link #finishCloseIfDrained()} on the slot owner
+     * discards the queued write (it is never written to the socket) before the carrier reactor can
+     * acquire the slot and flush it — the determinism the {@code reset()}-abandon discriminator needs.
+     */
+    /* default */ void completeAbortAndUnpinOutboundConsumerForTest(Thread owner) {
+        assert resetRequested.get()
+                : "completeAbortAndUnpinOutboundConsumerForTest requires a prior reset() — "
+                + "completing a close while holding the consumer slot without an abort request "
+                + "would tear down a still-live stream";
+        try {
+            finishCloseIfDrained();
+        } finally {
+            NativeTcpStreamConsumerGate.releaseSingleConsumer(runtime.outboundConsumer(), owner);
+        }
+    }
+
     /* default */ void offerIngress(LoanedBuffer ingressBuffer) {
         if (closed.get()) {
             try (ingressBuffer) {
@@ -457,7 +558,44 @@ final class NativeTcpStream implements TransportStream {
 
     /* default */ void markRegistrationReady() {
         runtime.registrationGate().markReady();
+        registrationReadyNanos = System.nanoTime();
         signalWriteReady();
+        if (tlsEngine == null) {
+            // Plaintext has no handshake: the connection is established the moment the reactor
+            // has armed the key. (TLS defers to fireEstablishedOnce() in readTlsIngressFromFd
+            // once the reactor-driven handshake reaches ACTIVE.)
+            fireEstablishedOnce();
+        }
+    }
+
+    /**
+     * Arms the one-shot established callback. Set by the carrier before the registration is
+     * enqueued so the reactor can fire it as soon as the connection is established. Replaces
+     * the former acceptor-thread {@code awaitHandshakeReadyForConnection()} block, which
+     * serialised every TLS handshake on the single acceptor thread.
+     */
+    /* default */ void onEstablished(Runnable callback) {
+        this.onEstablishedCallback = callback;
+    }
+
+    /**
+     * Fires the established callback at most once. Invoked on the reactor thread; the callback
+     * (connection-handler notification + PAQS schedule) is contractually non-blocking
+     * ({@code ConnectionHandler} runs on a carrier thread).
+     */
+    private void fireEstablishedOnce() {
+        Runnable callback = onEstablishedCallback;
+        if (callback != null && establishedFired.compareAndSet(false, true)) {
+            long startNanos = System.nanoTime();
+            callback.run();
+            // Once per connection (CAS-gated), off the request hot path. handlerDurationNanos
+            // surfaces a ConnectionHandler that blocks the reactor in violation of its contract.
+            ConnectionEstablishedEvent.emit(
+                    streamId,
+                    tlsEngine != null,
+                    Math.max(0L, startNanos - registrationReadyNanos),
+                    System.nanoTime() - startNanos);
+        }
     }
 
     /* default */ boolean isClosed() {
@@ -490,14 +628,6 @@ final class NativeTcpStream implements TransportStream {
         return tlsEngine instanceof CommunityTlsEngine;
     }
 
-    /* default */ boolean awaitRegistrationReadyForConnection() {
-        return awaitRegistrationReady(true);
-    }
-
-    /* default */ boolean awaitHandshakeReadyForConnection() {
-        return ensureTlsReady(true);
-    }
-
     // PERF-062: try-with-resources is intentionally NOT used here. The success path transfers
     // ownership of `plaintext` to the caller (returned at refcount 1, freed by the queue
     // consumer); only the failure path closes via the `transferred` ownership flag. A
@@ -511,6 +641,10 @@ final class NativeTcpStream implements TransportStream {
         if (!ensureTlsReady(false)) {
             return null;
         }
+        // TLS handshake just reached ACTIVE on the reactor thread: signal the connection as
+        // established exactly once (idempotent CAS), driving onConnectionEstablished + PAQS
+        // schedule without the acceptor ever blocking on the handshake.
+        fireEstablishedOnce();
         // PERF-062: fast-fail before allocation when offerIngress would reject.
         // Saves the slab borrow + TLS unwrap on closing-stream / backpressured paths.
         if (closed.get()) {
@@ -520,17 +654,18 @@ final class NativeTcpStream implements TransportStream {
             return null;
         }
 
-        LoanedBuffer ciphertextPlaceholder = allocator.allocateInfrastructure(1);
+        // PERF: reuse the per-stream empty placeholder — fd-owner unwrap never reads it (see field
+        // doc). Only the plaintext slab is allocated per record; the prior per-read placeholder
+        // allocate+close pair is gone.
         LoanedBuffer plaintext = allocator.allocateCarrierSlab(0);
         // PERF-062: ownership-transfer flag replaces the prior retain()/auto-close ceremony.
         // The successful return path keeps the buffer alive at refcount 1 without an extra
         // retain+close pair; the unsuccessful path closes the slab in finally.
         boolean transferred = false;
         try {
-            ciphertextPlaceholder.setSize(0);
             TlsStatus status;
             synchronized (tlsLock) {
-                status = tlsEngine.unwrap(ciphertextPlaceholder, plaintext);
+                status = tlsEngine.unwrap(tlsCiphertextPlaceholder, plaintext);
             }
             if (status == TlsStatus.OK && plaintext.size() > 0) {
                 transferred = true;
@@ -541,7 +676,6 @@ final class NativeTcpStream implements TransportStream {
             }
             return null;
         } finally {
-            ciphertextPlaceholder.close();
             if (!transferred) {
                 plaintext.close();
             }
@@ -658,6 +792,10 @@ final class NativeTcpStream implements TransportStream {
             return DRAIN_CLOSED;
         }
         if (status != TlsStatus.OK) {
+            // Same fail-closed discipline as the IOException paths: an unrecoverable TLS WRAP
+            // status must not leave the queued write stuck (hasPendingData() would stay true and
+            // hang teardown). We hold the single-consumer slot here, so the discard is safe.
+            abortOnUnrecoverableWriteFailure();
             throw TransportException.sendFailure(engineName, pending.bytesWritten(), null);
         }
         return tryDrainCipherWrite(pending) ? DRAIN_OK : DRAIN_STALLED;
@@ -670,6 +808,7 @@ final class NativeTcpStream implements TransportStream {
             if (closed.get()) {
                 return true;
             }
+            abortOnUnrecoverableWriteFailure();
             throw TransportException.sendFailure(engineName, pending.bytesWritten(), e);
         }
     }
@@ -681,8 +820,28 @@ final class NativeTcpStream implements TransportStream {
             if (closed.get()) {
                 return true;
             }
+            abortOnUnrecoverableWriteFailure();
             throw TransportException.sendFailure(engineName, pending.bytesWritten(), e);
         }
+    }
+
+    /**
+     * Reacts to an unrecoverable outbound-write {@link IOException} by abandoning the queued
+     * writes and marking the stream for abortive termination.
+     *
+     * <p>Without this, a failed write would leave the pending entry in the queue forever:
+     * {@link #hasPendingData()} would stay {@code true} and {@link #close()} (and any drain-bounded
+     * teardown) would hang until its timeout. This runs on the carrier reactor thread while it
+     * holds the single-consumer slot (via {@code flushPendingWrites}), so {@link #drainOutboundQueue}
+     * is safe to call directly — but {@code finishCloseIfDrained()} MUST NOT be invoked here, as its
+     * nested consumer-slot acquire/release would prematurely free the slot held by the caller. The
+     * terminal channel close therefore runs later on the {@link #close()} / teardown path, which by
+     * then sees no pending data and the {@code resetRequested} flag (abortive close).
+     */
+    private void abortOnUnrecoverableWriteFailure() {
+        resetRequested.set(true);
+        closeRequested.set(true);
+        drainOutboundQueue();
     }
 
     private void writeDirect(MemorySegment source, int length) {
@@ -942,27 +1101,15 @@ final class NativeTcpStream implements TransportStream {
         if (owner != null && !Objects.equals(owner, currentThread)) {
             return;
         }
-        if (!closeRequested.get() || hasPendingData()) {
+        // A graceful close waits for queued writes to drain; an abortive reset abandons them.
+        if (!closeRequested.get() || (hasPendingData() && !resetRequested.get())) {
             return;
         }
         if (!closed.compareAndSet(false, true)) {
             return;
         }
 
-        if (tlsEngine != null) {
-            try {
-                try (LoanedBuffer outbound = allocator.allocateNetwork(1024)) {
-                    tlsEngine.initiateShutdown(outbound);
-                }
-            } catch (RuntimeException _) {
-                // best effort
-            }
-            try {
-                tlsEngine.close();
-            } catch (RuntimeException _) {
-                // best effort
-            }
-        }
+        releaseTlsResources();
 
         try {
             cleanupInboundIfOwnedByCurrentThreadOrIdle();
@@ -976,20 +1123,64 @@ final class NativeTcpStream implements TransportStream {
             logBestEffortCleanupFailure("cleanupOutbound", error);
         }
 
-        try {
-            channel.shutdownOutput();
-        } catch (IOException | RuntimeException _) {
-            // best effort half-close before full close
-        }
+        closeChannelQuietly();
 
+        connection.markClosedByCarrier();
+        closeCallback.run();
+    }
+
+    /**
+     * Terminal, best-effort release of TLS-owned resources: graceful shutdown record, the engine
+     * itself, and the per-stream ciphertext placeholder (see {@link #tlsCiphertextPlaceholder}).
+     * Invoked exactly once from {@link #finishCloseIfDrained()} under its {@code closed} CAS guard.
+     */
+    private void releaseTlsResources() {
+        if (tlsEngine == null) {
+            return;
+        }
+        try {
+            try (LoanedBuffer outbound = allocator.allocateNetwork(1024)) {
+                tlsEngine.initiateShutdown(outbound);
+            }
+        } catch (RuntimeException _) {
+            // best effort
+        }
+        try {
+            tlsEngine.close();
+        } catch (RuntimeException _) {
+            // best effort
+        }
+        if (tlsCiphertextPlaceholder != null) {
+            try {
+                // Safe outside tlsLock: fd-owner unwrap never dereferences the ciphertext segment
+                // (OffHeapTlsEngine#unwrap reads the socket BIO directly). Do NOT move this under
+                // tlsLock — that lock is held on the ingress hot path, and finishCloseIfDrained()
+                // must never block on it.
+                tlsCiphertextPlaceholder.close();
+            } catch (RuntimeException _) {
+                // best effort
+            }
+        }
+    }
+
+    /**
+     * Best-effort terminal close of the underlying channel. A graceful close half-closes the output
+     * first (FIN); an abortive {@link #reset(long)} skips the half-close so the SO_LINGER-0 close
+     * emits a RST instead.
+     */
+    private void closeChannelQuietly() {
+        if (!resetRequested.get()) {
+            try {
+                channel.shutdownOutput();
+            } catch (IOException | RuntimeException _) {
+                // best effort half-close before full close
+            }
+        }
         try {
             channel.close();
         } catch (IOException _) {
             // best effort close
         }
-
-        connection.markClosedByCarrier();
-        closeCallback.run();
     }
 
     private void closeCurrentInbound() {

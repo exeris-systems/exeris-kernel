@@ -18,7 +18,7 @@ package eu.exeris.kernel.spi.telemetry;
  * @param consoleSinkEnabled   Whether to activate the text console sink (Community).
  * @param jfrSinkEnabled       Whether to emit JFR events (Community + Enterprise).
  * @param fileSinkPath         Optional path for file-based sink; {@code null} = disabled.
- * @param blackBoxOffHeapBytes Off-heap budget for BinaryGlassBoxSink (Enterprise).
+ * @param glassBoxOffHeapBytes Off-heap budget for BinaryGlassBoxSink (Enterprise).
  *                             {@code 0} = disabled (Community mode).
  * @param maxEventQueueDepth   Maximum buffered events before backpressure/drop.
  * @since 0.5.0
@@ -27,15 +27,15 @@ public record TelemetryConfig(
         boolean consoleSinkEnabled,
         boolean jfrSinkEnabled,
         String fileSinkPath,
-        long blackBoxOffHeapBytes,
+        long glassBoxOffHeapBytes,
         int maxEventQueueDepth
 ) {
     private static final long MIN_OFF_HEAP_BYTES = 0L;
     private static final int MIN_EVENT_QUEUE_DEPTH = 1;
 
     public TelemetryConfig {
-        if (blackBoxOffHeapBytes < MIN_OFF_HEAP_BYTES) {
-            throw new IllegalArgumentException("blackBoxOffHeapBytes must be >= 0");
+        if (glassBoxOffHeapBytes < MIN_OFF_HEAP_BYTES) {
+            throw new IllegalArgumentException("glassBoxOffHeapBytes must be >= 0");
         }
         if (maxEventQueueDepth < MIN_EVENT_QUEUE_DEPTH) {
             throw new IllegalArgumentException("maxEventQueueDepth must be > 0");
@@ -45,7 +45,7 @@ public record TelemetryConfig(
         }
         if (!consoleSinkEnabled && !jfrSinkEnabled
                 && (fileSinkPath == null || fileSinkPath.isBlank())
-                && blackBoxOffHeapBytes == 0L) {
+                && glassBoxOffHeapBytes == 0L) {
             throw new IllegalArgumentException("At least one telemetry sink must be enabled");
         }
     }
