@@ -26,7 +26,7 @@ Current repository realities to respect:
 - No unstructured concurrency in runtime orchestration paths where structured scope is expected.
 
 ### B) Strong Defaults (enforce by default, allow justified exceptions)
-- Prefer `StructuredTaskScope` for orchestration concurrency — scoped to JVM-controlled deployments and the opt-in STS adapter. The **distributable default artifact must stay preview-clean for 1.0 GA**, so on the default critical path prefer the own `fork`/`join`/`cancel` layer over virtual threads + `ScopedValue` (both GA) behind the seam; a default-path move *away* from `StructuredTaskScope` is not a guardrail violation (see ROADMAP "Platform Baseline for 1.0 GA").
+- Prefer `StructuredTaskScope` for orchestration concurrency — scoped to JVM-controlled deployments and the `preview` branch (the intended future `main`). The **distributable default artifact must stay preview-clean for 1.0 GA**, so on the default critical path (`main`) prefer the own `fork`/`join`/`cancel` layer over virtual threads + `ScopedValue` (both GA) at the existing seam; a default-path move *away* from `StructuredTaskScope` is not a guardrail violation (see ROADMAP "Platform Baseline for 1.0 GA").
 - Prefer `MemorySegment`, `LoanedBuffer`, and `VarHandle` on runtime hot paths.
 - Prefer JFR-first instrumentation for subsystem lifecycle/failure points (bootstrap, allocation failure, bind/start, state transitions).
 - Prefer expanding TCK coverage when observable SPI behavior changes.
