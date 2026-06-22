@@ -18,10 +18,14 @@ import java.nio.charset.StandardCharsets;
  * <h2>The Wall</h2>
  * <p>This is the tier-blind framing layer the streaming SPI relies on (ADR-043): it turns the
  * implementation-blind {@link StreamEvent} carrier into the {@code field: value\n …\n\n} byte block.
- * It owns no transport mechanics — the resulting bytes are wrapped by the HTTP/1.1 chunked encoder
- * ({@link eu.exeris.kernel.core.http.http1.Http1ChunkedEncoder}) or an HTTP/2 {@code DATA} frame by the
- * transport tier, which copies them once into the egress
- * {@link eu.exeris.kernel.spi.memory.LoanedBuffer}.
+ * It owns no transport mechanics.
+ *
+ * <p><b>v0.10 transport framing:</b> the engine copies these bytes once into the egress
+ * {@link eu.exeris.kernel.spi.memory.LoanedBuffer} and writes them as a <em>raw, close-delimited</em>
+ * HTTP/1.1 body (no {@code Content-Length}, no chunk framing; the response carries {@code Connection:
+ * close} and the SSE session ends with the connection — RFC 9112 §6.3). {@code Transfer-Encoding: chunked}
+ * per-event framing (for SSE through buffering reverse proxies) and an HTTP/2 {@code DATA}-frame path are
+ * documented follow-ups; this encoder's field-block output is unchanged by either.
  *
  * <h2>Field Order &amp; Rules</h2>
  * <pre>
@@ -33,8 +37,9 @@ import java.nio.charset.StandardCharsets;
  * </pre>
  *
  * <p>Per the SSE spec, {@code event}/{@code id} fields cannot span lines; embedded CR/LF in those
- * fields are stripped to prevent field-injection. The {@code data} payload is split on CR, LF, or CRLF
- * into one {@code data:} line each, faithfully reproducing multi-line payloads on the client.
+ * fields are stripped to prevent field-injection, and U+0000 NUL is stripped (a NUL in the {@code id}
+ * field makes the client ignore it — WHATWG HTML §9.2). The {@code data} payload is split on CR, LF, or
+ * CRLF into one {@code data:} line each, faithfully reproducing multi-line payloads on the client.
  *
  * @since 0.10.0
  */
@@ -71,7 +76,9 @@ public final class SseEventEncoder {
         out.append(field).append(": ");
         for (int idx = 0; idx < value.length(); idx++) {
             char chr = value.charAt(idx);
-            if (chr != '\r' && chr != '\n') {
+            // Strip CR/LF (cannot span lines — field-injection guard) and U+0000 NUL: a NUL in the SSE
+            // id field makes the client ignore the field (WHATWG HTML §9.2), so drop it defensively.
+            if (chr != '\r' && chr != '\n' && chr != '\0') {
                 out.append(chr);
             }
         }

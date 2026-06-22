@@ -28,9 +28,12 @@ import eu.exeris.kernel.spi.transport.TransportEngine;
 import eu.exeris.kernel.spi.transport.TransportMode;
 import eu.exeris.kernel.spi.transport.TransportStream;
 import eu.exeris.kernel.tck.contract.http.AbstractHttpStreamExchangeTck;
+import static org.assertj.core.api.Assertions.assertThat;
+
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -136,6 +139,30 @@ class CommunityHttpStreamExchangeTckTest extends AbstractHttpStreamExchangeTck {
         }
     }
 
+    @Test
+    @DisplayName("SSE response head is well-formed and close-delimited (no Content-Length / chunked, v0.10)")
+    void sseResponseHeadIsWellFormedAndCloseDelimited() {
+        LoopbackStreamScenario scenario = LoopbackStreamScenario.start(exchange -> {
+            exchange.emit(StreamEvent.of("hi"));
+            exchange.close();
+        }, 0L);
+        try (scenario) {
+            scenario.awaitEvents(1);
+            String head = scenario.responseHead();
+            assertThat(head).as("the client must have read a response head").isNotNull();
+            String lower = head.toLowerCase(java.util.Locale.ROOT);
+            assertThat(head).as("status line").startsWith("HTTP/1.1 200");
+            assertThat(lower).as("SSE content type").contains("content-type: text/event-stream");
+            assertThat(lower).as("disables proxy/client caching").contains("cache-control: no-cache");
+            // v0.10: the SSE body is close-delimited (RFC 9112 §6.3) — Connection: close, and neither
+            // Content-Length nor Transfer-Encoding: chunked is present. This pins the honest framing the
+            // SseEventEncoder Javadoc / ADR-043 delivery-status note describe.
+            assertThat(lower).as("close-delimited framing").contains("connection: close");
+            assertThat(lower).as("no chunked framing in v0.10").doesNotContain("transfer-encoding");
+            assertThat(lower).as("no Content-Length on an open-ended stream").doesNotContain("content-length");
+        }
+    }
+
     // =====================================================================
     // Loopback scenario — real NIO server + plain-socket SSE client.
     // =====================================================================
@@ -215,6 +242,11 @@ class CommunityHttpStreamExchangeTckTest extends AbstractHttpStreamExchangeTck {
         @Override
         public boolean awaitEndOfStream() {
             return reader.awaitEndOfStream();
+        }
+
+        /** Community-only: the raw HTTP response head the client read (for the SSE framing assertion). */
+        String responseHead() {
+            return reader.awaitResponseHead();
         }
 
         @Override
@@ -306,6 +338,7 @@ class CommunityHttpStreamExchangeTckTest extends AbstractHttpStreamExchangeTck {
         private final AtomicBoolean stalled = new AtomicBoolean(false);
         private final AtomicBoolean stopped = new AtomicBoolean(false);
         private volatile boolean endOfStream;
+        private volatile String responseHead;
         private Thread readerVt;
 
         private SseClientReader(Socket socket) {
@@ -347,6 +380,7 @@ class CommunityHttpStreamExchangeTckTest extends AbstractHttpStreamExchangeTck {
                         if (headEnd < 0) {
                             continue;
                         }
+                        responseHead = pending.substring(cursor, headEnd);
                         cursor = headEnd + 4;
                         headerSeen = true;
                     }
@@ -429,6 +463,14 @@ class CommunityHttpStreamExchangeTckTest extends AbstractHttpStreamExchangeTck {
                 parkBriefly();
             }
             return endOfStream;
+        }
+
+        String awaitResponseHead() {
+            long deadline = System.currentTimeMillis() + OBSERVE_TIMEOUT_MILLIS;
+            while (responseHead == null && System.currentTimeMillis() < deadline) {
+                parkBriefly();
+            }
+            return responseHead;
         }
 
         private void waitOnLock(long deadline) {

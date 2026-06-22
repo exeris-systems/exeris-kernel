@@ -256,7 +256,16 @@
                                 keep ZGC, preview and native-access (functional needs); only the
                                 fork-level profiling recorder is dropped.
                             -->
-                            <argLine>@{coverage.argLine} -XX:+UnlockExperimentalVMOptions -XX:+UseZGC -XX:-ZUncommit --enable-preview --enable-native-access=ALL-UNNAMED --add-opens java.base/sun.nio.ch=ALL-UNNAMED --add-opens java.base/java.io=ALL-UNNAMED</argLine>
+                            <!--
+                                Pin the VT carrier count for this fork so the loopback harness gets a
+                                stable pool regardless of runner vCPUs. On a 2-vCPU CI runner the default
+                                scheduler parallelism is 2, which starves the per-stream loopback VTs
+                                (server reactor + handler emit loop + test orchestration) and times the
+                                timing-sensitive probes out — green locally on many-core boxes, red on CI.
+                                4 carriers decouple the test from the runner CPU count; oversubscription is
+                                safe here because these VTs are I/O-bound (socket I/O + park).
+                            -->
+                            <argLine>@{coverage.argLine} -XX:+UnlockExperimentalVMOptions -XX:+UseZGC -XX:-ZUncommit --enable-preview --enable-native-access=ALL-UNNAMED --add-opens java.base/sun.nio.ch=ALL-UNNAMED --add-opens java.base/java.io=ALL-UNNAMED -Djdk.virtualThreadScheduler.parallelism=4 -Djdk.virtualThreadScheduler.maxPoolSize=32</argLine>
                             <includes>
                                 <include>**/CommunityHttpStreamExchangeTckTest.java</include>
                                 <include>**/CommunityHttpStreamJfrTest.java</include>

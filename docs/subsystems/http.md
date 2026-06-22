@@ -53,6 +53,10 @@ Streaming (server-push) contracts — 🚧 Planned v0.10, ratified by [ADR-043](
 - **JWT-expiry fail-closed (`EX-HTTP-4012`)** — the deadline enforcement lives in `HttpStreamEngine`, but production dispatch passes no deadline until the IdentityProvider SPI (ADR-040) surfaces a principal `exp` on the streaming path (ADR-043 §6: Community-internal until then).
 - **Streaming-occupancy ceiling** — `StreamAdmissionController` enforces a long-lived-slot ceiling distinct from sub-ms request accounting, but it is not yet wired into production dispatch. The safety property (new stream-opens shed under load) still holds via carrier-edge PAQS; plumbing the dedicated ceiling is a v0.10 follow-up.
 
+Additional follow-ups (mechanism works; refinement deferred):
+- **Wire framing** — the SSE body is written as a raw, close-delimited HTTP/1.1 response (`Connection: close`, no `Content-Length`, no chunk framing; RFC 9112 §6.3). `Transfer-Encoding: chunked` per-event framing (so SSE streams through buffering reverse proxies / CDNs that hold length-unknown responses) and an HTTP/2 `DATA`-frame path are follow-ups. The response head is HTTP/1.1-specific today.
+- **Zero-copy emit** — `SseEventEncoder.encode` currently allocates a `StringBuilder` + `String` + `byte[]` per event before the single copy into the egress `LoanedBuffer`. Encoding field-by-field directly into the `LoanedBuffer` segment (no intermediate `String`/`byte[]`) is the No-Waste-Compute follow-up for high-rate streams.
+
 HTTP exceptions in SPI:
 
 - `eu.exeris.kernel.spi.exceptions.http.HttpException`

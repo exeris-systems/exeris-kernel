@@ -37,7 +37,12 @@ import java.util.concurrent.locks.LockSupport;
  * <p>This class depends only on SPI contracts ({@link TransportStream}, {@link MemoryAllocator},
  * {@link LoanedBuffer}) and Core framing — never on a concrete driver. A transport tier supplies a
  * concrete {@link TransportStream}; the Community NIO {@code NativeTcpStream} and the Enterprise
- * native binding both flow through this engine unchanged.
+ * native binding both flow through this engine.
+ *
+ * <p><b>v0.10 protocol scope:</b> the SSE event framing ({@link SseEventEncoder}) is protocol-blind, but
+ * the response-head write is HTTP/1.1-specific (it uses {@code Http1ResponseEncoder}). HTTP/2 streaming
+ * (head as HEADERS frame, body as DATA frames) needs a protocol-aware head-write seam — a follow-up; the
+ * current Community path is HTTP/1.1 only.
  *
  * <h2>Backpressure — park the VT, never an on-heap queue (obligation 4)</h2>
  * <p>The engine maintains a bounded <em>credit window</em>: at most {@code creditWindow} bytes may
@@ -185,6 +190,12 @@ public final class HttpStreamEngine implements HttpStreamExchange {
         // Single-phase commit BEFORE parking — the blocking park must never sit between
         // begin() and commit() on a virtual thread (carrier-bound EventWriter straddle).
         StreamBackpressureParkEvent.emit(stream.streamId(), outstandingBytes.get(), eventsEmitted.get());
+        // Missed-unpark window: between the overflow check above and this set, releaseCredit() on the
+        // transport callback thread may call unpark(null) (no-op) and the emitter would miss the signal.
+        // The bounded parkNanos(PARK_SLICE_NANOS) backstop below makes that benign — the loop re-checks
+        // credit every slice — at the cost of up to one slice of extra latency on that first wakeup. A
+        // volatile-flag handshake would close the window but adds hot-path state; the backstop is the
+        // deliberate, simpler trade-off.
         parkedEmitter.set(Thread.currentThread());
         try {
             while (outstandingBytes.get() + frameBytes > creditWindow) {
@@ -223,6 +234,12 @@ public final class HttpStreamEngine implements HttpStreamExchange {
             // gone: map them to the unchecked StreamClosedException the emit loop unwinds on.
             stream.queueWrite(buffer, frame.length);
         } catch (RuntimeException streamClosed) {
+            // Safety net for the credit accounting: the TransportStream.queueWrite contract closes the
+            // buffer before throwing (its close-action returns the credit), but close() is idempotent and
+            // the close-action runs exactly once (refcount CAS), so a defensive close() here cannot
+            // double-release — it only guarantees the credit is returned if an implementation ever throws
+            // without closing.
+            buffer.close();
             abortiveTeardown(StreamClosedException.peerDisconnect(eventsEmitted.get()), streamClosed);
         }
     }
@@ -277,8 +294,13 @@ public final class HttpStreamEngine implements HttpStreamExchange {
                     scratch.segment(), position, "Content-Type", "text/event-stream; charset=utf-8");
             position = Http1ResponseEncoder.writeHeader(
                     scratch.segment(), position, "Cache-Control", "no-cache");
+            // The SSE body has no Content-Length and is NOT chunk-framed in v0.10, so it is
+            // close-delimited (RFC 9112 §6.3): the stream ends when the connection closes, which is the
+            // natural end of an SSE session. "Connection: close" advertises this honestly — the request
+            // processor already declines keep-alive reuse for streaming routes. Transfer-Encoding: chunked
+            // (for SSE through buffering reverse proxies) is a documented v0.10 follow-up.
             position = Http1ResponseEncoder.writeHeader(
-                    scratch.segment(), position, "Connection", "keep-alive");
+                    scratch.segment(), position, "Connection", "close");
             position = Http1ResponseEncoder.writeHeaderEnd(scratch.segment(), position);
             stream.write(scratch.segment(), (int) position);
         }

@@ -21,6 +21,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -253,23 +254,28 @@ public abstract class AbstractHttpStreamExchangeTck {
         @DisplayName("after client disconnect, the next emit() throws StreamClosedException(EX-HTTP-4011)")
         void emitAfterDisconnectThrows() {
             AtomicReference<Throwable> captured = new AtomicReference<>();
+            CountDownLatch disconnected = new CountDownLatch(1);
             StreamScenario scenario = openStream(exchange -> {
                 try {
                     // First emit lands; then the client goes away and the next emit must throw.
                     exchange.emit(StreamEvent.of("before-disconnect"));
-                    awaitUninterruptibly(this);
+                    // CountDownLatch.await unmounts the virtual thread; it does NOT pin the carrier the
+                    // way synchronized/Object.wait would — load-bearing under the 2-carrier CI model.
+                    disconnected.await(OBSERVE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
                     while (true) {
                         exchange.emit(StreamEvent.of("after-disconnect"));
                     }
                 } catch (StreamClosedException ex) {
                     captured.set(ex);
+                } catch (InterruptedException ex) {
+                    Thread.currentThread().interrupt();
                 }
             });
 
             try (scenario) {
                 scenario.awaitEvents(1);
                 scenario.disconnectClient();
-                releaseSignal(this);
+                disconnected.countDown();
 
                 Throwable thrown = scenario.awaitHandlerUnwind();
                 assertThat(thrown)
@@ -517,25 +523,6 @@ public abstract class AbstractHttpStreamExchangeTck {
         }
     }
 
-    // -------------------------------------------------------------------------
-    // signal helpers for handler/test coordination (test-only; not a hot path)
-    // -------------------------------------------------------------------------
-
-    private static void awaitUninterruptibly(Object monitor) {
-        synchronized (monitor) {
-            try {
-                monitor.wait(TimeUnit.SECONDS.toMillis(OBSERVE_TIMEOUT_SECONDS));
-            } catch (InterruptedException ex) {
-                Thread.currentThread().interrupt();
-            }
-        }
-    }
-
-    private static void releaseSignal(Object monitor) {
-        synchronized (monitor) {
-            monitor.notifyAll();
-        }
-    }
 
     /**
      * Binding-supplied handle to one live streaming round-trip. The binding owns the held-open transport,

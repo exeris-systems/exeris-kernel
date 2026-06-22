@@ -74,6 +74,15 @@ class SseEventEncoderTest {
     }
 
     @Test
+    void nulBytesInEventAndIdFieldsAreStripped() {
+        // WHATWG HTML §9.2: a NUL in the id field makes the client ignore it — strip defensively.
+        // Build the NUL via (char) 0 so no raw 0x00 byte is written into the source file.
+        String nul = String.valueOf((char) 0);
+        assertThat(encode(new StreamEvent("e" + nul + "v", "x", "i" + nul + "d", 0L)))
+                .isEqualTo("event: ev\nid: id\ndata: x\n\n");
+    }
+
+    @Test
     void utf8MultibytePayloadRoundTrips() {
         assertThat(encode(StreamEvent.of("zażółć gęślą — €")))
                 .isEqualTo("data: zażółć gęślą — €\n\n");

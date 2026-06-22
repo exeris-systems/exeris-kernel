@@ -272,11 +272,16 @@ public final class KernelErrorCodes {
      * <p>This is a deliberate, non-fatal policy decision — not a hardware failure.
      * No connection state is allocated for the shed stream.
      *
-     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <p><b>Two surfaces, one code.</b> PAQS request-edge shedding emits this code as the JFR
+     * {@code StreamShedEvent} (typed event fields — streamId, priority, action, transport, occupancy — read
+     * by name, not by rawArgs index). The streaming stream-open shed (ADR-043) additionally <em>throws</em>
+     * it via {@link eu.exeris.kernel.spi.exceptions.transport.TransportException#streamShed(String, long)};
+     * the rawArgs layout below is that exception carrier's schema.
+     *
+     * <p><b>rawArgs layout for Glass-Box (exception carrier):</b>
      * <ul>
      *   <li>index 0 – {@code String} transportName</li>
-     *   <li>index 1 – {@code int}    streamPriority  (priority ordinal of the shed stream)</li>
-     *   <li>index 2 – {@code int}    thresholdPriority (active PAQS threshold at shed time)</li>
+     *   <li>index 1 – {@code long}   streamId (identifier of the shed stream)</li>
      * </ul>
      */
     public static final String EX_NET_4006 = "EX-NET-4006";
