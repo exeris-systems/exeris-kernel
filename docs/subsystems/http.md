@@ -57,6 +57,8 @@ Additional follow-ups (mechanism works; refinement deferred):
 - **Wire framing** — the SSE body is written as a raw, close-delimited HTTP/1.1 response (`Connection: close`, no `Content-Length`, no chunk framing; RFC 9112 §6.3). `Transfer-Encoding: chunked` per-event framing (so SSE streams through buffering reverse proxies / CDNs that hold length-unknown responses) and an HTTP/2 `DATA`-frame path are follow-ups. The response head is HTTP/1.1-specific today.
 - **Zero-copy emit** — `SseEventEncoder.encode` currently allocates a `StringBuilder` + `String` + `byte[]` per event before the single copy into the egress `LoanedBuffer`. Encoding field-by-field directly into the `LoanedBuffer` segment (no intermediate `String`/`byte[]`) is the No-Waste-Compute follow-up for high-rate streams.
 
+**Test gating.** The streaming contract is verified two ways. The fast, deterministic layer gates CI: `SseEventEncoderTest` (wire framing), `HttpRouterTest` streaming-registration, and the ArchTest Wall pin. The real-NIO loopback suite (`AbstractHttpStreamExchangeTck` bound by `CommunityHttpStreamExchangeTckTest` + the JFR `RecordingStream` test, `@Tag("stream-loopback")`) is run **on demand / locally**, not in the CI gate — like the `stress`/`flamegraph` suites it starves and times out on constrained 2-vCPU CI runners (server reactor + per-stream VT + client) even though it passes deterministically on many-core boxes. Run it with `mvn test -DincludedGroups=stream-loopback -DexcludedGroups=` (or `-Dtest=CommunityHttpStreamExchangeTckTest`). Making the loopback robust under scarce carriers so it can gate CI is a tracked follow-up.
+
 HTTP exceptions in SPI:
 
 - `eu.exeris.kernel.spi.exceptions.http.HttpException`
