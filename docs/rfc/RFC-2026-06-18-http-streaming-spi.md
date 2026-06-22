@@ -2,11 +2,11 @@
 
 | Field             | Value                                                                                                                                  |
 |:------------------|:---------------------------------------------------------------------------------------------------------------------------------------|
-| **Status**        | **DRAFT**                                                                                                                              |
+| **Status**        | **ACCEPTED** — superseded by ADR-043 (2026-06-21)                                                                                       |
 | **Author(s)**     | Arkadiusz Przychocki                                                                                                                    |
 | **Date Opened**   | 2026-06-18                                                                                                                              |
-| **Date Closed**   | —                                                                                                                                      |
-| **Target ADR(s)** | ADR-043 (reserved — Kernel HTTP streaming SPI; content + impl once accepted)                                                            |
+| **Date Closed**   | 2026-06-21                                                                                                                             |
+| **Target ADR(s)** | ADR-043 (ACCEPTED — Kernel HTTP streaming SPI; ratifies Option 1, resolves all 8 open design questions)                                 |
 | **Affected Repos**| `exeris-kernel` (SPI + Core framing + Community transport), `exeris-sdk` (`realTimeApi`/`@Action(streaming)` wired), `exeris-tooling` (stream emitters Java/TS), `exeris-kernel-enterprise` (native transport overlay, cross-repo) |
 | **Reviewers**     | —                                                                                                                                      |
 
@@ -98,3 +98,4 @@ ADR-043 is the architect sign-off + `Abstract*Tck` artifact; it cannot close wit
 
 ## Decision log
 - 2026-06-18 — DRAFT opened; preferred direction SSE-first + sibling `HttpStreamExchange`. Target ADR-043 reserved. transport.md SSE/WebSocket ordering corrected (SSE-first). Open design questions for ADR-043 enumerated per RFC review.
+- 2026-06-21 — ACCEPTED. Option 1 (SSE-first + sibling `HttpStreamExchange`) ratified by ADR-043; all 8 open design questions resolved there as testable obligations. WebSocket re-scoped from "post-1.0" to a separately-justified follow-up (not milestone-pinned). RFC closed; ADR-043 is now the authoritative artifact.

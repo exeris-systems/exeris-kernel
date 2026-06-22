@@ -41,6 +41,14 @@ Typed Response Encoding contracts:
 - `HttpResponseEncodingContext` — encoding parameter carrier
 - `HttpEncodedBody` — encoded output carrier
 
+Streaming (server-push) contracts — 🚧 Planned v0.10, ratified by [ADR-043](../adr/ADR-043-kernel-http-streaming-spi.md) (ACCEPTED):
+
+- `HttpStreamExchange` — sibling of `HttpExchange` for SSE server-push; `emit(StreamEvent)` may be called repeatedly until the stream closes. The respond-once `HttpExchange` invariant is left **untouched** — streaming is a separate, opt-in surface selected by route metadata.
+- `StreamEvent` — Valhalla-ready record (`event` / `data` / `id` / `retryMillis`) mapping directly to the SSE wire format; event-shaped and implementation-blind (never a raw byte buffer).
+- `HttpStreamHandler` — `@FunctionalInterface` sibling of `HttpHandler` (`void handle(HttpStreamExchange)`); disconnect is signalled by `emit()` throwing the unchecked `StreamClosedException` (Loom-idiomatic imperative emit loop, no parked-VT leak).
+- `emit()` parks the calling virtual thread under egress backpressure (no on-heap queue), and transfers `LoanedBuffer` ownership to the engine — identical to `HttpExchange.respond()`.
+- New error codes: `EX-HTTP-4011` (emit-after-close) and `EX-HTTP-4012` (JWT expired mid-stream, fail-closed per ADR-012 §5). Stream-open admission shedding reuses the existing `EX-NET-4006` + `StreamShedEvent` (see [transport.md](transport.md)), not a new HTTP code.
+
 HTTP exceptions in SPI:
 
 - `eu.exeris.kernel.spi.exceptions.http.HttpException`
@@ -87,6 +95,7 @@ HTTP abstract TCK suites present:
 - `AbstractHttpExchangeTck`
 - `AbstractHttpProviderLoopbackTck` — verifies real transport round-trip; bound at Community tier (`CommunityHttpProviderLoopbackTckTest`)
 - `AbstractHealthEndpointTck` (since 0.7.0) — pins the readiness/liveness endpoint contract for any `HttpHandler` binding that surfaces a `HealthProbe`. Bound at Community tier (`CommunityHealthEndpointTckTest`).
+- `AbstractHttpStreamExchangeTck` — 🚧 Planned v0.10 ([ADR-043](../adr/ADR-043-kernel-http-streaming-spi.md)) — pins the SSE streaming contract: open / emit-N / graceful close / disconnect-via-`StreamClosedException`, backpressure park-and-resume on window credit, and no respond-once regression. Community binding required; Enterprise native overlay declared as a cross-repo obligation.
 
 These verify SPI-level HTTP contract behavior and ServiceLoader/provider semantics.
 
