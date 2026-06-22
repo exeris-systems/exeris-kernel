@@ -467,7 +467,12 @@ final class CoreFlowRuntime { // NOPMD
 
     private CoreFlowExecutionPlan resolvePlanForSnapshot(CoreFlowExecutionPlan directPlan, FlowSnapshot persisted) {
         if (directPlan == null) {
-            return planCatalog.get(persisted.definitionName());
+            CoreFlowExecutionPlan catalogPlan = planCatalog.get(persisted.definitionName());
+            if (catalogPlan == null) {
+                return null;
+            }
+            validateSnapshotStepBounds(catalogPlan, persisted);
+            return catalogPlan;
         }
         if (!directPlan.definitionName().equals(persisted.definitionName())) {
             throw new FlowEngineException(
@@ -476,7 +481,40 @@ final class CoreFlowRuntime { // NOPMD
                     + "' but snapshot belongs to '"
                     + persisted.definitionName() + "'");
         }
+        validateSnapshotStepBounds(directPlan, persisted);
         return directPlan;
+    }
+
+    /**
+     * Fail-closed guard against resuming a persisted saga against an incompatible (changed) plan.
+     *
+     * <p>A snapshot persists {@code currentStep} as a bare zero-based index into the plan it was
+     * parked under. If a later deployment removes (or reorders away) steps, that index can point past
+     * the end of the currently-registered plan; replaying it blindly would resume at the wrong step —
+     * a data-corruption-class outcome — so resume must reject the mismatch rather than proceed.
+     *
+     * <p>Per {@code docs/subsystems/flow.md}, waking a non-terminal saga whose persisted
+     * {@code currentStep} no longer indexes a step in the active definition raises
+     * {@code EX-FLOW-7002 / phase=SCHEMA_MISMATCH} (Glass-Box rawArgs via
+     * {@link FlowEngineException#schemaMismatch(String, int)}) and requires manual intervention. Until
+     * definition versioning lands (ROADMAP "Flow/Saga Definition Versioning + In-Flight Migration"),
+     * step-index bounds/arity is the available identity signal — same-arity reorders are not yet caught.
+     * Terminal snapshots ({@link FlowState#isTerminal()}) are exempt — they are never resumed.
+     */
+    private void validateSnapshotStepBounds(CoreFlowExecutionPlan plan, FlowSnapshot persisted) {
+        if (persisted.state().isTerminal()) {
+            return;
+        }
+        int step = persisted.currentStep();
+        int stepCount = plan.stepCount();
+        // step < 0 makes the invariant explicit (a corrupted snapshot writing a sentinel index also
+        // fails closed, not just the redeploy-removed-step case).
+        if (step < 0 || step >= stepCount) {
+            FlowSchemaMismatchEvent.emit(
+                    config.engineName(), persisted.definitionName(),
+                    persisted.instanceIdMost(), persisted.instanceIdLeast(), step, stepCount);
+            throw FlowEngineException.schemaMismatch(config.engineName(), step);
+        }
     }
 
     private void launch(RuntimeFlowInstance instance, int startStep) {

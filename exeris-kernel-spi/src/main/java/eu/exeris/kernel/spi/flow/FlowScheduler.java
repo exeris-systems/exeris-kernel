@@ -93,6 +93,13 @@ public interface FlowScheduler {
      * @param instanceIdLeast least-significant bits of the flow instance UUID
      * @return an {@link Optional} containing the {@link FlowContext} if a parked instance
      *         with the given UUID is currently known to this scheduler; empty otherwise
+     * @throws eu.exeris.kernel.spi.exceptions.flow.FlowEngineException with
+     *         {@code phase=SCHEMA_MISMATCH} ({@code EX-FLOW-7002}) if a snapshot is found on the
+     *         fallback path but its persisted resume step no longer indexes a step in the active
+     *         flow definition (the definition changed under a parked saga). This is fail-closed by
+     *         design — resuming against an incompatible plan is a data-corruption-class outcome — so
+     *         a snapshot-fallback hit can surface this rather than {@link java.util.Optional#empty()};
+     *         the in-memory fast path never throws it.
      */
     default Optional<FlowContext> lookupParked(long instanceIdMost, long instanceIdLeast) {
         return Optional.empty();
