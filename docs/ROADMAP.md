@@ -1558,6 +1558,25 @@ See also: [Events Subsystem](./subsystems/events.md).
 
 ---
 
+### Events: Log-Ordering & Optimistic-Concurrency Boundary Not Owned by the Events SPI (sourcing/streaming fundament)
+
+**Gap:** The "one log, four views" shape — *streaming* = log read forward as transport; *sourcing* = log as source of truth, state = fold over replay; *KV* = log compacted to last-value-per-key; *distributed* = the same log replicated across nodes — requires a single, explicit consistency boundary on the **Events** surface that all four derivations honour. Today that boundary is **not on the Events SPI**. Code audit (2026-06-22) found:
+- The optimistic-concurrency CAS lives entirely on the **Persistence** side: `FlowSnapshot.schemaVersion` (`exeris-kernel-spi/.../spi/flow/model/FlowSnapshot.java:71`) enforced by `JdbcFlowSnapshotStore` `SQL_UPDATE_OCC` (`exeris-kernel-community/.../flow/JdbcFlowSnapshotStore.java:107`). `EventStreamAppender.append(...)` (`exeris-kernel-spi/.../spi/events/EventStreamAppender.java:62`) is **fire-and-forget** — no expected-version / sequence parameter — and `EventStore.append(OutboxEvent)` is likewise versionless. There is no append-with-expected-version contract anywhere on the Events surface.
+- The in-memory `EventBus` provides **no ordering guarantee**: `InMemoryEventBus.publish()` (`.../core/events/InMemoryEventBus.java:136`) starts one virtual thread per handler — concurrent fan-out, fire-and-forget — so there is no per-key / per-aggregate / FIFO delivery order by construction, and `AbstractEventBusTck` asserts none.
+- `EventStreamReader` / `EventStreamAppender` / `EventStream` remain **skeletons** (SPI interfaces + unbound `ScopedValue` slots in `KernelProviders`, zero main-source implementors; `KafkaEventEngine` javadoc states replay is "deferred"). There is no working replay path, so sourcing's "state = fold over replay" and KV's "rebuild from compacted replay" both have **no substrate** today.
+
+Sourcing (per-aggregate strict ordering + optimistic-concurrency append + infinite retention) and streaming (fan-out throughput + consumer offset + time/size retention) want *different* guarantees from the *same* log. The kernel has not decided **where that guarantee lives or proven it on both bindings** — this is the load-bearing "completion" that gates KV and distributed: both must respect a contract that does not yet exist on the Events SPI.
+
+**Owner:** Events subsystem (SPI seam) + Persistence (current CAS owner).
+
+**Resolution:** Decide and record where per-stream ordering + optimistic-concurrency append live (Events SPI vs Persistence). Make it explicit in the contract: give `EventStreamAppender.append(...)` an expected-sequence / expected-version parameter (or a documented "no-ordering" stance for the in-memory binding), define per-`StreamId` ordering semantics, and **bind `AbstractEventStreamReaderTck` / `AbstractEventStreamAppenderTck`** (currently unbound — "blocked on durability driver") against at least the Community JDBC binding and the Kafka binding so the guarantee is proven on both. Add a per-key ordering assertion to `AbstractEventBusTck`, or document the in-memory bus as explicitly unordered. This is the SPI that KV (compacted projection) and distributed (replicated log) must respect — settle it first.
+
+**Merge Gate:** Ordering/concurrency boundary recorded in `docs/subsystems/events.md`; `EventStreamAppender` contract states its sequencing semantics; `AbstractEventStreamReaderTck` / `AppenderTck` bound and green on ≥2 bindings; `AbstractEventBusTck` either asserts the documented ordering or documents its absence; additive only (no breaking-change framing per pre-1.0 / TRL-3 stance); The Wall preserved (no broker/JDBC types leak into the Events SPI).
+
+See also: [Events Subsystem](./subsystems/events.md); v0.7 EVENT-203 (skeleton delivery); ADR-013 (FlowSnapshot OCC); v0.12 §"Runtime: KV-as-Projection".
+
+---
+
 ### Multi-Tenancy: Shared-World / `Universe` Scope Tier — RFC Track
 
 **Gap:** The kernel models isolation through a single tenant-scoping primitive (`StorageContext.isolationKey`, per ADR-012). There is no scope tier above (or beside) the tenant for a *shared* world that multiple tenants observe and mutate together — e.g. a shared game universe, a common reference dataset, or a cross-tenant collaboration space. Today applications needing this force `isolationKey` to do double duty (one key meaning both "tenant" and "shared world"), which collapses the two concerns and either over-isolates (no sharing possible) or under-isolates (the tenant boundary leaks). Surfaced during downstream dogfooding (Stellar-Tactics multi-service build, 2026-06; finding K3, High).
@@ -1662,11 +1681,194 @@ See also: ADR-034 (`KernelWebClient` facade, superseding ADR-026), ADR-032 (`Htt
 
 **Resolution:** Open an RFC enumerating contract questions: read-through vs read-aside semantics, invalidation strategy (TTL-only vs key-level invalidate vs region-flush), `PrincipalContext` / `StorageContext` scoping (per-tenant cache regions), serialization shape for distributed backends, async vs sync `get` semantics on Loom (blocking-on-Loom is acceptable but the contract must be explicit), interaction with the existing `WatermarkManager` SHED_LOAD decisions. RFC stops at "RFC accepted with preferred shape called out"; SPI lands only when a concrete second-backend pull materializes (downstream consumer requesting Redis, or benchmark demonstrating off-heap slab win). Until then, generator emission for `cacheable` flag remains a tooling-only Caffeine wiring.
 
-**Binding-agnostic shape (same open-core pattern as Events `topic`, transport NIO/`io_uring`).** Specify a single `CacheProvider` SPI that is swappable across bindings exactly as K1 proposes for the Events `topic` seam: Community ships an in-process / off-heap KV implementation behind the SPI; enterprise / adapter bindings provide Redis / Hazelcast. Application code is written against the contract, not the backend. **Distributed invalidation rides the Events bus, not a separate channel:** a region flush / key invalidate is published as an event, so the cache seam reuses the multi-node substrate already in place rather than introducing a second coordination mechanism. For single-node deployments the in-heap `CommunityEventBus` is itself the channel — coherent invalidation with no Kafka dependency; Kafka is the multi-node path only (the Community binding must not require Kafka for correctness). K1 (`topic`) + `CacheProvider` + invalidation-over-events = one coherent multi-node story with zero new data-plane in the kernel.
+**Scope clarification — the cache seam is NOT KV-as-projection.** This `CacheProvider` entry is the **commodity cache seam**: a swappable, *backend-defined* store (Caffeine-class in-process vs Redis vs Hazelcast) with a coherence contract. It is a **different primitive** from the off-heap, log-*derived* last-value view tracked under v0.12 §"Runtime: KV-as-Projection" — that one is a *view on the Events log* (rebuilt from compacted replay), this one is an *independent cache the application reads and writes directly*. The two were previously conflated in this section; they must be designed as distinct contracts. The Community in-process backend here is an ordinary cache (heap or off-heap slab as an impl detail), **not** the Events-log projection.
+
+**Binding-agnostic shape (same open-core pattern as Events `topic`, transport NIO/`io_uring`).** Specify a single `CacheProvider` SPI that is swappable across bindings exactly as K1 proposes for the Events `topic` seam: Community ships an in-process cache behind the SPI; enterprise / adapter bindings provide Redis / Hazelcast. Application code is written against the contract, not the backend. **Distributed invalidation rides the Events bus, not a separate channel:** a region flush / key invalidate is published as an event, so the cache seam reuses the multi-node substrate already in place rather than introducing a second coordination mechanism. For single-node deployments the in-heap `CommunityEventBus` is itself the channel — coherent invalidation with no Kafka dependency; Kafka is the multi-node path only (the Community binding must not require Kafka for correctness). K1 (`topic`) + `CacheProvider` + invalidation-over-events = one coherent multi-node story with zero new data-plane in the kernel.
 
 **Coherence is a `[CONTRACT]` landmine.** Local (in-process) and distributed cache backends have *different* coherence semantics; if the SPI hides this, business code written against the contract is subtly wrong after a backend swap (a stale read that never happens on Caffeine surfaces under Redis). The RFC must resolve this one of two ways: make coherence an explicit part of the contract (stated staleness / read-after-write / invalidation guarantees the caller can rely on regardless of backend), or bind invalidation to the Events bus so coherence is delivered by the same mechanism on every backend. The invalidation-over-events choice above discharges this automatically.
 
-**Merge Gate:** RFC accepted with the coherence-semantics contract resolved (explicit staleness/invalidation guarantees, or invalidation bound to the Events bus) so a backend swap cannot silently change correctness; no kernel SPI commits in this gate (decision-only track). SPI implementation gate deferred to a future version, conditional on real second-backend pull; when it lands, distributed invalidation reuses the Events bus rather than a new channel.
+**Audit note (2026-06-22) — the "second-backend pull" precondition may already be met.** The SDK already carries `cacheable` / `cacheRegion` / `cacheTtl` on `ExerisDomain` / `Graph` / `Projection` (`exeris-sdk-annotations/.../ExerisDomain.java:258,266,274`) and they round-trip through the APT processor, source model, and TS model — but **no emitter or kernel sink consumes them** (audit: captured-but-dead). The kernel cache primitive is confirmed **ABSENT**. The RFC's "SPI lands only on a concrete second-backend pull" gate should be re-evaluated rather than assumed unmet: downstream dogfooding (Stellar-Tactics, BudgetHQ) is the Redis pull, and the dead SDK flags are already waiting for a sink. If the pull is confirmed, the cache seam graduates from RFC-only to an implementation milestone.
+
+**Merge Gate:** RFC accepted with the coherence-semantics contract resolved (explicit staleness/invalidation guarantees, or invalidation bound to the Events bus) so a backend swap cannot silently change correctness; no kernel SPI commits in this gate (decision-only track). SPI implementation gate deferred to a future version, conditional on real second-backend pull (re-evaluate per the audit note above); when it lands, distributed invalidation reuses the Events bus rather than a new channel.
+
+---
+
+### Runtime: KV-as-Projection (Off-Heap, Log-Derived Last-Value View) — distinct from the `CacheProvider` cache seam
+
+**Gap:** "KV as a view on the log" — last-value-per-key projection of a compacted stream — is the unification play and is **NOT** the `CacheProvider` cache seam above. The cache seam is a swappable commodity backend; KV-as-projection is an off-heap, deterministic, log-*derived* view that inherits the off-heap / zero-alloc thesis **only if** built on existing machinery rather than a heap map. Code audit (2026-06-22) found the substrate is **further from ready than it looks**:
+- `ProjectionEngine` (`exeris-kernel-core/.../events/projection/ProjectionEngine.java`) is REAL but is a **single-aggregate fold over the live bus**: one `AtomicReference<S>` per projection (`Projection.java:55,127`), **heap-resident**, **no keyed / last-value-per-key state**, and **not driven by any `EventStreamReader` replay** (it folds the live subscription, so durable cross-restart rebuild is not wired).
+- There is **no off-heap keyed store**: the `MemoryAllocator` slab layer (`exeris-kernel-spi/.../memory/MemoryAllocator.java`) provides buffer/slab primitives only and even names "projection-cache slabs" as a future use (`:114`), but nothing keyed is built on it.
+- **Compaction is ABSENT everywhere** (audit): the Postgres outbox is append-only drained by forward polling with per-event delete; Kafka has no `cleanup.policy=compact` and the driver provisions no topic config at all.
+
+So KV-as-projection needs **three net-new mechanisms, not one**: (1) **keyed projection state** (ideally off-heap on the slab layer — else it degrades to a heap `ConcurrentHashMap`, the commodity version that betrays the off-heap thesis); (2) **replay-driven rebuild** (a concrete `EventStreamReader` — today a skeleton, gated on the v0.10 Events ordering/concurrency fundament); (3) **store-side compaction** (keep-latest-per-key — the one genuinely new store mechanism). With these, `get` = O(1) read of current keyed projection state, `watch` = bus subscription, durability = replay of the compacted stream.
+
+**Owner:** Events / Memory subsystem.
+
+**Resolution:** RFC-track (paired with the `CacheProvider` RFC so the two seams are designed as **distinct** contracts, not collapsed). Specify a keyed projection variant (`ProjectionHandler` keyed by an ordinal / `StreamId` → off-heap slab-backed state), a compaction policy on the durable binding (Postgres keep-latest-per-key + Kafka `cleanup.policy=compact`), and the rebuild path over `EventStreamReader`. **Depends on the v0.10 Events ordering/concurrency boundary landing first.**
+
+**Merge Gate:** RFC accepted distinguishing KV-as-projection from the cache seam; if implemented, `AbstractKeyedProjectionTck` covers keyed fold + compacted-replay rebuild + O(1) get; off-heap state asserted (no heap map on the hot path); compaction proven on ≥1 durable binding. Decision-only until the fundament lands.
+
+See also: v0.10 §"Events: Log-Ordering & Optimistic-Concurrency Boundary" (the fundament); v0.12 §"Runtime: `CacheProvider` SPI" (the distinct cache seam).
+
+---
+
+## Road to 1.0 — Differentiator & Table-Stakes Gaps (surfaced 2026-06-22)
+
+> This section captures gaps that make the two load-bearing product claims — **"deterministic runtime"** and **"replaces application + orchestration layer"** — *demonstrable* rather than merely asserted, plus cross-cutting table-stakes that had no owner in this document. Each entry carries an explicit **1.0 disposition** (1.0-blocking / 1.0-recommended / post-1.0). All claims code-verified 2026-06-22.
+
+### Differentiator: Flow/Saga Definition Versioning + In-Flight Migration (the Camunda-wedge enabler)
+
+**Gap:** Replacing an orchestration layer (Camunda/Temporal) is not credible without the one thing those engines all handle: a long-running saga outliving a deploy that changed its definition. Today the kernel has **no versioned flow definition and no in-flight migration**, and the documented safety net does not exist:
+- `FlowDefinition` is keyed solely by `String name` (`exeris-kernel-spi/.../flow/model/FlowDefinition.java:34`) — no version field. `FlowSnapshot.schemaVersion` is a CAS optimistic-lock counter, *not* a definition version.
+- Resume is **version-blind**: `CoreFlowRuntime.resolvePlanForSnapshot` (`:468`) rebinds a parked saga to *whatever plan is currently registered under that name*, then replays the persisted `currentStep` `int` index into the new plan with **no bounds check and no step-identity check**. A deploy that reorders/removes steps makes the old index silently point at a different step — a data-corruption-class bug, not a missing feature.
+- **Doc-vs-code drift (correctness landmine):** `docs/subsystems/flow.md:36` claims removing a step makes wake throw `EX-FLOW-7002 / phase="SCHEMA_MISMATCH"`. **No such phase or step-bounds validation exists anywhere in code** — the only guard is a name-mismatch exception. The promised fail-closed behavior is aspirational; the real behavior is a silent index replay.
+- `loadByDefinition()` is explicitly deferred to "the definition-versioning epic" (FLOW-101) — an epic never written into this roadmap until now.
+
+**Owner:** Flow subsystem.
+
+**Resolution (two-stage):**
+1. **Correctness guard (small):** make version-blind resume fail closed *now* — implement the `SCHEMA_MISMATCH` guard the docs already promise (validate persisted `currentStep` against the current plan's step identity/arity; throw `EX-FLOW-7002 phase=SCHEMA_MISMATCH` on mismatch instead of replaying a stale index), or correct `flow.md:36` to state the real unsafe behavior. A 1.0 that silently mis-replays sagas across deploys is not shippable.
+2. **Definition-versioning epic (v0.11 — candidate to pull earlier):** add a version to `FlowDefinition` (name+version key), carry it in `FlowSnapshot`, make resume resolve the *exact* definition version the saga was parked under, and define an in-flight migration contract (migrate a parked saga vN→vN+1 via an explicit testable transform; reject/quarantine on no migration path). Wire `loadByDefinition()` once the version key exists.
+
+**Merge Gate:** stage 1 — `AbstractSagaRecoveryTck` gains a "definition changed under a parked saga" case asserting fail-closed `SCHEMA_MISMATCH`; flow.md drift corrected. Stage 2 — `AbstractFlowDefinitionVersioningTck` covers version-keyed resume, vN→vN+1 in-flight migration, no-migration-path rejection; Community JDBC + Kafka bindings green; additive only.
+
+**1.0 disposition:** stage 1 **1.0-BLOCKING** (correctness); stage 2 **v0.11 differentiator** — the go-to-market wedge; pull earlier if BudgetHQ/Stellar need it. *This is the most urgent item in this section* — it strikes the strongest concrete claim (the Camunda wedge).
+
+---
+
+### Differentiator: Deterministic Simulation Testing (DST) Harness — the long-term moat
+
+**Gap:** "Deterministic runtime" today means *local* predictable mechanisms (deterministic deny, net-counter admission without wall-clock, LIFO unwind) — it does **not** mean "run the whole runtime under a controlled scheduler, inject a fault, replay bit-for-bit." That second meaning is what TigerBeetle (VOPR) and FoundationDB (Flow simulation) built their reputations on, and **no JVM runtime has it** — Lincheck/JPF model-check *structures*, not a whole runtime with native IO. Retrofitting determinism onto a mature runtime normally breaks on the absence of a clean scheduler injection point without rewriting the world. **The kernel now has both hard seams already in place and validated:**
+- **IO swap — via The Wall:** all IO sits behind SPI, so real transport/persistence/events swap for an in-memory simulation via one binding. Under simulated (deterministic) IO, unmount/park points become deterministic for free.
+- **Execution swap — via the PAQS/stream execution seam:** the parked `research/loom-continuation-locality` branch (v0.6) produced, as its byproduct, an extracted execution backend (M1) **proven refactor-neutral on PAQS/stream** (M2). The branch closed **NO_GO on the locality hypothesis** (transport-affine continuation gave no payoff — shop-order-saga CPU +12.97%, latency 4.9→6.1 ms, throughput flat), but that result is **orthogonal to DST**: locality asked "does affine scheduling raise RPS?" (no); DST asks "does deterministic single-stepping give reproducibility?" — not an RPS question, so the negative locality result does not touch it. DST's value is *reproducibility, not throughput*.
+
+So the seams — the architecturally risky part — are done. What remains is **work, not architectural risk**: deterministic implementations behind the two seams + an injectable clock (see "Unified Clock" — being unified anyway) + a seeded RNG + a sim-driver steering all of it with fault injection and replay.
+
+**The one load-bearing open question (first RFC decision):** the execution seam gives an injection point at resume continuation. DST needs full **ordering control** — which VT resumes before which, when a timer fires, when a completion is delivered. Part is free under simulated IO; the rest depends on whether the PAQS-seam controls **next-runnable selection (total order)** or only **placement**. **Total-order vs. placement is the question the RFC must resolve first** — it sets how deep into the semi-internal Loom carrier surface the harness must reach.
+
+**Owner:** Runtime / Testing infrastructure (cross-subsystem).
+
+**Resolution:** RFC-track first (`docs/rfc/RFC-2026-06-22-deterministic-simulation-testing.md`) — resolve total-order-vs-placement and pin the Loom custom-scheduler approach before committing. Then: (1) a `SimulationScheduler` behind the existing execution seam driving virtual-thread execution deterministically; (2) the unified injectable `Clock` as time source; (3) a seeded RNG threaded through any nondeterministic choice; (4) in-memory simulation bindings for `TransportProvider` / `PersistenceEngine` / `EventEngine` (The Wall makes these swap-in); (5) a sim-driver with fault injection (drop/delay/partition/crash) and seed-replay. Lean on the already-deterministic primitives (admission net-counter, LIFO unwind) as invariants the sim asserts.
+
+**Merge Gate:** a seeded run reproduces an identical event/transition trace across two executions of the same seed; a fault-injection scenario (e.g. persistence partition mid-saga) is replayable from its seed; the in-memory SPI bindings pass the same Abstract*Tck suites as the real bindings.
+
+**1.0 disposition:** **POST-1.0** — the largest long-term moat, but not a GA gate. Cost/benefit has tilted sharply *toward* it now that the seam removed the most expensive leg. Land the **prerequisites** (unified Clock, seeded-RNG discipline, in-memory SPI bindings) opportunistically so the harness is a small later step, not a rewrite.
+
+See also: parked research `research/loom-continuation-locality` (the execution seam, NO_GO on locality); "Road to 1.0" §"Cross-Cutting: Unified Injectable Clock Seam".
+
+---
+
+### Cross-Cutting: Unified Injectable Clock Seam (consistency fix + DST backbone)
+
+**Gap:** Time is read **ad hoc** — audit found 95 `System.nanoTime`, 21 `Instant.now`, including **in the SPI itself** (`KernelEvent`, `ExerisKernelException`, `FlowExecutionPlan` deadline). No `Clock`/`TimeSource` abstraction; the only two injectable seams are local one-offs (`FairnessTracker`'s `LongSupplier`, `CommunityRotatingKeySet`'s `java.time.Clock`) using *different* types. Saga TTL, retry backoff, JFR timestamps are all non-injectable. Both a consistency gap (two idioms, no policy) and the missing backbone for DST — you cannot virtualize time you read ad hoc.
+
+**Owner:** Core (cross-subsystem) + SPI.
+
+**Resolution:** one kernel time-source seam (`NanoClock`/`TimeSource` — `long nanos()` + an `Instant` view), constructed at bootstrap, threaded via `ScopedValue` (not `ThreadLocal`), default-bound to the platform clock. Migrate *behavior-affecting* wall-clock paths (saga TTL, retry/backoff, telemetry timestamps); keep admission net-counter clock-free; leave hot-path `nanoTime` micro-measurements out of scope where a seam adds overhead.
+
+**Merge Gate:** behavior-affecting time reads go through the seam; a test binds a virtual clock and drives saga TTL expiry deterministically; no `ThreadLocal` introduced (ArchTest); SPI deadline contract documents the seam.
+
+**1.0 disposition:** **1.0-RECOMMENDED** — cheap, fixes a real consistency gap, de-risks the DST moat. High value-per-effort, not a hard GA gate.
+
+---
+
+### Cross-Cutting: Systemic Flow-Control Contract (subsystems are islands)
+
+**Gap:** Each subsystem has its **own** backpressure — Transport `ResourceArbiter`/`WatermarkManager` + `AdmissionController` net-counter, Persistence admission (`FairnessTracker`, ADR-035), Events `EventQueue` — all confirmed independent. There is **no systemic flow-control contract**: when persistence sheds load, HTTP admission never hears about it, so backpressure does not propagate to where upstream load enters. The only cross-subsystem edge is a transport-local memory→admission wire built inside `NativeTcpCarrier`, never shared. Tellingly, `ResourceArbiter.Context` already enumerates `TRANSPORT_IO` **and** `KERNEL_LOGIC`, but `KERNEL_LOGIC` is wired to nothing — a **latent seam for exactly this**. Under "bounded resource by design + deterministic," end-to-end load propagation + a per-subsystem/per-tenant memory budget is both a consistency fix and a differentiator. (Per-tenant memory budget is also absent — only a per-provider `totalOffHeapBytes` watermark exists.)
+
+**Owner:** Memory / Runtime (cross-subsystem).
+
+**Resolution:** RFC-track. Define a minimal shared load-signal contract (a kernel-level pressure observer the existing per-subsystem shedders both *publish* to and *consult*), reusing the latent `ResourceArbiter.Context.KERNEL_LOGIC` rather than a new bus where possible. Scope: persistence-saturation → HTTP-admission pushback; an optional per-tenant memory/throughput budget layered on existing watermarks; fail-closed defaults (misread signal sheds, never over-admits). Explicitly *not* a new subsystem — a thin contract over the three existing shedders.
+
+**Merge Gate:** RFC accepted with one shape; if implemented, an integration test shows persistence shed → HTTP admission pushback under sustained load; `AbstractAdmissionTck` extended with a cross-subsystem propagation case; constrained-benchmark guard unregressed.
+
+**1.0 disposition:** **POST-1.0** (RFC may open pre-1.0) — the per-subsystem mechanisms already hold; systemic propagation is a differentiator, not a GA blocker.
+
+---
+
+### Table-Stakes: Supply-Chain Integrity (SBOM, signed releases, provenance)
+
+**Gap:** Zero supply-chain integrity in the build — audit found no CycloneDX SBOM, no cosign/Sigstore signing, no SLSA provenance, no reproducible-build config, no GPG. The only release step is an unsigned, unattested `mvn deploy` (`.github/workflows/maven.yml:119`). PR-time dependency-review + CodeQL exist, but those are vulnerability scanning, not artifact integrity; Sonar/PMD/JaCoCo are code quality. This is the gap most aligned with the EU/FENG digital-sovereignty narrative — an *argument*, not just hygiene — and it is low-cost.
+
+**Owner:** Build / Release (seam in open-core; richer attestation can be enterprise).
+
+**Resolution:** add to the release pipeline: CycloneDX SBOM per artifact, artifact signing (cosign/Sigstore keyless or GPG for Maven Central), SLSA provenance attestation, a reproducible-build baseline (pinned plugin versions, stripped timestamps). Publish the SBOM alongside the artifact.
+
+**Merge Gate:** every published 1.0 artifact carries a CycloneDX SBOM + verifiable signature + provenance attestation; a CI job verifies the signature on a fresh pull.
+
+**1.0 disposition:** **1.0-BLOCKING** — a credible "1.0 GA" on Maven Central cannot ship unsigned and SBOM-less; also the cheapest strategic win in this list.
+
+---
+
+### Table-Stakes: SPI Binary-Compatibility Gate (revapi / japicmp in CI)
+
+**Gap:** API stability is asserted only in the manual `docs/stability-matrix.md`; there is **no automated API-diff** (no revapi, japicmp, animal-sniffer, bnd-baseline). With out-of-repo Enterprise bindings depending on the SPI, an accidental binary-incompatible change ships undetected. Low-cost, high-value once 1.0 declares SPI stability.
+
+**Owner:** Build / SPI.
+
+**Resolution:** add japicmp or revapi to CI, baselined at the 1.0 SPI surface, failing the build on a binary-incompatible change to `exeris-kernel-spi` (and other published-API modules). Honour the additive-only / pre-1.0 stance until 1.0, then tighten to strict after GA.
+
+**Merge Gate:** CI fails on an unannotated binary-incompatible SPI change; the gate's baseline is the published 1.0 SPI; the stability matrix is cross-checked against tool output.
+
+**1.0 disposition:** **1.0-BLOCKING** — declaring SPI stability without automated enforcement is a promise you can't keep.
+
+---
+
+### Table-Stakes: Kernel-Owned Table Schema Evolution
+
+**Gap:** Auto-DDL creates `exeris_saga_state` / `exeris_outbox` / `exeris_outbox_dlq` via hand-rolled `CREATE TABLE IF NOT EXISTS` (opt-in, default off), with a hardcoded 2-file list and **no versioned evolution path** — no schema-version ledger, no ALTER ordering, no Flyway/Liquibase. If a kernel release changes the `saga_state` schema while old-schema in-flight sagas exist, `IF NOT EXISTS` is a silent no-op: the change never applies, and version-blind resume (see Flow versioning above) reads old-shape rows through new code. **Correctness, not convenience** — a schema change breaks in-flight sagas on upgrade.
+
+**Owner:** Persistence subsystem.
+
+**Resolution:** a minimal versioned migration runner for kernel-owned tables — a `schema_version` ledger tracking applied migrations, ordered apply-once `V*.sql` application (not re-run-all), and a documented upgrade contract for in-flight rows. Scoped to kernel-owned tables; operators still bring Flyway/Liquibase for their own schema (existing "initContainer" guidance stays). Pair with the Flow definition-versioning epic so in-flight sagas survive both code and schema change.
+
+**Merge Gate:** an upgrade test creates rows under schema vN, applies the vN+1 migration, resumes the in-flight sagas correctly; double-application is a no-op via the ledger; `AbstractSagaRecoveryTck` gains a cross-version-upgrade case.
+
+**1.0 disposition:** **1.0-BLOCKING** (correctness) — minimally a schema-version ledger + apply-once ordering; full in-flight row transforms can ride the Flow versioning epic.
+
+---
+
+### Table-Stakes: `SecretProvider` SPI
+
+**Gap:** Secrets (JWKS signing keys, DB password, TLS key material) enter **purely as plain config** — `PersistenceConfig.password` is a plaintext `String` protected only by toString-redaction; JWKS is a config URI or a static in-memory map. No secret-resolution seam; "Vault" appears only in Javadoc prose. Production needs a Vault/ASM/env-backed seam.
+
+**Owner:** Security / Config (seam in open-core; Vault/ASM drivers can be enterprise / community-add-on).
+
+**Resolution:** define a `SecretProvider` SPI (`resolve(SecretRef) → secret`, env + static drivers in Community; Vault/AWS-SM as additional drivers). Route DB password, JWKS key source, TLS key material through it instead of raw config. Fail-closed on unresolved required secrets.
+
+**Merge Gate:** `AbstractSecretProviderTck` covers resolve/missing/rotation; DB + JWKS + TLS read through the seam; no plaintext secret retained in a config record beyond the resolved-handle boundary; Wall preserved.
+
+**1.0 disposition:** **1.0-RECOMMENDED** (B2B production blocker) — stage-able if 1.0 docs explicitly state "secrets via config + external injection" as the supported 1.0 posture, with the SPI in v0.11.
+
+---
+
+### Table-Stakes: Per-Tenant Rate Limiting / Quota
+
+**Gap:** `isolationKey` isolates tenant *data*, not tenant *throughput*. Audit found only global admission/throttle + connection-level Rapid-Reset defense — **no per-tenant request quota or rate limit** (no token bucket, no per-tenant counter). A B2B SaaS substrate (BudgetHQ) needs per-tenant throughput limiting so one tenant cannot starve others.
+
+**Owner:** Security / Transport.
+
+**Resolution:** a per-tenant rate/quota contract keyed on `PrincipalContext` / `isolationKey` (token-bucket or net-counter per tenant), integrated with admission, emitting a structured `EX-*` on limit. Keep the limiter pluggable (in-process default; distributed counter later, riding the cache/coordination seams).
+
+**Merge Gate:** `AbstractTenantQuotaTck` covers per-tenant limit enforcement + fairness across tenants under contention; integration test shows one tenant's burst does not shed another's traffic.
+
+**1.0 disposition:** **POST-1.0** (v0.11) — important for the B2B story, not a kernel-correctness GA gate; document the absence explicitly in the 1.0 support matrix.
+
+---
+
+### Scope Discipline & Declared Stances
+
+**1.0 = narrow, deep, defensible core.** v0.11/v0.12 stack a row of new SPIs — `BlobStorageProvider`, `JobScheduler`, `CacheProvider`, `WebSocketProvider`, `ServiceResolver`, cross-node coordination — each a real subsystem. For a solo founder, bundling these into 1.0 is scope-explosion risk. **Decision: explicitly mark all of these as post-1.0.** 1.0 is the narrow, deep, *unfalsifiable* core — `transport / http / security / persistence / flow / events` (+ `memory` foundation) — plus the cross-cutting 1.0-blocking items above (preview-clean baseline, supply-chain integrity, SPI binary-compat gate, schema evolution, flow-resume correctness). Better 1.0 unbreakable on six things than shallow on fifteen. RFC-gating already applies to most of these — this makes the post-1.0 tag explicit rather than implied.
+
+**Graph in 1.0 — DECIDED: stays in 1.0.** The earlier keep-or-split question is closed. Graph is substantially complete well before 1.0 and its claims are TCK-backed like the rest of the core: GRAPH-111 (v0.8 Sprint 7) delivered `ExecutionGraphZeroAllocTck` + `GraphChurnRatioTck` with Community bindings (`CommunityExecutionGraphZeroAllocTckTest`, `CommunityGraphChurnRatioTckIT`). No dilution-of-focus concern — Graph is a finished in-scope subsystem, not an open scope risk.
+
+**STS two-branch tax — CI discipline.** The GA-clean-substitution-on-`main` + `preview`-branch plan (Platform Baseline below) is sound, but every change to the four STS sites is now done twice, and the `preview` branch rots without CI. **Mandate:** keep the `main`↔`preview` delta mechanically minimal (substitution confined to the concurrency-policy method boundary), and run the `preview` branch in CI **every commit** so "the intended future `main`" never silently stops compiling.
+
+**Native-image / GraalVM — declare a performance contract, not just a yes/no.** The mechanism is concrete: Panama performs better on HotSpot because FFM downcall stubs and `MemorySegment`/`VarHandle` access are intrinsified and C2-runtime-optimized; the FFM path under native-image is younger and, without PGO, more conservative. The same logic extends to the **zero-alloc / No-Waste-Compute contract**: scalarization via Escape Analysis is peak-tier C2, profile-driven — under AOT without profiles the decisions are more conservative. PGO closes part of the gap but is operationally heavy (instrumented build → profile → optimized build). This is not "native-image is worse"; it is **"native-image is a different performance contract."** Edge/lightweight (startup without warmup, small footprint, small image) is where native-image *wins* and is part of the thesis; the throughput tier stays HotSpot/C2. The decision is *which contract*, not *whether it builds* — a build was already confirmed to compile.
+
+**Actions:** (1) **Pin the zero-alloc / No-Waste-Compute contract explicitly to HotSpot-C2** in `docs/performance-contract.md` — otherwise someone benchmarks the claim under native-image, sees it not hold, and concludes it is *false*; scoping the contract defends the claim. (2) Declare the 1.0 stance in the support matrix: **edge/lightweight = native-image target (enablement is a post-1.0 gated track); throughput tier = HotSpot/C2** — explicitly stated, not silently absent. (3) Track native-image *enablement* as a separate gated track (post-1.0): reachability metadata for FFM downcalls, reflection config for reflective loaders (`GeneratedRoleRegistryLoader` resolves FQNs via reflection), `ServiceLoader` registration, and JFR feature-parity (JFR-first telemetry + `RecordingStream` in TCK — *not* zero-risk; verify custom events and streaming under SubstrateVM).
+
+**1.0 disposition:** declare the **contract** in 1.0 (cheap, defends the claim — the `performance-contract.md` pin is near-term); native-image **enablement** is a **post-1.0** gated track.
 
 ---
 
@@ -1718,6 +1920,12 @@ Community 1.0 requires:
 - no unresolved ambiguity in docs about what is supported vs planned vs enterprise-only,
 - TCK-complete coverage for all SPI-observable behavior introduced by roadmap items (with Community bindings and explicit out-of-repo Enterprise obligations),
 - **a preview-clean critical path on a GA LTS baseline (JDK 25 LTS)** — the default artifact must build and run with **no `--enable-preview`** and impose none on consumers (see "Platform Baseline for 1.0 GA").
+- **flow-resume correctness across deploys** — version-blind saga resume must fail closed (real `SCHEMA_MISMATCH` guard, not the documented-but-absent one), so a definition change cannot silently mis-replay an in-flight saga (see "Differentiator: Flow/Saga Definition Versioning").
+- **kernel-owned schema evolution** — a versioned migration runner (schema-version ledger + apply-once ordering) so a kernel upgrade cannot silently break in-flight sagas (correctness, see "Table-Stakes: Kernel-Owned Table Schema Evolution").
+- **supply-chain integrity** — published artifacts carry CycloneDX SBOM + verifiable signature + provenance attestation; a "1.0 GA" on Maven Central cannot ship unsigned (see "Table-Stakes: Supply-Chain Integrity").
+- **automated SPI binary-compatibility gate** — revapi/japicmp baselined at the 1.0 SPI surface, enforcing the stability declaration in CI (see "Table-Stakes: SPI Binary-Compatibility Gate").
+- **a declared native-image / GraalVM stance** in the support matrix (`supported` / `explicitly-not-supported` / `post-1.0`) rather than silence.
+- **a narrowed, deep core** — the new v0.11/v0.12 SPIs (Blob, Job, Cache, WebSocket, ServiceResolver, coordination) are explicitly **post-1.0**; 1.0 is unbreakable on `transport / http / security / persistence / flow / events` (+ `memory`) rather than shallow across fifteen surfaces.
 
 ---
 
@@ -1743,7 +1951,12 @@ Community 1.0 requires:
 - `graph`
 
 ### Cross-cutting 1.0-critical
-- JDK 25 LTS baseline + preview-clean GA critical path (GA-clean substitution at the bootstrap seam on `main`; the STS / value-class version lives on a temporary `preview` branch = intended future `main`, published as `1.0-preview`; certify on 29 LTS)
+- JDK 25 LTS baseline + preview-clean GA critical path (GA-clean substitution at the bootstrap seam on `main`; the STS / value-class version lives on a temporary `preview` branch = intended future `main`, published as `1.0-preview`; certify on 29 LTS; preview branch in CI every commit, delta mechanically minimal)
+- flow-resume correctness across deploys (fail-closed `SCHEMA_MISMATCH` guard) + kernel-owned schema-evolution runner — both correctness, see "Road to 1.0" section
+- supply-chain integrity (CycloneDX SBOM + signed releases + SLSA provenance) — strategic EU/FENG sovereignty argument
+- automated SPI binary-compatibility gate (revapi/japicmp baselined at 1.0 surface)
+- declared native-image / GraalVM stance + explicit post-1.0 tag on the v0.11/v0.12 new-SPI stack (scope discipline)
+- unified injectable Clock seam (consistency + DST backbone) — 1.0-recommended
 - refactoring / PMD suppression reduction
 - SonarQube
 - docs truthfulness
