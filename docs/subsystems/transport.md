@@ -259,16 +259,15 @@ When PAQS sheds a stream or the Kernel initiates graceful shutdown:
 
 ## WebSocket / SSE — Design Stance
 
-**WebSocket and Server-Sent Events (SSE) are not supported at TRL-3.** This is a deliberate scope
-constraint, not an oversight.
+**Server-Sent Events (SSE) is the kernel's first server-push primitive — decided in [ADR-043](../adr/ADR-043-kernel-http-streaming-spi.md) (ACCEPTED), implemented in v0.10.** WebSocket remains unsupported and is a separately-justified follow-up. No server-push existed at TRL-3; this was a deliberate scope constraint, now being lifted SSE-first.
 
 | Protocol     | Status      | Rationale                                                                                              |
 |:-------------|:------------|:-------------------------------------------------------------------------------------------------------|
-| **SSE**       | 🚧 Planned v0.10/v0.11 | One-directional server push via HTTP/1.1 chunked transfer (a thin framing layer over the existing `Http1ChunkedEncoder`) or HTTP/2. **SSE-first** per [RFC-2026-06-18](../rfc/RFC-2026-06-18-http-streaming-spi.md) — the minimal server-push primitive; **precedes** WebSocket. |
-| **WebSocket** | 🚧 Planned (after SSE) | Full duplex; requires an HTTP Upgrade (H1) / Extended CONNECT (H2 RFC 8441) handshake + frame protocol. Deferred to a later, separately-justified decision once a bidirectional use case is proven (see RFC-2026-06-18). |
+| **SSE**       | 🚧 Planned v0.10 — ratified by [ADR-043](../adr/ADR-043-kernel-http-streaming-spi.md) (ACCEPTED) | One-directional server push via HTTP/1.1 chunked transfer (a thin `data:…\n\n` framing layer over the existing `Http1ChunkedEncoder`) or HTTP/2. Surfaced as the sibling `HttpStreamExchange` SPI (respond-once `HttpExchange` untouched). **SSE-first** — the minimal server-push primitive; see [http.md](http.md) for the SPI surface. |
+| **WebSocket** | Deferred — separately-justified follow-up (not milestone-pinned) | Full duplex; requires an HTTP Upgrade (H1) / Extended CONNECT (H2 RFC 8441) handshake + frame protocol. Decided separately once a bidirectional/low-latency client-streaming use case is proven; may precede 1.0 but is not pinned to a release milestone (see ADR-043 §What is NOT in scope). |
 | **gRPC streaming** | 🚧 Planned TRL-5 | Modelled as HTTP/2 streams — follows transport carrier maturity. |
 
-For real-time push requirements at TRL-3, use the **Events subsystem (L3)** with a Kafka/Redpanda
+Before SSE lands, real-time push uses the **Events subsystem (L3)** with a Kafka/Redpanda
 backend and a polling client. The PAQS scheduler handles priority-based delivery.
 
 ---
