@@ -238,6 +238,8 @@ not listed here.
 | `network.paqs.criticalThreshold`                   | `float`   | `0.85`              | ✅ DYNAMIC   | 🔲 planned  | WM `CRITICAL` level (fraction of off-heap budget)        |
 | `network.paqs.sheddingThreshold`                   | `float`   | `0.95`              | ✅ DYNAMIC   | 🔲 planned  | WM `SHEDDING` level (fraction of off-heap budget)        |
 | `network.paqs.endpointPriority.<path>`             | `string`  | `NORMAL`            | ✅ DYNAMIC   | 🔲 planned  | Static `StreamPriority` for path prefix                  |
+| `http.stream.creditWindowBytes`                    | `int`     | `65536`             | ❌ IMMUTABLE | ✅ WIRED    | SSE server-push (ADR-043) egress credit window: outstanding bytes before `emit()` parks the streaming VT. Direct `-D` system property (see note ⁑) |
+| `transport.acceptedSendBufferBytes`                | `int`     | `0` (OS default)    | ❌ IMMUTABLE | ✅ WIRED    | Optional `SO_SNDBUF` override on accepted sockets; `0` leaves the OS default. Tightens egress backpressure (smaller window ⇒ earlier `emit()` park). Direct `-D` system property (see note ⁑) |
 | `memory.watermarkPollIntervalMs`                   | `int`     | `50`                | ✅ DYNAMIC   | 🔲 planned  | `WatermarkManager` sampling interval                     |
 | `memory.leakDetection`                             | `string`  | `SAMPLED`           | ❌ IMMUTABLE | 🔲 planned  | `DISABLED`, `SAMPLED`, `PARANOID`                        |
 | `telemetry.allocationSampleRate`                   | `double`  | `0.01`              | ✅ DYNAMIC   | 🔲 planned  | JFR allocation event sampling rate (0.0–1.0)             |
@@ -258,6 +260,8 @@ not listed here.
 > predictable behaviour under K8s memory limits.
 
 > **Persistence helper note:** `PersistenceConfig.defaults(...)` is a fixed development/unit-test preset in the SPI helper API. It is not the Community runtime bootstrap default when `persistence.maxPoolSize` is unset.
+
+> **⁑ Direct system-property knobs:** `http.stream.creditWindowBytes` and `transport.acceptedSendBufferBytes` are read directly via `-Dexeris.http.stream.creditWindowBytes` / `-Dexeris.transport.acceptedSendBufferBytes` (the Community streaming dispatcher / TCP carrier read them at construction), **not** through the config provider — they do not appear in `KernelSettings`/`NetworkSettings`. They are advanced backpressure-tuning knobs; the streaming TCK also uses them to force a deterministic `emit()` park below OS socket-buffer sizes. Defaults are production-safe; leave them unset unless tuning SSE backpressure.
 
 ---
 

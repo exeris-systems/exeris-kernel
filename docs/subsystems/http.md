@@ -49,6 +49,10 @@ Streaming (server-push) contracts — 🚧 Planned v0.10, ratified by [ADR-043](
 - `emit()` parks the calling virtual thread under egress backpressure (no on-heap queue), and transfers `LoanedBuffer` ownership to the engine — identical to `HttpExchange.respond()`.
 - New error codes: `EX-HTTP-4011` (emit-after-close) and `EX-HTTP-4012` (JWT expired mid-stream, fail-closed per ADR-012 §5). Stream-open admission shedding reuses the existing `EX-NET-4006` + `StreamShedEvent` (see [transport.md](transport.md)), not a new HTTP code.
 
+**v0.10 delivery status (ADR-043).** The SSE mechanism is wired end-to-end in production (Core `HttpStreamEngine` + `SseEventEncoder`, Community dispatch): open → `emit`-N (park-the-VT backpressure) → graceful `close`, peer-disconnect → `StreamClosedException`/`EX-HTTP-4011`, abortive teardown, four single-phase JFR events, all pinned by `AbstractHttpStreamExchangeTck`. Two obligation **mechanisms are built + TCK-pinned but their production binding is deferred**, by design:
+- **JWT-expiry fail-closed (`EX-HTTP-4012`)** — the deadline enforcement lives in `HttpStreamEngine`, but production dispatch passes no deadline until the IdentityProvider SPI (ADR-040) surfaces a principal `exp` on the streaming path (ADR-043 §6: Community-internal until then).
+- **Streaming-occupancy ceiling** — `StreamAdmissionController` enforces a long-lived-slot ceiling distinct from sub-ms request accounting, but it is not yet wired into production dispatch. The safety property (new stream-opens shed under load) still holds via carrier-edge PAQS; plumbing the dedicated ceiling is a v0.10 follow-up.
+
 HTTP exceptions in SPI:
 
 - `eu.exeris.kernel.spi.exceptions.http.HttpException`
