@@ -73,6 +73,12 @@ public final class NativeTcpCarrier implements TransportEngine {
     // docs/subsystems/transport.md). Overridable for field tuning, mirroring
     // exeris.transport.queueBackpressureEnabled.
     private static final int MAX_TLS_RECORDS_PER_READ = readMaxTlsRecordsPerRead();
+    // Optional SO_SNDBUF override for accepted sockets (bytes). 0 = leave OS default. A small send
+    // buffer tightens egress backpressure so a slow/stalled peer parks the writer sooner; used by the
+    // streaming backpressure TCK probe and available for field tuning. Mirrors the other
+    // exeris.transport.* knobs.
+    private static final int ACCEPTED_SEND_BUFFER_BYTES =
+            Integer.getInteger("exeris.transport.acceptedSendBufferBytes", 0);
 
     private final TransportConfig config;
     private final MemoryAllocator allocator;
@@ -507,8 +513,7 @@ public final class NativeTcpCarrier implements TransportEngine {
                     acceptedChannel = serverChannel.accept();
                     continue;
                 }
-                currentChannel.configureBlocking(false);
-                currentChannel.socket().setTcpNoDelay(true);
+                configureAcceptedChannel(currentChannel);
 
                 InetSocketAddress remote = resolveRemoteAddress(currentChannel);
                 connection = new NativeTcpConnection(
@@ -532,6 +537,14 @@ public final class NativeTcpCarrier implements TransportEngine {
                 }
             }
             acceptedChannel = serverChannel.accept();
+        }
+    }
+
+    private static void configureAcceptedChannel(SocketChannel channel) throws IOException {
+        channel.configureBlocking(false);
+        channel.socket().setTcpNoDelay(true);
+        if (ACCEPTED_SEND_BUFFER_BYTES > 0) {
+            channel.setOption(java.net.StandardSocketOptions.SO_SNDBUF, ACCEPTED_SEND_BUFFER_BYTES);
         }
     }
 

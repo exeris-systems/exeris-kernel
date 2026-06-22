@@ -12,9 +12,12 @@ import eu.exeris.kernel.spi.http.HttpExchange;
 import eu.exeris.kernel.spi.http.HttpHandler;
 import eu.exeris.kernel.spi.http.HttpMethod;
 import eu.exeris.kernel.spi.http.HttpStatus;
+import eu.exeris.kernel.spi.http.HttpStreamHandler;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -37,14 +40,45 @@ public final class HttpRouter implements HttpHandler {
 
     private final List<RouteEntry> exactRoutes;
     private final List<RouteEntry> prefixRoutes;
+    private final Map<StreamRouteKey, HttpStreamHandler> streamRoutes;
     private final HttpHandler notFoundHandler;
 
     private HttpRouter(List<RouteEntry> exactRoutes,
                        List<RouteEntry> prefixRoutes,
+                       Map<StreamRouteKey, HttpStreamHandler> streamRoutes,
                        HttpHandler notFoundHandler) {
         this.exactRoutes = List.copyOf(exactRoutes);
         this.prefixRoutes = List.copyOf(prefixRoutes);
+        this.streamRoutes = Map.copyOf(streamRoutes);
         this.notFoundHandler = notFoundHandler;
+    }
+
+    /**
+     * Resolves a streaming-flagged route to its {@link HttpStreamHandler}, or {@code null} when the
+     * route is not registered as a stream (ADR-043 obligation 7).
+     *
+     * <p>A streaming route resolves <em>only</em> here, never through {@link #handle(HttpExchange)} —
+     * so a streaming route never delivers a respond-once {@link HttpExchange}, and a respond-once route
+     * never resolves to an {@link HttpStreamHandler}. The transport tier consults this first; on a hit
+     * it opens an {@code HttpStreamExchange}, otherwise it falls back to respond-once dispatch.
+     *
+     * @param method request method
+     * @param path   request path (query stripped)
+     * @return the stream handler for a streaming route, or {@code null}
+     */
+    public HttpStreamHandler resolveStream(HttpMethod method, String path) {
+        return streamRoutes.get(new StreamRouteKey(method, stripQuery(path)));
+    }
+
+    /**
+     * Returns {@code true} if {@code (method, path)} is registered as a streaming route.
+     *
+     * @param method request method
+     * @param path   request path (query stripped)
+     * @return whether the route is streaming
+     */
+    public boolean isStreamRoute(HttpMethod method, String path) {
+        return streamRoutes.containsKey(new StreamRouteKey(method, stripQuery(path)));
     }
 
     public static Builder builder() {
@@ -103,6 +137,8 @@ public final class HttpRouter implements HttpHandler {
 
     private record RouteEntry(HttpMethod method, String path, HttpHandler handler) {}
 
+    private record StreamRouteKey(HttpMethod method, String path) {}
+
     public static final class Builder {
 
         private static final String HANDLER_PARAM = "handler";
@@ -110,6 +146,7 @@ public final class HttpRouter implements HttpHandler {
 
         private final List<RouteEntry> exactRoutes = new ArrayList<>();
         private final List<RouteEntry> prefixRoutes = new ArrayList<>();
+        private final Map<StreamRouteKey, HttpStreamHandler> streamRoutes = new HashMap<>();
         private HttpHandler notFoundHandler = DEFAULT_NOT_FOUND;
 
         private Builder() {}
@@ -152,6 +189,25 @@ public final class HttpRouter implements HttpHandler {
             return this;
         }
 
+        /**
+         * Registers a streaming (SSE) route resolving to an {@link HttpStreamHandler}, distinct from the
+         * respond-once {@code (method, path) → HttpHandler} table (ADR-043 obligation 7). A streaming
+         * route never delivers a respond-once {@link HttpExchange}; it is opened as an
+         * {@code HttpStreamExchange} by the transport tier.
+         *
+         * @param method  request method
+         * @param path    exact request path
+         * @param handler the streaming handler
+         * @return this builder
+         */
+        public Builder streamRoute(HttpMethod method, String path, HttpStreamHandler handler) {
+            Objects.requireNonNull(method, METHOD_PARAM);
+            Objects.requireNonNull(path, "path");
+            Objects.requireNonNull(handler, HANDLER_PARAM);
+            streamRoutes.put(new StreamRouteKey(method, path), handler);
+            return this;
+        }
+
         /** Overrides the default 404 handler. */
         public Builder notFound(HttpHandler handler) {
             this.notFoundHandler = Objects.requireNonNull(handler, HANDLER_PARAM);
@@ -161,7 +217,7 @@ public final class HttpRouter implements HttpHandler {
         /** Builds the immutable router and emits a JFR lifecycle event. */
         public HttpRouter build() {
             HttpRouterRegisteredEvent.emit(exactRoutes.size(), prefixRoutes.size());
-            return new HttpRouter(exactRoutes, prefixRoutes, notFoundHandler);
+            return new HttpRouter(exactRoutes, prefixRoutes, streamRoutes, notFoundHandler);
         }
     }
 }

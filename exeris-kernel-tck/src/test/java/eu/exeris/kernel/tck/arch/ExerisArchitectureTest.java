@@ -95,6 +95,20 @@ public class ExerisArchitectureTest {
             .because("sun.misc.Unsafe is banned. Use FFM API.");
 
     @ArchTest
+    static final ArchRule streamingSpiCarriesNoWireOrTransportTypes = noClasses()
+            .that().haveSimpleName("HttpStreamExchange")
+            .or().haveSimpleName("HttpStreamHandler")
+            .or().haveSimpleName("StreamEvent")
+            .should().dependOnClassesThat().resideInAnyPackage(
+                    "eu.exeris.kernel.core.http..",
+                    "eu.exeris.kernel.community..",
+                    "eu.exeris.kernel.spi.transport..",
+                    "jdk.jfr..")
+            .allowEmptyShould(true)
+            .because("ADR-043 / The Wall: the streaming SPI carriers carry no wire-format or transport "
+                    + "types; SSE framing is Core and the held-open transport is tier-specific.");
+
+    @ArchTest
     static final ArchRule diagnosticsSpiIsEventFree = noClasses()
             .that().resideInAPackage("eu.exeris.kernel.spi.diagnostics..")
             .should().dependOnClassesThat().resideInAnyPackage(

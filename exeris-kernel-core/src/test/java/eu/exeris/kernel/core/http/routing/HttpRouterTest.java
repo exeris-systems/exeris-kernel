@@ -205,6 +205,44 @@ class HttpRouterTest {
         }
     }
 
+    @Nested
+    class StreamingRegistration {
+
+        @Test
+        void streamRouteResolvesToStreamHandler() {
+            AtomicBoolean ran = new AtomicBoolean(false);
+            HttpRouter router = HttpRouter.builder()
+                    .streamRoute(HttpMethod.GET, "/events", exchange -> ran.set(true))
+                    .build();
+
+            assertTrue(router.isStreamRoute(HttpMethod.GET, "/events"));
+            assertTrue(router.resolveStream(HttpMethod.GET, "/events") != null);
+            // Query is stripped before matching.
+            assertTrue(router.resolveStream(HttpMethod.GET, "/events?since=5") != null);
+        }
+
+        @Test
+        void streamRouteNeverDeliversRespondOnce() {
+            // ADR-043 obligation 7: a streaming route is invisible to the respond-once handle() path.
+            HttpRouter router = HttpRouter.builder()
+                    .streamRoute(HttpMethod.GET, "/events", exchange -> { })
+                    .build();
+            CapturingExchange exchange = CapturingExchange.get("/events");
+            router.handle(exchange);
+            // No respond-once route matched → default 404; the stream handler was NOT invoked here.
+            assertEquals(HttpStatus.NOT_FOUND, exchange.status());
+        }
+
+        @Test
+        void respondOnceRouteIsNotAStreamRoute() {
+            HttpRouter router = HttpRouter.builder()
+                    .route(HttpMethod.GET, "/health", e -> e.respond(HttpStatus.OK))
+                    .build();
+            assertEquals(false, router.isStreamRoute(HttpMethod.GET, "/health"));
+            assertEquals(null, router.resolveStream(HttpMethod.GET, "/health"));
+        }
+    }
+
     // Minimal exchange capture - only responds to HttpResponse (which is what all default methods call)
     private static final class CapturingExchange implements HttpExchange {
 

@@ -41,7 +41,7 @@
             own fork because the scarce-carrier VT-scheduler args would otherwise distort
             every other test in the default execution.
         -->
-        <excludedGroups>flamegraph,integration,stress,transport-pinning-recv,continuity</excludedGroups>
+        <excludedGroups>flamegraph,integration,stress,transport-pinning-recv,continuity,stream-loopback</excludedGroups>
 
         <!--
             v0.8 Sprint 6 (Coverage C-P0-01): LINE coverage floor for the Community bundle.
@@ -221,6 +221,53 @@
                             -->
                             <groups>transport-pinning-recv</groups>
                             <excludedGroups>flamegraph,integration,stress</excludedGroups>
+                        </configuration>
+                    </execution>
+                    <!--
+                        ADR-043 streaming loopback (CommunityHttpStreamExchangeTckTest,
+                        CommunityHttpStreamJfrTest, @Tag("stream-loopback")). These are integration-style
+                        timing tests: each spins a real NIO server + socket client + per-stream VT emit
+                        loop and asserts disconnect detection, backpressure park, and JFR event timing
+                        within a 10 s bound. They pass deterministically in isolation but flake when run
+                        after the ~1240-test default suite in the same forked JVM (accumulated reactor /
+                        carrier / fd pressure starves the timing-sensitive loopback). Run in their own
+                        fresh fork so prior-test pollution never distorts them — same rationale as
+                        transport-pinning-recv above, but these need ample carriers (no scarce-carrier
+                        args).
+                    -->
+                    <execution>
+                        <id>stream-loopback</id>
+                        <phase>test</phase>
+                        <goals>
+                            <goal>test</goal>
+                        </goals>
+                        <configuration>
+                            <!--
+                                Deliberately NOT ${jvm.args}: the shared jvm.args enables a fork-level
+                                StartFlightRecording=...,settings=profile recording. Profile-level JFR
+                                method sampling adds heavy scheduling jitter to the timing-sensitive
+                                loopback VTs (handler emit loop + reactor + per-event credit/park), which
+                                makes every streaming case flake under full-machine load (the CI
+                                condition): the handler VT simply does not get scheduled in time. With
+                                the profiling recording off these 14 cases pass reliably under the same
+                                load. This does NOT reduce JFR coverage: CommunityHttpStreamJfrTest opens
+                                its own RecordingStream for exactly the four ADR-043 streaming events it
+                                asserts, so the streaming JFR contract is still exercised end-to-end. We
+                                keep ZGC, preview and native-access (functional needs); only the
+                                fork-level profiling recorder is dropped.
+                            -->
+                            <argLine>@{coverage.argLine} -XX:+UnlockExperimentalVMOptions -XX:+UseZGC -XX:-ZUncommit --enable-preview --enable-native-access=ALL-UNNAMED --add-opens java.base/sun.nio.ch=ALL-UNNAMED --add-opens java.base/java.io=ALL-UNNAMED</argLine>
+                            <includes>
+                                <include>**/CommunityHttpStreamExchangeTckTest.java</include>
+                                <include>**/CommunityHttpStreamJfrTest.java</include>
+                            </includes>
+                            <!--
+                                Re-include the stream-loopback tag here (the plugin-level
+                                ${excludedGroups} excludes it for the default execution). The other heavy
+                                tags stay excluded so this fork runs ONLY the streaming loopback classes.
+                            -->
+                            <groups>stream-loopback</groups>
+                            <excludedGroups>flamegraph,integration,stress,transport-pinning-recv,continuity</excludedGroups>
                         </configuration>
                     </execution>
                 </executions>

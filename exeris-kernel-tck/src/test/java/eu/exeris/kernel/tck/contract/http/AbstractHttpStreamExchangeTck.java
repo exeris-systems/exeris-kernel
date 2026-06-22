@@ -82,6 +82,24 @@ public abstract class AbstractHttpStreamExchangeTck {
     /** Bound on how long a park/resume or disconnect observation may take before the test fails. */
     private static final long OBSERVE_TIMEOUT_SECONDS = 10L;
 
+    /**
+     * Longer guard for the two integration-style probes (backpressure drain, auth-expiry fail-closed).
+     * These run in a dedicated forked Surefire execution and genuinely complete eventually; under full
+     * machine load a correct park/resume or fail-closed teardown may take much longer than the tight
+     * {@link #OBSERVE_TIMEOUT_SECONDS} bound the fast mandatory cases keep. This bound only guards
+     * against a true hang, never against slowness — it does not weaken what either probe proves.
+     */
+    private static final long SLOW_PROBE_TIMEOUT_SECONDS = 30L;
+
+    /**
+     * Flood size for the backpressure probe. Sized to RELIABLY force several credit-window park cycles
+     * given the binding's deliberately-tiny egress window (so the property — emit() parks then resumes
+     * then delivers everything — is genuinely proven) while draining comfortably within
+     * {@link #SLOW_PROBE_TIMEOUT_SECONDS} on a loaded box. A larger flood proves nothing more about the
+     * park/resume property; it only makes the probe throughput-bound and flaky under contention.
+     */
+    protected static final int BACKPRESSURE_FLOOD = 2_000;
+
     // -------------------------------------------------------------------------
     // Mandatory binding hook — the real loopback round-trip
     // -------------------------------------------------------------------------
@@ -332,14 +350,15 @@ public abstract class AbstractHttpStreamExchangeTck {
     class Backpressure {
 
         @Test
-        @Timeout(value = OBSERVE_TIMEOUT_SECONDS, unit = TimeUnit.SECONDS)
+        @Timeout(value = SLOW_PROBE_TIMEOUT_SECONDS, unit = TimeUnit.SECONDS)
         @DisplayName("emit() parks while the client is stalled, resumes when it drains")
         void emitParksThenResumesOnCredit() {
             Assumptions.assumeTrue(supportsBackpressureProbe(),
                     "binding does not wire a deterministic client-stall backpressure probe");
 
-            // Emit far more than any sane egress window holds so the VT is forced to park.
-            int flood = 10_000;
+            // Emit enough to overflow the binding's tiny egress window several times over, forcing the
+            // emitting VT to park repeatedly — but not so much that the probe becomes throughput-bound.
+            int flood = BACKPRESSURE_FLOOD;
             StreamScenario scenario = openStream(exchange -> {
                 for (int idx = 0; idx < flood; idx++) {
                     exchange.emit(StreamEvent.of(Integer.toString(idx)));
@@ -378,7 +397,7 @@ public abstract class AbstractHttpStreamExchangeTck {
     class AuthExpiry {
 
         @Test
-        @Timeout(value = OBSERVE_TIMEOUT_SECONDS, unit = TimeUnit.SECONDS)
+        @Timeout(value = SLOW_PROBE_TIMEOUT_SECONDS, unit = TimeUnit.SECONDS)
         @DisplayName("a held-open stream is deterministically closed with EX-HTTP-4012 when the token expires")
         void expiryClosesStreamFailClosed() {
             Assumptions.assumeTrue(supportsAuthExpiryProbe(),

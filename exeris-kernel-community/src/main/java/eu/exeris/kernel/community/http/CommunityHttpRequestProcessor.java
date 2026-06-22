@@ -17,6 +17,7 @@ import eu.exeris.kernel.spi.http.HttpConfig;
 import eu.exeris.kernel.spi.http.HttpHandler;
 import eu.exeris.kernel.spi.http.HttpRequest;
 import eu.exeris.kernel.spi.http.HttpResponseBodyEncoderRegistry;
+import eu.exeris.kernel.spi.http.HttpStreamHandler;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.persistence.PersistenceEngine;
@@ -61,6 +62,7 @@ public final class CommunityHttpRequestProcessor {
     private final HttpResponseBodyEncoderRegistry encoderRegistry;
     private final HttpConfig config;
     private final CommunityHttpRequestDispatcher requestDispatcher;
+    private final CommunityHttpStreamDispatcher streamDispatcher;
     private final CommunityHttp2SessionProcessor http2SessionProcessor;
     private final CommunityHttpH2cUpgradeDetector upgradeDetector;
 
@@ -89,6 +91,7 @@ public final class CommunityHttpRequestProcessor {
                 this.allocator,
                 securityInterceptor,
                 persistenceEngine);
+        this.streamDispatcher = new CommunityHttpStreamDispatcher(this.allocator);
         this.http2SessionProcessor = new CommunityHttp2SessionProcessor(
                 this.allocator,
                 this.encoderRegistry,
@@ -145,7 +148,12 @@ public final class CommunityHttpRequestProcessor {
         }
 
         state.recordRequest();
-        handleRequest(readResult, state.aggregate(), stream, handler);
+        boolean wasStream = handleRequest(readResult, state.aggregate(), stream, handler);
+        if (wasStream) {
+            // A streaming route held the connection for the stream's lifetime and then closed it;
+            // there is no keep-alive continuation on the same connection.
+            return false;
+        }
 
         state.updateBufferedBytes(CommunityHttp1RequestReader.retainUnreadBytes(
                 state.aggregate(),
@@ -159,14 +167,13 @@ public final class CommunityHttpRequestProcessor {
         return true;
     }
 
-    private void handleRequest(ReadResult readResult,
-                               LoanedBuffer aggregate,
-                               TransportStream stream,
-                               HttpHandler handler) {
+    private boolean handleRequest(ReadResult readResult,
+                                  LoanedBuffer aggregate,
+                                  TransportStream stream,
+                                  HttpHandler handler) {
         int bodyLength = readResult.bodyLength();
         if (bodyLength <= 0) {
-            dispatchRequest(readResult, null, stream, handler);
-            return;
+            return dispatchRequest(readResult, null, stream, handler);
         }
 
         try (LoanedBuffer bodyBuffer = allocator.allocateNetwork(bodyLength)) {
@@ -175,7 +182,7 @@ public final class CommunityHttpRequestProcessor {
                     bodyBuffer.segment(), 0,
                     bodyLength);
             bodyBuffer.setSize(bodyLength);
-            dispatchRequest(readResult, bodyBuffer, stream, handler);
+            return dispatchRequest(readResult, bodyBuffer, stream, handler);
         }
     }
 
@@ -191,10 +198,10 @@ public final class CommunityHttpRequestProcessor {
         return false;
     }
 
-    private void dispatchRequest(ReadResult readResult,
-                                 LoanedBuffer bodyBuffer,
-                                 TransportStream stream,
-                                 HttpHandler handler) {
+    private boolean dispatchRequest(ReadResult readResult,
+                                    LoanedBuffer bodyBuffer,
+                                    TransportStream stream,
+                                    HttpHandler handler) {
         HttpRequest request = new HttpRequest(
                 readResult.method(),
                 readResult.path(),
@@ -202,10 +209,28 @@ public final class CommunityHttpRequestProcessor {
                 readResult.headers(),
                 bodyBuffer);
 
+        HttpStreamHandler streamHandler = streamDispatcher.resolveStreamHandler(request, handler);
+        if (streamHandler != null) {
+            // v0.10 streaming dispatch (ADR-043). Two obligation mechanisms are built + TCK-pinned
+            // (HttpStreamEngine deadline / StreamAdmissionController) but their PRODUCTION binding is
+            // deliberately deferred here, not wired:
+            //   - obligation 6 (JWT-expiry fail-closed): dispatched with no auth deadline until the
+            //     IdentityProvider SPI (ADR-040) surfaces a principal `exp` on the streaming path
+            //     (ADR-043 §6 states the deadline is Community-internal until then).
+            //   - obligation 7 (streaming-occupancy ceiling): no StreamAdmissionController is wired, so
+            //     the dedicated long-lived-slot ceiling is not yet enforced. The safety property — new
+            //     stream-opens shed under load — still holds via carrier-edge PAQS (NativeTcpCarrier's
+            //     AdmissionController), which sheds any new stream including an SSE open. Plumbing the
+            //     carrier arbiter through to a dedicated streaming ceiling is a v0.10 follow-up.
+            streamDispatcher.dispatchStream(request, stream, streamHandler);
+            return true;
+        }
+
         CommunityHttpExchange exchange = new CommunityHttpExchange(
                 request, stream, allocator, readResult.keepAlive(), encoderRegistry);
 
         requestDispatcher.dispatch(request, exchange, handler);
+        return false;
     }
 
     @SuppressWarnings("PMD.CognitiveComplexity")
