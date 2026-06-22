@@ -413,6 +413,34 @@ public final class KernelErrorCodes {
      */
     public static final String EX_HTTP_4010 = "EX-HTTP-4010";
 
+    /**
+     * Server-push streaming: {@code HttpStreamExchange.emit(...)} was called after the stream had
+     * already closed (peer disconnect, graceful close, or abortive teardown). Carried by
+     * {@link eu.exeris.kernel.spi.exceptions.http.StreamClosedException} so an imperative emit loop
+     * exits on the throw without leaking a parked virtual thread (ADR-043). Secret-safe — carries
+     * only stream-scoped counters, never event payload.
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code long} eventsEmitted (events successfully emitted before close)</li>
+     * </ul>
+     */
+    public static final String EX_HTTP_4011 = "EX-HTTP-4011";
+
+    /**
+     * Server-push streaming: the authenticated principal's token expired while a stream was held
+     * open. The stream is deterministically closed (fail-closed per ADR-012 §5 — no fail-open
+     * fallthrough); validation happens at open-time and against an expiry deadline, never via a
+     * per-emit re-fetch. Secret-safe — carries only stream-scoped counters, never token content.
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code long} streamAgeMillis (elapsed since stream open at expiry)</li>
+     *   <li>index 1 – {@code long} eventsEmitted (events successfully emitted before expiry)</li>
+     * </ul>
+     */
+    public static final String EX_HTTP_4012 = "EX-HTTP-4012";
+
     // -----------------------------------------------------------------------
     // EX-PERS – Persistence subsystem
     // -----------------------------------------------------------------------
