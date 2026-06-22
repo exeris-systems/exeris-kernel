@@ -19,13 +19,14 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  * <ul>
  *   <li>index 0 – {@code String} engineName</li>
  *   <li>index 1 – {@code String} phase — one of: {@code "START"}, {@code "STOP"},
- *       {@code "COMPILE"}, {@code "SCHEDULE"}, {@code "OPTIMISTIC_LOCK_CONFLICT"} (since 0.7)</li>
+ *       {@code "COMPILE"}, {@code "SCHEDULE"}, {@code "OPTIMISTIC_LOCK_CONFLICT"} (since 0.7),
+ *       {@code "SCHEMA_MISMATCH"} (since 0.10)</li>
  *   <li>index 2 – {@code String} staticReasonCode — stable identifier, never user-supplied
  *       (e.g. {@code "STARTUP_FAILED"}, {@code "COMPILE_FAILED"}, {@code "QUEUE_FULL"},
- *       {@code "STALE_VERSION"})</li>
+ *       {@code "STALE_VERSION"}, {@code "STEP_OUT_OF_RANGE"})</li>
  *   <li>index 3 – {@code int} contextValue — phase-specific numeric context
  *       (e.g. current queue depth for SCHEDULE phase, incoming schemaVersion for
- *       OPTIMISTIC_LOCK_CONFLICT); {@code -1} when not applicable</li>
+ *       OPTIMISTIC_LOCK_CONFLICT, persisted resume step for SCHEMA_MISMATCH); {@code -1} when not applicable</li>
  * </ul>
  *
  * @since 0.5.0
@@ -33,10 +34,12 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 public final class FlowEngineException extends ExerisKernelException {
 
     private static final String MSG_ENGINE_FAILURE  = "Flow engine lifecycle failure";
+    private static final String MSG_SCHEMA_MISMATCH = "Flow definition changed under a parked saga";
     private static final String REASON_STARTUP      = "STARTUP_FAILED";
     private static final String REASON_COMPILE      = "COMPILE_FAILED";
     private static final String REASON_QUEUE_FULL   = "QUEUE_FULL";
     private static final String REASON_STALE_VERSION = "STALE_VERSION";
+    private static final String REASON_STEP_OUT_OF_RANGE = "STEP_OUT_OF_RANGE";
 
     public FlowEngineException(String message) {
         super(KernelErrorCodes.EX_FLOW_7002, message, (Throwable) null);
@@ -110,6 +113,27 @@ public final class FlowEngineException extends ExerisKernelException {
         int contextValue = (int) Math.min(incomingSchemaVersion, Integer.MAX_VALUE);
         return new FlowEngineException(KernelErrorCodes.EX_FLOW_7002, MSG_ENGINE_FAILURE, cause,
                 engineName, "OPTIMISTIC_LOCK_CONFLICT", REASON_STALE_VERSION, contextValue);
+    }
+
+    /**
+     * Creates an exception for a parked saga whose persisted resume step no longer exists in the
+     * (redeployed) flow definition — the definition was changed (a step removed, or the plan shrank)
+     * while the saga was parked. Raised <strong>fail-closed</strong> at resume instead of replaying the
+     * stale step index into a different step (a data-corruption-class outcome). Manual intervention /
+     * a definition-versioned migration (the v0.11 epic) is required.
+     *
+     * <p>This is the bounds/arity guard; full step-identity validation (catching same-arity reorders)
+     * arrives with definition versioning. Documented in {@code docs/subsystems/flow.md}.
+     *
+     * <p>rawArgs layout: {@code [engineName, "SCHEMA_MISMATCH", "STEP_OUT_OF_RANGE", persistedStep]}.
+     *
+     * @param engineName   the engine name
+     * @param persistedStep the persisted resume step index the current definition no longer has
+     * @since 0.10.0
+     */
+    public static FlowEngineException schemaMismatch(String engineName, int persistedStep) {
+        return new FlowEngineException(KernelErrorCodes.EX_FLOW_7002, MSG_SCHEMA_MISMATCH, null,
+                engineName, "SCHEMA_MISMATCH", REASON_STEP_OUT_OF_RANGE, persistedStep);
     }
 }
 

@@ -9,6 +9,8 @@
 package eu.exeris.kernel.core.flow;
 
 import eu.exeris.kernel.spi.context.KernelProviders;
+import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
+import eu.exeris.kernel.spi.exceptions.flow.FlowEngineException;
 import eu.exeris.kernel.spi.flow.FlowEngineCapabilities;
 import eu.exeris.kernel.spi.flow.FlowEngineConfig;
 import eu.exeris.kernel.spi.flow.IdempotencyGuard;
@@ -46,6 +48,7 @@ class CoreFlowRuntimeTest {
     private static final String STEP_FAILED_EVENT = "eu.exeris.kernel.flow.StepFailed";
     private static final String SHUTDOWN_EVENT = "eu.exeris.kernel.flow.Shutdown";
     private static final String WAKE_FALLBACK_EVENT = "eu.exeris.kernel.flow.WakeOnLoadFallback";
+    private static final String SCHEMA_MISMATCH_EVENT = "eu.exeris.kernel.flow.SchemaMismatch";
 
     @Test
     @Timeout(value = 10, unit = TimeUnit.SECONDS)
@@ -310,6 +313,109 @@ class CoreFlowRuntimeTest {
             assertThat(resumed.await(3, TimeUnit.SECONDS))
                     .as("the parked flow must resume after lookup-based wake on rebuilt runtime")
                     .isTrue();
+        }
+    }
+
+    @Test
+    @Timeout(value = 10, unit = TimeUnit.SECONDS)
+    @DisplayName("resume fails closed (EX-FLOW-7002 SCHEMA_MISMATCH) when a deploy removed the step a saga was parked on")
+    void resumeFailsClosedWhenParkedStepRemovedFromDefinition() throws Exception {
+        InMemorySnapshotStore snapshotStore = new InMemorySnapshotStore();
+        CountDownLatch parked = new CountDownLatch(1);
+        FlowContext parkedContext;
+
+        // Engine #1: a 2-step saga that advances past step 0 and parks on the tail step (index 1).
+        try (CoreFlowEngine engine = startedEngine(true, snapshotStore)) {
+            FlowDefinition wide = engine.plans().newDefinition("schema-shrinks")
+                    .step("keep", _ -> FlowOutcome.CONTINUE, null)
+                    .step("park-tail", _ -> {
+                        parked.countDown();
+                        return FlowOutcome.PARK;
+                    }, null)
+                    .build();
+            FlowExecutionPlan plan = engine.plans().compile(wide);
+            parkedContext = context("schema-shrinks-instance", wide.name());
+            engine.scheduler().schedule(plan, parkedContext);
+
+            assertThat(parked.await(3, TimeUnit.SECONDS))
+                    .as("flow must park on the tail step before restart")
+                    .isTrue();
+            awaitTrue(3_000, () -> snapshotStore.exists(
+                    parkedContext.instanceIdMost(), parkedContext.instanceIdLeast()));
+        }
+
+        // Engine #2 (shared store): the deploy dropped the tail step — only 1 step remains, so the
+        // persisted currentStep no longer indexes a step in the active definition. Resume MUST fail
+        // closed rather than replay the stale index against an incompatible plan.
+        try (CoreFlowEngine rebuilt = startedEngine(true, snapshotStore)) {
+            rebuilt.plans().compile(rebuilt.plans().newDefinition("schema-shrinks")
+                    .step("keep", _ -> FlowOutcome.CONTINUE, null)
+                    .build());
+
+            assertThatThrownBy(() -> rebuilt.scheduler().wake(parkedContext))
+                    .isInstanceOf(FlowEngineException.class)
+                    .satisfies(thrown -> {
+                        // Glass-Box: phase/reason live in structured rawArgs (one-code-one-schema),
+                        // not the message text — assert the contract there.
+                        FlowEngineException ex = (FlowEngineException) thrown;
+                        assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_FLOW_7002);
+                        assertThat(ex.rawArgs()[1]).isEqualTo("SCHEMA_MISMATCH");
+                        assertThat(ex.rawArgs()[2]).as("stable reason key").isEqualTo("STEP_OUT_OF_RANGE");
+                        assertThat(ex.rawArgs()[3]).as("out-of-range persisted step").isEqualTo(1);
+                    });
+        }
+    }
+
+    @Test
+    @Timeout(value = 10, unit = TimeUnit.SECONDS)
+    @DisplayName("emits FlowSchemaMismatchEvent when a deploy removed the step a parked saga was on")
+    void emitsFlowSchemaMismatchEventOnRejectedResume() throws Exception {
+        InMemorySnapshotStore snapshotStore = new InMemorySnapshotStore();
+        CountDownLatch parked = new CountDownLatch(1);
+        CountDownLatch eventReceived = new CountDownLatch(1);
+        AtomicReference<RecordedEvent> captured = new AtomicReference<>();
+        FlowContext parkedContext;
+
+        try (CoreFlowEngine engine = startedEngine(true, snapshotStore)) {
+            FlowDefinition wide = engine.plans().newDefinition("schema-shrinks-jfr")
+                    .step("keep", _ -> FlowOutcome.CONTINUE, null)
+                    .step("park-tail", _ -> {
+                        parked.countDown();
+                        return FlowOutcome.PARK;
+                    }, null)
+                    .build();
+            FlowExecutionPlan plan = engine.plans().compile(wide);
+            parkedContext = context("schema-shrinks-jfr-instance", wide.name());
+            engine.scheduler().schedule(plan, parkedContext);
+
+            assertThat(parked.await(3, TimeUnit.SECONDS)).isTrue();
+            awaitTrue(3_000, () -> snapshotStore.exists(
+                    parkedContext.instanceIdMost(), parkedContext.instanceIdLeast()));
+        }
+
+        try (CoreFlowEngine rebuilt = startedEngine(true, snapshotStore);
+             RecordingStream rs = new RecordingStream()) {
+            rs.enable(SCHEMA_MISMATCH_EVENT);
+            rs.onEvent(SCHEMA_MISMATCH_EVENT, event -> {
+                captured.compareAndSet(null, event);
+                eventReceived.countDown();
+            });
+            rs.startAsync();
+
+            rebuilt.plans().compile(rebuilt.plans().newDefinition("schema-shrinks-jfr")
+                    .step("keep", _ -> FlowOutcome.CONTINUE, null)
+                    .build());
+
+            assertThatThrownBy(() -> rebuilt.scheduler().wake(parkedContext))
+                    .isInstanceOf(FlowEngineException.class);
+
+            assertThat(eventReceived.await(3, TimeUnit.SECONDS))
+                    .as("eu.exeris.kernel.flow.SchemaMismatch must be emitted on the rejected resume")
+                    .isTrue();
+            RecordedEvent event = captured.get();
+            assertThat(event.getString("definitionName")).isEqualTo("schema-shrinks-jfr");
+            assertThat(event.getInt("persistedStep")).isEqualTo(1);
+            assertThat(event.getInt("planStepCount")).isEqualTo(1);
         }
     }
 
