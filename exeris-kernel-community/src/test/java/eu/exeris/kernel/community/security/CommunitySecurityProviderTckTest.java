@@ -12,6 +12,7 @@ import eu.exeris.kernel.community.testkit.security.TestJwt;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.security.KernelIsolationClaims;
 import eu.exeris.kernel.spi.security.SecurityProvider;
+import eu.exeris.kernel.spi.security.identity.KeyRotationPolicy;
 import eu.exeris.kernel.tck.contract.security.AbstractSecurityProviderTck;
 import org.junit.jupiter.api.DisplayName;
 

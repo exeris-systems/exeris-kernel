@@ -9,6 +9,7 @@
 package eu.exeris.kernel.community.security;
 
 import eu.exeris.kernel.spi.exceptions.security.SecurityAuthenticationException;
+import eu.exeris.kernel.spi.security.identity.KeyRotationPolicy;
 
 import java.security.interfaces.RSAPublicKey;
 import java.time.Clock;

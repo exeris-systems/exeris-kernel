@@ -10,6 +10,7 @@ package eu.exeris.kernel.community.security;
 
 import eu.exeris.kernel.community.testkit.security.TestJwt;
 import eu.exeris.kernel.spi.exceptions.security.SecurityAuthenticationException;
+import eu.exeris.kernel.spi.security.identity.KeyRotationPolicy;
 import jdk.jfr.Recording;
 import jdk.jfr.consumer.RecordedEvent;
 import jdk.jfr.consumer.RecordingFile;
