@@ -72,12 +72,15 @@ public final class IdentityStorageMapping {
             return sharedFor(subjectId);
         }
 
+        // Strong strategies key on the verified subject string (the tenant identifier), matching
+        // the value the SHARED path derives from; subjectId provides the SHARED bit-packing.
+        String subject = claims.subject();
         return switch (strategy) {
             case "SHARED" -> sharedFor(subjectId);
             case "SEPARATED_SCHEMA" -> ImmutableStorageContext.separatedSchema(
-                    subjectId.toString(), require(claims, KernelIsolationClaims.SCHEMA_NAME, tokenType));
+                    subject, require(claims, KernelIsolationClaims.SCHEMA_NAME, tokenType));
             case "DEDICATED" -> ImmutableStorageContext.dedicated(
-                    subjectId.toString(), require(claims, KernelIsolationClaims.DATASOURCE_KEY, tokenType));
+                    subject, require(claims, KernelIsolationClaims.DATASOURCE_KEY, tokenType));
             default -> throw new SecurityAuthenticationException(tokenType, ERR_UNKNOWN);
         };
     }

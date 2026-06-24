@@ -14,27 +14,35 @@ import com.nimbusds.jose.crypto.RSASSAVerifier;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import eu.exeris.kernel.spi.exceptions.security.SecurityAuthenticationException;
-import eu.exeris.kernel.spi.security.AuthenticationResult;
-import eu.exeris.kernel.spi.security.ImmutablePrincipal;
-import eu.exeris.kernel.spi.security.ImmutableStorageContext;
+import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.security.KernelIsolationClaims;
+import eu.exeris.kernel.spi.security.identity.TokenValidator;
+import eu.exeris.kernel.spi.security.identity.VerifiedClaims;
 
+import java.lang.foreign.ValueLayout;
+import java.nio.charset.StandardCharsets;
 import java.security.interfaces.RSAPublicKey;
 import java.text.ParseException;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
-import java.util.UUID;
 
 /**
- * Community JWT validator based on an immutable kid->RSA public key map.
+ * Community OIDC/JWKS {@link TokenValidator}: the ordered, fail-closed RS256 verification pipeline
+ * ({@code kid → key → algorithm → signature → issuer → audience → time}) over a JWT, producing
+ * format-blind {@link VerifiedClaims}.
  *
- * @since 0.5.0
+ * <p>Extracted from the former {@code CommunityJwksValidator}: the cryptographic pipeline is
+ * unchanged (static-map path byte-for-byte), but tenant-isolation → {@code StorageContext} mapping
+ * and principal assembly now live above this seam (in
+ * {@link eu.exeris.kernel.spi.security.identity.IdentityStorageMapping} and
+ * {@link CommunityClaimsMapper}).
+ *
+ * @since 0.10.0
  */
 @SuppressWarnings("PMD.CyclomaticComplexity")
-final class CommunityJwksValidator {
+final class CommunityOidcTokenValidator implements TokenValidator {
 
     private static final String JWT_TYPE = "JWT";
     private static final String ERR_CLAIMS_MISSING = "claims-missing";
@@ -43,21 +51,42 @@ final class CommunityJwksValidator {
     private final String expectedIssuer;
     private final String expectedAudience;
 
-    /* default */ CommunityJwksValidator(
+    /* default */ CommunityOidcTokenValidator(
             Map<String, RSAPublicKey> keysByKid, String expectedIssuer, String expectedAudience) {
         this(new StaticJwksKeyResolver(Objects.requireNonNull(keysByKid, "keysByKid must not be null")),
                 expectedIssuer, expectedAudience);
     }
 
-    /* default */ CommunityJwksValidator(
+    /* default */ CommunityOidcTokenValidator(
             JwksKeyResolver keyResolver, String expectedIssuer, String expectedAudience) {
         this.keyResolver = Objects.requireNonNull(keyResolver, "keyResolver must not be null");
         this.expectedIssuer = Objects.requireNonNull(expectedIssuer, "expectedIssuer must not be null");
         this.expectedAudience = Objects.requireNonNull(expectedAudience, "expectedAudience must not be null");
     }
 
-    /* default */ AuthenticationResult authenticate(String compactJwt) {
-        SignedJWT signedJwt = parseJwt(compactJwt);
+    /**
+     * Reads the compact JWT string out of a caller-owned {@link LoanedBuffer}, applying the same
+     * size guards as the legacy provider edge. Shared by {@link #validate(LoanedBuffer)} and the
+     * provider's {@code canAttempt} routing peek.
+     */
+    /* default */ static String readCompactJwt(LoanedBuffer rawToken) {
+        if (rawToken == null) {
+            throw new SecurityAuthenticationException(JWT_TYPE, "missing-token");
+        }
+        long tokenSize = rawToken.size();
+        if (tokenSize < 0) {
+            throw new SecurityAuthenticationException(JWT_TYPE, "indeterminate");
+        }
+        if (tokenSize == 0) {
+            throw new SecurityAuthenticationException(JWT_TYPE, "empty-token");
+        }
+        byte[] tokenBytes = rawToken.segment().asSlice(0L, tokenSize).toArray(ValueLayout.JAVA_BYTE);
+        return new String(tokenBytes, StandardCharsets.UTF_8);
+    }
+
+    @Override
+    public VerifiedClaims validate(LoanedBuffer rawToken) {
+        SignedJWT signedJwt = parseJwt(readCompactJwt(rawToken));
 
         String kid = signedJwt.getHeader().getKeyID();
         if (kid == null || kid.isBlank()) {
@@ -69,6 +98,7 @@ final class CommunityJwksValidator {
             throw new SecurityAuthenticationException(JWT_TYPE, "unknown-kid");
         }
 
+        // Algorithm pinned BEFORE signature verification (algorithm-confusion defence).
         if (!JWSAlgorithm.RS256.equals(signedJwt.getHeader().getAlgorithm())) {
             throw new SecurityAuthenticationException(JWT_TYPE, "signature-invalid");
         }
@@ -79,78 +109,9 @@ final class CommunityJwksValidator {
         validateIssuer(claims);
         validateAudience(claims);
         validateExpiry(claims);
+        validateIsolationStrategyWellTyped(claims);
 
-        String subject = claims.getSubject();
-        if (subject == null || subject.isBlank()) {
-            throw new SecurityAuthenticationException(JWT_TYPE, ERR_CLAIMS_MISSING);
-        }
-
-        UUID subjectUuid;
-        try {
-            subjectUuid = UUID.fromString(subject);
-        } catch (IllegalArgumentException _) {
-            throw new SecurityAuthenticationException(JWT_TYPE, "invalid-subject");
-        }
-
-        ImmutableStorageContext storageCtx =
-                resolveStorageContext(claims, subject, subjectUuid);
-        return new AuthenticationResult(
-                ImmutablePrincipal.ofTenant(subjectUuid, subjectUuid, Set.of(), Set.of("security:read")),
-                storageCtx);
-    }
-
-    private static ImmutableStorageContext resolveStorageContext(
-            JWTClaimsSet claims, String subject, UUID subjectUuid) {
-        String strategyStr;
-        try {
-            strategyStr = claims.getStringClaim(KernelIsolationClaims.ISOLATION_STRATEGY);
-        } catch (ParseException _) {
-            // S-P0-07 / ADR-012 §4a (amended): a declared isolation claim present but wrong-typed
-            // is malformed security input — terminal deny, never a silent downgrade to SHARED.
-            throw new SecurityAuthenticationException(JWT_TYPE, "isolation-malformed");
-        }
-
-        if (strategyStr == null || strategyStr.isBlank()) {
-            // No isolation strategy declared → SHARED keyed on the subject is the legitimate
-            // baseline (no intent expressed). This is the ONLY permissive fall-through.
-            return sharedFor(subjectUuid);
-        }
-
-        return switch (strategyStr) {
-            case "SHARED" -> sharedFor(subjectUuid);
-            case "SEPARATED_SCHEMA" -> ImmutableStorageContext.separatedSchema(
-                    subject, requireSubClaim(claims, KernelIsolationClaims.SCHEMA_NAME));
-            case "DEDICATED" -> ImmutableStorageContext.dedicated(
-                    subject, requireSubClaim(claims, KernelIsolationClaims.DATASOURCE_KEY));
-            // A declared-but-unrecognised strategy cannot be honoured → terminal deny, NOT a
-            // downgrade to SHARED (the weakest tier). Producing SHARED here was fail-OPEN (S-P0-07).
-            default -> throw new SecurityAuthenticationException(JWT_TYPE, "isolation-unknown-strategy");
-        };
-    }
-
-    private static ImmutableStorageContext sharedFor(UUID subjectUuid) {
-        return ImmutableStorageContext.shared(
-                subjectUuid.getMostSignificantBits(), subjectUuid.getLeastSignificantBits());
-    }
-
-    /**
-     * Resolves a required isolation sub-claim ({@code SCHEMA_NAME} / {@code DATASOURCE_KEY}) for a
-     * declared strong strategy. A missing, blank, or wrong-typed sub-claim is a terminal deny —
-     * downgrading to SHARED would silently weaken the tenant's provisioned isolation tier
-     * (S-P0-07; ADR-012 §4a amended, §5 fail-closed). The reason code is secret-safe — it never
-     * carries the claim value.
-     */
-    private static String requireSubClaim(JWTClaimsSet claims, String claimName) {
-        String value;
-        try {
-            value = claims.getStringClaim(claimName);
-        } catch (ParseException _) {
-            throw new SecurityAuthenticationException(JWT_TYPE, "isolation-incomplete");
-        }
-        if (value == null || value.isBlank()) {
-            throw new SecurityAuthenticationException(JWT_TYPE, "isolation-incomplete");
-        }
-        return value;
+        return new CommunityVerifiedClaims(claims);
     }
 
     private static SignedJWT parseJwt(String compactJwt) {
@@ -178,7 +139,6 @@ final class CommunityJwksValidator {
         } catch (ParseException _) {
             throw new SecurityAuthenticationException(JWT_TYPE, ERR_CLAIMS_MISSING);
         }
-
         if (claims == null) {
             throw new SecurityAuthenticationException(JWT_TYPE, ERR_CLAIMS_MISSING);
         }
@@ -202,10 +162,23 @@ final class CommunityJwksValidator {
         if (claims.getExpirationTime() == null) {
             throw new SecurityAuthenticationException(JWT_TYPE, ERR_CLAIMS_MISSING);
         }
-
         Instant expiry = claims.getExpirationTime().toInstant();
         if (expiry.isBefore(Instant.now())) {
             throw new SecurityAuthenticationException(JWT_TYPE, "expired");
+        }
+    }
+
+    /**
+     * A declared isolation-strategy claim that is present but not a string is malformed security
+     * input — terminal deny, never a silent downgrade to SHARED (S-P0-07; ADR-012 §4a amended).
+     * Verifying it here keeps {@link VerifiedClaims#claim(String)} free of deny logic; an absent or
+     * well-typed strategy is left to {@link eu.exeris.kernel.spi.security.identity.IdentityStorageMapping}.
+     */
+    private static void validateIsolationStrategyWellTyped(JWTClaimsSet claims) {
+        try {
+            claims.getStringClaim(KernelIsolationClaims.ISOLATION_STRATEGY);
+        } catch (ParseException _) {
+            throw new SecurityAuthenticationException(JWT_TYPE, "isolation-malformed");
         }
     }
 }
