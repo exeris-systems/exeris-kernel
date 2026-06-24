@@ -79,7 +79,7 @@ public interface SubsystemProvider {
      * @return priority ≥ 0
      */
     default int priority() {
-        return 100;
+        return 0;
     }
 
     /**

@@ -177,7 +177,7 @@ public interface ConfigProvider {
      * @return priority ≥ 0
      */
     default int priority() {
-        return 100;
+        return 0;
     }
 
     /**

@@ -56,7 +56,7 @@ public final class CommunityMemoryProvider implements MemoryProvider {
 
     @Override
     public int priority() {
-        return 0; // Enterprise wins with 100
+        return 0;
     }
 }
 

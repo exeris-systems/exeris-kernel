@@ -76,7 +76,7 @@ public final class CommunityTelemetryProvider implements TelemetryProvider {
 
     @Override
     public int priority() {
-        return 0; // Enterprise wins with 100
+        return 0;
     }
 }
 
