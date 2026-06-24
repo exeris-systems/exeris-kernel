@@ -10,6 +10,7 @@ package eu.exeris.kernel.community.security;
 
 import com.nimbusds.jwt.SignedJWT;
 import eu.exeris.kernel.core.http.client.KernelWebClient;
+import eu.exeris.kernel.spi.exceptions.security.SecurityAuthenticationException;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.security.AuthenticationResult;
 import eu.exeris.kernel.spi.security.PrincipalContext;
@@ -115,9 +116,19 @@ public final class CommunityOidcIdentityProvider implements IdentityProvider {
 
     @Override
     public AuthenticationResult authenticate(LoanedBuffer rawToken) {
-        VerifiedClaims claims = tokenValidator.validate(rawToken);
-        PrincipalContext principal = claimsMapper.map(claims);
-        StorageContext storage = IdentityStorageMapping.fromClaims(claims, principal.principalId(), JWT_TYPE);
-        return new AuthenticationResult(principal, storage);
+        long startNanos = System.nanoTime();
+        try {
+            VerifiedClaims claims = tokenValidator.validate(rawToken);
+            PrincipalContext principal = claimsMapper.map(claims);
+            StorageContext storage = IdentityStorageMapping.fromClaims(claims, principal.principalId(), JWT_TYPE);
+            // Single-phase JFR commit AFTER (possibly blocking) validation — never straddle a VT.
+            CommunityIdentityJfrEvents.emitValidation(PROVIDER_ID, claims.issuer(), startNanos);
+            return new AuthenticationResult(principal, storage);
+        } catch (SecurityAuthenticationException ex) {
+            Object[] args = ex.rawArgs();
+            String reason = args.length > 1 ? String.valueOf(args[1]) : "validation-failed";
+            CommunityIdentityJfrEvents.emitRejection(PROVIDER_ID, reason);
+            throw ex;
+        }
     }
 }
