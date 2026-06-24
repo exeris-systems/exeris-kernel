@@ -9,6 +9,7 @@
 package eu.exeris.kernel.community.security;
 
 import com.nimbusds.jwt.SignedJWT;
+import eu.exeris.kernel.core.http.client.KernelWebClient;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.security.AuthenticationResult;
 import eu.exeris.kernel.spi.security.PrincipalContext;
@@ -16,10 +17,12 @@ import eu.exeris.kernel.spi.security.StorageContext;
 import eu.exeris.kernel.spi.security.identity.ClaimsMapper;
 import eu.exeris.kernel.spi.security.identity.IdentityProvider;
 import eu.exeris.kernel.spi.security.identity.IdentityStorageMapping;
+import eu.exeris.kernel.spi.security.identity.KeyRotationPolicy;
 import eu.exeris.kernel.spi.security.identity.TokenValidator;
 import eu.exeris.kernel.spi.security.identity.VerifiedClaims;
 
 import java.security.interfaces.RSAPublicKey;
+import java.time.Clock;
 import java.util.Map;
 import java.util.Objects;
 
@@ -61,6 +64,21 @@ public final class CommunityOidcIdentityProvider implements IdentityProvider {
         this.tokenValidator = Objects.requireNonNull(tokenValidator, "tokenValidator must not be null");
         this.claimsMapper = new CommunityClaimsMapper();
         this.expectedIssuer = Objects.requireNonNull(expectedIssuer, "expectedIssuer must not be null");
+    }
+
+    /**
+     * Assembles an OIDC provider that refreshes its verification keys from a live JWKS endpoint:
+     * a {@link CommunityJwksHttpKeySetSource} (one GET via {@code jwksClient}) feeds the v0.9
+     * {@link CommunityRotatingKeySet}, applying {@code policy} on the supplied {@code clock}.
+     * {@code initialKeys} seeds the first generation (may be empty to force a fetch on first use).
+     */
+    public static CommunityOidcIdentityProvider overJwksEndpoint(
+            KernelWebClient jwksClient, String jwksPath,
+            Map<String, RSAPublicKey> initialKeys, KeyRotationPolicy policy, Clock clock,
+            String expectedIssuer, String expectedAudience) {
+        KeySetSource source = CommunityJwksHttpKeySetSource.overWebClient(jwksClient, jwksPath);
+        JwksKeyResolver resolver = new CommunityRotatingKeySet(initialKeys, source, policy, clock);
+        return new CommunityOidcIdentityProvider(resolver, expectedIssuer, expectedAudience);
     }
 
     @Override
