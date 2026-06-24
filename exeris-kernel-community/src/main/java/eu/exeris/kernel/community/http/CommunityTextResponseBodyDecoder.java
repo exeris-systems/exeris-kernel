@@ -48,6 +48,9 @@ public final class CommunityTextResponseBodyDecoder implements HttpResponseBodyD
     @Override
     public Object decode(LoanedBuffer body, Class<?> targetType, HttpResponseDecodingContext context) {
         Objects.requireNonNull(context, "context must not be null");
+        if (body == null) {
+            return null;
+        }
         long size = body.size();
         if (size == EMPTY_SIZE) {
             return null;

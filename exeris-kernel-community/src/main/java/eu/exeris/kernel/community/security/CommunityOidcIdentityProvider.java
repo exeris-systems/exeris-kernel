@@ -83,7 +83,9 @@ public final class CommunityOidcIdentityProvider implements IdentityProvider {
             String expectedIssuer, String expectedAudience) {
         KeySetSource source = CommunityJwksHttpKeySetSource.overWebClient(jwksClient, jwksPath);
         JwksKeyResolver resolver = new CommunityRotatingKeySet(initialKeys, source, policy, clock);
-        return new CommunityOidcIdentityProvider(resolver, expectedIssuer, expectedAudience);
+        // Same clock drives both rotation timing and token-expiry — no wall-clock skew between them.
+        TokenValidator validator = new CommunityOidcTokenValidator(resolver, expectedIssuer, expectedAudience, clock);
+        return new CommunityOidcIdentityProvider(validator, expectedIssuer);
     }
 
     @Override

@@ -73,8 +73,10 @@ public final class IdentityStorageMapping {
         }
 
         // Strong strategies key on the verified subject string (the tenant identifier), matching
-        // the value the SHARED path derives from; subjectId provides the SHARED bit-packing.
-        String subject = claims.subject();
+        // the value the SHARED path derives from; subjectId provides the SHARED bit-packing. The
+        // VerifiedClaims contract requires a non-blank subject, but a broken driver must still
+        // fail closed here rather than NPE inside ImmutableStorageContext.
+        String subject = requireSubject(claims, tokenType);
         return switch (strategy) {
             case "SHARED" -> sharedFor(subjectId);
             case "SEPARATED_SCHEMA" -> ImmutableStorageContext.separatedSchema(
@@ -83,6 +85,14 @@ public final class IdentityStorageMapping {
                     subject, require(claims, KernelIsolationClaims.DATASOURCE_KEY, tokenType));
             default -> throw new SecurityAuthenticationException(tokenType, ERR_UNKNOWN);
         };
+    }
+
+    private static String requireSubject(VerifiedClaims claims, String tokenType) {
+        String subject = claims.subject();
+        if (subject == null || subject.isBlank()) {
+            throw new SecurityAuthenticationException(tokenType, ERR_INCOMPLETE);
+        }
+        return subject;
     }
 
     private static ImmutableStorageContext sharedFor(UUID subjectId) {

@@ -15,6 +15,7 @@ import jdk.jfr.FlightRecorder;
 import jdk.jfr.Label;
 import jdk.jfr.Name;
 import jdk.jfr.StackTrace;
+import jdk.jfr.Timespan;
 
 /**
  * JFR events for the Community OIDC {@link CommunityOidcIdentityProvider} (ADR-040 §7).
@@ -45,7 +46,7 @@ final class CommunityIdentityJfrEvents {
         if (event.isEnabled()) {
             event.providerId = providerId;
             event.issuer = issuer;
-            event.durationMicros = (System.nanoTime() - startNanos) / 1_000L;
+            event.durationNanos = System.nanoTime() - startNanos;
             event.commit();
         }
     }
@@ -75,8 +76,9 @@ final class CommunityIdentityJfrEvents {
         @Label("Issuer")
         /* default */ String issuer;
 
-        @Label("Duration (µs)")
-        /* default */ long durationMicros;
+        @Label("Validation Duration")
+        @Timespan(Timespan.NANOSECONDS)
+        /* default */ long durationNanos;
     }
 
     @Name("eu.exeris.kernel.security.IdentityRejection")

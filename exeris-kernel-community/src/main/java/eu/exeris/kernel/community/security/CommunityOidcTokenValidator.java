@@ -23,6 +23,7 @@ import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
 import java.security.interfaces.RSAPublicKey;
 import java.text.ParseException;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -50,18 +51,30 @@ final class CommunityOidcTokenValidator implements TokenValidator {
     private final JwksKeyResolver keyResolver;
     private final String expectedIssuer;
     private final String expectedAudience;
+    private final Clock clock;
 
     /* default */ CommunityOidcTokenValidator(
             Map<String, RSAPublicKey> keysByKid, String expectedIssuer, String expectedAudience) {
+        this(keysByKid, expectedIssuer, expectedAudience, Clock.systemUTC());
+    }
+
+    /* default */ CommunityOidcTokenValidator(
+            Map<String, RSAPublicKey> keysByKid, String expectedIssuer, String expectedAudience, Clock clock) {
         this(new StaticJwksKeyResolver(Objects.requireNonNull(keysByKid, "keysByKid must not be null")),
-                expectedIssuer, expectedAudience);
+                expectedIssuer, expectedAudience, clock);
     }
 
     /* default */ CommunityOidcTokenValidator(
             JwksKeyResolver keyResolver, String expectedIssuer, String expectedAudience) {
+        this(keyResolver, expectedIssuer, expectedAudience, Clock.systemUTC());
+    }
+
+    /* default */ CommunityOidcTokenValidator(
+            JwksKeyResolver keyResolver, String expectedIssuer, String expectedAudience, Clock clock) {
         this.keyResolver = Objects.requireNonNull(keyResolver, "keyResolver must not be null");
         this.expectedIssuer = Objects.requireNonNull(expectedIssuer, "expectedIssuer must not be null");
         this.expectedAudience = Objects.requireNonNull(expectedAudience, "expectedAudience must not be null");
+        this.clock = Objects.requireNonNull(clock, "clock must not be null");
     }
 
     /**
@@ -158,12 +171,12 @@ final class CommunityOidcTokenValidator implements TokenValidator {
         }
     }
 
-    private static void validateExpiry(JWTClaimsSet claims) {
+    private void validateExpiry(JWTClaimsSet claims) {
         if (claims.getExpirationTime() == null) {
             throw new SecurityAuthenticationException(JWT_TYPE, ERR_CLAIMS_MISSING);
         }
         Instant expiry = claims.getExpirationTime().toInstant();
-        if (expiry.isBefore(Instant.now())) {
+        if (expiry.isBefore(Instant.now(clock))) {
             throw new SecurityAuthenticationException(JWT_TYPE, "expired");
         }
     }

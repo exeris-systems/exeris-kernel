@@ -92,7 +92,7 @@ public record KeyRotationPolicy(Duration overlapWindow, Duration staleFetchBudge
 
 1. `CommunityJwksValidator` extracts to `CommunityOidcIdentityProvider implements IdentityProvider`, splitting into a `TokenValidator` (the Nimbus pipeline) + a default `ClaimsMapper` (sub → `principalId`, roles/scopes claims → `PrincipalContext`).
 2. A real OIDC/JWKS `KeySetSource` lands, fetching over `KernelWebClient` / `HttpClientEngine` (ADR-034) and feeding the v0.9 `CommunityRotatingKeySet`. The **static-map path is byte-for-byte unchanged** (anti-regression).
-3. `META-INF/services/eu.exeris.kernel.spi.security.identity.IdentityProvider` registration; `priority() == 0`. Multi-IDP issuer-dispatch routes via `canAttempt` (unverified `iss` peek); per-tenant routing uses `StorageContext.isolationKey`.
+3. `priority() == 0`; multi-IDP issuer-dispatch routes via `canAttempt` (unverified `iss` peek); per-tenant routing uses `StorageContext.isolationKey`. The driver is wired **programmatically** via the `overJwksEndpoint` factory in v0.10 — `META-INF/services` ServiceLoader registration is deferred to the config-wiring step (see [What is NOT in scope](#-what-is-not-in-scope)).
 4. JWKS fetch is fail-closed: an unreachable/untrustworthy endpoint denies (`jwks-stale` once past the stale-fetch budget with no in-overlap generation), never fail-open.
 
 ### 4. Outbound (v0.10 = O-a; O-c reserved)
@@ -124,6 +124,7 @@ Outbound service-to-service propagation stays at **parsed-identity headers** —
 
 ### 📋 What is NOT in scope
 
+- **ServiceLoader discovery + config-driven construction** — `META-INF/services/eu.exeris.kernel.spi.security.identity.IdentityProvider` registration and property-driven wiring (jwks-uri / issuer / audience) are **deferred to the config-wiring step**. The `overJwksEndpoint` programmatic factory is the supported v0.10 entry point (the live Keycloak IT exercises it end-to-end).
 - **Outbound-credential seam / token-exchange (O-c)** — reserved, documented, not built in v0.10.
 - **Enterprise overlay driver** (`priority() == 100`) — cross-repo follow-up in `exeris-kernel-enterprise`, not v0.10.
 - **PASETO / federation / custom-claim drivers** — each reachable under this contract *after* OIDC-first with no contract change.
