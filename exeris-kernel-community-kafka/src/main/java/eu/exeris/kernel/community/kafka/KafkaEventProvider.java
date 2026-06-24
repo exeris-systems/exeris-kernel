@@ -23,9 +23,11 @@ import java.util.Objects;
  *
  * <h2>Discovery</h2>
  * <p>Registered via {@code META-INF/services/eu.exeris.kernel.spi.events.EventProvider}.
- * Priority is intentionally higher than the in-memory Community provider (priority {@code 100}
+ * Priority is intentionally higher than the in-memory Community provider (priority {@code 50}
  * vs Community's {@code 0}) so that {@code exeris-kernel-community-kafka} wins
- * {@code ServiceLoader} resolution when both modules are on the classpath.
+ * {@code ServiceLoader} resolution when both modules are on the classpath. It stays below the
+ * Enterprise tier slot ({@code 100}): this is intra-Community precedence, not the open-core tier
+ * convention, so an Enterprise overlay still outranks it.
  *
  * <h2>Configuration Sources</h2>
  * <p>Kafka-specific knobs are read from the active {@link KernelProviders#CURRENT_CONFIG} when
@@ -36,8 +38,11 @@ import java.util.Objects;
  */
 public final class KafkaEventProvider implements EventProvider {
 
-    /** Default priority — higher than Community in-memory ({@code 0}) so Kafka wins ServiceLoader. */
-    public static final int PRIORITY = 100;
+    /**
+     * Default priority — above in-memory Community ({@code 0}) so Kafka wins ServiceLoader, and
+     * below the Enterprise tier slot ({@code 100}). Intra-Community precedence, not a tier value.
+     */
+    public static final int PRIORITY = 50;
 
     private static final String PROVIDER_ID   = "community-kafka";
     private static final String PROVIDER_NAME = "ExerisCommunityKafka/Events";

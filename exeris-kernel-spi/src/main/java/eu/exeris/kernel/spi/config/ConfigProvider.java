@@ -58,8 +58,8 @@ import java.util.function.Supplier;
  * <h2>ServiceLoader Registration</h2>
  * <pre>
  * # META-INF/services/eu.exeris.kernel.spi.config.ConfigProvider
- * eu.exeris.kernel.community.config.SimpleFileConfigProvider   # priority=100
- * eu.exeris.kernel.enterprise.config.EnterpriseConfigProvider  # priority=200
+ * eu.exeris.kernel.community.config.SimpleFileConfigProvider   # priority=0
+ * eu.exeris.kernel.enterprise.config.EnterpriseConfigProvider  # priority=100
  * </pre>
  *
  * @since 0.5.0
@@ -172,12 +172,12 @@ public interface ConfigProvider {
     /**
      * Selection priority — the highest value wins at bootstrap time.
      *
-     * <p>Convention: Community=100, Enterprise=200.
+     * <p>Convention: Community=0, Enterprise=100.
      *
      * @return priority ≥ 0
      */
     default int priority() {
-        return 100;
+        return 0;
     }
 
     /**

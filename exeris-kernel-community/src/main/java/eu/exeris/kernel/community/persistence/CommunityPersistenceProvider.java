@@ -56,7 +56,7 @@ public final class CommunityPersistenceProvider implements PersistenceProvider {
 
     @Override
     public int priority() {
-        return 0; // Enterprise wins with 100
+        return 0;
     }
 
     @Override

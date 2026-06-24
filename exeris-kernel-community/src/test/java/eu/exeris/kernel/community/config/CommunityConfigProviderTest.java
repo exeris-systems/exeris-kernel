@@ -74,9 +74,9 @@ class CommunityConfigProviderTest {
         }
 
         @Test
-        @DisplayName("priority() == 100 (Community Open-Core slot)")
+        @DisplayName("priority() == 0 (Community Open-Core slot)")
         void priorityIsCommunitySlot() {
-            assertThat(provider.priority()).isEqualTo(100);
+            assertThat(provider.priority()).isEqualTo(0);
         }
     }
 
