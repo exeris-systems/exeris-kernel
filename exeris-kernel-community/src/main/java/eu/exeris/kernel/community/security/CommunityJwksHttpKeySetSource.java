@@ -48,6 +48,12 @@ final class CommunityJwksHttpKeySetSource implements KeySetSource {
     /**
      * Builds a source whose fetcher issues a single {@code GET jwksPath} via {@code client} and
      * returns the raw JWKS JSON. The {@link KernelWebClient}'s engine targets the IDP host.
+     *
+     * <p>The JWKS document is handed verbatim to the JOSE parser, so {@code client} must decode a
+     * {@code String.class} response as the raw response text — wire it with a
+     * {@link eu.exeris.kernel.community.http.CommunityTextResponseBodyDecoder}, not a JSON
+     * object-mapping decoder (a JWKS advertises {@code application/json}, which a JSON decoder
+     * cannot coerce into a {@code String}).
      */
     /* default */ static CommunityJwksHttpKeySetSource overWebClient(KernelWebClient client, String jwksPath) {
         Objects.requireNonNull(client, "client must not be null");

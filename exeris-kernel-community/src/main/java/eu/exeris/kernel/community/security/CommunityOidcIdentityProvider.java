@@ -72,6 +72,10 @@ public final class CommunityOidcIdentityProvider implements IdentityProvider {
      * a {@link CommunityJwksHttpKeySetSource} (one GET via {@code jwksClient}) feeds the v0.9
      * {@link CommunityRotatingKeySet}, applying {@code policy} on the supplied {@code clock}.
      * {@code initialKeys} seeds the first generation (may be empty to force a fetch on first use).
+     *
+     * <p>{@code jwksClient} must decode a {@code String.class} response as the raw response text
+     * (see {@link CommunityJwksHttpKeySetSource#overWebClient}) — wire it with a
+     * {@link eu.exeris.kernel.community.http.CommunityTextResponseBodyDecoder}.
      */
     public static CommunityOidcIdentityProvider overJwksEndpoint(
             KernelWebClient jwksClient, String jwksPath,
