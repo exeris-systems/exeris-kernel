@@ -160,7 +160,7 @@ public final class CommunityConfigProvider implements ConfigProvider {
 
     @Override
     public int priority() {
-        return 100;
+        return 0;
     }
 
     @Override

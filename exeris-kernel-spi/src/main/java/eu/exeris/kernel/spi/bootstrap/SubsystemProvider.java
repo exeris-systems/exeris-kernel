@@ -26,7 +26,7 @@ import java.util.List;
  * {@link #priority()} descending. Name collisions are resolved by first-writer-wins
  * (highest-priority provider's subsystem for a given name is kept).
  *
- * <p>Priority convention: Community = 100, Enterprise = 200.
+ * <p>Priority convention: Community = 0, Enterprise = 100.
  *
  * <h2>ServiceLoader Registration</h2>
  * <pre>
@@ -74,7 +74,7 @@ public interface SubsystemProvider {
     /**
      * Selection priority — higher value wins on name collision.
      *
-     * <p>Convention: Community = 100, Enterprise = 200.
+     * <p>Convention: Community = 0, Enterprise = 100.
      *
      * @return priority ≥ 0
      */
