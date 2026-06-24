@@ -2,7 +2,7 @@
 
 | Attribute       | Value                                                                                          |
 |:----------------|:-----------------------------------------------------------------------------------------------|
-| **Status**      | **PROPOSED**                                                                                    |
+| **Status**      | **ACCEPTED**                                                                                    |
 | **Deciders**    | Arkadiusz Przychocki                                                                            |
 | **Date**        | 2026-06-24                                                                                       |
 | **Scope**       | kernel/security (per-repo; lockstep cross-repo coordination with `exeris-kernel-enterprise` overlay + downstream `budgetHQ`/`exeris-ai-bridge` consumers) |
