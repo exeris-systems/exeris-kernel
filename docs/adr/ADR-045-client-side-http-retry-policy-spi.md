@@ -73,23 +73,27 @@ public interface HttpRetryPolicy {
 
 ```java
 /**
- * The result of a single send attempt: either a received HTTP status, or a transport-level
- * failure with no status. Carries no body — body ownership stays inside KernelWebClient.
+ * The result of a single send attempt: either a received HTTP status (with its response
+ * headers), or a transport-level failure with no status. Carries the headers so a policy can
+ * honour Retry-After on a 503 — but NO body: body ownership stays inside KernelWebClient.
  *
  * <p>Valhalla-ready value carrier: immutable record, no identity-sensitive operations.
  */
-public record HttpAttemptOutcome(int statusCode, Throwable failure) {
+public record HttpAttemptOutcome(int statusCode, List<HttpHeader> responseHeaders, Throwable failure) {
 
-    /** A completed exchange that returned an HTTP status. */
-    public static HttpAttemptOutcome ofStatus(int statusCode) { /* statusCode > 0 */ }
+    /** A completed exchange that returned an HTTP status + headers. */
+    public static HttpAttemptOutcome ofStatus(int statusCode, List<HttpHeader> responseHeaders) { /* statusCode > 0 */ }
 
-    /** A transport-level failure with no HTTP response (statusCode == 0). */
+    /** A transport-level failure with no HTTP response (statusCode == 0, empty headers). */
     public static HttpAttemptOutcome ofFailure(Throwable failure) { /* failure != null */ }
 
     public boolean hasResponse() { return failure == null; }
     public boolean isTransportFailure() { return failure != null; }
 }
 ```
+
+The carrier exposes response *headers* (already an SPI type) but never the response *body* — so a
+policy can read `Retry-After` without any `LoanedBuffer` ownership crossing the seam.
 
 ```java
 /**

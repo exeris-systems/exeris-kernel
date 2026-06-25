@@ -8,6 +8,7 @@
  */
 package eu.exeris.kernel.core.http.client;
 
+import eu.exeris.kernel.spi.http.HttpAttemptOutcome;
 import eu.exeris.kernel.spi.http.HttpClientEngine;
 import eu.exeris.kernel.spi.http.HttpClientRequestEnricher;
 import eu.exeris.kernel.spi.http.HttpEncodedBody;
@@ -21,7 +22,9 @@ import eu.exeris.kernel.spi.http.HttpResponse;
 import eu.exeris.kernel.spi.http.HttpResponseBodyDecoder;
 import eu.exeris.kernel.spi.http.HttpResponseBodyDecoderRegistry;
 import eu.exeris.kernel.spi.http.HttpResponseDecodingContext;
+import eu.exeris.kernel.spi.http.HttpRetryPolicy;
 import eu.exeris.kernel.spi.http.HttpVersion;
+import eu.exeris.kernel.spi.http.RetryDecision;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 
@@ -76,7 +79,9 @@ import java.util.Objects;
 // CouplingBetweenObjects: facade composes the four SPI seams listed in ADR-034 §4
 // (HttpClientEngine, request-body codec, response-body codec, request enricher) plus the
 // shared HTTP carrier types — the coupling is the façade contract.
-@SuppressWarnings({"PMD.CyclomaticComplexity", "PMD.CouplingBetweenObjects"})
+// PMD.GodClass: a cohesive client façade — typed verbs + codec adaptation + the ADR-045 retry
+// loop all operate on the same handful of fields; the WMC growth is feature surface, not inflation.
+@SuppressWarnings({"PMD.CyclomaticComplexity", "PMD.CouplingBetweenObjects", "PMD.GodClass"})
 public final class KernelWebClient {
 
     private static final HttpVersion DEFAULT_VERSION = HttpVersion.HTTP_1_1;
@@ -94,15 +99,44 @@ public final class KernelWebClient {
 
     private static final byte[] EMPTY_BYTES = new byte[0];
     private static final long EMPTY_SIZE = 0L;
+    private static final long NO_DELAY_MILLIS = 0L;
 
     private final HttpClientEngine engine;
     private final MemoryAllocator allocator;
     private final HttpRequestBodyEncoderRegistry requestEncoders;
     private final HttpResponseBodyDecoderRegistry responseDecoders;
     private final HttpClientRequestEnricher enricher;
+    private final HttpRetryPolicy retryPolicy;
 
     /**
-     * Creates a client with explicit enricher composition (ADR-032).
+     * Creates a client with explicit enricher composition (ADR-032) and retry
+     * policy (ADR-045).
+     *
+     * @param engine           a started client engine targeting a single host
+     * @param allocator        the kernel memory allocator (used by the resolved encoder)
+     * @param requestEncoders  registry of outbound body encoders
+     * @param responseDecoders registry of inbound body decoders
+     * @param enricher         outbound request enricher (use {@link HttpClientRequestEnricher#noop()} for none)
+     * @param retryPolicy      client-side retry policy (use {@link HttpRetryPolicy#none()} for no retry)
+     */
+    public KernelWebClient(
+            HttpClientEngine engine,
+            MemoryAllocator allocator,
+            HttpRequestBodyEncoderRegistry requestEncoders,
+            HttpResponseBodyDecoderRegistry responseDecoders,
+            HttpClientRequestEnricher enricher,
+            HttpRetryPolicy retryPolicy) {
+        this.engine = Objects.requireNonNull(engine, "engine must not be null");
+        this.allocator = Objects.requireNonNull(allocator, "allocator must not be null");
+        this.requestEncoders = Objects.requireNonNull(requestEncoders, "requestEncoders must not be null");
+        this.responseDecoders = Objects.requireNonNull(responseDecoders, "responseDecoders must not be null");
+        this.enricher = Objects.requireNonNull(enricher, "enricher must not be null");
+        this.retryPolicy = Objects.requireNonNull(retryPolicy, "retryPolicy must not be null");
+    }
+
+    /**
+     * Convenience constructor — explicit enricher, defaults the retry policy to
+     * {@link HttpRetryPolicy#none()} (preserves the ADR-026 no-implicit-retry surface).
      *
      * @param engine           a started client engine targeting a single host
      * @param allocator        the kernel memory allocator (used by the resolved encoder)
@@ -116,16 +150,13 @@ public final class KernelWebClient {
             HttpRequestBodyEncoderRegistry requestEncoders,
             HttpResponseBodyDecoderRegistry responseDecoders,
             HttpClientRequestEnricher enricher) {
-        this.engine = Objects.requireNonNull(engine, "engine must not be null");
-        this.allocator = Objects.requireNonNull(allocator, "allocator must not be null");
-        this.requestEncoders = Objects.requireNonNull(requestEncoders, "requestEncoders must not be null");
-        this.responseDecoders = Objects.requireNonNull(responseDecoders, "responseDecoders must not be null");
-        this.enricher = Objects.requireNonNull(enricher, "enricher must not be null");
+        this(engine, allocator, requestEncoders, responseDecoders, enricher, HttpRetryPolicy.none());
     }
 
     /**
      * Convenience constructor — defaults the enricher to
-     * {@link HttpClientRequestEnricher#noop()}.
+     * {@link HttpClientRequestEnricher#noop()} and the retry policy to
+     * {@link HttpRetryPolicy#none()}.
      *
      * @param engine           a started client engine targeting a single host
      * @param allocator        the kernel memory allocator
@@ -137,7 +168,8 @@ public final class KernelWebClient {
             MemoryAllocator allocator,
             HttpRequestBodyEncoderRegistry requestEncoders,
             HttpResponseBodyDecoderRegistry responseDecoders) {
-        this(engine, allocator, requestEncoders, responseDecoders, HttpClientRequestEnricher.noop());
+        this(engine, allocator, requestEncoders, responseDecoders,
+                HttpClientRequestEnricher.noop(), HttpRetryPolicy.none());
     }
 
     /**
@@ -190,23 +222,79 @@ public final class KernelWebClient {
         return execute(HttpMethod.DELETE, path, null, responseType);
     }
 
-    // PMD.UseTryWithResources: response body ownership transfers from engine.send() return,
-    // so the buffer lifecycle is finalised in an explicit finally rather than try-with-resources.
-    @SuppressWarnings("PMD.UseTryWithResources")
+    // PMD.AvoidCatchingGenericException: engine.send() surfaces transport failures as unchecked
+    // exceptions; the retry policy (ADR-045) inspects them before they propagate. On give-up the
+    // original throwable is re-thrown unchanged, preserving the ADR-026 single-failure surface.
+    // PMD.AvoidBranchingStatementAsLastInLoop: the retry loop terminates by returning the decoded
+    // result on the first non-retried attempt — branching-as-last is the loop's exit, not a bug.
+    // PMD.CloseResource: a retried response's body is closed inline before the next attempt; the
+    // terminal attempt's body is closed in finishAttempt's finally. Ownership is local and explicit.
+    @SuppressWarnings({"PMD.AvoidCatchingGenericException", "PMD.AvoidBranchingStatementAsLastInLoop",
+            "PMD.CloseResource"})
     private <T> T execute(HttpMethod method, String path, Object requestBody, Class<T> responseType) {
         Objects.requireNonNull(path, "path must not be null");
         Objects.requireNonNull(responseType, "responseType must not be null");
 
-        HttpRequest request = buildRequest(method, path, requestBody);
-        request = enricher.enrich(request);
+        int attempt = 0;
+        while (true) {
+            // ADR-045: the typed body is re-encoded each attempt; no LoanedBuffer is retained across
+            // attempts, so the codec path's zero-leak invariant is untouched by retry.
+            HttpRequest request = enricher.enrich(buildRequest(method, path, requestBody));
 
-        HttpResponse response = engine.send(request);
+            HttpResponse response;
+            try {
+                response = engine.send(request);
+            } catch (RuntimeException transportFailure) {
+                if (shouldRetry(request, HttpAttemptOutcome.ofFailure(transportFailure), attempt)) {
+                    attempt++;
+                    continue;
+                }
+                throw transportFailure;
+            }
 
-        int status = response.status().code();
+            int status = response.status().code();
+            boolean success = status >= HTTP_2XX_LOWER && status < HTTP_2XX_UPPER;
+            if (!success && shouldRetry(request, HttpAttemptOutcome.ofStatus(status, response.headers()), attempt)) {
+                LoanedBuffer discarded = response.body();   // discard this attempt; the next re-encodes the body
+                if (discarded != null) {
+                    discarded.close();
+                }
+                attempt++;
+                continue;
+            }
+            return finishAttempt(response, responseType, status);
+        }
+    }
+
+    /**
+     * Consults the retry policy; when it elects to retry, waits the decided delay on the caller's
+     * virtual thread and returns {@code true}. Returns {@code false} to give up.
+     */
+    private boolean shouldRetry(HttpRequest request, HttpAttemptOutcome outcome, int attempt) {
+        RetryDecision decision = retryPolicy.decide(request, outcome, attempt);
+        if (!decision.retry()) {
+            return false;
+        }
+        long delayMillis = decision.delayMillis();
+        if (delayMillis > NO_DELAY_MILLIS) {
+            try {
+                Thread.sleep(delayMillis);
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+                throw new WebClientException(0, "", "Retry wait interrupted", ex);
+            }
+        }
+        return true;
+    }
+
+    // PMD.UseTryWithResources: response body ownership transfers from engine.send() return,
+    // so the buffer lifecycle is finalised in an explicit finally rather than try-with-resources.
+    @SuppressWarnings("PMD.UseTryWithResources")
+    private <T> T finishAttempt(HttpResponse response, Class<T> responseType, int status) {
+        boolean success = status >= HTTP_2XX_LOWER && status < HTTP_2XX_UPPER;
         LoanedBuffer body = response.body();
         try {
             byte[] responseBytes = (body == null) ? EMPTY_BYTES : readAll(body);
-            boolean success = status >= HTTP_2XX_LOWER && status < HTTP_2XX_UPPER;
             if (!success) {
                 String responseBodyText = new String(responseBytes, StandardCharsets.UTF_8);
                 throw new WebClientException(status, responseBodyText,
