@@ -33,11 +33,17 @@ import java.util.Objects;
 public record HttpAttemptOutcome(int statusCode, List<HttpHeader> responseHeaders, Throwable failure) {
 
     /**
-     * Canonical constructor — defensively copies the headers and rejects a null list.
+     * Canonical constructor — defensively copies the headers, rejects a null list, and enforces the
+     * two-state invariant: exactly one of a received status ({@code statusCode > 0}) or a transport
+     * {@code failure} is present. This closes the bypass the static factories already avoid.
      */
     public HttpAttemptOutcome {
         Objects.requireNonNull(responseHeaders, "responseHeaders must not be null");
         responseHeaders = List.copyOf(responseHeaders);
+        if ((failure == null) == (statusCode <= 0)) {
+            throw new IllegalArgumentException(
+                    "exactly one of statusCode (> 0) or failure must be present");
+        }
     }
 
     /**
@@ -57,6 +63,12 @@ public record HttpAttemptOutcome(int statusCode, List<HttpHeader> responseHeader
     /**
      * Returns an outcome for an attempt that failed at the transport level with
      * no HTTP response.
+     *
+     * <p>In practice the client façade ({@code KernelWebClient}) only produces
+     * {@link RuntimeException} transport failures — {@code HttpClientEngine.send}
+     * is an unchecked-throwing contract. The parameter is widened to {@link Throwable}
+     * so a policy may also carry a wrapped cause; it is not a signal that checked
+     * transport exceptions reach the seam.
      *
      * @param failure the transport failure; never {@code null}
      * @return a transport-failure outcome

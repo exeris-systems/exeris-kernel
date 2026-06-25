@@ -1,7 +1,7 @@
 # ADR-045: `HttpRetryPolicy` SPI — Opt-in Client-Side Retry for `KernelWebClient`
 
-**Status:** Reserved
-**Date:** 2026-06-25
+**Status:** Accepted
+**Date:** 2026-06-25 (implemented in v0.10 Sprint 4, PR #220)
 **Owner:** kernel/transport
 **Visibility:** public
 **Scope:** kernel/transport (per-repo; lockstep cross-repo coordination with `exeris-tooling`, `budgetHQ`)
@@ -80,6 +80,9 @@ public interface HttpRetryPolicy {
  * <p>Valhalla-ready value carrier: immutable record, no identity-sensitive operations.
  */
 public record HttpAttemptOutcome(int statusCode, List<HttpHeader> responseHeaders, Throwable failure) {
+
+    // canonical constructor enforces the two-state invariant: exactly one of
+    // statusCode (> 0) or failure is present (closes the factory-bypass gap).
 
     /** A completed exchange that returned an HTTP status + headers. */
     public static HttpAttemptOutcome ofStatus(int statusCode, List<HttpHeader> responseHeaders) { /* statusCode > 0 */ }

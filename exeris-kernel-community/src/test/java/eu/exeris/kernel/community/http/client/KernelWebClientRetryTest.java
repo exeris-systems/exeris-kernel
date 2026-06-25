@@ -107,6 +107,34 @@ class KernelWebClientRetryTest {
         assertThat(engine.received).allSatisfy(request -> assertThat(request.body()).isNotNull());
     }
 
+    @Test
+    @DisplayName("re-throws the original transport failure unchanged after the cap (not a WebClientException)")
+    void transportFailureGivesUpUnwrapped() {
+        ProgrammedEngine engine = new ProgrammedEngine(List.of(boom(), boom()));
+        KernelWebClient twoAttempts = new KernelWebClient(engine, ALLOCATOR, REQUEST_ENCODERS, RESPONSE_DECODERS,
+                HttpClientRequestEnricher.noop(), new CommunityHttpRetryPolicy(2, 0L, 0L, () -> 0.0));
+
+        assertThatThrownBy(() -> twoAttempts.get("/widget/1", Map.class))
+                .isInstanceOf(TransportBoom.class)
+                .isNotInstanceOf(KernelWebClient.WebClientException.class);
+        assertThat(engine.received).hasSize(2);
+    }
+
+    private static Supplier<HttpResponse> boom() {
+        return () -> {
+            throw new TransportBoom();
+        };
+    }
+
+    /** Sentinel unchecked exception standing in for an engine-level transport failure. */
+    private static final class TransportBoom extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+
+        TransportBoom() {
+            super("simulated transport failure");
+        }
+    }
+
     private static HttpClientRequestEnricher idempotencyKey(String key) {
         return request -> {
             List<HttpHeader> headers = new ArrayList<>(request.headers());

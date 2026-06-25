@@ -45,6 +45,10 @@ import java.util.function.DoubleSupplier;
  *
  * @since 0.10.0
  */
+// PMD.CyclomaticComplexity: a retry policy is a decision machine — idempotency gate, retryable-status
+// set, backoff ceiling, and Retry-After parsing each add a small branch. No single method exceeds the
+// per-method limit (highest is 9); the class total is the sum of cohesive one-purpose helpers.
+@SuppressWarnings("PMD.CyclomaticComplexity")
 public final class CommunityHttpRetryPolicy implements HttpRetryPolicy {
 
     private static final int DEFAULT_MAX_ATTEMPTS = 3;
@@ -138,8 +142,21 @@ public final class CommunityHttpRetryPolicy implements HttpRetryPolicy {
                 return retryAfter;
             }
         }
-        long ceiling = Math.min(maxDelayMillis, baseDelayMillis << Math.min(attemptIndex, Long.SIZE - 2));
-        return (long) (jitter.getAsDouble() * ceiling);
+        return (long) (jitter.getAsDouble() * backoffCeiling(attemptIndex));
+    }
+
+    /**
+     * Exponential backoff ceiling {@code min(maxDelay, base · 2^attemptIndex)}, computed with a clamped
+     * exponent so the left-shift can never overflow into a negative value for large attempt indices or
+     * custom caps (the shift stays within the positive range of {@code base}).
+     */
+    private long backoffCeiling(int attemptIndex) {
+        if (baseDelayMillis == ZERO_MILLIS) {
+            return ZERO_MILLIS;
+        }
+        int maxExponent = Long.numberOfLeadingZeros(baseDelayMillis) - 1;
+        int exponent = Math.min(attemptIndex, maxExponent);
+        return Math.min(maxDelayMillis, baseDelayMillis << exponent);
     }
 
     /**

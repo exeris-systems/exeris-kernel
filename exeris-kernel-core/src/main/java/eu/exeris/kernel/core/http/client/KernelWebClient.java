@@ -79,9 +79,15 @@ import java.util.Objects;
 // CouplingBetweenObjects: facade composes the four SPI seams listed in ADR-034 §4
 // (HttpClientEngine, request-body codec, response-body codec, request enricher) plus the
 // shared HTTP carrier types — the coupling is the façade contract.
-// PMD.GodClass: a cohesive client façade — typed verbs + codec adaptation + the ADR-045 retry
-// loop all operate on the same handful of fields; the WMC growth is feature surface, not inflation.
-@SuppressWarnings({"PMD.CyclomaticComplexity", "PMD.CouplingBetweenObjects", "PMD.GodClass"})
+// PMD.GodClass / PMD.TooManyMethods: a cohesive client façade — typed verbs + codec adaptation + the
+// ADR-045 retry loop all operate on the same handful of fields; the WMC / method growth is feature
+// surface, not inflation (the retry helpers keep the loop readable rather than inlining duplicate
+// null-checks / sleep logic).
+// PMD.AvoidCatchingGenericException: this façade's error model maps unchecked transport/codec/policy
+// RuntimeExceptions to WebClientException (or re-throws transport failures per ADR-026); the catch
+// pattern is deliberate and class-wide, consolidated here to keep it in one place.
+@SuppressWarnings({"PMD.CyclomaticComplexity", "PMD.CouplingBetweenObjects",
+        "PMD.GodClass", "PMD.TooManyMethods", "PMD.AvoidCatchingGenericException"})
 public final class KernelWebClient {
 
     private static final HttpVersion DEFAULT_VERSION = HttpVersion.HTTP_1_1;
@@ -222,15 +228,10 @@ public final class KernelWebClient {
         return execute(HttpMethod.DELETE, path, null, responseType);
     }
 
-    // PMD.AvoidCatchingGenericException: engine.send() surfaces transport failures as unchecked
-    // exceptions; the retry policy (ADR-045) inspects them before they propagate. On give-up the
-    // original throwable is re-thrown unchanged, preserving the ADR-026 single-failure surface.
     // PMD.AvoidBranchingStatementAsLastInLoop: the retry loop terminates by returning the decoded
     // result on the first non-retried attempt — branching-as-last is the loop's exit, not a bug.
-    // PMD.CloseResource: a retried response's body is closed inline before the next attempt; the
-    // terminal attempt's body is closed in finishAttempt's finally. Ownership is local and explicit.
-    @SuppressWarnings({"PMD.AvoidCatchingGenericException", "PMD.AvoidBranchingStatementAsLastInLoop",
-            "PMD.CloseResource"})
+    // (RuntimeException catching is suppressed class-wide — see the type-level note.)
+    @SuppressWarnings("PMD.AvoidBranchingStatementAsLastInLoop")
     private <T> T execute(HttpMethod method, String path, Object requestBody, Class<T> responseType) {
         Objects.requireNonNull(path, "path must not be null");
         Objects.requireNonNull(responseType, "responseType must not be null");
@@ -245,20 +246,20 @@ public final class KernelWebClient {
             try {
                 response = engine.send(request);
             } catch (RuntimeException transportFailure) {
-                if (shouldRetry(request, HttpAttemptOutcome.ofFailure(transportFailure), attempt)) {
-                    attempt++;
-                    continue;
+                // No response/body yet — a policy throw here just propagates; nothing to release.
+                RetryDecision decision = retryPolicy.decide(request,
+                        HttpAttemptOutcome.ofFailure(transportFailure), attempt);
+                if (!decision.retry()) {
+                    throw transportFailure;
                 }
-                throw transportFailure;
+                applyDelay(decision.delayMillis(), 0);
+                attempt++;
+                continue;
             }
 
             int status = response.status().code();
             boolean success = status >= HTTP_2XX_LOWER && status < HTTP_2XX_UPPER;
-            if (!success && shouldRetry(request, HttpAttemptOutcome.ofStatus(status, response.headers()), attempt)) {
-                LoanedBuffer discarded = response.body();   // discard this attempt; the next re-encodes the body
-                if (discarded != null) {
-                    discarded.close();
-                }
+            if (!success && retryNonSuccess(request, response, status, attempt)) {
                 attempt++;
                 continue;
             }
@@ -267,29 +268,53 @@ public final class KernelWebClient {
     }
 
     /**
-     * Consults the retry policy; when it elects to retry, waits the decided delay on the caller's
-     * virtual thread and returns {@code true}. Returns {@code false} to give up.
+     * Handles a non-2xx response: consults the policy and, when it retries, closes this attempt's body
+     * <em>before</em> the wait (no buffer held across the sleep) and applies the delay. Returns
+     * {@code true} to retry (body already released) or {@code false} to finish (body still open for
+     * {@link #finishAttempt}). A buggy policy's RuntimeException closes the body before propagating
+     * (RuntimeException catching is suppressed class-wide — see the type-level note).
      */
-    private boolean shouldRetry(HttpRequest request, HttpAttemptOutcome outcome, int attempt) {
-        RetryDecision decision = retryPolicy.decide(request, outcome, attempt);
+    private boolean retryNonSuccess(HttpRequest request, HttpResponse response, int status, int attempt) {
+        RetryDecision decision;
+        try {
+            decision = retryPolicy.decide(request, HttpAttemptOutcome.ofStatus(status, response.headers()), attempt);
+        } catch (RuntimeException policyFailure) {
+            closeBody(response.body());
+            throw policyFailure;
+        }
         if (!decision.retry()) {
             return false;
         }
-        long delayMillis = decision.delayMillis();
-        if (delayMillis > NO_DELAY_MILLIS) {
-            try {
-                Thread.sleep(delayMillis);
-            } catch (InterruptedException ex) {
-                Thread.currentThread().interrupt();
-                throw new WebClientException(0, "", "Retry wait interrupted", ex);
-            }
-        }
+        closeBody(response.body());   // close BEFORE the wait — no buffer held across the sleep
+        applyDelay(decision.delayMillis(), status);
         return true;
     }
 
-    // PMD.UseTryWithResources: response body ownership transfers from engine.send() return,
-    // so the buffer lifecycle is finalised in an explicit finally rather than try-with-resources.
-    @SuppressWarnings("PMD.UseTryWithResources")
+    private static void closeBody(LoanedBuffer body) {
+        if (body != null) {
+            body.close();
+        }
+    }
+
+    /**
+     * Waits {@code delayMillis} on the caller's virtual thread before the next attempt. On interrupt
+     * the wait is abandoned with a {@link WebClientException} carrying {@code triggeringStatus} (0 for
+     * a transport failure) so the retry-triggering status survives in diagnostics.
+     */
+    private static void applyDelay(long delayMillis, int triggeringStatus) {
+        if (delayMillis <= NO_DELAY_MILLIS) {
+            return;
+        }
+        try {
+            Thread.sleep(delayMillis);
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new WebClientException(triggeringStatus, "", "Retry wait interrupted", ex);
+        }
+    }
+
+    // Response body ownership transfers from engine.send() return, so the buffer lifecycle is
+    // finalised in an explicit finally (via closeBody) rather than try-with-resources.
     private <T> T finishAttempt(HttpResponse response, Class<T> responseType, int status) {
         boolean success = status >= HTTP_2XX_LOWER && status < HTTP_2XX_UPPER;
         LoanedBuffer body = response.body();
@@ -309,16 +334,14 @@ public final class KernelWebClient {
             }
             return decodeSuccessBody(response, body, responseBytes, responseType, status);
         } finally {
-            if (body != null) {
-                body.close();
-            }
+            closeBody(body);
         }
     }
 
-    // PMD.AvoidCatchingGenericException: decoder drivers wrap their binding exceptions in
-    // RuntimeException (typically IllegalStateException) per ADR-034 §3; we re-wrap with
-    // status + raw body context for caller diagnostics.
-    @SuppressWarnings({"unchecked", "PMD.AvoidCatchingGenericException"})
+    // Decoder drivers wrap their binding exceptions in RuntimeException (typically IllegalStateException)
+    // per ADR-034 §3; we re-wrap with status + raw body context for caller diagnostics. (RuntimeException
+    // catching is suppressed class-wide — see the type-level note.)
+    @SuppressWarnings("unchecked")
     private <T> T decodeSuccessBody(HttpResponse response,
                                     LoanedBuffer body,
                                     byte[] responseBytes,
@@ -350,9 +373,8 @@ public final class KernelWebClient {
         }
     }
 
-    // PMD.AvoidCatchingGenericException: outbound buffer must be released if anything throws
-    // between allocate() and engine ownership transfer.
-    @SuppressWarnings("PMD.AvoidCatchingGenericException")
+    // Outbound buffer must be released if anything throws between allocate() and engine ownership
+    // transfer. (RuntimeException catching is suppressed class-wide — see the type-level note.)
     private HttpRequest buildRequest(HttpMethod method, String path, Object body) {
         if (body == null) {
             return HttpRequest.noBody(method, path, DEFAULT_VERSION, ACCEPT_JSON_HEADERS);

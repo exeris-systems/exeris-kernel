@@ -177,10 +177,25 @@ public abstract class AbstractHttpRetryPolicyTck {
         }
 
         @Test
+        @DisplayName("502 on an idempotent GET → retry")
+        void retriesIdempotentOn502() {
+            assertThat(createPolicy().decide(request(HttpMethod.GET, List.of()), status(502), 0).retry())
+                    .isTrue();
+        }
+
+        @Test
+        @DisplayName("504 on an idempotent GET → retry")
+        void retriesIdempotentOn504() {
+            assertThat(createPolicy().decide(request(HttpMethod.GET, List.of()), status(504), 0).retry())
+                    .isTrue();
+        }
+
+        @Test
         @DisplayName("transport failure on a GET → retry")
         void retriesIdempotentOnTransportFailure() {
+            // Representative of what the engine actually throws — an unchecked transport failure.
             assertThat(createPolicy().decide(request(HttpMethod.GET, List.of()),
-                    HttpAttemptOutcome.ofFailure(new IOException("reset")), 0).retry()).isTrue();
+                    HttpAttemptOutcome.ofFailure(new RuntimeException("connection reset")), 0).retry()).isTrue();
         }
 
         @Test
