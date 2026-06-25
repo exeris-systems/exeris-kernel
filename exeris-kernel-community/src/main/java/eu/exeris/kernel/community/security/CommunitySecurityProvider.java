@@ -14,15 +14,28 @@ import eu.exeris.kernel.spi.security.AuthenticationResult;
 import eu.exeris.kernel.spi.security.ImmutableStorageContext;
 import eu.exeris.kernel.spi.security.SecurityProvider;
 import eu.exeris.kernel.spi.security.StorageContext;
+import eu.exeris.kernel.spi.security.identity.IdentityProvider;
+import eu.exeris.kernel.spi.security.identity.IdentityProviderRegistry;
 
-import java.lang.foreign.ValueLayout;
-import java.nio.charset.StandardCharsets;
 import java.security.interfaces.RSAPublicKey;
+import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 
 /**
- * Community {@link SecurityProvider} baseline implementation.
+ * Community {@link SecurityProvider} — a thin dispatcher over an {@link IdentityProviderRegistry}
+ * (ADR-040, Option S-A).
+ *
+ * <p>It selects exactly one {@link IdentityProvider} for the incoming token and delegates
+ * validation. The selected provider's failure is terminal — there is no fallback to another
+ * provider (fail-closed; re-dispatch on failure would be token-confusion). When no provider claims
+ * the token the dispatcher denies fail-closed with {@code EX-SEC-2002}.
+ *
+ * <p>This refactor moves the JWT pipeline into {@link CommunityOidcIdentityProvider} /
+ * {@link CommunityOidcTokenValidator}; the static {@code kid → key} path is byte-for-byte unchanged.
+ *
+ * <p>ServiceLoader-based discovery of {@link IdentityProvider} bindings and config-driven
+ * construction (issuer / audience / JWKS endpoint) land with the config wiring step; today the
+ * registry is built from the directly-constructed Community OIDC provider.
  *
  * @since 0.5.0
  */
@@ -32,8 +45,9 @@ public final class CommunitySecurityProvider implements SecurityProvider {
     private static final String PROVIDER_NAME = "ExerisCommunity/JWT";
     private static final String EXPECTED_ISSUER = "https://auth.example.com";
     private static final String EXPECTED_AUDIENCE = "exeris-kernel";
+    private static final String JWT_TYPE = "JWT";
 
-    private final CommunityJwksValidator jwksValidator;
+    private final IdentityProviderRegistry registry;
 
     /** Public no-arg constructor required by {@link java.util.ServiceLoader}. */
     public CommunitySecurityProvider() {
@@ -43,22 +57,22 @@ public final class CommunitySecurityProvider implements SecurityProvider {
     public CommunitySecurityProvider(Map<String, RSAPublicKey> keysByKid,
                                      String expectedIssuer,
                                      String expectedAudience) {
-        this(new CommunityJwksValidator(keysByKid, expectedIssuer, expectedAudience));
+        this(new CommunityOidcIdentityProvider(keysByKid, expectedIssuer, expectedAudience));
     }
 
-    /* default */ CommunitySecurityProvider(CommunityJwksValidator jwksValidator) {
-        this.jwksValidator = Objects.requireNonNull(jwksValidator, "jwksValidator must not be null");
+    private CommunitySecurityProvider(IdentityProvider identityProvider) {
+        this.registry = IdentityProviderRegistry.of(List.of(identityProvider));
     }
 
     /**
      * Opt-in factory wiring a rotating key set. Rotation is applied through the injected
-     * {@link JwksKeyResolver} (typically a {@link CommunityRotatingKeySet}); the verify
-     * pipeline (signature/issuer/audience/expiry/storage-context) is unchanged.
+     * {@link JwksKeyResolver} (typically a {@link CommunityRotatingKeySet}); the verify pipeline is
+     * unchanged.
      */
     /* default */ static CommunitySecurityProvider withKeyResolver(
             JwksKeyResolver keyResolver, String expectedIssuer, String expectedAudience) {
         return new CommunitySecurityProvider(
-                new CommunityJwksValidator(keyResolver, expectedIssuer, expectedAudience));
+                new CommunityOidcIdentityProvider(keyResolver, expectedIssuer, expectedAudience));
     }
 
     @Override
@@ -79,23 +93,14 @@ public final class CommunitySecurityProvider implements SecurityProvider {
     @Override
     public AuthenticationResult authenticate(LoanedBuffer rawToken) {
         if (rawToken == null) {
-            throw new SecurityAuthenticationException("JWT", "missing-token");
+            throw new SecurityAuthenticationException(JWT_TYPE, "missing-token");
         }
-
-        long tokenSize = rawToken.size();
-        if (tokenSize < 0) {
-            throw new SecurityAuthenticationException("JWT", "indeterminate");
+        IdentityProvider provider = registry.select(rawToken);
+        if (provider == null) {
+            // No provider claims the token → terminal deny, never fail-open.
+            throw new SecurityAuthenticationException(JWT_TYPE, "no-identity-provider");
         }
-        if (tokenSize == 0) {
-            throw new SecurityAuthenticationException("JWT", "empty-token");
-        }
-
-        byte[] tokenBytes = rawToken.segment()
-            .asSlice(0L, tokenSize)
-            .toArray(ValueLayout.JAVA_BYTE);
-        String compactJwt = new String(tokenBytes, StandardCharsets.UTF_8);
-
-        return jwksValidator.authenticate(compactJwt);
+        return provider.authenticate(rawToken);
     }
 
     @Override

@@ -22,8 +22,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * Unit tests for the isolation strategy resolution cases in
- * {@link CommunityJwksValidator}/{@link CommunitySecurityProvider}.
+ * Unit tests for the isolation strategy resolution cases via
+ * {@link CommunitySecurityProvider} (the pipeline now lives in
+ * {@link CommunityOidcTokenValidator} +
+ * {@link eu.exeris.kernel.spi.security.identity.IdentityStorageMapping}).
  *
  * <p>Fail-closed semantics after S-P0-07 / ADR-012 §4a (amended): only a genuinely <i>absent</i>
  * (or explicit {@code SHARED}) strategy resolves to SHARED. A <b>declared</b> strategy that the

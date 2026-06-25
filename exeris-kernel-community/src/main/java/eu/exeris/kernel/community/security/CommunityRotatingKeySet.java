@@ -9,6 +9,7 @@
 package eu.exeris.kernel.community.security;
 
 import eu.exeris.kernel.spi.exceptions.security.SecurityAuthenticationException;
+import eu.exeris.kernel.spi.security.identity.KeyRotationPolicy;
 
 import java.security.interfaces.RSAPublicKey;
 import java.time.Clock;
@@ -70,7 +71,12 @@ import java.util.concurrent.atomic.AtomicReference;
         this.overlapMillis = policy.overlapWindow().toMillis();
         Map<String, RSAPublicKey> current =
                 Map.copyOf(Objects.requireNonNull(initialKeys, "initialKeys must not be null"));
-        this.generations = new AtomicReference<>(new Generations(current, clock.millis(), null, 0L));
+        // An empty initial generation holds no verification keys, so it is stamped at the epoch —
+        // immediately stale. The first resolve() then triggers a JWKS refresh rather than denying
+        // every token until the stale-fetch budget elapses (this is what lets overJwksEndpoint seed
+        // an empty key set and fetch lazily on first use). A seeded generation stamps at now.
+        long installedAtMillis = current.isEmpty() ? 0L : clock.millis();
+        this.generations = new AtomicReference<>(new Generations(current, installedAtMillis, null, 0L));
     }
 
     @Override
