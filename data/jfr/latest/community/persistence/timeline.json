@@ -1,1009 +1,993 @@
 [ {
-  "t" : 1782367498433,
+  "t" : 1782454134749,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.HashSet",
+  "class" : "java.lang.String",
   "thread" : "main",
   "size" : 261568,
   "stackId" : "stk_0001",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1782367498440,
+  "t" : 1782454134750,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.HashMap$Node",
+  "class" : "java.util.HashMap$KeyIterator",
   "thread" : "main",
-  "size" : 261560,
+  "size" : 261568,
   "stackId" : "stk_0002",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1782367498440,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.util.HashMap$Node",
-  "thread" : "main",
-  "size" : 40,
-  "stackId" : "stk_0002",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367498445,
+  "t" : 1782454134756,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "[Ljava.lang.Object;",
-  "thread" : "main",
-  "size" : 261528,
-  "stackId" : "stk_0003",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367498445,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "[Ljava.lang.Object;",
-  "thread" : "main",
-  "size" : 96,
-  "stackId" : "stk_0003",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367498449,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "org.h2.command.query.Select",
-  "thread" : "main",
-  "size" : 261568,
-  "stackId" : "stk_0004",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367498449,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "org.h2.command.query.Select",
-  "thread" : "main",
-  "size" : 360,
-  "stackId" : "stk_0004",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367498453,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "org.h2.result.LocalResult",
-  "thread" : "main",
-  "size" : 261568,
-  "stackId" : "stk_0005",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367498453,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "org.h2.result.LocalResult",
-  "thread" : "main",
-  "size" : 144,
-  "stackId" : "stk_0005",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367498457,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "[Lorg.h2.table.IndexColumn;",
-  "thread" : "main",
-  "size" : 261560,
-  "stackId" : "stk_0006",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367498457,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "[Lorg.h2.table.IndexColumn;",
-  "thread" : "main",
-  "size" : 16,
-  "stackId" : "stk_0006",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367498461,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "org.h2.table.TableFilter",
-  "thread" : "main",
-  "size" : 261384,
-  "stackId" : "stk_0007",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367498461,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "org.h2.table.TableFilter",
-  "thread" : "main",
-  "size" : 200,
-  "stackId" : "stk_0007",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367498464,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "eu.exeris.kernel.community.persistence.jdbc.JdbcQueryResult$JdbcRowCursor",
-  "thread" : "main",
-  "size" : 261560,
-  "stackId" : "stk_0008",
-  "category" : "TEST_HARNESS"
-}, {
-  "t" : 1782367498464,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "eu.exeris.kernel.community.persistence.jdbc.JdbcQueryResult$JdbcRowCursor",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0008",
-  "category" : "TEST_HARNESS"
-}, {
-  "t" : 1782367498468,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "org.h2.mvstore.tx.Transaction",
-  "thread" : "main",
-  "size" : 261536,
-  "stackId" : "stk_0009",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367498468,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "org.h2.mvstore.tx.Transaction",
-  "thread" : "main",
-  "size" : 128,
-  "stackId" : "stk_0009",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367498469,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "[Ljava.lang.String;",
-  "thread" : "exeris-community-shared:housekeeper",
-  "size" : 24,
-  "stackId" : "stk_0010",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367498470,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "com.zaxxer.hikari.pool.PoolEntry",
-  "thread" : "exeris-community-shared:connection-adder",
-  "size" : 80,
-  "stackId" : "stk_0011",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367498475,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "org.h2.jdbc.JdbcResultSet",
-  "thread" : "main",
-  "size" : 261536,
-  "stackId" : "stk_0012",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367498475,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "org.h2.jdbc.JdbcResultSet",
-  "thread" : "main",
-  "size" : 112,
-  "stackId" : "stk_0012",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367498480,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "org.h2.command.CommandContainer",
-  "thread" : "main",
-  "size" : 261544,
-  "stackId" : "stk_0013",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367498480,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "org.h2.command.CommandContainer",
-  "thread" : "main",
-  "size" : 56,
-  "stackId" : "stk_0013",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367498484,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "org.h2.result.RowFactory$DefaultRowFactory",
-  "thread" : "main",
-  "size" : 261528,
-  "stackId" : "stk_0014",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367498484,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "org.h2.result.RowFactory$DefaultRowFactory",
-  "thread" : "main",
-  "size" : 48,
-  "stackId" : "stk_0014",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367498488,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "eu.exeris.kernel.core.persistence.ConnectionAcquireEvent",
-  "thread" : "main",
-  "size" : 261544,
-  "stackId" : "stk_0015",
-  "category" : "TEST_HARNESS"
-}, {
-  "t" : 1782367498488,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "eu.exeris.kernel.core.persistence.ConnectionAcquireEvent",
-  "thread" : "main",
-  "size" : 56,
-  "stackId" : "stk_0015",
-  "category" : "TEST_HARNESS"
-}, {
-  "t" : 1782367498492,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.ArrayList$Itr",
+  "class" : "org.h2.mvstore.db.RowDataType",
   "thread" : "main",
   "size" : 261552,
-  "stackId" : "stk_0016",
+  "stackId" : "stk_0003",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1782367498492,
+  "t" : 1782454134756,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "org.h2.mvstore.db.RowDataType",
+  "thread" : "main",
+  "size" : 48,
+  "stackId" : "stk_0003",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454134761,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "org.h2.command.query.Optimizer",
+  "thread" : "main",
+  "size" : 261568,
+  "stackId" : "stk_0004",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454134761,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "org.h2.command.query.Optimizer",
+  "thread" : "main",
+  "size" : 96,
+  "stackId" : "stk_0004",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454134767,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "[Ljava.lang.Object;",
+  "thread" : "main",
+  "size" : 261560,
+  "stackId" : "stk_0005",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454134767,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "[Ljava.lang.Object;",
+  "thread" : "main",
+  "size" : 48,
+  "stackId" : "stk_0005",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454134771,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.util.concurrent.atomic.AtomicBoolean",
+  "thread" : "main",
+  "size" : 261568,
+  "stackId" : "stk_0006",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454134771,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.util.concurrent.atomic.AtomicBoolean",
+  "thread" : "main",
+  "size" : 16,
+  "stackId" : "stk_0006",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454134776,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.util.ArrayList$Itr",
+  "thread" : "main",
+  "size" : 261568,
+  "stackId" : "stk_0007",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454134776,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "java.util.ArrayList$Itr",
   "thread" : "main",
   "size" : 32,
-  "stackId" : "stk_0016",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367498496,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "[Ljava.lang.Object;",
-  "thread" : "main",
-  "size" : 261488,
-  "stackId" : "stk_0003",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367498496,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "[Ljava.lang.Object;",
-  "thread" : "main",
-  "size" : 96,
-  "stackId" : "stk_0003",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367498499,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "org.h2.command.query.Select",
-  "thread" : "main",
-  "size" : 261568,
-  "stackId" : "stk_0004",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367498499,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "org.h2.command.query.Select",
-  "thread" : "main",
-  "size" : 360,
-  "stackId" : "stk_0004",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367498502,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "org.h2.result.LocalResult",
-  "thread" : "main",
-  "size" : 261568,
-  "stackId" : "stk_0005",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367498502,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "org.h2.result.LocalResult",
-  "thread" : "main",
-  "size" : 144,
-  "stackId" : "stk_0005",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367498506,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.String",
-  "thread" : "C1 CompilerThread0",
-  "size" : 1000,
-  "stackId" : "stk_0017",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367498506,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.String",
-  "thread" : "C1 CompilerThread0",
-  "size" : 32,
-  "stackId" : "stk_0017",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367498506,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "[I",
-  "thread" : "main",
-  "size" : 261568,
-  "stackId" : "stk_0018",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367498506,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "[I",
-  "thread" : "main",
-  "size" : 16,
-  "stackId" : "stk_0018",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367498509,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "org.h2.table.DualTable",
-  "thread" : "main",
-  "size" : 261488,
   "stackId" : "stk_0007",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1782367498509,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "org.h2.table.DualTable",
-  "thread" : "main",
-  "size" : 160,
-  "stackId" : "stk_0007",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367498512,
+  "t" : 1782454134780,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "java.util.HashMap",
   "thread" : "main",
-  "size" : 261520,
-  "stackId" : "stk_0019",
+  "size" : 261560,
+  "stackId" : "stk_0008",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1782367498512,
+  "t" : 1782454134780,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "java.util.HashMap",
   "thread" : "main",
   "size" : 64,
-  "stackId" : "stk_0019",
+  "stackId" : "stk_0008",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1782367498517,
+  "t" : 1782454134784,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.concurrent.atomic.AtomicLong",
-  "thread" : "main",
-  "size" : 261568,
-  "stackId" : "stk_0020",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367498517,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.util.concurrent.atomic.AtomicLong",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0020",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367498520,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "[Lorg.h2.table.TableFilter;",
-  "thread" : "main",
-  "size" : 261568,
-  "stackId" : "stk_0021",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367498520,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "[Lorg.h2.table.TableFilter;",
-  "thread" : "main",
-  "size" : 16,
-  "stackId" : "stk_0021",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367498523,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "[J",
-  "thread" : "main",
-  "size" : 261568,
-  "stackId" : "stk_0022",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367498523,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "[J",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0022",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367498526,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.ArrayList$Itr",
+  "class" : "org.h2.index.IndexType",
   "thread" : "main",
   "size" : 261544,
-  "stackId" : "stk_0023",
+  "stackId" : "stk_0009",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1782367498526,
+  "t" : 1782454134784,
   "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.util.ArrayList$Itr",
+  "class" : "org.h2.index.IndexType",
   "thread" : "main",
   "size" : 32,
-  "stackId" : "stk_0023",
+  "stackId" : "stk_0009",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1782367498529,
+  "t" : 1782454134788,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "[I",
+  "class" : "java.util.HashMap",
   "thread" : "main",
-  "size" : 261568,
-  "stackId" : "stk_0024",
+  "size" : 261512,
+  "stackId" : "stk_0010",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1782367498529,
+  "t" : 1782454134788,
   "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "[I",
+  "class" : "java.util.HashMap",
   "thread" : "main",
-  "size" : 16,
-  "stackId" : "stk_0024",
+  "size" : 64,
+  "stackId" : "stk_0010",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1782367498531,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "[Lorg.h2.expression.Expression;",
-  "thread" : "main",
-  "size" : 261568,
-  "stackId" : "stk_0025",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367498532,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "[Lorg.h2.expression.Expression;",
-  "thread" : "main",
-  "size" : 16,
-  "stackId" : "stk_0025",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367498534,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "org.h2.table.TableFilter",
-  "thread" : "main",
-  "size" : 261568,
-  "stackId" : "stk_0007",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367498534,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "org.h2.table.TableFilter",
-  "thread" : "main",
-  "size" : 200,
-  "stackId" : "stk_0007",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367498537,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "[J",
-  "thread" : "main",
-  "size" : 261560,
-  "stackId" : "stk_0022",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367498537,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "[J",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0022",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367498539,
+  "t" : 1782454134791,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "[Ljava.lang.Object;",
   "thread" : "main",
-  "size" : 261544,
-  "stackId" : "stk_0003",
+  "size" : 261552,
+  "stackId" : "stk_0011",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1782367498539,
+  "t" : 1782454134791,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "[Ljava.lang.Object;",
   "thread" : "main",
   "size" : 96,
+  "stackId" : "stk_0011",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454134794,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "com.zaxxer.hikari.pool.HikariProxyResultSet",
+  "thread" : "main",
+  "size" : 261552,
+  "stackId" : "stk_0012",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454134794,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "com.zaxxer.hikari.pool.HikariProxyResultSet",
+  "thread" : "main",
+  "size" : 40,
+  "stackId" : "stk_0012",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454134797,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.util.HashMap$KeyIterator",
+  "thread" : "main",
+  "size" : 261560,
+  "stackId" : "stk_0013",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454134797,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.util.HashMap$KeyIterator",
+  "thread" : "main",
+  "size" : 48,
+  "stackId" : "stk_0013",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454134802,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "org.h2.mvstore.db.RowDataType",
+  "thread" : "main",
+  "size" : 261552,
   "stackId" : "stk_0003",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1782367498542,
+  "t" : 1782454134802,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "org.h2.mvstore.db.RowDataType",
+  "thread" : "main",
+  "size" : 48,
+  "stackId" : "stk_0003",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454134806,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.Object",
+  "class" : "org.h2.command.query.Optimizer",
+  "thread" : "main",
+  "size" : 261496,
+  "stackId" : "stk_0004",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454134806,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "org.h2.command.query.Optimizer",
+  "thread" : "main",
+  "size" : 96,
+  "stackId" : "stk_0004",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454134809,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "[Ljava.lang.Object;",
+  "thread" : "main",
+  "size" : 261560,
+  "stackId" : "stk_0005",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454134809,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "[Ljava.lang.Object;",
+  "thread" : "main",
+  "size" : 48,
+  "stackId" : "stk_0005",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454134813,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.util.concurrent.atomic.AtomicBoolean",
   "thread" : "main",
   "size" : 261568,
-  "stackId" : "stk_0026",
+  "stackId" : "stk_0006",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1782367498542,
+  "t" : 1782454134813,
   "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.Object",
+  "class" : "java.util.concurrent.atomic.AtomicBoolean",
   "thread" : "main",
   "size" : 16,
+  "stackId" : "stk_0006",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454134816,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "[J",
+  "thread" : "main",
+  "size" : 261568,
+  "stackId" : "stk_0014",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454134816,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "[J",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0014",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454134819,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "org.h2.mvstore.tx.Transaction",
+  "thread" : "main",
+  "size" : 261520,
+  "stackId" : "stk_0015",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454134819,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "org.h2.mvstore.tx.Transaction",
+  "thread" : "main",
+  "size" : 128,
+  "stackId" : "stk_0015",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454134823,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "org.h2.index.DualIndex",
+  "thread" : "main",
+  "size" : 261528,
+  "stackId" : "stk_0016",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454134823,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "org.h2.index.DualIndex",
+  "thread" : "main",
+  "size" : 128,
+  "stackId" : "stk_0016",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454134826,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.util.concurrent.CopyOnWriteArrayList",
+  "thread" : "main",
+  "size" : 261560,
+  "stackId" : "stk_0017",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454134826,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.util.concurrent.CopyOnWriteArrayList",
+  "thread" : "main",
+  "size" : 32,
+  "stackId" : "stk_0017",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454134829,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "org.h2.command.Tokenizer",
+  "thread" : "main",
+  "size" : 261560,
+  "stackId" : "stk_0018",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454134829,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "org.h2.command.Tokenizer",
+  "thread" : "main",
+  "size" : 32,
+  "stackId" : "stk_0018",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454134832,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "eu.exeris.kernel.community.persistence.jdbc.JdbcPersistenceConnection",
+  "thread" : "main",
+  "size" : 261544,
+  "stackId" : "stk_0019",
+  "category" : "TEST_HARNESS"
+}, {
+  "t" : 1782454134832,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "eu.exeris.kernel.community.persistence.jdbc.JdbcPersistenceConnection",
+  "thread" : "main",
+  "size" : 48,
+  "stackId" : "stk_0019",
+  "category" : "TEST_HARNESS"
+}, {
+  "t" : 1782454134835,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.ThreadLocal$ThreadLocalMap$Entry",
+  "thread" : "main",
+  "size" : 261528,
+  "stackId" : "stk_0020",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454134835,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.ThreadLocal$ThreadLocalMap$Entry",
+  "thread" : "main",
+  "size" : 56,
+  "stackId" : "stk_0020",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454134838,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.util.HashMap",
+  "thread" : "main",
+  "size" : 261552,
+  "stackId" : "stk_0021",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454134838,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.util.HashMap",
+  "thread" : "main",
+  "size" : 64,
+  "stackId" : "stk_0021",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454134841,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "org.h2.jdbc.JdbcResultSet",
+  "thread" : "main",
+  "size" : 261536,
+  "stackId" : "stk_0022",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454134841,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "org.h2.jdbc.JdbcResultSet",
+  "thread" : "main",
+  "size" : 112,
+  "stackId" : "stk_0022",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454134843,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "org.h2.command.query.Select$LazyResultQueryFlat",
+  "thread" : "main",
+  "size" : 261568,
+  "stackId" : "stk_0023",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454134843,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "org.h2.command.query.Select$LazyResultQueryFlat",
+  "thread" : "main",
+  "size" : 96,
+  "stackId" : "stk_0023",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454134847,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "org.h2.command.query.Query$OffsetFetch",
+  "thread" : "main",
+  "size" : 261544,
+  "stackId" : "stk_0024",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454134847,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "org.h2.command.query.Query$OffsetFetch",
+  "thread" : "main",
+  "size" : 32,
+  "stackId" : "stk_0024",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454134849,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.util.ArrayList$Itr",
+  "thread" : "main",
+  "size" : 261568,
+  "stackId" : "stk_0025",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454134849,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.util.ArrayList$Itr",
+  "thread" : "main",
+  "size" : 32,
+  "stackId" : "stk_0025",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454134852,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "[J",
+  "thread" : "main",
+  "size" : 261552,
   "stackId" : "stk_0026",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1782367498546,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.HashMap$Node",
-  "thread" : "main",
-  "size" : 261544,
-  "stackId" : "stk_0027",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367498546,
+  "t" : 1782454134852,
   "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.util.HashMap$Node",
+  "class" : "[J",
   "thread" : "main",
-  "size" : 40,
+  "size" : 24,
+  "stackId" : "stk_0026",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454134856,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.util.LinkedHashMap",
+  "thread" : "main",
+  "size" : 261488,
   "stackId" : "stk_0027",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1782367499355,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.HashSet",
+  "t" : 1782454134856,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.util.LinkedHashMap",
   "thread" : "main",
-  "size" : 261552,
+  "size" : 88,
+  "stackId" : "stk_0027",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454134857,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.util.HashMap",
+  "thread" : "main",
+  "size" : 261568,
   "stackId" : "stk_0028",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1782367499359,
+  "t" : 1782454134857,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.util.HashMap",
+  "thread" : "main",
+  "size" : 64,
+  "stackId" : "stk_0028",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454135644,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "org.h2.table.Plan$$Lambda.0x000000000f2ced38",
-  "thread" : "exeris-pin-Persistence-4",
-  "size" : 158120,
+  "class" : "java.lang.String",
+  "thread" : "main",
+  "size" : 261544,
   "stackId" : "stk_0029",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1782367499360,
+  "t" : 1782454135648,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 261488,
+  "class" : "[J",
+  "thread" : "exeris-pin-Persistence-8",
+  "size" : 146912,
   "stackId" : "stk_0030",
-  "category" : "LOOM_RUNTIME"
+  "category" : "JVM_NOISE"
 }, {
-  "t" : 1782367499363,
+  "t" : 1782454135648,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "org.h2.jdbc.JdbcStatement",
-  "thread" : "exeris-pin-Persistence-27",
-  "size" : 141008,
+  "class" : "java.util.BitSet",
+  "thread" : "exeris-pin-Persistence-13",
+  "size" : 151240,
   "stackId" : "stk_0031",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1782367499364,
+  "t" : 1782454135648,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.ArrayList$Itr",
-  "thread" : "exeris-pin-Persistence-39",
-  "size" : 154504,
+  "class" : "java.lang.String",
+  "thread" : "main",
+  "size" : 261552,
   "stackId" : "stk_0032",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1782367499364,
+  "t" : 1782454135649,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread$VThreadContinuation$1",
-  "thread" : "main",
-  "size" : 261544,
+  "class" : "org.h2.index.DualIndex",
+  "thread" : "exeris-pin-Persistence-39",
+  "size" : 96936,
   "stackId" : "stk_0033",
-  "category" : "LOOM_RUNTIME"
+  "category" : "JVM_NOISE"
 }, {
-  "t" : 1782367499366,
+  "t" : 1782454135650,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "[B",
-  "thread" : "main",
-  "size" : 261544,
+  "class" : "[Ljava.lang.ThreadLocal$ThreadLocalMap$Entry;",
+  "thread" : "exeris-pin-Persistence-45",
+  "size" : 146856,
   "stackId" : "stk_0034",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1782367499368,
+  "t" : 1782454135650,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "[J",
-  "thread" : "exeris-pin-Persistence-84",
-  "size" : 158192,
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 261480,
   "stackId" : "stk_0035",
-  "category" : "JVM_NOISE"
+  "category" : "LOOM_RUNTIME"
 }, {
-  "t" : 1782367499368,
+  "t" : 1782454135651,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "org.h2.command.query.Select",
-  "thread" : "exeris-pin-Persistence-79",
-  "size" : 157352,
+  "class" : "java.util.HashSet",
+  "thread" : "exeris-pin-Persistence-56",
+  "size" : 97136,
   "stackId" : "stk_0036",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1782367499369,
+  "t" : 1782454135651,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.ArrayList$Itr",
-  "thread" : "exeris-pin-Persistence-116",
-  "size" : 157752,
+  "class" : "java.util.concurrent.ConcurrentHashMap$Node",
+  "thread" : "main",
+  "size" : 261568,
   "stackId" : "stk_0037",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1782367499370,
+  "t" : 1782454135653,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "jdk.internal.vm.StackChunk",
-  "thread" : "exeris-pin-Persistence-140",
-  "size" : 155416,
+  "class" : "org.h2.index.IndexCursor",
+  "thread" : "exeris-pin-Persistence-89",
+  "size" : 146664,
   "stackId" : "stk_0038",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1782367499370,
+  "t" : 1782454135653,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "jdk.internal.vm.StackChunk",
-  "thread" : "exeris-pin-Persistence-171",
-  "size" : 160456,
-  "stackId" : "stk_0038",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367499371,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "jdk.internal.vm.StackChunk",
-  "thread" : "exeris-pin-Persistence-201",
-  "size" : 156936,
-  "stackId" : "stk_0038",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367499371,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "jdk.internal.vm.StackChunk",
-  "thread" : "exeris-pin-Persistence-204",
-  "size" : 160952,
-  "stackId" : "stk_0038",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367499372,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "jdk.internal.vm.StackChunk",
-  "thread" : "exeris-pin-Persistence-249",
-  "size" : 162192,
-  "stackId" : "stk_0038",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367499373,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "jdk.internal.vm.StackChunk",
-  "thread" : "exeris-pin-Persistence-282",
-  "size" : 160704,
-  "stackId" : "stk_0038",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367499373,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "jdk.internal.vm.StackChunk",
-  "thread" : "exeris-pin-Persistence-252",
-  "size" : 162192,
-  "stackId" : "stk_0038",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367499375,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "jdk.internal.vm.StackChunk",
-  "thread" : "exeris-pin-Persistence-316",
-  "size" : 160704,
-  "stackId" : "stk_0038",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367499375,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "jdk.internal.vm.StackChunk",
-  "thread" : "exeris-pin-Persistence-309",
-  "size" : 153840,
-  "stackId" : "stk_0038",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367499375,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.ArrayList",
-  "thread" : "exeris-pin-Persistence-142",
-  "size" : 28584,
+  "class" : "com.zaxxer.hikari.pool.HikariProxyStatement",
+  "thread" : "exeris-pin-Persistence-79",
+  "size" : 151000,
   "stackId" : "stk_0039",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1782367499378,
+  "t" : 1782454135655,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.ArrayList$Itr",
-  "thread" : "exeris-pin-Persistence-379",
-  "size" : 162600,
+  "class" : "org.h2.expression.ExpressionVisitor",
+  "thread" : "exeris-pin-Persistence-123",
+  "size" : 146952,
   "stackId" : "stk_0040",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1782367499378,
+  "t" : 1782454135655,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "jdk.internal.vm.StackChunk",
-  "thread" : "exeris-pin-Persistence-380",
-  "size" : 155680,
-  "stackId" : "stk_0038",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367499381,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "org.h2.jdbc.JdbcStatement",
-  "thread" : "exeris-pin-Persistence-123",
-  "size" : 158048,
-  "stackId" : "stk_0031",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367499384,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "com.zaxxer.hikari.pool.HikariProxyConnection",
   "thread" : "exeris-pin-Persistence-131",
-  "size" : 158160,
+  "size" : 153776,
   "stackId" : "stk_0041",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1782367499386,
+  "t" : 1782454135656,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.BitSet",
-  "thread" : "exeris-pin-Persistence-134",
-  "size" : 154448,
+  "class" : "org.h2.index.IndexCursor",
+  "thread" : "exeris-pin-Persistence-155",
+  "size" : 151544,
+  "stackId" : "stk_0038",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454135658,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "org.h2.mvstore.tx.Transaction",
+  "thread" : "exeris-pin-Persistence-124",
+  "size" : 146656,
   "stackId" : "stk_0042",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1782367499387,
+  "t" : 1782454135658,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "org.h2.jdbc.JdbcResultSetMetaData",
-  "thread" : "exeris-pin-Persistence-266",
-  "size" : 158160,
+  "class" : "[Ljava.lang.Object;",
+  "thread" : "exeris-pin-Persistence-68",
+  "size" : 155608,
   "stackId" : "stk_0043",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1782367499388,
+  "t" : 1782454135660,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "[Lorg.h2.table.IndexColumn;",
-  "thread" : "exeris-pin-Persistence-280",
-  "size" : 154456,
+  "class" : "jdk.internal.vm.StackChunk",
+  "thread" : "exeris-pin-Persistence-172",
+  "size" : 96792,
+  "stackId" : "stk_0041",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454135660,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.util.ArrayList$Itr",
+  "thread" : "exeris-pin-Persistence-176",
+  "size" : 151080,
   "stackId" : "stk_0044",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1782367499389,
+  "t" : 1782454135661,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.ArrayList",
-  "thread" : "exeris-pin-Persistence-290",
-  "size" : 161888,
+  "class" : "[Ljava.lang.ThreadLocal$ThreadLocalMap$Entry;",
+  "thread" : "exeris-pin-Persistence-195",
+  "size" : 101672,
+  "stackId" : "stk_0034",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454135661,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "jdk.internal.vm.StackChunk",
+  "thread" : "exeris-pin-Persistence-154",
+  "size" : 145816,
+  "stackId" : "stk_0041",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454135663,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "org.h2.mvstore.db.ValueDataType",
+  "thread" : "exeris-pin-Persistence-210",
+  "size" : 151016,
   "stackId" : "stk_0045",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1782367499390,
+  "t" : 1782454135664,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "[Ljava.util.HashMap$Node;",
-  "thread" : "exeris-pin-Persistence-309",
-  "size" : 158072,
+  "class" : "java.util.HashSet",
+  "thread" : "exeris-pin-Persistence-223",
+  "size" : 146752,
   "stackId" : "stk_0046",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1782367499392,
+  "t" : 1782454135665,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.ArrayList$Itr",
-  "thread" : "exeris-pin-Persistence-220",
-  "size" : 162256,
+  "class" : "org.h2.mvstore.tx.VersionedBitSet",
+  "thread" : "exeris-pin-Persistence-267",
+  "size" : 146656,
   "stackId" : "stk_0047",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1782367499393,
+  "t" : 1782454135665,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "[Ljava.util.HashMap$Node;",
-  "thread" : "exeris-pin-Persistence-351",
-  "size" : 158128,
-  "stackId" : "stk_0046",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367499396,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.HashMap$KeySet",
-  "thread" : "exeris-pin-Persistence-381",
-  "size" : 158232,
+  "class" : "[Ljava.lang.Object;",
+  "thread" : "exeris-pin-Persistence-242",
+  "size" : 150968,
   "stackId" : "stk_0048",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1782367499398,
+  "t" : 1782454135666,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.concurrent.atomic.AtomicLong",
-  "thread" : "exeris-pin-Persistence-419",
-  "size" : 154440,
+  "class" : "org.h2.command.Parser",
+  "thread" : "exeris-pin-Persistence-277",
+  "size" : 149392,
   "stackId" : "stk_0049",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1782367499399,
+  "t" : 1782454135666,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "org.h2.command.query.Select$LazyResultQueryFlat",
-  "thread" : "exeris-pin-Persistence-420",
-  "size" : 158096,
+  "class" : "org.h2.table.TableFilter",
+  "thread" : "exeris-pin-Persistence-299",
+  "size" : 151008,
   "stackId" : "stk_0050",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1782367499399,
+  "t" : 1782454135667,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "org.h2.expression.ExpressionVisitor",
-  "thread" : "exeris-pin-Persistence-425",
-  "size" : 15000,
+  "class" : "jdk.internal.vm.StackChunk",
+  "thread" : "exeris-pin-Persistence-303",
+  "size" : 96656,
   "stackId" : "stk_0051",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1782367499400,
+  "t" : 1782454135667,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.concurrent.CopyOnWriteArrayList$COWIterator",
-  "thread" : "exeris-pin-Persistence-453",
-  "size" : 157768,
+  "class" : "jdk.internal.vm.StackChunk",
+  "thread" : "exeris-pin-Persistence-303",
+  "size" : 99112,
+  "stackId" : "stk_0051",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454135667,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.util.ArrayList$Itr",
+  "thread" : "exeris-pin-Persistence-309",
+  "size" : 147000,
   "stackId" : "stk_0052",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1782367499401,
+  "t" : 1782454135668,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.HashMap",
-  "thread" : "exeris-pin-Persistence-466",
-  "size" : 158104,
+  "class" : "jdk.internal.vm.StackChunk",
+  "thread" : "exeris-pin-Persistence-305",
+  "size" : 97664,
+  "stackId" : "stk_0051",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454135668,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "[J",
+  "thread" : "exeris-pin-Persistence-323",
+  "size" : 146888,
   "stackId" : "stk_0053",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1782367499402,
+  "t" : 1782454135668,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "org.h2.command.Token$KeywordToken",
-  "thread" : "exeris-pin-Persistence-507",
-  "size" : 158160,
+  "class" : "[Lorg.h2.value.TypeInfo;",
+  "thread" : "exeris-pin-Persistence-325",
+  "size" : 17264,
   "stackId" : "stk_0054",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1782367499402,
+  "t" : 1782454135670,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "org.h2.mvstore.tx.Transaction",
-  "thread" : "exeris-pin-Persistence-493",
-  "size" : 157768,
+  "class" : "[J",
+  "thread" : "exeris-pin-Persistence-358",
+  "size" : 151184,
+  "stackId" : "stk_0030",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454135671,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.util.ArrayList",
+  "thread" : "exeris-pin-Persistence-373",
+  "size" : 151000,
   "stackId" : "stk_0055",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1782367499402,
+  "t" : 1782454135672,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "org.h2.jdbc.JdbcStatement",
-  "thread" : "exeris-pin-Persistence-509",
-  "size" : 157328,
-  "stackId" : "stk_0031",
+  "class" : "[Ljava.lang.ThreadLocal$ThreadLocalMap$Entry;",
+  "thread" : "exeris-pin-Persistence-380",
+  "size" : 146576,
+  "stackId" : "stk_0034",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1782367499403,
+  "t" : 1782454135672,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.HashMap$KeyIterator",
-  "thread" : "exeris-pin-Persistence-523",
-  "size" : 154456,
+  "class" : "org.h2.command.query.Select",
+  "thread" : "exeris-pin-Persistence-395",
+  "size" : 146712,
   "stackId" : "stk_0056",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1782367499404,
+  "t" : 1782454135673,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "[Ljava.lang.Object;",
-  "thread" : "exeris-pin-Persistence-568",
-  "size" : 158040,
+  "class" : "[I",
+  "thread" : "exeris-pin-Persistence-409",
+  "size" : 146992,
   "stackId" : "stk_0057",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1782367499404,
+  "t" : 1782454135674,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "org.h2.command.query.Select$LazyResultQueryFlat",
-  "thread" : "exeris-pin-Persistence-569",
-  "size" : 157424,
-  "stackId" : "stk_0050",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367499405,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "org.h2.command.query.Select",
-  "thread" : "exeris-pin-Persistence-584",
-  "size" : 154304,
-  "stackId" : "stk_0036",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367499406,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "org.h2.index.DualIndex",
-  "thread" : "exeris-pin-Persistence-614",
-  "size" : 158096,
+  "class" : "org.h2.index.IndexType",
+  "thread" : "exeris-pin-Persistence-424",
+  "size" : 146872,
   "stackId" : "stk_0058",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1782367499407,
+  "t" : 1782454135676,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.ArrayList",
-  "thread" : "exeris-pin-Persistence-640",
-  "size" : 157856,
+  "class" : "java.util.ArrayList$Itr",
+  "thread" : "exeris-pin-Persistence-447",
+  "size" : 146880,
   "stackId" : "stk_0059",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1782367499409,
+  "t" : 1782454135676,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "org.h2.command.query.Select",
-  "thread" : "exeris-pin-Persistence-677",
-  "size" : 157472,
-  "stackId" : "stk_0036",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367499409,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.HashMap$Node",
-  "thread" : "exeris-pin-Persistence-676",
-  "size" : 157472,
+  "class" : "[Ljava.util.HashMap$Node;",
+  "thread" : "exeris-pin-Persistence-459",
+  "size" : 150992,
   "stackId" : "stk_0060",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1782367499410,
+  "t" : 1782454135677,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "org.h2.result.RowFactory$DefaultRowFactory",
-  "thread" : "exeris-pin-Persistence-709",
-  "size" : 158224,
-  "stackId" : "stk_0061",
+  "class" : "jdk.internal.vm.StackChunk",
+  "thread" : "exeris-pin-Persistence-477",
+  "size" : 96520,
+  "stackId" : "stk_0041",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1782367499411,
+  "t" : 1782454135677,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.HashMap",
-  "thread" : "exeris-pin-Persistence-729",
-  "size" : 154744,
-  "stackId" : "stk_0062",
+  "class" : "jdk.internal.vm.StackChunk",
+  "thread" : "exeris-pin-Persistence-498",
+  "size" : 104832,
+  "stackId" : "stk_0041",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1782367499412,
+  "t" : 1782454135677,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "org.h2.result.RowFactory$DefaultRowFactory",
-  "thread" : "exeris-pin-Persistence-750",
-  "size" : 158136,
-  "stackId" : "stk_0063",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367499414,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.ThreadLocal$ThreadLocalMap$Entry",
-  "thread" : "exeris-pin-Persistence-784",
-  "size" : 158072,
-  "stackId" : "stk_0064",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367499414,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "org.h2.command.query.Optimizer",
-  "thread" : "exeris-pin-Persistence-774",
-  "size" : 157432,
-  "stackId" : "stk_0065",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367499415,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "org.h2.command.query.Select",
-  "thread" : "exeris-pin-Persistence-822",
-  "size" : 157360,
-  "stackId" : "stk_0036",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367499415,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "[Ljava.lang.Object;",
-  "thread" : "exeris-pin-Persistence-807",
-  "size" : 154424,
-  "stackId" : "stk_0057",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367499416,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "org.h2.table.DualTable",
-  "thread" : "exeris-pin-Persistence-846",
-  "size" : 158096,
-  "stackId" : "stk_0066",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367499416,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "org.h2.index.DualIndex",
-  "thread" : "exeris-pin-Persistence-833",
-  "size" : 25720,
-  "stackId" : "stk_0058",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367499417,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "[Ljava.lang.ThreadLocal$ThreadLocalMap$Entry;",
-  "thread" : "exeris-pin-Persistence-875",
-  "size" : 157520,
-  "stackId" : "stk_0067",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1782367499418,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "org.h2.command.query.Select$LazyResultQueryFlat",
-  "thread" : "exeris-pin-Persistence-888",
-  "size" : 157728,
+  "class" : "org.h2.table.TableFilter",
+  "thread" : "exeris-pin-Persistence-473",
+  "size" : 146800,
   "stackId" : "stk_0050",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1782367499419,
+  "t" : 1782454135678,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "org.h2.command.query.Select",
-  "thread" : "exeris-pin-Persistence-904",
-  "size" : 158216,
-  "stackId" : "stk_0036",
+  "class" : "jdk.internal.vm.StackChunk",
+  "thread" : "exeris-pin-Persistence-518",
+  "size" : 100632,
+  "stackId" : "stk_0041",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1782367499419,
+  "t" : 1782454135678,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "[Lorg.h2.table.TableFilter;",
-  "thread" : "exeris-pin-Persistence-917",
-  "size" : 154520,
+  "class" : "jdk.internal.vm.StackChunk",
+  "thread" : "exeris-pin-Persistence-538",
+  "size" : 100640,
+  "stackId" : "stk_0041",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454135678,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "jdk.internal.vm.StackChunk",
+  "thread" : "exeris-pin-Persistence-557",
+  "size" : 95608,
+  "stackId" : "stk_0041",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454135678,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "jdk.internal.vm.StackChunk",
+  "thread" : "exeris-pin-Persistence-577",
+  "size" : 100640,
+  "stackId" : "stk_0041",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454135679,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "jdk.internal.vm.StackChunk",
+  "thread" : "exeris-pin-Persistence-597",
+  "size" : 100640,
+  "stackId" : "stk_0041",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454135679,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "jdk.internal.vm.StackChunk",
+  "thread" : "exeris-pin-Persistence-617",
+  "size" : 100280,
+  "stackId" : "stk_0041",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454135679,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "jdk.internal.vm.StackChunk",
+  "thread" : "exeris-pin-Persistence-638",
+  "size" : 104160,
+  "stackId" : "stk_0041",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454135679,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.util.HashMap",
+  "thread" : "exeris-pin-Persistence-658",
+  "size" : 101304,
+  "stackId" : "stk_0061",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454135679,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "[Lcom.zaxxer.hikari.util.ConcurrentBag$IConcurrentBagEntry;",
+  "thread" : "exeris-pin-Persistence-660",
+  "size" : 17856,
+  "stackId" : "stk_0062",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454135680,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "[Lorg.h2.value.TypeInfo;",
+  "thread" : "exeris-pin-Persistence-681",
+  "size" : 101360,
+  "stackId" : "stk_0054",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454135680,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "org.h2.mvstore.tx.Transaction",
+  "thread" : "exeris-pin-Persistence-487",
+  "size" : 146608,
+  "stackId" : "stk_0042",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454135680,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "jdk.internal.vm.StackChunk",
+  "thread" : "exeris-pin-Persistence-710",
+  "size" : 161992,
+  "stackId" : "stk_0041",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454135681,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "org.h2.index.DualIndex",
+  "thread" : "exeris-pin-Persistence-502",
+  "size" : 155248,
+  "stackId" : "stk_0063",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454135682,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "[Ljava.lang.Object;",
+  "thread" : "exeris-pin-Persistence-519",
+  "size" : 146728,
+  "stackId" : "stk_0043",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454135684,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "[J",
+  "thread" : "exeris-pin-Persistence-550",
+  "size" : 97016,
+  "stackId" : "stk_0064",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454135685,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "com.zaxxer.hikari.pool.HikariProxyConnection",
+  "thread" : "exeris-pin-Persistence-567",
+  "size" : 96984,
+  "stackId" : "stk_0065",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454135685,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "[I",
+  "thread" : "exeris-pin-Persistence-574",
+  "size" : 151128,
+  "stackId" : "stk_0066",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454135686,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "org.h2.index.DualCursor",
+  "thread" : "exeris-pin-Persistence-588",
+  "size" : 97072,
+  "stackId" : "stk_0067",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782454135708,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.util.HashMap$KeySet",
+  "thread" : "main",
+  "size" : 523096,
   "stackId" : "stk_0068",
   "category" : "JVM_NOISE"
 } ]

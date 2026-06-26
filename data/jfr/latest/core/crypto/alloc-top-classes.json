@@ -1,36 +1,31 @@
 [ {
+  "class" : "java.util.HashMap",
+  "count" : 3,
+  "bytes" : 784688,
+  "category" : "JVM_NOISE"
+}, {
   "class" : "[Ljava.util.HashMap$Node;",
   "count" : 3,
-  "bytes" : 783352,
+  "bytes" : 783568,
   "category" : "JVM_NOISE"
 }, {
   "class" : "java.util.HashMap$Node",
-  "count" : 2,
-  "bytes" : 261592,
+  "count" : 1,
+  "bytes" : 261536,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "jdk.jfr.internal.SettingsManager$InternalSetting",
-  "count" : 1,
-  "bytes" : 261560,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "java.util.LinkedHashMap$Entry",
-  "count" : 1,
-  "bytes" : 261520,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "eu.exeris.kernel.tck.contract.AbstractSubsystemCarrierPinningTck$$Lambda.0x0000000017356b38",
-  "count" : 1,
-  "bytes" : 261544,
-  "category" : "TEST_HARNESS"
-}, {
-  "class" : "java.lang.Object",
+  "class" : "java.lang.String",
   "count" : 1,
   "bytes" : 261568,
   "category" : "JVM_NOISE"
 }, {
+  "class" : "java.lang.VirtualThread$VThreadContinuation",
+  "count" : 1,
+  "bytes" : 261512,
+  "category" : "LOOM_RUNTIME"
+}, {
   "class" : "[B",
   "count" : 1,
-  "bytes" : 261560,
+  "bytes" : 261544,
   "category" : "JVM_NOISE"
 } ]
