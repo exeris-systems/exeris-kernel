@@ -20,7 +20,7 @@ The answer is binary in shape: do we ship a **dedicated `KernelDiagnostics` SPI 
 
 Two concrete forcing functions land this week:
 
-1. **`exeris-ai-bridge` 0.4.0 is blocked.** [ADR-025](../../../exeris-docs/adr/ADR-025-ai-agent-bridge.md) was accepted 2026-05-15. The bridge ships three tool families — `docs:*`, `lsp:*`, `kernel:*`. The `kernel:*` family (`list_providers`, `list_capabilities`, `get_bootstrap_dag`, `describe_subsystem`) explicitly defers to a "`KernelDiagnostics` SPI RFC" called out in `ROADMAP.md` §0.4.0. Until that RFC lands, every `kernel:*` handler in the bridge returns `isError: true` with the message *"Not implemented yet — blocked on KernelDiagnostics SPI RFC."*
+1. **`exeris-ai-bridge` 0.4.0 is blocked.** [ADR-025](https://github.com/exeris-systems/exeris-ai-bridge/blob/main/docs/adr/ADR-025-ai-agent-bridge.md) was accepted 2026-05-15. The bridge ships three tool families — `docs:*`, `lsp:*`, `kernel:*`. The `kernel:*` family (`list_providers`, `list_capabilities`, `get_bootstrap_dag`, `describe_subsystem`) explicitly defers to a "`KernelDiagnostics` SPI RFC" called out in `ROADMAP.md` §0.4.0. Until that RFC lands, every `kernel:*` handler in the bridge returns `isError: true` with the message *"Not implemented yet — blocked on KernelDiagnostics SPI RFC."*
 2. **Existing diagnostic points are usable but fragmented.** Today the kernel already exposes:
    - `SubsystemOrchestrator.subsystem(String name)` and `SubsystemOrchestrator.subsystems()` — public List/Optional returns of the live bootstrap DAG nodes.
    - `MemoryStats` value record (returned by `MemoryAllocator#stats()`).
