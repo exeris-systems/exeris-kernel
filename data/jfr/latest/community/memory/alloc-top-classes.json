@@ -1,71 +1,61 @@
 [ {
   "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
-  "count" : 47,
-  "bytes" : 332720,
+  "count" : 49,
+  "bytes" : 875824,
   "category" : "TEST_HARNESS"
-}, {
-  "class" : "eu.exeris.kernel.community.memory.CommunityReleaseAction",
-  "count" : 7,
-  "bytes" : 786904,
-  "category" : "TEST_HARNESS"
-}, {
-  "class" : "[B",
-  "count" : 5,
-  "bytes" : 731424,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "[Ljava.util.HashMap$Node;",
-  "count" : 4,
-  "bytes" : 366904,
-  "category" : "JVM_NOISE"
 }, {
   "class" : "java.util.concurrent.ConcurrentLinkedQueue$Node",
-  "count" : 4,
-  "bytes" : 523176,
+  "count" : 8,
+  "bytes" : 788888,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "java.lang.VirtualThread$$Lambda.0x00000000162470f0",
+  "class" : "eu.exeris.kernel.community.memory.CommunityReleaseAction",
+  "count" : 6,
+  "bytes" : 527328,
+  "category" : "TEST_HARNESS"
+}, {
+  "class" : "java.lang.String",
+  "count" : 6,
+  "bytes" : 903496,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "java.util.LinkedHashMap$Entry",
   "count" : 4,
-  "bytes" : 207616,
-  "category" : "LOOM_RUNTIME"
+  "bytes" : 564296,
+  "category" : "JVM_NOISE"
 }, {
   "class" : "java.lang.VirtualThread",
   "count" : 4,
-  "bytes" : 207424,
+  "bytes" : 163680,
   "category" : "LOOM_RUNTIME"
 }, {
-  "class" : "java.util.HashMap",
+  "class" : "java.lang.ThreadBuilders$VirtualThreadBuilder",
+  "count" : 4,
+  "bytes" : 165056,
+  "category" : "LOOM_RUNTIME"
+}, {
+  "class" : "[Ljava.util.HashMap$Node;",
   "count" : 3,
-  "bytes" : 523152,
+  "bytes" : 319656,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "java.util.HashSet",
+  "count" : 2,
+  "bytes" : 86264,
   "category" : "JVM_NOISE"
 }, {
   "class" : "java.util.LinkedHashMap",
-  "count" : 3,
-  "bytes" : 155592,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "[Ljava.lang.Object;",
-  "count" : 2,
-  "bytes" : 261648,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "eu.exeris.kernel.community.memory.CommunityArenaShardPool$Allocation",
-  "count" : 2,
-  "bytes" : 261592,
-  "category" : "TEST_HARNESS"
-}, {
-  "class" : "java.util.LinkedHashMap$Entry",
   "count" : 1,
-  "bytes" : 51912,
+  "bytes" : 41024,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "java.util.HashMap$KeyIterator",
+  "class" : "[B",
   "count" : 1,
-  "bytes" : 51912,
+  "bytes" : 41112,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "java.util.ArrayList$Itr",
+  "class" : "java.util.HashMap$KeySet",
   "count" : 1,
-  "bytes" : 51888,
+  "bytes" : 41056,
   "category" : "JVM_NOISE"
 } ]
