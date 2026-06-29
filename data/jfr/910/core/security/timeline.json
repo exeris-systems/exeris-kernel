@@ -1,0 +1,57 @@
+[ {
+  "t" : 1782715374599,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "[Ljava.util.HashMap$Node;",
+  "thread" : "main",
+  "size" : 261520,
+  "stackId" : "stk_0001",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782715374599,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.util.HashMap$KeyIterator",
+  "thread" : "main",
+  "size" : 261544,
+  "stackId" : "stk_0002",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782715374602,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "eu.exeris.kernel.core.security.jfr.SecurityJfrEvents$StorageContextDerivedEvent",
+  "thread" : "main",
+  "size" : 261552,
+  "stackId" : "stk_0003",
+  "category" : "TEST_HARNESS"
+}, {
+  "t" : 1782715374602,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "eu.exeris.kernel.core.security.jfr.SecurityJfrEvents$StorageContextDerivedEvent",
+  "thread" : "main",
+  "size" : 40,
+  "stackId" : "stk_0003",
+  "category" : "TEST_HARNESS"
+}, {
+  "t" : 1782715374606,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.util.HashMap$Node",
+  "thread" : "main",
+  "size" : 261560,
+  "stackId" : "stk_0004",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782715374606,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.util.HashMap$Node",
+  "thread" : "main",
+  "size" : 40,
+  "stackId" : "stk_0004",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1782715374607,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.util.HashMap$KeyIterator",
+  "thread" : "main",
+  "size" : 261536,
+  "stackId" : "stk_0005",
+  "category" : "JVM_NOISE"
+} ]
