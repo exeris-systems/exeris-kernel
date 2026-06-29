@@ -79,7 +79,7 @@ Implemented components:
 - **HPACK / Huffman:** `hpack.*`, `hpack.huffman.*`
 - **HTTP/2 framing:** `http2.*`
 - **HTTP/1.1 codec:** `http1.*`
-- **Routing:** `routing/` — `HttpRouter` — transport-agnostic `HttpHandler` implementation with exact/prefix routing and HEAD→GET fallback (RFC 9110 §9.3.2). `HttpRouterRegisteredEvent` (JFR).
+- **Routing:** `routing/` — `HttpRouter` — transport-agnostic `HttpHandler` implementation with exact, path-template (`{name}` placeholder), and prefix routing plus HEAD→GET fallback (RFC 9110 §9.3.2). Resolution precedence is exact → template → prefix; a template hit captures each placeholder and exposes it to the handler via `HttpExchange.pathParams()` (the router wraps the exchange in a `PathParamHttpExchange` decorator — Core never depends on a concrete transport-side exchange). `HttpRouterRegisteredEvent` (JFR) records exact/template/prefix route counts.
 
 Current placement reality:
 

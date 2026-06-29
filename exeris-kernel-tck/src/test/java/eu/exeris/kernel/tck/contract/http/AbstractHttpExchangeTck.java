@@ -72,6 +72,15 @@ public abstract class AbstractHttpExchangeTck {
             assertThat(exchange.request().method()).isEqualTo(HttpMethod.GET);
             assertThat(exchange.request().path()).isEqualTo("/");
         }
+
+        @Test
+        @DisplayName("pathParams() defaults to an empty map for a non-templated exchange")
+        void pathParamsEmptyByDefault() {
+            HttpExchange exchange = createExchange(minimalRequest());
+            assertThat(exchange.pathParams())
+                    .as("an exchange not dispatched through a path-template route exposes no path params")
+                    .isEmpty();
+        }
     }
 
     @Nested
