@@ -1,9 +1,9 @@
-# ADR (DRAFT): Event-Payload Codec SPI — a pluggable serialization seam for domain-event payloads
+# ADR-046: Event-Payload Codec SPI — a pluggable serialization seam for domain-event payloads
 
 | Attribute       | Value                                                                                                    |
 |:----------------|:---------------------------------------------------------------------------------------------------------|
-| **ADR #**       | **046** (reserved 2026-06-29 in `exeris-docs/adr-index.md`). File renames to `ADR-046-event-payload-codec-spi.md` on acceptance. |
-| **Status**      | **DRAFT — number reserved; targeted v0.10** (alongside the Events `topic` item). Kernel SPI + Community driver + TCK landing this PR; the `exeris-tooling` generator + bootstrap slot-binding follow lockstep. |
+| **ADR #**       | **046** (reserved 2026-06-29 in `exeris-docs/adr-index.md`). |
+| **Status**      | **DRAFT — number reserved; targeted v0.10** (alongside the Events `topic` item). Kernel SPI + Community driver + TCK landing this PR; the `exeris-tooling` generator + bootstrap slot-binding follow lockstep. Flips to **Accepted** once the lockstep consumer lands. |
 | **Deciders**    | Arkadiusz Przychocki                                                                                      |
 | **Date**        | 2026-06-28                                                                                                |
 | **Scope**       | kernel/events (per-repo; lockstep cross-repo coordination with `exeris-tooling` for the generated publisher) |
