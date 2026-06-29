@@ -15,7 +15,9 @@ import eu.exeris.kernel.core.security.SecurityInterceptor;
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.http.HttpConfig;
 import eu.exeris.kernel.spi.http.HttpHandler;
+import eu.exeris.kernel.spi.http.HttpKernelProviders;
 import eu.exeris.kernel.spi.http.HttpRequest;
+import eu.exeris.kernel.spi.http.HttpRequestBodyDecoderRegistry;
 import eu.exeris.kernel.spi.http.HttpResponseBodyEncoderRegistry;
 import eu.exeris.kernel.spi.http.HttpStreamHandler;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
@@ -87,10 +89,20 @@ public final class CommunityHttpRequestProcessor {
                 ? KernelProviders.PERSISTENCE_ENGINE.get()
                 : null;
 
+        // ADR-036 / W7 boot-path fix: the request-body decoder registry is bound into the kernel
+        // carrier scope by CommunityHttpSubsystem.providerBindings(), but the native transport runs
+        // per-request handlers on reactor threads that are not structured forks of that scope, so a
+        // handler-time HttpKernelProviders.httpRequestBodyDecoderRegistry() read would see an unbound
+        // slot. We capture it here — this constructor runs inside the carrier scope at engine start —
+        // and re-establish it per request at the dispatch seam (same channel as REQUEST_SESSION).
+        HttpRequestBodyDecoderRegistry requestBodyDecoderRegistry =
+                HttpKernelProviders.httpRequestBodyDecoderRegistry().orElse(null);
+
         this.requestDispatcher = new CommunityHttpRequestDispatcher(
                 this.allocator,
                 securityInterceptor,
-                persistenceEngine);
+                persistenceEngine,
+                requestBodyDecoderRegistry);
         this.streamDispatcher = new CommunityHttpStreamDispatcher(this.allocator);
         this.http2SessionProcessor = new CommunityHttp2SessionProcessor(
                 this.allocator,

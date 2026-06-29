@@ -14,8 +14,10 @@ import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.http.HttpExchange;
 import eu.exeris.kernel.spi.http.HttpHandler;
 import eu.exeris.kernel.spi.http.HttpHeader;
+import eu.exeris.kernel.spi.http.HttpKernelProviders;
 import eu.exeris.kernel.spi.http.HttpMethod;
 import eu.exeris.kernel.spi.http.HttpRequest;
+import eu.exeris.kernel.spi.http.HttpRequestBodyDecoderRegistry;
 import eu.exeris.kernel.spi.http.HttpResponse;
 import eu.exeris.kernel.spi.http.HttpStatus;
 import eu.exeris.kernel.spi.http.HttpVersion;
@@ -53,13 +55,16 @@ final class CommunityHttpRequestDispatcher {
     private final MemoryAllocator allocator;
     private final SecurityInterceptor securityInterceptor;
     private final PersistenceEngine persistenceEngine;
+    private final HttpRequestBodyDecoderRegistry requestBodyDecoderRegistry;
 
     /* default */ CommunityHttpRequestDispatcher(MemoryAllocator allocator,
                                    SecurityInterceptor securityInterceptor,
-                                   PersistenceEngine persistenceEngine) {
+                                   PersistenceEngine persistenceEngine,
+                                   HttpRequestBodyDecoderRegistry requestBodyDecoderRegistry) {
         this.allocator = Objects.requireNonNull(allocator, "allocator must not be null");
         this.securityInterceptor = securityInterceptor;
         this.persistenceEngine = persistenceEngine;
+        this.requestBodyDecoderRegistry = requestBodyDecoderRegistry;
     }
 
     /* default */ void dispatch(HttpRequest request, HttpExchange exchange, HttpHandler handler) {
@@ -133,7 +138,17 @@ final class CommunityHttpRequestDispatcher {
                 TransactionIsolation.READ_COMMITTED,
                 readOnly);
 
-        ScopedValue.where(CommunityHttpRequestProcessor.REQUEST_SESSION, box).run(() -> {
+        // Re-establish request-scoped bindings on the transport reactor thread (which does not inherit
+        // the kernel carrier scope): the per-request persistence session and — for write-over-HTTP —
+        // the request-body decoder registry the generated handler resolves via
+        // HttpKernelProviders.httpRequestBodyDecoderRegistry() (ADR-036 / W7 boot-path fix).
+        ScopedValue.Carrier carrier =
+                ScopedValue.where(CommunityHttpRequestProcessor.REQUEST_SESSION, box);
+        if (requestBodyDecoderRegistry != null) {
+            carrier = carrier.where(
+                    HttpKernelProviders.HTTP_REQUEST_BODY_DECODER_REGISTRY, requestBodyDecoderRegistry);
+        }
+        carrier.run(() -> {
             try {
                 handler.handle(exchange);
             } catch (RuntimeException _) {

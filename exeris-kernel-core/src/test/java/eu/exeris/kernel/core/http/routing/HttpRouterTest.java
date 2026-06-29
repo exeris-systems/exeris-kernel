@@ -18,9 +18,12 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -122,6 +125,169 @@ class HttpRouterTest {
             CapturingExchange exchange = CapturingExchange.get("/api/special");
             router.handle(exchange);
             assertEquals(HttpStatus.CREATED, exchange.status());
+        }
+    }
+
+    @Nested
+    class PathParameterMatch {
+
+        @Test
+        void templateRouteResolvesAndCapturesParam() {
+            AtomicReference<Map<String, String>> captured = new AtomicReference<>();
+            HttpRouter router = HttpRouter.builder()
+                    .route(HttpMethod.GET, "/x/{id}", e -> {
+                        captured.set(e.pathParams());
+                        e.respond(HttpStatus.OK);
+                    })
+                    .build();
+            CapturingExchange exchange = CapturingExchange.get("/x/42");
+            router.handle(exchange);
+            assertEquals(HttpStatus.OK, exchange.status());
+            assertEquals("42", captured.get().get("id"));
+        }
+
+        @Test
+        void collectionRouteAndByIdTemplateCoexist() {
+            HttpRouter router = HttpRouter.builder()
+                    .route(HttpMethod.GET, "/x", e -> e.respond(HttpStatus.OK))
+                    .route(HttpMethod.GET, "/x/{id}", e -> e.respond(HttpStatus.ACCEPTED))
+                    .build();
+
+            CapturingExchange collection = CapturingExchange.get("/x");
+            router.handle(collection);
+            assertEquals(HttpStatus.OK, collection.status());
+
+            CapturingExchange byId = CapturingExchange.get("/x/7");
+            router.handle(byId);
+            assertEquals(HttpStatus.ACCEPTED, byId.status());
+        }
+
+        @Test
+        void exactRouteTakesPrecedenceOverTemplate() {
+            HttpRouter router = HttpRouter.builder()
+                    .route(HttpMethod.GET, "/x/latest", e -> e.respond(HttpStatus.CREATED))
+                    .route(HttpMethod.GET, "/x/{id}", e -> e.respond(HttpStatus.OK))
+                    .build();
+            CapturingExchange exchange = CapturingExchange.get("/x/latest");
+            router.handle(exchange);
+            assertEquals(HttpStatus.CREATED, exchange.status());
+        }
+
+        @Test
+        void templateDoesNotMatchDifferentSegmentCount() {
+            HttpRouter router = HttpRouter.builder()
+                    .route(HttpMethod.GET, "/x/{id}", e -> e.respond(HttpStatus.OK))
+                    .build();
+            // One segment too few — the collection path is not a by-id match.
+            CapturingExchange exchange = CapturingExchange.get("/x");
+            router.handle(exchange);
+            assertEquals(HttpStatus.NOT_FOUND, exchange.status());
+        }
+
+        @Test
+        void emptyParameterSegmentDoesNotMatch() {
+            HttpRouter router = HttpRouter.builder()
+                    .route(HttpMethod.GET, "/x/{id}", e -> e.respond(HttpStatus.OK))
+                    .build();
+            // Trailing slash leaves an empty {id} segment — must not capture an empty id.
+            CapturingExchange exchange = CapturingExchange.get("/x/");
+            router.handle(exchange);
+            assertEquals(HttpStatus.NOT_FOUND, exchange.status());
+        }
+
+        @Test
+        void multipleParametersAreCaptured() {
+            AtomicReference<Map<String, String>> captured = new AtomicReference<>();
+            HttpRouter router = HttpRouter.builder()
+                    .route(HttpMethod.GET, "/a/{x}/b/{y}", e -> {
+                        captured.set(e.pathParams());
+                        e.respond(HttpStatus.OK);
+                    })
+                    .build();
+            CapturingExchange exchange = CapturingExchange.get("/a/one/b/two");
+            router.handle(exchange);
+            assertEquals(HttpStatus.OK, exchange.status());
+            assertEquals("one", captured.get().get("x"));
+            assertEquals("two", captured.get().get("y"));
+        }
+
+        @Test
+        void queryStringIsStrippedBeforeTemplateMatching() {
+            AtomicReference<Map<String, String>> captured = new AtomicReference<>();
+            HttpRouter router = HttpRouter.builder()
+                    .route(HttpMethod.GET, "/x/{id}", e -> {
+                        captured.set(e.pathParams());
+                        e.respond(HttpStatus.OK);
+                    })
+                    .build();
+            CapturingExchange exchange = CapturingExchange.get("/x/42?expand=true");
+            router.handle(exchange);
+            assertEquals(HttpStatus.OK, exchange.status());
+            assertEquals("42", captured.get().get("id"));
+        }
+
+        @Test
+        void byIdTemplateResolvesAcrossWriteMethods() {
+            HttpRouter router = HttpRouter.builder()
+                    .route(e -> e.respond(HttpStatus.OK), "/x/{id}",
+                            HttpMethod.GET, HttpMethod.PUT, HttpMethod.DELETE)
+                    .build();
+            for (HttpMethod method : List.of(HttpMethod.GET, HttpMethod.PUT, HttpMethod.DELETE)) {
+                CapturingExchange exchange = CapturingExchange.of(method, "/x/42");
+                router.handle(exchange);
+                assertEquals(HttpStatus.OK, exchange.status(), "by-id route must resolve for " + method);
+            }
+        }
+
+        @Test
+        void headFallsBackToTemplateGetHandler() {
+            AtomicReference<Map<String, String>> captured = new AtomicReference<>();
+            HttpRouter router = HttpRouter.builder()
+                    .route(HttpMethod.GET, "/x/{id}", e -> {
+                        captured.set(e.pathParams());
+                        e.respond(HttpStatus.OK);
+                    })
+                    .build();
+            CapturingExchange exchange = CapturingExchange.of(HttpMethod.HEAD, "/x/42");
+            router.handle(exchange);
+            assertEquals(HttpStatus.OK, exchange.status());
+            assertEquals("42", captured.get().get("id"));
+        }
+
+        @Test
+        void nonTemplateRouteExposesEmptyPathParams() {
+            AtomicReference<Map<String, String>> captured = new AtomicReference<>();
+            HttpRouter router = HttpRouter.builder()
+                    .route(HttpMethod.GET, "/health", e -> {
+                        captured.set(e.pathParams());
+                        e.respond(HttpStatus.OK);
+                    })
+                    .build();
+            CapturingExchange exchange = CapturingExchange.get("/health");
+            router.handle(exchange);
+            assertEquals(HttpStatus.OK, exchange.status());
+            assertTrue(captured.get().isEmpty());
+        }
+
+        @Test
+        void prefixRouteUnregressedWhenTemplatePresent() {
+            HttpRouter router = HttpRouter.builder()
+                    .route(HttpMethod.GET, "/x/{id}", e -> e.respond(HttpStatus.ACCEPTED))
+                    .prefixRoute(HttpMethod.GET, "/static", e -> e.respond(HttpStatus.OK))
+                    .build();
+            CapturingExchange exchange = CapturingExchange.get("/static/css/app.css");
+            router.handle(exchange);
+            assertEquals(HttpStatus.OK, exchange.status());
+        }
+
+        @Test
+        void streamRouteResolutionUnregressedWhenTemplatePresent() {
+            HttpRouter router = HttpRouter.builder()
+                    .route(HttpMethod.GET, "/x/{id}", e -> e.respond(HttpStatus.OK))
+                    .streamRoute(HttpMethod.GET, "/events", exchange -> { })
+                    .build();
+            assertTrue(router.isStreamRoute(HttpMethod.GET, "/events"));
+            assertNull(router.resolveStream(HttpMethod.GET, "/x/42"));
         }
     }
 
