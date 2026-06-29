@@ -16,6 +16,7 @@ import eu.exeris.kernel.spi.events.EventEngine;
 import eu.exeris.kernel.spi.events.EventEngineConfig;
 import eu.exeris.kernel.spi.events.EventProvider;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.function.UnaryOperator;
 
@@ -70,10 +71,18 @@ final class CommunityEventsSubsystem extends AbstractCommunitySubsystem {
         if (eventProvider == null || eventEngine == null) {
             return defaultProviderBindings();
         }
-        return CommunityCarrierBindings.operator(
-                CommunityCarrierBindings.binding(KernelProviders.EVENT_PROVIDER, eventProvider),
-                CommunityCarrierBindings.binding(KernelProviders.EVENT_ENGINE, eventEngine)
-        );
+        List<CommunityCarrierBindings.Binding<?>> bindings = new ArrayList<>();
+        bindings.add(CommunityCarrierBindings.binding(KernelProviders.EVENT_PROVIDER, eventProvider));
+        bindings.add(CommunityCarrierBindings.binding(KernelProviders.EVENT_ENGINE, eventEngine));
+        // ADR-046: bind the event-payload codec registry into the kernel scope so the producer
+        // (the generated *EventPublisher) can resolve a codec via
+        // KernelProviders.eventPayloadCodecRegistry() without DI — the event-side mirror of how
+        // CommunityHttpSubsystem binds HTTP_REQUEST_BODY_DECODER_REGISTRY (ADR-036). Optional and
+        // ifPresent-guarded: a provider shipping no codec leaves the slot unbound (publisher falls
+        // back to EventPayload.empty()).
+        eventProvider.eventPayloadCodecRegistry().ifPresent(registry -> bindings.add(
+                CommunityCarrierBindings.binding(KernelProviders.EVENT_PAYLOAD_CODEC_REGISTRY, registry)));
+        return CommunityCarrierBindings.operator(bindings);
     }
 
     private static EventEngineConfig buildConfig(ConfigProvider configProvider) {

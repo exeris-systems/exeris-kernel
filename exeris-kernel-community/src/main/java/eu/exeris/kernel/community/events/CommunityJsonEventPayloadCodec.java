@@ -8,6 +8,7 @@
  */
 package eu.exeris.kernel.community.events;
 
+import eu.exeris.kernel.community.events.jfr.CommunityEventPayloadEncodeFailedEvent;
 import eu.exeris.kernel.spi.events.EventPayload;
 import eu.exeris.kernel.spi.events.codec.EventCodecContext;
 import eu.exeris.kernel.spi.events.codec.EventPayloadCodec;
@@ -64,6 +65,13 @@ public final class CommunityJsonEventPayloadCodec implements EventPayloadCodec {
         try {
             bytes = mapper.writeValueAsBytes(payload);
         } catch (JacksonException ex) {
+            // Secret-safe JFR post-mortem (ADR-046): payload type, content-type, event-type,
+            // and the failing exception class — never payload bytes or field values.
+            CommunityEventPayloadEncodeFailedEvent.emit(
+                    payload.getClass().getName(),
+                    ctx.contentType(),
+                    ctx.eventTypeName(),
+                    ex);
             throw new IllegalStateException(
                     "JSON serialization failed for payload type " + payload.getClass().getName(), ex);
         }

@@ -21,7 +21,6 @@ import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.nio.charset.StandardCharsets;
-import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -97,8 +96,11 @@ class CommunityJsonEventPayloadCodecTckTest extends AbstractEventPayloadCodecTck
         @DisplayName("registry is readable via the slot inside scope, empty outside (generated-publisher read path)")
         @SuppressWarnings("unchecked") // confined Map cast in the assertion; the SPI is generics-free by design
         void slotBoundDuringPublish() {
-            EventPayloadCodecRegistry registry =
-                    EventPayloadCodecRegistry.of(List.of(new CommunityJsonEventPayloadCodec(MAPPER)));
+            // Source the registry exactly as CommunityEventsSubsystem.providerBindings() does —
+            // from the provider — so this exercises the provider→slot wiring end to end.
+            EventPayloadCodecRegistry registry = new CommunityEventProvider()
+                    .eventPayloadCodecRegistry()
+                    .orElseThrow();
 
             assertThat(KernelProviders.eventPayloadCodecRegistry())
                     .as("slot must be empty outside the kernel scope")

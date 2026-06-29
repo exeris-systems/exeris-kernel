@@ -3,7 +3,7 @@
 | Attribute       | Value                                                                                                    |
 |:----------------|:---------------------------------------------------------------------------------------------------------|
 | **ADR #**       | **046** (reserved 2026-06-29 in `exeris-docs/adr-index.md`). |
-| **Status**      | **Accepted** — kernel SPI + Community driver + TCK implemented on the v0.10 train (PR #222, `development/0.10.0`); reaches `main` with the 0.10 release. The `exeris-tooling` generator + the bootstrap slot-binding land lockstep (the slot ships defined-but-unbound here, the `EVENT_STREAM_*` precedent). |
+| **Status**      | **Accepted** — kernel SPI + Community driver + TCK on the v0.10 train (PR #222); **bootstrap slot-binding + encode-failure JFR** landed in PR-A.1. Reaches `main` with the 0.10 release. Remaining lockstep: the `exeris-tooling` `KernelEventGenerator` publisher rewrite (PR-B) + the codec-resolution JFR (emitted by the publisher, its runtime home). |
 | **Deciders**    | Arkadiusz Przychocki                                                                                      |
 | **Date**        | 2026-06-29 (drafted 2026-06-28; accepted on implementation)                                              |
 | **Scope**       | kernel/events (per-repo; lockstep cross-repo coordination with `exeris-tooling` for the generated publisher) |
@@ -108,13 +108,14 @@ public static Optional<EventPayloadCodecRegistry> eventPayloadCodecRegistry() {
 }
 ```
 
-The slot ships **defined-but-unbound** in this kernel PR (its accessor + the Community driver + TCK land here),
-then is **bound by the bootstrapper** before `EventEngine.start()` in the lockstep step that brings the
-consumer online — exactly the `EVENT_STREAM_READER` / `EVENT_STREAM_APPENDER` precedent (slots wired for
-hand-off in 0.7.0, bound when a driver/consumer lands). **ScopedValue, never ThreadLocal.** The slot is
-optional and additive — a kernel without a codec binding still bootstraps events (the publisher falls back to
-`EventPayload.empty()`, i.e. today's behaviour) — and once bound is inherited by every virtual thread in the
-kernel scope, including the publish-path threads where the generated publisher runs.
+The slot is **bound by `CommunityEventsSubsystem.providerBindings()`** before `EventEngine.start()`, sourced
+from `EventProvider.eventPayloadCodecRegistry()` (the event-side mirror of how `CommunityHttpSubsystem` binds
+`HTTP_REQUEST_BODY_DECODER_REGISTRY` from `HttpProvider.requestBodyDecoderRegistry()`, ADR-036). **ScopedValue,
+never ThreadLocal.** The slot is optional and additive — `ifPresent`-guarded, so a provider shipping no codec
+leaves it unbound and the publisher falls back to `EventPayload.empty()` (today's behaviour) — and once bound
+is inherited by every virtual thread in the kernel scope, including the publish-path threads where the
+generated publisher runs. (PR-A: SPI types + accessor + driver + TCK; PR-A.1: this binding + the
+`EventProvider.eventPayloadCodecRegistry()` default + Community override.)
 
 ### 3. Core / Community
 
@@ -210,13 +211,12 @@ separate, lockstep `exeris-tooling` PR gated on this ADR** (the SPI ships unused
 - **Java-26 idioms:** `ScopedValue` slot; immutable record `EventCodecContext`; no
   `ThreadLocal` / `ExecutorService` / `CompletableFuture` on the path; no off-heap copy beyond the existing
   `EventPayload` `MemorySegment` lifecycle.
-- **JFR (deferred to the lockstep PR):** a codec-resolution / encode-failure JFR event on the cold/error
-  path (secret-safe — no payload bytes), following the events-package pattern (`EventLoopFailureEvent` /
-  `CommunityEventQueueOverflowEvent` — `@Category({"Exeris","Events","Community"})`, `@StackTrace(false)`,
-  guarded by `FlightRecorder.isInitialized()` + `event.isEnabled()`). **Intentionally not in this PR:** the
-  encode path is not invoked at runtime until the bootstrap slot-binding + generated-publisher land, so the
-  JFR event ships with the consumer (its natural, observable home) rather than emitting from a codec nothing
-  yet calls in production. Tracked as a lockstep obligation in the Engineering Protocol below.
+- **JFR (encode-failure landed in PR-A.1):** `CommunityEventPayloadEncodeFailedEvent`
+  (`@Name("eu.exeris.kernel.events.CommunityEventPayloadEncodeFailed")`, `@StackTrace(false)`, `isEnabled()`
+  guard, following `CommunityEventQueueOverflowEvent`) is emitted from `CommunityJsonEventPayloadCodec.encode`'s
+  catch block — secret-safe (payload type, content-type, event-type, failure class; **never** the message or
+  payload bytes). The **codec-resolution** failure event (registry returns `null`) is emitted by the *producer*
+  (the generated publisher), so it ships with PR-B — resolution happens there, not in the kernel.
 
 ## Milestone & sequencing (decided)
 
@@ -262,14 +262,15 @@ publisher in the lockstep `exeris-tooling` PR:
 
 1. **ADR number reserved** in `exeris-docs/adr-index.md` (046), Status Accepted (register discipline —
    number before content claims). ✅
-2. **Lockstep across repos.** PR-A `exeris-kernel` (load-bearing: SPI types + `CommunityJsonEventPayloadCodec`
-   + `KernelProviders` slot/accessor + `AbstractEventPayloadCodecTck` + Community binding + this ADR + an
-   `events.md` update). PR-A.1 `exeris-kernel` bootstrap slot-binding (populate `EVENT_PAYLOAD_CODEC_REGISTRY`
-   at scope init) **+ the deferred JFR encode-failure / codec-resolution event** (its runtime home — see
-   "Consequences & obligations"). PR-B `exeris-tooling` (`KernelEventGenerator.*EventPublisher` rewrite: build
-   the redacted payload object, resolve via `KernelProviders.eventPayloadCodecRegistry()`, encode, publish —
-   carrying no concrete-codec symbol) + a `docs/adr/ADR-046.link.md` stub. PR-A alone ships the SPI unused;
-   PR-B alone references a non-existent registry.
+2. **Lockstep across repos.** PR-A `exeris-kernel` ✅ (load-bearing: SPI types + `CommunityJsonEventPayloadCodec`
+   + `KernelProviders` slot/accessor + `AbstractEventPayloadCodecTck` + Community binding + this ADR + the
+   `events.md` update). PR-A.1 `exeris-kernel` ✅ (`EventProvider.eventPayloadCodecRegistry()` default +
+   Community override; `CommunityEventsSubsystem` binds `EVENT_PAYLOAD_CODEC_REGISTRY` at scope init;
+   `CommunityEventPayloadEncodeFailedEvent` JFR + emission test). PR-B `exeris-tooling`
+   (`KernelEventGenerator.*EventPublisher` rewrite: build the redacted payload object, resolve via
+   `KernelProviders.eventPayloadCodecRegistry()`, encode, publish — carrying no concrete-codec symbol; emit the
+   codec-resolution-failure JFR) + a `docs/adr/ADR-046.link.md` stub. Until PR-B, the bound registry has no
+   in-repo consumer — it is live for any application that wires its own publisher against the slot.
 3. **TCK gate.** `AbstractEventPayloadCodecTck` bound in Community and registered in CI (not an orphan base).
 4. **Generator-output assertion.** The `exeris-tooling` e2e fixture asserts the generated publisher contains
    no `tools.jackson.*` symbol and resolves via `KernelProviders.eventPayloadCodecRegistry()` — the
