@@ -11,12 +11,24 @@ package eu.exeris.kernel.community.events;
 import eu.exeris.kernel.spi.events.EventEngine;
 import eu.exeris.kernel.spi.events.EventEngineConfig;
 import eu.exeris.kernel.spi.events.EventProvider;
+import eu.exeris.kernel.spi.events.codec.EventPayloadCodecRegistry;
 import eu.exeris.kernel.spi.exceptions.events.EventProviderException;
+import tools.jackson.databind.ObjectMapper;
+
+import java.util.List;
+import java.util.Optional;
 
 public final class CommunityEventProvider implements EventProvider {
 
     private static final String PROVIDER_ID = "community";
     private static final String PROVIDER_NAME = "ExerisCommunity/Events";
+
+    // Default JSON codec (ADR-046). Mirrors CommunityHttpProvider's static mapper + registry:
+    // Jackson stays a Community driver detail behind The Wall; the registry is exposed to the
+    // bootstrapper as an SPI type and bound into KernelProviders.EVENT_PAYLOAD_CODEC_REGISTRY.
+    private static final ObjectMapper DEFAULT_MAPPER = new ObjectMapper();
+    private static final EventPayloadCodecRegistry PAYLOAD_CODEC_REGISTRY =
+            EventPayloadCodecRegistry.of(List.of(new CommunityJsonEventPayloadCodec(DEFAULT_MAPPER)));
 
     @Override
     public String providerName() {
@@ -42,5 +54,10 @@ public final class CommunityEventProvider implements EventProvider {
                     new NullPointerException("config"));
         }
         return new CommunityEventEngine(config);
+    }
+
+    @Override
+    public Optional<EventPayloadCodecRegistry> eventPayloadCodecRegistry() {
+        return Optional.of(PAYLOAD_CODEC_REGISTRY);
     }
 }
