@@ -3,9 +3,9 @@
 | Attribute       | Value                                                                                                    |
 |:----------------|:---------------------------------------------------------------------------------------------------------|
 | **ADR #**       | **046** (reserved 2026-06-29 in `exeris-docs/adr-index.md`). |
-| **Status**      | **DRAFT — number reserved; targeted v0.10** (alongside the Events `topic` item). Kernel SPI + Community driver + TCK landing this PR; the `exeris-tooling` generator + bootstrap slot-binding follow lockstep. Flips to **Accepted** once the lockstep consumer lands. |
+| **Status**      | **Accepted** — kernel SPI + Community driver + TCK implemented on the v0.10 train (PR #222, `development/0.10.0`); reaches `main` with the 0.10 release. The `exeris-tooling` generator + the bootstrap slot-binding land lockstep (the slot ships defined-but-unbound here, the `EVENT_STREAM_*` precedent). |
 | **Deciders**    | Arkadiusz Przychocki                                                                                      |
-| **Date**        | 2026-06-28                                                                                                |
+| **Date**        | 2026-06-29 (drafted 2026-06-28; accepted on implementation)                                              |
 | **Scope**       | kernel/events (per-repo; lockstep cross-repo coordination with `exeris-tooling` for the generated publisher) |
 | **Owning Repo** | `exeris-kernel`                                                                                           |
 | **Driven By**   | The EV1 generated-event-payload lever (`@DomainEvent` payload realization) — its runtime half is blocked by a missing kernel seam |
@@ -46,7 +46,7 @@ requires introducing the event-side analog of the body-codec seam, faithful to h
 request-decode quadrant: a tier-neutral SPI, a Community JSON driver, and resolution **in generated
 code** (the publisher) rather than inside the kernel dispatch path.
 
-## 🏁 The Decision (proposed)
+## 🏁 The Decision
 
 **Introduce an event-payload codec SPI in `exeris-kernel-spi`, mirroring the proven ADR-036 shape, with a
 Community JSON default, resolved by the generated publisher — leaving the `EventBus` / `EventEngine`
@@ -230,7 +230,10 @@ separate, lockstep `exeris-tooling` PR gated on this ADR** (the SPI ships unused
   `exeris-tooling` `KernelEventGenerator` publisher rewrite follow **lockstep** (the slot ships
   defined-but-unbound here, per the `EVENT_STREAM_*` precedent — §2).
 
-## Open questions (for the founder)
+## Open questions (consumer side — for the `exeris-tooling` lockstep PR)
+
+These do **not** gate the kernel SPI decision (accepted, implemented) — they are choices for the generated
+publisher in the lockstep `exeris-tooling` PR:
 
 1. **Typed payload vs `Map<String,Object>`** in the generated publisher — a generated per-event payload
    record (type-safe, more emitted code) vs a map (simpler, less type-safe). (Leaning: a generated payload
@@ -255,10 +258,10 @@ separate, lockstep `exeris-tooling` PR gated on this ADR** (the SPI ships unused
   primitive-only constraint; codec seam placement).
 - ROADMAP §"Events: Binding-Agnostic `topic` Concept" (v0.10) — the sibling events item to sequence with.
 
-## Engineering Protocol (if accepted)
+## Engineering Protocol
 
-1. **Reserve the global ADR number** in `exeris-docs/adr-index.md` and flip Status to Accepted (register
-   discipline — number before content claims).
+1. **ADR number reserved** in `exeris-docs/adr-index.md` (046), Status Accepted (register discipline —
+   number before content claims). ✅
 2. **Lockstep across repos.** PR-A `exeris-kernel` (load-bearing: SPI types + `CommunityJsonEventPayloadCodec`
    + `KernelProviders` slot/accessor + `AbstractEventPayloadCodecTck` + Community binding + this ADR + an
    `events.md` update). PR-A.1 `exeris-kernel` bootstrap slot-binding (populate `EVENT_PAYLOAD_CODEC_REGISTRY`
