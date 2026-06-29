@@ -92,6 +92,10 @@ public final class CommunityJsonEventPayloadCodec implements EventPayloadCodec {
         try {
             return mapper.readValue(bytes, targetType);
         } catch (JacksonException ex) {
+            // NOTE(ADR-046): no decode-failure JFR here — the decode direction has no
+            // runtime consumer until the @EventHandler/projection wiring lands. The
+            // symmetric decode-failure event ships with that consumer (its observable
+            // home), mirroring the encode event added for the publish path in PR-A.1.
             throw new IllegalStateException(
                     "JSON deserialization failed for target type " + targetType.getName(), ex);
         }
