@@ -75,6 +75,15 @@ class CommunityJsonEventPayloadCodecTckTest extends AbstractEventPayloadCodecTck
         return "{ \"k\": ".getBytes(StandardCharsets.UTF_8);
     }
 
+    @Override
+    protected Object unserializablePayloadObject() {
+        // A self-referential map — Jackson trips its StreamWriteConstraints max-nesting-depth
+        // and raises a JacksonException; the driver MUST wrap it into a java.* RuntimeException.
+        Map<String, Object> cyclic = new java.util.HashMap<>();
+        cyclic.put("self", cyclic);
+        return cyclic;
+    }
+
     // ------------------------------------------------------------------------
     // Community-tier wiring — the slot read path the generated publisher uses.
     // NOT a codec-contract concern, so it does not belong in the abstract TCK.

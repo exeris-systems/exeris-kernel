@@ -54,6 +54,7 @@ public record EventCodecContext(String contentType, String eventTypeName) {
      *
      * @param eventTypeName the event-type name; never null (may be empty)
      * @return a JSON-content-type context
+     * @since 0.10.0
      */
     public static EventCodecContext json(String eventTypeName) {
         return new EventCodecContext(JSON, eventTypeName);

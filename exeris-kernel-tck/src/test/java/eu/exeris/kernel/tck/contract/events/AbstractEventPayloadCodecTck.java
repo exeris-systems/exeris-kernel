@@ -101,11 +101,22 @@ public abstract class AbstractEventPayloadCodecTck {
 
     /**
      * Returns a byte payload that is syntactically invalid for the binding (e.g.
-     * truncated JSON) — exercised for the driver-exception-opacity clause.
+     * truncated JSON) — exercised for the decode driver-exception-opacity clause.
      *
      * @return non-null, non-empty byte payload
      */
     protected abstract byte[] malformedEncodedBytes();
+
+    /**
+     * Returns a payload object the binding cannot serialize (e.g. a value with no
+     * serializable properties, or a self-referential cycle) — exercised for the
+     * <em>encode</em> driver-exception-opacity clause. The codec contract requires
+     * {@code encode} to wrap binding exceptions into a {@code java.*}
+     * {@link RuntimeException} just as {@code decode} does.
+     *
+     * @return non-null payload object that fails to encode under this binding
+     */
+    protected abstract Object unserializablePayloadObject();
 
     private EventCodecContext context() {
         return new EventCodecContext(supportedContentType(), "TckEvent");
@@ -174,6 +185,25 @@ public abstract class AbstractEventPayloadCodecTck {
                         .as("a non-empty payload object must encode to a non-empty byte payload")
                         .isGreaterThan(0);
             }
+        }
+
+        @Test
+        @DisplayName("encode wraps driver exceptions into a generic RuntimeException — no tools.jackson.* escapes")
+        void encodeWrapsDriverExceptions() {
+            EventPayloadCodec codec = createCodec();
+            assertThatThrownBy(() -> codec.encode(unserializablePayloadObject(), context()))
+                    .as("encode driver exceptions MUST be wrapped — no binding-specific types may escape")
+                    .isInstanceOf(RuntimeException.class)
+                    .extracting(Object::getClass)
+                    .satisfies(cls -> {
+                        String pkg = ((Class<?>) cls).getPackage().getName();
+                        assertThat(pkg)
+                                .as("wrapped exception MUST live in java.* (not the driver package)")
+                                .startsWith("java.");
+                        assertThat(pkg)
+                                .as("no tools.jackson.* type may cross the SPI boundary (The Wall)")
+                                .doesNotStartWith("tools.jackson");
+                    });
         }
 
         @Test

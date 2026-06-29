@@ -61,8 +61,9 @@ public interface EventPayloadCodecRegistry {
      *   <li>{@code null} returned when no candidate supports the {@code (payloadType, contentType)} pair.</li>
      * </ul>
      *
-     * @param codecs ordered list of candidates; non-null, may be empty
+     * @param codecs ordered list of candidates; non-null, may be empty, elements non-null
      * @return registry over the given codecs
+     * @throws NullPointerException if {@code codecs} is null or contains a null element
      */
     @SuppressWarnings("PMD.ShortMethodName") // 'of' is a standard Java factory idiom (cf. List.of, Map.of)
     static EventPayloadCodecRegistry of(List<EventPayloadCodec> codecs) {
