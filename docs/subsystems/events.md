@@ -64,6 +64,17 @@ operates on local memory, a PostgreSQL partition, or a Kafka cluster. (The SPI i
 - `AbstractKafkaEventEngineTck` (EVENT-206) + `CommunityKafkaEventEngineTckIT` (`@Tag("integration") @Testcontainers`, `confluentinc/cp-kafka:7.6.1`) — asserts publish/consume roundtrip with bit-exact descriptor preservation, idempotent close, and start-before-register warm-up safety (engine started with no registry entries must not crash the consumer loop and must still deliver after a later register+publish). Green in ~6 s on the local toolchain.
 - `CommunityKafkaFlowChoreographyTckIT` (DIST-302 smoke) drives `AbstractFlowChoreographyTck` (Wake / Start / Ignore / RAII) over a Testcontainers Kafka broker; `CommunityCrossEngineChoreographyIT` (DIST-302 closure, Sprint 6c) wires two `FlowEngine`s against a shared `JdbcFlowSnapshotStore` (Postgres) plus the same Kafka broker and proves a saga parked on Service A is woken and completed on Service B via the snapshot fallback in `lookupParked`.
 
+**Implemented in 0.10 (ADR-046 — SPI + Community driver + TCK; bootstrap binding + generator lockstep):**
+
+- **Event-payload codec seam.** A tier-neutral `EventPayloadCodec` + `EventPayloadCodecRegistry`
+  (`eu.exeris.kernel.spi.events.codec`) that turns a typed/structured domain-event payload into the
+  already-serialized bytes the `EventBus` carries today — registry-selected by `(payloadType, contentType)`,
+  Community JSON default, resolved **in the generated `*EventPublisher`** (not in the bus), wired via a new
+  optional `KernelProviders.EVENT_PAYLOAD_CODEC_REGISTRY` slot (the `EVENT_STREAM_READER` /
+  `EVENT_STREAM_APPENDER` precedent). Mirrors the HTTP body-codec matrix (ADR-009/034/036). Strictly
+  additive — `EventBus` / `EventEngine` / `EventPayload` unchanged. Unblocks the EV1 generated-event
+  payloads (today the generated publisher emits `EventPayload.empty()`). See `docs/adr/ADR-046-event-payload-codec-spi.md`.
+
 **Not yet implemented (later):**
 
 - Per-subscription retry configuration on `EventBus`.
@@ -90,7 +101,7 @@ the payload immediately — eliminating silent leaks from dead events.
 
 ### 3. Zero-Copy Native Flow
 
-`EventPayload` bytes travel from the producer's `LoanedBuffer` directly through the `EventBus` to subscribers with RAII ref-count lifecycle — no heap serialization on the dispatch path. When the Outbox is enabled, the Community implementation delivers events to the in-memory `EventBus` after the database commit. The Sprint 5b2 Kafka driver (`KafkaEventEngine` + `KafkaEventBrokerPort`) preserves the same RAII contract on the local hops; the broker hop itself is a fixed-layout byte copy through `KafkaEventCodec` (48-byte header + payload tail) and therefore avoids JSON / reflection on the hot path. Enterprise off-heap log driver remains out-of-repo.
+`EventPayload` bytes travel from the producer's `LoanedBuffer` directly through the `EventBus` to subscribers with RAII ref-count lifecycle — no heap serialization on the dispatch path. Serialization of a typed payload into those bytes happens **upstream of the bus**, at the producer (today hand-rolled; the planned ADR-046 codec seam standardizes it in the generated publisher) — so the dispatch path itself stays copy-free. When the Outbox is enabled, the Community implementation delivers events to the in-memory `EventBus` after the database commit. The Sprint 5b2 Kafka driver (`KafkaEventEngine` + `KafkaEventBrokerPort`) preserves the same RAII contract on the local hops; the broker hop itself is a fixed-layout byte copy through `KafkaEventCodec` (48-byte header + payload tail) and therefore avoids JSON / reflection on the hot path. Enterprise off-heap log driver remains out-of-repo.
 
 ### 4. Backpressure by Design
 

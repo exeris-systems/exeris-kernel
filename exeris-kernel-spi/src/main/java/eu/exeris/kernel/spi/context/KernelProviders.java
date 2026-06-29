@@ -15,6 +15,7 @@ import eu.exeris.kernel.spi.events.EventEngine;
 import eu.exeris.kernel.spi.events.EventProvider;
 import eu.exeris.kernel.spi.events.EventStreamAppender;
 import eu.exeris.kernel.spi.events.EventStreamReader;
+import eu.exeris.kernel.spi.events.codec.EventPayloadCodecRegistry;
 import eu.exeris.kernel.spi.exceptions.security.PrincipalContextMissingException;
 import eu.exeris.kernel.spi.exceptions.security.StorageContextMissingException;
 import eu.exeris.kernel.spi.flow.FlowEngine;
@@ -78,7 +79,9 @@ import java.util.Optional;
  * @since 0.5.0
  * @see <a href="../../../../../../docs/subsystems/memory.md">memory.md</a>
  */
-@SuppressWarnings("PMD.TooManyMethods") // Central ScopedValue slot registry — splitting would violate the SPI Wall.
+// Central ScopedValue slot registry — it imports every SPI provider/engine type by
+// design; splitting it would violate the SPI Wall, so the import/method counts are intrinsic.
+@SuppressWarnings({"PMD.TooManyMethods", "PMD.ExcessiveImports"})
 public final class KernelProviders {
 
     // =========================================================================
@@ -293,6 +296,28 @@ public final class KernelProviders {
      * @see EventStreamAppender
      */
     public static final ScopedValue<EventStreamAppender> EVENT_STREAM_APPENDER = ScopedValue.newInstance();
+
+    /**
+     * Optional {@link EventPayloadCodecRegistry} for serializing typed domain-event
+     * payloads to the bytes the {@link EventEngine} carries (since 0.10.0, ADR-046).
+     *
+     * <p>Bound by the bootstrapper before {@link EventEngine#start()} when a codec
+     * binding (e.g. the Community JSON driver) is on the classpath. Resolved by the
+     * <b>producer</b> — the generated {@code *EventPublisher} — via
+     * {@link #eventPayloadCodecRegistry()} (ADR-036 "site B"); {@code EventBus} /
+     * {@code EventEngine} carry no codec knowledge. The slot is <b>optional</b>: a
+     * kernel without a codec binding still bootstraps events, and a producer treats an
+     * empty {@link Optional} as "no codec configured" (falling back to
+     * {@link eu.exeris.kernel.spi.events.EventPayload#empty()}). Inherited by every
+     * virtual thread in the kernel scope (the publish-path threads where the generated
+     * publisher runs).
+     *
+     * @since 0.10.0
+     * @see eu.exeris.kernel.spi.events.codec.EventPayloadCodec
+     * @see #eventPayloadCodecRegistry()
+     */
+    public static final ScopedValue<EventPayloadCodecRegistry> EVENT_PAYLOAD_CODEC_REGISTRY =
+            ScopedValue.newInstance();
 
     // =========================================================================
     // Flow Slots (L4 Saga / Flow Orchestration)
@@ -625,6 +650,20 @@ public final class KernelProviders {
     public static Optional<EventStreamAppender> eventStreamAppender() {
         return EVENT_STREAM_APPENDER.isBound()
                 ? Optional.of(EVENT_STREAM_APPENDER.get())
+                : Optional.empty();
+    }
+
+    /**
+     * Returns the optional {@link EventPayloadCodecRegistry} from the current scope
+     * (since 0.10.0, ADR-046).
+     *
+     * @return an {@link Optional} containing the registry if a codec binding is present
+     *         and the slot was bound; empty otherwise
+     * @since 0.10.0
+     */
+    public static Optional<EventPayloadCodecRegistry> eventPayloadCodecRegistry() {
+        return EVENT_PAYLOAD_CODEC_REGISTRY.isBound()
+                ? Optional.of(EVENT_PAYLOAD_CODEC_REGISTRY.get())
                 : Optional.empty();
     }
 
