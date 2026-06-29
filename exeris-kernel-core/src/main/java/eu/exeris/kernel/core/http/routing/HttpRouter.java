@@ -204,6 +204,9 @@ public final class HttpRouter implements HttpHandler {
          * Registers a single (method, path) → handler route. A path containing one or more
          * {@code {name}} segments is registered as a path-template route (captured into
          * {@link HttpExchange#pathParams()}); otherwise it is an exact route.
+         *
+         * @throws IllegalArgumentException if {@code path} contains a malformed brace segment
+         *     (an unbalanced {@code {}/{@code }} that is not a well-formed {@code {name}} placeholder)
          */
         public Builder route(HttpMethod method, String path, HttpHandler handler) {
             Objects.requireNonNull(method, METHOD_PARAM);

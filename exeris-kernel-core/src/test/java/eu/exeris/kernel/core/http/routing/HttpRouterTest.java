@@ -289,6 +289,13 @@ class HttpRouterTest {
             assertTrue(router.isStreamRoute(HttpMethod.GET, "/events"));
             assertNull(router.resolveStream(HttpMethod.GET, "/x/42"));
         }
+
+        @Test
+        void malformedTemplateSegmentIsRejectedAtBuildTime() {
+            // An unbalanced brace would otherwise compile to a never-matching literal that silently 404s.
+            assertThrows(IllegalArgumentException.class, () ->
+                    HttpRouter.builder().route(HttpMethod.GET, "/x/{id", e -> e.respond(HttpStatus.OK)));
+        }
     }
 
     @Nested

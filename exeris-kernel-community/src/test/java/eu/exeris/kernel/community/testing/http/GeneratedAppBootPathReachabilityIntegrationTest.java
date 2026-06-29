@@ -128,7 +128,7 @@ class GeneratedAppBootPathReachabilityIntegrationTest {
                 exchange.request().method(),
                 exchange.request().path(),
                 exchange.request().headers(),
-                UnusedAllocator.INSTANCE);
+                ThrowingTestAllocator.INSTANCE);
         Map<?, ?> decoded = (Map<?, ?>) decoder.decode(exchange.request().body(), Map.class, context);
         exchange.respond(HttpResponse.noBody(
                 HttpStatus.OK,
@@ -160,10 +160,12 @@ class GeneratedAppBootPathReachabilityIntegrationTest {
 
     /**
      * The JSON request-body decoder never touches the decoding context's allocator (it copies the
-     * off-heap body straight into Jackson), so this e2e supplies a non-null placeholder rather than
-     * standing up a real allocator on the handler thread.
+     * off-heap body straight into Jackson), so this e2e supplies a placeholder rather than standing up
+     * a real allocator on the handler thread. Every allocation method throws on purpose: if a future
+     * decoder change starts allocating through the context, this fails loudly instead of silently
+     * leaking an unbacked buffer.
      */
-    private enum UnusedAllocator implements MemoryAllocator {
+    private enum ThrowingTestAllocator implements MemoryAllocator {
         INSTANCE;
 
         @Override
