@@ -63,6 +63,14 @@ import static org.assertj.core.api.Assertions.assertThatCode;
  * ({@code EventStreamAppender} / {@code EventStreamReader}), <b>not</b> the bus. This suite
  * therefore deliberately asserts no delivery order; callers needing ordering use the durable log.
  *
+ * <h2>Topic-Blind by Design (ADR-050)</h2>
+ * <p>An event type's binding-agnostic {@code topic} ({@link EventTypeSpec#topic()}) is
+ * <b>advisory</b> for the in-memory {@link EventBus}: routing is by {@code eventTypeOrdinal}
+ * only, so the bus does not consult {@code topic} and delivery is unaffected by whether a type
+ * carries one. Broker bindings (e.g. Kafka) map {@code topic} to a concrete broker topic; the
+ * in-memory bus does not. This suite therefore makes no topic-based routing assertion — that the
+ * value round-trips through the registry is covered by {@code AbstractEventRegistryTck}.
+ *
  * <h2>Usage</h2>
  * <pre>{@code
  * class CommunityEventBusTest extends AbstractEventBusTck {

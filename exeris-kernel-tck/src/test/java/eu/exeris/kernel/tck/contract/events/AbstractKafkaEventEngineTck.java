@@ -45,6 +45,10 @@ import static org.assertj.core.api.Assertions.assertThatCode;
  *       partition level by per-key routing, but the in-memory bus dispatches each event onto
  *       its own virtual thread — so subscriber-observed order is unspecified by this TCK.</li>
  *   <li>Engine close is idempotent and stops the consumer poll loop deterministically.</li>
+ *   <li>(ADR-050) A type carrying a binding-agnostic {@code topic} override still round-trips:
+ *       the publish path and the subscribe path both resolve to the override topic, so the event
+ *       reaches the local subscriber. If they diverged (publish → override, subscribe →
+ *       name-derived default) the event would be stranded and never surface.</li>
  * </ol>
  *
  * <p>Concrete bindings (e.g. {@code CommunityKafkaEventEngineTckIT}) are responsible for
@@ -64,6 +68,11 @@ public abstract class AbstractKafkaEventEngineTck {
 
     private static final String  TYPE_KAFKA_PROBE     = "KafkaTckProbe";
     private static final int     ORDINAL_KAFKA_PROBE  = 30_001;
+
+    // ADR-050 — a type whose topic override differs from its type name.
+    private static final String  TYPE_KAFKA_TOPICED    = "KafkaTckTopicedProbe";
+    private static final int     ORDINAL_KAFKA_TOPICED = 30_050;
+    private static final String  TOPIC_OVERRIDE        = "exeris-tck.orders.created";
 
     private EventEngine engine;
 
@@ -131,6 +140,51 @@ public abstract class AbstractKafkaEventEngineTck {
         assertThat(capturedLength.get())
                 .as("EventPayload.empty() length is preserved across the wire")
                 .isZero();
+    }
+
+    @Test
+    @Timeout(value = 60, unit = TimeUnit.SECONDS)
+    @DisplayName("(ADR-050) a type with a topic override still round-trips to a local subscriber")
+    void topicOverrideRoundtripDelivers() throws Exception {
+        // Register a type whose topic override ("exeris-tck.orders.created") differs from its
+        // type name ("KafkaTckTopicedProbe"). The consumer loop picks up the new registration on
+        // its next subscription refresh (same dynamic-registration path as the warm-up test).
+        // Publish and subscribe must BOTH resolve to the override topic — if they diverged
+        // (publish → override, subscribe → name-derived default), the event would be stranded and
+        // this delivery would time out.
+        engine.registry().register(
+                EventTypeSpec.ofPersistent(TYPE_KAFKA_TOPICED, ORDINAL_KAFKA_TOPICED, TOPIC_OVERRIDE));
+
+        UUID eventId  = UUID.randomUUID();
+        UUID streamId = UUID.randomUUID();
+        CountDownLatch received = new CountDownLatch(1);
+        AtomicReference<EventDescriptor> captured = new AtomicReference<>();
+
+        engine.bus().subscribe(TYPE_KAFKA_TOPICED, (descriptor, payload) -> {
+            try (payload) {
+                if (descriptor.streamIdHigh() == streamId.getMostSignificantBits()
+                        && descriptor.streamIdLow() == streamId.getLeastSignificantBits()) {
+                    captured.set(descriptor);
+                    received.countDown();
+                }
+            }
+        });
+
+        EventDescriptor sent = EventDescriptor.of(
+                eventId.getMostSignificantBits(),  eventId.getLeastSignificantBits(),
+                streamId.getMostSignificantBits(), streamId.getLeastSignificantBits(),
+                ORDINAL_KAFKA_TOPICED,
+                EventDescriptor.FLAG_PERSISTENT,
+                System.currentTimeMillis());
+        engine.bus().publish(sent, EventPayload.empty());
+
+        assertThat(received.await(45, TimeUnit.SECONDS))
+                .as("a topic-overridden type MUST round-trip: publish and subscribe both resolve "
+                        + "to the ADR-050 override topic, so the event reaches the local subscriber")
+                .isTrue();
+        assertThat(captured.get().eventTypeOrdinal())
+                .as("the delivered event MUST be the topic-overridden type")
+                .isEqualTo(ORDINAL_KAFKA_TOPICED);
     }
 
     @Test
