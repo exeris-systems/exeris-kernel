@@ -1591,6 +1591,8 @@ Sourcing (per-aggregate strict ordering + optimistic-concurrency append + infini
 
 **Merge Gate:** Ordering/concurrency boundary recorded in `docs/subsystems/events.md`; `EventStreamAppender` contract states its sequencing semantics; `AbstractEventStreamReaderTck` / `AppenderTck` bound and green on ≥2 bindings; `AbstractEventBusTck` either asserts the documented ordering or documents its absence; additive only (no breaking-change framing per pre-1.0 / TRL-3 stance); The Wall preserved (no broker/JDBC types leak into the Events SPI).
 
+**Status (v0.10):** **DECISION LANDED (ADR-049, Accepted 2026-07-01).** The ownership boundary is settled: per-`StreamId` total ordering + optimistic-concurrency **append-with-expected-version** are owned by the Events SPI durable-log surface (`EventStreamAppender`); the transient `EventBus` stays **unordered by design**; `FlowSnapshot.schemaVersion` CAS stays Persistence-owned (ADR-013) as a distinct mechanism. This decision-only slice ships ADR-049 + the `events.md` boundary record + the `EventStreamAppender` Javadoc; it also corrected a stale doc note that attributed event OCC to a non-existent `PersistenceEngine.append(streamId, expectedVersion)`. **Remaining (implementation slice, still v0.10):** the `EventStreamAppender` signature change (`expectedVersion` + `AppendResult`), `EX-EVENT-6008` (version conflict), and binding `AbstractEventStreamAppenderTck` / `AbstractEventStreamReaderTck` on ≥2 durable bindings (Community Postgres outbox + Kafka) — the merge gate for the fundament.
+
 See also: [Events Subsystem](./subsystems/events.md); v0.7 EVENT-203 (skeleton delivery); ADR-013 (FlowSnapshot OCC); v0.12 §"Runtime: KV-as-Projection".
 
 ---

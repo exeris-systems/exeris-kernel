@@ -35,6 +35,28 @@ package eu.exeris.kernel.spi.events;
  * {@code payload} on entry. After the call returns (success or thrown exception),
  * the caller MUST NOT call {@link EventPayload#close()} on the same reference.
  *
+ * <h2>Sequencing &amp; Optimistic Concurrency (ADR-049)</h2>
+ * <p>The durable log is the kernel's ordering / optimistic-concurrency boundary. Per
+ * <b>ADR-049</b>, every {@code EventStreamAppender} binding MUST provide, for each
+ * {@link StreamId}, a <b>per-stream total order</b>: concurrent appends to the same stream
+ * are linearized and assigned strictly monotonic sequence numbers, and
+ * {@link EventStreamReader#replayFromVersion(StreamId, long)} reads them back in that order.
+ * This is the contract that log-derived views (event sourcing, KV-as-projection, the
+ * replicated distributed log) rely on; it is owned <b>here</b>, on the Events SPI — not by
+ * the transient {@link EventBus} (unordered by design) and not by Persistence. The separate
+ * {@link eu.exeris.kernel.spi.flow.model.FlowSnapshot} {@code schemaVersion} CAS (ADR-013)
+ * is flow-snapshot state concurrency, a distinct mechanism — not the event-log append OCC.
+ *
+ * <p><b>Optimistic-concurrency append (implementation slice).</b> The append surface will
+ * gain an {@code expectedVersion} parameter and return the committed sequence — target shape
+ * {@code AppendResult append(StreamId, long expectedVersion, EventDescriptor, EventPayload)}
+ * with an {@code ANY_VERSION} sentinel that opts append-only callers out of the check. When
+ * {@code expectedVersion} does not match the stream head, the append fails closed with
+ * {@code EX-EVENT-6008} (version conflict) — no silent overwrite. This ADR-049 slice records
+ * the decision and the contract; the signature change, the error code, and the
+ * {@code AbstractEventStreamAppenderTck} binding on &ge;2 durable bindings land in the
+ * implementation slice. The current single-argument {@link #append} is the pre-slice shape.
+ *
  * @since 0.7.0
  * @see EventStreamReader
  */
