@@ -25,6 +25,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
+import java.util.function.LongBinaryOperator;
 
 /**
  * Community Kafka binding of {@link EventStreamAppender} (ADR-049), log-authoritative.
@@ -65,9 +66,11 @@ public final class KafkaEventStreamAppender implements EventStreamAppender {
     private static final long EMPTY_HEAD = 0L;
 
     private final Producer<byte[], byte[]> producer;
-    private final KafkaEventConfig config;
     private final String logTopic;
     private final String engineName;
+    // Head recovery seam (streamIdHigh, streamIdLow) -> current head; the default reads the log tail.
+    // A unit test injects a fake to exercise the OCC / monotonic / failure logic without a broker.
+    private final LongBinaryOperator headResolver;
     private final Map<StreamKey, Long> heads = new ConcurrentHashMap<>();
     private final Map<StreamKey, Object> streamLocks = new ConcurrentHashMap<>();
 
@@ -77,10 +80,25 @@ public final class KafkaEventStreamAppender implements EventStreamAppender {
      * @param engineName human-readable engine name for JFR telemetry
      */
     public KafkaEventStreamAppender(Producer<byte[], byte[]> producer, KafkaEventConfig config, String engineName) {
+        this(producer, config, engineName, defaultHeadResolver(config));
+    }
+
+    // Package-private seam: a unit test injects a fake HeadResolver + a mock Producer to exercise the
+    // OCC / monotonic-sequence / failure logic without a broker (the default resolver reads the log
+    // tail via KafkaEventLog, which needs a real KafkaConsumer).
+    /* default */ KafkaEventStreamAppender(Producer<byte[], byte[]> producer, KafkaEventConfig config,
+                                           String engineName, LongBinaryOperator headResolver) {
         this.producer = Objects.requireNonNull(producer, "producer");
-        this.config = Objects.requireNonNull(config, "config");
-        this.logTopic = config.eventLogTopic();
+        this.logTopic = Objects.requireNonNull(config, "config").eventLogTopic();
         this.engineName = Objects.requireNonNull(engineName, "engineName");
+        this.headResolver = Objects.requireNonNull(headResolver, "headResolver");
+    }
+
+    private static LongBinaryOperator defaultHeadResolver(KafkaEventConfig config) {
+        return (streamIdHigh, streamIdLow) -> {
+            List<byte[]> frames = KafkaEventLog.readStreamFrames(config, streamIdHigh, streamIdLow);
+            return frames.isEmpty() ? EMPTY_HEAD : KafkaEventLogCodec.decodeSequence(frames.get(frames.size() - 1));
+        };
     }
 
     @Override
@@ -132,11 +150,7 @@ public final class KafkaEventStreamAppender implements EventStreamAppender {
     }
 
     private long recoverHead(StreamKey key) {
-        List<byte[]> frames = KafkaEventLog.readStreamFrames(config, key.high(), key.low());
-        if (frames.isEmpty()) {
-            return EMPTY_HEAD;
-        }
-        return KafkaEventLogCodec.decodeSequence(frames.get(frames.size() - 1));
+        return headResolver.applyAsLong(key.high(), key.low());
     }
 
     private record StreamKey(long high, long low) {
