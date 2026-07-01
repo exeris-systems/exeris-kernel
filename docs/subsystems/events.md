@@ -197,7 +197,10 @@ The "one log, four views" family — streaming, sourcing, KV, distributed — al
 | `EX-EVENT-6001` | Generic Engine Failure| `[0] String message`                                                   |
 | `EX-EVENT-6002` | Bus Publish Failure   | `[0] String eventType, [1] long queueDepth, [2] long queueCapacity`    |
 | `EX-EVENT-6003` | Registry Conflict     | `[0] String eventType, [1] int ordinal`                                |
-| `EX-EVENT-6004` | Provider Boot Failure | `[0] String providerName, [1] String reason`                           |
+| `EX-EVENT-6004` | Provider Boot Failure | `[0] String providerName, [1] String reason` |
+| `EX-EVENT-6005` | Outbox Event → DLQ | `[0] String eventType, [1] String reason, [2] int retryCount` |
+| `EX-EVENT-6006` | Projection Handler Failure | `[0] String projectionName, [1] int eventTypeOrdinal` |
+| `EX-EVENT-6007` | Event-Loop VT Uncaught | `[0] String loopName, [1] String exceptionType`                           |
 
 > **Proposed (ADR-049):** `EX-EVENT-6008` — event-log append version conflict on `EventStreamAppender.append(…, expectedVersion, …)`; `rawArgs [0] String streamType, [1] long expectedVersion, [2] long actualVersion`. Lands with the append-with-expected-version implementation slice.
 
