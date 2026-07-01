@@ -9,7 +9,6 @@
 package eu.exeris.kernel.community.events;
 
 import eu.exeris.kernel.spi.events.EventDescriptor;
-import eu.exeris.kernel.spi.events.EventPayload;
 import eu.exeris.kernel.spi.events.EventStreamAppender;
 import eu.exeris.kernel.spi.events.EventStreamReader;
 import eu.exeris.kernel.spi.events.StreamId;
@@ -73,7 +72,10 @@ class CommunityJdbcEventStreamReaderTckIT extends AbstractEventStreamReaderTck {
                     eventId.getMostSignificantBits(), eventId.getLeastSignificantBits(),
                     streamId.streamIdHigh(), streamId.streamIdLow(),
                     SEED_EVENT_TYPE_ORDINAL, EventDescriptor.FLAG_PERSISTENT, System.currentTimeMillis());
-            seeder.append(streamId, EventStreamAppender.ANY_VERSION, descriptor, EventPayload.empty());
+            // ADR-049 ordering contract: event i carries indexPayload(i) so the reader TCK can
+            // assert the append order round-trips (an unordered SELECT would fail the assertion).
+            seeder.append(streamId, EventStreamAppender.ANY_VERSION, descriptor,
+                    new CommunityHeapEventPayload(indexPayload(i)));
         }
     }
 }

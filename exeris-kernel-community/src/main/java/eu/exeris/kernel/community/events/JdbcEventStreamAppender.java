@@ -8,6 +8,8 @@
  */
 package eu.exeris.kernel.community.events;
 
+import eu.exeris.kernel.community.events.jfr.EventLogAppendConflictEvent;
+import eu.exeris.kernel.community.events.jfr.EventLogAppendFailedEvent;
 import eu.exeris.kernel.spi.events.AppendResult;
 import eu.exeris.kernel.spi.events.EventDescriptor;
 import eu.exeris.kernel.spi.events.EventPayload;
@@ -75,6 +77,7 @@ public final class JdbcEventStreamAppender implements EventStreamAppender {
     // SQLSTATE class 23 = ANSI integrity-constraint violation (Postgres 23505, H2 23505). Used to
     // detect a concurrent-INSERT race on the composite PK under READ_COMMITTED (TOCTOU vs SELECT MAX).
     private static final String SQLSTATE_CLASS_INTEGRITY = "23";
+    private static final String SQLSTATE_UNKNOWN = "UNKNOWN";
     private static final long EMPTY_HEAD = 0L;
     private static final int MAX_APPEND_ATTEMPTS = 8;
 
@@ -111,6 +114,8 @@ public final class JdbcEventStreamAppender implements EventStreamAppender {
                 long head = queryHead(conn, streamId);
                 if (expectedVersion != ANY_VERSION && expectedVersion != head) {
                     conn.rollback();
+                    EventLogAppendConflictEvent.emit(engineName, EventLogAppendConflictEvent.PHASE_HEAD_MISMATCH,
+                            streamId.streamType(), expectedVersion, head);
                     throw EventStreamAppendConflictException.versionConflict(
                             streamId.streamType(), expectedVersion, head);
                 }
@@ -122,12 +127,15 @@ public final class JdbcEventStreamAppender implements EventStreamAppender {
                 } catch (PersistenceProviderException ppe) {
                     conn.rollback();
                     if (!isIntegrityConstraintViolation(ppe)) {
-                        throw new EventEngineException(
-                                "Failed to append event to stream log [engine=" + engineName + ']', ppe);
+                        EventLogAppendFailedEvent.emit(
+                                engineName, streamId.streamType(), extractSqlState(ppe), ppe);
+                        throw new EventEngineException("Failed to append event to stream log", ppe);
                     }
                     if (expectedVersion != ANY_VERSION) {
                         // A concurrent writer took the head the OCC caller expected — fail closed,
                         // preserving the SQLSTATE-23 cause that revealed the lost race.
+                        EventLogAppendConflictEvent.emit(engineName, EventLogAppendConflictEvent.PHASE_INSERT_TOCTOU,
+                                streamId.streamType(), expectedVersion, next);
                         throw EventStreamAppendConflictException.versionConflict(
                                 streamId.streamType(), expectedVersion, next, ppe);
                     }
@@ -135,8 +143,8 @@ public final class JdbcEventStreamAppender implements EventStreamAppender {
                 }
             }
         }
-        throw new EventEngineException(
-                "Append retry budget exhausted under contention [engine=" + engineName + ']', lastRace);
+        EventLogAppendFailedEvent.emit(engineName, streamId.streamType(), extractSqlState(lastRace), lastRace);
+        throw new EventEngineException("Append retry budget exhausted under contention", lastRace);
     }
 
     private long queryHead(PersistenceConnection conn, StreamId streamId) {
@@ -175,5 +183,17 @@ public final class JdbcEventStreamAppender implements EventStreamAppender {
             }
         }
         return false;
+    }
+
+    private static String extractSqlState(Throwable thrown) {
+        for (Throwable current = thrown; current != null; current = current.getCause()) {
+            if (current instanceof SQLException sql) {
+                String state = sql.getSQLState();
+                if (state != null && !state.isBlank()) {
+                    return state;
+                }
+            }
+        }
+        return SQLSTATE_UNKNOWN;
     }
 }
