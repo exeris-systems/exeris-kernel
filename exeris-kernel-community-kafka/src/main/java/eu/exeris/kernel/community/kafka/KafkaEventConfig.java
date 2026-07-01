@@ -93,6 +93,20 @@ public record KafkaEventConfig(
     }
 
     /**
+     * The dedicated durable event-log topic (ADR-049) — a single topic keyed by {@code streamId}
+     * so a stream's events (across types) stay totally ordered on one partition. Distinct from the
+     * per-event-type outbox-delivery topics computed by {@link #topicFor(String)}.
+     *
+     * <p>Reserved name (hyphenated, unlike PascalCase event types) so it cannot collide with an
+     * event-type topic.
+     *
+     * @return the event-log topic name (prefixed by {@link #topicPrefix})
+     */
+    public String eventLogTopic() {
+        return topicPrefix + "exeris-event-log";
+    }
+
+    /**
      * Computes the topic name for a given event type by joining {@link #topicPrefix} and the
      * event type name.
      *
