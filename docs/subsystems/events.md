@@ -163,7 +163,7 @@ in the `EventDescriptor` primitive layout.
 1. Define `EventDescriptor` (primitive-only routing metadata) and `EventPayload` (ref-counted off-heap bytes).
 2. Provide `EventStreamReader` and `EventStreamAppender` interfaces (since 0.7.0, EVENT-203) plus the `StreamId` / `EventStream` carriers used to query and stream events. Implementation-blind — bindings (PostgreSQL outbox, Kafka driver, Enterprise off-heap log) provide the cursor.
 3. Define `EventRegistry` ordinal contract for O(1) type routing.
-4. Define conflict-resolution routing via `EventDescriptor.flags` (PERSISTENT, ORDERED, ASYNC, BROADCAST). Note: optimistic concurrency version enforcement is a Persistence SPI concern (`PersistenceEngine.append(streamId, expectedVersion, …)`), not an Events routing concern.
+4. Define conflict-resolution routing via `EventDescriptor.flags` (PERSISTENT, ORDERED, ASYNC, BROADCAST) — advisory routing hints, **not** the ordering guarantee itself. Per **[ADR-049](../adr/ADR-049-events-log-ordering-and-optimistic-concurrency-boundary.md)**, per-`StreamId` total ordering and optimistic-concurrency **append-with-expected-version** are owned by the Events SPI on the durable-log surface (`EventStreamAppender`) — **not** by the transient `EventBus` (unordered by design) and **not** by Persistence. The separate `FlowSnapshot.schemaVersion` CAS (`JdbcFlowSnapshotStore`, ADR-013) is flow-snapshot state concurrency — a distinct mechanism, not the event-log append OCC. (There is no `PersistenceEngine.append(streamId, expectedVersion, …)`; the earlier note here pointed at a method that does not exist.)
 
 **What Events Core DOES:**
 
@@ -172,6 +172,19 @@ in the `EventDescriptor` primitive layout.
 3. Handle event serialization/deserialization using the Kernel's binary formats (no JSON on hot-path).
 4. Manage local **Projections** via `ProjectionEngine` — subscribes typed `ProjectionHandler<S>` instances to the bus and maintains their immutable state via lock-free `AtomicReference.updateAndGet`.
 5. Provide binary `EventDescriptorCodec` for off-heap serialisation of `EventDescriptor` structs (Panama FFM `StructLayout`, little-endian).
+
+---
+
+## Log-Ordering & Optimistic-Concurrency Boundary (ADR-049)
+
+The "one log, four views" family — streaming, sourcing, KV, distributed — all derive from a single durable log and must honour one consistency boundary. **[ADR-049](../adr/ADR-049-events-log-ordering-and-optimistic-concurrency-boundary.md)** settles where that boundary lives:
+
+- **Durable log (`EventStreamAppender`) — ordering + OCC owned here (mandatory).** Every binding provides **per-`StreamId` total ordering** (concurrent appends to one stream are linearized and assigned strictly monotonic sequences; `EventStreamReader.replayFromVersion` reads them back in order) and honours an **append-with-expected-version** optimistic-concurrency check. Target append shape (implementation slice): `AppendResult append(StreamId, long expectedVersion, EventDescriptor, EventPayload)` with an `ANY_VERSION` sentinel for append-only callers; a version mismatch fails closed with `EX-EVENT-6008` (no silent overwrite).
+- **Transient bus (`EventBus.publish`) — unordered by design.** The in-memory bus keeps its concurrent per-handler fan-out and makes **no** per-key / per-aggregate ordering promise. Ordering is a property of the durable-log surface only.
+- **`FlowSnapshot.schemaVersion` CAS — a separate, Persistence-owned mechanism.** It is flow-snapshot state concurrency (ADR-013), not the event-log append OCC. The two are distinct and are not merged.
+- **The Wall holds.** Bindings realize ordering/OCC privately (Kafka: `streamId`-keyed partition order + a per-stream sequence; Postgres outbox: per-stream sequence column + `INSERT … WHERE expected = current` CAS; Enterprise off-heap log: native sequence). No broker/JDBC type enters the Events SPI.
+
+**Current state:** decision landed (ADR-049, this v0.10 slice). The `EventStreamAppender` signature change, `EX-EVENT-6008`, and the `AbstractEventStreamAppenderTck` / `AbstractEventStreamReaderTck` bindings on ≥2 durable bindings are the deferred implementation slice — see the Testing Strategy "Order Integrity" note.
 
 ---
 
@@ -185,6 +198,8 @@ in the `EventDescriptor` primitive layout.
 | `EX-EVENT-6002` | Bus Publish Failure   | `[0] String eventType, [1] long queueDepth, [2] long queueCapacity`    |
 | `EX-EVENT-6003` | Registry Conflict     | `[0] String eventType, [1] int ordinal`                                |
 | `EX-EVENT-6004` | Provider Boot Failure | `[0] String providerName, [1] String reason`                           |
+
+> **Proposed (ADR-049):** `EX-EVENT-6008` — event-log append version conflict on `EventStreamAppender.append(…, expectedVersion, …)`; `rawArgs [0] String streamType, [1] long expectedVersion, [2] long actualVersion`. Lands with the append-with-expected-version implementation slice.
 
 **Backpressure note for `EX-EVENT-6002`:** When thrown, the publisher MUST NOT retry inline. The
 `EventBus` must propagate this exception to the caller's `StructuredTaskScope` boundary, allowing
@@ -310,6 +325,9 @@ public interface EventStreamReader extends AutoCloseable {
 @FunctionalInterface
 public interface EventStreamAppender {
     // Same RAII ownership transfer as EventBus.publish(...)
+    // ADR-049: the implementation slice changes this to
+    //   AppendResult append(StreamId, long expectedVersion, EventDescriptor, EventPayload)
+    // (ANY_VERSION opts out of the OCC check; mismatch -> EX-EVENT-6008). Versionless form shown is pre-slice.
     void append(StreamId streamId, EventDescriptor descriptor, EventPayload payload);
 }
 
