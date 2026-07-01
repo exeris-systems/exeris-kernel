@@ -39,6 +39,13 @@ import java.time.Instant;
  * releases shared driver resources (connection pool slot, consumer group session) and
  * is idempotent.
  *
+ * <h2>Ordering (ADR-049)</h2>
+ * <p>Replay honours the per-stream total order the {@link EventStreamAppender} established:
+ * {@link #replayFromVersion(StreamId, long)} yields the stream's events in strictly ascending
+ * {@code committedSequence} order (the 1-based sequence assigned at append). This is the read
+ * side of the ordering boundary the durable log owns; the transient {@link EventBus} makes no
+ * ordering promise.
+ *
  * @since 0.7.0
  * @see EventStream
  * @see EventStreamAppender
