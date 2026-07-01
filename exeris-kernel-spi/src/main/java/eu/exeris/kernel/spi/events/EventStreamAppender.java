@@ -88,11 +88,14 @@ public interface EventStreamAppender {
      *                        {@link StreamId#streamIdLow()} MUST match the stream UUID carried by
      *                        {@code descriptor}
      * @param expectedVersion the stream head the caller expects ({@code >= 0}), or
-     *                        {@link #ANY_VERSION} to skip the concurrency check
+     *                        {@link #ANY_VERSION} to skip the concurrency check; negative values
+     *                        other than {@link #ANY_VERSION} are reserved and their behaviour is
+     *                        undefined
      * @param descriptor      routing metadata (non-null)
      * @param payload         event payload; ownership transfers to the appender (non-null;
      *                        use {@link EventPayload#empty()} for no-data events)
      * @return the committed per-stream sequence assigned to this event (the stream's new head)
+     * @throws NullPointerException if {@code streamId}, {@code descriptor}, or {@code payload} is null
      * @throws eu.exeris.kernel.spi.exceptions.events.EventStreamAppendConflictException
      *         when {@code expectedVersion != }{@link #ANY_VERSION} and it does not match the
      *         stream's current head ({@code EX-EVENT-6008}); the head is left unchanged
