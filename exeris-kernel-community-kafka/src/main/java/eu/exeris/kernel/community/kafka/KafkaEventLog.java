@@ -8,6 +8,8 @@
  */
 package eu.exeris.kernel.community.kafka;
 
+import eu.exeris.kernel.spi.exceptions.events.EventEngineException;
+
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
@@ -44,9 +46,14 @@ import java.util.function.LongPredicate;
  */
 final class KafkaEventLog {
 
-    // Safety bound: stop after this many consecutive empty polls even if end-offset math is off,
-    // so a scan can never hang the caller indefinitely.
-    private static final int MAX_EMPTY_POLLS = 3;
+    // A scan reads until every partition reaches the end offset captured at scan start. Empty polls
+    // are NORMAL (fetch pacing: pollTimeout is well under the broker's fetch.max.wait.ms), so they
+    // must NOT be treated as end-of-log — doing so would truncate the scan and silently corrupt the
+    // appender's recovered head or drop replay events. Instead we bound only genuine no-progress
+    // STALLS: if the broker delivers nothing for this long while end offsets are still unreached,
+    // fail loud rather than return a truncated (correctness-violating) scan. The deadline resets on
+    // every non-empty poll, so a large-but-healthy log that keeps making progress never trips it.
+    private static final Duration SCAN_STALL_TIMEOUT = Duration.ofSeconds(30L);
 
     private KafkaEventLog() {
         // utility
@@ -77,28 +84,32 @@ final class KafkaEventLog {
             consumer.assign(assigned);
             Map<TopicPartition, Long> endOffsets = consumer.endOffsets(assigned);
             consumer.seekToBeginning(assigned);
-            drain(consumer, endOffsets, config.consumerPollTimeout(), highMatch, lowMatch, out);
+            drain(consumer, topic, endOffsets, config.consumerPollTimeout(), highMatch, lowMatch, out);
         }
         return out;
     }
 
     private static void drain(KafkaConsumer<byte[], byte[]> consumer,
+                              String topic,
                               Map<TopicPartition, Long> endOffsets,
                               Duration pollTimeout,
                               LongPredicate highMatch,
                               LongPredicate lowMatch,
                               List<byte[]> out) {
-        int emptyPolls = 0;
+        long stallNanos = SCAN_STALL_TIMEOUT.toNanos();
+        long idleDeadline = System.nanoTime() + stallNanos;
         while (!allReached(consumer, endOffsets)) {
             ConsumerRecords<byte[], byte[]> records = consumer.poll(pollTimeout);
             if (records.isEmpty()) {
-                emptyPolls++;
-                if (emptyPolls >= MAX_EMPTY_POLLS) {
-                    return;
+                // Only a genuine no-progress stall trips this — empty polls alone never truncate.
+                if (deadlinePassed(idleDeadline)) {
+                    throw new EventEngineException(
+                            "Kafka event-log scan stalled: partitions did not reach their end offsets "
+                            + "within " + SCAN_STALL_TIMEOUT + " of no progress (topic=" + topic + ')');
                 }
                 continue;
             }
-            emptyPolls = 0;
+            idleDeadline = System.nanoTime() + stallNanos; // progress → reset the no-progress deadline
             collectMatching(records, highMatch, lowMatch, out);
         }
     }
@@ -117,6 +128,11 @@ final class KafkaEventLog {
                 out.add(frame);
             }
         }
+    }
+
+    /** Overflow-safe "has {@code deadlineNanos} (a {@link System#nanoTime} instant) passed?". */
+    private static boolean deadlinePassed(long deadlineNanos) {
+        return System.nanoTime() - deadlineNanos >= 0L;
     }
 
     private static boolean allReached(KafkaConsumer<byte[], byte[]> consumer,

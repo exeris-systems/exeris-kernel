@@ -338,7 +338,9 @@ public record StreamId(long streamIdHigh, long streamIdLow, String streamType) {
 
 `StreamId` is wire-compatible with `EventDescriptor.streamIdHigh()` / `streamIdLow()` so the same routing index serves both descriptor dispatch and stream-scoped queries.
 
-**Zero-allocation replay path:** Events are streamed directly from the PostgreSQL WAL or Kafka topic into `LoanedBuffer` slabs — no intermediate `List<Event>` materialisation. `EventStream extends Iterable<EventPayload>, AutoCloseable`; each payload arrives at refCount 1 and the consumer closes it (no broadcast retain protocol on replay). The cursor is released via `EventStream.close()`.
+**Replay allocation contract:** `EventStream extends Iterable<EventPayload>, AutoCloseable`; each payload arrives at refCount 1 and the consumer closes it (no broadcast retain protocol on replay), and the cursor is released via `EventStream.close()`.
+
+Per-event allocation is bounded to one heap `byte[]` payload per row/record (no `List<EventPayload>` accumulation). Tier reality (ADR-049 Community bindings): the **JDBC** binding streams lazily over a live JDBC cursor; the **Kafka** binding performs a bounded read-to-end and materialises the matching `List<byte[]>` frames on heap before iterating (correct-but-not-scale-tuned — an advisory compacted-head checkpoint + partition-targeted reads are the deferred optimisation). Neither Community binding uses off-heap `LoanedBuffer` slabs — that zero-copy / WAL-streamed path is the out-of-repo Enterprise target-state, not the current Community behaviour.
 
 **Bindings (status):**
 

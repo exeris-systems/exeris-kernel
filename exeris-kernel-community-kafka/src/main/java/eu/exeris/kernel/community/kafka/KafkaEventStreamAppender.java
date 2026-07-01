@@ -48,6 +48,11 @@ import java.util.concurrent.ExecutionException;
  * same head). This is the documented Community-tier boundary; JVM-controlled / enterprise durability
  * (e.g. a compacted-head checkpoint or an off-heap log) is a later, separately-justified step.
  *
+ * <p>The in-memory head and per-stream lock maps are keyed by {@code StreamId} with <b>no
+ * eviction</b>, so they grow with distinct-stream cardinality — bounded for typical aggregate
+ * cardinality, but a deployment with unbounded stream cardinality should treat a bounding/eviction
+ * policy as part of the same deferred scale upgrade.
+ *
  * <h2>The Wall</h2>
  * <p>{@code org.apache.kafka.clients.*} stays inside this module; the SPI sees only
  * {@link AppendResult} / {@link EventStreamAppendConflictException}. The {@link Producer} is owned by

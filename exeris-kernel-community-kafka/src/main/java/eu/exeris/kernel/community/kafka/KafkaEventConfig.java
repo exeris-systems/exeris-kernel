@@ -100,6 +100,12 @@ public record KafkaEventConfig(
      * <p>Reserved name (hyphenated, unlike PascalCase event types) so it cannot collide with an
      * event-type topic.
      *
+     * <p><b>Operational note:</b> per-stream ordering relies on a <b>stable partition count</b>.
+     * Kafka's default partitioner routes {@code hash(key) % partitions}, so increasing this topic's
+     * partition count after first use reroutes new records for existing streams onto a different
+     * partition — old records stay put, so the stream's per-stream order (and thus replay) breaks.
+     * Do not repartition the event-log topic once it is in use.
+     *
      * @return the event-log topic name (prefixed by {@link #topicPrefix})
      */
     public String eventLogTopic() {
