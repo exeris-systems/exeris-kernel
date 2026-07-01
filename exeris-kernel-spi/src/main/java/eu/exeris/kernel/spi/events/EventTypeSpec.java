@@ -30,8 +30,9 @@ package eu.exeris.kernel.spi.events;
  * primitive-only {@code EventDescriptor} to carry a non-primitive (or an interned ordinal),
  * breaking its Valhalla layout. Semantics:
  * <ul>
- *   <li>{@code null} / blank — <b>no topic override</b>. Bindings fall back to their default
- *       routing (e.g. the Kafka binding derives the topic from the event-type {@code name}).</li>
+ *   <li>{@code null} / blank — <b>no topic override</b> (a blank {@code topic} is normalized to
+ *       {@code null} at construction). Bindings fall back to their default routing (e.g. the Kafka
+ *       binding derives the topic from the event-type {@code name}).</li>
  *   <li>non-blank — the binding-agnostic routing target. Broker bindings (e.g. Kafka) map it
  *       to the concrete broker topic; the in-memory {@link EventBus} treats it as
  *       <b>advisory</b> and does not route on it (topic-blind by design — ADR-049 H2).</li>
@@ -57,6 +58,21 @@ public record EventTypeSpec(
         boolean ordered,
         String topic
 ) {
+
+    /**
+     * Compact constructor — normalizes a blank {@code topic} to {@code null} so "no override" has a
+     * single canonical form. Without this, {@code topic == null} and a blank {@code topic} would be
+     * distinct under the record's structural {@link #equals(Object)} — a spurious registry conflict
+     * ({@code EX-EVENT-6003}) when the 2-arg and 3-arg factories are mixed for the same type — even
+     * though {@link #hasTopic()} already treats both as "no override". Normalizing here keeps the
+     * identity view and the effective-value view of {@code topic} in agreement.
+     */
+    @SuppressWarnings("PMD.NullAssignment") // deliberate blank->null canonicalization of "no override"
+    public EventTypeSpec {
+        if (topic != null && topic.isBlank()) {
+            topic = null;
+        }
+    }
 
     /**
      * Creates a non-persistent, unordered event type spec with no topic override
@@ -128,10 +144,12 @@ public record EventTypeSpec(
     }
 
     /**
-     * @return {@code true} if this spec carries a non-blank {@code topic} override; {@code false}
-     *         when a binding should fall back to its default routing (e.g. the event-type name)
+     * @return {@code true} if this spec carries a {@code topic} override; {@code false} when a
+     *         binding should fall back to its default routing (e.g. the event-type name). A blank
+     *         {@code topic} is normalized to {@code null} in the canonical constructor, so this is
+     *         equivalent to {@code topic != null}.
      */
     public boolean hasTopic() {
-        return topic != null && !topic.isBlank();
+        return topic != null;
     }
 }

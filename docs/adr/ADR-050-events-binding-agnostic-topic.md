@@ -63,7 +63,7 @@ The ROADMAP said both "promote `topic` to a **field on the event descriptor** SP
 ### ⚠️ Trade-offs
 
 - **[-] Bindings must resolve `topic` from the registry** (an ordinal → spec lookup on the publish path). It is O(1) and off the in-memory hot path; the Kafka path already did an ordinal → name lookup, now a spec lookup.
-- **[-] `EventTypeSpec` equality now includes `topic`.** Re-registering the same `(name, ordinal)` with a *different* topic is a conflict — correct (a type's topic changing under a fixed name/ordinal is a misconfiguration), and consistent with how `persistent` / `ordered` already participate in equality.
+- **[-] `EventTypeSpec` equality now includes `topic`.** Re-registering the same `(name, ordinal)` with a *different non-blank* topic is a conflict — correct (a type's topic changing under a fixed name/ordinal is a misconfiguration), and consistent with how `persistent` / `ordered` already participate in equality. A blank topic is normalized to `null` in the canonical (compact) constructor, so `null` and blank are the *same* identity — mixing the 2-arg and 3-arg factories for the same type does **not** raise a spurious `EX-EVENT-6003`, and `hasTopic()` (the effective-value view) agrees with `equals()` (the identity view) on the "no override" state.
 - **[-] Full value only after the lockstep lands.** Until the `exeris-tooling` generator populates `topic`, the kernel seam ships correct but unpopulated by codegen (mirrors ADR-046's generator-rewrite lockstep). Hand-written registrations can use it immediately.
 
 ### 📋 What is NOT in scope

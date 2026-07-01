@@ -232,6 +232,20 @@ public abstract class AbstractEventRegistryTck {
         }
 
         @Test
+        @DisplayName("null vs blank topic for the same name+ordinal is NOT a conflict (blank normalizes to null)")
+        void nullAndBlankTopicAreSameIdentity() {
+            registry.register(EventTypeSpec.of(TYPE_PLAIN, ORDINAL_PLAIN));               // topic = null
+
+            assertThatCode(() -> registry.register(EventTypeSpec.of(TYPE_PLAIN, ORDINAL_PLAIN, "   ")))
+                    .as("a blank topic normalizes to null (ADR-050), so re-registering the same "
+                            + "name+ordinal with a blank topic MUST be idempotent, not an EX-EVENT-6003 conflict")
+                    .doesNotThrowAnyException();
+            assertThat(registry.resolve(TYPE_PLAIN).hasTopic())
+                    .as("the normalized spec still reports no override")
+                    .isFalse();
+        }
+
+        @Test
         @DisplayName("re-registering the IDENTICAL topic-carrying spec is idempotent")
         void sameTopicSpecIsIdempotent() {
             EventTypeSpec spec = EventTypeSpec.ofPersistent(TYPE_TOPICED, ORDINAL_TOPICED, TOPIC_OVERRIDE);

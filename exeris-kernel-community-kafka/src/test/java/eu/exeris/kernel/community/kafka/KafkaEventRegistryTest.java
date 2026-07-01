@@ -64,6 +64,21 @@ class KafkaEventRegistryTest {
     }
 
     @Test
+    @DisplayName("a blank topic normalizes to null — null vs blank for same name+ordinal is idempotent, not a conflict")
+    void blankTopicNormalizesToNull() {
+        KafkaEventRegistry registry = new KafkaEventRegistry();
+        registry.register(EventTypeSpec.ofPersistent(TYPE, ORDINAL));                 // topic = null
+
+        assertThatCode(() -> registry.register(EventTypeSpec.ofPersistent(TYPE, ORDINAL, "   ")))
+                .as("blank normalizes to null (ADR-050) — same identity, no spurious conflict")
+                .doesNotThrowAnyException();
+        assertThat(registry.resolve(TYPE).hasTopic()).isFalse();
+        assertThat(registry.resolve(TYPE).topic())
+                .as("a blank topic MUST be observable as normalized null")
+                .isNull();
+    }
+
+    @Test
     @DisplayName("topic is part of spec identity: different topic conflicts; identical spec is idempotent")
     void topicParticipatesInIdentity() {
         KafkaEventRegistry registry = new KafkaEventRegistry();
