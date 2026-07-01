@@ -55,8 +55,11 @@ public final class KafkaEventBrokerPort implements OutboxBrokerPort {
 
     /**
      * @param producer        a configured Kafka producer; the port does NOT close it
-     * @param ordinalToTopic  resolves a registered event-type ordinal to its destination topic
-     *                        (typically {@code KafkaEventConfig.topicFor(registry.nameOfOrdinal(o))})
+     * @param ordinalToTopic  resolves a registered event-type ordinal to its destination topic.
+     *                        To stay consistent with the {@code KafkaEventEngine} publish path,
+     *                        the resolver should honour the ADR-050 topic override — i.e. the
+     *                        registered spec's {@code topic} when present, else the name-derived
+     *                        default (e.g. {@code config.topicFor(spec.hasTopic() ? spec.topic() : spec.name())})
      */
     public KafkaEventBrokerPort(Producer<byte[], byte[]> producer,
                                 IntFunction<String>      ordinalToTopic) {

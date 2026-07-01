@@ -69,9 +69,15 @@ final class KafkaEventRegistry implements EventRegistry {
         return byName.size();
     }
 
-    /** Reverse lookup used by the Kafka publish path to compute topic names from ordinals. */
-    /* default */ String nameOfOrdinal(int ordinal) {
-        return byOrdinal.get(ordinal);
+    /**
+     * Reverse lookup from ordinal to the full {@link EventTypeSpec} — the Kafka publish path
+     * resolves the concrete topic from the spec (its binding-agnostic {@code topic} override
+     * when present, else the type {@code name} — ADR-050). Returns {@code null} when the ordinal
+     * is not registered.
+     */
+    /* default */ EventTypeSpec specOfOrdinal(int ordinal) {
+        String name = byOrdinal.get(ordinal);
+        return name == null ? null : byName.get(name);
     }
 
     /**

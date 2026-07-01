@@ -20,6 +20,7 @@ import eu.exeris.kernel.spi.events.EventLoop;
 import eu.exeris.kernel.spi.events.EventPayload;
 import eu.exeris.kernel.spi.events.EventQueue;
 import eu.exeris.kernel.spi.events.EventRegistry;
+import eu.exeris.kernel.spi.events.EventTypeSpec;
 import eu.exeris.kernel.spi.events.SubscriptionToken;
 import eu.exeris.kernel.spi.exceptions.events.EventBusException;
 
@@ -47,9 +48,11 @@ import java.util.concurrent.locks.LockSupport;
  *
  * <h2>Wire Model</h2>
  * <ul>
- *   <li>{@link EventBus#publish} delegates to a Kafka {@link Producer}; the Kafka topic is
- *       {@code KafkaEventConfig.topicFor(registry.nameOfOrdinal(...))}, the partition key is
- *       the 16-byte stream UUID (so events for the same saga land on the same partition).</li>
+ *   <li>{@link EventBus#publish} delegates to a Kafka {@link Producer}; the Kafka topic is the
+ *       registered type's binding-agnostic {@code topic} override when present, else the
+ *       name-derived {@code KafkaEventConfig.topicFor(spec.name())} default (ADR-050). The
+ *       partition key is the 16-byte stream UUID (so events for the same saga land on the same
+ *       partition).</li>
  *   <li>Subscribers register against an internal {@link InMemoryEventBus}; nothing is delivered
  *       locally on publish — events surface to local subscribers only after a Kafka roundtrip,
  *       which gives the same semantics as a remote subscriber.</li>
@@ -181,6 +184,18 @@ public final class KafkaEventEngine implements EventEngine {
         return new KafkaProducer<>(props);
     }
 
+    /**
+     * Resolves the concrete Kafka topic for a registered event type (ADR-050): the spec's
+     * binding-agnostic {@code topic} override when present, else the default derived from the
+     * event-type {@code name}. The <b>same</b> resolution feeds both the publish path
+     * ({@code KafkaPublishBus.buildRecord}) and the subscribe path
+     * ({@code ConsumerLoop.refreshSubscriptions}), so a topic-overridden type produces and
+     * consumes on the same topic instead of splitting across the name-derived default.
+     */
+    /* default */ static String effectiveTopic(EventTypeSpec spec, KafkaEventConfig config) {
+        return config.topicFor(spec.hasTopic() ? spec.topic() : spec.name());
+    }
+
     // =========================================================================
     // Internal: KafkaPublishBus — publish via producer, subscribe via local delegate
     // =========================================================================
@@ -269,8 +284,8 @@ public final class KafkaEventEngine implements EventEngine {
          * inside the catch block and the real cause exception propagates unchanged.
          */
         private String resolveTopicSafe(EventDescriptor descriptor) {
-            String typeName = registry.nameOfOrdinal(descriptor.eventTypeOrdinal());
-            return (typeName == null || typeName.isBlank()) ? UNKNOWN_TOPIC : config.topicFor(typeName);
+            EventTypeSpec spec = registry.specOfOrdinal(descriptor.eventTypeOrdinal());
+            return spec == null ? UNKNOWN_TOPIC : effectiveTopic(spec, config);
         }
 
         @Override
@@ -284,13 +299,13 @@ public final class KafkaEventEngine implements EventEngine {
         }
 
         private ProducerRecord<byte[], byte[]> buildRecord(EventDescriptor descriptor, EventPayload payload) {
-            String typeName = registry.nameOfOrdinal(descriptor.eventTypeOrdinal());
-            if (typeName == null || typeName.isBlank()) {
+            EventTypeSpec spec = registry.specOfOrdinal(descriptor.eventTypeOrdinal());
+            if (spec == null) {
                 throw new EventBusException(
                         "Cannot publish event with unregistered ordinal: "
                         + descriptor.eventTypeOrdinal());
             }
-            String topic = config.topicFor(typeName);
+            String topic = effectiveTopic(spec, config);   // ADR-050: honour the topic override
             byte[] key   = KafkaEventCodec.streamKey(descriptor);
             byte[] value = KafkaEventCodec.encode(descriptor, payload);
             return new ProducerRecord<>(topic, key, value);
@@ -421,7 +436,12 @@ public final class KafkaEventEngine implements EventEngine {
             Set<String> registered = registry.registeredTypes();
             Set<String> desired = HashSet.newHashSet(registered.size());
             for (String type : registered) {
-                desired.add(config.topicFor(type));
+                // ADR-050: subscribe to the SAME topic the publish path produces to — the
+                // spec's topic override when present, else the name-derived default. Splitting
+                // these would strand a topic-overridden type (produced on the override, consumed
+                // on the name-derived default).
+                EventTypeSpec spec = registry.resolve(type);
+                desired.add(spec != null ? effectiveTopic(spec, config) : config.topicFor(type));
             }
             if (!desired.equals(subscribedTopics)) {
                 consumer.subscribe(desired);
