@@ -56,6 +56,13 @@ import static org.assertj.core.api.Assertions.assertThatCode;
  *   <li>publishAndAwait() blocks until all handlers complete.</li>
  * </ol>
  *
+ * <h2>No-Ordering by Design (ADR-049)</h2>
+ * <p>The {@link EventBus} is the <b>transient</b> pub/sub path and makes <b>no</b> per-key /
+ * per-aggregate ordering promise — {@code publish()} fans out concurrently (one virtual thread per
+ * handler). Per ADR-049, per-stream total ordering is a property of the durable-log surface
+ * ({@code EventStreamAppender} / {@code EventStreamReader}), <b>not</b> the bus. This suite
+ * therefore deliberately asserts no delivery order; callers needing ordering use the durable log.
+ *
  * <h2>Usage</h2>
  * <pre>{@code
  * class CommunityEventBusTest extends AbstractEventBusTck {

@@ -726,6 +726,21 @@ public final class KernelErrorCodes {
      */
     public static final String EX_EVENT_6007 = "EX-EVENT-6007";
 
+    /**
+     * Event-log append version conflict: an optimistic-concurrency append
+     * ({@code EventStreamAppender.append(streamId, expectedVersion, …)}, ADR-049) was rejected
+     * because the caller's {@code expectedVersion} did not match the stream's current head
+     * sequence. Fail-closed — the event is not appended and the head is unchanged.
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} streamType       (the stream's type qualifier)</li>
+     *   <li>index 1 – {@code long}   expectedVersion  (version the caller expected)</li>
+     *   <li>index 2 – {@code long}   actualVersion    (the stream's actual head)</li>
+     * </ul>
+     */
+    public static final String EX_EVENT_6008 = "EX-EVENT-6008";
+
     // -----------------------------------------------------------------------
     // EX-FLOW – Flow Engine / Saga Orchestration subsystem
     // -----------------------------------------------------------------------

@@ -179,12 +179,12 @@ in the `EventDescriptor` primitive layout.
 
 The "one log, four views" family — streaming, sourcing, KV, distributed — all derive from a single durable log and must honour one consistency boundary. **[ADR-049](../adr/ADR-049-events-log-ordering-and-optimistic-concurrency-boundary.md)** settles where that boundary lives:
 
-- **Durable log (`EventStreamAppender`) — ordering + OCC owned here (mandatory).** Every binding provides **per-`StreamId` total ordering** (concurrent appends to one stream are linearized and assigned strictly monotonic sequences; `EventStreamReader.replayFromVersion` reads them back in order) and honours an **append-with-expected-version** optimistic-concurrency check. Target append shape (implementation slice): `AppendResult append(StreamId, long expectedVersion, EventDescriptor, EventPayload)` with an `ANY_VERSION` sentinel for append-only callers; a version mismatch fails closed with `EX-EVENT-6008` (no silent overwrite).
+- **Durable log (`EventStreamAppender`) — ordering + OCC owned here (mandatory).** Every binding provides **per-`StreamId` total ordering** (concurrent appends to one stream are linearized and assigned strictly monotonic sequences; `EventStreamReader.replayFromVersion` reads them back in order) and honours an **append-with-expected-version** optimistic-concurrency check. Append shape: `AppendResult append(StreamId, long expectedVersion, EventDescriptor, EventPayload)` returning the committed 1-based per-stream sequence; an `ANY_VERSION` sentinel opts append-only callers out of the check; a version mismatch fails closed with `EX-EVENT-6008` (no silent overwrite).
 - **Transient bus (`EventBus.publish`) — unordered by design.** The in-memory bus keeps its concurrent per-handler fan-out and makes **no** per-key / per-aggregate ordering promise. Ordering is a property of the durable-log surface only.
 - **`FlowSnapshot.schemaVersion` CAS — a separate, Persistence-owned mechanism.** It is flow-snapshot state concurrency (ADR-013), not the event-log append OCC. The two are distinct and are not merged.
 - **The Wall holds.** Bindings realize ordering/OCC privately (Kafka: `streamId`-keyed partition order + a per-stream sequence; Postgres outbox: per-stream sequence column + `INSERT … WHERE expected = current` CAS; Enterprise off-heap log: native sequence). No broker/JDBC type enters the Events SPI.
 
-**Current state:** decision landed (ADR-049, this v0.10 slice). The `EventStreamAppender` signature change, `EX-EVENT-6008`, and the `AbstractEventStreamAppenderTck` / `AbstractEventStreamReaderTck` bindings on ≥2 durable bindings are the deferred implementation slice — see the Testing Strategy "Order Integrity" note.
+**Current state:** SPI surface landed (ADR-049 implementation slice, v0.10) — `EventStreamAppender.append(StreamId, long expectedVersion, EventDescriptor, EventPayload)` returning `AppendResult`, the `ANY_VERSION` sentinel, `EX-EVENT-6008` + `EventStreamAppendConflictException`, the `EventStreamReader` ordering contract, and the updated abstract TCKs (`AbstractEventStreamAppenderTck` ordering + OCC cases; `AbstractEventBusTck` no-ordering note). **Remaining merge gate:** concrete bindings on ≥2 durable logs (Community Postgres outbox + Kafka) extending the abstract TCKs — the end-to-end append→replay ordering round-trip.
 
 ---
 
@@ -200,9 +200,8 @@ The "one log, four views" family — streaming, sourcing, KV, distributed — al
 | `EX-EVENT-6004` | Provider Boot Failure | `[0] String providerName, [1] String reason` |
 | `EX-EVENT-6005` | Outbox Event → DLQ | `[0] String eventType, [1] String reason, [2] int retryCount` |
 | `EX-EVENT-6006` | Projection Handler Failure | `[0] String projectionName, [1] int eventTypeOrdinal` |
-| `EX-EVENT-6007` | Event-Loop VT Uncaught | `[0] String loopName, [1] String exceptionType`                           |
-
-> **Proposed (ADR-049):** `EX-EVENT-6008` — event-log append version conflict on `EventStreamAppender.append(…, expectedVersion, …)`; `rawArgs [0] String streamType, [1] long expectedVersion, [2] long actualVersion`. Lands with the append-with-expected-version implementation slice.
+| `EX-EVENT-6007` | Event-Loop VT Uncaught | `[0] String loopName, [1] String exceptionType` |
+| `EX-EVENT-6008` | Append Version Conflict | `[0] String streamType, [1] long expectedVersion, [2] long actualVersion`                           |
 
 **Backpressure note for `EX-EVENT-6002`:** When thrown, the publisher MUST NOT retry inline. The
 `EventBus` must propagate this exception to the caller's `StructuredTaskScope` boundary, allowing
@@ -327,11 +326,11 @@ public interface EventStreamReader extends AutoCloseable {
 
 @FunctionalInterface
 public interface EventStreamAppender {
-    // Same RAII ownership transfer as EventBus.publish(...)
-    // ADR-049: the implementation slice changes this to
-    //   AppendResult append(StreamId, long expectedVersion, EventDescriptor, EventPayload)
-    // (ANY_VERSION opts out of the OCC check; mismatch -> EX-EVENT-6008). Versionless form shown is pre-slice.
-    void append(StreamId streamId, EventDescriptor descriptor, EventPayload payload);
+    long ANY_VERSION = -1L; // skip the OCC check (unconditional append-only)
+    // Per-StreamId ordering + optimistic concurrency (ADR-049): expectedVersion must match the
+    // stream head (or ANY_VERSION to skip); mismatch -> EventStreamAppendConflictException (EX-EVENT-6008).
+    // Same RAII ownership transfer as EventBus.publish(...); returns the committed per-stream sequence.
+    AppendResult append(StreamId streamId, long expectedVersion, EventDescriptor descriptor, EventPayload payload);
 }
 
 public record StreamId(long streamIdHigh, long streamIdLow, String streamType) { ... }

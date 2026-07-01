@@ -48,6 +48,10 @@ import static org.assertj.core.api.Assertions.assertThatNullPointerException;
  *   <li>Each {@link EventPayload} handed to the iterator arrives at {@code refCount == 1};
  *       consumer closes own each payload (no broadcast retain protocol on replay).</li>
  *   <li>Replay from a stream that has no events returns an empty (but valid) stream.</li>
+ *   <li><b>Ordering (ADR-049):</b> {@code replayFromVersion} yields a stream's events in strictly
+ *       ascending {@code committedSequence} order — the read side of the durable-log ordering
+ *       boundary. The end-to-end append→replay ordering round-trip is exercised by the concrete
+ *       binding integration tests (Postgres outbox, Kafka), which control payload identity.</li>
  * </ol>
  *
  * <h2>Usage</h2>
