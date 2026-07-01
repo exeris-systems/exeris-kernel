@@ -78,7 +78,26 @@ public class EventStreamAppendConflictException extends ExerisKernelException {
      */
     public static EventStreamAppendConflictException versionConflict(
             String streamType, long expectedVersion, long actualVersion) {
-        return new EventStreamAppendConflictException(KernelErrorCodes.EX_EVENT_6008, MSG_VERSION_CONFLICT, null,
+        return versionConflict(streamType, expectedVersion, actualVersion, null);
+    }
+
+    /**
+     * Creates an {@code EventStreamAppendConflictException} for a version mismatch on append,
+     * preserving the driver-level cause (e.g. the SQLSTATE-23 integrity violation that revealed a
+     * lost INSERT race).
+     *
+     * <p>Sets error code {@value KernelErrorCodes#EX_EVENT_6008}.
+     * rawArgs layout: {@code [String streamType, long expectedVersion, long actualVersion]}.
+     *
+     * @param streamType      the target stream's type qualifier
+     * @param expectedVersion the version the caller passed as {@code expectedVersion}
+     * @param actualVersion   the stream's actual current head sequence
+     * @param cause           the underlying driver failure that detected the conflict; may be {@code null}
+     * @return a fully initialised {@link EventStreamAppendConflictException}
+     */
+    public static EventStreamAppendConflictException versionConflict(
+            String streamType, long expectedVersion, long actualVersion, Throwable cause) {
+        return new EventStreamAppendConflictException(KernelErrorCodes.EX_EVENT_6008, MSG_VERSION_CONFLICT, cause,
                 streamType, expectedVersion, actualVersion);
     }
 }

@@ -342,7 +342,7 @@ public record StreamId(long streamIdHigh, long streamIdLow, String streamType) {
 
 **Bindings (status):**
 
-- PostgreSQL outbox replay — planned (no current binding).
+- PostgreSQL event-log — **shipped (ADR-049, v0.10)**: `JdbcEventStreamAppender` / `JdbcEventStreamReader` over the dedicated `exeris_event_log` table (per-`StreamId` monotonic ordering + append-with-expected-version OCC → `EX-EVENT-6008`; `V0.10.0` migration). Bound into `KernelProviders.EVENT_STREAM_APPENDER` / `EVENT_STREAM_READER` by `CommunityEventsSubsystem` when a persistence engine is present. Distinct from the transactional `exeris_outbox` delivery drain.
 - Kafka driver — **shipped in 0.7 Sprint 5b2** (`exeris-kernel-community-kafka`). `KafkaEventEngine` exposes the consumer roundtrip via its in-process `EventBus` delegate today; a dedicated `EventStreamReader`/`EventStreamAppender` wiring on top of `KafkaEventBrokerPort` is a follow-up. Publish-side failures (since v0.8 Sprint 5, JFR-091) emit `KafkaPublishFailedEvent` (JFR name `eu.exeris.kernel.events.kafka.PublishFailed`, fields `engineName, topic, eventTypeOrdinal, publishMode, exceptionClass, exceptionMessage`) before the engine wraps the cause as `EventBusException`. **Payload bytes are never logged** (Glass-Box secret-safe contract); the `topic` lookup is best-effort and falls back to `"<unknown>"` on unregistered ordinals so the JFR emit never NPEs inside the catch block.
 - Enterprise off-heap log — out-of-repo, target-state.
 
