@@ -25,6 +25,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.LongBinaryOperator;
 
 /**
@@ -72,7 +73,11 @@ public final class KafkaEventStreamAppender implements EventStreamAppender {
     // A unit test injects a fake to exercise the OCC / monotonic / failure logic without a broker.
     private final LongBinaryOperator headResolver;
     private final Map<StreamKey, Long> heads = new ConcurrentHashMap<>();
-    private final Map<StreamKey, Object> streamLocks = new ConcurrentHashMap<>();
+    // Per-stream lock: a ReentrantLock (not an intrinsic monitor) so the broker-ack wait inside the
+    // critical section unmounts the virtual thread cleanly. Sequence-assignment + send stay under the
+    // same lock — that serialization IS the ADR-049 per-StreamId total-ordering guarantee, not a cost
+    // to optimize away (releasing before send would let concurrent same-stream appends reorder).
+    private final Map<StreamKey, ReentrantLock> streamLocks = new ConcurrentHashMap<>();
 
     /**
      * @param producer   a configured Kafka producer ({@code acks=all} recommended); NOT closed here
@@ -115,8 +120,9 @@ public final class KafkaEventStreamAppender implements EventStreamAppender {
     private AppendResult appendUnderStreamLock(StreamId streamId, long expectedVersion,
                                                EventDescriptor descriptor, EventPayload payload) {
         StreamKey key = new StreamKey(streamId.streamIdHigh(), streamId.streamIdLow());
-        Object lock = streamLocks.computeIfAbsent(key, k -> new Object());
-        synchronized (lock) {
+        ReentrantLock lock = streamLocks.computeIfAbsent(key, k -> new ReentrantLock());
+        lock.lock();
+        try {
             Long cached = heads.get(key);
             long head = cached != null ? cached : recoverHead(key);
             if (expectedVersion != ANY_VERSION && expectedVersion != head) {
@@ -131,6 +137,8 @@ public final class KafkaEventStreamAppender implements EventStreamAppender {
             send(streamId, recordKey, frame);
             heads.put(key, next);
             return new AppendResult(next);
+        } finally {
+            lock.unlock();
         }
     }
 

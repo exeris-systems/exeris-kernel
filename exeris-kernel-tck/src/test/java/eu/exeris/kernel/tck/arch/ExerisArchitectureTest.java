@@ -66,10 +66,12 @@ public class ExerisArchitectureTest {
     static final ArchRule noImplLeaksInSpi = noClasses()
             .that().resideInAPackage("eu.exeris.kernel.spi..")
             .should().dependOnClassesThat().resideInAnyPackage(
-                    "io.netty..", "io.uring..", "org.openssl..", "com.zaxxer.hikari..", "java.sql.."
+                    "io.netty..", "io.uring..", "org.openssl..", "com.zaxxer.hikari..", "java.sql..",
+                    "com.nimbusds..", "org.apache.kafka.."
             )
             .allowEmptyShould(true)
-            .because("SPI must be implementation-blind (The Wall).");
+            .because("SPI must be implementation-blind (The Wall) — no JWT/Nimbus (ADR-040) "
+                    + "or Kafka client (ADR-049/050) vocabulary may cross into the SPI.");
 
     @ArchTest
     static final ArchRule noDiFrameworksInSpi = noClasses()

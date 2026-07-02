@@ -21,7 +21,6 @@ import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.transport.TransportStream;
 
-import java.lang.foreign.MemorySegment;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
@@ -164,9 +163,9 @@ public final class HttpStreamEngine implements HttpStreamExchange {
         }
         failClosedIfAuthExpired();
 
-        byte[] frame = SseEventEncoder.encode(event);
-        awaitCredit(frame.length);
-        transferFrame(frame);
+        int frameBytes = SseEventEncoder.encodedLength(event);
+        awaitCredit(frameBytes);
+        transferFrame(event, frameBytes);
         eventsEmitted.incrementAndGet();
     }
 
@@ -210,18 +209,19 @@ public final class HttpStreamEngine implements HttpStreamExchange {
         }
     }
 
-    private void transferFrame(byte[] frame) {
-        LoanedBuffer buffer = allocator.allocateNetwork(frame.length);
+    private void transferFrame(StreamEvent event, int frameBytes) {
+        LoanedBuffer buffer = allocator.allocateNetwork(frameBytes);
         boolean accounted = false;
         try {
-            MemorySegment.copy(MemorySegment.ofArray(frame), 0, buffer.segment(), 0, frame.length);
-            buffer.setSize(frame.length);
-            outstandingBytes.addAndGet(frame.length);
+            // Zero-copy: frame the event straight into the egress segment (no intermediate byte[]).
+            SseEventEncoder.encodeInto(event, buffer.segment(), 0L);
+            buffer.setSize(frameBytes);
+            outstandingBytes.addAndGet(frameBytes);
             accounted = true;
-            buffer.addCloseAction(() -> releaseCredit(frame.length));
+            buffer.addCloseAction(() -> releaseCredit(frameBytes));
         } catch (RuntimeException error) {
             if (accounted) {
-                outstandingBytes.addAndGet(-frame.length);
+                outstandingBytes.addAndGet(-frameBytes);
             }
             buffer.close();
             throw error;
@@ -232,7 +232,7 @@ public final class HttpStreamEngine implements HttpStreamExchange {
             // ("stream closed") or a TransportException surfaced from a synchronous flush whose
             // socket write faulted (broken pipe / RST after peer disconnect). Both mean the peer is
             // gone: map them to the unchecked StreamClosedException the emit loop unwinds on.
-            stream.queueWrite(buffer, frame.length);
+            stream.queueWrite(buffer, frameBytes);
         } catch (RuntimeException streamClosed) {
             // Safety net for the credit accounting: the TransportStream.queueWrite contract closes the
             // buffer before throwing (its close-action returns the credit), but close() is idempotent and

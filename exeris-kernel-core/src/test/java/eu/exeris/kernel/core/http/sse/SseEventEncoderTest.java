@@ -87,4 +87,23 @@ class SseEventEncoderTest {
         assertThat(encode(StreamEvent.of("zażółć gęślą — €")))
                 .isEqualTo("data: zażółć gęślą — €\n\n");
     }
+
+    @Test
+    void supplementaryCodePointIsEncodedAsFourUtf8Bytes() {
+        // U+1F680 ROCKET (surrogate pair in UTF-16 → 4-byte UTF-8) — the zero-copy encoder must walk
+        // by code point, not code unit, or it would split the pair. Bytes must match getBytes(UTF_8).
+        String rocket = "🚀";
+        byte[] actual = SseEventEncoder.encode(StreamEvent.of(rocket));
+        assertThat(actual).isEqualTo(("data: " + rocket + "\n\n").getBytes(StandardCharsets.UTF_8));
+    }
+
+    @Test
+    void unpairedSurrogateIsReplacedLikeGetBytes() {
+        // A lone high surrogate is malformed UTF-8 input; the encoder must emit the same single '?'
+        // replacement byte the JDK UTF-8 encoder does, so the segment path stays byte-identical.
+        String lone = "a\uD83Db";
+        byte[] actual = SseEventEncoder.encode(StreamEvent.of(lone));
+        assertThat(actual).isEqualTo(("data: " + lone + "\n\n").getBytes(StandardCharsets.UTF_8));
+        assertThat(new String(actual, StandardCharsets.UTF_8)).isEqualTo("data: a?b\n\n");
+    }
 }

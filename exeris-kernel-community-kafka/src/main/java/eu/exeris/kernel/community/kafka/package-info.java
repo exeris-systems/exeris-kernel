@@ -36,10 +36,13 @@
  * {@link eu.exeris.kernel.tck.contract.events.AbstractKafkaEventEngineTck}
  * (publish/consume roundtrip + idempotent close, Testcontainers Kafka 3.x).
  *
+ * <p>The durable event-log bindings {@link KafkaEventStreamAppender} and
+ * {@link KafkaEventStreamReader} (ADR-049 append-with-expected-version + per-stream ordering,
+ * {@code @since 0.10.0}) are implemented; see {@code docs/subsystems/events.md}.
+ *
  * <h2>Deferred</h2>
  * <ul>
- *   <li>Replay (seek by timestamp / offset) and the
- *       {@code EventStreamReader} / {@code EventStreamAppender} bindings.</li>
+ *   <li>Replay by wall-clock timestamp (offset-based tail read is implemented in the reader binding).</li>
  *   <li>Outbox-orchestrator-driven delivery wiring on top of {@link KafkaEventBrokerPort}.</li>
  *   <li>{@code enable.auto.commit=false} with manual commit-after-handler (today the
  *       loop runs auto-commit, which yields at-most-once semantics on consume).</li>

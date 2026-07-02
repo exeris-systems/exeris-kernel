@@ -230,7 +230,10 @@ class CommunityHttpStreamJfrTest {
         void readSome() {
             byte[] buf = new byte[CLIENT_READ_BUF];
             try {
-                client.getInputStream().read(buf);
+                int read = client.getInputStream().read(buf);
+                if (read < 0) {
+                    return; // peer closed the stream — best-effort read, nothing to consume
+                }
             } catch (IOException _) {
                 // best effort
             }
