@@ -59,10 +59,24 @@ operates on local memory, a PostgreSQL partition, or a Kafka cluster. (The SPI i
 - `KafkaEventCodec` — fixed 48-byte wire header (`eventIdHigh/Low`, `streamIdHigh/Low`, `ordinal`, `flags`, `occurredAtMs`) followed by the payload tail. `encode()` / `decodeDescriptor()` / `decodePayloadBytes()` keep `EventDescriptor` primitives bit-exact across the broker hop.
 - `KafkaEventBrokerPort` — Core `OutboxBrokerPort` adapter wrapping `org.apache.kafka.clients.producer.KafkaProducer<byte[],byte[]>`; takes an `IntFunction<String> ordinalToTopic` resolver (Wall-friendly: Core never sees Kafka classes). `brokerId() = "kafka"`.
 - `KafkaEventEngine` — `EventEngine` implementation with three composed actors: `KafkaPublishBus` (publish-via-producer, subscribe-delegated to an in-process `InMemoryEventBus`), `ConsumerLoop` (single virtual-thread `KafkaConsumer` poll loop with dynamic subscription refresh per registered ordinal — quiesces on `LockSupport.parkNanos(pollTimeout)` while the registry has no entries, since `KafkaConsumer.poll()` throws `IllegalStateException` on an unsubscribed consumer in kafka-clients 3.x), and `NoOpQueue` (degenerate — Kafka itself is the durable queue, so the local `EventQueue` slot is bypassed).
-- `KafkaEventRegistry` + `KafkaHeapEventPayload` — package-private heap-backed registry with `nameOfOrdinal(int)` reverse lookup (used by the codec for topic resolution) and an `AtomicInteger`-backed payload owner for the consumer loop hand-off.
-- `KafkaEventProvider` (`META-INF/services/eu.exeris.kernel.spi.events.EventProvider`, priority `100` — outranks Community in-memory `0`) reads `events.kafka.bootstrap-servers` / `group-id` / `topic-prefix` / `require-all-acks` / `producer-linger-ms` / `consumer-poll-timeout-ms` from `KernelProviders.config()`. Tests/TCK use the `KafkaEventProvider.create(spi, kafka)` factory which short-circuits the lookup.
+- `KafkaEventRegistry` + `KafkaHeapEventPayload` — package-private heap-backed registry with a `specOfOrdinal(int)` reverse lookup (ADR-050: returns the full `EventTypeSpec` so the publish + subscribe paths honour a `topic` override via `KafkaEventEngine.effectiveTopic`) and an `AtomicInteger`-backed payload owner for the consumer loop hand-off.
+- `KafkaEventProvider` (`META-INF/services/eu.exeris.kernel.spi.events.EventProvider`, priority `50` — outranks Community in-memory `0`, below the Enterprise tier slot `100`) reads `events.kafka.bootstrap-servers` / `group-id` / `topic-prefix` / `require-all-acks` / `producer-linger-ms` / `consumer-poll-timeout-ms` from `KernelProviders.config()`. Tests/TCK use the `KafkaEventProvider.create(spi, kafka)` factory which short-circuits the lookup.
 - `AbstractKafkaEventEngineTck` (EVENT-206) + `CommunityKafkaEventEngineTckIT` (`@Tag("integration") @Testcontainers`, `confluentinc/cp-kafka:7.6.1`) — asserts publish/consume roundtrip with bit-exact descriptor preservation, idempotent close, and start-before-register warm-up safety (engine started with no registry entries must not crash the consumer loop and must still deliver after a later register+publish). Green in ~6 s on the local toolchain.
 - `CommunityKafkaFlowChoreographyTckIT` (DIST-302 smoke) drives `AbstractFlowChoreographyTck` (Wake / Start / Ignore / RAII) over a Testcontainers Kafka broker; `CommunityCrossEngineChoreographyIT` (DIST-302 closure, Sprint 6c) wires two `FlowEngine`s against a shared `JdbcFlowSnapshotStore` (Postgres) plus the same Kafka broker and proves a saga parked on Service A is woken and completed on Service B via the snapshot fallback in `lookupParked`.
+
+**Implemented in 0.10 (ADR-046 — SPI + Community driver + TCK + bootstrap binding + encode-failure JFR; tooling generator lockstep):**
+
+- **Event-payload codec seam.** A tier-neutral `EventPayloadCodec` + `EventPayloadCodecRegistry`
+  (`eu.exeris.kernel.spi.events.codec`) that turns a typed/structured domain-event payload into the
+  already-serialized bytes the `EventBus` carries today — registry-selected by `(payloadType, contentType)`,
+  Community JSON default, resolved **in the generated `*EventPublisher`** (not in the bus), wired via the
+  optional `KernelProviders.EVENT_PAYLOAD_CODEC_REGISTRY` slot — bound at scope init by
+  `CommunityEventsSubsystem` from `EventProvider.eventPayloadCodecRegistry()` (the `EVENT_STREAM_READER` /
+  `EVENT_STREAM_APPENDER` precedent). Encode failures emit `CommunityEventPayloadEncodeFailedEvent` (JFR,
+  secret-safe). Mirrors the HTTP body-codec matrix (ADR-009/034/036). Strictly additive — `EventBus` /
+  `EventEngine` / `EventPayload` unchanged. Unblocks the EV1 generated-event payloads (today the generated
+  publisher emits `EventPayload.empty()`); the `exeris-tooling` publisher rewrite is the remaining lockstep.
+  See `docs/adr/ADR-046-event-payload-codec-spi.md`.
 
 **Not yet implemented (later):**
 
@@ -90,7 +104,7 @@ the payload immediately — eliminating silent leaks from dead events.
 
 ### 3. Zero-Copy Native Flow
 
-`EventPayload` bytes travel from the producer's `LoanedBuffer` directly through the `EventBus` to subscribers with RAII ref-count lifecycle — no heap serialization on the dispatch path. When the Outbox is enabled, the Community implementation delivers events to the in-memory `EventBus` after the database commit. The Sprint 5b2 Kafka driver (`KafkaEventEngine` + `KafkaEventBrokerPort`) preserves the same RAII contract on the local hops; the broker hop itself is a fixed-layout byte copy through `KafkaEventCodec` (48-byte header + payload tail) and therefore avoids JSON / reflection on the hot path. Enterprise off-heap log driver remains out-of-repo.
+`EventPayload` bytes travel from the producer's `LoanedBuffer` directly through the `EventBus` to subscribers with RAII ref-count lifecycle — no heap serialization on the dispatch path. Serialization of a typed payload into those bytes happens **upstream of the bus**, at the producer (today hand-rolled; the planned ADR-046 codec seam standardizes it in the generated publisher) — so the dispatch path itself stays copy-free. When the Outbox is enabled, the Community implementation delivers events to the in-memory `EventBus` after the database commit. The Sprint 5b2 Kafka driver (`KafkaEventEngine` + `KafkaEventBrokerPort`) preserves the same RAII contract on the local hops; the broker hop itself is a fixed-layout byte copy through `KafkaEventCodec` (48-byte header + payload tail) and therefore avoids JSON / reflection on the hot path. Enterprise off-heap log driver remains out-of-repo.
 
 ### 4. Backpressure by Design
 
@@ -149,7 +163,7 @@ in the `EventDescriptor` primitive layout.
 1. Define `EventDescriptor` (primitive-only routing metadata) and `EventPayload` (ref-counted off-heap bytes).
 2. Provide `EventStreamReader` and `EventStreamAppender` interfaces (since 0.7.0, EVENT-203) plus the `StreamId` / `EventStream` carriers used to query and stream events. Implementation-blind — bindings (PostgreSQL outbox, Kafka driver, Enterprise off-heap log) provide the cursor.
 3. Define `EventRegistry` ordinal contract for O(1) type routing.
-4. Define conflict-resolution routing via `EventDescriptor.flags` (PERSISTENT, ORDERED, ASYNC, BROADCAST). Note: optimistic concurrency version enforcement is a Persistence SPI concern (`PersistenceEngine.append(streamId, expectedVersion, …)`), not an Events routing concern.
+4. Define conflict-resolution routing via `EventDescriptor.flags` (PERSISTENT, ORDERED, ASYNC, BROADCAST) — advisory routing hints, **not** the ordering guarantee itself. Per **[ADR-049](../adr/ADR-049-events-log-ordering-and-optimistic-concurrency-boundary.md)**, per-`StreamId` total ordering and optimistic-concurrency **append-with-expected-version** are owned by the Events SPI on the durable-log surface (`EventStreamAppender`) — **not** by the transient `EventBus` (unordered by design) and **not** by Persistence. The separate `FlowSnapshot.schemaVersion` CAS (`JdbcFlowSnapshotStore`, ADR-013) is flow-snapshot state concurrency — a distinct mechanism, not the event-log append OCC. (There is no `PersistenceEngine.append(streamId, expectedVersion, …)`; the earlier note here pointed at a method that does not exist.)
 
 **What Events Core DOES:**
 
@@ -158,6 +172,32 @@ in the `EventDescriptor` primitive layout.
 3. Handle event serialization/deserialization using the Kernel's binary formats (no JSON on hot-path).
 4. Manage local **Projections** via `ProjectionEngine` — subscribes typed `ProjectionHandler<S>` instances to the bus and maintains their immutable state via lock-free `AtomicReference.updateAndGet`.
 5. Provide binary `EventDescriptorCodec` for off-heap serialisation of `EventDescriptor` structs (Panama FFM `StructLayout`, little-endian).
+
+---
+
+## Log-Ordering & Optimistic-Concurrency Boundary (ADR-049)
+
+The "one log, four views" family — streaming, sourcing, KV, distributed — all derive from a single durable log and must honour one consistency boundary. **[ADR-049](../adr/ADR-049-events-log-ordering-and-optimistic-concurrency-boundary.md)** settles where that boundary lives:
+
+- **Durable log (`EventStreamAppender`) — ordering + OCC owned here (mandatory).** Every binding provides **per-`StreamId` total ordering** (concurrent appends to one stream are linearized and assigned strictly monotonic sequences; `EventStreamReader.replayFromVersion` reads them back in order) and honours an **append-with-expected-version** optimistic-concurrency check. Append shape: `AppendResult append(StreamId, long expectedVersion, EventDescriptor, EventPayload)` returning the committed 1-based per-stream sequence; an `ANY_VERSION` sentinel opts append-only callers out of the check; a version mismatch fails closed with `EX-EVENT-6008` (no silent overwrite).
+- **Transient bus (`EventBus.publish`) — unordered by design.** The in-memory bus keeps its concurrent per-handler fan-out and makes **no** per-key / per-aggregate ordering promise. Ordering is a property of the durable-log surface only.
+- **`FlowSnapshot.schemaVersion` CAS — a separate, Persistence-owned mechanism.** It is flow-snapshot state concurrency (ADR-013), not the event-log append OCC. The two are distinct and are not merged.
+- **The Wall holds.** Bindings realize ordering/OCC privately (Kafka: `streamId`-keyed partition order + a per-stream sequence; Postgres outbox: per-stream sequence column + `INSERT … WHERE expected = current` CAS; Enterprise off-heap log: native sequence). No broker/JDBC type enters the Events SPI.
+
+**Current state:** SPI surface landed (ADR-049 implementation slice, v0.10) — `EventStreamAppender.append(StreamId, long expectedVersion, EventDescriptor, EventPayload)` returning `AppendResult`, the `ANY_VERSION` sentinel, `EX-EVENT-6008` + `EventStreamAppendConflictException`, the `EventStreamReader` ordering contract, and the updated abstract TCKs (`AbstractEventStreamAppenderTck` ordering + OCC cases; `AbstractEventBusTck` no-ordering note). **Remaining merge gate:** concrete bindings on ≥2 durable logs (Community Postgres outbox + Kafka) extending the abstract TCKs — the end-to-end append→replay ordering round-trip.
+
+---
+
+## Binding-Agnostic `topic` (ADR-050)
+
+The SDK `@DomainEvent.topic` attribute captures an author's routing target; **[ADR-050](../adr/ADR-050-events-binding-agnostic-topic.md)** gives it a kernel sink so it becomes portable across bindings.
+
+- **Where it lives: `EventTypeSpec.topic` (per-*type*), NOT `EventDescriptor`.** `topic` is a static per-type attribute, so it rides the type-registration record alongside the existing `name` `String` (both registration/lookup only, never the hot dispatch path). The primitive-only, Valhalla-ready `EventDescriptor` — and both Kafka wire codecs — stay byte-for-byte unchanged. `null`/blank means "no override"; `EventTypeSpec.hasTopic()` reports a real override.
+- **Kafka binding — honours the override on publish AND subscribe.** A single resolution `effectiveTopic(spec) = topicFor(spec.hasTopic() ? spec.topic() : spec.name())` feeds both the producer (`buildRecord`) and the consumer subscription (`refreshSubscriptions`); the `topicPrefix` still applies. A type with no override keeps the historical type-name topic.
+- **In-memory bus — topic-blind (advisory).** `InMemoryEventBus` routes by `eventTypeOrdinal` only and does not consult `topic`; delivery is unaffected by whether a type carries one (consistent with the ADR-049 unordered-bus stance).
+- **The Wall holds.** `topic` is a plain SPI `String`; only broker bindings assign it broker meaning.
+
+**Current state:** kernel slice landed (v0.10) — `EventTypeSpec.topic` + factories + `hasTopic()`; the Kafka `effectiveTopic` resolution on both paths; `AbstractEventRegistryTck` topic round-trip, `KafkaTopicResolutionTest`, the `AbstractKafkaEventEngineTck` override round-trip, and the `AbstractEventBusTck` topic-blind note. **Lockstep follow-up (separate repos):** `exeris-tooling` `KernelEventGenerator` populates `EventTypeSpec.ofPersistent(name, ordinal, topic)` (today it drops `@DomainEvent.topic` to a Javadoc-only reference) + an e2e assertion; `exeris-sdk` updates the `@DomainEvent.topic` "Open-Core status" Javadoc to the new stance.
 
 ---
 
@@ -170,7 +210,11 @@ in the `EventDescriptor` primitive layout.
 | `EX-EVENT-6001` | Generic Engine Failure| `[0] String message`                                                   |
 | `EX-EVENT-6002` | Bus Publish Failure   | `[0] String eventType, [1] long queueDepth, [2] long queueCapacity`    |
 | `EX-EVENT-6003` | Registry Conflict     | `[0] String eventType, [1] int ordinal`                                |
-| `EX-EVENT-6004` | Provider Boot Failure | `[0] String providerName, [1] String reason`                           |
+| `EX-EVENT-6004` | Provider Boot Failure | `[0] String providerName, [1] String reason` |
+| `EX-EVENT-6005` | Outbox Event → DLQ | `[0] String eventType, [1] String reason, [2] int retryCount` |
+| `EX-EVENT-6006` | Projection Handler Failure | `[0] String projectionName, [1] int eventTypeOrdinal` |
+| `EX-EVENT-6007` | Event-Loop VT Uncaught | `[0] String loopName, [1] String exceptionType` |
+| `EX-EVENT-6008` | Append Version Conflict | `[0] String streamType, [1] long expectedVersion, [2] long actualVersion`                           |
 
 **Backpressure note for `EX-EVENT-6002`:** When thrown, the publisher MUST NOT retry inline. The
 `EventBus` must propagate this exception to the caller's `StructuredTaskScope` boundary, allowing
@@ -295,8 +339,11 @@ public interface EventStreamReader extends AutoCloseable {
 
 @FunctionalInterface
 public interface EventStreamAppender {
-    // Same RAII ownership transfer as EventBus.publish(...)
-    void append(StreamId streamId, EventDescriptor descriptor, EventPayload payload);
+    long ANY_VERSION = -1L; // skip the OCC check (unconditional append-only)
+    // Per-StreamId ordering + optimistic concurrency (ADR-049): expectedVersion must match the
+    // stream head (or ANY_VERSION to skip); mismatch -> EventStreamAppendConflictException (EX-EVENT-6008).
+    // Same RAII ownership transfer as EventBus.publish(...); returns the committed per-stream sequence.
+    AppendResult append(StreamId streamId, long expectedVersion, EventDescriptor descriptor, EventPayload payload);
 }
 
 public record StreamId(long streamIdHigh, long streamIdLow, String streamType) { ... }
@@ -304,12 +351,14 @@ public record StreamId(long streamIdHigh, long streamIdLow, String streamType) {
 
 `StreamId` is wire-compatible with `EventDescriptor.streamIdHigh()` / `streamIdLow()` so the same routing index serves both descriptor dispatch and stream-scoped queries.
 
-**Zero-allocation replay path:** Events are streamed directly from the PostgreSQL WAL or Kafka topic into `LoanedBuffer` slabs — no intermediate `List<Event>` materialisation. `EventStream extends Iterable<EventPayload>, AutoCloseable`; each payload arrives at refCount 1 and the consumer closes it (no broadcast retain protocol on replay). The cursor is released via `EventStream.close()`.
+**Replay allocation contract:** `EventStream extends Iterable<EventPayload>, AutoCloseable`; each payload arrives at refCount 1 and the consumer closes it (no broadcast retain protocol on replay), and the cursor is released via `EventStream.close()`.
+
+Per-event allocation is bounded to one heap `byte[]` payload per row/record (no `List<EventPayload>` accumulation). Tier reality (ADR-049 Community bindings): the **JDBC** binding streams lazily over a live JDBC cursor; the **Kafka** binding performs a bounded read-to-end and materialises the matching `List<byte[]>` frames on heap before iterating (correct-but-not-scale-tuned — an advisory compacted-head checkpoint + partition-targeted reads are the deferred optimisation). Neither Community binding uses off-heap `LoanedBuffer` slabs — that zero-copy / WAL-streamed path is the out-of-repo Enterprise target-state, not the current Community behaviour.
 
 **Bindings (status):**
 
-- PostgreSQL outbox replay — planned (no current binding).
-- Kafka driver — **shipped in 0.7 Sprint 5b2** (`exeris-kernel-community-kafka`). `KafkaEventEngine` exposes the consumer roundtrip via its in-process `EventBus` delegate today; a dedicated `EventStreamReader`/`EventStreamAppender` wiring on top of `KafkaEventBrokerPort` is a follow-up. Publish-side failures (since v0.8 Sprint 5, JFR-091) emit `KafkaPublishFailedEvent` (JFR name `eu.exeris.kernel.events.kafka.PublishFailed`, fields `engineName, topic, eventTypeOrdinal, publishMode, exceptionClass, exceptionMessage`) before the engine wraps the cause as `EventBusException`. **Payload bytes are never logged** (Glass-Box secret-safe contract); the `topic` lookup is best-effort and falls back to `"<unknown>"` on unregistered ordinals so the JFR emit never NPEs inside the catch block.
+- PostgreSQL event-log — **shipped (ADR-049, v0.10)**: `JdbcEventStreamAppender` / `JdbcEventStreamReader` over the dedicated `exeris_event_log` table (per-`StreamId` monotonic ordering + append-with-expected-version OCC → `EX-EVENT-6008`; `V0.10.0` migration). Bound into `KernelProviders.EVENT_STREAM_APPENDER` / `EVENT_STREAM_READER` by `CommunityEventsSubsystem` when a persistence engine is present. Distinct from the transactional `exeris_outbox` delivery drain.
+- Kafka driver — **shipped in 0.7 Sprint 5b2** (`exeris-kernel-community-kafka`). `KafkaEventEngine` exposes the consumer roundtrip via its in-process `EventBus` delegate today; the ADR-049 durable event-log binding shipped in v0.10 — `KafkaEventStreamAppender` / `KafkaEventStreamReader` over a `streamId`-keyed log topic (log-authoritative per-`StreamId` sequence + append-with-expected-version OCC → `EX-EVENT-6008`), single-writer-per-stream best-effort (Kafka has no cross-instance CAS). Publish-side failures (since v0.8 Sprint 5, JFR-091) emit `KafkaPublishFailedEvent` (JFR name `eu.exeris.kernel.events.kafka.PublishFailed`, fields `engineName, topic, eventTypeOrdinal, publishMode, exceptionClass, exceptionMessage`) before the engine wraps the cause as `EventBusException`. **Payload bytes are never logged** (Glass-Box secret-safe contract); the `topic` lookup is best-effort and falls back to `"<unknown>"` on unregistered ordinals so the JFR emit never NPEs inside the catch block.
 - Enterprise off-heap log — out-of-repo, target-state.
 
 ---

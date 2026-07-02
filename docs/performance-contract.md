@@ -41,6 +41,21 @@ This is where Exeris implements the **"No Waste Compute"** philosophy.
 
 ---
 
+### 2.2.1 Execution-Tier Scope — HotSpot/C2 (the zero-allocation contract is profile-driven)
+
+The **0 B/req** allocation target and the broader **"No Waste Compute"** guarantees are **pinned to the HotSpot C2 JIT**. They depend on peak-tier, profile-driven optimizations — most importantly **Escape Analysis scalarization** of carriers, and the **intrinsification / runtime optimization of Panama FFM downcall stubs and `MemorySegment` / `VarHandle` access**. These are C2 runtime properties, not language-level guarantees.
+
+Under **GraalVM native-image (SubstrateVM)** the contract is **different, not broken**: AOT compilation without profile-guided optimization makes scalarization and FFM-path decisions more conservative, so the zero-allocation and per-core throughput SLOs above are **not asserted** under native-image. PGO (instrumented build → profile → optimized build) narrows the gap but is operationally heavy and out of scope for the default contract.
+
+**Consequences for benchmarking and claims:**
+
+- The targets in §2.1–§2.2 apply on **HotSpot/C2** (the *throughput tier*). Any benchmark asserting the zero-allocation or RPS-per-core claims **MUST** run on HotSpot/C2 and record the JIT tier. A native-image measurement of these specific claims is **out of contract** and must not be presented as a refutation of them.
+- **native-image is the *edge/lightweight tier*** — fast startup without warmup, small footprint, small image — a separately-scoped performance profile, not a regression of this one. Its enablement is a post-1.0 gated track (see ROADMAP "Road to 1.0" §"Scope Discipline & Declared Stances" — the Native-image / GraalVM stance).
+
+Scoping the contract to the execution tier it was measured on **defends the claim**: an unscoped "zero-alloc" assertion benchmarked under native-image would read as false when it is merely measured against the wrong contract.
+
+---
+
 ## 2.3 Admission Control: ThreadPark Starvation Prevention
 
 ### Latency & Fairness Guarantees

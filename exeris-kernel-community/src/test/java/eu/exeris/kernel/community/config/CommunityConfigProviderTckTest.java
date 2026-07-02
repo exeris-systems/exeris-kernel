@@ -20,7 +20,7 @@ import org.junit.jupiter.api.DisplayName;
  * <ul>
  *   <li>KernelSettings is computed exactly once (LazyConstant / JEP 526 semantic)</li>
  *   <li>Concurrent VT access under contention still yields a single instance</li>
- *   <li>priority() == 100 — correct Open-Core slot</li>
+ *   <li>priority() == 0 — correct Open-Core slot</li>
  *   <li>No banned Jackson/SnakeYAML parsers pulled in by this implementation</li>
  * </ul>
  *

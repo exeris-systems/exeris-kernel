@@ -66,10 +66,12 @@ public class ExerisArchitectureTest {
     static final ArchRule noImplLeaksInSpi = noClasses()
             .that().resideInAPackage("eu.exeris.kernel.spi..")
             .should().dependOnClassesThat().resideInAnyPackage(
-                    "io.netty..", "io.uring..", "org.openssl..", "com.zaxxer.hikari..", "java.sql.."
+                    "io.netty..", "io.uring..", "org.openssl..", "com.zaxxer.hikari..", "java.sql..",
+                    "com.nimbusds..", "org.apache.kafka.."
             )
             .allowEmptyShould(true)
-            .because("SPI must be implementation-blind (The Wall).");
+            .because("SPI must be implementation-blind (The Wall) — no JWT/Nimbus (ADR-040) "
+                    + "or Kafka client (ADR-049/050) vocabulary may cross into the SPI.");
 
     @ArchTest
     static final ArchRule noDiFrameworksInSpi = noClasses()
@@ -93,6 +95,20 @@ public class ExerisArchitectureTest {
             .should().dependOnClassesThat().haveFullyQualifiedName("sun.misc.Unsafe")
             .allowEmptyShould(true)
             .because("sun.misc.Unsafe is banned. Use FFM API.");
+
+    @ArchTest
+    static final ArchRule streamingSpiCarriesNoWireOrTransportTypes = noClasses()
+            .that().haveSimpleName("HttpStreamExchange")
+            .or().haveSimpleName("HttpStreamHandler")
+            .or().haveSimpleName("StreamEvent")
+            .should().dependOnClassesThat().resideInAnyPackage(
+                    "eu.exeris.kernel.core.http..",
+                    "eu.exeris.kernel.community..",
+                    "eu.exeris.kernel.spi.transport..",
+                    "jdk.jfr..")
+            .allowEmptyShould(true)
+            .because("ADR-043 / The Wall: the streaming SPI carriers carry no wire-format or transport "
+                    + "types; SSE framing is Core and the held-open transport is tier-specific.");
 
     @ArchTest
     static final ArchRule diagnosticsSpiIsEventFree = noClasses()

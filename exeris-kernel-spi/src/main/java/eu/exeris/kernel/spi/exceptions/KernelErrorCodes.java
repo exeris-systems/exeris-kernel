@@ -272,11 +272,16 @@ public final class KernelErrorCodes {
      * <p>This is a deliberate, non-fatal policy decision — not a hardware failure.
      * No connection state is allocated for the shed stream.
      *
-     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <p><b>Two surfaces, one code.</b> PAQS request-edge shedding emits this code as the JFR
+     * {@code StreamShedEvent} (typed event fields — streamId, priority, action, transport, occupancy — read
+     * by name, not by rawArgs index). The streaming stream-open shed (ADR-043) additionally <em>throws</em>
+     * it via {@link eu.exeris.kernel.spi.exceptions.transport.TransportException#streamShed(String, long)};
+     * the rawArgs layout below is that exception carrier's schema.
+     *
+     * <p><b>rawArgs layout for Glass-Box (exception carrier):</b>
      * <ul>
      *   <li>index 0 – {@code String} transportName</li>
-     *   <li>index 1 – {@code int}    streamPriority  (priority ordinal of the shed stream)</li>
-     *   <li>index 2 – {@code int}    thresholdPriority (active PAQS threshold at shed time)</li>
+     *   <li>index 1 – {@code long}   streamId (identifier of the shed stream)</li>
      * </ul>
      */
     public static final String EX_NET_4006 = "EX-NET-4006";
@@ -412,6 +417,34 @@ public final class KernelErrorCodes {
      * </ul>
      */
     public static final String EX_HTTP_4010 = "EX-HTTP-4010";
+
+    /**
+     * Server-push streaming: {@code HttpStreamExchange.emit(...)} was called after the stream had
+     * already closed (peer disconnect, graceful close, or abortive teardown). Carried by
+     * {@link eu.exeris.kernel.spi.exceptions.http.StreamClosedException} so an imperative emit loop
+     * exits on the throw without leaking a parked virtual thread (ADR-043). Secret-safe — carries
+     * only stream-scoped counters, never event payload.
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code long} eventsEmitted (events successfully emitted before close)</li>
+     * </ul>
+     */
+    public static final String EX_HTTP_4011 = "EX-HTTP-4011";
+
+    /**
+     * Server-push streaming: the authenticated principal's token expired while a stream was held
+     * open. The stream is deterministically closed (fail-closed per ADR-012 §5 — no fail-open
+     * fallthrough); validation happens at open-time and against an expiry deadline, never via a
+     * per-emit re-fetch. Secret-safe — carries only stream-scoped counters, never token content.
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code long} streamAgeMillis (elapsed since stream open at expiry)</li>
+     *   <li>index 1 – {@code long} eventsEmitted (events successfully emitted before expiry)</li>
+     * </ul>
+     */
+    public static final String EX_HTTP_4012 = "EX-HTTP-4012";
 
     // -----------------------------------------------------------------------
     // EX-PERS – Persistence subsystem
@@ -692,6 +725,21 @@ public final class KernelErrorCodes {
      * </ul>
      */
     public static final String EX_EVENT_6007 = "EX-EVENT-6007";
+
+    /**
+     * Event-log append version conflict: an optimistic-concurrency append
+     * ({@code EventStreamAppender.append(streamId, expectedVersion, …)}, ADR-049) was rejected
+     * because the caller's {@code expectedVersion} did not match the stream's current head
+     * sequence. Fail-closed — the event is not appended and the head is unchanged.
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} streamType       (the stream's type qualifier)</li>
+     *   <li>index 1 – {@code long}   expectedVersion  (version the caller expected)</li>
+     *   <li>index 2 – {@code long}   actualVersion    (the stream's actual head)</li>
+     * </ul>
+     */
+    public static final String EX_EVENT_6008 = "EX-EVENT-6008";
 
     // -----------------------------------------------------------------------
     // EX-FLOW – Flow Engine / Saga Orchestration subsystem

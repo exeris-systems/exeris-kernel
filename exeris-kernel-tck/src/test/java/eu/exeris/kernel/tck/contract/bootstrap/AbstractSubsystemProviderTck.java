@@ -40,7 +40,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
  *   <li>Every subsystem declares a valid, non-null {@link BootstrapPhase}.</li>
  *   <li>Every subsystem's dependsOn() list contains no null or blank entries.</li>
  *   <li>No reflection-based DI (public no-arg constructor required by ServiceLoader).</li>
- *   <li>priority() follows Open-Core convention (0 ≤ Community ≤ 100, Enterprise = 200+).</li>
+ *   <li>priority() follows Open-Core convention (Community = 0, Enterprise = 100).</li>
  *   <li>Returned list is non-null and does not itself contain null entries.</li>
  * </ol>
  *
@@ -84,7 +84,7 @@ public abstract class AbstractSubsystemProviderTck {
     void priorityIsNonNegative() {
         assertThat(provider.priority())
                 .as("SubsystemProvider.priority() must be non-negative " +
-                    "(convention: Community = 100, Enterprise = 200)")
+                    "(convention: Community = 0, Enterprise = 100)")
                 .isGreaterThanOrEqualTo(0);
     }
 

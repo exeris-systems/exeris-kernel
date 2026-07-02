@@ -45,9 +45,9 @@ class CommunityConfigProviderContractTest {
     }
 
     @Test
-    @DisplayName("priority() equals 100 for Community tier")
+    @DisplayName("priority() equals 0 for Community tier")
     void priorityIsCommunityLevel() {
-        assertThat(provider.priority()).isEqualTo(100);
+        assertThat(provider.priority()).isEqualTo(0);
     }
 
     @Test

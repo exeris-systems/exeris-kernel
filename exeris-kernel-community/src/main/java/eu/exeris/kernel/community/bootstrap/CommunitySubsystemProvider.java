@@ -19,8 +19,8 @@ import java.util.List;
  * to the {@code SubsystemOrchestrator}.
  *
  * <h2>Priority</h2>
- * <p>Returns {@code 100} — the Community open-core slot.
- * Enterprise overrides individual subsystems at priority {@code 200}.
+ * <p>Returns {@code 0} — the Community open-core slot.
+ * Enterprise overrides individual subsystems at priority {@code 100}.
  *
  * @since 0.5.0
  */

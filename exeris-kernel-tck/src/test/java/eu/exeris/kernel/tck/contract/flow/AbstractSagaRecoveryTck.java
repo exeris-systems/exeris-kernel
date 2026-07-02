@@ -8,6 +8,8 @@
  */
 package eu.exeris.kernel.tck.contract.flow;
 
+import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
+import eu.exeris.kernel.spi.exceptions.flow.FlowEngineException;
 import eu.exeris.kernel.spi.flow.FlowEngine;
 import eu.exeris.kernel.spi.flow.model.FlowContext;
 import eu.exeris.kernel.spi.flow.model.FlowDefinition;
@@ -37,6 +39,7 @@ import java.util.concurrent.locks.LockSupport;
 import java.util.function.BooleanSupplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * TCK: Abstract base for Flow / Saga recovery verification.
@@ -214,6 +217,79 @@ public abstract class AbstractSagaRecoveryTck {
             assertThat(step0Exec.get())
                     .as("step0 (validate) MUST NOT re-execute after resume — idempotency guard")
                     .isEqualTo(1);
+        }
+    }
+
+    // =========================================================================
+    // Definition changed under a parked saga — fail-closed SCHEMA_MISMATCH
+    // =========================================================================
+
+    @Nested
+    @DisplayName("Definition changed under a parked saga — fail-closed SCHEMA_MISMATCH")
+    class SchemaMismatchOnResume {
+
+        @Test
+        @Timeout(value = 30, unit = TimeUnit.SECONDS)
+        @DisplayName("a parked resume step the redeployed definition removed fails closed (EX-FLOW-7002 / SCHEMA_MISMATCH), never silent stale-index replay")
+        void redeployedDefinitionMissingParkedStepFailsClosed() {
+            AtomicInteger anyStepReexec = new AtomicInteger();
+
+            FlowStepAction validate = _ -> { anyStepReexec.incrementAndGet(); return FlowOutcome.CONTINUE; };
+            FlowStepAction pay      = _ -> { anyStepReexec.incrementAndGet(); return FlowOutcome.CONTINUE; };
+            FlowStepAction ship     = _ -> FlowOutcome.PARK;
+
+            // v1: 3 steps; parks on the last step (index 2, "ship").
+            FlowDefinition v1 = engine.plans().newDefinition("schema-mismatch-saga")
+                    .step("validate", validate, null)
+                    .step("pay",      pay,      null)
+                    .step("ship",     ship,     null)
+                    .transition(0, 1)
+                    .transition(1, 2)
+                    .build();
+
+            FlowExecutionPlan plan = engine.plans().compile(v1);
+            FlowContext ctx = TestFlowContexts.create(UUID.randomUUID().toString(), "schema-mismatch-saga");
+            engine.scheduler().schedule(plan, ctx);
+
+            assertThat(awaitCondition(() -> snapshotExists(ctx), 5))
+                    .as("saga MUST park (checkpoint persisted) before the redeploy").isTrue();
+            Optional<FlowSnapshot> snap = loadSnapshot(ctx);
+            assertThat(snap).isPresent();
+            assertThat(snap.get().currentStep())
+                    .as("parked at the last step index (2, ship)").isEqualTo(2);
+            int reexecBaseline = anyStepReexec.get();
+
+            // Force-close, rebuild, and re-register a SHORTER definition — "ship" removed (stepCount 2).
+            engine.close();
+            engine = rebuildEngine();
+            engine.start();
+            FlowDefinition v2 = engine.plans().newDefinition("schema-mismatch-saga")
+                    .step("validate", validate, null)
+                    .step("pay",      pay,      null)
+                    .transition(0, 1)
+                    .build();
+            engine.plans().compile(v2);
+
+            // Resume MUST fail closed — persisted step 2 no longer exists in v2 (stepCount 2) — and MUST
+            // be synchronous (before any VT launch / step replay), so no stale-index step ever runs.
+            assertThatThrownBy(() -> engine.scheduler().wake(ctx))
+                    .as("version-blind resume MUST fail closed, never replay the stale step index")
+                    .isInstanceOf(FlowEngineException.class)
+                    .satisfies(thrown -> {
+                        FlowEngineException ex = (FlowEngineException) thrown;
+                        assertThat(ex.errorCode())
+                                .as("carries EX-FLOW-7002").isEqualTo(KernelErrorCodes.EX_FLOW_7002);
+                        assertThat(ex.rawArgs()[1])
+                                .as("phase=SCHEMA_MISMATCH").isEqualTo("SCHEMA_MISMATCH");
+                        assertThat(ex.rawArgs()[2])
+                                .as("reason=STEP_OUT_OF_RANGE (stable tooling key)").isEqualTo("STEP_OUT_OF_RANGE");
+                        assertThat(ex.rawArgs()[3])
+                                .as("contextValue = the out-of-range persisted step").isEqualTo(2);
+                    });
+
+            assertThat(anyStepReexec.get())
+                    .as("fail-closed: NO step re-executes on the rejected resume")
+                    .isEqualTo(reexecBaseline);
         }
     }
 

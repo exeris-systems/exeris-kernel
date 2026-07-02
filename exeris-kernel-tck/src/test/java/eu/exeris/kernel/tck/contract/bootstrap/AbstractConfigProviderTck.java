@@ -42,7 +42,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *   <li>Concurrent access from N Virtual Threads still yields the same instance (single-init).</li>
  *   <li>KernelSettings is a Valhalla-ready record — no identity operations allowed.</li>
  *   <li>The implementation class name does NOT reference banned Jackson / SnakeYAML classes.</li>
- *   <li>priority() must be ≥ 0 (contract: Community = 100, Enterprise = 200).</li>
+ *   <li>priority() must be ≥ 0 (contract: Community = 0, Enterprise = 100).</li>
  * </ol>
  *
  * <h2>Usage</h2>
@@ -77,7 +77,7 @@ public abstract class AbstractConfigProviderTck {
     // =========================================================================
 
     @Test
-    @DisplayName("priority() must be ≥ 0 (convention: Community=100, Enterprise=200)")
+    @DisplayName("priority() must be ≥ 0 (convention: Community=0, Enterprise=100)")
     void priorityIsNonNegative() {
         assertThat(provider.priority())
                 .as("ConfigProvider.priority() must be non-negative")

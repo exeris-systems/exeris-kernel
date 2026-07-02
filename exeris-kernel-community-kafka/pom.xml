@@ -7,7 +7,7 @@
     <parent>
         <groupId>eu.exeris</groupId>
         <artifactId>exeris-kernel-parent</artifactId>
-        <version>0.9.0</version>
+        <version>0.10.0</version>
         <relativePath>../exeris-kernel-parent/pom.xml</relativePath>
     </parent>
     <artifactId>exeris-kernel-community-kafka</artifactId>
@@ -31,17 +31,17 @@
         <excludedGroups>integration,continuity</excludedGroups>
 
         <!--
-            v0.8 Sprint 6 (Coverage C-P0-01): LINE coverage floor for the Kafka bundle.
-            Current measurement: ~28% from unit suite only. The 10 Testcontainers
-            IT-tests revived in this same Sprint (kafka-integration-gate) run in a
-            separate CI job with their own jacoco.exec — IT coverage is not merged
-            into this floor. Ratchet at 0.20 — blocks unit-suite regressions while
-            the IT-merge follow-up is pending.
+            Coverage floor for the Kafka bundle (unit suite only; the Testcontainers ITs run in the
+            kafka-integration-gate CI job with a separate jacoco.exec, NOT merged into this floor).
+            RATCHETED UP for v0.10 (ADR-049 event-log binding + its unit tests): the added
+            KafkaEventLogCodec / KafkaEventStream / KafkaEventStreamAppender / KafkaEventLogAppendFailedEvent
+            unit tests lifted the unit-suite measurement to ~40% line / ~23% branch (2026-07-01:
+            248/613 line, 38/168 branch). Floors set a few pp below measured — block regressions and
+            step toward the 1.0 goal of >=80%. The remaining gap is the broker-bound KafkaEventLog /
+            KafkaEventStreamReader, covered by the Testcontainers TCK (not this floor).
         -->
-        <jacoco.line.minimum>0.20</jacoco.line.minimum>
-        <!-- BRANCH baseline 2026-06-10: 16.0% (16/100), unit-only (Kafka IT not merged).
-             Ratchet ~6 pp below. -->
-        <jacoco.branch.minimum>0.10</jacoco.branch.minimum>
+        <jacoco.line.minimum>0.35</jacoco.line.minimum>
+        <jacoco.branch.minimum>0.18</jacoco.branch.minimum>
     </properties>
 
     <dependencies>

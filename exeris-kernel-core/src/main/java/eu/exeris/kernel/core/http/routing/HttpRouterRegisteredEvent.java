@@ -22,10 +22,12 @@ final class HttpRouterRegisteredEvent extends Event {
     // Package-private for same-package router tests and diagnostics.
     /* default */ int exactRouteCount;
     // Package-private for same-package router tests and diagnostics.
+    /* default */ int templateRouteCount;
+    // Package-private for same-package router tests and diagnostics.
     /* default */ int prefixRouteCount;
 
     // Package-private for same-package router lifecycle emission only.
-    /* default */ static void emit(int exactCount, int prefixCount) {
+    /* default */ static void emit(int exactCount, int templateCount, int prefixCount) {
         if (!FlightRecorder.isInitialized()) {
             return;
         }
@@ -34,6 +36,7 @@ final class HttpRouterRegisteredEvent extends Event {
             return;
         }
         event.exactRouteCount = exactCount;
+        event.templateRouteCount = templateCount;
         event.prefixRouteCount = prefixCount;
         event.commit();
     }

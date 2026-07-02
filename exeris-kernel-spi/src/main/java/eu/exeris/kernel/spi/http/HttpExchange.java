@@ -8,6 +8,8 @@
  */
 package eu.exeris.kernel.spi.http;
 
+import java.util.Map;
+
 /**
  * SPI: A single HTTP request–response exchange lifecycle.
  *
@@ -45,6 +47,27 @@ public interface HttpExchange {
      * @return the inbound request; never {@code null}
      */
     HttpRequest request();
+
+    /**
+     * Returns the path parameters captured by the router from a templated route.
+     *
+     * <p>When a request resolves through a path-template route (e.g. registering
+     * {@code /entities/{id}} and serving {@code /entities/42}), the router captures
+     * each {@code {name}} placeholder and exposes the bound value here — so
+     * {@code pathParams().get("id")} yields {@code "42"}. For exact or prefix routes,
+     * and for any exchange not dispatched through a templated route, this returns an
+     * empty map.
+     *
+     * <p>The returned map is immutable and carries no wire-format types — values are
+     * the already-decoded path segments as received on the request target.
+     *
+     * @return an immutable map of captured path parameters; never {@code null}, empty
+     *         when the route declared no placeholders
+     * @since 0.10.0
+     */
+    default Map<String, String> pathParams() {
+        return Map.of();
+    }
 
     /**
      * Writes the given response to the wire and finalises this exchange.

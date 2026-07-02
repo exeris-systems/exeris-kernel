@@ -80,6 +80,7 @@ public final class TransportException extends ExerisKernelException {
     private static final String MSG_TIMEOUT = "Transport receive timeout";
     private static final String MSG_BOOTSTRAP = "Transport engine bootstrap failure";
     private static final String MSG_START = "Transport engine start failure";
+    private static final String MSG_STREAM_SHED = "Stream rejected by PAQS load-shedding";
     private static final String ERR_TRANSPORT_NAME_NULL = "transportName must not be null";
 
     // -----------------------------------------------------------------------
@@ -209,6 +210,27 @@ public final class TransportException extends ExerisKernelException {
                 MSG_START,
                 cause,
                 transportName, port);
+    }
+
+    /**
+     * Creates a {@code TransportException} for a stream rejected by PAQS load-shedding at the
+     * transport edge — the single source of truth for load-shedding (ADR-043 reuses this for a
+     * sheded SSE stream-open rather than minting a parallel HTTP shed code).
+     *
+     * <p>Sets error code {@value KernelErrorCodes#EX_NET_4006}.
+     * rawArgs layout: {@code [String transportName, long streamId]}.
+     *
+     * @param transportName name of the transport engine that shed the stream
+     * @param streamId      the rejected stream's identifier
+     * @return a fully initialised {@link TransportException}
+     */
+    public static TransportException streamShed(String transportName, long streamId) {
+        Objects.requireNonNull(transportName, ERR_TRANSPORT_NAME_NULL);
+        return new TransportException(
+                KernelErrorCodes.EX_NET_4006,
+                MSG_STREAM_SHED,
+                null,
+                transportName, streamId);
     }
 
     // -----------------------------------------------------------------------

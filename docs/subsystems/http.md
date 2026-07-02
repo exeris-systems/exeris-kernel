@@ -41,6 +41,24 @@ Typed Response Encoding contracts:
 - `HttpResponseEncodingContext` — encoding parameter carrier
 - `HttpEncodedBody` — encoded output carrier
 
+Streaming (server-push) contracts — 🚧 Planned v0.10, ratified by [ADR-043](../adr/ADR-043-kernel-http-streaming-spi.md) (ACCEPTED):
+
+- `HttpStreamExchange` — sibling of `HttpExchange` for SSE server-push; `emit(StreamEvent)` may be called repeatedly until the stream closes. The respond-once `HttpExchange` invariant is left **untouched** — streaming is a separate, opt-in surface selected by route metadata.
+- `StreamEvent` — Valhalla-ready record (`event` / `data` / `id` / `retryMillis`) mapping directly to the SSE wire format; event-shaped and implementation-blind (never a raw byte buffer).
+- `HttpStreamHandler` — `@FunctionalInterface` sibling of `HttpHandler` (`void handle(HttpStreamExchange)`); disconnect is signalled by `emit()` throwing the unchecked `StreamClosedException` (Loom-idiomatic imperative emit loop, no parked-VT leak).
+- `emit()` parks the calling virtual thread under egress backpressure (no on-heap queue), and transfers `LoanedBuffer` ownership to the engine — identical to `HttpExchange.respond()`.
+- New error codes: `EX-HTTP-4011` (emit-after-close) and `EX-HTTP-4012` (JWT expired mid-stream, fail-closed per ADR-012 §5). Stream-open admission shedding reuses the existing `EX-NET-4006` + `StreamShedEvent` (see [transport.md](transport.md)), not a new HTTP code.
+
+**v0.10 delivery status (ADR-043).** The SSE mechanism is wired end-to-end in production (Core `HttpStreamEngine` + `SseEventEncoder`, Community dispatch): open → `emit`-N (park-the-VT backpressure) → graceful `close`, peer-disconnect → `StreamClosedException`/`EX-HTTP-4011`, abortive teardown, four single-phase JFR events, all pinned by `AbstractHttpStreamExchangeTck`. Two obligation **mechanisms are built + TCK-pinned but their production binding is deferred**, by design:
+- **JWT-expiry fail-closed (`EX-HTTP-4012`)** — the deadline enforcement lives in `HttpStreamEngine`, but production dispatch passes no deadline until the IdentityProvider SPI (ADR-040) surfaces a principal `exp` on the streaming path (ADR-043 §6: Community-internal until then).
+- **Streaming-occupancy ceiling** — `StreamAdmissionController` enforces a long-lived-slot ceiling distinct from sub-ms request accounting, but it is not yet wired into production dispatch. The safety property (new stream-opens shed under load) still holds via carrier-edge PAQS; plumbing the dedicated ceiling is a v0.10 follow-up.
+
+Additional follow-ups (mechanism works; refinement deferred):
+- **Wire framing** — the SSE body is written as a raw, close-delimited HTTP/1.1 response (`Connection: close`, no `Content-Length`, no chunk framing; RFC 9112 §6.3). `Transfer-Encoding: chunked` per-event framing (so SSE streams through buffering reverse proxies / CDNs that hold length-unknown responses) and an HTTP/2 `DATA`-frame path are follow-ups. The response head is HTTP/1.1-specific today.
+- **Zero-copy emit** — `SseEventEncoder.encode` currently allocates a `StringBuilder` + `String` + `byte[]` per event before the single copy into the egress `LoanedBuffer`. Encoding field-by-field directly into the `LoanedBuffer` segment (no intermediate `String`/`byte[]`) is the No-Waste-Compute follow-up for high-rate streams.
+
+**Test gating.** The streaming contract is verified two ways. The fast, deterministic layer gates CI: `SseEventEncoderTest` (wire framing), `HttpRouterTest` streaming-registration, and the ArchTest Wall pin. The real-NIO loopback suite (`AbstractHttpStreamExchangeTck` bound by `CommunityHttpStreamExchangeTckTest` + the JFR `RecordingStream` test, `@Tag("stream-loopback")`) is run **on demand / locally**, not in the CI gate — like the `stress`/`flamegraph` suites it starves and times out on constrained 2-vCPU CI runners (server reactor + per-stream VT + client) even though it passes deterministically on many-core boxes. Run it with `mvn test -DincludedGroups=stream-loopback -DexcludedGroups=` (or `-Dtest=CommunityHttpStreamExchangeTckTest`). Making the loopback robust under scarce carriers so it can gate CI is a tracked follow-up.
+
 HTTP exceptions in SPI:
 
 - `eu.exeris.kernel.spi.exceptions.http.HttpException`
@@ -61,7 +79,7 @@ Implemented components:
 - **HPACK / Huffman:** `hpack.*`, `hpack.huffman.*`
 - **HTTP/2 framing:** `http2.*`
 - **HTTP/1.1 codec:** `http1.*`
-- **Routing:** `routing/` — `HttpRouter` — transport-agnostic `HttpHandler` implementation with exact/prefix routing and HEAD→GET fallback (RFC 9110 §9.3.2). `HttpRouterRegisteredEvent` (JFR).
+- **Routing:** `routing/` — `HttpRouter` — transport-agnostic `HttpHandler` implementation with exact, path-template (`{name}` placeholder), and prefix routing plus HEAD→GET fallback (RFC 9110 §9.3.2). Resolution precedence is exact → template → prefix; a template hit captures each placeholder and exposes it to the handler via `HttpExchange.pathParams()` (the router wraps the exchange in a `PathParamHttpExchange` decorator — Core never depends on a concrete transport-side exchange). `HttpRouterRegisteredEvent` (JFR) records exact/template/prefix route counts.
 
 Current placement reality:
 
@@ -87,6 +105,7 @@ HTTP abstract TCK suites present:
 - `AbstractHttpExchangeTck`
 - `AbstractHttpProviderLoopbackTck` — verifies real transport round-trip; bound at Community tier (`CommunityHttpProviderLoopbackTckTest`)
 - `AbstractHealthEndpointTck` (since 0.7.0) — pins the readiness/liveness endpoint contract for any `HttpHandler` binding that surfaces a `HealthProbe`. Bound at Community tier (`CommunityHealthEndpointTckTest`).
+- `AbstractHttpStreamExchangeTck` — 🚧 Planned v0.10 ([ADR-043](../adr/ADR-043-kernel-http-streaming-spi.md)) — pins the SSE streaming contract: open / emit-N / graceful close / disconnect-via-`StreamClosedException`, backpressure park-and-resume on window credit, and no respond-once regression. Community binding required; Enterprise native overlay declared as a cross-repo obligation.
 
 These verify SPI-level HTTP contract behavior and ServiceLoader/provider semantics.
 

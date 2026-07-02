@@ -56,6 +56,21 @@ import static org.assertj.core.api.Assertions.assertThatCode;
  *   <li>publishAndAwait() blocks until all handlers complete.</li>
  * </ol>
  *
+ * <h2>No-Ordering by Design (ADR-049)</h2>
+ * <p>The {@link EventBus} is the <b>transient</b> pub/sub path and makes <b>no</b> per-key /
+ * per-aggregate ordering promise — {@code publish()} fans out concurrently (one virtual thread per
+ * handler). Per ADR-049, per-stream total ordering is a property of the durable-log surface
+ * ({@code EventStreamAppender} / {@code EventStreamReader}), <b>not</b> the bus. This suite
+ * therefore deliberately asserts no delivery order; callers needing ordering use the durable log.
+ *
+ * <h2>Topic-Blind by Design (ADR-050)</h2>
+ * <p>An event type's binding-agnostic {@code topic} ({@link EventTypeSpec#topic()}) is
+ * <b>advisory</b> for the in-memory {@link EventBus}: routing is by {@code eventTypeOrdinal}
+ * only, so the bus does not consult {@code topic} and delivery is unaffected by whether a type
+ * carries one. Broker bindings (e.g. Kafka) map {@code topic} to a concrete broker topic; the
+ * in-memory bus does not. This suite therefore makes no topic-based routing assertion — that the
+ * value round-trips through the registry is covered by {@code AbstractEventRegistryTck}.
+ *
  * <h2>Usage</h2>
  * <pre>{@code
  * class CommunityEventBusTest extends AbstractEventBusTck {

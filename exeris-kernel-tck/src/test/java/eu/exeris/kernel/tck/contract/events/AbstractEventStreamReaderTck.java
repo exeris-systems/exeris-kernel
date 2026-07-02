@@ -18,6 +18,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import java.lang.foreign.ValueLayout;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Iterator;
@@ -48,6 +49,10 @@ import static org.assertj.core.api.Assertions.assertThatNullPointerException;
  *   <li>Each {@link EventPayload} handed to the iterator arrives at {@code refCount == 1};
  *       consumer closes own each payload (no broadcast retain protocol on replay).</li>
  *   <li>Replay from a stream that has no events returns an empty (but valid) stream.</li>
+ *   <li><b>Ordering (ADR-049):</b> {@code replayFromVersion} yields a stream's events in strictly
+ *       ascending {@code committedSequence} order — the read side of the durable-log ordering
+ *       boundary. The end-to-end append→replay ordering round-trip is exercised by the concrete
+ *       binding integration tests (Postgres outbox, Kafka), which control payload identity.</li>
  * </ol>
  *
  * <h2>Usage</h2>
@@ -72,6 +77,11 @@ public abstract class AbstractEventStreamReaderTck {
     /**
      * Populates the durable log so {@code replayFrom(streamId, ...)} returns {@code eventCount}
      * events. The seeded events are expected to occur strictly before {@link Instant#now()}.
+     *
+     * <p><b>Ordering contract (ADR-049):</b> event {@code i} (0-based, in append order) MUST carry
+     * {@link #indexPayload(int) indexPayload(i)} as its payload, so the ordering test
+     * ({@code replayFromVersionReturnsEventsInAppendOrder}) can decode each replayed payload and
+     * assert the append order round-trips.
      */
     protected abstract void seedStream(StreamId streamId, int eventCount);
 
@@ -92,6 +102,26 @@ public abstract class AbstractEventStreamReaderTck {
     private static StreamId freshStreamId(String streamType) {
         UUID id = UUID.randomUUID();
         return new StreamId(id.getMostSignificantBits(), id.getLeastSignificantBits(), streamType);
+    }
+
+    /**
+     * Encodes {@code index} as a 4-byte big-endian payload body so {@link #seedStream} can produce
+     * order-distinguishable events. Bindings MUST seed event {@code i} (0-based) with
+     * {@code indexPayload(i)}; the ordering test decodes it back to assert append order.
+     *
+     * @param index the 0-based append index to encode
+     * @return a 4-byte big-endian representation of {@code index}
+     */
+    protected static byte[] indexPayload(int index) {
+        return new byte[] {
+                (byte) (index >>> 24), (byte) (index >>> 16), (byte) (index >>> 8), (byte) index
+        };
+    }
+
+    private static int decodeIndex(EventPayload payload) {
+        byte[] bytes = payload.segment().toArray(ValueLayout.JAVA_BYTE);
+        return ((bytes[0] & 0xFF) << 24) | ((bytes[1] & 0xFF) << 16)
+                | ((bytes[2] & 0xFF) << 8) | (bytes[3] & 0xFF);
     }
 
     @Nested
@@ -120,6 +150,27 @@ public abstract class AbstractEventStreamReaderTck {
             try (EventStream stream = reader.replayFromVersion(streamId, 0L)) {
                 assertThat(stream).isNotNull();
             }
+        }
+
+        @Test
+        @DisplayName("replayFromVersion() returns a stream's events in ascending committed-sequence (append) order (ADR-049)")
+        void replayFromVersionReturnsEventsInAppendOrder() {
+            StreamId streamId = freshStreamId("ReplayOrder");
+            seedStream(streamId, 5);
+
+            List<Integer> replayedIndices = new ArrayList<>();
+            try (EventStream stream = reader.replayFromVersion(streamId, 0L)) {
+                for (EventPayload payload : stream) {
+                    try (payload) {
+                        replayedIndices.add(decodeIndex(payload));
+                    }
+                }
+            }
+
+            assertThat(replayedIndices)
+                    .as("replayFromVersion MUST yield events in append order (ascending committedSequence) "
+                            + "— the durable-log ordering boundary (ADR-049)")
+                    .containsExactly(0, 1, 2, 3, 4);
         }
 
         @Test

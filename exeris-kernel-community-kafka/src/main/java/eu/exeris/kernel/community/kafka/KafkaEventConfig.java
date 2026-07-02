@@ -93,6 +93,26 @@ public record KafkaEventConfig(
     }
 
     /**
+     * The dedicated durable event-log topic (ADR-049) — a single topic keyed by {@code streamId}
+     * so a stream's events (across types) stay totally ordered on one partition. Distinct from the
+     * per-event-type outbox-delivery topics computed by {@link #topicFor(String)}.
+     *
+     * <p>Reserved name (hyphenated, unlike PascalCase event types) so it cannot collide with an
+     * event-type topic.
+     *
+     * <p><b>Operational note:</b> per-stream ordering relies on a <b>stable partition count</b>.
+     * Kafka's default partitioner routes {@code hash(key) % partitions}, so increasing this topic's
+     * partition count after first use reroutes new records for existing streams onto a different
+     * partition — old records stay put, so the stream's per-stream order (and thus replay) breaks.
+     * Do not repartition the event-log topic once it is in use.
+     *
+     * @return the event-log topic name (prefixed by {@link #topicPrefix})
+     */
+    public String eventLogTopic() {
+        return topicPrefix + "exeris-event-log";
+    }
+
+    /**
      * Computes the topic name for a given event type by joining {@link #topicPrefix} and the
      * event type name.
      *

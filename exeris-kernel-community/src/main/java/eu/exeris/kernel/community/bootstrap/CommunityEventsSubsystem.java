@@ -8,6 +8,8 @@
  */
 package eu.exeris.kernel.community.bootstrap;
 
+import eu.exeris.kernel.community.events.JdbcEventStreamAppender;
+import eu.exeris.kernel.community.events.JdbcEventStreamReader;
 import eu.exeris.kernel.core.events.EventBootstrap;
 import eu.exeris.kernel.spi.bootstrap.BootstrapPhase;
 import eu.exeris.kernel.spi.config.ConfigProvider;
@@ -15,7 +17,11 @@ import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.events.EventEngine;
 import eu.exeris.kernel.spi.events.EventEngineConfig;
 import eu.exeris.kernel.spi.events.EventProvider;
+import eu.exeris.kernel.spi.events.EventStreamAppender;
+import eu.exeris.kernel.spi.events.EventStreamReader;
+import eu.exeris.kernel.spi.persistence.PersistenceEngine;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.function.UnaryOperator;
 
@@ -23,6 +29,8 @@ final class CommunityEventsSubsystem extends AbstractCommunitySubsystem {
 
     private EventProvider eventProvider;
     private EventEngine eventEngine;
+    private EventStreamAppender eventStreamAppender;
+    private EventStreamReader eventStreamReader;
 
     @Override
     public String name() {
@@ -46,6 +54,25 @@ final class CommunityEventsSubsystem extends AbstractCommunitySubsystem {
         EventBootstrap.BootstrapResult bootstrapResult = EventBootstrap.loadWithProvider(config);
         eventProvider = bootstrapResult.provider();
         eventEngine = bootstrapResult.engine();
+
+        // ADR-049: bind the durable event-log appender/reader when a Community persistence engine is
+        // present. Optional — with no engine the slots stay unbound and callers fall back to the bus
+        // per the SPI Javadoc. dependsOn("persistence") guarantees the shared engine is set first.
+        eventStreamAppender = resolveEventStreamAppender(config.engineName());
+        eventStreamReader = resolveEventStreamReader(config.engineName());
+    }
+
+    // The shared PersistenceEngine is owned by CommunityPersistenceSubsystem; this subsystem only
+    // borrows it to construct the appender/reader and MUST NOT close it. Fetching + consuming the
+    // engine in a single-return helper mirrors CommunityFlowSubsystem.resolveSnapshotStore (ADR-022 §4).
+    private EventStreamAppender resolveEventStreamAppender(String engineName) {
+        PersistenceEngine engine = CommunityBootstrapServices.getSharedPersistenceEngine();
+        return engine == null ? null : new JdbcEventStreamAppender(engine, engineName);
+    }
+
+    private EventStreamReader resolveEventStreamReader(String engineName) {
+        PersistenceEngine engine = CommunityBootstrapServices.getSharedPersistenceEngine();
+        return engine == null ? null : new JdbcEventStreamReader(engine, engineName, eventEngine.registry()::ordinalOf);
     }
 
     @Override
@@ -70,10 +97,28 @@ final class CommunityEventsSubsystem extends AbstractCommunitySubsystem {
         if (eventProvider == null || eventEngine == null) {
             return defaultProviderBindings();
         }
-        return CommunityCarrierBindings.operator(
-                CommunityCarrierBindings.binding(KernelProviders.EVENT_PROVIDER, eventProvider),
-                CommunityCarrierBindings.binding(KernelProviders.EVENT_ENGINE, eventEngine)
-        );
+        List<CommunityCarrierBindings.Binding<?>> bindings = new ArrayList<>();
+        bindings.add(CommunityCarrierBindings.binding(KernelProviders.EVENT_PROVIDER, eventProvider));
+        bindings.add(CommunityCarrierBindings.binding(KernelProviders.EVENT_ENGINE, eventEngine));
+        // ADR-046: bind the event-payload codec registry into the kernel scope so the producer
+        // (the generated *EventPublisher) can resolve a codec via
+        // KernelProviders.eventPayloadCodecRegistry() without DI — the event-side mirror of how
+        // CommunityHttpSubsystem binds HTTP_REQUEST_BODY_DECODER_REGISTRY (ADR-036). Optional and
+        // ifPresent-guarded: a provider shipping no codec leaves the slot unbound (publisher falls
+        // back to EventPayload.empty()).
+        eventProvider.eventPayloadCodecRegistry().ifPresent(registry -> bindings.add(
+                CommunityCarrierBindings.binding(KernelProviders.EVENT_PAYLOAD_CODEC_REGISTRY, registry)));
+        // ADR-049: durable event-log appender/reader slots (optional; bound only when persistence
+        // is present so the ordered/replayable log is available to sourcing/streaming consumers).
+        if (eventStreamAppender != null) {
+            bindings.add(CommunityCarrierBindings.binding(
+                    KernelProviders.EVENT_STREAM_APPENDER, eventStreamAppender));
+        }
+        if (eventStreamReader != null) {
+            bindings.add(CommunityCarrierBindings.binding(
+                    KernelProviders.EVENT_STREAM_READER, eventStreamReader));
+        }
+        return CommunityCarrierBindings.operator(bindings);
     }
 
     private static EventEngineConfig buildConfig(ConfigProvider configProvider) {

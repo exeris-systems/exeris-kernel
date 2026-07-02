@@ -44,6 +44,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *   <li>Registering the same name with a different ordinal throws
  *       {@link EventRegistryException} with the same error code; rawArgs carry the
  *       conflicting registration shape.</li>
+ *   <li>(ADR-050) A spec's binding-agnostic {@code topic} override round-trips through the
+ *       registry unchanged; a spec registered without a topic reports
+ *       {@link EventTypeSpec#hasTopic()}{@code == false} (bindings fall back to their default
+ *       routing); and {@code topic} participates in spec identity — the same name+ordinal with a
+ *       differing topic conflicts, the identical topic-carrying spec is idempotent.</li>
  * </ol>
  *
  * <h2>Usage</h2>
@@ -68,6 +73,13 @@ public abstract class AbstractEventRegistryTck {
     private static final String TYPE_USER_CREATED     = "RegistryTckUserCreated";
     private static final String TYPE_ORDER_PLACED     = "RegistryTckOrderPlaced";
     private static final String TYPE_DIFFERENT        = "RegistryTckDifferent";
+
+    private static final int    ORDINAL_TOPICED       = 1_050;
+    private static final int    ORDINAL_PLAIN         = 1_051;
+    private static final String TYPE_TOPICED          = "RegistryTckTopicedEvent";
+    private static final String TYPE_PLAIN            = "RegistryTckPlainEvent";
+    private static final String TOPIC_OVERRIDE        = "registry-tck.orders.created";
+    private static final String TOPIC_OTHER           = "registry-tck.orders.updated";
 
     private EventEngine engine;
     private EventRegistry registry;
@@ -168,6 +180,84 @@ public abstract class AbstractEventRegistryTck {
                                         + "carrying the conflicting registration")
                                 .containsExactly(TYPE_USER_CREATED, ORDINAL_ORDER_PLACED);
                     });
+        }
+    }
+
+    @Nested
+    @DisplayName("Binding-agnostic topic (ADR-050)")
+    class BindingAgnosticTopic {
+
+        @Test
+        @DisplayName("a spec's topic override round-trips through the registry unchanged")
+        void topicRoundTripsThroughRegistry() {
+            registry.register(EventTypeSpec.ofPersistent(TYPE_TOPICED, ORDINAL_TOPICED, TOPIC_OVERRIDE));
+
+            EventTypeSpec resolved = registry.resolve(TYPE_TOPICED);
+            assertThat(resolved)
+                    .as("resolve() MUST return the registered spec")
+                    .isNotNull();
+            assertThat(resolved.hasTopic())
+                    .as("hasTopic() MUST be true for a non-blank topic override")
+                    .isTrue();
+            assertThat(resolved.topic())
+                    .as("the ADR-050 topic MUST round-trip through the registry unchanged")
+                    .isEqualTo(TOPIC_OVERRIDE);
+        }
+
+        @Test
+        @DisplayName("a spec registered with no topic reports no override (bindings use their default routing)")
+        void noTopicOverrideReportsAbsent() {
+            registry.register(EventTypeSpec.ofPersistent(TYPE_PLAIN, ORDINAL_PLAIN));
+
+            EventTypeSpec resolved = registry.resolve(TYPE_PLAIN);
+            assertThat(resolved).isNotNull();
+            assertThat(resolved.hasTopic())
+                    .as("a spec registered without a topic MUST report no override, so a binding "
+                            + "falls back to its default routing (e.g. the event-type name)")
+                    .isFalse();
+        }
+
+        @Test
+        @DisplayName("topic is part of spec identity: same name+ordinal with a DIFFERENT topic conflicts (EX-EVENT-6003)")
+        void differentTopicSameNameOrdinalConflicts() {
+            registry.register(EventTypeSpec.ofPersistent(TYPE_TOPICED, ORDINAL_TOPICED, TOPIC_OVERRIDE));
+
+            assertThatThrownBy(() -> registry.register(
+                    EventTypeSpec.ofPersistent(TYPE_TOPICED, ORDINAL_TOPICED, TOPIC_OTHER)))
+                    .as("topic participates in EventTypeSpec equality (ADR-050) — re-registering the same "
+                            + "name+ordinal with a different topic MUST raise EX-EVENT-6003")
+                    .isInstanceOf(EventRegistryException.class)
+                    .satisfies(ex -> assertThat(((EventRegistryException) ex).errorCode())
+                            .isEqualTo(KernelErrorCodes.EX_EVENT_6003));
+        }
+
+        @Test
+        @DisplayName("null vs blank topic for the same name+ordinal is NOT a conflict (blank normalizes to null)")
+        void nullAndBlankTopicAreSameIdentity() {
+            registry.register(EventTypeSpec.of(TYPE_PLAIN, ORDINAL_PLAIN));               // topic = null
+
+            assertThatCode(() -> registry.register(EventTypeSpec.of(TYPE_PLAIN, ORDINAL_PLAIN, "   ")))
+                    .as("a blank topic normalizes to null (ADR-050), so re-registering the same "
+                            + "name+ordinal with a blank topic MUST be idempotent, not an EX-EVENT-6003 conflict")
+                    .doesNotThrowAnyException();
+            assertThat(registry.resolve(TYPE_PLAIN).hasTopic())
+                    .as("the normalized spec still reports no override")
+                    .isFalse();
+        }
+
+        @Test
+        @DisplayName("re-registering the IDENTICAL topic-carrying spec is idempotent")
+        void sameTopicSpecIsIdempotent() {
+            EventTypeSpec spec = EventTypeSpec.ofPersistent(TYPE_TOPICED, ORDINAL_TOPICED, TOPIC_OVERRIDE);
+            registry.register(spec);
+            int sizeAfterFirst = registry.size();
+
+            assertThatCode(() -> registry.register(spec))
+                    .as("re-registering the identical topic-carrying spec MUST NOT throw")
+                    .doesNotThrowAnyException();
+            assertThat(registry.size())
+                    .as("size() MUST be unchanged after idempotent re-registration of a topic-carrying spec")
+                    .isEqualTo(sizeAfterFirst);
         }
     }
 }

@@ -8,7 +8,10 @@
  */
 package eu.exeris.kernel.spi.events;
 
+import eu.exeris.kernel.spi.events.codec.EventPayloadCodecRegistry;
 import eu.exeris.kernel.spi.exceptions.events.EventProviderException;
+
+import java.util.Optional;
 
 /**
  * SPI: Pluggable Event Engine Provider.
@@ -90,4 +93,24 @@ public interface EventProvider {
      * @throws EventProviderException if the engine cannot be created from the given configuration
      */
     EventEngine createEngine(EventEngineConfig config);
+
+    /**
+     * Returns the provider's {@link EventPayloadCodecRegistry} for serializing typed
+     * domain-event payloads to bytes (ADR-046), or {@link Optional#empty()} when this
+     * provider ships no codec.
+     *
+     * <p>The bootstrapper binds the returned registry into
+     * {@link eu.exeris.kernel.spi.context.KernelProviders#EVENT_PAYLOAD_CODEC_REGISTRY}
+     * so the producer (the generated {@code *EventPublisher}) can resolve a codec
+     * without DI — the event-side mirror of how {@code HttpProvider.requestBodyDecoderRegistry()}
+     * feeds the server-side request-decoder slot (ADR-036). Default empty keeps the
+     * method additive: a provider without a codec still bootstraps events, and the
+     * producer falls back to {@link EventPayload#empty()}.
+     *
+     * @return the codec registry, or empty when this provider ships none
+     * @since 0.10.0
+     */
+    default Optional<EventPayloadCodecRegistry> eventPayloadCodecRegistry() {
+        return Optional.empty();
+    }
 }
