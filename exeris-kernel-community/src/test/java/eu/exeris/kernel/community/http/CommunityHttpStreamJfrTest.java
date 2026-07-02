@@ -65,6 +65,7 @@ class CommunityHttpStreamJfrTest {
     private static final long RECORD_SETTLE_MILLIS = 1_500L;
     private static final long PARK_SLICE_MILLIS = 5L;
     private static final int CLIENT_READ_BUF = 16 * 1024;
+    private static final int CLIENT_RECV_BUF = 2 * 1024;
 
     static {
         // Small credit window + send buffer so the backpressure-park path fires deterministically.
@@ -280,6 +281,10 @@ class CommunityHttpStreamJfrTest {
     private static Socket connectClient(int port) {
         try {
             Socket socket = new Socket();
+            // Cap the kernel recv buffer BEFORE connect (fixes the TCP window): the OS default
+            // (~128 KB, autotuned) would absorb the whole backpressure flood, credit would keep
+            // returning on kernel write-accept, and the park path would never fire.
+            socket.setReceiveBufferSize(CLIENT_RECV_BUF);
             socket.connect(new InetSocketAddress("127.0.0.1", port), (int) TimeUnit.SECONDS.toMillis(5L));
             socket.setTcpNoDelay(true);
             socket.getOutputStream().write(
