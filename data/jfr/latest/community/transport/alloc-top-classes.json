@@ -1,126 +1,116 @@
 [ {
   "class" : "jdk.internal.vm.StackChunk",
-  "count" : 76,
-  "bytes" : 415000,
+  "count" : 156,
+  "bytes" : 333776,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "[Ljava.util.HashMap$Node;",
-  "count" : 24,
-  "bytes" : 605904,
+  "class" : "java.util.concurrent.ConcurrentLinkedQueue$Node",
+  "count" : 32,
+  "bytes" : 279256,
   "category" : "JVM_NOISE"
 }, {
   "class" : "java.lang.VirtualThread",
   "count" : 24,
-  "bytes" : 808808,
+  "bytes" : 763384,
   "category" : "LOOM_RUNTIME"
 }, {
-  "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
+  "class" : "[Ljava.util.HashMap$Node;",
+  "count" : 22,
+  "bytes" : 411688,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "[B",
   "count" : 18,
-  "bytes" : 303128,
+  "bytes" : 365704,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "eu.exeris.kernel.community.memory.CommunityReleaseAction",
+  "count" : 18,
+  "bytes" : 285984,
   "category" : "TEST_HARNESS"
 }, {
   "class" : "eu.exeris.kernel.community.transport.NativeTcpStreamPendingWrite",
   "count" : 18,
-  "bytes" : 302848,
+  "bytes" : 285120,
   "category" : "TEST_HARNESS"
 }, {
   "class" : "java.util.HashMap",
-  "count" : 16,
-  "bytes" : 336288,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "[B",
   "count" : 14,
-  "bytes" : 303536,
+  "bytes" : 325656,
   "category" : "JVM_NOISE"
 }, {
   "class" : "java.util.LinkedHashMap$Entry",
-  "count" : 13,
-  "bytes" : 336064,
+  "count" : 12,
+  "bytes" : 255328,
   "category" : "JVM_NOISE"
 }, {
   "class" : "java.lang.String",
-  "count" : 11,
-  "bytes" : 235272,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "eu.exeris.kernel.community.memory.CommunityReleaseAction",
-  "count" : 10,
-  "bytes" : 184608,
-  "category" : "TEST_HARNESS"
-}, {
-  "class" : "java.util.HashMap$Node",
-  "count" : 9,
-  "bytes" : 168088,
+  "count" : 12,
+  "bytes" : 301648,
   "category" : "JVM_NOISE"
 }, {
   "class" : "java.util.HashMap$KeyIterator",
+  "count" : 12,
+  "bytes" : 13652888,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
   "count" : 8,
-  "bytes" : 13404408,
+  "bytes" : 126800,
+  "category" : "TEST_HARNESS"
+}, {
+  "class" : "java.util.HashMap$Node",
+  "count" : 7,
+  "bytes" : 189880,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "java.util.concurrent.ConcurrentLinkedQueue$Node",
-  "count" : 4,
-  "bytes" : 37184,
+  "class" : "java.util.HashSet",
+  "count" : 6,
+  "bytes" : 94952,
   "category" : "JVM_NOISE"
-}, {
-  "class" : "[Ljdk.jfr.internal.util.TimespanUnit;",
-  "count" : 4,
-  "bytes" : 67232,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "jdk.internal.foreign.NativeMemorySegmentImpl",
-  "count" : 4,
-  "bytes" : 47472,
-  "category" : "PANAMA"
 }, {
   "class" : "java.util.LinkedHashMap",
-  "count" : 3,
-  "bytes" : 100736,
+  "count" : 5,
+  "bytes" : 126528,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "[Ljava.lang.Object;",
-  "count" : 3,
-  "bytes" : 102968,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "java.util.ArrayList$Itr",
+  "class" : "java.util.HashMap$KeySet",
   "count" : 2,
-  "bytes" : 33632,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "[I",
-  "count" : 2,
-  "bytes" : 32800,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "jdk.internal.constant.ClassOrInterfaceDescImpl",
-  "count" : 2,
-  "bytes" : 50000,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "[Ljava.lang.constant.ClassDesc;",
-  "count" : 2,
-  "bytes" : 33664,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "jdk.jfr.internal.SettingsManager$InternalSetting",
-  "count" : 2,
-  "bytes" : 67192,
+  "bytes" : 347896,
   "category" : "JVM_NOISE"
 }, {
   "class" : "jdk.jfr.events.InitialSecurityPropertyEvent",
   "count" : 2,
-  "bytes" : 33648,
+  "bytes" : 31680,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "java.util.HashSet",
-  "count" : 1,
-  "bytes" : 33624,
+  "class" : "jdk.internal.classfile.impl.AbstractPoolEntry$Utf8EntryImpl",
+  "count" : 2,
+  "bytes" : 31656,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "java.util.HashMap$KeySet",
+  "class" : "jdk.jfr.internal.SettingsManager$InternalSetting",
   "count" : 1,
-  "bytes" : 35552,
+  "bytes" : 40,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "[I",
+  "count" : 1,
+  "bytes" : 16400,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "[Ljdk.jfr.internal.util.TimespanUnit;",
+  "count" : 1,
+  "bytes" : 31560,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "java.lang.StringBuilder",
+  "count" : 1,
+  "bytes" : 31600,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "java.util.concurrent.ConcurrentHashMap$Node",
+  "count" : 1,
+  "bytes" : 31592,
   "category" : "JVM_NOISE"
 } ]

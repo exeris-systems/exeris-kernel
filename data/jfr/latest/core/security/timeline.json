@@ -1,29 +1,29 @@
 [ {
-  "t" : 1782715374599,
+  "t" : 1782971758457,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "[Ljava.util.HashMap$Node;",
   "thread" : "main",
-  "size" : 261520,
+  "size" : 261536,
   "stackId" : "stk_0001",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1782715374599,
+  "t" : 1782971758458,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "java.util.HashMap$KeyIterator",
   "thread" : "main",
-  "size" : 261544,
+  "size" : 261552,
   "stackId" : "stk_0002",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1782715374602,
+  "t" : 1782971758462,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "eu.exeris.kernel.core.security.jfr.SecurityJfrEvents$StorageContextDerivedEvent",
   "thread" : "main",
-  "size" : 261552,
+  "size" : 261568,
   "stackId" : "stk_0003",
   "category" : "TEST_HARNESS"
 }, {
-  "t" : 1782715374602,
+  "t" : 1782971758462,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "eu.exeris.kernel.core.security.jfr.SecurityJfrEvents$StorageContextDerivedEvent",
   "thread" : "main",
@@ -31,27 +31,27 @@
   "stackId" : "stk_0003",
   "category" : "TEST_HARNESS"
 }, {
-  "t" : 1782715374606,
+  "t" : 1782971758466,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.HashMap$Node",
+  "class" : "jdk.jfr.internal.SettingsManager$InternalSetting",
   "thread" : "main",
-  "size" : 261560,
+  "size" : 261568,
   "stackId" : "stk_0004",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1782715374606,
+  "t" : 1782971758466,
   "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.util.HashMap$Node",
+  "class" : "jdk.jfr.internal.SettingsManager$InternalSetting",
   "thread" : "main",
   "size" : 40,
   "stackId" : "stk_0004",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1782715374607,
+  "t" : 1782971758467,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.HashMap$KeyIterator",
+  "class" : "[Ljava.lang.Object;",
   "thread" : "main",
-  "size" : 261536,
+  "size" : 261504,
   "stackId" : "stk_0005",
   "category" : "JVM_NOISE"
 } ]
