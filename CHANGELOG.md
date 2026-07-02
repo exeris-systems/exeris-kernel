@@ -6,6 +6,29 @@ This file is intentionally terse: it lists what landed, with a pointer to the re
 
 Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project versions follow [SemVer](https://semver.org/spec/v2.0.0.html), with the pre-1.0 caveat that minor versions may carry observable contract additions while remaining backwards-compatible at the SPI level. Which SPI surfaces are `stable` / `preview` / `experimental`, and what each label commits to for semver, is declared in [`docs/stability-matrix.md`](docs/stability-matrix.md) — the authoritative source for the semver policy.
 
+## [0.10.0] — 2026-07-02
+
+Minor release. SPI-additive (pre-1.0; no external consumers). The **Events** subsystem gains its ordering/OCC and codec fundament; **Security** gains a dedicated identity SPI; **HTTP** gains streaming, retry, and boot-path routing. Detail + merge gates: [`docs/release/v0.10.0-release-notes.md`](docs/release/v0.10.0-release-notes.md).
+
+### Added
+- **IdentityProvider SPI + Community OIDC driver** — `eu.exeris.kernel.spi.security` identity dispatcher; OIDC+JWKS first driver; Keycloak IT (ADR-040, #218).
+- **HTTP server-push / SSE streaming** — `HttpStreamExchange` SPI + Core SSE framing + Community binding, respond-once invariant preserved (ADR-043, #214).
+- **HTTP client retry** — `HttpRetryPolicy` SPI + `KernelWebClient` retry loop + Community default (ADR-045, #220).
+- **Event-Payload Codec SPI** — `EventPayloadCodec` + registry + Community JSON driver + TCK; bootstrap binding + encode-failure JFR (ADR-046, #222/#223).
+- **Events log-ordering & OCC boundary** — `EventStreamAppender` append-with-expected-version + per-`StreamId` total ordering SPI; Community JDBC/Postgres **and** Kafka bindings (≥2-binding gate closed) (ADR-049, #225–#228).
+- **Binding-agnostic `topic`** — optional `EventTypeSpec.topic` (per-type) + `hasTopic()` + 3-arg factories; Kafka honours the override on publish and subscribe (ADR-050, #229).
+- **HTTP generated-app boot-path** — `{id}` path-parameter routing + request-decoder request-scope (W7, #224).
+
+### Changed
+- **Open-core provider priority aligned** — Community=`0` / Enterprise=`100`; stale `100/200` text swept (#217).
+
+### Fixed
+- **Saga version-blind resume** — fail-closed `SCHEMA_MISMATCH` on a version-blind saga resume rather than silent divergence (#215).
+
+### Direction (RFC / decision — implementation in later versions)
+- **Shared-scope isolation tier** — `RFC-2026-07-02` (**ACCEPTED**): the shared-world tier is an *orthogonal row-visibility dimension* (`sharedScopeKey`/`SHARED_WORLD`), not a fourth `IsolationStrategy`; kernel-neutral name (game-domain "Universe" stays SDK-side). SPI carrier + RLS mode land later as an ADR-012 amendment.
+- **WebClient service addressing** — `RFC-2026-06-29` relocated to the kernel repo (owning-repo-holds-the-SPI-RFC convention, #230).
+
 ## [0.9.0] — 2026-06-18
 
 Minor release. SPI-backwards-compatible apart from one pre-1.0 diagnostics trim (no external consumers). Detail + migration notes: [`docs/release/v0.9.0-release-notes.md`](docs/release/v0.9.0-release-notes.md).
