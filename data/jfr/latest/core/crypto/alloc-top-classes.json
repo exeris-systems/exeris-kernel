@@ -1,36 +1,31 @@
 [ {
-  "class" : "java.util.HashMap$Node",
-  "count" : 2,
-  "bytes" : 261592,
-  "category" : "JVM_NOISE"
-}, {
   "class" : "[Ljava.util.HashMap$Node;",
-  "count" : 2,
-  "bytes" : 487328,
+  "count" : 4,
+  "bytes" : 751200,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "java.util.HashSet",
+  "class" : "java.util.LinkedHashMap",
   "count" : 2,
-  "bytes" : 656552,
+  "bytes" : 656608,
   "category" : "JVM_NOISE"
-}, {
-  "class" : "java.lang.VirtualThread",
-  "count" : 2,
-  "bytes" : 522872,
-  "category" : "LOOM_RUNTIME"
 }, {
   "class" : "java.lang.String",
+  "count" : 2,
+  "bytes" : 523104,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "java.util.LinkedHashMap$Entry",
   "count" : 1,
   "bytes" : 261560,
   "category" : "JVM_NOISE"
 }, {
+  "class" : "java.lang.VirtualThread",
+  "count" : 1,
+  "bytes" : 95232,
+  "category" : "LOOM_RUNTIME"
+}, {
   "class" : "java.util.concurrent.ForkJoinTask$AdaptedRunnableAction",
   "count" : 1,
   "bytes" : 261552,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "java.lang.StringBuilder",
-  "count" : 1,
-  "bytes" : 15312,
   "category" : "JVM_NOISE"
 } ]
