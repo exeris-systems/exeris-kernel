@@ -93,13 +93,17 @@ public abstract class AbstractHttpStreamExchangeTck {
     private static final long SLOW_PROBE_TIMEOUT_SECONDS = 30L;
 
     /**
-     * Flood size for the backpressure probe. Sized to RELIABLY force several credit-window park cycles
-     * given the binding's deliberately-tiny egress window (so the property — emit() parks then resumes
-     * then delivers everything — is genuinely proven) while draining comfortably within
-     * {@link #SLOW_PROBE_TIMEOUT_SECONDS} on a loaded box. A larger flood proves nothing more about the
-     * park/resume property; it only makes the probe throughput-bound and flaky under contention.
+     * Flood size for the backpressure probe. The park condition only trips once the kernel refuses a
+     * socket write: egress credit returns when the transport accepts a frame (buffer close), not when
+     * the client reads it. The flood must therefore dominate everything the OS can absorb with a
+     * stalled reader — server {@code SO_SNDBUF} + client {@code SO_RCVBUF} (Linux doubles both
+     * setsockopt values) — plus the credit window itself, with margin for the pre-stall drain race.
+     * 2_000 (~23 KB of {@code data: N} frames) sat below that ceiling (~36 KB with the reference
+     * binding's 8 KB/2 KB sockets and 16 KB window), so emit() could legitimately complete without
+     * ever parking on some boxes; 8_000 (~95 KB) clears it several times over while still draining
+     * well within {@link #SLOW_PROBE_TIMEOUT_SECONDS} on a loaded box.
      */
-    protected static final int BACKPRESSURE_FLOOD = 2_000;
+    protected static final int BACKPRESSURE_FLOOD = 8_000;
 
     // -------------------------------------------------------------------------
     // Mandatory binding hook — the real loopback round-trip

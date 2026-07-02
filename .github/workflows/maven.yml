@@ -607,7 +607,7 @@ jobs:
             -Dbenchmark.warmuptime=1s \
             -Dbenchmark.iterationstime=1s \
             -Dbenchmark.jvmArgsAppend=-XX:StartFlightRecording=name=jmh,filename=target/jfr-reports/jmh-benchmarks.jfr,dumponexit=true,settings=default \
-            verify -B -e
+            verify -DskipTests -B -e
           mvn -pl exeris-kernel-core -P benchmarks \
             -Dbenchmark.forks=1 \
             -Dbenchmark.warmup=3 \
@@ -615,7 +615,7 @@ jobs:
             -Dbenchmark.warmuptime=1s \
             -Dbenchmark.iterationstime=1s \
             -Dbenchmark.jvmArgsAppend=-XX:StartFlightRecording=name=jmh,filename=target/jfr-reports/jmh-benchmarks.jfr,dumponexit=true,settings=default \
-            verify -B -e
+            verify -DskipTests -B -e
 
       - name: Upload Community benchmark results
         uses: actions/upload-artifact@v4
