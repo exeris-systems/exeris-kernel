@@ -436,6 +436,49 @@ class PaqsSchedulerTest {
         }
     }
 
+    // =========================================================================
+    // Custom execution backend seam
+    // =========================================================================
+
+    @Nested
+    @DisplayName("Custom execution backend")
+    class CustomExecutionBackend {
+
+        @Test
+        @DisplayName("custom backend is invoked with correct thread name and task runs")
+        @Timeout(value = TIMEOUT_MS, unit = TimeUnit.MILLISECONDS)
+        void customBackendIsInvoked() throws InterruptedException {
+            CountDownLatch backendInvoked = new CountDownLatch(1);
+            CountDownLatch taskRan = new CountDownLatch(1);
+            AtomicReference<String> capturedThreadName = new AtomicReference<>();
+
+            StreamExecutionBackend customBackend = (threadName, task) -> {
+                capturedThreadName.set(threadName);
+                backendInvoked.countDown();
+                task.run();
+            };
+
+            AdmissionController controller = buildController(WatermarkLevel.NORMAL);
+            PaqsScheduler sut = new PaqsScheduler(
+                    controller,
+                    new StreamLoadShedder(ENGINE),
+                    stream -> taskRan.countDown(),
+                    s -> StreamPriority.HIGH,
+                    ENGINE,
+                    customBackend);
+
+            sut.schedule(stubStream(77L, new AtomicBoolean()));
+
+            assertThat(backendInvoked.await(TIMEOUT_MS, TimeUnit.MILLISECONDS))
+                    .as("custom backend must be invoked").isTrue();
+            assertThat(taskRan.await(TIMEOUT_MS, TimeUnit.MILLISECONDS))
+                    .as("stream handler must be invoked").isTrue();
+            assertThat(capturedThreadName.get())
+                    .as("thread name must have expected format")
+                    .isEqualTo("paqs/" + ENGINE + "/HIGH/77");
+        }
+    }
+
     private static AdmissionController buildController(WatermarkLevel level) {
         long total = 1_000_000L;
         long allocated = utilizationForLevel(level, total);

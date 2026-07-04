@@ -15,6 +15,7 @@ import eu.exeris.kernel.core.memory.WatermarkManager;
 import eu.exeris.kernel.core.transport.TransportScopes;
 import eu.exeris.kernel.core.transport.scheduler.AdmissionController;
 import eu.exeris.kernel.core.transport.scheduler.PaqsScheduler;
+import eu.exeris.kernel.core.transport.scheduler.StreamExecutionBackend;
 import eu.exeris.kernel.core.transport.scheduler.StreamLoadShedder;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
@@ -185,6 +186,34 @@ public abstract class AbstractPaqsSchedulerTck {
     }
 
     // =========================================================================
+    // Execution backend seam contract
+    // =========================================================================
+    @Nested
+    @DisplayName("Execution backend seam contract")
+    class ExecutionBackendSeamContract {
+        @Test
+        @DisplayName("custom execution backend preserves ScopedValue bindings")
+        @Timeout(value = TIMEOUT_MS, unit = TimeUnit.MILLISECONDS)
+        void customExecutionBackendPreservesScopedValueBindings() throws InterruptedException {
+            setPressure(WatermarkLevel.NORMAL);
+            CountDownLatch latch = new CountDownLatch(1);
+            AtomicReference<StreamPriority> capturedPriority = new AtomicReference<>();
+            AtomicReference<Long> capturedStreamId = new AtomicReference<>();
+            StreamExecutionBackend backend = (threadName, task) -> task.run();
+
+            buildScheduler(stream -> {
+                capturedPriority.set(TransportScopes.STREAM_PRIORITY.get());
+                capturedStreamId.set(TransportScopes.STREAM_ID.get());
+                latch.countDown();
+            }, s -> StreamPriority.HIGH, backend).schedule(stubStream(501L));
+
+            assertThat(latch.await(TIMEOUT_MS, TimeUnit.MILLISECONDS)).isTrue();
+            assertThat(capturedPriority.get()).isEqualTo(StreamPriority.HIGH);
+            assertThat(capturedStreamId.get()).isEqualTo(501L);
+        }
+    }
+
+    // =========================================================================
     // Counter invariants
     // =========================================================================
     @Nested
@@ -289,6 +318,12 @@ public abstract class AbstractPaqsSchedulerTck {
     protected PaqsScheduler buildScheduler(StreamHandler handler,
                                            Function<TransportStream, StreamPriority> extractor) {
         return new PaqsScheduler(admissionController, loadShedder, handler, extractor, ENGINE_NAME);
+    }
+
+    protected PaqsScheduler buildScheduler(StreamHandler handler,
+                                           Function<TransportStream, StreamPriority> extractor,
+                                           StreamExecutionBackend executionBackend) {
+        return new PaqsScheduler(admissionController, loadShedder, handler, extractor, ENGINE_NAME, executionBackend);
     }
 
     protected static TransportStream stubStream(long id) {
