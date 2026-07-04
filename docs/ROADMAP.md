@@ -1721,6 +1721,20 @@ See also: ADR-034 (`KernelWebClient` facade, superseding ADR-026), ADR-032 (`Htt
 
 ---
 
+### HTTP: Stream-Route Table Is Exact-Path Only — Generated Per-Action Stream Routes Unreachable
+
+**Gap:** The router's streaming table is exact-match only: `streamRoutes` is a `Map<StreamRouteKey, HttpStreamHandler>` and `resolveStream` / `isStreamRoute` are plain map lookups (`HttpRouter.java:52,80-93`); the `streamRoute(...)` Javadoc pins "exact request path". The W7 `{id}` path-template machinery (`PathTemplateRoute`) applies only to respond-once `route(...)` registrations (`HttpRouter.java:231-237`). The `exeris-tooling` generator emits `streamRoute(POST, "<base>/{id}/actions/<kebab>")` for per-action streams (ADR-044 Slice 2; `KernelApplicationGenerator.java:488`), so the literal `{id}` map key never matches a concrete id and every generated per-action stream 404s on a real boot — the same dead-route failure class T23 fixed one layer below. Aggravating detail: `Builder.streamRoute` silently accepts `{` in a path today, so the dead registration is invisible at build time. Not yet user-visible only because the per-action driver is still a keep-alive scaffold. Surfaced during downstream dogfooding (EV1-stream, 2026-07).
+
+**Owner:** HTTP subsystem (router); shape decision shared with `exeris-tooling` (ADR-044 EV1-stream slice).
+
+**Resolution:** Rule the shape inside the tooling EV1-stream slice, then land the kernel side in v0.11. Default direction — kernel-side template matching: extend the streaming table with the same template semantics the unary table already has (reuse `PathTemplateRoute` compile/match for `streamRoute` paths containing `{name}`; exact stream routes take precedence over template stream routes, mirroring unary precedence; captured params exposed on the streaming path). Alternative — ADR-044 amendment (tooling repo) redesigns per-action stream paths onto exact routes, and the kernel change collapses to a Javadoc clarification plus a build-time guard. **Either way, fail-fast becomes mandatory:** a `{` in a stream path must either resolve via templates or be rejected in `Builder.streamRoute` — a silently-dead registered route must become impossible.
+
+**Merge Gate:** Fail-fast property enforced (template resolution or `IllegalArgumentException` at registration — no third state). If template matching lands: router unit coverage for stream-template resolve + exact-over-template precedence, plus a streaming TCK (or router-level) case proving a `{id}` stream route opens an `HttpStreamExchange` for a concrete id; ADR-043 obligation 7 stays true (streaming resolves only via `resolveStream`, never through `handle`). Tooling lockstep (ADR-044 Slice 2 per-action driver impl) tracked in `exeris-tooling`, non-gating for the kernel merge.
+
+See also: ADR-043 (streaming SPI, obligation 7); ADR-044 (`exeris-tooling` SSE emitter shape — Slice 2 ratified, impl pending); v0.10 §"HTTP: generated-app boot-path reachability" (W7 template routing, T23 cross-repo note).
+
+---
+
 ## Known Gaps / Future Work planned for v0.12
 
 ### HTTP: `WebSocketProvider` SPI (or SSE-Only Commitment)
