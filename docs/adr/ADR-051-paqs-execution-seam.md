@@ -8,7 +8,7 @@
 | **Date**        | 2026-07-04                                                                                                                                                                                 |
 | **Scope**       | kernel/transport                                                                                                                                                                          |
 | **Owning Repo** | `exeris-kernel`                                                                                                                                                                            |
-| **Driven By**   | v0.11 ROADMAP §"Transport: PAQS Execution-Seam Port (M1)"; the port of the refactor-neutral M1 seam from `research/loom-continuation-locality` (v0.6); the DST moat (ROADMAP "Road to 1.0" §"Deterministic Simulation Testing"); the Francesco Nigro scheduler-geometry discussion on continuation locality. |
+| **Driven By**   | v0.11 ROADMAP §"Transport: PAQS Execution-Seam Port (M1)"; the port of the refactor-neutral M1 seam from `research/loom-continuation-locality` (v0.6); the DST moat (ROADMAP "Road to 1.0" §"Deterministic Simulation Testing"); prior public analysis of Loom scheduler geometry and continuation locality (the cost of splitting I/O completion reaping from continuation execution). |
 | **Compliance**  | The Wall (ADR-006 — the seam is Core-internal, **not** SPI); No Waste Compute (refactor-neutral default, zero hot-path delta); `ScopedValue` (no `ThreadLocal`) for stream context; no new `StructuredTaskScope` import on the default path. |
 
 ## Context and Problem Statement
@@ -37,8 +37,9 @@ affine backend's carrier pinning rode a *reflective* VT custom-scheduler overrid
 (`LocalityAwareExecutionBackend`) that is **absent unless running a Loom custom-scheduler JDK**, so
 the "locality-aware" arm **could not actually pin carriers** — it degraded to the default. It ran
 without `pullerMode=3`, and the Enterprise **io_uring** track (M4/M5: native reaper + affine +
-multishot + bounded drain) **never ran**. Per the Nigro scheduler-geometry discussion, native
-io_uring ingress is precisely the regime where continuation locality should bite hardest. The
+multishot + bounded drain) **never ran**. Native io_uring ingress is precisely the regime where
+continuation-locality effects should be strongest — where the split between kernel I/O completion
+reaping and user-space continuation execution is most pronounced. The
 research's own conclusion demanded "a materially different hypothesis" for future locality work;
 that hypothesis — **io_uring + a Loom custom scheduler + `pullerMode=3`** — is the live re-test,
 untested in the regime that matters.
