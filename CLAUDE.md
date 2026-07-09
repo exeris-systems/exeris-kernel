@@ -77,7 +77,7 @@ The following are banned in production runtime hot paths unless explicitly justi
 - `String.formatted()` / string concatenation on exception/failure paths — use the `rawArgs[]` primitive layout.
 - double-checked locking for lazy init — use the Supplier + `AtomicReference` CAS compute-once pattern (see CONTRIBUTING.md) or `LazyConstant`.
 
-These bans do not automatically apply to test fixtures, build tooling, migration scripts, or debug harnesses. PMD enforces several of them (`ThreadLocal`, `ExecutorService`, …) — see the lint footgun below.
+These bans do not automatically apply to test fixtures, build tooling, migration scripts, or debug harnesses. The `ThreadLocal` and `Executors` bans are enforced by ArchUnit (`ExerisArchitectureTest`), not PMD — if the arch guard did not run, nothing has checked them.
 
 ## Memory and Ownership Policy
 All native memory must have explicit owner and deterministic lifecycle.
@@ -99,7 +99,7 @@ Golden command (the only one that counts — `compile` proves nothing here):
 mvn clean install
 ```
 
-**Lint footgun (recurring, expensive):** `mvn verify`/`install` does **not** run `pmd:check` (it is bound `default-cli`). A green build is NOT lint-clean. Run explicitly, scoped to changed modules, and never include `exeris-kernel-build-config` in the `-pl` list:
+**Lint gates:** the parent POM binds `checkstyle:check` to `validate` and `pmd:check` to `verify` (both fail on violation), so a full `mvn clean install` with no skip flags IS lint-gated. The footgun is the skip flags: `-Dpmd.skip=true`/`-Dcheckstyle.skip=true` get used for fast iteration and JDK 26 SIGSEGV workarounds, and PMD binds at `verify`, so a `mvn test` loop never reaches it — a build that skipped lint proves nothing about lint. Standalone re-check, scoped to changed modules; never include `exeris-kernel-build-config` in the `-pl` list (parented to `exeris-kernel-root`, so no lint bindings, plus `pmd.skip=true`):
 
 ```bash
 mvn -pl <changed-modules> pmd:check checkstyle:check
@@ -110,14 +110,14 @@ mvn -pl <changed-modules> pmd:check checkstyle:check
 ```bash
 mvn -q -pl exeris-kernel-tck -am -Dtest=ExerisArchitectureTest \
   -Dsurefire.failIfNoSpecifiedTests=false \
-  -Dpmd.skip=true -Dcheckstyle.skip=true -Dspotbugs.skip=true test
+  -Dpmd.skip=true -Dcheckstyle.skip=true test
 ```
 
 CI (`.github/workflows/maven.yml`) runs `mvn clean verify -P coverage` (JaCoCo line/branch floors are ratcheted per module — don't lower a floor to make a build pass) plus sequenced gates: persistence RLS → Kafka integration → recovery continuity → transport stress → TLS OpenSSL 3.x/4.x matrix; JMH benchmarks on `main` only.
 
 **Definition of done — all of these, in order, before calling work finished:**
 1. `mvn clean install` green (full reactor for cross-module changes; `-pl <module> -am` acceptable for isolated ones).
-2. Explicit lint pass on changed modules (command above). No new PMD/Checkstyle suppressions without written justification.
+2. Lint-clean on changed modules — covered by step 1 **unless** any `-Dpmd.skip`/`-Dcheckstyle.skip` was used in the loop; then run the standalone command above. No new PMD/Checkstyle suppressions without written justification.
 3. `ExerisArchitectureTest` green.
 4. Contract/SPI change → TCK + binding tests updated and green; tagged tests run if their subject changed.
 5. Docs/ADR impact triaged (`exeris-doc-impact-triage` skill); drift fixed or explicitly deferred with reason.
