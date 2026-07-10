@@ -32,21 +32,13 @@ If multiple categories apply, route by primary risk first and list required seco
 - Router plans and routes; specialists execute.
 
 ## Recommended Skills (triage and planning only)
-- `exeris-task-classifier` (must-have)
-- `exeris-risk-prioritizer` (must-have)
-- `exeris-routing-planner` (must-have)
-- `exeris-validation-gate-planner` (must-have)
+- `exeris-triage` (must-have — single pass: classify → subsystem scope → primary risk → route/handoffs → validation gates)
 - `exeris-doc-impact-triage` (recommended)
-- `exeris-multi-agent-handoff` (recommended)
-- `exeris-subsystem-scope-detector` (optional)
 
 Execution order for multi-domain work:
-1. classify task,
-2. prioritize primary risk,
-3. plan routing and handoffs,
-4. define validation and merge gates,
-5. optionally assess docs/ADR impact,
-6. route to primary specialist.
+1. run `exeris-triage` (one pass covers classification, risk, routing, and gates),
+2. optionally assess docs/ADR impact (`exeris-doc-impact-triage`),
+3. route to primary specialist.
 
 ## Core Guardrails (always enforce)
 - Preserve The Wall: SPI implementation-blind, Core driver-agnostic.

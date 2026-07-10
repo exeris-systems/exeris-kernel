@@ -2,19 +2,44 @@
 
 Mission: preserve **No Waste Compute**, keep **The Wall** intact, and prefer practical, contract-grounded decisions over style dogma.
 
+## What This Project Is
+
+Exeris Kernel is a cloud-native, zero-copy runtime platform for the JVM (open-core: this repo is the open side). It replaces framework-heavy Java stacks with a system-level kernel: Panama FFM off-heap memory, virtual threads, `ScopedValue` context, JFR-first observability, OpenSSL via FFM. Not a standard Java app — standard Java idioms are often *wrong* here.
+
+- **Stack:** Java 26 with `--enable-preview` (mandatory; do not disable per-module), Maven 3.9+ multi-module reactor, JUnit 5, ArchUnit, JMH, JFR, Testcontainers (Postgres/Kafka) for tagged integration tests.
+- **Coordinates:** groupId `eu.exeris`, packages `eu.exeris.kernel.<module>.<subsystem>`, GitHub `exeris-systems/exeris-kernel`. Version on `main`: 0.10.0; active development: v0.11.
+- **Subsystems** (each has a contract doc in `docs/subsystems/`): bootstrap, config, crypto, events, exceptions, flow, graph, http, memory, persistence, security, telemetry, transport.
+- **Key terms** (`docs/glossary.md` is authoritative): *The Wall* = SPI/implementation separation; *No Waste Compute* = every byte allocated and cycle spent must add value; *software inflation* = abstraction layers without measurable value; *Glass-Box* = JFR events as primary observability, not logs.
+
+## Repository Map and The Wall
+
+Reactor modules (root `pom.xml`) and their import rules:
+
+| Module | Role | May depend on |
+|---|---|---|
+| `exeris-kernel-spi` | Contracts + carriers ("The Constitution") | **only `java.*` / `jdk.*`** |
+| `exeris-kernel-core` | Driver-agnostic orchestration, bootstrap; HTTP codec/runtime currently lives here | SPI. **Never** community/enterprise |
+| `exeris-kernel-community` | Open providers (transport, persistence/JDBC, flow, events, security, …) | SPI only. **Never** core internals |
+| `exeris-kernel-community-kafka` | Kafka/Redpanda event/flow bindings | SPI, community |
+| `exeris-kernel-community-testkit` | Shared test fixtures | — |
+| `exeris-kernel-tck` | Contract tests (`Abstract*Tck`) + `ExerisArchitectureTest` (ArchUnit Wall guard) | SPI |
+| `exeris-kernel-diagnostics-cli` | Diagnostics tooling (thin, coverage-ungated) | — |
+| `exeris-kernel-bom` / `-parent` / `-build-config` | Build plumbing; build-config ships lint rulesets and is itself lint-exempt | — |
+
+Repository realities to respect:
+- `exeris-kernel-enterprise` is **not in this repository** (separate closed-source distribution). Never deep-link into enterprise-private repos from public docs.
+- Enterprise-facing claims in docs describe the shared Core engine (e.g. FFM/OpenSSL per ADR-008), not code you can read here.
+- `tools/jfr-reporter` is CI tooling, outside the reactor.
+
 ## Documentation Precedence
 Use the smallest sufficient authoritative set first.
 
 1. `docs/modules/*.md` and `docs/subsystems/*.md` for placement and behavior.
-2. `docs/adr/*.md` when boundaries, lifecycle model, or module split are affected.
-3. `docs/whitepaper.md`, `docs/architecture.md`, `docs/performance-contract.md` when present and relevant.
+2. `docs/adr/*.md` when boundaries, lifecycle model, or module split are affected. `docs/rfc/*.md` for designs still in flight.
+3. `docs/whitepaper.md`, `docs/architecture.md`, `docs/performance-contract.md` for philosophy and numeric SLOs.
+4. `docs/ROADMAP.md` for current milestone intent and 1.0 GA constraints; `docs/glossary.md` for terminology; `CONTRIBUTING.md` for build/off-heap/debugging mechanics.
 
-If any referenced document is missing or stale, fall back to available module/subsystem/ADR docs and the current source layout.
-
-Current repository realities to respect:
-- `exeris-kernel-community` may contain placeholders.
-- `exeris-kernel-enterprise` may be out-of-repo.
-- HTTP codec/runtime code is currently embedded in Core in this repository state.
+If a referenced document is missing or stale, fall back to available module/subsystem/ADR docs and the current source layout — and say so rather than inventing target-state.
 
 ## Rule Levels
 
@@ -24,13 +49,15 @@ Current repository realities to respect:
 - No framework DI in runtime kernel code; use explicit construction and ServiceLoader model.
 - No `ThreadLocal` for runtime context propagation; use `ScopedValue`.
 - No unstructured concurrency in runtime orchestration paths where structured scope is expected.
+- New SPI surface or changed observable SPI behavior requires executable `Abstract*Tck` coverage plus binding tests before merge.
+- New `ExerisKernelException` subclasses require a `rawArgs` layout comment and an error code registered in `exeris-kernel-spi/.../spi/exceptions/KernelErrorCodes.java` (single source of truth — no string literals in exception constructors).
 
 ### B) Strong Defaults (enforce by default, allow justified exceptions)
 - Prefer `StructuredTaskScope` for orchestration concurrency — scoped to JVM-controlled deployments (served via the `1.0-preview` artifact on the `preview` branch, the intended future `main`). The **distributable default artifact must stay preview-clean for 1.0 GA**, so on the default critical path (`main`) prefer the own `fork`/`join`/`cancel` layer over virtual threads + `ScopedValue` (both GA) at the existing seam; a default-path move *away* from `StructuredTaskScope` is not a guardrail violation (see ROADMAP "Platform Baseline for 1.0 GA").
 - Prefer `MemorySegment`, `LoanedBuffer`, and `VarHandle` on runtime hot paths.
 - Prefer JFR-first instrumentation for subsystem lifecycle/failure points (bootstrap, allocation failure, bind/start, state transitions).
 - Prefer expanding TCK coverage when observable SPI behavior changes.
-- Design carriers to be Valhalla-ready (`record` / immutable final classes; avoid identity-sensitive operations).
+- Design carriers to be Valhalla-ready (`record` / immutable final classes; avoid identity-sensitive operations: no `synchronized` on carriers, no `System.identityHashCode()`, no identity `==` on domain objects).
 
 ### C) Heuristics (signals, not hard gates)
 - Class with more than ~5 meaningful collaborators may indicate software inflation.
@@ -45,14 +72,80 @@ The following are banned in production runtime hot paths unless explicitly justi
 - `ExecutorService`, `Executors`, `CompletableFuture` (when replacing structured orchestration).
 - `java.io.*`, `java.net.Socket`, `ByteBuffer` (when used in zero-copy runtime paths).
 - `sun.misc.Unsafe`.
-- ad-hoc Arena management in subsystem runtime code when approved ownership abstractions exist.
+- ad-hoc Arena management (`Arena.ofConfined()` etc.) in subsystem runtime code when approved ownership abstractions exist — it bypasses `WatermarkManager`.
 - checked exceptions on hot state-machine paths.
+- `String.formatted()` / string concatenation on exception/failure paths — use the `rawArgs[]` primitive layout.
+- double-checked locking for lazy init — use the Supplier + `AtomicReference` CAS compute-once pattern (see CONTRIBUTING.md) or `LazyConstant`.
 
-These bans do not automatically apply to test fixtures, build tooling, migration scripts, or debug harnesses.
+These bans do not automatically apply to test fixtures, build tooling, migration scripts, or debug harnesses. The `ThreadLocal` and `Executors` bans are enforced by ArchUnit (`ExerisArchitectureTest`), not PMD — if the arch guard did not run, nothing has checked them.
 
 ## Memory and Ownership Policy
 All native memory must have explicit owner and deterministic lifecycle.
 In subsystem/runtime code, prefer `MemoryAllocator`, `LoanedBuffer`, or approved native context wrappers over ad-hoc ownership.
+
+`LoanedBuffer` lifecycle is unforgiving (silent leaks, double-free SIGSEGV): always try-with-resources; `retain()` **before** forking a subtask that uses the buffer, `close()` in the subtask. The TCK runs `LeakDetectionMode.PARANOID` — a `LeakDetectedError` means fix the lifecycle, not the test. Full rules: CONTRIBUTING.md §"Off-Heap Memory".
+
+## Testing Model
+- **Test triad for features:** unit test + integration test + TCK expansion. A PR touching an SPI boundary with only unit tests is incomplete.
+- **TCK pattern:** contract behavior lives in `Abstract*Tck` classes in `exeris-kernel-tck`; each provider module binds them with concrete subclasses. Assert semantics, not just happy paths.
+- **Tagged tests do NOT run in the default build.** `@Tag("integration")` (Testcontainers Postgres/Kafka), `@Tag("continuity")`, and `@Tag("stress")` are excluded from `mvn clean install` and run in dedicated CI gates. If you touched code they cover, run them explicitly: `mvn -pl <module> -DincludedGroups=<tag> -DexcludedGroups= test`. A green default build is not proof they pass.
+- On Windows, FFM/OpenSSL TLS tests auto-skip; full native coverage needs Linux (`libssl.so.3` on path) — don't claim TLS verification from a Windows run.
+
+## Build, Verify, and Definition of Done
+
+Golden command (the only one that counts — `compile` proves nothing here):
+
+```bash
+mvn clean install
+```
+
+**Lint gates:** the parent POM binds `checkstyle:check` to `validate` and `pmd:check` to `verify` (both fail on violation), so a full `mvn clean install` with no skip flags IS lint-gated. The footgun is the skip flags: `-Dpmd.skip=true`/`-Dcheckstyle.skip=true` get used for fast iteration and JDK 26 SIGSEGV workarounds, and PMD binds at `verify`, so a `mvn test` loop never reaches it — a build that skipped lint proves nothing about lint. Standalone re-check, scoped to changed modules; never include `exeris-kernel-build-config` in the `-pl` list (parented to `exeris-kernel-root`, so no lint bindings, plus `pmd.skip=true`):
+
+```bash
+mvn -pl <changed-modules> pmd:check checkstyle:check
+```
+
+**Architecture guard:** run the Wall guard yourself — do not assume CI covers it (it has historically been `@ArchIgnore`'d):
+
+```bash
+mvn -q -pl exeris-kernel-tck -am -Dtest=ExerisArchitectureTest \
+  -Dsurefire.failIfNoSpecifiedTests=false \
+  -Dpmd.skip=true -Dcheckstyle.skip=true test
+```
+
+CI (`.github/workflows/maven.yml`) runs `mvn clean verify -P coverage` (JaCoCo line/branch floors are ratcheted per module — don't lower a floor to make a build pass) plus sequenced gates: persistence RLS → Kafka integration → recovery continuity → transport stress → TLS OpenSSL 3.x/4.x matrix; JMH benchmarks on `main` only.
+
+**Definition of done — all of these, in order, before calling work finished:**
+1. `mvn clean install` green (full reactor for cross-module changes; `-pl <module> -am` acceptable for isolated ones).
+2. Lint-clean on changed modules — covered by step 1 **unless** any `-Dpmd.skip`/`-Dcheckstyle.skip` was used in the loop; then run the standalone command above. No new PMD/Checkstyle suppressions without written justification.
+3. `ExerisArchitectureTest` green.
+4. Contract/SPI change → TCK + binding tests updated and green; tagged tests run if their subject changed.
+5. Docs/ADR impact triaged (`exeris-doc-impact-triage` skill); drift fixed or explicitly deferred with reason.
+6. Release notes/CHANGELOG describe only published behavior — no local-only links, no cross-repo private PR references.
+
+Run the `exeris-pr-preflight` skill before any commit/push/PR — it encodes this checklist as a go/no-go gate. Never report "ready to PR" from a green `verify` alone.
+
+## Branch, PR, and Release Workflow
+- **Base branch:** cut a fresh feature branch per task off the current active development base — `development/0.11.0` as of v0.10.0 (bump this line in the release integration PR) — or a `research/<slug>` branch for perf research. Never commit directly to `main`; never reuse a merged branch.
+- **Branch names:** `feature/…`, `fix/…`, `perf/…`, `docs/…`, `research/…` with a version or ADR prefix when applicable (e.g. `feature/v011-…`, `feature/ADR-046-…`).
+- **Commits/PR titles:** conventional style `type(scope): summary` — e.g. `fix(persistence): …`, `docs(adr): …`, `release(0.10.0): …`.
+- **Releases:** milestones integrate into `main` via a single `release(x.y.z)` PR; `main` carries release versions, `development/*` carry `-SNAPSHOT`s (both publish to GitHub Packages).
+- **ADR/RFC numbers are a GLOBAL namespace across the exeris ecosystem.** Reserve the number in `~/exeris-systems/exeris-docs/adr-index.md` **before** writing content (use the `exeris-adr-register` skill; the ADR-026 collision in PR #129 is the cautionary tale). Filenames are kebab-case: `ADR-0XX-short-title.md`; cross-repo ADRs get `.link.md` stubs.
+- **Planning artifacts:** milestone/implementation plans live outside the repo (local plans directory). In-repo planning is only `docs/ROADMAP.md` and `docs/release/*` notes.
+- Multiple concurrent sessions on this repo → use git worktrees off a clean base; a parallel branch-switch can revert uncommitted edits.
+
+## Operating Standards (Any Model)
+Process discipline that holds regardless of which Claude model runs the session — follow these mechanically; they remove the judgment calls that go wrong first.
+
+1. **Ground truth over meta-docs.** Claims about what the build/CI/tooling *does* are verified against the effective source (`pom.xml` `<executions>`, `.github/workflows/*.yml`, rulesets) — never against CLAUDE.md, skills, or sibling meta-docs; they share ancestry with the claim being checked (the "verify skips PMD" myth survived that circular check from the first commit until PR #238).
+2. **Classify scope first.** Runtime hot path / runtime non-hot / test-tooling / docs-only — bans and review depth follow from the class, and every verdict states it.
+3. **A claim names the command that proves it.** "Tests pass" cites the exact invocation; a green default build says nothing about tagged tests (`exeris-tagged-gate-runner`), and a skip-flagged build says nothing about lint.
+4. **No perf conclusions from one run; no cross-driver comparisons.** Full discipline: `exeris-jfr-perf-research`.
+5. **Minimal diffs, matched idiom.** No drive-by refactors or style rewrites; comments only per the comment policy below.
+6. **Never invent target-state.** Missing or stale doc → say so and fall back to source layout; docs never outrun code.
+7. **Findings carry the why.** Every review finding maps to a doc/ADR/contract clause plus the smallest corrective action.
+8. **Escalate at the seams.** Placement doubt → architect lens BEFORE code; SPI/observable-behavior touch → TCK gate; contract-changing work is never self-approved as done.
+9. **Report outcome first.** What happened or was found leads the reply; skipped steps and residual risks are stated, never silent.
 
 ## Review Priorities
 1. Boundary integrity (SPI/Core/Drivers, The Wall).
@@ -82,11 +175,11 @@ When the SonarQube MCP server is available:
 ## Agents, Commands, and Skills
 - Functional subagents live in `.claude/agents/` (Architect, Implementer, TCK/Test, Performance/Memory, Docs/ADR, Router).
 - Reusable slash commands live in `.claude/commands/` (Community/Open-Core review and implementation prompts).
-- Skill packs live in `.claude/skills/` (PR-review lenses, routing/planner, subsystem lenses, plus the `exeris-pr-preflight` / `exeris-adr-register` / `exeris-jfr-perf-research` workflow skills).
+- Skill packs live in `.claude/skills/` (PR-review lenses, `exeris-triage` single-pass triage, subsystem lenses, plus the workflow skills: `exeris-pr-preflight`, `exeris-adr-register`, `exeris-jfr-perf-research`, `exeris-release-integration`, `exeris-tagged-gate-runner`).
 
 ### When to use which
 These three surfaces overlap on purpose; pick by *how* you need the work done, not *what* it is:
-- **Skill** (`Skill` tool, inline) — runs the checklist in the current conversation, keeping full context. Default for review lenses, triage, and the workflow skills above. Start a PR review with `exeris-pr-review-waste-hunter`, which dispatches to the focused lenses.
+- **Skill** (`Skill` tool, inline) — runs the checklist in the current conversation, keeping full context. Default for review lenses, triage, and the workflow skills above. Start a PR review with `exeris-pr-review-waste-hunter`, which dispatches to the focused lenses. `exeris-pr-preflight` is mandatory before any push/PR; `exeris-adr-register` is mandatory before authoring any ADR/RFC.
 - **Agent** (`Agent` tool, delegated) — spins up a separate context window. Use for broad fan-out, read-heavy exploration, or parallel independent work where you only want the conclusion back (e.g. `exeris-architect`, `exeris-performance`).
 - **Command** (`/name`, explicit) — user-invoked Community/Open-Core prompt; reach for it when the user types the slash command.
 - Skills and agents intentionally mirror the same personas (e.g. `exeris-architect-guardrails` skill ↔ `exeris-architect` agent): same lens, different execution mode.

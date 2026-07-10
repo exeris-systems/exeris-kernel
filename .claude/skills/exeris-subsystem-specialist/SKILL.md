@@ -1,6 +1,6 @@
 ---
 name: exeris-subsystem-specialist
-description: Targeted single-subsystem review for Exeris Kernel via one mode-driven skill (modes: bootstrap, memory, crypto, transport, persistence, events, flow, http, security, config). Use when a change is concentrated in one subsystem and you want its contract doc loaded as the primary source of truth plus mode-specific deep checks — without spawning multiple agents. State the mode (e.g. "review this as Transport").
+description: Targeted single-subsystem review for Exeris Kernel via one mode-driven skill — one mode per contract doc in docs/subsystems/ (bootstrap, config, crypto, events, exceptions, flow, graph, http, memory, persistence, security, telemetry, transport). Use when a change is concentrated in one subsystem and you want its contract doc loaded as the primary source of truth plus mode-specific deep checks — without spawning multiple agents. State the mode (e.g. "review this as Transport").
 ---
 
 # Exeris Subsystem Specialist
@@ -21,6 +21,9 @@ This skill keeps one shared Exeris philosophy while switching to subsystem-speci
 - http
 - security
 - config
+- exceptions
+- graph
+- telemetry
 
 ## Invocation Pattern
 Use a mode-first subprompt, for example:
@@ -53,6 +56,9 @@ Then load exactly one subsystem contract based on selected mode:
 - http → docs/subsystems/http.md
 - security → docs/subsystems/security.md
 - config → docs/subsystems/config.md
+- exceptions → docs/subsystems/exceptions.md
+- graph → docs/subsystems/graph.md
+- telemetry → docs/subsystems/telemetry.md
 
 ## Mode Workflow
 1. **Select mode**
@@ -81,6 +87,9 @@ Then load exactly one subsystem contract based on selected mode:
    - http: provider/server/client/handler/exchange contract conformance at SPI boundary.
    - security: context propagation, identity/authorization invariants, isolation and auditability guarantees.
    - config: schema and validation semantics, deterministic resolution/override precedence, boot-time safety.
+   - exceptions: `KernelErrorCodes` registry integrity (single source of truth, no string literals in constructors), `rawArgs[]` layout comments and primitive-only payloads, no `String.formatted()`/concat on failure paths, checked-exception ban on hot state machines.
+   - graph: traversal/query contract semantics, zero-copy payload handoff at persistence boundaries, deterministic lookup complexity on hot paths.
+   - telemetry: JFR-first event contracts, single-phase `commit()` (never begin → blocking-op → commit on a virtual thread), `@StackTrace(false)` weight discipline, secret-safe payloads, L0/L1 sink boundaries.
 
 5. **Decision and report**
    - Output verdict: APPROVE, CONDITIONAL, REJECT.
