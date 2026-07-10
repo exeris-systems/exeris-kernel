@@ -134,6 +134,19 @@ Run the `exeris-pr-preflight` skill before any commit/push/PR — it encodes thi
 - **Planning artifacts:** milestone/implementation plans live outside the repo (local plans directory). In-repo planning is only `docs/ROADMAP.md` and `docs/release/*` notes.
 - Multiple concurrent sessions on this repo → use git worktrees off a clean base; a parallel branch-switch can revert uncommitted edits.
 
+## Operating Standards (Any Model)
+Process discipline that holds regardless of which Claude model runs the session — follow these mechanically; they remove the judgment calls that go wrong first.
+
+1. **Ground truth over meta-docs.** Claims about what the build/CI/tooling *does* are verified against the effective source (`pom.xml` `<executions>`, `.github/workflows/*.yml`, rulesets) — never against CLAUDE.md, skills, or sibling meta-docs; they share ancestry with the claim being checked (the "verify skips PMD" myth survived that circular check from the first commit until PR #238).
+2. **Classify scope first.** Runtime hot path / runtime non-hot / test-tooling / docs-only — bans and review depth follow from the class, and every verdict states it.
+3. **A claim names the command that proves it.** "Tests pass" cites the exact invocation; a green default build says nothing about tagged tests (`exeris-tagged-gate-runner`), and a skip-flagged build says nothing about lint.
+4. **No perf conclusions from one run; no cross-driver comparisons.** Full discipline: `exeris-jfr-perf-research`.
+5. **Minimal diffs, matched idiom.** No drive-by refactors or style rewrites; comments only per the comment policy below.
+6. **Never invent target-state.** Missing or stale doc → say so and fall back to source layout; docs never outrun code.
+7. **Findings carry the why.** Every review finding maps to a doc/ADR/contract clause plus the smallest corrective action.
+8. **Escalate at the seams.** Placement doubt → architect lens BEFORE code; SPI/observable-behavior touch → TCK gate; contract-changing work is never self-approved as done.
+9. **Report outcome first.** What happened or was found leads the reply; skipped steps and residual risks are stated, never silent.
+
 ## Review Priorities
 1. Boundary integrity (SPI/Core/Drivers, The Wall).
 2. Contract integrity (subsystem docs + ADR intent).
@@ -162,7 +175,7 @@ When the SonarQube MCP server is available:
 ## Agents, Commands, and Skills
 - Functional subagents live in `.claude/agents/` (Architect, Implementer, TCK/Test, Performance/Memory, Docs/ADR, Router).
 - Reusable slash commands live in `.claude/commands/` (Community/Open-Core review and implementation prompts).
-- Skill packs live in `.claude/skills/` (PR-review lenses, routing/planner, subsystem lenses, plus the `exeris-pr-preflight` / `exeris-adr-register` / `exeris-jfr-perf-research` workflow skills).
+- Skill packs live in `.claude/skills/` (PR-review lenses, routing/planner, subsystem lenses, plus the workflow skills: `exeris-pr-preflight`, `exeris-adr-register`, `exeris-jfr-perf-research`, `exeris-release-integration`, `exeris-tagged-gate-runner`).
 
 ### When to use which
 These three surfaces overlap on purpose; pick by *how* you need the work done, not *what* it is:
