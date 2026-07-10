@@ -19,7 +19,7 @@ description: Run the tagged test gates (integration / continuity / stress) that 
 |---|---|---|---|
 | persistence / JDBC / RLS interceptors | `integration` | `exeris-kernel-community` | Persistence RLS/Interceptor Gate |
 | events / flow via Kafka or Redpanda | `integration` | `exeris-kernel-community-kafka` | Kafka Integration Gate |
-| recovery / continuity (flow & events state) | `continuity` | `exeris-kernel-core` and `exeris-kernel-community` | Recovery Continuity Gate |
+| recovery / continuity (flow & events state) | `continuity` | `exeris-kernel-community` and `exeris-kernel-community-kafka` | Recovery Continuity Gate |
 | transport under load / backpressure / load-shed | `stress` | `exeris-kernel-community` | Transport Stress Gate |
 | crypto / TLS (OpenSSL FFM) | — (matrix) | Linux-only | TLS OpenSSL 3.x/4.x matrix |
 

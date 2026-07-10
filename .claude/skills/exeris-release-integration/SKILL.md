@@ -26,7 +26,7 @@ Make the recurring milestone→main integration deterministic. The flow below ma
 2. **Version flip on the dev branch.** All **11 reactor coordinates** (root + parent + bom + build-config + spi + tck + core + community + community-kafka + community-testkit + diagnostics-cli): `X.Y.0-SNAPSHOT` → `X.Y.0`.
    - Verify completeness: `grep -r "X.Y.0-SNAPSHOT" --include=pom.xml .` must return nothing.
 
-3. **Release notes.** `docs/release/vX.Y.0-notes.md` describing **only published behavior** — no local-only links, no private cross-repo PR references, no unpublished-consumer behavior framed as shipped.
+3. **Release notes.** `docs/release/vX.Y.0-release-notes.md` (the established pattern — see `v0.7.0` through `v0.10.0`) describing **only published behavior** — no local-only links, no private cross-repo PR references, no unpublished-consumer behavior framed as shipped.
 
 4. **Repo-doc sync in the same PR.**
    - `docs/ROADMAP.md` milestone status.
