@@ -175,7 +175,7 @@ When the SonarQube MCP server is available:
 ## Agents, Commands, and Skills
 - Functional subagents live in `.claude/agents/` (Architect, Implementer, TCK/Test, Performance/Memory, Docs/ADR, Router).
 - Reusable slash commands live in `.claude/commands/` (Community/Open-Core review and implementation prompts).
-- Skill packs live in `.claude/skills/` (PR-review lenses, routing/planner, subsystem lenses, plus the workflow skills: `exeris-pr-preflight`, `exeris-adr-register`, `exeris-jfr-perf-research`, `exeris-release-integration`, `exeris-tagged-gate-runner`).
+- Skill packs live in `.claude/skills/` (PR-review lenses, `exeris-triage` single-pass triage, subsystem lenses, plus the workflow skills: `exeris-pr-preflight`, `exeris-adr-register`, `exeris-jfr-perf-research`, `exeris-release-integration`, `exeris-tagged-gate-runner`).
 
 ### When to use which
 These three surfaces overlap on purpose; pick by *how* you need the work done, not *what* it is:
