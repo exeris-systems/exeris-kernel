@@ -1,86 +1,121 @@
 [ {
   "class" : "jdk.internal.vm.StackChunk",
+  "count" : 99,
+  "bytes" : 259168,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
+  "count" : 8,
+  "bytes" : 522920,
+  "category" : "TEST_HARNESS"
+}, {
+  "class" : "[B",
   "count" : 7,
-  "bytes" : 269072,
+  "bytes" : 783896,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "java.util.HashMap",
-  "count" : 5,
-  "bytes" : 724992,
+  "class" : "java.util.HashSet",
+  "count" : 6,
+  "bytes" : 392000,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "java.util.concurrent.ConcurrentLinkedQueue$Node",
+  "class" : "java.util.LinkedHashMap$Entry",
   "count" : 4,
-  "bytes" : 24320,
+  "bytes" : 307424,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "jdk.internal.foreign.NativeMemorySegmentImpl",
+  "class" : "jdk.internal.classfile.impl.AbstractPoolEntry$Utf8EntryImpl",
   "count" : 4,
-  "bytes" : 368008,
-  "category" : "PANAMA"
+  "bytes" : 302424,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "eu.exeris.kernel.community.memory.CommunityArenaShardPool$Allocation",
+  "count" : 4,
+  "bytes" : 261440,
+  "category" : "TEST_HARNESS"
 }, {
   "class" : "[Ljava.util.HashMap$Node;",
   "count" : 3,
-  "bytes" : 487216,
+  "bytes" : 261336,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "jdk.jfr.internal.SettingsManager$InternalSetting",
+  "count" : 3,
+  "bytes" : 261312,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "java.util.LinkedHashMap",
+  "count" : 2,
+  "bytes" : 265288,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "java.util.HashMap",
+  "count" : 2,
+  "bytes" : 261432,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "java.util.concurrent.ConcurrentLinkedQueue$Node",
+  "count" : 2,
+  "bytes" : 13480,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "[I",
+  "count" : 2,
+  "bytes" : 32800,
   "category" : "JVM_NOISE"
 }, {
   "class" : "java.lang.String",
-  "count" : 3,
-  "bytes" : 724840,
+  "count" : 2,
+  "bytes" : 132480,
   "category" : "JVM_NOISE"
 }, {
   "class" : "eu.exeris.kernel.community.transport.NativeTcpStreamPendingWrite",
   "count" : 2,
-  "bytes" : 241680,
+  "bytes" : 130648,
   "category" : "TEST_HARNESS"
 }, {
-  "class" : "java.util.concurrent.ConcurrentHashMap$MapEntry",
-  "count" : 2,
-  "bytes" : 241704,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "java.util.LinkedHashMap$Entry",
-  "count" : 2,
-  "bytes" : 241712,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "[B",
-  "count" : 2,
-  "bytes" : 241672,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
-  "count" : 2,
-  "bytes" : 101576,
-  "category" : "TEST_HARNESS"
-}, {
-  "class" : "java.util.HashMap$KeyIterator",
+  "class" : "[Ljava.lang.Object;",
   "count" : 1,
-  "bytes" : 241664,
+  "bytes" : 130544,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "java.util.LinkedHashMap",
+  "class" : "[Ljava.lang.classfile.constantpool.PoolEntry;",
   "count" : 1,
-  "bytes" : 241672,
+  "bytes" : 8208,
   "category" : "JVM_NOISE"
 }, {
   "class" : "java.util.HashMap$Node",
   "count" : 1,
-  "bytes" : 241688,
+  "bytes" : 130648,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "java.util.HashMap$KeyIterator",
+  "count" : 1,
+  "bytes" : 130616,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "java.lang.Long",
+  "count" : 1,
+  "bytes" : 130640,
   "category" : "JVM_NOISE"
 }, {
   "class" : "java.lang.VirtualThread$VThreadContinuation",
   "count" : 1,
-  "bytes" : 241600,
+  "bytes" : 130560,
   "category" : "LOOM_RUNTIME"
 }, {
-  "class" : "java.util.concurrent.ConcurrentHashMap$Node",
+  "class" : "java.lang.VirtualThread$$Lambda.0x0000000014247c38",
   "count" : 1,
-  "bytes" : 241664,
+  "bytes" : 130664,
+  "category" : "LOOM_RUNTIME"
+}, {
+  "class" : "java.lang.StringBuilder",
+  "count" : 1,
+  "bytes" : 130632,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "java.lang.ThreadBuilders$VirtualThreadBuilder",
+  "class" : "java.lang.VirtualThread",
   "count" : 1,
-  "bytes" : 197544,
+  "bytes" : 130600,
   "category" : "LOOM_RUNTIME"
 } ]

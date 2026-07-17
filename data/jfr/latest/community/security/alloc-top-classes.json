@@ -1,25 +1,40 @@
 [ {
-  "class" : "java.util.HashMap$Node",
-  "count" : 3,
+  "class" : "eu.exeris.kernel.core.security.jfr.SecurityJfrEvents$StorageContextDerivedEvent",
+  "count" : 4,
+  "bytes" : 477592,
+  "category" : "TEST_HARNESS"
+}, {
+  "class" : "java.util.HashSet",
+  "count" : 2,
   "bytes" : 372968,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "[Ljava.util.HashMap$Node;",
-  "count" : 3,
-  "bytes" : 522688,
+  "class" : "[B",
+  "count" : 2,
+  "bytes" : 261584,
   "category" : "JVM_NOISE"
 }, {
   "class" : "java.util.HashMap$KeyIterator",
   "count" : 2,
-  "bytes" : 261608,
+  "bytes" : 261600,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "java.util.HashMap$KeySet",
-  "count" : 1,
-  "bytes" : 261568,
+  "class" : "java.util.HashMap$Node",
+  "count" : 2,
+  "bytes" : 261592,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "java.util.HashMap",
+  "class" : "jdk.jfr.internal.SettingsManager$InternalSetting",
+  "count" : 2,
+  "bytes" : 261592,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "[Ljava.util.HashMap$Node;",
+  "count" : 2,
+  "bytes" : 261584,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "java.lang.String",
   "count" : 1,
   "bytes" : 261552,
   "category" : "JVM_NOISE"
