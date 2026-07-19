@@ -44,6 +44,7 @@ final class CommunityMemoryAllocator implements MemoryAllocator {
     private final AtomicLong releaseCount = new AtomicLong(0);
     private final AtomicLong allocatedBytes = new AtomicLong(0);
     private final AtomicLong peakAllocated = new AtomicLong(0);
+    private final CommunityReleaseAccounting releaseAccounting;
 
     /* default */ CommunityMemoryAllocator(MemoryProviderConfig config) {
         CommunityAllocatorSupport.validateSupportedConfig(config, DEFAULT_NETWORK_OFF_HEAP_THRESHOLD);
@@ -52,6 +53,8 @@ final class CommunityMemoryAllocator implements MemoryAllocator {
         this.leakDetection = config.leakDetection();
         this.leakTracker = new LeakTracker(config.leakDetection());
         this.arenaPool = new CommunityArenaShardPool();
+        this.releaseAccounting =
+                new CommunityReleaseAccounting(releaseCount, allocatedBytes, jfrEnabled, jfrSampling);
     }
 
     @Override
@@ -111,7 +114,7 @@ final class CommunityMemoryAllocator implements MemoryAllocator {
     private LoanedBuffer allocateBuffer(long capacityBytes) {
         try {
             AbstractLoanedBuffer buffer = CommunityArenaBuffers.allocateOwned(
-                    capacityBytes, CACHE_LINE_ALIGNMENT, arenaPool);
+                    capacityBytes, CACHE_LINE_ALIGNMENT, arenaPool, releaseAccounting);
             CommunityAllocatorSupport.trackAllocation(
                     allocationCount,
                     allocatedBytes,
@@ -120,13 +123,8 @@ final class CommunityMemoryAllocator implements MemoryAllocator {
                     jfrSampling,
                     capacityBytes
             );
-            buffer.addCloseAction(new CommunityReleaseAction(
-                    capacityBytes,
-                    releaseCount,
-                    allocatedBytes,
-                    jfrEnabled,
-                    jfrSampling
-            ));
+            // Release accounting is now folded into the buffer's onRelease (see CommunityReleaseAccounting),
+            // so no per-buffer close-action object is allocated on the hot path.
             if (leakDetection != LeakDetectionMode.DISABLED) {
                 buffer.enableLeakTracking(leakTracker);
             }
