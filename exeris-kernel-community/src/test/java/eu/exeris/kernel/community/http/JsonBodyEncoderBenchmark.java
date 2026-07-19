@@ -38,10 +38,13 @@ import java.util.List;
  * <h2>Why this exists</h2>
  * <p>The response-encode hot path had no JMH coverage — the only allocation/CPU evidence came from
  * whole-stack perfbox runs, which cannot isolate the encoder. This benchmark measures the encode step
- * directly, comparing the two strategies side by side in one run via {@link #strategy}:
+ * directly, comparing the three strategies side by side in one run via {@link #strategy}:
  * <ul>
  *   <li>{@code STREAMING} — {@link JsonBodyEncoder} writing straight into the loaned off-heap segment
  *       through {@link SegmentSink} (0.10.2+).</li>
+ *   <li>{@code STREAMING_REUSED_WRITER} — streaming through a pre-built, reused {@link ObjectWriter}; a
+ *       documented <em>negative result</em> (allocation-neutral vs {@code STREAMING}) — writer reuse is
+ *       not a lever on the residual. See {@link #encodeStreamingReusedWriter(Object)}.</li>
  *   <li>{@code MATERIALIZE_AND_COPY} — the pre-0.10.2 path: {@code ObjectMapper.writeValueAsBytes}
  *       to a heap {@code byte[]}, then {@link MemorySegment#copy} into the loaned buffer. Kept here
  *       only as the A/B baseline.</li>
@@ -151,7 +154,7 @@ public class JsonBodyEncoderBenchmark extends AbstractExerisBenchmark {
     public record UserRow(long id, String name, String email, List<String> interests) {
     }
 
-    /** The two encode strategies compared in one run. */
+    /** The three encode strategies compared in one run (see the class Javadoc for each). */
     public enum Strategy {
         STREAMING,
         STREAMING_REUSED_WRITER,
