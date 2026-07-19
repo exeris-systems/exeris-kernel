@@ -42,6 +42,7 @@ final class CommunityLoanedBuffer extends AbstractLoanedBuffer {
     private final CommunityArenaShardPool pool;
     private final long originalCapacityBytes;
     private final int originShard;
+    private final CommunityReleaseAccounting releaseAccounting;
 
     // =========================================================================
     // Constructor — DeclarationOrder: fields → constructor → static factories
@@ -53,19 +54,22 @@ final class CommunityLoanedBuffer extends AbstractLoanedBuffer {
         this.pool = null;
         this.originalCapacityBytes = 0L;
         this.originShard = 0;
+        this.releaseAccounting = null;
     }
 
     private CommunityLoanedBuffer(
             MemorySegment segment,
             long originalCapacityBytes,
             int originShard,
-            CommunityArenaShardPool pool
+            CommunityArenaShardPool pool,
+            CommunityReleaseAccounting releaseAccounting
     ) {
         super();
         this.segment = segment;
         this.originalCapacityBytes = originalCapacityBytes;
         this.originShard = originShard;
         this.pool = pool;
+        this.releaseAccounting = releaseAccounting;
     }
 
     // =========================================================================
@@ -77,17 +81,19 @@ final class CommunityLoanedBuffer extends AbstractLoanedBuffer {
      * On release, the buffer (segment) is returned to the pool's free queue.
      *
      * @param segment              the allocated memory segment
-     * @param originalCapacityBytes the original requested capacity (for pool lookup)
+     * @param originalCapacityBytes the original requested capacity (for pool lookup and release accounting)
      * @param originShard          shard that originally supplied the segment
      * @param pool                 the arena shard pool managing reuse
+     * @param releaseAccounting    the allocator's shared release-accounting helper, invoked on release
      */
     /* default */ static CommunityLoanedBuffer allocateOwnedPooled(
             MemorySegment segment,
             long originalCapacityBytes,
             int originShard,
-            CommunityArenaShardPool pool
+            CommunityArenaShardPool pool,
+            CommunityReleaseAccounting releaseAccounting
     ) {
-        return new CommunityLoanedBuffer(segment, originalCapacityBytes, originShard, pool);
+        return new CommunityLoanedBuffer(segment, originalCapacityBytes, originShard, pool, releaseAccounting);
     }
 
     /**
@@ -112,7 +118,12 @@ final class CommunityLoanedBuffer extends AbstractLoanedBuffer {
 
     @Override
     protected void onRelease() {
-        // Single dispatch guaranteed by refcount CAS — see AbstractLoanedBuffer.onRelease().
+        // Single dispatch guaranteed by refcount CAS — see AbstractLoanedBuffer.onRelease(). Release
+        // accounting is folded in here (formerly a per-buffer close-action) using this buffer's own
+        // capacity — the same value the matching trackAllocation added, so allocatedBytes stays balanced.
+        if (releaseAccounting != null) {
+            releaseAccounting.release(originalCapacityBytes);
+        }
         if (pool != null) {
             pool.returnSegment(originalCapacityBytes, originShard, segment);
         }
