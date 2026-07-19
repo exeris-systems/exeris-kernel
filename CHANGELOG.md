@@ -6,6 +6,17 @@ This file is intentionally terse: it lists what landed, with a pointer to the re
 
 Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project versions follow [SemVer](https://semver.org/spec/v2.0.0.html), with the pre-1.0 caveat that minor versions may carry observable contract additions while remaining backwards-compatible at the SPI level. Which SPI surfaces are `stable` / `preview` / `experimental`, and what each label commits to for semver, is declared in [`docs/stability-matrix.md`](docs/stability-matrix.md) — the authoritative source for the semver policy.
 
+## [0.10.2] — 2026-07-19
+
+Patch release. Community-internal allocation discipline on the JSON-encode and memory-allocator hot paths; additive, SPI-unchanged, default byte-identical. Detail + notes: [`docs/release/v0.10.2-release-notes.md`](docs/release/v0.10.2-release-notes.md).
+
+### Changed
+- **Zero-copy JSON body encoding** — `JsonBodyEncoder` (#241) and `CommunityJsonRequestBodyEncoder` (#242) stream Jackson straight into the loaned off-heap buffer via `SegmentSink`, dropping the per-request heap `byte[]` + `MemorySegment.copy` (~11432 → ~1192 B/op/encode; byte-identical output, no SPI change).
+- **Allocator release accounting** — `CommunityMemoryAllocator` folds per-buffer release bookkeeping into `CommunityLoanedBuffer.onRelease()` via a shared `CommunityReleaseAccounting`, dropping the per-buffer close-action object (−80 B/op per allocation, system-wide; `stats()`/JFR identical) (#244).
+
+### Added
+- **JSON-encode JMH benchmark** — `JsonBodyEncoderBenchmark` (streaming vs materialize-and-copy), plus a documented negative result that Jackson `ObjectWriter` reuse is allocation-neutral (#243).
+
 ## [0.10.1] — 2026-07-19
 
 Patch release. Community-internal, additive, default byte-identical (no SPI change). Detail + notes: [`docs/release/v0.10.1-release-notes.md`](docs/release/v0.10.1-release-notes.md) (ADR-052).
