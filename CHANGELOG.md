@@ -11,7 +11,7 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 Patch release. Community-internal, additive, default byte-identical (no SPI change). Detail: [ADR-052](docs/adr/ADR-052-community-json-mapper-customization-seam.md).
 
 ### Added
-- **Configurable Community JSON mapper** — `eu.exeris.kernel.community.json` `JsonMapperCustomizer` (ServiceLoader) + per-quadrant `JsonMapperScope`; `CommunityHttpProvider` / `CommunityEventProvider` source each codec's Jackson `ObjectMapper` through the seam instead of a hardcoded `new ObjectMapper()`, so an application can (e.g.) register Blackbird for `invokedynamic` accessors on the response-encode hot path. With no customizer registered every mapper is byte-for-byte the prior default; Jackson stays a Community driver detail (The Wall holds) (ADR-052).
+- **Configurable Community JSON mapper** — `eu.exeris.kernel.community.json` `JsonMapperCustomizer` (ServiceLoader) + per-quadrant `JsonMapperScope`; `CommunityHttpProvider` / `CommunityEventProvider` source each codec's Jackson `ObjectMapper` through the seam instead of a hardcoded `new ObjectMapper()`, so an application can (e.g.) register Blackbird for `invokedynamic` accessors on the response-encode hot path. With no customizer registered every mapper is byte-for-byte the prior default; Jackson stays a Community driver detail (The Wall holds). Note: "byte-identical" is about serialized output — each HTTP quadrant now builds its own mapper instead of one shared instance, so per-mapper serializer caches are no longer shared across quadrants (bootstrap/JVM-warmup only) (ADR-052).
 
 ## [0.10.0] — 2026-07-02
 

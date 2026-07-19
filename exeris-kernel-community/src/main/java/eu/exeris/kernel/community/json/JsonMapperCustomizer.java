@@ -77,6 +77,11 @@ public interface JsonMapperCustomizer {
     /**
      * Application order relative to other customizers applied to the same scope; lower runs first.
      *
+     * <p>Customizers with <strong>equal</strong> {@code order()} are applied in
+     * {@link java.util.ServiceLoader} discovery order, which is unspecified — so when registering
+     * two or more customizers that touch the <em>same</em> scope, assign distinct {@code order()}
+     * values to make their relative effect deterministic.
+     *
      * @return the order value (default {@code 0})
      */
     default int order() {

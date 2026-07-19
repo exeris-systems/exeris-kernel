@@ -76,6 +76,12 @@ round-trip that could drift from the bare-constructor defaults. The customizing 
 only when at least one customizer opts in. Pinned by
 `CommunityJsonMappersTest.noCustomizerYieldsByteIdenticalDefaultMapper` across every scope.
 
+"Byte-identical" refers to **serialized output + default configuration**, not object identity: what *does*
+change is that each quadrant now builds its own mapper (§3) instead of the former single shared
+`DEFAULT_MAPPER`, so per-mapper serializer/deserializer caches are no longer shared across the four HTTP
+quadrants. This is a bootstrap-time / JVM-cache-warmup concern only (see the §Trade-offs note), never a
+change to what bytes go on the wire.
+
 ### 3. Provider wiring
 
 `CommunityHttpProvider` sources four mappers (one per HTTP quadrant) and `CommunityEventProvider` one
@@ -146,7 +152,9 @@ supplying its own `JsonMapperCustomizer` + the module dependency + a `META-INF/s
   the providers that now source mappers per scope.
 
 ## Engineering Protocol
-1. **ADR number reserved** in `exeris-docs/adr-index.md` (051) before content — register discipline.
+1. **ADR number reserved** in `exeris-docs/adr-index.md` (052) before content — register discipline.
+   (Originally drafted as 051; renumbered after 051 was concurrently reserved for the PAQS
+   execution-seam — the register-before-content check caught the collision pre-merge.)
 2. **Per-repo, additive.** SPI, drivers, and generated code untouched; no lockstep.
 3. **Tests (Community).** `CommunityJsonMappersTest` (default byte-identical per scope, ordering,
    `appliesTo` filtering, config application) + `CommunityJsonMapperServiceLoaderTest` (discovery via a
