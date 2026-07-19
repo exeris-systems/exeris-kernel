@@ -38,8 +38,10 @@ final class JsonBodyEncoder implements HttpResponseBodyEncoder {
     private static final List<HttpHeader> JSON_HEADERS = List.of(new HttpHeader("content-type", "application/json"));
 
     /**
-     * Initial off-heap buffer size (bytes). Sized to hold a typical JSON response in one shot so the
-     * {@link SegmentSink} grow path is the rare exception, not the rule; larger payloads grow transparently.
+     * Initial off-heap buffer size (bytes) — a conservative default; responses larger than this grow
+     * transparently via {@link SegmentSink} (one intra-buffer copy of the bytes written so far, still far
+     * cheaper than the removed heap {@code byte[]} + full copy). The optimal value is workload-dependent;
+     * tuning it from the real response-size distribution (or making it configurable) is a tracked follow-up.
      */
     private static final int INITIAL_BUFFER_BYTES = 4096;
 
