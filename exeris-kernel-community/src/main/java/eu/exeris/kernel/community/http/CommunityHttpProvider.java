@@ -16,7 +16,8 @@ import eu.exeris.kernel.spi.http.HttpRequestBodyEncoderRegistry;
 import eu.exeris.kernel.spi.http.HttpResponseBodyDecoderRegistry;
 import eu.exeris.kernel.spi.http.HttpResponseBodyEncoderRegistry;
 import eu.exeris.kernel.spi.http.HttpServerEngine;
-import tools.jackson.databind.ObjectMapper;
+import eu.exeris.kernel.community.json.CommunityJsonMappers;
+import eu.exeris.kernel.community.json.JsonMapperScope;
 
 import java.util.List;
 import java.util.Objects;
@@ -26,17 +27,23 @@ public final class CommunityHttpProvider implements HttpProvider {
 
     private static final String PROVIDER_ID = "community-http";
     private static final String PROVIDER_NAME = "ExerisCommunity/NativeTcpHttp";
-    private static final ObjectMapper DEFAULT_MAPPER = new ObjectMapper();
+
+    // Each JSON codec sources its Jackson mapper per-scope through the ADR-052 customization seam.
+    // With no JsonMapperCustomizer registered, every scope yields a bare default mapper (unchanged).
     private static final HttpResponseBodyEncoderRegistry ENCODER_REGISTRY = buildDefaultRegistry();
     private static final HttpRequestBodyEncoderRegistry REQUEST_BODY_ENCODER_REGISTRY =
-            HttpRequestBodyEncoderRegistry.of(List.of(new CommunityJsonRequestBodyEncoder(DEFAULT_MAPPER)));
+            HttpRequestBodyEncoderRegistry.of(List.of(new CommunityJsonRequestBodyEncoder(
+                    CommunityJsonMappers.forScope(JsonMapperScope.HTTP_REQUEST_ENCODE))));
     private static final HttpResponseBodyDecoderRegistry RESPONSE_BODY_DECODER_REGISTRY =
-            HttpResponseBodyDecoderRegistry.of(List.of(new CommunityJsonResponseBodyDecoder(DEFAULT_MAPPER)));
+            HttpResponseBodyDecoderRegistry.of(List.of(new CommunityJsonResponseBodyDecoder(
+                    CommunityJsonMappers.forScope(JsonMapperScope.HTTP_RESPONSE_DECODE))));
     private static final HttpRequestBodyDecoderRegistry REQUEST_BODY_DECODER_REGISTRY =
-            HttpRequestBodyDecoderRegistry.of(List.of(new CommunityJsonRequestBodyDecoder(DEFAULT_MAPPER)));
+            HttpRequestBodyDecoderRegistry.of(List.of(new CommunityJsonRequestBodyDecoder(
+                    CommunityJsonMappers.forScope(JsonMapperScope.HTTP_REQUEST_DECODE))));
 
     private static HttpResponseBodyEncoderRegistry buildDefaultRegistry() {
-        JsonBodyEncoder encoder = new JsonBodyEncoder(DEFAULT_MAPPER);
+        JsonBodyEncoder encoder =
+                new JsonBodyEncoder(CommunityJsonMappers.forScope(JsonMapperScope.HTTP_RESPONSE_ENCODE));
         return payloadType -> encoder.supports(payloadType) ? encoder : null;
     }
 

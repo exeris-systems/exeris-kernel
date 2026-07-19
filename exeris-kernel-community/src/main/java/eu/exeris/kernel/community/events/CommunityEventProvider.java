@@ -13,7 +13,8 @@ import eu.exeris.kernel.spi.events.EventEngineConfig;
 import eu.exeris.kernel.spi.events.EventProvider;
 import eu.exeris.kernel.spi.events.codec.EventPayloadCodecRegistry;
 import eu.exeris.kernel.spi.exceptions.events.EventProviderException;
-import tools.jackson.databind.ObjectMapper;
+import eu.exeris.kernel.community.json.CommunityJsonMappers;
+import eu.exeris.kernel.community.json.JsonMapperScope;
 
 import java.util.List;
 import java.util.Optional;
@@ -23,12 +24,13 @@ public final class CommunityEventProvider implements EventProvider {
     private static final String PROVIDER_ID = "community";
     private static final String PROVIDER_NAME = "ExerisCommunity/Events";
 
-    // Default JSON codec (ADR-046). Mirrors CommunityHttpProvider's static mapper + registry:
-    // Jackson stays a Community driver detail behind The Wall; the registry is exposed to the
-    // bootstrapper as an SPI type and bound into KernelProviders.EVENT_PAYLOAD_CODEC_REGISTRY.
-    private static final ObjectMapper DEFAULT_MAPPER = new ObjectMapper();
+    // Default JSON codec (ADR-046). Jackson stays a Community driver detail behind The Wall; the
+    // registry is exposed to the bootstrapper as an SPI type and bound into
+    // KernelProviders.EVENT_PAYLOAD_CODEC_REGISTRY. The mapper is sourced per-scope through the
+    // ADR-052 customization seam (bare default when no JsonMapperCustomizer is registered).
     private static final EventPayloadCodecRegistry PAYLOAD_CODEC_REGISTRY =
-            EventPayloadCodecRegistry.of(List.of(new CommunityJsonEventPayloadCodec(DEFAULT_MAPPER)));
+            EventPayloadCodecRegistry.of(List.of(new CommunityJsonEventPayloadCodec(
+                    CommunityJsonMappers.forScope(JsonMapperScope.EVENTS))));
 
     @Override
     public String providerName() {
