@@ -78,6 +78,14 @@ operates on local memory, a PostgreSQL partition, or a Kafka cluster. (The SPI i
   publisher emits `EventPayload.empty()`); the `exeris-tooling` publisher rewrite is the remaining lockstep.
   See `docs/adr/ADR-046-event-payload-codec-spi.md`.
 
+- **JSON mapper customization (since v0.10.1, ADR-052).** `CommunityEventProvider` sources the
+  `CommunityJsonEventPayloadCodec`'s `tools.jackson` `ObjectMapper` through the `EVENTS` scope of the
+  Community customization seam (`eu.exeris.kernel.community.json.CommunityJsonMappers.forScope(...)`)
+  rather than a hardcoded `new ObjectMapper()`. An application-registered `JsonMapperCustomizer`
+  (ServiceLoader) can tune the event-payload mapper (modules/features); with none registered it is
+  byte-for-byte the pre-0.10.1 default. Jackson stays a Community driver detail — the seam never enters
+  SPI. See `docs/adr/ADR-052-community-json-mapper-customization-seam.md`.
+
 **Not yet implemented (later):**
 
 - Per-subscription retry configuration on `EventBus`.

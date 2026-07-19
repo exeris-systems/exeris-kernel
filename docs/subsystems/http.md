@@ -159,6 +159,21 @@ Current `exeris-kernel-core` HTTP package focuses on codec/wire primitives:
 - `CommunityHttpLifecycleEvent` (JFR)
 - `eu.exeris.kernel.community.http.client.CommunityWebClient` + `WebClientException` (since v0.8 Sprint 2, ADR-026) — typed HTTP verbs + Jackson 3 JSON binding façade on top of `HttpClientEngine`; the SPI surface consumed by `exeris-tooling`'s `KernelClientGenerator` for typed per-entity clients.
 
+### JSON mapper customization (since v0.10.1 — [ADR-052](../adr/ADR-052-community-json-mapper-customization-seam.md))
+
+The Community JSON codecs (`JsonBodyEncoder` + the three ADR-034/036 body codecs) each accept an
+injected `tools.jackson` `ObjectMapper`. Since v0.10.1 `CommunityHttpProvider` sources that mapper
+**per codec quadrant** through the customization seam in `eu.exeris.kernel.community.json`
+(`CommunityJsonMappers.forScope(JsonMapperScope)`), instead of a single hardcoded `new ObjectMapper()`.
+Applications register a `ServiceLoader`-discovered `JsonMapperCustomizer` to tune the mapper — e.g. add
+the Blackbird module so response-body property access compiles to monomorphic `invokedynamic` call-sites
+instead of the shared megamorphic `MethodHandle` accessor on the `respond()` hot path. With **no**
+customizer registered every mapper is byte-for-byte the pre-0.10.1 default; Jackson stays a Community
+driver detail (The Wall — the seam and `ObjectMapper` never enter SPI). Scopes: `HTTP_RESPONSE_ENCODE`,
+`HTTP_REQUEST_ENCODE`, `HTTP_RESPONSE_DECODE`, `HTTP_REQUEST_DECODE` (events uses `EVENTS`). There is no
+web-client scope — `KernelWebClient` is app-constructed with its own registries (ADR-034), so a
+per-instance client mapper is already an application capability.
+
 ### HTTP/2 stream admission (since v0.8 Sprint 5, HTTP-112)
 
 `Http2SessionContext.admitClientStreamId(int)` enforces two RFC 7540 invariants that the Community h2c session previously did not validate:
