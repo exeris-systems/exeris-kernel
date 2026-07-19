@@ -6,9 +6,9 @@ This file is intentionally terse: it lists what landed, with a pointer to the re
 
 Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project versions follow [SemVer](https://semver.org/spec/v2.0.0.html), with the pre-1.0 caveat that minor versions may carry observable contract additions while remaining backwards-compatible at the SPI level. Which SPI surfaces are `stable` / `preview` / `experimental`, and what each label commits to for semver, is declared in [`docs/stability-matrix.md`](docs/stability-matrix.md) — the authoritative source for the semver policy.
 
-## [0.10.1] — Unreleased
+## [0.10.1] — 2026-07-19
 
-Patch release. Community-internal, additive, default byte-identical (no SPI change). Detail: [ADR-052](docs/adr/ADR-052-community-json-mapper-customization-seam.md).
+Patch release. Community-internal, additive, default byte-identical (no SPI change). Detail + notes: [`docs/release/v0.10.1-release-notes.md`](docs/release/v0.10.1-release-notes.md) (ADR-052).
 
 ### Added
 - **Configurable Community JSON mapper** — `eu.exeris.kernel.community.json` `JsonMapperCustomizer` (ServiceLoader) + per-quadrant `JsonMapperScope`; `CommunityHttpProvider` / `CommunityEventProvider` source each codec's Jackson `ObjectMapper` through the seam instead of a hardcoded `new ObjectMapper()`, so an application can (e.g.) register Blackbird for `invokedynamic` accessors on the response-encode hot path. With no customizer registered every mapper is byte-for-byte the prior default; Jackson stays a Community driver detail (The Wall holds). Note: "byte-identical" is about serialized output — each HTTP quadrant now builds its own mapper instead of one shared instance, so per-mapper serializer caches are no longer shared across quadrants (bootstrap/JVM-warmup only) (ADR-052).
