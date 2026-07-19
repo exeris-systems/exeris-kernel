@@ -16,22 +16,22 @@ import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 
-import java.lang.foreign.MemorySegment;
 import java.util.List;
 import java.util.Objects;
 
 /**
  * Community driver: Jackson 3 implementation of {@link HttpRequestBodyEncoder}.
  *
- * <p>Serialises any non-null payload to JSON via {@link ObjectMapper#writeValueAsBytes(Object)},
- * copies the bytes into a kernel-allocated {@link LoanedBuffer}, and returns an
- * {@link HttpEncodedBody} carrying the buffer plus a {@code content-type:
- * application/json} header (the encoder owns the content-type header; the façade
- * adds {@code content-length} from the resulting buffer size).
+ * <p>Streams a non-null payload as JSON <em>straight into</em> a kernel-allocated
+ * {@link LoanedBuffer} through {@link SegmentSink} — no intermediate heap {@code byte[]} and no
+ * heap&rarr;off-heap {@code MemorySegment.copy} per request (No-Waste-Compute; mirrors the
+ * server-side {@code JsonBodyEncoder}). The sink grows to a larger buffer if the initial estimate
+ * is exceeded. The returned {@link HttpEncodedBody} carries the buffer plus a
+ * {@code content-type: application/json} header (the encoder owns the content-type; the façade adds
+ * {@code content-length} from the buffer size). Buffer ownership transfers to the returned body.
  *
- * <p>Jackson-specific exceptions are wrapped in {@link IllegalStateException} to
- * keep driver-specific types out of any SPI / Core surface (mirrors the server-side
- * {@code JsonBodyEncoder} pattern).
+ * <p>Jackson-specific exceptions are wrapped in {@link IllegalStateException} to keep driver-specific
+ * types out of any SPI / Core surface (The Wall — ADR-006).
  *
  * @since 0.8.0
  */
@@ -39,6 +39,13 @@ public final class CommunityJsonRequestBodyEncoder implements HttpRequestBodyEnc
 
     private static final List<HttpHeader> JSON_HEADERS =
             List.of(new HttpHeader("content-type", "application/json"));
+
+    /**
+     * Initial off-heap buffer size (bytes) — a conservative default; larger request bodies grow
+     * transparently via {@link SegmentSink}. Sizing is a tracked tuning follow-up (mirrors
+     * {@code JsonBodyEncoder}).
+     */
+    private static final int INITIAL_BUFFER_BYTES = 4096;
 
     private final ObjectMapper mapper;
 
@@ -57,19 +64,29 @@ public final class CommunityJsonRequestBodyEncoder implements HttpRequestBodyEnc
     }
 
     @Override
+    // CloseResource: the sink's buffer ownership transfers to the returned HttpEncodedBody on success,
+    // and the finally releases it on every non-committed exit — no path leaks the off-heap loan.
+    @SuppressWarnings("PMD.CloseResource")
     public HttpEncodedBody encode(Object payload, HttpRequestEncodingContext context) {
         Objects.requireNonNull(payload, "payload must not be null");
         Objects.requireNonNull(context, "context must not be null");
-        byte[] bytes;
+        SegmentSink sink = new SegmentSink(
+                context.allocator().allocateNetwork(INITIAL_BUFFER_BYTES), context.allocator());
+        boolean committed = false;
         try {
-            bytes = mapper.writeValueAsBytes(payload);
+            mapper.writeValue(sink, payload);
+            sink.setSizeToWritten();
+            HttpEncodedBody body = new HttpEncodedBody(JSON_HEADERS, sink.buffer());
+            committed = true;
+            return body;
         } catch (JacksonException ex) {
+            // Do not let a tools.jackson type cross out of the encoder (The Wall — ADR-006).
             throw new IllegalStateException(
                     "JSON serialization failed for payload type " + payload.getClass().getName(), ex);
+        } finally {
+            if (!committed) {
+                sink.discard();
+            }
         }
-        LoanedBuffer buf = context.allocator().allocateNetwork(bytes.length);
-        MemorySegment.copy(MemorySegment.ofArray(bytes), 0, buf.segment(), 0, bytes.length);
-        buf.setSize(bytes.length);
-        return new HttpEncodedBody(JSON_HEADERS, buf);
     }
 }
