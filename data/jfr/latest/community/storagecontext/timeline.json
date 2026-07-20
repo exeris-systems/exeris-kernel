@@ -1,25 +1,49 @@
 [ {
-  "t" : 1784492291954,
+  "t" : 1784525285740,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "[Ljava.util.HashMap$Node;",
+  "class" : "java.lang.String",
   "thread" : "main",
-  "size" : 261496,
+  "size" : 261568,
   "stackId" : "stk_0001",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1784492291981,
+  "t" : 1784525285748,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.LinkedHashMap$Entry",
-  "thread" : "main",
-  "size" : 261536,
+  "class" : "java.lang.String",
+  "thread" : "C1 CompilerThread0",
+  "size" : 2096,
   "stackId" : "stk_0002",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1784492291981,
+  "t" : 1784525285748,
   "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.util.LinkedHashMap$Entry",
-  "thread" : "main",
-  "size" : 56,
+  "class" : "java.lang.String",
+  "thread" : "C1 CompilerThread0",
+  "size" : 32,
   "stackId" : "stk_0002",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1784525285757,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "[B",
+  "thread" : "main",
+  "size" : 261552,
+  "stackId" : "stk_0003",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1784525285757,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "[B",
+  "thread" : "main",
+  "size" : 48,
+  "stackId" : "stk_0003",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1784525285758,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.util.HashMap$KeyIterator",
+  "thread" : "main",
+  "size" : 261552,
+  "stackId" : "stk_0004",
   "category" : "JVM_NOISE"
 } ]
