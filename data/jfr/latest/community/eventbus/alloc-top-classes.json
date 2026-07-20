@@ -1,66 +1,61 @@
 [ {
   "class" : "java.lang.VirtualThread",
-  "count" : 125,
-  "bytes" : 8127944,
+  "count" : 149,
+  "bytes" : 8133680,
   "category" : "LOOM_RUNTIME"
 }, {
-  "class" : "java.lang.VirtualThread$$Lambda.0x00000000a03462d8",
-  "count" : 114,
-  "bytes" : 6802464,
-  "category" : "LOOM_RUNTIME"
-}, {
-  "class" : "java.lang.ThreadBuilders$VirtualThreadBuilder",
-  "count" : 21,
-  "bytes" : 262488,
+  "class" : "java.lang.VirtualThread$$Lambda.0x000000001b3462d8",
+  "count" : 139,
+  "bytes" : 6803064,
   "category" : "LOOM_RUNTIME"
 }, {
   "class" : "java.lang.VirtualThread$VThreadContinuation",
-  "count" : 21,
-  "bytes" : 677376,
-  "category" : "LOOM_RUNTIME"
-}, {
-  "class" : "[Ljava.util.HashMap$Node;",
-  "count" : 3,
-  "bytes" : 261848,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "[B",
-  "count" : 3,
-  "bytes" : 45544000,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "java.lang.VirtualThread$VThreadContinuation$1",
-  "count" : 2,
-  "bytes" : 64,
+  "count" : 5,
+  "bytes" : 822248,
   "category" : "LOOM_RUNTIME"
 }, {
   "class" : "java.lang.Object",
+  "count" : 3,
+  "bytes" : 261600,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "eu.exeris.kernel.core.events.jfr.EventBusPublishEvent",
+  "count" : 3,
+  "bytes" : 261616,
+  "category" : "TEST_HARNESS"
+}, {
+  "class" : "java.util.LinkedHashMap",
   "count" : 2,
+  "bytes" : 523032,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "[Ljava.util.concurrent.ForkJoinTask;",
+  "count" : 2,
+  "bytes" : 268976,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "java.lang.String",
+  "count" : 1,
   "bytes" : 32,
   "category" : "JVM_NOISE"
 }, {
   "class" : "java.util.concurrent.ForkJoinTask$AdaptedRunnableAction",
-  "count" : 2,
-  "bytes" : 153104,
+  "count" : 1,
+  "bytes" : 8874808,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "java.util.HashSet",
+  "class" : "[Ljava.util.HashMap$Node;",
   "count" : 1,
-  "bytes" : 261568,
+  "bytes" : 405520,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "eu.exeris.kernel.core.events.InMemoryEventBus$$Lambda.0x00000000a065a6e8",
+  "class" : "java.util.ArrayList$Itr",
   "count" : 1,
-  "bytes" : 40,
-  "category" : "TEST_HARNESS"
-}, {
-  "class" : "java.util.LinkedHashMap",
-  "count" : 1,
-  "bytes" : 261568,
+  "bytes" : 261552,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "java.util.concurrent.ConcurrentHashMap$Node",
+  "class" : "[B",
   "count" : 1,
-  "bytes" : 261560,
+  "bytes" : 261544,
   "category" : "JVM_NOISE"
 } ]
