@@ -185,9 +185,9 @@ the Jackson `writeValue(OutputStream, …)` seam only: no heap buffering happens
 straight in the off-heap segment — so this is the zero-copy path *by construction* (the bridge, not a
 buffer), not the `java.io`-on-hot-path case the guardrails warn about. Ownership is single-live-buffer:
 the sink transfers the buffer to the returned `HttpEncodedBody` on success and releases it on every
-failure path. The mirror-image `CommunityJsonRequestBodyEncoder` (client request bodies) still
-materialises-then-copies; converting it is the No-Waste-Compute follow-up, analogous to the SSE
-zero-copy-emit follow-up above.
+failure path. The mirror-image `CommunityJsonRequestBodyEncoder` (client request bodies) streams
+through the same `SegmentSink` with identical ownership semantics; the SSE zero-copy-emit follow-up
+noted above remains open.
 
 ### HTTP/2 stream admission (since v0.8 Sprint 5, HTTP-112)
 
