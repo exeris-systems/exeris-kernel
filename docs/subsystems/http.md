@@ -55,7 +55,7 @@ Streaming (server-push) contracts — 🚧 Planned v0.10, ratified by [ADR-043](
 
 Additional follow-ups (mechanism works; refinement deferred):
 - **Wire framing** — the SSE body is written as a raw, close-delimited HTTP/1.1 response (`Connection: close`, no `Content-Length`, no chunk framing; RFC 9112 §6.3). `Transfer-Encoding: chunked` per-event framing (so SSE streams through buffering reverse proxies / CDNs that hold length-unknown responses) and an HTTP/2 `DATA`-frame path are follow-ups. The response head is HTTP/1.1-specific today.
-- **Zero-copy emit** — `SseEventEncoder.encode` currently allocates a `StringBuilder` + `String` + `byte[]` per event before the single copy into the egress `LoanedBuffer`. Encoding field-by-field directly into the `LoanedBuffer` segment (no intermediate `String`/`byte[]`) is the No-Waste-Compute follow-up for high-rate streams.
+- ~~**Zero-copy emit**~~ — **done in v0.10.0.** `SseEventEncoder` frames each event as two passes over one shared traversal: `encodedLength(StreamEvent)` measures the UTF-8 block and `encodeInto(StreamEvent, MemorySegment, long)` writes it field-by-field straight into the egress `LoanedBuffer` — no intermediate `StringBuilder`/`String`/`byte[]` and no array→segment copy. `HttpStreamEngine` calls both on the emit path. The heap `encode(StreamEvent)` wrapper is retained for tests and non-hot-path callers only.
 
 **Test gating.** The streaming contract is verified two ways. The fast, deterministic layer gates CI: `SseEventEncoderTest` (wire framing), `HttpRouterTest` streaming-registration, and the ArchTest Wall pin. The real-NIO loopback suite (`AbstractHttpStreamExchangeTck` bound by `CommunityHttpStreamExchangeTckTest` + the JFR `RecordingStream` test, `@Tag("stream-loopback")`) is run **on demand / locally**, not in the CI gate — like the `stress`/`flamegraph` suites it starves and times out on constrained 2-vCPU CI runners (server reactor + per-stream VT + client) even though it passes deterministically on many-core boxes. Run it with `mvn test -DincludedGroups=stream-loopback -DexcludedGroups=` (or `-Dtest=CommunityHttpStreamExchangeTckTest`). Making the loopback robust under scarce carriers so it can gate CI is a tracked follow-up.
 
@@ -185,9 +185,8 @@ the Jackson `writeValue(OutputStream, …)` seam only: no heap buffering happens
 straight in the off-heap segment — so this is the zero-copy path *by construction* (the bridge, not a
 buffer), not the `java.io`-on-hot-path case the guardrails warn about. Ownership is single-live-buffer:
 the sink transfers the buffer to the returned `HttpEncodedBody` on success and releases it on every
-failure path. The mirror-image `CommunityJsonRequestBodyEncoder` (client request bodies) still
-materialises-then-copies; converting it is the No-Waste-Compute follow-up, analogous to the SSE
-zero-copy-emit follow-up above.
+failure path. The mirror-image `CommunityJsonRequestBodyEncoder` (client request bodies) streams
+through the same `SegmentSink` with identical ownership semantics.
 
 ### HTTP/2 stream admission (since v0.8 Sprint 5, HTTP-112)
 
