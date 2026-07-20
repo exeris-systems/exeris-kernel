@@ -174,6 +174,21 @@ driver detail (The Wall — the seam and `ObjectMapper` never enter SPI). Scopes
 web-client scope — `KernelWebClient` is app-constructed with its own registries (ADR-034), so a
 per-instance client mapper is already an application capability.
 
+### JSON response-body zero-copy encoding (since v0.10.2)
+
+`JsonBodyEncoder.encode` streams Jackson's output **directly into the loaned off-heap response
+segment** via `SegmentSink` — an `OutputStream` over a `LoanedBuffer` that grows to a larger buffer on
+overflow — instead of serializing to a heap `byte[]` and `MemorySegment.copy`-ing it in. This removes a
+per-response heap allocation and a full extra pass over the payload; output is byte-identical and no SPI
+surface changes (an internal Community reimplementation, The Wall holds). The `java.io.OutputStream` is
+the Jackson `writeValue(OutputStream, …)` seam only: no heap buffering happens — each write lands
+straight in the off-heap segment — so this is the zero-copy path *by construction* (the bridge, not a
+buffer), not the `java.io`-on-hot-path case the guardrails warn about. Ownership is single-live-buffer:
+the sink transfers the buffer to the returned `HttpEncodedBody` on success and releases it on every
+failure path. The mirror-image `CommunityJsonRequestBodyEncoder` (client request bodies) streams
+through the same `SegmentSink` with identical ownership semantics; the SSE zero-copy-emit follow-up
+noted above remains open.
+
 ### HTTP/2 stream admission (since v0.8 Sprint 5, HTTP-112)
 
 `Http2SessionContext.admitClientStreamId(int)` enforces two RFC 7540 invariants that the Community h2c session previously did not validate:

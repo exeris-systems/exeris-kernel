@@ -16,13 +16,15 @@ final class CommunityArenaBuffers {
     }
 
     /* default */ static AbstractLoanedBuffer allocateOwned(
-            long capacityBytes, long alignmentBytes, CommunityArenaShardPool pool) {
+            long capacityBytes, long alignmentBytes, CommunityArenaShardPool pool,
+            CommunityReleaseAccounting releaseAccounting) {
         CommunityArenaShardPool.Allocation allocation = pool.allocateSegment(capacityBytes, alignmentBytes);
         return CommunityLoanedBuffer.allocateOwnedPooled(
             allocation.segment(),
                 capacityBytes,
             allocation.originShard(),
-                pool);
+                pool,
+                releaseAccounting);
     }
 
 }
