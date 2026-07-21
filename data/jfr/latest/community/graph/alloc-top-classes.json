@@ -1,26 +1,31 @@
 [ {
   "class" : "[B",
-  "count" : 3,
-  "bytes" : 499672,
+  "count" : 4,
+  "bytes" : 345432,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "java.util.LinkedHashMap",
+  "class" : "java.util.HashMap",
   "count" : 2,
-  "bytes" : 240600,
+  "bytes" : 172760,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "java.util.HashMap$KeySet",
+  "class" : "java.util.HashMap$KeyIterator",
   "count" : 2,
-  "bytes" : 240640,
+  "bytes" : 172776,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "[Ljava.lang.Object;",
+  "class" : "eu.exeris.kernel.community.graph.CommunityGraphSqlHelper",
   "count" : 2,
-  "bytes" : 241048,
-  "category" : "JVM_NOISE"
+  "bytes" : 172736,
+  "category" : "TEST_HARNESS"
 }, {
   "class" : "[Ljava.util.HashMap$Node;",
   "count" : 1,
-  "bytes" : 117472,
+  "bytes" : 193224,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "java.util.LinkedHashMap$Entry",
+  "count" : 1,
+  "bytes" : 172736,
   "category" : "JVM_NOISE"
 } ]
