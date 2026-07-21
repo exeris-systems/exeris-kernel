@@ -33,7 +33,7 @@ sub-1% CPU overhead when enabled and zero overhead when disabled.
 
 ### Hyper-Density
 
-The system's capability to handle an extreme number of concurrent tasks (> 8,500 RPS/vCPU) with
+The system's capability to handle an extreme number of concurrent tasks (Enterprise target: > 8,500 RPS/vCPU) with
 minimal RAM and CPU overhead, achieved by eliminating object headers, GC churn, and OS thread
 context-switching via Virtual Threads and Project Valhalla.
 
