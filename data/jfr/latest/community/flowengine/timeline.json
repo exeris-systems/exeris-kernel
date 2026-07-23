@@ -1,1169 +1,1201 @@
 [ {
-  "t" : 1784697480545,
+  "t" : 1784784167379,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "java.util.LinkedHashMap$Entry",
   "thread" : "main",
-  "size" : 261568,
+  "size" : 398936,
   "stackId" : "stk_0001",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1784697480546,
+  "t" : 1784784167381,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.HashMap$KeyIterator",
+  "class" : "java.lang.String",
   "thread" : "main",
-  "size" : 261544,
+  "size" : 261552,
   "stackId" : "stk_0002",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1784697480551,
+  "t" : 1784784167385,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.concurrent.ConcurrentHashMap$ReservationNode",
-  "thread" : "exeris-pin-FlowEngine-53",
-  "size" : 261560,
+  "class" : "java.lang.String",
+  "thread" : "C1 CompilerThread0",
+  "size" : 2080,
   "stackId" : "stk_0003",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1784697480552,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 261528,
-  "stackId" : "stk_0004",
-  "category" : "LOOM_RUNTIME"
-}, {
-  "t" : 1784697480553,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 261472,
-  "stackId" : "stk_0004",
-  "category" : "LOOM_RUNTIME"
-}, {
-  "t" : 1784697480555,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.concurrent.ConcurrentHashMap$Node",
-  "thread" : "main",
-  "size" : 261568,
-  "stackId" : "stk_0005",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1784697480562,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.concurrent.ConcurrentHashMap$Node",
-  "thread" : "exeris-pin-FlowEngine-153",
-  "size" : 261536,
-  "stackId" : "stk_0006",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1784697480567,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.concurrent.ConcurrentHashMap$ReservationNode",
-  "thread" : "exeris-pin-FlowEngine-371",
-  "size" : 261544,
-  "stackId" : "stk_0003",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1784697480570,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "exeris-pin-FlowEngine-492",
-  "size" : 261440,
-  "stackId" : "stk_0007",
-  "category" : "LOOM_RUNTIME"
-}, {
-  "t" : 1784697480573,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "eu.exeris.kernel.core.flow.RuntimeFlowInstance",
-  "thread" : "exeris-pin-FlowEngine-624",
-  "size" : 261472,
-  "stackId" : "stk_0008",
-  "category" : "TEST_HARNESS"
-}, {
-  "t" : 1784697480574,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.concurrent.ConcurrentHashMap$ReservationNode",
-  "thread" : "exeris-flow-1483478686904236512--9103149681610968759",
-  "size" : 261544,
-  "stackId" : "stk_0009",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1784697480581,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.LinkedHashMap",
-  "thread" : "main",
-  "size" : 261496,
-  "stackId" : "stk_0010",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1784697480728,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "[Ljava.util.HashMap$Node;",
-  "thread" : "main",
-  "size" : 276600,
-  "stackId" : "stk_0011",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1784697480729,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "[Ljava.util.HashMap$Node;",
-  "thread" : "main",
-  "size" : 261504,
-  "stackId" : "stk_0012",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1784697480739,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.concurrent.ConcurrentHashMap$ReservationNode",
-  "thread" : "exeris-flow--8374217148867003832--5924412697481244468",
-  "size" : 261552,
-  "stackId" : "stk_0009",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1784697480739,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.util.concurrent.ConcurrentHashMap$ReservationNode",
-  "thread" : "exeris-flow--8374217148867003832--5924412697481244468",
-  "size" : 40,
-  "stackId" : "stk_0009",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1784697480741,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 261424,
-  "stackId" : "stk_0013",
-  "category" : "LOOM_RUNTIME"
-}, {
-  "t" : 1784697480741,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0013",
-  "category" : "LOOM_RUNTIME"
-}, {
-  "t" : 1784697480746,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "jdk.internal.vm.StackChunk",
-  "thread" : "exeris-flow--5165612768839715054--7884505174380222300",
-  "size" : 110264,
-  "stackId" : "stk_0014",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1784697480746,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "jdk.internal.vm.StackChunk",
-  "thread" : "exeris-flow--5165612768839715054--7884505174380222300",
-  "size" : 2800,
-  "stackId" : "stk_0014",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1784697480746,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "eu.exeris.kernel.core.flow.RuntimeFlowInstance",
-  "thread" : "main",
-  "size" : 261512,
-  "stackId" : "stk_0015",
-  "category" : "TEST_HARNESS"
-}, {
-  "t" : 1784697480746,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "eu.exeris.kernel.core.flow.RuntimeFlowInstance",
-  "thread" : "main",
-  "size" : 120,
-  "stackId" : "stk_0015",
-  "category" : "TEST_HARNESS"
-}, {
-  "t" : 1784697480747,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "[Ljava.util.concurrent.ConcurrentHashMap$Node;",
-  "thread" : "exeris-flow-6244991465661739555--6998186028804274027",
-  "size" : 261480,
-  "stackId" : "stk_0016",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1784697480747,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "[Ljava.util.concurrent.ConcurrentHashMap$Node;",
-  "thread" : "exeris-flow-6244991465661739555--6998186028804274027",
-  "size" : 144,
-  "stackId" : "stk_0016",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1784697480749,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.concurrent.atomic.AtomicBoolean",
-  "thread" : "main",
-  "size" : 261568,
-  "stackId" : "stk_0017",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1784697480749,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.util.concurrent.atomic.AtomicBoolean",
-  "thread" : "main",
-  "size" : 16,
-  "stackId" : "stk_0017",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1784697480750,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 261376,
-  "stackId" : "stk_0013",
-  "category" : "LOOM_RUNTIME"
-}, {
-  "t" : 1784697480750,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0013",
-  "category" : "LOOM_RUNTIME"
-}, {
-  "t" : 1784697480755,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.Object",
-  "thread" : "main",
-  "size" : 245168,
-  "stackId" : "stk_0018",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1784697480755,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.Object",
-  "thread" : "main",
-  "size" : 16,
-  "stackId" : "stk_0018",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1784697480758,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 261400,
-  "stackId" : "stk_0013",
-  "category" : "LOOM_RUNTIME"
-}, {
-  "t" : 1784697480758,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0013",
-  "category" : "LOOM_RUNTIME"
-}, {
-  "t" : 1784697480761,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "eu.exeris.kernel.core.flow.CoreFlowRuntime$$Lambda.0x0000000084636c70",
-  "thread" : "main",
-  "size" : 261552,
-  "stackId" : "stk_0019",
-  "category" : "TEST_HARNESS"
-}, {
-  "t" : 1784697480761,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "eu.exeris.kernel.core.flow.CoreFlowRuntime$$Lambda.0x0000000084636c70",
-  "thread" : "main",
-  "size" : 40,
-  "stackId" : "stk_0019",
-  "category" : "TEST_HARNESS"
-}, {
-  "t" : 1784697480764,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.concurrent.ConcurrentHashMap$Node",
-  "thread" : "exeris-flow--3734419777297695885--8885294295395834183",
-  "size" : 261544,
-  "stackId" : "stk_0020",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1784697480764,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.util.concurrent.ConcurrentHashMap$Node",
-  "thread" : "exeris-flow--3734419777297695885--8885294295395834183",
-  "size" : 40,
-  "stackId" : "stk_0020",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1784697480765,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "eu.exeris.kernel.core.flow.RuntimeFlowInstance$Seed",
-  "thread" : "main",
-  "size" : 261496,
-  "stackId" : "stk_0015",
-  "category" : "TEST_HARNESS"
-}, {
-  "t" : 1784697480765,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "eu.exeris.kernel.core.flow.RuntimeFlowInstance$Seed",
-  "thread" : "main",
-  "size" : 88,
-  "stackId" : "stk_0015",
-  "category" : "TEST_HARNESS"
-}, {
-  "t" : 1784697480766,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "eu.exeris.kernel.core.flow.CoreFlowRuntime$StepPlan",
-  "thread" : "exeris-flow-3668446707820543058--4689950208718431265",
-  "size" : 261544,
-  "stackId" : "stk_0021",
-  "category" : "PRODUCTION"
-}, {
-  "t" : 1784697480766,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "eu.exeris.kernel.core.flow.CoreFlowRuntime$StepPlan",
-  "thread" : "exeris-flow-3668446707820543058--4689950208718431265",
-  "size" : 40,
-  "stackId" : "stk_0021",
-  "category" : "PRODUCTION"
-}, {
-  "t" : 1784697480767,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.concurrent.ConcurrentHashMap",
-  "thread" : "exeris-flow-5622656551270038757--8929316334080647180",
-  "size" : 258904,
-  "stackId" : "stk_0022",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1784697480767,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.util.concurrent.ConcurrentHashMap",
-  "thread" : "exeris-flow-5622656551270038757--8929316334080647180",
-  "size" : 96,
-  "stackId" : "stk_0022",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1784697480768,
+  "t" : 1784784167391,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "[B",
   "thread" : "main",
   "size" : 261552,
-  "stackId" : "stk_0023",
+  "stackId" : "stk_0004",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1784697480768,
+  "t" : 1784784167393,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "eu.exeris.kernel.core.flow.RuntimeFlowInstance$Seed",
+  "thread" : "exeris-pin-FlowEngine-128",
+  "size" : 261496,
+  "stackId" : "stk_0005",
+  "category" : "TEST_HARNESS"
+}, {
+  "t" : 1784784167396,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread$VThreadContinuation",
+  "thread" : "main",
+  "size" : 261520,
+  "stackId" : "stk_0006",
+  "category" : "LOOM_RUNTIME"
+}, {
+  "t" : 1784784167398,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "[B",
+  "thread" : "exeris-pin-FlowEngine-314",
+  "size" : 261552,
+  "stackId" : "stk_0007",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1784784167398,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.StringBuilder",
+  "thread" : "main",
+  "size" : 261568,
+  "stackId" : "stk_0008",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1784784167401,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.util.concurrent.ConcurrentHashMap$Node",
+  "thread" : "exeris-pin-FlowEngine-815",
+  "size" : 522368,
+  "stackId" : "stk_0009",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1784784167403,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "eu.exeris.kernel.core.flow.FlowKey",
+  "thread" : "exeris-flow--2830778635983768038--7807220222907412116",
+  "size" : 261544,
+  "stackId" : "stk_0010",
+  "category" : "PRODUCTION"
+}, {
+  "t" : 1784784167403,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "[Ljava.util.concurrent.ConcurrentHashMap$Node;",
+  "thread" : "exeris-flow-5491740717048870393--5184641414381209720",
+  "size" : 11328,
+  "stackId" : "stk_0011",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1784784167409,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread$VThreadContinuation",
+  "thread" : "exeris-pin-FlowEngine-532",
+  "size" : 261520,
+  "stackId" : "stk_0012",
+  "category" : "LOOM_RUNTIME"
+}, {
+  "t" : 1784784167416,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.util.concurrent.ConcurrentHashMap$ReservationNode",
+  "thread" : "exeris-flow--953742597471192484--7456648572123044620",
+  "size" : 261552,
+  "stackId" : "stk_0013",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1784784167423,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.util.LinkedHashMap$Entry",
+  "thread" : "main",
+  "size" : 261536,
+  "stackId" : "stk_0014",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1784784167578,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "[Ljava.util.HashMap$Node;",
+  "thread" : "main",
+  "size" : 261528,
+  "stackId" : "stk_0015",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1784784167583,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread$VThreadContinuation$1",
+  "thread" : "main",
+  "size" : 261568,
+  "stackId" : "stk_0016",
+  "category" : "LOOM_RUNTIME"
+}, {
+  "t" : 1784784167583,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$VThreadContinuation$1",
+  "thread" : "main",
+  "size" : 32,
+  "stackId" : "stk_0016",
+  "category" : "LOOM_RUNTIME"
+}, {
+  "t" : 1784784167587,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "eu.exeris.kernel.core.flow.RuntimeFlowInstance$Seed",
+  "thread" : "main",
+  "size" : 261504,
+  "stackId" : "stk_0017",
+  "category" : "TEST_HARNESS"
+}, {
+  "t" : 1784784167587,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "eu.exeris.kernel.core.flow.RuntimeFlowInstance$Seed",
+  "thread" : "main",
+  "size" : 88,
+  "stackId" : "stk_0017",
+  "category" : "TEST_HARNESS"
+}, {
+  "t" : 1784784167589,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "[Ljava.util.concurrent.ConcurrentHashMap$Node;",
+  "thread" : "exeris-flow-5981250744757334790--7229070836666062103",
+  "size" : 261456,
+  "stackId" : "stk_0011",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1784784167589,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "[Ljava.util.concurrent.ConcurrentHashMap$Node;",
+  "thread" : "exeris-flow-5981250744757334790--7229070836666062103",
+  "size" : 144,
+  "stackId" : "stk_0011",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1784784167590,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "[Ljava.util.concurrent.ConcurrentHashMap$Node;",
+  "thread" : "exeris-flow--2212698823320259296--5496450742942998904",
+  "size" : 261456,
+  "stackId" : "stk_0011",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1784784167590,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "[Ljava.util.concurrent.ConcurrentHashMap$Node;",
+  "thread" : "exeris-flow--2212698823320259296--5496450742942998904",
+  "size" : 144,
+  "stackId" : "stk_0011",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1784784167591,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "[B",
+  "thread" : "main",
+  "size" : 261560,
+  "stackId" : "stk_0018",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1784784167591,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "[B",
   "thread" : "main",
   "size" : 72,
-  "stackId" : "stk_0023",
+  "stackId" : "stk_0018",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1784697480772,
+  "t" : 1784784167593,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread",
+  "class" : "eu.exeris.kernel.core.flow.CoreFlowRuntime$$Lambda.0x0000000096637530",
   "thread" : "main",
-  "size" : 261392,
-  "stackId" : "stk_0013",
-  "category" : "LOOM_RUNTIME"
-}, {
-  "t" : 1784697480772,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0013",
-  "category" : "LOOM_RUNTIME"
-}, {
-  "t" : 1784697480774,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.concurrent.ConcurrentHashMap$Node",
-  "thread" : "exeris-flow--6486810253663129154--5406170666191403191",
   "size" : 261568,
-  "stackId" : "stk_0024",
-  "category" : "JVM_NOISE"
+  "stackId" : "stk_0019",
+  "category" : "TEST_HARNESS"
 }, {
-  "t" : 1784697480774,
+  "t" : 1784784167593,
   "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.util.concurrent.ConcurrentHashMap$Node",
-  "thread" : "exeris-flow--6486810253663129154--5406170666191403191",
-  "size" : 40,
-  "stackId" : "stk_0024",
+  "class" : "eu.exeris.kernel.core.flow.CoreFlowRuntime$$Lambda.0x0000000096637530",
+  "thread" : "main",
+  "size" : 32,
+  "stackId" : "stk_0019",
+  "category" : "TEST_HARNESS"
+}, {
+  "t" : 1784784167595,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.util.concurrent.ConcurrentHashMap$ReservationNode",
+  "thread" : "exeris-flow-882043583688359106--4704768545564630166",
+  "size" : 261560,
+  "stackId" : "stk_0013",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1784697480777,
+  "t" : 1784784167595,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.util.concurrent.ConcurrentHashMap$ReservationNode",
+  "thread" : "exeris-flow-882043583688359106--4704768545564630166",
+  "size" : 40,
+  "stackId" : "stk_0013",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1784784167596,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "[B",
+  "thread" : "main",
+  "size" : 261560,
+  "stackId" : "stk_0018",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1784784167596,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "[B",
+  "thread" : "main",
+  "size" : 72,
+  "stackId" : "stk_0018",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1784784167600,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "java.lang.VirtualThread",
   "thread" : "main",
-  "size" : 261336,
-  "stackId" : "stk_0013",
+  "size" : 236632,
+  "stackId" : "stk_0020",
   "category" : "LOOM_RUNTIME"
 }, {
-  "t" : 1784697480777,
+  "t" : 1784784167600,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "java.lang.VirtualThread",
   "thread" : "main",
   "size" : 248,
-  "stackId" : "stk_0013",
+  "stackId" : "stk_0020",
   "category" : "LOOM_RUNTIME"
 }, {
-  "t" : 1784697480780,
+  "t" : 1784784167603,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.util.concurrent.ConcurrentHashMap$Node",
+  "thread" : "exeris-flow--2006891009898039019--9024609637083886969",
+  "size" : 261568,
+  "stackId" : "stk_0021",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1784784167603,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.util.concurrent.ConcurrentHashMap$Node",
+  "thread" : "exeris-flow--2006891009898039019--9024609637083886969",
+  "size" : 40,
+  "stackId" : "stk_0021",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1784784167604,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "java.lang.VirtualThread$VThreadContinuation$1",
   "thread" : "main",
-  "size" : 261552,
-  "stackId" : "stk_0025",
+  "size" : 261560,
+  "stackId" : "stk_0016",
   "category" : "LOOM_RUNTIME"
 }, {
-  "t" : 1784697480780,
+  "t" : 1784784167604,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "java.lang.VirtualThread$VThreadContinuation$1",
   "thread" : "main",
   "size" : 32,
-  "stackId" : "stk_0025",
+  "stackId" : "stk_0016",
   "category" : "LOOM_RUNTIME"
 }, {
-  "t" : 1784697480781,
+  "t" : 1784784167608,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.concurrent.ConcurrentHashMap$Node",
-  "thread" : "exeris-flow-6617922148424759155--8826129364384883935",
-  "size" : 261544,
-  "stackId" : "stk_0026",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1784697480781,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.util.concurrent.ConcurrentHashMap$Node",
-  "thread" : "exeris-flow-6617922148424759155--8826129364384883935",
-  "size" : 40,
-  "stackId" : "stk_0026",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1784697480784,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "eu.exeris.kernel.core.flow.FlowKey",
+  "class" : "java.lang.ThreadBuilders$VirtualThreadBuilder",
   "thread" : "main",
-  "size" : 261544,
-  "stackId" : "stk_0027",
-  "category" : "TEST_HARNESS"
-}, {
-  "t" : 1784697480784,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "eu.exeris.kernel.core.flow.FlowKey",
-  "thread" : "main",
-  "size" : 32,
-  "stackId" : "stk_0027",
-  "category" : "TEST_HARNESS"
-}, {
-  "t" : 1784697480787,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.concurrent.ForkJoinTask$AdaptedRunnableAction",
-  "thread" : "main",
-  "size" : 261544,
-  "stackId" : "stk_0028",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1784697480787,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.util.concurrent.ForkJoinTask$AdaptedRunnableAction",
-  "thread" : "main",
-  "size" : 32,
-  "stackId" : "stk_0028",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1784697480789,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "[I",
-  "thread" : "main",
-  "size" : 261560,
-  "stackId" : "stk_0029",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1784697480789,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "[I",
-  "thread" : "main",
-  "size" : 32,
-  "stackId" : "stk_0029",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1784697480792,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.concurrent.ConcurrentHashMap",
-  "thread" : "exeris-flow-4262243790947105985--6083443807683942012",
-  "size" : 261544,
+  "size" : 258888,
   "stackId" : "stk_0022",
-  "category" : "JVM_NOISE"
+  "category" : "LOOM_RUNTIME"
 }, {
-  "t" : 1784697480792,
+  "t" : 1784784167608,
   "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.util.concurrent.ConcurrentHashMap",
-  "thread" : "exeris-flow-4262243790947105985--6083443807683942012",
-  "size" : 96,
+  "class" : "java.lang.ThreadBuilders$VirtualThreadBuilder",
+  "thread" : "main",
+  "size" : 48,
   "stackId" : "stk_0022",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1784697480792,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.concurrent.ConcurrentHashMap$Node",
-  "thread" : "main",
-  "size" : 261544,
-  "stackId" : "stk_0030",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1784697480792,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.util.concurrent.ConcurrentHashMap$Node",
-  "thread" : "main",
-  "size" : 40,
-  "stackId" : "stk_0030",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1784697480794,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 261520,
-  "stackId" : "stk_0013",
   "category" : "LOOM_RUNTIME"
 }, {
-  "t" : 1784697480794,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0013",
-  "category" : "LOOM_RUNTIME"
-}, {
-  "t" : 1784697480795,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "eu.exeris.kernel.core.flow.FlowKey",
-  "thread" : "exeris-flow--2923715961071127782--7083630881428135265",
-  "size" : 261560,
-  "stackId" : "stk_0031",
-  "category" : "PRODUCTION"
-}, {
-  "t" : 1784697480795,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "eu.exeris.kernel.core.flow.FlowKey",
-  "thread" : "exeris-flow--2923715961071127782--7083630881428135265",
-  "size" : 32,
-  "stackId" : "stk_0031",
-  "category" : "PRODUCTION"
-}, {
-  "t" : 1784697480796,
+  "t" : 1784784167611,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "eu.exeris.kernel.core.flow.RuntimeFlowInstance",
   "thread" : "main",
-  "size" : 261552,
-  "stackId" : "stk_0015",
+  "size" : 261456,
+  "stackId" : "stk_0017",
   "category" : "TEST_HARNESS"
 }, {
-  "t" : 1784697480796,
+  "t" : 1784784167611,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "eu.exeris.kernel.core.flow.RuntimeFlowInstance",
   "thread" : "main",
   "size" : 120,
-  "stackId" : "stk_0015",
+  "stackId" : "stk_0017",
   "category" : "TEST_HARNESS"
 }, {
-  "t" : 1784697480798,
+  "t" : 1784784167613,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.String",
+  "class" : "java.lang.VirtualThread$VThreadContinuation",
   "thread" : "main",
-  "size" : 261544,
-  "stackId" : "stk_0032",
+  "size" : 261512,
+  "stackId" : "stk_0023",
+  "category" : "LOOM_RUNTIME"
+}, {
+  "t" : 1784784167613,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$VThreadContinuation",
+  "thread" : "main",
+  "size" : 72,
+  "stackId" : "stk_0023",
+  "category" : "LOOM_RUNTIME"
+}, {
+  "t" : 1784784167615,
+  "type" : "jdk.ObjectAllocationOutsideTLAB",
+  "class" : "[Ljava.util.concurrent.ConcurrentHashMap$Node;",
+  "thread" : "exeris-flow-8694359920665378029--8607404790925891453",
+  "size" : 65552,
+  "stackId" : "stk_0024",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1784697480798,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.String",
-  "thread" : "main",
-  "size" : 32,
-  "stackId" : "stk_0032",
+  "t" : 1784784167615,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.util.concurrent.ConcurrentHashMap$Node",
+  "thread" : "exeris-flow-1915948580187813715--6417982546235594845",
+  "size" : 261552,
+  "stackId" : "stk_0025",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1784697480800,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "eu.exeris.kernel.core.flow.FlowKey",
-  "thread" : "exeris-flow-4191241718712447126--8695816672187832681",
-  "size" : 261544,
-  "stackId" : "stk_0033",
-  "category" : "PRODUCTION"
-}, {
-  "t" : 1784697480800,
+  "t" : 1784784167615,
   "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "eu.exeris.kernel.core.flow.FlowKey",
-  "thread" : "exeris-flow-4191241718712447126--8695816672187832681",
-  "size" : 32,
-  "stackId" : "stk_0033",
+  "class" : "java.util.concurrent.ConcurrentHashMap$Node",
+  "thread" : "exeris-flow-1915948580187813715--6417982546235594845",
+  "size" : 40,
+  "stackId" : "stk_0025",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1784784167616,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "eu.exeris.kernel.core.flow.CoreFlowRuntime$StepPlan",
+  "thread" : "exeris-flow--3335453585366239929--8422946199499598179",
+  "size" : 327088,
+  "stackId" : "stk_0026",
   "category" : "PRODUCTION"
 }, {
-  "t" : 1784697480800,
+  "t" : 1784784167616,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "eu.exeris.kernel.core.flow.CoreFlowRuntime$StepPlan",
+  "thread" : "exeris-flow--3335453585366239929--8422946199499598179",
+  "size" : 40,
+  "stackId" : "stk_0026",
+  "category" : "PRODUCTION"
+}, {
+  "t" : 1784784167616,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "eu.exeris.kernel.core.flow.CoreFlowRuntime$$Lambda.0x0000000096637530",
+  "thread" : "main",
+  "size" : 261568,
+  "stackId" : "stk_0019",
+  "category" : "TEST_HARNESS"
+}, {
+  "t" : 1784784167616,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "eu.exeris.kernel.core.flow.CoreFlowRuntime$$Lambda.0x0000000096637530",
+  "thread" : "main",
+  "size" : 32,
+  "stackId" : "stk_0019",
+  "category" : "TEST_HARNESS"
+}, {
+  "t" : 1784784167617,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.util.concurrent.ConcurrentHashMap$Node",
+  "thread" : "exeris-flow-3148725404838411002--5709581612335365974",
+  "size" : 261552,
+  "stackId" : "stk_0025",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1784784167617,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.util.concurrent.ConcurrentHashMap$Node",
+  "thread" : "exeris-flow-3148725404838411002--5709581612335365974",
+  "size" : 40,
+  "stackId" : "stk_0025",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1784784167618,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "eu.exeris.kernel.core.flow.RuntimeFlowInstance$Seed",
   "thread" : "main",
-  "size" : 261496,
-  "stackId" : "stk_0015",
+  "size" : 261544,
+  "stackId" : "stk_0017",
   "category" : "TEST_HARNESS"
 }, {
-  "t" : 1784697480800,
+  "t" : 1784784167618,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "eu.exeris.kernel.core.flow.RuntimeFlowInstance$Seed",
   "thread" : "main",
   "size" : 88,
-  "stackId" : "stk_0015",
+  "stackId" : "stk_0017",
   "category" : "TEST_HARNESS"
 }, {
-  "t" : 1784697480802,
+  "t" : 1784784167619,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "[Ljava.util.concurrent.ConcurrentHashMap$Node;",
+  "thread" : "exeris-flow-9163805763314988453--5575916776723247282",
+  "size" : 261448,
+  "stackId" : "stk_0011",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1784784167619,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "[Ljava.util.concurrent.ConcurrentHashMap$Node;",
+  "thread" : "exeris-flow-9163805763314988453--5575916776723247282",
+  "size" : 144,
+  "stackId" : "stk_0011",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1784784167621,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "java.util.concurrent.ConcurrentHashMap$Node",
-  "thread" : "exeris-flow-415752523953224973--9069574600815569178",
-  "size" : 261568,
-  "stackId" : "stk_0020",
+  "thread" : "main",
+  "size" : 261560,
+  "stackId" : "stk_0027",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1784697480802,
+  "t" : 1784784167621,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "java.util.concurrent.ConcurrentHashMap$Node",
-  "thread" : "exeris-flow-415752523953224973--9069574600815569178",
+  "thread" : "main",
   "size" : 40,
-  "stackId" : "stk_0020",
+  "stackId" : "stk_0027",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1784697480802,
+  "t" : 1784784167624,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000963462d8",
+  "thread" : "main",
+  "size" : 261560,
+  "stackId" : "stk_0028",
+  "category" : "LOOM_RUNTIME"
+}, {
+  "t" : 1784784167624,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000963462d8",
+  "thread" : "main",
+  "size" : 24,
+  "stackId" : "stk_0028",
+  "category" : "LOOM_RUNTIME"
+}, {
+  "t" : 1784784167626,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.util.concurrent.ConcurrentHashMap$ReservationNode",
+  "thread" : "main",
+  "size" : 195992,
+  "stackId" : "stk_0029",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1784784167626,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.util.concurrent.ConcurrentHashMap$ReservationNode",
+  "thread" : "main",
+  "size" : 40,
+  "stackId" : "stk_0029",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1784784167629,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 261488,
+  "stackId" : "stk_0020",
+  "category" : "LOOM_RUNTIME"
+}, {
+  "t" : 1784784167629,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0020",
+  "category" : "LOOM_RUNTIME"
+}, {
+  "t" : 1784784167632,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread$VThreadContinuation",
+  "thread" : "main",
+  "size" : 261528,
+  "stackId" : "stk_0023",
+  "category" : "LOOM_RUNTIME"
+}, {
+  "t" : 1784784167632,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$VThreadContinuation",
+  "thread" : "main",
+  "size" : 72,
+  "stackId" : "stk_0023",
+  "category" : "LOOM_RUNTIME"
+}, {
+  "t" : 1784784167635,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "eu.exeris.kernel.core.flow.CoreFlowRuntime$StepPlan",
+  "thread" : "exeris-flow-1794868814052798744--9162577186243462335",
+  "size" : 261544,
+  "stackId" : "stk_0026",
+  "category" : "PRODUCTION"
+}, {
+  "t" : 1784784167635,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "eu.exeris.kernel.core.flow.CoreFlowRuntime$StepPlan",
+  "thread" : "exeris-flow-1794868814052798744--9162577186243462335",
+  "size" : 40,
+  "stackId" : "stk_0026",
+  "category" : "PRODUCTION"
+}, {
+  "t" : 1784784167635,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread$VThreadContinuation",
+  "thread" : "main",
+  "size" : 261504,
+  "stackId" : "stk_0023",
+  "category" : "LOOM_RUNTIME"
+}, {
+  "t" : 1784784167635,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$VThreadContinuation",
+  "thread" : "main",
+  "size" : 72,
+  "stackId" : "stk_0023",
+  "category" : "LOOM_RUNTIME"
+}, {
+  "t" : 1784784167638,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.util.concurrent.ConcurrentHashMap$Node",
+  "thread" : "exeris-flow-9079383590014038251--6575236093134063487",
+  "size" : 261536,
+  "stackId" : "stk_0025",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1784784167638,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.util.concurrent.ConcurrentHashMap$Node",
+  "thread" : "exeris-flow-9079383590014038251--6575236093134063487",
+  "size" : 40,
+  "stackId" : "stk_0025",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1784784167638,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.Object",
+  "thread" : "main",
+  "size" : 261568,
+  "stackId" : "stk_0030",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1784784167638,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.Object",
+  "thread" : "main",
+  "size" : 16,
+  "stackId" : "stk_0030",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1784784167639,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.util.concurrent.ConcurrentHashMap",
+  "thread" : "exeris-flow-8288231344124473630--7833029737224280446",
+  "size" : 261504,
+  "stackId" : "stk_0031",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1784784167639,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.util.concurrent.ConcurrentHashMap",
+  "thread" : "exeris-flow-8288231344124473630--7833029737224280446",
+  "size" : 96,
+  "stackId" : "stk_0031",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1784784167641,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread$VThreadContinuation",
+  "thread" : "main",
+  "size" : 261520,
+  "stackId" : "stk_0023",
+  "category" : "LOOM_RUNTIME"
+}, {
+  "t" : 1784784167641,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$VThreadContinuation",
+  "thread" : "main",
+  "size" : 72,
+  "stackId" : "stk_0023",
+  "category" : "LOOM_RUNTIME"
+}, {
+  "t" : 1784784167645,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "eu.exeris.kernel.core.flow.RuntimeFlowInstance",
+  "thread" : "main",
+  "size" : 261568,
+  "stackId" : "stk_0017",
+  "category" : "TEST_HARNESS"
+}, {
+  "t" : 1784784167645,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "eu.exeris.kernel.core.flow.RuntimeFlowInstance",
+  "thread" : "main",
+  "size" : 120,
+  "stackId" : "stk_0017",
+  "category" : "TEST_HARNESS"
+}, {
+  "t" : 1784784167648,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "java.lang.VirtualThread",
   "thread" : "main",
   "size" : 261408,
-  "stackId" : "stk_0013",
+  "stackId" : "stk_0020",
   "category" : "LOOM_RUNTIME"
 }, {
-  "t" : 1784697480802,
+  "t" : 1784784167649,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "java.lang.VirtualThread",
   "thread" : "main",
   "size" : 248,
-  "stackId" : "stk_0013",
+  "stackId" : "stk_0020",
   "category" : "LOOM_RUNTIME"
 }, {
-  "t" : 1784697480803,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "[Ljava.util.concurrent.ConcurrentHashMap$Node;",
-  "thread" : "exeris-flow--1790154248327121106--7346710594628937299",
-  "size" : 261504,
-  "stackId" : "stk_0016",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1784697480803,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "[Ljava.util.concurrent.ConcurrentHashMap$Node;",
-  "thread" : "exeris-flow--1790154248327121106--7346710594628937299",
-  "size" : 144,
-  "stackId" : "stk_0016",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1784697480804,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "eu.exeris.kernel.core.flow.RuntimeFlowInstance",
-  "thread" : "main",
-  "size" : 261552,
-  "stackId" : "stk_0015",
-  "category" : "TEST_HARNESS"
-}, {
-  "t" : 1784697480804,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "eu.exeris.kernel.core.flow.RuntimeFlowInstance",
-  "thread" : "main",
-  "size" : 120,
-  "stackId" : "stk_0015",
-  "category" : "TEST_HARNESS"
-}, {
-  "t" : 1784697480805,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "[I",
-  "thread" : "main",
-  "size" : 261544,
-  "stackId" : "stk_0029",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1784697480805,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "[I",
-  "thread" : "main",
-  "size" : 32,
-  "stackId" : "stk_0029",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1784697480807,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "eu.exeris.kernel.core.flow.RuntimeFlowContext",
-  "thread" : "main",
-  "size" : 261560,
-  "stackId" : "stk_0034",
-  "category" : "TEST_HARNESS"
-}, {
-  "t" : 1784697480807,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "eu.exeris.kernel.core.flow.RuntimeFlowContext",
-  "thread" : "main",
-  "size" : 40,
-  "stackId" : "stk_0034",
-  "category" : "TEST_HARNESS"
-}, {
-  "t" : 1784697480809,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.concurrent.ConcurrentHashMap$Node",
-  "thread" : "exeris-flow-5724348005127961989--4733032957077522714",
-  "size" : 261536,
-  "stackId" : "stk_0024",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1784697480809,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.util.concurrent.ConcurrentHashMap$Node",
-  "thread" : "exeris-flow-5724348005127961989--4733032957077522714",
-  "size" : 40,
-  "stackId" : "stk_0024",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1784697480811,
+  "t" : 1784784167653,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "java.lang.VirtualThread",
   "thread" : "main",
-  "size" : 261384,
-  "stackId" : "stk_0013",
+  "size" : 261416,
+  "stackId" : "stk_0020",
   "category" : "LOOM_RUNTIME"
 }, {
-  "t" : 1784697480811,
+  "t" : 1784784167653,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "java.lang.VirtualThread",
   "thread" : "main",
   "size" : 248,
-  "stackId" : "stk_0013",
+  "stackId" : "stk_0020",
   "category" : "LOOM_RUNTIME"
 }, {
-  "t" : 1784697480813,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.concurrent.ConcurrentHashMap$ReservationNode",
-  "thread" : "exeris-flow--7166960290959380076--7429870966186113332",
-  "size" : 261568,
-  "stackId" : "stk_0009",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1784697480813,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.util.concurrent.ConcurrentHashMap$ReservationNode",
-  "thread" : "exeris-flow--7166960290959380076--7429870966186113332",
-  "size" : 40,
-  "stackId" : "stk_0009",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1784697480813,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread$VThreadContinuation$1",
-  "thread" : "main",
-  "size" : 261552,
-  "stackId" : "stk_0025",
-  "category" : "LOOM_RUNTIME"
-}, {
-  "t" : 1784697480813,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$VThreadContinuation$1",
-  "thread" : "main",
-  "size" : 32,
-  "stackId" : "stk_0025",
-  "category" : "LOOM_RUNTIME"
-}, {
-  "t" : 1784697480815,
+  "t" : 1784784167656,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "eu.exeris.kernel.core.flow.FlowKey",
-  "thread" : "exeris-flow-6672759232847362231--9100090577823831867",
+  "thread" : "exeris-flow-2176058187749667772--7480112962840746225",
   "size" : 261560,
-  "stackId" : "stk_0031",
+  "stackId" : "stk_0032",
   "category" : "PRODUCTION"
 }, {
-  "t" : 1784697480815,
+  "t" : 1784784167656,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "eu.exeris.kernel.core.flow.FlowKey",
-  "thread" : "exeris-flow-6672759232847362231--9100090577823831867",
+  "thread" : "exeris-flow-2176058187749667772--7480112962840746225",
   "size" : 32,
-  "stackId" : "stk_0031",
+  "stackId" : "stk_0032",
   "category" : "PRODUCTION"
 }, {
-  "t" : 1784697480815,
+  "t" : 1784784167656,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "eu.exeris.kernel.core.flow.RuntimeFlowInstance$Seed",
+  "class" : "java.lang.VirtualThread",
   "thread" : "main",
   "size" : 261496,
-  "stackId" : "stk_0015",
-  "category" : "TEST_HARNESS"
-}, {
-  "t" : 1784697480815,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "eu.exeris.kernel.core.flow.RuntimeFlowInstance$Seed",
-  "thread" : "main",
-  "size" : 88,
-  "stackId" : "stk_0015",
-  "category" : "TEST_HARNESS"
-}, {
-  "t" : 1784697480816,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 261448,
-  "stackId" : "stk_0013",
+  "stackId" : "stk_0020",
   "category" : "LOOM_RUNTIME"
 }, {
-  "t" : 1784697480816,
+  "t" : 1784784167656,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "java.lang.VirtualThread",
   "thread" : "main",
   "size" : 248,
-  "stackId" : "stk_0013",
-  "category" : "LOOM_RUNTIME"
-}, {
-  "t" : 1784697480817,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.concurrent.ConcurrentHashMap",
-  "thread" : "exeris-flow-628904225388445375--6013040538987274969",
-  "size" : 261568,
-  "stackId" : "stk_0022",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1784697480817,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.util.concurrent.ConcurrentHashMap",
-  "thread" : "exeris-flow-628904225388445375--6013040538987274969",
-  "size" : 96,
-  "stackId" : "stk_0022",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1784697480817,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread$VThreadContinuation",
-  "thread" : "main",
-  "size" : 261560,
-  "stackId" : "stk_0035",
-  "category" : "LOOM_RUNTIME"
-}, {
-  "t" : 1784697480817,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$VThreadContinuation",
-  "thread" : "main",
-  "size" : 72,
-  "stackId" : "stk_0035",
-  "category" : "LOOM_RUNTIME"
-}, {
-  "t" : 1784697480819,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "[I",
-  "thread" : "main",
-  "size" : 261568,
-  "stackId" : "stk_0029",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1784697480819,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "[I",
-  "thread" : "main",
-  "size" : 32,
-  "stackId" : "stk_0029",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1784697480821,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "eu.exeris.kernel.core.flow.FlowKey",
-  "thread" : "exeris-flow--3654133395066570189--5845114489559124799",
-  "size" : 261560,
-  "stackId" : "stk_0033",
-  "category" : "PRODUCTION"
-}, {
-  "t" : 1784697480821,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "eu.exeris.kernel.core.flow.FlowKey",
-  "thread" : "exeris-flow--3654133395066570189--5845114489559124799",
-  "size" : 32,
-  "stackId" : "stk_0033",
-  "category" : "PRODUCTION"
-}, {
-  "t" : 1784697480821,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread$VThreadContinuation$1",
-  "thread" : "main",
-  "size" : 261544,
-  "stackId" : "stk_0025",
-  "category" : "LOOM_RUNTIME"
-}, {
-  "t" : 1784697480821,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$VThreadContinuation$1",
-  "thread" : "main",
-  "size" : 32,
-  "stackId" : "stk_0025",
-  "category" : "LOOM_RUNTIME"
-}, {
-  "t" : 1784697480823,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "eu.exeris.kernel.core.flow.RuntimeFlowContext",
-  "thread" : "main",
-  "size" : 261560,
-  "stackId" : "stk_0034",
-  "category" : "TEST_HARNESS"
-}, {
-  "t" : 1784697480823,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "eu.exeris.kernel.core.flow.RuntimeFlowContext",
-  "thread" : "main",
-  "size" : 40,
-  "stackId" : "stk_0034",
-  "category" : "TEST_HARNESS"
-}, {
-  "t" : 1784697480824,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.concurrent.ConcurrentHashMap$Node",
-  "thread" : "exeris-flow--780166104534468666--7750083346307830363",
-  "size" : 261568,
   "stackId" : "stk_0020",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1784697480824,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.util.concurrent.ConcurrentHashMap$Node",
-  "thread" : "exeris-flow--780166104534468666--7750083346307830363",
-  "size" : 40,
-  "stackId" : "stk_0020",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1784697480825,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread$$Lambda.0x00000000843462d8",
-  "thread" : "main",
-  "size" : 261552,
-  "stackId" : "stk_0036",
   "category" : "LOOM_RUNTIME"
 }, {
-  "t" : 1784697480825,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread$$Lambda.0x00000000843462d8",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0036",
-  "category" : "LOOM_RUNTIME"
-}, {
-  "t" : 1784697480826,
+  "t" : 1784784167657,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "[Ljava.util.concurrent.ConcurrentHashMap$Node;",
-  "thread" : "exeris-flow--2696800163543371014--9077601278180267837",
-  "size" : 261520,
-  "stackId" : "stk_0016",
+  "thread" : "exeris-flow--552111415264657859--8793996786251206092",
+  "size" : 241304,
+  "stackId" : "stk_0011",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1784697480826,
+  "t" : 1784784167657,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "[Ljava.util.concurrent.ConcurrentHashMap$Node;",
-  "thread" : "exeris-flow--2696800163543371014--9077601278180267837",
+  "thread" : "exeris-flow--552111415264657859--8793996786251206092",
   "size" : 144,
-  "stackId" : "stk_0016",
+  "stackId" : "stk_0011",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1784697480827,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.concurrent.ConcurrentHashMap$Node",
-  "thread" : "main",
-  "size" : 261552,
-  "stackId" : "stk_0030",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1784697480827,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.util.concurrent.ConcurrentHashMap$Node",
-  "thread" : "main",
-  "size" : 40,
-  "stackId" : "stk_0030",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1784697480829,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 261440,
-  "stackId" : "stk_0013",
-  "category" : "LOOM_RUNTIME"
-}, {
-  "t" : 1784697480829,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0013",
-  "category" : "LOOM_RUNTIME"
-}, {
-  "t" : 1784697480831,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.concurrent.ConcurrentHashMap$Node",
-  "thread" : "main",
-  "size" : 261568,
-  "stackId" : "stk_0037",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1784697480831,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.util.concurrent.ConcurrentHashMap$Node",
-  "thread" : "main",
-  "size" : 40,
-  "stackId" : "stk_0037",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1784697480833,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "eu.exeris.kernel.core.flow.FlowKey",
-  "thread" : "exeris-flow--4042649343781358585--8238398357273780591",
-  "size" : 261544,
-  "stackId" : "stk_0033",
-  "category" : "PRODUCTION"
-}, {
-  "t" : 1784697480833,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "eu.exeris.kernel.core.flow.FlowKey",
-  "thread" : "exeris-flow--4042649343781358585--8238398357273780591",
-  "size" : 32,
-  "stackId" : "stk_0033",
-  "category" : "PRODUCTION"
-}, {
-  "t" : 1784697480833,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "eu.exeris.kernel.core.flow.RuntimeFlowInstance",
-  "thread" : "main",
-  "size" : 261560,
-  "stackId" : "stk_0015",
-  "category" : "TEST_HARNESS"
-}, {
-  "t" : 1784697480833,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "eu.exeris.kernel.core.flow.RuntimeFlowInstance",
-  "thread" : "main",
-  "size" : 120,
-  "stackId" : "stk_0015",
-  "category" : "TEST_HARNESS"
-}, {
-  "t" : 1784697480834,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.concurrent.ConcurrentHashMap",
-  "thread" : "exeris-flow-5983140458832670951--5599430898049504798",
-  "size" : 261520,
-  "stackId" : "stk_0022",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1784697480834,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.util.concurrent.ConcurrentHashMap",
-  "thread" : "exeris-flow-5983140458832670951--5599430898049504798",
-  "size" : 96,
-  "stackId" : "stk_0022",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1784697480835,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.concurrent.ForkJoinTask$AdaptedRunnableAction",
-  "thread" : "main",
-  "size" : 261552,
-  "stackId" : "stk_0028",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1784697480835,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.util.concurrent.ForkJoinTask$AdaptedRunnableAction",
-  "thread" : "main",
-  "size" : 32,
-  "stackId" : "stk_0028",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1784697480836,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "eu.exeris.kernel.core.flow.RuntimeFlowInstance",
-  "thread" : "main",
-  "size" : 120,
-  "stackId" : "stk_0015",
-  "category" : "TEST_HARNESS"
-}, {
-  "t" : 1784697480837,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "eu.exeris.kernel.core.flow.FlowKey",
-  "thread" : "exeris-flow-2406411437663207229--5912702410061749656",
-  "size" : 32,
-  "stackId" : "stk_0031",
-  "category" : "PRODUCTION"
-}, {
-  "t" : 1784697480838,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.util.concurrent.atomic.AtomicLong",
-  "thread" : "main",
-  "size" : 24,
-  "stackId" : "stk_0038",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1784697480839,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.util.concurrent.ConcurrentHashMap$Node",
-  "thread" : "exeris-flow--6615180144415392846--6905403378274017191",
-  "size" : 40,
+  "t" : 1784784167658,
+  "type" : "jdk.ObjectAllocationOutsideTLAB",
+  "class" : "[Ljava.util.concurrent.ConcurrentHashMap$Node;",
+  "thread" : "exeris-flow-569309062592934055--5160532691574801713",
+  "size" : 131088,
   "stackId" : "stk_0024",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1784697480839,
+  "t" : 1784784167658,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.util.concurrent.ConcurrentHashMap$Node",
+  "thread" : "exeris-flow-569309062592934055--5160532691574801713",
+  "size" : 392656,
+  "stackId" : "stk_0033",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1784784167658,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.util.concurrent.ConcurrentHashMap$Node",
+  "thread" : "exeris-flow-569309062592934055--5160532691574801713",
+  "size" : 40,
+  "stackId" : "stk_0033",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1784784167660,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.util.concurrent.ConcurrentHashMap$Node",
+  "thread" : "main",
+  "size" : 261568,
+  "stackId" : "stk_0034",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1784784167660,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.util.concurrent.ConcurrentHashMap$Node",
+  "thread" : "main",
+  "size" : 40,
+  "stackId" : "stk_0034",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1784784167663,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "eu.exeris.kernel.core.flow.FlowKey",
+  "thread" : "main",
+  "size" : 261568,
+  "stackId" : "stk_0035",
+  "category" : "TEST_HARNESS"
+}, {
+  "t" : 1784784167663,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "eu.exeris.kernel.core.flow.FlowKey",
   "thread" : "main",
   "size" : 32,
-  "stackId" : "stk_0039",
+  "stackId" : "stk_0035",
   "category" : "TEST_HARNESS"
 }, {
-  "t" : 1784697480840,
+  "t" : 1784784167664,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "eu.exeris.kernel.core.flow.FlowKey",
+  "thread" : "exeris-flow--3366367773325575986--8745121575908047507",
+  "size" : 261552,
+  "stackId" : "stk_0032",
+  "category" : "PRODUCTION"
+}, {
+  "t" : 1784784167664,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "eu.exeris.kernel.core.flow.FlowKey",
+  "thread" : "exeris-flow--3366367773325575986--8745121575908047507",
+  "size" : 32,
+  "stackId" : "stk_0032",
+  "category" : "PRODUCTION"
+}, {
+  "t" : 1784784167666,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "[B",
+  "thread" : "main",
+  "size" : 261504,
+  "stackId" : "stk_0018",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1784784167666,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "[B",
+  "thread" : "main",
+  "size" : 72,
+  "stackId" : "stk_0018",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1784784167668,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.Object",
+  "thread" : "main",
+  "size" : 261560,
+  "stackId" : "stk_0030",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1784784167668,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "java.lang.Object",
   "thread" : "main",
   "size" : 16,
-  "stackId" : "stk_0040",
+  "stackId" : "stk_0030",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1784697480841,
+  "t" : 1784784167671,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.util.concurrent.ForkJoinTask$AdaptedRunnableAction",
+  "thread" : "main",
+  "size" : 261560,
+  "stackId" : "stk_0036",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1784784167671,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.util.concurrent.ForkJoinTask$AdaptedRunnableAction",
+  "thread" : "main",
+  "size" : 32,
+  "stackId" : "stk_0036",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1784784167674,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "eu.exeris.kernel.core.flow.RuntimeFlowInstance",
+  "thread" : "main",
+  "size" : 261560,
+  "stackId" : "stk_0017",
+  "category" : "TEST_HARNESS"
+}, {
+  "t" : 1784784167674,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "eu.exeris.kernel.core.flow.RuntimeFlowInstance",
+  "thread" : "main",
+  "size" : 120,
+  "stackId" : "stk_0017",
+  "category" : "TEST_HARNESS"
+}, {
+  "t" : 1784784167677,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "eu.exeris.kernel.core.flow.CoreFlowRuntime$StepPlan",
+  "thread" : "exeris-flow-1490551703824708071--6928470370355817758",
+  "size" : 261544,
+  "stackId" : "stk_0026",
+  "category" : "PRODUCTION"
+}, {
+  "t" : 1784784167677,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "eu.exeris.kernel.core.flow.CoreFlowRuntime$StepPlan",
+  "thread" : "exeris-flow-1490551703824708071--6928470370355817758",
+  "size" : 40,
+  "stackId" : "stk_0026",
+  "category" : "PRODUCTION"
+}, {
+  "t" : 1784784167677,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "[Ljava.util.concurrent.ConcurrentHashMap$Node;",
+  "thread" : "exeris-flow-2594417916700605917--8916079772848289246",
+  "size" : 261528,
+  "stackId" : "stk_0011",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1784784167677,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "[Ljava.util.concurrent.ConcurrentHashMap$Node;",
+  "thread" : "exeris-flow-2594417916700605917--8916079772848289246",
+  "size" : 144,
+  "stackId" : "stk_0011",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1784784167677,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "eu.exeris.kernel.core.flow.FlowKey",
+  "thread" : "main",
+  "size" : 261544,
+  "stackId" : "stk_0035",
+  "category" : "TEST_HARNESS"
+}, {
+  "t" : 1784784167677,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "eu.exeris.kernel.core.flow.FlowKey",
+  "thread" : "main",
+  "size" : 32,
+  "stackId" : "stk_0035",
+  "category" : "TEST_HARNESS"
+}, {
+  "t" : 1784784167679,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.util.concurrent.ConcurrentHashMap$Node",
+  "thread" : "exeris-flow--2600662471257867475--7466184973585867321",
+  "size" : 261552,
+  "stackId" : "stk_0037",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1784784167679,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.util.concurrent.ConcurrentHashMap$Node",
+  "thread" : "exeris-flow--2600662471257867475--7466184973585867321",
+  "size" : 40,
+  "stackId" : "stk_0037",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1784784167681,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 261440,
+  "stackId" : "stk_0020",
+  "category" : "LOOM_RUNTIME"
+}, {
+  "t" : 1784784167681,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0020",
+  "category" : "LOOM_RUNTIME"
+}, {
+  "t" : 1784784167683,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "eu.exeris.kernel.core.flow.RuntimeFlowInstance$Seed",
+  "thread" : "main",
+  "size" : 261552,
+  "stackId" : "stk_0017",
+  "category" : "TEST_HARNESS"
+}, {
+  "t" : 1784784167683,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "eu.exeris.kernel.core.flow.RuntimeFlowInstance$Seed",
   "thread" : "main",
   "size" : 88,
-  "stackId" : "stk_0015",
+  "stackId" : "stk_0017",
   "category" : "TEST_HARNESS"
 }, {
-  "t" : 1784697480842,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.VirtualThread",
-  "thread" : "main",
-  "size" : 248,
-  "stackId" : "stk_0013",
-  "category" : "LOOM_RUNTIME"
-}, {
-  "t" : 1784697480843,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "eu.exeris.kernel.core.flow.FlowKey",
-  "thread" : "exeris-flow-1090337327472916398--8337517696649022828",
-  "size" : 32,
-  "stackId" : "stk_0033",
-  "category" : "PRODUCTION"
-}, {
-  "t" : 1784697480843,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.lang.String",
-  "thread" : "main",
-  "size" : 32,
-  "stackId" : "stk_0032",
+  "t" : 1784784167684,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.util.concurrent.ConcurrentHashMap$Node",
+  "thread" : "exeris-flow-5919086387943323950--4631242597839827374",
+  "size" : 261568,
+  "stackId" : "stk_0038",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1784697480844,
+  "t" : 1784784167684,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.util.concurrent.ConcurrentHashMap$Node",
+  "thread" : "exeris-flow-5919086387943323950--4631242597839827374",
+  "size" : 40,
+  "stackId" : "stk_0038",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1784784167687,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "eu.exeris.kernel.core.flow.FlowKey",
+  "thread" : "main",
+  "size" : 261544,
+  "stackId" : "stk_0035",
+  "category" : "TEST_HARNESS"
+}, {
+  "t" : 1784784167687,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "eu.exeris.kernel.core.flow.FlowKey",
+  "thread" : "main",
+  "size" : 32,
+  "stackId" : "stk_0035",
+  "category" : "TEST_HARNESS"
+}, {
+  "t" : 1784784167691,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "[B",
+  "thread" : "main",
+  "size" : 261504,
+  "stackId" : "stk_0018",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1784784167691,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "[B",
+  "thread" : "main",
+  "size" : 72,
+  "stackId" : "stk_0018",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1784784167695,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 261472,
+  "stackId" : "stk_0020",
+  "category" : "LOOM_RUNTIME"
+}, {
+  "t" : 1784784167695,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "java.lang.VirtualThread",
   "thread" : "main",
   "size" : 248,
-  "stackId" : "stk_0013",
+  "stackId" : "stk_0020",
   "category" : "LOOM_RUNTIME"
 }, {
-  "t" : 1784697480848,
+  "t" : 1784784167699,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "eu.exeris.kernel.core.flow.CoreFlowRuntime$$Lambda.0x0000000096637530",
+  "thread" : "main",
+  "size" : 261544,
+  "stackId" : "stk_0019",
+  "category" : "TEST_HARNESS"
+}, {
+  "t" : 1784784167699,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "eu.exeris.kernel.core.flow.CoreFlowRuntime$$Lambda.0x0000000096637530",
+  "thread" : "main",
+  "size" : 32,
+  "stackId" : "stk_0019",
+  "category" : "TEST_HARNESS"
+}, {
+  "t" : 1784784167701,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "[Ljava.util.concurrent.ConcurrentHashMap$Node;",
+  "thread" : "exeris-flow-7035943338026614164--8626891119102863536",
+  "size" : 261488,
+  "stackId" : "stk_0011",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1784784167701,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "[Ljava.util.concurrent.ConcurrentHashMap$Node;",
+  "thread" : "exeris-flow-7035943338026614164--8626891119102863536",
+  "size" : 144,
+  "stackId" : "stk_0011",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1784784167702,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "[Ljava.util.concurrent.ConcurrentHashMap$Node;",
+  "thread" : "exeris-flow-64480676914280035--6880347728037194217",
+  "size" : 261464,
+  "stackId" : "stk_0011",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1784784167702,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "[Ljava.util.concurrent.ConcurrentHashMap$Node;",
+  "thread" : "exeris-flow-64480676914280035--6880347728037194217",
+  "size" : 144,
+  "stackId" : "stk_0011",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1784784167702,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 261488,
+  "stackId" : "stk_0020",
+  "category" : "LOOM_RUNTIME"
+}, {
+  "t" : 1784784167702,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0020",
+  "category" : "LOOM_RUNTIME"
+}, {
+  "t" : 1784784167704,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.util.concurrent.ConcurrentHashMap",
+  "thread" : "exeris-flow-2621970080090767309--4687472189484552309",
+  "size" : 261512,
+  "stackId" : "stk_0031",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1784784167704,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.util.concurrent.ConcurrentHashMap",
+  "thread" : "exeris-flow-2621970080090767309--4687472189484552309",
+  "size" : 96,
+  "stackId" : "stk_0031",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1784784167705,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0020",
+  "category" : "LOOM_RUNTIME"
+}, {
+  "t" : 1784784167708,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$VThreadContinuation$1",
+  "thread" : "main",
+  "size" : 32,
+  "stackId" : "stk_0016",
+  "category" : "LOOM_RUNTIME"
+}, {
+  "t" : 1784784167711,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.util.concurrent.ConcurrentHashMap",
+  "thread" : "exeris-flow-837046301324030545--7622398606149024799",
+  "size" : 96,
+  "stackId" : "stk_0031",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1784784167712,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "eu.exeris.kernel.core.flow.RuntimeFlowInstance",
+  "thread" : "main",
+  "size" : 120,
+  "stackId" : "stk_0017",
+  "category" : "TEST_HARNESS"
+}, {
+  "t" : 1784784167715,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "eu.exeris.kernel.core.flow.RuntimeFlowInstance$Seed",
+  "thread" : "main",
+  "size" : 88,
+  "stackId" : "stk_0017",
+  "category" : "TEST_HARNESS"
+}, {
+  "t" : 1784784167719,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.util.concurrent.atomic.AtomicBoolean",
+  "thread" : "main",
+  "size" : 16,
+  "stackId" : "stk_0039",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1784784167722,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "eu.exeris.kernel.core.flow.CoreFlowRuntime$StepPlan",
+  "thread" : "exeris-flow-3790803396302286949--6774593157598605433",
+  "size" : 40,
+  "stackId" : "stk_0026",
+  "category" : "PRODUCTION"
+}, {
+  "t" : 1784784167722,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread",
+  "thread" : "main",
+  "size" : 248,
+  "stackId" : "stk_0020",
+  "category" : "LOOM_RUNTIME"
+}, {
+  "t" : 1784784167724,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.util.concurrent.ConcurrentHashMap",
+  "thread" : "exeris-flow-3583588764387979273--7053870671075897204",
+  "size" : 96,
+  "stackId" : "stk_0031",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1784784167726,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "eu.exeris.kernel.core.flow.CoreFlowRuntime$$Lambda.0x0000000096637530",
+  "thread" : "main",
+  "size" : 32,
+  "stackId" : "stk_0019",
+  "category" : "TEST_HARNESS"
+}, {
+  "t" : 1784784167729,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.VirtualThread$VThreadContinuation",
+  "thread" : "main",
+  "size" : 72,
+  "stackId" : "stk_0023",
+  "category" : "LOOM_RUNTIME"
+}, {
+  "t" : 1784784167735,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.util.HashMap$Node",
+  "thread" : "main",
+  "size" : 40,
+  "stackId" : "stk_0040",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1784784167735,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "[Ljava.util.HashMap$Node;",
   "thread" : "main",
-  "size" : 80,
+  "size" : 1040,
   "stackId" : "stk_0041",
   "category" : "JVM_NOISE"
 } ]
