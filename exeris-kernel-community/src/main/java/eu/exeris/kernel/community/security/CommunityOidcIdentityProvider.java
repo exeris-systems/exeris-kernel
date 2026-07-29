@@ -48,6 +48,7 @@ public final class CommunityOidcIdentityProvider implements IdentityProvider {
     private final TokenValidator tokenValidator;
     private final ClaimsMapper claimsMapper;
     private final String expectedIssuer;
+    private final boolean sharedScopeEnforced;
 
     public CommunityOidcIdentityProvider(Map<String, RSAPublicKey> keysByKid,
                                          String expectedIssuer,
@@ -62,9 +63,31 @@ public final class CommunityOidcIdentityProvider implements IdentityProvider {
     }
 
     private CommunityOidcIdentityProvider(TokenValidator tokenValidator, String expectedIssuer) {
+        this(tokenValidator, expectedIssuer, false);
+    }
+
+    private CommunityOidcIdentityProvider(TokenValidator tokenValidator, String expectedIssuer,
+                                          boolean sharedScopeEnforced) {
         this.tokenValidator = Objects.requireNonNull(tokenValidator, "tokenValidator must not be null");
         this.claimsMapper = new CommunityClaimsMapper();
         this.expectedIssuer = Objects.requireNonNull(expectedIssuer, "expectedIssuer must not be null");
+        this.sharedScopeEnforced = sharedScopeEnforced;
+    }
+
+    /**
+     * Declares that this deployment's storage schema implements the shared-scope policy contract, so a
+     * token declaring a shared scope resolves to a scoped context instead of being denied
+     * (see {@link IdentityStorageMapping#SHARED_SCOPE_ENFORCED_KEY}).
+     *
+     * <p>Returns a new provider rather than mutating. The flag takes part in a security decision on
+     * every request, so it is fixed at construction and never becomes reconfigurable state behind a live
+     * provider — and the default stays fail-closed for anyone who does not call this.
+     *
+     * @return a provider identical to this one but honouring declared shared scopes
+     * @since 0.11.0
+     */
+    public CommunityOidcIdentityProvider enforcingSharedScope() {
+        return new CommunityOidcIdentityProvider(tokenValidator, expectedIssuer, true);
     }
 
     /**
@@ -126,7 +149,8 @@ public final class CommunityOidcIdentityProvider implements IdentityProvider {
         try {
             VerifiedClaims claims = tokenValidator.validate(rawToken);
             PrincipalContext principal = claimsMapper.map(claims);
-            StorageContext storage = IdentityStorageMapping.fromClaims(claims, principal.principalId(), JWT_TYPE);
+            StorageContext storage = IdentityStorageMapping.fromClaims(
+                    claims, principal.principalId(), JWT_TYPE, sharedScopeEnforced);
             // Single-phase JFR commit AFTER (possibly blocking) validation — never straddle a VT.
             CommunityIdentityJfrEvents.emitValidation(PROVIDER_ID, claims.issuer(), startNanos);
             return new AuthenticationResult(principal, storage);

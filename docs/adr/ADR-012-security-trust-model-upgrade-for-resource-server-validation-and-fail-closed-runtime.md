@@ -123,6 +123,34 @@ the RFC deferred to this amendment. **Not yet implemented** — see §10.
   (`exeris-sdk` `RFC-2026-06-24`) and MUST NOT enter kernel SPI names, Javadoc, or claim strings; the
   tooling mapping records the equivalence at the SDK edge.
 
+### 4b.7 Enforceability signal — RULED: an operator declaration, not a kernel probe (added 2026-07-29)
+
+§4b.5 requires a declared shared scope to be denied wherever it cannot be enforced, which presupposes
+knowing whether it can be. This section rules how that is known.
+
+- **The kernel cannot know it.** It ships no RLS policy and cannot introspect the one a deployment wrote —
+  the read-widen / write-pin predicates live in the application's DDL. Enforceability is a property of a
+  schema the kernel never sees.
+- **Ruled:** the deployment asserts it, through configuration key
+  `exeris.security.shared-scope.enforced` (`IdentityStorageMapping.SHARED_SCOPE_ENFORCED_KEY`). Absent or
+  `false` → a declared shared scope is denied. The flag is fixed at provider construction, never
+  reconfigurable behind a live provider, because it participates in a per-request security decision.
+- **Rejected — a capability on the persistence provider** (e.g. `PersistenceEngine.supportsSharedScope()`
+  resolved at bootstrap). It reads as the cleaner, more kernel-owned option and is worse: the engine does
+  not write the policy either, so it cannot answer truthfully. Sourcing the value from configuration and
+  returning it through an engine method would dress an operator's claim as a kernel guarantee — the same
+  category of error as documenting a contract the code does not enforce.
+- **Rejected — probing the database** (e.g. reading `pg_policies` for references to the shared-scope
+  setting). It is the only option that genuinely verifies, and it fails on every other axis: PostgreSQL-
+  specific, defeated by a policy present on some tables and not others, requires a live database during
+  bootstrap, and puts DDL introspection inside the kernel.
+- **Consequence for the wrong-typed claim.** §4a's enforcement-layer split noted that a wrong-typed
+  shared-scope claim collapses to absent and yields tenant-private, and that this was tolerable only while
+  every declared scope was denied anyway. Once a deployment enforces, it is no longer tolerable: a caller
+  with a malformed scope claim silently loses the visibility it asked for. Type-checking that claim during
+  token validation is therefore a `TokenValidator` obligation on the same footing as
+  `ISOLATION_STRATEGY` — the mapping structurally cannot make it.
+
 ## 5) Fail-Closed Lifecycle Contract
 - Bootstrap readiness is denied if required trust anchors, JWKS resolution path, or validation dependencies are unavailable.
 - Runtime degradation (cache corruption, resolver outage, claim-policy backend uncertainty) must fail closed with deterministic deny.
