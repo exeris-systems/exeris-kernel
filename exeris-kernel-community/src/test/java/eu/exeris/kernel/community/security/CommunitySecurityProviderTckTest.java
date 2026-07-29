@@ -141,6 +141,15 @@ class CommunitySecurityProviderTckTest extends AbstractSecurityProviderTck {
     }
 
     @Override
+    protected LoanedBuffer createTokenWithWrongTypedStrategy() {
+        // A JSON number where a strategy string belongs. Discharged by the driver's own token
+        // validation — the kernel mapping cannot see this case (see the TCK factory's Javadoc).
+        return TestJwt.builder()
+                .claimRaw(KernelIsolationClaims.ISOLATION_STRATEGY, 42)
+                .toBuffer();
+    }
+
+    @Override
     protected RotationHarness createRotationHarness() {
         return new CommunityRotationHarness();
     }

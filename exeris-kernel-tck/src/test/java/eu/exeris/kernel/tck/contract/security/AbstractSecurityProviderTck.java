@@ -295,6 +295,34 @@ public abstract class AbstractSecurityProviderTck {
      */
     protected abstract LoanedBuffer createTokenWithUnrecognizedStrategy();
 
+    /**
+     * Creates a {@link LoanedBuffer} containing a token whose isolation strategy claim is
+     * <b>present but not representable as a single string</b> — e.g. a JSON number, boolean, array,
+     * or object as the value of
+     * {@link eu.exeris.kernel.spi.security.KernelIsolationClaims#ISOLATION_STRATEGY}. An unrecognised
+     * <i>string</i> value is a different case, covered by {@link #createTokenWithUnrecognizedStrategy()}.
+     *
+     * <p>The provider MUST <b>deny</b> this token ({@link SecurityAuthenticationException},
+     * {@code EX-SEC-2002}).
+     *
+     * <h2>Why this case is the binding's own obligation</h2>
+     * <p>Every other isolation deny in this contract is enforced centrally: bindings route through
+     * {@link eu.exeris.kernel.spi.security.identity.IdentityStorageMapping#fromClaims} and inherit
+     * them for free. This one they do not inherit.
+     * {@link eu.exeris.kernel.spi.security.identity.VerifiedClaims#claim(String)} deliberately carries
+     * no deny logic and reports a present-but-not-single-string claim as <b>absent</b>, so a
+     * wrong-typed strategy arrives at the mapping as the permissive "no isolation intent" case and
+     * resolves to {@link StorageContext.IsolationStrategy#SHARED}. The deny must therefore happen
+     * earlier, in the binding's own token validation.
+     *
+     * <p>A binding that omits that check silently downgrades malformed security input to the weakest
+     * isolation tier — fail-OPEN — while passing every other case in this suite. That is why the case
+     * exists here rather than only in a binding-local unit test.
+     *
+     * <p>Caller owns the buffer lifecycle.
+     */
+    protected abstract LoanedBuffer createTokenWithWrongTypedStrategy();
+
     // =========================================================================
     // Optional rotation harness — default-skip for non-rotating subclasses
     // =========================================================================
@@ -897,6 +925,24 @@ public abstract class AbstractSecurityProviderTck {
                         .as("a declared-but-unrecognised strategy value cannot be honoured and MUST "
                                 + "be denied \u2014 downgrading to SHARED grants a session on an injection "
                                 + "probe instead of rejecting it (S-P0-07 / ADR-012 \u00a74a amended)")
+                        .isInstanceOfSatisfying(SecurityAuthenticationException.class, ex ->
+                                assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_SEC_2002));
+            }
+        }
+
+        @Test
+        @DisplayName("wrong-typed strategy claim \u2192 terminal deny (EX-SEC-2002)")
+        void assert_authenticate_denies_on_wrong_typed_strategy() {
+            try (LoanedBuffer token = createTokenWithWrongTypedStrategy()) {
+                assertThatThrownBy(() -> provider.authenticate(token))
+                        .as("a present-but-not-string ISOLATION_STRATEGY is malformed security input "
+                                + "and MUST be denied. This is the one isolation deny the kernel cannot "
+                                + "make on a binding's behalf: VerifiedClaims.claim() reports a "
+                                + "wrong-typed claim as ABSENT, so it reaches "
+                                + "IdentityStorageMapping.fromClaims as the permissive no-intent case "
+                                + "and would resolve to SHARED. A binding that does not type-check "
+                                + "during validation fails OPEN here with every other gate green "
+                                + "(S-P0-07 / ADR-012 \u00a74a amended, \u00a79 enforcement layers)")
                         .isInstanceOfSatisfying(SecurityAuthenticationException.class, ex ->
                                 assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_SEC_2002));
             }
