@@ -6,6 +6,7 @@
 | **Deciders**   | Arkadiusz Przychocki                                                                   |
 | **Date**       | 2026-03-31                                                                             |
 | **Amended**    | 2026-06-10 — §4a/§9: incomplete/unrecognized/malformed isolation claim is now terminal-deny, not SHARED-downgrade (closes the S-P0-07 fail-OPEN storage-isolation finding) |
+| **Amended**    | 2026-07-29 — §4a/§4b/§9/§10: adds the **shared-scope tier** as an orthogonal row-visibility dimension (`sharedScopeKey`), rules its carrier shape / claim name / binding-gate interpretation, and re-points the isolation mapping site from `SecurityProvider.authenticate()` to `IdentityStorageMapping.fromClaims` per ADR-040 (implements `RFC-2026-07-02`) |
 | **Driven By**  | ADR-007, performance contract, subsystem contracts security/transport/persistence      |
 | **Compliance** | [Strategic Pillar: Secure Fail-Closed Resource-Server Trust](../whitepaper.md)        |
 
@@ -33,8 +34,8 @@
 - Any indeterminate state at any stage maps to deterministic deny on uncertainty.
 
 ## 4a) Isolation Strategy Claim Contract
-- `KernelIsolationClaims` is the normative definition of JWT claim names for storage isolation routing; SecurityProvider implementations MUST read `KernelIsolationClaims.ISOLATION_STRATEGY`, `SCHEMA_NAME`, and `DATASOURCE_KEY` after cryptographic verification succeeds.
-- `SecurityProvider.authenticate()` MUST produce the correct `ImmutableStorageContext` variant based on the claim value:
+- `KernelIsolationClaims` is the normative definition of JWT claim names for storage isolation routing; the isolation mapping MUST read `KernelIsolationClaims.ISOLATION_STRATEGY`, `SCHEMA_NAME`, and `DATASOURCE_KEY` after cryptographic verification succeeds.
+- **Single mapping site (amended 2026-07-29, ADR-040 §2.4).** `IdentityStorageMapping.fromClaims` is the *one* kernel-owned claims→`StorageContext` mapping, deliberately not overridable by an application `ClaimsMapper`. Every `IdentityProvider` routes through it, so isolation resolution cannot diverge per driver. The pre-ADR-040 phrasing ("`SecurityProvider.authenticate()` MUST produce the correct variant") described the v0.9 architecture and is superseded: `SecurityProvider` is a dispatcher and MUST NOT grow a second isolation-mapping path. The mapping MUST produce the correct `ImmutableStorageContext` variant based on the claim value:
   - `SHARED`, or `ISOLATION_STRATEGY` absent/blank → `ImmutableStorageContext.shared(tenantId)`
   - `SEPARATED_SCHEMA` + `x-exeris-isolation-schema` present → `ImmutableStorageContext.separatedSchema(tenantId, schemaName)`
   - `DEDICATED` + `x-exeris-isolation-datasource` present → `ImmutableStorageContext.dedicated(tenantId, dataSourceKey)`
@@ -44,6 +45,83 @@
   - a wrong-typed `ISOLATION_STRATEGY` claim → **deny**
   - Rationale: producing `SHARED` for a declared-but-broken strategy is **fail-OPEN** — it silently downgrades the tenant to the weakest isolation tier and grants a session on malformed/injected security input. Deny reasons are secret-safe (reason code only, never the claim value). The previous "absent, unrecognized, or missing-sub-claim → SHARED" rule conflated absence (legitimate default) with declared-but-broken (must deny) and is superseded.
 - `StorageContextBridge` in Core is SHARED-only by design and MUST NOT be used when `SEPARATED_SCHEMA` or `DEDICATED` strategy is required; the bridge is a fallback for system/anonymous paths only.
+
+## 4b) Shared-Scope Tier — Row Visibility (amended 2026-07-29)
+
+Implements `RFC-2026-07-02` (ACCEPTED 2026-07-02), which ruled the shared-scope tier is an **orthogonal
+row-visibility dimension**, not a fourth `IsolationStrategy` value. This section rules the three sub-shapes
+the RFC deferred to this amendment. **Not yet implemented** — see §10.
+
+### 4b.1 Axis separation (inherited from the RFC, restated as contract)
+- `strategy()` answers **where rows physically live** (RLS key / schema / datasource). `sharedScopeKey`
+  answers **who may read a given row**. They are independent: a shared dataset is valid under `SHARED`,
+  `SEPARATED_SCHEMA`, *and* `DEDICATED`.
+- Adding a `SHARED_WORLD` value to `IsolationStrategy` is **rejected** — it would weld visibility onto
+  placement and make "shared dataset under schema/dedicated isolation" unrepresentable.
+
+### 4b.2 Carrier shape — RULED: flat `Optional<String> sharedScopeKey()`, no visibility-mode field
+- The carrier is a **single additive accessor** `Optional<String> sharedScopeKey()` on `StorageContext`,
+  backed by a **6th record component** on `ImmutableStorageContext`. Rejected alternative: a composite
+  `Scope` record (owner + key + mode).
+- Rationale (a) **Valhalla, §"Valhalla Readiness"**: `ImmutableStorageContext` is a flat record slated for
+  `value record`. A nested `Scope` record introduces an identity-bearing object inside the carrier and an
+  extra indirection to flatten; a 6th `Optional<String>` component is homogeneous with the four components
+  already present.
+- Rationale (b) **the composite's other two fields are redundant or harmful**. The owner tenant *is*
+  `isolationKey()` — a second copy could disagree with it. And a separate visibility **mode** enum
+  reintroduces exactly the representable-nonsense trap the RFC rejected one layer up: `mode=SHARED` with an
+  empty key, or `mode=PRIVATE` with a key present, are both constructible and neither has a defined
+  meaning. **Presence of `sharedScopeKey` IS the mode** — absent = tenant-private (today's behaviour),
+  present = shared-read + owner-scoped-write. One field, no invalid states, no reconciliation rule.
+- Rationale (c) **O(1) hot path (§7)**: a plain accessor over a record component; no lookup, no derivation.
+- **Constructor invariant (fail-closed by construction):** `sharedScopeKey` present REQUIRES `isolationKey`
+  present. A shared scope without an owner identity has nothing for the write predicate to pin to, so it
+  MUST be rejected in the compact constructor (`IllegalArgumentException`). This makes
+  `ImmutableStorageContext.GLOBAL` (system/tenant-less, `isolationKey` empty) structurally incapable of
+  carrying a shared scope.
+- The strategy-exclusivity rules in the compact constructor are **unchanged** — `sharedScopeKey` composes
+  with all three strategies and adds no exclusion.
+- **Migration note:** the canonical constructor arity changes 5 → 6. Every in-repo construction site goes
+  through the static factories or the `GLOBAL` singleton (`IdentityStorageMapping`, `StorageContextBridge`),
+  so the change is contained; the accessor is additive on the `StorageContext` interface with a
+  tenant-private `default`, so no external implementor is forced to change.
+
+### 4b.3 Claim name — RULED: `SHARED_SCOPE_KEY = "x-exeris-shared-scope"`
+- One additive constant on `KernelIsolationClaims`, resolved **after** cryptographic verification like the
+  existing three, mapped fail-closed at the single site named in §4a.
+- **Rejected: `SCOPE_VISIBILITY`.** It names a mode, and §4b.2 rules there is no mode field — a visibility
+  claim would have to be reconciled against key presence, recreating the invalid states.
+- **Deliberate prefix departure.** The existing three claims are `x-exeris-isolation-*`. Shared scope is
+  *not* an isolation-strategy sub-claim, and naming it `x-exeris-isolation-shared-scope` would lexically
+  re-weld it to the placement axis this amendment separates. The constant nevertheless stays on
+  `KernelIsolationClaims` — that class is the normative home for storage-routing claim names, and moving or
+  renaming it is out of scope here.
+
+### 4b.4 Write model — read-widen, write-pin
+- **Read:** the predicate widens to the shared partition when `sharedScopeKey` is present — rows tagged
+  into that shared scope become readable across the tenants that carry the same key.
+- **Write:** the predicate pins `owner = current tenant` **even as reads widen**. A tenant may create and
+  mutate only its *own* (owner-tagged) rows within the shared scope; it can never forge or mutate another
+  owner's row.
+- Cross-tenant mutation of another owner's row is **out of scope** for this contract and MUST NOT be
+  introduced by a binding as an extension.
+
+### 4b.5 Fail-closed inheritance (non-negotiable, unchanged from §4a)
+- **Absent** `sharedScopeKey` → today's behaviour, tenant-private. Existing deployments are unaffected
+  until they opt in.
+- **Declared but unenforceable** — a `sharedScopeKey` present while the running persistence binding has no
+  owner-scoped-write/read-widen mode wired — is a **terminal deny** (`SecurityAuthenticationException`,
+  `EX-SEC-2002`, secret-safe reason `shared-scope-unsupported`), never a silent narrowing to tenant-private
+  and never a widening. Silently narrowing would let an application believe it is sharing when it is not;
+  silently widening is the S-P0-07 class outright.
+- **Ordering consequence:** the SPI carrier + claim + deny path MAY land before any binding enforces shared
+  visibility (the RFC grants this sequencing), but only under the rule above — there must be **no window**
+  in which a declared shared scope resolves to anything other than deny or correct enforcement.
+
+### 4b.6 Naming boundary
+- The kernel vocabulary is **shared scope**. "Universe" is SDK/game-facing domain metaphor
+  (`exeris-sdk` `RFC-2026-06-24`) and MUST NOT enter kernel SPI names, Javadoc, or claim strings; the
+  tooling mapping records the equivalence at the SDK edge.
 
 ## 5) Fail-Closed Lifecycle Contract
 - Bootstrap readiness is denied if required trust anchors, JWKS resolution path, or validation dependencies are unavailable.
@@ -79,11 +157,33 @@
 - `AbstractSecurityProviderTck.IsolationStrategyContract` codifies the isolation claim resolution paths: SHARED default (absent claim), explicit SEPARATED_SCHEMA / DEDICATED happy paths, and **terminal deny (`EX-SEC-2002`)** on a missing sub-claim, on an unrecognized strategy value, and on a wrong-typed claim (amended 2026-06-10 — these were previously fail-closed-to-SHARED downgrades; see §4a).
 - `AbstractPersistenceEngineTck.DedicatedRoutingContract` codifies DEDICATED pool routing, EX-PERS-5006 on unknown key, and RLS interceptor bypass for DEDICATED strategy.
 
+### Shared-scope obligations (amended 2026-07-29, §4b)
+- `AbstractSecurityProviderTck.IsolationStrategyContract` **and** `AbstractIdentityProviderTck` must both
+  cover shared-scope claim resolution: absent claim → tenant-private (`sharedScopeKey` empty); present claim
+  → carried onto the resolved `StorageContext`; present-but-unenforceable → terminal deny
+  (`EX-SEC-2002` / `shared-scope-unsupported`). Both suites are named because §4a routes every provider
+  through one mapping site — the contract must be proven from both entry surfaces.
+- `ImmutableStorageContext` must have a constructor-invariant case: `sharedScopeKey` present with
+  `isolationKey` absent is rejected (§4b.2).
+- `AbstractPersistenceEngineTck` must carry a shared-vs-tenant **access matrix**: the read-widen path (a
+  tenant reads another owner's row inside the same shared scope) and the write-pin path (a tenant cannot
+  write a row owned by another tenant, inside or outside the shared scope). Cross-tenant mutation stays out
+  of scope (§4b.4) and MUST NOT be added to the matrix as an allowed cell.
+- **"Two bindings" — RULED (amended 2026-07-29).** The §9 two-binding language means *every binding that
+  exists in-repo, plus a recorded obligation on out-of-repo bindings* — not "block the contract until a
+  second in-repo binding is invented". Only one in-repo persistence binding exists (Community/Postgres), so
+  the merge gate for the shared-scope tier is: **the Community binding green in CI**, plus an explicit,
+  contractual obligation that the out-of-repo Enterprise binding passes the same abstract suites before it
+  claims support. This is the Milestone Gate Policy reading (`Abstract*Tck` + Community binding for an SPI
+  minor release) and it is recorded here so the obligation cannot be silently dropped when the Enterprise
+  binding lands.
+
 ## 10) Implemented vs Planned (mandatory anti-drift block)
 - Implemented now (repository state): security/transport/persistence/core/tck modules and contracts exist in active refactor trajectory; current repository state may include transitional placements and placeholders.
 - Implemented now (repository state): Community provider path enforces JWT/JWKS resource-server checks (`kid` resolution, RS256 signature verification, issuer/audience/expiry validation) with fail-closed deny semantics and HTTP admission behavior split as 401 (authentication failure) versus 403 (insufficient scope).
 - Implemented now (repository state): `KernelIsolationClaims` defines normative JWT claim names for storage isolation strategy routing.
-- Implemented now (repository state): Community SecurityProvider reads isolation claims and produces all three `ImmutableStorageContext` variants after JWT validation.
+- Implemented now (repository state, corrected 2026-07-29): the isolation claims are read and mapped in `IdentityStorageMapping.fromClaims` (SPI, ADR-040) — the single kernel-owned fail-closed site — producing all three `ImmutableStorageContext` variants after JWT validation. Its only production caller is `CommunityOidcIdentityProvider`; no `SecurityProvider` implementation reads `KernelIsolationClaims` any more. The earlier "Community SecurityProvider reads isolation claims" line described the v0.9 architecture.
+- **Not implemented (planned, §4b):** the shared-scope tier. No `sharedScopeKey` accessor, no `SHARED_SCOPE_KEY` claim, and no read-widen/write-pin RLS mode exist in any binding today. §4b defines the target contract only; until the carrier lands, every request is tenant-private by construction and there is nothing to deny. The deny path of §4b.5 becomes live in the same change that introduces the carrier — it MUST NOT lag it.
 - Implemented now (repository state): Community `PersistenceEngine` routes DEDICATED strategy to per-tenant pools from `PersistenceConfig.dedicatedDataSources()`.
 - Repository-state disclaimer: this ADR defines target contract semantics even where implementation is currently partial, staged, or temporarily embedded.
 - Planned target state: unified JWT/JWS/JWKS/OIDC resource-server trust pipeline with deterministic deny on uncertainty, fail-closed lifecycle gates, explicit rotation TTL/staleness/outage semantics, and mandatory typed telemetry categories.
@@ -94,6 +194,33 @@
 - Benefit: clearer trust boundaries and incident triage through stable EX-SEC taxonomy and typed telemetry.
 - Cost: stricter readiness can increase startup failures for misconfigured deployments.
 - Cost: stronger contract constraints reduce provider-level shortcut flexibility.
+
+### Shared-scope tier (amended 2026-07-29)
+- Benefit: the placement and visibility axes stay separable, so a shared dataset is expressible under any
+  physical strategy — and the SDK's mutually-exclusive design-time discriminator maps cleanly onto presence
+  or absence of one kernel field.
+- Benefit: no invalid states. One field carries the whole decision (§4b.2), so there is no mode/key pair to
+  reconcile and no fail-open gap between them.
+- Cost: the isolation model now has two keys to reason about (`isolationKey` = owner, `sharedScopeKey` =
+  shared partition). Mitigated by absence meaning today's behaviour exactly.
+- Cost: the canonical `ImmutableStorageContext` constructor grows to six components (§4b.2 migration note).
+- Cost: the RLS predicate becomes asymmetric (read widens, write pins). This is the honest cost of the
+  write model and is why §9 demands an access **matrix** rather than a happy-path case.
+
+### Dissent recorded
+- **On the carrier (§4b.2).** The composite `Scope` record has a real argument: it names the concept
+  explicitly and would let a future third visibility mode arrive without another accessor. It was rejected
+  on Valhalla flatness and on the redundant-owner / invalid-state grounds above. If a third mode is ever
+  genuinely needed, the escape hatch is to promote the carrier then — the accessor is `Optional`-typed and
+  additive, so nothing here forecloses it.
+- **On the claim prefix (§4b.3).** Departing from the `x-exeris-isolation-*` family costs naming
+  consistency in a class literally named `KernelIsolationClaims`, and a reviewer may reasonably prefer
+  `x-exeris-isolation-shared-scope`. Axis separation was judged the stronger signal; the counter-argument
+  is recorded rather than dismissed.
+- **On the binding gate (§9).** Accepting a single in-repo binding weakens the two-binding assurance to a
+  contractual promise about out-of-repo code. The alternative — blocking the tier until a second in-repo
+  persistence binding exists — was rejected as gating a security contract on unrelated driver work, but the
+  weakening is real and is the reason the obligation is written into §9 rather than left implicit.
 
 ## 12) Acceptance Criteria and Merge Gates
 - ADR approval by architecture/security maintainers.
