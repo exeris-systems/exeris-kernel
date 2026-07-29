@@ -25,11 +25,13 @@ import java.util.Optional;
  * {@code KernelProviders.STORAGE_CONTEXT.get().isolationKey()} to inject RLS
  * parameters — zero coupling to Security classes.
  *
- * @param isolationKey  the tenant isolation key for RLS (empty for system scope)
- * @param strategy      the physical isolation strategy
- * @param schemaName    schema name for SEPARATED_SCHEMA (empty otherwise)
- * @param dataSourceKey datasource key for DEDICATED (empty otherwise)
- * @param attributes    opaque {@code String→String} interceptor metadata; never {@code null}
+ * @param isolationKey   the tenant isolation key for RLS (empty for system scope)
+ * @param strategy       the physical isolation strategy
+ * @param schemaName     schema name for SEPARATED_SCHEMA (empty otherwise)
+ * @param dataSourceKey  datasource key for DEDICATED (empty otherwise)
+ * @param sharedScopeKey shared-scope partition (empty for the tenant-private default); orthogonal to
+ *                       {@code strategy} — see {@link StorageContext#sharedScopeKey()}
+ * @param attributes     opaque {@code String→String} interceptor metadata; never {@code null}
  *
  * @since 0.5.0
  * @see StorageContext
@@ -39,6 +41,7 @@ public record ImmutableStorageContext(
         IsolationStrategy strategy,
         Optional<String> schemaName,
         Optional<String> dataSourceKey,
+        Optional<String> sharedScopeKey,
         Map<String, String> attributes
 ) implements StorageContext {
 
@@ -59,6 +62,7 @@ public record ImmutableStorageContext(
                     IsolationStrategy.SHARED,
                     Optional.empty(),
                     Optional.empty(),
+                    Optional.empty(),
                     Map.of());
 
     private static final char[] HEX_DIGITS = "0123456789abcdef".toCharArray();
@@ -74,14 +78,26 @@ public record ImmutableStorageContext(
      *   <li>{@link IsolationStrategy#DEDICATED}: {@code dataSourceKey} MUST be present,
      *       {@code schemaName} MUST be absent.</li>
      * </ul>
+     *
+     * <p>{@code sharedScopeKey} is <b>orthogonal</b> and adds no strategy exclusion — it composes with
+     * all three (ADR-012 §4b.1). It carries one invariant of its own: it MUST NOT be present without an
+     * {@code isolationKey}, because the shared-scope write predicate pins {@code owner = isolationKey}
+     * and has nothing to pin to otherwise. This is what makes {@link #GLOBAL} (system scope, no
+     * isolation key) structurally incapable of carrying a shared scope.
      */
     public ImmutableStorageContext {
         Objects.requireNonNull(isolationKey, "isolationKey Optional must not be null");
         Objects.requireNonNull(strategy, "strategy must not be null");
         Objects.requireNonNull(schemaName, "schemaName Optional must not be null");
         Objects.requireNonNull(dataSourceKey, "dataSourceKey Optional must not be null");
+        Objects.requireNonNull(sharedScopeKey, "sharedScopeKey Optional must not be null");
         Objects.requireNonNull(attributes, "attributes must not be null");
         attributes = Map.copyOf(attributes);
+
+        if (sharedScopeKey.isPresent() && isolationKey.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "sharedScopeKey requires an isolationKey to pin owner-scoped writes to");
+        }
 
         switch (strategy) {
             case SHARED -> {
@@ -129,6 +145,7 @@ public record ImmutableStorageContext(
                 IsolationStrategy.SHARED,
                 Optional.empty(),
                 Optional.empty(),
+                Optional.empty(),
                 Map.of());
     }
 
@@ -150,6 +167,7 @@ public record ImmutableStorageContext(
         return new ImmutableStorageContext(
                 Optional.of(isolationKey),
                 IsolationStrategy.SHARED,
+                Optional.empty(),
                 Optional.empty(),
                 Optional.empty(),
                 Map.of());
@@ -200,6 +218,7 @@ public record ImmutableStorageContext(
                 IsolationStrategy.SHARED,
                 Optional.empty(),
                 Optional.empty(),
+                Optional.empty(),
                 attributes);
     }
 
@@ -215,6 +234,7 @@ public record ImmutableStorageContext(
                 Optional.of(tenantId),
                 IsolationStrategy.SEPARATED_SCHEMA,
                 Optional.of(schemaName),
+                Optional.empty(),
                 Optional.empty(),
                 Map.of());
     }
@@ -235,6 +255,7 @@ public record ImmutableStorageContext(
                 IsolationStrategy.SEPARATED_SCHEMA,
                 Optional.of(schemaName),
                 Optional.empty(),
+                Optional.empty(),
                 attributes);
     }
 
@@ -251,6 +272,7 @@ public record ImmutableStorageContext(
                 IsolationStrategy.DEDICATED,
                 Optional.empty(),
                 Optional.of(dataSourceKey),
+                Optional.empty(),
                 Map.of());
     }
 
@@ -270,6 +292,7 @@ public record ImmutableStorageContext(
                 IsolationStrategy.DEDICATED,
                 Optional.empty(),
                 Optional.of(dataSourceKey),
+                Optional.empty(),
                 attributes);
     }
 
@@ -282,6 +305,29 @@ public record ImmutableStorageContext(
      */
     public static ImmutableStorageContext system() {
         return GLOBAL;
+    }
+
+    /**
+     * Returns a copy of this context participating in the given shared-scope partition.
+     *
+     * <p>Deliberately a single composer rather than a shared-scope variant of each factory: the
+     * shared-scope dimension is <b>orthogonal</b> to physical placement (ADR-012 §4b.1), so it composes
+     * with {@code SHARED}, {@code SEPARATED_SCHEMA}, and {@code DEDICATED} alike. Adding it as a
+     * parameter to every factory would multiply the surface while implying the two axes are related.
+     *
+     * <p>Reads widen to the partition; writes stay pinned to this context's {@link #isolationKey()} as
+     * the owner. Requires an {@code isolationKey} to be present — see the compact constructor.
+     *
+     * @param sharedScopeKey the shared-scope partition key; never {@code null}
+     * @return a new context identical to this one but carrying the shared scope; never {@code null}
+     * @throws IllegalArgumentException if this context has no {@link #isolationKey()}
+     * @since 0.11.0
+     */
+    public ImmutableStorageContext withSharedScope(String sharedScopeKey) {
+        Objects.requireNonNull(sharedScopeKey, "sharedScopeKey must not be null");
+        return new ImmutableStorageContext(
+                isolationKey, strategy, schemaName, dataSourceKey,
+                Optional.of(sharedScopeKey), attributes);
     }
 }
 

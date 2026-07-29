@@ -53,6 +53,13 @@ import eu.exeris.kernel.spi.security.StorageContext;
  * kernel-owned fail-closed mapping site (ADR-040 §2.4, ADR-012 §4a) — and bound by the Security
  * Interceptor. Callers that require a non-SHARED context MUST NOT call this bridge.
  *
+ * <h2>Never a shared scope</h2>
+ * <p>Both derivation paths produce an empty {@link StorageContext#sharedScopeKey()}: the tenant path
+ * builds a plain {@code shared(...)} context and the tenant-less path returns
+ * {@link ImmutableStorageContext#GLOBAL}, which the record's own invariant forbids from carrying one.
+ * System and anonymous requests therefore stay tenant-private by construction, with no code here to
+ * audit for widening (ADR-012 §4b).
+ *
  * <h2>JFR-First</h2>
  * <p>Every derivation emits a {@code StorageContextDerived} JFR event.
  *

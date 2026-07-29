@@ -36,6 +36,9 @@ import java.util.UUID;
  *   <li>{@code DEDICATED} → requires {@link KernelIsolationClaims#DATASOURCE_KEY}; same deny rule.</li>
  *   <li>A declared-but-unrecognised strategy is a terminal deny ({@code isolation-unknown-strategy})
  *       — producing {@code SHARED} (the weakest tier) here would be fail-open.</li>
+ *   <li>A declared {@link KernelIsolationClaims#SHARED_SCOPE_KEY} is a terminal deny
+ *       ({@code shared-scope-unsupported}) while no binding can enforce shared visibility — neither
+ *       narrowing it away nor honouring it unenforced is permitted (ADR-012 §4b.5).</li>
  * </ul>
  *
  * @since 0.10.0
@@ -46,6 +49,7 @@ public final class IdentityStorageMapping {
 
     private static final String ERR_INCOMPLETE = "isolation-incomplete";
     private static final String ERR_UNKNOWN = "isolation-unknown-strategy";
+    private static final String ERR_SHARED_SCOPE_UNSUPPORTED = "shared-scope-unsupported";
 
     private IdentityStorageMapping() {
         // Utility class — not instantiable.
@@ -67,6 +71,8 @@ public final class IdentityStorageMapping {
         Objects.requireNonNull(subjectId, "subjectId must not be null");
         Objects.requireNonNull(tokenType, "tokenType must not be null");
 
+        rejectUnenforceableSharedScope(claims, tokenType);
+
         String strategy = claims.claim(KernelIsolationClaims.ISOLATION_STRATEGY).orElse(null);
         if (strategy == null || strategy.isBlank()) {
             return sharedFor(subjectId);
@@ -85,6 +91,31 @@ public final class IdentityStorageMapping {
                     subject, require(claims, KernelIsolationClaims.DATASOURCE_KEY, tokenType));
             default -> throw new SecurityAuthenticationException(tokenType, ERR_UNKNOWN);
         };
+    }
+
+    /**
+     * Fail-closed handling of a declared shared scope while no binding can enforce one.
+     *
+     * <p>Per ADR-012 §4b.5 a declared-but-unenforceable shared scope is a terminal deny — never a silent
+     * narrowing to tenant-private, and never a widening. No persistence binding implements the
+     * read-widen / owner-scoped-write mode yet, so the claim is currently unconditionally unenforceable.
+     * When a binding gains that mode, this check becomes conditional on the running deployment rather
+     * than disappearing: the deny must remain wherever enforcement is absent, so there is never a window
+     * in which the claim resolves to anything but deny or correct enforcement.
+     *
+     * <p><b>Wrong-typed claim caveat.</b> {@link VerifiedClaims#claim(String)} reports a
+     * present-but-not-single-string claim as absent, so a wrong-typed shared-scope claim reaches this
+     * check as "no shared scope declared" and yields the tenant-private default. That is a narrowing,
+     * not a widening, so it is safe while the enforceable answer is deny anyway. It stops being safe the
+     * moment a binding can honour the claim — at that point type-checking this claim during token
+     * validation becomes a driver obligation, exactly as it already is for
+     * {@link KernelIsolationClaims#ISOLATION_STRATEGY} (ADR-012 §4a enforcement layers).
+     */
+    private static void rejectUnenforceableSharedScope(VerifiedClaims claims, String tokenType) {
+        String sharedScope = claims.claim(KernelIsolationClaims.SHARED_SCOPE_KEY).orElse(null);
+        if (sharedScope != null && !sharedScope.isBlank()) {
+            throw new SecurityAuthenticationException(tokenType, ERR_SHARED_SCOPE_UNSUPPORTED);
+        }
     }
 
     private static String requireSubject(VerifiedClaims claims, String tokenType) {

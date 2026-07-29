@@ -10,6 +10,7 @@ package eu.exeris.kernel.community.security;
 
 import eu.exeris.kernel.community.testkit.security.TestJwt;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
+import eu.exeris.kernel.spi.security.KernelIsolationClaims;
 import eu.exeris.kernel.spi.security.identity.IdentityProvider;
 import eu.exeris.kernel.tck.contract.security.AbstractIdentityProviderTck;
 import org.junit.jupiter.api.DisplayName;
@@ -46,5 +47,12 @@ class CommunityOidcIdentityProviderTckTest extends AbstractIdentityProviderTck {
     @Override
     protected LoanedBuffer expiredTokenBuffer() {
         return TestJwt.builder().expired().toBuffer();
+    }
+
+    @Override
+    protected LoanedBuffer sharedScopeTokenBuffer() {
+        return TestJwt.builder()
+                .claim(KernelIsolationClaims.SHARED_SCOPE_KEY, "world-alpha")
+                .toBuffer();
     }
 }

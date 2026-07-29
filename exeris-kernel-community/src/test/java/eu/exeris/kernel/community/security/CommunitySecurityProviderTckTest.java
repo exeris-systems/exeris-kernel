@@ -150,6 +150,13 @@ class CommunitySecurityProviderTckTest extends AbstractSecurityProviderTck {
     }
 
     @Override
+    protected LoanedBuffer createTokenWithSharedScopeClaim() {
+        return TestJwt.builder()
+                .claim(KernelIsolationClaims.SHARED_SCOPE_KEY, "world-alpha")
+                .toBuffer();
+    }
+
+    @Override
     protected RotationHarness createRotationHarness() {
         return new CommunityRotationHarness();
     }
