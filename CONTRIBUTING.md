@@ -71,6 +71,31 @@ export DYLD_LIBRARY_PATH="$(brew --prefix openssl@3)/lib:$DYLD_LIBRARY_PATH"
 
 ---
 
+## Static Analysis (SonarQube Cloud)
+
+Analysis runs **from CI**, as a step in `build-and-verify` after `mvn clean verify -P coverage`, so it
+consumes the compiled classes and JaCoCo XML that build already produced. Configuration lives in
+`sonar-project.properties` (the CLI scanner reads it; note that the `sonar:sonar` Maven goal would *not*).
+
+Two things must be true in the SonarQube Cloud project for this to work, and neither is expressible in
+this repository. **Do them in this order** — the second is a precondition of the first, not a companion
+to it:
+
+1. **Automatic Analysis must be OFF.** It is mutually exclusive with CI-based analysis: leave it on and
+   SonarQube Cloud *rejects* the CI submission. Requires an organisation administrator.
+2. **`SONAR_TOKEN` repository secret.** Add it only once step 1 is done. Until then the analysis step
+   skips (no token) rather than failing — which is the state you want, because with Automatic Analysis
+   still enabled a submitted scan is rejected and the step fails.
+
+The analysis step carries `continue-on-error: true` precisely so that this cannot escalate: it runs in
+`build-and-verify`, which every other job depends on, and static analysis must never be able to block a
+merge gate. Remove that flag once a CI analysis has been confirmed green, otherwise a rotting analysis
+will go unnoticed.
+
+Automatic Analysis is also why coverage was reported as `0.0% on New Code` before this setup regardless of
+the tests written — it never builds the project, so no JaCoCo report exists for it to import. If you see
+0.0% coverage on a pull request again, suspect the analysis path before suspecting the tests.
+
 ## Build & Test
 
 ### The Golden Command

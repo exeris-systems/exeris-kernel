@@ -33,9 +33,18 @@ jobs:
       contents: read
       packages: write   # required for GitHub Packages publish
 
+    env:
+      # Job-level so the guard on the analysis step can read it — `secrets` is not available in a
+      # step-level `if`. Empty on forked PRs, which is exactly when the step must skip rather than fail.
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
+        with:
+          # Sonar needs full history to attribute new code and blame; a shallow clone silently
+          # degrades the new-code period into "everything".
+          fetch-depth: 0
 
       - name: Cache JDK tarball
         id: jdk-cache
@@ -88,6 +97,32 @@ jobs:
           mvn clean verify -B -e \
             -P coverage \
             -Dexeris.tck.transport.drainTimeoutSeconds=30
+
+      - name: SonarQube Cloud Analysis
+        # Runs in this job, immediately after the build, so it consumes the compiled classes and the
+        # JaCoCo XML that `-P coverage` just produced rather than rebuilding them. That reuse is the
+        # whole point: SonarCloud Automatic Analysis never builds the project, so the
+        # `sonar.coverage.jacoco.xmlReportPaths` in sonar-project.properties could never resolve and
+        # coverage on new code read 0.0% on every pull request regardless of the tests written.
+        #
+        # Skipped when the secret is absent (forked pull requests) — a missing token must not fail
+        # the build gate.
+        #
+        # continue-on-error, deliberately: this job is the ROOT of the entire pipeline — all eight
+        # other jobs depend on it directly or transitively — so an unhealthy analysis step would take
+        # down every merge gate for a reason unrelated to the code under test. Static analysis is not
+        # a correctness gate here and must never be able to do that.
+        #
+        # It is load-bearing right now, not just prudent: the SonarQube Cloud organisation is
+        # currently without an administrator, so Automatic Analysis cannot be switched off — and
+        # SonarQube Cloud *rejects* a CI submission while it is enabled. Until that is resolved this
+        # step is expected to fail whenever a token is present.
+        #
+        # REMOVE once a CI-based analysis has been confirmed green; leaving it in permanently would
+        # let the analysis rot silently.
+        continue-on-error: true
+        if: ${{ env.SONAR_TOKEN != '' }}
+        uses: SonarSource/sonarqube-scan-action@v5
 
       - name: Upload TCK JFR recordings
         if: always() && (github.event_name == 'push' || github.event_name == 'schedule') && github.ref == 'refs/heads/main'
