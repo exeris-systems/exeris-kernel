@@ -46,6 +46,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *   <tr><td>8</td><td>wrong-typed</td><td>—</td><td>DENY (EX-SEC-2002)</td></tr>
  * </table>
  *
+ * <p>Every row here is also driven across all bindings by
+ * {@code AbstractSecurityProviderTck.IsolationStrategyContract}; this class is the Community-local
+ * companion, not the authoritative coverage. Case 8 in particular used to be the <i>only</i> coverage
+ * of the wrong-typed deny anywhere in the repository — the abstract suite had no such case, so no
+ * other binding was ever asked for that token. It now does (ADR-012 §9, enforcement layers).
+ *
  * @since 0.5.0
  */
 @DisplayName("Community: isolation strategy resolution — fail-closed (ADR-012 §4a amended)")

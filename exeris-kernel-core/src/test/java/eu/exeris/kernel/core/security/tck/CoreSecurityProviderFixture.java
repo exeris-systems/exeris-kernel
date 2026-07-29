@@ -57,12 +57,16 @@ public final class CoreSecurityProviderFixture implements SecurityProvider {
             case 2  -> ImmutableStorageContext.separatedSchema(TENANT_KEY, SEPARATED_SCHEMA_NAME);
             case 3  -> ImmutableStorageContext.dedicated(TENANT_KEY, DEDICATED_DS_KEY);
             // ADR-012 §4a (amended) / S-P0-07: a declared-but-unhonourable isolation strategy is a
-            // terminal deny, NOT a downgrade to SHARED. Sizes 10/11/12 model the three deny shapes
+            // terminal deny, NOT a downgrade to SHARED. Sizes 10/11/12/13 model the four deny shapes
             // the inverted IsolationStrategyContract drives (missing schema / missing datasource /
-            // unrecognized strategy). Secret-safe reason codes only.
+            // unrecognized strategy / wrong-typed strategy). Secret-safe reason codes only.
+            // Size 13 models what a conforming provider does during *its own* token validation:
+            // per §9 the wrong-typed deny is not inherited from IdentityStorageMapping, because
+            // VerifiedClaims.claim() reports such a claim as absent.
             case 10 -> throw new SecurityAuthenticationException("JWT", "isolation-incomplete");
             case 11 -> throw new SecurityAuthenticationException("JWT", "isolation-incomplete");
             case 12 -> throw new SecurityAuthenticationException("JWT", "isolation-unknown-strategy");
+            case 13 -> throw new SecurityAuthenticationException("JWT", "isolation-malformed");
             default -> ImmutableStorageContext.GLOBAL;
         };
         return new AuthenticationResult(
