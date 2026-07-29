@@ -107,6 +107,20 @@ jobs:
         #
         # Skipped when the secret is absent (forked pull requests) — a missing token must not fail
         # the build gate.
+        #
+        # continue-on-error, deliberately: this job is the ROOT of the entire pipeline — all eight
+        # other jobs depend on it directly or transitively — so an unhealthy analysis step would take
+        # down every merge gate for a reason unrelated to the code under test. Static analysis is not
+        # a correctness gate here and must never be able to do that.
+        #
+        # It is load-bearing right now, not just prudent: the SonarQube Cloud organisation is
+        # currently without an administrator, so Automatic Analysis cannot be switched off — and
+        # SonarQube Cloud *rejects* a CI submission while it is enabled. Until that is resolved this
+        # step is expected to fail whenever a token is present.
+        #
+        # REMOVE once a CI-based analysis has been confirmed green; leaving it in permanently would
+        # let the analysis rot silently.
+        continue-on-error: true
         if: ${{ env.SONAR_TOKEN != '' }}
         uses: SonarSource/sonarqube-scan-action@v5
 

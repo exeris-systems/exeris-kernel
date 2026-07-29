@@ -78,13 +78,19 @@ consumes the compiled classes and JaCoCo XML that build already produced. Config
 `sonar-project.properties` (the CLI scanner reads it; note that the `sonar:sonar` Maven goal would *not*).
 
 Two things must be true in the SonarQube Cloud project for this to work, and neither is expressible in
-this repository:
+this repository. **Do them in this order** — the second is a precondition of the first, not a companion
+to it:
 
-1. **`SONAR_TOKEN` repository secret** must exist. Without it the analysis step skips — deliberately, so
-   forked pull requests do not fail the build gate.
-2. **Automatic Analysis must stay OFF.** It is mutually exclusive with CI-based analysis: leave it on and
-   SonarQube Cloud *rejects* the CI submission, so the pipeline appears to work while the results keep
-   coming from the old path.
+1. **Automatic Analysis must be OFF.** It is mutually exclusive with CI-based analysis: leave it on and
+   SonarQube Cloud *rejects* the CI submission. Requires an organisation administrator.
+2. **`SONAR_TOKEN` repository secret.** Add it only once step 1 is done. Until then the analysis step
+   skips (no token) rather than failing — which is the state you want, because with Automatic Analysis
+   still enabled a submitted scan is rejected and the step fails.
+
+The analysis step carries `continue-on-error: true` precisely so that this cannot escalate: it runs in
+`build-and-verify`, which every other job depends on, and static analysis must never be able to block a
+merge gate. Remove that flag once a CI analysis has been confirmed green, otherwise a rotting analysis
+will go unnoticed.
 
 Automatic Analysis is also why coverage was reported as `0.0% on New Code` before this setup regardless of
 the tests written — it never builds the project, so no JaCoCo report exists for it to import. If you see
