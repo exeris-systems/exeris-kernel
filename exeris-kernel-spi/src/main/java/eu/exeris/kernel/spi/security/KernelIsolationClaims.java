@@ -42,8 +42,21 @@ package eu.exeris.kernel.spi.security;
  * </ul>
  * <p>Producing {@code SHARED} for a declared-but-broken strategy is <b>fail-OPEN</b>: it silently drops
  * the tenant to the weakest isolation tier and grants a session on malformed or injected security input.
- * The mapping is implemented once, in
- * {@link eu.exeris.kernel.spi.security.identity.IdentityStorageMapping#fromClaims}.
+ *
+ * <h3>Which layer enforces which case — driver implementors read this</h3>
+ * <p>The deny is mandatory in every case above, but it is <b>not</b> enforced in one place:
+ * <ul>
+ *   <li><b>Unrecognised strategy value</b> and <b>missing/blank sub-claim</b> — enforced by
+ *       {@link eu.exeris.kernel.spi.security.identity.IdentityStorageMapping#fromClaims}, the single
+ *       kernel-owned mapping every {@code IdentityProvider} routes through. Drivers get this for free.</li>
+ *   <li><b>Wrong-typed claim</b> (present but not representable as a single string) — a
+ *       <b>{@code TokenValidator} obligation</b>, <i>not</i> covered by {@code fromClaims}. Per
+ *       {@link eu.exeris.kernel.spi.security.identity.VerifiedClaims#claim(String)} such a claim is
+ *       reported as <i>absent</i>, so it reaches the mapping as the permissive no-intent case and would
+ *       resolve to {@code SHARED}. A driver that does not type-check the claim during validation
+ *       therefore re-creates the fail-OPEN downgrade at its own layer. The first-party Community driver
+ *       discharges this in its token validator; every other driver MUST do the equivalent.</li>
+ * </ul>
  *
  * <h2>The Wall</h2>
  * <p>This class is part of {@code exeris-kernel-spi} and carries no runtime
@@ -61,8 +74,10 @@ public final class KernelIsolationClaims {
      *
      * <p>Value is the enum name string: {@code "SHARED"}, {@code "SEPARATED_SCHEMA"},
      * or {@code "DEDICATED"}. If <b>absent or blank</b>, the mapping defaults to {@code SHARED}
-     * (no isolation intent expressed). An <b>unrecognised or wrong-typed</b> value is a terminal
-     * deny ({@code EX-SEC-2002}), not a downgrade — see the class-level fail-closed rule.
+     * (no isolation intent expressed). An <b>unrecognised</b> value is a terminal deny
+     * ({@code EX-SEC-2002}) in the mapping; a <b>wrong-typed</b> value must be denied by the driver's
+     * {@code TokenValidator} before the mapping sees it — neither is ever a downgrade. See the
+     * class-level fail-closed rule for which layer owns which case.
      *
      * <p>This claim is consumed exclusively by the Security edge during token parsing.
      * The Persistence subsystem sees only the resulting {@link StorageContext}.
