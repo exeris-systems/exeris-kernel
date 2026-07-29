@@ -24,7 +24,10 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -41,11 +44,24 @@ class RlsConnectionInterceptorTest {
     @Mock
     private PersistenceStatement statement;
 
+    private static final String SQL_TENANT_AND_SCOPE =
+            "SELECT set_config('exeris.tenant_id', ?, false), set_config('exeris.shared_scope', ?, false)";
+    private static final String SQL_SCOPE_ONLY =
+            "SELECT set_config('exeris.shared_scope', ?, false)";
+
+    /** Stubs the prepare/bind/execute chain for {@code sql}, returning the shared statement mock. */
+    private void stubStatement(String sql) {
+        when(connection.prepare(sql)).thenReturn(statement);
+        when(statement.bindString(anyInt(), anyString())).thenReturn(statement);
+        when(statement.executeQuery()).thenReturn(mock(QueryResult.class));
+    }
+
     @Test
     @DisplayName("separatedSchema valid schema executes exact search_path SQL")
     void separatedSchemaValidSchemaExecutesExactSql() {
         when(storageContext.strategy()).thenReturn(StorageContext.IsolationStrategy.SEPARATED_SCHEMA);
         when(storageContext.schemaName()).thenReturn(Optional.of("tenant_01"));
+        stubStatement(SQL_SCOPE_ONLY);
 
         RlsConnectionInterceptor.INSTANCE.onConnectionAcquired(connection, storageContext);
 
@@ -87,14 +103,82 @@ class RlsConnectionInterceptorTest {
     void sharedStrategyUsesPrepareAndBindString() {
         when(storageContext.strategy()).thenReturn(StorageContext.IsolationStrategy.SHARED);
         when(storageContext.isolationKey()).thenReturn(Optional.of("tenant-key-01"));
-        when(connection.prepare("SELECT set_config('exeris.tenant_id', ?, false)")).thenReturn(statement);
-        when(statement.bindString(0, "tenant-key-01")).thenReturn(statement);
-        QueryResult queryResult = mock(QueryResult.class);
-        when(statement.executeQuery()).thenReturn(queryResult);
+        stubStatement(SQL_TENANT_AND_SCOPE);
 
         RlsConnectionInterceptor.INSTANCE.onConnectionAcquired(connection, storageContext);
 
-        verify(connection).prepare("SELECT set_config('exeris.tenant_id', ?, false)");
+        verify(connection).prepare(SQL_TENANT_AND_SCOPE);
         verify(statement).bindString(0, "tenant-key-01");
+    }
+
+    // =========================================================================
+    // Shared scope — ADR-012 §4b row visibility
+    // =========================================================================
+
+    @Test
+    @DisplayName("shared strategy publishes a declared shared scope alongside the tenant key")
+    void sharedStrategyPublishesDeclaredSharedScope() {
+        when(storageContext.strategy()).thenReturn(StorageContext.IsolationStrategy.SHARED);
+        when(storageContext.isolationKey()).thenReturn(Optional.of("tenant-key-01"));
+        when(storageContext.sharedScopeKey()).thenReturn(Optional.of("world-alpha"));
+        stubStatement(SQL_TENANT_AND_SCOPE);
+
+        RlsConnectionInterceptor.INSTANCE.onConnectionAcquired(connection, storageContext);
+
+        verify(statement).bindString(0, "tenant-key-01");
+        verify(statement).bindString(1, "world-alpha");
+        verify(connection, never()).prepare(SQL_SCOPE_ONLY);
+    }
+
+    @Test
+    @DisplayName("absent shared scope is published as \"\" — a stale one must not survive pool recycle")
+    void absentSharedScopeIsClearedNotSkipped() {
+        when(storageContext.strategy()).thenReturn(StorageContext.IsolationStrategy.SHARED);
+        when(storageContext.isolationKey()).thenReturn(Optional.of("tenant-key-01"));
+        stubStatement(SQL_TENANT_AND_SCOPE);
+
+        RlsConnectionInterceptor.INSTANCE.onConnectionAcquired(connection, storageContext);
+
+        verify(statement)
+                .bindString(1, "");
+    }
+
+    @Test
+    @DisplayName("dedicated strategy publishes the shared scope — orthogonal to pool-level routing")
+    void dedicatedStrategyPublishesSharedScope() {
+        when(storageContext.strategy()).thenReturn(StorageContext.IsolationStrategy.DEDICATED);
+        when(storageContext.sharedScopeKey()).thenReturn(Optional.of("world-alpha"));
+        stubStatement(SQL_SCOPE_ONLY);
+
+        RlsConnectionInterceptor.INSTANCE.onConnectionAcquired(connection, storageContext);
+
+        verify(connection).prepare(SQL_SCOPE_ONLY);
+        verify(statement).bindString(0, "world-alpha");
+    }
+
+    @Test
+    @DisplayName("dedicated strategy clears the shared scope when none is declared")
+    void dedicatedStrategyClearsSharedScopeWhenAbsent() {
+        when(storageContext.strategy()).thenReturn(StorageContext.IsolationStrategy.DEDICATED);
+        stubStatement(SQL_SCOPE_ONLY);
+
+        RlsConnectionInterceptor.INSTANCE.onConnectionAcquired(connection, storageContext);
+
+        verify(statement)
+                .bindString(0, "");
+    }
+
+    @Test
+    @DisplayName("separatedSchema publishes the shared scope after the search_path switch")
+    void separatedSchemaPublishesSharedScope() {
+        when(storageContext.strategy()).thenReturn(StorageContext.IsolationStrategy.SEPARATED_SCHEMA);
+        when(storageContext.schemaName()).thenReturn(Optional.of("tenant_01"));
+        when(storageContext.sharedScopeKey()).thenReturn(Optional.of("world-alpha"));
+        stubStatement(SQL_SCOPE_ONLY);
+
+        RlsConnectionInterceptor.INSTANCE.onConnectionAcquired(connection, storageContext);
+
+        verify(connection).executeUpdate("SET search_path TO tenant_01, public");
+        verify(statement).bindString(0, "world-alpha");
     }
 }

@@ -165,10 +165,18 @@ the RFC deferred to this amendment. **Not yet implemented** — see §10.
   through one mapping site — the contract must be proven from both entry surfaces.
 - `ImmutableStorageContext` must have a constructor-invariant case: `sharedScopeKey` present with
   `isolationKey` absent is rejected (§4b.2).
-- `AbstractPersistenceEngineTck` must carry a shared-vs-tenant **access matrix**: the read-widen path (a
+- The persistence TCK must carry a shared-vs-tenant **access matrix**: the read-widen path (a
   tenant reads another owner's row inside the same shared scope) and the write-pin path (a tenant cannot
   write a row owned by another tenant, inside or outside the shared scope). Cross-tenant mutation stays out
   of scope (§4b.4) and MUST NOT be added to the matrix as an allowed cell.
+  - **Host corrected 2026-07-29 (v0.11 S3): `AbstractSharedScopeAccessMatrixTck`, not
+    `AbstractPersistenceEngineTck`.** This clause originally named the latter. Implementation showed that
+    would be self-defeating: the only in-repo binding of `AbstractPersistenceEngineTck` runs on H2 in
+    PostgreSQL-compatibility mode, and H2 implements neither `CREATE POLICY` nor `current_setting`, so a
+    matrix hosted there could only ever *skip*. That is a vacuous anchor — the same failure class as the
+    wrong-typed isolation case, which sat unbound behind a green suite until 2026-07-29. The matrix
+    therefore lives in its own abstract suite whose binding is a live-database one, which keeps the
+    obligation both abstract and non-vacuous. The requirement is unchanged; only its host is.
 - **"Two bindings" — RULED (amended 2026-07-29).** The §9 two-binding language means *every binding that
   exists in-repo, plus a recorded obligation on out-of-repo bindings* — not "block the contract until a
   second in-repo binding is invented". Only one in-repo persistence binding exists (Community/Postgres), so
@@ -184,7 +192,8 @@ the RFC deferred to this amendment. **Not yet implemented** — see §10.
 - Implemented now (repository state): `KernelIsolationClaims` defines normative JWT claim names for storage isolation strategy routing.
 - Implemented now (repository state, corrected 2026-07-29): the isolation claims are read and mapped in `IdentityStorageMapping.fromClaims` (SPI, ADR-040) — the single kernel-owned fail-closed site — producing all three `ImmutableStorageContext` variants after JWT validation. Its only production caller is `CommunityOidcIdentityProvider`; no `SecurityProvider` implementation reads `KernelIsolationClaims` any more. The earlier "Community SecurityProvider reads isolation claims" line described the v0.9 architecture.
 - **Implemented now (§4b carrier + claim + deny, v0.11 S2):** `StorageContext.sharedScopeKey()` (additive, tenant-private `default`), the 6th `ImmutableStorageContext` component with its `sharedScopeKey`-requires-`isolationKey` constructor invariant, `KernelIsolationClaims.SHARED_SCOPE_KEY`, and the §4b.5 terminal deny in `IdentityStorageMapping.fromClaims` (`EX-SEC-2002` / `shared-scope-unsupported`). The deny did not lag the carrier — both landed in the same change, as §4b.5 requires.
-- **Not implemented (planned, §4b.4):** the read-widen / owner-scoped-write RLS mode. No persistence binding enforces shared visibility, which is *why* the mapping currently denies every declared shared scope rather than honouring it. When a binding gains the mode the deny becomes conditional on the deployment rather than disappearing, so no window opens in which a declared scope resolves to anything but deny or correct enforcement.
+- **Implemented now (§4b.4 enforcement substrate, v0.11 S3):** the Community persistence binding publishes `exeris.shared_scope` alongside `exeris.tenant_id` on every strategy, so a deployment's RLS policy can widen its read predicate while `WITH CHECK` keeps writes pinned to the owner. The setting is published unconditionally — as `""` when absent — because session-scoped settings survive connection reuse and skipping the statement would widen a request that declared no scope. `AbstractSharedScopeAccessMatrixTck` codifies the matrix, bound against live PostgreSQL.
+- **Not implemented (planned):** the kernel ships no RLS policy and cannot introspect the deployment's, so it has no way to tell whether a given deployment honours a shared scope. That signal — a capability seam between Security and Persistence — is what `IdentityStorageMapping` still lacks, and is why it denies every declared shared scope rather than honouring it. The tier is therefore not reachable end-to-end yet: enforcement exists, the path to it does not. When the seam lands, the deny becomes conditional on the deployment rather than disappearing, so no window opens in which a declared scope resolves to anything but deny or correct enforcement.
 - Implemented now (repository state): Community `PersistenceEngine` routes DEDICATED strategy to per-tenant pools from `PersistenceConfig.dedicatedDataSources()`.
 - Repository-state disclaimer: this ADR defines target contract semantics even where implementation is currently partial, staged, or temporarily embedded.
 - Planned target state: unified JWT/JWS/JWKS/OIDC resource-server trust pipeline with deterministic deny on uncertainty, fail-closed lifecycle gates, explicit rotation TTL/staleness/outage semantics, and mandatory typed telemetry categories.
