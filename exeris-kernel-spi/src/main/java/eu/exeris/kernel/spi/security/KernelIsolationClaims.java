@@ -28,6 +28,9 @@ package eu.exeris.kernel.spi.security;
  *   <tr><td>{@link #DATASOURCE_KEY}</td><td>{@code ISOLATION_STRATEGY == "DEDICATED"}</td>
  *       <td>Key matching an entry in {@link eu.exeris.kernel.spi.persistence.PersistenceConfig#dedicatedDataSources()}
  *   </td></tr>
+ *   <tr><td>{@link #SHARED_SCOPE_KEY}</td><td>Never — orthogonal to the strategy, not a sub-claim</td>
+ *       <td>Shared-scope partition identifier; absent means tenant-private. Currently always denied —
+ *       see the constant's own documentation</td></tr>
  * </table>
  *
  * <h2>Fail-Closed Rule (ADR-012 §4a, amended 2026-06-10 — S-P0-07)</h2>
@@ -114,6 +117,27 @@ public final class KernelIsolationClaims {
      * with {@code EX-PERS-5006}.
      */
     public static final String DATASOURCE_KEY = "x-exeris-isolation-datasource";
+
+    /**
+     * JWT claim declaring the shared-scope partition this subject participates in
+     * ({@link StorageContext#sharedScopeKey()}, ADR-012 §4b).
+     *
+     * <p>Orthogonal to {@link #ISOLATION_STRATEGY}: it composes with any physical strategy rather than
+     * selecting one. Absent means the tenant-private default. The name deliberately departs from the
+     * {@code x-exeris-isolation-*} family — shared scope is a row-<i>visibility</i> concern, not an
+     * isolation-strategy sub-claim, and naming it under {@code isolation-} would re-weld it to the
+     * placement axis ADR-012 §4b separates it from.
+     *
+     * <p><b>Currently always denied.</b> No persistence binding implements the read-widen /
+     * owner-scoped-write mode yet, so a token declaring this claim is a terminal deny
+     * ({@code EX-SEC-2002}, reason {@code shared-scope-unsupported}). Resolving it to a tenant-private
+     * context instead would silently narrow what the caller asked for, and resolving it to a widened one
+     * would grant visibility nothing enforces — ADR-012 §4b.5 forbids both. The deny lifts, per
+     * deployment, when a binding can honour it.
+     *
+     * @since 0.11.0
+     */
+    public static final String SHARED_SCOPE_KEY = "x-exeris-shared-scope";
 
     private KernelIsolationClaims() {
         // Utility class — not instantiable.

@@ -323,6 +323,25 @@ public abstract class AbstractSecurityProviderTck {
      */
     protected abstract LoanedBuffer createTokenWithWrongTypedStrategy();
 
+    /**
+     * Creates a {@link LoanedBuffer} containing a token declaring
+     * {@link eu.exeris.kernel.spi.security.KernelIsolationClaims#SHARED_SCOPE_KEY} — a shared-scope
+     * partition the subject asks to participate in.
+     *
+     * <p>The provider MUST <b>deny</b> this token ({@link SecurityAuthenticationException},
+     * {@code EX-SEC-2002}) for as long as no persistence binding implements the read-widen /
+     * owner-scoped-write mode. Neither alternative is permitted (ADR-012 §4b.5): resolving it to a
+     * tenant-private context silently narrows what the caller asked for, and honouring it produces a
+     * context claiming visibility that nothing enforces — the S-P0-07 class.
+     *
+     * <p>This case inverts when a binding gains the mode: it does not disappear, it becomes conditional
+     * on the deployment, so there is never a window in which a declared shared scope resolves to
+     * anything but deny or correct enforcement.
+     *
+     * <p>Caller owns the buffer lifecycle.
+     */
+    protected abstract LoanedBuffer createTokenWithSharedScopeClaim();
+
     // =========================================================================
     // Optional rotation harness — default-skip for non-rotating subclasses
     // =========================================================================
@@ -943,6 +962,35 @@ public abstract class AbstractSecurityProviderTck {
                                 + "and would resolve to SHARED. A binding that does not type-check "
                                 + "during validation fails OPEN here with every other gate green "
                                 + "(S-P0-07 / ADR-012 \u00a74a amended, \u00a79 enforcement layers)")
+                        .isInstanceOfSatisfying(SecurityAuthenticationException.class, ex ->
+                                assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_SEC_2002));
+            }
+        }
+
+        @Test
+        @DisplayName("no shared-scope claim \u2192 tenant-private (sharedScopeKey empty)")
+        void assert_authenticate_defaults_to_tenant_private_scope() {
+            try (LoanedBuffer token = createTokenWithNoIsolationClaim()) {
+                StorageContext storage = provider.authenticate(token).storage();
+                assertThat(storage.sharedScopeKey())
+                        .as("absence of a shared-scope claim MUST mean the tenant-private default \u2014 "
+                                + "the behaviour of every deployment predating the accessor "
+                                + "(ADR-012 \u00a74b.5)")
+                        .isEmpty();
+            }
+        }
+
+        @Test
+        @DisplayName("declared shared scope \u2192 terminal deny while unenforceable (EX-SEC-2002)")
+        void assert_authenticate_denies_declared_shared_scope_while_unenforceable() {
+            try (LoanedBuffer token = createTokenWithSharedScopeClaim()) {
+                assertThatThrownBy(() -> provider.authenticate(token))
+                        .as("no binding implements read-widen / owner-scoped-write yet, so a declared "
+                                + "shared scope MUST deny. Resolving it tenant-private would silently "
+                                + "narrow what the caller asked for; honouring it would hand back a "
+                                + "context claiming visibility nothing enforces (S-P0-07 class). "
+                                + "ADR-012 \u00a74b.5 forbids both \u2014 there must be no window where a "
+                                + "declared scope resolves to anything but deny or enforcement")
                         .isInstanceOfSatisfying(SecurityAuthenticationException.class, ex ->
                                 assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_SEC_2002));
             }

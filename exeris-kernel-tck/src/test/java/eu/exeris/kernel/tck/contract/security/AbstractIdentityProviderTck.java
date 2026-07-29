@@ -53,6 +53,13 @@ public abstract class AbstractIdentityProviderTck {
     /** A token whose signature verifies but whose expiry is in the past — must deny. */
     protected abstract LoanedBuffer expiredTokenBuffer();
 
+    /**
+     * A verifiable token declaring
+     * {@link eu.exeris.kernel.spi.security.KernelIsolationClaims#SHARED_SCOPE_KEY} — must deny while
+     * no persistence binding implements the read-widen / owner-scoped-write mode (ADR-012 §4b.5).
+     */
+    protected abstract LoanedBuffer sharedScopeTokenBuffer();
+
     /** A scope expected on the principal produced from {@link #validTokenBuffer()}. */
     protected String expectedGrantedScope() {
         return "security:read";
@@ -126,6 +133,10 @@ public abstract class AbstractIdentityProviderTck {
                 StorageContext storage = result.storage();
                 assertThat(storage).isNotNull();
                 assertThat(storage.strategy()).as("isolation strategy").isNotNull();
+                assertThat(storage.sharedScopeKey())
+                        .as("a token declaring no shared scope MUST stay tenant-private "
+                                + "(ADR-012 §4b.5)")
+                        .isEmpty();
             }
         }
 
@@ -166,6 +177,24 @@ public abstract class AbstractIdentityProviderTck {
             IdentityProvider provider = createProvider();
             try (LoanedBuffer token = expiredTokenBuffer()) {
                 assertThatThrownBy(() -> provider.authenticate(token))
+                        .isInstanceOf(SecurityAuthenticationException.class)
+                        .extracting(e -> ((SecurityAuthenticationException) e).errorCode())
+                        .isEqualTo(KernelErrorCodes.EX_SEC_2002);
+            }
+        }
+
+        @Test
+        @DisplayName("a declared shared scope is a terminal EX-SEC-2002 deny while unenforceable")
+        void declaredSharedScopeDenies() {
+            IdentityProvider provider = createProvider();
+            try (LoanedBuffer token = sharedScopeTokenBuffer()) {
+                assertThatThrownBy(() -> provider.authenticate(token))
+                        .as("ADR-012 §4b.5 — no binding implements read-widen / owner-scoped-write "
+                                + "yet, so neither narrowing the request to tenant-private nor "
+                                + "honouring it unenforced is permitted. Asserted from this suite as "
+                                + "well as AbstractSecurityProviderTck because ADR-012 §4a routes "
+                                + "every provider through one mapping site — the contract must hold "
+                                + "from both entry surfaces")
                         .isInstanceOf(SecurityAuthenticationException.class)
                         .extracting(e -> ((SecurityAuthenticationException) e).errorCode())
                         .isEqualTo(KernelErrorCodes.EX_SEC_2002);
