@@ -28,6 +28,9 @@ package eu.exeris.kernel.spi.security;
  *   <tr><td>{@link #DATASOURCE_KEY}</td><td>{@code ISOLATION_STRATEGY == "DEDICATED"}</td>
  *       <td>Key matching an entry in {@link eu.exeris.kernel.spi.persistence.PersistenceConfig#dedicatedDataSources()}
  *   </td></tr>
+ *   <tr><td>{@link #SHARED_SCOPE_KEY}</td><td>Never — orthogonal to the strategy, not a sub-claim</td>
+ *       <td>Shared-scope partition identifier; absent means tenant-private. Currently always denied —
+ *       see the constant's own documentation</td></tr>
  * </table>
  *
  * <h2>Fail-Closed Rule (ADR-012 §4a, amended 2026-06-10 — S-P0-07)</h2>
