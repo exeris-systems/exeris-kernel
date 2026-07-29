@@ -245,6 +245,10 @@ Before submitting a PR, verify the following:
 
 A PR that only adds unit tests is **incomplete** if it touches an SPI boundary.
 
+If the TCK expansion asserts a **deny** or any other negative behaviour, it must also be shown to fail
+against a binding that does not implement it — a negative case that would stay green regardless enforces
+nothing. See [Proving a New Contract Case Is Not Vacuous](exeris-kernel-tck/README.md#proving-a-new-contract-case-is-not-vacuous).
+
 ---
 
 ## Getting Help
