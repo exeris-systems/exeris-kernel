@@ -1,31 +1,41 @@
 [ {
-  "class" : "eu.exeris.kernel.core.security.jfr.SecurityJfrEvents$StorageContextDerivedEvent",
-  "count" : 4,
-  "bytes" : 523176,
-  "category" : "TEST_HARNESS"
-}, {
-  "class" : "java.util.HashMap",
-  "count" : 4,
-  "bytes" : 523160,
+  "class" : "java.util.LinkedHashMap",
+  "count" : 5,
+  "bytes" : 784696,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "java.util.LinkedHashMap",
-  "count" : 3,
-  "bytes" : 523136,
+  "class" : "eu.exeris.kernel.core.security.jfr.SecurityJfrEvents$StorageContextDerivedEvent",
+  "count" : 4,
+  "bytes" : 506760,
+  "category" : "TEST_HARNESS"
+}, {
+  "class" : "java.util.HashMap$Node",
+  "count" : 2,
+  "bytes" : 261592,
   "category" : "JVM_NOISE"
 }, {
   "class" : "[Ljava.util.HashMap$Node;",
   "count" : 2,
-  "bytes" : 481792,
+  "bytes" : 521712,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "[Ljava.lang.String;",
+  "class" : "[B",
   "count" : 1,
-  "bytes" : 261560,
+  "bytes" : 261552,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "java.util.HashMap",
+  "count" : 1,
+  "bytes" : 261520,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "[Ljava.lang.Object;",
+  "count" : 1,
+  "bytes" : 36960,
   "category" : "JVM_NOISE"
 }, {
   "class" : "java.util.LinkedHashMap$Entry",
   "count" : 1,
-  "bytes" : 261568,
+  "bytes" : 41832,
   "category" : "JVM_NOISE"
 } ]
