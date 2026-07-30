@@ -55,4 +55,11 @@ class CommunityOidcIdentityProviderTckTest extends AbstractIdentityProviderTck {
                 .claim(KernelIsolationClaims.SHARED_SCOPE_KEY, "world-alpha")
                 .toBuffer();
     }
+
+    @Override
+    protected IdentityProvider createSharedScopeEnforcingProvider() {
+        return new CommunityOidcIdentityProvider(
+                TestJwt.keySet(), TestJwt.EXPECTED_ISSUER, TestJwt.EXPECTED_AUDIENCE)
+                .enforcingSharedScope();
+    }
 }

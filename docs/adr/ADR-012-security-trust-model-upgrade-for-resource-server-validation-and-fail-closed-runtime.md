@@ -50,7 +50,7 @@
 
 Implements `RFC-2026-07-02` (ACCEPTED 2026-07-02), which ruled the shared-scope tier is an **orthogonal
 row-visibility dimension**, not a fourth `IsolationStrategy` value. This section rules the three sub-shapes
-the RFC deferred to this amendment. **Not yet implemented** — see §10.
+the RFC deferred to this amendment. Implementation status per sub-shape is tracked in §10.
 
 ### 4b.1 Axis separation (inherited from the RFC, restated as contract)
 - `strategy()` answers **where rows physically live** (RLS key / schema / datasource). `sharedScopeKey`
@@ -123,6 +123,39 @@ the RFC deferred to this amendment. **Not yet implemented** — see §10.
   (`exeris-sdk` `RFC-2026-06-24`) and MUST NOT enter kernel SPI names, Javadoc, or claim strings; the
   tooling mapping records the equivalence at the SDK edge.
 
+### 4b.7 Enforceability signal — RULED: an operator declaration, not a kernel probe (added 2026-07-29)
+
+§4b.5 requires a declared shared scope to be denied wherever it cannot be enforced, which presupposes
+knowing whether it can be. This section rules how that is known.
+
+- **The kernel cannot know it.** It ships no RLS policy and cannot introspect the one a deployment wrote —
+  the read-widen / write-pin predicates live in the application's DDL. Enforceability is a property of a
+  schema the kernel never sees.
+- **Ruled:** the deployment asserts it, through configuration key
+  `exeris.security.shared-scope.enforced` (`IdentityStorageMapping.SHARED_SCOPE_ENFORCED_KEY`). Absent or
+  `false` → a declared shared scope is denied. The flag is fixed at provider construction, never
+  reconfigurable behind a live provider, because it participates in a per-request security decision.
+- **The key is named, not yet read.** Nothing resolves that property from a configuration source today;
+  the assertion reaches the mapping through explicit provider construction, and binding the key to
+  configuration lands with the same wiring step that still owns issuer, audience, and JWKS endpoint. The
+  constant is introduced now so the name an operator will set and the name the wiring will read are fixed
+  together — the alternative is documenting a property that later turns out to be spelled differently.
+- **Rejected — a capability on the persistence provider** (e.g. `PersistenceEngine.supportsSharedScope()`
+  resolved at bootstrap). It reads as the cleaner, more kernel-owned option and is worse: the engine does
+  not write the policy either, so it cannot answer truthfully. Sourcing the value from configuration and
+  returning it through an engine method would dress an operator's claim as a kernel guarantee — the same
+  category of error as documenting a contract the code does not enforce.
+- **Rejected — probing the database** (e.g. reading `pg_policies` for references to the shared-scope
+  setting). It is the only option that genuinely verifies, and it fails on every other axis: PostgreSQL-
+  specific, defeated by a policy present on some tables and not others, requires a live database during
+  bootstrap, and puts DDL introspection inside the kernel.
+- **Consequence for the wrong-typed claim.** §4a's enforcement-layer split noted that a wrong-typed
+  shared-scope claim collapses to absent and yields tenant-private, and that this was tolerable only while
+  every declared scope was denied anyway. Once a deployment enforces, it is no longer tolerable: a caller
+  with a malformed scope claim silently loses the visibility it asked for. Type-checking that claim during
+  token validation is therefore a `TokenValidator` obligation on the same footing as
+  `ISOLATION_STRATEGY` — the mapping structurally cannot make it.
+
 ## 5) Fail-Closed Lifecycle Contract
 - Bootstrap readiness is denied if required trust anchors, JWKS resolution path, or validation dependencies are unavailable.
 - Runtime degradation (cache corruption, resolver outage, claim-policy backend uncertainty) must fail closed with deterministic deny.
@@ -193,7 +226,8 @@ the RFC deferred to this amendment. **Not yet implemented** — see §10.
 - Implemented now (repository state, corrected 2026-07-29): the isolation claims are read and mapped in `IdentityStorageMapping.fromClaims` (SPI, ADR-040) — the single kernel-owned fail-closed site — producing all three `ImmutableStorageContext` variants after JWT validation. Its only production caller is `CommunityOidcIdentityProvider`; no `SecurityProvider` implementation reads `KernelIsolationClaims` any more. The earlier "Community SecurityProvider reads isolation claims" line described the v0.9 architecture.
 - **Implemented now (§4b carrier + claim + deny, v0.11 S2):** `StorageContext.sharedScopeKey()` (additive, tenant-private `default`), the 6th `ImmutableStorageContext` component with its `sharedScopeKey`-requires-`isolationKey` constructor invariant, `KernelIsolationClaims.SHARED_SCOPE_KEY`, and the §4b.5 terminal deny in `IdentityStorageMapping.fromClaims` (`EX-SEC-2002` / `shared-scope-unsupported`). The deny did not lag the carrier — both landed in the same change, as §4b.5 requires.
 - **Implemented now (§4b.4 enforcement substrate, v0.11 S3):** the Community persistence binding publishes `exeris.shared_scope` alongside `exeris.tenant_id` on every strategy, so a deployment's RLS policy can widen its read predicate while `WITH CHECK` keeps writes pinned to the owner. The setting is published unconditionally — as `""` when absent — because session-scoped settings survive connection reuse and skipping the statement would widen a request that declared no scope. `AbstractSharedScopeAccessMatrixTck` codifies the matrix, bound against live PostgreSQL.
-- **Not implemented (planned):** the kernel ships no RLS policy and cannot introspect the deployment's, so it has no way to tell whether a given deployment honours a shared scope. That signal — a capability seam between Security and Persistence — is what `IdentityStorageMapping` still lacks, and is why it denies every declared shared scope rather than honouring it. The tier is therefore not reachable end-to-end yet: enforcement exists, the path to it does not. When the seam lands, the deny becomes conditional on the deployment rather than disappearing, so no window opens in which a declared scope resolves to anything but deny or correct enforcement.
+- **Implemented now (§4b.7 enforceability signal, v0.11):** the kernel ships no RLS policy and cannot introspect the deployment's, so the deployment asserts enforceability itself via `exeris.security.shared-scope.enforced` (`IdentityStorageMapping.SHARED_SCOPE_ENFORCED_KEY`). `fromClaims` carries a declared shared scope onto the resolved context where the deployment has opted in, and denies it everywhere else. The tier is reachable end-to-end from that point: carrier, claim, mapping, and RLS enforcement all exist and are connected. Absent opt-in the behaviour is unchanged, so no existing deployment moves off tenant-private.
+- **Not implemented (open obligation, §4b.7):** the driver-side type check for a wrong-typed shared-scope claim. `VerifiedClaims.claim` reports it as absent, so in an *enforcing* deployment a caller with a malformed claim silently loses the visibility it asked for. This was harmless while every declared scope was denied and is not harmless now. The check belongs in each `TokenValidator`, on the same footing as `ISOLATION_STRATEGY` (§4a enforcement layers), with a TCK case to make it binding-independent.
 - Implemented now (repository state): Community `PersistenceEngine` routes DEDICATED strategy to per-tenant pools from `PersistenceConfig.dedicatedDataSources()`.
 - Repository-state disclaimer: this ADR defines target contract semantics even where implementation is currently partial, staged, or temporarily embedded.
 - Planned target state: unified JWT/JWS/JWKS/OIDC resource-server trust pipeline with deterministic deny on uncertainty, fail-closed lifecycle gates, explicit rotation TTL/staleness/outage semantics, and mandatory typed telemetry categories.

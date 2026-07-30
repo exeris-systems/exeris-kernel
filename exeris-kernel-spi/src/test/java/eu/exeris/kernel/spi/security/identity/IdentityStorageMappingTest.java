@@ -44,6 +44,11 @@ class IdentityStorageMappingTest {
         return IdentityStorageMapping.fromClaims(new FakeClaims(claims), SUBJECT_ID, JWT);
     }
 
+    /** Maps under a deployment that asserts it can enforce shared scopes. */
+    private static StorageContext mapEnforcing(Map<String, String> claims) {
+        return IdentityStorageMapping.fromClaims(new FakeClaims(claims), SUBJECT_ID, JWT, true);
+    }
+
     private static void assertDenied(Map<String, String> claims, String because) {
         assertThatThrownBy(() -> map(claims))
                 .as(because)
@@ -117,6 +122,53 @@ class IdentityStorageMappingTest {
                             KernelIsolationClaims.ISOLATION_STRATEGY, "DEDICATED",
                             KernelIsolationClaims.DATASOURCE_KEY, "ds-primary-eu"),
                     "likewise for an otherwise-valid DEDICATED declaration");
+        }
+
+        @Test
+        @DisplayName("enforced deployment carries the declared scope onto the context")
+        void enforcedDeploymentCarriesTheScope() {
+            assertThat(mapEnforcing(Map.of(KernelIsolationClaims.SHARED_SCOPE_KEY, "world-alpha"))
+                    .sharedScopeKey())
+                    .as("once a deployment asserts it enforces the policy contract, the declaration is "
+                            + "honoured rather than denied — that is the whole point of the seam")
+                    .contains("world-alpha");
+        }
+
+        @Test
+        @DisplayName("enforcement composes with every physical strategy, and does not alter it")
+        void enforcementComposesWithStrategy() {
+            StorageContext ctx = mapEnforcing(Map.of(
+                    KernelIsolationClaims.SHARED_SCOPE_KEY, "world-alpha",
+                    KernelIsolationClaims.ISOLATION_STRATEGY, "SEPARATED_SCHEMA",
+                    KernelIsolationClaims.SCHEMA_NAME, "tenant_acme"));
+
+            assertThat(ctx.strategy()).isEqualTo(StorageContext.IsolationStrategy.SEPARATED_SCHEMA);
+            assertThat(ctx.schemaName()).contains("tenant_acme");
+            assertThat(ctx.sharedScopeKey())
+                    .as("the axes stay orthogonal under enforcement too (ADR-012 §4b.1)")
+                    .contains("world-alpha");
+        }
+
+        @Test
+        @DisplayName("enforcement does not weaken any other fail-closed rule")
+        void enforcementDoesNotWeakenOtherDenies() {
+            assertThatThrownBy(() -> mapEnforcing(Map.of(
+                    KernelIsolationClaims.SHARED_SCOPE_KEY, "world-alpha",
+                    KernelIsolationClaims.ISOLATION_STRATEGY, "BYPASS_RLS")))
+                    .as("asserting shared-scope support says nothing about strategy validity — an "
+                            + "unrecognised strategy must still deny, or the flag would become a "
+                            + "blanket relaxation")
+                    .isInstanceOfSatisfying(SecurityAuthenticationException.class, ex ->
+                            assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_SEC_2002));
+        }
+
+        @Test
+        @DisplayName("the three-argument overload stays fail-closed — absence of the flag means deny")
+        void defaultOverloadRemainsFailClosed() {
+            assertDenied(
+                    Map.of(KernelIsolationClaims.SHARED_SCOPE_KEY, "world-alpha"),
+                    "a caller that never passes the flag must get the denying behaviour, so an "
+                            + "un-migrated driver cannot silently start honouring shared scopes");
         }
 
         @Test
