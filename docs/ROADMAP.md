@@ -1671,7 +1671,7 @@ See also: `docs/adr/ADR-056-blob-storage-provider-spi.md` (Accepted 2026-07-30) 
 
 ---
 
-### Runtime: `JobScheduler` SPI
+### Runtime: `JobScheduler` SPI (ADR-057)
 
 **Gap:** Background-job execution (cron triggers, queued retries, scheduled emissions) has no kernel SPI. Applications wanting "run this every 5 minutes" or "schedule this to fire in 24h" hand-roll a scheduler or pull in Quartz, losing `PrincipalContext` / `StorageContext` propagation and missing JFR observability. Job dispatch is a runtime concern that composes with the existing event publisher and Flow engine, and has plausible alternative drivers (in-process Loom-based scheduler vs DB-backed durable queue vs external orchestrator hook).
 
@@ -1680,6 +1680,8 @@ See also: `docs/adr/ADR-056-blob-storage-provider-spi.md` (Accepted 2026-07-30) 
 **Resolution:** Define `JobScheduler`, `JobDescriptor`, `JobHandle`, `JobTrigger` (cron / interval / one-shot / event-driven) in `eu.exeris.kernel.spi.scheduling`. Context propagation: `PrincipalContext` and `StorageContext` captured at submission time, restored via `ScopedValue` on dispatch (mirrors the Flow engine context-capture pattern). Community driver: in-process Loom scheduler using `StructuredTaskScope` plus `ScheduledExecutorService` (one of the few approved scoped-ban exceptions, justified because the scheduling primitive itself is the boundary — orchestrated job code remains on Loom). Enterprise driver track (out-of-repo): DB-backed durable queue with at-least-once semantics + leader election. `AbstractJobSchedulerTck` covers: cron trigger fires on schedule, interval trigger respects delay, context propagation across job boundary, cancel via `JobHandle`, leader-election semantics for durable backend.
 
 **Merge Gate:** SPI green on TCK with Community in-process driver bound; context propagation TCK verifies `PrincipalContext` + `StorageContext` round-trip across submit → dispatch; ArchTest confirms no `ThreadLocal` use for context propagation (`ScopedValue` only); JFR `JobDispatchEvent` / `JobCompletionEvent` / `JobFailureEvent` carried for observability; companion ADR documents the `ScheduledExecutorService` scoped-ban exception with explicit scope.
+
+See also: `docs/adr/ADR-057-job-scheduler-spi.md` (Accepted 2026-07-30). It deviates from the Resolution text above on both concurrency primitives, and the second deviation also retires the Merge-Gate clause immediately above. (a) **Dispatch is virtual threads + explicit `ScopedValue` rebind, not `StructuredTaskScope`** — a new subsystem on STS would be a fifth preview-taint site on the default line (four exist: `CommunityEventLoop`, `SubsystemOrchestrator`, `OutboxOrchestrator`, `InMemoryEventBus`), against the "Platform Baseline for 1.0 GA" mandate below. (b) **There is no `ScheduledExecutorService` and therefore no scoped-ban exception to document** — this entry asks for an injectable time source in the same breath, and `ScheduledThreadPoolExecutor` times off `System.nanoTime()` internally with no seam to displace, so the deterministic trigger TCK this gate requires is unreachable through it; the driver owns its timing loop instead. (c) A third, smaller departure: **`JobTrigger` carries three kinds, not four** — the event-driven kind listed in the Resolution text above is excluded on coupling direction (an event handler calling `submit` already expresses it, whereas a trigger kind would put an `spi.events` dependency inside the scheduling contract).
 
 ---
 
