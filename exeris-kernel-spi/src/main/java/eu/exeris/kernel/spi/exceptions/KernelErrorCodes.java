@@ -904,6 +904,59 @@ public final class KernelErrorCodes {
     /** {@link eu.exeris.kernel.spi.diagnostics.KernelDiagnostics#getJvmErgonomics()} was invoked. */
     public static final String EX_DIAG_1005 = "EX-DIAG-1005";
 
+    // =======================================================================
+    // EX-BLOB-8xxx — Blob storage (ADR-056)
+    // =======================================================================
+
+    /**
+     * The referenced object does not exist in the resolved tenant namespace.
+     *
+     * <p>rawArgs layout:
+     * <ul>
+     *   <li>index 0 – {@code String} providerName</li>
+     *   <li>index 1 – {@code String} container — never the object key, which can carry
+     *       application data</li>
+     * </ul>
+     */
+    public static final String EX_BLOB_8001 = "EX-BLOB-8001";
+
+    /**
+     * A blob operation was attempted with no isolation key in the ambient
+     * {@link eu.exeris.kernel.spi.security.StorageContext} — there is no namespace to resolve the
+     * tenant-relative reference against, so the operation is denied rather than placed unscoped
+     * (ADR-056 §5).
+     *
+     * <p>rawArgs layout:
+     * <ul>
+     *   <li>index 0 – {@code String} providerName</li>
+     *   <li>index 1 – {@code String} isolation strategy name of the ambient context</li>
+     * </ul>
+     */
+    public static final String EX_BLOB_8002 = "EX-BLOB-8002";
+
+    /**
+     * I/O failure during an upload or download transfer.
+     *
+     * <p>rawArgs layout:
+     * <ul>
+     *   <li>index 0 – {@code String} providerName</li>
+     *   <li>index 1 – {@code String} container</li>
+     * </ul>
+     */
+    public static final String EX_BLOB_8003 = "EX-BLOB-8003";
+
+    /**
+     * An upload wrote a different number of bytes than the content length it declared.
+     *
+     * <p>rawArgs layout:
+     * <ul>
+     *   <li>index 0 – {@code String} providerName</li>
+     *   <li>index 1 – {@code long}   declaredLength</li>
+     *   <li>index 2 – {@code long}   actualLength</li>
+     * </ul>
+     */
+    public static final String EX_BLOB_8004 = "EX-BLOB-8004";
+
     // -----------------------------------------------------------------------
     // Constructor – utility class, no instantiation
     // -----------------------------------------------------------------------
