@@ -122,7 +122,7 @@ final class CommunityOidcTokenValidator implements TokenValidator {
         validateIssuer(claims);
         validateAudience(claims);
         validateExpiry(claims);
-        validateIsolationStrategyWellTyped(claims);
+        validateIsolationClaimsWellTyped(claims);
 
         return new CommunityVerifiedClaims(claims);
     }
@@ -182,16 +182,27 @@ final class CommunityOidcTokenValidator implements TokenValidator {
     }
 
     /**
-     * A declared isolation-strategy claim that is present but not a string is malformed security
-     * input — terminal deny, never a silent downgrade to SHARED (S-P0-07; ADR-012 §4a amended).
-     * Verifying it here keeps {@link VerifiedClaims#claim(String)} free of deny logic; an absent or
-     * well-typed strategy is left to {@link eu.exeris.kernel.spi.security.identity.IdentityStorageMapping}.
+     * An isolation claim that is present but not a string is malformed security input — terminal deny,
+     * never a silent fall-through (S-P0-07; ADR-012 §4a amended). Verifying it here keeps
+     * {@link VerifiedClaims#claim(String)} free of deny logic; absent or well-typed claims are left to
+     * {@link eu.exeris.kernel.spi.security.identity.IdentityStorageMapping}.
+     *
+     * <p>Both isolation axes need this and for the same structural reason — {@code claim()} reports a
+     * wrong-typed claim as absent — but the damage differs, which is why neither can be skipped: a
+     * wrong-typed strategy resolves to {@code SHARED}, weakening the provisioned tier, while a
+     * wrong-typed shared scope resolves to tenant-private, silently withholding visibility the caller
+     * asked for and the deployment was ready to grant (ADR-012 §4b.7).
      */
-    private static void validateIsolationStrategyWellTyped(JWTClaimsSet claims) {
+    private static void validateIsolationClaimsWellTyped(JWTClaimsSet claims) {
+        requireStringClaim(claims, KernelIsolationClaims.ISOLATION_STRATEGY, "isolation-malformed");
+        requireStringClaim(claims, KernelIsolationClaims.SHARED_SCOPE_KEY, "shared-scope-malformed");
+    }
+
+    private static void requireStringClaim(JWTClaimsSet claims, String claimName, String denyReason) {
         try {
-            claims.getStringClaim(KernelIsolationClaims.ISOLATION_STRATEGY);
+            claims.getStringClaim(claimName);
         } catch (ParseException _) {
-            throw new SecurityAuthenticationException(JWT_TYPE, "isolation-malformed");
+            throw new SecurityAuthenticationException(JWT_TYPE, denyReason);
         }
     }
 }

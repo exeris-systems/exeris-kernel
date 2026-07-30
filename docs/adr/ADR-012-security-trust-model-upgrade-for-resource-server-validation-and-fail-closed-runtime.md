@@ -154,7 +154,10 @@ knowing whether it can be. This section rules how that is known.
   every declared scope was denied anyway. Once a deployment enforces, it is no longer tolerable: a caller
   with a malformed scope claim silently loses the visibility it asked for. Type-checking that claim during
   token validation is therefore a `TokenValidator` obligation on the same footing as
-  `ISOLATION_STRATEGY` — the mapping structurally cannot make it.
+  `ISOLATION_STRATEGY` — the mapping structurally cannot make it. **Discharged in the same milestone**
+  (deny reason `shared-scope-malformed`, pinned by `AbstractSecurityProviderTck`); the two checks stay
+  separate because a wrong-typed strategy weakens the provisioned tier while a wrong-typed scope withholds
+  visibility from it, so passing one says nothing about the other.
 
 ## 5) Fail-Closed Lifecycle Contract
 - Bootstrap readiness is denied if required trust anchors, JWKS resolution path, or validation dependencies are unavailable.
@@ -196,6 +199,12 @@ knowing whether it can be. This section rules how that is known.
   → carried onto the resolved `StorageContext`; present-but-unenforceable → terminal deny
   (`EX-SEC-2002` / `shared-scope-unsupported`). Both suites are named because §4a routes every provider
   through one mapping site — the contract must be proven from both entry surfaces.
+- `AbstractSecurityProviderTck.IsolationStrategyContract` must additionally cover a **wrong-typed**
+  shared-scope claim → terminal deny (`EX-SEC-2002` / `shared-scope-malformed`). Like the wrong-typed
+  strategy case this is the binding's own obligation, not inherited from the mapping, and it is kept
+  separate from that case: both stem from `claim()` reporting a wrong-typed value as absent, but one
+  weakens the provisioned tier while the other silently withholds visibility from it, so a binding
+  passing one says nothing about the other (§4b.7).
 - `ImmutableStorageContext` must have a constructor-invariant case: `sharedScopeKey` present with
   `isolationKey` absent is rejected (§4b.2).
 - The persistence TCK must carry a shared-vs-tenant **access matrix**: the read-widen path (a
@@ -227,7 +236,7 @@ knowing whether it can be. This section rules how that is known.
 - **Implemented now (§4b carrier + claim + deny, v0.11 S2):** `StorageContext.sharedScopeKey()` (additive, tenant-private `default`), the 6th `ImmutableStorageContext` component with its `sharedScopeKey`-requires-`isolationKey` constructor invariant, `KernelIsolationClaims.SHARED_SCOPE_KEY`, and the §4b.5 terminal deny in `IdentityStorageMapping.fromClaims` (`EX-SEC-2002` / `shared-scope-unsupported`). The deny did not lag the carrier — both landed in the same change, as §4b.5 requires.
 - **Implemented now (§4b.4 enforcement substrate, v0.11 S3):** the Community persistence binding publishes `exeris.shared_scope` alongside `exeris.tenant_id` on every strategy, so a deployment's RLS policy can widen its read predicate while `WITH CHECK` keeps writes pinned to the owner. The setting is published unconditionally — as `""` when absent — because session-scoped settings survive connection reuse and skipping the statement would widen a request that declared no scope. `AbstractSharedScopeAccessMatrixTck` codifies the matrix, bound against live PostgreSQL.
 - **Implemented now (§4b.7 enforceability signal, v0.11):** the kernel ships no RLS policy and cannot introspect the deployment's, so the deployment asserts enforceability itself via `exeris.security.shared-scope.enforced` (`IdentityStorageMapping.SHARED_SCOPE_ENFORCED_KEY`). `fromClaims` carries a declared shared scope onto the resolved context where the deployment has opted in, and denies it everywhere else. The tier is reachable end-to-end from that point: carrier, claim, mapping, and RLS enforcement all exist and are connected. Absent opt-in the behaviour is unchanged, so no existing deployment moves off tenant-private.
-- **Not implemented (open obligation, §4b.7):** the driver-side type check for a wrong-typed shared-scope claim. `VerifiedClaims.claim` reports it as absent, so in an *enforcing* deployment a caller with a malformed claim silently loses the visibility it asked for. This was harmless while every declared scope was denied and is not harmless now. The check belongs in each `TokenValidator`, on the same footing as `ISOLATION_STRATEGY` (§4a enforcement layers), with a TCK case to make it binding-independent.
+- **Implemented now (§4b.7 wrong-typed shared scope, v0.11):** the driver-side type check that closes §4b.7's own consequence. `VerifiedClaims.claim` reports a wrong-typed claim as absent, so a malformed shared scope would reach the mapping as "none declared" and resolve to tenant-private — harmless while every declared scope was denied, and not harmless once §4b.7 made that deny conditional, since an enforcing deployment would then silently withhold visibility the caller asked for. The check sits in the binding's token validation next to the `ISOLATION_STRATEGY` one (§4a enforcement layers), denying `shared-scope-malformed`, and is pinned for every binding by `AbstractSecurityProviderTck` rather than left to each one's diligence. Both axes are checked because the structural cause is shared but the damage is not: a wrong-typed strategy weakens the tier, a wrong-typed scope withholds from it.
 - Implemented now (repository state): Community `PersistenceEngine` routes DEDICATED strategy to per-tenant pools from `PersistenceConfig.dedicatedDataSources()`.
 - Repository-state disclaimer: this ADR defines target contract semantics even where implementation is currently partial, staged, or temporarily embedded.
 - Planned target state: unified JWT/JWS/JWKS/OIDC resource-server trust pipeline with deterministic deny on uncertainty, fail-closed lifecycle gates, explicit rotation TTL/staleness/outage semantics, and mandatory typed telemetry categories.

@@ -23,6 +23,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Map;
 
 @DisplayName("Community: SecurityProvider TCK")
@@ -146,6 +147,14 @@ class CommunitySecurityProviderTckTest extends AbstractSecurityProviderTck {
         // validation — the kernel mapping cannot see this case (see the TCK factory's Javadoc).
         return TestJwt.builder()
                 .claimRaw(KernelIsolationClaims.ISOLATION_STRATEGY, 42)
+                .toBuffer();
+    }
+
+    @Override
+    protected LoanedBuffer createTokenWithWrongTypedSharedScope() {
+        // A JSON array where a shared-scope string belongs — one partition name, not a list.
+        return TestJwt.builder()
+                .claimRaw(KernelIsolationClaims.SHARED_SCOPE_KEY, List.of("world-alpha"))
                 .toBuffer();
     }
 
