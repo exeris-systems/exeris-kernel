@@ -83,6 +83,11 @@ class CoreSecurityProviderTckTest extends AbstractSecurityProviderTck {
         return new StubLoanedBuffer(14L); // fixture denies: shared scope declared but unenforceable
     }
 
+    @Override
+    protected LoanedBuffer createTokenWithWrongTypedSharedScope() {
+        return new StubLoanedBuffer(15L); // fixture denies: wrong-typed shared-scope claim
+    }
+
     private static final class StubLoanedBuffer implements LoanedBuffer {
         private long size;
 

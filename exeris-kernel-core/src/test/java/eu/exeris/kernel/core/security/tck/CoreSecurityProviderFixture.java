@@ -67,10 +67,13 @@ public final class CoreSecurityProviderFixture implements SecurityProvider {
             case 11 -> throw new SecurityAuthenticationException("JWT", "isolation-incomplete");
             case 12 -> throw new SecurityAuthenticationException("JWT", "isolation-unknown-strategy");
             case 13 -> throw new SecurityAuthenticationException("JWT", "isolation-malformed");
-            // Size 14: a declared shared scope. Denied while no binding implements read-widen /
-            // owner-scoped-write — narrowing it to tenant-private or honouring it unenforced are both
-            // forbidden (ADR-012 §4b.5). This case inverts to enforcement when a binding gains the mode.
+            // Size 14: a declared shared scope, on a provider not constructed as enforcing — narrowing
+            // it to tenant-private or honouring it unenforced are both forbidden (ADR-012 §4b.5/§4b.7).
             case 14 -> throw new SecurityAuthenticationException("JWT", "shared-scope-unsupported");
+            // Size 15: a wrong-typed shared scope. Like size 13 this deny is the provider's own — the
+            // mapping sees the claim as absent — but it guards the opposite failure: not a weakened
+            // tier, a silently withheld one (ADR-012 §4b.7).
+            case 15 -> throw new SecurityAuthenticationException("JWT", "shared-scope-malformed");
             default -> ImmutableStorageContext.GLOBAL;
         };
         return new AuthenticationResult(

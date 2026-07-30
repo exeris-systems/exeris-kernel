@@ -163,16 +163,15 @@ public final class IdentityStorageMapping {
      * remains wherever enforcement is absent, so no window exists in which a declared scope resolves to
      * anything but deny or correct enforcement.
      *
-     * <p><b>Wrong-typed claim — now a live driver obligation.</b>
+     * <p><b>Wrong-typed claim — discharged upstream, by obligation.</b>
      * {@link VerifiedClaims#claim(String)} reports a present-but-not-single-string claim as absent, so a
-     * wrong-typed shared-scope claim arrives here as "no shared scope declared" and yields the
-     * tenant-private default. While every declared scope was denied outright that was merely a
-     * narrowing, and therefore tolerable. It is not tolerable any more: in a deployment that asserts
-     * {@link #SHARED_SCOPE_ENFORCED_KEY}, a caller whose scope claim is malformed silently loses the
-     * shared visibility it asked for instead of being told. Type-checking this claim during token
-     * validation is consequently a {@code TokenValidator} obligation on the same footing as
-     * {@link KernelIsolationClaims#ISOLATION_STRATEGY} (ADR-012 §4a enforcement layers) — the mapping
-     * structurally cannot make it.
+     * wrong-typed shared-scope claim would arrive here as "no shared scope declared" and yield the
+     * tenant-private default. In a deployment asserting {@link #SHARED_SCOPE_ENFORCED_KEY} that means a
+     * caller with a malformed claim silently loses the visibility it asked for instead of being told.
+     * The mapping structurally cannot catch it, so type-checking the claim during token validation is a
+     * {@code TokenValidator} obligation on the same footing as
+     * {@link KernelIsolationClaims#ISOLATION_STRATEGY} (ADR-012 §4a enforcement layers), pinned for every
+     * binding by the TCK rather than left to each one's diligence.
      */
     private static String resolveSharedScope(VerifiedClaims claims, String tokenType,
                                              boolean sharedScopeEnforced) {

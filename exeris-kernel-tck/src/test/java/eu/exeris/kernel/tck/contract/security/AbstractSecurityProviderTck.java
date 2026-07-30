@@ -324,6 +324,32 @@ public abstract class AbstractSecurityProviderTck {
     protected abstract LoanedBuffer createTokenWithWrongTypedStrategy();
 
     /**
+     * Creates a {@link LoanedBuffer} containing a token whose
+     * {@link eu.exeris.kernel.spi.security.KernelIsolationClaims#SHARED_SCOPE_KEY} claim is
+     * <b>present but not representable as a single string</b> — the shared-scope counterpart of
+     * {@link #createTokenWithWrongTypedStrategy()}.
+     *
+     * <p>The provider MUST <b>deny</b> this token ({@link SecurityAuthenticationException},
+     * {@code EX-SEC-2002}).
+     *
+     * <h2>Why this is a second obligation and not the same one</h2>
+     * <p>The structural cause is shared — {@code claim()} reports the wrong-typed value as absent, so
+     * the mapping never sees it — but the resulting harm is not, so discharging one check does not
+     * discharge the other. A wrong-typed strategy resolves to {@code SHARED} and weakens the
+     * provisioned tier. A wrong-typed shared scope resolves to tenant-private: it grants nothing, and
+     * instead <em>withholds</em> visibility the caller asked for and an enforcing deployment was ready
+     * to grant, with no signal that anything was wrong.
+     *
+     * <p>That silent withholding is why this case did not exist before v0.11: while every declared
+     * shared scope was denied outright, the mistyped token reached the same outcome as the well-typed
+     * one, so nothing was hidden. ADR-012 §4b.7 removed that coincidence by making the deny conditional
+     * on the deployment (see §10).
+     *
+     * <p>Caller owns the buffer lifecycle.
+     */
+    protected abstract LoanedBuffer createTokenWithWrongTypedSharedScope();
+
+    /**
      * Creates a {@link LoanedBuffer} containing a token declaring
      * {@link eu.exeris.kernel.spi.security.KernelIsolationClaims#SHARED_SCOPE_KEY} — a shared-scope
      * partition the subject asks to participate in.
@@ -964,6 +990,24 @@ public abstract class AbstractSecurityProviderTck {
                                 + "and would resolve to SHARED. A binding that does not type-check "
                                 + "during validation fails OPEN here with every other gate green "
                                 + "(S-P0-07 / ADR-012 \u00a74a amended, \u00a79 enforcement layers)")
+                        .isInstanceOfSatisfying(SecurityAuthenticationException.class, ex ->
+                                assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_SEC_2002));
+            }
+        }
+
+        @Test
+        @DisplayName("wrong-typed shared-scope claim \u2192 terminal deny (EX-SEC-2002)")
+        void assert_authenticate_denies_wrong_typed_shared_scope() {
+            try (LoanedBuffer token = createTokenWithWrongTypedSharedScope()) {
+                assertThatThrownBy(() -> provider.authenticate(token))
+                        .as("a present-but-not-string SHARED_SCOPE_KEY is malformed security input and "
+                                + "MUST be denied by the binding's own validation \u2014 "
+                                + "VerifiedClaims.claim() reports it as ABSENT, so it reaches "
+                                + "IdentityStorageMapping.fromClaims as \"no shared scope declared\". "
+                                + "A binding that skips the check does not fail open here; it fails "
+                                + "SILENT, resolving the request to tenant-private and withholding "
+                                + "visibility an enforcing deployment was ready to grant, with every "
+                                + "other gate green (ADR-012 \u00a74b.7, \u00a79 enforcement layers)")
                         .isInstanceOfSatisfying(SecurityAuthenticationException.class, ex ->
                                 assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_SEC_2002));
             }
