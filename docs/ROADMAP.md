@@ -1657,7 +1657,7 @@ See also: ADR-036 (request-body decoder SPI quadrant); ADR-043 (SSE streaming); 
 
 ---
 
-### Storage: `BlobStorageProvider` SPI
+### Storage: `BlobStorageProvider` SPI (ADR-056)
 
 **Gap:** File and media handling has no kernel SPI seam. Application generators that need to emit upload widgets, signed-URL flows, or download streams cannot rely on a kernel-side adapter — every host application hand-wires its own S3 / MinIO / GCS / local-FS code, with no zero-copy story and no isolation-key scoping. Blob I/O is a runtime hot path (large-payload streaming, native sendfile candidate) with ≥2 plausible drivers, qualifying as kernel SPI territory under the Wall test.
 
@@ -1666,6 +1666,8 @@ See also: ADR-036 (request-body decoder SPI quadrant); ADR-043 (SSE streaming); 
 **Resolution:** Define `BlobStorageProvider`, `BlobRef`, `BlobUploadHandle`, `BlobDownloadHandle` in `eu.exeris.kernel.spi.storage.blob`. Streaming I/O backed by `LoanedBuffer` / `MemorySegment` (no `byte[]` round-trip on the hot path). Community drivers: local filesystem + a minimal S3-compatible HTTP driver reusing `HttpClientEngine`. Enterprise driver track (out-of-repo): zero-copy `io_uring sendfile` for local FS, native multipart upload for S3 (parallel uploads via `StructuredTaskScope`). `AbstractBlobStorageTck` covers: upload round-trip, download streaming, content-range read, signed-URL generation contract, isolation-key scoping (`StorageContext.isolationKey` honored for tenant-segregated buckets per ADR-012).
 
 **Merge Gate:** SPI green on TCK with at least two bindings (local FS + S3-compatible HTTP); zero-leak assertion on `LoanedBuffer` lifecycle through upload + download paths; `StorageContext` isolation honored per ADR-012; ArchTest forbids `java.io.File` / `java.nio.file.Files` imports inside the SPI package (consistent with existing scoped bans in runtime hot paths).
+
+See also: `docs/adr/ADR-056-blob-storage-provider-spi.md` (Accepted 2026-07-30) — rules package placement, the `LoanedBuffer` ownership rule across both transfer directions, tenant-relative `BlobRef` addressing, the absent-`isolationKey` deny, and the signed-URL capability contract. One deviation from the Resolution text above is recorded there: the operational type is **`BlobStore`**, with `BlobStorageProvider` kept as the ServiceLoader discovery handle, matching the `*Provider` + `createEngine` convention every sibling package already follows.
 
 ---
 
