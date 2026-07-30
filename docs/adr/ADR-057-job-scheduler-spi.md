@@ -98,7 +98,8 @@ scoped-ban exception.**
 7. **Cron support is the standard five-field syntax and nothing more.** No seconds field, no `@reboot`,
    no vendor extensions. A cron parser is a surface where scope creep is invisible and compatibility
    claims are expensive; the subset is stated in the contract so a driver cannot quietly widen it.
-   `JobTrigger` additionally covers fixed-interval and one-shot triggers.
+   `JobTrigger` covers exactly three kinds — cron, fixed-interval, and one-shot. The ROADMAP entry lists
+   a fourth, event-driven; it is deliberately excluded, for the reason given below.
 
 8. **JFR is the observability surface.** `JobDispatchEvent`, `JobCompletionEvent`, and `JobFailureEvent`
    are single-phase commits. A job runs on a virtual thread, and straddling blocking work between an
@@ -156,8 +157,19 @@ scoped-ban exception.**
 - **Re-validating identity at dispatch time** (see obligation 5's second consequence).
 - **Job persistence across restart.** The in-process driver's schedule lives in memory; surviving a
   restart is a durable-backend property, and travels with the durable-queue work above.
+- **Event-driven triggers**, which the ROADMAP entry lists as a fourth `JobTrigger` kind. Excluded on
+  coupling direction. "Run this job when event X occurs" is already expressible: an event handler calls
+  `submit`, and the job gains context capture, a handle, cancellation, and JFR events by that route. A
+  trigger kind would instead make `spi.scheduling` depend on `spi.events` to name the subscription —
+  putting an events dependency inside the scheduling contract to express something composition already
+  covers. Events submitting jobs is the direction that keeps both contracts narrow; the reverse is a
+  seam the kernel would have to maintain forever for no capability gained. Debounce and rate-limit
+  semantics, which are the genuinely scheduler-shaped part of the request, are dispatch policy rather
+  than a trigger kind, and are not in v0.11 either.
 - **Distributed fan-out, work stealing, and job dependency graphs.** A scheduler that also expresses
-  DAGs is a workflow engine, and this repository already has one — the Flow subsystem.
+  DAGs is a workflow engine, and this repository already has one — the Flow subsystem. Together with the
+  entry above, both exclusions hold the same line: the scheduler composes with its neighbours rather
+  than absorbing them.
 - **1.0 GA scope.** `docs/ROADMAP.md` marks the v0.11/v0.12 SPI row — including `JobScheduler` —
   explicitly post-1.0. This SPI ships in v0.11 and 1.0 is not gated on it.
 
