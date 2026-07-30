@@ -135,6 +135,11 @@ knowing whether it can be. This section rules how that is known.
   `exeris.security.shared-scope.enforced` (`IdentityStorageMapping.SHARED_SCOPE_ENFORCED_KEY`). Absent or
   `false` → a declared shared scope is denied. The flag is fixed at provider construction, never
   reconfigurable behind a live provider, because it participates in a per-request security decision.
+- **The key is named, not yet read.** Nothing resolves that property from a configuration source today;
+  the assertion reaches the mapping through explicit provider construction, and binding the key to
+  configuration lands with the same wiring step that still owns issuer, audience, and JWKS endpoint. The
+  constant is introduced now so the name an operator will set and the name the wiring will read are fixed
+  together — the alternative is documenting a property that later turns out to be spelled differently.
 - **Rejected — a capability on the persistence provider** (e.g. `PersistenceEngine.supportsSharedScope()`
   resolved at bootstrap). It reads as the cleaner, more kernel-owned option and is worse: the engine does
   not write the policy either, so it cannot answer truthfully. Sourcing the value from configuration and

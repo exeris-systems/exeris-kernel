@@ -329,14 +329,16 @@ public abstract class AbstractSecurityProviderTck {
      * partition the subject asks to participate in.
      *
      * <p>The provider MUST <b>deny</b> this token ({@link SecurityAuthenticationException},
-     * {@code EX-SEC-2002}) for as long as no persistence binding implements the read-widen /
-     * owner-scoped-write mode. Neither alternative is permitted (ADR-012 §4b.5): resolving it to a
-     * tenant-private context silently narrows what the caller asked for, and honouring it produces a
-     * context claiming visibility that nothing enforces — the S-P0-07 class.
+     * {@code EX-SEC-2002}) unless it was constructed for a deployment asserting it enforces the
+     * shared-scope policy contract (ADR-012 §4b.7). Neither alternative is permitted (ADR-012 §4b.5):
+     * resolving it to a tenant-private context silently narrows what the caller asked for, and honouring
+     * it produces a context claiming visibility that nothing enforces — the S-P0-07 class.
      *
-     * <p>This case inverts when a binding gains the mode: it does not disappear, it becomes conditional
-     * on the deployment, so there is never a window in which a declared shared scope resolves to
-     * anything but deny or correct enforcement.
+     * <p>That inversion has now happened, and the case did not disappear: it became conditional on the
+     * deployment, so there is still no window in which a declared shared scope resolves to anything but
+     * deny or correct enforcement. The enforcing half of the seam is asserted in
+     * {@code AbstractIdentityProviderTck}, whose SUT is a template method and can therefore supply an
+     * enforcing instance; this suite pins the unenforced default.
      *
      * <p>Caller owns the buffer lifecycle.
      */
@@ -985,7 +987,8 @@ public abstract class AbstractSecurityProviderTck {
         void assert_authenticate_denies_declared_shared_scope_while_unenforceable() {
             try (LoanedBuffer token = createTokenWithSharedScopeClaim()) {
                 assertThatThrownBy(() -> provider.authenticate(token))
-                        .as("no binding implements read-widen / owner-scoped-write yet, so a declared "
+                        .as("this provider is not constructed for a deployment asserting it enforces "
+                                + "the shared-scope policy contract (ADR-012 §4b.7), so a declared "
                                 + "shared scope MUST deny. Resolving it tenant-private would silently "
                                 + "narrow what the caller asked for; honouring it would hand back a "
                                 + "context claiming visibility nothing enforces (S-P0-07 class). "

@@ -62,6 +62,13 @@ public final class IdentityStorageMapping {
      * <p>Absent or {@code false} means unenforceable, and a declared shared scope is therefore denied.
      * That default is what keeps the tier fail-closed for every deployment that has not opted in.
      *
+     * <p><b>Names the key; nothing reads it yet.</b> No kernel component resolves this property from a
+     * configuration source today — the assertion reaches
+     * {@link #fromClaims(VerifiedClaims, UUID, String, boolean)} through explicit provider construction,
+     * so setting the property has no effect before the config-wiring step that still owns issuer,
+     * audience, and JWKS endpoint. The constant exists now to fix the name that step will use, so
+     * operator-facing documentation and the eventual wiring cannot drift apart.
+     *
      * @since 0.11.0
      */
     public static final String SHARED_SCOPE_ENFORCED_KEY = "exeris.security.shared-scope.enforced";
