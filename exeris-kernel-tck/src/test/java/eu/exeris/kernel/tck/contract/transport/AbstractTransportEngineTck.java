@@ -19,6 +19,13 @@ import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 /**
  * TCK: Abstract base for {@link TransportEngine} lifecycle verification.
@@ -38,11 +45,33 @@ import static org.assertj.core.api.Assertions.assertThatCode;
  */
 public abstract class AbstractTransportEngineTck {
 
+    /** Small enough to reach in a unit test; nothing about the mechanism is size-dependent. */
+    private static final int CEILING = 2;
+    private static final int OVER_CEILING = 2;
+    private static final int CONNECT_TIMEOUT_MS = 2_000;
+    private static final long REJECTION_TIMEOUT_SECONDS = 5L;
+
     /**
      * Creates a fully initialised (but not yet started) {@link TransportEngine} in SERVER mode.
      * The engine MUST have a stream handler already registered.
      */
     protected abstract TransportEngine createEngine();
+
+    /**
+     * Creates an unstarted SERVER-mode engine whose concurrent-connection ceiling is
+     * {@code maxConnections}, with a stream handler already registered.
+     *
+     * <p>Abstract rather than defaulted-to-skip. A binding that never implemented this would pass the
+     * refusal contract below by not running it — which is exactly the shape of the defect the
+     * contract exists to catch, since the Community driver counted its own accept-time refusals
+     * nowhere and reported a healthy zero while turning every connection away.
+     *
+     * @param maxConnections the ceiling; small values are expected, so a binding must not silently
+     *                       clamp it to something it finds more reasonable
+     * @param port           the port to bind; supplied by the suite so it can drive clients at the
+     *                       engine without needing a binding-specific way to read the bound address
+     */
+    protected abstract TransportEngine createEngineWithConnectionCeiling(int maxConnections, int port);
 
     /**
      * Returns the expected {@link TransportMode} of the engine created by {@link #createEngine()}.
@@ -153,6 +182,70 @@ public abstract class AbstractTransportEngineTck {
             assertThat(stats.activeConnections()).isGreaterThanOrEqualTo(0);
             assertThat(stats.totalAccepted()).isGreaterThanOrEqualTo(0);
             engine.stop();
+        }
+
+        @Test
+        @DisplayName("totalRejected counts a refusal at the connection ceiling")
+        void totalRejectedCountsCeilingRefusal() throws Exception {
+            int port = freePort();
+            TransportEngine bounded = createEngineWithConnectionCeiling(CEILING, port);
+            List<Socket> clients = new ArrayList<>();
+            try {
+                bounded.start();
+                for (int i = 0; i < CEILING + OVER_CEILING; i++) {
+                    clients.add(connectQuietly(port));
+                }
+                awaitRejection(bounded);
+            } finally {
+                clients.forEach(AbstractTransportEngineTck::closeQuietly);
+                bounded.close();
+            }
+        }
+    }
+
+    /**
+     * A refusal at the ceiling MUST reach {@code totalRejected}.
+     *
+     * <p>The field is what an operator consults when asking whether the server is turning work away,
+     * so a driver that counts only one of its refusal paths reports a healthy zero during a total
+     * outage — a value read as evidence the fault lies elsewhere. The contract is that
+     * {@code totalRejected} reflects <em>every</em> path by which the engine declines work, not
+     * whichever one a driver happened to wire up.
+     */
+    private static void awaitRejection(TransportEngine bounded) {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(REJECTION_TIMEOUT_SECONDS);
+        while (bounded.stats().totalRejected() == 0 && System.nanoTime() < deadline) {
+            Thread.onSpinWait();
+        }
+        assertThat(bounded.stats().totalRejected())
+                .as("a refusal the engine does not count is a refusal an operator cannot see")
+                .isPositive();
+    }
+
+    private static int freePort() {
+        try (ServerSocket probe = new ServerSocket(0)) {
+            return probe.getLocalPort();
+        } catch (IOException e) {
+            throw new IllegalStateException("unable to allocate a free TCP port", e);
+        }
+    }
+
+    private static Socket connectQuietly(int port) {
+        Socket socket = new Socket();
+        try {
+            socket.connect(new InetSocketAddress("127.0.0.1", port), CONNECT_TIMEOUT_MS);
+        } catch (IOException e) {
+            // A refused connection may surface here or on a later read; the assertion reads the
+            // server's own counter rather than guessing which side observes it first.
+        }
+        return socket;
+    }
+
+    private static void closeQuietly(Socket socket) {
+        try {
+            socket.close();
+        } catch (IOException e) {
+            // Teardown.
         }
     }
 }

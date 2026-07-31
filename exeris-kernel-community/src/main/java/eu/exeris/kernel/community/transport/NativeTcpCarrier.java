@@ -94,6 +94,7 @@ public final class NativeTcpCarrier implements TransportEngine {
     private final AtomicLong activeConnections = new AtomicLong();
     private final AtomicLong activeStreams = new AtomicLong();
     private final AtomicLong totalAccepted = new AtomicLong();
+    private final AtomicLong refusedConnections = new AtomicLong();
 
     private volatile StreamHandler streamHandler;
     private volatile ConnectionHandler connectionHandler = connection -> {
@@ -283,10 +284,12 @@ public final class NativeTcpCarrier implements TransportEngine {
         if (!running.get()) {
             return TransportStats.EMPTY;
         }
-        long rejected = 0L;
+        // Both refusal paths, not just the PAQS one. A caller reading totalRejected is asking "is
+        // this server turning work away", and an accept-time refusal is the most total form of that.
+        long rejected = refusedConnections.get();
         PaqsScheduler localPaqs = paqs;
         if (localPaqs != null) {
-            rejected = localPaqs.loadShedder().shedCount();
+            rejected += localPaqs.loadShedder().shedCount();
         }
         return new TransportStats(
                 (int) activeConnections.get(),
@@ -457,6 +460,21 @@ public final class NativeTcpCarrier implements TransportEngine {
         }
     }
 
+    /**
+     * Records a connection refused at the {@code maxConnections} ceiling.
+     *
+     * <p>Observability only — the refusal itself is unchanged. Whether an accept-time cap is the
+     * right mechanism, and whether its default is right, are separate decisions; this makes the
+     * existing behaviour visible so they can be taken on evidence.
+     */
+    private void recordRefusal() {
+        long total = refusedConnections.incrementAndGet();
+        CommunityConnectionRefusedEvent.emit(
+                config.bindAddress(), config.port(), activeConnections.get(),
+                config.maxConnections(), total);
+    }
+
+
     private boolean tryReserveConnectionSlot() {
         long maxConnections = config.maxConnections();
         while (true) {
@@ -509,6 +527,7 @@ public final class NativeTcpCarrier implements TransportEngine {
             try {
                 slotReserved = tryReserveConnectionSlot();
                 if (!slotReserved) {
+                    recordRefusal();
                     closeQuietly(currentChannel);
                     acceptedChannel = serverChannel.accept();
                     continue;
