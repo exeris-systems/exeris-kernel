@@ -1799,6 +1799,38 @@ So KV-as-projection needs **three net-new mechanisms, not one**: (1) **keyed pro
 
 See also: v0.10 §"Events: Log-Ordering & Optimistic-Concurrency Boundary" (the fundament); v0.12 §"Runtime: `CacheProvider` SPI" (the distinct cache seam).
 
+### Graph: Heterogeneous Multi-Hop Traversal (surfaced by dogfooding, 2026-07-31)
+
+**Gap:** `GraphTraversal` (`exeris-kernel-spi/.../graph/model/GraphTraversal.java:28`) carries exactly **one** `GraphEdgeDescriptor`, and every `GraphSession` entry point that consumes a traversal takes that single-edge shape: `traverseBreadthFirst(GraphTraversal)`, `streamBfsJson(GraphTraversal)`, and `findShortestPath(GraphEdgeDescriptor, source, target)`. There is no method accepting a heterogeneous path. A two-hop query over different relationship types — `User -[PURCHASED]-> Product -[SIMILAR_TO]-> Product` — is therefore not expressible as one request; a caller must issue hop one, materialise the intermediate node set, and issue hop two per node.
+
+That is not merely inconvenient. It moves the join into application code, which (a) costs one round trip per hop and an N+1 fan-out on the second, (b) puts the intermediate result set on the heap, against the No-Waste-Compute contract the graph subsystem otherwise honours through `streamBfsJson`'s `LoanedBuffer`, and (c) leaves the second hop's tenant scoping to the caller rather than to the engine. Recommendation traversal is the canonical graph use case, so this is closer to a missing primitive than to a missing convenience.
+
+**Owner:** Graph subsystem.
+
+**Resolution:** RFC before ADR — the option space is open and the choice is a contract shape, not a defect fix. Options to compare: (a) a `GraphPathSpec` carrying an ordered `List<GraphEdgeDescriptor>` with a per-hop depth, consumed by a new `traversePath(...)`; (b) generalising `GraphTraversal.edgeDescriptor` to a set with a per-hop predicate; (c) declining the primitive and documenting the client-side composition as the supported pattern, on the grounds that arbitrary path expressions are a query-language problem the kernel deliberately does not own. Any option that lands must state how depth interacts with hop count (a five-hop path with `maxDepth=3` needs a defined meaning), and must keep `StorageContext` scoping engine-side on every hop.
+
+**Merge Gate:** RFC accepted with one shape and dissent recorded. If a primitive lands: `AbstractGraphSessionTck` covers a heterogeneous two-hop path, a hop that matches nothing (empty result, not error), depth interaction, and a cross-tenant probe proving the second hop cannot escape the caller's isolation key; both bindings green; the zero-copy streaming variant covered, not only the `List<UUID>` one.
+
+**1.0 disposition:** post-1.0. Graph is not in the six-subsystem 1.0 core (see §"Road to 1.0"), and this is contract widening rather than a correctness fix.
+
+---
+
+### Flow: No Way to Await a Flow (surfaced by dogfooding, 2026-07-31)
+
+**Gap:** `FlowScheduler` exposes `schedule(FlowExecutionPlan, FlowContext)` returning `void`, plus `park`, `wake`, and `lookupParked`. Neither it nor `FlowEngine` offers any completion surface — no handle, no join, no completion callback, no terminal-state future. A caller that starts a flow has no supported way to learn that it finished, short of polling a snapshot store or subscribing to an event the flow itself must be written to emit.
+
+This is a genuine product-SPI gap rather than a stylistic one. Request/response over a flow — "run this saga, answer the HTTP call when it settles" — is a shape downstream applications reach for immediately, and today it has no kernel answer at all. Every consumer invents its own correlation and waiting mechanism, which is the duplicated-unaudited-code failure the kernel exists to remove.
+
+**Owner:** Flow subsystem.
+
+**Resolution:** RFC. The design question is not "add a future" — it is what completion *means* for a durable, parkable, cross-restart flow, and that is exactly where a naive API would mislead. Points the RFC must settle: whether awaiting is even coherent for a flow that may park across a restart (the awaiting caller does not survive it); whether the surface is a terminal-state observer rather than a join; the relationship to the existing terminal-state catalog and to `FlowSnapshotStore`; the timeout contract and what a caller observes when a flow outlives its awaiter; and whether this composes with, or duplicates, the choreography wake path. **Must not acquire a `CompletableFuture`** — banned on orchestration paths — nor a new `StructuredTaskScope` site, per the Platform Baseline below.
+
+**Merge Gate:** RFC accepted with one shape and dissent recorded. If a surface lands: `AbstractFlowSchedulerTck` covers completion after a normal terminal state, after a compensating/failed terminal state, a timeout, an awaiter racing a park, and an awaiter that gives up before the flow settles (no leak, no orphaned registration); Community binding green.
+
+**1.0 disposition:** 1.0-recommended. Flow *is* in the 1.0 core, and "replaces the orchestration layer" is one of the two load-bearing product claims — a flow nobody can wait on weakens it. Sequenced behind the v0.11 flow-versioning and continuity work rather than ahead of it.
+
+---
+
 ---
 
 ## Road to 1.0 — Differentiator & Table-Stakes Gaps (surfaced 2026-06-22)
