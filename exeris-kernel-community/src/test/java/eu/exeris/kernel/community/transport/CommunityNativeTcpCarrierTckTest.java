@@ -36,6 +36,19 @@ class CommunityNativeTcpCarrierTckTest extends AbstractTransportEngineTck {
     }
 
     @Override
+    protected TransportEngine createEngineWithConnectionCeiling(int maxConnections, int port) {
+        TransportConfig config = new TransportConfig(
+                TransportMode.SERVER, "127.0.0.1", port, 1, null, null, maxConnections, 30_000);
+        TransportEngine[] holder = new TransportEngine[1];
+        ScopedValue.where(KernelProviders.MEMORY_ALLOCATOR, ALLOCATOR)
+                .run(() -> holder[0] = new NativeTcpTransportProvider().createEngine(config));
+        // Accepted connections are parked, never served: closing them here would free slots
+        // underneath the ceiling and the refusal path would never be reached.
+        holder[0].setStreamHandler(stream -> { });
+        return holder[0];
+    }
+
+    @Override
     protected TransportEngine createEngine() {
         NativeTcpTransportProvider provider = new NativeTcpTransportProvider();
         TransportConfig config = new TransportConfig(

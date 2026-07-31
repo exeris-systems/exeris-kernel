@@ -27,7 +27,13 @@ package eu.exeris.kernel.spi.transport;
  *                          ({@code long} — can exceed {@code Integer.MAX_VALUE} on
  *                          high-throughput multiplexed transports)
  * @param totalAccepted     cumulative number of connections accepted since engine start
- * @param totalRejected     cumulative number of connections/streams rejected (load shedding)
+ * @param totalRejected     cumulative work the engine declined, across <em>every</em> refusal path
+ *                          it has — priority-aware stream shedding and any admission ceiling
+ *                          enforced before a shed decision is reached, such as a cap on concurrent
+ *                          connections applied at accept time. A driver that counts only one of its
+ *                          paths reports zero during a total refusal, which is read as evidence the
+ *                          fault lies elsewhere; the contract is the sum, not whichever mechanism a
+ *                          binding happened to wire up.
  * @param rttP50Micros      median RTT in microseconds (0 if no samples)
  * @param rttP95Micros      95th percentile RTT in microseconds (0 if no samples)
  * @see TransportEngine#stats()

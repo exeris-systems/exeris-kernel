@@ -474,9 +474,6 @@ public final class NativeTcpCarrier implements TransportEngine {
                 config.maxConnections(), total);
     }
 
-    /* default */ long refusedConnectionCount() {
-        return refusedConnections.get();
-    }
 
     private boolean tryReserveConnectionSlot() {
         long maxConnections = config.maxConnections();
