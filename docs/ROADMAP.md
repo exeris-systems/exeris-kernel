@@ -1799,56 +1799,6 @@ So KV-as-projection needs **three net-new mechanisms, not one**: (1) **keyed pro
 
 See also: v0.10 §"Events: Log-Ordering & Optimistic-Concurrency Boundary" (the fundament); v0.12 §"Runtime: `CacheProvider` SPI" (the distinct cache seam).
 
-### Transport: Connection Cap Refuses Silently (surfaced by load-test triage, 2026-07-31)
-
-**Gap:** `NativeTcpCarrier`'s accept loop reserves a slot against `TransportConfig.maxConnections()` (default `HttpConfig.DEFAULT_MAX_CONNECTIONS` = 1000, `http.maxConnections`). When the cap is reached it calls `closeQuietly(currentChannel)` and continues: the connection is **accepted at TCP level and then closed with no log line, no JFR event, and no counter an operator can read**. From the client the socket opens and dies; from the server nothing happened.
-
-This is the only refusal path in the kernel with no telemetry at all, which makes it the hardest failure to diagnose and the easiest to misattribute. A load test that trips it sees connection-level errors with a clean server log and will reasonably conclude the fault is elsewhere — a shape that has already cost triage time (see below). It also breaks the Glass-Box premise: every other shed or deny in the kernel emits an event, and admission decisions in persistence emit `AdmissionDecisionEvent` specifically so operators can attribute them.
-
-Two properties make this cap easy to hit unexpectedly: it counts **concurrent connections, not rate**, so a transient overlap of two client phases can cross it at a request rate that is otherwise comfortable; and 1000 is low enough that a keep-alive client pool plus a draining previous pool can exceed it without either alone coming close.
-
-**Owner:** Transport subsystem.
-
-**Resolution:** Emit a JFR event on refusal (`schedulerName`-style shape: bind address, active count, configured cap) and expose the refusal count in transport stats; the event must be single-phase and must not carry peer identity beyond what the transport already records. Independently, review whether a default of 1000 is right for the reference deployment, and whether an accept-time cap is the correct mechanism at all versus admitting and shedding at request level where the response can carry a status. **Do not change the cap's behaviour and its observability in the same commit** — the silence is the defect being fixed; the policy is a separate decision.
-
-**Merge Gate:** Refusal event registered in `docs/subsystems/telemetry.md` §Required Events and asserted by a driver-local JFR test that drives the cap to its limit; transport stats expose a monotonic refusal counter; `docs/subsystems/transport.md` documents the cap, its default, and what a client observes when it trips.
-
-**1.0 disposition:** 1.0-recommended. Transport *is* in the 1.0 core, and an undiagnosable refusal path is the kind of thing that turns a support conversation into an accusation.
-
----
-
-### Graph: Heterogeneous Multi-Hop Traversal (surfaced by dogfooding, 2026-07-31)
-
-**Gap:** `GraphTraversal` (`exeris-kernel-spi/.../graph/model/GraphTraversal.java:28`) carries exactly **one** `GraphEdgeDescriptor`, and every `GraphSession` entry point that consumes a traversal takes that single-edge shape: `traverseBreadthFirst(GraphTraversal)`, `streamBfsJson(GraphTraversal)`, and `findShortestPath(GraphEdgeDescriptor, source, target)`. There is no method accepting a heterogeneous path. A two-hop query over different relationship types — `User -[PURCHASED]-> Product -[SIMILAR_TO]-> Product` — is therefore not expressible as one request; a caller must issue hop one, materialise the intermediate node set, and issue hop two per node.
-
-That is not merely inconvenient. It moves the join into application code, which (a) costs one round trip per hop and an N+1 fan-out on the second, (b) puts the intermediate result set on the heap, against the No-Waste-Compute contract the graph subsystem otherwise honours through `streamBfsJson`'s `LoanedBuffer`, and (c) leaves the second hop's tenant scoping to the caller rather than to the engine. Recommendation traversal is the canonical graph use case, so this is closer to a missing primitive than to a missing convenience.
-
-**Owner:** Graph subsystem.
-
-**Resolution:** RFC before ADR — the option space is open and the choice is a contract shape, not a defect fix. Options to compare: (a) a `GraphPathSpec` carrying an ordered `List<GraphEdgeDescriptor>` with a per-hop depth, consumed by a new `traversePath(...)`; (b) generalising `GraphTraversal.edgeDescriptor` to a set with a per-hop predicate; (c) declining the primitive and documenting the client-side composition as the supported pattern, on the grounds that arbitrary path expressions are a query-language problem the kernel deliberately does not own. Any option that lands must state how depth interacts with hop count (a five-hop path with `maxDepth=3` needs a defined meaning), and must keep `StorageContext` scoping engine-side on every hop.
-
-**Merge Gate:** RFC accepted with one shape and dissent recorded. If a primitive lands: `AbstractGraphSessionTck` covers a heterogeneous two-hop path, a hop that matches nothing (empty result, not error), depth interaction, and a cross-tenant probe proving the second hop cannot escape the caller's isolation key; both bindings green; the zero-copy streaming variant covered, not only the `List<UUID>` one.
-
-**1.0 disposition:** post-1.0. Graph is not in the six-subsystem 1.0 core (see §"Road to 1.0"), and this is contract widening rather than a correctness fix.
-
----
-
-### Flow: No Way to Await a Flow (surfaced by dogfooding, 2026-07-31)
-
-**Gap:** `FlowScheduler` exposes `schedule(FlowExecutionPlan, FlowContext)` returning `void`, plus `park`, `wake`, and `lookupParked`. Neither it nor `FlowEngine` offers any completion surface — no handle, no join, no completion callback, no terminal-state future. A caller that starts a flow has no supported way to learn that it finished, short of polling a snapshot store or subscribing to an event the flow itself must be written to emit.
-
-This is a genuine product-SPI gap rather than a stylistic one. Request/response over a flow — "run this saga, answer the HTTP call when it settles" — is a shape downstream applications reach for immediately, and today it has no kernel answer at all. Every consumer invents its own correlation and waiting mechanism, which is the duplicated-unaudited-code failure the kernel exists to remove.
-
-**Owner:** Flow subsystem.
-
-**Resolution:** RFC. The design question is not "add a future" — it is what completion *means* for a durable, parkable, cross-restart flow, and that is exactly where a naive API would mislead. Points the RFC must settle: whether awaiting is even coherent for a flow that may park across a restart (the awaiting caller does not survive it); whether the surface is a terminal-state observer rather than a join; the relationship to the existing terminal-state catalog and to `FlowSnapshotStore`; the timeout contract and what a caller observes when a flow outlives its awaiter; and whether this composes with, or duplicates, the choreography wake path. **Must not acquire a `CompletableFuture`** — banned on orchestration paths — nor a new `StructuredTaskScope` site, per the Platform Baseline below.
-
-**Merge Gate:** RFC accepted with one shape and dissent recorded. If a surface lands: `AbstractFlowSchedulerTck` covers completion after a normal terminal state, after a compensating/failed terminal state, a timeout, an awaiter racing a park, and an awaiter that gives up before the flow settles (no leak, no orphaned registration); Community binding green.
-
-**1.0 disposition:** 1.0-recommended. Flow *is* in the 1.0 core, and "replaces the orchestration layer" is one of the two load-bearing product claims — a flow nobody can wait on weakens it. Sequenced behind the v0.11 flow-versioning and continuity work rather than ahead of it.
-
----
-
 ---
 
 ## Road to 1.0 — Differentiator & Table-Stakes Gaps (surfaced 2026-06-22)
@@ -2008,6 +1958,54 @@ See also: v0.11 §"Transport: PAQS Execution-Seam Port (M1)" (seam landed on the
 **Actions:** (1) **Pin the zero-alloc / No-Waste-Compute contract explicitly to HotSpot-C2** in `docs/performance-contract.md` — otherwise someone benchmarks the claim under native-image, sees it not hold, and concludes it is *false*; scoping the contract defends the claim. (2) Declare the 1.0 stance in the support matrix: **edge/lightweight = native-image target (enablement is a post-1.0 gated track); throughput tier = HotSpot/C2** — explicitly stated, not silently absent. (3) Track native-image *enablement* as a separate gated track (post-1.0): reachability metadata for FFM downcalls, reflection config for reflective loaders (`GeneratedRoleRegistryLoader` resolves FQNs via reflection), `ServiceLoader` registration, and JFR feature-parity (JFR-first telemetry + `RecordingStream` in TCK — *not* zero-risk; verify custom events and streaming under SubstrateVM).
 
 **1.0 disposition:** declare the **contract** in 1.0 (cheap, defends the claim — the `performance-contract.md` pin is near-term); native-image **enablement** is a **post-1.0** gated track.
+
+### Transport: Connection Cap Refuses Silently (surfaced by load-test triage, 2026-07-31)
+
+**Gap:** `NativeTcpCarrier`'s accept loop reserves a slot against `TransportConfig.maxConnections()` (default `HttpConfig.DEFAULT_MAX_CONNECTIONS` = 1000, `http.maxConnections`). When the cap is reached it calls `closeQuietly(currentChannel)` and continues: the connection is **accepted at TCP level and then closed with no log line, no JFR event, and no counter an operator can read**. From the client the socket opens and dies; from the server nothing happened.
+
+This is the only refusal path in the kernel with no telemetry at all, which makes it the hardest failure to diagnose and the easiest to misattribute. A load test that trips it sees connection-level errors with a clean server log and will reasonably conclude the fault is elsewhere — a shape that has already cost triage time (see below). It also breaks the Glass-Box premise: every other shed or deny in the kernel emits an event, and admission decisions in persistence emit `AdmissionDecisionEvent` specifically so operators can attribute them.
+
+Two properties make this cap easy to hit unexpectedly: it counts **concurrent connections, not rate**, so a transient overlap of two client phases can cross it at a request rate that is otherwise comfortable; and 1000 is low enough that a keep-alive client pool plus a draining previous pool can exceed it without either alone coming close.
+
+**Owner:** Transport subsystem.
+
+**Resolution:** Emit a JFR event on refusal (`schedulerName`-style shape: bind address, active count, configured cap) and expose the refusal count in transport stats; the event must be single-phase and must not carry peer identity beyond what the transport already records. Independently, review whether a default of 1000 is right for the reference deployment, and whether an accept-time cap is the correct mechanism at all versus admitting and shedding at request level where the response can carry a status. **Do not change the cap's behaviour and its observability in the same commit** — the silence is the defect being fixed; the policy is a separate decision.
+
+**Merge Gate:** Refusal event registered in `docs/subsystems/telemetry.md` §Required Events and asserted by a driver-local JFR test that drives the cap to its limit; transport stats expose a monotonic refusal counter; `docs/subsystems/transport.md` documents the cap, its default, and what a client observes when it trips.
+
+**1.0 disposition:** 1.0-recommended. Transport *is* in the 1.0 core, and an undiagnosable refusal path is the kind of thing that turns a support conversation into an accusation.
+
+---
+
+### Graph: Heterogeneous Multi-Hop Traversal (surfaced by dogfooding, 2026-07-31)
+
+**Gap:** `GraphTraversal` (`exeris-kernel-spi/.../graph/model/GraphTraversal.java:28`) carries exactly **one** `GraphEdgeDescriptor`, and every `GraphSession` entry point that consumes a traversal takes that single-edge shape: `traverseBreadthFirst(GraphTraversal)`, `streamBfsJson(GraphTraversal)`, and `findShortestPath(GraphEdgeDescriptor, source, target)`. There is no method accepting a heterogeneous path. A two-hop query over different relationship types — `User -[PURCHASED]-> Product -[SIMILAR_TO]-> Product` — is therefore not expressible as one request; a caller must issue hop one, materialise the intermediate node set, and issue hop two per node.
+
+That is not merely inconvenient. It moves the join into application code, which (a) costs one round trip per hop and an N+1 fan-out on the second, (b) puts the intermediate result set on the heap, against the No-Waste-Compute contract the graph subsystem otherwise honours through `streamBfsJson`'s `LoanedBuffer`, and (c) leaves the second hop's tenant scoping to the caller rather than to the engine. Recommendation traversal is the canonical graph use case, so this is closer to a missing primitive than to a missing convenience.
+
+**Owner:** Graph subsystem.
+
+**Resolution:** RFC before ADR — the option space is open and the choice is a contract shape, not a defect fix. Options to compare: (a) a `GraphPathSpec` carrying an ordered `List<GraphEdgeDescriptor>` with a per-hop depth, consumed by a new `traversePath(...)`; (b) generalising `GraphTraversal.edgeDescriptor` to a set with a per-hop predicate; (c) declining the primitive and documenting the client-side composition as the supported pattern, on the grounds that arbitrary path expressions are a query-language problem the kernel deliberately does not own. Any option that lands must state how depth interacts with hop count (a five-hop path with `maxDepth=3` needs a defined meaning), and must keep `StorageContext` scoping engine-side on every hop.
+
+**Merge Gate:** RFC accepted with one shape and dissent recorded. If a primitive lands: `AbstractGraphSessionTck` covers a heterogeneous two-hop path, a hop that matches nothing (empty result, not error), depth interaction, and a cross-tenant probe proving the second hop cannot escape the caller's isolation key; both bindings green; the zero-copy streaming variant covered, not only the `List<UUID>` one.
+
+**1.0 disposition:** post-1.0 — but the reason is narrower than "graph is not 1.0", which would contradict the **"Graph in 1.0 — DECIDED: stays in 1.0"** ruling in this same section. Graph the subsystem *is* in 1.0: it is substantially complete and TCK-backed. What is post-1.0 is *this contract widening*. The 1.0 decision was taken about the graph surface as it stands, on the strength of GRAPH-111's zero-alloc and churn-ratio TCKs; a new traversal primitive is new surface that ruling never assessed, and adding it inside the 1.0 window would re-open a scope question that was deliberately closed.
+
+---
+
+### Flow: No Way to Await a Flow (surfaced by dogfooding, 2026-07-31)
+
+**Gap:** `FlowScheduler` exposes `schedule(FlowExecutionPlan, FlowContext)` returning `void`, plus `park`, `wake`, and `lookupParked`. Neither it nor `FlowEngine` offers any completion surface — no handle, no join, no completion callback, no terminal-state future. A caller that starts a flow has no supported way to learn that it finished, short of polling a snapshot store or subscribing to an event the flow itself must be written to emit.
+
+This is a genuine product-SPI gap rather than a stylistic one. Request/response over a flow — "run this saga, answer the HTTP call when it settles" — is a shape downstream applications reach for immediately, and today it has no kernel answer at all. Every consumer invents its own correlation and waiting mechanism, which is the duplicated-unaudited-code failure the kernel exists to remove.
+
+**Owner:** Flow subsystem.
+
+**Resolution:** RFC. The design question is not "add a future" — it is what completion *means* for a durable, parkable, cross-restart flow, and that is exactly where a naive API would mislead. Points the RFC must settle: whether awaiting is even coherent for a flow that may park across a restart (the awaiting caller does not survive it); whether the surface is a terminal-state observer rather than a join; the relationship to the existing terminal-state catalog and to `FlowSnapshotStore`; the timeout contract and what a caller observes when a flow outlives its awaiter; and whether this composes with, or duplicates, the choreography wake path. **Must not acquire a `CompletableFuture`** — banned on orchestration paths — nor a new `StructuredTaskScope` site, per the Platform Baseline below.
+
+**Merge Gate:** RFC accepted with one shape and dissent recorded. If a surface lands: `AbstractFlowSchedulerTck` covers completion after a normal terminal state, after a compensating/failed terminal state, a timeout, an awaiter racing a park, and an awaiter that gives up before the flow settles (no leak, no orphaned registration); Community binding green.
+
+**1.0 disposition:** 1.0-recommended. Flow *is* in the 1.0 core, and "replaces the orchestration layer" is one of the two load-bearing product claims — a flow nobody can wait on weakens it. Sequenced behind the v0.11 flow-versioning and continuity work rather than ahead of it.
 
 ---
 
