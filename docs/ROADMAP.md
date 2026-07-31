@@ -1961,7 +1961,9 @@ See also: v0.11 §"Transport: PAQS Execution-Seam Port (M1)" (seam landed on the
 
 ### Transport: Connection Cap Refuses Silently (surfaced by load-test triage, 2026-07-31)
 
-**Gap:** `NativeTcpCarrier`'s accept loop reserves a slot against `TransportConfig.maxConnections()` (default `HttpConfig.DEFAULT_MAX_CONNECTIONS` = 1000, `http.maxConnections`). When the cap is reached it calls `closeQuietly(currentChannel)` and continues: the connection is **accepted at TCP level and then closed with no log line, no JFR event, and no counter an operator can read**. From the client the socket opens and dies; from the server nothing happened.
+**Gap:** `NativeTcpCarrier`'s accept loop reserves a slot against `TransportConfig.maxConnections()` (default `HttpConfig.DEFAULT_MAX_CONNECTIONS` = 1000, `http.maxConnections`). When the cap is reached it calls `closeQuietly(currentChannel)` and continues: the connection is **accepted at TCP level and then closed with no log line and no JFR event**. From the client the socket opens and dies; from the server nothing happened.
+
+Sharper than "no counter", which is how this was first written: `TransportStats` already carries `totalRejected` — *"cumulative number of connections/streams rejected (load shedding)"* — and the carrier fed it from the PAQS load-shedder alone. The one field an operator consults when asking whether the server is turning work away therefore read **zero while every connection was being refused**. That is worse than absent telemetry, because a zero is read as evidence the fault lies elsewhere.
 
 This is the only refusal path in the kernel with no telemetry at all, which makes it the hardest failure to diagnose and the easiest to misattribute. A load test that trips it sees connection-level errors with a clean server log and will reasonably conclude the fault is elsewhere — a shape that has already cost triage time (see below). It also breaks the Glass-Box premise: every other shed or deny in the kernel emits an event, and admission decisions in persistence emit `AdmissionDecisionEvent` specifically so operators can attribute them.
 
@@ -1974,6 +1976,8 @@ Two properties make this cap easy to hit unexpectedly: it counts **concurrent co
 **Merge Gate:** Refusal event registered in `docs/subsystems/telemetry.md` §Required Events and asserted by a driver-local JFR test that drives the cap to its limit; transport stats expose a monotonic refusal counter; `docs/subsystems/transport.md` documents the cap, its default, and what a client observes when it trips.
 
 **1.0 disposition:** 1.0-recommended. Transport *is* in the 1.0 core, and an undiagnosable refusal path is the kind of thing that turns a support conversation into an accusation.
+
+**Status (v0.11):** observability half **DELIVERED** — `CommunityConnectionRefusedEvent` per refusal, and `totalRejected` now sums both refusal paths. The policy half is open and deliberately unbundled: whether an accept-time cap is the right mechanism against request-level shedding that can answer with a status, and whether 1000 is the right default for the reference deployment.
 
 ---
 
