@@ -55,6 +55,30 @@ Whether an accept-time cap is the right mechanism — as opposed to admitting an
 level, where the response can carry a status — and whether 1000 is the right default, are open
 questions tracked in `docs/ROADMAP.md`. The behaviour above is unchanged; only its visibility is new.
 
+## Accept-path failure modes
+
+There are two ways an accepted connection ends without being served, and they look identical from the
+client: the socket opens and dies. They are different in kind, and the kernel now distinguishes them.
+
+| | Refusal | Setup fault |
+|---|---|---|
+| Event | `CommunityConnectionRefused` | `CommunityAcceptFault` |
+| Cause | the connection ceiling was reached | something threw while configuring the channel, resolving the peer, building the stream, or registering it |
+| Nature | a **policy** decision at a known limit | a **defect** — allocator failure, TLS engine that would not initialise, registry inconsistency |
+| In `totalRejected` | yes | **no** |
+
+A setup fault is deliberately **not** counted as a refusal. `totalRejected` means work the engine
+*declined*, and a setup that broke declined nothing. Folding the two together would leave an operator
+reading a spike unable to tell a capacity problem from a bug — the one distinction that changes what
+they do next.
+
+Both paths recover: the accept loop continues. That is correct for a per-connection failure, and
+making a setup fault fatal would trade a silent drop for an outage. What changed is only that neither
+is silent.
+
+The fault event carries the exception **class** and never its message, matching
+`CommunityReactorDispatchFault` — a message can carry request-derived text.
+
 ## Core Philosophy
 
 ### 1. Carrier Loop Architecture
