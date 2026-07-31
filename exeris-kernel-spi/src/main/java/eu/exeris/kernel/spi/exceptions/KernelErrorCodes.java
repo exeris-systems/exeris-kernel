@@ -967,11 +967,10 @@ public final class KernelErrorCodes {
      * Job dispatch refused: the submission captured no identity context, and running under an
      * ambient or default identity is not an option (ADR-057 §5).
      *
-     * <p>rawArgs layout:
-     * <ul>
-     *   <li>index 0 – {@code String} schedulerName</li>
-     *   <li>index 1 – {@code String} jobName — developer-chosen, safe to record</li>
-     * </ul>
+     * <p>Never carried on a thrown exception, so it has no {@code rawArgs} layout: a dispatched job
+     * runs on its own thread and has no caller to throw to. It is recorded on the
+     * {@code eu.exeris.kernel.scheduling.JobFailure} JFR event, alongside {@code schedulerName},
+     * {@code jobName} and {@code jobId}.
      */
     public static final String EX_JOB_9001 = "EX-JOB-9001";
 
@@ -990,11 +989,9 @@ public final class KernelErrorCodes {
      * A dispatched job body threw. The scheduler records the failure and keeps running; a repeating
      * job stays scheduled, because one failed run is not evidence the schedule is wrong.
      *
-     * <p>rawArgs layout:
-     * <ul>
-     *   <li>index 0 – {@code String} schedulerName</li>
-     *   <li>index 1 – {@code String} jobName</li>
-     * </ul>
+     * <p>JFR-only, for the same reason as {@link #EX_JOB_9001}: recorded on the
+     * {@code eu.exeris.kernel.scheduling.JobFailure} event with {@code schedulerName},
+     * {@code jobName}, {@code jobId}, and the body's exception class as the reason.
      */
     public static final String EX_JOB_9003 = "EX-JOB-9003";
 

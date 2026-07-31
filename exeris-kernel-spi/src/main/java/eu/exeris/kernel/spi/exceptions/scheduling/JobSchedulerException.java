@@ -33,7 +33,6 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  */
 public final class JobSchedulerException extends ExerisKernelException {
 
-    private static final String NO_CONTEXT_MSG = "Job dispatch refused — no captured identity context";
     private static final String CLOSED_MSG = "Scheduler is closed";
 
     private JobSchedulerException(String errorCode, String message, Throwable cause,
@@ -41,21 +40,6 @@ public final class JobSchedulerException extends ExerisKernelException {
         super(errorCode, message, cause, rawArgs);
     }
 
-    /**
-     * The job was submitted with neither a principal nor a storage context bound, so there is nothing
-     * to rebind at dispatch.
-     *
-     * <p>Terminal by design (ADR-057 §5): running under an ambient or default identity is how
-     * scheduled work quietly acquires authority nobody granted it.
-     *
-     * @param schedulerName scheduler display name
-     * @param jobName       the job that was refused
-     * @return exception with rawArgs: [schedulerName, jobName]
-     */
-    public static JobSchedulerException noCapturedContext(String schedulerName, String jobName) {
-        return new JobSchedulerException(
-                KernelErrorCodes.EX_JOB_9001, NO_CONTEXT_MSG, null, schedulerName, jobName);
-    }
 
     /**
      * A submission arrived after {@link eu.exeris.kernel.spi.scheduling.JobScheduler#close()}.

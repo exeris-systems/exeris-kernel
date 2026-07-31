@@ -35,23 +35,24 @@ final class CommunityTriggerClock {
 
     /** Compiles a cron expression once, at submission, rather than on every fire. */
     /* default */ void register(String jobId, JobTrigger trigger) {
-        if (trigger instanceof JobTrigger.Cron cron) {
-            cronSchedules.put(jobId, new CommunityCronSchedule(cron.expression()));
+        if (trigger instanceof JobTrigger.Cron(String expression)) {
+            cronSchedules.put(jobId, new CommunityCronSchedule(expression));
         }
     }
 
     /* default */ long firstDue(String jobId, JobTrigger trigger) {
         return switch (trigger) {
-            case JobTrigger.OneShot oneShot -> clock.nanoTime() + oneShot.delay().toNanos();
-            case JobTrigger.FixedInterval interval ->
-                    clock.nanoTime() + interval.initialDelay().toNanos();
+            case JobTrigger.OneShot(Duration delay) -> clock.nanoTime() + delay.toNanos();
+            case JobTrigger.FixedInterval(Duration initialDelay, Duration _) ->
+                    clock.nanoTime() + initialDelay.toNanos();
             case JobTrigger.Cron _ -> cronDue(jobId);
         };
     }
 
     /* default */ long nextDue(String jobId, JobTrigger trigger) {
         return switch (trigger) {
-            case JobTrigger.FixedInterval interval -> clock.nanoTime() + interval.interval().toNanos();
+            case JobTrigger.FixedInterval(Duration _, Duration interval) ->
+                    clock.nanoTime() + interval.toNanos();
             case JobTrigger.Cron _ -> cronDue(jobId);
             case JobTrigger.OneShot _ -> clock.nanoTime();
         };

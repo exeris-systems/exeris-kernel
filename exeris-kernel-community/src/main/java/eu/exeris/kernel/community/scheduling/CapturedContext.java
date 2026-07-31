@@ -42,28 +42,30 @@ record CapturedContext(PrincipalContext principal, StorageContext storage) {
     /**
      * Rebinds whatever was captured and runs the body.
      *
-     * <p>Chained through {@code ScopedValue.Carrier} rather than nested {@code where(...).run(...)}
-     * calls, which is the shape the bootstrap path already uses for multi-value rebinds. Either
-     * context may be absent on its own — only the both-absent case is a refusal.
+     * <p>Written as three explicit shapes rather than an accumulated {@code ScopedValue.Carrier}:
+     * every chain terminates in its own {@code run}, which is both what static analysis can verify
+     * and what a reader can check at a glance. Either context may be absent on its own — only the
+     * both-absent case is a refusal.
      */
     /* default */ void run(Runnable body) {
-        ScopedValue.Carrier carrier = null;
-        if (principal != null) {
-            carrier = ScopedValue.where(KernelProviders.PRINCIPAL_CONTEXT, principal);
-        }
-        if (storage != null) {
-            carrier = carrier == null
-                    ? ScopedValue.where(KernelProviders.STORAGE_CONTEXT, storage)
-                    : carrier.where(KernelProviders.STORAGE_CONTEXT, storage);
-        }
-        if (carrier == null) {
-            // Only reachable if the §5 guard in the scheduler is removed. It runs the body unrebound
-            // — exactly what the guard forbids — rather than dereferencing null, so removing the
-            // guard shows up as the job running (which the contract test catches) instead of as an
-            // incidental NullPointerException that would make the same test pass for the wrong reason.
-            body.run();
+        if (principal != null && storage != null) {
+            ScopedValue.where(KernelProviders.PRINCIPAL_CONTEXT, principal)
+                    .where(KernelProviders.STORAGE_CONTEXT, storage)
+                    .run(body);
             return;
         }
-        carrier.run(body);
+        if (principal != null) {
+            ScopedValue.where(KernelProviders.PRINCIPAL_CONTEXT, principal).run(body);
+            return;
+        }
+        if (storage != null) {
+            ScopedValue.where(KernelProviders.STORAGE_CONTEXT, storage).run(body);
+            return;
+        }
+        // Only reachable if the §5 guard in the scheduler is removed. It runs the body unrebound —
+        // exactly what the guard forbids — rather than throwing, so removing the guard shows up as
+        // the job running (which the contract test catches) instead of as an incidental failure that
+        // would make the same test pass for the wrong reason.
+        body.run();
     }
 }

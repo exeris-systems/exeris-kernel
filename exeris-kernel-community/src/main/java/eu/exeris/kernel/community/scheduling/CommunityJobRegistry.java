@@ -51,6 +51,16 @@ final class CommunityJobRegistry {
         clock.signal();
     }
 
+    /** Takes the lock itself — for callers that are not already inside a critical section. */
+    /* default */ boolean isRunningNow() {
+        clock.lock().lock();
+        try {
+            return running;
+        } finally {
+            clock.lock().unlock();
+        }
+    }
+
     /* default */ CommunityJobHandle find(String jobId) {
         return jobs.get(jobId);
     }

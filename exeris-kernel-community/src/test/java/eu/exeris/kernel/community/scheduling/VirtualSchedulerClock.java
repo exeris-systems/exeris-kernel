@@ -30,6 +30,7 @@ final class VirtualSchedulerClock implements CommunitySchedulerClock {
 
     // Volatile: the dispatcher reads these under the lock, but a running job body reads nanoTime()
     // outside it when the scheduler measures execution duration.
+    private long signals;
     private volatile long nanos;
     private volatile Instant wall = EPOCH;
 
@@ -50,16 +51,20 @@ final class VirtualSchedulerClock implements CommunitySchedulerClock {
 
     @Override
     public void awaitUntil(long deadlineNanos) throws InterruptedException {
-        wakeup.await();
+        awaitSignal();
     }
 
     @Override
     public void awaitSignal() throws InterruptedException {
-        wakeup.await();
+        long seen = signals;
+        while (signals == seen) {
+            wakeup.await();
+        }
     }
 
     @Override
     public void signal() {
+        signals++;
         wakeup.signalAll();
     }
 
@@ -69,7 +74,7 @@ final class VirtualSchedulerClock implements CommunitySchedulerClock {
         try {
             nanos += amount.toNanos();
             wall = wall.plus(amount);
-            wakeup.signalAll();
+            signal();
         } finally {
             lock.unlock();
         }

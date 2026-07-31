@@ -27,6 +27,7 @@ import org.junit.jupiter.api.Test;
 import java.time.Duration;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -59,6 +60,12 @@ public abstract class AbstractJobSchedulerTck {
     private static final long SILENCE_MILLIS = 250L;
 
     private static final String TENANT = "tenant-alpha";
+
+    /** Attempts for the shutdown-race case; see {@link #assertDrainIsTotal} for what that buys. */
+    private static final int DRAIN_ATTEMPTS = 20;
+
+    /** How long a raced body runs, so an unwaited-for one is still going when close() returns. */
+    private static final long BODY_MILLIS = 5L;
 
     private JobScheduler scheduler;
 
@@ -267,6 +274,14 @@ public abstract class AbstractJobSchedulerTck {
         }
 
         @Test
+        @DisplayName("close() does not return while a body it started is still running")
+        void closeDrainIsTotalUnderRace() throws InterruptedException {
+            for (int attempt = 0; attempt < DRAIN_ATTEMPTS; attempt++) {
+                assertDrainIsTotal(createScheduler());
+            }
+        }
+
+        @Test
         @DisplayName("close waits for a run already in flight")
         void closeDrainsInFlight() throws InterruptedException {
             CountDownLatch started = new CountDownLatch(1);
@@ -393,9 +408,59 @@ public abstract class AbstractJobSchedulerTck {
     // =========================================================================
 
     private JobHandle submitAsTenant(String jobName, JobTrigger trigger, Runnable body) {
+        return submitTo(scheduler, jobName, trigger, body);
+    }
+
+    private static JobHandle submitTo(JobScheduler target, String jobName, JobTrigger trigger,
+                                      Runnable body) {
         StorageContext context = ImmutableStorageContext.shared(TENANT);
         return ScopedValue.where(KernelProviders.STORAGE_CONTEXT, context)
-                .call(() -> scheduler.submit(new JobDescriptor(jobName, trigger, body)));
+                .call(() -> target.submit(new JobDescriptor(jobName, trigger, body)));
+    }
+
+    /**
+     * Races a time advance against {@code close()} and asserts the drain was total.
+     *
+     * <p>The property is not "no body ran" — a body that overlaps shutdown is legitimate, and the
+     * drain is supposed to wait for it. The property is that {@code close()} does not <em>return</em>
+     * while a body it started is still unfinished. That is what "drained, not abandoned" means, and
+     * it is checkable the instant close returns.
+     *
+     * <p><strong>What this does not cover.</strong> The motivating defect was a window between
+     * checking a job out of the queue and registering its worker: a driver doing those in two
+     * critical sections leaves the job in neither, and a close landing between them snapshots past it
+     * and returns without waiting. That window is a few instructions wide, and reintroducing it does
+     * <em>not</em> fail this case — the interleaving needed to hit it is not reachable by racing two
+     * threads from outside. It is closed by construction instead, by doing both under one lock. This
+     * case is a regression net for the coarser property, not a reproduction of that race, and it is
+     * documented as such so nobody later reads a green run as proof the window is guarded.
+     */
+    private void assertDrainIsTotal(JobScheduler racing) throws InterruptedException {
+        AtomicBoolean bodyStarted = new AtomicBoolean();
+        AtomicBoolean bodyFinished = new AtomicBoolean();
+        try {
+            submitTo(racing, "racer", new JobTrigger.OneShot(Duration.ofMinutes(1)), () -> {
+                bodyStarted.set(true);
+                // Long enough that an unwaited-for body is still running when close() returns.
+                long until = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(BODY_MILLIS);
+                while (System.nanoTime() < until) {
+                    Thread.onSpinWait();
+                }
+                bodyFinished.set(true);
+            });
+            Thread mover = Thread.ofVirtual().start(() -> advanceTime(Duration.ofMinutes(1)));
+            racing.close();
+            boolean abandoned = bodyStarted.get() && !bodyFinished.get();
+            mover.join();
+
+            assertThat(abandoned)
+                    .as("ADR-057 §6 — close() returned while a body it had started was still "
+                            + "running; the lifecycle boundary that stands in for a structured scope "
+                            + "only holds if the drain is total")
+                    .isFalse();
+        } finally {
+            racing.close();
+        }
     }
 
     /** Waits until the latch has counted down to {@code remaining}, or fails the bound. */
@@ -437,7 +502,7 @@ public abstract class AbstractJobSchedulerTck {
     private static void awaitQuietly(CountDownLatch latch) {
         try {
             latch.await(FIRE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-        } catch (InterruptedException e) {
+        } catch (InterruptedException _) {
             Thread.currentThread().interrupt();
         }
     }

@@ -11,8 +11,10 @@ package eu.exeris.kernel.community.scheduling;
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 import eu.exeris.kernel.spi.scheduling.JobDescriptor;
+import eu.exeris.kernel.spi.scheduling.JobHandle;
 import eu.exeris.kernel.spi.scheduling.JobScheduler;
 import eu.exeris.kernel.spi.scheduling.JobSchedulerConfig;
+import eu.exeris.kernel.spi.scheduling.JobState;
 import eu.exeris.kernel.spi.scheduling.JobTrigger;
 import eu.exeris.kernel.spi.security.ImmutableStorageContext;
 import jdk.jfr.Recording;
@@ -53,7 +55,7 @@ class CommunityJobJfrTest {
         VirtualSchedulerClock clock = new VirtualSchedulerClock();
         CountDownLatch fired = new CountDownLatch(1);
 
-        List<RecordedEvent> events = record(tmp, clock, recorder -> {
+        List<RecordedEvent> events = recordEvents(tmp, clock, recorder -> {
             try (JobScheduler scheduler = new CommunityJobScheduler(
                     new JobSchedulerConfig("jfr"), clock)) {
                 ScopedValue.where(KernelProviders.STORAGE_CONTEXT,
@@ -79,12 +81,11 @@ class CommunityJobJfrTest {
     void emitsFailClosedRefusal(@TempDir Path tmp) throws Exception {
         VirtualSchedulerClock clock = new VirtualSchedulerClock();
 
-        List<RecordedEvent> events = record(tmp, clock, recorder -> {
+        List<RecordedEvent> events = recordEvents(tmp, clock, recorder -> {
             try (JobScheduler scheduler = new CommunityJobScheduler(
                     new JobSchedulerConfig("jfr"), clock)) {
-                scheduler.submit(new JobDescriptor(
-                        "unscoped", new JobTrigger.OneShot(Duration.ZERO), () -> { }));
-                sleepBriefly();
+                awaitFailed(scheduler.submit(new JobDescriptor(
+                        "unscoped", new JobTrigger.OneShot(Duration.ZERO), () -> { })));
             }
         });
 
@@ -104,7 +105,7 @@ class CommunityJobJfrTest {
         VirtualSchedulerClock clock = new VirtualSchedulerClock();
         CountDownLatch fired = new CountDownLatch(1);
 
-        List<RecordedEvent> events = record(tmp, clock, recorder -> {
+        List<RecordedEvent> events = recordEvents(tmp, clock, recorder -> {
             try (JobScheduler scheduler = new CommunityJobScheduler(
                     new JobSchedulerConfig("jfr"), clock)) {
                 ScopedValue.where(KernelProviders.STORAGE_CONTEXT,
@@ -124,8 +125,8 @@ class CommunityJobJfrTest {
                 .isEqualTo(IllegalStateException.class.getName());
     }
 
-    private static List<RecordedEvent> record(Path tmp, VirtualSchedulerClock clock,
-                                              Body body) throws Exception {
+    private static List<RecordedEvent> recordEvents(Path tmp, VirtualSchedulerClock clock,
+                                                    Body body) throws Exception {
         Path jfr = tmp.resolve("scheduling.jfr");
         try (Recording recording = new Recording()) {
             recording.enable(DISPATCH);
@@ -148,20 +149,20 @@ class CommunityJobJfrTest {
     private static void awaitQuietly(CountDownLatch latch) {
         try {
             latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-        } catch (InterruptedException e) {
+        } catch (InterruptedException _) {
             Thread.currentThread().interrupt();
         }
     }
 
     /**
-     * The refusal path has no latch to wait on — the body never runs by design — so this is the one
-     * place a short real wait is unavoidable. It bounds nothing that a schedule controls.
+     * The refusal path has no latch to wait on — the body never runs by design — so the handle's
+     * state is the signal. Polling it beats sleeping: it returns as soon as the refusal is recorded
+     * and its bound is a failure timeout rather than a fixed delay every run pays.
      */
-    private static void sleepBriefly() {
-        try {
-            Thread.sleep(200L);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
+    private static void awaitFailed(JobHandle handle) {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(TIMEOUT_SECONDS);
+        while (handle.state() != JobState.FAILED && System.nanoTime() < deadline) {
+            Thread.onSpinWait();
         }
     }
 

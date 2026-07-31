@@ -22,6 +22,12 @@ final class CommunitySystemSchedulerClock implements CommunitySchedulerClock {
     private final ReentrantLock lock = new ReentrantLock();
     private final Condition wakeup = lock.newCondition();
 
+    /**
+     * Counts deliveries so a wait can tell a real signal from a spurious wake-up. Guarded by
+     * {@link #lock}, like everything else here.
+     */
+    private long signals;
+
     @Override
     public long nanoTime() {
         return System.nanoTime();
@@ -37,21 +43,30 @@ final class CommunitySystemSchedulerClock implements CommunitySchedulerClock {
         return lock;
     }
 
+    /**
+     * Waits until the deadline or a signal, looping on the residual timeout {@code awaitNanos}
+     * returns so a spurious wake-up neither ends the wait early nor restarts the full interval.
+     */
     @Override
     public void awaitUntil(long deadlineNanos) throws InterruptedException {
+        long seen = signals;
         long remaining = deadlineNanos - System.nanoTime();
-        if (remaining > 0) {
-            wakeup.awaitNanos(remaining);
+        while (remaining > 0 && signals == seen) {
+            remaining = wakeup.awaitNanos(remaining);
         }
     }
 
     @Override
     public void awaitSignal() throws InterruptedException {
-        wakeup.await();
+        long seen = signals;
+        while (signals == seen) {
+            wakeup.await();
+        }
     }
 
     @Override
     public void signal() {
+        signals++;
         wakeup.signalAll();
     }
 }

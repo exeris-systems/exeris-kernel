@@ -190,13 +190,12 @@
             <artifactId>postgresql</artifactId>
             <scope>test</scope>
         </dependency>
-            <dependency>
+        <dependency>
             <groupId>com.tngtech.archunit</groupId>
             <artifactId>archunit-junit5</artifactId>
             <scope>test</scope>
         </dependency>
-
-</dependencies>
+    </dependencies>
 
     <build>
         <plugins>

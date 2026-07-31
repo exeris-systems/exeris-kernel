@@ -43,22 +43,22 @@ final class CommunityCronSchedule {
      */
     private static final int MAX_STEPS = 4 * 366 * 24 * 60;
 
-    private static final int MINUTES = 60;
-    private static final int HOURS = 24;
-    private static final int DAYS_OF_MONTH = 32;
-    private static final int MONTHS = 13;
-    private static final int DAYS_OF_WEEK = 7;
+    private static final int MINUTE_COUNT = 60;
+    private static final int HOUR_COUNT = 24;
+    private static final int DAY_OF_MONTH_COUNT = 32;
+    private static final int MONTH_COUNT = 13;
+    private static final int DAY_OF_WEEK_COUNT = 7;
     private static final int SUNDAY_ALIAS = 7;
 
     private static final String WILDCARD = "*";
     private static final char RANGE = '-';
     private static final char STEP_SEPARATOR = '/';
 
-    private final boolean[] minutes = new boolean[MINUTES];
-    private final boolean[] hours = new boolean[HOURS];
-    private final boolean[] daysOfMonth = new boolean[DAYS_OF_MONTH];
-    private final boolean[] months = new boolean[MONTHS];
-    private final boolean[] daysOfWeek = new boolean[DAYS_OF_WEEK];
+    private final boolean[] minutes = new boolean[MINUTE_COUNT];
+    private final boolean[] hours = new boolean[HOUR_COUNT];
+    private final boolean[] daysOfMonth = new boolean[DAY_OF_MONTH_COUNT];
+    private final boolean[] months = new boolean[MONTH_COUNT];
+    private final boolean[] daysOfWeek = new boolean[DAY_OF_WEEK_COUNT];
 
     private final boolean domRestricted;
     private final boolean dowRestricted;
@@ -137,7 +137,7 @@ final class CommunityCronSchedule {
         // Parsed over 0..7 so the Sunday alias is representable, then folded down to 0..6.
         boolean[] wide = new boolean[SUNDAY_ALIAS + 1];
         fill(wide, field, 0);
-        System.arraycopy(wide, 0, daysOfWeek, 0, DAYS_OF_WEEK);
+        System.arraycopy(wide, 0, daysOfWeek, 0, DAY_OF_WEEK_COUNT);
         daysOfWeek[0] = daysOfWeek[0] || wide[SUNDAY_ALIAS];
     }
 
