@@ -29,6 +29,32 @@ off-heap `LoanedBuffer` slabs via Panama FFM — no JVM heap contact on the ingr
 
 ---
 
+## Connection ceiling
+
+`TransportConfig.maxConnections()` (`http.maxConnections`, default `HttpConfig.DEFAULT_MAX_CONNECTIONS`
+= 1000) is a hard cap on **concurrent connections across all reactors**, enforced at accept time. When
+it is reached, `NativeTcpCarrier` accepts the connection at TCP level and immediately closes it.
+
+What a client observes: the socket opens and then dies, with no HTTP response — a transport-level
+failure, not a status code. There is no way for the client to distinguish this from a network fault.
+
+Two properties make the ceiling easy to reach at a request rate that feels comfortable. It counts
+**concurrent connections, not rate**, so a client whose connection pool overlaps with a draining
+previous pool can cross it while neither pool alone comes close. And it is enforced before anything
+else — no queue, no shed decision, no response.
+
+Refusals are visible in two places, and were visible in neither before v0.11:
+
+- `TransportStats.totalRejected` includes them. It previously counted only PAQS load-sheds, so it read
+  zero during a total accept-time refusal — a value an operator reasonably reads as "this server is
+  healthy, look elsewhere".
+- `eu.exeris.kernel.transport.CommunityConnectionRefused` is emitted per refusal, carrying the active
+  count, the configured ceiling, and a cumulative total whose slope distinguishes a blip from a wall.
+
+Whether an accept-time cap is the right mechanism — as opposed to admitting and shedding at request
+level, where the response can carry a status — and whether 1000 is the right default, are open
+questions tracked in `docs/ROADMAP.md`. The behaviour above is unchanged; only its visibility is new.
+
 ## Core Philosophy
 
 ### 1. Carrier Loop Architecture
