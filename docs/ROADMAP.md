@@ -1799,6 +1799,24 @@ So KV-as-projection needs **three net-new mechanisms, not one**: (1) **keyed pro
 
 See also: v0.10 §"Events: Log-Ordering & Optimistic-Concurrency Boundary" (the fundament); v0.12 §"Runtime: `CacheProvider` SPI" (the distinct cache seam).
 
+### Transport: Connection Cap Refuses Silently (surfaced by load-test triage, 2026-07-31)
+
+**Gap:** `NativeTcpCarrier`'s accept loop reserves a slot against `TransportConfig.maxConnections()` (default `HttpConfig.DEFAULT_MAX_CONNECTIONS` = 1000, `http.maxConnections`). When the cap is reached it calls `closeQuietly(currentChannel)` and continues: the connection is **accepted at TCP level and then closed with no log line, no JFR event, and no counter an operator can read**. From the client the socket opens and dies; from the server nothing happened.
+
+This is the only refusal path in the kernel with no telemetry at all, which makes it the hardest failure to diagnose and the easiest to misattribute. A load test that trips it sees connection-level errors with a clean server log and will reasonably conclude the fault is elsewhere — a shape that has already cost triage time (see below). It also breaks the Glass-Box premise: every other shed or deny in the kernel emits an event, and admission decisions in persistence emit `AdmissionDecisionEvent` specifically so operators can attribute them.
+
+Two properties make this cap easy to hit unexpectedly: it counts **concurrent connections, not rate**, so a transient overlap of two client phases can cross it at a request rate that is otherwise comfortable; and 1000 is low enough that a keep-alive client pool plus a draining previous pool can exceed it without either alone coming close.
+
+**Owner:** Transport subsystem.
+
+**Resolution:** Emit a JFR event on refusal (`schedulerName`-style shape: bind address, active count, configured cap) and expose the refusal count in transport stats; the event must be single-phase and must not carry peer identity beyond what the transport already records. Independently, review whether a default of 1000 is right for the reference deployment, and whether an accept-time cap is the correct mechanism at all versus admitting and shedding at request level where the response can carry a status. **Do not change the cap's behaviour and its observability in the same commit** — the silence is the defect being fixed; the policy is a separate decision.
+
+**Merge Gate:** Refusal event registered in `docs/subsystems/telemetry.md` §Required Events and asserted by a driver-local JFR test that drives the cap to its limit; transport stats expose a monotonic refusal counter; `docs/subsystems/transport.md` documents the cap, its default, and what a client observes when it trips.
+
+**1.0 disposition:** 1.0-recommended. Transport *is* in the 1.0 core, and an undiagnosable refusal path is the kind of thing that turns a support conversation into an accusation.
+
+---
+
 ### Graph: Heterogeneous Multi-Hop Traversal (surfaced by dogfooding, 2026-07-31)
 
 **Gap:** `GraphTraversal` (`exeris-kernel-spi/.../graph/model/GraphTraversal.java:28`) carries exactly **one** `GraphEdgeDescriptor`, and every `GraphSession` entry point that consumes a traversal takes that single-edge shape: `traverseBreadthFirst(GraphTraversal)`, `streamBfsJson(GraphTraversal)`, and `findShortestPath(GraphEdgeDescriptor, source, target)`. There is no method accepting a heterogeneous path. A two-hop query over different relationship types — `User -[PURCHASED]-> Product -[SIMILAR_TO]-> Product` — is therefore not expressible as one request; a caller must issue hop one, materialise the intermediate node set, and issue hop two per node.
