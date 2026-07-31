@@ -9,7 +9,6 @@
 package eu.exeris.kernel.community.storage;
 
 import eu.exeris.kernel.spi.context.KernelProviders;
-import eu.exeris.kernel.spi.exceptions.storage.BlobStorageException;
 import eu.exeris.kernel.spi.security.StorageContext;
 import eu.exeris.kernel.spi.storage.blob.BlobMetadata;
 import eu.exeris.kernel.spi.storage.blob.BlobRef;
@@ -34,7 +33,6 @@ import java.util.HexFormat;
  */
 final class CommunityFilesystemBlobLayout {
 
-    private static final String PROVIDER_NAME = "ExerisCommunity/FilesystemBlob";
     private static final String TENANT_PREFIX = "t-";
     private static final String SIDECAR_SUFFIX = ".ctype";
 
@@ -50,12 +48,18 @@ final class CommunityFilesystemBlobLayout {
      * <p>The containment check is not redundant with {@link BlobRef}'s validation. It is the backstop
      * that still holds if the carrier is ever relaxed, and it costs one comparison on a path that is
      * about to touch a filesystem anyway.
+     *
+     * @param ref       the tenant-relative reference
+     * @param operation the {@code CommunityBlobFailures.OP_*} constant for the call in flight, so a
+     *                  denial is attributed to the operation the caller made rather than to resolution
      */
-    /* default */ Path resolve(BlobRef ref) {
-        Path tenantDir = requireTenantDirectory();
+    /* default */ Path resolve(BlobRef ref, String operation) {
+        StorageContext context = KernelProviders.storageContextOrSystem();
+        Path tenantDir = tenantDirectoryOf(context, operation);
         Path resolved = tenantDir.resolve(ref.container()).resolve(ref.key()).normalize();
         if (!resolved.startsWith(tenantDir)) {
-            throw BlobStorageException.isolationDenied(PROVIDER_NAME, "path-escape");
+            throw CommunityBlobFailures.isolationDenied(
+                    operation, CommunityBlobFailures.REASON_PATH_ESCAPE, context.strategy().name());
         }
         return resolved;
     }
@@ -66,15 +70,30 @@ final class CommunityFilesystemBlobLayout {
      * <p>ADR-056 §5: an absent key means there is no namespace to resolve into, and falling back to the
      * store root would place one tenant's object where every tenant can reach it.
      *
-     * <p>The directory name is hex-encoded rather than used verbatim. The isolation key arrives from a
-     * verified token claim, and a value of {@code ".."} would otherwise be a directory name that escapes
-     * the root — encoding removes the question instead of enumerating the bad values.
+     * <p>The directory name is hex-encoded rather than used verbatim. The isolation key is an
+     * unconstrained {@code String} that arrives from a verified token claim, so what it may contain is
+     * a policy question the store should not have to answer. Encoding makes the whole key one opaque
+     * segment, which buys two things a bare {@code ".."} check would not:
+     * <ul>
+     *   <li>a key carrying separators — {@code "../../etc"}, or merely {@code "a/b"} — cannot become a
+     *       nested directory chain, and so cannot climb out of the root;</li>
+     *   <li>the mapping is injective, so two distinct tenants cannot land in one directory through
+     *       any case-folding or normalisation the filesystem applies.</li>
+     * </ul>
+     *
+     * <p>The {@code t-} prefix independently defeats a <em>bare</em> {@code ".."} key, since
+     * {@code "t-.."} is an ordinary directory name. Encoding is what covers the separator-bearing and
+     * colliding cases, which is where the real exposure is.
      */
-    /* default */ Path requireTenantDirectory() {
-        StorageContext context = KernelProviders.storageContextOrSystem();
+    /* default */ Path requireTenantDirectory(String operation) {
+        return tenantDirectoryOf(KernelProviders.storageContextOrSystem(), operation);
+    }
+
+    private Path tenantDirectoryOf(StorageContext context, String operation) {
         String isolationKey = context.isolationKey().orElse(null);
         if (isolationKey == null || isolationKey.isBlank()) {
-            throw BlobStorageException.isolationDenied(PROVIDER_NAME, context.strategy().name());
+            throw CommunityBlobFailures.isolationDenied(operation,
+                    CommunityBlobFailures.REASON_NO_ISOLATION_KEY, context.strategy().name());
         }
         String encoded = HexFormat.of().formatHex(isolationKey.getBytes(StandardCharsets.UTF_8));
         return root.resolve(TENANT_PREFIX + encoded);

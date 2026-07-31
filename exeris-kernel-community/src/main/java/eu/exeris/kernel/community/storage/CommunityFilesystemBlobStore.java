@@ -32,6 +32,7 @@ import java.util.Optional;
  * <p>Transfer mechanics only. Where a reference lands — tenant resolution, the containment check, and
  * the encoding that keeps a hostile isolation key from becoming a directory name — belongs to
  * {@link CommunityFilesystemBlobLayout}, so a change to placement is not read as a change to I/O.
+ * Failures are raised through {@link CommunityBlobFailures}, which records them to JFR on the way out.
  *
  * <p>Uploads land in a temporary file and are moved into place on commit, so an interrupted transfer
  * leaves nothing visible (ADR-056 §3).
@@ -40,9 +41,9 @@ import java.util.Optional;
  */
 public final class CommunityFilesystemBlobStore implements BlobStore {
 
-    private static final String PROVIDER_NAME = "ExerisCommunity/FilesystemBlob";
     private static final String UPLOAD_SUFFIX = ".uploading";
     private static final String REF_REQUIRED = "ref must not be null";
+    private static final String ROOT_CONTAINER = "[root]";
 
     private final Path root;
     private final CommunityFilesystemBlobLayout layout;
@@ -53,7 +54,8 @@ public final class CommunityFilesystemBlobStore implements BlobStore {
         try {
             Files.createDirectories(root);
         } catch (IOException e) {
-            throw BlobStorageException.transferFailed(PROVIDER_NAME, "[root]", e);
+            throw CommunityBlobFailures.transferFailed(
+                    CommunityBlobFailures.OP_INIT, ROOT_CONTAINER, e);
         }
         this.layout = new CommunityFilesystemBlobLayout(root);
     }
@@ -64,7 +66,7 @@ public final class CommunityFilesystemBlobStore implements BlobStore {
         if (contentLength < 0) {
             throw new IllegalArgumentException("contentLength must not be negative");
         }
-        Path target = layout.resolve(ref);
+        Path target = layout.resolve(ref, CommunityBlobFailures.OP_UPLOAD);
         try {
             Files.createDirectories(target.getParent());
             Path staging = target.resolveSibling(target.getFileName() + UPLOAD_SUFFIX);
@@ -72,7 +74,8 @@ public final class CommunityFilesystemBlobStore implements BlobStore {
                     staging, target, ref, contentLength,
                     contentType == null ? BlobMetadata.DEFAULT_CONTENT_TYPE : contentType);
         } catch (IOException e) {
-            throw BlobStorageException.transferFailed(PROVIDER_NAME, ref.container(), e);
+            throw CommunityBlobFailures.transferFailed(
+                    CommunityBlobFailures.OP_UPLOAD, ref.container(), e);
         }
     }
 
@@ -84,9 +87,9 @@ public final class CommunityFilesystemBlobStore implements BlobStore {
     @Override
     public BlobDownloadHandle openDownload(BlobRef ref, BlobRange range) {
         Objects.requireNonNull(ref, REF_REQUIRED);
-        Path target = layout.resolve(ref);
+        Path target = layout.resolve(ref, CommunityBlobFailures.OP_DOWNLOAD);
         if (!Files.isRegularFile(target)) {
-            throw BlobStorageException.notFound(PROVIDER_NAME, ref.container());
+            throw BlobStorageException.notFound(CommunityBlobFailures.PROVIDER_NAME, ref.container());
         }
         try {
             long size = Files.size(target);
@@ -95,14 +98,15 @@ public final class CommunityFilesystemBlobStore implements BlobStore {
                     new BlobMetadata(ref, size, CommunityFilesystemBlobLayout.contentTypeOf(target)),
                     range);
         } catch (IOException e) {
-            throw BlobStorageException.transferFailed(PROVIDER_NAME, ref.container(), e);
+            throw CommunityBlobFailures.transferFailed(
+                    CommunityBlobFailures.OP_DOWNLOAD, ref.container(), e);
         }
     }
 
     @Override
     public Optional<BlobMetadata> stat(BlobRef ref) {
         Objects.requireNonNull(ref, REF_REQUIRED);
-        Path target = layout.resolve(ref);
+        Path target = layout.resolve(ref, CommunityBlobFailures.OP_STAT);
         if (!Files.isRegularFile(target)) {
             return Optional.empty();
         }
@@ -110,20 +114,22 @@ public final class CommunityFilesystemBlobStore implements BlobStore {
             return Optional.of(new BlobMetadata(
                     ref, Files.size(target), CommunityFilesystemBlobLayout.contentTypeOf(target)));
         } catch (IOException e) {
-            throw BlobStorageException.transferFailed(PROVIDER_NAME, ref.container(), e);
+            throw CommunityBlobFailures.transferFailed(
+                    CommunityBlobFailures.OP_STAT, ref.container(), e);
         }
     }
 
     @Override
     public boolean delete(BlobRef ref) {
         Objects.requireNonNull(ref, REF_REQUIRED);
-        Path target = layout.resolve(ref);
+        Path target = layout.resolve(ref, CommunityBlobFailures.OP_DELETE);
         try {
             boolean removed = Files.deleteIfExists(target);
             Files.deleteIfExists(CommunityFilesystemBlobLayout.sidecar(target));
             return removed;
         } catch (IOException e) {
-            throw BlobStorageException.transferFailed(PROVIDER_NAME, ref.container(), e);
+            throw CommunityBlobFailures.transferFailed(
+                    CommunityBlobFailures.OP_DELETE, ref.container(), e);
         }
     }
 
@@ -140,7 +146,7 @@ public final class CommunityFilesystemBlobStore implements BlobStore {
         if (ttl.isZero() || ttl.isNegative()) {
             throw new IllegalArgumentException("ttl must be positive");
         }
-        layout.requireTenantDirectory();
+        layout.requireTenantDirectory(CommunityBlobFailures.OP_SIGNED_URL);
         return Optional.empty();
     }
 

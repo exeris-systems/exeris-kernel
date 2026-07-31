@@ -63,13 +63,19 @@ public final class BlobStorageException extends ExerisKernelException {
      * <p>Terminal by design (ADR-056 §5): falling back to an unscoped location would place a tenant's
      * object where every tenant can reach it, which is the weakest possible placement reached silently.
      *
+     * <p>The same code covers a resolved location that would fall outside the tenant namespace: both
+     * are "this reference has no valid place to land", and splitting them would make a driver choose
+     * between codes on a path where the safe answer is identical.
+     *
      * @param providerName provider display name
-     * @param strategy     the {@code IsolationStrategy} name of the ambient context
-     * @return exception with rawArgs: [providerName, strategy]
+     * @param reason       the {@code IsolationStrategy} name when the ambient context carries no
+     *                     isolation key, or a driver-specific reason code (such as
+     *                     {@code path-escape}) when resolution left the tenant namespace
+     * @return exception with rawArgs: [providerName, reason]
      */
-    public static BlobStorageException isolationDenied(String providerName, String strategy) {
+    public static BlobStorageException isolationDenied(String providerName, String reason) {
         return new BlobStorageException(
-                KernelErrorCodes.EX_BLOB_8002, ISOLATION_MSG, null, providerName, strategy);
+                KernelErrorCodes.EX_BLOB_8002, ISOLATION_MSG, null, providerName, reason);
     }
 
     /**

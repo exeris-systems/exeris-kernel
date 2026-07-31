@@ -37,6 +37,9 @@ class BlobRefTest {
                 "../escape",
                 "nested/../../escape",
                 "..",
+                ".",
+                "./file.bin",
+                "nested/./file.bin",
                 "/absolute/path",
                 "windows\\separator",
                 "double//separator",
@@ -69,6 +72,8 @@ class BlobRefTest {
             assertThatThrownBy(() -> new BlobRef("documents/nested", "file.bin"))
                     .isInstanceOf(IllegalArgumentException.class);
             assertThatThrownBy(() -> new BlobRef("..", "file.bin"))
+                    .isInstanceOf(IllegalArgumentException.class);
+            assertThatThrownBy(() -> new BlobRef(".", "file.bin"))
                     .isInstanceOf(IllegalArgumentException.class);
         }
     }

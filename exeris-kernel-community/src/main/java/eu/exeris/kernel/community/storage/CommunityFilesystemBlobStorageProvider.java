@@ -22,7 +22,6 @@ import eu.exeris.kernel.spi.storage.blob.BlobStore;
 public final class CommunityFilesystemBlobStorageProvider implements BlobStorageProvider {
 
     private static final String PROVIDER_ID = "blob-fs-community";
-    private static final String PROVIDER_NAME = "ExerisCommunity/FilesystemBlob";
 
     @Override
     public String providerId() {
@@ -31,7 +30,8 @@ public final class CommunityFilesystemBlobStorageProvider implements BlobStorage
 
     @Override
     public String providerName() {
-        return PROVIDER_NAME;
+        // Shared with the telemetry choke point so the JFR events and the SPI identity cannot drift.
+        return CommunityBlobFailures.PROVIDER_NAME;
     }
 
     @Override

@@ -8,7 +8,6 @@
  */
 package eu.exeris.kernel.community.storage;
 
-import eu.exeris.kernel.spi.exceptions.storage.BlobStorageException;
 import eu.exeris.kernel.spi.storage.blob.BlobDownloadHandle;
 import eu.exeris.kernel.spi.storage.blob.BlobMetadata;
 import eu.exeris.kernel.spi.storage.blob.BlobRange;
@@ -27,8 +26,6 @@ import java.nio.file.StandardOpenOption;
  */
 final class CommunityFilesystemBlobDownloadHandle implements BlobDownloadHandle {
 
-    private static final String PROVIDER_NAME = "ExerisCommunity/FilesystemBlob";
-
     private final BlobMetadata metadata;
     private final FileChannel channel;
 
@@ -42,7 +39,8 @@ final class CommunityFilesystemBlobDownloadHandle implements BlobDownloadHandle 
         try {
             this.channel = FileChannel.open(target, StandardOpenOption.READ);
         } catch (IOException e) {
-            throw BlobStorageException.transferFailed(PROVIDER_NAME, metadata.ref().container(), e);
+            throw CommunityBlobFailures.transferFailed(
+                    CommunityBlobFailures.OP_DOWNLOAD, metadata.ref().container(), e);
         }
         if (range == null) {
             this.position = 0;
@@ -91,7 +89,8 @@ final class CommunityFilesystemBlobDownloadHandle implements BlobDownloadHandle 
         try {
             read = channel.read(view, position);
         } catch (IOException e) {
-            throw BlobStorageException.transferFailed(PROVIDER_NAME, metadata.ref().container(), e);
+            throw CommunityBlobFailures.transferFailed(
+                    CommunityBlobFailures.OP_DOWNLOAD, metadata.ref().container(), e);
         }
         if (read <= 0) {
             return -1;
@@ -110,7 +109,8 @@ final class CommunityFilesystemBlobDownloadHandle implements BlobDownloadHandle 
         try {
             channel.close();
         } catch (IOException e) {
-            throw BlobStorageException.transferFailed(PROVIDER_NAME, metadata.ref().container(), e);
+            throw CommunityBlobFailures.transferFailed(
+                    CommunityBlobFailures.OP_DOWNLOAD, metadata.ref().container(), e);
         }
     }
 }

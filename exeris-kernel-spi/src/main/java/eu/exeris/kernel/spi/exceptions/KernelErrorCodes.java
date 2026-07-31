@@ -929,7 +929,9 @@ public final class KernelErrorCodes {
      * <p>rawArgs layout:
      * <ul>
      *   <li>index 0 – {@code String} providerName</li>
-     *   <li>index 1 – {@code String} isolation strategy name of the ambient context</li>
+     *   <li>index 1 – {@code String} deny reason — the isolation strategy name of the ambient
+     *       context when it carries no key, or a driver reason code when resolution left the
+     *       tenant namespace</li>
      * </ul>
      */
     public static final String EX_BLOB_8002 = "EX-BLOB-8002";

@@ -32,6 +32,7 @@ import java.util.Objects;
 public record BlobRef(String container, String key) {
 
     private static final String PARENT_SEGMENT = "..";
+    private static final String CURRENT_SEGMENT = ".";
     private static final char SEPARATOR = '/';
     private static final char BACKSLASH = '\\';
     private static final char NUL = (char) 0;
@@ -40,8 +41,9 @@ public record BlobRef(String container, String key) {
      * Canonical constructor.
      *
      * @throws NullPointerException     if either component is {@code null}
-     * @throws IllegalArgumentException if either component is blank, or the key contains traversal
-     *                                  syntax, an absolute-path prefix, a backslash, or a NUL byte
+     * @throws IllegalArgumentException if either component is blank, or the key contains a
+     *                                  relative-navigation segment ({@code .} or {@code ..}), an
+     *                                  absolute-path prefix, a backslash, or a NUL byte
      */
     public BlobRef {
         Objects.requireNonNull(container, "container must not be null");
@@ -55,7 +57,8 @@ public record BlobRef(String container, String key) {
             throw new IllegalArgumentException("container must not be blank");
         }
         if (container.indexOf(SEPARATOR) >= 0 || container.indexOf(BACKSLASH) >= 0
-                || container.indexOf(NUL) >= 0 || PARENT_SEGMENT.equals(container)) {
+                || container.indexOf(NUL) >= 0
+                || PARENT_SEGMENT.equals(container) || CURRENT_SEGMENT.equals(container)) {
             throw new IllegalArgumentException("container must be a single safe segment");
         }
     }
@@ -84,13 +87,21 @@ public record BlobRef(String container, String key) {
         }
     }
 
+    /**
+     * A lone {@code "."} is rejected alongside {@code ".."}. It cannot escape the namespace, but it is a
+     * relative-navigation token rather than an object name, and a driver that resolved it against a
+     * filesystem would silently address the container directory itself while one storing the key
+     * verbatim would address a distinct object named {@code "."}. Rejecting it keeps one key from
+     * meaning two things.
+     */
     private static void requireSafeSegments(String key) {
         for (String segment : key.split(String.valueOf(SEPARATOR), -1)) {
             if (segment.isEmpty()) {
                 throw new IllegalArgumentException("key must not contain an empty path segment");
             }
-            if (PARENT_SEGMENT.equals(segment)) {
-                throw new IllegalArgumentException("key must not contain a parent-directory segment");
+            if (PARENT_SEGMENT.equals(segment) || CURRENT_SEGMENT.equals(segment)) {
+                throw new IllegalArgumentException(
+                        "key must not contain a relative-navigation segment");
             }
         }
     }

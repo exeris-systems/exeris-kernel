@@ -57,9 +57,15 @@ rather than leaving each driver to guess how much it may assume.
    (`PersistenceProvider`, `EventProvider`, `FlowProvider`, `TransportProvider`, `MemoryProvider`) is a
    ServiceLoader discovery handle carrying `providerId()` / `providerName()` / `priority()` and a
    `createEngine(config)` factory. This SPI keeps that shape: **`BlobStorageProvider`** discovers and
-   constructs, **`BlobStore`** performs operations. Bootstrap exposes both through the established slot
-   pair, `KernelProviders.BLOB_STORAGE_PROVIDER` and `KernelProviders.BLOB_STORE`. The ROADMAP wording is
-   a naming sketch predating the type set; consistency with sixteen sibling packages wins over it.
+   constructs, **`BlobStore`** performs operations. Bootstrap will expose both through the established
+   slot pair, `KernelProviders.BLOB_STORAGE_PROVIDER` and `KernelProviders.BLOB_STORE`. The ROADMAP
+   wording is a naming sketch predating the type set; consistency with sixteen sibling packages wins
+   over it.
+
+   *(Amended 2026-07-30, with the SPI: stated in the future tense, because the slot pair does not exist
+   yet. The SPI and the first driver land ahead of bootstrap wiring, as `GraphProvider` did; the slots
+   and the config binding land with the second driver, where a provider-selection decision first has
+   something to select between. Until then a `BlobStore` is constructed directly by its caller.)*
 
 3. **Bytes move on `LoanedBuffer`; the SPI exposes no `byte[]` and no `InputStream` on the transfer
    path.** *(Amended 2026-07-30, with the SPI. The original text set out a `retain()`/`close()`
@@ -91,7 +97,9 @@ rather than leaving each driver to guess how much it may assume.
    possible placement, and reaching it silently is how tenant data ends up co-mingled. System-scope blob
    storage is out of scope (see below).
 
-6. **Key derivation must be injection-safe, and this is a driver obligation the TCK checks.** Both
+6. **Key derivation must be injection-safe.** *(Originally worded "a driver obligation the TCK checks";
+   see the amendment below — it became a carrier invariant, so `BlobRefTest` checks it, not the TCK.)*
+   Both
    plausible drivers interpolate a caller-supplied key into a namespace: a filesystem path, or an S3
    object key inside a bucket or prefix. A key containing `..`, a leading separator, or an encoded
    traversal MUST be rejected or neutralised so it cannot resolve outside the tenant namespace. This
@@ -101,7 +109,8 @@ rather than leaving each driver to guess how much it may assume.
    instead of trusting each driver to rediscover it.
 
    *(Amended 2026-07-30, with the SPI: discharged one level earlier than "driver obligation" implied.
-   `BlobRef` rejects traversal, absolute keys, separators, empty segments, and NUL at construction, so
+   `BlobRef` rejects relative-navigation segments (`.` and `..`), absolute keys, separators, empty
+   segments, and NUL at construction, so
    an unsafe reference is unrepresentable and no driver can forget the check. Driver-specific
    restrictions remain the driver's business — the carrier is the floor, not the ceiling. The
    filesystem binding additionally verifies containment after resolution, as a backstop that holds even
@@ -211,9 +220,16 @@ The codebase is not yet compliant — this ADR precedes the SPI. Enforcement lan
 implementation slices:
 
 1. **`AbstractBlobStorageTck`** covers upload round-trip, download streaming, ranged read, the
-   signed-URL disjunction (obligation 7), isolation-key scoping, the absent-key deny (obligation 5), and
-   key-injection rejection (obligation 6). Bound by both drivers; `LeakDetectionMode.PARANOID`
-   throughout.
+   signed-URL disjunction (obligation 7), isolation-key scoping, and the absent-key deny
+   (obligation 5). Bound by both drivers; `LeakDetectionMode.PARANOID` throughout.
+   *(Amended 2026-07-30: key-injection rejection is **not** here. Once obligation 6 moved into
+   `BlobRef`'s constructor, an unsafe key stopped being reachable through the store at all, so the
+   check belongs to `BlobRefTest` in the SPI module. A driver-level test would have had to construct an
+   invalid carrier to exercise it, which the carrier forbids.)*
+   Driver-local guards sit beside it, not in the TCK, because they assert driver decisions rather than
+   contract: `CommunityFilesystemBlobLayoutTest` (a hostile isolation key cannot escape the store root;
+   the encoding is injective) and `CommunityBlobJfrTest` (both failure events commit, and no recording
+   carries an object key).
 2. **`ExerisArchitectureTest`** gains the obligation-9 rule: no `java.io.File` / `java.nio.file.Files`
    inside `eu.exeris.kernel.spi.storage..`.
 3. **Testcontainers MinIO integration test** under `@Tag("integration")`, with its own CI gate, since the
@@ -222,6 +238,13 @@ implementation slices:
    them.
 5. **`docs/subsystems/storage.md`** lands with the SPI slice. Every kernel subsystem carries a contract
    doc; a seventeenth package without one is documentation drift on arrival.
+6. **JFR failure events** for both the isolation deny and the transfer failure, registered in
+   `docs/subsystems/telemetry.md` §Required Events.
+   *(Added 2026-07-30, with the first driver. The original list omitted telemetry, and the milestone
+   plan scheduled it a slice later with the second driver — but the failure sites ship now, and a slice
+   that lands blind failure paths and instruments them afterwards is the worse order. Emitted from a
+   choke point that also builds the exception, so the two cannot drift; the events are shared by both
+   drivers.)*
 
 Obligations 1, 2, and 9 are reviewable by inspection from the first SPI PR. Obligations 3–8 are only
 proven by the TCK, so the SPI slice is not done until both bindings are green against it.
