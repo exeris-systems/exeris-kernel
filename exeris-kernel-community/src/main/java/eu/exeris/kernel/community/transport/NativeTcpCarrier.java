@@ -468,6 +468,13 @@ public final class NativeTcpCarrier implements TransportEngine {
      * right mechanism, and whether its default is right, are separate decisions; this makes the
      * existing behaviour visible so they can be taken on evidence.
      */
+    private void recordRefusal() {
+        long total = refusedConnections.incrementAndGet();
+        CommunityConnectionRefusedEvent.emit(
+                config.bindAddress(), config.port(), activeConnections.get(),
+                config.maxConnections(), total);
+    }
+
     /**
      * Records a connection that was accepted and then failed during setup.
      *
@@ -479,13 +486,6 @@ public final class NativeTcpCarrier implements TransportEngine {
         long total = acceptFaults.incrementAndGet();
         CommunityAcceptFaultEvent.emit(
                 config.bindAddress(), config.port(), exception.getClass().getName(), total);
-    }
-
-    private void recordRefusal() {
-        long total = refusedConnections.incrementAndGet();
-        CommunityConnectionRefusedEvent.emit(
-                config.bindAddress(), config.port(), activeConnections.get(),
-                config.maxConnections(), total);
     }
 
 
