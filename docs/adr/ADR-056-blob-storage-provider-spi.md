@@ -57,20 +57,32 @@ rather than leaving each driver to guess how much it may assume.
    (`PersistenceProvider`, `EventProvider`, `FlowProvider`, `TransportProvider`, `MemoryProvider`) is a
    ServiceLoader discovery handle carrying `providerId()` / `providerName()` / `priority()` and a
    `createEngine(config)` factory. This SPI keeps that shape: **`BlobStorageProvider`** discovers and
-   constructs, **`BlobStore`** performs operations. Bootstrap exposes both through the established slot
-   pair, `KernelProviders.BLOB_STORAGE_PROVIDER` and `KernelProviders.BLOB_STORE`. The ROADMAP wording is
-   a naming sketch predating the type set; consistency with sixteen sibling packages wins over it.
+   constructs, **`BlobStore`** performs operations. Bootstrap will expose both through the established
+   slot pair, `KernelProviders.BLOB_STORAGE_PROVIDER` and `KernelProviders.BLOB_STORE`. The ROADMAP
+   wording is a naming sketch predating the type set; consistency with sixteen sibling packages wins
+   over it.
+
+   *(Amended 2026-07-30, with the SPI: stated in the future tense, because the slot pair does not exist
+   yet. The SPI and the first driver land ahead of bootstrap wiring, as `GraphProvider` did; the slots
+   and the config binding land with the second driver, where a provider-selection decision first has
+   something to select between. Until then a `BlobStore` is constructed directly by its caller.)*
 
 3. **Bytes move on `LoanedBuffer`; the SPI exposes no `byte[]` and no `InputStream` on the transfer
-   path.** Ownership follows the rule `LoanedBuffer` already documents for transport hand-off, stated
-   once per direction so neither half is left to inference:
-   - **Upload.** The caller owns each buffer it passes to `BlobUploadHandle`. A handle that retains a
-     buffer beyond the call MUST `retain()` before returning and `close()` its own reference when done;
-     the caller closes its reference regardless.
-   - **Download.** The store owns each buffer it produces and transfers ownership to the caller, which
-     MUST close it. A caller that forwards a buffer onward retains it first, per the same rule.
-   - **Both handles are `AutoCloseable`,** and closing one releases every reference it still holds.
-     Closing an upload handle without committing MUST NOT leave a partially written object visible.
+   path.** *(Amended 2026-07-30, with the SPI. The original text set out a `retain()`/`close()`
+   protocol per direction. Implementation showed no hand-off is needed at all, so the protocol is
+   replaced by the stronger rule below — see the retired trade-off in Consequences.)*
+   - **The caller owns its buffers, in both directions, throughout.** `BlobUploadHandle.write` takes a
+     `MemorySegment` and MUST NOT retain a reference to it past the call;
+     `BlobDownloadHandle.read` fills a caller-supplied `MemorySegment` and returns a count. Both mirror
+     `TransportStream.write` / `TransportStream.read` exactly, including the non-positive no-op and the
+     `-1` end-of-stream signal, so a reader who knows the transport seam already knows this one.
+   - **Why nothing transfers ownership.** Per-chunk transfer would force a fresh allocation per chunk;
+     caller-owned buffers let one pooled `LoanedBuffer` drive an entire transfer. It also deletes the
+     failure mode outright: with no ownership crossing the seam there is no `retain()` to forget. A
+     store that needs to defer a chunk must copy, and that copy is then visible in its own code rather
+     than hidden in a lifetime rule.
+   - **Both handles are `AutoCloseable`,** and closing one releases everything it holds. Closing an
+     upload handle without committing MUST NOT leave a partially written object visible.
 
 4. **`BlobRef` is tenant-relative and never absolute.** It names a container and a key *within the
    caller's namespace*. Resolution to a physical location happens inside the store, using
@@ -85,7 +97,9 @@ rather than leaving each driver to guess how much it may assume.
    possible placement, and reaching it silently is how tenant data ends up co-mingled. System-scope blob
    storage is out of scope (see below).
 
-6. **Key derivation must be injection-safe, and this is a driver obligation the TCK checks.** Both
+6. **Key derivation must be injection-safe.** *(Originally worded "a driver obligation the TCK checks";
+   see the amendment below — it became a carrier invariant, so `BlobRefTest` checks it, not the TCK.)*
+   Both
    plausible drivers interpolate a caller-supplied key into a namespace: a filesystem path, or an S3
    object key inside a bucket or prefix. A key containing `..`, a leading separator, or an encoded
    traversal MUST be rejected or neutralised so it cannot resolve outside the tenant namespace. This
@@ -93,6 +107,14 @@ rather than leaving each driver to guess how much it may assume.
    fixed path traversal and query injection in generated clients, and `PostgresIdentifier`, extracted to
    guard a `SET search_path` interpolation that cannot take a bind parameter — so the contract states it
    instead of trusting each driver to rediscover it.
+
+   *(Amended 2026-07-30, with the SPI: discharged one level earlier than "driver obligation" implied.
+   `BlobRef` rejects relative-navigation segments (`.` and `..`), absolute keys, separators, empty
+   segments, and NUL at construction, so
+   an unsafe reference is unrepresentable and no driver can forget the check. Driver-specific
+   restrictions remain the driver's business — the carrier is the floor, not the ceiling. The
+   filesystem binding additionally verifies containment after resolution, as a backstop that holds even
+   if the carrier is later relaxed.)*
 
 7. **The signed-URL contract states what the SPI promises and, equally, what it does not.**
    - *Promised:* a returned URL grants exactly the one requested operation (read or write) on exactly
@@ -152,10 +174,12 @@ rather than leaving each driver to guess how much it may assume.
   a single request, and a partial SigV4 implementation may not interoperate with every S3-compatible
   vendor. The binding targets MinIO-compatible path-style access; broader coverage is a later decision,
   not an oversight.
-- **[-] Ownership rules across a two-sided transfer are the SPI's sharpest edge.** `LoanedBuffer` is
-  unforgiving — a missed `retain()` is a use-after-free, a missed `close()` is a leak — and an upload
-  handle that buffers internally has exactly the shape where this goes wrong. The TCK runs
-  `LeakDetectionMode.PARANOID` on both directions for that reason.
+- **[-] ~~Ownership rules across a two-sided transfer are the SPI's sharpest edge.~~** *(Retired
+  2026-07-30 by the obligation-3 amendment.)* The concern was real for the shape originally specified —
+  `LoanedBuffer` is unforgiving, and an upload handle that buffers internally is exactly where a missed
+  `retain()` becomes a use-after-free. It no longer applies, because nothing crosses the seam owning
+  memory. The `LeakDetectionMode.PARANOID` TCK stays: it now proves the absence, catching a store that
+  retains or releases a caller's buffer against a contract that says it must not.
 
 ### 📋 What is NOT in scope
 
@@ -196,9 +220,16 @@ The codebase is not yet compliant — this ADR precedes the SPI. Enforcement lan
 implementation slices:
 
 1. **`AbstractBlobStorageTck`** covers upload round-trip, download streaming, ranged read, the
-   signed-URL disjunction (obligation 7), isolation-key scoping, the absent-key deny (obligation 5), and
-   key-injection rejection (obligation 6). Bound by both drivers; `LeakDetectionMode.PARANOID`
-   throughout.
+   signed-URL disjunction (obligation 7), isolation-key scoping, and the absent-key deny
+   (obligation 5). Bound by both drivers; `LeakDetectionMode.PARANOID` throughout.
+   *(Amended 2026-07-30: key-injection rejection is **not** here. Once obligation 6 moved into
+   `BlobRef`'s constructor, an unsafe key stopped being reachable through the store at all, so the
+   check belongs to `BlobRefTest` in the SPI module. A driver-level test would have had to construct an
+   invalid carrier to exercise it, which the carrier forbids.)*
+   Driver-local guards sit beside it, not in the TCK, because they assert driver decisions rather than
+   contract: `CommunityFilesystemBlobLayoutTest` (a hostile isolation key cannot escape the store root;
+   the encoding is injective) and `CommunityBlobJfrTest` (both failure events commit, and no recording
+   carries an object key).
 2. **`ExerisArchitectureTest`** gains the obligation-9 rule: no `java.io.File` / `java.nio.file.Files`
    inside `eu.exeris.kernel.spi.storage..`.
 3. **Testcontainers MinIO integration test** under `@Tag("integration")`, with its own CI gate, since the
@@ -207,6 +238,13 @@ implementation slices:
    them.
 5. **`docs/subsystems/storage.md`** lands with the SPI slice. Every kernel subsystem carries a contract
    doc; a seventeenth package without one is documentation drift on arrival.
+6. **JFR failure events** for both the isolation deny and the transfer failure, registered in
+   `docs/subsystems/telemetry.md` §Required Events.
+   *(Added 2026-07-30, with the first driver. The original list omitted telemetry, and the milestone
+   plan scheduled it a slice later with the second driver — but the failure sites ship now, and a slice
+   that lands blind failure paths and instruments them afterwards is the worse order. Emitted from a
+   choke point that also builds the exception, so the two cannot drift; the events are shared by both
+   drivers.)*
 
 Obligations 1, 2, and 9 are reviewable by inspection from the first SPI PR. Obligations 3–8 are only
 proven by the TCK, so the SPI slice is not done until both bindings are green against it.

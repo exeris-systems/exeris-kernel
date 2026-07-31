@@ -42,6 +42,16 @@ public class ExerisArchitectureTest {
             .because("SPI must use java.nio or Panama FFM, never legacy java.io");
 
     @ArchTest
+    static final ArchRule noFilesystemTypesInStorageSpi = noClasses()
+            .that().resideInAPackage("eu.exeris.kernel.spi.storage..")
+            .should().dependOnClassesThat().resideInAPackage("java.nio.file..")
+            .allowEmptyShould(true)
+            .because("ADR-056 §9 — a filesystem type in the blob contract would encode one driver's "
+                    + "addressing model into the seam. Scoped to the storage package rather than the "
+                    + "whole SPI because CryptoProviderConfig legitimately carries a Path, and scoped "
+                    + "to java.nio.file only because noJavaIoInSpi already covers java.io repo-wide.");
+
+    @ArchTest
     static final ArchRule noExecutorsAnywhere = noClasses()
             .that().resideInAPackage("eu.exeris.kernel..")
             .should().dependOnClassesThat().haveFullyQualifiedName("java.util.concurrent.Executors")
