@@ -960,6 +960,45 @@ public final class KernelErrorCodes {
     public static final String EX_BLOB_8004 = "EX-BLOB-8004";
 
     // -----------------------------------------------------------------------
+    // Scheduling (EX-JOB-9xxx) — ADR-057
+    // -----------------------------------------------------------------------
+
+    /**
+     * Job dispatch refused: the submission captured no identity context, and running under an
+     * ambient or default identity is not an option (ADR-057 §5).
+     *
+     * <p>rawArgs layout:
+     * <ul>
+     *   <li>index 0 – {@code String} schedulerName</li>
+     *   <li>index 1 – {@code String} jobName — developer-chosen, safe to record</li>
+     * </ul>
+     */
+    public static final String EX_JOB_9001 = "EX-JOB-9001";
+
+    /**
+     * A job was submitted to a scheduler that has already been closed.
+     *
+     * <p>rawArgs layout:
+     * <ul>
+     *   <li>index 0 – {@code String} schedulerName</li>
+     *   <li>index 1 – {@code String} jobName</li>
+     * </ul>
+     */
+    public static final String EX_JOB_9002 = "EX-JOB-9002";
+
+    /**
+     * A dispatched job body threw. The scheduler records the failure and keeps running; a repeating
+     * job stays scheduled, because one failed run is not evidence the schedule is wrong.
+     *
+     * <p>rawArgs layout:
+     * <ul>
+     *   <li>index 0 – {@code String} schedulerName</li>
+     *   <li>index 1 – {@code String} jobName</li>
+     * </ul>
+     */
+    public static final String EX_JOB_9003 = "EX-JOB-9003";
+
+    // -----------------------------------------------------------------------
     // Constructor – utility class, no instantiation
     // -----------------------------------------------------------------------
 

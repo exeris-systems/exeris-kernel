@@ -52,6 +52,20 @@ public class ExerisArchitectureTest {
                     + "to java.nio.file only because noJavaIoInSpi already covers java.io repo-wide.");
 
     @ArchTest
+    static final ArchRule noStructuredTaskScopeInSchedulingSpi = noClasses()
+            .that().resideInAPackage("eu.exeris.kernel.spi.scheduling..")
+            .should().dependOnClassesThat()
+            .haveFullyQualifiedName("java.util.concurrent.StructuredTaskScope")
+            .allowEmptyShould(true)
+            .because("ADR-057 §2 — StructuredTaskScope is the kernel's last preview dependency and "
+                    + "the Platform Baseline commits the default artifact to being preview-clean for "
+                    + "1.0 GA. Scoped to the SPI half only: this suite runs in exeris-kernel-tck, "
+                    + "whose only production dependency is the SPI, so no Community class is ever on "
+                    + "its analysis classpath and a rule naming one here could never fire. The "
+                    + "driver half is held by CommunitySchedulingArchitectureTest, in the module "
+                    + "that can see it.");
+
+    @ArchTest
     static final ArchRule noExecutorsAnywhere = noClasses()
             .that().resideInAPackage("eu.exeris.kernel..")
             .should().dependOnClassesThat().haveFullyQualifiedName("java.util.concurrent.Executors")
