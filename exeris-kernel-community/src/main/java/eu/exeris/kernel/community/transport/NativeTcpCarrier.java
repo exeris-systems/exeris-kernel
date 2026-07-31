@@ -95,6 +95,7 @@ public final class NativeTcpCarrier implements TransportEngine {
     private final AtomicLong activeStreams = new AtomicLong();
     private final AtomicLong totalAccepted = new AtomicLong();
     private final AtomicLong refusedConnections = new AtomicLong();
+    private final AtomicLong acceptFaults = new AtomicLong();
 
     private volatile StreamHandler streamHandler;
     private volatile ConnectionHandler connectionHandler = connection -> {
@@ -467,6 +468,19 @@ public final class NativeTcpCarrier implements TransportEngine {
      * right mechanism, and whether its default is right, are separate decisions; this makes the
      * existing behaviour visible so they can be taken on evidence.
      */
+    /**
+     * Records a connection that was accepted and then failed during setup.
+     *
+     * <p>Recovery is unchanged — continuing the accept loop after a per-connection failure is
+     * correct, and making this fatal would trade a silent drop for an availability regression. Only
+     * the silence is removed.
+     */
+    private void recordAcceptFault(RuntimeException exception) {
+        long total = acceptFaults.incrementAndGet();
+        CommunityAcceptFaultEvent.emit(
+                config.bindAddress(), config.port(), exception.getClass().getName(), total);
+    }
+
     private void recordRefusal() {
         long total = refusedConnections.incrementAndGet();
         CommunityConnectionRefusedEvent.emit(
@@ -545,6 +559,7 @@ public final class NativeTcpCarrier implements TransportEngine {
                 connectionManagedByStreamLifecycle = true;
                 registerConnection(connection, stream, currentChannel);
             } catch (RuntimeException exception) {
+                recordAcceptFault(exception);
                 if (connection != null) {
                     connection.close();
                 } else {
