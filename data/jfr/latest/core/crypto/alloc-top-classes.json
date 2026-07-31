@@ -1,46 +1,41 @@
 [ {
-  "class" : "java.util.HashMap",
+  "class" : "[Ljava.util.HashMap$Node;",
+  "count" : 4,
+  "bytes" : 784936,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "[B",
   "count" : 3,
-  "bytes" : 308888,
+  "bytes" : 523136,
   "category" : "JVM_NOISE"
 }, {
   "class" : "java.nio.HeapByteBuffer",
   "count" : 2,
-  "bytes" : 384,
+  "bytes" : 1664,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "[Ljava.util.HashMap$Node;",
+  "class" : "java.lang.VirtualThread$VThreadContinuation",
   "count" : 2,
-  "bytes" : 261648,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "java.lang.VirtualThread",
-  "count" : 2,
-  "bytes" : 522992,
+  "bytes" : 523048,
   "category" : "LOOM_RUNTIME"
 }, {
-  "class" : "java.lang.String",
+  "class" : "[Ljava.util.concurrent.ConcurrentHashMap$CounterCell;",
+  "count" : 1,
+  "bytes" : 4339168,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "java.util.concurrent.ConcurrentHashMap$CounterCell",
+  "count" : 1,
+  "bytes" : 275272,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "java.util.LinkedHashMap",
   "count" : 1,
   "bytes" : 261552,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "java.util.HashMap$Node",
+  "class" : "java.util.HashMap$KeySet",
   "count" : 1,
-  "bytes" : 261544,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "java.util.LinkedHashMap$Entry",
-  "count" : 1,
-  "bytes" : 261560,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "java.util.HashSet",
-  "count" : 1,
-  "bytes" : 261560,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "java.util.concurrent.ForkJoinTask$AdaptedRunnableAction",
-  "count" : 1,
-  "bytes" : 261552,
+  "bytes" : 261568,
   "category" : "JVM_NOISE"
 } ]
