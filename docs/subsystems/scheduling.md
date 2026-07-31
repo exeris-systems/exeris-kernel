@@ -107,6 +107,7 @@ is shaped so migrating onto one is a substitution, not a redesign.
 | `eu.exeris.kernel.scheduling.JobDispatch` | A job is dispatched onto a virtual thread | `schedulerName`, `jobName`, `jobId` |
 | `eu.exeris.kernel.scheduling.JobCompletion` | A body returns normally | `schedulerName`, `jobName`, `jobId`, `durationNanos` |
 | `eu.exeris.kernel.scheduling.JobFailure` | A body throws, or a dispatch is refused for want of context | `schedulerName`, `jobName`, `jobId`, `errorCode`, `reason` |
+| `eu.exeris.kernel.scheduling.SchedulingBootstrapSelected` | Bootstrap picks a provider | `providerClass`, `providerId`, `priority`, `schedulerName` |
 
 All single-phase commits. A scheduler's whole purpose is dispatching blocking work onto virtual
 threads, so it is the subsystem most exposed to the `begin() → blocking-op → commit()` straddle that
@@ -128,6 +129,7 @@ kernel decided this.
 | `CommunityCronScheduleTest` | What a valid expression means: rollover, steps, lists, the `0`/`7` Sunday aliases, the day-of-month/day-of-week union, leap day, and UTC interpretation. |
 | `CommunityJobJfrTest` | All three events commit, and a refusal carries `EX-JOB-9001` rather than looking like a crash. |
 | `CommunitySchedulingArchitectureTest` | No `StructuredTaskScope`, no `ThreadLocal`, no `ScheduledExecutorService` in the driver. |
+| `CommunitySchedulingSubsystemTest` | Bootstrap wiring: both slots bound to a scheduler that actually runs a job under the submitter's tenant, `stop()` drains rather than abandons, and the selection is recorded. |
 | `ExerisArchitectureTest.noStructuredTaskScopeInSchedulingSpi` | The same preview ban on the SPI half. |
 
 The architecture guard is split across two modules on purpose. `ExerisArchitectureTest` runs in
@@ -136,6 +138,34 @@ ever on its analysis classpath, and a rule written there naming a Community pack
 `CommunitySchedulingArchitectureTest` lives in the module that can see the driver, and asserts a
 non-empty analysis set before asserting anything else.
 
+## Bootstrap
+
+`CommunitySchedulingSubsystem` runs in the `SERVICES` phase and **declares no dependencies**.
+
+That is not an oversight. The in-process driver allocates no off-heap memory, opens no connection and
+reads no store — its construction is a config lookup and a virtual thread. The tempting declaration
+is `security`, on the reasoning that a job carries the identity that submitted it; that is wrong
+twice over. There is no `security` subsystem in the registry — identity arrives through `ScopedValue`
+slots, not a boot-ordered component — and identity crosses this seam at *submit* time from the
+caller's own scope, which no boot order can influence.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `scheduling.schedulerName` | `default` | Name in JFR events and diagnostics |
+
+Provider selection goes through the shared `BootstrapProviderSelector` (highest `priority()` wins)
+and commits `eu.exeris.kernel.scheduling.SchedulingBootstrapSelected`. Which provider won a
+ServiceLoader race is invisible after the fact and is the first thing anyone asks when a scheduler
+behaves unexpectedly, so it is recorded at selection rather than reconstructed from behaviour.
+
+No provider on the classpath is a terminal `EX-JOB-9004` rather than a degraded boot: a kernel that
+started with scheduling silently absent would let an application submit jobs that never run.
+
+Subsystem `stop()` calls `JobScheduler.close()`, so the drain of ADR-057 §6 is what shutdown
+actually performs — not a property the scheduler merely offers.
+
+Both slots are bound: `KernelProviders.JOB_SCHEDULER_PROVIDER` and `KernelProviders.JOB_SCHEDULER`.
+
 ## Error codes
 
 | Code | Meaning |
@@ -143,11 +173,9 @@ non-empty analysis set before asserting anything else.
 | `EX-JOB-9001` | Dispatch refused — the submission captured no identity context |
 | `EX-JOB-9002` | The scheduler is closed |
 | `EX-JOB-9003` | A job body threw; recorded on the JFR failure event rather than raised, since a dispatched body has no caller to throw to |
+| `EX-JOB-9004` | No `JobSchedulerProvider` on the classpath at bootstrap |
 
 ## Not in this subsystem
 
 Durable job stores, leader election, distributed coordination, retry and back-off policy, job
-priorities, and dispatch-time re-validation of a captured identity. Bootstrap wiring —
-`KernelProviders.JOB_SCHEDULER_PROVIDER` and `KernelProviders.JOB_SCHEDULER`, config keys, and
-lifecycle integration — lands with the next slice; today a `JobScheduler` is constructed by its
-caller through the provider.
+priorities, and dispatch-time re-validation of a captured identity.

@@ -26,6 +26,7 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  * <ul>
  *   <li>{@value KernelErrorCodes#EX_JOB_9001} — dispatch refused: no captured identity context</li>
  *   <li>{@value KernelErrorCodes#EX_JOB_9002} — the scheduler is closed</li>
+ *   <li>{@value KernelErrorCodes#EX_JOB_9004} — no provider on the classpath at bootstrap</li>
  *   <li>{@value KernelErrorCodes#EX_JOB_9003} — a job body threw</li>
  * </ul>
  *
@@ -34,6 +35,7 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 public final class JobSchedulerException extends ExerisKernelException {
 
     private static final String CLOSED_MSG = "Scheduler is closed";
+    private static final String NO_PROVIDER_MSG = "No JobSchedulerProvider on the classpath";
 
     private JobSchedulerException(String errorCode, String message, Throwable cause,
                                   Object... rawArgs) {
@@ -53,4 +55,18 @@ public final class JobSchedulerException extends ExerisKernelException {
                 KernelErrorCodes.EX_JOB_9002, CLOSED_MSG, null, schedulerName, jobName);
     }
 
+
+    /**
+     * Bootstrap found no {@link eu.exeris.kernel.spi.scheduling.JobSchedulerProvider} to select.
+     *
+     * <p>Terminal rather than degraded: a kernel that boots with scheduling silently absent would let
+     * an application submit jobs that never run, which is worse than refusing to start.
+     *
+     * @param component the bootstrap component that attempted the selection
+     * @return exception with rawArgs: [component]
+     */
+    public static JobSchedulerException noProvider(String component) {
+        return new JobSchedulerException(
+                KernelErrorCodes.EX_JOB_9004, NO_PROVIDER_MSG, null, component);
+    }
 }

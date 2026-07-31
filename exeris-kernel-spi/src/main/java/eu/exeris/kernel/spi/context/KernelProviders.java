@@ -39,6 +39,8 @@ import eu.exeris.kernel.spi.transport.TransportProvider;
 
 import java.util.List;
 import java.util.Optional;
+import eu.exeris.kernel.spi.scheduling.JobScheduler;
+import eu.exeris.kernel.spi.scheduling.JobSchedulerProvider;
 
 /**
  * Central {@link ScopedValue} slots for all SPI providers resolved during bootstrap.
@@ -486,6 +488,29 @@ public final class KernelProviders {
      * @since 0.5.0
      */
     public static final ScopedValue<SecurityProvider> SECURITY_PROVIDER = ScopedValue.newInstance();
+
+    /**
+     * The selected {@link eu.exeris.kernel.spi.scheduling.JobSchedulerProvider} (ADR-057 §1).
+     *
+     * <p>Bound once at bootstrap. Application code should use {@link #JOB_SCHEDULER} directly; this
+     * slot exists for diagnostics and for code that needs to reconfigure the provider.
+     *
+     * @since 0.11.0
+     */
+    public static final ScopedValue<JobSchedulerProvider> JOB_SCHEDULER_PROVIDER =
+            ScopedValue.newInstance();
+
+    /**
+     * The kernel-wide {@link eu.exeris.kernel.spi.scheduling.JobScheduler} (created from
+     * {@link #JOB_SCHEDULER_PROVIDER}).
+     *
+     * <p>Jobs submitted through it capture the ambient {@code PrincipalContext} and
+     * {@code StorageContext} and rebind them at dispatch; a submission with neither bound fails
+     * closed rather than running as nobody (ADR-057 §5).
+     *
+     * @since 0.11.0
+     */
+    public static final ScopedValue<JobScheduler> JOB_SCHEDULER = ScopedValue.newInstance();
 
     /**
      * The authenticated {@link PrincipalContext} for the current request scope.

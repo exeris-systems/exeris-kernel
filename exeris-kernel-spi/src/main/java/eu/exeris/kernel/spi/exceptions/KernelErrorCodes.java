@@ -995,6 +995,16 @@ public final class KernelErrorCodes {
      */
     public static final String EX_JOB_9003 = "EX-JOB-9003";
 
+    /**
+     * No {@code JobSchedulerProvider} was found on the classpath at bootstrap.
+     *
+     * <p>rawArgs layout:
+     * <ul>
+     *   <li>index 0 – {@code String} component that attempted the selection</li>
+     * </ul>
+     */
+    public static final String EX_JOB_9004 = "EX-JOB-9004";
+
     // -----------------------------------------------------------------------
     // Constructor – utility class, no instantiation
     // -----------------------------------------------------------------------
