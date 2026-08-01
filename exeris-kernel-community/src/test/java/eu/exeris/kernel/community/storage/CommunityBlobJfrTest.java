@@ -68,7 +68,7 @@ class CommunityBlobJfrTest {
         RecordedEvent denied = events.stream()
                 .filter(e -> ISOLATION_DENIED.equals(e.getEventType().getName()))
                 .findFirst().orElseThrow();
-        assertThat(denied.getString("providerName")).isEqualTo(CommunityBlobFailures.PROVIDER_NAME);
+        assertThat(denied.getString("providerName")).isEqualTo(CommunityBlobFailures.FILESYSTEM_PROVIDER);
         assertThat(denied.getString("operation")).isEqualTo(CommunityBlobFailures.OP_STAT);
         assertThat(denied.getString("reason"))
                 .isEqualTo(CommunityBlobFailures.REASON_NO_ISOLATION_KEY);
@@ -113,7 +113,7 @@ class CommunityBlobJfrTest {
         RecordedEvent failed = events.stream()
                 .filter(e -> TRANSFER_FAILED.equals(e.getEventType().getName()))
                 .findFirst().orElseThrow();
-        assertThat(failed.getString("providerName")).isEqualTo(CommunityBlobFailures.PROVIDER_NAME);
+        assertThat(failed.getString("providerName")).isEqualTo(CommunityBlobFailures.FILESYSTEM_PROVIDER);
         assertThat(failed.getString("operation")).isEqualTo(CommunityBlobFailures.OP_UPLOAD);
         assertThat(failed.getString("container")).isEqualTo("docs");
         assertThat(failed.getString("exceptionClass")).isNotBlank();

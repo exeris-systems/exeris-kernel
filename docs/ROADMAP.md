@@ -1667,6 +1667,18 @@ See also: ADR-036 (request-body decoder SPI quadrant); ADR-043 (SSE streaming); 
 
 **Merge Gate:** SPI green on TCK with at least two bindings (local FS + S3-compatible HTTP); zero-leak assertion on `LoanedBuffer` lifecycle through upload + download paths; `StorageContext` isolation honored per ADR-012; ArchTest forbids `java.io.File` / `java.nio.file.Files` imports inside the SPI package (consistent with existing scoped bans in runtime hot paths).
 
+**Status (v0.11): DELIVERED.** SPI + `AbstractBlobStorageTck` + filesystem driver (ADR-056), then the
+S3-compatible driver against MinIO — the merge gate's two-binding requirement is closed. The S3 binding's
+scope is recorded as an ADR-056 §10 amendment rather than left to folklore: header signing over
+`host` / `x-amz-content-sha256` / `x-amz-date` plus query-signed presigned URLs, no multipart, no chunked
+payload signing; an `https://` endpoint is **rejected at construction** because the Community HTTP client
+engine has no client-side TLS; and the single-object ceiling is a named knob (`s3.maxObjectBytes`, default
+8 MiB) rather than an implicit one, refused loudly through `EX-BLOB-8005` before any allocation.
+
+Two things this slice deliberately did **not** close, both tracked below: bootstrap wiring for the
+subsystem (so two same-priority providers still need a configured selection rather than a discovery
+order), and the client engine's fixed per-response buffer.
+
 See also: `docs/adr/ADR-056-blob-storage-provider-spi.md` (Accepted 2026-07-30) — rules package placement, the `LoanedBuffer` ownership rule across both transfer directions, tenant-relative `BlobRef` addressing, the absent-`isolationKey` deny, and the signed-URL capability contract. One deviation from the Resolution text above is recorded there: the operational type is **`BlobStore`**, with `BlobStorageProvider` kept as the ServiceLoader discovery handle, matching the `*Provider` + `createEngine` convention every sibling package already follows.
 
 ---
@@ -1771,6 +1783,71 @@ The asymmetry is local and visible: the sibling paths in the same file close the
 **Resolution:** Emit a JFR event carrying the exception class (class only — no message, matching `CommunityReactorDispatchFaultEvent`'s secret-safe shape) and count the failure. Do **not** change the recovery behaviour: continuing the accept loop after a per-connection setup failure is correct, and conflating "make it visible" with "make it fatal" would trade a silent drop for an availability regression.
 
 **Merge Gate:** Driver-local JFR test that forces a setup failure on an accepted connection and asserts the event; the fault count exposed alongside the refusal count; `docs/subsystems/transport.md` records both accept-path failure modes together, since an operator sees the same symptom from either.
+
+---
+
+### HTTP Client: Every Response Buffer Is Sized For The Largest Possible One (surfaced 2026-08-01)
+
+**Gap:** `CommunityHttpClientEngine.readResponse` allocates its aggregate buffer from
+`resolveAggregateCapacity()`, which is derived once from `HttpConfig.maxRequestBodyBytes` and does not
+vary per request. Every response — a `HEAD` with no body, a `204` from a `DELETE`, a small JSON reply —
+pays the allocation sized for the largest body the engine is configured to accept.
+
+Two separate problems sit in that one line:
+
+1. **Waste.** An engine configured for an 8 MiB ceiling allocates 8 MiB to read a 200-byte `HEAD`
+   response. Surfaced by the S3 blob driver, where the object ceiling *is* the engine ceiling, so raising
+   the largest storable object also raises the cost of every `stat` — the knob does two unrelated things
+   at once. Directly against No Waste Compute, on a path that runs per request.
+2. **A misnamed knob.** `maxRequestBodyBytes` is a *server-side request* limit by name and Javadoc; the
+   client reuses it as a *response* ceiling. A deployment tuning ingress limits silently retunes its
+   outbound client, and neither name says so.
+
+Not a correctness bug: an oversized response is refused loudly (`decodeResponse` throws
+`Truncated HTTP response body: expected N bytes but received M`), which is why the blob driver can size
+the engine deliberately and rely on the refusal. The cost is memory and clarity, not silence.
+
+**Owner:** HTTP subsystem.
+
+**Resolution:** Size the aggregate from what the response actually declares — read the status line and
+headers into a small buffer, then allocate the body from `Content-Length` (bounded by the ceiling), which
+is the shape the decoder already computes in `resolveExpectedTotal`. Give the client its own
+`maxResponseBodyBytes` rather than borrowing the request limit, and keep the loud refusal on overrun.
+
+**1.0 disposition:** the separate client-side knob is 1.0 (configuration surface — a limit that cannot be
+set independently is a limit an operator cannot reason about); the per-response sizing is a No Waste
+Compute improvement that can follow.
+
+**Merge Gate:** a `HEAD` and a small `GET` allocate proportional to what arrived, not to the ceiling
+(assert on allocator stats, not on timing); the overrun refusal still fires at the configured limit; the
+S3 driver's ceiling stops being the engine's ceiling.
+
+---
+
+### Storage: Two Blob Providers, No Way To Choose Between Them (surfaced 2026-08-01)
+
+**Gap:** `CommunityFilesystemBlobStorageProvider` and `CommunityS3BlobStorageProvider` are both
+registered in `META-INF/services` at the same Community priority, and nothing in this repository loads
+`BlobStorageProvider` through `ServiceLoader` yet. Today that is inert — a deployment gets the store whose
+provider it constructs — but the moment a storage subsystem bootstraps the SPI, discovery order decides
+which backend a tenant's objects land in. Ordering is not a contract, and the two stores are not
+interchangeable: one needs credentials and a reachable endpoint, the other needs a writable directory.
+
+The scheduling subsystem already shows the shape this needs (`SchedulingBootstrap` +
+`SchedulingBootstrapSelected` JFR event), with one addition: scheduling had a single provider, so
+recording the winner was enough. Storage has two at equal priority, so the choice must be *stated* by
+configuration, not merely *recorded*.
+
+**Owner:** Storage / Bootstrap.
+
+**Resolution:** A `StorageBootstrap` in Core plus a Community subsystem binding the selected store into
+`KernelProviders`, selecting by an explicit config key rather than by priority or discovery order. An
+unset key with more than one provider present is a startup failure, not a default — picking silently is
+the failure this entry exists to prevent. Emit the selection as a JFR event, as scheduling does.
+
+**Merge Gate:** binding test proving the configured provider wins with both on the classpath; a test
+proving an ambiguous configuration fails at startup rather than choosing; `docs/subsystems/storage.md`
+loses its "provider selection is an open gap" paragraph.
 
 ---
 

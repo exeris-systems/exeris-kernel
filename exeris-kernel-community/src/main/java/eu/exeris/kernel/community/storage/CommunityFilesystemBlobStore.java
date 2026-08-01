@@ -8,7 +8,6 @@
  */
 package eu.exeris.kernel.community.storage;
 
-import eu.exeris.kernel.spi.exceptions.storage.BlobStorageException;
 import eu.exeris.kernel.spi.storage.blob.BlobAccess;
 import eu.exeris.kernel.spi.storage.blob.BlobDownloadHandle;
 import eu.exeris.kernel.spi.storage.blob.BlobMetadata;
@@ -41,6 +40,9 @@ import java.util.Optional;
  */
 public final class CommunityFilesystemBlobStore implements BlobStore {
 
+    private static final CommunityBlobFailures FAILURES =
+            CommunityBlobFailures.forProvider(CommunityBlobFailures.FILESYSTEM_PROVIDER);
+
     private static final String UPLOAD_SUFFIX = ".uploading";
     private static final String REF_REQUIRED = "ref must not be null";
     private static final String ROOT_CONTAINER = "[root]";
@@ -54,7 +56,7 @@ public final class CommunityFilesystemBlobStore implements BlobStore {
         try {
             Files.createDirectories(root);
         } catch (IOException e) {
-            throw CommunityBlobFailures.transferFailed(
+            throw FAILURES.transferFailed(
                     CommunityBlobFailures.OP_INIT, ROOT_CONTAINER, e);
         }
         this.layout = new CommunityFilesystemBlobLayout(root);
@@ -74,7 +76,7 @@ public final class CommunityFilesystemBlobStore implements BlobStore {
                     staging, target, ref, contentLength,
                     contentType == null ? BlobMetadata.DEFAULT_CONTENT_TYPE : contentType);
         } catch (IOException e) {
-            throw CommunityBlobFailures.transferFailed(
+            throw FAILURES.transferFailed(
                     CommunityBlobFailures.OP_UPLOAD, ref.container(), e);
         }
     }
@@ -89,7 +91,7 @@ public final class CommunityFilesystemBlobStore implements BlobStore {
         Objects.requireNonNull(ref, REF_REQUIRED);
         Path target = layout.resolve(ref, CommunityBlobFailures.OP_DOWNLOAD);
         if (!Files.isRegularFile(target)) {
-            throw BlobStorageException.notFound(CommunityBlobFailures.PROVIDER_NAME, ref.container());
+            throw FAILURES.notFound(ref.container());
         }
         try {
             long size = Files.size(target);
@@ -98,7 +100,7 @@ public final class CommunityFilesystemBlobStore implements BlobStore {
                     new BlobMetadata(ref, size, CommunityFilesystemBlobLayout.contentTypeOf(target)),
                     range);
         } catch (IOException e) {
-            throw CommunityBlobFailures.transferFailed(
+            throw FAILURES.transferFailed(
                     CommunityBlobFailures.OP_DOWNLOAD, ref.container(), e);
         }
     }
@@ -114,7 +116,7 @@ public final class CommunityFilesystemBlobStore implements BlobStore {
             return Optional.of(new BlobMetadata(
                     ref, Files.size(target), CommunityFilesystemBlobLayout.contentTypeOf(target)));
         } catch (IOException e) {
-            throw CommunityBlobFailures.transferFailed(
+            throw FAILURES.transferFailed(
                     CommunityBlobFailures.OP_STAT, ref.container(), e);
         }
     }
@@ -128,7 +130,7 @@ public final class CommunityFilesystemBlobStore implements BlobStore {
             Files.deleteIfExists(CommunityFilesystemBlobLayout.sidecar(target));
             return removed;
         } catch (IOException e) {
-            throw CommunityBlobFailures.transferFailed(
+            throw FAILURES.transferFailed(
                     CommunityBlobFailures.OP_DELETE, ref.container(), e);
         }
     }

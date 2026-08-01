@@ -144,6 +144,32 @@ rather than leaving each driver to guess how much it may assume.
     contract from a description into something falsifiable: a single binding proves only that the SPI can
     describe itself.
 
+    *(Amended 2026-08-01, with the S3 binding. Four things the original wording left open, settled by
+    building it:*
+
+    - ***The authentication subset is header signing over `host`, `x-amz-content-sha256` and
+      `x-amz-date`, plus query signing for presigned URLs.** Not implemented: chunked (`STREAMING-*`)
+      payload signing, session tokens, and signing arbitrary caller-supplied `x-amz-*` headers. Each
+      serves a capability this driver does not have — multipart upload, temporary credentials,
+      server-side encryption — so implementing them would be signing for requests it cannot make.*
+    - ***The endpoint must be `http://`, and `https://` is rejected at construction.** The Community
+      HTTP client engine has no client-side TLS: `CommunityHttpTransportFactory` wires certificate
+      material for listeners only, so a `CLIENT`-mode engine speaks cleartext whatever the scheme says.
+      Accepting an `https` endpoint would send SigV4 credentials in the clear because a scheme was
+      ignored. The driver targets a MinIO-compatible endpoint over a trusted network path; a public S3
+      endpoint needs the Enterprise transport.*
+    - ***A configurable single-object ceiling (`s3.maxObjectBytes`, default 8 MiB) replaces an implicit
+      one.** Without multipart upload an object is held in one buffer for the length of a transfer, so a
+      ceiling exists whether or not it is named; naming it makes the refusal loud (`EX-BLOB-8005`, before
+      any allocation or request) instead of surfacing as an allocation failure or a decode error. It is
+      also a per-request cost, because the client engine sizes every response buffer from its configured
+      body ceiling — which is why the default is modest rather than generous.*
+    - ***A prerequisite fix landed in the HTTP client.** The client decoder read `Content-Length` as a
+      promise of bytes to come, so every `HEAD` ended as a truncation failure and the method was
+      unusable — found the moment the driver tried to `stat` an object without downloading it. Framing
+      is now decided by the request method (RFC 9110 §6.4.1), threaded from the engine because a
+      response cannot carry it.)*
+
 ## Consequences
 
 ### ✅ Positive Outcomes
@@ -232,8 +258,12 @@ implementation slices:
    carries an object key).
 2. **`ExerisArchitectureTest`** gains the obligation-9 rule: no `java.io.File` / `java.nio.file.Files`
    inside `eu.exeris.kernel.spi.storage..`.
-3. **Testcontainers MinIO integration test** under `@Tag("integration")`, with its own CI gate, since the
-   S3 binding cannot be proven against a stub.
+3. **Testcontainers MinIO integration test** under `@Tag("integration")`, since the S3 binding cannot be
+   proven against a stub.
+   *(Amended 2026-08-01: no new CI gate. The existing community integration job already runs every
+   `@Tag("integration")` test in `exeris-kernel-community` — it is named for the persistence work that
+   created it, but the Keycloak suite has ridden it since v0.10 and the MinIO suite joins them. A second
+   job selecting the same tag in the same module would run the same tests twice.)*
 4. **Registry check:** `EX-BLOB-*` codes present in `KernelErrorCodes` before any throw site references
    them.
 5. **`docs/subsystems/storage.md`** lands with the SPI slice. Every kernel subsystem carries a contract

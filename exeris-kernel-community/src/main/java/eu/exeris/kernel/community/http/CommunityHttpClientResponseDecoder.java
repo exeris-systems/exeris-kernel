@@ -63,9 +63,15 @@ final class CommunityHttpClientResponseDecoder {
     /* default */ static long resolveExpectedTotal(long currentExpectedTotal,
                                                    MemorySegment segment,
                                                    long totalBytes,
-                                                   long headerTerminator) {
+                                                   long headerTerminator,
+                                                   boolean bodyless) {
         if (currentExpectedTotal >= 0 || headerTerminator < 0) {
             return currentExpectedTotal;
+        }
+        if (bodyless) {
+            // RFC 9110 §6.4.1: the response to HEAD carries the Content-Length the object would
+            // have, and no body. Waiting for those bytes would block until the peer closed.
+            return headerTerminator + 4;
         }
         long statusLineEnd = CommunityHttpBufferOps.findCrLf(segment, 0, totalBytes);
         if (statusLineEnd < 0) {
@@ -91,7 +97,8 @@ final class CommunityHttpClientResponseDecoder {
     /* default */ static HttpResponse decodeResponse(MemoryAllocator allocator,
                                                      LoanedBuffer aggregate,
                                                      long total,
-                                                     HttpVersion requestVersion) {
+                                                     HttpVersion requestVersion,
+                                                     boolean bodyless) {
         long statusLineEnd = CommunityHttpBufferOps.findCrLf(aggregate.segment(), 0, total);
         if (statusLineEnd < 0) {
             throw new IllegalStateException("Invalid HTTP response: missing status line terminator");
@@ -112,7 +119,7 @@ final class CommunityHttpClientResponseDecoder {
         if (availableBodyBytes < 0) {
             throw new IllegalStateException("Invalid HTTP response: body start exceeds received bytes");
         }
-        long bodyLength = resolveBodyLength(headers, availableBodyBytes);
+        long bodyLength = bodyless ? 0L : resolveBodyLength(headers, availableBodyBytes);
         if (bodyLength > availableBodyBytes) {
             throw new IllegalStateException(
                     "Truncated HTTP response body: expected " + bodyLength

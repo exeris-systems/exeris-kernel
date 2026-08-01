@@ -29,6 +29,8 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  *   <li>{@value KernelErrorCodes#EX_BLOB_8002} — isolation denied (no tenant scope to resolve against)</li>
  *   <li>{@value KernelErrorCodes#EX_BLOB_8003} — transfer failure</li>
  *   <li>{@value KernelErrorCodes#EX_BLOB_8004} — upload contract violation</li>
+ *   <li>{@value KernelErrorCodes#EX_BLOB_8005} — object exceeds the driver's configured ceiling</li>
+ *   <li>{@value KernelErrorCodes#EX_BLOB_8006} — the remote store refused the request</li>
  * </ul>
  *
  * @since 0.11.0
@@ -39,6 +41,8 @@ public final class BlobStorageException extends ExerisKernelException {
     private static final String ISOLATION_MSG = "Blob operation denied — no tenant scope";
     private static final String TRANSFER_MSG = "Blob transfer failure";
     private static final String UPLOAD_MSG = "Blob upload contract violation";
+    private static final String TOO_LARGE_MSG = "Blob exceeds the driver's configured ceiling";
+    private static final String REMOTE_MSG = "Remote blob store refused the request";
 
     private BlobStorageException(String errorCode, String message, Throwable cause, Object... rawArgs) {
         super(errorCode, message, cause, rawArgs);
@@ -105,5 +109,37 @@ public final class BlobStorageException extends ExerisKernelException {
         return new BlobStorageException(
                 KernelErrorCodes.EX_BLOB_8004, UPLOAD_MSG, null,
                 providerName, declaredLength, actualLength);
+    }
+
+    /**
+     * The transfer is larger than the driver is configured to hold.
+     *
+     * <p>Raised before any allocation or request, so an oversized object costs nothing to refuse.
+     *
+     * @param providerName  provider display name
+     * @param declaredBytes the object size the caller asked for
+     * @param ceilingBytes  the configured ceiling
+     * @return exception with rawArgs: [providerName, declaredBytes, ceilingBytes]
+     */
+    public static BlobStorageException exceedsCeiling(String providerName, long declaredBytes,
+                                                      long ceilingBytes) {
+        return new BlobStorageException(
+                KernelErrorCodes.EX_BLOB_8005, TOO_LARGE_MSG, null,
+                providerName, declaredBytes, ceilingBytes);
+    }
+
+    /**
+     * A remote store answered with a status the driver cannot treat as success.
+     *
+     * @param providerName provider display name
+     * @param container    the logical container the request addressed
+     * @param statusCode   the HTTP status the store returned
+     * @return exception with rawArgs: [providerName, container, statusCode]
+     */
+    public static BlobStorageException remoteRefused(String providerName, String container,
+                                                     int statusCode) {
+        return new BlobStorageException(
+                KernelErrorCodes.EX_BLOB_8006, REMOTE_MSG, null,
+                providerName, container, statusCode);
     }
 }

@@ -12,6 +12,7 @@ import eu.exeris.kernel.community.memory.CommunityMemoryProvider;
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.http.HttpClientEngine;
 import eu.exeris.kernel.spi.http.HttpConfig;
+import eu.exeris.kernel.spi.http.HttpMethod;
 import eu.exeris.kernel.spi.http.HttpRequest;
 import eu.exeris.kernel.spi.http.HttpResponse;
 import eu.exeris.kernel.spi.http.HttpVersion;
@@ -116,7 +117,7 @@ final class CommunityHttpClientEngine implements HttpClientEngine {
         try (TransportConnection connection = transport.connect(targetHost, targetPort);
              TransportStream stream = connection.openStream()) {
             sendRequest(stream, request, connection);
-            return readResponse(stream, request.version());
+            return readResponse(stream, request.version(), request.method() == HttpMethod.HEAD);
         }
     }
 
@@ -157,7 +158,8 @@ final class CommunityHttpClientEngine implements HttpClientEngine {
         }
     }
 
-    private HttpResponse readResponse(TransportStream stream, HttpVersion requestVersion) {
+    private HttpResponse readResponse(TransportStream stream, HttpVersion requestVersion,
+                                      boolean bodyless) {
         try (LoanedBuffer aggregate = allocator.allocateNetwork(resolveAggregateCapacity())) {
             long total = 0;
             long headerTerminator = -1;
@@ -177,7 +179,7 @@ final class CommunityHttpClientEngine implements HttpClientEngine {
                         headerTerminator = CommunityHttpClientResponseDecoder.resolveHeaderTerminator(
                                 headerTerminator, aggregate.segment(), total);
                         expectedTotal = CommunityHttpClientResponseDecoder.resolveExpectedTotal(
-                                expectedTotal, aggregate.segment(), total, headerTerminator);
+                                expectedTotal, aggregate.segment(), total, headerTerminator, bodyless);
                         responseComplete = CommunityHttpClientResponseDecoder.isResponseComplete(total, expectedTotal);
                     }
                 }
@@ -187,7 +189,8 @@ final class CommunityHttpClientEngine implements HttpClientEngine {
                 throw new IllegalStateException("Remote peer returned an empty HTTP response");
             }
 
-            return CommunityHttpClientResponseDecoder.decodeResponse(allocator, aggregate, total, requestVersion);
+            return CommunityHttpClientResponseDecoder.decodeResponse(
+                    allocator, aggregate, total, requestVersion, bodyless);
         }
     }
 
