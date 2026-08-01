@@ -1,111 +1,86 @@
 [ {
   "class" : "java.lang.VirtualThread",
-  "count" : 272,
-  "bytes" : 1265688,
-  "category" : "LOOM_RUNTIME"
-}, {
-  "class" : "java.util.concurrent.ForkJoinTask$AdaptedRunnableAction",
-  "count" : 181,
-  "bytes" : 28272,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "java.util.concurrent.ConcurrentHashMap$Node",
-  "count" : 105,
-  "bytes" : 534960,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "java.lang.VirtualThread$VThreadContinuation",
-  "count" : 100,
-  "bytes" : 553112,
-  "category" : "LOOM_RUNTIME"
-}, {
-  "class" : "java.lang.ThreadBuilders$VirtualThreadBuilder",
-  "count" : 99,
-  "bytes" : 767208,
+  "count" : 869,
+  "bytes" : 4990632,
   "category" : "LOOM_RUNTIME"
 }, {
   "class" : "jdk.internal.vm.StackChunk",
-  "count" : 92,
-  "bytes" : 1387408,
+  "count" : 109,
+  "bytes" : 1071688,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000005205a000",
-  "count" : 88,
-  "bytes" : 525120,
+  "class" : "java.lang.VirtualThread$VThreadContinuation",
+  "count" : 29,
+  "bytes" : 96896,
   "category" : "LOOM_RUNTIME"
 }, {
-  "class" : "eu.exeris.kernel.core.events.InMemoryEventBus$$Lambda.0x0000000052304930",
-  "count" : 87,
-  "bytes" : 460608,
-  "category" : "TEST_HARNESS"
+  "class" : "java.lang.ThreadBuilders$VirtualThreadBuilder",
+  "count" : 11,
+  "bytes" : 70096,
+  "category" : "LOOM_RUNTIME"
 }, {
-  "class" : "eu.exeris.kernel.core.events.jfr.EventBusPublishEvent",
-  "count" : 85,
-  "bytes" : 460696,
-  "category" : "TEST_HARNESS"
-}, {
-  "class" : "java.util.LinkedHashMap$Entry",
-  "count" : 5,
-  "bytes" : 261504,
+  "class" : "java.util.concurrent.CopyOnWriteArrayList$COWIterator",
+  "count" : 10,
+  "bytes" : 240,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "[B",
-  "count" : 4,
-  "bytes" : 875816,
+  "class" : "java.util.concurrent.ConcurrentHashMap$Node",
+  "count" : 10,
+  "bytes" : 23032,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "[Ljava.lang.Object;",
-  "count" : 2,
-  "bytes" : 65472,
+  "class" : "java.util.concurrent.ForkJoinTask$AdaptedRunnableAction",
+  "count" : 9,
+  "bytes" : 83440,
   "category" : "JVM_NOISE"
 }, {
   "class" : "[Ljava.util.HashMap$Node;",
-  "count" : 1,
-  "bytes" : 65368,
+  "count" : 3,
+  "bytes" : 75144,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "java.util.concurrent.ConcurrentHashMap$CounterCell",
-  "count" : 1,
-  "bytes" : 280,
+  "class" : "[Ljdk.jfr.internal.util.TimespanUnit;",
+  "count" : 3,
+  "bytes" : 61823880,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "jdk.jfr.internal.SettingsManager$InternalSetting",
+  "class" : "java.util.HashMap",
+  "count" : 2,
+  "bytes" : 75056,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "java.util.HashMap$KeyIterator",
+  "count" : 2,
+  "bytes" : 75056,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "java.lang.VirtualThread$VThreadContinuation$1",
+  "count" : 2,
+  "bytes" : 42576,
+  "category" : "LOOM_RUNTIME"
+}, {
+  "class" : "java.lang.VirtualThread$$Lambda.0x000000004005a000",
+  "count" : 2,
+  "bytes" : 75016,
+  "category" : "LOOM_RUNTIME"
+}, {
+  "class" : "java.util.HashSet",
   "count" : 1,
-  "bytes" : 40,
+  "bytes" : 75008,
   "category" : "JVM_NOISE"
 }, {
   "class" : "java.util.LinkedHashMap",
   "count" : 1,
-  "bytes" : 88,
+  "bytes" : 74912,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "java.util.HashMap",
+  "class" : "java.util.LinkedHashMap$Entry",
   "count" : 1,
-  "bytes" : 64,
+  "bytes" : 56,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "[Ljava.util.concurrent.ForkJoinTask;",
+  "class" : "java.util.HashMap$KeySet",
   "count" : 1,
-  "bytes" : 32784,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "[Ljdk.jfr.internal.util.TimespanUnit;",
-  "count" : 1,
-  "bytes" : 11170248,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "java.lang.VirtualThread$VThreadContinuation$1",
-  "count" : 1,
-  "bytes" : 65376,
-  "category" : "LOOM_RUNTIME"
-}, {
-  "class" : "java.lang.String",
-  "count" : 1,
-  "bytes" : 65368,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "java.lang.StringBuilder",
-  "count" : 1,
-  "bytes" : 65352,
+  "bytes" : 375072,
   "category" : "JVM_NOISE"
 } ]
