@@ -407,6 +407,87 @@ class HttpRouterTest {
         }
 
         @Test
+        void templatedStreamRouteMatchesAConcreteId() {
+            // The defect this table was missing: the tooling generator emits exactly this shape
+            // (ADR-044 Slice 2), and an exact-match table registered it happily and then never matched,
+            // so every per-action stream 404'd on a real boot.
+            HttpRouter router = HttpRouter.builder()
+                    .streamRoute(HttpMethod.POST, "/orders/{id}/actions/ship", exchange -> { })
+                    .build();
+
+            HttpRouter.StreamMatch match =
+                    router.resolveStream(HttpMethod.POST, "/orders/42/actions/ship");
+
+            assertTrue(match != null, "a registered stream route that cannot match is a dead route");
+            assertEquals("42", match.params().get("id"));
+            assertTrue(router.isStreamRoute(HttpMethod.POST, "/orders/42/actions/ship"));
+        }
+
+        @Test
+        void templatedStreamRouteCapturesEverySegmentAndStripsQuery() {
+            HttpRouter router = HttpRouter.builder()
+                    .streamRoute(HttpMethod.GET, "/t/{tenant}/s/{stream}", exchange -> { })
+                    .build();
+
+            HttpRouter.StreamMatch match =
+                    router.resolveStream(HttpMethod.GET, "/t/acme/s/audit?since=5");
+
+            assertTrue(match != null);
+            assertEquals("acme", match.params().get("tenant"));
+            assertEquals("audit", match.params().get("stream"));
+        }
+
+        @Test
+        void exactStreamRouteWinsOverTemplate() {
+            AtomicBoolean exactRan = new AtomicBoolean(false);
+            HttpRouter router = HttpRouter.builder()
+                    .streamRoute(HttpMethod.GET, "/x/{id}", exchange -> { })
+                    .streamRoute(HttpMethod.GET, "/x/all", exchange -> exactRan.set(true))
+                    .build();
+
+            // Mirrors respond-once precedence: registering a literal alongside a template means the
+            // literal is the special case.
+            router.resolveStream(HttpMethod.GET, "/x/all").handler().handle(null);
+            assertTrue(exactRan.get());
+            assertTrue(router.resolveStream(HttpMethod.GET, "/x/7").params().containsKey("id"));
+        }
+
+        @Test
+        void templatedStreamRouteDoesNotMatchAWrongShape() {
+            HttpRouter router = HttpRouter.builder()
+                    .streamRoute(HttpMethod.GET, "/x/{id}/events", exchange -> { })
+                    .build();
+
+            assertNull(router.resolveStream(HttpMethod.GET, "/x/42"));
+            assertNull(router.resolveStream(HttpMethod.GET, "/x//events"),
+                    "an empty segment must not satisfy a placeholder");
+            assertNull(router.resolveStream(HttpMethod.POST, "/x/42/events"),
+                    "the method is part of the match");
+        }
+
+        @Test
+        void malformedBraceInAStreamPathIsRejectedAtRegistration() {
+            // The fail-fast half of this slice: a stream path carrying a brace either resolves via
+            // templates or fails here. A silently-dead stream registration must be unrepresentable.
+            assertThrows(IllegalArgumentException.class, () -> HttpRouter.builder()
+                    .streamRoute(HttpMethod.GET, "/x/{id/events", exchange -> { }));
+        }
+
+        @Test
+        void streamAndRespondOnceTablesStayDisjointUnderTemplates() {
+            HttpRouter router = HttpRouter.builder()
+                    .route(HttpMethod.GET, "/x/{id}", e -> e.respond(HttpStatus.OK))
+                    .streamRoute(HttpMethod.GET, "/x/{id}/events", exchange -> { })
+                    .build();
+
+            assertNull(router.resolveStream(HttpMethod.GET, "/x/42"));
+            CapturingExchange exchange = CapturingExchange.get("/x/42/events");
+            router.handle(exchange);
+            assertEquals(HttpStatus.NOT_FOUND, exchange.status(),
+                    "a streaming route stays invisible to the respond-once path (ADR-043 §7)");
+        }
+
+        @Test
         void respondOnceRouteIsNotAStreamRoute() {
             HttpRouter router = HttpRouter.builder()
                     .route(HttpMethod.GET, "/health", e -> e.respond(HttpStatus.OK))

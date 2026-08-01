@@ -1750,6 +1750,16 @@ See also: ADR-034 (`KernelWebClient` facade, superseding ADR-026), ADR-032 (`Htt
 
 **Owner:** HTTP subsystem (router); shape decision shared with `exeris-tooling` (ADR-044 EV1-stream slice).
 
+**Status (v0.11): DELIVERED — kernel-side template matching.** The streaming table now compiles `{name}`
+paths through the same `PathTemplate` the respond-once table uses, with the same exact-before-template
+precedence, and captured values reach the handler through the new `HttpStreamExchange.pathParams()` (a
+`PathParamStreamExchange` decorator, mirroring `PathParamHttpExchange`). One compiled template type
+serves both tables, so they cannot drift into disagreeing about what `/x/{id}` means. The fail-fast half
+landed with it: a malformed brace throws at `Builder.streamRoute`, so a silently-dead stream registration
+is unrepresentable. This is the default direction below, chosen without waiting on the tooling ruling —
+it subsumes the fail-fast property and stays correct under either tooling outcome, exactly as the
+alternative anticipated.
+
 **Resolution:** Rule the shape inside the tooling EV1-stream slice, then land the kernel side in v0.11. Default direction — kernel-side template matching: extend the streaming table with the same template semantics the unary table already has (reuse `PathTemplateRoute` compile/match for `streamRoute` paths containing `{name}`; exact stream routes take precedence over template stream routes, mirroring unary precedence; captured params exposed on the streaming path). Alternative — ADR-044 amendment (tooling repo) redesigns per-action stream paths onto exact routes, and the kernel change collapses to a Javadoc clarification plus a build-time guard. **Either way, fail-fast becomes mandatory:** a `{` in a stream path must either resolve via templates or be rejected in `Builder.streamRoute` — a silently-dead registered route must become impossible.
 
 **Merge Gate:** Fail-fast property enforced (template resolution or `IllegalArgumentException` at registration — no third state). If template matching lands: router unit coverage for stream-template resolve + exact-over-template precedence, plus a streaming TCK (or router-level) case proving a `{id}` stream route opens an `HttpStreamExchange` for a concrete id; ADR-043 obligation 7 stays true (streaming resolves only via `resolveStream`, never through `handle`). Tooling lockstep (ADR-044 Slice 2 per-action driver impl) tracked in `exeris-tooling`, non-gating for the kernel merge.

@@ -8,6 +8,7 @@
  */
 package eu.exeris.kernel.community.http;
 
+import eu.exeris.kernel.core.http.routing.HttpRouter;
 import eu.exeris.kernel.community.persistence.PersistenceSessionBox;
 import eu.exeris.kernel.core.http.http1.Http1Codec;
 import eu.exeris.kernel.core.security.GeneratedRoleRegistryLoader;
@@ -19,7 +20,6 @@ import eu.exeris.kernel.spi.http.HttpKernelProviders;
 import eu.exeris.kernel.spi.http.HttpRequest;
 import eu.exeris.kernel.spi.http.HttpRequestBodyDecoderRegistry;
 import eu.exeris.kernel.spi.http.HttpResponseBodyEncoderRegistry;
-import eu.exeris.kernel.spi.http.HttpStreamHandler;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.persistence.PersistenceEngine;
@@ -221,8 +221,8 @@ public final class CommunityHttpRequestProcessor {
                 readResult.headers(),
                 bodyBuffer);
 
-        HttpStreamHandler streamHandler = streamDispatcher.resolveStreamHandler(request, handler);
-        if (streamHandler != null) {
+        HttpRouter.StreamMatch streamRoute = streamDispatcher.resolveStreamHandler(request, handler);
+        if (streamRoute != null) {
             // v0.10 streaming dispatch (ADR-043). Two obligation mechanisms are built + TCK-pinned
             // (HttpStreamEngine deadline / StreamAdmissionController) but their PRODUCTION binding is
             // deliberately deferred here, not wired:
@@ -234,7 +234,7 @@ public final class CommunityHttpRequestProcessor {
             //     stream-opens shed under load — still holds via carrier-edge PAQS (NativeTcpCarrier's
             //     AdmissionController), which sheds any new stream including an SSE open. Plumbing the
             //     carrier arbiter through to a dedicated streaming ceiling is a v0.10 follow-up.
-            streamDispatcher.dispatchStream(request, stream, streamHandler);
+            streamDispatcher.dispatchStream(request, stream, streamRoute);
             return true;
         }
 
