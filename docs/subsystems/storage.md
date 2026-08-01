@@ -179,7 +179,7 @@ on.
 | `s3.bucket` | *(required)* | The single bucket every object lands in — tenants are separated by key prefix, not by bucket |
 | `s3.accessKey` / `s3.secretKey` | *(required)* | SigV4 credentials |
 | `s3.region` | `us-east-1` | SigV4 credential-scope region |
-| `s3.maxObjectBytes` | 8 MiB | Ceiling on a single object |
+| `s3.maxObjectBytes` | 8 MiB | Ceiling on a single object. Bounded above at just under 2 GiB and refused at construction beyond it — the single-buffer design addresses an object with an `int`, so a larger ceiling could not be honoured |
 
 **Cleartext only.** `CommunityHttpTransportFactory` wires certificate material for listeners, not for
 client connections, so a `CLIENT`-mode engine speaks cleartext whatever the endpoint scheme says. An
@@ -192,6 +192,12 @@ length of a transfer, because a single `PUT` must declare `Content-Length` befor
 multipart upload is out of scope. The Community HTTP client engine also reads every *response* into one
 buffer sized from its configured body ceiling — so raising `s3.maxObjectBytes` raises the allocation a
 `stat` pays, not only the largest object allowed. The default is deliberately modest for that reason.
+
+That single buffer is also why the ceiling has an upper bound. Both the allocator and the engine's
+aggregate sizing address it with an `int`, so a ceiling above roughly 2 GiB could not be allocated even
+though it would pass its own limit check — the transfer would narrow to a wrapped size at allocation,
+which is precisely the failure the named ceiling exists to replace with a loud refusal. The bound is
+enforced at construction, so an unhonourable ceiling is a startup error rather than a first-transfer one.
 
 **Two round trips per read.** Every download begins with a `HEAD`. The driver must know an object's size
 before deciding whether to pull it into one buffer, and a ranged read needs the total for

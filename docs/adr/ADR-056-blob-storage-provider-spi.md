@@ -163,7 +163,10 @@ rather than leaving each driver to guess how much it may assume.
       ceiling exists whether or not it is named; naming it makes the refusal loud (`EX-BLOB-8005`, before
       any allocation or request) instead of surfacing as an allocation failure or a decode error. It is
       also a per-request cost, because the client engine sizes every response buffer from its configured
-      body ceiling — which is why the default is modest rather than generous.*
+      body ceiling — which is why the default is modest rather than generous. **Bounded above** at just
+      under 2 GiB and refused at construction beyond it: the single-buffer design addresses an object
+      with an `int`, so a larger ceiling would pass its own limit check and then narrow to a wrapped
+      allocation size — the same failure the named ceiling replaces, reintroduced one level up.*
     - ***A prerequisite fix landed in the HTTP client.** The client decoder read `Content-Length` as a
       promise of bytes to come, so every `HEAD` ended as a truncation failure and the method was
       unusable — found the moment the driver tried to `stat` an object without downloading it. Framing

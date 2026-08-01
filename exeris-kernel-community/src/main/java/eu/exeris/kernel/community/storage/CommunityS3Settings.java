@@ -65,6 +65,10 @@ import java.util.Map;
      * response into one buffer sized from its configured body ceiling, so a {@code HEAD} pays the same
      * allocation as the largest {@code GET} the driver is prepared to make. Raise this to the largest
      * object a deployment genuinely stores, and no further.
+     *
+     * <p>Bounded above by {@link #MAX_SUPPORTED_OBJECT_BYTES}: the single-buffer design cannot address
+     * more than an {@code int} of bytes, so a larger ceiling is refused at construction rather than
+     * discovered when a transfer narrows to a wrapped allocation size.
      */
     /* default */ static final String MAX_OBJECT_BYTES = "s3.maxObjectBytes";
 
@@ -84,13 +88,39 @@ import java.util.Map;
     private static final long HEADER_HEADROOM_BYTES = 64L * 1024;
 
     /**
+     * What the client engine adds to whatever ceiling it is handed, for the status line and headers it
+     * reads into the same buffer. Named here because this driver's ceiling has to leave room for it.
+     */
+    private static final long ENGINE_FRAMING_HEADROOM_BYTES = 8L * 1024;
+
+    /**
+     * Largest ceiling this driver can honour: an object is held in one buffer, and both
+     * {@code MemoryAllocator.allocateNetwork} and the client engine's aggregate sizing address it with
+     * an {@code int}. The two headrooms above sit on top of the object, so the addressable maximum is
+     * what is left of {@link Integer#MAX_VALUE} once both are subtracted.
+     *
+     * <p>Bounded here rather than at the transfer, because a ceiling that cannot be honoured is a
+     * configuration error and belongs at construction. Left unbounded, a ceiling above 2 GiB would let
+     * an oversized transfer pass its own limit check and then narrow to a wrapped {@code int} at
+     * allocation — the exact failure the named ceiling exists to replace with a loud refusal.
+     */
+    /* default */ static final long MAX_SUPPORTED_OBJECT_BYTES =
+            Integer.MAX_VALUE - HEADER_HEADROOM_BYTES - ENGINE_FRAMING_HEADROOM_BYTES;
+
+    /**
      * Canonical constructor.
      *
-     * @throws IllegalArgumentException if the ceiling is not positive
+     * @throws IllegalArgumentException if the ceiling is not positive, or exceeds
+     *                                  {@link #MAX_SUPPORTED_OBJECT_BYTES}
      */
     /* default */ CommunityS3Settings {
         if (maxObjectBytes <= 0) {
             throw new IllegalArgumentException(MAX_OBJECT_BYTES + " must be positive");
+        }
+        if (maxObjectBytes > MAX_SUPPORTED_OBJECT_BYTES) {
+            throw new IllegalArgumentException(MAX_OBJECT_BYTES + " must not exceed "
+                    + MAX_SUPPORTED_OBJECT_BYTES + " — this driver holds an object in one buffer, and a "
+                    + "larger ceiling could not be allocated; got: " + maxObjectBytes);
         }
     }
 
