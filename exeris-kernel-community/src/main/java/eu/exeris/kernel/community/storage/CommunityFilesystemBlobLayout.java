@@ -33,6 +33,9 @@ import java.util.HexFormat;
  */
 final class CommunityFilesystemBlobLayout {
 
+    private static final CommunityBlobFailures FAILURES =
+            CommunityBlobFailures.forProvider(CommunityBlobFailures.FILESYSTEM_PROVIDER);
+
     private static final String TENANT_PREFIX = "t-";
     private static final String SIDECAR_SUFFIX = ".ctype";
 
@@ -58,7 +61,7 @@ final class CommunityFilesystemBlobLayout {
         Path tenantDir = tenantDirectoryOf(context, operation);
         Path resolved = tenantDir.resolve(ref.container()).resolve(ref.key()).normalize();
         if (!resolved.startsWith(tenantDir)) {
-            throw CommunityBlobFailures.isolationDenied(
+            throw FAILURES.isolationDenied(
                     operation, CommunityBlobFailures.REASON_PATH_ESCAPE, context.strategy().name());
         }
         return resolved;
@@ -92,7 +95,7 @@ final class CommunityFilesystemBlobLayout {
     private Path tenantDirectoryOf(StorageContext context, String operation) {
         String isolationKey = context.isolationKey().orElse(null);
         if (isolationKey == null || isolationKey.isBlank()) {
-            throw CommunityBlobFailures.isolationDenied(operation,
+            throw FAILURES.isolationDenied(operation,
                     CommunityBlobFailures.REASON_NO_ISOLATION_KEY, context.strategy().name());
         }
         String encoded = HexFormat.of().formatHex(isolationKey.getBytes(StandardCharsets.UTF_8));

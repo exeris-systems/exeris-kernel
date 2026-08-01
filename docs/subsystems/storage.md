@@ -1,11 +1,13 @@
 # Storage Subsystem — Blob Contract
 
-**Status:** SPI + Community filesystem driver shipped in v0.11 (ADR-056). Post-1.0 per the ROADMAP's
+**Status:** SPI + two Community drivers shipped in v0.11 (ADR-056). Post-1.0 per the ROADMAP's
 narrowed-core decision — 1.0 GA is not gated on this subsystem.
 
 **SPI package:** `eu.exeris.kernel.spi.storage.blob`
-**Drivers:** `CommunityFilesystemBlobStorageProvider` (in repo); an S3-compatible driver is the second
-in-repo binding that closes the ≥2-binding gate.
+**Drivers:** `CommunityFilesystemBlobStorageProvider` and `CommunityS3BlobStorageProvider`. Two bindings
+is the point, not a convenience: a contract with one binding describes that binding, and a filesystem and
+an object store disagree about almost everything below `BlobStore`, so a rule both satisfy is a rule
+about blobs.
 
 ---
 
@@ -119,20 +121,26 @@ be tidier but are not portable across the filesystems a Community driver must ru
 | `ExerisArchitectureTest.noFilesystemTypesInStorageSpi` | No `java.nio.file` inside the storage SPI package. `java.io` is already covered SPI-wide by `noJavaIoInSpi`. |
 | `CommunityFilesystemBlobLayoutTest` | A hostile isolation key cannot escape the store root, and the encoding is injective. Bound to the driver, not the SPI — the layout is a driver decision. |
 | `CommunityBlobJfrTest` | Both failure events are actually committed, and no recording carries an object key. |
+| `CommunityS3BlobStorageTckIT` | The same contract against live MinIO. `@Tag("integration")`, so it runs in the community integration gate, not the default build. |
+| `CommunityS3ObjectKeyTest` | Tenant separation and wire encoding, in the default build — the integration gate proves a round trip works, not why two tenants stay apart. |
+| `CommunityS3SignerTest` | Published SHA-256 vectors, that every signing input reaches the signature, and that the secret key is in no header and no minted URL. |
 
 ## Telemetry
 
 Failures are raised through `CommunityBlobFailures`, which emits the JFR event and returns the exception,
-so a call site reads `throw CommunityBlobFailures.transferFailed(...)`. The driver has fourteen failure
-sites across four classes; pairing an emit with a throw by hand at each one makes "recorded but not
-thrown" and "thrown but not recorded" both reachable by omission, and returning the exception removes the
-pairing. Both events are single-phase commits — transfers block on a channel and run on virtual threads,
+so a call site reads `throw failures.transferFailed(...)`. The drivers have some twenty failure sites
+across seven classes; pairing an emit with a throw by hand at each one makes "recorded but not thrown"
+and "thrown but not recorded" both reachable by omission, and returning the exception removes the
+pairing. The channel is bound once per driver to that driver's name, so a failure cannot be attributed to
+the sibling driver by an argument slip, and both drivers share the event names — filter
+`eu.exeris.kernel.storage.*` and read `providerName` to tell them apart. Both events are single-phase commits — transfers block on a channel and run on virtual threads,
 so a `begin() → I/O → commit()` straddle would bind the carrier-local `EventWriter` across a park.
 
 | Event | When | Fields |
 |---|---|---|
 | `eu.exeris.kernel.storage.BlobIsolationDenied` | Ambient context carries no isolation key, or a resolved path would leave the tenant directory | `providerName`, `operation`, `reason` (`no-isolation-key` / `path-escape`), `strategy` |
-| `eu.exeris.kernel.storage.BlobTransferFailed` | An I/O failure on init, upload, download, stat, or delete | `providerName`, `operation`, `container`, `exceptionClass`, `exceptionMessage` |
+| `eu.exeris.kernel.storage.BlobTransferFailed` | An I/O failure on init, upload, download, stat, or delete — or a remote store refusing the request | `providerName`, `operation`, `container`, `exceptionClass`, `exceptionMessage`, `remoteStatus` (`0` when the failure was local) |
+| `eu.exeris.kernel.storage.BlobCeilingExceeded` | A driver refuses a transfer larger than its configured single-object ceiling | `providerName`, `operation`, `container`, `declaredBytes`, `ceilingBytes` |
 
 `reason` is a classification rather than the strategy name: `ImmutableStorageContext.GLOBAL` carries
 strategy `SHARED` with an empty key, so reporting the strategy alone would tell an operator `SHARED` for
@@ -148,9 +156,65 @@ Neither event carries an object key, for the same reason `BlobStorageException` 
 | `EX-BLOB-8002` | Isolation denied — no tenant scope to resolve against, or resolution left the tenant namespace |
 | `EX-BLOB-8003` | Transfer failure (I/O) |
 | `EX-BLOB-8004` | Upload contract violation — byte count differs from the declared length |
+| `EX-BLOB-8005` | Object exceeds the driver's configured single-object ceiling — a refusal by policy, before any allocation or request |
+| `EX-BLOB-8006` | A remote store answered and refused; the status is carried, because `403` is the caller's credential or clock and `5xx` is the store's problem |
 
 No factory captures an object key: keys can carry application data, and a container plus a reason code
 is enough to locate a fault without putting caller data into telemetry.
+
+## S3-compatible driver notes
+
+Layout is the filesystem driver's, in a bucket: `t-<hex(isolationKey)>/<container>/<key>` under one
+bucket, path-style. One layout across both drivers means an operator reading a bucket listing and a
+directory tree sees the same structure. There is no containment re-check after resolution, unlike the
+filesystem driver: nothing here normalises the key, so an assertion that a just-concatenated string
+starts with its own prefix would confirm its own last statement. `BlobRef` refuses relative-navigation
+segments, and the hex prefix is one opaque segment — the same two properties the filesystem layout rests
+on.
+
+**Configuration.** `location` is the endpoint; the rest arrives as properties.
+
+| Property | Default | Meaning |
+|---|---|---|
+| `s3.bucket` | *(required)* | The single bucket every object lands in — tenants are separated by key prefix, not by bucket |
+| `s3.accessKey` / `s3.secretKey` | *(required)* | SigV4 credentials |
+| `s3.region` | `us-east-1` | SigV4 credential-scope region |
+| `s3.maxObjectBytes` | 8 MiB | Ceiling on a single object. Bounded above at just under 2 GiB and refused at construction beyond it — the single-buffer design addresses an object with an `int`, so a larger ceiling could not be honoured |
+
+**Cleartext only.** `CommunityHttpTransportFactory` wires certificate material for listeners, not for
+client connections, so a `CLIENT`-mode engine speaks cleartext whatever the endpoint scheme says. An
+`https://` endpoint is therefore **rejected at construction** rather than silently downgraded — sending
+SigV4 credentials in the clear because a scheme was ignored is not a failure that may be quiet. The
+target is a MinIO-compatible endpoint over a trusted network path.
+
+**The ceiling is a memory budget, not just a limit.** The driver holds an object in one buffer for the
+length of a transfer, because a single `PUT` must declare `Content-Length` before its first body byte and
+multipart upload is out of scope. The Community HTTP client engine also reads every *response* into one
+buffer sized from its configured body ceiling — so raising `s3.maxObjectBytes` raises the allocation a
+`stat` pays, not only the largest object allowed. The default is deliberately modest for that reason.
+
+That single buffer is also why the ceiling has an upper bound. Both the allocator and the engine's
+aggregate sizing address it with an `int`, so a ceiling above roughly 2 GiB could not be allocated even
+though it would pass its own limit check — the transfer would narrow to a wrapped size at allocation,
+which is precisely the failure the named ceiling exists to replace with a loud refusal. The bound is
+enforced at construction, so an unhonourable ceiling is a startup error rather than a first-transfer one.
+
+**Two round trips per read.** Every download begins with a `HEAD`. The driver must know an object's size
+before deciding whether to pull it into one buffer, and a ranged read needs the total for
+`BlobMetadata.sizeBytes()` regardless. Skipping it would mean discovering the ceiling after the bytes had
+arrived, or reporting a range length as the object size. `DELETE` pays the same cost for a different
+reason: S3 answers `204` whether or not anything was there, and the contract promises the caller can tell
+a removal from a no-op.
+
+**Signing subset.** Header signing over a fixed three-header set (`host`, `x-amz-content-sha256`,
+`x-amz-date`) and query signing for presigned URLs. Not implemented: chunked (`STREAMING-*`) payload
+signing, session tokens, and signing arbitrary caller-supplied `x-amz-*` headers — each serves a
+capability this driver does not have, so implementing it would be signing for requests it cannot make.
+
+**Provider selection is an open gap.** Both providers are registered at the same Community priority, and
+nothing in this repository loads `BlobStorageProvider` through `ServiceLoader` yet, so a deployment gets
+the store whose provider it constructs. When a storage subsystem does bootstrap the SPI, two providers at
+one priority will need a configured choice rather than a discovery order.
 
 ## Not in this subsystem
 

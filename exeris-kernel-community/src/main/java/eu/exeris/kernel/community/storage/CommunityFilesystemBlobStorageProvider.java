@@ -31,7 +31,7 @@ public final class CommunityFilesystemBlobStorageProvider implements BlobStorage
     @Override
     public String providerName() {
         // Shared with the telemetry choke point so the JFR events and the SPI identity cannot drift.
-        return CommunityBlobFailures.PROVIDER_NAME;
+        return CommunityBlobFailures.FILESYSTEM_PROVIDER;
     }
 
     @Override

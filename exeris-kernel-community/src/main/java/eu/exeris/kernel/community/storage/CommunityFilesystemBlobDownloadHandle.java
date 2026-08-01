@@ -26,6 +26,9 @@ import java.nio.file.StandardOpenOption;
  */
 final class CommunityFilesystemBlobDownloadHandle implements BlobDownloadHandle {
 
+    private static final CommunityBlobFailures FAILURES =
+            CommunityBlobFailures.forProvider(CommunityBlobFailures.FILESYSTEM_PROVIDER);
+
     private final BlobMetadata metadata;
     private final FileChannel channel;
 
@@ -39,7 +42,7 @@ final class CommunityFilesystemBlobDownloadHandle implements BlobDownloadHandle 
         try {
             this.channel = FileChannel.open(target, StandardOpenOption.READ);
         } catch (IOException e) {
-            throw CommunityBlobFailures.transferFailed(
+            throw FAILURES.transferFailed(
                     CommunityBlobFailures.OP_DOWNLOAD, metadata.ref().container(), e);
         }
         if (range == null) {
@@ -89,7 +92,7 @@ final class CommunityFilesystemBlobDownloadHandle implements BlobDownloadHandle 
         try {
             read = channel.read(view, position);
         } catch (IOException e) {
-            throw CommunityBlobFailures.transferFailed(
+            throw FAILURES.transferFailed(
                     CommunityBlobFailures.OP_DOWNLOAD, metadata.ref().container(), e);
         }
         if (read <= 0) {
@@ -109,7 +112,7 @@ final class CommunityFilesystemBlobDownloadHandle implements BlobDownloadHandle 
         try {
             channel.close();
         } catch (IOException e) {
-            throw CommunityBlobFailures.transferFailed(
+            throw FAILURES.transferFailed(
                     CommunityBlobFailures.OP_DOWNLOAD, metadata.ref().container(), e);
         }
     }

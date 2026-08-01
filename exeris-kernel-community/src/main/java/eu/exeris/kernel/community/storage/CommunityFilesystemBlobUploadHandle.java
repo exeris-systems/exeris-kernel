@@ -32,6 +32,9 @@ import java.nio.file.StandardOpenOption;
  */
 final class CommunityFilesystemBlobUploadHandle implements BlobUploadHandle {
 
+    private static final CommunityBlobFailures FAILURES =
+            CommunityBlobFailures.forProvider(CommunityBlobFailures.FILESYSTEM_PROVIDER);
+
     private final Path staging;
     private final Path target;
     private final BlobRef ref;
@@ -55,7 +58,7 @@ final class CommunityFilesystemBlobUploadHandle implements BlobUploadHandle {
                     StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING,
                     StandardOpenOption.WRITE);
         } catch (IOException e) {
-            throw CommunityBlobFailures.transferFailed(
+            throw FAILURES.transferFailed(
                     CommunityBlobFailures.OP_UPLOAD, ref.container(), e);
         }
     }
@@ -80,7 +83,7 @@ final class CommunityFilesystemBlobUploadHandle implements BlobUploadHandle {
         }
         if (written + length > declaredLength) {
             throw BlobStorageException.uploadLengthMismatch(
-                    CommunityBlobFailures.PROVIDER_NAME, declaredLength, written + length);
+                    FAILURES.providerName(), declaredLength, written + length);
         }
     }
 
@@ -90,7 +93,7 @@ final class CommunityFilesystemBlobUploadHandle implements BlobUploadHandle {
                 channel.write(view);
             }
         } catch (IOException e) {
-            throw CommunityBlobFailures.transferFailed(
+            throw FAILURES.transferFailed(
                     CommunityBlobFailures.OP_UPLOAD, ref.container(), e);
         }
     }
@@ -100,7 +103,7 @@ final class CommunityFilesystemBlobUploadHandle implements BlobUploadHandle {
         requireOpen();
         if (written != declaredLength) {
             throw BlobStorageException.uploadLengthMismatch(
-                    CommunityBlobFailures.PROVIDER_NAME, declaredLength, written);
+                    FAILURES.providerName(), declaredLength, written);
         }
         try {
             channel.force(true);
@@ -109,7 +112,7 @@ final class CommunityFilesystemBlobUploadHandle implements BlobUploadHandle {
             Files.move(staging, target, StandardCopyOption.REPLACE_EXISTING,
                     StandardCopyOption.ATOMIC_MOVE);
         } catch (IOException e) {
-            throw CommunityBlobFailures.transferFailed(
+            throw FAILURES.transferFailed(
                     CommunityBlobFailures.OP_UPLOAD, ref.container(), e);
         }
         committed = true;
@@ -130,7 +133,7 @@ final class CommunityFilesystemBlobUploadHandle implements BlobUploadHandle {
             channel.close();
             Files.deleteIfExists(staging);
         } catch (IOException e) {
-            throw CommunityBlobFailures.transferFailed(
+            throw FAILURES.transferFailed(
                     CommunityBlobFailures.OP_UPLOAD, ref.container(), e);
         }
     }
