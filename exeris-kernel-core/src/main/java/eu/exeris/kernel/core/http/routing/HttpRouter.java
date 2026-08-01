@@ -256,7 +256,9 @@ public final class HttpRouter implements HttpHandler {
         }
 
         private void addRoute(HttpMethod method, String path, HttpHandler handler) {
-            if (path.indexOf('{') >= 0) {
+            // The shared predicate, not a second copy of it: one type decides what counts as a template
+            // for both tables, which is the whole reason PathTemplate was extracted.
+            if (PathTemplate.isTemplate(path)) {
                 templateRoutes.add(PathTemplateRoute.compile(method, path, handler));
             } else {
                 exactRoutes.add(new RouteEntry(method, path, handler));
