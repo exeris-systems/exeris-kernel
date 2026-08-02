@@ -296,6 +296,14 @@ When PAQS sheds a stream or the Kernel initiates graceful shutdown:
 > **Why `FIN` not `RST` for load shedding?** `RST` causes immediate connection teardown on the client
 > side, which may interrupt in-flight retries and force the client to reconnect. `FIN` allows the client
 > to receive the `HTTP 503` response body, which is machine-readable and enables intelligent backoff.
+> `RST` is reserved for hard timeout scenarios only.
+>
+> **`reset(long)` vs `close()`:** `close()` is a graceful end-of-stream (`FIN`, drains queued writes);
+> `reset(long)` is the deliberate abortive primitive (`RST`, abandons queued writes) — the SPI's
+> transport-agnostic stream abort (an Enterprise QUIC binding maps it to `RESET_STREAM`). A failed
+> outbound write self-aborts via the same path. **Telemetry follow-up:** a secret-safe, single-phase
+> `StreamLifecycleEvent` for the reset transition is deferred to the security/transport
+> validation-stage JFR pass (Phase 4 N1) — the reset call sites are the intended emission points.
 
 ### Graceful-shutdown phase order (since 0.11)
 
@@ -318,14 +326,6 @@ mid-exchange across `stop()` and asserts the response still arrives.
 records each drain's stream count at start, count remaining, and duration. A non-zero
 `streamsRemaining` means the deadline fired before the drain finished — the signal that in-flight work
 was severed, and the number to tune `terminationGracePeriodSeconds` against.
-> `RST` is reserved for hard timeout scenarios only.
->
-> **`reset(long)` vs `close()`:** `close()` is a graceful end-of-stream (`FIN`, drains queued writes);
-> `reset(long)` is the deliberate abortive primitive (`RST`, abandons queued writes) — the SPI's
-> transport-agnostic stream abort (an Enterprise QUIC binding maps it to `RESET_STREAM`). A failed
-> outbound write self-aborts via the same path. **Telemetry follow-up:** a secret-safe, single-phase
-> `StreamLifecycleEvent` for the reset transition is deferred to the security/transport
-> validation-stage JFR pass (Phase 4 N1) — the reset call sites are the intended emission points.
 
 ---
 

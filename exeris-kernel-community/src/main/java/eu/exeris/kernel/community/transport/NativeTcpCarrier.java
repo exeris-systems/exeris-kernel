@@ -199,10 +199,21 @@ public final class NativeTcpCarrier implements TransportEngine {
      */
     @Override
     public void stop() {
-        if (!running.compareAndSet(true, false)) {
+        // Claim the stop before clearing `running`, and in this order. The reactors' liveness
+        // predicate is `running || draining`, so raising `draining` second would leave a window where
+        // both read false and a reactor could exit before the drain has even begun — the very failure
+        // this method exists to prevent, reintroduced at instruction scale. Entering through the
+        // `draining` CAS also makes the guard atomic: a concurrent second stop() loses the race here
+        // and returns, instead of both threads passing a separate check.
+        if (!draining.compareAndSet(false, true)) {
             return;
         }
-        draining.set(true);
+        if (!running.compareAndSet(true, false)) {
+            // Not running — nothing to drain, and `draining` must not stay raised or the reactors of a
+            // subsequent start() would never be allowed to exit.
+            draining.set(false);
+            return;
+        }
 
         // Phase 1 — close ingress. No new connections; the reactors keep serving admitted ones.
         closeQuietly(serverChannel);
@@ -366,6 +377,12 @@ public final class NativeTcpCarrier implements TransportEngine {
      * stop <em>accepting</em>, while the reactors must keep flushing responses for streams already
      * admitted. A reactor that exits on {@code running} alone takes the write path down with it, so
      * the drain that follows has nothing left to drain through.
+     *
+     * <p>These are two independent reads, not one atomic state, so {@link #stop()} owes them an
+     * ordering invariant: at least one of the two flags reads true from the moment a stop is claimed
+     * until the drain has finished. {@code stop()} raises {@code draining} <em>before</em> clearing
+     * {@code running} for exactly that reason — the reverse order leaves a window, however narrow, in
+     * which both read false and a reactor exits ahead of the drain.
      */
     /* default */ boolean isReactorActive() {
         return running.get() || draining.get();
