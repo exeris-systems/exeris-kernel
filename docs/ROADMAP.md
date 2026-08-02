@@ -1910,6 +1910,52 @@ delivery-boundary section in `docs/subsystems/events.md` loses its "not composab
 
 ---
 
+### Testkit: No Real-Runtime Fixtures Outside HTTP — Downstream Verifies Against Its Own Stubs (surfaced 2026-08-02)
+
+**Gap:** `exeris-kernel-community-testkit` ships four classes: three HTTP fixtures and `TestJwt`. There
+is nothing for persistence, transactions, events, flow, graph, scheduling, storage, or telemetry. A
+downstream host runtime binding those SPIs has no way to test against the real engine, so it writes
+stubs — and a stub encodes how its author *read* the contract, not how the runtime *behaves*. Ordering,
+lifecycle, and threading are exactly the properties a stub cannot get wrong loudly.
+
+This is not speculative. The kernel's own graceful-drain defect (§"Transport: drain in-flight streams"
+above, fixed in v0.11) is this class: the drain machinery existed, the SPI documented it, and every
+in-repo test passed because the TCK asserted the state machine rather than the semantics. Downstream
+reports the same shape repeatedly — compat datasource under load, JWT decoding when the servlet stack
+is absent, provider scope inside a filter and inside flow steps, routing with a query string — each
+found by a consuming application rather than by any test suite on either side.
+
+The sharpest exposure is transactions: propagation matrix, rollback, the second connection under
+`REQUIRES_NEW`, `ScopedValue` resolution inside `doBegin`. That is data-integrity behaviour currently
+proven only against hand-written doubles.
+
+**Owner:** Testkit / Community.
+
+**Resolution:** Extend the testkit with fixtures that stand up the *real* Community providers in a
+consumer's test scope, following the shape `KernelBootstrapHttpEngineFixture` already establishes —
+`ServiceLoader` discovery through a real bootstrap, engine pulled from the bound `KernelProviders` slot.
+Priority order by exposure: persistence/transactions first, then events + flow (which compose with it),
+then the rest.
+
+**Feasibility is established, not assumed.** `CommunityPersistenceProvider.createEngine(...)` against
+`jdbc:h2:mem:…;MODE=PostgreSQL;DB_CLOSE_DELAY=-1` yields a working engine in-process with no
+Testcontainers and no external schema step: the engine carries its own DDL
+(`db/migration/V0.5.0__create_outbox.sql`, `V0.7.0__create_saga_state.sql`,
+`V0.10.0__create_event_log.sql`) and applies it when `run.migrations=true` is set in
+`PersistenceConfig.properties()` — it defaults to `false`, which is the only non-obvious step. The
+in-repo persistence TCK bindings already do exactly this.
+
+One packaging decision to settle in the implementing PR: H2 is `test`-scoped in
+`exeris-kernel-community`, so a fixture defaulting to it must declare the driver `provided`/optional
+rather than drag a database into every consumer's classpath.
+
+**Merge Gate:** a downstream-shaped test — outside `exeris-kernel-community`, depending only on the
+testkit — that drives a transaction through the real engine and observes a rollback; the fixture
+surface documented in `docs/modules/` alongside the HTTP one. No new SPI: the fixtures compose
+existing contracts, so nothing here widens the kernel's public surface.
+
+---
+
 ## Known Gaps / Future Work planned for v0.12
 
 ### HTTP: `WebSocketProvider` SPI (or SSE-Only Commitment)
