@@ -31,8 +31,9 @@
  * {@link KafkaEventBrokerPort} (Core {@code OutboxBrokerPort} adapter — built but not
  * yet wired into a runtime path; reserved for the outbox-driven delivery follow-up),
  * {@link KafkaEventEngine} ({@code KafkaPublishBus} + virtual-thread {@code ConsumerLoop}
- * + {@code NoOpQueue}), and {@link KafkaEventProvider} (ServiceLoader, priority 100 —
- * outranks the in-memory Community provider). Coverage:
+ * + {@code NoOpQueue}), and {@link KafkaEventProvider} (ServiceLoader, priority 50 —
+ * outranks the in-memory Community provider at 0, stays below the Enterprise tier slot at 100;
+ * see {@link KafkaEventProvider#PRIORITY}, which this text contradicted until 0.11). Coverage:
  * {@link eu.exeris.kernel.tck.contract.events.AbstractKafkaEventEngineTck}
  * (publish/consume roundtrip + idempotent close, Testcontainers Kafka 3.x).
  *

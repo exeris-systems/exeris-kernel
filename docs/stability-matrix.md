@@ -60,8 +60,9 @@ this is informational and **not** a dependency of the open-core surface.
 | `…spi.events` | **preview** | 0.5.0 | — | `AbstractEventBusTck`, `…EventLoopTck`, `…KafkaEventEngineTck`, +5 | — |
 | `…spi.graph` | **preview** | 0.5.0 | — | `AbstractGraphProviderTck`, `…GraphEngineTck`, `…GraphDialectTck`, +3 | — |
 | `…spi.security` | **preview** | 0.5.0 | ADR-014 (RBAC) | `AbstractSecurityProviderTck`, `…RequiresRoleTck`, `…CitadelGuardTck`, +6 | — |
+| `…spi.security.identity` | **preview** | 0.10.0 | ADR-040 | `AbstractIdentityProviderTck` | — |
 | `…spi.crypto` | **preview** | 0.5.0 | ADR-008 (TLS engine) | `AbstractCryptoEngineTck` | yes (FFM crypto) |
-| `…spi.http` | **mixed** | 0.5.0 | ADR-009 / ADR-032 / ADR-034 | see per-surface rows below | yes (HTTP/3 path) |
+| `…spi.http` | **mixed** | 0.5.0 | ADR-009 / ADR-032 / ADR-034 / ADR-043 | see per-surface rows below | yes (HTTP/3 path) |
 | `…spi.util` | _internal_ | 0.5.0 | — | — | — |
 
 ¹ `config`: `ConfigProvider` / `KernelProfile` / `Dynamic` are mature 0.5.0 contracts and treated
@@ -76,10 +77,18 @@ as `stable`. The `@Immutable` annotation + watcher-refusal semantics (since 0.9.
 | `HttpClientEngine`, `HttpServerEngine`, `HttpProvider`, `HttpExchange`, `HttpHandler` | **stable** | 0.5.0 | ADR-009 | `AbstractHttpClientEngineTck`, `…HttpServerEngineTck`, `…HttpProviderTck`, `…HttpExchangeTck`, `…HttpHandlerTck` |
 | `HttpClientRequestEnricher` | **stable** | 0.8.0 | ADR-032 | `AbstractHttpClientRequestEnricherTck` |
 | `HttpRequestBodyEncoder` / `HttpRequestBodyDecoder` / `HttpResponseBodyDecoder` | **preview** | 0.8.0 | ADR-034 | `AbstractHttpRequestBodyEncoderTck`, `…RequestBodyDecoderTck`, `…ResponseBodyDecoderTck` |
+| `HttpStreamExchange` / `HttpStreamHandler` / `StreamEvent` (SSE server-push) | **preview** | 0.10.0 | ADR-043 | `AbstractHttpStreamExchangeTck` |
 
 > The body-codec quadrant has an **accepted ADR (ADR-034)** and executable TCKs, so it is past
 > `experimental` — but the server-side generator that consumes the request decoder lands in a
 > later cycle, so the contract is held at `preview` until that loop closes.
+
+> The streaming surface is wired end-to-end and TCK-pinned, but changes are still in flight rather
+> than merely possible: the wire framing is HTTP/1.1 close-delimited today (per-event chunked framing
+> and an HTTP/2 `DATA` path are follow-ups), the JWT-expiry deadline is built and TCK-pinned but not
+> yet passed by production dispatch, and 0.11 added `pathParams()` to the interface. `preview` is the
+> honest label until those close — see [`subsystems/http.md`](./subsystems/http.md) for the per-item
+> delivery status.
 
 `util` is excluded from the consumer matrix: `eu.exeris.kernel.spi.util` currently contains only
 `SpiDiagnostics`, an internal helper — not a consumer-facing SPI surface.

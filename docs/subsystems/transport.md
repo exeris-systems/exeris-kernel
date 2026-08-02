@@ -313,12 +313,14 @@ When PAQS sheds a stream or the Kernel initiates graceful shutdown:
 
 | Protocol     | Status      | Rationale                                                                                              |
 |:-------------|:------------|:-------------------------------------------------------------------------------------------------------|
-| **SSE**       | 🚧 Planned v0.10 — ratified by [ADR-043](../adr/ADR-043-kernel-http-streaming-spi.md) (ACCEPTED) | One-directional server push via HTTP/1.1 chunked transfer (a thin `data:…\n\n` framing layer over the existing `Http1ChunkedEncoder`) or HTTP/2. Surfaced as the sibling `HttpStreamExchange` SPI (respond-once `HttpExchange` untouched). **SSE-first** — the minimal server-push primitive; see [http.md](http.md) for the SPI surface. |
+| **SSE**       | ✅ Shipped v0.10 — ratified by [ADR-043](../adr/ADR-043-kernel-http-streaming-spi.md) (ACCEPTED) | One-directional server push, surfaced as the sibling `HttpStreamExchange` SPI (respond-once `HttpExchange` untouched). **SSE-first** — the minimal server-push primitive. The delivered wire framing is a close-delimited HTTP/1.1 response, not chunked transfer as sketched here before it landed; per-event chunked framing and an HTTP/2 `DATA` path are follow-ups. See [http.md](http.md) for the SPI surface and the per-item delivery status. |
 | **WebSocket** | Deferred — separately-justified follow-up (not milestone-pinned) | Full duplex; requires an HTTP Upgrade (H1) / Extended CONNECT (H2 RFC 8441) handshake + frame protocol. Decided separately once a bidirectional/low-latency client-streaming use case is proven; may precede 1.0 but is not pinned to a release milestone (see ADR-043 §What is NOT in scope). |
 | **gRPC streaming** | 🚧 Planned TRL-5 | Modelled as HTTP/2 streams — follows transport carrier maturity. |
 
-Before SSE lands, real-time push uses the **Events subsystem (L3)** with a Kafka/Redpanda
-backend and a polling client. The PAQS scheduler handles priority-based delivery.
+Full-duplex traffic still has no kernel primitive: until WebSocket is decided, a bidirectional
+use case pairs SSE downstream with ordinary requests upstream, or falls back to the **Events
+subsystem (L3)** with a Kafka/Redpanda backend and a polling client. The PAQS scheduler handles
+priority-based delivery.
 
 ---
 
