@@ -146,6 +146,10 @@ See also: [Security Subsystem](./subsystems/security.md) — Responsibilities.
 
 **Merge Gate:** `TransportCarrierPinningTck` must pass with no pinning regressions; add community-scale sustained ingress load validation in CI/perf pipeline.
 
+**Status (v0.11): DISCHARGED** — by PERF-063, not by a later slice of this entry, which is why it sat open: the work landed under a different name and nobody closed the row. `NativeTcpReactor.pendingRequests` is an `MpscUnboundedArrayQueue` (`NativeTcpReactor.java:66`), so the cross-VT handoff this entry describes is lock-free today. Both merge-gate halves exist: `CommunityTransportCarrierPinningTckTest` plus its 2- and 4-reactor variants, and `NativeTcpTransportStressTest` behind the dedicated `transport-stress-gate` CI job.
+
+Two deviations from the text above, recorded so the row is not re-opened by someone diffing wording against code: the queue is **JCTools**, not Agrona (`org.jctools:jctools-core` is already a Community dependency, so no new one was taken), and it lives in `NativeTcpReactor` rather than `NativeTcpCarrier` — the reactor is where the cross-VT handoff actually is. No separate per-connection ingress queue was added and none is indicated; the Sprint-8e Hot-Path Collections Review discharged that question for the carrier as a whole.
+
 See also: [Transport Subsystem](./subsystems/transport.md) — Testing Strategy / Load Tests.
 
 ---
@@ -159,6 +163,14 @@ See also: [Transport Subsystem](./subsystems/transport.md) — Testing Strategy 
 **Resolution:** Migrate the Community carrier incrementally from primary NIO socket lifecycle management to the Core-provided FFM syscall path backed by `CoreSyscallLoader`. Preserve SPI blindness, PAQS semantics, and current TLS FD-owner binding while moving socket bootstrap and readiness operations onto the shared POSIX / Winsock layer. Java NIO remains the explicit portability / compatibility fallback when FFM socket bootstrap is unavailable, unsupported, or temporarily disabled.
 
 **Merge Gate:** Add Community integration and TCK coverage proving boot, bind, connect, ingress, and load-shed behavior through the FFM-backed socket path. Linux validation is mandatory; Windows-capable CI coverage is required for Winsock compatibility before milestone close.
+
+**Status (v0.11): PARTIAL — validation seam delivered, carrier migration deferred to v0.12 candidate.**
+
+What landed: `SyscallLoopbackRoundTripIT` drives the resolved handles through a real loopback connection — socket → bind → listen → connect → accept → send → recv with a byte-exact comparison, plus a refusal case with a positive control. Until it, the seam had only non-nullness assertions, so the build could not distinguish working socket handles from merely-present ones. That is the precondition for trusting the path enough to move a carrier onto it, and it is now in the default build (Failsafe, `**/*IT.java`).
+
+What did not land, and why it is not a slip: migrating `NativeTcpCarrier` off NIO is a live-traffic change to the one component every request crosses, and it should not be attempted while the Winsock half of the seam is unexecuted anywhere. **Named precondition, verified rather than assumed:** every job in `.github/workflows/maven.yml` is `ubuntu-latest`. There is no Windows runner, so `CoreSyscallLoader.loadWindows` and the Windows branch of the new IT have never run in CI or locally here. The migration's own merge gate demands Winsock compatibility coverage before milestone close, which no v0.11 slice could have satisfied.
+
+**v0.12 entry condition:** a Windows CI runner exists and the new IT is green on it. Absent that, the honest v0.12 scope is Linux-only migration behind a fallback, with NIO retained as the documented portability path — which the Resolution above already anticipates.
 
 See also: [Transport Subsystem](./subsystems/transport.md) — Responsibilities / Zero-Copy Ingress.
 
