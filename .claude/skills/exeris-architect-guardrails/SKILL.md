@@ -15,7 +15,7 @@ Run a strict architectural review for Exeris Kernel changes so every PR remains 
 This skill is mandatory for PR reviews that touch architecture, module boundaries, subsystem contracts, or dependency wiring.
 
 ## When to Use
-- Any PR review in Exeris Kernel (default)
+- Any PR that can affect placement, boundaries, or dependency direction (skip pure intra-module edits with no boundary impact)
 - Any change touching SPI/Core/Community/Enterprise/TCK modules
 - Any change introducing or modifying interfaces, providers, adapters, transport/security/persistence internals
 - Any refactor that can alter dependency direction or module layering

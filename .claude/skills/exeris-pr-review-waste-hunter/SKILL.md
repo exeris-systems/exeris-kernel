@@ -28,7 +28,7 @@ This skill is the entry point. After the inflation/boundary triage, invoke the f
 - Provider discovery / bootstrap DAG / ServiceLoader → `exeris-service-loader-and-bootstrap`
 - Doc/ADR drift suspected → `exeris-docs-adr-check`
 
-If unsure how to route a multi-domain change, use the triage skills first: `exeris-task-classifier` → `exeris-risk-prioritizer` → `exeris-routing-planner`.
+If unsure how to route a multi-domain change, run `exeris-triage` first (single pass: classify → primary risk → route → gates).
 
 ## Canon to Load First
 - docs/whitepaper.md

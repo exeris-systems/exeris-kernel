@@ -15,7 +15,7 @@ This skill validates that changes respect:
 - subsystem hot-path contracts in `docs/subsystems/*.md`
 
 ## When to Use
-- Every PR review in Exeris Kernel (mandatory)
+- Any PR that can touch runtime code paths (skip for docs-only or pure test/tooling changes — classify scope first)
 - Any change touching runtime, transport, flow, memory, persistence, telemetry, or bootstrap
 - Any change that can affect allocations, concurrency model, or off-heap memory movement
 
