@@ -158,6 +158,7 @@ class SyscallLoopbackRoundTripIT {
                     closeQuietly(handles, acceptedFd);
                     closeQuietly(handles, clientFd);
                     closeQuietly(handles, serverFd);
+                    releaseWinsock(handles);
                 }
             }
         }
@@ -219,6 +220,7 @@ class SyscallLoopbackRoundTripIT {
                     closeQuietly(handles, acceptedClientFd);
                     closeQuietly(handles, parkedFd);
                     closeQuietly(handles, listenerFd);
+                    releaseWinsock(handles);
                 }
             }
         }
@@ -305,6 +307,25 @@ class SyscallLoopbackRoundTripIT {
     private static void closeQuietly(SyscallHandles handles, long descriptor) throws Throwable {
         if (descriptor >= 0) {
             call(handles.close(), fd(handles.close(), descriptor));
+        }
+    }
+
+    /**
+     * Pairs the {@code WSAStartup} that {@link CoreSyscallLoader#load} performs on Windows.
+     *
+     * <p>{@link SyscallHandles#wsaCleanup()} documents that it must run before the owning arena closes.
+     * These tests load into a fresh {@link Arena#ofConfined()} per method, so without this each method
+     * would close its arena on an unbalanced Winsock refcount — the sibling
+     * {@code CoreSyscallLoaderTest} does not have the problem because it loads once into
+     * {@link Arena#global()}, which never closes.
+     *
+     * <p>No-op on POSIX, where the handle is null by the loader's own convention. Unverified in this
+     * repository's CI, which has no Windows runner — it satisfies the documented contract rather than a
+     * green run.
+     */
+    private static void releaseWinsock(SyscallHandles handles) throws Throwable {
+        if (handles.hasWsaCleanup()) {
+            call(handles.wsaCleanup());
         }
     }
 }
