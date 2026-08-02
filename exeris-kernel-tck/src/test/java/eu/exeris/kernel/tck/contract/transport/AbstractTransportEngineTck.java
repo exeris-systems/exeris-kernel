@@ -8,6 +8,7 @@
  */
 package eu.exeris.kernel.tck.contract.transport;
 
+import eu.exeris.kernel.spi.transport.StreamHandler;
 import eu.exeris.kernel.spi.transport.TransportEngine;
 import eu.exeris.kernel.spi.transport.TransportMode;
 import eu.exeris.kernel.spi.transport.TransportStats;
@@ -20,11 +21,13 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import java.io.IOException;
+import java.lang.foreign.MemorySegment;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -50,6 +53,8 @@ public abstract class AbstractTransportEngineTck {
     private static final int OVER_CEILING = 2;
     private static final int CONNECT_TIMEOUT_MS = 2_000;
     private static final long REJECTION_TIMEOUT_SECONDS = 5L;
+    private static final long DRAIN_TIMEOUT_SECONDS = 10L;
+    private static final byte[] DRAIN_PAYLOAD = {'D', 'R', 'A', 'I', 'N', 'E', 'D', '!'};
 
     /**
      * Creates a fully initialised (but not yet started) {@link TransportEngine} in SERVER mode.
@@ -72,6 +77,19 @@ public abstract class AbstractTransportEngineTck {
      *                       engine without needing a binding-specific way to read the bound address
      */
     protected abstract TransportEngine createEngineWithConnectionCeiling(int maxConnections, int port);
+
+    /**
+     * Creates an unstarted SERVER-mode engine bound to {@code port} whose stream handler is the one
+     * supplied, rather than one the binding chooses.
+     *
+     * <p>The drain contract cannot be asserted from outside the handler: proving that {@code stop()}
+     * lets an in-flight exchange finish requires holding one open across the call, which only the
+     * suite's own handler can do.
+     *
+     * @param port    the port to bind
+     * @param handler the handler the engine must invoke for each admitted stream
+     */
+    protected abstract TransportEngine createEngineWithHandler(int port, StreamHandler handler);
 
     /**
      * Returns the expected {@link TransportMode} of the engine created by {@link #createEngine()}.
@@ -220,6 +238,62 @@ public abstract class AbstractTransportEngineTck {
         assertThat(bounded.stats().totalRejected())
                 .as("a refusal the engine does not count is a refusal an operator cannot see")
                 .isPositive();
+    }
+
+    @Nested
+    @DisplayName("stop() drains in-flight streams before tearing the transport down")
+    class GracefulDrain {
+
+        @Test
+        @DisplayName("a stream mid-exchange when stop() is called still delivers its response")
+        void inFlightStreamSurvivesStop() throws Exception {
+            CountDownLatch handlerEntered = new CountDownLatch(1);
+            CountDownLatch releaseHandler = new CountDownLatch(1);
+            int port = freePort();
+
+            TransportEngine draining = createEngineWithHandler(port, stream -> {
+                handlerEntered.countDown();
+                try {
+                    // Hold the exchange open so stop() is guaranteed to land mid-flight. Without this
+                    // the handler could finish first and the test would pass on timing, not contract.
+                    if (!releaseHandler.await(DRAIN_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                        return;
+                    }
+                    MemorySegment response = MemorySegment.ofArray(DRAIN_PAYLOAD);
+                    stream.write(response, DRAIN_PAYLOAD.length);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                } finally {
+                    stream.close();
+                }
+            });
+            draining.start();
+
+            Socket client = connectQuietly(port);
+            try {
+                client.setSoTimeout((int) TimeUnit.SECONDS.toMillis(DRAIN_TIMEOUT_SECONDS));
+                assertThat(handlerEntered.await(DRAIN_TIMEOUT_SECONDS, TimeUnit.SECONDS))
+                        .as("the handler must be running before stop() is called, or this asserts nothing")
+                        .isTrue();
+
+                Thread stopper = Thread.ofPlatform().start(draining::stop);
+                releaseHandler.countDown();
+
+                byte[] received = client.getInputStream().readNBytes(DRAIN_PAYLOAD.length);
+                stopper.join(TimeUnit.SECONDS.toMillis(DRAIN_TIMEOUT_SECONDS));
+
+                assertThat(received)
+                        .as("stop() promises in-flight streams are drained before being forcefully "
+                                + "closed. Severing the socket first and draining afterwards leaves the "
+                                + "handler running against a dead descriptor: it completes, the peer "
+                                + "gets nothing, and an idempotent client retries into a closed listener")
+                        .containsExactly(DRAIN_PAYLOAD);
+            } finally {
+                releaseHandler.countDown();
+                closeQuietly(client);
+                draining.close();
+            }
+        }
     }
 
     private static int freePort() {

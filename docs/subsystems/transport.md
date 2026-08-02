@@ -296,6 +296,28 @@ When PAQS sheds a stream or the Kernel initiates graceful shutdown:
 > **Why `FIN` not `RST` for load shedding?** `RST` causes immediate connection teardown on the client
 > side, which may interrupt in-flight retries and force the client to reconnect. `FIN` allows the client
 > to receive the `HTTP 503` response body, which is machine-readable and enables intelligent backoff.
+
+### Graceful-shutdown phase order (since 0.11)
+
+`NativeTcpCarrier.stop()` runs three phases, and the order is load-bearing rather than incidental:
+
+1. **Close ingress** — the listening channel closes and the acceptor joins. No new connections; the
+   reactors keep serving the ones already admitted.
+2. **Drain** — `PaqsScheduler.close()` waits for the admission controller's active-stream count to
+   reach zero under its 60-second hard deadline. The reactors are deliberately still looping here, so
+   a handler that completes during the drain can still have its response flushed.
+3. **Teardown** — reactors are woken and joined, then the selector and all remaining channels close.
+
+Until 0.11 the drain ran *after* teardown, which made it inert: handlers were waited on while their
+sockets were already closed, so an in-flight request completed and its response went nowhere. The peer
+observed a connection closed with no reply, and an idempotent client retried into a listener that was
+already gone. `AbstractTransportEngineTck$GracefulDrain` now pins the contract — it holds a stream
+mid-exchange across `stop()` and asserts the response still arrives.
+
+**Telemetry.** `CommunityTransportDrainEvent` (JFR `eu.exeris.kernel.transport.CommunityTransportDrain`)
+records each drain's stream count at start, count remaining, and duration. A non-zero
+`streamsRemaining` means the deadline fired before the drain finished — the signal that in-flight work
+was severed, and the number to tune `terminationGracePeriodSeconds` against.
 > `RST` is reserved for hard timeout scenarios only.
 >
 > **`reset(long)` vs `close()`:** `close()` is a graceful end-of-stream (`FIN`, drains queued writes);

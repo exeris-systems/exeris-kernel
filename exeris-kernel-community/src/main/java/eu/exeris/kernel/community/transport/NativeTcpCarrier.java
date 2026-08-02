@@ -87,6 +87,7 @@ public final class NativeTcpCarrier implements TransportEngine {
     private final NativeTcpSocketBackend backend;
 
     private final AtomicBoolean running = new AtomicBoolean(false);
+    private final AtomicBoolean draining = new AtomicBoolean(false);
     private final AtomicBoolean closed = new AtomicBoolean(false);
 
     private final AtomicLong streamSeq = new AtomicLong(1);
@@ -180,12 +181,30 @@ public final class NativeTcpCarrier implements TransportEngine {
         }
     }
 
+    /**
+     * Graceful stop per the {@code TransportEngine.stop()} contract: stop accepting, drain in-flight
+     * streams for a bounded period, then force-close whatever is left.
+     *
+     * <p>The drain machinery is {@link PaqsScheduler#close()} — it waits for the admission
+     * controller's active-stream count to reach zero under a 60-second hard deadline. It was already
+     * here, but it ran <em>last</em>, after {@code closeSelectorAndChannels()} had closed the sockets
+     * and the reactors had exited. Handlers were therefore drained against dead file descriptors:
+     * a request that had reached its handler completed, and its response went nowhere. The peer saw a
+     * connection closed with no reply, and an idempotent client retried into a listener that was
+     * already gone.
+     *
+     * <p>So the order below is the fix, not the mechanism. Ingress closes first, the reactors stay up
+     * to carry responses out, the drain runs while they can still flush, and only then does anything
+     * get torn down.
+     */
     @Override
     public void stop() {
         if (!running.compareAndSet(true, false)) {
             return;
         }
+        draining.set(true);
 
+        // Phase 1 — close ingress. No new connections; the reactors keep serving admitted ones.
         closeQuietly(serverChannel);
 
         Thread acceptor = acceptorThread;
@@ -197,6 +216,22 @@ public final class NativeTcpCarrier implements TransportEngine {
             }
         }
 
+        // Phase 2 — drain in-flight streams while the write path is still alive.
+        long drainStartNanos = System.nanoTime();
+        int inFlightAtStart = paqsActiveStreams();
+        PaqsScheduler localPaqs = paqs;
+        if (localPaqs != null) {
+            localPaqs.close();
+        }
+        int inFlightRemaining = paqsActiveStreams();
+        CommunityTransportDrainEvent.emit(
+                engineName(),
+                inFlightAtStart,
+                inFlightRemaining,
+                System.nanoTime() - drainStartNanos);
+
+        // Phase 3 — the drain is over by completion or by deadline; take the loops down.
+        draining.set(false);
         for (NativeTcpReactor reactor : reactors) {
             reactor.wakeup();
         }
@@ -205,11 +240,11 @@ public final class NativeTcpCarrier implements TransportEngine {
         }
 
         closeSelectorAndChannels();
+    }
 
+    private int paqsActiveStreams() {
         PaqsScheduler localPaqs = paqs;
-        if (localPaqs != null) {
-            localPaqs.close();
-        }
+        return localPaqs == null ? 0 : localPaqs.admissionController().activeStreamCount();
     }
 
     @Override
@@ -321,6 +356,19 @@ public final class NativeTcpCarrier implements TransportEngine {
 
     /* default */ boolean isRunning() {
         return running.get();
+    }
+
+    /**
+     * Whether the reactor loops should keep selecting.
+     *
+     * <p>Distinct from {@link #isRunning()} because a graceful stop has two phases, and collapsing
+     * them is what broke the drain: {@code running} goes false the instant {@link #stop()} decides to
+     * stop <em>accepting</em>, while the reactors must keep flushing responses for streams already
+     * admitted. A reactor that exits on {@code running} alone takes the write path down with it, so
+     * the drain that follows has nothing left to drain through.
+     */
+    /* default */ boolean isReactorActive() {
+        return running.get() || draining.get();
     }
 
     /* default */ String requestedSocketBackend() {
