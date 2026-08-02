@@ -128,7 +128,7 @@ The Community carrier transfers bytes from the network socket directly into off-
    a shared long-lived STS is architecturally incompatible with the multi-carrier ingress model. These
    unstructured VTs act as roots of the Request Tree. All subsequent concurrent operations within
    the stream handler MUST use `StructuredTaskScope`.
-4. Expose cross-platform POSIX / Winsock socket symbol loading via `CoreSyscallLoader` (Panama FFM). Migration of the active Community carrier onto this shared socket path is planned; the current in-repo carrier remains NIO-backed, and NIO is retained as the explicit fallback path for portability and degraded-operation scenarios.
+4. Expose cross-platform POSIX / Winsock socket symbol loading via `CoreSyscallLoader` (Panama FFM). The POSIX half of that seam is exercised end-to-end since 0.11 (`SyscallLoopbackRoundTripIT`, below); the Winsock half has never run, because CI carries no Windows runner. Migration of the active Community carrier onto this shared socket path is planned but gated on that coverage; the current in-repo carrier remains NIO-backed, and NIO is retained as the explicit fallback path for portability and degraded-operation scenarios.
 
 ---
 
@@ -371,13 +371,16 @@ for client IP preservation behind load balancers (HAProxy, NGINX, AWS NLB, GCP L
 - **Zero-Allocation Hot-Path:** JFR baseline shows zero heap allocations during `processIngress()`.
 - **PAQS Integration:** `WatermarkManager` pressure increase correctly raises PAQS threshold and
   triggers `EX-NET-4006` for low-priority streams. 🚧 Planned — not yet implemented. `AbstractPaqsIntegrationTck` covering WatermarkManager→PAQS→EX-NET-4006 chain does not yet exist.
+- **Berkeley socket seam round-trip (since 0.11):** `SyscallLoopbackRoundTripIT` (Core) drives the handles resolved by `CoreSyscallLoader` through a real loopback connection — bind, listen, connect, accept, send, recv, byte-exact comparison — plus a refusal case that pairs a successful connect with a refused one so neither can pass alone. Runs in the default build via Failsafe; Linux and Windows only, since BSD `sockaddr_in` carries a leading `sin_len` byte that the shared 16-byte layout does not model. Integer-width entries in the C-type→`ValueLayout` table stay reviewed-not-tested: the x86-64 SysV ABI zero-extends, so a `size_t` mis-declared as `JAVA_INT` passes this gate.
 
 **Full TCK abstract class set (all have full Community bindings):** `AbstractTransportEngineTck`, `AbstractTransportProviderTck`, `AbstractTransportConnectionTck`, `AbstractTransportStreamTck`, `TransportZeroAllocTck`, `TransportCarrierPinningTck`.
 
 ### Load Tests
 
-- **Carrier Stress:** `MpscArrayQueue` (Agrona) throughput under millions of network events per second with
-  zero `CarrierPinnedEvent` emissions.
+- **Carrier Stress:** reactor-handoff queue throughput under sustained network events with zero
+  `CarrierPinnedEvent` emissions — `NativeTcpTransportStressTest`, behind the `transport-stress-gate`
+  CI job. The queue is JCTools `MpscUnboundedArrayQueue` (PERF-063); the Agrona attribution this line
+  carried was never what the code used.
 
 ---
 

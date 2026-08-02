@@ -1,12 +1,12 @@
 ---
 name: exeris-pr-preflight
-description: Pre-PR gate for Exeris Kernel — run BEFORE opening or pushing any PR. Enforces the lint footgun (mvn verify SKIPS PMD), the architecture guard test, fresh-branch-per-task discipline, and the register-ADR-before-claiming rule. Use whenever about to commit/push a branch or open a PR in the kernel repo.
+description: Pre-PR gate for Exeris Kernel — run BEFORE opening or pushing any PR. Enforces lint-gate integrity (skip flags poison a green build's lint proof), the architecture guard test, fresh-branch-per-task discipline, and the register-ADR-before-claiming rule. Use whenever about to commit/push a branch or open a PR in the kernel repo.
 ---
 
 # Exeris PR Preflight
 
 ## Purpose
-Catch the recurring, expensive footguns that a green `mvn verify` does **not** catch, before a PR is opened. This is a workflow skill (it runs checks), not a review-lens.
+Catch the recurring, expensive footguns that a green build alone does **not** prove are absent (lint skipped via flags, ignored arch rules, tagged-test gaps), before a PR is opened. This is a workflow skill (it runs checks), not a review-lens.
 
 ## When to Use
 - About to push a branch or open a PR in `exeris-kernel`.
@@ -19,9 +19,9 @@ Catch the recurring, expensive footguns that a green `mvn verify` does **not** c
    - Confirm work is on a fresh feature branch cut off the current active development base (the `development/<active-ver>` branch on origin; check the repo `CLAUDE.md` / README for the current name as it advances per release), or the current `research/<slug>` branch — NOT an already-merged branch or directly on `main`.
    - If multiple Claude sessions may share this tree, prefer a git worktree off a clean base — a parallel branch-switch/commit can revert uncommitted edits.
 
-2. **Lint gate is NOT in `verify` — run it explicitly**
-   - `mvn verify` does **not** run `pmd:check` (it is `default-cli`). A green verify is NOT lint-clean.
-   - Run explicitly, scoped to the changed modules (spi/core/community/etc.), and **exclude `exeris-kernel-build-config`** (it ships the rulesets, is `pmd.skip`, and is not checkstyle-gated; APT processors there inherit that exemption):
+2. **Lint gate — confirm the proof was not poisoned by skip flags**
+   - The parent POM binds `checkstyle:check` to `validate` and `pmd:check` to `verify` (both fail on violation): a full `mvn clean install` with no skip flags IS lint-clean.
+   - The footgun: `-Dpmd.skip=true`/`-Dcheckstyle.skip=true` get used for fast iteration and SIGSEGV workarounds, and PMD binds at `verify`, so a `mvn test` loop never reaches it. If any build in the session used skips — or you are unsure — re-check standalone, scoped to the changed modules (spi/core/community/etc.), and **exclude `exeris-kernel-build-config`** (it ships the rulesets, is `pmd.skip`, and is not checkstyle-gated; APT processors there inherit that exemption):
      ```
      mvn -pl <changed-modules> pmd:check checkstyle:check
      ```
@@ -32,7 +32,7 @@ Catch the recurring, expensive footguns that a green `mvn verify` does **not** c
      ```
      mvn -q -pl exeris-kernel-tck -am -Dtest=ExerisArchitectureTest \
        -Dsurefire.failIfNoSpecifiedTests=false \
-       -Dpmd.skip=true -Dcheckstyle.skip=true -Dspotbugs.skip=true test
+       -Dpmd.skip=true -Dcheckstyle.skip=true test
      ```
 
 4. **Contract change → TCK present**
@@ -49,7 +49,7 @@ Catch the recurring, expensive footguns that a green `mvn verify` does **not** c
 A go/no-go summary: each check → PASS / FAIL / N/A, with the exact failing command output and the minimal fix. Do not report "ready to PR" unless lint, arch guard, and (if applicable) TCK are all green or explicitly N/A with reason.
 
 ## Non-Negotiable Rules
-- Never equate green `mvn verify` with lint-clean.
+- Never equate a build that used `-Dpmd.skip`/`-Dcheckstyle.skip` with lint-clean.
 - Never include `exeris-kernel-build-config` in the `-pl` module list when running lint.
 - Never open a PR that changes a contract without TCK implications.
 - Never claim an ADR number before reserving it in the global index.
