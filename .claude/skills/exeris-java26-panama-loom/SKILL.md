@@ -35,8 +35,8 @@ This skill validates changes against:
    - Flag deep context parameter threading when `ScopedValue` is the cleaner runtime-aligned option.
 
 3. **Structured concurrency discipline**
-   - Verify fan-out/fan-in concurrency uses `StructuredTaskScope`.
-   - Flag unstructured async orchestration and thread-pool-centric patterns in runtime paths.
+   - Verify fan-out/fan-in concurrency is structured. `StructuredTaskScope` is the preferred mechanism on the `1.0-preview` artifact line; on the default critical path (`main`, which must stay preview-clean for 1.0 GA per ROADMAP "Platform Baseline for 1.0 GA"), the kernel's own `fork`/`join`/`cancel` layer over virtual threads + `ScopedValue` at the existing seam is the correct form — a default-path move *away* from `StructuredTaskScope` is NOT a regression.
+   - Flag unstructured async orchestration and thread-pool-centric patterns in runtime paths — structure is the requirement; `StructuredTaskScope` is one permitted mechanism, not the definition of compliance.
 
 4. **Panama FFM correctness and suitability**
    - Check whether native interop/data movement uses `MemorySegment` where zero-copy off-heap behavior is required.
@@ -62,7 +62,7 @@ This skill validates changes against:
 ## Decision Logic
 - **APPROVE**: Java 26+ runtime idioms are followed; no material regression to legacy patterns.
 - **CONDITIONAL**: Transitional code exists but has bounded remediation without architectural drift.
-- **REJECT**: Core runtime path regresses from ScopedValue/structured concurrency/FFM direction, breaks immutable construction discipline, or reintroduces legacy framework idioms.
+- **REJECT**: Core runtime path regresses from ScopedValue/structured-concurrency/FFM direction (regression = unstructured async; NOT a preview-clean move off `StructuredTaskScope` per ROADMAP), breaks immutable construction discipline, or reintroduces legacy framework idioms.
 
 ## Completion Criteria
 A review is complete only if all are true:
@@ -87,7 +87,7 @@ Use this structure in PR feedback:
 
 ## Non-Negotiable Rules
 - Prefer `ScopedValue` for scoped runtime context.
-- Prefer `StructuredTaskScope` for orchestration concurrency.
+- Require structured orchestration: `StructuredTaskScope` on the preview line; the kernel's own fork/join/cancel seam on the preview-clean default path.
 - Prefer FFM-first native interop where native boundaries exist.
 - Keep carrier/state models immutable and value-oriented where logical.
 - Do not reintroduce legacy framework idioms in Exeris runtime paths.

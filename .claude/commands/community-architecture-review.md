@@ -8,7 +8,7 @@ Review this change as an Exeris Community/Open-Core architecture task.
 Context:
 - Preserve The Wall: SPI must remain implementation-blind, Core must remain driver-agnostic, Community provides OSS runtime implementations behind SPI contracts.
 - Use the smallest sufficient docs first: relevant docs/modules/*.md, docs/subsystems/*.md, then docs/adr/*.md if boundaries or placement are affected.
-- Respect current repository realities: Community may contain placeholders; Enterprise may be out-of-repo; HTTP codec is currently embedded in Core.
+- Respect current repository realities: Community is a real provider module (transport, persistence/JDBC, flow, events, security); Enterprise is out-of-repo (separate closed-source distribution); HTTP codec/runtime currently lives in Core.
 
 Scope:
 $ARGUMENTS
