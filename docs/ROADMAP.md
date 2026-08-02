@@ -1728,6 +1728,10 @@ See also: v0.11 §"Runtime: `JobScheduler` SPI" (leader-election subset); ADR-01
 
 **Merge Gate:** `docs/subsystems/events.md` states the single-node-default vs Kafka-cross-node delivery boundary; the multi-node substrate inventory is recorded in one authoritative place (events.md or the operator deployment doc). No TCK / SPI change.
 
+**Status (v0.11): DELIVERED.** `events.md` §"Delivery Boundary: Single-Node Default vs Cross-Node (Kafka)" states the boundary and hosts the substrate inventory; `support-matrix.md` and `operations/reference-deployment.md` link there instead of restating it.
+
+One finding from writing it, recorded because it is sharper than the gap this entry described: **the durable-emission and cross-node-delivery paths are not composable today.** The Gap text above reads as though an operator picks the Kafka driver and keeps the Outbox. They do not — `KafkaEventEngine` runs no outbox orchestrator (its `EventQueue` slot is a `NoOpQueue`, and `KafkaEventBrokerPort` is a built adapter wired into no runtime path), while `CommunityEventEngine` constructs its local broker port directly with no seam to substitute. So the choice today is durable emission on one node *or* cross-node fan-out, not both. Documented as a current limit; tracked separately as §"Events: Durable Emission And Cross-Node Delivery Cannot Be Had Together" below, because the operator-visible cost (adopting Kafka silently drops the transactional outbox) is a gap in its own right, not a documentation shortfall.
+
 ---
 
 ### HTTP Client: Service Discovery & Logical Addressing for `KernelWebClient` — RFC Track
@@ -1858,6 +1862,39 @@ the failure this entry exists to prevent. Emit the selection as a JFR event, as 
 **Merge Gate:** binding test proving the configured provider wins with both on the classpath; a test
 proving an ambiguous configuration fails at startup rather than choosing; `docs/subsystems/storage.md`
 loses its "provider selection is an open gap" paragraph.
+
+---
+
+### Events: Durable Emission And Cross-Node Delivery Cannot Be Had Together (surfaced 2026-08-02)
+
+**Gap:** The Outbox and the Kafka driver are described throughout the docs as complementary — durable
+emission plus cross-node fan-out — but no deployment can run both. `KafkaEventEngine` starts no outbox
+orchestrator: its `EventQueue` slot is a `NoOpQueue`, and `KafkaEventBrokerPort` exists as a built,
+Wall-clean adapter that nothing wires into a runtime path. `CommunityEventEngine` constructs
+`CommunityEventBusOutboxBrokerPort` inline, so its relay target is the local bus with no seam to
+substitute. Provider selection then picks exactly one engine.
+
+The consequence is not a lost event but a lost *guarantee*, and it lands on the deployment that needs
+both most: a multi-node operator who adopts Kafka for fan-out silently gives up the transactional
+outbox — the crash-survival property that made the event atomic with the entity that caused it. Nothing
+warns them; the SPI surface is identical either way. Surfaced while writing the delivery-boundary
+section that this milestone's documentation slice required.
+
+**Owner:** Events subsystem.
+
+**Resolution:** Make the broker port a selection, not a construction detail. The two adapters already
+implement the same Core port, so the work is a seam plus config, not a new mechanism: let the engine
+take its `OutboxBrokerPort` from configuration, and let the Kafka module run the orchestrator with
+`KafkaEventBrokerPort` bound. The publish-path duplication needs settling in the same change — with a
+Kafka broker port the outbox relay and `KafkaPublishBus` are two routes to the same topic, so one of
+them has to become the only one. That the port is unwired is already on record — [ADR-050](adr/ADR-050-events-binding-agnostic-topic.md)
+§Consequences notes it, and the module's `package-info` lists it as deferred — so no ADR is contradicted
+here; this entry is where the operator-visible *cost* of the deferral is recorded, which neither of
+those does.
+
+**Merge Gate:** an integration test proving an event committed in a transaction reaches a *second*
+kernel instance after a crash of the first — the property neither engine can demonstrate today; the
+delivery-boundary section in `docs/subsystems/events.md` loses its "not composable today" paragraph.
 
 ---
 

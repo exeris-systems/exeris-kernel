@@ -65,7 +65,9 @@ Validated by the v0.9 operational-continuity suite (the `recovery-continuity-gat
 ## Known operational limits (Community)
 
 - **Single-node, NIO carrier** — no `io_uring`, no slab pools (Enterprise overlay). Best-effort performance contract.
-- **No server-initiated push yet** — HTTP is request/response; a live view polls until the SSE streaming SPI lands (target v0.10/v0.11; RFC in review). See the [Support Matrix](../support-matrix.md) → *Deferred*.
+- **Server push is SSE-only** — one-directional `HttpStreamExchange` since 0.10 ([ADR-043](../adr/ADR-043-kernel-http-streaming-spi.md)); no WebSocket, so full-duplex clients still poll. The SSE body is HTTP/1.1 close-delimited today, which matters for reverse proxies that buffer length-unknown responses — see [`subsystems/http.md`](../subsystems/http.md).
+- **Events do not cross the node boundary on the default driver** — the in-heap bus is single-node and the Outbox is durable *emission*, not cross-node delivery; fanning out to peers means running the Kafka driver. See [`subsystems/events.md`](../subsystems/events.md) → *Delivery Boundary*.
+- **No cross-node coordination seam** — distributed lock / leader election / singleton execution are the host application's concern today.
 - **Caffeine** in-process cache only; no distributed cache provider.
 
 ## See also

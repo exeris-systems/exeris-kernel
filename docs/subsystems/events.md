@@ -164,6 +164,57 @@ in the `EventDescriptor` primitive layout.
 
 ---
 
+## Delivery Boundary: Single-Node Default vs Cross-Node (Kafka)
+
+The default Community Events driver is **single-node**. Nothing in the SPI says so — it is
+implementation-blind by design — and "Transactional Outbox" reads as cross-node delivery to anyone who
+has met the pattern elsewhere. Stating the boundary is therefore the documentation's job, not the
+contract's.
+
+**The in-heap bus never crosses the node boundary.** `CommunityEventEngine` composes an in-JVM
+`InMemoryEventBus`; a subscriber is an `EventHandler` registered in the same process. A second kernel
+instance running the same application does not observe the first instance's publications.
+
+**The Outbox is durable *emission*, not cross-node *delivery*.** A row is written to `exeris_outbox`
+through `EventStore.append` inside the caller's own transaction, so the event commits atomically with
+the entity that caused it and survives a crash between commit and dispatch. That is the guarantee it
+buys. Where it dispatches *to* is the part that surprises: the default `OutboxBrokerPort` is
+`CommunityEventBusOutboxBrokerPort`, which republishes onto **that same node's bus**. The durability is
+real; the fan-out is local. Two conditions are worth knowing because neither announces itself — the
+orchestrator is constructed only when `outboxEnabled` (default `true` in
+`EventEngineConfig.communityDefaults()`) *and* a `PersistenceEngine` is bound, so on a kernel with no
+persistence the outbox is silently inert; and the relay is a poll loop over committed rows, so it is
+asynchronous with respect to the transaction that produced them.
+
+**Cross-node delivery requires `exeris-kernel-community-kafka`.** `KafkaEventProvider` registers at
+priority 50 and outranks the in-memory Community provider (priority 0), so adding the jar to the
+classpath swaps the engine — intra-Community precedence, still below the Enterprise tier slot (100).
+Publication then goes producer → broker, and local subscribers see the event only after the roundtrip
+— deliberately, so a local subscriber has the same semantics as a remote one. The consume-side caveats documented for that driver hold: the poll loop runs with
+`enable.auto.commit=true` (at-most-once on consume) and hands each decoded record to an internal
+in-memory bus for local fan-out.
+
+**The two are not composable today.** `KafkaEventEngine` runs no outbox orchestrator at all — its
+`EventQueue` slot is a `NoOpQueue`, and `KafkaEventBrokerPort` ships as a built adapter that is not
+wired into any runtime path. `CommunityEventEngine`, for its part, constructs the local broker port
+directly with no seam to substitute. So a deployment gets durable emission on one node *or* cross-node
+fan-out, not both from one engine. This is a current limit, not a contract: the outbox-orchestrator-driven
+Kafka delivery path is listed as deferred in that module's `package-info`.
+
+### Multi-node substrate inventory
+
+What a "5 instances of the same app" deployment gets from the kernel today. This table is the
+authoritative home for the answer; other docs link here rather than restating it.
+
+| Concern | Substrate today | Where |
+|:--------|:----------------|:------|
+| Per-request state | Stateless — `PrincipalContext` / `StorageContext` propagate through `ScopedValue` per request, so any instance can serve any request | `spi.context`, no shared store needed |
+| Durable shared state | PostgreSQL — saga snapshots with optimistic concurrency on the shared row | [ADR-013](../adr/ADR-013-distributed-saga-state-distribution-model.md); the snapshot store binds through the [ADR-022](../adr/ADR-022-persistence-spi-extension-instant-binders.md) persistence-SPI extension |
+| Cross-node event fan-out | Kafka / Redpanda driver — see the boundary above | `exeris-kernel-community-kafka` |
+| Cross-node coordination (distributed lock, leader election, singleton execution) | **No kernel seam.** Hand-rolled over Postgres advisory locks or Kafka consumer groups, with the fencing-token and lease-expiry burden on application code | ROADMAP → *Runtime: Cross-Node Coordination (Leader Election / Distributed Lock) — RFC Track* |
+
+---
+
 ## Responsibilities
 
 **What Events SPI DOES:**
@@ -439,9 +490,13 @@ operational differences relevant when targeting Kafka vs. Redpanda:
 The Events subsystem is the nervous system of the Exeris Kernel. The `EventDescriptor` / `EventPayload`
 separation is the architectural core: primitive routing metadata enables O(1) dispatch and Valhalla
 scalarization, while RAII `EventPayload` ref-counting guarantees that off-heap memory is reclaimed
-deterministically — regardless of how many subscribers fan out or how deep the retry chain goes. Together
-with the Transactional Outbox, it scales from a single-node application to a
-globally distributed event-driven mesh without changing a single line of domain logic.
+deterministically — regardless of how many subscribers fan out or how deep the retry chain goes.
+
+Going from a single-node application to a distributed event-driven mesh costs no change to domain
+logic — the SPI is implementation-blind, so publishers and subscribers are written once. It does cost
+a **deployment** change: the default driver is single-node, and cross-node delivery means running on
+the Kafka driver. See *Delivery Boundary: Single-Node Default vs Cross-Node (Kafka)* above for what
+each driver actually carries.
 
 ---
 
