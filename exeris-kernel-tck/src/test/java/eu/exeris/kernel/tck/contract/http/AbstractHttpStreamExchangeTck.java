@@ -21,6 +21,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -186,6 +187,47 @@ public abstract class AbstractHttpStreamExchangeTck {
      */
     protected ExerisKernelException openUnderShed(HttpStreamHandler handler) {
         throw new UnsupportedOperationException("openUnderShed not wired by this binding");
+    }
+
+    // -------------------------------------------------------------------------
+    // Path parameters
+    // -------------------------------------------------------------------------
+
+    @Nested
+    @DisplayName("Path parameters")
+    class PathParameters {
+
+        @Test
+        @Timeout(value = OBSERVE_TIMEOUT_SECONDS, unit = TimeUnit.SECONDS)
+        @DisplayName("an exchange not opened through a template reports an empty, immutable map")
+        void defaultIsEmptyAndImmutable() {
+            AtomicReference<Map<String, String>> seen = new AtomicReference<>();
+            AtomicReference<Boolean> mutable = new AtomicReference<>(Boolean.TRUE);
+
+            StreamScenario scenario = openStream(exchange -> {
+                seen.set(exchange.pathParams());
+                try {
+                    exchange.pathParams().put("injected", "value");
+                } catch (RuntimeException _) {
+                    mutable.set(Boolean.FALSE);
+                }
+                exchange.emit(StreamEvent.of("ready"));
+                exchange.close();
+            });
+
+            try (scenario) {
+                scenario.awaitEvents(1);
+                assertThat(seen.get())
+                        .as("never null — a handler reading pathParams() on an exact route must not "
+                                + "have to null-check what the contract promises")
+                        .isNotNull()
+                        .isEmpty();
+                assertThat(mutable.get())
+                        .as("the map is routing state; a handler that could write to it could change "
+                                + "what a later request resolves to")
+                        .isFalse();
+            }
+        }
     }
 
     // -------------------------------------------------------------------------

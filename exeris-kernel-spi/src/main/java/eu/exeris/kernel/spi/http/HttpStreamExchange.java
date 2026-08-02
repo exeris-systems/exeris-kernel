@@ -10,6 +10,8 @@ package eu.exeris.kernel.spi.http;
 
 import eu.exeris.kernel.spi.exceptions.http.StreamClosedException;
 
+import java.util.Map;
+
 /**
  * SPI: A long-lived, server-initiated HTTP push exchange — Server-Sent Events (SSE).
  *
@@ -67,6 +69,28 @@ public interface HttpStreamExchange {
      * @return the inbound request; never {@code null}
      */
     HttpRequest request();
+
+    /**
+     * Returns the path parameters captured by the router from a templated streaming route.
+     *
+     * <p>The streaming counterpart of {@link HttpExchange#pathParams()}, with the same semantics: a
+     * stream route registered as {@code /entities/{id}/events} and opened on {@code /entities/42/events}
+     * yields {@code pathParams().get("id") == "42"}. An exact stream route, or any exchange not opened
+     * through a template, returns an empty map.
+     *
+     * <p>Without this a templated stream route would resolve and then drop the one value that made it
+     * worth templating — the handler would know a stream is open, but not what it is a stream *of*.
+     *
+     * <p>The returned map is immutable and carries no wire-format types — values are the already-decoded
+     * path segments as received on the request target.
+     *
+     * @return an immutable map of captured path parameters; never {@code null}, empty when the route
+     *         declared no placeholders
+     * @since 0.11.0
+     */
+    default Map<String, String> pathParams() {
+        return Map.of();
+    }
 
     /**
      * Frames and writes a single SSE event to the wire.

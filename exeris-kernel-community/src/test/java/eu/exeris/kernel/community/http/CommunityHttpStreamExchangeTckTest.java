@@ -8,6 +8,7 @@
  */
 package eu.exeris.kernel.community.http;
 
+import eu.exeris.kernel.core.http.routing.HttpRouter;
 import eu.exeris.kernel.community.memory.CommunityMemoryProvider;
 import eu.exeris.kernel.community.transport.NativeTcpTransportProvider;
 import eu.exeris.kernel.core.http.sse.StreamAdmissionController;
@@ -132,7 +133,7 @@ class CommunityHttpStreamExchangeTckTest extends AbstractHttpStreamExchangeTck {
         CommunityHttpStreamDispatcher dispatcher =
                 new CommunityHttpStreamDispatcher(new LeakTrackingAllocator(ALLOCATOR), shed);
         try {
-            dispatcher.dispatchStream(streamRequest(), new StubStream(), handler);
+            dispatcher.dispatchStream(streamRequest(), new StubStream(), HttpRouter.StreamMatch.exact(handler));
             return null;
         } catch (ExerisKernelException rejection) {
             return rejection;
@@ -223,7 +224,8 @@ class CommunityHttpStreamExchangeTckTest extends AbstractHttpStreamExchangeTck {
                 // The terminal StreamClosedException (disconnect / fail-closed) is returned even when
                 // the handler swallows the throw — that is what awaitHandlerUnwind() reports.
                 StreamClosedException terminal =
-                        dispatcher.dispatchStream(request, serverStream, observing, authDeadlineEpochMillis);
+                        dispatcher.dispatchStream(request, serverStream,
+                                HttpRouter.StreamMatch.exact(observing), authDeadlineEpochMillis);
                 if (terminal != null) {
                     handlerError.set(terminal);
                 }

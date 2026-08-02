@@ -9,6 +9,7 @@
 package eu.exeris.kernel.community.http;
 
 import eu.exeris.kernel.core.http.routing.HttpRouter;
+import eu.exeris.kernel.core.http.routing.PathParamStreamExchange;
 import eu.exeris.kernel.core.http.sse.HttpStreamEngine;
 import eu.exeris.kernel.core.http.sse.StreamAdmissionController;
 import eu.exeris.kernel.spi.exceptions.http.StreamClosedException;
@@ -63,9 +64,10 @@ final class CommunityHttpStreamDispatcher {
      *
      * @param request the parsed request
      * @param handler the active root handler
-     * @return the streaming handler, or {@code null}
+     * @return the resolved stream route, or {@code null}
      */
-    /* default */ HttpStreamHandler resolveStreamHandler(HttpRequest request, HttpHandler handler) {
+    /* default */ HttpRouter.StreamMatch resolveStreamHandler(HttpRequest request,
+                                                              HttpHandler handler) {
         if (handler instanceof HttpRouter router) {
             return router.resolveStream(request.method(), request.path());
         }
@@ -80,12 +82,12 @@ final class CommunityHttpStreamDispatcher {
      *
      * @param request the parsed request that opened the stream
      * @param stream  the held-open transport stream
-     * @param handler the streaming handler to drive
+     * @param match   the resolved stream route
      */
     /* default */ StreamClosedException dispatchStream(HttpRequest request,
                                                       TransportStream stream,
-                                                      HttpStreamHandler handler) {
-        return dispatchStream(request, stream, handler, 0L);
+                                                      HttpRouter.StreamMatch match) {
+        return dispatchStream(request, stream, match, 0L);
     }
 
     /**
@@ -94,12 +96,12 @@ final class CommunityHttpStreamDispatcher {
      *
      * @param request                 the parsed request
      * @param stream                  the held-open transport stream
-     * @param handler                 the streaming handler
+     * @param match                   the resolved stream route
      * @param authDeadlineEpochMillis epoch-millis deadline; {@code <= 0} disables expiry enforcement
      */
     /* default */ StreamClosedException dispatchStream(HttpRequest request,
                                                       TransportStream stream,
-                                                      HttpStreamHandler handler,
+                                                      HttpRouter.StreamMatch match,
                                                       long authDeadlineEpochMillis) {
         // PAQS admission (ADR-043 obligation 7): a NEW open is admitted once and holds its slot for the
         // stream lifetime. Under SHED_LOAD this throws TransportException(EX-NET-4006) before the slot is
@@ -111,7 +113,10 @@ final class CommunityHttpStreamDispatcher {
         HttpStreamEngine engine = HttpStreamEngine.open(
                 request, stream, allocator, authDeadlineEpochMillis, CREDIT_WINDOW_BYTES);
         try {
-            handler.handle(engine);
+            // An exact stream route gets the engine itself; only a template pays for the decorator.
+            match.handler().handle(match.params().isEmpty()
+                    ? engine
+                    : new PathParamStreamExchange(engine, match.params()));
             engine.close();
         } catch (StreamClosedException _) {
             // Designed unwind: peer disconnect or fail-closed teardown. The engine already reset the
