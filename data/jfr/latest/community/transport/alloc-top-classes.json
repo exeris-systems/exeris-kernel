@@ -1,53 +1,58 @@
 [ {
-  "class" : "[B",
-  "count" : 9,
-  "bytes" : 1309960,
-  "category" : "JVM_NOISE"
-}, {
   "class" : "jdk.internal.vm.StackChunk",
-  "count" : 4,
-  "bytes" : 447592,
+  "count" : 7,
+  "bytes" : 795160,
   "category" : "JVM_NOISE"
 }, {
   "class" : "[Ljava.util.HashMap$Node;",
-  "count" : 4,
-  "bytes" : 784680,
+  "count" : 6,
+  "bytes" : 785472,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "java.lang.String",
-  "count" : 3,
-  "bytes" : 523136,
+  "class" : "[B",
+  "count" : 6,
+  "bytes" : 786848,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "java.util.ArrayList$SubList",
-  "count" : 2,
-  "bytes" : 261600,
+  "class" : "java.util.LinkedHashMap",
+  "count" : 5,
+  "bytes" : 822816,
   "category" : "JVM_NOISE"
 }, {
   "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
   "count" : 2,
-  "bytes" : 261656,
+  "bytes" : 261648,
   "category" : "TEST_HARNESS"
 }, {
-  "class" : "java.util.HashMap",
+  "class" : "java.util.HashMap$KeySet",
   "count" : 2,
-  "bytes" : 261624,
+  "bytes" : 523128,
   "category" : "JVM_NOISE"
+}, {
+  "class" : "jdk.internal.foreign.NativeMemorySegmentImpl",
+  "count" : 2,
+  "bytes" : 261592,
+  "category" : "PANAMA"
 }, {
   "class" : "eu.exeris.kernel.community.transport.NativeTcpStreamPendingWrite",
   "count" : 2,
-  "bytes" : 261592,
+  "bytes" : 261576,
   "category" : "TEST_HARNESS"
 }, {
-  "class" : "java.lang.VirtualThread",
-  "count" : 2,
-  "bytes" : 522920,
-  "category" : "LOOM_RUNTIME"
+  "class" : "java.util.HashMap",
+  "count" : 1,
+  "bytes" : 261560,
+  "category" : "JVM_NOISE"
 }, {
   "class" : "java.util.LinkedHashMap$Entry",
   "count" : 1,
-  "bytes" : 245144,
+  "bytes" : 261552,
   "category" : "JVM_NOISE"
+}, {
+  "class" : "java.lang.VirtualThread",
+  "count" : 1,
+  "bytes" : 261424,
+  "category" : "LOOM_RUNTIME"
 }, {
   "class" : "java.util.concurrent.ForkJoinTask$AdaptedRunnableAction",
   "count" : 1,
