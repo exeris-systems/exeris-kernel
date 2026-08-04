@@ -1,61 +1,61 @@
 [ {
-  "class" : "jdk.internal.vm.StackChunk",
+  "class" : "java.lang.String",
   "count" : 7,
-  "bytes" : 795160,
+  "bytes" : 810640,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "[Ljava.util.HashMap$Node;",
-  "count" : 6,
-  "bytes" : 785472,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "[B",
-  "count" : 6,
-  "bytes" : 786848,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "java.util.LinkedHashMap",
+  "class" : "java.util.HashMap$Node",
   "count" : 5,
-  "bytes" : 822816,
+  "bytes" : 784736,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
-  "count" : 2,
-  "bytes" : 261648,
-  "category" : "TEST_HARNESS"
-}, {
-  "class" : "java.util.HashMap$KeySet",
-  "count" : 2,
-  "bytes" : 523128,
+  "class" : "jdk.internal.vm.StackChunk",
+  "count" : 4,
+  "bytes" : 252240,
   "category" : "JVM_NOISE"
 }, {
   "class" : "jdk.internal.foreign.NativeMemorySegmentImpl",
-  "count" : 2,
-  "bytes" : 261592,
+  "count" : 4,
+  "bytes" : 523160,
   "category" : "PANAMA"
 }, {
-  "class" : "eu.exeris.kernel.community.transport.NativeTcpStreamPendingWrite",
-  "count" : 2,
-  "bytes" : 261576,
-  "category" : "TEST_HARNESS"
-}, {
-  "class" : "java.util.HashMap",
-  "count" : 1,
-  "bytes" : 261560,
+  "class" : "[B",
+  "count" : 3,
+  "bytes" : 784648,
   "category" : "JVM_NOISE"
 }, {
   "class" : "java.util.LinkedHashMap$Entry",
-  "count" : 1,
-  "bytes" : 261552,
+  "count" : 2,
+  "bytes" : 261608,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "java.lang.VirtualThread",
+  "class" : "eu.exeris.kernel.community.transport.NativeTcpStreamPendingWrite",
+  "count" : 2,
+  "bytes" : 261624,
+  "category" : "TEST_HARNESS"
+}, {
+  "class" : "[Ljava.util.HashMap$Node;",
+  "count" : 2,
+  "bytes" : 537672,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "java.util.HashMap$KeyIterator",
   "count" : 1,
-  "bytes" : 261424,
+  "bytes" : 261536,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "java.util.LinkedHashMap",
+  "count" : 1,
+  "bytes" : 261488,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "java.time.Clock$SystemClock",
+  "count" : 1,
+  "bytes" : 261568,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "java.lang.VirtualThread$VThreadContinuation",
+  "count" : 1,
+  "bytes" : 261512,
   "category" : "LOOM_RUNTIME"
-}, {
-  "class" : "java.util.concurrent.ForkJoinTask$AdaptedRunnableAction",
-  "count" : 1,
-  "bytes" : 261552,
-  "category" : "JVM_NOISE"
 } ]

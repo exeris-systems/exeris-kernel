@@ -1,46 +1,36 @@
 [ {
-  "class" : "java.util.LinkedHashMap$Entry",
-  "count" : 2,
-  "bytes" : 261600,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "java.lang.String",
-  "count" : 2,
-  "bytes" : 523120,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "java.util.HashMap$Node",
-  "count" : 1,
-  "bytes" : 261536,
-  "category" : "JVM_NOISE"
-}, {
   "class" : "[Ljava.util.HashMap$Node;",
-  "count" : 1,
-  "bytes" : 260904,
+  "count" : 4,
+  "bytes" : 784744,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "java.io.FileCleanable",
-  "count" : 1,
-  "bytes" : 261560,
+  "class" : "[B",
+  "count" : 3,
+  "bytes" : 784656,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "java.util.LinkedHashMap",
-  "count" : 1,
-  "bytes" : 261496,
+  "class" : "java.nio.HeapByteBuffer",
+  "count" : 2,
+  "bytes" : 1712,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "java.lang.ThreadBuilders$VirtualThreadBuilder",
-  "count" : 1,
-  "bytes" : 261552,
-  "category" : "LOOM_RUNTIME"
-}, {
-  "class" : "java.lang.VirtualThread",
-  "count" : 1,
-  "bytes" : 181504,
-  "category" : "LOOM_RUNTIME"
-}, {
-  "class" : "java.util.concurrent.ForkJoinTask$AdaptedRunnableAction",
+  "class" : "java.util.HashMap$KeySet",
   "count" : 1,
   "bytes" : 261552,
   "category" : "JVM_NOISE"
+}, {
+  "class" : "java.util.LinkedHashMap$Entry",
+  "count" : 1,
+  "bytes" : 230992,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "java.util.HashSet",
+  "count" : 1,
+  "bytes" : 261552,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "java.lang.VirtualThread$VThreadContinuation",
+  "count" : 1,
+  "bytes" : 261512,
+  "category" : "LOOM_RUNTIME"
 } ]
