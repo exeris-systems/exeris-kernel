@@ -234,6 +234,38 @@ public abstract class AbstractFlowDefinitionVersioningTck {
             assertThat(executions.get()).isZero();
         }
 
+        /**
+         * The guarantee has to hold on the resubmit path too, not only on wake.
+         *
+         * <p>{@code schedule()} hands the runtime a plan the application already holds — plausibly
+         * the newest it compiled — for an instance that may be parked under an older version. Where
+         * the two happen to line up at the parked index, resuming on the caller's plan is the same
+         * silent mis-replay reached through a different entry point, and it would look like an
+         * ordinary successful resubmit. Choreography reaches this path directly.
+         */
+        @Test
+        @Timeout(value = 30, unit = TimeUnit.SECONDS)
+        @DisplayName("schedule() with a newer plan refuses a saga parked under an older version")
+        void scheduleWithMismatchedVersionIsRefused() {
+            AtomicInteger v1Executions = new AtomicInteger();
+            AtomicInteger v2Executions = new AtomicInteger();
+            register(1, v1Executions);
+            FlowExecutionPlan v2 = register(2, v2Executions);
+
+            UUID id = UUID.randomUUID();
+            snapshotStore().save(parkedSnapshot(id, DEFINITION, 1));
+
+            assertThatThrownBy(() -> engine.scheduler().schedule(v2, contextFor(id)))
+                    .as("the caller supplied v2 for a saga parked under v1; accepting it would "
+                            + "resume the saga on a definition it never started under")
+                    .isInstanceOfSatisfying(FlowEngineException.class, ex ->
+                            assertThat(reasonOf(ex))
+                                    .isEqualTo(FlowEngineException.REASON_DEFINITION_VERSION_UNRESOLVED));
+            assertThat(v1Executions.get() + v2Executions.get())
+                    .as("refused before any step replays, on either version")
+                    .isZero();
+        }
+
         @Test
         @Timeout(value = 30, unit = TimeUnit.SECONDS)
         @DisplayName("a definition this engine hosts no version of is not a refusal — it is another node's saga")

@@ -481,23 +481,34 @@ final class CoreFlowRuntime { // NOPMD
                     + "' but snapshot belongs to '"
                     + persisted.definitionName() + "'");
         }
+        validateSnapshotVersion(directPlan, persisted);
         validateSnapshotStepBounds(directPlan, persisted);
         return directPlan;
     }
 
     /**
-     * Resolves the plan for the definition version the saga actually parked under (ADR-064).
+     * Applies the version guard to a caller-supplied plan (ADR-064 obligation 4).
      *
-     * <p>Two absences are deliberately different. If this engine hosts <em>no</em> version of the
-     * definition, the answer is {@code null} and the caller treats the instance as belonging
-     * elsewhere — that is the cross-engine choreography path (ADR-013 §8) and it is unchanged. If the
-     * engine hosts the definition but not <em>that version</em>, the saga is ours and we cannot serve
-     * it, which is a fail-closed refusal rather than a silent no-op. Rebinding it to whichever
-     * version happens to be newest is precisely the behaviour this epic removes.
-     *
-     * <p>The refusal leaves the parked row untouched, so deploying the missing version recovers the
-     * saga. The linear scan is on the cold resume path and bounded by {@code maxExecutionPlans}.
+     * <p>{@code schedule()} resubmits against a plan the application already holds — plausibly the
+     * newest it compiled — for an instance that may be parked under an older one. Without this the
+     * guarantee held only on {@code wake()}: where the two versions happen to line up at the parked
+     * index, the saga resumes on the wrong definition exactly as it did before this epic, reached
+     * through a different entry point rather than fixed.
      */
+    private void validateSnapshotVersion(CoreFlowExecutionPlan plan, FlowSnapshot persisted) {
+        if (persisted.state().isTerminal()) {
+            return;
+        }
+        if (persisted.definitionVersion() == FlowSnapshot.VERSION_ABSENT) {
+            throw FlowEngineException.schemaMismatchDefinitionVersionAbsent(
+                    config.engineName(), persisted.currentStep());
+        }
+        if (plan.definitionVersion() != persisted.definitionVersion()) {
+            throw FlowEngineException.schemaMismatchDefinitionVersionUnresolved(
+                    config.engineName(), persisted.definitionVersion());
+        }
+    }
+
     private CoreFlowExecutionPlan resolveVersionedPlan(FlowSnapshot persisted) {
         if (persisted.state().isTerminal()) {
             return planCatalog.get(new PlanKey(persisted.definitionName(), persisted.definitionVersion()));

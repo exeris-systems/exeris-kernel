@@ -218,7 +218,7 @@ class CommunityJdbcFlowSnapshotStoreTckIT extends AbstractDistributedFlowSnapsho
         return new FlowSnapshot(
                 id.getMostSignificantBits(),
                 id.getLeastSignificantBits(),
-                "occ-jfr-saga",FlowDefinition.INITIAL_VERSION,
+                "occ-jfr-saga", FlowDefinition.INITIAL_VERSION,
                 currentStep,
                 Optional.of("step-" + currentStep),
                 state,

@@ -45,6 +45,9 @@ import java.util.Optional;
  * @param instanceIdLeast   least-significant bits of the 128-bit flow instance UUID
  * @param definitionName    name of the {@link FlowDefinition} this instance was compiled from;
  *                          must not be {@code null} or blank
+ * @param definitionVersion version of that definition (ADR-064). {@link #VERSION_ABSENT} means the
+ *                          snapshot predates definition versioning — such a snapshot is rejected
+ *                          fail-closed on resume rather than bound to whichever version is registered
  * @param currentStepName   identity of the step {@code currentStep} pointed at when the snapshot
  *                          was written (ADR-062). {@link Optional#empty()} means the snapshot predates
  *                          step-identity recording — such a snapshot cannot be validated on resume and
@@ -250,11 +253,13 @@ public record FlowSnapshot(
         }
         return instanceIdMost   == other.instanceIdMost
                && instanceIdLeast  == other.instanceIdLeast
+               && definitionVersion == other.definitionVersion
                && currentStep      == other.currentStep
                && stackPointer     == other.stackPointer
                && schemaVersion    == other.schemaVersion
                && state            == other.state
                && Objects.equals(definitionName, other.definitionName)
+               && Objects.equals(currentStepName, other.currentStepName)
                && Objects.equals(lastUpdate,     other.lastUpdate)
                && Objects.equals(timeout,        other.timeout)
                && Arrays.equals(compensationStack, other.compensationStack)
@@ -268,8 +273,8 @@ public record FlowSnapshot(
     @Override
     public int hashCode() {
         int result = Objects.hash(
-                instanceIdMost, instanceIdLeast, definitionName,
-                currentStep, state, lastUpdate, timeout, stackPointer, schemaVersion);
+                instanceIdMost, instanceIdLeast, definitionName, definitionVersion,
+                currentStep, currentStepName, state, lastUpdate, timeout, stackPointer, schemaVersion);
         result = 31 * result + Arrays.hashCode(compensationStack);
         result = 31 * result + Arrays.hashCode(opaqueState);
         return result;
@@ -284,7 +289,9 @@ public record FlowSnapshot(
         return "FlowSnapshot["
                + "instanceId=" + instanceId()
                + ", definitionName=" + definitionName
+               + ", definitionVersion=" + definitionVersion
                + ", currentStep=" + currentStep
+               + ", currentStepName=" + currentStepName.orElse(null)
                + ", state=" + state
                + ", lastUpdate=" + lastUpdate
                + ", timeout=" + timeout

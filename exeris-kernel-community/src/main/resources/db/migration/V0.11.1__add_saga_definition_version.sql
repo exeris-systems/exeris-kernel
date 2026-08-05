@@ -1,13 +1,17 @@
 -- ADR-064: a parked saga resumes on the definition version it parked under, not on whichever
 -- version happens to be registered when it wakes.
 --
--- Nullable on purpose, and deliberately WITHOUT a default. A row written before this column existed
--- must read back as "no version recorded" so the resume guard can refuse it, exactly as the
--- step-identity column added in V0.11.0 refuses a row that carries no identity. Backfilling a
--- default of 1 would silently assert that every parked saga belongs to the first version — the
--- guess this epic exists to stop making.
+-- NOT NULL DEFAULT 0, and the 0 is load-bearing: it is FlowSnapshot.VERSION_ABSENT. Definition
+-- versions start at 1, so 0 can never name a real version. A row written before this column existed
+-- backfills to "no version recorded" and is refused fail-closed on resume, exactly as the
+-- step-identity column added in V0.11.0 refuses a row carrying no identity. Defaulting to 1 would
+-- instead assert that every parked saga belongs to the first version, which is the guess this epic
+-- exists to stop making.
+--
+-- Two constraints this file learned the hard way, both enforced by the runner rather than by a
+-- linter. It replays every resource on every boot with no applied-migration ledger, so the DDL must
+-- be idempotent (V0.11.0 does the same). And it executes each resource as ONE statement after a
+-- quote-aware comment strip, so a file may carry no second statement and no apostrophe in its
+-- comments.
 ALTER TABLE exeris_saga_state
-    ADD COLUMN definition_version INTEGER;
-
-COMMENT ON COLUMN exeris_saga_state.definition_version IS
-    'FlowDefinition version this saga parked under; NULL means the row predates ADR-064 and is refused on resume.';
+    ADD COLUMN IF NOT EXISTS definition_version INTEGER NOT NULL DEFAULT 0;

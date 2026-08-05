@@ -102,7 +102,7 @@ class CommunityRestartRecoveryIntegrationTest {
         return new FlowSnapshot(
                 id.getMostSignificantBits(),
                 id.getLeastSignificantBits(),
-                "restart-recovery-saga",FlowDefinition.INITIAL_VERSION,
+                "restart-recovery-saga", FlowDefinition.INITIAL_VERSION,
                 currentStep,
                 Optional.of("step-" + currentStep),
                 FlowState.PARKED,

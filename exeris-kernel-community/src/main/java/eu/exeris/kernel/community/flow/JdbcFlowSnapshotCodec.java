@@ -151,7 +151,9 @@ final class JdbcFlowSnapshotCodec {
         // NULL means the row predates ADR-062 — absence, not a name. The resume guard rejects it.
         Optional<String> stepName = Optional.ofNullable(row.getString(10));
         long schemaVersion = row.getLong(11);
-        // NULL means the row predates ADR-064 — absence, not version zero. The resume guard rejects it.
+        // 0 is VERSION_ABSENT — the migration backfills it for rows written before the column
+        // existed. Never NULL: the cursor's getInt has no NULL representation, so the migration
+        // carries the absence instead of the read having to (ADR-064).
         int definitionVersion = row.getInt(12);
         return new FlowSnapshot(
                 instanceIdMost, instanceIdLeast,
