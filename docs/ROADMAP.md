@@ -2056,6 +2056,46 @@ policy's; it needs its own slice.
 
 ---
 
+### CI: The Persistence Gate Ran None of the Tests It Is Named After (surfaced 2026-08-05) — DELIVERED
+
+**Gap:** `exeris-kernel-community` held 11 `@Tag("integration")` classes, every one named `*IT`, and the
+CI job that exists to run them selected **none**.
+
+`.github/workflows/maven.yml:194-201` runs
+`mvn -pl exeris-kernel-community -DincludedGroups=integration -DexcludedGroups= test`. That is Surefire,
+whose 3.2.5 defaults are `Test*` / `*Test` / `*Tests` / `*TestCase` — and the module declared no
+`<includes>`. So the job named **"persistence RLS integration gate" ran no persistence RLS test**. What
+kept it green were three unrelated `*Test` classes that happen to carry the tag (crypto TLS loopback,
+transport ingress, carrier pinning).
+
+Dead alongside them: the JDBC event-stream TCK bindings, the graph parity and churn ITs, the S3 blob
+TCK, and the Keycloak OIDC conformance test. Several are the only executable evidence behind contracts
+ADR-012 and ADR-056 rest on.
+
+**The fix already existed one module away.** `exeris-kernel-community-kafka` added exactly this
+`<includes>` block in v0.8 Sprint 6 (Coverage C-P0-02), with a comment describing the same failure —
+"the three IT files end in IT and were silently dead before this include addition". It was never
+applied to `exeris-kernel-community`, and the Kafka gate has been genuinely running its ITs ever since
+while the persistence gate has not.
+
+**Resolution:** the same `<includes>` block, in `exeris-kernel-community/pom.xml`.
+
+**Evidence, by the two commands that matter:**
+
+- `mvn -pl exeris-kernel-community test` selects **zero** `*IT` classes — every one is
+  `@Tag("integration")`, so no Testcontainers start in a default build.
+- `mvn -pl exeris-kernel-community -DincludedGroups=integration -DexcludedGroups= test` — the gate's
+  own command — now runs all 11: **74 tests, 0 failures**. They were never broken. They had simply
+  never run.
+
+**Lesson this repeats.** Same shape as the "verify skips PMD" myth (PR #238) and the JaCoCo floor that
+only began applying once a module gained its first test: a gate believed because it was green, when
+green meant it had nothing to check. A gate's name is not evidence; the `Running …` lines in its log
+are.
+
+---
+
+
 ## Known Gaps / Future Work planned for v0.12
 
 ### HTTP: `WebSocketProvider` SPI (or SSE-Only Commitment)
