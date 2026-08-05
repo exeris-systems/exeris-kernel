@@ -496,9 +496,11 @@ final class CoreFlowRuntime { // NOPMD
      * <p>Per {@code docs/subsystems/flow.md}, waking a non-terminal saga whose persisted
      * {@code currentStep} no longer indexes a step in the active definition raises
      * {@code EX-FLOW-7002 / phase=SCHEMA_MISMATCH} (Glass-Box rawArgs via
-     * {@link FlowEngineException#schemaMismatch(String, int)}) and requires manual intervention. Until
-     * definition versioning lands (ROADMAP "Flow/Saga Definition Versioning + In-Flight Migration"),
-     * step-index bounds/arity is the available identity signal — same-arity reorders are not yet caught.
+     * {@link FlowEngineException#schemaMismatch(String, int)}) and requires manual intervention.
+     *
+     * <p>This method is the <b>bounds/arity</b> half. Since 0.11 it delegates to
+     * {@link #validateSnapshotStepIdentity} for the half it structurally cannot cover: a same-arity
+     * reorder leaves the index in range, so only comparing step identities detects it (ADR-062).
      * Terminal snapshots ({@link FlowState#isTerminal()}) are exempt — they are never resumed.
      */
     private void validateSnapshotStepBounds(CoreFlowExecutionPlan plan, FlowSnapshot persisted) {
@@ -510,7 +512,7 @@ final class CoreFlowRuntime { // NOPMD
         // step < 0 makes the invariant explicit (a corrupted snapshot writing a sentinel index also
         // fails closed, not just the redeploy-removed-step case).
         if (step < 0 || step >= stepCount) {
-            emitSchemaMismatch(persisted, step, stepCount, "STEP_OUT_OF_RANGE", null, null);
+            emitSchemaMismatch(persisted, step, stepCount, FlowEngineException.REASON_STEP_OUT_OF_RANGE, null, null);
             throw FlowEngineException.schemaMismatch(config.engineName(), step);
         }
         validateSnapshotStepIdentity(plan, persisted, step, stepCount);
@@ -538,11 +540,12 @@ final class CoreFlowRuntime { // NOPMD
         if (persistedName.isEmpty()) {
             // Written before 0.11. Resuming it would mean trusting the index again, which is the
             // behaviour this guard exists to remove — so it is refused rather than assumed safe.
-            emitSchemaMismatch(persisted, step, stepCount, "STEP_IDENTITY_ABSENT", null, planStepName);
+            emitSchemaMismatch(persisted, step, stepCount,
+                    FlowEngineException.REASON_STEP_IDENTITY_ABSENT, null, planStepName);
             throw FlowEngineException.schemaMismatchStepIdentityAbsent(config.engineName(), step);
         }
         if (!persistedName.get().equals(planStepName)) {
-            emitSchemaMismatch(persisted, step, stepCount, "STEP_IDENTITY_MISMATCH",
+            emitSchemaMismatch(persisted, step, stepCount, FlowEngineException.REASON_STEP_IDENTITY_MISMATCH,
                     persistedName.get(), planStepName);
             throw FlowEngineException.schemaMismatchStepIdentity(config.engineName(), step);
         }

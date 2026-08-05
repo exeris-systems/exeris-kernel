@@ -33,15 +33,31 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  */
 public final class FlowEngineException extends ExerisKernelException {
 
+    /**
+     * {@code rawArgs[2]} reason: the persisted step index no longer addresses any step (since 0.10).
+     *
+     * <p>Public because it is already a stable tooling key — the TCK asserts on it, operators filter
+     * on it, and the JFR event reports it. A private copy here plus a literal at the emission site is
+     * how the two silently drift apart.
+     */
+    public static final String REASON_STEP_OUT_OF_RANGE = "STEP_OUT_OF_RANGE";
+
+    /**
+     * {@code rawArgs[2]} reason: the index is in range but names a different step (since 0.11).
+     */
+    public static final String REASON_STEP_IDENTITY_MISMATCH = "STEP_IDENTITY_MISMATCH";
+
+    /**
+     * {@code rawArgs[2]} reason: the snapshot records no step identity at all (since 0.11).
+     */
+    public static final String REASON_STEP_IDENTITY_ABSENT = "STEP_IDENTITY_ABSENT";
+
     private static final String MSG_ENGINE_FAILURE  = "Flow engine lifecycle failure";
     private static final String MSG_SCHEMA_MISMATCH = "Flow definition changed under a parked saga";
     private static final String REASON_STARTUP      = "STARTUP_FAILED";
     private static final String REASON_COMPILE      = "COMPILE_FAILED";
     private static final String REASON_QUEUE_FULL   = "QUEUE_FULL";
     private static final String REASON_STALE_VERSION = "STALE_VERSION";
-    private static final String REASON_STEP_OUT_OF_RANGE = "STEP_OUT_OF_RANGE";
-    private static final String REASON_STEP_IDENTITY_MISMATCH = "STEP_IDENTITY_MISMATCH";
-    private static final String REASON_STEP_IDENTITY_ABSENT = "STEP_IDENTITY_ABSENT";
 
     public FlowEngineException(String message) {
         super(KernelErrorCodes.EX_FLOW_7002, message, (Throwable) null);

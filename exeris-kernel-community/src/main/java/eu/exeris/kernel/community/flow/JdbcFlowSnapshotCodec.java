@@ -35,7 +35,7 @@ import java.util.Optional;
  *   0: instance_id_most       1: instance_id_least    2: definition_name
  *   3: current_step           4: state                5: last_update
  *   6: timeout_at             7: compensation_stack   8: stack_pointer
- *   9: opaque_state          10: schema_version
+ *   9: opaque_state          10: step_name          11: schema_version
  * </pre>
  *
  * <h2>Instant.MAX encoding</h2>
