@@ -42,7 +42,9 @@ public final class EmbeddedPersistenceEngineFixtures {
     /**
      * A fixture on a fresh in-memory H2 database, migrations applied.
      *
-     * <p>The database name is unique per call, so two fixtures never share state.
+     * <p>The database name is unique per call, so two fixtures never share state — including under
+     * parallel test execution, where {@code FixtureBootLock} keeps concurrent starts from reading each
+     * other's JDBC URL.
      *
      * @return an unstarted fixture
      */

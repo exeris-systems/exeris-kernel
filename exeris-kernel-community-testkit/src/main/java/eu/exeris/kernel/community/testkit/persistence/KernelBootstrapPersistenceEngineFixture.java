@@ -8,6 +8,7 @@
  */
 package eu.exeris.kernel.community.testkit.persistence;
 
+import eu.exeris.kernel.community.testkit.FixtureBootLock;
 import eu.exeris.kernel.community.testkit.FixtureThreads;
 import eu.exeris.kernel.community.testkit.SystemPropertySnapshot;
 import eu.exeris.kernel.core.bootstrap.KernelBootstrap;
@@ -45,6 +46,8 @@ final class KernelBootstrapPersistenceEngineFixture implements EmbeddedPersisten
     private final boolean runMigrations;
 
     private final AtomicReference<PersistenceEngine> engine = new AtomicReference<>();
+    /** Claimed by the first {@link #start()}; {@code started} only flips once the boot succeeded. */
+    private final AtomicBoolean starting = new AtomicBoolean(false);
     private final AtomicBoolean started = new AtomicBoolean(false);
     private final KernelScopePump pump = new KernelScopePump();
 
@@ -57,10 +60,28 @@ final class KernelBootstrapPersistenceEngineFixture implements EmbeddedPersisten
 
     @Override
     public void start() {
-        if (started.get()) {
+        if (!starting.compareAndSet(false, true)) {
             throw new IllegalStateException("Fixture is already started");
         }
 
+        boolean booted = false;
+        try {
+            FixtureBootLock.bootExclusively(this::bootAndAwaitStart);
+            booted = true;
+        } finally {
+            // Release the claim on failure, so a fixture that could not boot is not wedged shut.
+            starting.set(booted);
+        }
+        started.set(true);
+    }
+
+    /**
+     * Publishes configuration, starts the runtime thread, and returns once it has booted or failed.
+     *
+     * <p>Runs under {@link FixtureBootLock}: the properties are JVM-global and the kernel reads them
+     * uncached during subsystem initialisation, so no other fixture may boot while this is in flight.
+     */
+    private void bootAndAwaitStart() {
         SystemPropertySnapshot snapshot =
                 SystemPropertySnapshot.capture(JDBC_URL_PROPERTY, RUN_MIGRATIONS_PROPERTY);
         CountDownLatch startedSignal = new CountDownLatch(1);
@@ -76,7 +97,6 @@ final class KernelBootstrapPersistenceEngineFixture implements EmbeddedPersisten
 
         awaitStart(thread, startedSignal, startupFailure);
         runtimeThread = thread;
-        started.set(true);
     }
 
     @Override
@@ -114,6 +134,7 @@ final class KernelBootstrapPersistenceEngineFixture implements EmbeddedPersisten
         pump.requestStop();
         FixtureThreads.joinQuietly(runtimeThread, STOP_TIMEOUT_SECONDS);
         engine.set(null);
+        starting.set(false);
     }
 
     private void requireStarted() {

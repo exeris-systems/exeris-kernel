@@ -91,11 +91,33 @@ Signed-token construction for tests exercising `TokenValidator` / `IdentityProvi
 
 ## Shared plumbing
 
-`SystemPropertySnapshot` and `FixtureThreads` sit in the root package. Both are **testkit-internal** —
-public only because Java package access does not reach across subpackages — and neither is fixture API.
-They exist because every fixture that holds a kernel boot open on a dedicated thread has to set
-configuration properties before booting and put them back afterwards, and has to join that thread on a
-deadline rather than hanging the suite.
+`SystemPropertySnapshot`, `FixtureThreads` and `FixtureBootLock` sit in the root package. All three are
+**testkit-internal** — public only because Java package access does not reach across subpackages — and
+none is fixture API. They exist because every fixture that holds a kernel boot open on a dedicated
+thread has to publish configuration properties before booting and put them back afterwards, has to join
+that thread on a deadline rather than hanging the suite, and must not boot while another fixture is
+mid-boot.
+
+### Concurrent starts
+
+Kernel configuration arrives through system properties, which are JVM-global. The kernel reads them
+**uncached** (`CommunityConfigProvider.resolveRaw` calls `System.getProperty` per lookup) during
+subsystem initialisation, and `KernelBootstrap`'s `bootActive` guard is per-instance — so nothing in
+the kernel serialises two `boot()` calls. Without a lock, two fixtures started from different threads
+could each read the other's properties: for HTTP that is the wrong port, for persistence it is
+**the wrong database**.
+
+`FixtureBootLock` closes this by serialising the set-properties → boot → await-started window across
+the whole fixture family. Two guarantees follow:
+
+- **Fixtures are safe to use under parallel test execution.** They cannot boot simultaneously, but they
+  run simultaneously — the lock covers starting, not the fixture lifetime.
+- **Overlapping lifetimes are harmless.** The values are resolved once, into a configuration object the
+  engine then owns, and never re-read; so one fixture restoring its snapshot while another is still
+  running cannot affect the running one.
+
+Each fixture also refuses a second concurrent `start()` on the same instance, rather than silently
+spawning a second boot thread and leaking the first.
 
 ---
 

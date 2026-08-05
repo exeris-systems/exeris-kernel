@@ -8,6 +8,7 @@
  */
 package eu.exeris.kernel.community.testkit.http;
 
+import eu.exeris.kernel.community.testkit.FixtureBootLock;
 import eu.exeris.kernel.community.testkit.FixtureThreads;
 import eu.exeris.kernel.community.testkit.SystemPropertySnapshot;
 import eu.exeris.kernel.core.bootstrap.KernelBootstrap;
@@ -54,58 +55,68 @@ public final class KernelBootstrapHttpEngineFixture implements EmbeddedHttpEngin
                 throw new IllegalStateException("Fixture is already started");
             }
 
-            int reservedPort = reserveLoopbackPort();
-            SystemPropertySnapshot propertySnapshot = SystemPropertySnapshot.capture(
-                    "exeris.http.mode",
-                    "exeris.http.bindHost",
-                    "exeris.http.port",
-                    "http.mode",
-                    "http.bindHost",
-                    "http.port");
-
-            CountDownLatch startedSignal = new CountDownLatch(1);
-            CountDownLatch stop = new CountDownLatch(1);
-            AtomicReference<Throwable> startupFailure = new AtomicReference<>();
-
-            Thread thread = Thread.ofPlatform()
-                    .name("kernel-bootstrap-http-fixture")
-                    .uncaughtExceptionHandler((_, throwable) -> {
-                        startupFailure.compareAndSet(null, throwable);
-                        startedSignal.countDown();
-                    })
-                    .start(() -> runFixtureRuntime(
-                            handler,
-                            reservedPort,
-                            propertySnapshot,
-                            startedSignal,
-                            stop,
-                            startupFailure));
-
-            try {
-                if (!startedSignal.await(START_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
-                    stop.countDown();
-                    FixtureThreads.joinQuietly(thread, STOP_TIMEOUT_SECONDS);
-                    throw new IllegalStateException("Timed out while starting kernel HTTP fixture");
-                }
-            } catch (InterruptedException interruptedException) {
-                Thread.currentThread().interrupt();
-                stop.countDown();
-                FixtureThreads.joinQuietly(thread, STOP_TIMEOUT_SECONDS);
-                throw new IllegalStateException("Interrupted while starting kernel HTTP fixture",
-                        interruptedException);
-            }
-
-            Throwable failure = startupFailure.get();
-            if (failure != null) {
-                stop.countDown();
-                FixtureThreads.joinQuietly(thread, STOP_TIMEOUT_SECONDS);
-                throw new IllegalStateException("Kernel HTTP fixture failed to start", failure);
-            }
-
-            runtimeThread = thread;
-            stopSignal = stop;
-            started.set(true);
+            FixtureBootLock.bootExclusively(() -> bootAndAwaitStart(handler));
         }
+    }
+
+    /**
+     * Publishes configuration, starts the runtime thread, and returns once it has booted or failed.
+     *
+     * <p>Runs under {@link FixtureBootLock}: the properties are JVM-global and the kernel reads them
+     * uncached during subsystem initialisation, so no other fixture may boot while this is in flight.
+     */
+    private void bootAndAwaitStart(HttpHandler handler) {
+        int reservedPort = reserveLoopbackPort();
+        SystemPropertySnapshot propertySnapshot = SystemPropertySnapshot.capture(
+                "exeris.http.mode",
+                "exeris.http.bindHost",
+                "exeris.http.port",
+                "http.mode",
+                "http.bindHost",
+                "http.port");
+
+        CountDownLatch startedSignal = new CountDownLatch(1);
+        CountDownLatch stop = new CountDownLatch(1);
+        AtomicReference<Throwable> startupFailure = new AtomicReference<>();
+
+        Thread thread = Thread.ofPlatform()
+                .name("kernel-bootstrap-http-fixture")
+                .uncaughtExceptionHandler((_, throwable) -> {
+                    startupFailure.compareAndSet(null, throwable);
+                    startedSignal.countDown();
+                })
+                .start(() -> runFixtureRuntime(
+                        handler,
+                        reservedPort,
+                        propertySnapshot,
+                        startedSignal,
+                        stop,
+                        startupFailure));
+
+        try {
+            if (!startedSignal.await(START_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                stop.countDown();
+                FixtureThreads.joinQuietly(thread, STOP_TIMEOUT_SECONDS);
+                throw new IllegalStateException("Timed out while starting kernel HTTP fixture");
+            }
+        } catch (InterruptedException interruptedException) {
+            Thread.currentThread().interrupt();
+            stop.countDown();
+            FixtureThreads.joinQuietly(thread, STOP_TIMEOUT_SECONDS);
+            throw new IllegalStateException("Interrupted while starting kernel HTTP fixture",
+                    interruptedException);
+        }
+
+        Throwable failure = startupFailure.get();
+        if (failure != null) {
+            stop.countDown();
+            FixtureThreads.joinQuietly(thread, STOP_TIMEOUT_SECONDS);
+            throw new IllegalStateException("Kernel HTTP fixture failed to start", failure);
+        }
+
+        runtimeThread = thread;
+        stopSignal = stop;
+        started.set(true);
     }
 
     @Override
