@@ -116,8 +116,9 @@ addressing — and a name does what an index cannot: survive a definition changi
 ### 📋 What is NOT in scope
 
 - **A `FlowDefinition` version field, coexisting definition versions, and in-flight migration** — the
-  differentiator tracked in the kernel ROADMAP. Version coexistence built before the runtime can
-  *detect* a mismatch would be built on sand; this ADR supplies the detection those need.
+  differentiator tracked in the kernel ROADMAP, **decided by ADR-064**. Version coexistence built
+  before the runtime can *detect* a mismatch would be built on sand; this ADR supplies the detection
+  those need, and ADR-064 validates every migration's output through the identity check decided here.
 - **`loadByDefinition()`**, deferred in the ROADMAP to "the definition-versioning epic". It waits on
   versioning, not on identity.
 - **The FlowJournal contract itself.** This ADR is its prerequisite, not its design.
