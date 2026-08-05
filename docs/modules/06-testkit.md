@@ -85,7 +85,22 @@ of it.
 
 ### Security — `TestJwt`
 
-Signed-token construction for tests exercising `TokenValidator` / `IdentityProvider` bindings.
+Signed-token construction for tests exercising `TokenValidator` / `IdentityProvider` bindings, plus
+the attack shapes those tests are built on: `expired()`, `tamperedSignature()`, `algNone()`,
+`hmacConfusion()`, `noKid()`. Each is unit-tested against the plain, genuinely-valid token — a builder
+that quietly produced a *valid* token when asked for `algNone()` would make every negative security
+test pass while proving nothing.
+
+---
+
+## Coverage note
+
+The two `KernelBootstrap*Fixture` classes are roughly half this module's lines and **cannot be covered
+from inside it**: exercising them requires a provider on the classpath, and the module deliberately
+declares none. Their coverage lives in `exeris-kernel-community`'s test scope, which JaCoCo attributes
+to that module's bundle instead. The module clears its floor on the plumbing and `TestJwt`; expect the
+ratio to fall as each new fixture lands, since every one adds uncoverable lines here and coverable
+lines elsewhere.
 
 ---
 
