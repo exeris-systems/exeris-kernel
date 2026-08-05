@@ -599,7 +599,34 @@ final class CoreFlowRuntime { // NOPMD
                 decrementLifecycleCounterOnExit(activeFlows);
             }
             runningThreads.remove(Thread.currentThread());
+            honourDeferredWake(instance);
         }
+    }
+
+    /**
+     * Re-submits a wake that arrived while this run still held the instance.
+     *
+     * <p>Ordering is load-bearing: this runs after the exiting thread has deregistered itself and
+     * released its lifecycle counters, so {@code close()}'s bounded join never observes a half-torn
+     * set. The re-submission hands off to a fresh Virtual Thread rather than nesting, so this thread
+     * still exits immediately.
+     *
+     * <p>Refusals here are legitimately silent. A terminal instance has already finished — there is
+     * nothing to wake. A superseded lifecycle generation means the engine restarted underneath this
+     * run, and re-launching would resurrect a reclaimed snapshot row rather than resume anything.
+     */
+    private void honourDeferredWake(RuntimeFlowInstance instance) {
+        if (!instance.claimPendingWake()) {
+            return;
+        }
+        if (instance.isTerminal() || !isActiveLifecycle(instance) || !isCurrentLifecycle(instance)) {
+            return;
+        }
+        int startStep = instance.beginScheduleAfterWake();
+        if (startStep < 0) {
+            return;
+        }
+        launch(instance, startStep);
     }
 
     /**

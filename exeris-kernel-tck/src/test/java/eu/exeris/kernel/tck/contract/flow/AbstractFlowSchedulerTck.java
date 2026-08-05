@@ -29,6 +29,8 @@ import java.util.concurrent.StructuredTaskScope;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.LockSupport;
+import java.util.function.BooleanSupplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -44,6 +46,9 @@ import static org.assertj.core.api.Assertions.assertThatCode;
  * @since 0.5.0
  */
 public abstract class AbstractFlowSchedulerTck {
+
+    /** Generous: this waits on a real flow resuming, not on a poll interval. */
+    private static final long WAKE_TIMEOUT_SECONDS = 30L;
 
     protected abstract FlowEngine createEngine();
 
@@ -97,6 +102,72 @@ public abstract class AbstractFlowSchedulerTck {
                 scheduler.wake(ctx);
             }).as("park() then wake() MUST not throw for a validly scheduled context")
               .doesNotThrowAnyException();
+        }
+
+        /**
+         * A wake refused because a run still holds the instance MUST still be honoured once that
+         * run drains.
+         *
+         * <p>{@link FlowScheduler#wake} promises to re-submit the flow for execution, and expressly
+         * allows an implementation to tolerate the immediate schedule/park/wake window rather than
+         * throwing. Tolerating is not discarding: a choreography wake is one event per business
+         * trigger, not a poll, so a request dropped here strands the saga — and because the instance
+         * stays discoverable through {@code lookupParked}, no miss-path telemetry marks the loss.
+         * Enterprise's ring-buffer scheduler has the same window on its CAS-enqueue path.
+         */
+        @Test
+        @Timeout(value = 60, unit = TimeUnit.SECONDS)
+        @DisplayName("a wake arriving while a run is still in flight is honoured, not dropped")
+        void wakeDuringRunIsNotLost() {
+            FlowScheduler scheduler = engine.scheduler();
+            CountDownLatch insideStep = new CountDownLatch(1);
+            CountDownLatch releaseStep = new CountDownLatch(1);
+
+            FlowDefinition definition = engine.plans().newDefinition("wake-during-run-flow")
+                    .step("gate", _ -> {
+                        insideStep.countDown();
+                        awaitQuietly(releaseStep);
+                        return FlowOutcome.CONTINUE;
+                    }, null)
+                    .step("after-gate", _ -> FlowOutcome.CONTINUE, null)
+                    .transition(0, 1)
+                    .build();
+            FlowExecutionPlan plan = engine.plans().compile(definition);
+            FlowContext ctx = TestFlowContexts.create("wake-during-run-1", definition.name());
+
+            scheduler.schedule(plan, ctx);
+            assertThat(awaitQuietly(insideStep))
+                    .as("the run must be in flight before park/wake, or this asserts nothing")
+                    .isTrue();
+
+            // The step is held on a latch, so the instance is provably still owned by a run when
+            // the wake below lands. No timing assumption — this is the window a scheduler may
+            // legitimately refuse to schedule into, and the one it must not lose the request in.
+            scheduler.park(ctx);
+            scheduler.wake(ctx);
+            releaseStep.countDown();
+
+            awaitTrue(WAKE_TIMEOUT_SECONDS, () -> engine.stats().completedFlows() >= 1);
+        }
+    }
+
+    private static void awaitTrue(long timeoutSeconds, BooleanSupplier condition) {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(timeoutSeconds);
+        while (!condition.getAsBoolean()) {
+            if (System.nanoTime() > deadline) {
+                throw new AssertionError(
+                        "a wake delivered while a run was in flight never resumed the flow");
+            }
+            LockSupport.parkNanos(10_000_000L);
+        }
+    }
+
+    private static boolean awaitQuietly(CountDownLatch latch) {
+        try {
+            return latch.await(WAKE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
         }
     }
 
