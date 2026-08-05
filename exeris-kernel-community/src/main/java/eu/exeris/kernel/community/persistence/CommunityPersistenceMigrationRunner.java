@@ -22,6 +22,8 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.regex.Pattern;
+import java.util.regex.Matcher;
 
 /**
  * Community-internal SQL migration bootstrap helper. Extracted from
@@ -63,12 +65,47 @@ import java.util.List;
 @SuppressWarnings("PMD.CyclomaticComplexity")
 final class CommunityPersistenceMigrationRunner {
 
+    /**
+     * Orders migrations by their {@code V<major>.<minor>.<patch>} version, numerically.
+     *
+     * <p>This used to be {@link Comparator#naturalOrder()} over the resource path, which is a string
+     * comparison: {@code V0.10.0} sorts before {@code V0.5.0} because {@code '1' < '5'}. That was
+     * harmless only for as long as no migration depended on an earlier one — every script so far
+     * created its own table with {@code IF NOT EXISTS}, so running them out of order changed nothing.
+     * The first {@code ALTER TABLE} against a table an earlier script creates fails outright, which is
+     * how the ordering was found.
+     *
+     * <p>Anything that does not parse as a version sorts last, by path, rather than throwing: a
+     * migration runner is not the right place to fail a boot over a file name.
+     */
+    /* default */ static final Comparator<String> MIGRATION_ORDER =
+            Comparator.comparing(CommunityPersistenceMigrationRunner::versionKey)
+                    .thenComparing(Comparator.naturalOrder());
+
+    private static final Pattern VERSION_PATTERN = Pattern.compile("V(\\d+)\\.(\\d+)\\.(\\d+)__");
+
     private CommunityPersistenceMigrationRunner() {
         // utility — no instances
     }
 
     /**
-     * Runs every migration in {@code resources} (sorted in natural order) against the
+     * Extracts a numerically comparable key from a migration resource path.
+     *
+     * @param resourcePath the classpath resource path
+     * @return a comparable version key; {@link Long#MAX_VALUE} when the path carries no version
+     */
+    private static Long versionKey(String resourcePath) {
+        Matcher matcher = VERSION_PATTERN.matcher(resourcePath);
+        if (!matcher.find()) {
+            return Long.MAX_VALUE;
+        }
+        return Long.parseLong(matcher.group(1)) * 1_000_000L
+                + Long.parseLong(matcher.group(2)) * 1_000L
+                + Long.parseLong(matcher.group(3));
+    }
+
+    /**
+     * Runs every migration in {@code resources} (ordered by semantic version) against the
      * supplied {@code dataSource} inside a single transaction. Returns immediately when
      * {@code enabled} is {@code false}.
      *
@@ -89,7 +126,7 @@ final class CommunityPersistenceMigrationRunner {
             return;
         }
         List<String> sorted = new ArrayList<>(resources);
-        sorted.sort(Comparator.naturalOrder());
+        sorted.sort(MIGRATION_ORDER);
         try (Connection connection = dataSource.getConnection()) {
             runMigrationsInTransaction(connection, sorted);
         } catch (SQLException | IllegalStateException | UncheckedIOException ex) {

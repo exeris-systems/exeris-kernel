@@ -74,7 +74,8 @@ final class CommunityPersistenceEngine implements PersistenceEngine, PhysicalCon
     private static final List<String> MIGRATION_RESOURCES = List.of(
             "db/migration/V0.5.0__create_outbox.sql",
             "db/migration/V0.7.0__create_saga_state.sql",
-            "db/migration/V0.10.0__create_event_log.sql"
+            "db/migration/V0.10.0__create_event_log.sql",
+            "db/migration/V0.11.0__add_saga_step_name.sql"
     );
 
     private final PersistenceConfig config;

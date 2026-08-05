@@ -53,6 +53,15 @@ final class FlowSchemaMismatchEvent extends Event {
     @Description("Persisted resume step index that the active definition no longer has")
     /* default */ int persistedStep;
 
+    @Label("Reason")
+    /* default */ String reason;
+
+    @Label("Persisted Step Name")
+    /* default */ String persistedStepName;
+
+    @Label("Plan Step Name")
+    /* default */ String planStepName;
+
     @Label("Plan Step Count")
     @Description("Step count of the active (resolved) definition the resume was attempted against")
     /* default */ int planStepCount;
@@ -63,7 +72,10 @@ final class FlowSchemaMismatchEvent extends Event {
             long instanceIdMost,
             long instanceIdLeast,
             int persistedStep,
-            int planStepCount) {
+            int planStepCount,
+            String reason,
+            String persistedStepName,
+            String planStepName) {
         FlowSchemaMismatchEvent event = new FlowSchemaMismatchEvent();
         if (!event.isEnabled()) {
             return;
@@ -75,6 +87,12 @@ final class FlowSchemaMismatchEvent extends Event {
         event.instanceIdLeast = instanceIdLeast;
         event.persistedStep = persistedStep;
         event.planStepCount = planStepCount;
+        event.reason = reason;
+        // Step names are definition metadata written by the application's own code — not user data,
+        // not credentials, not principal identity — so they are safe under the JFR payload rules, and
+        // without them the event reports that a mismatch happened while withholding what mismatched.
+        event.persistedStepName = persistedStepName;
+        event.planStepName = planStepName;
         event.commit();
     }
 }

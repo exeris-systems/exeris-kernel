@@ -496,9 +496,11 @@ final class CoreFlowRuntime { // NOPMD
      * <p>Per {@code docs/subsystems/flow.md}, waking a non-terminal saga whose persisted
      * {@code currentStep} no longer indexes a step in the active definition raises
      * {@code EX-FLOW-7002 / phase=SCHEMA_MISMATCH} (Glass-Box rawArgs via
-     * {@link FlowEngineException#schemaMismatch(String, int)}) and requires manual intervention. Until
-     * definition versioning lands (ROADMAP "Flow/Saga Definition Versioning + In-Flight Migration"),
-     * step-index bounds/arity is the available identity signal — same-arity reorders are not yet caught.
+     * {@link FlowEngineException#schemaMismatch(String, int)}) and requires manual intervention.
+     *
+     * <p>This method is the <b>bounds/arity</b> half. Since 0.11 it delegates to
+     * {@link #validateSnapshotStepIdentity} for the half it structurally cannot cover: a same-arity
+     * reorder leaves the index in range, so only comparing step identities detects it (ADR-062).
      * Terminal snapshots ({@link FlowState#isTerminal()}) are exempt — they are never resumed.
      */
     private void validateSnapshotStepBounds(CoreFlowExecutionPlan plan, FlowSnapshot persisted) {
@@ -510,11 +512,51 @@ final class CoreFlowRuntime { // NOPMD
         // step < 0 makes the invariant explicit (a corrupted snapshot writing a sentinel index also
         // fails closed, not just the redeploy-removed-step case).
         if (step < 0 || step >= stepCount) {
-            FlowSchemaMismatchEvent.emit(
-                    config.engineName(), persisted.definitionName(),
-                    persisted.instanceIdMost(), persisted.instanceIdLeast(), step, stepCount);
+            emitSchemaMismatch(persisted, step, stepCount, FlowEngineException.REASON_STEP_OUT_OF_RANGE, null, null);
             throw FlowEngineException.schemaMismatch(config.engineName(), step);
         }
+        validateSnapshotStepIdentity(plan, persisted, step, stepCount);
+    }
+
+    /**
+     * Rejects a resume whose persisted step index is in range but no longer names the same step
+     * (ADR-062).
+     *
+     * <p>This is the case the bounds check cannot reach. A same-arity reorder leaves the index valid,
+     * so without comparing identities the saga would resume on a different step than it parked at —
+     * silently, and with the wrong compensation stack semantics behind it.
+     *
+     * @param plan      the resolved plan the resume would bind to
+     * @param persisted the snapshot being resumed
+     * @param step      the persisted step index, already known to be in range
+     * @param stepCount the plan's step count, for the diagnostic event
+     */
+    private void validateSnapshotStepIdentity(CoreFlowExecutionPlan plan,
+                                              FlowSnapshot persisted,
+                                              int step,
+                                              int stepCount) {
+        String planStepName = plan.stepAt(step).name();
+        Optional<String> persistedName = persisted.currentStepName();
+        if (persistedName.isEmpty()) {
+            // Written before 0.11. Resuming it would mean trusting the index again, which is the
+            // behaviour this guard exists to remove — so it is refused rather than assumed safe.
+            emitSchemaMismatch(persisted, step, stepCount,
+                    FlowEngineException.REASON_STEP_IDENTITY_ABSENT, null, planStepName);
+            throw FlowEngineException.schemaMismatchStepIdentityAbsent(config.engineName(), step);
+        }
+        if (!persistedName.get().equals(planStepName)) {
+            emitSchemaMismatch(persisted, step, stepCount, FlowEngineException.REASON_STEP_IDENTITY_MISMATCH,
+                    persistedName.get(), planStepName);
+            throw FlowEngineException.schemaMismatchStepIdentity(config.engineName(), step);
+        }
+    }
+
+    private void emitSchemaMismatch(FlowSnapshot persisted, int step, int stepCount,
+                                    String reason, String persistedStepName, String planStepName) {
+        FlowSchemaMismatchEvent.emit(
+                config.engineName(), persisted.definitionName(),
+                persisted.instanceIdMost(), persisted.instanceIdLeast(), step, stepCount,
+                reason, persistedStepName, planStepName);
     }
 
     private void launch(RuntimeFlowInstance instance, int startStep) {

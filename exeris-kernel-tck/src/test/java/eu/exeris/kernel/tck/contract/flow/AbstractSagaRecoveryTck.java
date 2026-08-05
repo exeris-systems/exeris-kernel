@@ -291,6 +291,134 @@ public abstract class AbstractSagaRecoveryTck {
                     .as("fail-closed: NO step re-executes on the rejected resume")
                     .isEqualTo(reexecBaseline);
         }
+
+        @Test
+        @Timeout(value = 30, unit = TimeUnit.SECONDS)
+        @DisplayName("a same-arity reorder fails closed (reason=STEP_IDENTITY_MISMATCH) — the case the bounds guard cannot see")
+        void redeployedDefinitionReorderingStepsFailsClosed() {
+            AtomicInteger anyStepReexec = new AtomicInteger();
+
+            FlowStepAction validate = _ -> { anyStepReexec.incrementAndGet(); return FlowOutcome.CONTINUE; };
+            FlowStepAction pay      = _ -> { anyStepReexec.incrementAndGet(); return FlowOutcome.CONTINUE; };
+            FlowStepAction ship     = _ -> FlowOutcome.PARK;
+
+            FlowDefinition v1 = engine.plans().newDefinition("reorder-mismatch-saga")
+                    .step("validate", validate, null)
+                    .step("pay",      pay,      null)
+                    .step("ship",     ship,     null)
+                    .transition(0, 1)
+                    .transition(1, 2)
+                    .build();
+
+            FlowExecutionPlan plan = engine.plans().compile(v1);
+            FlowContext ctx = TestFlowContexts.create(UUID.randomUUID().toString(), "reorder-mismatch-saga");
+            engine.scheduler().schedule(plan, ctx);
+
+            assertThat(awaitCondition(() -> snapshotExists(ctx), 5))
+                    .as("saga MUST park before the redeploy").isTrue();
+            Optional<FlowSnapshot> snap = loadSnapshot(ctx);
+            assertThat(snap).isPresent();
+            assertThat(snap.get().currentStepName())
+                    .as("the snapshot must record WHICH step it parked at, not only where — without "
+                            + "this the reorder below is undetectable (ADR-062)")
+                    .contains("ship");
+            int reexecBaseline = anyStepReexec.get();
+
+            // Redeploy with the SAME step count and a different order. Index 2 stays in range, so the
+            // bounds guard passes it; only the identity check can tell that index 2 is now "pay".
+            engine.close();
+            engine = rebuildEngine();
+            engine.start();
+            FlowDefinition v2 = engine.plans().newDefinition("reorder-mismatch-saga")
+                    .step("validate", validate, null)
+                    .step("ship",     ship,     null)
+                    .step("pay",      pay,      null)
+                    .transition(0, 1)
+                    .transition(1, 2)
+                    .build();
+            engine.plans().compile(v2);
+
+            assertThatThrownBy(() -> engine.scheduler().wake(ctx))
+                    .as("a same-arity reorder MUST fail closed — the index is still valid, which is "
+                            + "exactly why replaying it would bind the saga to the wrong step")
+                    .isInstanceOf(FlowEngineException.class)
+                    .satisfies(thrown -> {
+                        FlowEngineException ex = (FlowEngineException) thrown;
+                        assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_FLOW_7002);
+                        assertThat(ex.rawArgs()[1]).isEqualTo("SCHEMA_MISMATCH");
+                        assertThat(ex.rawArgs()[2])
+                                .as("a distinct reason from STEP_OUT_OF_RANGE: the step did not vanish, "
+                                        + "the step at that position became something else")
+                                .isEqualTo("STEP_IDENTITY_MISMATCH");
+                        assertThat(ex.rawArgs()[3])
+                                .as("contextValue = the persisted step index").isEqualTo(2);
+                    });
+
+            assertThat(anyStepReexec.get())
+                    .as("fail-closed: NO step re-executes on the rejected resume")
+                    .isEqualTo(reexecBaseline);
+        }
+
+        @Test
+        @Timeout(value = 30, unit = TimeUnit.SECONDS)
+        @DisplayName("a snapshot with no recorded identity fails closed (reason=STEP_IDENTITY_ABSENT) — a pre-0.11 row is not resumed by position")
+        void snapshotWithoutRecordedIdentityFailsClosed() {
+            AtomicInteger anyStepReexec = new AtomicInteger();
+
+            FlowStepAction validate = _ -> { anyStepReexec.incrementAndGet(); return FlowOutcome.CONTINUE; };
+            FlowStepAction pay      = _ -> { anyStepReexec.incrementAndGet(); return FlowOutcome.CONTINUE; };
+            FlowStepAction ship     = _ -> FlowOutcome.PARK;
+
+            FlowDefinition def = engine.plans().newDefinition("identity-absent-saga")
+                    .step("validate", validate, null)
+                    .step("pay",      pay,      null)
+                    .step("ship",     ship,     null)
+                    .transition(0, 1)
+                    .transition(1, 2)
+                    .build();
+
+            FlowExecutionPlan plan = engine.plans().compile(def);
+            FlowContext ctx = TestFlowContexts.create(UUID.randomUUID().toString(), "identity-absent-saga");
+            engine.scheduler().schedule(plan, ctx);
+
+            assertThat(awaitCondition(() -> snapshotExists(ctx), 5)).as("saga MUST park").isTrue();
+            FlowSnapshot parked = loadSnapshot(ctx).orElseThrow();
+            int reexecBaseline = anyStepReexec.get();
+
+            // Rewrite the row exactly as a pre-0.11 kernel would have left it: same state, same index,
+            // no identity. The definition is NOT changed — so nothing but the missing identity can
+            // cause the rejection, and a guard that only compared names would happily admit this.
+            FlowSnapshot legacy = new FlowSnapshot(
+                    parked.instanceIdMost(), parked.instanceIdLeast(), parked.definitionName(),
+                    parked.currentStep(), Optional.empty(), parked.state(), parked.lastUpdate(),
+                    parked.timeout(), parked.compensationStack(), parked.stackPointer(),
+                    parked.opaqueState(), parked.schemaVersion());
+            snapshotStore().save(legacy);
+
+            engine.close();
+            engine = rebuildEngine();
+            engine.start();
+            engine.plans().compile(def);
+
+            assertThatThrownBy(() -> engine.scheduler().wake(ctx))
+                    .as("resuming it would mean trusting the index again — the behaviour ADR-062 "
+                            + "removes — so an unvalidatable snapshot is refused, not assumed safe")
+                    .isInstanceOf(FlowEngineException.class)
+                    .satisfies(thrown -> {
+                        FlowEngineException ex = (FlowEngineException) thrown;
+                        assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_FLOW_7002);
+                        assertThat(ex.rawArgs()[1]).isEqualTo("SCHEMA_MISMATCH");
+                        assertThat(ex.rawArgs()[2])
+                                .as("distinct from STEP_IDENTITY_MISMATCH: nothing disagreed, there "
+                                        + "was simply nothing to compare — and the operator response "
+                                        + "differs (drain before upgrading, not fix the definition)")
+                                .isEqualTo(FlowEngineException.REASON_STEP_IDENTITY_ABSENT);
+                    });
+
+            assertThat(anyStepReexec.get())
+                    .as("fail-closed: NO step re-executes on the rejected resume")
+                    .isEqualTo(reexecBaseline);
+        }
     }
 
     // =========================================================================

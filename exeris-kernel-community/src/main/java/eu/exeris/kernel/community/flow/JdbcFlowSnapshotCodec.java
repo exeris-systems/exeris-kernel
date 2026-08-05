@@ -15,6 +15,7 @@ import eu.exeris.kernel.spi.persistence.RowCursor;
 
 import java.nio.ByteBuffer;
 import java.time.Instant;
+import java.util.Optional;
 
 /**
  * Package-private codec for {@link FlowSnapshot} ↔ {@code exeris_saga_state}
@@ -34,7 +35,7 @@ import java.time.Instant;
  *   0: instance_id_most       1: instance_id_least    2: definition_name
  *   3: current_step           4: state                5: last_update
  *   6: timeout_at             7: compensation_stack   8: stack_pointer
- *   9: opaque_state          10: schema_version
+ *   9: opaque_state          10: step_name          11: schema_version
  * </pre>
  *
  * <h2>Instant.MAX encoding</h2>
@@ -52,7 +53,7 @@ final class JdbcFlowSnapshotCodec {
     }
 
     /**
-     * Binds the eight payload columns (definition_name through opaque_state)
+     * Binds the nine payload columns (definition_name through step_name)
      * starting at the given parameter index. Used by both INSERT (offset 2)
      * and UPDATE (offset 0).
      */
@@ -75,10 +76,13 @@ final class JdbcFlowSnapshotCodec {
         stmt.bindInt(idx++, snapshot.stackPointer());
         byte[] opaque = snapshot.opaqueState();
         if (opaque.length == 0) {
-            stmt.bindBytes(idx, null);
+            stmt.bindBytes(idx++, null);
         } else {
-            stmt.bindBytes(idx, opaque);
+            stmt.bindBytes(idx++, opaque);
         }
+        // NULL rather than a placeholder: the column has to be able to say "no identity recorded",
+        // because that is what the resume guard keys on (ADR-062).
+        stmt.bindString(idx, snapshot.currentStepName().orElse(null));
     }
 
     /**
@@ -140,10 +144,12 @@ final class JdbcFlowSnapshotCodec {
         if (opaqueState == null) {
             opaqueState = new byte[0];
         }
-        long schemaVersion = row.getLong(10);
+        // NULL means the row predates ADR-062 — absence, not a name. The resume guard rejects it.
+        Optional<String> stepName = Optional.ofNullable(row.getString(10));
+        long schemaVersion = row.getLong(11);
         return new FlowSnapshot(
                 instanceIdMost, instanceIdLeast,
-                definitionName, currentStep, state,
+                definitionName, currentStep, stepName, state,
                 lastUpdate, timeout,
                 compensationStack, stackPointer,
                 opaqueState, schemaVersion);

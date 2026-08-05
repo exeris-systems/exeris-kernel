@@ -112,6 +112,8 @@ public abstract class AbstractDistributedFlowSnapshotStoreTck {
                 id.getLeastSignificantBits(),
                 "demo-saga",
                 currentStep,
+                // The store must round-trip the identity, so the fixture always carries one.
+                Optional.of("step-" + currentStep),
                 state,
                 Instant.parse("2026-05-02T10:00:00Z"),
                 Instant.parse("2026-05-02T11:00:00Z"),
