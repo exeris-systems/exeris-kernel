@@ -9,10 +9,12 @@
 package eu.exeris.kernel.community.security;
 
 import eu.exeris.kernel.community.testkit.security.TestJwt;
+import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
+import eu.exeris.kernel.spi.exceptions.security.SecurityAuthenticationException;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
+import eu.exeris.kernel.spi.security.AuthenticationResult;
 import eu.exeris.kernel.spi.security.ImmutablePrincipal;
 import eu.exeris.kernel.spi.security.KernelIsolationClaims;
-import eu.exeris.kernel.spi.security.AuthenticationResult;
 import eu.exeris.kernel.spi.security.identity.ClaimsMapper;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -38,6 +40,8 @@ class CommunityOidcClaimsMapperSeamTest {
     private static final UUID CUSTOM_TENANT =
             UUID.fromString("66666666-7777-8888-9999-000000000000");
     private static final String CUSTOM_SCOPE = "custom:granted";
+    /** IdentityStorageMapping's reason for refusing an unenforced shared-scope declaration. */
+    private static final String SHARED_SCOPE_UNSUPPORTED = "shared-scope-unsupported";
 
     /** Ignores the token's own subject, so its effect is unmistakable in an assertion. */
     private static final ClaimsMapper FIXED_IDENTITY = _ -> ImmutablePrincipal.ofTenant(
@@ -147,7 +151,14 @@ class CommunityOidcClaimsMapperSeamTest {
                         .as("ADR-012 §4a routes isolation through one kernel-owned mapping; a "
                                 + "customisable mapper must not become a way to widen what a token "
                                 + "may reach")
-                        .isInstanceOf(RuntimeException.class);
+                        .isInstanceOfSatisfying(SecurityAuthenticationException.class, ex -> {
+                            assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_SEC_2002);
+                            // Named, not just "something was thrown": a wiring fault anywhere in
+                            // the pipeline also aborts the request, and a test that accepted any
+                            // failure here would report the isolation guard as proven while
+                            // actually observing a defect.
+                            assertThat(ex.rawArgs()[1]).isEqualTo(SHARED_SCOPE_UNSUPPORTED);
+                        });
             }
         }
     }
