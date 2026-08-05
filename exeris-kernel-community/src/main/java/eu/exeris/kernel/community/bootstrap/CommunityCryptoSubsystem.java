@@ -12,9 +12,7 @@ import eu.exeris.kernel.spi.bootstrap.BootstrapPhase;
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.crypto.KernelCryptoProvider;
 
-import java.util.Comparator;
 import java.util.List;
-import java.util.ServiceLoader;
 import java.util.function.UnaryOperator;
 
 @SuppressWarnings({"PMD.CloseResource", "PMD.AvoidCatchingGenericException"})
@@ -39,12 +37,8 @@ final class CommunityCryptoSubsystem extends AbstractCommunitySubsystem {
 
     @Override
     public void initialize() {
-        cryptoProvider = ServiceLoader.load(KernelCryptoProvider.class)
-                .stream()
-                .map(ServiceLoader.Provider::get)
-                .max(Comparator.comparingInt(KernelCryptoProvider::priority)
-                        .thenComparing(provider -> provider.getClass().getName()))
-                .orElse(null);
+        cryptoProvider = CommunityProviderDiscovery.highestPriority(
+                KernelCryptoProvider.class, KernelCryptoProvider::priority);
     }
 
     @Override

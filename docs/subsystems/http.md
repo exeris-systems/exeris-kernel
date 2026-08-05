@@ -199,6 +199,17 @@ shape: optional, application-bound, empty meaning "none supplied".
 same reason the decoder registry is captured there. The admission path runs on reactor threads that
 are not structured forks of the boot scope, so a request-time read would see an unbound slot.
 
+**Operational trap when adopting a policy.** Before 0.11 the driver's own `/health`, `/health/live`,
+`/health/ready` and `/db/ping` routes were unconditionally reachable — they did not start with
+`/secure`, so the admission test was always false for them. They are now ordinary routes: a policy
+with a fail-closed unmatched default denies them, and an orchestrator's liveness and readiness probes
+start failing against a perfectly healthy process. This bites the deployment that binds a policy but
+**no** `HTTP_SERVER_HANDLER`, since that is exactly when the driver installs its built-in health
+handler (`CommunityHttpSubsystem` falls back to `CommunityHttpHealthRoutes` only when the application
+supplied no handler). Declare those paths `permitAll()`. The kernel deliberately does not exempt them:
+ADR-061 obligation 5 rules that a driver-local notion of "public" would be a competing answer to a
+question the policy now owns.
+
 The policy answers `RouteRequirement` (`permitAll` / `authenticated` / `requiringAnyScope` /
 `requiringAllScopes`); `RouteAuthorizationEnforcer` in Core turns that plus the bound
 `PrincipalContext` into admit / `401` / `403`. Roles are not expressible here — see

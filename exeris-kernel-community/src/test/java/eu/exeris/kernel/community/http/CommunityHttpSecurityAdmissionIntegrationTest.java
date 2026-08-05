@@ -272,6 +272,52 @@ class CommunityHttpSecurityAdmissionIntegrationTest {
         assertThat(handlerInvoked.get()).isTrue();
     }
 
+    @Test
+    @DisplayName("No policy bound: every route reaches the handler — the pre-0.11 compatibility guarantee")
+    void noPolicyBoundAdmitsEverything() {
+        AtomicBoolean handlerInvoked = new AtomicBoolean(false);
+
+        // Deliberately NOT withHttpSecurityScope: this case is about the absence of HTTP_ROUTE_POLICY.
+        // The release notes lean on "an application that declares nothing behaves as it did before",
+        // and until now nothing exercised that branch end-to-end.
+        ScopedValue.where(KernelProviders.MEMORY_ALLOCATOR, ALLOCATOR)
+            .where(KernelProviders.SECURITY_PROVIDER,
+                new CommunitySecurityProvider(TestJwt.keySet(), TestJwt.EXPECTED_ISSUER, TestJwt.EXPECTED_AUDIENCE))
+            .run(() -> {
+                int port = nextFreePort();
+                HttpProvider provider = new CommunityHttpProvider();
+
+                try (HttpServerEngine server = provider.createServerEngine(serverConfig(port));
+                     HttpClientEngine client = provider.createClientEngine(clientConfig(port))) {
+                    server.setHandler(exchange -> {
+                        handlerInvoked.set(true);
+                        exchange.respond(HttpResponse.noBody(HttpStatus.OK, exchange.request().version()));
+                    });
+
+                    server.start();
+                    client.start();
+
+                    HttpResponse response = client.send(HttpRequest.noBody(
+                            HttpMethod.GET,
+                            "/api/orders",
+                            HttpVersion.HTTP_1_1,
+                            List.of()));
+                    try {
+                        assertThat(response.status().code())
+                                .as("the same path answers 401 once a policy declares a scope for it, so "
+                                        + "this 200 is the unbound-slot branch and nothing else")
+                                .isEqualTo(200);
+                    } finally {
+                        if (response.body() != null) {
+                            response.body().close();
+                        }
+                    }
+                }
+            });
+
+        assertThat(handlerInvoked.get()).isTrue();
+    }
+
     private static void withHttpSecurityScope(Runnable testCase) {
         ScopedValue.where(KernelProviders.MEMORY_ALLOCATOR, ALLOCATOR)
             .where(KernelProviders.SECURITY_PROVIDER,

@@ -70,6 +70,14 @@ public interface HttpRoutePolicy {
      * route still demands identity. {@link RouteRequirement#permitAll()} is fail-open: an undeclared
      * route is public, which is how a forgotten endpoint becomes an unauthenticated one.
      *
+     * <p><b>Before choosing fail-closed, account for the routes you did not write.</b> A deployment
+     * that binds a policy but no {@code HTTP_SERVER_HANDLER} gets the driver's built-in liveness,
+     * readiness and database-probe endpoints — and those are routes like any other, so a fail-closed
+     * unmatched answer denies them. An orchestrator's probes then fail against a healthy process.
+     * Declare them {@link RouteRequirement#permitAll()} explicitly. The kernel does not exempt them
+     * for you: a driver-local notion of "public" would be a second answer to the question this
+     * contract now owns, and the first thing it would do is disagree with yours.
+     *
      * @return the fail-closed answer, which is the one to prefer when unsure
      */
     static RouteRequirement unmatched() {

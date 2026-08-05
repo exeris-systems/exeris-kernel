@@ -12,9 +12,7 @@ import eu.exeris.kernel.spi.bootstrap.BootstrapPhase;
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.security.SecurityProvider;
 
-import java.util.Comparator;
 import java.util.List;
-import java.util.ServiceLoader;
 import java.util.function.UnaryOperator;
 
 /**
@@ -61,12 +59,8 @@ final class CommunitySecuritySubsystem extends AbstractCommunitySubsystem {
 
     @Override
     public void initialize() {
-        securityProvider = ServiceLoader.load(SecurityProvider.class)
-                .stream()
-                .map(ServiceLoader.Provider::get)
-                .max(Comparator.comparingInt(SecurityProvider::priority)
-                        .thenComparing(provider -> provider.getClass().getName()))
-                .orElse(null);
+        securityProvider = CommunityProviderDiscovery.highestPriority(
+                SecurityProvider.class, SecurityProvider::priority);
     }
 
     @Override
