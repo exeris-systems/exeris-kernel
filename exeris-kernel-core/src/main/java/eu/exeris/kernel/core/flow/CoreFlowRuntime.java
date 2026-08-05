@@ -619,12 +619,20 @@ final class CoreFlowRuntime { // NOPMD
         if (!instance.claimPendingWake()) {
             return;
         }
-        if (instance.isTerminal() || !isActiveLifecycle(instance) || !isCurrentLifecycle(instance)) {
+        if (instance.isTerminal() || !isActiveLifecycle(instance)) {
             return;
         }
         int startStep = instance.beginScheduleAfterWake();
         if (startStep < 0) {
             return;
+        }
+        // The instance is RUNNING again from here, so it must not remain in the parked index. The
+        // immediate path sheds that registration inside resolveParkedInstance; the deferred path
+        // reaches launch() without passing through it, so it sheds it here. Conditional on the
+        // remove, exactly as the schedule() path is, so a wake resolved through a branch that never
+        // registered cannot double-decrement.
+        if (parkedInstances.remove(instance.key()) != null) {
+            parkedFlows.decrement();
         }
         launch(instance, startStep);
     }
