@@ -144,6 +144,16 @@ public abstract class AbstractSagaRecoveryTck {
         return snapshotStore().load(ctx.instanceIdMost(), ctx.instanceIdLeast());
     }
 
+    /** Whether every instance's durable checkpoint has been reclaimed. */
+    private boolean allCheckpointsReclaimed(List<FlowContext> contexts) {
+        for (FlowContext ctx : contexts) {
+            if (loadSnapshot(ctx).isPresent()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     private boolean awaitCondition(BooleanSupplier condition, int timeoutSeconds) {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(timeoutSeconds);
         while (System.nanoTime() < deadline) {
@@ -452,8 +462,11 @@ public abstract class AbstractSagaRecoveryTck {
         private static final String DEF_NAME = "restart-under-load-saga";
         private static final String WORKER_THREAD_PREFIX = "exeris-flow-";
 
+        // 60s, not the suite's usual 30s: this method's own await budgets sum to 35s (10 + 5 + 15 +
+        // 5), so a 30s ceiling can kill it mid-await and report an anonymous timeout instead of the
+        // assertion that would name what actually went wrong.
         @Test
-        @Timeout(value = 30, unit = TimeUnit.SECONDS)
+        @Timeout(value = 60, unit = TimeUnit.SECONDS)
         @DisplayName("N parked snapshots survive close(); all resume to COMPLETED; no re-exec, no orphans, counters reset")
         void parkedFleetSurvivesForceCloseAndResumes() {
             int n = restartLoadCount();
@@ -560,6 +573,18 @@ public abstract class AbstractSagaRecoveryTck {
                     () -> engine.stats().completedFlows() >= expectedCompleted, 15))
                     .as("Rebuilt engine MUST drive all %d resumed instances to COMPLETED", expectedCompleted)
                     .isTrue();
+
+            // The counter above is not a proxy for the reclaim. complete() increments
+            // completedFlows, publishes progress, and only then deletes the checkpoint, so the
+            // fleet-size gate is satisfied while the last instance's row is still in the store —
+            // and reading it in the same breath makes this a race, not an assertion. Await the
+            // reclaim itself; the per-instance check below still names the offender if it never
+            // lands, rather than reporting an anonymous timeout.
+            // 5s, not the 15s the line above uses: that one waits for sixteen flows to execute,
+            // this one for a finalization step that is sub-millisecond in practice (50ms with the
+            // window widened far enough to reproduce the race). Deliberately not asserted — a
+            // timeout here falls through to the per-instance loop, which names the offender.
+            awaitCondition(() -> allCheckpointsReclaimed(parked), 5);
 
             for (FlowContext ctx : parked) {
                 assertThat(loadSnapshot(ctx))
