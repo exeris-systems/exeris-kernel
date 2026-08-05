@@ -17,6 +17,7 @@ import eu.exeris.kernel.spi.flow.model.FlowState;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Arrays;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -268,6 +269,7 @@ final class RuntimeFlowInstance implements RuntimeFlowContextStateView { // NOPM
                 key.instanceIdLeast(),
                 definitionName,
                 Math.max(0, stepIndex),
+                stepNameAt(Math.max(0, stepIndex)),
                 snapshotState,
                 Instant.now(),
                 timeoutInstant(),
@@ -276,6 +278,24 @@ final class RuntimeFlowInstance implements RuntimeFlowContextStateView { // NOPM
                 EMPTY_OPAQUE_STATE,
                 schemaVersion.get()
         );
+    }
+
+    /**
+     * Resolves the identity of the step this snapshot parks at (ADR-062).
+     *
+     * <p>Empty when the index addresses no step — which happens on completion, where
+     * {@code stepIndex == stepCount}. That is not a missing identity: a terminal snapshot is never
+     * resumed, so the resume-side identity check skips it before the absence could matter.
+     *
+     * @param stepIndex the index being recorded
+     * @return the step's name, or empty when the index addresses no step
+     */
+    private Optional<String> stepNameAt(int stepIndex) {
+        CoreFlowExecutionPlan currentPlan = plan;
+        if (currentPlan == null || stepIndex >= currentPlan.stepCount()) {
+            return Optional.empty();
+        }
+        return Optional.of(currentPlan.stepAt(stepIndex).name());
     }
 
     /**

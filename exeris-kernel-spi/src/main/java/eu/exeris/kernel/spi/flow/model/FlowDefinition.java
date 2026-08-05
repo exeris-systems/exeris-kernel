@@ -8,7 +8,9 @@
  */
 package eu.exeris.kernel.spi.flow.model;
 
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.Objects;
 
 /**
@@ -55,6 +57,28 @@ public record FlowDefinition(
             throw new IllegalArgumentException("maxRetries must be >= 0, got: " + maxRetries);
         }
         steps = List.copyOf(steps);  // defensive copy — immutable
+        requireDistinctStepNames(steps);
+    }
+
+    /**
+     * Rejects a definition whose steps do not have distinct names (ADR-062).
+     *
+     * <p>Step names identify a step across redeployments — a parked saga records the name it stopped
+     * at, and resume refuses to continue if the plan disagrees. Two steps sharing a name would make
+     * that comparison pass while binding to the wrong one, which is the failure the identity check
+     * exists to prevent. So uniqueness is enforced where definitions are built rather than assumed at
+     * the point it matters.
+     *
+     * @param steps the already-copied step list
+     */
+    private static void requireDistinctStepNames(List<FlowStepDescriptor> steps) {
+        Set<String> seen = HashSet.newHashSet(steps.size());
+        for (FlowStepDescriptor step : steps) {
+            if (!seen.add(step.name())) {
+                throw new IllegalArgumentException(
+                        "flow definition step names must be distinct — duplicate: " + step.name());
+            }
+        }
     }
 }
 

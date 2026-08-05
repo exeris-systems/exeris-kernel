@@ -510,11 +510,50 @@ final class CoreFlowRuntime { // NOPMD
         // step < 0 makes the invariant explicit (a corrupted snapshot writing a sentinel index also
         // fails closed, not just the redeploy-removed-step case).
         if (step < 0 || step >= stepCount) {
-            FlowSchemaMismatchEvent.emit(
-                    config.engineName(), persisted.definitionName(),
-                    persisted.instanceIdMost(), persisted.instanceIdLeast(), step, stepCount);
+            emitSchemaMismatch(persisted, step, stepCount, "STEP_OUT_OF_RANGE", null, null);
             throw FlowEngineException.schemaMismatch(config.engineName(), step);
         }
+        validateSnapshotStepIdentity(plan, persisted, step, stepCount);
+    }
+
+    /**
+     * Rejects a resume whose persisted step index is in range but no longer names the same step
+     * (ADR-062).
+     *
+     * <p>This is the case the bounds check cannot reach. A same-arity reorder leaves the index valid,
+     * so without comparing identities the saga would resume on a different step than it parked at —
+     * silently, and with the wrong compensation stack semantics behind it.
+     *
+     * @param plan      the resolved plan the resume would bind to
+     * @param persisted the snapshot being resumed
+     * @param step      the persisted step index, already known to be in range
+     * @param stepCount the plan's step count, for the diagnostic event
+     */
+    private void validateSnapshotStepIdentity(CoreFlowExecutionPlan plan,
+                                              FlowSnapshot persisted,
+                                              int step,
+                                              int stepCount) {
+        String planStepName = plan.stepAt(step).name();
+        Optional<String> persistedName = persisted.currentStepName();
+        if (persistedName.isEmpty()) {
+            // Written before 0.11. Resuming it would mean trusting the index again, which is the
+            // behaviour this guard exists to remove — so it is refused rather than assumed safe.
+            emitSchemaMismatch(persisted, step, stepCount, "STEP_IDENTITY_ABSENT", null, planStepName);
+            throw FlowEngineException.schemaMismatchStepIdentityAbsent(config.engineName(), step);
+        }
+        if (!persistedName.get().equals(planStepName)) {
+            emitSchemaMismatch(persisted, step, stepCount, "STEP_IDENTITY_MISMATCH",
+                    persistedName.get(), planStepName);
+            throw FlowEngineException.schemaMismatchStepIdentity(config.engineName(), step);
+        }
+    }
+
+    private void emitSchemaMismatch(FlowSnapshot persisted, int step, int stepCount,
+                                    String reason, String persistedStepName, String planStepName) {
+        FlowSchemaMismatchEvent.emit(
+                config.engineName(), persisted.definitionName(),
+                persisted.instanceIdMost(), persisted.instanceIdLeast(), step, stepCount,
+                reason, persistedStepName, planStepName);
     }
 
     private void launch(RuntimeFlowInstance instance, int startStep) {

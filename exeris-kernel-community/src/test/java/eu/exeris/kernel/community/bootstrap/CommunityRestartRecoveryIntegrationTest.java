@@ -103,6 +103,7 @@ class CommunityRestartRecoveryIntegrationTest {
                 id.getLeastSignificantBits(),
                 "restart-recovery-saga",
                 currentStep,
+                Optional.of("step-" + currentStep),
                 FlowState.PARKED,
                 Instant.parse("2026-06-18T10:00:00Z"),
                 Instant.parse("2026-06-18T11:00:00Z"),

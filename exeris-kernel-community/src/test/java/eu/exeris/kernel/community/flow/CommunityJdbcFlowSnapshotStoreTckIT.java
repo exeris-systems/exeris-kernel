@@ -31,6 +31,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.time.Instant;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -218,6 +219,7 @@ class CommunityJdbcFlowSnapshotStoreTckIT extends AbstractDistributedFlowSnapsho
                 id.getLeastSignificantBits(),
                 "occ-jfr-saga",
                 currentStep,
+                Optional.of("step-" + currentStep),
                 state,
                 Instant.parse("2026-05-08T10:00:00Z"),
                 Instant.parse("2026-05-08T11:00:00Z"),
@@ -233,6 +235,7 @@ class CommunityJdbcFlowSnapshotStoreTckIT extends AbstractDistributedFlowSnapsho
                 loaded.instanceIdLeast(),
                 loaded.definitionName(),
                 newStep,
+                Optional.of("step-" + newStep),
                 newState,
                 loaded.lastUpdate(),
                 loaded.timeout(),

@@ -40,6 +40,8 @@ public final class FlowEngineException extends ExerisKernelException {
     private static final String REASON_QUEUE_FULL   = "QUEUE_FULL";
     private static final String REASON_STALE_VERSION = "STALE_VERSION";
     private static final String REASON_STEP_OUT_OF_RANGE = "STEP_OUT_OF_RANGE";
+    private static final String REASON_STEP_IDENTITY_MISMATCH = "STEP_IDENTITY_MISMATCH";
+    private static final String REASON_STEP_IDENTITY_ABSENT = "STEP_IDENTITY_ABSENT";
 
     public FlowEngineException(String message) {
         super(KernelErrorCodes.EX_FLOW_7002, message, (Throwable) null);
@@ -122,8 +124,9 @@ public final class FlowEngineException extends ExerisKernelException {
      * stale step index into a different step (a data-corruption-class outcome). Manual intervention /
      * a definition-versioned migration (the v0.11 epic) is required.
      *
-     * <p>This is the bounds/arity guard; full step-identity validation (catching same-arity reorders)
-     * arrives with definition versioning. Documented in {@code docs/subsystems/flow.md}.
+     * <p>This is the bounds/arity guard — the persisted index no longer addresses a step at all.
+     * The same-arity reorder, where the index still addresses <em>something</em>, is
+     * {@link #schemaMismatchStepIdentity} (ADR-062). Documented in {@code docs/subsystems/flow.md}.
      *
      * <p>rawArgs layout: {@code [engineName, "SCHEMA_MISMATCH", "STEP_OUT_OF_RANGE", persistedStep]}.
      *
@@ -134,6 +137,43 @@ public final class FlowEngineException extends ExerisKernelException {
     public static FlowEngineException schemaMismatch(String engineName, int persistedStep) {
         return new FlowEngineException(KernelErrorCodes.EX_FLOW_7002, MSG_SCHEMA_MISMATCH, null,
                 engineName, "SCHEMA_MISMATCH", REASON_STEP_OUT_OF_RANGE, persistedStep);
+    }
+
+    /**
+     * Raised when a parked saga's persisted step index is in range but names a different step than
+     * the one it parked at — the same-arity reorder the bounds guard cannot see (ADR-062).
+     *
+     * <p>Separate reason from {@code STEP_OUT_OF_RANGE} because the operator response differs: one
+     * says the step is gone, the other says the step at that position is now something else.
+     *
+     * <p>rawArgs layout: {@code [engineName, "SCHEMA_MISMATCH", "STEP_IDENTITY_MISMATCH", persistedStep]}.
+     *
+     * @param engineName    the engine name
+     * @param persistedStep the persisted resume step index whose identity no longer matches
+     * @return the exception
+     * @since 0.11.0
+     */
+    public static FlowEngineException schemaMismatchStepIdentity(String engineName, int persistedStep) {
+        return new FlowEngineException(KernelErrorCodes.EX_FLOW_7002, MSG_SCHEMA_MISMATCH, null,
+                engineName, "SCHEMA_MISMATCH", REASON_STEP_IDENTITY_MISMATCH, persistedStep);
+    }
+
+    /**
+     * Raised when a parked saga carries no step identity at all — a snapshot written before 0.11.
+     *
+     * <p>It is rejected rather than resumed by position, because admitting it would leave a live route
+     * back to the behaviour ADR-062 removes. Operators drain in-flight sagas before upgrading.
+     *
+     * <p>rawArgs layout: {@code [engineName, "SCHEMA_MISMATCH", "STEP_IDENTITY_ABSENT", persistedStep]}.
+     *
+     * @param engineName    the engine name
+     * @param persistedStep the persisted resume step index that cannot be validated
+     * @return the exception
+     * @since 0.11.0
+     */
+    public static FlowEngineException schemaMismatchStepIdentityAbsent(String engineName, int persistedStep) {
+        return new FlowEngineException(KernelErrorCodes.EX_FLOW_7002, MSG_SCHEMA_MISMATCH, null,
+                engineName, "SCHEMA_MISMATCH", REASON_STEP_IDENTITY_ABSENT, persistedStep);
     }
 }
 

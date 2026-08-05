@@ -8,6 +8,12 @@
  */
 package eu.exeris.kernel.community.persistence;
 
+import org.junit.jupiter.api.Nested;
+
+import java.util.List;
+
+import java.util.ArrayList;
+
 import eu.exeris.kernel.spi.persistence.PersistenceConfig;
 import eu.exeris.kernel.spi.persistence.PersistenceConnection;
 import eu.exeris.kernel.spi.persistence.QueryResult;
@@ -68,5 +74,49 @@ class CommunityPersistenceEngineMigrationTest {
                 0,
                 Map.of("run.migrations", Boolean.toString(runMigrations))
         );
+    }
+
+    @Nested
+    @DisplayName("Migration ordering")
+    class Ordering {
+
+        @Test
+        @DisplayName("migrations run in version order, not string order")
+        void migrationsRunInVersionOrder() {
+            List<String> shuffled = new ArrayList<>(List.of(
+                    "db/migration/V0.11.0__add_saga_step_name.sql",
+                    "db/migration/V0.5.0__create_outbox.sql",
+                    "db/migration/V0.10.0__create_event_log.sql",
+                    "db/migration/V0.7.0__create_saga_state.sql"));
+
+            shuffled.sort(CommunityPersistenceMigrationRunner.MIGRATION_ORDER);
+
+            assertThat(shuffled)
+                    .as("string order puts V0.10.0 and V0.11.0 ahead of V0.5.0, because '1' < '5'. "
+                            + "That was invisible while every script only created its own table with "
+                            + "IF NOT EXISTS; the first ALTER against an earlier script's table fails "
+                            + "outright, which is how it was found")
+                    .containsExactly(
+                            "db/migration/V0.5.0__create_outbox.sql",
+                            "db/migration/V0.7.0__create_saga_state.sql",
+                            "db/migration/V0.10.0__create_event_log.sql",
+                            "db/migration/V0.11.0__add_saga_step_name.sql");
+        }
+
+        @Test
+        @DisplayName("an unversioned resource sorts last rather than failing the boot")
+        void unversionedResourceSortsLast() {
+            List<String> paths = new ArrayList<>(List.of(
+                    "db/migration/readme.txt",
+                    "db/migration/V0.7.0__create_saga_state.sql"));
+
+            paths.sort(CommunityPersistenceMigrationRunner.MIGRATION_ORDER);
+
+            assertThat(paths)
+                    .as("a migration runner is not the right place to fail a boot over a file name")
+                    .containsExactly(
+                            "db/migration/V0.7.0__create_saga_state.sql",
+                            "db/migration/readme.txt");
+        }
     }
 }

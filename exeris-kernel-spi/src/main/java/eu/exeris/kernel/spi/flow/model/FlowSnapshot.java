@@ -11,6 +11,7 @@ package eu.exeris.kernel.spi.flow.model;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.Objects;
+import java.util.Optional;
 
 /**
  * Immutable snapshot of a flow instance's persisted state.
@@ -44,6 +45,10 @@ import java.util.Objects;
  * @param instanceIdLeast   least-significant bits of the 128-bit flow instance UUID
  * @param definitionName    name of the {@link FlowDefinition} this instance was compiled from;
  *                          must not be {@code null} or blank
+ * @param currentStepName   identity of the step {@code currentStep} pointed at when the snapshot
+ *                          was written (ADR-062). {@link Optional#empty()} means the snapshot predates
+ *                          step-identity recording — such a snapshot cannot be validated on resume and
+ *                          is rejected fail-closed rather than replayed by position
  * @param currentStep       zero-based index of the step to resume execution at;
  *                          must be {@code >= 0}
  * @param state             current {@link FlowState}
@@ -62,6 +67,7 @@ public record FlowSnapshot(
         long      instanceIdLeast,
         String    definitionName,
         int       currentStep,
+        Optional<String> currentStepName,
         FlowState state,
         Instant   lastUpdate,
         Instant   timeout,
@@ -118,6 +124,13 @@ public record FlowSnapshot(
             throw new IllegalArgumentException(
                     "currentStep must be >= 0 (zero-based step index), got: " + currentStep);
         }
+        Objects.requireNonNull(currentStepName,
+                "currentStepName must not be null — use Optional.empty() for a pre-0.11 snapshot");
+        if (currentStepName.isPresent() && currentStepName.get().isBlank()) {
+            // A blank identity would compare unequal to every real step name and read as corruption
+            // rather than as absence, so it is rejected at construction where the cause is still known.
+            throw new IllegalArgumentException("currentStepName must not be blank when present");
+        }
         if (stackPointer < 0 || stackPointer > compensationStack.length) {
             throw new IllegalArgumentException(
                     "stackPointer out of bounds: " + stackPointer
@@ -158,7 +171,11 @@ public record FlowSnapshot(
             int       stackPointer,
             byte[]    opaqueState
     ) {
-        this(instanceIdMost, instanceIdLeast, definitionName, currentStep, state,
+        // Identity is absent by construction here: this shim preserves a call shape that predates
+        // ADR-062 and cannot know the step's name. The resulting snapshot is rejected fail-closed on
+        // resume rather than replayed by position — deliberately, so the shim cannot become a quiet
+        // route back to positional resume.
+        this(instanceIdMost, instanceIdLeast, definitionName, currentStep, Optional.empty(), state,
              lastUpdate, timeout, compensationStack, stackPointer, opaqueState,
              SCHEMA_VERSION_INITIAL);
     }
