@@ -128,6 +128,16 @@ The check is binding-agnostic — both Community (heap) and Enterprise (off-heap
 - **Parked-reschedule no-op.** Scheduling a context whose `state()` is already `PARKED` MUST register the instance in the parked map without spawning step execution (`PARKED_SCHEDULE_NOOP` path).
 - **Unknown-instance lookup.** `FlowScheduler.lookupParked(...)` for an instance that was never scheduled MUST return `Optional.empty()` without throwing, regardless of whether persistence is bound.
 
+### Deferred Wake (since 0.11)
+
+**A wake that cannot be scheduled yet MUST still be honoured.** `FlowScheduler.wake()` promises to re-submit the flow for execution and expressly permits an implementation to tolerate the immediate schedule → park → wake window rather than throwing. Tolerating that window is not the same as discarding the request: until 0.11 `CoreFlowRuntime` did neither, so a wake landing while a run still owned the instance was dropped with no exception, no event, and no resumption. `AbstractFlowSchedulerTck$BasicScheduling#wakeDuringRunIsNotLost` pins the obligation — it holds a step on a latch so the wake provably lands mid-run, then asserts the flow completes.
+
+The consequence was invisible, which is what made it dangerous. A choreography wake is one event per business trigger, not a poll, so a dropped request strands the saga until some unrelated event happens to arrive. And because the instance stays discoverable through `lookupParked` (it remains in the live index), the miss-path `WakeOnLoadFallbackEvent` never fires — nothing marked the loss.
+
+Core records the refused wake on the instance under the same monitor that guards its scheduled flag, and the draining run re-submits it after releasing its own bookkeeping. Two refusals stay deliberately silent because neither loses work: a **terminal** instance has already finished, and a **superseded lifecycle generation** means the engine restarted underneath the run — re-launching there would resurrect a reclaimed snapshot row rather than resume anything.
+
+**Enterprise obligation.** The ring-buffer scheduler has the same window on its CAS-enqueue path (a wake enqueued while a consumer still owns the slot) and inherits this contract through the same TCK case.
+
 ### Cross-Restart Choreography Wake
 
 For choreography-driven wake, the in-memory parked map remains the O(1) fast path during a live runtime.

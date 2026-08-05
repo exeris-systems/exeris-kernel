@@ -38,6 +38,8 @@ final class RuntimeFlowInstance implements RuntimeFlowContextStateView { // NOPM
     private volatile CoreFlowExecutionPlan plan;
     private volatile EventEngine eventEngine;
     private volatile FlowState state;
+    /** A wake refused because a run still held the instance; guarded by {@code monitor}. */
+    private boolean wakePending;
     private volatile int currentStep;
     private volatile long timeoutNanos;
     private int[] compensationStack;
@@ -249,12 +251,39 @@ final class RuntimeFlowInstance implements RuntimeFlowContextStateView { // NOPM
 
     public int beginScheduleAfterWake() {
         synchronized (monitor) {
-            if (scheduled.get() || isTerminal()) {
+            if (isTerminal()) {
+                return -1;
+            }
+            if (scheduled.get()) {
+                // A run still owns this instance, so it cannot be re-submitted yet. Recording the
+                // intent under the same monitor that guards `scheduled` makes the refusal and the
+                // deferral atomic: FlowScheduler.wake() promises to re-submit the flow for
+                // execution, and dropping the request here left a parked saga stranded with no
+                // trace — a choreography wake is one event per business trigger, not a poll.
+                wakePending = true;
                 return -1;
             }
             scheduled.set(true);
             state = FlowState.RUNNING;
             return Math.min(currentStep + 1, plan.stepCount());
+        }
+    }
+
+    /**
+     * Claims a wake that arrived while a run was still in flight, if there was one.
+     *
+     * <p>Called once by the draining run so the deferred wake is honoured exactly once; a second
+     * caller sees nothing pending.
+     *
+     * @return {@code true} if a deferred wake was claimed by this caller
+     */
+    public boolean claimPendingWake() {
+        synchronized (monitor) {
+            if (!wakePending) {
+                return false;
+            }
+            wakePending = false;
+            return true;
         }
     }
 

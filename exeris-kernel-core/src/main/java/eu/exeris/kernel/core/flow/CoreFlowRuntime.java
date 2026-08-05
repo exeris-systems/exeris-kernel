@@ -599,7 +599,42 @@ final class CoreFlowRuntime { // NOPMD
                 decrementLifecycleCounterOnExit(activeFlows);
             }
             runningThreads.remove(Thread.currentThread());
+            honourDeferredWake(instance);
         }
+    }
+
+    /**
+     * Re-submits a wake that arrived while this run still held the instance.
+     *
+     * <p>Ordering is load-bearing: this runs after the exiting thread has deregistered itself and
+     * released its lifecycle counters, so {@code close()}'s bounded join never observes a half-torn
+     * set. The re-submission hands off to a fresh Virtual Thread rather than nesting, so this thread
+     * still exits immediately.
+     *
+     * <p>Refusals here are legitimately silent. A terminal instance has already finished — there is
+     * nothing to wake. A superseded lifecycle generation means the engine restarted underneath this
+     * run, and re-launching would resurrect a reclaimed snapshot row rather than resume anything.
+     */
+    private void honourDeferredWake(RuntimeFlowInstance instance) {
+        if (!instance.claimPendingWake()) {
+            return;
+        }
+        if (instance.isTerminal() || !isActiveLifecycle(instance)) {
+            return;
+        }
+        int startStep = instance.beginScheduleAfterWake();
+        if (startStep < 0) {
+            return;
+        }
+        // The instance is RUNNING again from here, so it must not remain in the parked index. The
+        // immediate path sheds that registration inside resolveParkedInstance; the deferred path
+        // reaches launch() without passing through it, so it sheds it here. Conditional on the
+        // remove, exactly as the schedule() path is, so a wake resolved through a branch that never
+        // registered cannot double-decrement.
+        if (parkedInstances.remove(instance.key()) != null) {
+            parkedFlows.decrement();
+        }
+        launch(instance, startStep);
     }
 
     /**
