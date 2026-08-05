@@ -13,6 +13,7 @@ import eu.exeris.kernel.spi.flow.FlowDefinitionBuilder;
 import eu.exeris.kernel.spi.flow.FlowEngineConfig;
 import eu.exeris.kernel.spi.flow.FlowExecutionPlanFactory;
 import eu.exeris.kernel.spi.flow.model.FlowDefinition;
+import eu.exeris.kernel.spi.flow.model.FlowDefinitionMigration;
 import eu.exeris.kernel.spi.flow.model.FlowExecutionPlan;
 import eu.exeris.kernel.spi.flow.model.FlowStepAction;
 import eu.exeris.kernel.spi.flow.model.FlowStepDescriptor;
@@ -34,16 +35,19 @@ final class CoreFlowPlanFactory implements FlowExecutionPlanFactory {
     private final FlowEngineConfig config;
     private final CoreFlowRegistry registry;
     private final ConcurrentMap<PlanKey, CoreFlowExecutionPlan> planCatalog;
+    private final ConcurrentMap<MigrationKey, FlowDefinitionMigration> migrations;
     private final Runnable onPlanCompiled;
     private final ConcurrentMap<String, List<FlowTransitionDescriptor>> transitionsByDefinition =
             new ConcurrentHashMap<>();
 
     /* default */ CoreFlowPlanFactory(FlowEngineConfig config, CoreFlowRegistry registry,
                                       ConcurrentMap<PlanKey, CoreFlowExecutionPlan> planCatalog,
+                                      ConcurrentMap<MigrationKey, FlowDefinitionMigration> migrations,
                                       Runnable onPlanCompiled) {
         this.config = Objects.requireNonNull(config, "config");
         this.registry = Objects.requireNonNull(registry, "registry");
         this.planCatalog = Objects.requireNonNull(planCatalog, "planCatalog");
+        this.migrations = Objects.requireNonNull(migrations, "migrations");
         this.onPlanCompiled = Objects.requireNonNull(onPlanCompiled, "onPlanCompiled");
     }
 
@@ -232,4 +236,29 @@ final class CoreFlowPlanFactory implements FlowExecutionPlanFactory {
             return definition;
         }
     }
+    /**
+     * Registers an adjacent-hop migration (ADR-064). Storage and validation only in this slice — the
+     * chain that consumes it lives in {@code CoreFlowRuntime}.
+     */
+    @Override
+    public void registerMigration(String definitionName, int fromVersion, FlowDefinitionMigration migration) {
+        Objects.requireNonNull(definitionName, "definitionName must not be null");
+        Objects.requireNonNull(migration, "migration must not be null");
+        if (definitionName.isBlank()) {
+            throw new IllegalArgumentException("definitionName must not be blank");
+        }
+        if (fromVersion < FlowDefinition.INITIAL_VERSION) {
+            throw new IllegalArgumentException(
+                    "fromVersion must be >= " + FlowDefinition.INITIAL_VERSION + ", got: " + fromVersion);
+        }
+        MigrationKey key = new MigrationKey(definitionName, fromVersion);
+        if (migrations.putIfAbsent(key, migration) != null) {
+            // Silently replacing would mean a redeploy could change how in-flight sagas are moved
+            // without anyone stating it — the transform is as load-bearing as the definition itself.
+            throw new FlowEngineException(
+                    "A migration is already registered for definition '" + definitionName
+                    + "' version " + fromVersion);
+        }
+    }
+
 }

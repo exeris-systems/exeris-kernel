@@ -170,6 +170,47 @@ public record FlowSnapshot(
     }
 
     /**
+     * The canonical constructor as it stood in 0.10.0 — restored, not left broken.
+     *
+     * <p>{@code eu.exeris.kernel.spi.flow} is declared <b>stable since 0.5.0</b> in
+     * {@code docs/stability-matrix.md}. v0.11 adds two components to this record ({@code
+     * currentStepName} for ADR-062, {@code definitionVersion} for ADR-064), which moves the canonical
+     * constructor from eleven parameters to thirteen and would otherwise leave code compiled against
+     * 0.10.0 unable to construct a snapshot at all. This overload restores that exact descriptor.
+     *
+     * <p>Both new components default to their <b>fail-closed</b> sentinels — {@link Optional#empty()}
+     * and {@link #VERSION_ABSENT} — so a snapshot built this way is refused on resume rather than
+     * replayed by position against whichever definition happens to be registered. The compatibility
+     * shim therefore cannot become the quiet route back that ADR-062 and ADR-064 each closed; it buys
+     * a caller compilation, not a bypass.
+     *
+     * <p><b>What this does not restore.</b> Adding a component to a record changes its component list,
+     * and no overload can hide that: record deconstruction patterns and reflection over
+     * {@code RecordComponent[]} still observe a different shape. That residue is irreducible for a
+     * record and is recorded in the release notes rather than papered over here.
+     *
+     * @since 0.11.0
+     */
+    @SuppressWarnings("PMD.ExcessiveParameterList") // compatibility bridge — preserves the 0.10.0 shape
+    public FlowSnapshot(
+            long      instanceIdMost,
+            long      instanceIdLeast,
+            String    definitionName,
+            int       currentStep,
+            FlowState state,
+            Instant   lastUpdate,
+            Instant   timeout,
+            int[]     compensationStack,
+            int       stackPointer,
+            byte[]    opaqueState,
+            long      schemaVersion
+    ) {
+        this(instanceIdMost, instanceIdLeast, definitionName, VERSION_ABSENT, currentStep,
+             Optional.empty(), state, lastUpdate, timeout, compensationStack, stackPointer,
+             opaqueState, schemaVersion);
+    }
+
+    /**
      * Convenience constructor that omits {@link #schemaVersion}, defaulting it to
      * {@link #SCHEMA_VERSION_INITIAL}. Preserves the pre-0.7 call shape so existing
      * callers (e.g., the runtime engine's {@code toSnapshot} path and in-memory stores)

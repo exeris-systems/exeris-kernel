@@ -12,7 +12,9 @@ import eu.exeris.kernel.spi.exceptions.flow.FlowEngineException;
 import eu.exeris.kernel.spi.flow.FlowEngine;
 import eu.exeris.kernel.spi.flow.model.FlowContext;
 import eu.exeris.kernel.spi.flow.model.FlowDefinition;
+import eu.exeris.kernel.spi.flow.model.FlowDefinitionMigration;
 import eu.exeris.kernel.spi.flow.model.FlowExecutionPlan;
+import eu.exeris.kernel.spi.flow.model.FlowMigrationState;
 import eu.exeris.kernel.spi.flow.model.FlowOutcome;
 import eu.exeris.kernel.spi.flow.model.FlowSnapshot;
 import eu.exeris.kernel.spi.flow.model.FlowSnapshotStore;
@@ -296,6 +298,207 @@ public abstract class AbstractFlowDefinitionVersioningTck {
     private static Object reasonOf(FlowEngineException ex) {
         Object[] args = ex.rawArgs();
         return args.length > 2 ? args[2] : null;
+    }
+
+    @Nested
+    @DisplayName("In-flight migration")
+    class Migration {
+
+        /** Identity transform: the versions differ but the saga sits at the same named step. */
+        private FlowMigrationState sameStep(FlowMigrationState parked) {
+            return parked;
+        }
+
+        @Test
+        @Timeout(value = 30, unit = TimeUnit.SECONDS)
+        @DisplayName("a single hop moves a saga parked under v1 onto the registered v2")
+        void singleHopMigrationResumesOnTargetVersion() {
+            AtomicInteger v2Executions = new AtomicInteger();
+            register(2, v2Executions);
+            engine.plans().registerMigration(DEFINITION, 1, this::sameStep);
+
+            UUID id = UUID.randomUUID();
+            snapshotStore().save(parkedSnapshot(id, DEFINITION, 1));
+
+            engine.scheduler().wake(contextFor(id));
+            awaitTrue(() -> v2Executions.get() > 0);
+
+            assertThat(v2Executions.get())
+                    .as("v1 is no longer hosted but a path to v2 exists, so the saga moves rather "
+                            + "than being refused")
+                    .isEqualTo(1);
+        }
+
+        @Test
+        @Timeout(value = 30, unit = TimeUnit.SECONDS)
+        @DisplayName("adjacent hops chain: v1 reaches a registered v3 through two transforms")
+        void chainedMigrationCrossesTwoHops() {
+            AtomicInteger v3Executions = new AtomicInteger();
+            register(3, v3Executions);
+            engine.plans().registerMigration(DEFINITION, 1, this::sameStep);
+            engine.plans().registerMigration(DEFINITION, 2, this::sameStep);
+
+            UUID id = UUID.randomUUID();
+            snapshotStore().save(parkedSnapshot(id, DEFINITION, 1));
+
+            engine.scheduler().wake(contextFor(id));
+            awaitTrue(() -> v3Executions.get() > 0);
+
+            assertThat(v3Executions.get())
+                    .as("an application registers n-1 adjacent transforms, not every pair; the "
+                            + "runtime is what walks them")
+                    .isEqualTo(1);
+        }
+
+        @Test
+        @Timeout(value = 30, unit = TimeUnit.SECONDS)
+        @DisplayName("a missing link mid-chain is refused, and the row survives it")
+        void missingLinkIsRefused() {
+            AtomicInteger v3Executions = new AtomicInteger();
+            register(3, v3Executions);
+            engine.plans().registerMigration(DEFINITION, 2, this::sameStep);
+
+            UUID id = UUID.randomUUID();
+            snapshotStore().save(parkedSnapshot(id, DEFINITION, 1));
+
+            assertThatThrownBy(() -> engine.scheduler().wake(contextFor(id)))
+                    .as("no 1 to 2 transform exists, so there is no path; a best-effort jump to the "
+                            + "2 to 3 hop would be exactly the guess this epic removes")
+                    .isInstanceOfSatisfying(FlowEngineException.class, ex ->
+                            assertThat(reasonOf(ex))
+                                    .isEqualTo(FlowEngineException.REASON_DEFINITION_VERSION_UNRESOLVED));
+            assertThat(snapshotStore().load(id.getMostSignificantBits(), id.getLeastSignificantBits()))
+                    .as("rejection must not mutate the row — registering the missing transform and "
+                            + "waking again is the documented remedy, and it needs the row intact")
+                    .isPresent();
+            assertThat(v3Executions.get()).isZero();
+        }
+
+        @Test
+        @Timeout(value = 30, unit = TimeUnit.SECONDS)
+        @DisplayName("a transform that throws fails the wake closed and leaves the row recoverable")
+        void throwingMigrationFailsClosed() {
+            AtomicInteger v2Executions = new AtomicInteger();
+            register(2, v2Executions);
+            engine.plans().registerMigration(DEFINITION, 1, _ -> {
+                throw new IllegalStateException("transform is broken");
+            });
+
+            UUID id = UUID.randomUUID();
+            snapshotStore().save(parkedSnapshot(id, DEFINITION, 1));
+
+            assertThatThrownBy(() -> engine.scheduler().wake(contextFor(id)))
+                    .as("application code failing on the resume path must surface, not be swallowed "
+                            + "into a wake that quietly does nothing")
+                    .isInstanceOf(RuntimeException.class);
+            assertThat(snapshotStore().load(id.getMostSignificantBits(), id.getLeastSignificantBits()))
+                    .as("a broken transform is fixable; destroying the row would make it terminal")
+                    .isPresent();
+            assertThat(v2Executions.get()).isZero();
+        }
+
+        @Test
+        @Timeout(value = 30, unit = TimeUnit.SECONDS)
+        @DisplayName("a transform naming a step the target plan does not have is refused")
+        void migrationEmittingUnknownStepIsRefused() {
+            AtomicInteger v2Executions = new AtomicInteger();
+            register(2, v2Executions);
+            engine.plans().registerMigration(DEFINITION, 1, parked -> new FlowMigrationState(
+                    parked.parkedStep(), "step-that-does-not-exist",
+                    parked.compensationStack(), parked.stackPointer(), parked.opaqueState()));
+
+            UUID id = UUID.randomUUID();
+            snapshotStore().save(parkedSnapshot(id, DEFINITION, 1));
+
+            assertThatThrownBy(() -> engine.scheduler().wake(contextFor(id)))
+                    .as("ADR-064 obligation 9 — the transform runs first and its output is checked by "
+                            + "the same guard as any resume, so application code on this path is not "
+                            + "a new trust boundary")
+                    .isInstanceOfSatisfying(FlowEngineException.class, ex ->
+                            assertThat(reasonOf(ex))
+                                    .isEqualTo(FlowEngineException.REASON_STEP_IDENTITY_MISMATCH));
+            assertThat(v2Executions.get()).isZero();
+        }
+
+        @Test
+        @Timeout(value = 30, unit = TimeUnit.SECONDS)
+        @DisplayName("a successful migration is persisted — the row stops naming the old version")
+        void migrationResultIsPersisted() {
+            // The resumed step PARKS rather than completing, on purpose. A completing saga has its
+            // row reclaimed by complete(), so the version would be unobservable after the fact and
+            // the assertion would read "empty" whether or not the migration persisted anything.
+            AtomicInteger v2Executions = new AtomicInteger();
+            FlowDefinition base = engine.plans().newDefinition(DEFINITION)
+                    .step(PARKED_STEP, _ -> FlowOutcome.PARK, null)
+                    .step("resumed-step", _ -> {
+                        v2Executions.incrementAndGet();
+                        return FlowOutcome.PARK;
+                    }, null)
+                    .transition(0, 1)
+                    .build();
+            engine.plans().compile(new FlowDefinition(
+                    base.name(), 2, base.steps(), base.timeoutDurationNanos(), base.maxRetries()));
+            engine.plans().registerMigration(DEFINITION, 1, this::sameStep);
+
+            UUID id = UUID.randomUUID();
+            snapshotStore().save(parkedSnapshot(id, DEFINITION, 1));
+
+            engine.scheduler().wake(contextFor(id));
+            awaitTrue(() -> v2Executions.get() > 0);
+
+            assertThat(snapshotStore().load(id.getMostSignificantBits(), id.getLeastSignificantBits())
+                    .map(FlowSnapshot::definitionVersion))
+                    .as("ADR-064 amendment A3: not persisting would leave the row asserting a version "
+                            + "the saga no longer runs, and would make transform purity an unstated "
+                            + "obligation because the chain would re-run on every wake")
+                    .hasValue(2);
+        }
+    }
+
+    @Nested
+    @DisplayName("SPI stability (spi.flow is stable since 0.5.0)")
+    class StabilityCompatibility {
+
+        /**
+         * The 0.10.0 canonical constructor still exists, and still fails closed.
+         *
+         * <p>Two obligations that pull in opposite directions and must both hold. `spi.flow` is
+         * declared stable, so code compiled against 0.10.0 must still be able to construct a
+         * snapshot. And ADR-062/ADR-064 both refuse a snapshot that records no step identity or no
+         * definition version — so the compatibility bridge must not be a way to obtain a snapshot
+         * that resumes anyway. A shim defaulting to "version 1, step name from the plan" would
+         * satisfy the first and quietly destroy the second.
+         */
+        @Test
+        @Timeout(value = 30, unit = TimeUnit.SECONDS)
+        @DisplayName("the 0.10.0 constructor still compiles and its snapshot is refused on resume")
+        void legacyConstructorSurvivesAndStillFailsClosed() {
+            AtomicInteger executions = new AtomicInteger();
+            register(1, executions);
+
+            UUID id = UUID.randomUUID();
+            FlowSnapshot legacy = new FlowSnapshot(
+                    id.getMostSignificantBits(), id.getLeastSignificantBits(),
+                    DEFINITION, 0, FlowState.PARKED,
+                    Instant.now(), Instant.now().plusSeconds(60L),
+                    new int[0], 0, new byte[0], FlowSnapshot.SCHEMA_VERSION_INITIAL);
+
+            assertThat(legacy.definitionVersion())
+                    .as("the bridge must default to the fail-closed sentinel, never to a real version")
+                    .isEqualTo(FlowSnapshot.VERSION_ABSENT);
+            assertThat(legacy.currentStepName())
+                    .as("and to absent identity, for the same reason ADR-062 gave")
+                    .isEmpty();
+
+            snapshotStore().save(legacy);
+            assertThatThrownBy(() -> engine.scheduler().wake(contextFor(id)))
+                    .as("compiling against 0.10.0 buys a caller compilation, not a bypass of the "
+                            + "guards this milestone added")
+                    .isInstanceOfSatisfying(FlowEngineException.class, ex ->
+                            assertThat(reasonOf(ex))
+                                    .isEqualTo(FlowEngineException.REASON_DEFINITION_VERSION_ABSENT));
+            assertThat(executions.get()).isZero();
+        }
     }
 
     private static void awaitTrue(java.util.function.BooleanSupplier condition) {

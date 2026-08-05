@@ -9,6 +9,7 @@
 package eu.exeris.kernel.spi.flow;
 
 import eu.exeris.kernel.spi.flow.model.FlowDefinition;
+import eu.exeris.kernel.spi.flow.model.FlowDefinitionMigration;
 import eu.exeris.kernel.spi.flow.model.FlowExecutionPlan;
 
 /**
@@ -73,5 +74,28 @@ public interface FlowExecutionPlanFactory {
      *         (e.g., slab pool exhausted in Enterprise, or invalid step graph topology)
      */
     FlowExecutionPlan compile(FlowDefinition definition);
+
+    /**
+     * Registers a transform that moves a parked saga from {@code fromVersion} to
+     * {@code fromVersion + 1} (ADR-064).
+     *
+     * <p>Adjacent hops only, enforced here rather than discovered later: the runtime chains
+     * registered hops to reach a version it hosts, and requiring adjacency at registration is what
+     * makes that chain terminate by construction. It also keeps every lookup a point-get — the plan
+     * catalogue offers no name-to-versions index, and adding a scan to the resume success path would
+     * cost more than the feature is worth.
+     *
+     * <p>Registering is optional and additive. An application that registers none keeps the v0.11
+     * behaviour: a saga parked under a version this engine no longer hosts is refused rather than
+     * moved, and the refusal leaves the row recoverable.
+     *
+     * @param definitionName the definition these versions belong to; must not be {@code null} or blank
+     * @param fromVersion    the version being migrated away from; must be {@code >= 1}
+     * @param migration      the transform; must not be {@code null}
+     * @throws eu.exeris.kernel.spi.exceptions.flow.FlowEngineException if a migration is already
+     *         registered for that definition and version
+     * @since 0.11.0
+     */
+    void registerMigration(String definitionName, int fromVersion, FlowDefinitionMigration migration);
 }
 

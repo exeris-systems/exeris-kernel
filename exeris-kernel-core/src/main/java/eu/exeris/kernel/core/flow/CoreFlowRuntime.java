@@ -17,6 +17,8 @@ import eu.exeris.kernel.spi.flow.IdempotencyGuard;
 import eu.exeris.kernel.spi.flow.model.FlowContext;
 import eu.exeris.kernel.spi.flow.model.FlowExecutionPlan;
 import eu.exeris.kernel.spi.flow.model.FlowOutcome;
+import eu.exeris.kernel.spi.flow.model.FlowDefinitionMigration;
+import eu.exeris.kernel.spi.flow.model.FlowMigrationState;
 import eu.exeris.kernel.spi.flow.model.FlowSnapshot;
 import eu.exeris.kernel.spi.flow.model.FlowSnapshotStore;
 import eu.exeris.kernel.spi.flow.model.FlowState;
@@ -39,6 +41,9 @@ import java.util.concurrent.atomic.LongAdder;
 @SuppressWarnings("PMD.PublicMemberInNonPublicType")
 final class CoreFlowRuntime { // NOPMD
 
+    /** Blast-radius bound only: adjacency enforced at registration is what terminates the chain. */
+    private static final int MAX_MIGRATION_HOPS = 32;
+
     private static final int  MAX_PARKED_LOOKUP_MISSES = 256;
     private static final long NO_TIMEOUT_OVERRUN       = 0L;
     private static final int  STEP_PROCEED             = Integer.MIN_VALUE;
@@ -50,6 +55,7 @@ final class CoreFlowRuntime { // NOPMD
     private final ConcurrentMap<FlowKey, RuntimeFlowInstance> liveInstances = new ConcurrentHashMap<>();
     private final ConcurrentMap<FlowKey, RuntimeFlowInstance> parkedInstances = new ConcurrentHashMap<>();
     private final ConcurrentMap<PlanKey, CoreFlowExecutionPlan> planCatalog = new ConcurrentHashMap<>();
+    private final ConcurrentMap<MigrationKey, FlowDefinitionMigration> migrations = new ConcurrentHashMap<>();
     private final TerminalStateCatalog terminalStateCatalog;
     private final Set<FlowKey> parkedLookupMisses = ConcurrentHashMap.newKeySet();
     private final Deque<FlowKey> parkedLookupMissOrder = new ArrayDeque<>();
@@ -91,6 +97,10 @@ final class CoreFlowRuntime { // NOPMD
 
     /* default */ ConcurrentMap<PlanKey, CoreFlowExecutionPlan> planCatalog() {
         return planCatalog;
+    }
+
+    /* default */ ConcurrentMap<MigrationKey, FlowDefinitionMigration> migrations() {
+        return migrations;
     }
 
     /* default */ void clearLookupSuppressionAfterPlanCompile() {
@@ -382,7 +392,11 @@ final class CoreFlowRuntime { // NOPMD
         if (persisted == null) {
             return null;
         }
-        CoreFlowExecutionPlan resolvedPlan = resolvePlanForSnapshot(directPlan, persisted);
+        // ADR-064 A1: wake only. The resubmit path fixes the target version at the caller's plan,
+        // which makes the chain's terminating condition path-dependent — it keeps refusing instead.
+        FlowSnapshot migrated = directPlan == null ? migrateIfNeeded(persisted) : null;
+        FlowSnapshot resumable = migrated == null ? persisted : migrated;
+        CoreFlowExecutionPlan resolvedPlan = resolvePlanForSnapshot(directPlan, resumable);
         if (resolvedPlan == null) {
             if (suppressRepeatedMisses) {
                 recordParkedLookupMiss(key);
@@ -390,7 +404,13 @@ final class CoreFlowRuntime { // NOPMD
             return null;
         }
         clearParkedLookupMiss(key);
-        return RuntimeFlowInstance.fromSnapshot(resolvedPlan, persisted, lifecycleGeneration.get());
+        if (migrated != null) {
+            // ADR-064 A3. Not persisting would leave the row naming a version the saga no longer
+            // runs, and would make transform purity an unstated obligation by re-running the chain
+            // on every wake.
+            persistMigratedSnapshot(migrated);
+        }
+        return RuntimeFlowInstance.fromSnapshot(resolvedPlan, resumable, lifecycleGeneration.get());
     }
 
     private FlowSnapshot loadSnapshot(FlowKey key, FlowState requiredState, boolean suppressRepeatedMisses) {
@@ -506,6 +526,72 @@ final class CoreFlowRuntime { // NOPMD
         if (plan.definitionVersion() != persisted.definitionVersion()) {
             throw FlowEngineException.schemaMismatchDefinitionVersionUnresolved(
                     config.engineName(), persisted.definitionVersion());
+        }
+    }
+
+    /**
+     * Walks adjacent registered migrations until the snapshot names a version this engine hosts.
+     *
+     * <p>Stops at the FIRST reachable registered version rather than running to the newest, and that
+     * is forced by the data structure rather than chosen: the catalogue is keyed by
+     * {@code PlanKey(name, version)} and offers point-gets only, so "newest" would need a
+     * name-to-versions scan on the resume success path.
+     *
+     * <p>Returns {@code null} when no migration applies — including when the version is already
+     * hosted, absent, or the snapshot is terminal. Null rather than the input, because the caller has
+     * to know whether a migration happened in order to persist it, and answering that by comparing
+     * object identity would be exactly the identity-sensitive operation carriers must avoid.
+     *
+     * <p>A transform that throws propagates. Application code failing here must surface rather than
+     * be folded into a wake that quietly does nothing.
+     */
+    // Two small value keys allocated per hop. Justified rather than hoisted: both are keyed by the
+    // version, which is precisely what each hop advances, so there is nothing loop-invariant to lift.
+    // Cold path — a resume that needs migrating at all — and bounded by MAX_MIGRATION_HOPS.
+    @SuppressWarnings("PMD.AvoidInstantiatingObjectsInLoops")
+    private FlowSnapshot migrateIfNeeded(FlowSnapshot persisted) {
+        if (persisted.state().isTerminal()
+                || persisted.definitionVersion() == FlowSnapshot.VERSION_ABSENT
+                || planCatalog.containsKey(new PlanKey(persisted.definitionName(), persisted.definitionVersion()))) {
+            return null;
+        }
+        FlowSnapshot current = persisted;
+        for (int hop = 0; hop < MAX_MIGRATION_HOPS; hop++) {
+            FlowDefinitionMigration migration =
+                    migrations.get(new MigrationKey(current.definitionName(), current.definitionVersion()));
+            if (migration == null) {
+                return null;
+            }
+            current = applyHop(migration, current);
+            if (planCatalog.containsKey(new PlanKey(current.definitionName(), current.definitionVersion()))) {
+                return current;
+            }
+        }
+        return null;
+    }
+
+    /** Applies one adjacent hop, rebuilding the snapshot at {@code version + 1}. */
+    private static FlowSnapshot applyHop(FlowDefinitionMigration migration, FlowSnapshot from) {
+        FlowMigrationState before = new FlowMigrationState(
+                from.currentStep(),
+                from.currentStepName().orElseThrow(),
+                from.compensationStack(),
+                from.stackPointer(),
+                from.opaqueState());
+        FlowMigrationState after = Objects.requireNonNull(
+                migration.migrate(before), "FlowDefinitionMigration must not return null");
+        return new FlowSnapshot(
+                from.instanceIdMost(), from.instanceIdLeast(),
+                from.definitionName(), from.definitionVersion() + 1,
+                after.parkedStep(), Optional.of(after.parkedStepName()),
+                from.state(), from.lastUpdate(), from.timeout(),
+                after.compensationStack(), after.stackPointer(),
+                after.opaqueState(), from.schemaVersion());
+    }
+
+    private void persistMigratedSnapshot(FlowSnapshot migrated) {
+        if (snapshotStore != null) {
+            snapshotStore.save(migrated);
         }
     }
 
