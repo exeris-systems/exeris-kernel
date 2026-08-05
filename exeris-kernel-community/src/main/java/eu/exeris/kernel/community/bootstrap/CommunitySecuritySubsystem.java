@@ -13,7 +13,7 @@ import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.security.SecurityProvider;
 
 import java.util.List;
-import java.util.function.UnaryOperator;
+import java.util.function.ToIntFunction;
 
 /**
  * Binds the discovered {@link SecurityProvider} into {@link KernelProviders#SECURITY_PROVIDER}.
@@ -35,9 +35,7 @@ import java.util.function.UnaryOperator;
  * is read as "no authentication available" and denies, which is the fail-closed behaviour the Citadel
  * contract depends on.
  */
-final class CommunitySecuritySubsystem extends AbstractCommunitySubsystem {
-
-    private SecurityProvider securityProvider;
+final class CommunitySecuritySubsystem extends AbstractSingleProviderSubsystem<SecurityProvider> {
 
     @Override
     public String name() {
@@ -58,28 +56,17 @@ final class CommunitySecuritySubsystem extends AbstractCommunitySubsystem {
     }
 
     @Override
-    public void initialize() {
-        securityProvider = CommunityProviderDiscovery.highestPriority(
-                SecurityProvider.class, SecurityProvider::priority);
+    protected Class<SecurityProvider> contract() {
+        return SecurityProvider.class;
     }
 
     @Override
-    public void start() {
-        markRunning(securityProvider != null);
+    protected ToIntFunction<SecurityProvider> priority() {
+        return SecurityProvider::priority;
     }
 
     @Override
-    public void stop() {
-        markRunning(false);
-    }
-
-    @Override
-    public UnaryOperator<ScopedValue.Carrier> providerBindings() {
-        if (securityProvider == null) {
-            return defaultProviderBindings();
-        }
-        return CommunityCarrierBindings.operator(
-                CommunityCarrierBindings.binding(KernelProviders.SECURITY_PROVIDER, securityProvider)
-        );
+    protected ScopedValue<SecurityProvider> slot() {
+        return KernelProviders.SECURITY_PROVIDER;
     }
 }
