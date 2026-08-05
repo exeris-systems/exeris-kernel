@@ -462,8 +462,11 @@ public abstract class AbstractSagaRecoveryTck {
         private static final String DEF_NAME = "restart-under-load-saga";
         private static final String WORKER_THREAD_PREFIX = "exeris-flow-";
 
+        // 60s, not the suite's usual 30s: this method's own await budgets sum to 35s (10 + 5 + 15 +
+        // 5), so a 30s ceiling can kill it mid-await and report an anonymous timeout instead of the
+        // assertion that would name what actually went wrong.
         @Test
-        @Timeout(value = 30, unit = TimeUnit.SECONDS)
+        @Timeout(value = 60, unit = TimeUnit.SECONDS)
         @DisplayName("N parked snapshots survive close(); all resume to COMPLETED; no re-exec, no orphans, counters reset")
         void parkedFleetSurvivesForceCloseAndResumes() {
             int n = restartLoadCount();
@@ -577,7 +580,11 @@ public abstract class AbstractSagaRecoveryTck {
             // and reading it in the same breath makes this a race, not an assertion. Await the
             // reclaim itself; the per-instance check below still names the offender if it never
             // lands, rather than reporting an anonymous timeout.
-            awaitCondition(() -> allCheckpointsReclaimed(parked), 15);
+            // 5s, not the 15s the line above uses: that one waits for sixteen flows to execute,
+            // this one for a finalization step that is sub-millisecond in practice (50ms with the
+            // window widened far enough to reproduce the race). Deliberately not asserted — a
+            // timeout here falls through to the per-instance loop, which names the offender.
+            awaitCondition(() -> allCheckpointsReclaimed(parked), 5);
 
             for (FlowContext ctx : parked) {
                 assertThat(loadSnapshot(ctx))
