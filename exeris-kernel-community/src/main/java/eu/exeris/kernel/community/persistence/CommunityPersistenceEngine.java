@@ -75,7 +75,8 @@ final class CommunityPersistenceEngine implements PersistenceEngine, PhysicalCon
             "db/migration/V0.5.0__create_outbox.sql",
             "db/migration/V0.7.0__create_saga_state.sql",
             "db/migration/V0.10.0__create_event_log.sql",
-            "db/migration/V0.11.0__add_saga_step_name.sql"
+            "db/migration/V0.11.0__add_saga_step_name.sql",
+            "db/migration/V0.11.1__add_saga_definition_version.sql"
     );
 
     private final PersistenceConfig config;

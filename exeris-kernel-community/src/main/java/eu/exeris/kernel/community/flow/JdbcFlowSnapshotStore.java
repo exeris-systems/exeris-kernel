@@ -101,14 +101,14 @@ public final class JdbcFlowSnapshotStore implements FlowSnapshotStore {
             "INSERT INTO exeris_saga_state ("
                     + "instance_id_most, instance_id_least, definition_name, current_step, "
                     + "state, last_update, timeout_at, compensation_stack, stack_pointer, "
-                    + "opaque_state, step_name, schema_version) "
-                    + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                    + "opaque_state, step_name, definition_version, schema_version) "
+                    + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
     private static final String SQL_UPDATE_OCC =
             "UPDATE exeris_saga_state SET "
                     + "definition_name = ?, current_step = ?, state = ?, "
                     + "last_update = ?, timeout_at = ?, compensation_stack = ?, "
-                    + "stack_pointer = ?, opaque_state = ?, step_name = ?, "
+                    + "stack_pointer = ?, opaque_state = ?, step_name = ?, definition_version = ?, "
                     + "schema_version = schema_version + 1 "
                     + "WHERE instance_id_most = ? AND instance_id_least = ? "
                     + "AND schema_version = ?";
@@ -116,7 +116,7 @@ public final class JdbcFlowSnapshotStore implements FlowSnapshotStore {
     private static final String SQL_SELECT_BY_PK =
             "SELECT instance_id_most, instance_id_least, definition_name, current_step, "
                     + "state, last_update, timeout_at, compensation_stack, stack_pointer, "
-                    + "opaque_state, step_name, schema_version "
+                    + "opaque_state, step_name, schema_version, definition_version "
                     + "FROM exeris_saga_state "
                     + "WHERE instance_id_most = ? AND instance_id_least = ?";
 
@@ -131,7 +131,7 @@ public final class JdbcFlowSnapshotStore implements FlowSnapshotStore {
     private static final String SQL_LIST_PARKED =
             "SELECT instance_id_most, instance_id_least, definition_name, current_step, "
                     + "state, last_update, timeout_at, compensation_stack, stack_pointer, "
-                    + "opaque_state, step_name, schema_version "
+                    + "opaque_state, step_name, schema_version, definition_version "
                     + "FROM exeris_saga_state "
                     + "WHERE state = '" + /* FlowState.PARKED.name() */ "PARKED" + "'";
 
@@ -322,11 +322,13 @@ public final class JdbcFlowSnapshotStore implements FlowSnapshotStore {
         try (PersistenceStatement stmt = conn.prepare(SQL_UPDATE_OCC)) {
             // SET clause bindings (0..8): definition_name, current_step, state, last_update,
             // timeout_at, compensation_stack, stack_pointer, opaque_state, step_name.
+            // Payload is ten values since ADR-064 (…, step_name, definition_version), so the WHERE
+            // parameters start one slot later than they did.
             JdbcFlowSnapshotCodec.bindSnapshotPayload(stmt, snapshot, 0);
-            // WHERE clause bindings (9..11): instance_id_most, instance_id_least, schema_version.
-            stmt.bindLong(9, snapshot.instanceIdMost());
-            stmt.bindLong(10, snapshot.instanceIdLeast());
-            stmt.bindLong(11, snapshot.schemaVersion());
+            // WHERE clause bindings (10..12): instance_id_most, instance_id_least, schema_version.
+            stmt.bindLong(10, snapshot.instanceIdMost());
+            stmt.bindLong(11, snapshot.instanceIdLeast());
+            stmt.bindLong(12, snapshot.schemaVersion());
             return stmt.executeUpdate();
         }
     }
@@ -336,12 +338,12 @@ public final class JdbcFlowSnapshotStore implements FlowSnapshotStore {
             stmt.bindLong(0, snapshot.instanceIdMost());
             stmt.bindLong(1, snapshot.instanceIdLeast());
             // definition_name, current_step, state, last_update, timeout_at,
-            // compensation_stack, stack_pointer, opaque_state, step_name -> bindings 2..10.
+            // compensation_stack, stack_pointer, opaque_state, step_name, definition_version -> 2..11.
             JdbcFlowSnapshotCodec.bindSnapshotPayload(stmt, snapshot, 2);
             // ADR-013 §5: advance the on-disk version by exactly one on every accepted
             // write — INSERT and UPDATE share this semantic, so the caller can blindly
             // bump its local schemaVersion by 1 after any successful save.
-            stmt.bindLong(11, snapshot.schemaVersion() + 1L);
+            stmt.bindLong(12, snapshot.schemaVersion() + 1L);
             stmt.executeUpdate();
         }
     }

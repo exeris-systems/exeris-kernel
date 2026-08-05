@@ -40,6 +40,18 @@ public interface FlowExecutionPlan {
     String definitionName();
 
     /**
+     * The version of the {@link FlowDefinition} this plan was compiled from.
+     *
+     * <p>Together with {@link #definitionName()} this is the key a parked saga resumes on: several
+     * versions of one definition may be registered at once, and a snapshot binds to the exact one it
+     * parked under rather than to whichever is newest (ADR-064).
+     *
+     * @return the declared version, {@code >= FlowDefinition.INITIAL_VERSION}
+     * @since 0.11.0
+     */
+    int definitionVersion();
+
+    /**
      * The total number of steps in this plan.
      *
      * @return step count ≥ 1

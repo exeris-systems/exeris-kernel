@@ -9,6 +9,7 @@
 package eu.exeris.kernel.tck.contract.flow;
 
 import eu.exeris.kernel.spi.exceptions.flow.FlowEngineException;
+import eu.exeris.kernel.spi.flow.model.FlowDefinition;
 import eu.exeris.kernel.spi.flow.model.FlowSnapshot;
 import eu.exeris.kernel.spi.flow.model.FlowSnapshotStore;
 import eu.exeris.kernel.spi.flow.model.FlowState;
@@ -111,6 +112,7 @@ public abstract class AbstractDistributedFlowSnapshotStoreTck {
                 id.getMostSignificantBits(),
                 id.getLeastSignificantBits(),
                 "demo-saga",
+                FlowDefinition.INITIAL_VERSION,
                 currentStep,
                 // The store must round-trip the identity, so the fixture always carries one.
                 Optional.of("step-" + currentStep),

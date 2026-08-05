@@ -36,6 +36,7 @@ import java.util.Optional;
  *   3: current_step           4: state                5: last_update
  *   6: timeout_at             7: compensation_stack   8: stack_pointer
  *   9: opaque_state          10: step_name          11: schema_version
+ *  12: definition_version
  * </pre>
  *
  * <h2>Instant.MAX encoding</h2>
@@ -53,7 +54,7 @@ final class JdbcFlowSnapshotCodec {
     }
 
     /**
-     * Binds the nine payload columns (definition_name through step_name)
+     * Binds the ten payload columns (definition_name through definition_version)
      * starting at the given parameter index. Used by both INSERT (offset 2)
      * and UPDATE (offset 0).
      */
@@ -82,7 +83,10 @@ final class JdbcFlowSnapshotCodec {
         }
         // NULL rather than a placeholder: the column has to be able to say "no identity recorded",
         // because that is what the resume guard keys on (ADR-062).
-        stmt.bindString(idx, snapshot.currentStepName().orElse(null));
+        stmt.bindString(idx++, snapshot.currentStepName().orElse(null));
+        // Same reasoning one field along: 0 is VERSION_ABSENT, never a real version, and the resume
+        // guard rejects it rather than binding the saga to whichever version is newest (ADR-064).
+        stmt.bindInt(idx, snapshot.definitionVersion());
     }
 
     /**
@@ -147,9 +151,13 @@ final class JdbcFlowSnapshotCodec {
         // NULL means the row predates ADR-062 — absence, not a name. The resume guard rejects it.
         Optional<String> stepName = Optional.ofNullable(row.getString(10));
         long schemaVersion = row.getLong(11);
+        // 0 is VERSION_ABSENT — the migration backfills it for rows written before the column
+        // existed. Never NULL: the cursor's getInt has no NULL representation, so the migration
+        // carries the absence instead of the read having to (ADR-064).
+        int definitionVersion = row.getInt(12);
         return new FlowSnapshot(
                 instanceIdMost, instanceIdLeast,
-                definitionName, currentStep, stepName, state,
+                definitionName, definitionVersion, currentStep, stepName, state,
                 lastUpdate, timeout,
                 compensationStack, stackPointer,
                 opaqueState, schemaVersion);

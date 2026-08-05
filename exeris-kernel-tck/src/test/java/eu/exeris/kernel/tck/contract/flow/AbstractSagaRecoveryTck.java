@@ -399,7 +399,7 @@ public abstract class AbstractSagaRecoveryTck {
             // no identity. The definition is NOT changed — so nothing but the missing identity can
             // cause the rejection, and a guard that only compared names would happily admit this.
             FlowSnapshot legacy = new FlowSnapshot(
-                    parked.instanceIdMost(), parked.instanceIdLeast(), parked.definitionName(),
+                    parked.instanceIdMost(), parked.instanceIdLeast(), parked.definitionName(),FlowDefinition.INITIAL_VERSION,
                     parked.currentStep(), Optional.empty(), parked.state(), parked.lastUpdate(),
                     parked.timeout(), parked.compensationStack(), parked.stackPointer(),
                     parked.opaqueState(), parked.schemaVersion());

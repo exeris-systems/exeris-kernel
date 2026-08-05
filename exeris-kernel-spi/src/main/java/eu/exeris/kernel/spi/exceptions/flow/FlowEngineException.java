@@ -52,8 +52,29 @@ public final class FlowEngineException extends ExerisKernelException {
      */
     public static final String REASON_STEP_IDENTITY_ABSENT = "STEP_IDENTITY_ABSENT";
 
+    /**
+     * {@code rawArgs[2]} reason: the snapshot records no definition version at all (since 0.11).
+     *
+     * <p>Distinct from {@link #REASON_DEFINITION_VERSION_UNRESOLVED}: nothing is missing from the
+     * deployment, the row simply predates versioning. The remedy is the drain ADR-062 already
+     * prescribes for the 0.10→0.11 upgrade, not deploying another definition.
+     */
+    public static final String REASON_DEFINITION_VERSION_ABSENT = "DEFINITION_VERSION_ABSENT";
+
+    /**
+     * {@code rawArgs[2]} reason: the snapshot names a definition version this engine does not have
+     * registered, and no migration path reaches one it does (since 0.11).
+     *
+     * <p>The parked row is left untouched, so deploying the missing version — or registering the
+     * missing migration — recovers the saga (ADR-064).
+     */
+    public static final String REASON_DEFINITION_VERSION_UNRESOLVED = "DEFINITION_VERSION_UNRESOLVED";
+
     private static final String MSG_ENGINE_FAILURE  = "Flow engine lifecycle failure";
     private static final String MSG_SCHEMA_MISMATCH = "Flow definition changed under a parked saga";
+
+    /** {@code rawArgs[1]} phase shared by every resume-compatibility refusal. */
+    private static final String PHASE_SCHEMA_MISMATCH = "SCHEMA_MISMATCH";
     private static final String REASON_STARTUP      = "STARTUP_FAILED";
     private static final String REASON_COMPILE      = "COMPILE_FAILED";
     private static final String REASON_QUEUE_FULL   = "QUEUE_FULL";
@@ -152,7 +173,7 @@ public final class FlowEngineException extends ExerisKernelException {
      */
     public static FlowEngineException schemaMismatch(String engineName, int persistedStep) {
         return new FlowEngineException(KernelErrorCodes.EX_FLOW_7002, MSG_SCHEMA_MISMATCH, null,
-                engineName, "SCHEMA_MISMATCH", REASON_STEP_OUT_OF_RANGE, persistedStep);
+                engineName, PHASE_SCHEMA_MISMATCH, REASON_STEP_OUT_OF_RANGE, persistedStep);
     }
 
     /**
@@ -171,7 +192,7 @@ public final class FlowEngineException extends ExerisKernelException {
      */
     public static FlowEngineException schemaMismatchStepIdentity(String engineName, int persistedStep) {
         return new FlowEngineException(KernelErrorCodes.EX_FLOW_7002, MSG_SCHEMA_MISMATCH, null,
-                engineName, "SCHEMA_MISMATCH", REASON_STEP_IDENTITY_MISMATCH, persistedStep);
+                engineName, PHASE_SCHEMA_MISMATCH, REASON_STEP_IDENTITY_MISMATCH, persistedStep);
     }
 
     /**
@@ -189,7 +210,45 @@ public final class FlowEngineException extends ExerisKernelException {
      */
     public static FlowEngineException schemaMismatchStepIdentityAbsent(String engineName, int persistedStep) {
         return new FlowEngineException(KernelErrorCodes.EX_FLOW_7002, MSG_SCHEMA_MISMATCH, null,
-                engineName, "SCHEMA_MISMATCH", REASON_STEP_IDENTITY_ABSENT, persistedStep);
+                engineName, PHASE_SCHEMA_MISMATCH, REASON_STEP_IDENTITY_ABSENT, persistedStep);
+    }
+
+    /**
+     * Raised when a parked saga carries no definition version — a snapshot written before 0.11.
+     *
+     * <p>{@code rawArgs} layout: {@code [0]}=engineName, {@code [1]}="SCHEMA_MISMATCH",
+     * {@code [2]}={@link #REASON_DEFINITION_VERSION_ABSENT}, {@code [3]}=persisted step index.
+     *
+     * @param engineName    the engine that refused the resume
+     * @param persistedStep the step index the snapshot carried
+     * @return the exception to throw
+     * @since 0.11.0
+     */
+    public static FlowEngineException schemaMismatchDefinitionVersionAbsent(String engineName,
+                                                                           int persistedStep) {
+        return new FlowEngineException(KernelErrorCodes.EX_FLOW_7002, MSG_SCHEMA_MISMATCH, null,
+                engineName, PHASE_SCHEMA_MISMATCH, REASON_DEFINITION_VERSION_ABSENT, persistedStep);
+    }
+
+    /**
+     * Raised when a parked saga names a definition version this engine hosts no plan for.
+     *
+     * <p>The engine hosts the definition — some version of it — so this is not "another node owns
+     * this flow"; it is "the version this saga parked under is not deployed here". The parked row is
+     * left untouched, so deploying that version recovers the saga (ADR-064).
+     *
+     * <p>{@code rawArgs} layout: {@code [0]}=engineName, {@code [1]}="SCHEMA_MISMATCH",
+     * {@code [2]}={@link #REASON_DEFINITION_VERSION_UNRESOLVED}, {@code [3]}=persisted version.
+     *
+     * @param engineName        the engine that refused the resume
+     * @param persistedVersion  the definition version the snapshot carried
+     * @return the exception to throw
+     * @since 0.11.0
+     */
+    public static FlowEngineException schemaMismatchDefinitionVersionUnresolved(String engineName,
+                                                                               int persistedVersion) {
+        return new FlowEngineException(KernelErrorCodes.EX_FLOW_7002, MSG_SCHEMA_MISMATCH, null,
+                engineName, PHASE_SCHEMA_MISMATCH, REASON_DEFINITION_VERSION_UNRESOLVED, persistedVersion);
     }
 }
 

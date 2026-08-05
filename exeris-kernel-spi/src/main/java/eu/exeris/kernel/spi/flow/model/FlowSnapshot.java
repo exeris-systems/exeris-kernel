@@ -45,6 +45,9 @@ import java.util.Optional;
  * @param instanceIdLeast   least-significant bits of the 128-bit flow instance UUID
  * @param definitionName    name of the {@link FlowDefinition} this instance was compiled from;
  *                          must not be {@code null} or blank
+ * @param definitionVersion version of that definition (ADR-064). {@link #VERSION_ABSENT} means the
+ *                          snapshot predates definition versioning — such a snapshot is rejected
+ *                          fail-closed on resume rather than bound to whichever version is registered
  * @param currentStepName   identity of the step {@code currentStep} pointed at when the snapshot
  *                          was written (ADR-062). {@link Optional#empty()} means the snapshot predates
  *                          step-identity recording — such a snapshot cannot be validated on resume and
@@ -66,6 +69,7 @@ public record FlowSnapshot(
         long      instanceIdMost,
         long      instanceIdLeast,
         String    definitionName,
+        int       definitionVersion,
         int       currentStep,
         Optional<String> currentStepName,
         FlowState state,
@@ -90,6 +94,18 @@ public record FlowSnapshot(
      * @since 0.7.0
      */
     public static final long SCHEMA_VERSION_INITIAL = 1L;
+
+    /**
+     * {@link #definitionVersion} of a snapshot written before definition versioning existed.
+     *
+     * <p>Not a version: {@code FlowDefinition.INITIAL_VERSION} is 1, so this value can never name a
+     * real definition. Resume rejects it fail-closed rather than guessing a version, for the same
+     * reason ADR-062 rejects a snapshot carrying no step identity — a default here would be a
+     * permanent route back to resuming against whatever happens to be registered.
+     *
+     * @since 0.11.0
+     */
+    public static final int VERSION_ABSENT = 0;
 
     /**
      * Compact constructor — validates all invariants eagerly (fail-fast) and defensively
@@ -119,6 +135,10 @@ public record FlowSnapshot(
         Objects.requireNonNull(opaqueState,       "opaqueState must not be null — use new byte[0] for empty");
         if (definitionName.isBlank()) {
             throw new IllegalArgumentException("definitionName must not be blank");
+        }
+        if (definitionVersion < VERSION_ABSENT) {
+            throw new IllegalArgumentException(
+                    "definitionVersion must be >= " + VERSION_ABSENT + ", got: " + definitionVersion);
         }
         if (currentStep < 0) {
             throw new IllegalArgumentException(
@@ -171,13 +191,13 @@ public record FlowSnapshot(
             int       stackPointer,
             byte[]    opaqueState
     ) {
-        // Identity is absent by construction here: this shim preserves a call shape that predates
-        // ADR-062 and cannot know the step's name. The resulting snapshot is rejected fail-closed on
-        // resume rather than replayed by position — deliberately, so the shim cannot become a quiet
-        // route back to positional resume.
-        this(instanceIdMost, instanceIdLeast, definitionName, currentStep, Optional.empty(), state,
-             lastUpdate, timeout, compensationStack, stackPointer, opaqueState,
-             SCHEMA_VERSION_INITIAL);
+        // Identity and definition version are both absent by construction here: this shim preserves a
+        // call shape that predates ADR-062 and ADR-064 and cannot know either. The resulting snapshot
+        // is rejected fail-closed on resume rather than replayed by position against whatever plan is
+        // registered — deliberately, so the shim cannot become a quiet route back to either.
+        this(instanceIdMost, instanceIdLeast, definitionName, VERSION_ABSENT, currentStep,
+             Optional.empty(), state, lastUpdate, timeout, compensationStack, stackPointer,
+             opaqueState, SCHEMA_VERSION_INITIAL);
     }
 
     /**
@@ -233,11 +253,13 @@ public record FlowSnapshot(
         }
         return instanceIdMost   == other.instanceIdMost
                && instanceIdLeast  == other.instanceIdLeast
+               && definitionVersion == other.definitionVersion
                && currentStep      == other.currentStep
                && stackPointer     == other.stackPointer
                && schemaVersion    == other.schemaVersion
                && state            == other.state
                && Objects.equals(definitionName, other.definitionName)
+               && Objects.equals(currentStepName, other.currentStepName)
                && Objects.equals(lastUpdate,     other.lastUpdate)
                && Objects.equals(timeout,        other.timeout)
                && Arrays.equals(compensationStack, other.compensationStack)
@@ -251,8 +273,8 @@ public record FlowSnapshot(
     @Override
     public int hashCode() {
         int result = Objects.hash(
-                instanceIdMost, instanceIdLeast, definitionName,
-                currentStep, state, lastUpdate, timeout, stackPointer, schemaVersion);
+                instanceIdMost, instanceIdLeast, definitionName, definitionVersion,
+                currentStep, currentStepName, state, lastUpdate, timeout, stackPointer, schemaVersion);
         result = 31 * result + Arrays.hashCode(compensationStack);
         result = 31 * result + Arrays.hashCode(opaqueState);
         return result;
@@ -267,7 +289,9 @@ public record FlowSnapshot(
         return "FlowSnapshot["
                + "instanceId=" + instanceId()
                + ", definitionName=" + definitionName
+               + ", definitionVersion=" + definitionVersion
                + ", currentStep=" + currentStep
+               + ", currentStepName=" + currentStepName.orElse(null)
                + ", state=" + state
                + ", lastUpdate=" + lastUpdate
                + ", timeout=" + timeout

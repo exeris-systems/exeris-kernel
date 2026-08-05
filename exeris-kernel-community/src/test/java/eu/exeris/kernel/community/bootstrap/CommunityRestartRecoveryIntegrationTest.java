@@ -10,6 +10,7 @@ package eu.exeris.kernel.community.bootstrap;
 
 import eu.exeris.kernel.community.flow.JdbcFlowSnapshotStore;
 import eu.exeris.kernel.community.persistence.CommunityPersistenceProvider;
+import eu.exeris.kernel.spi.flow.model.FlowDefinition;
 import eu.exeris.kernel.spi.flow.model.FlowSnapshot;
 import eu.exeris.kernel.spi.flow.model.FlowSnapshotStore;
 import eu.exeris.kernel.spi.flow.model.FlowState;
@@ -101,7 +102,7 @@ class CommunityRestartRecoveryIntegrationTest {
         return new FlowSnapshot(
                 id.getMostSignificantBits(),
                 id.getLeastSignificantBits(),
-                "restart-recovery-saga",
+                "restart-recovery-saga", FlowDefinition.INITIAL_VERSION,
                 currentStep,
                 Optional.of("step-" + currentStep),
                 FlowState.PARKED,

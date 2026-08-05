@@ -49,7 +49,7 @@ final class CoreFlowRuntime { // NOPMD
     private final Scheduler scheduler = new Scheduler();
     private final ConcurrentMap<FlowKey, RuntimeFlowInstance> liveInstances = new ConcurrentHashMap<>();
     private final ConcurrentMap<FlowKey, RuntimeFlowInstance> parkedInstances = new ConcurrentHashMap<>();
-    private final ConcurrentMap<String, CoreFlowExecutionPlan> planCatalog = new ConcurrentHashMap<>();
+    private final ConcurrentMap<PlanKey, CoreFlowExecutionPlan> planCatalog = new ConcurrentHashMap<>();
     private final TerminalStateCatalog terminalStateCatalog;
     private final Set<FlowKey> parkedLookupMisses = ConcurrentHashMap.newKeySet();
     private final Deque<FlowKey> parkedLookupMissOrder = new ArrayDeque<>();
@@ -89,7 +89,7 @@ final class CoreFlowRuntime { // NOPMD
         return scheduler;
     }
 
-    /* default */ ConcurrentMap<String, CoreFlowExecutionPlan> planCatalog() {
+    /* default */ ConcurrentMap<PlanKey, CoreFlowExecutionPlan> planCatalog() {
         return planCatalog;
     }
 
@@ -467,7 +467,7 @@ final class CoreFlowRuntime { // NOPMD
 
     private CoreFlowExecutionPlan resolvePlanForSnapshot(CoreFlowExecutionPlan directPlan, FlowSnapshot persisted) {
         if (directPlan == null) {
-            CoreFlowExecutionPlan catalogPlan = planCatalog.get(persisted.definitionName());
+            CoreFlowExecutionPlan catalogPlan = resolveVersionedPlan(persisted);
             if (catalogPlan == null) {
                 return null;
             }
@@ -481,8 +481,61 @@ final class CoreFlowRuntime { // NOPMD
                     + "' but snapshot belongs to '"
                     + persisted.definitionName() + "'");
         }
+        validateSnapshotVersion(directPlan, persisted);
         validateSnapshotStepBounds(directPlan, persisted);
         return directPlan;
+    }
+
+    /**
+     * Applies the version guard to a caller-supplied plan (ADR-064 obligation 4).
+     *
+     * <p>{@code schedule()} resubmits against a plan the application already holds — plausibly the
+     * newest it compiled — for an instance that may be parked under an older one. Without this the
+     * guarantee held only on {@code wake()}: where the two versions happen to line up at the parked
+     * index, the saga resumes on the wrong definition exactly as it did before this epic, reached
+     * through a different entry point rather than fixed.
+     */
+    private void validateSnapshotVersion(CoreFlowExecutionPlan plan, FlowSnapshot persisted) {
+        if (persisted.state().isTerminal()) {
+            return;
+        }
+        if (persisted.definitionVersion() == FlowSnapshot.VERSION_ABSENT) {
+            throw FlowEngineException.schemaMismatchDefinitionVersionAbsent(
+                    config.engineName(), persisted.currentStep());
+        }
+        if (plan.definitionVersion() != persisted.definitionVersion()) {
+            throw FlowEngineException.schemaMismatchDefinitionVersionUnresolved(
+                    config.engineName(), persisted.definitionVersion());
+        }
+    }
+
+    private CoreFlowExecutionPlan resolveVersionedPlan(FlowSnapshot persisted) {
+        if (persisted.state().isTerminal()) {
+            return planCatalog.get(new PlanKey(persisted.definitionName(), persisted.definitionVersion()));
+        }
+        if (persisted.definitionVersion() == FlowSnapshot.VERSION_ABSENT) {
+            throw FlowEngineException.schemaMismatchDefinitionVersionAbsent(
+                    config.engineName(), persisted.currentStep());
+        }
+        PlanKey key = new PlanKey(persisted.definitionName(), persisted.definitionVersion());
+        CoreFlowExecutionPlan plan = planCatalog.get(key);
+        if (plan != null) {
+            return plan;
+        }
+        if (!hostsDefinition(persisted.definitionName())) {
+            return null;
+        }
+        throw FlowEngineException.schemaMismatchDefinitionVersionUnresolved(
+                config.engineName(), persisted.definitionVersion());
+    }
+
+    private boolean hostsDefinition(String definitionName) {
+        for (PlanKey registered : planCatalog.keySet()) {
+            if (registered.name().equals(definitionName)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
