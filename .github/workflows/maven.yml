@@ -198,9 +198,10 @@ jobs:
           architecture: x64
           cache: maven
 
-      - name: Every SPI package carries a maturity label
-        # A new SPI package with no row in the stability matrix would otherwise ship
-        # unclassified, and an unclassified surface is one the gate below cannot protect.
+      - name: Every SPI class resolves to a maturity label
+        # Checked per class, not per package: inside a `mixed` package one matching
+        # class would otherwise mark the whole directory classified, and the rest would
+        # fall out of both include lists below — neither gated nor reported.
         run: tools/spi-api-diff/spi-api-diff.sh --verify-surfaces
 
       - name: Diff SPI against the last released version
