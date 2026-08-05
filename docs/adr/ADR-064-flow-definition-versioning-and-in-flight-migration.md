@@ -79,10 +79,18 @@ parked saga's state means the same thing under the new definition.
    requires draining in-flight sagas across the 0.10→0.11 boundary, and both changes ship in 0.11, so a
    deployment following the documented procedure has no ambiguous rows.
 6. **Migration is an explicit, registered transform between adjacent versions.** A
-   `FlowDefinitionMigration` maps a saga parked under vN onto a resumable position under vN+1: the step
-   it should resume at, its compensation stack, and its opaque state. Adjacent hops are chained by the
+   `FlowDefinitionMigration` maps a saga parked under vN onto a resumable position under vN+1: **the
+   step it parked at**, its compensation stack, and its opaque state. Adjacent hops are chained by the
    runtime (v1→v2→v3), so an application registers *n-1* transforms rather than *n²* pairs. A missing
    link means no path.
+
+   *Amended during implementation.* This obligation first read "the step it should resume at", which is
+   a different step: `FlowSnapshot.currentStep` records where the saga **parked**, and `wake()` resumes
+   at `currentStep + 1`. A transform written to the original wording would emit the resume step, the
+   runtime would advance past it, and the saga would **skip a step — while ADR-062's identity check
+   passed**, because the emitted (index, name) pair is internally consistent. A silent drop with a
+   guard reporting success is the defect class this milestone exists to remove, so the wording is
+   corrected rather than left for each implementer to trip over.
 7. **The compensation stack is part of what a migration transforms, not a detail it may ignore.** The
    stack holds step indices from the version that pushed them. Carrying it across a version boundary
    unchanged would compensate the wrong steps on failure — the same class of defect as position-bound
@@ -107,6 +115,37 @@ parked saga's state means the same thing under the new definition.
     registered at once, a vN→vN+1 migration, a chained vN→vN+2, and the no-path rejection — with the
     rejection case mandatory, because a suite that only proves migration would pass against a runtime
     that migrates anything to anything.
+
+## Amendments (settled during implementation, v0.11)
+
+Three questions this ADR left open or under-specified, decided before any code was written and
+recorded here rather than in a commit message.
+
+**A1 — Migration runs on `wake()` only; `schedule()` continues to refuse.** The resubmit path fixes
+the target version at the plan the *caller* supplies, which makes the chain's terminating condition
+path-dependent — one policy cannot serve both doors. Scoping to wake also keeps application code out
+of three places it does not belong: the `liveInstances.compute` mapping function (a concurrent-map bin
+lock), `lookupParked`'s read-only query, and a `COMPENSATING` snapshot reaching a transform its author
+wrote for a parked saga. A resubmit against a mismatched version therefore keeps failing closed with
+`DEFINITION_VERSION_UNRESOLVED` — a refusal, not a silent wrong-version resume — and that is a
+**functional narrowing stated plainly**: choreography can reach `schedule()` directly, and a saga
+resubmitted rather than woken is not migrated.
+
+**A2 — The chain stops at the first registered version, and adjacency is enforced at registration.**
+Not a preference: `planCatalog` is keyed by `PlanKey(name, version)` and offers point-gets only. There
+is no name→versions index, and the single name-scoped query (`hostsDefinition`) is a full `keySet()`
+scan — adding another to the resume *success* path would be a No-Waste-Compute regression. Requiring
+`to == from + 1` at registration makes the chain terminate by construction; the configured chain bound
+is a blast-radius limit, not the termination mechanism.
+
+**A3 — A successful migration persists its result.** The alternative — re-running the chain on every
+wake — makes purity and idempotence load-bearing obligations that no document states, and leaves the
+durable row asserting a version the saga no longer runs. ADR-062's thesis is that the checkpoint must
+be truthful; a row saying v1 for a saga executing v2 is the same class of lie as a step recorded by
+position. The write happens on the resume path and participates in the ADR-013 `schemaVersion` OCC
+model like any other checkpoint.
+
+---
 
 ## Consequences
 
