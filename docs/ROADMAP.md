@@ -1954,6 +1954,26 @@ testkit — that drives a transaction through the real engine and observes a rol
 surface documented in `docs/modules/` alongside the HTTP one. No new SPI: the fixtures compose
 existing contracts, so nothing here widens the kernel's public surface.
 
+**Status (v0.11): PARTIAL — persistence delivered, the rest open.**
+
+`EmbeddedPersistenceEngineFixture` boots the real `persistence` subsystem (transitively `memory`)
+through `KernelBootstrap` + `ServiceLoader`, with `inMemoryH2()` applying the engine's own DDL and
+`forJdbcUrl(url, runMigrations)` for a container-backed or pre-migrated database. `runInKernelScope`
+carries consumer work to the thread holding the boot, since a `ScopedValue` binding cannot be handed
+out — that is what makes the fixture usable by a host runtime's transaction manager, which resolves the
+engine from the slot rather than from a reference. Surface documented in `docs/modules/06-testkit.md`,
+which also covers the previously undocumented HTTP fixture.
+
+The merge gate is met with one stated compromise: the consumer-shaped test imports only the testkit and
+SPI — nothing from `eu.exeris.kernel.community.*` — but it *lives* in that module's test scope, because
+the testkit builds before Community in the reactor and cannot depend on a provider. A genuinely
+external consumer module would be stronger, and is worth creating if this pattern grows past one or two
+subsystems.
+
+**Still open:** events, flow, graph, scheduling, storage, telemetry. Persistence was taken first
+because transactions are the sharpest exposure; events + flow are the natural next pair, since they
+compose with the engine this slice now makes reachable.
+
 ---
 
 ## Known Gaps / Future Work planned for v0.12

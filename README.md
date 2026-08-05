@@ -45,6 +45,7 @@ Authoritative references:
 - [docs/modules/03-community.md](docs/modules/03-community.md)
 - [docs/modules/04-enterprise.md](docs/modules/04-enterprise.md)
 - [docs/modules/05-tck.md](docs/modules/05-tck.md)
+- [docs/modules/06-testkit.md](docs/modules/06-testkit.md)
 
 ## Requirements
 

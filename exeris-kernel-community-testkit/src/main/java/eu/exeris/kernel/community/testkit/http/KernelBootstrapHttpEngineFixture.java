@@ -8,6 +8,8 @@
  */
 package eu.exeris.kernel.community.testkit.http;
 
+import eu.exeris.kernel.community.testkit.FixtureThreads;
+import eu.exeris.kernel.community.testkit.SystemPropertySnapshot;
 import eu.exeris.kernel.core.bootstrap.KernelBootstrap;
 import eu.exeris.kernel.spi.bootstrap.BootstrapSelector;
 import eu.exeris.kernel.spi.http.HttpHandler;
@@ -16,8 +18,6 @@ import eu.exeris.kernel.spi.http.HttpServerEngine;
 
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -28,7 +28,7 @@ import java.util.concurrent.atomic.AtomicReference;
 /**
  * KernelBootstrap-based fixture that keeps HTTP running until explicitly closed.
  */
-@SuppressWarnings({"PMD.CyclomaticComplexity", "PMD.AvoidUsingHardCodedIP"})
+@SuppressWarnings("PMD.AvoidUsingHardCodedIP")
 public final class KernelBootstrapHttpEngineFixture implements EmbeddedHttpEngineFixture {
 
     private static final long START_TIMEOUT_SECONDS = 10L;
@@ -55,7 +55,7 @@ public final class KernelBootstrapHttpEngineFixture implements EmbeddedHttpEngin
             }
 
             int reservedPort = reserveLoopbackPort();
-            PropertySnapshot propertySnapshot = PropertySnapshot.capture(
+            SystemPropertySnapshot propertySnapshot = SystemPropertySnapshot.capture(
                     "exeris.http.mode",
                     "exeris.http.bindHost",
                     "exeris.http.port",
@@ -84,13 +84,13 @@ public final class KernelBootstrapHttpEngineFixture implements EmbeddedHttpEngin
             try {
                 if (!startedSignal.await(START_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
                     stop.countDown();
-                    joinQuietly(thread);
+                    FixtureThreads.joinQuietly(thread, STOP_TIMEOUT_SECONDS);
                     throw new IllegalStateException("Timed out while starting kernel HTTP fixture");
                 }
             } catch (InterruptedException interruptedException) {
                 Thread.currentThread().interrupt();
                 stop.countDown();
-                joinQuietly(thread);
+                FixtureThreads.joinQuietly(thread, STOP_TIMEOUT_SECONDS);
                 throw new IllegalStateException("Interrupted while starting kernel HTTP fixture",
                         interruptedException);
             }
@@ -98,7 +98,7 @@ public final class KernelBootstrapHttpEngineFixture implements EmbeddedHttpEngin
             Throwable failure = startupFailure.get();
             if (failure != null) {
                 stop.countDown();
-                joinQuietly(thread);
+                FixtureThreads.joinQuietly(thread, STOP_TIMEOUT_SECONDS);
                 throw new IllegalStateException("Kernel HTTP fixture failed to start", failure);
             }
 
@@ -148,7 +148,7 @@ public final class KernelBootstrapHttpEngineFixture implements EmbeddedHttpEngin
         if (stopToSignal != null) {
             stopToSignal.countDown();
         }
-        joinQuietly(threadToJoin);
+        FixtureThreads.joinQuietly(threadToJoin, STOP_TIMEOUT_SECONDS);
 
         synchronized (lifecycleLock) {
             started.set(false);
@@ -158,7 +158,7 @@ public final class KernelBootstrapHttpEngineFixture implements EmbeddedHttpEngin
 
     private void runFixtureRuntime(HttpHandler handler,
                                    int reservedPort,
-                                   PropertySnapshot propertySnapshot,
+                                   SystemPropertySnapshot propertySnapshot,
                                    CountDownLatch startedSignal,
                                    CountDownLatch stop,
                                    AtomicReference<Throwable> startupFailure) {
@@ -208,57 +208,6 @@ public final class KernelBootstrapHttpEngineFixture implements EmbeddedHttpEngin
             return socket.getLocalPort();
         } catch (java.io.IOException exception) {
             throw new IllegalStateException("Unable to reserve loopback HTTP port", exception);
-        }
-    }
-
-    private static void joinQuietly(Thread thread) {
-        if (thread == null) {
-            return;
-        }
-
-        long deadlineNanos = System.nanoTime() + TimeUnit.SECONDS.toNanos(STOP_TIMEOUT_SECONDS);
-        while (thread.isAlive() && System.nanoTime() < deadlineNanos) {
-            try {
-                thread.join(100L);
-            } catch (InterruptedException _) {
-                Thread.currentThread().interrupt();
-                break;
-            }
-        }
-
-        if (thread.isAlive()) {
-            thread.interrupt();
-        }
-    }
-
-    private static final class PropertySnapshot {
-
-        private final List<String> keys;
-        private final List<String> values;
-
-        private PropertySnapshot(List<String> keys, List<String> values) {
-            this.keys = keys;
-            this.values = values;
-        }
-
-        private static PropertySnapshot capture(String... propertyKeys) {
-            List<String> capturedKeys = List.of(propertyKeys);
-            List<String> snapshotValues = new ArrayList<>(capturedKeys.size());
-            for (String key : capturedKeys) {
-                snapshotValues.add(System.getProperty(key));
-            }
-            return new PropertySnapshot(capturedKeys, snapshotValues);
-        }
-
-        private void restore() {
-            for (int index = 0; index < keys.size(); index++) {
-                String value = values.get(index);
-                if (value == null) {
-                    System.clearProperty(keys.get(index));
-                } else {
-                    System.setProperty(keys.get(index), value);
-                }
-            }
         }
     }
 }
