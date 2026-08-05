@@ -14,6 +14,7 @@ import eu.exeris.kernel.spi.flow.model.FlowContext;
 import eu.exeris.kernel.spi.flow.model.FlowDefinition;
 import eu.exeris.kernel.spi.flow.model.FlowExecutionPlan;
 import eu.exeris.kernel.spi.flow.model.FlowOutcome;
+import eu.exeris.kernel.spi.flow.model.FlowState;
 import eu.exeris.kernel.spi.flow.model.FlowStepAction;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -147,6 +148,77 @@ public abstract class AbstractFlowSchedulerTck {
             scheduler.wake(ctx);
             releaseStep.countDown();
 
+            awaitTrue(WAKE_TIMEOUT_SECONDS, () -> engine.stats().completedFlows() >= 1);
+        }
+
+        /**
+         * A flow resumed by a deferred wake MUST stop being reported as parked.
+         *
+         * <p>Distinct from the case above, which resumes a flow parked from outside: here the step
+         * itself returns {@code PARK} on the very run that already carries a deferred wake, so the
+         * park registration is taken <em>inside</em> the draining run and the resume follows it
+         * immediately. Miss that shed and the instance runs while {@code lookupParked} still hands
+         * it out and {@code parkedFlows} still counts it — a scheduler would hand the same instance
+         * to a second wake.
+         */
+        @Test
+        @Timeout(value = 60, unit = TimeUnit.SECONDS)
+        @DisplayName("a flow that parks itself while a wake is deferred is not left registered as parked")
+        void deferredWakeAfterSelfParkClearsParkedRegistration() {
+            FlowScheduler scheduler = engine.scheduler();
+            CountDownLatch insideStep = new CountDownLatch(1);
+            CountDownLatch releaseStep = new CountDownLatch(1);
+
+            CountDownLatch insideResumedStep = new CountDownLatch(1);
+            CountDownLatch releaseResumedStep = new CountDownLatch(1);
+
+            FlowDefinition definition = engine.plans().newDefinition("self-park-deferred-wake-flow")
+                    .step("gate-then-park", _ -> {
+                        insideStep.countDown();
+                        awaitQuietly(releaseStep);
+                        return FlowOutcome.PARK;
+                    }, null)
+                    // Held open so the assertions below run while the resumed flow is live. Checked
+                    // after completion they prove nothing: lookupParked consults the terminal
+                    // catalogue first and returns empty for a finished flow however the parked index
+                    // looks, and completion clears the registration anyway.
+                    .step("after-park", _ -> {
+                        insideResumedStep.countDown();
+                        awaitQuietly(releaseResumedStep);
+                        return FlowOutcome.CONTINUE;
+                    }, null)
+                    .transition(0, 1)
+                    .build();
+            FlowExecutionPlan plan = engine.plans().compile(definition);
+
+            // Same instance id, two views: schedule() must see a runnable context, while wake()
+            // declares the parked intent that lets it resolve an instance a run still owns.
+            FlowContext running = TestFlowContexts.create("self-park-wake-1", definition.name());
+            FlowContext parked = TestFlowContexts.createWithState(
+                    "self-park-wake-1", definition.name(), FlowState.PARKED);
+
+            scheduler.schedule(plan, running);
+            assertThat(awaitQuietly(insideStep))
+                    .as("the run must be in flight before the wake, or nothing is deferred")
+                    .isTrue();
+
+            scheduler.wake(parked);
+            releaseStep.countDown();
+
+            assertThat(awaitQuietly(insideResumedStep))
+                    .as("the deferred wake must resume the flow past the step that parked it")
+                    .isTrue();
+
+            assertThat(scheduler.lookupParked(parked.instanceIdMost(), parked.instanceIdLeast()))
+                    .as("this instance is running right now; handing it out as parked would let a "
+                            + "second wake schedule the same flow again")
+                    .isEmpty();
+            assertThat(engine.stats().parkedFlows())
+                    .as("the park registration taken inside the run must be shed when the deferred "
+                            + "wake resumes it, or the parked-flow gauge drifts up for good")
+                    .isZero();
+
+            releaseResumedStep.countDown();
             awaitTrue(WAKE_TIMEOUT_SECONDS, () -> engine.stats().completedFlows() >= 1);
         }
     }
