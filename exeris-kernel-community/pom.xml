@@ -210,6 +210,30 @@
                     <groups>${includedGroups}</groups>
                     <!-- Exclude @Tag("flamegraph") tests from regular CI runs -->
                     <excludedGroups>${excludedGroups}</excludedGroups>
+                    <!--
+                        Pick up *IT.java alongside the Surefire defaults, so the persistence-rls-gate
+                        CI job (`-DincludedGroups=integration -DexcludedGroups=` against this module)
+                        actually discovers the classes its name promises.
+
+                        Surefire 3.2.5 defaults to Test*.java / *Test.java / *Tests.java /
+                        *TestCase.java only. Every integration test in this module ends in IT, so the
+                        gate selected none of them: not the persistence isolation suite it is named
+                        after, nor the JDBC event-stream TCK bindings, the graph parity/churn ITs, the
+                        S3 blob TCK, or the Keycloak OIDC conformance test. The job was green because
+                        it ran three unrelated *Test classes that happen to carry the tag.
+
+                        exeris-kernel-community-kafka fixed exactly this in v0.8 Sprint 6 (Coverage
+                        C-P0-02) and the same block never reached this module. Default tag-exclusion
+                        still keeps these out of `mvn test` / `mvn install` — every one of them is
+                        @Tag("integration"), so no Testcontainers start without the group override.
+                    -->
+                    <includes>
+                        <include>**/Test*.java</include>
+                        <include>**/*Test.java</include>
+                        <include>**/*Tests.java</include>
+                        <include>**/*TestCase.java</include>
+                        <include>**/*IT.java</include>
+                    </includes>
                 </configuration>
                 <executions>
                     <!--
