@@ -2049,6 +2049,22 @@ bound. An application that declares no policy gets permit-all everywhere, which 
 before — and which means **declaring nothing means no edge authorization**. The subsystem docs say so
 rather than implying that installing the kernel confers protection.
 
+**Additive follow-on (v0.11): the claims mapping is substitutable.** `ClaimsMapper` has been
+documented since 0.10 as the only application-customisable point in the identity pipeline, but
+`CommunityOidcIdentityProvider` constructed the Community default inline, so nothing could supply
+one — an application needing a different subject or scope shape had to reimplement `IdentityProvider`
+outright, and a host-runtime binding had no seam to translate the same token into its own authority
+shape. `withClaimsMapper(ClaimsMapper)` mirrors `enforcingSharedScope()`: a new provider rather than a
+mutation, because the mapping takes part in a security decision on every request and must be fixed at
+construction. Not an issue and not a defect report — the contract was right, the producer just had no
+entry point; scoped as additive because the default is unchanged for every existing caller.
+
+Isolation is deliberately **not** part of what a mapper can influence: it produces a
+`PrincipalContext` only, and tenant routing stays with `IdentityStorageMapping` on the path every
+provider crosses (ADR-012 §4a). Pinned by a Community test whose composition case is mutation-proven —
+an `enforcingSharedScope()` that failed to carry the mapper would silently revert it to the default in
+one call order and nothing else in the suite would notice.
+
 **Claim-driven scopes and roles: DELIVERED.** `CommunityClaimsMapper` now reads `scope` / `scp` /
 `roles` from the verified token, with no fallback — a token declaring nothing grants nothing. This
 was the iteration ADR-040 §"Implementation" already specified ("sub → principalId, roles/scopes
