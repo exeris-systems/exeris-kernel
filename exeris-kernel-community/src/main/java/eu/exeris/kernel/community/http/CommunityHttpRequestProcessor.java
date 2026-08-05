@@ -19,6 +19,7 @@ import eu.exeris.kernel.spi.http.HttpHandler;
 import eu.exeris.kernel.spi.http.HttpKernelProviders;
 import eu.exeris.kernel.spi.http.HttpRequest;
 import eu.exeris.kernel.spi.http.HttpRequestBodyDecoderRegistry;
+import eu.exeris.kernel.spi.http.HttpRoutePolicy;
 import eu.exeris.kernel.spi.http.HttpResponseBodyEncoderRegistry;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
@@ -98,11 +99,16 @@ public final class CommunityHttpRequestProcessor {
         HttpRequestBodyDecoderRegistry requestBodyDecoderRegistry =
                 HttpKernelProviders.httpRequestBodyDecoderRegistry().orElse(null);
 
+        // ADR-061: captured here for the same reason as the decoder registry above — the route policy
+        // is read on the admission path, which runs on reactor threads outside this carrier scope.
+        HttpRoutePolicy routePolicy = HttpKernelProviders.httpRoutePolicy().orElse(null);
+
         this.requestDispatcher = new CommunityHttpRequestDispatcher(
                 this.allocator,
                 securityInterceptor,
                 persistenceEngine,
-                requestBodyDecoderRegistry);
+                requestBodyDecoderRegistry,
+                routePolicy);
         this.streamDispatcher = new CommunityHttpStreamDispatcher(this.allocator);
         this.http2SessionProcessor = new CommunityHttp2SessionProcessor(
                 this.allocator,

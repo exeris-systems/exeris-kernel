@@ -189,6 +189,23 @@ the sink transfers the buffer to the returned `HttpEncodedBody` on success and r
 failure path. The mirror-image `CommunityJsonRequestBodyEncoder` (client request bodies) streams
 through the same `SegmentSink` with identical ownership semantics.
 
+### Route authorization (since 0.11, ADR-061)
+
+`HttpKernelProviders.HTTP_ROUTE_POLICY` carries an application-supplied `HttpRoutePolicy`, read
+defensively via `httpRoutePolicy()`. The slot follows the ADR-036 `HTTP_REQUEST_BODY_DECODER_REGISTRY`
+shape: optional, application-bound, empty meaning "none supplied".
+
+`CommunityHttpRequestProcessor` captures it at construction rather than reading it per request — the
+same reason the decoder registry is captured there. The admission path runs on reactor threads that
+are not structured forks of the boot scope, so a request-time read would see an unbound slot.
+
+The policy answers `RouteRequirement` (`permitAll` / `authenticated` / `requiringAnyScope` /
+`requiringAllScopes`); `RouteAuthorizationEnforcer` in Core turns that plus the bound
+`PrincipalContext` into admit / `401` / `403`. Roles are not expressible here — see
+[`security.md`](security.md) for why the edge checks scopes and `@RequiresRole` stays at the method.
+
+---
+
 ### HTTP/2 stream admission (since v0.8 Sprint 5, HTTP-112)
 
 `Http2SessionContext.admitClientStreamId(int)` enforces two RFC 7540 invariants that the Community h2c session previously did not validate:
