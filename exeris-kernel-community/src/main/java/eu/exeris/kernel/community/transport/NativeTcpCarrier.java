@@ -229,16 +229,18 @@ public final class NativeTcpCarrier implements TransportEngine {
 
         // Phase 2 — drain in-flight streams while the write path is still alive.
         long drainStartNanos = System.nanoTime();
-        int inFlightAtStart = paqsActiveStreams();
         PaqsScheduler localPaqs = paqs;
+        int openAtStart = paqsActiveStreams();
+        int busyAtStart = localPaqs == null ? 0 : localPaqs.drainCoordinator().busyStreams();
         if (localPaqs != null) {
             localPaqs.close();
         }
-        int inFlightRemaining = paqsActiveStreams();
+        int busyRemaining = localPaqs == null ? 0 : localPaqs.drainCoordinator().busyStreams();
         CommunityTransportDrainEvent.emit(
                 engineName(),
-                inFlightAtStart,
-                inFlightRemaining,
+                busyAtStart,
+                busyRemaining,
+                openAtStart,
                 System.nanoTime() - drainStartNanos);
 
         // Phase 3 — the drain is over by completion or by deadline; take the loops down.
