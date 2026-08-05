@@ -31,7 +31,8 @@ class CommunityOidcIdentityProviderTckTest extends AbstractIdentityProviderTck {
 
     @Override
     protected LoanedBuffer validTokenBuffer() {
-        return TestJwt.builder().toBuffer();
+        // Since 0.11 the mapper grants only what the token claims, so the fixture has to say it.
+        return TestJwt.builder().claim("scope", "security:read").toBuffer();
     }
 
     @Override

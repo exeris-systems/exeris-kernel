@@ -2049,10 +2049,18 @@ bound. An application that declares no policy gets permit-all everywhere, which 
 before — and which means **declaring nothing means no edge authorization**. The subsystem docs say so
 rather than implying that installing the kernel confers protection.
 
-**Adjacent finding, not fixed here:** `CommunityClaimsMapper:52` assigns every authenticated principal
-exactly `Set.of("security:read")` and never reads the token's `scope` claim, so `security:write` is a
-scope nothing can grant. That predates this work and is the claims mapper's contract, not the route
-policy's; it needs its own slice.
+**Claim-driven scopes and roles: DELIVERED.** `CommunityClaimsMapper` now reads `scope` / `scp` /
+`roles` from the verified token, with no fallback — a token declaring nothing grants nothing. This
+was the iteration ADR-040 §"Implementation" already specified ("sub → principalId, roles/scopes
+claims → PrincipalContext") and the 0.10 refactor deliberately deferred to avoid changing
+observable behaviour, so it needed no new ADR. It also makes `security:write` grantable for the
+first time: the admission integration suite gains a case where an admin-scoped token reaches
+`/api/admin`, which was unwritable while nothing could grant that scope — meaning the existing 403
+case would have passed even against a route no caller could ever reach.
+
+**Behaviour change:** every principal used to receive `security:read` unconditionally. Fixtures and
+TCK token builders now declare their scopes explicitly, which is what makes them honest about what
+they grant.
 
 ---
 
