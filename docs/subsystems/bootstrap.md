@@ -37,6 +37,10 @@ Memory) are fully operational before higher‑level logic (Transport, Flow) is a
 
 - **Virtual Thread Parallelization**  
   L1 and L2 subsystems (Security, Persistence, Graph, Transport) initialize in parallel using `StructuredTaskScope`.
+  > **Note (0.11):** Community ships `CommunitySecuritySubsystem` from 0.11 onward. Before that this
+  > document described a Security subsystem the Community module did not have, so
+  > `KernelProviders.SECURITY_PROVIDER` was bound by nothing and the Citadel path was unreachable
+  > in a default boot. Closed as drift repair by ADR-061.
 
 - **Fail‑Fast vs Degrade**  
   Configurable failure policies:

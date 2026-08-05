@@ -53,26 +53,42 @@ public final class RouteAuthorizationEnforcer {
     /**
      * Decides whether a request satisfies the requirement its route declares.
      *
-     * @param requirement what the route demands; must not be {@code null}
+     * <p>A {@code null} requirement means the policy broke its own contract, and a broken policy must
+     * not grant. Reading it as {@link HttpRoutePolicy#unmatched()} would admit any authenticated
+     * caller — so a policy bug would hand an ordinary user a route that may have demanded an admin
+     * scope. It denies outright instead, in the shape the caller can act on: no identity is still a
+     * {@code 401}, an identity we cannot authorize is a {@code 403}. This method owns that rule, so
+     * callers that resolve a requirement themselves need not re-derive it.
+     *
+     * @param requirement what the route demands, or {@code null} if the policy returned none
      * @param principal   the verified identity, or {@code null} when none was established
      * @return the decision
      */
     public static RouteDecision decide(RouteRequirement requirement, PrincipalContext principal) {
+        if (requirement == null) {
+            return deny(principal);
+        }
         if (requirement.kind() == RouteRequirement.Kind.PERMIT_ALL) {
             return RouteDecision.ADMIT;
         }
         if (principal == null) {
             return RouteDecision.UNAUTHENTICATED;
         }
+        return satisfiesScopes(requirement, principal) ? RouteDecision.ADMIT : RouteDecision.FORBIDDEN;
+    }
+
+    /** Denies in the shape the caller can act on: {@code 401} with no identity, {@code 403} with one. */
+    private static RouteDecision deny(PrincipalContext principal) {
+        return principal == null ? RouteDecision.UNAUTHENTICATED : RouteDecision.FORBIDDEN;
+    }
+
+    private static boolean satisfiesScopes(RouteRequirement requirement, PrincipalContext principal) {
+        // Exhaustive over Kind on purpose: a new variant fails the compile here rather than falling
+        // through to true, which would open every route carrying it.
         return switch (requirement.kind()) {
-            case AUTHENTICATED -> RouteDecision.ADMIT;
-            case ANY_SCOPE -> hasAny(requirement, principal)
-                    ? RouteDecision.ADMIT : RouteDecision.FORBIDDEN;
-            case ALL_SCOPES -> hasAll(requirement, principal)
-                    ? RouteDecision.ADMIT : RouteDecision.FORBIDDEN;
-            // PERMIT_ALL returned above; listed so a new Kind fails the compile rather than
-            // falling through to ADMIT, which would open every route carrying it.
-            case PERMIT_ALL -> RouteDecision.ADMIT;
+            case PERMIT_ALL, AUTHENTICATED -> true;
+            case ANY_SCOPE -> hasAny(requirement, principal);
+            case ALL_SCOPES -> hasAll(requirement, principal);
         };
     }
 
@@ -89,16 +105,7 @@ public final class RouteAuthorizationEnforcer {
                                        HttpMethod method,
                                        String path,
                                        PrincipalContext principal) {
-        RouteRequirement requirement = policy.requirementFor(method, path);
-        if (requirement == null) {
-            // A policy that breaks the never-null contract is broken, and a broken policy must not
-            // grant. Substituting unmatched() here would admit any authenticated caller — so a policy
-            // bug would hand an ordinary user a route that may have demanded an admin scope. Deny
-            // outright instead, and deny in the shape the caller can act on: no identity is still a
-            // 401, an identity we cannot authorize is a 403.
-            return principal == null ? RouteDecision.UNAUTHENTICATED : RouteDecision.FORBIDDEN;
-        }
-        return decide(requirement, principal);
+        return decide(policy.requirementFor(method, path), principal);
     }
 
     private static boolean hasAny(RouteRequirement requirement, PrincipalContext principal) {

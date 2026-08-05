@@ -166,6 +166,8 @@ public class SecurityInterceptor {
   cross-tenant access and asserting row count is zero.
 - Fail-Closed: invalid token at transport edge results in `EX-SEC-2002` and zero downstream calls.
 - Community HTTP admission semantics (implemented): missing/invalid token maps to HTTP `401`; authenticated principal without required scope maps to HTTP `403`; steady-state scope checks remain membership tests over immutable in-memory scope sets.
+- **Which routes require what is declared by the application, not by the driver (since 0.11, ADR-061).** `CommunityHttpRequestDispatcher` no longer gates on a `/secure` path prefix with the literal scopes `security:read` / `security:write` compiled into it. It resolves the route through `HttpRoutePolicy` (bound at `HttpKernelProviders.HTTP_ROUTE_POLICY`) and hands the resulting `RouteRequirement` to `RouteAuthorizationEnforcer` in Core, so every transport shares one decision layer. With no policy bound the requirement is permit-all and the kernel behaves as it did before — declaring nothing changes nothing, which also means an application that never declares a policy has **no edge authorization**. The unmatched route is the application's call: `HttpRoutePolicy.unmatched()` is fail-closed, and a policy returning `null` is treated as a defect and denies outright rather than being read as unmatched.
+- `KernelProviders.SECURITY_PROVIDER` is bound by `CommunitySecuritySubsystem` (since 0.11). Before that it was bound by nothing, so the interceptor was never constructed and the whole Citadel path was unreachable in a default boot.
 
 ---
 
