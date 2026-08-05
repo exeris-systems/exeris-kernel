@@ -2199,7 +2199,11 @@ See also: v0.10 §"Events: Log-Ordering & Optimistic-Concurrency Boundary" (the 
 
 **1.0 disposition:** stage 1 **1.0-BLOCKING** (correctness); stage 2 **v0.11 differentiator** — the go-to-market wedge; pull earlier if BudgetHQ/Stellar need it. *This is the most urgent item in this section* — it strikes the strongest concrete claim (the Camunda wedge).
 
-**Status (v0.11): stage 1 DELIVERED (ADR-062); stage 2 DECIDED (ADR-064), implementation open.**
+**Status (v0.11): stage 1 DELIVERED (ADR-062); stage 2 PARTIAL — coexistence DELIVERED (ADR-064), in-flight migration open.**
+
+What landed: `FlowDefinition` carries a version, the plan catalog is keyed by `(name, version)` so versions coexist, `FlowSnapshot` records the version a saga parked under, and both resume entry points — `wake()` and `schedule()` — bind to that exact version or refuse fail-closed. `AbstractFlowDefinitionVersioningTck` is the gate.
+
+What has not: `FlowDefinitionMigration` — the explicit vN→vN+1 transform, adjacent-hop chaining, and the no-path rejection. Until it lands, a definition change means bumping and keeping the old version registered; there is no way to move a parked saga forward. The Camunda-wedge claim is not complete without it.
 
 **FlowJournal follows this, it does not precede it.** The journal was queued ahead of versioning in planning and the ordering was wrong for the same reason ADR-062 gave about positions: an entry recording *which step completed* is durable history only if it also records *which version produced it*, or it ages out at the next deploy exactly as a position does. Its contract is also not obviously an ADR yet — what an entry contains, whether it is SPI or Community-local, where it persists, retention, and its write cost on the saga checkpoint path are all open, which is an RFC's shape rather than a decision already made.
 

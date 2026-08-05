@@ -234,7 +234,7 @@ class CommunityJdbcFlowSnapshotStoreTckIT extends AbstractDistributedFlowSnapsho
         return new FlowSnapshot(
                 loaded.instanceIdMost(),
                 loaded.instanceIdLeast(),
-                loaded.definitionName(),FlowDefinition.INITIAL_VERSION,
+                loaded.definitionName(), FlowDefinition.INITIAL_VERSION,
                 newStep,
                 Optional.of("step-" + newStep),
                 newState,
