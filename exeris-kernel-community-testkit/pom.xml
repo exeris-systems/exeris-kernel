@@ -14,7 +14,7 @@
     <artifactId>exeris-kernel-community-testkit</artifactId>
 
     <name>Exeris Kernel :: Community Testkit</name>
-    <description>Reusable community HTTP fixture utilities for tests across modules.</description>
+    <description>Reusable fixtures that boot the real kernel for tests across modules and for downstream consumers.</description>
 
     <dependencies>
         <dependency>
@@ -29,10 +29,16 @@
             <groupId>com.nimbusds</groupId>
             <artifactId>nimbus-jose-jwt</artifactId>
         </dependency>
+        <!-- Version managed by exeris-kernel-bom; the previous hard-pinned 5.10.2 diverged from the
+             reactor-wide JUnit and would have put two Jupiter versions on the test classpath. -->
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
-            <version>5.10.2</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>

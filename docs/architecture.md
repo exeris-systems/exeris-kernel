@@ -277,6 +277,7 @@ To understand how these concepts map to actual code, read the subsystem definiti
 - [Community Module](modules/03-community.md) – NIO.2-backed Java 26 subsystem drivers (OSS)
 - [Enterprise Module](modules/04-enterprise.md) - High-Performance Native Drivers
 - [TCK Module](modules/05-tck.md) - Technology Compatibility Kit
+- [Testkit Module](modules/06-testkit.md) - Fixtures that boot the real kernel for consumers
 
 **Logical Subsystems:**
 - [Bootstrap](subsystems/bootstrap.md) | [Config](subsystems/config.md) | [Memory](subsystems/memory.md) | [Security](subsystems/security.md)
