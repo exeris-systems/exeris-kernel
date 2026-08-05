@@ -63,6 +63,8 @@ import java.util.function.Function;
  *   <li>{@link TransportScopes#STREAM_PRIORITY} — the stream's business priority</li>
  *   <li>{@link TransportScopes#STREAM_ID} — the stream's unique identifier</li>
  *   <li>{@link TransportScopes#ENGINE_NAME} — the transport engine name for diagnostics</li>
+ *   <li>{@link TransportScopes#DRAIN_COORDINATOR} — whether graceful shutdown has begun</li>
+ *   <li>{@link TransportScopes#STREAM_WORK} — this stream's handle for reporting itself idle</li>
  * </ul>
  *
  * <h2>JFR-First Telemetry</h2>
@@ -230,9 +232,13 @@ public final class PaqsScheduler implements AutoCloseable {
     }
 
     /**
-     * Waits until the {@link AdmissionController}'s active stream count reaches zero,
-     * applying a spin-then-yield backoff strategy to avoid burning CPU, and enforcing
-     * a hard timeout to keep shutdown operationally safe even if a handler misbehaves.
+     * Marks the drain, then waits until no stream is being served.
+     *
+     * <p>Waits on {@link DrainCoordinator#busyStreams()} rather than the {@link AdmissionController}'s
+     * active count: the latter counts open streams, and a keep-alive connection stays open with
+     * nothing in flight for as long as its peer holds it, so waiting on it burned the whole deadline.
+     * Applies a spin-then-yield backoff to avoid burning CPU, and enforces a hard timeout so shutdown
+     * stays operationally safe even if a handler misbehaves.
      */
     @Override
     public void close() {

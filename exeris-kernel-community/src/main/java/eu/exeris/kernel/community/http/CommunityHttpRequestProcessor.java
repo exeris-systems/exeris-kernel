@@ -193,6 +193,11 @@ public final class CommunityHttpRequestProcessor {
             // Shutdown began while this connection was being served. Extending it would put the
             // connection back into the idle state the drain cannot wait out; the response already
             // told the peer to close (see CommunityHttpExchange#resolveKeepAlive).
+            //
+            // Accepted residual: the drain can begin between that write and this check, so a peer can
+            // be told keep-alive and then find the connection closed. There is no I/O between the two
+            // to widen the window, and RFC 9112 §9.6 requires a client to tolerate exactly this — a
+            // persistent connection may close at any time, and an idempotent request is retried.
             return false;
         }
 
