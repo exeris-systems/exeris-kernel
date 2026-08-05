@@ -16,7 +16,7 @@ tools/spi-api-diff/spi-api-diff.sh --old v0.10.2 --new HEAD --fail-on-stable
 # whole release history, report-only
 tools/spi-api-diff/spi-api-diff.sh --history v0.5.0,v0.6.0,v0.7.0,v0.7.1,v0.8.0,v0.8.1,v0.9.0,v0.10.0,v0.10.1,v0.10.2
 
-# every SPI package carries a maturity label?
+# every SPI class resolves to a maturity label?
 tools/spi-api-diff/spi-api-diff.sh --verify-surfaces
 ```
 
@@ -54,9 +54,13 @@ Reachability does not matter here — the comparison is between two API surfaces
 
 The machine-readable mirror of the matrix: which packages and classes are `stable`, `preview`,
 `experimental`, or `internal`. **When a surface changes level in the matrix, change it here in the
-same commit.** `--verify-surfaces` fails when an SPI package exists with no label at all, so a new
-subsystem cannot ship unclassified — that check is what caught `spi.scheduling` and
-`spi.storage.blob` being absent from the matrix when this tool was first run.
+same commit.** `--verify-surfaces` fails when any SPI **class** resolves to no label, so neither a
+new subsystem nor a new class inside an existing `mixed` package can ship unclassified. It caught
+`spi.scheduling` and `spi.storage.blob` on its first run, and 25 unclassified `spi.http` classes
+once tightened from package to class granularity.
+
+A `mixed` package must therefore be enumerated exhaustively. Package-level entries still match as
+prefixes, so a single-maturity package stays one line.
 
 ## Failure modes this tool defends against
 
@@ -70,6 +74,10 @@ both are now asserted against:
 - **Silent build failure.** If the SPI at a revision fails to compile, an empty jar compares as
   "everything unchanged". `assert_jar` fails the run unless the artifact contains classes, and
   japicmp output is rejected unless it carries its comparison header.
+- **Package-granular self-check.** `--verify-surfaces` originally checked per package, so one
+  matching class marked its whole package classified and the rest fell out of both include lists —
+  neither gated nor reported. The self-check had the hole it exists to prevent, in the one package
+  (`spi.http`) that needs class-level precision. Now checked per fully-qualified class name.
 
 Neither check is decorative; both were live defects that produced green output over known-breaking
 revision pairs.

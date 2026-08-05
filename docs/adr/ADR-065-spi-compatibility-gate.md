@@ -76,15 +76,25 @@ sitting beside it. `tools/spi-api-diff/stability-surfaces.conf` mirrors the tabl
 the same commit as any maturity change. Where the generated record and the table disagree, the record
 wins and the table is the bug.
 
-### 3. An unclassified SPI package fails the build
+### 3. An unclassified SPI class fails the build
 
-`--verify-surfaces` fails when a package exists in the SPI tree with no maturity label at all.
+`--verify-surfaces` fails when a **class** in the SPI tree resolves to no maturity label.
 Classification is mandatory, not opt-in — an unlabelled surface is one the gate cannot protect and a
 consumer cannot reason about.
 
-This was not a theoretical guard. Its first run found `spi.scheduling` and `spi.storage.blob`
-shipping on the 0.11 line with accepted ADRs (057 / 056), `Abstract*Tck` coverage and Community
-bindings — and no row in the matrix. Both are now labelled `preview`.
+The unit is the class, not the package, and that distinction is the whole guard. A `mixed` package
+is classified by class name, so a package-granular check is satisfied by its *first* matching class
+and blind to every other one. Since japicmp compares only what an include expression selects, a class
+named in no list is neither gated nor reported. `spi.http` is the package this matters for: 38
+classes, of which the matrix originally enumerated 12.
+
+This was not a theoretical guard, in either form. The package-granular first version found
+`spi.scheduling` and `spi.storage.blob` shipping on the 0.11 line with accepted ADRs (057 / 056),
+`Abstract*Tck` coverage and Community bindings, and no row in the matrix. Tightening it to class
+granularity then found 25 unclassified classes in `spi.http` — including `HttpRequest`,
+`HttpResponse` and `HttpStatus`, the carriers the `stable` engine and handler contracts are written
+in terms of. The matrix's `…spi.http` breakdown is now exhaustive by construction, and two surfaces
+it had never described at all (client retry, ADR-045; route authorization, ADR-061) have rows.
 
 ### 4. A failure is a decision prompt, not an automatic revert
 
@@ -134,11 +144,25 @@ The matrix is allowed to be wrong. It is not allowed to be quietly wrong.
   where both files name a package but at different levels. That check is worth adding later; it is
   not built now.
 - **A gate reporting a false green would be worse than no gate**, because it converts an unknown into
-  an assurance. Two such defects appeared while building it — japicmp separates include expressions
-  with `;`, so a comma-separated list matches nothing and reports clean; and an SPI revision that
-  fails to compile yields an empty jar that compares as unchanged. Both are now asserted against
-  (`assert_filter_selects`, `assert_jar`, and a required comparison header), and both are the reason
-  those assertions exist rather than defensive decoration.
+  an assurance. **Three** such defects appeared, and the pattern is worth naming: every one of them
+  failed *open* and looked like success.
+  1. japicmp separates include expressions with `;`, so a comma-separated list matches nothing and
+     reports a clean diff → `assert_filter_selects` fails the run if an expression selects no class.
+  2. An SPI revision that fails to compile yields an empty jar that compares as unchanged →
+     `assert_jar` requires the artifact to contain classes, and japicmp output is rejected without
+     its comparison header.
+  3. `--verify-surfaces` checked per package, so one matching class marked its whole package
+     classified and the rest fell out of both include lists — **the self-check had the exact hole it
+     exists to prevent**, in the one package (`spi.http`) singled out for class-level treatment.
+     Found in review, not by the tool. Fixed by checking per fully-qualified class name; package
+     entries in the config still match as prefixes, so only `mixed` packages pay the cost of being
+     enumerated.
+
+  Defect 3 is the instructive one: the first two were caught because they made the tool visibly
+  wrong on a known-breaking pair, while the third made it *quietly* right on the pairs anyone would
+  test. Regenerating the whole history after the fix returned identical counts — the hole existed,
+  but nothing had gone through it — which is the outcome to expect and not evidence the check was
+  unnecessary.
 - **japicmp is a new build-time dependency**, fetched once into `~/.m2`. It is not a runtime
   dependency and does not enter the reactor.
 
@@ -164,9 +188,10 @@ The matrix is allowed to be wrong. It is not allowed to be quietly wrong.
 1. A maturity change in `docs/stability-matrix.md` and the matching change in
    `tools/spi-api-diff/stability-surfaces.conf` land in the **same commit**. A PR moving one without
    the other is incomplete.
-2. A new SPI package gets a matrix row and a label in the same PR that introduces it. The
-   `--verify-surfaces` step enforces this; do not work around it by widening an existing package
-   expression to swallow the new one.
+2. A new SPI class gets a label in the same PR that introduces it, and a matrix row wherever the
+   matrix describes its surface. The `--verify-surfaces` step enforces this per class. **Do not
+   satisfy a report from it by widening a class entry to its package** — inside a `mixed` package
+   that re-opens defect 3 above, silently.
 3. When the gate fails, respond with one of the three documented outcomes and record which. Do not
    silence it by demoting a surface without a note in the release notes explaining the demotion.
 4. `docs/release/spi-api-history.md` is generated. Regenerate it at each release cut rather than

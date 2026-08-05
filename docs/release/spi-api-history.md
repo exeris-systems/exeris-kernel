@@ -123,6 +123,8 @@ decision, not an instruction to revert:
 3. **Intended, and the surface really is stable?** Then it is a major-version decision, and pre-1.0
    it needs an ADR — not a build-config edit.
 
-The gate also fails when an SPI package exists with no maturity label at all
-(`spi-api-diff.sh --verify-surfaces`), which is how a new subsystem is stopped from shipping
-unclassified.
+The gate also fails when any SPI **class** resolves to no maturity label
+(`spi-api-diff.sh --verify-surfaces`), which is how a new subsystem — or a new class inside an
+already-classified `mixed` package such as `spi.http` — is stopped from shipping unclassified.
+Only what an include expression selects is compared, so an unlabelled class would be neither gated
+nor reported.

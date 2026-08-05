@@ -14,8 +14,11 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   with nothing but a JDK) and diffs them with japicmp, classifying each finding by the maturity label
   declared in `docs/stability-matrix.md`. A binary-incompatible change to a surface declared `stable`
   fails CI (`spi-compatibility-gate` job); `preview`/`experimental` changes are reported, not gated.
-  A second check fails the build when an SPI package carries no maturity label at all — which is how
-  `spi.scheduling` and `spi.storage.blob` were found to be missing from the matrix (ADR-065).
+  A second check fails the build when any SPI class resolves to no maturity label — which is how
+  `spi.scheduling` and `spi.storage.blob` were found missing from the matrix, and then 25
+  unclassified `eu.exeris.kernel.spi.http` classes (including the `HttpRequest` / `HttpResponse` /
+  `HttpStatus` carriers the `stable` engine contracts are written in terms of) once the check was
+  tightened from package to class granularity (ADR-065).
 - **Generated compatibility record** — `docs/release/spi-api-history.md`: one row per release
   transition from 0.5.0 to 0.10.2, produced by the gate rather than by review. No `stable` surface has
   taken a binary-incompatible change since the stability matrix was first published in v0.9.0.
@@ -27,8 +30,11 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Changed
 - **Stability matrix** — added the missing `…spi.scheduling` and `…spi.storage.blob` rows (both
-  `preview`, since 0.11.0, ADR-057 / ADR-056); the pre-1.0 framing now distinguishes "no consumer
-  under a support contract" from "no consumers", and points at the generated record.
+  `preview`, since 0.11.0, ADR-057 / ADR-056); the `…spi.http` per-surface breakdown is now
+  **exhaustive** (every class in the package appears in exactly one row), which added rows for two
+  surfaces it had never described — client retry (ADR-045) and route authorization (ADR-061); and
+  the pre-1.0 framing now distinguishes "no consumer under a support contract" from "no consumers",
+  and points at the generated record.
 
 ## [0.10.2] — 2026-07-19
 

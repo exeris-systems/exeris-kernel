@@ -119,31 +119,41 @@ build_ref() {
 # --- surface classification guard ------------------------------------------
 
 verify_surfaces() {
-  local ref="${1:-HEAD}" missing=0
+  local ref="${1:-HEAD}" missing=0 checked=0
   local classified="${STABLE_INC},${PREVIEW_INC},${EXPERIMENTAL_INC},${INTERNAL_INC}"
-  while read -r pkg; do
+  # Checked per fully-qualified CLASS, not per package. A package-granular check
+  # cannot see a gap inside a `mixed` package: `spi.http` is classified by class
+  # name, so the moment one class there matched, the whole directory counted as
+  # covered and its remaining classes fell out of BOTH japicmp include lists —
+  # ungated and unreported, which is the false-green this gate exists to prevent.
+  # Package-level entries in the conf still work here: they match as prefixes.
+  while read -r fqcn; do
+    checked=$((checked + 1))
     local hit=0
     IFS=',' read -ra entries <<< "$classified"
     for e in "${entries[@]}"; do
       [[ -z "$e" ]] && continue
-      # A package is classified when an entry is the package itself, a parent
-      # package, or a class inside it.
-      if [[ "$pkg" == "$e" || "$pkg" == "$e".* || "$e" == "$pkg".* ]]; then hit=1; break; fi
+      # Classified when the entry IS the class, or is a package containing it.
+      # Note there is deliberately no "entry is below the class" branch — that
+      # is what let one class-level entry classify its whole package.
+      if [[ "$fqcn" == "$e" || "$fqcn" == "$e".* ]]; then hit=1; break; fi
     done
     if [[ $hit -eq 0 ]]; then
-      echo "spi-api-diff: UNCLASSIFIED SPI package: $pkg" >&2
+      echo "spi-api-diff: UNCLASSIFIED SPI class: $fqcn" >&2
       missing=1
     fi
   done < <(git -C "$REPO_ROOT" ls-tree -r "$ref" --name-only -- "$SPI_PATH" \
            | grep '\.java$' \
-           | sed "s#^$SPI_PATH/##; s#/[^/]*\.java\$##; s#/#.#g" \
+           | grep -v '/package-info\.java$' \
+           | sed "s#^$SPI_PATH/##; s#\.java\$##; s#/#.#g" \
            | LC_ALL=C sort -u)
+  [[ $checked -gt 0 ]] || die "no SPI sources found at $ref — refusing to report a vacuous pass"
   if [[ $missing -eq 1 ]]; then
-    echo "spi-api-diff: every SPI package must carry a maturity label in stability-surfaces.conf" >&2
+    echo "spi-api-diff: every SPI class must resolve to a maturity label in stability-surfaces.conf" >&2
     echo "spi-api-diff: (and a matching row in docs/stability-matrix.md)" >&2
     return 1
   fi
-  echo "spi-api-diff: all SPI packages at $ref are classified."
+  echo "spi-api-diff: all $checked SPI classes at $ref are classified."
   return 0
 }
 

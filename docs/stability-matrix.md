@@ -80,12 +80,28 @@ as `stable`. The `@Immutable` annotation + watcher-refusal semantics (since 0.9.
 
 ### `…spi.http` per-surface breakdown
 
+Because this package is `mixed`, the breakdown is **exhaustive**: every class in
+`eu.exeris.kernel.spi.http` appears in exactly one row. A class named in no row would be neither
+gated nor reported by the compatibility gate, so completeness here is enforced, not aspirational —
+`spi-api-diff.sh --verify-surfaces` checks per fully-qualified class name.
+
 | HTTP surface | Level | Since | Anchor ADR | TCK |
 |---|---|---|---|---|
 | `HttpClientEngine`, `HttpServerEngine`, `HttpProvider`, `HttpExchange`, `HttpHandler` | **stable** | 0.5.0 | ADR-009 | `AbstractHttpClientEngineTck`, `…HttpServerEngineTck`, `…HttpProviderTck`, `…HttpExchangeTck`, `…HttpHandlerTck` |
+| Request/response carriers: `HttpRequest`, `HttpResponse`, `HttpTypedResponse`, `HttpStatus`, `HttpMethod`, `HttpVersion`, `HttpHeader` | **stable** | 0.5.0 | ADR-009 | exercised through the engine/exchange/handler TCKs above |
+| Engine wiring: `HttpConfig`, `HttpMode`, `HttpKernelProviders` | **stable** | 0.5.0 | ADR-009 | `AbstractHttpProviderTck`, `…HttpProviderLoopbackTck` |
 | `HttpClientRequestEnricher` | **stable** | 0.8.0 | ADR-032 | `AbstractHttpClientRequestEnricherTck` |
-| `HttpRequestBodyEncoder` / `HttpRequestBodyDecoder` / `HttpResponseBodyDecoder` | **preview** | 0.8.0 | ADR-034 | `AbstractHttpRequestBodyEncoderTck`, `…RequestBodyDecoderTck`, `…ResponseBodyDecoderTck` |
+| Body codecs: `HttpRequestBodyEncoder`, `HttpRequestBodyDecoder`, `HttpResponseBodyEncoder`, `HttpResponseBodyDecoder`, `HttpRequestBodyEncoderRegistry`, `HttpRequestBodyDecoderRegistry`, `HttpResponseBodyEncoderRegistry`, `HttpResponseBodyDecoderRegistry`, `HttpRequestEncodingContext`, `HttpRequestDecodingContext`, `HttpResponseEncodingContext`, `HttpResponseDecodingContext`, `HttpEncodedBody` | **preview** | 0.8.0 | ADR-034 / ADR-036 | `AbstractHttpRequestBodyEncoderTck`, `…RequestBodyDecoderTck`, `…ResponseBodyDecoderTck` |
+| Client retry: `HttpRetryPolicy`, `RetryDecision`, `HttpAttemptOutcome` | **preview** | 0.10.0 | ADR-045 | `AbstractHttpRetryPolicyTck` |
+| Route authorization: `HttpRoutePolicy`, `RouteRequirement` | **preview** | 0.11.0 | ADR-061 | `AbstractHttpRoutePolicyTck` |
 | `HttpStreamExchange` / `HttpStreamHandler` / `StreamEvent` (SSE server-push) | **preview** | 0.10.0 | ADR-043 | `AbstractHttpStreamExchangeTck` |
+
+> One asymmetry is deliberate and worth stating, because it looks like an error: `HttpProvider` is
+> `stable` while the four codec `…Registry` types it returns are `preview`. Every such method is a
+> `default` returning `empty()` / `Optional.empty()`, so the codec seam is opt-in and a provider
+> implementor inherits no obligation from it — the settled part of `HttpProvider` is unaffected by
+> the quadrant still moving. If the registries' shape changes, the gate reports it without failing
+> the build, which is the intended reading of `preview` and not a hole in `stable`.
 
 > The body-codec quadrant has an **accepted ADR (ADR-034)** and executable TCKs, so it is past
 > `experimental` — but the server-side generator that consumes the request decoder lands in a
