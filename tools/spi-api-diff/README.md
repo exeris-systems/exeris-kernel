@@ -1,6 +1,7 @@
 # `spi-api-diff` — SPI compatibility gate
 
 CI tooling, outside the Maven reactor (same status as `tools/jfr-reporter`).
+Anchor decision: [ADR-065](../../docs/adr/ADR-065-spi-compatibility-gate.md).
 
 Turns the maturity labels declared in [`docs/stability-matrix.md`](../../docs/stability-matrix.md)
 from a statement into a checked property: every build diffs the public SPI against the last released

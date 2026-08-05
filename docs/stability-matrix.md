@@ -22,8 +22,9 @@ exactly what each label commits to.
 
 Intent alone is not checkable, so it is paired with evidence: every release transition is diffed at
 the bytecode level and published in [`release/spi-api-history.md`](./release/spi-api-history.md), and
-an incompatible change to a surface declared `stable` fails CI. Consumers upgrading across several
-minors should start from [`release/upgrade-0.5-to-0.10.md`](./release/upgrade-0.5-to-0.10.md).
+an incompatible change to a surface declared `stable` fails CI ([ADR-065](./adr/ADR-065-spi-compatibility-gate.md)).
+Consumers upgrading across several minors should start from
+[`release/upgrade-0.5-to-0.10.md`](./release/upgrade-0.5-to-0.10.md).
 
 > **One namespace, one source of truth.** When a subsystem or module doc says a surface is
 > `stable` / `preview` / `experimental`, it MUST match this table. If they ever disagree,

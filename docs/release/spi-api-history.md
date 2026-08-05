@@ -2,6 +2,7 @@
 
 **Status:** Generated artefact — do not edit by hand
 **Regenerate:** `tools/spi-api-diff/spi-api-diff.sh --history v0.5.0,v0.6.0,…,v0.10.2 --out docs/release`
+**Anchor ADR:** [ADR-065](../adr/ADR-065-spi-compatibility-gate.md)
 **Method:** each tag's `exeris-kernel-spi` is compiled straight from git and diffed with
 [japicmp](https://siom79.github.io/japicmp/) at `public` visibility; findings are classified by the
 maturity label declared in [`../stability-matrix.md`](../stability-matrix.md).

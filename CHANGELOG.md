@@ -15,7 +15,7 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   declared in `docs/stability-matrix.md`. A binary-incompatible change to a surface declared `stable`
   fails CI (`spi-compatibility-gate` job); `preview`/`experimental` changes are reported, not gated.
   A second check fails the build when an SPI package carries no maturity label at all — which is how
-  `spi.scheduling` and `spi.storage.blob` were found to be missing from the matrix.
+  `spi.scheduling` and `spi.storage.blob` were found to be missing from the matrix (ADR-065).
 - **Generated compatibility record** — `docs/release/spi-api-history.md`: one row per release
   transition from 0.5.0 to 0.10.2, produced by the gate rather than by review. No `stable` surface has
   taken a binary-incompatible change since the stability matrix was first published in v0.9.0.
