@@ -144,6 +144,16 @@ public abstract class AbstractSagaRecoveryTck {
         return snapshotStore().load(ctx.instanceIdMost(), ctx.instanceIdLeast());
     }
 
+    /** Whether every instance's durable checkpoint has been reclaimed. */
+    private boolean allCheckpointsReclaimed(List<FlowContext> contexts) {
+        for (FlowContext ctx : contexts) {
+            if (loadSnapshot(ctx).isPresent()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     private boolean awaitCondition(BooleanSupplier condition, int timeoutSeconds) {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(timeoutSeconds);
         while (System.nanoTime() < deadline) {
@@ -560,6 +570,14 @@ public abstract class AbstractSagaRecoveryTck {
                     () -> engine.stats().completedFlows() >= expectedCompleted, 15))
                     .as("Rebuilt engine MUST drive all %d resumed instances to COMPLETED", expectedCompleted)
                     .isTrue();
+
+            // The counter above is not a proxy for the reclaim. complete() increments
+            // completedFlows, publishes progress, and only then deletes the checkpoint, so the
+            // fleet-size gate is satisfied while the last instance's row is still in the store —
+            // and reading it in the same breath makes this a race, not an assertion. Await the
+            // reclaim itself; the per-instance check below still names the offender if it never
+            // lands, rather than reporting an anonymous timeout.
+            awaitCondition(() -> allCheckpointsReclaimed(parked), 15);
 
             for (FlowContext ctx : parked) {
                 assertThat(loadSnapshot(ctx))
