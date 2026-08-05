@@ -1956,6 +1956,58 @@ existing contracts, so nothing here widens the kernel's public surface.
 
 ---
 
+### Security: Route Authorization Is a Hardcoded `/secure` Prefix, Not Something an Application Can Declare (surfaced 2026-08-05, ADR-061)
+
+**Gap:** the HTTP admission gate is fail-closed but unaddressable. `CommunityHttpRequestDispatcher`
+hardcodes `SECURE_PATH_PREFIX = "/secure"`, `ADMIN_PATH_PREFIX = "/secure/admin"` and the literal scope
+names `security:read` / `security:write` (`:50-53`); `requiresAdmission()` is `startsWith("/secure")`
+(`:207-209`). Every other path takes the `else` branch of `dispatch()` (`:96`) straight to the handler
+— no admission, no `PrincipalContext` bound. An application whose routes live under `/api/**` has no
+edge authorization and no supported way to ask for it.
+
+Three findings from the same audit:
+
+- **The gate is unreachable in a default boot.** `CommunityHttpRequestProcessor:83-86` builds the
+  `SecurityInterceptor` only when `KernelProviders.SECURITY_PROVIDER.isBound()`, and nothing in
+  production binds that slot. `CommunitySecurityProvider` exists and is `ServiceLoader`-registered, but
+  Community ships **no security `Subsystem`** — while `bootstrap.md` already places Security in the L1
+  parallel-init DAG (`:39`, `:323`, `:552`). So `/secure/*` answers `401` unconditionally and the whole
+  Citadel path (interceptor, role mask, `StorageContextBridge`) never executes.
+- **`isPublicPath` is unreachable code** (`:211-220`). It is consulted only behind
+  `startsWith("/secure")`, so no path can satisfy both conditions. A leftover from when the health
+  routes lived in the dispatcher; they now live in `CommunityHttpHealthRoutes`.
+- **Half the RBAC machinery is already live.** Contrary to the stale note at `security.md:6`,
+  `GeneratedRoleRegistryLoader.load()` *is* wired in production (`CommunityHttpRequestProcessor:86`) and
+  `SecurityInterceptor.enrichWithRoleMask` binds a precomputed `roleMask()`. Only the enforcement call
+  site is missing — and it cannot be the `methodId` one (see below).
+
+**Owner:** Security / HTTP subsystems; SPI + Core + Community.
+
+**Resolution:** ADR-061. A route-authorization contract in `eu.exeris.kernel.spi.http` behind an
+`Optional` slot on `HttpKernelProviders` (the ADR-036 shape), a driver-agnostic decision helper in
+`eu.exeris.kernel.core.security` beside `RoleCheckEnforcer` so every transport inherits one decision
+layer, rules **declared in code** (ADR-014 §3 rejected a configuration-file rule surface), a Community
+security `Subsystem` binding `SECURITY_PROVIDER`, and removal of the prefix constants plus the dead
+allowlist. Default is "no policy declared" — behaviour unchanged for an application that declares
+nothing.
+
+**Explicitly not a revision of the Sprint-4 descoping.** URL→`methodId` enforcement stays out: `methodId`
+is assigned at compile time from alphabetical ordering under `@Retention(SOURCE)`, so the kernel cannot
+reconstruct that map at runtime *at all*. The path-based mechanism is the only one the kernel executes
+unaided — it does not depend on `exeris-tooling`, which is a helper layer, not a prerequisite. An
+application written directly against the kernel, with no annotation processing anywhere in its build,
+gets edge authorization. `@RequiresRole` remains the method-level layer above it.
+
+**Merge Gate:** `AbstractHttpRoutePolicyTck` + a Community binding, with the deny paths and the
+unmatched-route path as mandatory cases — a suite that only proves admission would pass against an
+implementation that admits everything. `ExerisArchitectureTest` green. `security.md`, `http.md` and
+`bootstrap.md` updated in the implementing slice — not before it, since they describe what the kernel
+does. (The stale `security.md:6` note is a separate matter: it stated something false about the past,
+so it was corrected with ADR-061 itself.) Release notes record the default-boot behaviour change:
+`/secure/*` stops answering `401` unconditionally once a provider is bound.
+
+---
+
 ## Known Gaps / Future Work planned for v0.12
 
 ### HTTP: `WebSocketProvider` SPI (or SSE-Only Commitment)
