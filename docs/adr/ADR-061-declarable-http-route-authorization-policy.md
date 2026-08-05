@@ -48,8 +48,8 @@ Three further findings from the same audit sharpen the problem:
    `MaskedPrincipal` carrying a precomputed `roleMask()`. What is missing is an enforcement call site —
    and the missing one cannot be `RoleCheckEnforcer.check(methodId, …)`, because `methodId` is assigned
    at compile time from alphabetical ordering under `@Retention(SOURCE)`. The kernel has no way to
-   reconstruct a URL→`methodId` map at runtime. `security.md:220-226` already recorded this as
-   descoped.
+   reconstruct a URL→`methodId` map at runtime. `security.md:222-229`
+   (§"`@RequiresRole` Processing") already recorded this as descoped.
 
 The question this ADR answers: **how does an application tell the kernel which of its HTTP routes
 require what, without a configuration file, without compile-time `methodId` routing, and without each
@@ -93,7 +93,7 @@ layer above it, unchanged.
    route needing no principal becomes a statement the policy makes, so a second, driver-local notion of
    "public" would be a competing answer to a question the contract now owns.
 6. **Admission semantics are unchanged.** No principal established → `401`. Principal established but
-   lacking the declared requirement → `403`. These are the codes `security.md:166` already documents
+   lacking the declared requirement → `403`. These are the codes `security.md:168` already documents
    and ADR-012 already fixed; this ADR introduces no new HTTP status behaviour and no new error code.
 7. **The default is "no policy declared", and it preserves today's behaviour.** An application that
    supplies nothing sees exactly what it sees now. The mechanism is opt-in, consistent with the
@@ -108,7 +108,8 @@ layer above it, unchanged.
 Each of the following could be mistaken for a silent rollback of an accepted decision. None is revised
 here, and a future PR that appears to revise one needs its own ADR.
 
-- **The Sprint-4 descoping of kernel-edge `methodId` enforcement stands** (`security.md:220-226`). The
+- **The Sprint-4 descoping of kernel-edge `methodId` enforcement stands** (`security.md:222-229`,
+  §"`@RequiresRole` Processing"). The
   reason has been strengthened rather than weakened: `methodId` is a compile-time artefact of
   `@Retention(SOURCE)` annotation processing, so the kernel cannot reconstruct it at runtime at all —
   not merely "not yet". A URL→`methodId` routing table remains a codegen concern owned by
@@ -123,7 +124,7 @@ here, and a future PR that appears to revise one needs its own ADR.
   `security.md` put it.
 
 Also corrected **in this slice**, because it misled the very analysis that produced this ADR:
-`security.md:6` advertised an enforcer "auto-bind landing" that `:220-226` had already superseded, and
+`security.md:6` advertised an enforcer "auto-bind landing" that `:222-229` had already superseded, and
 claimed registry wiring was still pending when Sprint 4 had shipped it. That is a factual error about
 the past, not target state, so it is fixed now rather than deferred to the implementation — leaving a
 known-false sentence in place while citing it as misleading would be indefensible.
@@ -182,7 +183,7 @@ known-false sentence in place while citing it as misleading would be indefensibl
 - ADR-036 (Server-side request-body decoder SPI) — the `spi.http` contract + `Optional`
   `HttpKernelProviders` slot shape obligation 1 follows.
 - [`docs/subsystems/security.md`](../subsystems/security.md) — Citadel model, `401`/`403` mapping
-  (`:166`), and the descoping note (`:220-226`).
+  (`:168`), and the descoping note (`:222-229`, §"`@RequiresRole` Processing").
 - [`docs/subsystems/bootstrap.md`](../subsystems/bootstrap.md) — the L1 subsystem DAG that already
   includes Security.
 - [`docs/subsystems/http.md`](../subsystems/http.md) — the HTTP surface the contract joins.
