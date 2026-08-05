@@ -63,15 +63,39 @@ public final class CommunityOidcIdentityProvider implements IdentityProvider {
     }
 
     private CommunityOidcIdentityProvider(TokenValidator tokenValidator, String expectedIssuer) {
-        this(tokenValidator, expectedIssuer, false);
+        this(tokenValidator, expectedIssuer, false, new CommunityClaimsMapper());
     }
 
     private CommunityOidcIdentityProvider(TokenValidator tokenValidator, String expectedIssuer,
-                                          boolean sharedScopeEnforced) {
+                                          boolean sharedScopeEnforced, ClaimsMapper claimsMapper) {
         this.tokenValidator = Objects.requireNonNull(tokenValidator, "tokenValidator must not be null");
-        this.claimsMapper = new CommunityClaimsMapper();
+        this.claimsMapper = Objects.requireNonNull(claimsMapper, "claimsMapper must not be null");
         this.expectedIssuer = Objects.requireNonNull(expectedIssuer, "expectedIssuer must not be null");
         this.sharedScopeEnforced = sharedScopeEnforced;
+    }
+
+    /**
+     * Returns a provider that maps verified claims onto a principal with {@code claimsMapper}
+     * instead of the Community default.
+     *
+     * <p>{@link ClaimsMapper} is documented as the only application-customisable point in the
+     * identity pipeline, and until 0.11 this provider gave no way to supply one — an application
+     * needing a different subject or scope shape had to reimplement {@link IdentityProvider}
+     * outright. It maps identity only: tenant-isolation routing stays kernel-owned and fail-closed
+     * (ADR-012), so a custom mapper cannot widen what a token may reach.
+     *
+     * <p>Returns a new provider rather than mutating, for the same reason as
+     * {@link #enforcingSharedScope()} — the mapping takes part in a security decision on every
+     * request and is fixed at construction, never swapped behind a live provider. The two withers
+     * compose in either order.
+     *
+     * @param claimsMapper the mapping to use; must not be {@code null}
+     * @return a provider identical to this one but mapping claims with {@code claimsMapper}
+     * @since 0.11.0
+     */
+    public CommunityOidcIdentityProvider withClaimsMapper(ClaimsMapper claimsMapper) {
+        return new CommunityOidcIdentityProvider(
+                tokenValidator, expectedIssuer, sharedScopeEnforced, claimsMapper);
     }
 
     /**
@@ -87,7 +111,7 @@ public final class CommunityOidcIdentityProvider implements IdentityProvider {
      * @since 0.11.0
      */
     public CommunityOidcIdentityProvider enforcingSharedScope() {
-        return new CommunityOidcIdentityProvider(tokenValidator, expectedIssuer, true);
+        return new CommunityOidcIdentityProvider(tokenValidator, expectedIssuer, true, claimsMapper);
     }
 
     /**
