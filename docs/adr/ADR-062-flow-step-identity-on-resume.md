@@ -59,9 +59,18 @@ addressing — and a name does what an index cannot: survive a definition changi
    diagnostics". Identity means the contract now depends on it, so it is validated where definitions
    are built rather than trusted: `FlowDefinition`'s compact constructor rejects duplicate step names
    within a definition. A definition that cannot name its steps distinctly cannot be registered.
-2. **`FlowSnapshot` carries the resumed step's identity alongside `currentStep`.** Additive — the
-   index stays, because it is what the runtime dispatches on. Pre-1.0, no external SPI consumers, so
-   the carrier gains a component rather than growing a parallel type.
+2. **`FlowSnapshot` carries the resumed step's identity alongside `currentStep`.** Additive at the
+   source level — the index stays, because it is what the runtime dispatches on — so the carrier
+   gains a component rather than growing a parallel type.
+
+   Note what that costs: adding a component to a record changes its canonical constructor, which is
+   a **binary-incompatible** change to `eu.exeris.kernel.spi.flow`, a surface this project declares
+   `stable`. The SPI compatibility gate (`tools/spi-api-diff/`) flags it, and correctly so. Pre-1.0,
+   with no consumer under a support contract, taking the break is defensible — but it must be taken
+   deliberately: recorded in the v0.11 release notes and in
+   [`../release/upgrade-0.5-to-0.10.md`](../release/upgrade-0.5-to-0.10.md)'s successor, or avoided
+   by retaining the previous canonical constructor as an explicit overload. That choice is not made
+   by this ADR; it is made when v0.11 is cut.
 3. **Resume validates identity, not merely arity.** `validateSnapshotStepBounds` grows into an
    identity check that runs after the bounds check and before any step replays: if
    `plan.step(currentStep).name()` differs from the persisted identity, the wake fails closed.

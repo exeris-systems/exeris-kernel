@@ -6,6 +6,30 @@ This file is intentionally terse: it lists what landed, with a pointer to the re
 
 Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project versions follow [SemVer](https://semver.org/spec/v2.0.0.html), with the pre-1.0 caveat that minor versions may carry observable contract additions while remaining backwards-compatible at the SPI level. Which SPI surfaces are `stable` / `preview` / `experimental`, and what each label commits to for semver, is declared in [`docs/stability-matrix.md`](docs/stability-matrix.md) — the authoritative source for the semver policy.
 
+## [Unreleased]
+
+### Added
+- **SPI compatibility gate** — `tools/spi-api-diff/` compiles `exeris-kernel-spi` at any two revisions
+  straight from git (the module depends only on `java.*`/`jdk.*`, so every revision in history builds
+  with nothing but a JDK) and diffs them with japicmp, classifying each finding by the maturity label
+  declared in `docs/stability-matrix.md`. A binary-incompatible change to a surface declared `stable`
+  fails CI (`spi-compatibility-gate` job); `preview`/`experimental` changes are reported, not gated.
+  A second check fails the build when an SPI package carries no maturity label at all — which is how
+  `spi.scheduling` and `spi.storage.blob` were found to be missing from the matrix.
+- **Generated compatibility record** — `docs/release/spi-api-history.md`: one row per release
+  transition from 0.5.0 to 0.10.2, produced by the gate rather than by review. No `stable` surface has
+  taken a binary-incompatible change since the stability matrix was first published in v0.9.0.
+- **Upgrade guide 0.5.x → 0.10.x** — `docs/release/upgrade-0.5-to-0.10.md`, covering the three
+  breaking transitions in that range and what to write instead.
+- **Reconstructed v0.6.0 release notes** — `docs/release/v0.6.0-release-notes.md`. v0.6.0 shipped
+  without notes and predates this changelog, while carrying the only pre-declaration removal of
+  `stable`-surface SPI types; the record is now closed.
+
+### Changed
+- **Stability matrix** — added the missing `…spi.scheduling` and `…spi.storage.blob` rows (both
+  `preview`, since 0.11.0, ADR-057 / ADR-056); the pre-1.0 framing now distinguishes "no consumer
+  under a support contract" from "no consumers", and points at the generated record.
+
 ## [0.10.2] — 2026-07-19
 
 Patch release. Community-internal allocation discipline on the JSON-encode and memory-allocator hot paths; additive, SPI-unchanged, default byte-identical. Detail + notes: [`docs/release/v0.10.2-release-notes.md`](docs/release/v0.10.2-release-notes.md).

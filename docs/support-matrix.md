@@ -3,8 +3,10 @@
 > **Pre-1.0 / TRL-3 statement of scope.** This document declares what the **open-core (Community)**
 > kernel supports today, what is **Enterprise-only** (out of open-core scope), and what is **deferred**
 > to a future version. It is a forward-looking product-scope statement, **not** a semver guarantee:
-> there are no external SPI consumers before 1.0, and "stable" here means "the contract we intend to
-> hold semver-binding from 1.0" (see the per-surface authority in [`stability-matrix.md`](./stability-matrix.md)).
+> no SPI consumer is under a support contract before 1.0, and "stable" here means "the contract we
+> intend to hold semver-binding from 1.0" (see the per-surface authority in
+> [`stability-matrix.md`](./stability-matrix.md), and the generated per-release compatibility record
+> in [`release/spi-api-history.md`](./release/spi-api-history.md)).
 
 ## Supported runtime baseline
 

@@ -15,10 +15,15 @@ for consumers** — primarily `exeris-ai-bridge`, downstream host runtimes, and 
 implementors — telling them how much they can lean on each contract today and what the
 compatibility intent is for v1.0.
 
-It is **not** a present-day semver guarantee. Exeris is pre-1.0 / TRL-3 with no external SPI
-consumers under contract; per `CHANGELOG.md`, minor versions may still carry observable
-contract additions. The maturity labels below describe **stability intent**, not a binding
-patch-line promise. See [Semver policy](#semver-policy) for exactly what each label commits to.
+It is **not** a present-day semver guarantee. Exeris is pre-1.0 / TRL-3, and per `CHANGELOG.md`
+minor versions may still carry observable contract additions. The maturity labels below describe
+**stability intent**, not a binding patch-line promise. See [Semver policy](#semver-policy) for
+exactly what each label commits to.
+
+Intent alone is not checkable, so it is paired with evidence: every release transition is diffed at
+the bytecode level and published in [`release/spi-api-history.md`](./release/spi-api-history.md), and
+an incompatible change to a surface declared `stable` fails CI. Consumers upgrading across several
+minors should start from [`release/upgrade-0.5-to-0.10.md`](./release/upgrade-0.5-to-0.10.md).
 
 > **One namespace, one source of truth.** When a subsystem or module doc says a surface is
 > `stable` / `preview` / `experimental`, it MUST match this table. If they ever disagree,
@@ -62,6 +67,8 @@ this is informational and **not** a dependency of the open-core surface.
 | `…spi.security` | **preview** | 0.5.0 | ADR-014 (RBAC) | `AbstractSecurityProviderTck`, `…RequiresRoleTck`, `…CitadelGuardTck`, +6 | — |
 | `…spi.security.identity` | **preview** | 0.10.0 | ADR-040 | `AbstractIdentityProviderTck` | — |
 | `…spi.crypto` | **preview** | 0.5.0 | ADR-008 (TLS engine) | `AbstractCryptoEngineTck` | yes (FFM crypto) |
+| `…spi.scheduling` | **preview** | 0.11.0 | ADR-057 | `AbstractJobSchedulerTck` | — |
+| `…spi.storage.blob` | **preview** | 0.11.0 | ADR-056 | `AbstractBlobStorageTck` | — |
 | `…spi.http` | **mixed** | 0.5.0 | ADR-009 / ADR-032 / ADR-034 / ADR-043 | see per-surface rows below | yes (HTTP/3 path) |
 | `…spi.util` | _internal_ | 0.5.0 | — | — | — |
 
@@ -111,11 +118,19 @@ elsewhere; `CHANGELOG.md` links here for the authoritative version.
 
 ### Pre-1.0 / TRL-3 framing
 
-Exeris is pre-1.0 / TRL-3. There are no external SPI consumers under contract today. This matrix is
-a **statement of intent for v1.0**, not a present-day patch-line guarantee — a v0.9.x patch may
-still carry an observable contract addition. The matrix exists so that, as the first external
-consumer (`exeris-ai-bridge`) integrates, both sides share one honest picture of what is settled and
-what is still moving. v1.0 release notes will restate this framing explicitly.
+Exeris is pre-1.0 / TRL-3, and no SPI consumer is under a support contract today. This matrix is a
+**statement of intent for v1.0**, not a present-day patch-line guarantee — a patch release may still
+carry an observable contract addition. v1.0 release notes will restate this framing explicitly.
+
+"No support contract" is not the same as "no consumers": integrations against released versions
+exist, both inside the ecosystem (`exeris-ai-bridge`, host runtimes) and outside it. The matrix
+exists so that everyone integrating shares one honest picture of what is settled and what is still
+moving — and, since v0.11, so does the generated compatibility record that backs it.
+
+Where that record and this table disagree, the record wins and this table is the bug. The gate that
+produces it (`tools/spi-api-diff/`) reads its labels from
+`tools/spi-api-diff/stability-surfaces.conf`, which must be updated in the same commit as any
+maturity change here.
 
 ---
 
