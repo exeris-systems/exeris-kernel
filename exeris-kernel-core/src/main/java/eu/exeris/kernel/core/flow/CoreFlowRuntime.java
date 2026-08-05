@@ -49,7 +49,7 @@ final class CoreFlowRuntime { // NOPMD
     private final Scheduler scheduler = new Scheduler();
     private final ConcurrentMap<FlowKey, RuntimeFlowInstance> liveInstances = new ConcurrentHashMap<>();
     private final ConcurrentMap<FlowKey, RuntimeFlowInstance> parkedInstances = new ConcurrentHashMap<>();
-    private final ConcurrentMap<String, CoreFlowExecutionPlan> planCatalog = new ConcurrentHashMap<>();
+    private final ConcurrentMap<PlanKey, CoreFlowExecutionPlan> planCatalog = new ConcurrentHashMap<>();
     private final TerminalStateCatalog terminalStateCatalog;
     private final Set<FlowKey> parkedLookupMisses = ConcurrentHashMap.newKeySet();
     private final Deque<FlowKey> parkedLookupMissOrder = new ArrayDeque<>();
@@ -89,7 +89,7 @@ final class CoreFlowRuntime { // NOPMD
         return scheduler;
     }
 
-    /* default */ ConcurrentMap<String, CoreFlowExecutionPlan> planCatalog() {
+    /* default */ ConcurrentMap<PlanKey, CoreFlowExecutionPlan> planCatalog() {
         return planCatalog;
     }
 
@@ -467,7 +467,7 @@ final class CoreFlowRuntime { // NOPMD
 
     private CoreFlowExecutionPlan resolvePlanForSnapshot(CoreFlowExecutionPlan directPlan, FlowSnapshot persisted) {
         if (directPlan == null) {
-            CoreFlowExecutionPlan catalogPlan = planCatalog.get(persisted.definitionName());
+            CoreFlowExecutionPlan catalogPlan = resolveVersionedPlan(persisted);
             if (catalogPlan == null) {
                 return null;
             }
@@ -483,6 +483,48 @@ final class CoreFlowRuntime { // NOPMD
         }
         validateSnapshotStepBounds(directPlan, persisted);
         return directPlan;
+    }
+
+    /**
+     * Resolves the plan for the definition version the saga actually parked under (ADR-064).
+     *
+     * <p>Two absences are deliberately different. If this engine hosts <em>no</em> version of the
+     * definition, the answer is {@code null} and the caller treats the instance as belonging
+     * elsewhere — that is the cross-engine choreography path (ADR-013 §8) and it is unchanged. If the
+     * engine hosts the definition but not <em>that version</em>, the saga is ours and we cannot serve
+     * it, which is a fail-closed refusal rather than a silent no-op. Rebinding it to whichever
+     * version happens to be newest is precisely the behaviour this epic removes.
+     *
+     * <p>The refusal leaves the parked row untouched, so deploying the missing version recovers the
+     * saga. The linear scan is on the cold resume path and bounded by {@code maxExecutionPlans}.
+     */
+    private CoreFlowExecutionPlan resolveVersionedPlan(FlowSnapshot persisted) {
+        if (persisted.state().isTerminal()) {
+            return planCatalog.get(new PlanKey(persisted.definitionName(), persisted.definitionVersion()));
+        }
+        if (persisted.definitionVersion() == FlowSnapshot.VERSION_ABSENT) {
+            throw FlowEngineException.schemaMismatchDefinitionVersionAbsent(
+                    config.engineName(), persisted.currentStep());
+        }
+        PlanKey key = new PlanKey(persisted.definitionName(), persisted.definitionVersion());
+        CoreFlowExecutionPlan plan = planCatalog.get(key);
+        if (plan != null) {
+            return plan;
+        }
+        if (!hostsDefinition(persisted.definitionName())) {
+            return null;
+        }
+        throw FlowEngineException.schemaMismatchDefinitionVersionUnresolved(
+                config.engineName(), persisted.definitionVersion());
+    }
+
+    private boolean hostsDefinition(String definitionName) {
+        for (PlanKey registered : planCatalog.keySet()) {
+            if (registered.name().equals(definitionName)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

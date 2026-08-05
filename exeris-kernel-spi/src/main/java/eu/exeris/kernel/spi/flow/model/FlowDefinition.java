@@ -35,16 +35,26 @@ import java.util.Objects;
  */
 public record FlowDefinition(
         String                    name,
+        int                       version,
         List<FlowStepDescriptor>  steps,
         long                      timeoutDurationNanos,
         int                       maxRetries
 ) {
+
+    /** The version a definition carries when its author declared none. */
+    public static final int INITIAL_VERSION = 1;
 
     /** Compact constructor — validates invariants and defensively copies the step list. */
     public FlowDefinition {
         Objects.requireNonNull(name, "flow definition name must not be null");
         if (name.isBlank()) {
             throw new IllegalArgumentException("flow definition name must not be blank");
+        }
+        if (version < INITIAL_VERSION) {
+            // Versions start at 1 so that 0 can mean "this snapshot predates versioning" on the
+            // resume path without ever colliding with a real version (ADR-064).
+            throw new IllegalArgumentException(
+                    "flow definition version must be >= " + INITIAL_VERSION + ", got: " + version);
         }
         Objects.requireNonNull(steps, "steps list must not be null");
         if (steps.isEmpty()) {
@@ -58,6 +68,24 @@ public record FlowDefinition(
         }
         steps = List.copyOf(steps);  // defensive copy — immutable
         requireDistinctStepNames(steps);
+    }
+
+    /**
+     * Convenience constructor for a definition whose author declared no version, defaulting it to
+     * {@link #INITIAL_VERSION}.
+     *
+     * <p>Unlike {@code FlowSnapshot}'s pre-0.11 shim, this one is <em>not</em> a route to a
+     * fail-closed outcome: a definition without a declared version is a perfectly valid definition,
+     * and an application that never versions its flows keeps the behaviour it had before ADR-064.
+     * Versioning is a choice the application makes, not an obligation it inherits.
+     *
+     * @since 0.11.0
+     */
+    public FlowDefinition(String name,
+                          List<FlowStepDescriptor> steps,
+                          long timeoutDurationNanos,
+                          int maxRetries) {
+        this(name, INITIAL_VERSION, steps, timeoutDurationNanos, maxRetries);
     }
 
     /**

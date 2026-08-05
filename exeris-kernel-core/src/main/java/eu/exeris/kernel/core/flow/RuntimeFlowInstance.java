@@ -31,6 +31,8 @@ final class RuntimeFlowInstance implements RuntimeFlowContextStateView { // NOPM
 
     private final FlowKey key;
     private final String definitionName;
+    /** The definition version this instance runs under; written into every snapshot (ADR-064). */
+    private final int definitionVersion;
     private final long lifecycleGeneration;
     private final AtomicBoolean scheduled = new AtomicBoolean(false);
     private final Object monitor = new Object();
@@ -78,6 +80,7 @@ final class RuntimeFlowInstance implements RuntimeFlowContextStateView { // NOPM
     @SuppressWarnings("java:S6218")
     private record Seed(FlowKey key,
                         String definitionName,
+                        int definitionVersion,
                         long lifecycleGeneration,
                         CoreFlowExecutionPlan plan,
                         FlowState state,
@@ -90,6 +93,7 @@ final class RuntimeFlowInstance implements RuntimeFlowContextStateView { // NOPM
     private RuntimeFlowInstance(Seed seed) {
         this.key = seed.key();
         this.definitionName = seed.definitionName();
+        this.definitionVersion = seed.definitionVersion();
         this.lifecycleGeneration = seed.lifecycleGeneration();
         this.contextView = new RuntimeFlowContext(seed.key(), seed.definitionName(), this);
         this.plan = seed.plan();
@@ -111,6 +115,7 @@ final class RuntimeFlowInstance implements RuntimeFlowContextStateView { // NOPM
         return new RuntimeFlowInstance(new Seed(
                 FlowKey.from(context),
                 context.definitionName(),
+                plan.definitionVersion(),
                 lifecycleGeneration,
                 plan,
                 context.state(),
@@ -140,6 +145,7 @@ final class RuntimeFlowInstance implements RuntimeFlowContextStateView { // NOPM
         return new RuntimeFlowInstance(new Seed(
                 new FlowKey(snapshot.instanceIdMost(), snapshot.instanceIdLeast()),
                 snapshot.definitionName(),
+                plan.definitionVersion(),
                 lifecycleGeneration,
                 plan,
                 snapshot.state(),
@@ -297,6 +303,7 @@ final class RuntimeFlowInstance implements RuntimeFlowContextStateView { // NOPM
                 key.instanceIdMost(),
                 key.instanceIdLeast(),
                 definitionName,
+                definitionVersion,
                 Math.max(0, stepIndex),
                 stepNameAt(Math.max(0, stepIndex)),
                 snapshotState,

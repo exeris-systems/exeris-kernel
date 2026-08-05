@@ -33,13 +33,13 @@ final class CoreFlowPlanFactory implements FlowExecutionPlanFactory {
 
     private final FlowEngineConfig config;
     private final CoreFlowRegistry registry;
-    private final ConcurrentMap<String, CoreFlowExecutionPlan> planCatalog;
+    private final ConcurrentMap<PlanKey, CoreFlowExecutionPlan> planCatalog;
     private final Runnable onPlanCompiled;
     private final ConcurrentMap<String, List<FlowTransitionDescriptor>> transitionsByDefinition =
             new ConcurrentHashMap<>();
 
     /* default */ CoreFlowPlanFactory(FlowEngineConfig config, CoreFlowRegistry registry,
-                                      ConcurrentMap<String, CoreFlowExecutionPlan> planCatalog,
+                                      ConcurrentMap<PlanKey, CoreFlowExecutionPlan> planCatalog,
                                       Runnable onPlanCompiled) {
         this.config = Objects.requireNonNull(config, "config");
         this.registry = Objects.requireNonNull(registry, "registry");
@@ -64,19 +64,25 @@ final class CoreFlowPlanFactory implements FlowExecutionPlanFactory {
 
             CoreFlowExecutionPlan plan = new CoreFlowExecutionPlan(
                     definitionName,
+                    definition.version(),
                     steps,
                     adjacency,
                     nextSteps,
                     definition.timeoutDurationNanos()
             );
             registry.replace(steps, adjacency);
+            // Keyed by (name, version) since ADR-064: registering a changed definition must not
+            // evict the one every in-flight saga parked under. The ceiling therefore bounds retained
+            // versions as well as distinct definitions — an application that bumps on every deploy
+            // and never retires an old version will reach it.
+            PlanKey key = new PlanKey(definitionName, definition.version());
             synchronized (planCatalog) {
-                if (!planCatalog.containsKey(definitionName)
+                if (!planCatalog.containsKey(key)
                         && planCatalog.size() >= config.maxExecutionPlans()) {
                     throw new IllegalStateException(
                             "maxExecutionPlans limit reached: " + config.maxExecutionPlans());
                 }
-                planCatalog.put(definitionName, plan);
+                planCatalog.put(key, plan);
             }
             transitionsByDefinition.remove(definitionName);
             onPlanCompiled.run();

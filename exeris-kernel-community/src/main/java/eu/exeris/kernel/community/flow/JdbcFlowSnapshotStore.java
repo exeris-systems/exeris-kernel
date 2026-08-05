@@ -101,14 +101,14 @@ public final class JdbcFlowSnapshotStore implements FlowSnapshotStore {
             "INSERT INTO exeris_saga_state ("
                     + "instance_id_most, instance_id_least, definition_name, current_step, "
                     + "state, last_update, timeout_at, compensation_stack, stack_pointer, "
-                    + "opaque_state, step_name, schema_version) "
-                    + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                    + "opaque_state, step_name, definition_version, schema_version) "
+                    + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
     private static final String SQL_UPDATE_OCC =
             "UPDATE exeris_saga_state SET "
                     + "definition_name = ?, current_step = ?, state = ?, "
                     + "last_update = ?, timeout_at = ?, compensation_stack = ?, "
-                    + "stack_pointer = ?, opaque_state = ?, step_name = ?, "
+                    + "stack_pointer = ?, opaque_state = ?, step_name = ?, definition_version = ?, "
                     + "schema_version = schema_version + 1 "
                     + "WHERE instance_id_most = ? AND instance_id_least = ? "
                     + "AND schema_version = ?";
@@ -116,7 +116,7 @@ public final class JdbcFlowSnapshotStore implements FlowSnapshotStore {
     private static final String SQL_SELECT_BY_PK =
             "SELECT instance_id_most, instance_id_least, definition_name, current_step, "
                     + "state, last_update, timeout_at, compensation_stack, stack_pointer, "
-                    + "opaque_state, step_name, schema_version "
+                    + "opaque_state, step_name, schema_version, definition_version "
                     + "FROM exeris_saga_state "
                     + "WHERE instance_id_most = ? AND instance_id_least = ?";
 
@@ -131,7 +131,7 @@ public final class JdbcFlowSnapshotStore implements FlowSnapshotStore {
     private static final String SQL_LIST_PARKED =
             "SELECT instance_id_most, instance_id_least, definition_name, current_step, "
                     + "state, last_update, timeout_at, compensation_stack, stack_pointer, "
-                    + "opaque_state, step_name, schema_version "
+                    + "opaque_state, step_name, schema_version, definition_version "
                     + "FROM exeris_saga_state "
                     + "WHERE state = '" + /* FlowState.PARKED.name() */ "PARKED" + "'";
 

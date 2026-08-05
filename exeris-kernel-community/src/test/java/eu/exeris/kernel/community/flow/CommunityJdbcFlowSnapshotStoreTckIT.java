@@ -10,6 +10,7 @@ package eu.exeris.kernel.community.flow;
 
 import eu.exeris.kernel.community.persistence.CommunityPersistenceProvider;
 import eu.exeris.kernel.spi.exceptions.flow.FlowEngineException;
+import eu.exeris.kernel.spi.flow.model.FlowDefinition;
 import eu.exeris.kernel.spi.flow.model.FlowSnapshot;
 import eu.exeris.kernel.spi.flow.model.FlowSnapshotStore;
 import eu.exeris.kernel.spi.flow.model.FlowState;
@@ -217,7 +218,7 @@ class CommunityJdbcFlowSnapshotStoreTckIT extends AbstractDistributedFlowSnapsho
         return new FlowSnapshot(
                 id.getMostSignificantBits(),
                 id.getLeastSignificantBits(),
-                "occ-jfr-saga",
+                "occ-jfr-saga",FlowDefinition.INITIAL_VERSION,
                 currentStep,
                 Optional.of("step-" + currentStep),
                 state,
@@ -233,7 +234,7 @@ class CommunityJdbcFlowSnapshotStoreTckIT extends AbstractDistributedFlowSnapsho
         return new FlowSnapshot(
                 loaded.instanceIdMost(),
                 loaded.instanceIdLeast(),
-                loaded.definitionName(),
+                loaded.definitionName(),FlowDefinition.INITIAL_VERSION,
                 newStep,
                 Optional.of("step-" + newStep),
                 newState,
