@@ -2019,6 +2019,12 @@ application written directly against the kernel, with no annotation processing a
 gets edge authorization. `@RequiresRole` remains the method-level layer above it.
 
 **Merge Gate:** `AbstractHttpRoutePolicyTck` + a Community binding, with the deny paths and the
+unmatched-route path as mandatory cases — a suite that only proves admission would pass against an
+implementation that admits everything. `ExerisArchitectureTest` green. `security.md`, `http.md` and
+`bootstrap.md` updated in the implementing slice — not before it, since they describe what the kernel
+does. (The stale `security.md:6` note is a separate matter: it stated something false about the past,
+so it was corrected with ADR-061 itself.) Release notes record the default-boot behaviour change:
+`/secure/*` stops answering `401` unconditionally once a provider is bound.
 
 **Status (v0.11): PARTIAL — contract and decision landed, wiring pending.**
 
@@ -2038,12 +2044,6 @@ not an undeclared route, and now denies outright.
 `KernelProviders.SECURITY_PROVIDER`, the dispatcher reading the slot instead of `SECURE_PATH_PREFIX`,
 removal of the unreachable `isPublicPath` allowlist, and the `security.md` / `http.md` /
 `bootstrap.md` updates that describe the wired behaviour.
-unmatched-route path as mandatory cases — a suite that only proves admission would pass against an
-implementation that admits everything. `ExerisArchitectureTest` green. `security.md`, `http.md` and
-`bootstrap.md` updated in the implementing slice — not before it, since they describe what the kernel
-does. (The stale `security.md:6` note is a separate matter: it stated something false about the past,
-so it was corrected with ADR-061 itself.) Release notes record the default-boot behaviour change:
-`/secure/*` stops answering `401` unconditionally once a provider is bound.
 
 ---
 
