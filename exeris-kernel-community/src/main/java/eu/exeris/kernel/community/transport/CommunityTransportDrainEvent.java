@@ -27,8 +27,10 @@ import jdk.jfr.StackTrace;
  * second case, and the first leaves no trace at all — so an operator tuning
  * {@code terminationGracePeriodSeconds} has nothing to tune against.
  *
- * <p>{@code streamsRemaining > 0} is the signal that matters: the deadline fired first. Pair it with
- * {@code durationNanos} to tell "handlers are genuinely slow" from "one handler is stuck".
+ * <p>{@code busyRemaining > 0} is the signal that matters: the deadline fired first. Pair it with
+ * {@code durationNanos} to tell "handlers are genuinely slow" from "one handler is stuck". The gap
+ * between {@code openAtStart} and {@code busyAtStart} is the idle connections that used to hold
+ * shutdown open before 0.11.
  *
  * <p>Counts only — no peer identity, no request content. Single-phase {@code commit()} on the platform
  * thread driving shutdown; never on a virtual thread, so the carrier-pinning hazard that afflicts
@@ -46,18 +48,27 @@ final class CommunityTransportDrainEvent extends Event {
     @Label("Engine Name")
     /* default */ String engineName;
 
-    @Label("Streams In Flight At Drain Start")
-    /* default */ int streamsAtStart;
+    @Label("Busy Streams At Drain Start")
+    @Description("Streams actively being served when the drain began — what the drain waits on")
+    /* default */ int busyAtStart;
 
-    @Label("Streams Remaining After Drain")
-    /* default */ int streamsRemaining;
+    @Label("Busy Streams Remaining After Drain")
+    @Description("Non-zero means the deadline fired while work was still in flight")
+    /* default */ int busyRemaining;
+
+    @Label("Open Streams At Drain Start")
+    @Description("Connections admitted when the drain began, busy or idle. Reported for context: "
+            + "before 0.11 the drain waited on THIS number, which an idle keep-alive connection "
+            + "never lowers, so shutdown burned its full deadline")
+    /* default */ int openAtStart;
 
     @Label("Drain Duration (ns)")
     /* default */ long durationNanos;
 
     /* default */ static void emit(String engineName,
-                                   int streamsAtStart,
-                                   int streamsRemaining,
+                                   int busyAtStart,
+                                   int busyRemaining,
+                                   int openAtStart,
                                    long durationNanos) {
         if (!FlightRecorder.isInitialized()) {
             return;
@@ -65,8 +76,9 @@ final class CommunityTransportDrainEvent extends Event {
         CommunityTransportDrainEvent event = new CommunityTransportDrainEvent();
         if (event.isEnabled()) {
             event.engineName = engineName;
-            event.streamsAtStart = streamsAtStart;
-            event.streamsRemaining = streamsRemaining;
+            event.busyAtStart = busyAtStart;
+            event.busyRemaining = busyRemaining;
+            event.openAtStart = openAtStart;
             event.durationNanos = durationNanos;
             event.commit();
         }

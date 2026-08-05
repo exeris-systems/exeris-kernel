@@ -311,9 +311,9 @@ When PAQS sheds a stream or the Kernel initiates graceful shutdown:
 
 1. **Close ingress** — the listening channel closes and the acceptor joins. No new connections; the
    reactors keep serving the ones already admitted.
-2. **Drain** — `PaqsScheduler.close()` waits for the admission controller's active-stream count to
-   reach zero under its 60-second hard deadline. The reactors are deliberately still looping here, so
-   a handler that completes during the drain can still have its response flushed.
+2. **Drain** — `PaqsScheduler.close()` marks the engine draining and waits for the count of **busy**
+   streams to reach zero, under its 60-second hard deadline. The reactors are deliberately still
+   looping here, so a handler that completes during the drain can still have its response flushed.
 3. **Teardown** — reactors are woken and joined, then the selector and all remaining channels close.
 
 Until 0.11 the drain ran *after* teardown, which made it inert: handlers were waited on while their
@@ -322,10 +322,35 @@ observed a connection closed with no reply, and an idempotent client retried int
 already gone. `AbstractTransportEngineTck$GracefulDrain` now pins the contract — it holds a stream
 mid-exchange across `stop()` and asserts the response still arrives.
 
+**Busy, not open — and busy by default (since 0.11, issue #282).** The drain waits for streams being
+*served*, not for streams being *open*. Until this was separated it waited on the admission
+controller's active-stream count, which counts connections: a keep-alive connection holds a slot for
+its whole life, so an idle one burned the entire 60-second deadline. Every connection-pooling client,
+load balancer and service mesh holds connections idle, and a container runtime's default grace period
+is shorter than the deadline — so the normal outcome was SIGKILL mid-shutdown on every rollout.
+
+A stream is **busy from the moment it starts** and stays busy unless its protocol reports otherwise
+(`DrainCoordinator.StreamWork`). The default is load-bearing in the opposite direction from the
+obvious one: counting only work a protocol explicitly declares means a protocol that declares nothing
+looks finished, so teardown severs a handler still writing its response — the very regression the
+phase order above exists to prevent. A raw `StreamHandler` therefore keeps the full drain; only a
+codec that knows it is parked between requests — the HTTP/1.1 keep-alive loop — reports idle.
+
+**`Connection: close` while draining.** A response encoded after the drain has begun carries it,
+whatever the request asked for. Without it a well-behaved peer has no way to learn it should release a
+pooled connection, and the next shutdown waits on the same idle connection again.
+
+The question is asked when the response is written, not when the request was parsed — and the
+distinction is the whole point. The request that most needs to tell its peer to let go is the one
+already in flight when shutdown began; answered at parse time it always gets the pre-shutdown answer,
+so the peer keeps a connection it will never be asked about again.
+
 **Telemetry.** `CommunityTransportDrainEvent` (JFR `eu.exeris.kernel.transport.CommunityTransportDrain`)
-records each drain's stream count at start, count remaining, and duration. A non-zero
-`streamsRemaining` means the deadline fired before the drain finished — the signal that in-flight work
-was severed, and the number to tune `terminationGracePeriodSeconds` against.
+records `busyAtStart`, `busyRemaining`, `openAtStart` and duration. A non-zero `busyRemaining` means
+the deadline fired while work was still in flight — the signal that in-flight work was severed, and
+the number to tune `terminationGracePeriodSeconds` against. `openAtStart` is reported for context: it
+is the number the drain waited on before 0.11, and the gap between it and `busyAtStart` is exactly the
+idle connections that used to hold shutdown open.
 
 ---
 

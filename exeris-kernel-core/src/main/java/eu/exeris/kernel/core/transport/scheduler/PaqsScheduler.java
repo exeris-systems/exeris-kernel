@@ -63,6 +63,8 @@ import java.util.function.Function;
  *   <li>{@link TransportScopes#STREAM_PRIORITY} — the stream's business priority</li>
  *   <li>{@link TransportScopes#STREAM_ID} — the stream's unique identifier</li>
  *   <li>{@link TransportScopes#ENGINE_NAME} — the transport engine name for diagnostics</li>
+ *   <li>{@link TransportScopes#DRAIN_COORDINATOR} — whether graceful shutdown has begun</li>
+ *   <li>{@link TransportScopes#STREAM_WORK} — this stream's handle for reporting itself idle</li>
  * </ul>
  *
  * <h2>JFR-First Telemetry</h2>
@@ -87,6 +89,7 @@ public final class PaqsScheduler implements AutoCloseable {
     private static final String PHASE_HANDLER = "HANDLER";
 
     private final AdmissionController admissionController;
+    private final DrainCoordinator drainCoordinator = new DrainCoordinator();
     private final StreamLoadShedder loadShedder;
     private final StreamHandler handler;
     private final Function<TransportStream, StreamPriority> priorityExtractor;
@@ -208,6 +211,18 @@ public final class PaqsScheduler implements AutoCloseable {
     }
 
     /**
+     * Returns the engine's {@link DrainCoordinator}, for carriers reporting drain telemetry.
+     *
+     * <p>Distinct from {@link #admissionController()} on purpose: that one counts open streams,
+     * which is the capacity question, while this one counts streams being served.
+     *
+     * @return the coordinator; never {@code null}
+     */
+    public DrainCoordinator drainCoordinator() {
+        return drainCoordinator;
+    }
+
+    /**
      * Returns the {@link StreamLoadShedder} for diagnostic inspection (e.g., shed count).
      *
      * @return the load shedder; never {@code null}
@@ -217,21 +232,32 @@ public final class PaqsScheduler implements AutoCloseable {
     }
 
     /**
-     * Waits until the {@link AdmissionController}'s active stream count reaches zero,
-     * applying a spin-then-yield backoff strategy to avoid burning CPU, and enforcing
-     * a hard timeout to keep shutdown operationally safe even if a handler misbehaves.
+     * Marks the drain, then waits until no stream is being served.
+     *
+     * <p>Waits on {@link DrainCoordinator#busyStreams()} rather than the {@link AdmissionController}'s
+     * active count: the latter counts open streams, and a keep-alive connection stays open with
+     * nothing in flight for as long as its peer holds it, so waiting on it burned the whole deadline.
+     * Applies a spin-then-yield backoff to avoid burning CPU, and enforces a hard timeout so shutdown
+     * stays operationally safe even if a handler misbehaves.
      */
     @Override
     public void close() {
+        // Tell the protocol layers first: a codec that knows shutdown started stops extending
+        // connections it would otherwise keep alive, so the count below can actually reach zero.
+        drainCoordinator.markDraining();
+
         final long deadlineNanos = System.nanoTime() + 60_000_000_000L;
         long spins = 0L;
-        while (admissionController.activeStreamCount() > 0) {
+        // Waits on streams being SERVED, not on streams being OPEN. A stream is busy from the moment
+        // it starts and only a protocol that knows it is between requests reports otherwise, so a raw
+        // handler still gets the full drain while an idle keep-alive connection stops holding it.
+        while (drainCoordinator.busyStreams() > 0) {
             if (System.nanoTime() >= deadlineNanos) {
-                int remaining = admissionController.activeStreamCount();
+                int remaining = drainCoordinator.busyStreams();
                 if (remaining > 0) {
                     LOG.log(System.Logger.Level.WARNING,
-                            "PaqsScheduler.close() timed out waiting for {0} active streams"
-                                    + " to complete; proceeding with shutdown",
+                            "PaqsScheduler.close() timed out waiting for {0} busy"
+                                    + " streams to finish; proceeding with shutdown",
                             remaining);
                 }
                 break;
@@ -296,10 +322,14 @@ public final class PaqsScheduler implements AutoCloseable {
         String outcome = StreamLifecycleEvent.OUTCOME_COMPLETE;
 
         try {
-            ScopedValue.where(TransportScopes.STREAM_PRIORITY, priority)
-                    .where(TransportScopes.STREAM_ID, streamId)
-                    .where(TransportScopes.ENGINE_NAME, engineName)
-                    .run(() -> handler.handle(stream));
+            try (DrainCoordinator.StreamWork work = drainCoordinator.registerStream()) {
+                ScopedValue.where(TransportScopes.STREAM_PRIORITY, priority)
+                        .where(TransportScopes.STREAM_ID, streamId)
+                        .where(TransportScopes.ENGINE_NAME, engineName)
+                        .where(TransportScopes.DRAIN_COORDINATOR, drainCoordinator)
+                        .where(TransportScopes.STREAM_WORK, work)
+                        .run(() -> handler.handle(stream));
+            }
         } catch (Error error) { //NOPMD AvoidCatchingGenericException — outcome must be set before rethrow
             outcome = StreamLifecycleEvent.OUTCOME_ERROR;
             PaqsHandlerFailureEvent.emit(streamId, engineName, error.getClass().getName(), PHASE_HANDLER);

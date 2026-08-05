@@ -12,6 +12,7 @@ import eu.exeris.kernel.core.http.routing.HttpRouter;
 import eu.exeris.kernel.community.persistence.PersistenceSessionBox;
 import eu.exeris.kernel.core.http.http1.Http1Codec;
 import eu.exeris.kernel.core.security.GeneratedRoleRegistryLoader;
+import eu.exeris.kernel.core.transport.TransportScopes;
 import eu.exeris.kernel.core.security.SecurityInterceptor;
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.http.HttpConfig;
@@ -150,7 +151,16 @@ public final class CommunityHttpRequestProcessor {
             state.resetBufferForNewAggregate();
         }
 
-        ReadResult readResult = readRequest(codec, stream, handler, state, state.bufferedBytes());
+        // Parked on the next request, this connection is serving nothing — it must not hold graceful
+        // shutdown open, because an idle keep-alive connection never closes on its own (issue #282).
+        // Streams are busy by default, so a protocol that cannot tell simply never reaches this.
+        markIdle();
+        ReadResult readResult;
+        try {
+            readResult = readRequest(codec, stream, handler, state, state.bufferedBytes());
+        } finally {
+            markBusy();
+        }
         if (readResult == null) {
             return false;
         }
@@ -179,10 +189,38 @@ public final class CommunityHttpRequestProcessor {
         if (!readResult.keepAlive()) {
             return false;
         }
+        if (isDraining()) {
+            // Shutdown began while this connection was being served. Extending it would put the
+            // connection back into the idle state the drain cannot wait out; the response already
+            // told the peer to close (see CommunityHttpExchange#resolveKeepAlive).
+            //
+            // Accepted residual: the drain can begin between that write and this check, so a peer can
+            // be told keep-alive and then find the connection closed. There is no I/O between the two
+            // to widen the window, and RFC 9112 §9.6 requires a client to tolerate exactly this — a
+            // persistent connection may close at any time, and an idempotent request is retried.
+            return false;
+        }
 
         CommunityHttpAggregateTelemetry.applyAndRelease(state, MAX_AGGREGATE_BYTES);
         state.releaseAggregateIfIdle();
         return true;
+    }
+
+    private static void markIdle() {
+        if (TransportScopes.STREAM_WORK.isBound()) {
+            TransportScopes.STREAM_WORK.get().markIdle();
+        }
+    }
+
+    private static void markBusy() {
+        if (TransportScopes.STREAM_WORK.isBound()) {
+            TransportScopes.STREAM_WORK.get().markBusy();
+        }
+    }
+
+    private static boolean isDraining() {
+        return TransportScopes.DRAIN_COORDINATOR.isBound()
+                && TransportScopes.DRAIN_COORDINATOR.get().isDraining();
     }
 
     private boolean handleRequest(ReadResult readResult,
@@ -244,6 +282,8 @@ public final class CommunityHttpRequestProcessor {
             return true;
         }
 
+        // The exchange decides Connection: keep-alive when it writes, not here — see
+        // CommunityHttpExchange#resolveKeepAlive.
         CommunityHttpExchange exchange = new CommunityHttpExchange(
                 request, stream, allocator, readResult.keepAlive(), encoderRegistry);
 
