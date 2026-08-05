@@ -2026,6 +2026,25 @@ does. (The stale `security.md:6` note is a separate matter: it stated something 
 so it was corrected with ADR-061 itself.) Release notes record the default-boot behaviour change:
 `/secure/*` stops answering `401` unconditionally once a provider is bound.
 
+**Status (v0.11): PARTIAL — contract and decision landed, wiring pending.**
+
+`HttpRoutePolicy` + `RouteRequirement` in `eu.exeris.kernel.spi.http` behind
+`HttpKernelProviders.HTTP_ROUTE_POLICY`, and `RouteAuthorizationEnforcer` in
+`eu.exeris.kernel.core.security` beside `RoleCheckEnforcer`, with
+`AbstractHttpRoutePolicyTck` + the Community binding green. No behaviour change yet: nothing reads
+the slot, so the dispatcher still gates on `/secure`.
+
+The TCK earned its place before the wiring did. Its `nullAnswerDenies` case caught a fail-open in the
+first implementation of the enforcer, which substituted `HttpRoutePolicy.unmatched()` — that is
+`authenticated()` — when a policy returned `null`. A broken policy would therefore have admitted any
+logged-in caller to a route that may have demanded an admin scope. A `null` answer is a policy defect,
+not an undeclared route, and now denies outright.
+
+**Still open:** obligations 4 and 5 — the Community security `Subsystem` binding
+`KernelProviders.SECURITY_PROVIDER`, the dispatcher reading the slot instead of `SECURE_PATH_PREFIX`,
+removal of the unreachable `isPublicPath` allowlist, and the `security.md` / `http.md` /
+`bootstrap.md` updates that describe the wired behaviour.
+
 ---
 
 ## Known Gaps / Future Work planned for v0.12

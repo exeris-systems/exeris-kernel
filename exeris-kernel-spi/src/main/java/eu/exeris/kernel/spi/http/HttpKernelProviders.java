@@ -134,6 +134,19 @@ public final class HttpKernelProviders {
     public static final ScopedValue<HttpRequestBodyDecoderRegistry> HTTP_REQUEST_BODY_DECODER_REGISTRY =
             ScopedValue.newInstance();
 
+    /**
+     * Optional per-route authorization policy ({@link HttpRoutePolicy}), supplied by the application.
+     *
+     * <p>Bound during HTTP bootstrap when the application declares one (ADR-061). The transport
+     * admission path reads this slot to decide whether a request may reach its handler. When unbound,
+     * no per-route requirement is applied — the kernel behaves as it did before 0.11, which is why an
+     * application that declares nothing sees no change. Use {@link #httpRoutePolicy()} to read
+     * defensively.
+     *
+     * @since 0.11.0
+     */
+    public static final ScopedValue<HttpRoutePolicy> HTTP_ROUTE_POLICY = ScopedValue.newInstance();
+
     private HttpKernelProviders() {
         // Static ScopedValue slots only — never instantiated.
     }
@@ -216,6 +229,18 @@ public final class HttpKernelProviders {
     public static Optional<HttpRequestBodyDecoderRegistry> httpRequestBodyDecoderRegistry() {
         return HTTP_REQUEST_BODY_DECODER_REGISTRY.isBound()
                 ? Optional.of(HTTP_REQUEST_BODY_DECODER_REGISTRY.get())
+                : Optional.empty();
+    }
+
+    /**
+     * Returns the optional per-route authorization policy, if the application bound one.
+     *
+     * @return an {@link Optional} containing the policy when bound, or empty otherwise
+     * @since 0.11.0
+     */
+    public static Optional<HttpRoutePolicy> httpRoutePolicy() {
+        return HTTP_ROUTE_POLICY.isBound()
+                ? Optional.of(HTTP_ROUTE_POLICY.get())
                 : Optional.empty();
     }
 }
