@@ -167,6 +167,16 @@ public class SecurityInterceptor {
 - Fail-Closed: invalid token at transport edge results in `EX-SEC-2002` and zero downstream calls.
 - Community HTTP admission semantics (implemented): missing/invalid token maps to HTTP `401`; authenticated principal without required scope maps to HTTP `403`; steady-state scope checks remain membership tests over immutable in-memory scope sets.
 - **Which routes require what is declared by the application, not by the driver (since 0.11, ADR-061).** `CommunityHttpRequestDispatcher` no longer gates on a `/secure` path prefix with the literal scopes `security:read` / `security:write` compiled into it. It resolves the route through `HttpRoutePolicy` (bound at `HttpKernelProviders.HTTP_ROUTE_POLICY`) and hands the resulting `RouteRequirement` to `RouteAuthorizationEnforcer` in Core, so every transport shares one decision layer. With no policy bound the requirement is permit-all and the kernel behaves as it did before — declaring nothing changes nothing, which also means an application that never declares a policy has **no edge authorization**. The unmatched route is the application's call: `HttpRoutePolicy.unmatched()` is fail-closed, and a policy returning `null` is treated as a defect and denies outright rather than being read as unmatched.
+- **The token grants what it claims, and nothing else (since 0.11).** `CommunityClaimsMapper` reads
+  `scope` (OAuth 2.0 space-delimited, RFC 6749 §3.3), `scp` (the array form some identity providers
+  emit, unioned with the former) and `roles`. Until 0.11 it handed every authenticated principal a
+  hardcoded `security:read` and no roles regardless of the token — the deferral ADR-040 left open,
+  although that ADR already specifies this mapper as "sub → principalId, roles/scopes claims →
+  PrincipalContext". Two consequences: no route could tell one caller's permissions from another's,
+  and `security:write` was a scope **nothing could grant**, so any policy requiring it denied
+  everyone. There is deliberately **no fallback** — a token carrying no scope claim yields an empty
+  scope set and a route requiring any scope denies it. Roles now reach `PrincipalContext.roles()`,
+  so the `roleMask` behind `@RequiresRole` is no longer permanently `0L`.
 - `KernelProviders.SECURITY_PROVIDER` is bound by `CommunitySecuritySubsystem` (since 0.11). Before that it was bound by nothing, so the interceptor was never constructed and the whole Citadel path was unreachable in a default boot.
 
 ---

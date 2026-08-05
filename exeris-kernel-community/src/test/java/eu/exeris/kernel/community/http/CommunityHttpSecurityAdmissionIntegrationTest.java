@@ -121,7 +121,7 @@ class CommunityHttpSecurityAdmissionIntegrationTest {
                         HttpMethod.GET,
                         "/api/admin",
                         HttpVersion.HTTP_1_1,
-                        List.of(new HttpHeader("Authorization", "Bearer " + TestJwt.builder().serialize()))));
+                        List.of(new HttpHeader("Authorization", "Bearer " + TestJwt.builder().claim("scope", "security:read").serialize()))));
                 try {
                     assertThat(response.status().code()).isEqualTo(403);
                 } finally {
@@ -162,7 +162,7 @@ class CommunityHttpSecurityAdmissionIntegrationTest {
                         HttpMethod.GET,
                         "/api/orders",
                         HttpVersion.HTTP_1_1,
-                    List.of(new HttpHeader("Authorization", "Bearer " + TestJwt.builder().serialize()))));
+                    List.of(new HttpHeader("Authorization", "Bearer " + TestJwt.builder().claim("scope", "security:read").serialize()))));
                 try {
                     assertThat(response.status().code()).isEqualTo(200);
                 } finally {
@@ -189,6 +189,48 @@ class CommunityHttpSecurityAdmissionIntegrationTest {
         case "/api/public" -> RouteRequirement.permitAll();
         default -> HttpRoutePolicy.unmatched();
     };
+
+    @Test
+    @DisplayName("A token carrying the admin scope reaches the admin route — the 403 above was about the scope")
+    void adminScopeReachesAdminRoute() {
+        AtomicBoolean handlerInvoked = new AtomicBoolean(false);
+
+        withHttpSecurityScope(() -> {
+            int port = nextFreePort();
+            HttpProvider provider = new CommunityHttpProvider();
+
+            try (HttpServerEngine server = provider.createServerEngine(serverConfig(port));
+                 HttpClientEngine client = provider.createClientEngine(clientConfig(port))) {
+                server.setHandler(exchange -> {
+                    handlerInvoked.set(true);
+                    exchange.respond(HttpResponse.noBody(HttpStatus.OK, exchange.request().version()));
+                });
+
+                server.start();
+                client.start();
+
+                HttpResponse response = client.send(HttpRequest.noBody(
+                        HttpMethod.GET,
+                        "/api/admin",
+                        HttpVersion.HTTP_1_1,
+                        List.of(new HttpHeader("Authorization",
+                                "Bearer " + TestJwt.builder().claim("scope", "security:write").serialize()))));
+                try {
+                    assertThat(response.status().code())
+                            .as("this case was unwritable before the claims mapper read the token: "
+                                    + "security:write was a scope nothing could grant, so the 403 above "
+                                    + "would have passed even against a route nobody could ever reach")
+                            .isEqualTo(200);
+                } finally {
+                    if (response.body() != null) {
+                        response.body().close();
+                    }
+                }
+            }
+        });
+
+        assertThat(handlerInvoked.get()).isTrue();
+    }
 
     @Test
     @DisplayName("Undeclared path is decided by the policy, not waved through — the ADR-061 defect")
