@@ -554,9 +554,10 @@ final class CoreFlowRuntime { // NOPMD
     // Cold path — a resume that needs migrating at all — and bounded by MAX_MIGRATION_HOPS.
     @SuppressWarnings("PMD.AvoidInstantiatingObjectsInLoops")
     private FlowSnapshot migrateIfNeeded(FlowSnapshot persisted) {
-        if (!isMigrationCandidate(persisted)) {
+        if (!needsMigration(persisted)) {
             return null;
         }
+        refuseRowThatCannotBeWalked(persisted);
         FlowSnapshot current = persisted;
         for (int hop = 0; hop < MAX_MIGRATION_HOPS; hop++) {
             FlowDefinitionMigration migration =
@@ -573,8 +574,7 @@ final class CoreFlowRuntime { // NOPMD
     }
 
     /**
-     * Whether this snapshot may be walked forward at all — everything that must hold before the first
-     * transform runs.
+     * Whether this snapshot needs a walk and this runtime may perform one.
      *
      * <p><b>Lifecycle write-fence.</b> {@code persistSnapshot} carries the same fence, with a comment
      * explaining why: a worker on a closed or not-yet-started runtime must not re-establish a
@@ -584,19 +584,43 @@ final class CoreFlowRuntime { // NOPMD
      * that cannot be persisted must not happen at all. The per-instance generation half of that fence
      * does not apply: there is no instance yet, and the restore binds to the current generation.
      *
-     * <p><b>No recorded step identity.</b> ADR-062's own refusal owns that row. Declining here hands it
-     * to {@code validateSnapshotStepIdentity}, which answers with {@code STEP_IDENTITY_ABSENT}, rather
-     * than letting {@code applyHop}'s {@code orElseThrow} surface a bare {@code NoSuchElementException}
-     * on a path where every other refusal carries a reason an operator can act on.
+     * <p>Read once, before the walk, rather than again before the save. {@code started} and
+     * {@code closed} are plain volatiles here as everywhere else in this class, so a {@code close()}
+     * landing mid-walk is not caught — the same tolerance the surrounding code already has, over a
+     * window of at most {@link #MAX_MIGRATION_HOPS} in-memory transforms.
      */
-    private boolean isMigrationCandidate(FlowSnapshot persisted) {
+    private boolean needsMigration(FlowSnapshot persisted) {
         return started
                 && !closed
                 && !persisted.state().isTerminal()
                 && persisted.definitionVersion() != FlowSnapshot.VERSION_ABSENT
-                && persisted.currentStepName().isPresent()
                 && !planCatalog.containsKey(
                         new PlanKey(persisted.definitionName(), persisted.definitionVersion()));
+    }
+
+    /**
+     * Refuses a row that needs a walk but records no step identity, naming the reason that is true.
+     *
+     * <p>{@code applyHop} builds the transform's input from the parked step's name, so without this
+     * the row would reach {@code orElseThrow} as a bare {@code NoSuchElementException} on a path where
+     * every other refusal carries a reason.
+     *
+     * <p>Declining silently is not enough either, and that is the subtler half. Falling through leaves
+     * the row to {@code resolveVersionedPlan}, which refuses first — before
+     * {@link #validateSnapshotStepIdentity} ever runs — with {@code DEFINITION_VERSION_UNRESOLVED}.
+     * That reason's documented remedy is "deploy the missing version, or register the missing
+     * transform", and here a transform may well already be registered: the row is unresumable because
+     * it records no step identity, which no deployment fixes. A refusal that steers an operator to the
+     * wrong runbook is worse than a raw exception, because it looks actionable.
+     */
+    private void refuseRowThatCannotBeWalked(FlowSnapshot persisted) {
+        if (persisted.currentStepName().isPresent()) {
+            return;
+        }
+        emitSchemaMismatch(persisted, persisted.currentStep(), -1,
+                FlowEngineException.REASON_STEP_IDENTITY_ABSENT, null, null);
+        throw FlowEngineException.schemaMismatchStepIdentityAbsent(
+                config.engineName(), persisted.currentStep());
     }
 
     /** Applies one adjacent hop, rebuilding the snapshot at {@code version + 1}. */

@@ -338,7 +338,11 @@ public record FlowSnapshot(
                + ", timeout=" + timeout
                + ", compensationStack=" + Arrays.toString(compensationStack)
                + ", stackPointer=" + stackPointer
-               + ", opaqueState=" + Arrays.toString(opaqueState)
+               // Size, not contents. opaqueState is the application's payload — the one component of
+               // this record that is user data rather than definition metadata — and toString is what
+               // reaches logs, debuggers and exception text. compensationStack above stays rendered
+               // because step indices are definition metadata. Mirrors FlowMigrationState.
+               + ", opaqueState=" + opaqueState.length + " bytes"
                + ", schemaVersion=" + schemaVersion
                + ']';
     }

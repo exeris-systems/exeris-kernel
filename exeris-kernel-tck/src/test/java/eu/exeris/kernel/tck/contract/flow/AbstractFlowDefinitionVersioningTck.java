@@ -588,10 +588,18 @@ public abstract class AbstractFlowDefinitionVersioningTck {
          * other refusal is a Glass-Box {@code FlowEngineException} with a reason an operator can act on
          * — reachable from a hand-built or partially-written store row, since the record permits the
          * combination.
+         *
+         * <p>The <em>reason</em> is the assertion, not merely that something was refused. Declining
+         * quietly would leave the row to the version guard, which refuses first with
+         * {@code DEFINITION_VERSION_UNRESOLVED} — whose documented remedy is "deploy the missing
+         * version or register the missing transform", and here a transform is already registered. The
+         * row is unresumable because it records no step identity, which no deployment fixes. A refusal
+         * naming the wrong remedy is worse than a raw exception, because it looks actionable; an
+         * assertion that only checks "a FlowEngineException was thrown" cannot tell the two apart.
          */
         @Test
         @Timeout(value = 30, unit = TimeUnit.SECONDS)
-        @DisplayName("a versioned snapshot with no step identity refuses on the reason path, not on orElseThrow")
+        @DisplayName("a versioned snapshot with no step identity refuses as STEP_IDENTITY_ABSENT, not as a version miss")
         void migrationOfSnapshotWithoutStepIdentityRefusesCleanly() {
             AtomicInteger transformInvocations = new AtomicInteger();
             register(2, new AtomicInteger());
@@ -608,9 +616,11 @@ public abstract class AbstractFlowDefinitionVersioningTck {
                     new int[0], 0, new byte[0], FlowSnapshot.SCHEMA_VERSION_INITIAL));
 
             assertThatThrownBy(() -> engine.scheduler().wake(contextFor(id)))
-                    .as("a refusal carrying a reason, not a JDK exception from a stripped Optional")
+                    .as("the reason an operator will act on: no step identity, which no deployment "
+                            + "fixes — not a version miss, whose remedy is already satisfied here")
                     .isInstanceOfSatisfying(FlowEngineException.class, ex ->
-                            assertThat(ex.rawArgs()).hasSizeGreaterThan(2));
+                            assertThat(reasonOf(ex))
+                                    .isEqualTo(FlowEngineException.REASON_STEP_IDENTITY_ABSENT));
             assertThat(transformInvocations.get())
                     .as("a row that cannot be validated must not be handed to application code first")
                     .isZero();
