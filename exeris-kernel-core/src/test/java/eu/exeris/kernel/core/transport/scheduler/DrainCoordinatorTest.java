@@ -178,4 +178,180 @@ class DrainCoordinatorTest {
                     .isEqualTo(1);
         }
     }
+
+    @Nested
+    @DisplayName("Sealing — observing zero and committing must be one step")
+    class Sealing {
+
+        @Test
+        @DisplayName("an idle coordinator seals")
+        void idleCoordinatorSeals() {
+            assertThat(new DrainCoordinator().sealIfIdle()).isTrue();
+        }
+
+        @Test
+        @DisplayName("a coordinator with work in flight refuses to seal")
+        void busyCoordinatorDoesNotSeal() {
+            DrainCoordinator coordinator = new DrainCoordinator();
+            coordinator.registerStream();
+
+            assertThat(coordinator.sealIfIdle())
+                    .as("sealing while a stream is served is the commit that severs it")
+                    .isFalse();
+        }
+
+        @Test
+        @DisplayName("after sealing, a parked stream cannot re-arm")
+        void sealedCoordinatorRefusesReArm() {
+            DrainCoordinator coordinator = new DrainCoordinator();
+            DrainCoordinator.StreamWork work = coordinator.registerStream();
+            work.markIdle();
+
+            assertThat(coordinator.sealIfIdle()).isTrue();
+
+            assertThat(work.markBusy())
+                    .as("this is the window the drain loop could not close by reading the count: a "
+                            + "request arriving after the commit must be told to close, not served "
+                            + "by a handler the teardown is about to sever")
+                    .isFalse();
+            assertThat(coordinator.busyStreams())
+                    .as("and a refused re-arm must not leave a count behind either")
+                    .isZero();
+        }
+
+        @Test
+        @DisplayName("a stream registered after the seal holds no count")
+        void streamRegisteredAfterSealHoldsNoCount() {
+            DrainCoordinator coordinator = new DrainCoordinator();
+            assertThat(coordinator.sealIfIdle()).isTrue();
+
+            DrainCoordinator.StreamWork late = coordinator.registerStream();
+
+            assertThat(coordinator.busyStreams())
+                    .as("close() does not stop admission, so a connection can still arrive — but it "
+                            + "cannot extend a shutdown already past its commit point")
+                    .isZero();
+            assertThat(late.markBusy()).isFalse();
+            late.close();
+            assertThat(coordinator.busyStreams())
+                    .as("and closing a handle that never took a count must not decrement")
+                    .isZero();
+        }
+
+        @Test
+        @DisplayName("sealNow discards work in flight, for the drain deadline only")
+        void sealNowDiscardsInFlightWork() {
+            DrainCoordinator coordinator = new DrainCoordinator();
+            DrainCoordinator.StreamWork work = coordinator.registerStream();
+
+            coordinator.sealNow();
+
+            assertThat(coordinator.busyStreams()).isZero();
+            assertThat(work.markBusy())
+                    .as("once shutdown proceeds regardless, letting a late arrival believe it is "
+                            + "protected is worse than telling it to close")
+                    .isTrue();
+        }
+    }
+
+    /**
+     * The handle is reachable from more than its own thread, so its flag is a compare-and-set.
+     *
+     * <p>These cannot prove the absence of a race — that needs a stress harness, and jcstress is not
+     * wired into this repo. What they do prove is that the previous shape was wrong: reverting the flag
+     * to a non-volatile field with read-modify-write fails <em>all three</em> of these, observed rather
+     * than assumed (the double-acquire case reported a count of 3 against an expected 1). A green run
+     * here is evidence the arithmetic holds under contention, not a proof that it always will; that
+     * distinction is written down rather than left for a reader to assume the stronger claim.
+     */
+    @Nested
+    @DisplayName("Handle concurrency")
+    class HandleConcurrency {
+
+        private static final int THREADS = 8;
+        private static final int ROUNDS = 2_000;
+
+        @Test
+        @DisplayName("concurrent markIdle() releases the count once, never once per caller")
+        void concurrentMarkIdleNeverDoubleReleases() throws InterruptedException {
+            for (int round = 0; round < ROUNDS; round++) {
+                DrainCoordinator coordinator = new DrainCoordinator();
+                DrainCoordinator.StreamWork work = coordinator.registerStream();
+
+                raceOn(work::markIdle);
+
+                assertThat(coordinator.busyStreams())
+                        .as("a double release drops the count below the truth, so the drain finishes "
+                                + "early and teardown severs a handler still writing its response")
+                        .isZero();
+            }
+        }
+
+        @Test
+        @DisplayName("concurrent markBusy() takes the count once, never once per caller")
+        void concurrentMarkBusyNeverDoubleAcquires() throws InterruptedException {
+            for (int round = 0; round < ROUNDS; round++) {
+                DrainCoordinator coordinator = new DrainCoordinator();
+                DrainCoordinator.StreamWork work = coordinator.registerStream();
+                work.markIdle();
+
+                raceOn(work::markBusy);
+
+                assertThat(coordinator.busyStreams())
+                        .as("a double acquire leaves a count nothing will ever release, so the drain "
+                                + "burns its full deadline — issue #282's symptom by another route")
+                        .isEqualTo(1);
+            }
+        }
+
+        @Test
+        @DisplayName("interleaved markIdle()/markBusy() leaves the count matching the flag")
+        void interleavedTransitionsPreserveTheInvariant() throws InterruptedException {
+            for (int round = 0; round < ROUNDS; round++) {
+                DrainCoordinator coordinator = new DrainCoordinator();
+                DrainCoordinator.StreamWork work = coordinator.registerStream();
+
+                raceOn(index -> {
+                    if (index % 2 == 0) {
+                        work.markIdle();
+                    } else {
+                        work.markBusy();
+                    }
+                });
+
+                // Whichever transition landed last, the handle holds 0 or 1 — never 2, never -1.
+                work.markIdle();
+                assertThat(coordinator.busyStreams())
+                        .as("the invariant is that a handle holds exactly busy ? 1 : 0 counts; any "
+                                + "other value means a transition and its counter operation came apart")
+                        .isZero();
+            }
+        }
+
+        private void raceOn(Runnable action) throws InterruptedException {
+            raceOn(_ -> action.run());
+        }
+
+        private void raceOn(java.util.function.IntConsumer action) throws InterruptedException {
+            java.util.concurrent.CountDownLatch start = new java.util.concurrent.CountDownLatch(1);
+            Thread[] threads = new Thread[THREADS];
+            for (int i = 0; i < THREADS; i++) {
+                int index = i;
+                threads[i] = Thread.ofVirtual().unstarted(() -> {
+                    try {
+                        start.await();
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        return;
+                    }
+                    action.accept(index);
+                });
+                threads[i].start();
+            }
+            start.countDown();
+            for (Thread thread : threads) {
+                thread.join();
+            }
+        }
+    }
 }

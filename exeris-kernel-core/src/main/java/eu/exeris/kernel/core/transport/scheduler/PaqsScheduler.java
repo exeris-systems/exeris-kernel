@@ -251,7 +251,11 @@ public final class PaqsScheduler implements AutoCloseable {
         // Waits on streams being SERVED, not on streams being OPEN. A stream is busy from the moment
         // it starts and only a protocol that knows it is between requests reports otherwise, so a raw
         // handler still gets the full drain while an idle keep-alive connection stops holding it.
-        while (drainCoordinator.busyStreams() > 0) {
+        // sealIfIdle() rather than busyStreams() == 0: observing zero and committing to teardown must
+        // be one step. Read as two, a request that arrived while the loop was looking flips the count
+        // back to one on an engine already past its commit point, and teardown severs the stream
+        // serving it. After the seal a re-arm is refused and the protocol layer closes instead.
+        while (!drainCoordinator.sealIfIdle()) {
             if (System.nanoTime() >= deadlineNanos) {
                 int remaining = drainCoordinator.busyStreams();
                 if (remaining > 0) {
@@ -260,6 +264,9 @@ public final class PaqsScheduler implements AutoCloseable {
                                     + " streams to finish; proceeding with shutdown",
                             remaining);
                 }
+                // Seal anyway. Shutdown has decided to proceed, so letting streams keep taking counts
+                // serves nothing and lets a late arrival believe it is protected when it is not.
+                drainCoordinator.sealNow();
                 break;
             }
             if (spins < SPIN_THRESHOLD) {

@@ -156,12 +156,21 @@ public final class CommunityHttpRequestProcessor {
         // Streams are busy by default, so a protocol that cannot tell simply never reaches this.
         markIdle();
         ReadResult readResult;
+        boolean rearmed;
         try {
             readResult = readRequest(codec, stream, handler, state, state.bufferedBytes());
         } finally {
-            markBusy();
+            rearmed = markBusy();
         }
         if (readResult == null) {
+            return false;
+        }
+        if (!rearmed) {
+            // The drain committed to teardown while this connection was parked on the next request,
+            // so this stream is not being waited for. Serving now would race a teardown already in
+            // progress — the failure the drain exists to prevent, reached from the other side. The
+            // peer was told to close on the previous response; a request sent anyway is racing us,
+            // and RFC 9112 §9.6 requires a client to tolerate a persistent connection closing.
             return false;
         }
 
@@ -212,10 +221,13 @@ public final class CommunityHttpRequestProcessor {
         }
     }
 
-    private static void markBusy() {
-        if (TransportScopes.STREAM_WORK.isBound()) {
-            TransportScopes.STREAM_WORK.get().markBusy();
-        }
+    /**
+     * @return {@code false} only when the drain has committed to teardown; unbound means no drain
+     *         coordinator is in play at all, which must not close connections
+     */
+    private static boolean markBusy() {
+        return !TransportScopes.STREAM_WORK.isBound()
+                || TransportScopes.STREAM_WORK.get().markBusy();
     }
 
     private static boolean isDraining() {

@@ -34,14 +34,31 @@ import java.lang.invoke.VarHandle;
  * its response — which is the exact regression graceful shutdown exists to prevent. Defaulting to busy
  * costs an unparticipating protocol a wait; defaulting to idle costs it its response.
  *
+ * <h2>Sealing — why observing zero is not enough</h2>
+ * <p>The busy count reaching zero and the shutdown proceeding to teardown must be one step. Read as
+ * two, a request that arrived while the drain was looking flips the count back to one on an engine
+ * already committed to tearing down, and the stream serving it is severed. That window is not closable
+ * by asking protocols to check {@link #isDraining()} first — a request already sitting in the socket
+ * buffer when the drain began has nobody left to ask, and the same reasoning that makes busy the
+ * default applies here: a protocol that does not participate must not be able to silently re-arm.
+ *
+ * <p>So {@link #sealIfIdle()} is a compare-and-set on the count itself. Once it succeeds no further
+ * count may be taken, {@link StreamWork#markBusy()} answers {@code false}, and the protocol layer is
+ * expected to close rather than serve. That is the honest reading of a connection we have already told
+ * the peer to close: a request arriving after that is racing our teardown, not being dropped by it.
+ *
  * <h2>Allocation</h2>
  * <p>One shared instance per engine plus one {@link StreamWork} handle per stream — the same order as
- * the Virtual Thread PAQS already spawns per stream, and nothing per request. The handle's own flag is
- * confined to its stream's thread, so only the shared counter is atomic.
+ * the Virtual Thread PAQS already spawns per stream, and nothing per request. Both the shared count and
+ * the per-handle flag are compare-and-set; see {@link StreamWork} for why the handle cannot rely on
+ * thread confinement.
  *
  * @since 0.11.0
  */
 public final class DrainCoordinator {
+
+    /** Count value meaning "the drain committed to teardown"; no further count may be taken. */
+    private static final int SEALED = Integer.MIN_VALUE;
 
     private static final VarHandle BUSY_STREAMS;
     private static final VarHandle DRAINING;
@@ -67,20 +84,67 @@ public final class DrainCoordinator {
      *
      * <p>Called by {@link PaqsScheduler} for every admitted stream, before the handler runs.
      *
+     * <p>After {@link #sealIfIdle()} has succeeded this returns a handle that holds no count. The
+     * handler still runs — {@code close()} does not stop admission, so a connection accepted moments
+     * earlier is entitled to what it can get — but it cannot extend a shutdown already past its commit
+     * point, and its {@link StreamWork#markBusy()} answers {@code false}.
+     *
      * @return the handle the protocol layer uses to report idleness; must be closed on stream exit
      */
     public StreamWork registerStream() {
-        BUSY_STREAMS.getAndAdd(this, 1);
-        return new StreamWork(this);
+        return new StreamWork(this, tryAcquire());
     }
 
     /**
      * Returns how many streams are currently being served.
      *
-     * @return the busy count; {@code 0} means shutdown may proceed to teardown
+     * @return the busy count, or {@code 0} once sealed; {@code 0} means teardown may proceed
      */
     public int busyStreams() {
-        return (int) BUSY_STREAMS.getAcquire(this);
+        int count = (int) BUSY_STREAMS.getAcquire(this);
+        return count == SEALED ? 0 : count;
+    }
+
+    /**
+     * Commits to teardown if — and atomically with observing that — nothing is being served.
+     *
+     * <p>The atomicity is the whole point. {@code busyStreams() == 0} followed by teardown is two
+     * steps, and a stream re-arming between them is served by a handler the next step severs.
+     *
+     * @return {@code true} if the count was zero and is now sealed; {@code false} if work is in flight
+     */
+    public boolean sealIfIdle() {
+        return BUSY_STREAMS.compareAndSet(this, 0, SEALED);
+    }
+
+    /**
+     * Seals unconditionally, discarding whatever is still in flight.
+     *
+     * <p>For the drain deadline only: once shutdown has decided to proceed regardless, letting streams
+     * keep taking counts serves nothing and lets a late arrival believe it is protected.
+     */
+    public void sealNow() {
+        BUSY_STREAMS.setVolatile(this, SEALED);
+    }
+
+    /**
+     * Takes one count unless sealed.
+     *
+     * <p>CAS loop rather than {@code getAndAdd}, because the sentinel must not be arithmetic on: a
+     * blind increment past {@link #SEALED} produces a count that is neither sealed nor true.
+     *
+     * @return {@code true} if a count was taken and must later be released
+     */
+    private boolean tryAcquire() {
+        while (true) {
+            int current = (int) BUSY_STREAMS.getAcquire(this);
+            if (current == SEALED) {
+                return false;
+            }
+            if (BUSY_STREAMS.compareAndSet(this, current, current + 1)) {
+                return true;
+            }
+        }
     }
 
     /**
@@ -110,32 +174,77 @@ public final class DrainCoordinator {
     /**
      * One stream's contribution to the busy count.
      *
-     * <p>The flag is confined to the stream's own thread — the protocol loop that reports it is the
-     * only caller — so the handle needs no synchronisation of its own.
+     * <h2>Why this is not thread-confined</h2>
+     * <p>An earlier version declared the flag confined to the stream's own thread and left it a plain
+     * field. The mechanism contradicted the declaration: the handle reaches protocol code only through
+     * {@link eu.exeris.kernel.core.transport.TransportScopes#STREAM_WORK}, a {@code ScopedValue}, and
+     * {@code PaqsScheduler} mandates {@code StructuredTaskScope} for concurrency inside
+     * {@code runStream()} — whose {@code fork()} inherits {@code ScopedValue} bindings. Any subtask
+     * written to that mandate can read the handle and call these methods from another thread.
+     *
+     * <p>Both failure modes destroy what this class is for. Two threads observing {@code busy == true}
+     * in {@link #markIdle()} both release, the count falls below the truth, the drain finishes early
+     * and teardown severs a handler mid-response — the exact regression graceful shutdown exists to
+     * prevent. Two observing {@code busy == false} in {@link #markBusy()} both take a count, and the
+     * drain never reaches zero. Neither is reachable by any test that is not a stress harness, and
+     * neither is visible to ArchUnit or PMD, so the guarantee has to be a property of the type.
+     *
+     * <h2>Invariant</h2>
+     * <p>This handle holds exactly {@code busy ? 1 : 0} counts on the owner. Every transition of the
+     * flag is a compare-and-set paired with exactly one counter operation, and the loser of a
+     * concurrent {@link #markBusy()} returns the count it took rather than leaving it stranded.
      */
     public static final class StreamWork implements AutoCloseable {
 
-        private final DrainCoordinator owner;
-        private boolean busy = true;
+        private static final VarHandle BUSY;
 
-        private StreamWork(DrainCoordinator owner) {
+        static {
+            try {
+                BUSY = MethodHandles.lookup().findVarHandle(StreamWork.class, "busy", boolean.class);
+            } catch (ReflectiveOperationException e) {
+                throw new ExceptionInInitializerError(e);
+            }
+        }
+
+        private final DrainCoordinator owner;
+
+        /** Written only through {@link #BUSY}; the plain reads below are the fast paths. */
+        private volatile boolean busy;
+
+        private StreamWork(DrainCoordinator owner, boolean busy) {
             this.owner = owner;
+            this.busy = busy;
         }
 
         /** Reports that this stream is between units of work and must not hold shutdown open. */
         public void markIdle() {
-            if (busy) {
-                busy = false;
+            if (BUSY.compareAndSet(this, true, false)) {
                 owner.release();
             }
         }
 
-        /** Reports that this stream has work in flight again. */
-        public void markBusy() {
-            if (!busy) {
-                busy = true;
-                BUSY_STREAMS.getAndAdd(owner, 1);
+        /**
+         * Reports that this stream has work in flight again.
+         *
+         * <p>The count is taken <em>before</em> the flag is set, never the other way round. Setting the
+         * flag first and reverting on failure would expose a window where a concurrent
+         * {@link #markIdle()} sees {@code busy == true} and releases a count this handle never took.
+         *
+         * @return {@code false} if the drain has already committed to teardown, in which case the
+         *         protocol layer must close rather than serve — the stream will not be waited for
+         */
+        public boolean markBusy() {
+            if (busy) {
+                return true;
             }
+            if (!owner.tryAcquire()) {
+                return false;
+            }
+            if (!BUSY.compareAndSet(this, false, true)) {
+                // Another markBusy won; it already holds the one count this handle is entitled to.
+                owner.release();
+            }
+            return true;
         }
 
         /** Releases this stream's contribution; idempotent with {@link #markIdle()}. */
