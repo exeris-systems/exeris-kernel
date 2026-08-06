@@ -54,8 +54,15 @@ import java.util.function.Function;
  * (NIO selectors, io_uring rings) — none of which own a shared scope. A long-lived STS is
  * therefore architecturally incompatible with the multi-carrier ingress model.
  * {@code Thread.ofVirtual().start()} is the sole deliberate exception to the STS mandate.
- * All concurrent operations <em>within</em> {@code runStream()} MUST use
- * {@code StructuredTaskScope}.
+ *
+ * <p><b>Track-dependent, and this class carries no {@code StructuredTaskScope} import on either.</b>
+ * The sentence this paragraph replaced said concurrency inside {@code runStream()} MUST use
+ * {@code StructuredTaskScope}. On the default line that mandates the one preview dependency 1.0 GA must
+ * not ship — see ROADMAP §"Platform Baseline for 1.0 GA", which records the same staleness in
+ * {@code ExerisArchitectureTest.noExecutorsAnywhere}'s reason text. Read it per track: the
+ * {@code preview} artifact keeps {@code StructuredTaskScope}; the default line uses virtual threads
+ * plus explicit {@code ScopedValue} rebind at the {@link StreamExecutionBackend} seam, both GA.
+ * Either way structured lifetime is the requirement, not a specific class.
  *
  * <h2>ScopedValue Bindings (JEP 506)</h2>
  * <p>Before invoking the {@link StreamHandler}, the PAQS binds:

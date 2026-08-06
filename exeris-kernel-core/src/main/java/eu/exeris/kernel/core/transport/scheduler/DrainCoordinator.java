@@ -177,10 +177,19 @@ public final class DrainCoordinator {
      * <h2>Why this is not thread-confined</h2>
      * <p>An earlier version declared the flag confined to the stream's own thread and left it a plain
      * field. The mechanism contradicted the declaration: the handle reaches protocol code only through
-     * {@link eu.exeris.kernel.core.transport.TransportScopes#STREAM_WORK}, a {@code ScopedValue}, and
-     * {@code PaqsScheduler} mandates {@code StructuredTaskScope} for concurrency inside
-     * {@code runStream()} — whose {@code fork()} inherits {@code ScopedValue} bindings. Any subtask
-     * written to that mandate can read the handle and call these methods from another thread.
+     * {@link eu.exeris.kernel.core.transport.TransportScopes#STREAM_WORK}, a {@code ScopedValue} —
+     * chosen precisely so it survives down the stack and across a task boundary. A parameter or a field
+     * would have expressed confinement; this expresses the opposite.
+     *
+     * <p>The reachable route does not depend on {@code StructuredTaskScope}, and saying so matters
+     * because the two distribution tracks disagree about it: the {@code preview} artifact keeps STS
+     * (whose {@code fork()} inherits {@code ScopedValue} bindings), while the default line must stay
+     * preview-clean for 1.0 GA. What holds on <em>both</em> is {@link StreamExecutionBackend}: the PAQS
+     * seam at which an admitted stream's root task is started, contractually required to preserve
+     * {@code ScopedValue} bindings across whatever thread a backend chooses
+     * ({@code AbstractPaqsSchedulerTck#customExecutionBackendPreservesScopedValueBindings}). Its
+     * forward consumers are the ones that run the task somewhere the scheduler did not create — an
+     * Enterprise locality-aware backend, and the post-1.0 DST simulation scheduler.
      *
      * <p>Both failure modes destroy what this class is for. Two threads observing {@code busy == true}
      * in {@link #markIdle()} both release, the count falls below the truth, the drain finishes early

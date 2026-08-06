@@ -330,9 +330,15 @@ being dropped by it. On the 60-second deadline the coordinator seals uncondition
 shutdown proceeds regardless, letting a late arrival believe it is protected is worse than closing on it.
 
 **The per-stream handle is not thread-confined.** `StreamWork` reaches protocol code through the
-`STREAM_WORK` `ScopedValue`, and `StructuredTaskScope.fork()` — mandated for concurrency inside
-`runStream()` — inherits `ScopedValue` bindings, so a subtask can report idleness from another thread.
-Both the shared count and the handle's flag are therefore compare-and-set. A double release drops the
+`STREAM_WORK` `ScopedValue` — chosen precisely so it survives down the stack and across a task
+boundary. The reachable route is track-independent and does not rest on `StructuredTaskScope` (which
+the default line must not ship for 1.0 GA): `StreamExecutionBackend`, the seam at which an admitted
+stream's root task is started, is contractually required to preserve `ScopedValue` bindings across
+whatever thread a backend chooses, and its forward consumers — an Enterprise locality-aware backend,
+the post-1.0 DST simulation scheduler — are exactly the ones that run the task on a thread the
+scheduler did not create. On the `preview` artifact `StructuredTaskScope.fork()`'s binding inheritance
+is a second route to the same place. Both the shared count and the handle's flag are therefore
+compare-and-set. A double release drops the
 count below the truth and ends the drain early; a double acquire means it never ends. Neither is
 reachable by anything short of a stress harness, so the guarantee is a property of the type rather than
 an assumption about callers.
