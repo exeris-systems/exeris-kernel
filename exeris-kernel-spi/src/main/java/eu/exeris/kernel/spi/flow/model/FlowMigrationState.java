@@ -77,4 +77,42 @@ public record FlowMigrationState(
     public byte[] opaqueState() {
         return Arrays.copyOf(opaqueState, opaqueState.length);
     }
+
+    /**
+     * Value equality over array <em>contents</em>.
+     *
+     * <p>A record's generated {@code equals} compares array components by reference, so two carriers
+     * describing the same parked saga would be unequal. That is an identity-sensitive operation on a
+     * carrier, which the Valhalla-readiness rule exists to keep out — and here it would also make the
+     * obvious way to assert a transform is a no-op quietly always false. Mirrors {@link FlowSnapshot}.
+     */
+    @Override
+    public boolean equals(Object other) {
+        return this == other
+                || other instanceof FlowMigrationState state
+                && parkedStep == state.parkedStep
+                && stackPointer == state.stackPointer
+                && parkedStepName.equals(state.parkedStepName)
+                && Arrays.equals(compensationStack, state.compensationStack)
+                && Arrays.equals(opaqueState, state.opaqueState);
+    }
+
+    @Override
+    public int hashCode() {
+        int result = Integer.hashCode(parkedStep);
+        result = 31 * result + parkedStepName.hashCode();
+        result = 31 * result + Arrays.hashCode(compensationStack);
+        result = 31 * result + stackPointer;
+        return 31 * result + Arrays.hashCode(opaqueState);
+    }
+
+    /** Sizes rather than contents: {@code opaqueState} is user data and never rendered. */
+    @Override
+    public String toString() {
+        return "FlowMigrationState[parkedStep=" + parkedStep
+                + ", parkedStepName=" + parkedStepName
+                + ", compensationStack=" + Arrays.toString(compensationStack)
+                + ", stackPointer=" + stackPointer
+                + ", opaqueState=" + opaqueState.length + " bytes]";
+    }
 }

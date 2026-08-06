@@ -409,6 +409,10 @@ final class CoreFlowRuntime { // NOPMD
             // runs, and would make transform purity an unstated obligation by re-running the chain
             // on every wake.
             persistMigratedSnapshot(migrated);
+            FlowDefinitionMigratedEvent.emit(
+                    config.engineName(), migrated.definitionName(),
+                    migrated.instanceIdMost(), migrated.instanceIdLeast(),
+                    persisted.definitionVersion(), migrated.definitionVersion());
         }
         return RuntimeFlowInstance.fromSnapshot(resolvedPlan, resumable, lifecycleGeneration.get());
     }
@@ -550,9 +554,7 @@ final class CoreFlowRuntime { // NOPMD
     // Cold path — a resume that needs migrating at all — and bounded by MAX_MIGRATION_HOPS.
     @SuppressWarnings("PMD.AvoidInstantiatingObjectsInLoops")
     private FlowSnapshot migrateIfNeeded(FlowSnapshot persisted) {
-        if (persisted.state().isTerminal()
-                || persisted.definitionVersion() == FlowSnapshot.VERSION_ABSENT
-                || planCatalog.containsKey(new PlanKey(persisted.definitionName(), persisted.definitionVersion()))) {
+        if (!isMigrationCandidate(persisted)) {
             return null;
         }
         FlowSnapshot current = persisted;
@@ -568,6 +570,33 @@ final class CoreFlowRuntime { // NOPMD
             }
         }
         return null;
+    }
+
+    /**
+     * Whether this snapshot may be walked forward at all — everything that must hold before the first
+     * transform runs.
+     *
+     * <p><b>Lifecycle write-fence.</b> {@code persistSnapshot} carries the same fence, with a comment
+     * explaining why: a worker on a closed or not-yet-started runtime must not re-establish a
+     * non-terminal row another runtime may already have reclaimed. It is hoisted to here rather than
+     * applied at the save because the alternative — migrate in memory, skip the write — resumes the
+     * saga on a version its row does not name, which is exactly what A3 exists to prevent. A migration
+     * that cannot be persisted must not happen at all. The per-instance generation half of that fence
+     * does not apply: there is no instance yet, and the restore binds to the current generation.
+     *
+     * <p><b>No recorded step identity.</b> ADR-062's own refusal owns that row. Declining here hands it
+     * to {@code validateSnapshotStepIdentity}, which answers with {@code STEP_IDENTITY_ABSENT}, rather
+     * than letting {@code applyHop}'s {@code orElseThrow} surface a bare {@code NoSuchElementException}
+     * on a path where every other refusal carries a reason an operator can act on.
+     */
+    private boolean isMigrationCandidate(FlowSnapshot persisted) {
+        return started
+                && !closed
+                && !persisted.state().isTerminal()
+                && persisted.definitionVersion() != FlowSnapshot.VERSION_ABSENT
+                && persisted.currentStepName().isPresent()
+                && !planCatalog.containsKey(
+                        new PlanKey(persisted.definitionName(), persisted.definitionVersion()));
     }
 
     /** Applies one adjacent hop, rebuilding the snapshot at {@code version + 1}. */

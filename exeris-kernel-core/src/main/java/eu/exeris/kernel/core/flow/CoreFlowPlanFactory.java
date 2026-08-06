@@ -35,7 +35,7 @@ final class CoreFlowPlanFactory implements FlowExecutionPlanFactory {
     private final FlowEngineConfig config;
     private final CoreFlowRegistry registry;
     private final ConcurrentMap<PlanKey, CoreFlowExecutionPlan> planCatalog;
-    private final ConcurrentMap<MigrationKey, FlowDefinitionMigration> migrations;
+    private final CoreMigrationRegistry migrationRegistry;
     private final Runnable onPlanCompiled;
     private final ConcurrentMap<String, List<FlowTransitionDescriptor>> transitionsByDefinition =
             new ConcurrentHashMap<>();
@@ -47,7 +47,7 @@ final class CoreFlowPlanFactory implements FlowExecutionPlanFactory {
         this.config = Objects.requireNonNull(config, "config");
         this.registry = Objects.requireNonNull(registry, "registry");
         this.planCatalog = Objects.requireNonNull(planCatalog, "planCatalog");
-        this.migrations = Objects.requireNonNull(migrations, "migrations");
+        this.migrationRegistry = new CoreMigrationRegistry(config, migrations);
         this.onPlanCompiled = Objects.requireNonNull(onPlanCompiled, "onPlanCompiled");
     }
 
@@ -236,29 +236,10 @@ final class CoreFlowPlanFactory implements FlowExecutionPlanFactory {
             return definition;
         }
     }
-    /**
-     * Registers an adjacent-hop migration (ADR-064). Storage and validation only in this slice — the
-     * chain that consumes it lives in {@code CoreFlowRuntime}.
-     */
+    /** Registers an adjacent-hop migration (ADR-064); admission rules live in the registry. */
     @Override
     public void registerMigration(String definitionName, int fromVersion, FlowDefinitionMigration migration) {
-        Objects.requireNonNull(definitionName, "definitionName must not be null");
-        Objects.requireNonNull(migration, "migration must not be null");
-        if (definitionName.isBlank()) {
-            throw new IllegalArgumentException("definitionName must not be blank");
-        }
-        if (fromVersion < FlowDefinition.INITIAL_VERSION) {
-            throw new IllegalArgumentException(
-                    "fromVersion must be >= " + FlowDefinition.INITIAL_VERSION + ", got: " + fromVersion);
-        }
-        MigrationKey key = new MigrationKey(definitionName, fromVersion);
-        if (migrations.putIfAbsent(key, migration) != null) {
-            // Silently replacing would mean a redeploy could change how in-flight sagas are moved
-            // without anyone stating it — the transform is as load-bearing as the definition itself.
-            throw new FlowEngineException(
-                    "A migration is already registered for definition '" + definitionName
-                    + "' version " + fromVersion);
-        }
+        migrationRegistry.register(definitionName, fromVersion, migration);
     }
 
 }

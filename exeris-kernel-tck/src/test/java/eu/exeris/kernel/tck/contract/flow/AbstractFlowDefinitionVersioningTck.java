@@ -10,6 +10,7 @@ package eu.exeris.kernel.tck.contract.flow;
 
 import eu.exeris.kernel.spi.exceptions.flow.FlowEngineException;
 import eu.exeris.kernel.spi.flow.FlowEngine;
+import eu.exeris.kernel.spi.flow.FlowScheduler;
 import eu.exeris.kernel.spi.flow.model.FlowContext;
 import eu.exeris.kernel.spi.flow.model.FlowDefinition;
 import eu.exeris.kernel.spi.flow.model.FlowDefinitionMigration;
@@ -532,15 +533,160 @@ public abstract class AbstractFlowDefinitionVersioningTck {
         }
 
         /**
-         * The migrated version reaches the store <em>before</em> the resumed saga runs.
+         * A runtime that cannot persist must not migrate.
          *
-         * <p>Read from inside the resumed step rather than after it, because the runtime writes a
-         * snapshot on PARK / COMPENSATING / FAILED_ROLLEDBACK and on no other transition. At this
-         * instant the migration's own write is the only one that can have happened. Asserting the
-         * end state instead cannot see the write at all: an engine that migrated in memory and never
-         * persisted would still park at version 2 a moment later, so the row would read 2 either way
-         * and the case would pass while pinning nothing.
+         * <p>{@code persistSnapshot} carries a lifecycle write-fence so a worker on a closed or
+         * superseded runtime cannot re-establish a non-terminal row another runtime may already have
+         * reclaimed. The migration write needs the same fence, and it is hoisted above the walk rather
+         * than applied at the save: migrating in memory and skipping the write would resume the saga on
+         * a version its row does not name, which is the failure A3 exists to prevent. So the fence has
+         * to make the migration not happen, not merely not persist.
+         *
+         * <p>The scheduler reference is captured <em>before</em> the close, because that is the only
+         * way this is reachable and it is the shape real code has: {@code FlowChoreographyBridge} holds
+         * a {@code FlowScheduler} from construction, and {@code lookupParked} — unlike {@code wake} and
+         * unlike {@code FlowEngine.scheduler()} itself — has no started-check of its own. A bridge
+         * draining an in-flight event while the engine closes is precisely the abandoned worker the
+         * fence exists for. Fetching the scheduler after the close instead would make this case pass
+         * against no fence at all, satisfied by {@code scheduler()}'s own refusal.
          */
+        @Test
+        @Timeout(value = 30, unit = TimeUnit.SECONDS)
+        @DisplayName("a closed runtime does not migrate — a migration it could not persist must not happen")
+        void closedRuntimeDoesNotMigrate() {
+            AtomicInteger transformInvocations = new AtomicInteger();
+            register(2, new AtomicInteger());
+            engine.plans().registerMigration(DEFINITION, 1, parked -> {
+                transformInvocations.incrementAndGet();
+                return parked;
+            });
+            FlowScheduler captured = engine.scheduler();
+
+            UUID id = UUID.randomUUID();
+            snapshotStore().save(parkedSnapshot(id, DEFINITION, 1));
+
+            engine.close();
+
+            assertThatThrownBy(() -> captured
+                    .lookupParked(id.getMostSignificantBits(), id.getLeastSignificantBits()))
+                    .as("with nothing able to migrate it, the saga is unservable here and says so")
+                    .isInstanceOf(FlowEngineException.class);
+            assertThat(transformInvocations.get())
+                    .as("application code must not run on behalf of a runtime that has stopped")
+                    .isZero();
+            assertThat(snapshotStore().load(id.getMostSignificantBits(), id.getLeastSignificantBits())
+                    .map(FlowSnapshot::definitionVersion))
+                    .as("and the row another runtime may own must be left exactly as found")
+                    .hasValue(1);
+        }
+
+        /**
+         * A snapshot with a version but no step identity belongs to ADR-062's refusal, not to a hop.
+         *
+         * <p>{@code applyHop} builds the transform's input from {@code currentStepName().orElseThrow()}.
+         * Without a bail-out that is a bare {@code NoSuchElementException} escaping a path where every
+         * other refusal is a Glass-Box {@code FlowEngineException} with a reason an operator can act on
+         * — reachable from a hand-built or partially-written store row, since the record permits the
+         * combination.
+         */
+        @Test
+        @Timeout(value = 30, unit = TimeUnit.SECONDS)
+        @DisplayName("a versioned snapshot with no step identity refuses on the reason path, not on orElseThrow")
+        void migrationOfSnapshotWithoutStepIdentityRefusesCleanly() {
+            AtomicInteger transformInvocations = new AtomicInteger();
+            register(2, new AtomicInteger());
+            engine.plans().registerMigration(DEFINITION, 1, parked -> {
+                transformInvocations.incrementAndGet();
+                return parked;
+            });
+
+            UUID id = UUID.randomUUID();
+            snapshotStore().save(new FlowSnapshot(
+                    id.getMostSignificantBits(), id.getLeastSignificantBits(),
+                    DEFINITION, 1, 0, Optional.empty(),
+                    FlowState.PARKED, Instant.now(), Instant.now().plusSeconds(60L),
+                    new int[0], 0, new byte[0], FlowSnapshot.SCHEMA_VERSION_INITIAL));
+
+            assertThatThrownBy(() -> engine.scheduler().wake(contextFor(id)))
+                    .as("a refusal carrying a reason, not a JDK exception from a stripped Optional")
+                    .isInstanceOfSatisfying(FlowEngineException.class, ex ->
+                            assertThat(ex.rawArgs()).hasSizeGreaterThan(2));
+            assertThat(transformInvocations.get())
+                    .as("a row that cannot be validated must not be handed to application code first")
+                    .isZero();
+        }
+
+        /**
+         * The choreography wake shape, end to end.
+         *
+         * <p>{@code FlowChoreographyBridge} wakes a saga as
+         * {@code lookupParked(most, least).ifPresent(scheduler::wake)}, so on a node that does not
+         * hold the instance in memory the migration happens inside {@code lookupParked}'s durable-store
+         * fallback — that fallback is a <em>restore</em>, not a read. Nothing pinned this, and the
+         * consequence of getting it wrong is not a slow path but a dead one: a cross-engine saga on a
+         * retired version would refuse instead of migrating, on the very topology ADR-013 §8 exists for.
+         */
+        @Test
+        @Timeout(value = 30, unit = TimeUnit.SECONDS)
+        @DisplayName("the choreography shape — lookupParked() then wake() — migrates and resumes")
+        void lookupParkedThenWakeMigratesAndResumes() {
+            AtomicInteger v2Executions = new AtomicInteger();
+            register(2, v2Executions);
+            engine.plans().registerMigration(DEFINITION, 1, this::sameStep);
+
+            UUID id = UUID.randomUUID();
+            snapshotStore().save(parkedSnapshot(id, DEFINITION, 1));
+
+            Optional<FlowContext> found = engine.scheduler()
+                    .lookupParked(id.getMostSignificantBits(), id.getLeastSignificantBits());
+            assertThat(found)
+                    .as("the saga is parked and migratable; an empty lookup here is how a choreography "
+                            + "wake becomes a silent no-op rather than a visible refusal")
+                    .isPresent();
+
+            found.ifPresent(engine.scheduler()::wake);
+            awaitTrue(() -> v2Executions.get() > 0);
+
+            assertThat(v2Executions.get()).isEqualTo(1);
+        }
+
+        /**
+         * Repeated lookups do not re-run the transform — the persisted result is what stops them.
+         *
+         * <p>The direct-wake case asserts the write happens; this asserts what the write <em>buys</em>,
+         * on the path where it matters most. A lookup is cheap to repeat and an application may poll
+         * one, so an unpersisted migration would run application code once per lookup and make
+         * transform purity a load-bearing obligation nothing states.
+         */
+        @Test
+        @Timeout(value = 30, unit = TimeUnit.SECONDS)
+        @DisplayName("a repeated lookupParked() runs the transform once, not once per lookup")
+        void repeatedLookupRunsTheTransformOnce() {
+            AtomicInteger transformInvocations = new AtomicInteger();
+            register(2, new AtomicInteger());
+            engine.plans().registerMigration(DEFINITION, 1, parked -> {
+                transformInvocations.incrementAndGet();
+                return parked;
+            });
+
+            UUID id = UUID.randomUUID();
+            snapshotStore().save(parkedSnapshot(id, DEFINITION, 1));
+
+            for (int attempt = 0; attempt < 3; attempt++) {
+                assertThat(engine.scheduler()
+                        .lookupParked(id.getMostSignificantBits(), id.getLeastSignificantBits()))
+                        .isPresent();
+            }
+
+            assertThat(transformInvocations.get())
+                    .as("ADR-064 A3 — the row now names v2, so the second and third lookups have "
+                            + "nothing left to migrate")
+                    .isEqualTo(1);
+            assertThat(snapshotStore().load(id.getMostSignificantBits(), id.getLeastSignificantBits())
+                    .map(FlowSnapshot::definitionVersion))
+                    .hasValue(2);
+        }
+
         /**
          * The transform's compensation stack is checked too, not only the step it names.
          *
@@ -572,6 +718,16 @@ public abstract class AbstractFlowDefinitionVersioningTck {
             assertThat(v2Executions.get()).isZero();
         }
 
+        /**
+         * The migrated version reaches the store <em>before</em> the resumed saga runs.
+         *
+         * <p>Read from inside the resumed step rather than after it, because the runtime writes a
+         * snapshot on PARK / COMPENSATING / FAILED_ROLLEDBACK and on no other transition. At this
+         * instant the migration's own write is the only one that can have happened. Asserting the
+         * end state instead cannot see the write at all: an engine that migrated in memory and never
+         * persisted would still park at version 2 a moment later, so the row would read 2 either way
+         * and the case would pass while pinning nothing.
+         */
         @Test
         @Timeout(value = 30, unit = TimeUnit.SECONDS)
         @DisplayName("a successful migration reaches the store before the resumed step runs")

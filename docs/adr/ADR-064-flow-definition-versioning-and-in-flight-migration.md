@@ -127,15 +127,39 @@ Four questions this ADR left open or under-specified. A1–A3 were decided befor
 A4 is different in kind: it corrects an obligation this ADR stated as met when it was met for two of
 five components. Recorded here rather than in a commit message, and rather than quietly narrowed.
 
-**A1 — Migration runs on `wake()` only; `schedule()` continues to refuse.** The resubmit path fixes
-the target version at the plan the *caller* supplies, which makes the chain's terminating condition
-path-dependent — one policy cannot serve both doors. Scoping to wake also keeps application code out
-of three places it does not belong: the `liveInstances.compute` mapping function (a concurrent-map bin
-lock), `lookupParked`'s read-only query, and a `COMPENSATING` snapshot reaching a transform its author
-wrote for a parked saga. A resubmit against a mismatched version therefore keeps failing closed with
-`DEFINITION_VERSION_UNRESOLVED` — a refusal, not a silent wrong-version resume — and that is a
-**functional narrowing stated plainly**: choreography can reach `schedule()` directly, and a saga
-resubmitted rather than woken is not migrated.
+**A1 — Migration is scoped to the resume-restore path; `schedule()` continues to refuse.** The
+resubmit path fixes the target version at the plan the *caller* supplies, which makes the chain's
+terminating condition path-dependent — one policy cannot serve both doors. A resubmit against a
+mismatched version therefore keeps failing closed with `DEFINITION_VERSION_UNRESOLVED` — a refusal, not
+a silent wrong-version resume — and that is a **functional narrowing stated plainly**: choreography can
+reach `schedule()` directly, and a saga resubmitted rather than woken is not migrated.
+
+An earlier draft of this amendment said "wake() only", and justified it partly by keeping application
+code out of `lookupParked`'s "read-only query". That was wrong twice over, and is corrected here rather
+than left to be discovered.
+
+Wrong on the facts: `lookupParked` has two branches. The in-memory branch returns a context view and
+never migrates, by construction. The durable-store branch is a **restore, not a read** — it was already
+building a `RuntimeFlowInstance`, registering it as parked, clearing miss tracking and emitting
+`WakeOnLoadFallbackEvent` before this ADR existed. Calling it read-only described nothing that was true.
+
+Wrong on the consequence: `FlowChoreographyBridge` wakes a saga as
+`lookupParked(most, least).ifPresent(scheduler::wake)`. Cutting migration out of the store fallback
+would not make it read-only; it would make a cross-engine saga on a retired version **refuse instead of
+migrate**, on exactly the topology ADR-013 §8 defines the fallback for. The narrowing would have been
+far larger than the one this amendment claims to state plainly.
+
+What the original list did get right holds by construction, and is worth keeping written down: no
+transform runs inside a concurrent-map mapping function (the restore completes before
+`liveInstances.putIfAbsent`), and no transform sees a non-`PARKED` snapshot (the restore requires
+`PARKED`, and the walk bails on terminal states).
+
+The residual is real and bounded: a bare `lookupParked` — introspection, not a prelude to a wake — can
+run a transform and write. It runs **once**; A3's persistence is what stops a polled lookup re-running
+application code, and `repeatedLookupRunsTheTransformOnce` pins that rather than leaving it to
+argument. Making the fallback build a snapshot-backed context without binding a plan would recover a
+genuinely read-only `lookupParked`, but it changes what the call registers and what the cross-engine
+recovery IT observes, so it is a separate decision and is not taken here.
 
 **A2 — The chain stops at the first *hosted* version, and adjacency is structural.**
 Not a preference: `planCatalog` is keyed by `PlanKey(name, version)` and offers point-gets only. There
