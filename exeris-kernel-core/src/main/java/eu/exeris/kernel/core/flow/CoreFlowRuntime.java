@@ -17,6 +17,8 @@ import eu.exeris.kernel.spi.flow.IdempotencyGuard;
 import eu.exeris.kernel.spi.flow.model.FlowContext;
 import eu.exeris.kernel.spi.flow.model.FlowExecutionPlan;
 import eu.exeris.kernel.spi.flow.model.FlowOutcome;
+import eu.exeris.kernel.spi.flow.model.FlowDefinitionMigration;
+import eu.exeris.kernel.spi.flow.model.FlowMigrationState;
 import eu.exeris.kernel.spi.flow.model.FlowSnapshot;
 import eu.exeris.kernel.spi.flow.model.FlowSnapshotStore;
 import eu.exeris.kernel.spi.flow.model.FlowState;
@@ -39,6 +41,9 @@ import java.util.concurrent.atomic.LongAdder;
 @SuppressWarnings("PMD.PublicMemberInNonPublicType")
 final class CoreFlowRuntime { // NOPMD
 
+    /** Blast-radius bound only: adjacency enforced at registration is what terminates the chain. */
+    private static final int MAX_MIGRATION_HOPS = 32;
+
     private static final int  MAX_PARKED_LOOKUP_MISSES = 256;
     private static final long NO_TIMEOUT_OVERRUN       = 0L;
     private static final int  STEP_PROCEED             = Integer.MIN_VALUE;
@@ -50,6 +55,7 @@ final class CoreFlowRuntime { // NOPMD
     private final ConcurrentMap<FlowKey, RuntimeFlowInstance> liveInstances = new ConcurrentHashMap<>();
     private final ConcurrentMap<FlowKey, RuntimeFlowInstance> parkedInstances = new ConcurrentHashMap<>();
     private final ConcurrentMap<PlanKey, CoreFlowExecutionPlan> planCatalog = new ConcurrentHashMap<>();
+    private final ConcurrentMap<MigrationKey, FlowDefinitionMigration> migrations = new ConcurrentHashMap<>();
     private final TerminalStateCatalog terminalStateCatalog;
     private final Set<FlowKey> parkedLookupMisses = ConcurrentHashMap.newKeySet();
     private final Deque<FlowKey> parkedLookupMissOrder = new ArrayDeque<>();
@@ -91,6 +97,10 @@ final class CoreFlowRuntime { // NOPMD
 
     /* default */ ConcurrentMap<PlanKey, CoreFlowExecutionPlan> planCatalog() {
         return planCatalog;
+    }
+
+    /* default */ ConcurrentMap<MigrationKey, FlowDefinitionMigration> migrations() {
+        return migrations;
     }
 
     /* default */ void clearLookupSuppressionAfterPlanCompile() {
@@ -382,7 +392,11 @@ final class CoreFlowRuntime { // NOPMD
         if (persisted == null) {
             return null;
         }
-        CoreFlowExecutionPlan resolvedPlan = resolvePlanForSnapshot(directPlan, persisted);
+        // ADR-064 A1: wake only. The resubmit path fixes the target version at the caller's plan,
+        // which makes the chain's terminating condition path-dependent — it keeps refusing instead.
+        FlowSnapshot migrated = directPlan == null ? migrateIfNeeded(persisted) : null;
+        FlowSnapshot resumable = migrated == null ? persisted : migrated;
+        CoreFlowExecutionPlan resolvedPlan = resolvePlanForSnapshot(directPlan, resumable);
         if (resolvedPlan == null) {
             if (suppressRepeatedMisses) {
                 recordParkedLookupMiss(key);
@@ -390,7 +404,17 @@ final class CoreFlowRuntime { // NOPMD
             return null;
         }
         clearParkedLookupMiss(key);
-        return RuntimeFlowInstance.fromSnapshot(resolvedPlan, persisted, lifecycleGeneration.get());
+        if (migrated != null) {
+            // ADR-064 A3. Not persisting would leave the row naming a version the saga no longer
+            // runs, and would make transform purity an unstated obligation by re-running the chain
+            // on every wake.
+            persistMigratedSnapshot(migrated);
+            FlowDefinitionMigratedEvent.emit(
+                    config.engineName(), migrated.definitionName(),
+                    migrated.instanceIdMost(), migrated.instanceIdLeast(),
+                    persisted.definitionVersion(), migrated.definitionVersion());
+        }
+        return RuntimeFlowInstance.fromSnapshot(resolvedPlan, resumable, lifecycleGeneration.get());
     }
 
     private FlowSnapshot loadSnapshot(FlowKey key, FlowState requiredState, boolean suppressRepeatedMisses) {
@@ -509,6 +533,121 @@ final class CoreFlowRuntime { // NOPMD
         }
     }
 
+    /**
+     * Walks adjacent registered migrations until the snapshot names a version this engine hosts.
+     *
+     * <p>Stops at the FIRST reachable registered version rather than running to the newest, and that
+     * is forced by the data structure rather than chosen: the catalogue is keyed by
+     * {@code PlanKey(name, version)} and offers point-gets only, so "newest" would need a
+     * name-to-versions scan on the resume success path.
+     *
+     * <p>Returns {@code null} when no migration applies — including when the version is already
+     * hosted, absent, or the snapshot is terminal. Null rather than the input, because the caller has
+     * to know whether a migration happened in order to persist it, and answering that by comparing
+     * object identity would be exactly the identity-sensitive operation carriers must avoid.
+     *
+     * <p>A transform that throws propagates. Application code failing here must surface rather than
+     * be folded into a wake that quietly does nothing.
+     */
+    // Two small value keys allocated per hop. Justified rather than hoisted: both are keyed by the
+    // version, which is precisely what each hop advances, so there is nothing loop-invariant to lift.
+    // Cold path — a resume that needs migrating at all — and bounded by MAX_MIGRATION_HOPS.
+    @SuppressWarnings("PMD.AvoidInstantiatingObjectsInLoops")
+    private FlowSnapshot migrateIfNeeded(FlowSnapshot persisted) {
+        if (!needsMigration(persisted)) {
+            return null;
+        }
+        refuseRowThatCannotBeWalked(persisted);
+        FlowSnapshot current = persisted;
+        for (int hop = 0; hop < MAX_MIGRATION_HOPS; hop++) {
+            FlowDefinitionMigration migration =
+                    migrations.get(new MigrationKey(current.definitionName(), current.definitionVersion()));
+            if (migration == null) {
+                return null;
+            }
+            current = applyHop(migration, current);
+            if (planCatalog.containsKey(new PlanKey(current.definitionName(), current.definitionVersion()))) {
+                return current;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Whether this snapshot needs a walk and this runtime may perform one.
+     *
+     * <p><b>Lifecycle write-fence.</b> {@code persistSnapshot} carries the same fence, with a comment
+     * explaining why: a worker on a closed or not-yet-started runtime must not re-establish a
+     * non-terminal row another runtime may already have reclaimed. It is hoisted to here rather than
+     * applied at the save because the alternative — migrate in memory, skip the write — resumes the
+     * saga on a version its row does not name, which is exactly what A3 exists to prevent. A migration
+     * that cannot be persisted must not happen at all. The per-instance generation half of that fence
+     * does not apply: there is no instance yet, and the restore binds to the current generation.
+     *
+     * <p>Read once, before the walk, rather than again before the save. {@code started} and
+     * {@code closed} are plain volatiles here as everywhere else in this class, so a {@code close()}
+     * landing mid-walk is not caught — the same tolerance the surrounding code already has, over a
+     * window of at most {@link #MAX_MIGRATION_HOPS} in-memory transforms.
+     */
+    private boolean needsMigration(FlowSnapshot persisted) {
+        return started
+                && !closed
+                && !persisted.state().isTerminal()
+                && persisted.definitionVersion() != FlowSnapshot.VERSION_ABSENT
+                && !planCatalog.containsKey(
+                        new PlanKey(persisted.definitionName(), persisted.definitionVersion()));
+    }
+
+    /**
+     * Refuses a row that needs a walk but records no step identity, naming the reason that is true.
+     *
+     * <p>{@code applyHop} builds the transform's input from the parked step's name, so without this
+     * the row would reach {@code orElseThrow} as a bare {@code NoSuchElementException} on a path where
+     * every other refusal carries a reason.
+     *
+     * <p>Declining silently is not enough either, and that is the subtler half. Falling through leaves
+     * the row to {@code resolveVersionedPlan}, which refuses first — before
+     * {@link #validateSnapshotStepIdentity} ever runs — with {@code DEFINITION_VERSION_UNRESOLVED}.
+     * That reason's documented remedy is "deploy the missing version, or register the missing
+     * transform", and here a transform may well already be registered: the row is unresumable because
+     * it records no step identity, which no deployment fixes. A refusal that steers an operator to the
+     * wrong runbook is worse than a raw exception, because it looks actionable.
+     */
+    private void refuseRowThatCannotBeWalked(FlowSnapshot persisted) {
+        if (persisted.currentStepName().isPresent()) {
+            return;
+        }
+        emitSchemaMismatch(persisted, persisted.currentStep(), -1,
+                FlowEngineException.REASON_STEP_IDENTITY_ABSENT, null, null);
+        throw FlowEngineException.schemaMismatchStepIdentityAbsent(
+                config.engineName(), persisted.currentStep());
+    }
+
+    /** Applies one adjacent hop, rebuilding the snapshot at {@code version + 1}. */
+    private static FlowSnapshot applyHop(FlowDefinitionMigration migration, FlowSnapshot from) {
+        FlowMigrationState before = new FlowMigrationState(
+                from.currentStep(),
+                from.currentStepName().orElseThrow(),
+                from.compensationStack(),
+                from.stackPointer(),
+                from.opaqueState());
+        FlowMigrationState after = Objects.requireNonNull(
+                migration.migrate(before), "FlowDefinitionMigration must not return null");
+        return new FlowSnapshot(
+                from.instanceIdMost(), from.instanceIdLeast(),
+                from.definitionName(), from.definitionVersion() + 1,
+                after.parkedStep(), Optional.of(after.parkedStepName()),
+                from.state(), from.lastUpdate(), from.timeout(),
+                after.compensationStack(), after.stackPointer(),
+                after.opaqueState(), from.schemaVersion());
+    }
+
+    private void persistMigratedSnapshot(FlowSnapshot migrated) {
+        if (snapshotStore != null) {
+            snapshotStore.save(migrated);
+        }
+    }
+
     private CoreFlowExecutionPlan resolveVersionedPlan(FlowSnapshot persisted) {
         if (persisted.state().isTerminal()) {
             return planCatalog.get(new PlanKey(persisted.definitionName(), persisted.definitionVersion()));
@@ -569,6 +708,49 @@ final class CoreFlowRuntime { // NOPMD
             throw FlowEngineException.schemaMismatch(config.engineName(), step);
         }
         validateSnapshotStepIdentity(plan, persisted, step, stepCount);
+        validateCompensationStackBounds(persisted, stepCount);
+    }
+
+    /**
+     * Rejects a resume whose compensation stack no longer indexes the plan.
+     *
+     * <p>The two guards above validate where the saga <em>resumes</em>. They say nothing about the
+     * steps it has already completed, and those are exactly what a rollback walks — so a saga can pass
+     * both and still hold a stack that is meaningless in the plan it just bound to. A migration makes
+     * this ordinary rather than exceptional: a transform may rewrite the stack, and
+     * {@code FlowMigrationState} documents that carrying it across a version boundary unchanged is
+     * wrong, but documenting an obligation is not enforcing it.
+     *
+     * <p>Checked here rather than at compensation time because {@code runCompensationStep} reads the
+     * plan by bare index <em>outside</em> its own catch, so a stale entry there aborts the remaining
+     * unwind and skips {@code finalizeFailedInstance} — leaving the saga mid-compensation with its
+     * idempotency guard still held. Refusing the resume leaves the row intact instead.
+     *
+     * <p>This is the bounds half only. An entry that indexes the plan but names a step the saga never
+     * ran is not detectable from indices alone; that needs the stack to carry identities, the same
+     * argument ADR-062 made for the cursor.
+     *
+     * @param persisted the snapshot being resumed
+     * @param stepCount the step count of the plan the resume would bind to
+     */
+    private void validateCompensationStackBounds(FlowSnapshot persisted, int stepCount) {
+        int live = persisted.stackPointer();
+        if (live == 0) {
+            return;
+        }
+        // One defensive copy on the resume path. Cold — a resume already cost a snapshot-store read —
+        // and FlowSnapshot exposes no per-entry accessor to borrow instead.
+        int[] stack = persisted.compensationStack();
+        for (int index = 0; index < live; index++) {
+            int entry = stack[index];
+            if (entry < 0 || entry >= stepCount) {
+                // Both step-name fields stay absent: the offending value is a stack entry, so neither
+                // "the step the snapshot names" nor "the step the plan has there" is a truthful answer.
+                emitSchemaMismatch(persisted, entry, stepCount,
+                        FlowEngineException.REASON_COMPENSATION_STACK_OUT_OF_RANGE, null, null);
+                throw FlowEngineException.schemaMismatchCompensationStack(config.engineName(), entry);
+            }
+        }
     }
 
     /**

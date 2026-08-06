@@ -79,10 +79,18 @@ parked saga's state means the same thing under the new definition.
    requires draining in-flight sagas across the 0.10→0.11 boundary, and both changes ship in 0.11, so a
    deployment following the documented procedure has no ambiguous rows.
 6. **Migration is an explicit, registered transform between adjacent versions.** A
-   `FlowDefinitionMigration` maps a saga parked under vN onto a resumable position under vN+1: the step
-   it should resume at, its compensation stack, and its opaque state. Adjacent hops are chained by the
+   `FlowDefinitionMigration` maps a saga parked under vN onto a resumable position under vN+1: **the
+   step it parked at**, its compensation stack, and its opaque state. Adjacent hops are chained by the
    runtime (v1→v2→v3), so an application registers *n-1* transforms rather than *n²* pairs. A missing
    link means no path.
+
+   *Amended during implementation.* This obligation first read "the step it should resume at", which is
+   a different step: `FlowSnapshot.currentStep` records where the saga **parked**, and `wake()` resumes
+   at `currentStep + 1`. A transform written to the original wording would emit the resume step, the
+   runtime would advance past it, and the saga would **skip a step — while ADR-062's identity check
+   passed**, because the emitted (index, name) pair is internally consistent. A silent drop with a
+   guard reporting success is the defect class this milestone exists to remove, so the wording is
+   corrected rather than left for each implementer to trip over.
 7. **The compensation stack is part of what a migration transforms, not a detail it may ignore.** The
    stack holds step indices from the version that pushed them. Carrying it across a version boundary
    unchanged would compensate the wrong steps on failure — the same class of defect as position-bound
@@ -94,11 +102,16 @@ parked saga's state means the same thing under the new definition.
    compensation for a definition the runtime cannot even bind, and would destroy the one remedy that
    works. **A quarantine `FlowState` is deliberately not introduced** — it would trade a reversible
    failure for an unrecoverable one.
-9. **A migration's output is validated by ADR-062's identity check, not trusted.** The transform runs
-   first, and the step it produces is then checked against the target version's plan exactly as any
-   other resume is. A transform that returns a step that does not exist, or that names a different step
-   than the index addresses, fails closed on the existing surface. Application code on the resume path
-   is not a new trust boundary.
+9. **A migration's output is validated, not trusted.** The transform runs first, and what it produces
+   is then checked against the target version's plan exactly as any other resume is. A transform that
+   returns a step that does not exist, or that names a different step than the index addresses, fails
+   closed on the existing surface. Application code on the resume path is not a new trust boundary.
+
+   *Scope, corrected during implementation — see amendment A4.* As accepted, this obligation named
+   ADR-062's identity check as the whole of the validation, which covers the cursor
+   (`parkedStep`, `parkedStepName`) and nothing else. `FlowMigrationState` has five components, and
+   the compensation stack is the one that drives rollback. The obligation is only met because a
+   bounds guard on the stack was added; the identity half of it is not met yet.
 10. **Failures reuse `EX-FLOW-7002 / phase=SCHEMA_MISMATCH`** with new reason discriminators beside
     `STEP_OUT_OF_RANGE`, `STEP_IDENTITY_MISMATCH` and `STEP_IDENTITY_ABSENT`. An operator needs to
     tell "this saga's version was never deployed here" from "its step moved" — different remedies, so
@@ -107,6 +120,98 @@ parked saga's state means the same thing under the new definition.
     registered at once, a vN→vN+1 migration, a chained vN→vN+2, and the no-path rejection — with the
     rejection case mandatory, because a suite that only proves migration would pass against a runtime
     that migrates anything to anything.
+
+## Amendments (settled during implementation, v0.11)
+
+Four questions this ADR left open or under-specified. A1–A3 were decided before any code was written.
+A4 is different in kind: it corrects an obligation this ADR stated as met when it was met for two of
+five components. Recorded here rather than in a commit message, and rather than quietly narrowed.
+
+**A1 — Migration is scoped to the resume-restore path; `schedule()` continues to refuse.** The
+resubmit path fixes the target version at the plan the *caller* supplies, which makes the chain's
+terminating condition path-dependent — one policy cannot serve both doors. A resubmit against a
+mismatched version therefore keeps failing closed with `DEFINITION_VERSION_UNRESOLVED` — a refusal, not
+a silent wrong-version resume — and that is a **functional narrowing stated plainly**: choreography can
+reach `schedule()` directly, and a saga resubmitted rather than woken is not migrated.
+
+An earlier draft of this amendment said "wake() only", and justified it partly by keeping application
+code out of `lookupParked`'s "read-only query". That was wrong twice over, and is corrected here rather
+than left to be discovered.
+
+Wrong on the facts: `lookupParked` has two branches. The in-memory branch returns a context view and
+never migrates, by construction. The durable-store branch is a **restore, not a read** — it was already
+building a `RuntimeFlowInstance`, registering it as parked, clearing miss tracking and emitting
+`WakeOnLoadFallbackEvent` before this ADR existed. Calling it read-only described nothing that was true.
+
+Wrong on the consequence: `FlowChoreographyBridge` wakes a saga as
+`lookupParked(most, least).ifPresent(scheduler::wake)`. Cutting migration out of the store fallback
+would not make it read-only; it would make a cross-engine saga on a retired version **refuse instead of
+migrate**, on exactly the topology ADR-013 §8 defines the fallback for. The narrowing would have been
+far larger than the one this amendment claims to state plainly.
+
+What the original list did get right holds by construction, and is worth keeping written down: no
+transform runs inside a concurrent-map mapping function (the restore completes before
+`liveInstances.putIfAbsent`), and no transform sees a non-`PARKED` snapshot (the restore requires
+`PARKED`, and the walk bails on terminal states).
+
+The residual is real and bounded: a bare `lookupParked` — introspection, not a prelude to a wake — can
+run a transform and write. It runs **once**; A3's persistence is what stops a polled lookup re-running
+application code, and `repeatedLookupRunsTheTransformOnce` pins that rather than leaving it to
+argument. Making the fallback build a snapshot-backed context without binding a plan would recover a
+genuinely read-only `lookupParked`, but it changes what the call registers and what the cross-engine
+recovery IT observes, so it is a separate decision and is not taken here.
+
+**A2 — The chain stops at the first *hosted* version, and adjacency is structural.**
+Not a preference: `planCatalog` is keyed by `PlanKey(name, version)` and offers point-gets only. There
+is no name→versions index, and the single name-scoped query (`hostsDefinition`) is a full `keySet()`
+scan — adding another to the resume *success* path would be a No-Waste-Compute regression. So the walk
+tests one key per hop and returns the moment that key is present.
+
+Adjacency is not validated, it is unrepresentable: `registerMigration(definitionName, fromVersion,
+migration)` takes no target version, and the runtime rebuilds the snapshot at `fromVersion + 1`. There
+is no malformed edge to reject. The configured hop bound is a blast-radius limit, not the termination
+mechanism.
+
+"First hosted" and "last registered" coincide in every chain whose transforms stop where hosting stops,
+which is the ordinary case and therefore not evidence for either rule. They disagree when an
+application keeps a transform registered past what it still hosts — and there the stopping rule is
+what decides between resuming the saga and refusing it, so
+`AbstractFlowDefinitionVersioningTck$Migration#migrationStopsAtTheFirstHostedVersion` constructs that
+disagreement rather than leaving the rule pinned by coincidence.
+
+**A3 — A successful migration persists its result.** The alternative — re-running the chain on every
+wake — makes purity and idempotence load-bearing obligations that no document states, and leaves the
+durable row asserting a version the saga no longer runs. ADR-062's thesis is that the checkpoint must
+be truthful; a row saying v1 for a saga executing v2 is the same class of lie as a step recorded by
+position. The write happens on the resume path and participates in the ADR-013 `schemaVersion` OCC
+model like any other checkpoint.
+
+**A4 — The compensation stack is validated too; obligation 9 overstated what covered it.**
+Obligation 9 said a transform's output is checked by ADR-062's identity check. That check reads
+`currentStep` and `currentStepName` — the cursor. It never looks at the compensation stack, which is
+the component that decides what a rollback undoes, and which the transform may rewrite.
+`FlowMigrationState` has five components; two were covered.
+
+The gap was neither hypothetical nor confined to migration. `runCompensationStep` resolves each entry
+with `plan.stepAt(entry)`, a bare array read, **outside its own catch**. A stale entry therefore throws
+out of `runCompensations` and skips both the remaining unwind and `finalizeFailedInstance` — leaving
+the saga mid-compensation, terminal state unwritten and idempotency guard still held, and only after
+some other failure has already put it on the rollback path. Strictly worse than refusing to resume. A
+shrinking redeploy could reach it before this ADR existed; migration made it ordinary rather than
+exceptional, because moving a saga onto a changed definition is now the sanctioned path.
+
+So the live prefix of the stack is validated against the target plan on every resume, refusing with
+`COMPENSATION_STACK_OUT_OF_RANGE` and leaving the row intact like every other resume refusal. Only the
+prefix below `stackPointer`: entries above it are dead, and closing on those would refuse a sound saga.
+
+This is the **bounds** half. An entry that indexes the plan but names a step the saga never ran is not
+detectable from indices — exactly as a same-arity reorder was not detectable from the cursor's index.
+Closing it needs the stack to carry identities, which is a `FlowSnapshot` shape change and therefore
+its own slice, taken in v0.11 rather than later: the record's component list already changed this
+milestone, so a third component costs nothing further on the stability ledger, while deferring it to
+v0.12 would be a fresh change to a surface declared stable.
+
+---
 
 ## Consequences
 

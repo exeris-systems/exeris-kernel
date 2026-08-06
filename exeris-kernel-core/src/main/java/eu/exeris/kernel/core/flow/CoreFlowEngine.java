@@ -49,6 +49,7 @@ public final class CoreFlowEngine implements FlowEngine {
                 nonNullConfig,
                 registry,
                 runtime.planCatalog(),
+                runtime.migrations(),
                 runtime::clearLookupSuppressionAfterPlanCompile);
     }
 
