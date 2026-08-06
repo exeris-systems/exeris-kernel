@@ -160,8 +160,9 @@ known-false sentence in place while citing it as misleading would be indefensibl
   no edge authorization. That is deliberate for an opt-in seam, but it is a real exposure, and the
   subsystem doc must state it rather than imply that installing the kernel confers protection.
 - **[-] Binding `SECURITY_PROVIDER` changes what a default boot does.** Requests under `/secure` that
-  answered `401` unconditionally will now be authenticated. Pre-1.0 with no external SPI consumers this
-  is low-risk, but it is a behaviour change and belongs in the release notes.
+  answered `401` unconditionally will now be authenticated. Pre-1.0, with no consumer under a support
+  contract, this is low-risk — but it is a behaviour change that an existing integration would feel on
+  upgrade, so it belongs in the release notes and in the upgrade guide, not only here.
 
 ### 📋 What is NOT in scope
 

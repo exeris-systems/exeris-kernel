@@ -157,6 +157,77 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  spi-compatibility-gate:
+    name: SPI Compatibility Gate
+    runs-on: ubuntu-latest
+    # Deliberately NOT `needs: build-and-verify`. The gate compiles only exeris-kernel-spi
+    # (which depends on nothing but java.*/jdk.*), so it finishes in well under a minute and
+    # gives the fastest possible signal on a contract break — the one class of mistake that is
+    # expensive to discover after a release rather than before one.
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          # Full history + tags: the gate diffs the SPI at the last released tag against this
+          # revision, and a shallow clone has neither.
+          fetch-depth: 0
+
+      - name: Cache JDK tarball
+        id: jdk-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/jdk.tar.gz
+          key: ${{ env.JDK_CACHE_KEY }}
+
+      - name: Fetch JDK
+        if: steps.jdk-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          wget -q -O ${{ runner.temp }}/jdk.tar.gz ${{ env.JDK_URL }}
+          echo "${{ env.JDK_SHA256 }}  ${{ runner.temp }}/jdk.tar.gz" | sha256sum -c
+
+      - name: Inject JDK into Runner
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'jdkfile'
+          jdkFile: ${{ runner.temp }}/jdk.tar.gz
+          java-version: ${{ env.JDK_VER }}
+          architecture: x64
+          cache: maven
+
+      - name: Every SPI class resolves to a maturity label
+        # Checked per class, not per package: inside a `mixed` package one matching
+        # class would otherwise mark the whole directory classified, and the rest would
+        # fall out of both include lists below — neither gated nor reported.
+        run: tools/spi-api-diff/spi-api-diff.sh --verify-surfaces
+
+      - name: Diff SPI against the last released version
+        run: |
+          set -euo pipefail
+          # Highest released version, NOT `git describe`: patch releases are cut on main, so on a
+          # development/* branch the last *reachable* tag can be older than the latest published
+          # one. Reachability is irrelevant — this compares two API surfaces, not two histories.
+          BASELINE="$(git tag --sort=-v:refname --list 'v*' | head -1)"
+          if [ -z "$BASELINE" ]; then
+            echo "no release tag found — nothing to compare against"; exit 0
+          fi
+          echo "baseline: $BASELINE"
+          tools/spi-api-diff/spi-api-diff.sh \
+            --old "$BASELINE" --new HEAD \
+            --out "${{ github.workspace }}/target/spi-api-diff" \
+            --fail-on-stable
+
+      - name: Publish SPI diff report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: spi-api-diff
+          path: target/spi-api-diff/
+          if-no-files-found: warn
+
   persistence-rls-gate:
     name: Persistence RLS/Interceptor Gate
     runs-on: ubuntu-latest
