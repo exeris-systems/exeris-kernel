@@ -350,6 +350,51 @@ public abstract class AbstractFlowDefinitionVersioningTck {
                     .isEqualTo(1);
         }
 
+        /**
+         * The chain's terminating condition is "hosted", not "no further transform".
+         *
+         * <p>Without a registered hop past the hosted version, every chained case ends at the last
+         * transform and at a hosted version simultaneously — so the two candidate rules are
+         * indistinguishable, and an engine walking one hop too far passes the whole suite. Here they
+         * disagree: v2 is hosted and a 2 to 3 transform exists, so an engine that keeps hopping
+         * lands on an unhosted v3, abandons the chain, and refuses the saga it could have served.
+         */
+        @Test
+        @Timeout(value = 30, unit = TimeUnit.SECONDS)
+        @DisplayName("the chain stops at the first hosted version even when a further hop is registered")
+        void migrationStopsAtTheFirstHostedVersion() {
+            AtomicInteger v2Executions = new AtomicInteger();
+            register(2, v2Executions);
+            engine.plans().registerMigration(DEFINITION, 1, this::sameStep);
+            engine.plans().registerMigration(DEFINITION, 2, this::sameStep);
+
+            UUID id = UUID.randomUUID();
+            snapshotStore().save(parkedSnapshot(id, DEFINITION, 1));
+
+            engine.scheduler().wake(contextFor(id));
+            awaitTrue(() -> v2Executions.get() > 0);
+
+            assertThat(v2Executions.get())
+                    .as("an application retires versions on its own schedule and may well keep a "
+                            + "transform registered past what it still hosts; that is not a reason "
+                            + "to carry a saga beyond the version it can actually run on")
+                    .isEqualTo(1);
+        }
+
+        @Test
+        @Timeout(value = 30, unit = TimeUnit.SECONDS)
+        @DisplayName("registering a second transform for the same version is refused")
+        void duplicateMigrationRegistrationIsRefused() {
+            register(2, new AtomicInteger());
+            engine.plans().registerMigration(DEFINITION, 1, this::sameStep);
+
+            assertThatThrownBy(() -> engine.plans().registerMigration(DEFINITION, 1, this::sameStep))
+                    .as("silently replacing would let a redeploy change how in-flight sagas are "
+                            + "moved without anyone stating it — the transform is as load-bearing "
+                            + "as the definition itself")
+                    .isInstanceOf(FlowEngineException.class);
+        }
+
         @Test
         @Timeout(value = 30, unit = TimeUnit.SECONDS)
         @DisplayName("a missing link mid-chain is refused, and the row survives it")
@@ -387,10 +432,16 @@ public abstract class AbstractFlowDefinitionVersioningTck {
             UUID id = UUID.randomUUID();
             snapshotStore().save(parkedSnapshot(id, DEFINITION, 1));
 
+            // The transform's own exception, by type and message — not merely "something was
+            // thrown". FlowEngineException is itself a RuntimeException, so the loose assertion also
+            // passed against an engine that never invoked the transform and refused the version
+            // outright, which is the opposite of what this case claims to pin.
             assertThatThrownBy(() -> engine.scheduler().wake(contextFor(id)))
                     .as("application code failing on the resume path must surface, not be swallowed "
-                            + "into a wake that quietly does nothing")
-                    .isInstanceOf(RuntimeException.class);
+                            + "into a wake that quietly does nothing, and not be relabelled as a "
+                            + "version refusal the operator would then chase in the wrong place")
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessage("transform is broken");
             assertThat(snapshotStore().load(id.getMostSignificantBits(), id.getLeastSignificantBits()))
                     .as("a broken transform is fixable; destroying the row would make it terminal")
                     .isPresent();
@@ -420,19 +471,30 @@ public abstract class AbstractFlowDefinitionVersioningTck {
             assertThat(v2Executions.get()).isZero();
         }
 
+        /**
+         * The migrated version reaches the store <em>before</em> the resumed saga runs.
+         *
+         * <p>Read from inside the resumed step rather than after it, because the runtime writes a
+         * snapshot on PARK / COMPENSATING / FAILED_ROLLEDBACK and on no other transition. At this
+         * instant the migration's own write is the only one that can have happened. Asserting the
+         * end state instead cannot see the write at all: an engine that migrated in memory and never
+         * persisted would still park at version 2 a moment later, so the row would read 2 either way
+         * and the case would pass while pinning nothing.
+         */
         @Test
         @Timeout(value = 30, unit = TimeUnit.SECONDS)
-        @DisplayName("a successful migration is persisted — the row stops naming the old version")
-        void migrationResultIsPersisted() {
-            // The resumed step PARKS rather than completing, on purpose. A completing saga has its
-            // row reclaimed by complete(), so the version would be unobservable after the fact and
-            // the assertion would read "empty" whether or not the migration persisted anything.
-            AtomicInteger v2Executions = new AtomicInteger();
+        @DisplayName("a successful migration reaches the store before the resumed step runs")
+        void migrationIsPersistedBeforeTheResumedStepRuns() {
+            UUID id = UUID.randomUUID();
+            AtomicInteger observedVersion = new AtomicInteger(FlowSnapshot.VERSION_ABSENT);
             FlowDefinition base = engine.plans().newDefinition(DEFINITION)
                     .step(PARKED_STEP, _ -> FlowOutcome.PARK, null)
                     .step("resumed-step", _ -> {
-                        v2Executions.incrementAndGet();
-                        return FlowOutcome.PARK;
+                        observedVersion.set(snapshotStore()
+                                .load(id.getMostSignificantBits(), id.getLeastSignificantBits())
+                                .map(FlowSnapshot::definitionVersion)
+                                .orElse(FlowSnapshot.VERSION_ABSENT));
+                        return FlowOutcome.COMPLETE;
                     }, null)
                     .transition(0, 1)
                     .build();
@@ -440,18 +502,16 @@ public abstract class AbstractFlowDefinitionVersioningTck {
                     base.name(), 2, base.steps(), base.timeoutDurationNanos(), base.maxRetries()));
             engine.plans().registerMigration(DEFINITION, 1, this::sameStep);
 
-            UUID id = UUID.randomUUID();
             snapshotStore().save(parkedSnapshot(id, DEFINITION, 1));
 
             engine.scheduler().wake(contextFor(id));
-            awaitTrue(() -> v2Executions.get() > 0);
+            awaitTrue(() -> observedVersion.get() != FlowSnapshot.VERSION_ABSENT);
 
-            assertThat(snapshotStore().load(id.getMostSignificantBits(), id.getLeastSignificantBits())
-                    .map(FlowSnapshot::definitionVersion))
+            assertThat(observedVersion.get())
                     .as("ADR-064 amendment A3: not persisting would leave the row asserting a version "
                             + "the saga no longer runs, and would make transform purity an unstated "
                             + "obligation because the chain would re-run on every wake")
-                    .hasValue(2);
+                    .isEqualTo(2);
         }
     }
 
