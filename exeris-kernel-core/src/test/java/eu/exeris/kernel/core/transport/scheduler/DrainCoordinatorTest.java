@@ -242,15 +242,48 @@ class DrainCoordinatorTest {
         @DisplayName("sealNow discards work in flight, for the drain deadline only")
         void sealNowDiscardsInFlightWork() {
             DrainCoordinator coordinator = new DrainCoordinator();
-            DrainCoordinator.StreamWork work = coordinator.registerStream();
+            coordinator.registerStream();
 
             coordinator.sealNow();
 
             assertThat(coordinator.busyStreams()).isZero();
-            assertThat(work.markBusy())
+            // Asserted through a FRESH handle. Asking the already-busy one whether it may re-arm
+            // answers from its own flag before the coordinator is ever consulted, so it would pass
+            // against no seal at all.
+            assertThat(coordinator.registerStream().markBusy())
                     .as("once shutdown proceeds regardless, letting a late arrival believe it is "
                             + "protected is worse than telling it to close")
-                    .isTrue();
+                    .isFalse();
+        }
+
+        /**
+         * The forced seal is the one path where a handle outlives its count, and the sentinel is a
+         * number.
+         *
+         * <p>{@code SEALED} is {@code Integer.MIN_VALUE}. A handler still running when the deadline
+         * fires finishes afterwards and releases; an unguarded decrement wraps the sentinel to
+         * {@code Integer.MAX_VALUE}, which is no longer the sentinel — so the coordinator resumes
+         * handing out counts, and a stream can report itself busy in the middle of teardown. That is
+         * the failure this class exists to prevent, reopened through the path that exists for it.
+         *
+         * <p>Deterministic, not an interleaving: it fires on every timed-out drain with work in flight.
+         */
+        @Test
+        @DisplayName("a stream released after a forced seal does not corrupt the sentinel")
+        void releaseAfterForcedSealDoesNotCorruptTheCount() {
+            DrainCoordinator coordinator = new DrainCoordinator();
+            DrainCoordinator.StreamWork inFlight = coordinator.registerStream();
+
+            coordinator.sealNow();
+            inFlight.close();
+
+            assertThat(coordinator.busyStreams())
+                    .as("a wrapped sentinel reads as a huge live count, so shutdown would believe "
+                            + "work appeared out of nowhere at the moment it stopped waiting")
+                    .isZero();
+            assertThat(coordinator.registerStream().markBusy())
+                    .as("and the seal must survive the release that followed it")
+                    .isFalse();
         }
     }
 

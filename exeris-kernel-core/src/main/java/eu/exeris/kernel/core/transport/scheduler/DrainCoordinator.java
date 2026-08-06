@@ -167,8 +167,29 @@ public final class DrainCoordinator {
         return (boolean) DRAINING.getAcquire(this);
     }
 
+    /**
+     * Returns one count, unless the coordinator is sealed.
+     *
+     * <p>Symmetric with {@link #tryAcquire()} and for the same reason: the sentinel must not be
+     * arithmetic on. {@link #sealNow()} discards whatever was in flight, so a handler that finishes
+     * after the deadline still calls this — and {@code SEALED} is {@code Integer.MIN_VALUE}, so an
+     * unguarded decrement wraps it to {@code Integer.MAX_VALUE}. That is no longer the sentinel, so
+     * {@code tryAcquire} starts handing out counts again and a stream can report itself busy during
+     * teardown: the failure this class exists to prevent, reopened through the forced path.
+     *
+     * <p>Once sealed the count is not a count, so declining to touch it is the whole contract — the
+     * handle's flag and the owner's count are deliberately allowed to disagree from that point on.
+     */
     private void release() {
-        BUSY_STREAMS.getAndAdd(this, -1);
+        while (true) {
+            int current = (int) BUSY_STREAMS.getAcquire(this);
+            if (current == SEALED) {
+                return;
+            }
+            if (BUSY_STREAMS.compareAndSet(this, current, current - 1)) {
+                return;
+            }
+        }
     }
 
     /**
@@ -199,9 +220,16 @@ public final class DrainCoordinator {
      * neither is visible to ArchUnit or PMD, so the guarantee has to be a property of the type.
      *
      * <h2>Invariant</h2>
-     * <p>This handle holds exactly {@code busy ? 1 : 0} counts on the owner. Every transition of the
-     * flag is a compare-and-set paired with exactly one counter operation, and the loser of a
-     * concurrent {@link #markBusy()} returns the count it took rather than leaving it stranded.
+     * <p>Until the owner is sealed, this handle holds exactly {@code busy ? 1 : 0} counts on it. Every
+     * transition of the flag is a compare-and-set paired with exactly one counter operation, and the
+     * loser of a concurrent {@link #markBusy()} returns the count it took rather than leaving it
+     * stranded.
+     *
+     * <p>Sealing ends that correspondence deliberately: {@link #sealNow()} discards the counts of
+     * streams still in flight, so a handle can be {@code busy} while the owner holds nothing for it.
+     * From then on the flag describes only this stream's own view, and every counter operation is a
+     * no-op — which is why {@link #release()} refuses to decrement a sealed count rather than
+     * subtracting from a sentinel.
      */
     public static final class StreamWork implements AutoCloseable {
 
