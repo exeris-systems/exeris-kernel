@@ -260,16 +260,20 @@ class DrainCoordinatorTest {
         }
 
         /**
-         * The forced seal is the one path where a handle outlives its count, and the sentinel is a
-         * number.
+         * The forced seal is the one path where a handle outlives its count, and the marker is a number.
          *
-         * <p>{@code SEALED} is {@code Integer.MIN_VALUE}. A handler still running when the deadline
-         * fires finishes afterwards and releases; an unguarded decrement wraps the sentinel to
-         * {@code Integer.MAX_VALUE}, which is no longer the sentinel — so the coordinator resumes
-         * handing out counts, and a stream can report itself busy in the middle of teardown. That is
-         * the failure this class exists to prevent, reopened through the path that exists for it.
+         * <p>A handler still running when the deadline fires finishes afterwards and releases, and
+         * {@code release()} decrements unconditionally. That is safe only because the seal marks a
+         * <em>range</em>: the decrement lands further inside it. Pin an exact marker instead — the
+         * shape this suite was first written against, at {@code Integer.MIN_VALUE} — and one decrement
+         * wraps it to {@code Integer.MAX_VALUE}, which reads as neither sealed nor a plausible count.
+         * The coordinator resumes handing out counts and a stream can report itself busy in the middle
+         * of teardown: the failure this class exists to prevent, reopened through the path that exists
+         * for it.
          *
          * <p>Deterministic, not an interleaving: it fires on every timed-out drain with work in flight.
+         * The single-release case is kept alongside {@link #sealSurvivesRepeatedPostSealReleases()}
+         * because it is the minimal one — if the range property breaks, this is what fails first.
          */
         @Test
         @DisplayName("a stream released after a forced seal does not corrupt the sentinel")

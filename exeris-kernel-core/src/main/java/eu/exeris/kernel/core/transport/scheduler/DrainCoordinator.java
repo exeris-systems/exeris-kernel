@@ -49,9 +49,10 @@ import java.lang.invoke.VarHandle;
  *
  * <h2>Allocation</h2>
  * <p>One shared instance per engine plus one {@link StreamWork} handle per stream — the same order as
- * the Virtual Thread PAQS already spawns per stream, and nothing per request. Both the shared count and
- * the per-handle flag are compare-and-set; see {@link StreamWork} for why the handle cannot rely on
- * thread confinement.
+ * the Virtual Thread PAQS already spawns per stream, and nothing per request. The per-handle flag is
+ * compare-and-set — see {@link StreamWork} for why it cannot rely on thread confinement — while the
+ * shared count takes plain {@code getAndAdd} on the per-request path and compare-and-set only in
+ * {@link #sealIfIdle()}, which runs once per drain.
  *
  * @since 0.11.0
  */
@@ -150,8 +151,10 @@ public final class DrainCoordinator {
     /**
      * Takes one count unless sealed.
      *
-     * <p>CAS loop rather than {@code getAndAdd}, because the sentinel must not be arithmetic on: a
-     * blind increment past {@link #SEALED} produces a count that is neither sealed nor true.
+     * <p>Add first, then inspect what was there — not read-then-compare-and-set. This runs per request
+     * on the H1 keep-alive path, so the difference is an unconditional {@code getAndAdd} against a loop
+     * that retries under contention. It is only available because {@link #SEALED} marks a range: the
+     * speculative {@code +1} on a sealed count lands harmlessly inside it and is taken straight back.
      *
      * @return {@code true} if a count was taken and must later be released
      */
@@ -237,9 +240,10 @@ public final class DrainCoordinator {
      *
      * <p>Sealing ends that correspondence deliberately: {@link #sealNow()} discards the counts of
      * streams still in flight, so a handle can be {@code busy} while the owner holds nothing for it.
-     * From then on the flag describes only this stream's own view, and every counter operation is a
-     * no-op — which is why {@link #release()} refuses to decrement a sealed count rather than
-     * subtracting from a sentinel.
+     * From then on the flag describes only this stream's own view, and the counter's value carries no
+     * meaning to restore — which is why {@link #release()} may decrement it unconditionally. The
+     * marker is a range, so a post-seal decrement lands further inside it (see {@link #SEALED}); it is
+     * not a value a mutator has to steer around.
      */
     public static final class StreamWork implements AutoCloseable {
 
