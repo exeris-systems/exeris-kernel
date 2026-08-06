@@ -50,13 +50,14 @@ class FlowSnapshotTest {
     private static final Instant   T_NOW    = Instant.parse("2026-05-01T10:00:00Z");
     private static final Instant   T_END    = Instant.parse("2026-05-01T10:30:00Z");
     private static final int[]     STACK    = {1, 2, 3};
+    private static final String[]  NAMES    = {"reserve", "charge", "ship"};
     private static final byte[]    OPAQUE   = {0x10, 0x20, 0x30};
     private static final Optional<String> STEP_NAME = Optional.of("charge-card");
 
     private static FlowSnapshot canonical(long schemaVersion) {
         return new FlowSnapshot(
                 ID_MOST, ID_LEAST, DEF_NAME, FlowDefinition.INITIAL_VERSION, 5, STEP_NAME, STATE, T_NOW, T_END,
-                STACK.clone(), STACK.length, OPAQUE.clone(), schemaVersion);
+                STACK.clone(), NAMES.clone(), STACK.length, OPAQUE.clone(), schemaVersion);
     }
 
     private static FlowSnapshot canonical() {
@@ -72,7 +73,7 @@ class FlowSnapshotTest {
         void nullDefinitionName() {
             assertThatThrownBy(() -> new FlowSnapshot(
                     ID_MOST, ID_LEAST, null, FlowDefinition.INITIAL_VERSION, 0, STEP_NAME, STATE, T_NOW, T_END,
-                    new int[0], 0, new byte[0], 1L))
+                    new int[0], new String[0], 0, new byte[0], 1L))
                     .isInstanceOf(NullPointerException.class)
                     .hasMessageContaining("definitionName");
         }
@@ -82,7 +83,7 @@ class FlowSnapshotTest {
         void blankDefinitionName() {
             assertThatThrownBy(() -> new FlowSnapshot(
                     ID_MOST, ID_LEAST, "  ", FlowDefinition.INITIAL_VERSION, 0, STEP_NAME, STATE, T_NOW, T_END,
-                    new int[0], 0, new byte[0], 1L))
+                    new int[0], new String[0], 0, new byte[0], 1L))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("definitionName");
         }
@@ -92,7 +93,7 @@ class FlowSnapshotTest {
         void negativeCurrentStep() {
             assertThatThrownBy(() -> new FlowSnapshot(
                     ID_MOST, ID_LEAST, DEF_NAME, FlowDefinition.INITIAL_VERSION, -1, STEP_NAME, STATE, T_NOW, T_END,
-                    new int[0], 0, new byte[0], 1L))
+                    new int[0], new String[0], 0, new byte[0], 1L))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("currentStep");
         }
@@ -102,7 +103,7 @@ class FlowSnapshotTest {
         void stackPointerOutOfBounds() {
             assertThatThrownBy(() -> new FlowSnapshot(
                     ID_MOST, ID_LEAST, DEF_NAME, FlowDefinition.INITIAL_VERSION, 0, STEP_NAME, STATE, T_NOW, T_END,
-                    new int[2], 3, new byte[0], 1L))
+                    new int[2], new String[0], 3, new byte[0], 1L))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("stackPointer");
         }
@@ -113,7 +114,7 @@ class FlowSnapshotTest {
             byte[] tooLarge = new byte[FlowSnapshot.MAX_OPAQUE_STATE_BYTES + 1];
             assertThatThrownBy(() -> new FlowSnapshot(
                     ID_MOST, ID_LEAST, DEF_NAME, FlowDefinition.INITIAL_VERSION, 0, STEP_NAME, STATE, T_NOW, T_END,
-                    new int[0], 0, tooLarge, 1L))
+                    new int[0], new String[0], 0, tooLarge, 1L))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("opaqueState");
         }
@@ -123,7 +124,7 @@ class FlowSnapshotTest {
         void nullCompensationStack() {
             assertThatThrownBy(() -> new FlowSnapshot(
                     ID_MOST, ID_LEAST, DEF_NAME, FlowDefinition.INITIAL_VERSION, 0, STEP_NAME, STATE, T_NOW, T_END,
-                    null, 0, new byte[0], 1L))
+                    null, new String[0], 0, new byte[0], 1L))
                     .isInstanceOf(NullPointerException.class)
                     .hasMessageContaining("compensationStack");
         }
@@ -133,7 +134,7 @@ class FlowSnapshotTest {
         void nullOpaqueState() {
             assertThatThrownBy(() -> new FlowSnapshot(
                     ID_MOST, ID_LEAST, DEF_NAME, FlowDefinition.INITIAL_VERSION, 0, STEP_NAME, STATE, T_NOW, T_END,
-                    new int[0], 0, null, 1L))
+                    new int[0], new String[0], 0, null, 1L))
                     .isInstanceOf(NullPointerException.class)
                     .hasMessageContaining("opaqueState");
         }
@@ -149,7 +150,7 @@ class FlowSnapshotTest {
             int[] input = {7, 8, 9};
             FlowSnapshot s = new FlowSnapshot(
                     ID_MOST, ID_LEAST, DEF_NAME, FlowDefinition.INITIAL_VERSION, 0, STEP_NAME, STATE, T_NOW, T_END,
-                    input, input.length, new byte[0], 1L);
+                    input, NAMES.clone(), input.length, new byte[0], 1L);
             input[0] = 999;
             assertThat(s.compensationStack()).containsExactly(7, 8, 9);
         }
@@ -160,7 +161,7 @@ class FlowSnapshotTest {
             byte[] input = {0x01, 0x02, 0x03};
             FlowSnapshot s = new FlowSnapshot(
                     ID_MOST, ID_LEAST, DEF_NAME, FlowDefinition.INITIAL_VERSION, 0, STEP_NAME, STATE, T_NOW, T_END,
-                    new int[0], 0, input, 1L);
+                    new int[0], new String[0], 0, input, 1L);
             input[0] = (byte) 0xFF;
             assertThat(s.opaqueState()).containsExactly(0x01, 0x02, 0x03);
         }
@@ -199,7 +200,7 @@ class FlowSnapshotTest {
         void blankStepNameRejected() {
             assertThatThrownBy(() -> new FlowSnapshot(
                     ID_MOST, ID_LEAST, DEF_NAME, FlowDefinition.INITIAL_VERSION, 5, Optional.of("  "), STATE, T_NOW, T_END,
-                    STACK.clone(), STACK.length, OPAQUE.clone(), 1L))
+                    STACK.clone(), NAMES.clone(), STACK.length, OPAQUE.clone(), 1L))
                     .as("a blank name compares unequal to every real step, so it would surface as a "
                             + "mismatch rather than as the missing identity it actually is")
                     .isInstanceOf(IllegalArgumentException.class);
@@ -210,7 +211,7 @@ class FlowSnapshotTest {
         void nullStepNameRejected() {
             assertThatThrownBy(() -> new FlowSnapshot(
                     ID_MOST, ID_LEAST, DEF_NAME, FlowDefinition.INITIAL_VERSION, 5, null, STATE, T_NOW, T_END,
-                    STACK.clone(), STACK.length, OPAQUE.clone(), 1L))
+                    STACK.clone(), NAMES.clone(), STACK.length, OPAQUE.clone(), 1L))
                     .isInstanceOf(NullPointerException.class);
         }
 

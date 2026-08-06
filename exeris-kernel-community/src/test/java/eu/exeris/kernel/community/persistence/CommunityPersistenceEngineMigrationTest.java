@@ -45,6 +45,81 @@ class CommunityPersistenceEngineMigrationTest {
         }
     }
 
+    /**
+     * Every migration resource on the classpath is registered to run.
+     *
+     * <p>The list is hand-maintained, so a new file under {@code db/migration/} is inert until someone
+     * remembers to add it — and nothing about that failure is visible until a query hits the missing
+     * column. That is not hypothetical: {@code V0.11.2} was written, shipped in the resource directory,
+     * and left unregistered, and the whole default build stayed green. Only the Testcontainers gate,
+     * which does not run in {@code mvn clean install}, said {@code column … does not exist}.
+     */
+    @Test
+    @DisplayName("every db/migration resource is registered to run — an unlisted file is inert")
+    void everyMigrationResourceIsRegistered() {
+        List<String> onDisk = migrationResourcesOnClasspath();
+
+        assertThat(onDisk)
+                .as("the enumeration itself must find something, or this test passes vacuously")
+                .isNotEmpty();
+        assertThat(CommunityPersistenceEngine.MIGRATION_RESOURCES)
+                .as("a migration file that is not listed here never runs, and the first symptom is a "
+                        + "missing column at query time in a gate the default build excludes")
+                .containsExactlyInAnyOrderElementsOf(onDisk);
+    }
+
+    /**
+     * The saga-state ALTERs actually execute — the three v0.11 columns exist after bootstrap.
+     *
+     * <p>Complements the check above: that one proves the files are wired, this one proves they run.
+     * Before this, no default-build test asserted that any of the three v0.11 migrations had any
+     * effect, on H2 or anywhere else.
+     */
+    @Test
+    @DisplayName("the v0.11 saga-state columns exist after migration")
+    void sagaStateCarriesTheV011Columns() {
+        try (CommunityPersistenceEngine engine = new CommunityPersistenceEngine(testConfig(true));
+             PersistenceConnection connection = engine.openConnection()) {
+            assertThat(countColumn(connection, "EXERIS_SAGA_STATE", "STEP_NAME"))
+                    .as("V0.11.0 (ADR-062)").isEqualTo(1);
+            assertThat(countColumn(connection, "EXERIS_SAGA_STATE", "DEFINITION_VERSION"))
+                    .as("V0.11.1 (ADR-064)").isEqualTo(1);
+            assertThat(countColumn(connection, "EXERIS_SAGA_STATE", "COMPENSATION_STEP_NAMES"))
+                    .as("V0.11.2 (ADR-064 A5)").isEqualTo(1);
+        }
+    }
+
+    private static List<String> migrationResourcesOnClasspath() {
+        java.net.URL directory = CommunityPersistenceEngine.class.getResource("/db/migration");
+        assertThat(directory)
+                .as("db/migration must be on the test classpath for this check to mean anything")
+                .isNotNull();
+        java.io.File[] files = new java.io.File(java.net.URI.create(directory.toString())).listFiles();
+        assertThat(files).as("db/migration must be readable as a directory").isNotNull();
+        List<String> paths = new ArrayList<>();
+        for (java.io.File file : files) {
+            if (file.getName().endsWith(".sql")) {
+                paths.add("db/migration/" + file.getName());
+            }
+        }
+        return paths;
+    }
+
+    private static long countColumn(PersistenceConnection connection, String table, String column) {
+        try (var statement = connection.prepare(
+                "SELECT COUNT(*) FROM information_schema.columns "
+                        + "WHERE table_name = $1 AND column_name = $2")) {
+            statement.bindString(0, table);
+            statement.bindString(1, column);
+            try (QueryResult result = statement.executeQuery()) {
+                if (result.next()) {
+                    return result.row().getLong(0);
+                }
+            }
+        }
+        return 0L;
+    }
+
     private static long countTables(PersistenceConnection connection, String tableName) {
         try (var statement = connection.prepare(
                 "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = $1")) {

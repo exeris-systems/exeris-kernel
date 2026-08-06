@@ -123,9 +123,11 @@ parked saga's state means the same thing under the new definition.
 
 ## Amendments (settled during implementation, v0.11)
 
-Four questions this ADR left open or under-specified. A1–A3 were decided before any code was written.
+Five questions this ADR left open or under-specified. A1–A3 were decided before any code was written.
 A4 is different in kind: it corrects an obligation this ADR stated as met when it was met for two of
-five components. Recorded here rather than in a commit message, and rather than quietly narrowed.
+five components. A5 completes A4 and, in turn, corrects a sentence of it — the failure mode A4
+described belongs to the half A4 closed, not to the half it carried. Recorded here rather than in
+commit messages, and rather than quietly narrowed.
 
 **A1 — Migration is scoped to the resume-restore path; `schedule()` continues to refuse.** The
 resubmit path fixes the target version at the plan the *caller* supplies, which makes the chain's
@@ -190,7 +192,7 @@ model like any other checkpoint.
 Obligation 9 said a transform's output is checked by ADR-062's identity check. That check reads
 `currentStep` and `currentStepName` — the cursor. It never looks at the compensation stack, which is
 the component that decides what a rollback undoes, and which the transform may rewrite.
-`FlowMigrationState` has five components; two were covered.
+`FlowMigrationState` had five components; two were covered. A5 adds the sixth and closes the rest.
 
 The gap was neither hypothetical nor confined to migration. `runCompensationStep` resolves each entry
 with `plan.stepAt(entry)`, a bare array read, **outside its own catch**. A stale entry therefore throws
@@ -209,7 +211,53 @@ detectable from indices — exactly as a same-arity reorder was not detectable f
 Closing it needs the stack to carry identities, which is a `FlowSnapshot` shape change and therefore
 its own slice, taken in v0.11 rather than later: the record's component list already changed this
 milestone, so a third component costs nothing further on the stability ledger, while deferring it to
-v0.12 would be a fresh change to a surface declared stable.
+v0.12 would be a fresh change to a surface declared stable. That slice is **A5**.
+
+**A5 — The stack carries step identities; and the failure mode A4 described belongs to the half A4
+closed.** This completes A4 and corrects one sentence of it.
+
+`FlowSnapshot` gains `String[] compensationStepNames` and `FlowMigrationState` gains the same
+component, so a live stack entry carries the identity of the step it addressed when it was pushed.
+Resume compares each against the plan it is binding to, refusing with
+`COMPENSATION_STACK_IDENTITY_MISMATCH`. This is ADR-062's decision applied to the stack rather than
+the cursor, and it is **additive**: identities sit beside the positions, never replacing them, because
+ADR-062's own non-scope clause rules that execution still addresses steps by index.
+
+**The correction.** A4 described the consequence of a stale entry as an aborted rollback — a throw out
+of `runCompensations` that skips `finalizeFailedInstance` and strands the saga. That is accurate, and
+it is what an **out-of-range** entry does. It is not what the remaining half does. An in-range entry
+that now addresses a different step resolves to a perfectly valid descriptor, and `plan.stepAt` throws
+nothing: the unwind either skips a compensation that was owed — the addressed step happens to declare
+none — or runs a *different* step's compensation. No exception, no JFR event, no counter.
+
+That inverts the risk ordering the two halves appear to have. The half fixed first is the loud one:
+it aborts visibly and the parked row survives, so an operator can still act. The half carried is
+silent, and it is not recoverable in the way a refused resume is — a compensation is a side effect,
+and by the time anything can observe that the wrong one ran, it has run. A4 did not say this, and a
+reader of A4 would reasonably have assumed the carried half failed the same loud way. Stated here
+rather than left to be inferred from the code.
+
+**Absent identities fail closed**, on ADR-062 obligation 6's reasoning: admitting a live stack with no
+identities would leave a permanent branch where the stack is still trusted by position. The case is
+reachable independently of the cursor guards — a row with a definition version *and* a cursor identity
+but no stack identities is what an application `FlowSnapshotStore` produces when its schema does not
+carry the column — so it takes its own reason, `COMPENSATION_STACK_IDENTITY_ABSENT`, rather than being
+folded into `STEP_IDENTITY_ABSENT`. An **empty** stack is not an absent one: with nothing live there is
+nothing to validate, so the two are indistinguishable there and must be, or every saga that never
+pushed a compensation would be refused.
+
+`FlowMigrationState`'s component is **not** optional and gets **no compatibility overload**, unlike
+`FlowSnapshot`'s. A snapshot may predate identity recording; a transform is written against this
+record and always knows the names it emits. A bridge defaulting them to absent would hand a transform
+the one input the guard exists to refuse — the same reasoning that made `registerMigration`'s default
+*refuse* rather than accept. The five-component shape never shipped, so nothing is being broken that
+a released artifact carries.
+
+**Not in scope, deliberately:** moving `plan.stepAt` inside `runCompensationStep`'s catch. Every
+reachable path to an out-of-range entry is now closed before the unwind — resume validates bounds,
+in-memory pushes are in-range by construction, and migration output is bounds-checked — so changing
+the catch would be defence in depth against a state nothing can produce, at the cost of converting a
+structural corruption into a logged per-step failure.
 
 ---
 
@@ -259,8 +307,10 @@ v0.12 would be a fresh change to a surface declared stable.
 
 ## Cross-references
 
-- ADR-062 (Bind flow resume to a named step, not a position) — supplies the detection this builds on,
-  and its identity check validates every migration's output per obligation 9.
+- ADR-062 (Bind flow resume to a named step, not a position) — supplies the detection this builds on.
+  Its identity check validates the *cursor* half of a migration's output; obligation 9 originally
+  claimed the whole of it, which A4 corrected and A5 completed by giving the compensation stack its
+  own identities and its own check.
 - ADR-013 (Distributed saga state distribution model) — the snapshot carrier this extends.
   `FlowSnapshot.schemaVersion` is that ADR's optimistic-lock counter, **not** a definition version, and
   this ADR neither merges the two nor adds a third meaning to it.

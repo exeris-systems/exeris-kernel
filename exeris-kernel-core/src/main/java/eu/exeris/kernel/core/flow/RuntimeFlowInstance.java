@@ -26,8 +26,9 @@ final class RuntimeFlowInstance implements RuntimeFlowContextStateView { // NOPM
 
     /* default */ static final int PARKED_SCHEDULE_NOOP = -2;
 
-    private static final int[]  EMPTY_STACK        = new int[0];
-    private static final byte[] EMPTY_OPAQUE_STATE = new byte[0];
+    private static final int[]    EMPTY_STACK        = new int[0];
+    private static final String[] EMPTY_STEP_NAMES   = new String[0];
+    private static final byte[]   EMPTY_OPAQUE_STATE = new byte[0];
 
     private final FlowKey key;
     private final String definitionName;
@@ -310,10 +311,36 @@ final class RuntimeFlowInstance implements RuntimeFlowContextStateView { // NOPM
                 Instant.now(),
                 timeoutInstant(),
                 stack,
+                compensationStepNames(),
                 stackPointer,
                 EMPTY_OPAQUE_STATE,
                 schemaVersion.get()
         );
+    }
+
+    /**
+     * Resolves the identity of every live compensation-stack entry (ADR-064 A5).
+     *
+     * <p>Derived at snapshot time rather than tracked alongside {@code compensationStack}, because in
+     * memory the two can never disagree: every push comes from a descriptor the bound plan resolved, so
+     * a parallel in-heap array would be redundant state whose only distinctive behaviour is the way it
+     * desynchronises — {@code pushCompensation} grows the stack by doubling off {@code
+     * compensationStack.length} alone, and a second array that missed a growth would silently shift.
+     *
+     * <p>Cold path: a snapshot is written on park, eviction or a terminal transition, never per step.
+     *
+     * @return one name per live entry, or an empty array when nothing is live
+     */
+    private String[] compensationStepNames() {
+        CoreFlowExecutionPlan currentPlan = plan;
+        if (stackPointer == 0 || currentPlan == null) {
+            return EMPTY_STEP_NAMES;
+        }
+        String[] names = new String[stackPointer];
+        for (int index = 0; index < stackPointer; index++) {
+            names[index] = currentPlan.stepAt(compensationStack[index]).name();
+        }
+        return names;
     }
 
     /**

@@ -28,6 +28,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -102,11 +103,26 @@ public abstract class AbstractFlowDefinitionVersioningTck {
     }
 
     private static FlowSnapshot parkedSnapshot(UUID id, String definitionName, int definitionVersion) {
-        return parkedSnapshot(id, definitionName, definitionVersion, new int[0], 0);
+        return parkedSnapshot(id, definitionName, definitionVersion, new int[0], new String[0], 0);
+    }
+
+    /**
+     * Builds a stack whose identities agree with the plan — the shape a sound saga leaves behind.
+     *
+     * <p>Every live entry addresses index {@code 0}, whose name is {@link #PARKED_STEP} in every plan
+     * this TCK registers, so a caller exercising the <em>bounds</em> guard does not have to also
+     * satisfy the identity guard by hand. Cases that exercise the identity guard pass names explicitly.
+     */
+    private static FlowSnapshot parkedSnapshot(UUID id, String definitionName, int definitionVersion,
+                                               int[] compensationStack, int stackPointer) {
+        String[] names = new String[stackPointer];
+        Arrays.fill(names, PARKED_STEP);
+        return parkedSnapshot(id, definitionName, definitionVersion, compensationStack, names, stackPointer);
     }
 
     private static FlowSnapshot parkedSnapshot(UUID id, String definitionName, int definitionVersion,
-                                               int[] compensationStack, int stackPointer) {
+                                               int[] compensationStack, String[] compensationStepNames,
+                                               int stackPointer) {
         return new FlowSnapshot(
                 id.getMostSignificantBits(),
                 id.getLeastSignificantBits(),
@@ -118,9 +134,39 @@ public abstract class AbstractFlowDefinitionVersioningTck {
                 Instant.now(),
                 Instant.now().plusSeconds(60L),
                 compensationStack,
+                compensationStepNames,
                 stackPointer,
                 new byte[0],
                 FlowSnapshot.SCHEMA_VERSION_INITIAL);
+    }
+
+    /** A context for starting a saga, as opposed to {@link #contextFor} which resumes a parked one. */
+    private static FlowContext runningContextFor(UUID id) {
+        return new FlowContext() {
+            @Override public long instanceIdMost() {
+                return id.getMostSignificantBits();
+            }
+
+            @Override public long instanceIdLeast() {
+                return id.getLeastSignificantBits();
+            }
+
+            @Override public String definitionName() {
+                return DEFINITION;
+            }
+
+            @Override public int currentStep() {
+                return 0;
+            }
+
+            @Override public FlowState state() {
+                return FlowState.RUNNING;
+            }
+
+            @Override public long timeoutNanos() {
+                return System.nanoTime() + TimeUnit.SECONDS.toNanos(30L);
+            }
+        };
     }
 
     private static FlowContext contextFor(UUID id) {
@@ -517,7 +563,8 @@ public abstract class AbstractFlowDefinitionVersioningTck {
             register(2, v2Executions);
             engine.plans().registerMigration(DEFINITION, 1, parked -> new FlowMigrationState(
                     parked.parkedStep(), "step-that-does-not-exist",
-                    parked.compensationStack(), parked.stackPointer(), parked.opaqueState()));
+                    parked.compensationStack(), parked.compensationStepNames(), parked.stackPointer(),
+                    parked.opaqueState()));
 
             UUID id = UUID.randomUUID();
             snapshotStore().save(parkedSnapshot(id, DEFINITION, 1));
@@ -613,7 +660,7 @@ public abstract class AbstractFlowDefinitionVersioningTck {
                     id.getMostSignificantBits(), id.getLeastSignificantBits(),
                     DEFINITION, 1, 0, Optional.empty(),
                     FlowState.PARKED, Instant.now(), Instant.now().plusSeconds(60L),
-                    new int[0], 0, new byte[0], FlowSnapshot.SCHEMA_VERSION_INITIAL));
+                    new int[0], new String[0], 0, new byte[0], FlowSnapshot.SCHEMA_VERSION_INITIAL));
 
             assertThatThrownBy(() -> engine.scheduler().wake(contextFor(id)))
                     .as("the reason an operator will act on: no step identity, which no deployment "
@@ -700,11 +747,15 @@ public abstract class AbstractFlowDefinitionVersioningTck {
         /**
          * The transform's compensation stack is checked too, not only the step it names.
          *
-         * <p>{@code FlowMigrationState} has five components and ADR-064 obligation 9 claims the
-         * runtime validates the transform's output. Until this case, that held for two of them: the
-         * parked step and its name. A transform emitting a stack entry the target plan cannot index
-         * was accepted, and the mistake surfaced later as an aborted rollback — the furthest possible
-         * point from the code that caused it, and only after something else had already failed.
+         * <p>ADR-064 obligation 9 claims the runtime validates the transform's output. Until this
+         * case, that held for two components: the parked step and its name. A transform emitting a
+         * stack entry the target plan cannot index was accepted, and the mistake surfaced later as an
+         * aborted rollback — the furthest possible point from the code that caused it, and only after
+         * something else had already failed.
+         *
+         * <p>This is the <em>bounds</em> half. The identity half is
+         * {@link StackIdentity#migrationEmittingMisnumberedCompensationStackIsRefused}, and its
+         * failure mode is quieter rather than louder — see that case.
          */
         @Test
         @Timeout(value = 30, unit = TimeUnit.SECONDS)
@@ -714,7 +765,7 @@ public abstract class AbstractFlowDefinitionVersioningTck {
             register(2, v2Executions);
             engine.plans().registerMigration(DEFINITION, 1, parked -> new FlowMigrationState(
                     parked.parkedStep(), parked.parkedStepName(),
-                    new int[] {4}, 1, parked.opaqueState()));
+                    new int[] {4}, new String[] {PARKED_STEP}, 1, parked.opaqueState()));
 
             UUID id = UUID.randomUUID();
             snapshotStore().save(parkedSnapshot(id, DEFINITION, 1));
@@ -769,6 +820,228 @@ public abstract class AbstractFlowDefinitionVersioningTck {
                             + "the saga no longer runs, and would make transform purity an unstated "
                             + "obligation because the chain would re-run on every wake")
                     .isEqualTo(2);
+        }
+    }
+
+    /**
+     * The compensation stack carries step identities, and resume refuses when they disagree with the
+     * plan (ADR-064 amendment A5).
+     *
+     * <h2>Why this half is the dangerous one</h2>
+     * <p>{@link Refusals#compensationStackOutsideThePlanIsRefused} covers an entry that does not index
+     * the plan. That one is loud: {@code plan.stepAt} throws inside failure handling, the unwind is
+     * truncated, and the parked row survives to be fixed. An entry that <em>does</em> index the plan but
+     * addresses a different step throws nothing at all. The unwind resolves a perfectly valid
+     * descriptor and either skips a compensation that was owed — the addressed step happens to declare
+     * none — or runs a different step's compensation. Both are silent, and neither is undoable: a
+     * compensation is a side effect that has already happened by the time anyone can observe it.
+     *
+     * <p>So these cases assert a <em>refusal on resume</em> rather than an observable rollback. There is
+     * no assertion that could distinguish the two silent outcomes after the fact, which is the whole
+     * argument for moving the check to the resume path.
+     */
+    @Nested
+    @DisplayName("Compensation-stack step identity (ADR-064 A5)")
+    class StackIdentity {
+
+        @Test
+        @Timeout(value = 30, unit = TimeUnit.SECONDS)
+        @DisplayName("an in-range entry that now addresses a different step is refused")
+        void inRangeEntryAddressingADifferentStepIsRefused() {
+            AtomicInteger executions = new AtomicInteger();
+            register(1, executions);
+
+            UUID id = UUID.randomUUID();
+            // Entry 1 indexes the plan (it has two steps), so the bounds guard passes. The name says
+            // the saga completed PARKED_STEP, but index 1 is "resumed-step" — the shape a same-arity
+            // reorder leaves behind, and the one no index can distinguish from a sound stack.
+            snapshotStore().save(parkedSnapshot(
+                    id, DEFINITION, 1, new int[] {1}, new String[] {PARKED_STEP}, 1));
+
+            assertThatThrownBy(() -> engine.scheduler().wake(contextFor(id)))
+                    .as("every other guard passes here — this is the one that can see it")
+                    .isInstanceOfSatisfying(FlowEngineException.class, ex ->
+                            assertThat(reasonOf(ex))
+                                    .isEqualTo(FlowEngineException.REASON_COMPENSATION_STACK_IDENTITY_MISMATCH));
+            assertThat(snapshotStore().load(id.getMostSignificantBits(), id.getLeastSignificantBits()))
+                    .as("refusing must leave the row recoverable, like every other resume refusal")
+                    .isPresent();
+            assertThat(executions.get()).isZero();
+        }
+
+        @Test
+        @Timeout(value = 30, unit = TimeUnit.SECONDS)
+        @DisplayName("a sound stack whose identities agree resumes — the guard is not refusing everything")
+        void agreeingIdentitiesResume() {
+            AtomicInteger executions = new AtomicInteger();
+            register(1, executions);
+
+            UUID id = UUID.randomUUID();
+            // Same stack shape as the case above, with the name the plan actually has at index 1.
+            // Without this, an engine that refused every live compensation stack would pass the suite.
+            snapshotStore().save(parkedSnapshot(
+                    id, DEFINITION, 1, new int[] {1}, new String[] {"resumed-step"}, 1));
+
+            engine.scheduler().wake(contextFor(id));
+            awaitTrue(() -> executions.get() > 0);
+
+            assertThat(executions.get()).isEqualTo(1);
+        }
+
+        @Test
+        @Timeout(value = 30, unit = TimeUnit.SECONDS)
+        @DisplayName("a live stack carrying no identities at all is refused, not trusted by position")
+        void liveStackWithoutIdentitiesIsRefused() {
+            AtomicInteger executions = new AtomicInteger();
+            register(1, executions);
+
+            UUID id = UUID.randomUUID();
+            // Reachable independently of the cursor guards: this row has a definition version AND a
+            // cursor identity, so it passes both. It is what an application FlowSnapshotStore produces
+            // when its schema does not carry the identities column.
+            snapshotStore().save(parkedSnapshot(
+                    id, DEFINITION, 1, new int[] {0}, new String[0], 1));
+
+            assertThatThrownBy(() -> engine.scheduler().wake(contextFor(id)))
+                    .as("admitting it would leave a permanent branch where the stack is trusted by "
+                            + "position — the behaviour this amendment removes")
+                    .isInstanceOfSatisfying(FlowEngineException.class, ex ->
+                            assertThat(reasonOf(ex))
+                                    .isEqualTo(FlowEngineException.REASON_COMPENSATION_STACK_IDENTITY_ABSENT));
+            assertThat(executions.get()).isZero();
+        }
+
+        @Test
+        @Timeout(value = 30, unit = TimeUnit.SECONDS)
+        @DisplayName("an empty stack with no identities is not an absent one — it resumes")
+        void emptyStackIsNotAnAbsentOne() {
+            AtomicInteger executions = new AtomicInteger();
+            register(1, executions);
+
+            UUID id = UUID.randomUUID();
+            // The absent sentinel is an empty identity array, so with nothing live the two are
+            // indistinguishable — and must be, or every saga that never pushed a compensation would be
+            // refused. This is the case that makes the sentinel choice safe rather than merely cheap.
+            snapshotStore().save(parkedSnapshot(id, DEFINITION, 1, new int[0], new String[0], 0));
+
+            engine.scheduler().wake(contextFor(id));
+            awaitTrue(() -> executions.get() > 0);
+
+            assertThat(executions.get()).isEqualTo(1);
+        }
+
+        /**
+         * The engine records the identities its own guard demands — proven end to end, not by fixture.
+         *
+         * <p>Every other case here hands the store a snapshot built by hand, so all of them would still
+         * pass against an engine that validated identities perfectly and never wrote any. This one runs
+         * a real saga: a compensable step completes (pushing an entry), a later step parks, and the
+         * snapshot the runtime wrote is then resumed through the guard. It can only pass if
+         * {@code toSnapshot} put real names in the row.
+         *
+         * <p>Added because the first version of this suite did not have it and a mutation that made the
+         * recording side return nothing left the whole suite green.
+         */
+        @Test
+        @Timeout(value = 30, unit = TimeUnit.SECONDS)
+        @DisplayName("a saga the engine itself parked resumes — the identities are actually recorded")
+        void identitiesRecordedByTheEngineRoundTrip() {
+            AtomicInteger resumed = new AtomicInteger();
+            AtomicInteger compensated = new AtomicInteger();
+            FlowDefinition def = engine.plans().newDefinition(DEFINITION)
+                    // Compensable, and it COMPLETEs — so the runtime pushes it onto the stack.
+                    .step("reserve", _ -> FlowOutcome.CONTINUE, _ -> {
+                        compensated.incrementAndGet();
+                        return FlowOutcome.COMPLETE;
+                    })
+                    .step("hold", _ -> FlowOutcome.PARK, null)
+                    .step("resumed-step", _ -> {
+                        resumed.incrementAndGet();
+                        return FlowOutcome.COMPLETE;
+                    }, null)
+                    .transition(0, 1)
+                    .transition(1, 2)
+                    .build();
+            FlowExecutionPlan plan = engine.plans().compile(new FlowDefinition(
+                    def.name(), 1, def.steps(), def.timeoutDurationNanos(), def.maxRetries()));
+
+            UUID id = UUID.randomUUID();
+            // A RUNNING context, not the PARKED one the wake-only cases use: this saga has to be
+            // started by the engine so the runtime is what writes the row.
+            engine.scheduler().schedule(plan, runningContextFor(id));
+            awaitTrue(() -> snapshotStore()
+                    .load(id.getMostSignificantBits(), id.getLeastSignificantBits())
+                    .filter(s -> s.state() == FlowState.PARKED)
+                    .isPresent());
+
+            FlowSnapshot parked = snapshotStore()
+                    .load(id.getMostSignificantBits(), id.getLeastSignificantBits()).orElseThrow();
+            assertThat(parked.stackPointer())
+                    .as("the compensable step completed, so the row must carry a live stack")
+                    .isEqualTo(1);
+            assertThat(parked.compensationStepNames())
+                    .as("and the identity of the step that entry addresses, by name")
+                    .containsExactly("reserve");
+
+            engine.scheduler().wake(contextFor(id));
+            awaitTrue(() -> resumed.get() > 0);
+
+            assertThat(resumed.get()).isEqualTo(1);
+            assertThat(compensated.get())
+                    .as("the saga completed, so nothing should have been rolled back")
+                    .isZero();
+        }
+
+        @Test
+        @Timeout(value = 30, unit = TimeUnit.SECONDS)
+        @DisplayName("a transform emitting a stack whose identities the target plan contradicts is refused")
+        void migrationEmittingMisnumberedCompensationStackIsRefused() {
+            AtomicInteger v2Executions = new AtomicInteger();
+            register(2, v2Executions);
+            // The renumbering mistake this amendment exists to catch: the transform moves the entry to
+            // an index that exists in v2, and says it still means PARKED_STEP. Both halves are
+            // individually plausible; only comparing them against the target plan shows the conflict.
+            engine.plans().registerMigration(DEFINITION, 1, parked -> new FlowMigrationState(
+                    parked.parkedStep(), parked.parkedStepName(),
+                    new int[] {1}, new String[] {PARKED_STEP}, 1, parked.opaqueState()));
+
+            UUID id = UUID.randomUUID();
+            snapshotStore().save(parkedSnapshot(id, DEFINITION, 1));
+
+            assertThatThrownBy(() -> engine.scheduler().wake(contextFor(id)))
+                    .as("ADR-064 obligation 9 says a transform's output is validated, not trusted — "
+                            + "the stack's identities are the last component that was not")
+                    .isInstanceOfSatisfying(FlowEngineException.class, ex ->
+                            assertThat(reasonOf(ex))
+                                    .isEqualTo(FlowEngineException.REASON_COMPENSATION_STACK_IDENTITY_MISMATCH));
+            assertThat(v2Executions.get()).isZero();
+        }
+
+        @Test
+        @Timeout(value = 30, unit = TimeUnit.SECONDS)
+        @DisplayName("a row with a live stack but no identities refuses before the transform runs")
+        void migrationOfRowWithoutStackIdentitiesRefusesCleanly() {
+            AtomicInteger transformInvocations = new AtomicInteger();
+            register(2, new AtomicInteger());
+            engine.plans().registerMigration(DEFINITION, 1, parked -> {
+                transformInvocations.incrementAndGet();
+                return parked;
+            });
+
+            UUID id = UUID.randomUUID();
+            snapshotStore().save(parkedSnapshot(
+                    id, DEFINITION, 1, new int[] {0}, new String[0], 1));
+
+            assertThatThrownBy(() -> engine.scheduler().wake(contextFor(id)))
+                    .as("FlowMigrationState requires identities, so without this the row reaches its "
+                            + "compact constructor as a bare IllegalArgumentException — a failure with "
+                            + "no reason code on a path where every other refusal carries one")
+                    .isInstanceOfSatisfying(FlowEngineException.class, ex ->
+                            assertThat(reasonOf(ex))
+                                    .isEqualTo(FlowEngineException.REASON_COMPENSATION_STACK_IDENTITY_ABSENT));
+            assertThat(transformInvocations.get())
+                    .as("refused before the transform, because there is no input to hand it")
+                    .isZero();
         }
     }
 

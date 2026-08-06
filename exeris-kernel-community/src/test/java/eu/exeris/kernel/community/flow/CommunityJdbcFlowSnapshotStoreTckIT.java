@@ -225,6 +225,7 @@ class CommunityJdbcFlowSnapshotStoreTckIT extends AbstractDistributedFlowSnapsho
                 Instant.parse("2026-05-08T10:00:00Z"),
                 Instant.parse("2026-05-08T11:00:00Z"),
                 new int[0],
+                new String[0],
                 0,
                 new byte[]{0x01},
                 schemaVersion);
@@ -241,6 +242,7 @@ class CommunityJdbcFlowSnapshotStoreTckIT extends AbstractDistributedFlowSnapsho
                 loaded.lastUpdate(),
                 loaded.timeout(),
                 loaded.compensationStack(),
+                loaded.compensationStepNames(),
                 loaded.stackPointer(),
                 loaded.opaqueState(),
                 loaded.schemaVersion());

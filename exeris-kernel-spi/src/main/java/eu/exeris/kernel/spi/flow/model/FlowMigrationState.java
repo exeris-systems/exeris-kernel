@@ -33,23 +33,31 @@ import java.util.Objects;
  * @param compensationStack step indices whose compensations run in reverse order, in target-definition
  *                          terms — carrying these across a version boundary unchanged compensates the
  *                          wrong steps on failure
+ * @param compensationStepNames identity of the step each live {@code compensationStack} entry addresses,
+ *                          in target-definition terms; validated against the target plan after the
+ *                          transform returns, never trusted — exactly like {@code parkedStepName}.
+ *                          Must cover the live stack: a transform that renumbers entries knows which
+ *                          steps it renumbered them onto, so there is no absent case to represent here
  * @param stackPointer      number of valid entries in {@code compensationStack}
  * @param opaqueState       implementation-specific payload; kernel-opaque, and the only component
  *                          here that is user data rather than definition metadata
  * @since 0.11.0
  */
 public record FlowMigrationState(
-        int    parkedStep,
-        String parkedStepName,
-        int[]  compensationStack,
-        int    stackPointer,
-        byte[] opaqueState
+        int      parkedStep,
+        String   parkedStepName,
+        int[]    compensationStack,
+        String[] compensationStepNames,
+        int      stackPointer,
+        byte[]   opaqueState
 ) {
 
     /** Compact constructor — validates and defensively copies, like {@link FlowSnapshot}. */
     public FlowMigrationState {
         Objects.requireNonNull(parkedStepName, "parkedStepName must not be null");
         Objects.requireNonNull(compensationStack, "compensationStack must not be null — use new int[0]");
+        Objects.requireNonNull(compensationStepNames,
+                "compensationStepNames must not be null — use new String[0] with an empty stack");
         Objects.requireNonNull(opaqueState, "opaqueState must not be null — use new byte[0]");
         if (parkedStepName.isBlank()) {
             throw new IllegalArgumentException("parkedStepName must not be blank");
@@ -62,7 +70,23 @@ public record FlowMigrationState(
                     "stackPointer out of bounds: " + stackPointer
                     + " (compensationStack.length=" + compensationStack.length + ')');
         }
+        // Stricter than FlowSnapshot's, and deliberately so: a snapshot may predate identity recording,
+        // whereas a transform is written against this record and always knows the names it emits.
+        // Allowing an empty array here would hand a transform the one thing the guard exists to refuse.
+        if (compensationStepNames.length < stackPointer) {
+            throw new IllegalArgumentException(
+                    "compensationStepNames must cover the live stack: length="
+                    + compensationStepNames.length + " < stackPointer=" + stackPointer);
+        }
+        for (int index = 0; index < stackPointer; index++) {
+            String name = compensationStepNames[index];
+            if (name == null || name.isBlank()) {
+                throw new IllegalArgumentException(
+                        "compensationStepNames[" + index + "] must not be null or blank");
+            }
+        }
         compensationStack = Arrays.copyOf(compensationStack, compensationStack.length);
+        compensationStepNames = Arrays.copyOf(compensationStepNames, compensationStepNames.length);
         opaqueState = Arrays.copyOf(opaqueState, opaqueState.length);
     }
 
@@ -70,6 +94,12 @@ public record FlowMigrationState(
     @Override
     public int[] compensationStack() {
         return Arrays.copyOf(compensationStack, compensationStack.length);
+    }
+
+    /** Defensive copy — callers must not mutate the result. */
+    @Override
+    public String[] compensationStepNames() {
+        return Arrays.copyOf(compensationStepNames, compensationStepNames.length);
     }
 
     /** Defensive copy — callers must not mutate the result. */
@@ -94,6 +124,7 @@ public record FlowMigrationState(
                 && stackPointer == state.stackPointer
                 && parkedStepName.equals(state.parkedStepName)
                 && Arrays.equals(compensationStack, state.compensationStack)
+                && Arrays.equals(compensationStepNames, state.compensationStepNames)
                 && Arrays.equals(opaqueState, state.opaqueState);
     }
 
@@ -102,6 +133,7 @@ public record FlowMigrationState(
         int result = Integer.hashCode(parkedStep);
         result = 31 * result + parkedStepName.hashCode();
         result = 31 * result + Arrays.hashCode(compensationStack);
+        result = 31 * result + Arrays.hashCode(compensationStepNames);
         result = 31 * result + stackPointer;
         return 31 * result + Arrays.hashCode(opaqueState);
     }
@@ -112,6 +144,7 @@ public record FlowMigrationState(
         return "FlowMigrationState[parkedStep=" + parkedStep
                 + ", parkedStepName=" + parkedStepName
                 + ", compensationStack=" + Arrays.toString(compensationStack)
+                + ", compensationStepNames=" + Arrays.toString(compensationStepNames)
                 + ", stackPointer=" + stackPointer
                 + ", opaqueState=" + opaqueState.length + " bytes]";
     }

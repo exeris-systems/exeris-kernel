@@ -1,0 +1,24 @@
+-- ADR-064 amendment A5: the compensation stack carries step identities, not only plan positions.
+--
+-- NULLABLE, and that is the opposite choice from the definition_version column in V0.11.1 for a
+-- reason the column type decides rather than taste. A BYTEA can represent NULL, so absence is
+-- carried by the read the way V0.11.0 carries it for step_name. definition_version had to backfill
+-- a sentinel instead, only because the row cursor getInt method has no NULL to return. A row
+-- written before this column existed reads back as no identities recorded and, if it carries a live
+-- compensation stack, is refused fail-closed on resume, which is the disposition every other
+-- absent-identity case takes.
+--
+-- Encoding mirrors compensation_stack. One blob, packed by the codec rather than a native array
+-- type, because H2 supports neither INT array nor TEXT array, per ADR-013 section 5. Each live
+-- entry is a 4-byte big-endian length followed by that many UTF-8 bytes, so the blob needs no
+-- delimiter and no escaping. Step names are validated only as non-blank, so no character is
+-- reserved and any delimiter scheme would have to escape one that is not.
+--
+-- Three constraints this file inherits from its siblings, all enforced by the runner rather than by
+-- a linter. The runner replays every resource on every boot with no applied-migration ledger, so
+-- the DDL must be idempotent. It executes each resource as ONE statement, so a file may carry no
+-- second statement, and no semicolon anywhere before the final one. And its comment strip is
+-- quote-aware, so a file may carry no apostrophe in its comments. Both punctuation rules were
+-- learned again while writing this file.
+ALTER TABLE exeris_saga_state
+    ADD COLUMN IF NOT EXISTS compensation_step_names BYTEA;

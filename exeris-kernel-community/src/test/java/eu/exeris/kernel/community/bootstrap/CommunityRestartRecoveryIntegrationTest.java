@@ -109,6 +109,7 @@ class CommunityRestartRecoveryIntegrationTest {
                 Instant.parse("2026-06-18T10:00:00Z"),
                 Instant.parse("2026-06-18T11:00:00Z"),
                 new int[]{1, 2, 3},
+                new String[]{"step-1", "step-2", "step-3"},
                 3,
                 new byte[]{0x0A, 0x0B},
                 FlowSnapshot.SCHEMA_VERSION_INITIAL);
