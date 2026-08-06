@@ -31,6 +31,11 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  *
  * @since 0.5.0
  */
+// TooManyMethods: the count is the contract. One named factory per rawArgs layout is what keeps
+// string literals out of throw sites (a repo-wide hard constraint) and keeps each layout documented
+// in exactly one place. Collapsing the schemaMismatch* family into a reason-taking factory would move
+// those literals back to the call sites, which is the drift the Glass-Box layout exists to prevent.
+@SuppressWarnings("PMD.TooManyMethods")
 public final class FlowEngineException extends ExerisKernelException {
 
     /**

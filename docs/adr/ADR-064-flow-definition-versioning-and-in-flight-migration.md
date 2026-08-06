@@ -102,11 +102,16 @@ parked saga's state means the same thing under the new definition.
    compensation for a definition the runtime cannot even bind, and would destroy the one remedy that
    works. **A quarantine `FlowState` is deliberately not introduced** — it would trade a reversible
    failure for an unrecoverable one.
-9. **A migration's output is validated by ADR-062's identity check, not trusted.** The transform runs
-   first, and the step it produces is then checked against the target version's plan exactly as any
-   other resume is. A transform that returns a step that does not exist, or that names a different step
-   than the index addresses, fails closed on the existing surface. Application code on the resume path
-   is not a new trust boundary.
+9. **A migration's output is validated, not trusted.** The transform runs first, and what it produces
+   is then checked against the target version's plan exactly as any other resume is. A transform that
+   returns a step that does not exist, or that names a different step than the index addresses, fails
+   closed on the existing surface. Application code on the resume path is not a new trust boundary.
+
+   *Scope, corrected during implementation — see amendment A4.* As accepted, this obligation named
+   ADR-062's identity check as the whole of the validation, which covers the cursor
+   (`parkedStep`, `parkedStepName`) and nothing else. `FlowMigrationState` has five components, and
+   the compensation stack is the one that drives rollback. The obligation is only met because a
+   bounds guard on the stack was added; the identity half of it is not met yet.
 10. **Failures reuse `EX-FLOW-7002 / phase=SCHEMA_MISMATCH`** with new reason discriminators beside
     `STEP_OUT_OF_RANGE`, `STEP_IDENTITY_MISMATCH` and `STEP_IDENTITY_ABSENT`. An operator needs to
     tell "this saga's version was never deployed here" from "its step moved" — different remedies, so
@@ -118,8 +123,9 @@ parked saga's state means the same thing under the new definition.
 
 ## Amendments (settled during implementation, v0.11)
 
-Three questions this ADR left open or under-specified, decided before any code was written and
-recorded here rather than in a commit message.
+Four questions this ADR left open or under-specified. A1–A3 were decided before any code was written.
+A4 is different in kind: it corrects an obligation this ADR stated as met when it was met for two of
+five components. Recorded here rather than in a commit message, and rather than quietly narrowed.
 
 **A1 — Migration runs on `wake()` only; `schedule()` continues to refuse.** The resubmit path fixes
 the target version at the plan the *caller* supplies, which makes the chain's terminating condition
@@ -155,6 +161,31 @@ durable row asserting a version the saga no longer runs. ADR-062's thesis is tha
 be truthful; a row saying v1 for a saga executing v2 is the same class of lie as a step recorded by
 position. The write happens on the resume path and participates in the ADR-013 `schemaVersion` OCC
 model like any other checkpoint.
+
+**A4 — The compensation stack is validated too; obligation 9 overstated what covered it.**
+Obligation 9 said a transform's output is checked by ADR-062's identity check. That check reads
+`currentStep` and `currentStepName` — the cursor. It never looks at the compensation stack, which is
+the component that decides what a rollback undoes, and which the transform may rewrite.
+`FlowMigrationState` has five components; two were covered.
+
+The gap was neither hypothetical nor confined to migration. `runCompensationStep` resolves each entry
+with `plan.stepAt(entry)`, a bare array read, **outside its own catch**. A stale entry therefore throws
+out of `runCompensations` and skips both the remaining unwind and `finalizeFailedInstance` — leaving
+the saga mid-compensation, terminal state unwritten and idempotency guard still held, and only after
+some other failure has already put it on the rollback path. Strictly worse than refusing to resume. A
+shrinking redeploy could reach it before this ADR existed; migration made it ordinary rather than
+exceptional, because moving a saga onto a changed definition is now the sanctioned path.
+
+So the live prefix of the stack is validated against the target plan on every resume, refusing with
+`COMPENSATION_STACK_OUT_OF_RANGE` and leaving the row intact like every other resume refusal. Only the
+prefix below `stackPointer`: entries above it are dead, and closing on those would refuse a sound saga.
+
+This is the **bounds** half. An entry that indexes the plan but names a step the saga never ran is not
+detectable from indices — exactly as a same-arity reorder was not detectable from the cursor's index.
+Closing it needs the stack to carry identities, which is a `FlowSnapshot` shape change and therefore
+its own slice, taken in v0.11 rather than later: the record's component list already changed this
+milestone, so a third component costs nothing further on the stability ledger, while deferring it to
+v0.12 would be a fresh change to a surface declared stable.
 
 ---
 

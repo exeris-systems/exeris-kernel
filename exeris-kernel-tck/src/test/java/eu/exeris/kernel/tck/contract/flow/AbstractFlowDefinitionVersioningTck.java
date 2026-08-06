@@ -522,9 +522,9 @@ public abstract class AbstractFlowDefinitionVersioningTck {
             snapshotStore().save(parkedSnapshot(id, DEFINITION, 1));
 
             assertThatThrownBy(() -> engine.scheduler().wake(contextFor(id)))
-                    .as("ADR-064 obligation 9 — the transform runs first and its output is checked by "
-                            + "the same guard as any resume, so application code on this path is not "
-                            + "a new trust boundary")
+                    .as("ADR-064 obligation 9 — the transform runs first and the step it names is "
+                            + "checked by the same guard as any resume; this is the cursor half of "
+                            + "that obligation, the stack half is the case below")
                     .isInstanceOfSatisfying(FlowEngineException.class, ex ->
                             assertThat(reasonOf(ex))
                                     .isEqualTo(FlowEngineException.REASON_STEP_IDENTITY_MISMATCH));
