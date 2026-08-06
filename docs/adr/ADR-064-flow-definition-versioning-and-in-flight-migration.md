@@ -131,12 +131,23 @@ wrote for a parked saga. A resubmit against a mismatched version therefore keeps
 **functional narrowing stated plainly**: choreography can reach `schedule()` directly, and a saga
 resubmitted rather than woken is not migrated.
 
-**A2 — The chain stops at the first registered version, and adjacency is enforced at registration.**
+**A2 — The chain stops at the first *hosted* version, and adjacency is structural.**
 Not a preference: `planCatalog` is keyed by `PlanKey(name, version)` and offers point-gets only. There
 is no name→versions index, and the single name-scoped query (`hostsDefinition`) is a full `keySet()`
-scan — adding another to the resume *success* path would be a No-Waste-Compute regression. Requiring
-`to == from + 1` at registration makes the chain terminate by construction; the configured chain bound
-is a blast-radius limit, not the termination mechanism.
+scan — adding another to the resume *success* path would be a No-Waste-Compute regression. So the walk
+tests one key per hop and returns the moment that key is present.
+
+Adjacency is not validated, it is unrepresentable: `registerMigration(definitionName, fromVersion,
+migration)` takes no target version, and the runtime rebuilds the snapshot at `fromVersion + 1`. There
+is no malformed edge to reject. The configured hop bound is a blast-radius limit, not the termination
+mechanism.
+
+"First hosted" and "last registered" coincide in every chain whose transforms stop where hosting stops,
+which is the ordinary case and therefore not evidence for either rule. They disagree when an
+application keeps a transform registered past what it still hosts — and there the stopping rule is
+what decides between resuming the saga and refusing it, so
+`AbstractFlowDefinitionVersioningTck$Migration#migrationStopsAtTheFirstHostedVersion` constructs that
+disagreement rather than leaving the rule pinned by coincidence.
 
 **A3 — A successful migration persists its result.** The alternative — re-running the chain on every
 wake — makes purity and idempotence load-bearing obligations that no document states, and leaves the

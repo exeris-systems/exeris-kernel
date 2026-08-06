@@ -2199,11 +2199,15 @@ See also: v0.10 §"Events: Log-Ordering & Optimistic-Concurrency Boundary" (the 
 
 **1.0 disposition:** stage 1 **1.0-BLOCKING** (correctness); stage 2 **v0.11 differentiator** — the go-to-market wedge; pull earlier if BudgetHQ/Stellar need it. *This is the most urgent item in this section* — it strikes the strongest concrete claim (the Camunda wedge).
 
-**Status (v0.11): stage 1 DELIVERED (ADR-062); stage 2 PARTIAL — coexistence DELIVERED (ADR-064), in-flight migration open.**
+**Status (v0.11): stage 1 DELIVERED (ADR-062); stage 2 DELIVERED (ADR-064, both halves).**
 
-What landed: `FlowDefinition` carries a version, the plan catalog is keyed by `(name, version)` so versions coexist, `FlowSnapshot` records the version a saga parked under, and both resume entry points — `wake()` and `schedule()` — bind to that exact version or refuse fail-closed. `AbstractFlowDefinitionVersioningTck` is the gate.
+Coexistence: `FlowDefinition` carries a version, the plan catalog is keyed by `(name, version)` so versions coexist, `FlowSnapshot` records the version a saga parked under, and both resume entry points — `wake()` and `schedule()` — bind to that exact version or refuse fail-closed.
 
-What has not: `FlowDefinitionMigration` — the explicit vN→vN+1 transform, adjacent-hop chaining, and the no-path rejection. Until it lands, a definition change means bumping and keeping the old version registered; there is no way to move a parked saga forward. The Camunda-wedge claim is not complete without it.
+In-flight migration: `FlowDefinitionMigration` is registered per `(definitionName, fromVersion)` through `FlowExecutionPlanFactory.registerMigration`; on wake the runtime walks adjacent hops until it reaches a hosted version and stops at the first one, persisting the result before the resumed step runs. A gap in the chain is the no-path rejection that leaves the row intact. `AbstractFlowDefinitionVersioningTck` is the gate for both halves.
+
+Three points settled during implementation and recorded as ADR-064 amendments rather than left as silent divergence: migration is **wake-only** (the resubmit path fixes the target version at the caller's plan, which makes the chain's terminating condition path-dependent); a successful migration is **persisted**, so the chain does not re-run on every wake and transform purity stays an implementation detail rather than an unstated obligation; and `FlowMigrationState` carries the step the saga **parked at**, not the step it would resume into.
+
+Carried, not closed: a rejected migration is not miss-suppressed (it throws before reaching the parked-lookup miss counter), and compensation-stack validation checks indices rather than step identity.
 
 **FlowJournal follows this, it does not precede it.** The journal was queued ahead of versioning in planning and the ordering was wrong for the same reason ADR-062 gave about positions: an entry recording *which step completed* is durable history only if it also records *which version produced it*, or it ages out at the next deploy exactly as a position does. Its contract is also not obviously an ADR yet — what an entry contains, whether it is SPI or Community-local, where it persists, retention, and its write cost on the saga checkpoint path are all open, which is an RFC's shape rather than a decision already made.
 
