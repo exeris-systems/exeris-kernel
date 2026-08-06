@@ -55,7 +55,15 @@ this is informational and **not** a dependency of the open-core surface.
 |---|---|---|---|---|---|
 | `…spi.diagnostics` | **stable** | 0.9.0 | ADR-033 | `AbstractKernelDiagnosticsTck` (+ JSON schema fixture) | `KernelDiagnosticsProvider` priority=100 (follow-up) |
 | `…spi.persistence` | **stable** | 0.5.0 | ADR-022 | `AbstractPersistenceProviderTck`, `…EngineTck`, `…OutboxGuaranteeTck`, +6 | yes (slab/FFM tier) |
-| `…spi.flow` | **stable** | 0.5.0 | ADR-013 | `AbstractFlowEngineTck`, `…SagaRecoveryTck`, `…IdempotencyGuardTck`, +3 | — |
+| `…spi.flow` | **stable** | 0.5.0 | ADR-013 | `AbstractFlowEngineTck`, `…SagaRecoveryTck`, `…IdempotencyGuardTck`, +3 | v0.11 record-component note below |
+
+> **`spi.flow` in v0.11 — `FlowSnapshot` gains two record components.** `currentStepName` (ADR-062) and `definitionVersion` (ADR-064) move the canonical constructor from eleven parameters to thirteen. The 0.10.0 constructor descriptor is **restored as an overload**, so code compiled against 0.10.0 still constructs snapshots — and both new components default to their fail-closed sentinels, so the bridge buys compilation and never a bypass of the resume guards those ADRs added (`AbstractFlowDefinitionVersioningTck$StabilityCompatibility` asserts both halves).
+>
+> What the overload cannot restore, stated rather than glossed: adding a component changes the record's **component list**. Record deconstruction patterns and reflection over `RecordComponent[]` observe a different shape, and no overload can hide that — it is irreducible for a record.
+>
+> **No automated gate reports this.** A binary-compatibility diff (japicmp) finds nothing, because nothing was removed: the 0.10.0 constructor descriptor is still present and the new components only add accessors. A source diff of the record declaration does show the components arriving, but not that anything downstream depends on their number or order. So this row is the record — not a redundant human note ahead of a machine that would have caught it anyway.
+>
+> The same asymmetry governs `FlowExecutionPlanFactory.registerMigration`, added to this package in v0.11: an abstract method on an interface is *binary*-compatible (implementors link until it is invoked) and *source*-incompatible. It ships with a refusing default so implementors keep compiling — again a change no binary gate would have flagged.
 | `…spi.memory` | **stable** | 0.5.0 | — (foundational) | `AbstractMemoryAllocatorTck`, `…LoanedBufferTck`, `…MemoryGovernorTck`, +5 | yes (slab pools) |
 | `…spi.transport` | **stable** | 0.5.0 | — (foundational) | `AbstractTransportProviderTck`, `…EngineTck`, `…StreamTck`, `…ConnectionTck` | yes (`io_uring`/QUIC) |
 | `…spi.exceptions` | **stable** | 0.5.0 | — (Glass-Box contract) | `AbstractDisclosureModeTck` (+ `…GlassBoxTckTest` in TCK) | — |

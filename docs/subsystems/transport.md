@@ -316,6 +316,33 @@ When PAQS sheds a stream or the Kernel initiates graceful shutdown:
    looping here, so a handler that completes during the drain can still have its response flushed.
 3. **Teardown** — reactors are woken and joined, then the selector and all remaining channels close.
 
+**Observing zero and committing to teardown are one step.** `DrainCoordinator.sealIfIdle()` is a
+compare-and-set on the busy count, not a read followed by a decision. Read as two steps, a request that
+arrived while the drain was looking flips the count back to one on an engine already past its commit
+point, and phase 3 severs the stream serving it — the failure phase ordering exists to prevent, reached
+from the other side. Asking protocols to check `isDraining()` first does not close it: a request already
+sitting in the socket buffer when the drain began has nobody left to ask.
+
+After the seal, `StreamWork.markBusy()` answers `false` and the protocol layer closes rather than
+serves — `CommunityHttpRequestProcessor` returns from its keep-alive loop. That is the honest reading of
+a connection the peer was already told to close: a request arriving after that is racing teardown, not
+being dropped by it. On the 60-second deadline the coordinator seals unconditionally, because once
+shutdown proceeds regardless, letting a late arrival believe it is protected is worse than closing on it.
+
+**The per-stream handle is not thread-confined.** `StreamWork` reaches protocol code through the
+`STREAM_WORK` `ScopedValue` — chosen precisely so it survives down the stack and across a task
+boundary. The reachable route is track-independent and does not rest on `StructuredTaskScope` (which
+the default line must not ship for 1.0 GA): `StreamExecutionBackend`, the seam at which an admitted
+stream's root task is started, is contractually required to preserve `ScopedValue` bindings across
+whatever thread a backend chooses, and its forward consumers — an Enterprise locality-aware backend,
+the post-1.0 DST simulation scheduler — are exactly the ones that run the task on a thread the
+scheduler did not create. On the `preview` artifact `StructuredTaskScope.fork()`'s binding inheritance
+is a second route to the same place. Both the shared count and the handle's flag are therefore
+compare-and-set. A double release drops the
+count below the truth and ends the drain early; a double acquire means it never ends. Neither is
+reachable by anything short of a stress harness, so the guarantee is a property of the type rather than
+an assumption about callers.
+
 Until 0.11 the drain ran *after* teardown, which made it inert: handlers were waited on while their
 sockets were already closed, so an in-flight request completed and its response went nowhere. The peer
 observed a connection closed with no reply, and an idempotent client retried into a listener that was
