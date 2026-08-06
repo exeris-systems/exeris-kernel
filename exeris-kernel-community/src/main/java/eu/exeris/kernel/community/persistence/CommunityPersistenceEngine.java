@@ -66,18 +66,26 @@ import java.util.concurrent.atomic.AtomicReference;
 @SuppressWarnings({"PMD.CyclomaticComplexity", "PMD.GodClass", "PMD.TooManyMethods"})
 final class CommunityPersistenceEngine implements PersistenceEngine, PhysicalConnectionSource {
 
+    /**
+     * The migrations run at bootstrap, in order. Hand-maintained rather than discovered: adding a file
+     * under {@code db/migration/} does nothing until it is listed here, which is a quiet failure mode —
+     * {@code CommunityPersistenceEngineMigrationTest} compares this list against the directory so an
+     * unregistered file fails the default build instead of a tagged gate.
+     */
+    /* default */ static final List<String> MIGRATION_RESOURCES = List.of(
+            "db/migration/V0.5.0__create_outbox.sql",
+            "db/migration/V0.7.0__create_saga_state.sql",
+            "db/migration/V0.10.0__create_event_log.sql",
+            "db/migration/V0.11.0__add_saga_step_name.sql",
+            "db/migration/V0.11.1__add_saga_definition_version.sql",
+            "db/migration/V0.11.2__add_saga_compensation_step_names.sql"
+    );
+
     private static final String ENGINE_CLOSED_MESSAGE = "CommunityPersistenceEngine is closed";
     private static final long MIN_CONNECTION_TIMEOUT_MS = 250L;
     private static final Runnable NOOP_ON_CLOSE = () -> { };
     private static final String REQUIRED_SHARED_INTERCEPTOR = "RlsConnectionInterceptor";
     private static final String RUN_MIGRATIONS_KEY = "run.migrations";
-    private static final List<String> MIGRATION_RESOURCES = List.of(
-            "db/migration/V0.5.0__create_outbox.sql",
-            "db/migration/V0.7.0__create_saga_state.sql",
-            "db/migration/V0.10.0__create_event_log.sql",
-            "db/migration/V0.11.0__add_saga_step_name.sql",
-            "db/migration/V0.11.1__add_saga_definition_version.sql"
-    );
 
     private final PersistenceConfig config;
     private final HikariDataSource sharedPool;

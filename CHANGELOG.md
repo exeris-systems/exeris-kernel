@@ -9,6 +9,15 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 ## [Unreleased]
 
 ### Added
+- **Flow resume binds to identity, not position** — `FlowSnapshot` gains three components across v0.11:
+  `currentStepName` (ADR-062), `definitionVersion` (ADR-064) and `compensationStepNames` (ADR-064
+  amendment A5). Each replaces an inference the runtime used to make from a bare index: which step a
+  saga parked at, which definition version it parked under, and which steps its compensation stack
+  would roll back. All three fail closed on resume when absent or contradicted, and the 0.10.0
+  constructor descriptor is retained as an overload so code compiled against it still builds. A
+  parallel `FlowMigrationState` component makes a migration transform declare — and the runtime
+  validate — the identities behind any stack it renumbers. Durable stores gain `step_name`,
+  `definition_version` and `compensation_step_names` columns (`V0.11.0`–`V0.11.2`).
 - **SPI compatibility gate** — `tools/spi-api-diff/` compiles `exeris-kernel-spi` at any two revisions
   straight from git (the module depends only on `java.*`/`jdk.*`, so every revision in history builds
   with nothing but a JDK) and diffs them with japicmp, classifying each finding by the maturity label

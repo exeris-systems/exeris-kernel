@@ -614,13 +614,24 @@ final class CoreFlowRuntime { // NOPMD
      * wrong runbook is worse than a raw exception, because it looks actionable.
      */
     private void refuseRowThatCannotBeWalked(FlowSnapshot persisted) {
-        if (persisted.currentStepName().isPresent()) {
-            return;
+        if (persisted.currentStepName().isEmpty()) {
+            emitSchemaMismatch(persisted, persisted.currentStep(), -1,
+                    FlowEngineException.REASON_STEP_IDENTITY_ABSENT, null, null);
+            throw FlowEngineException.schemaMismatchStepIdentityAbsent(
+                    config.engineName(), persisted.currentStep());
         }
-        emitSchemaMismatch(persisted, persisted.currentStep(), -1,
-                FlowEngineException.REASON_STEP_IDENTITY_ABSENT, null, null);
-        throw FlowEngineException.schemaMismatchStepIdentityAbsent(
-                config.engineName(), persisted.currentStep());
+        // Second input the transform cannot be handed: FlowMigrationState requires identities for the
+        // live stack, so a row without them reaches its compact constructor as a bare
+        // IllegalArgumentException — the same shape of unreasoned failure the cursor half above exists
+        // to prevent, on the same path, one component over. Refused here rather than left to the
+        // post-transform guard because there is no transform to run.
+        int live = persisted.stackPointer();
+        if (live > 0 && persisted.compensationStepNames().length == 0) {
+            emitSchemaMismatch(persisted, live, -1,
+                    FlowEngineException.REASON_COMPENSATION_STACK_IDENTITY_ABSENT, null, null);
+            throw FlowEngineException.schemaMismatchCompensationStackIdentityAbsent(
+                    config.engineName(), live);
+        }
     }
 
     /** Applies one adjacent hop, rebuilding the snapshot at {@code version + 1}. */
@@ -629,6 +640,7 @@ final class CoreFlowRuntime { // NOPMD
                 from.currentStep(),
                 from.currentStepName().orElseThrow(),
                 from.compensationStack(),
+                from.compensationStepNames(),
                 from.stackPointer(),
                 from.opaqueState());
         FlowMigrationState after = Objects.requireNonNull(
@@ -638,7 +650,7 @@ final class CoreFlowRuntime { // NOPMD
                 from.definitionName(), from.definitionVersion() + 1,
                 after.parkedStep(), Optional.of(after.parkedStepName()),
                 from.state(), from.lastUpdate(), from.timeout(),
-                after.compensationStack(), after.stackPointer(),
+                after.compensationStack(), after.compensationStepNames(), after.stackPointer(),
                 after.opaqueState(), from.schemaVersion());
     }
 
@@ -709,6 +721,7 @@ final class CoreFlowRuntime { // NOPMD
         }
         validateSnapshotStepIdentity(plan, persisted, step, stepCount);
         validateCompensationStackBounds(persisted, stepCount);
+        validateCompensationStackIdentity(plan, persisted);
     }
 
     /**
@@ -726,9 +739,10 @@ final class CoreFlowRuntime { // NOPMD
      * unwind and skips {@code finalizeFailedInstance} — leaving the saga mid-compensation with its
      * idempotency guard still held. Refusing the resume leaves the row intact instead.
      *
-     * <p>This is the bounds half only. An entry that indexes the plan but names a step the saga never
-     * ran is not detectable from indices alone; that needs the stack to carry identities, the same
-     * argument ADR-062 made for the cursor.
+     * <p>This is the bounds half only. An entry that indexes the plan but addresses a different step
+     * than it did when it was pushed is not detectable from indices alone; that is
+     * {@link #validateCompensationStackIdentity}, which runs after this one so that a structurally
+     * broken stack is diagnosed as broken rather than as a mismatch.
      *
      * @param persisted the snapshot being resumed
      * @param stepCount the step count of the plan the resume would bind to
@@ -749,6 +763,60 @@ final class CoreFlowRuntime { // NOPMD
                 emitSchemaMismatch(persisted, entry, stepCount,
                         FlowEngineException.REASON_COMPENSATION_STACK_OUT_OF_RANGE, null, null);
                 throw FlowEngineException.schemaMismatchCompensationStack(config.engineName(), entry);
+            }
+        }
+    }
+
+    /**
+     * Rejects a resume whose compensation stack indexes the plan but no longer addresses the same steps
+     * (ADR-064 A5).
+     *
+     * <p>ADR-062's argument for the cursor, applied to the stack: a same-arity reorder leaves every
+     * entry in range, so bounds cannot see it. What makes this the more dangerous of the two halves is
+     * that nothing throws. An out-of-range entry raises at {@code plan.stepAt} inside failure handling —
+     * loud, and the parked row survives to be fixed. An in-range entry that now addresses a different
+     * step resolves to a perfectly valid descriptor, and the unwind either skips a compensation that was
+     * owed (the addressed step happens to declare none) or runs a <em>different</em> step's
+     * compensation. Both are silent, and a compensation is a side effect: by the time anything can
+     * observe the mistake it has already been made.
+     *
+     * <p>A live stack with no identities at all is refused rather than admitted, on ADR-062 obligation
+     * 6's reasoning — admitting it would leave a permanent branch where the stack is still trusted by
+     * position. That case is reachable independently of the cursor guards: a row carrying a definition
+     * version and a cursor identity but no stack identities is what an application
+     * {@code FlowSnapshotStore} produces when its schema does not carry the column.
+     *
+     * <p>One further defensive copy on the cold resume path, over the one the bounds guard already
+     * makes. Kept separate rather than threaded through a shared array, because each guard owning its
+     * own contract is the shape the cursor pair already established in this class.
+     *
+     * @param plan      the resolved plan the resume would bind to
+     * @param persisted the snapshot being resumed, whose stack is already known to index that plan
+     */
+    private void validateCompensationStackIdentity(CoreFlowExecutionPlan plan, FlowSnapshot persisted) {
+        int live = persisted.stackPointer();
+        if (live == 0) {
+            return;
+        }
+        String[] names = persisted.compensationStepNames();
+        if (names.length == 0) {
+            // No offending entry to name when none of them is named, so the live depth is the
+            // diagnostic — it says how much rollback the refusal is protecting.
+            emitSchemaMismatch(persisted, live, plan.stepCount(),
+                    FlowEngineException.REASON_COMPENSATION_STACK_IDENTITY_ABSENT, null, null);
+            throw FlowEngineException.schemaMismatchCompensationStackIdentityAbsent(
+                    config.engineName(), live);
+        }
+        int[] stack = persisted.compensationStack();
+        for (int index = 0; index < live; index++) {
+            int entry = stack[index];
+            String planStepName = plan.stepAt(entry).name();
+            if (!names[index].equals(planStepName)) {
+                emitSchemaMismatch(persisted, entry, plan.stepCount(),
+                        FlowEngineException.REASON_COMPENSATION_STACK_IDENTITY_MISMATCH,
+                        names[index], planStepName);
+                throw FlowEngineException.schemaMismatchCompensationStackIdentity(
+                        config.engineName(), entry);
             }
         }
     }

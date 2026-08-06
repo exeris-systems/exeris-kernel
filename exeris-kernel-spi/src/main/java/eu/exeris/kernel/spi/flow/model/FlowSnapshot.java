@@ -31,7 +31,7 @@ import java.util.Optional;
  * race across processes) MAY ignore the field entirely.
  *
  * <h2>Array Equality</h2>
- * <p>This record contains {@code int[]} and {@code byte[]} array fields.
+ * <p>This record contains {@code int[]}, {@code String[]} and {@code byte[]} array fields.
  * The default record {@code equals()}/{@code hashCode()}/{@code toString()} use
  * reference equality for arrays, which is incorrect for structural comparison.
  * All three methods are overridden here to use {@link Arrays#equals} /
@@ -57,7 +57,13 @@ import java.util.Optional;
  * @param state             current {@link FlowState}
  * @param lastUpdate        timestamp of the last state mutation (for LRU eviction ordering)
  * @param timeout           absolute expiry time of this flow instance
- * @param compensationStack array of step ids whose compensations must execute in reverse order
+ * @param compensationStack plan <em>positions</em> whose compensations must execute in reverse order.
+ *                          Not identities: a position means a different step after a reorder, which is
+ *                          why {@code compensationStepNames} exists beside it
+ * @param compensationStepNames identity of the step each live {@code compensationStack} entry addressed
+ *                          when it was pushed (ADR-064 A5). A zero-length array means the snapshot
+ *                          predates stack-identity recording — with a non-empty stack that is rejected
+ *                          fail-closed on resume, for the same reason an absent {@code currentStepName} is
  * @param stackPointer      number of valid entries in {@code compensationStack}
  * @param opaqueState       raw byte payload for implementation-specific state (max 916 bytes)
  * @param schemaVersion     monotonic version for optimistic concurrency control on durable
@@ -76,6 +82,7 @@ public record FlowSnapshot(
         Instant   lastUpdate,
         Instant   timeout,
         int[]     compensationStack,
+        String[]  compensationStepNames,
         int       stackPointer,
         byte[]    opaqueState,
         long      schemaVersion
@@ -156,6 +163,25 @@ public record FlowSnapshot(
                     "stackPointer out of bounds: " + stackPointer
                     + " (compensationStack.length=" + compensationStack.length + ')');
         }
+        Objects.requireNonNull(compensationStepNames,
+                "compensationStepNames must not be null — use new String[0] when identities are absent");
+        // Absent is all-or-nothing. A partly-populated array would let a stack be validated entry by
+        // entry, and the entries it could not cover are exactly the ones a caller had no name for —
+        // i.e. the ones most likely to be stale. Either every live entry carries an identity or none do.
+        if (compensationStepNames.length != 0 && compensationStepNames.length < stackPointer) {
+            throw new IllegalArgumentException(
+                    "compensationStepNames must cover the live stack or be empty: length="
+                    + compensationStepNames.length + " < stackPointer=" + stackPointer);
+        }
+        for (int index = 0; index < stackPointer && index < compensationStepNames.length; index++) {
+            String name = compensationStepNames[index];
+            if (name == null || name.isBlank()) {
+                // Same reason a blank currentStepName is rejected: it would compare unequal to every
+                // real step name and read as corruption rather than as absence.
+                throw new IllegalArgumentException(
+                        "compensationStepNames[" + index + "] must not be null or blank");
+            }
+        }
         if (opaqueState.length > MAX_OPAQUE_STATE_BYTES) {
             throw new IllegalArgumentException(
                     "opaqueState exceeds max size: " + opaqueState.length
@@ -165,24 +191,26 @@ public record FlowSnapshot(
             throw new IllegalArgumentException(
                     "schemaVersion must be >= " + SCHEMA_VERSION_INITIAL + ", got: " + schemaVersion);
         }
-        compensationStack = Arrays.copyOf(compensationStack, compensationStack.length);
-        opaqueState       = Arrays.copyOf(opaqueState, opaqueState.length);
+        compensationStack     = Arrays.copyOf(compensationStack, compensationStack.length);
+        compensationStepNames = Arrays.copyOf(compensationStepNames, compensationStepNames.length);
+        opaqueState           = Arrays.copyOf(opaqueState, opaqueState.length);
     }
 
     /**
      * The canonical constructor as it stood in 0.10.0 — restored, not left broken.
      *
      * <p>{@code eu.exeris.kernel.spi.flow} is declared <b>stable since 0.5.0</b> in
-     * {@code docs/stability-matrix.md}. v0.11 adds two components to this record ({@code
-     * currentStepName} for ADR-062, {@code definitionVersion} for ADR-064), which moves the canonical
-     * constructor from eleven parameters to thirteen and would otherwise leave code compiled against
-     * 0.10.0 unable to construct a snapshot at all. This overload restores that exact descriptor.
+     * {@code docs/stability-matrix.md}. v0.11 adds three components to this record ({@code
+     * currentStepName} for ADR-062, {@code definitionVersion} for ADR-064, {@code
+     * compensationStepNames} for ADR-064 A5), which moves the canonical constructor from eleven
+     * parameters to fourteen and would otherwise leave code compiled against 0.10.0 unable to
+     * construct a snapshot at all. This overload restores that exact descriptor.
      *
-     * <p>Both new components default to their <b>fail-closed</b> sentinels — {@link Optional#empty()}
-     * and {@link #VERSION_ABSENT} — so a snapshot built this way is refused on resume rather than
-     * replayed by position against whichever definition happens to be registered. The compatibility
-     * shim therefore cannot become the quiet route back that ADR-062 and ADR-064 each closed; it buys
-     * a caller compilation, not a bypass.
+     * <p>All three new components default to their <b>fail-closed</b> sentinels — {@link
+     * Optional#empty()}, {@link #VERSION_ABSENT} and an empty identity array — so a snapshot built this
+     * way is refused on resume rather than replayed by position against whichever definition happens to
+     * be registered. The compatibility shim therefore cannot become the quiet route back that ADR-062
+     * and ADR-064 each closed; it buys a caller compilation, not a bypass.
      *
      * <p><b>What this does not restore.</b> Adding a component to a record changes its component list,
      * and no overload can hide that: record deconstruction patterns and reflection over
@@ -206,7 +234,7 @@ public record FlowSnapshot(
             long      schemaVersion
     ) {
         this(instanceIdMost, instanceIdLeast, definitionName, VERSION_ABSENT, currentStep,
-             Optional.empty(), state, lastUpdate, timeout, compensationStack, stackPointer,
+             Optional.empty(), state, lastUpdate, timeout, compensationStack, new String[0], stackPointer,
              opaqueState, schemaVersion);
     }
 
@@ -232,12 +260,13 @@ public record FlowSnapshot(
             int       stackPointer,
             byte[]    opaqueState
     ) {
-        // Identity and definition version are both absent by construction here: this shim preserves a
-        // call shape that predates ADR-062 and ADR-064 and cannot know either. The resulting snapshot
-        // is rejected fail-closed on resume rather than replayed by position against whatever plan is
-        // registered — deliberately, so the shim cannot become a quiet route back to either.
+        // Step identity, definition version and stack identities are all absent by construction here:
+        // this shim preserves a call shape that predates ADR-062 and ADR-064 and cannot know any of
+        // them. The resulting snapshot is rejected fail-closed on resume rather than replayed by
+        // position against whatever plan is registered — deliberately, so the shim cannot become a
+        // quiet route back to any of the three.
         this(instanceIdMost, instanceIdLeast, definitionName, VERSION_ABSENT, currentStep,
-             Optional.empty(), state, lastUpdate, timeout, compensationStack, stackPointer,
+             Optional.empty(), state, lastUpdate, timeout, compensationStack, new String[0], stackPointer,
              opaqueState, SCHEMA_VERSION_INITIAL);
     }
 
@@ -250,6 +279,19 @@ public record FlowSnapshot(
      */
     public int[] compensationStack() {
         return Arrays.copyOf(compensationStack, compensationStack.length);
+    }
+
+    /**
+     * Returns a <em>defensive copy</em> of the compensation-stack step identities.
+     *
+     * <p>Callers must not modify the returned array. A zero-length result with a non-zero
+     * {@link #stackPointer()} means the identities are <b>absent</b>, not that the stack is empty —
+     * the two are distinguishable precisely because a stack with nothing live has nothing to validate.
+     *
+     * @since 0.11.0
+     */
+    public String[] compensationStepNames() {
+        return Arrays.copyOf(compensationStepNames, compensationStepNames.length);
     }
 
     /**
@@ -303,8 +345,9 @@ public record FlowSnapshot(
                && Objects.equals(currentStepName, other.currentStepName)
                && Objects.equals(lastUpdate,     other.lastUpdate)
                && Objects.equals(timeout,        other.timeout)
-               && Arrays.equals(compensationStack, other.compensationStack)
-               && Arrays.equals(opaqueState,       other.opaqueState);
+               && Arrays.equals(compensationStack,     other.compensationStack)
+               && Arrays.equals(compensationStepNames, other.compensationStepNames)
+               && Arrays.equals(opaqueState,           other.opaqueState);
     }
 
     /**
@@ -317,6 +360,7 @@ public record FlowSnapshot(
                 instanceIdMost, instanceIdLeast, definitionName, definitionVersion,
                 currentStep, currentStepName, state, lastUpdate, timeout, stackPointer, schemaVersion);
         result = 31 * result + Arrays.hashCode(compensationStack);
+        result = 31 * result + Arrays.hashCode(compensationStepNames);
         result = 31 * result + Arrays.hashCode(opaqueState);
         return result;
     }
@@ -337,11 +381,13 @@ public record FlowSnapshot(
                + ", lastUpdate=" + lastUpdate
                + ", timeout=" + timeout
                + ", compensationStack=" + Arrays.toString(compensationStack)
+               + ", compensationStepNames=" + Arrays.toString(compensationStepNames)
                + ", stackPointer=" + stackPointer
                // Size, not contents. opaqueState is the application's payload — the one component of
                // this record that is user data rather than definition metadata — and toString is what
-               // reaches logs, debuggers and exception text. compensationStack above stays rendered
-               // because step indices are definition metadata. Mirrors FlowMigrationState.
+               // reaches logs, debuggers and exception text. The two compensation arrays above stay
+               // rendered because step positions and step names are both definition metadata, not
+               // instance data. Mirrors FlowMigrationState.
                + ", opaqueState=" + opaqueState.length + " bytes"
                + ", schemaVersion=" + schemaVersion
                + ']';

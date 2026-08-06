@@ -87,6 +87,33 @@ public final class FlowEngineException extends ExerisKernelException {
      */
     public static final String REASON_COMPENSATION_STACK_OUT_OF_RANGE = "COMPENSATION_STACK_OUT_OF_RANGE";
 
+    /**
+     * {@code rawArgs[2]} reason: a live compensation-stack entry indexes the plan, but names a
+     * different step than it did when it was pushed (since 0.11, ADR-064 A5).
+     *
+     * <p>The half {@link #REASON_COMPENSATION_STACK_OUT_OF_RANGE} structurally cannot reach, and the
+     * more dangerous of the two. An out-of-range entry throws at compensation time — loud, and the
+     * parked row survives. An in-range entry naming the wrong step throws nothing: the rollback either
+     * silently skips a step that needed compensating, or executes a <em>different</em> step's
+     * compensation. Both are irreversible in a way a refused resume is not, because a compensation is a
+     * side effect that has already happened by the time anyone can look.
+     */
+    public static final String REASON_COMPENSATION_STACK_IDENTITY_MISMATCH =
+            "COMPENSATION_STACK_IDENTITY_MISMATCH";
+
+    /**
+     * {@code rawArgs[2]} reason: the snapshot carries a live compensation stack but no identities for
+     * it (since 0.11, ADR-064 A5).
+     *
+     * <p>Distinct from {@link #REASON_STEP_IDENTITY_ABSENT}, which a pre-0.11 row hits first: this is
+     * reachable for a row that has a cursor identity and a definition version but no stack identities —
+     * what an application {@code FlowSnapshotStore} produces when it round-trips through a schema that
+     * does not carry the column. Refused for the same reason ADR-062 obligation 6 refuses an absent
+     * cursor identity: admitting it leaves a permanent branch where the stack is trusted by position.
+     */
+    public static final String REASON_COMPENSATION_STACK_IDENTITY_ABSENT =
+            "COMPENSATION_STACK_IDENTITY_ABSENT";
+
     private static final String MSG_ENGINE_FAILURE  = "Flow engine lifecycle failure";
     private static final String MSG_SCHEMA_MISMATCH = "Flow definition changed under a parked saga";
 
@@ -249,6 +276,49 @@ public final class FlowEngineException extends ExerisKernelException {
     public static FlowEngineException schemaMismatchCompensationStack(String engineName, int offendingEntry) {
         return new FlowEngineException(KernelErrorCodes.EX_FLOW_7002, MSG_SCHEMA_MISMATCH, null,
                 engineName, PHASE_SCHEMA_MISMATCH, REASON_COMPENSATION_STACK_OUT_OF_RANGE, offendingEntry);
+    }
+
+    /**
+     * Raised when a live compensation-stack entry indexes the plan but names a different step than it
+     * did when it was pushed.
+     *
+     * <p>rawArgs carries the offending <em>entry</em> — the plan position the stack pointed at — rather
+     * than the stack offset, matching {@link #schemaMismatchCompensationStack} so the one int slot in
+     * {@code EX-FLOW-7002} means the same thing across both compensation-stack refusals. The two step
+     * names, and the offset, ride on {@code FlowSchemaMismatchEvent} where there is room for them.
+     *
+     * <p>rawArgs layout:
+     * {@code [engineName, "SCHEMA_MISMATCH", "COMPENSATION_STACK_IDENTITY_MISMATCH", offendingEntry]}.
+     *
+     * @param engineName     the engine name
+     * @param offendingEntry the plan position whose identity no longer matches
+     * @return the exception
+     * @since 0.11.0
+     */
+    public static FlowEngineException schemaMismatchCompensationStackIdentity(String engineName,
+                                                                             int offendingEntry) {
+        return new FlowEngineException(KernelErrorCodes.EX_FLOW_7002, MSG_SCHEMA_MISMATCH, null,
+                engineName, PHASE_SCHEMA_MISMATCH,
+                REASON_COMPENSATION_STACK_IDENTITY_MISMATCH, offendingEntry);
+    }
+
+    /**
+     * Raised when a snapshot carries a live compensation stack but no identities for it.
+     *
+     * <p>rawArgs layout:
+     * {@code [engineName, "SCHEMA_MISMATCH", "COMPENSATION_STACK_IDENTITY_ABSENT", stackPointer]} —
+     * the live depth, because there is no single offending entry when every one of them is unnamed.
+     *
+     * @param engineName   the engine name
+     * @param stackPointer the number of live entries that carry no identity
+     * @return the exception
+     * @since 0.11.0
+     */
+    public static FlowEngineException schemaMismatchCompensationStackIdentityAbsent(String engineName,
+                                                                                    int stackPointer) {
+        return new FlowEngineException(KernelErrorCodes.EX_FLOW_7002, MSG_SCHEMA_MISMATCH, null,
+                engineName, PHASE_SCHEMA_MISMATCH,
+                REASON_COMPENSATION_STACK_IDENTITY_ABSENT, stackPointer);
     }
 
     /**

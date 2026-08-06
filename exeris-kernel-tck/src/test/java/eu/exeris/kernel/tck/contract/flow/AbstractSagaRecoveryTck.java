@@ -401,7 +401,7 @@ public abstract class AbstractSagaRecoveryTck {
             FlowSnapshot legacy = new FlowSnapshot(
                     parked.instanceIdMost(), parked.instanceIdLeast(), parked.definitionName(),FlowDefinition.INITIAL_VERSION,
                     parked.currentStep(), Optional.empty(), parked.state(), parked.lastUpdate(),
-                    parked.timeout(), parked.compensationStack(), parked.stackPointer(),
+                    parked.timeout(), parked.compensationStack(), new String[0], parked.stackPointer(),
                     parked.opaqueState(), parked.schemaVersion());
             snapshotStore().save(legacy);
 

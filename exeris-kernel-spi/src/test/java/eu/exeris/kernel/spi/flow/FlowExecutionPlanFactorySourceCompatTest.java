@@ -60,7 +60,7 @@ class FlowExecutionPlanFactorySourceCompatTest {
     @DisplayName("and the default refuses rather than silently accepting a transform it will never apply")
     void defaultRefusesRegistration() {
         FlowExecutionPlanFactory factory = new PreV011Factory();
-        FlowMigrationState unusedState = new FlowMigrationState(0, "step", new int[0], 0, new byte[0]);
+        FlowMigrationState unusedState = new FlowMigrationState(0, "step", new int[0], new String[0], 0, new byte[0]);
 
         assertThatThrownBy(() -> factory.registerMigration("orders", 1, parked -> unusedState))
                 .as("a swallowed registration would surface much later as a saga refused for a reason "
