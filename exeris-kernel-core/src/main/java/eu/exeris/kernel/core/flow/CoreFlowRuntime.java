@@ -655,6 +655,49 @@ final class CoreFlowRuntime { // NOPMD
             throw FlowEngineException.schemaMismatch(config.engineName(), step);
         }
         validateSnapshotStepIdentity(plan, persisted, step, stepCount);
+        validateCompensationStackBounds(persisted, stepCount);
+    }
+
+    /**
+     * Rejects a resume whose compensation stack no longer indexes the plan.
+     *
+     * <p>The two guards above validate where the saga <em>resumes</em>. They say nothing about the
+     * steps it has already completed, and those are exactly what a rollback walks — so a saga can pass
+     * both and still hold a stack that is meaningless in the plan it just bound to. A migration makes
+     * this ordinary rather than exceptional: a transform may rewrite the stack, and
+     * {@code FlowMigrationState} documents that carrying it across a version boundary unchanged is
+     * wrong, but documenting an obligation is not enforcing it.
+     *
+     * <p>Checked here rather than at compensation time because {@code runCompensationStep} reads the
+     * plan by bare index <em>outside</em> its own catch, so a stale entry there aborts the remaining
+     * unwind and skips {@code finalizeFailedInstance} — leaving the saga mid-compensation with its
+     * idempotency guard still held. Refusing the resume leaves the row intact instead.
+     *
+     * <p>This is the bounds half only. An entry that indexes the plan but names a step the saga never
+     * ran is not detectable from indices alone; that needs the stack to carry identities, the same
+     * argument ADR-062 made for the cursor.
+     *
+     * @param persisted the snapshot being resumed
+     * @param stepCount the step count of the plan the resume would bind to
+     */
+    private void validateCompensationStackBounds(FlowSnapshot persisted, int stepCount) {
+        int live = persisted.stackPointer();
+        if (live == 0) {
+            return;
+        }
+        // One defensive copy on the resume path. Cold — a resume already cost a snapshot-store read —
+        // and FlowSnapshot exposes no per-entry accessor to borrow instead.
+        int[] stack = persisted.compensationStack();
+        for (int index = 0; index < live; index++) {
+            int entry = stack[index];
+            if (entry < 0 || entry >= stepCount) {
+                // Both step-name fields stay absent: the offending value is a stack entry, so neither
+                // "the step the snapshot names" nor "the step the plan has there" is a truthful answer.
+                emitSchemaMismatch(persisted, entry, stepCount,
+                        FlowEngineException.REASON_COMPENSATION_STACK_OUT_OF_RANGE, null, null);
+                throw FlowEngineException.schemaMismatchCompensationStack(config.engineName(), entry);
+            }
+        }
     }
 
     /**

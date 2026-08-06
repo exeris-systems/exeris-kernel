@@ -70,6 +70,18 @@ public final class FlowEngineException extends ExerisKernelException {
      */
     public static final String REASON_DEFINITION_VERSION_UNRESOLVED = "DEFINITION_VERSION_UNRESOLVED";
 
+    /**
+     * {@code rawArgs[2]} reason: a live compensation-stack entry does not index the plan the resume
+     * would bind to (since 0.11).
+     *
+     * <p>The cursor guards ({@link #REASON_STEP_OUT_OF_RANGE} / {@link #REASON_STEP_IDENTITY_MISMATCH})
+     * validate where the saga resumes. They say nothing about the steps it has already completed, and
+     * those are what a rollback walks. An out-of-range entry reaches the plan as a bare array index at
+     * compensation time — inside failure handling, where an exception truncates the remaining unwind
+     * and skips the terminal write. Refusing the resume keeps the row intact and recoverable instead.
+     */
+    public static final String REASON_COMPENSATION_STACK_OUT_OF_RANGE = "COMPENSATION_STACK_OUT_OF_RANGE";
+
     private static final String MSG_ENGINE_FAILURE  = "Flow engine lifecycle failure";
     private static final String MSG_SCHEMA_MISMATCH = "Flow definition changed under a parked saga";
 
@@ -211,6 +223,27 @@ public final class FlowEngineException extends ExerisKernelException {
     public static FlowEngineException schemaMismatchStepIdentityAbsent(String engineName, int persistedStep) {
         return new FlowEngineException(KernelErrorCodes.EX_FLOW_7002, MSG_SCHEMA_MISMATCH, null,
                 engineName, PHASE_SCHEMA_MISMATCH, REASON_STEP_IDENTITY_ABSENT, persistedStep);
+    }
+
+    /**
+     * Raised when a live compensation-stack entry does not index the plan the resume would bind to.
+     *
+     * <p>Refused on the resume path rather than discovered on the rollback path. The compensation
+     * walk reads the plan by bare index outside its own failure handling, so a stale entry aborts the
+     * remaining unwind and skips the terminal write — the saga is left mid-compensation with its
+     * idempotency guard still held. Refusing the resume leaves the row untouched and recoverable.
+     *
+     * <p>rawArgs layout:
+     * {@code [engineName, "SCHEMA_MISMATCH", "COMPENSATION_STACK_OUT_OF_RANGE", offendingEntry]}.
+     *
+     * @param engineName     the engine name
+     * @param offendingEntry the stack entry that does not index the plan
+     * @return the exception
+     * @since 0.11.0
+     */
+    public static FlowEngineException schemaMismatchCompensationStack(String engineName, int offendingEntry) {
+        return new FlowEngineException(KernelErrorCodes.EX_FLOW_7002, MSG_SCHEMA_MISMATCH, null,
+                engineName, PHASE_SCHEMA_MISMATCH, REASON_COMPENSATION_STACK_OUT_OF_RANGE, offendingEntry);
     }
 
     /**

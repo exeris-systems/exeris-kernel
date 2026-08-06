@@ -101,6 +101,11 @@ public abstract class AbstractFlowDefinitionVersioningTck {
     }
 
     private static FlowSnapshot parkedSnapshot(UUID id, String definitionName, int definitionVersion) {
+        return parkedSnapshot(id, definitionName, definitionVersion, new int[0], 0);
+    }
+
+    private static FlowSnapshot parkedSnapshot(UUID id, String definitionName, int definitionVersion,
+                                               int[] compensationStack, int stackPointer) {
         return new FlowSnapshot(
                 id.getMostSignificantBits(),
                 id.getLeastSignificantBits(),
@@ -111,8 +116,8 @@ public abstract class AbstractFlowDefinitionVersioningTck {
                 FlowState.PARKED,
                 Instant.now(),
                 Instant.now().plusSeconds(60L),
-                new int[0],
-                0,
+                compensationStack,
+                stackPointer,
                 new byte[0],
                 FlowSnapshot.SCHEMA_VERSION_INITIAL);
     }
@@ -266,6 +271,61 @@ public abstract class AbstractFlowDefinitionVersioningTck {
             assertThat(v1Executions.get() + v2Executions.get())
                     .as("refused before any step replays, on either version")
                     .isZero();
+        }
+
+        /**
+         * The cursor guards do not cover the steps the saga has already run.
+         *
+         * <p>ADR-062 validated where a saga <em>resumes</em>. A rollback walks the other direction,
+         * through the compensation stack, and that is read as bare indices into whatever plan the
+         * resume bound to. A saga can therefore pass both cursor guards — right index, right name —
+         * and still hold a stack that is meaningless in that plan.
+         *
+         * <p>Refused on resume rather than left to fail during compensation, because the compensation
+         * walk reads the plan outside its own catch: a stale entry there aborts the rest of the unwind
+         * and skips the terminal write, leaving the saga mid-rollback with its guard held. That is
+         * strictly worse than not resuming, and it only surfaces once something has already failed.
+         */
+        @Test
+        @Timeout(value = 30, unit = TimeUnit.SECONDS)
+        @DisplayName("a compensation-stack entry outside the plan is refused before the saga resumes")
+        void compensationStackOutsideThePlanIsRefused() {
+            AtomicInteger executions = new AtomicInteger();
+            register(1, executions);
+
+            UUID id = UUID.randomUUID();
+            // Cursor is step 0 under the name the plan really has there, so both ADR-062 guards pass.
+            // The stack names step 5 of a two-step plan — a shape a shrinking redeploy leaves behind.
+            snapshotStore().save(parkedSnapshot(id, DEFINITION, 1, new int[] {0, 5}, 2));
+
+            assertThatThrownBy(() -> engine.scheduler().wake(contextFor(id)))
+                    .as("the cursor guards pass here, so nothing else would have caught this")
+                    .isInstanceOfSatisfying(FlowEngineException.class, ex ->
+                            assertThat(reasonOf(ex))
+                                    .isEqualTo(FlowEngineException.REASON_COMPENSATION_STACK_OUT_OF_RANGE));
+            assertThat(snapshotStore().load(id.getMostSignificantBits(), id.getLeastSignificantBits()))
+                    .as("refusing must leave the row recoverable, like every other resume refusal")
+                    .isPresent();
+            assertThat(executions.get()).isZero();
+        }
+
+        @Test
+        @Timeout(value = 30, unit = TimeUnit.SECONDS)
+        @DisplayName("entries beyond the stack pointer are dead and do not refuse a valid resume")
+        void staleEntriesAboveTheStackPointerAreIgnored() {
+            AtomicInteger executions = new AtomicInteger();
+            register(1, executions);
+
+            UUID id = UUID.randomUUID();
+            // stackPointer=1, so entry 9 is below the high-water mark of a stack that has been popped.
+            // A guard scanning the whole array instead of the live prefix would refuse a sound saga —
+            // fail-closed is only correct when what it closes on is actually live.
+            snapshotStore().save(parkedSnapshot(id, DEFINITION, 1, new int[] {0, 9}, 1));
+
+            engine.scheduler().wake(contextFor(id));
+            awaitTrue(() -> executions.get() > 0);
+
+            assertThat(executions.get()).isEqualTo(1);
         }
 
         @Test
@@ -481,6 +541,37 @@ public abstract class AbstractFlowDefinitionVersioningTck {
          * persisted would still park at version 2 a moment later, so the row would read 2 either way
          * and the case would pass while pinning nothing.
          */
+        /**
+         * The transform's compensation stack is checked too, not only the step it names.
+         *
+         * <p>{@code FlowMigrationState} has five components and ADR-064 obligation 9 claims the
+         * runtime validates the transform's output. Until this case, that held for two of them: the
+         * parked step and its name. A transform emitting a stack entry the target plan cannot index
+         * was accepted, and the mistake surfaced later as an aborted rollback — the furthest possible
+         * point from the code that caused it, and only after something else had already failed.
+         */
+        @Test
+        @Timeout(value = 30, unit = TimeUnit.SECONDS)
+        @DisplayName("a transform emitting a compensation-stack entry the target plan lacks is refused")
+        void migrationEmittingOutOfRangeCompensationStackIsRefused() {
+            AtomicInteger v2Executions = new AtomicInteger();
+            register(2, v2Executions);
+            engine.plans().registerMigration(DEFINITION, 1, parked -> new FlowMigrationState(
+                    parked.parkedStep(), parked.parkedStepName(),
+                    new int[] {4}, 1, parked.opaqueState()));
+
+            UUID id = UUID.randomUUID();
+            snapshotStore().save(parkedSnapshot(id, DEFINITION, 1));
+
+            assertThatThrownBy(() -> engine.scheduler().wake(contextFor(id)))
+                    .as("obligation 9 covers the whole carrier or it does not hold — a transform is "
+                            + "application code and the stack it emits drives compensation")
+                    .isInstanceOfSatisfying(FlowEngineException.class, ex ->
+                            assertThat(reasonOf(ex))
+                                    .isEqualTo(FlowEngineException.REASON_COMPENSATION_STACK_OUT_OF_RANGE));
+            assertThat(v2Executions.get()).isZero();
+        }
+
         @Test
         @Timeout(value = 30, unit = TimeUnit.SECONDS)
         @DisplayName("a successful migration reaches the store before the resumed step runs")
