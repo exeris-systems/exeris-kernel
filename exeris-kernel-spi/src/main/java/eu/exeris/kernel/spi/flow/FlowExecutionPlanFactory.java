@@ -99,8 +99,15 @@ public interface FlowExecutionPlanFactory {
      *
      * <p>Binary compatibility would not have required the default: adding a method to an interface
      * links fine until it is invoked. Source compatibility does, and an implementor discovering the
-     * difference at the next compile is not a meaningfully better outcome. Same disposition as
-     * {@code FlowSnapshotStore.listParked()}, added under the same rule in 0.7.0.
+     * difference at the next compile is not a meaningfully better outcome.
+     *
+     * <p>{@code FlowSnapshotStore.listParked()} was added under the same rule in 0.7.0 and took the
+     * <em>opposite</em> disposition — its default returns an empty list. The divergence is the point,
+     * not an inconsistency: an empty parked list is a truthful degenerate answer for a store that does
+     * not track them, whereas there is no truthful degenerate answer to "register this transform".
+     * Accepting one and never applying it would report success for work that will not happen. So the
+     * rule generalises and the body does not: read the two together as "a stable interface needs a
+     * default", never as "defaults no-op".
      *
      * @param definitionName the definition these versions belong to; must not be {@code null} or blank
      * @param fromVersion    the version being migrated away from; must be {@code >= 1}
