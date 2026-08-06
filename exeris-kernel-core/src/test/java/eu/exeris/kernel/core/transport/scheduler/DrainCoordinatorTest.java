@@ -12,6 +12,9 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -283,6 +286,36 @@ class DrainCoordinatorTest {
                     .isZero();
             assertThat(coordinator.registerStream().markBusy())
                     .as("and the seal must survive the release that followed it")
+                    .isFalse();
+        }
+
+        /**
+         * The marker is a range, and the headroom is the reason the hot path can stay on
+         * {@code getAndAdd}.
+         *
+         * <p>Post-seal releases drive the count further negative, so the claim being pinned is that a
+         * realistic number of them cannot walk it back across zero. The streams must be registered
+         * <em>before</em> the seal to hold a count at all — one registered after holds none, so its
+         * {@code close()} is a no-op and would exercise nothing. Asserting a single release proves only
+         * the first step.
+         */
+        @Test
+        @DisplayName("the seal survives far more post-seal releases than any ceiling permits")
+        void sealSurvivesRepeatedPostSealReleases() {
+            DrainCoordinator coordinator = new DrainCoordinator();
+            List<DrainCoordinator.StreamWork> inFlight = new ArrayList<>();
+            for (int i = 0; i < 10_000; i++) {
+                inFlight.add(coordinator.registerStream());
+            }
+
+            coordinator.sealNow();
+            inFlight.forEach(DrainCoordinator.StreamWork::close);
+
+            assertThat(coordinator.busyStreams())
+                    .as("a marker one step from wrapping reports a sealed engine as fully loaded")
+                    .isZero();
+            assertThat(coordinator.registerStream().markBusy())
+                    .as("and admission must still be closed after all of it")
                     .isFalse();
         }
     }

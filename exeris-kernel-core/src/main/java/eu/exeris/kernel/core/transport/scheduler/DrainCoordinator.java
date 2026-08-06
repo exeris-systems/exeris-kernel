@@ -57,8 +57,25 @@ import java.lang.invoke.VarHandle;
  */
 public final class DrainCoordinator {
 
-    /** Count value meaning "the drain committed to teardown"; no further count may be taken. */
-    private static final int SEALED = Integer.MIN_VALUE;
+    /**
+     * Seal marker: <b>any negative count means sealed</b>, and this is the value the seal writes.
+     *
+     * <p>A range rather than one exact value, so the hot path can stay on {@code getAndAdd}. A single
+     * sentinel forces every mutator into a read-then-compare-and-set loop, because a blind increment
+     * or decrement would step off the exact value — and on the H1 keep-alive path
+     * {@link StreamWork#markIdle()} and {@link StreamWork#markBusy()} run <em>per request</em> against
+     * one per-engine counter, so that is the difference between an unconditional {@code lock xadd} and
+     * a loop that retries under contention. With up to {@code maxConnections} streams on a handful of
+     * carriers hammering one cache line, retry behaviour is exactly what degrades.
+     *
+     * <p>Half of {@link Integer#MIN_VALUE} rather than {@code MIN_VALUE} itself, so the marker has
+     * roughly a billion of headroom in both directions. Nothing realistic approaches it: post-seal
+     * decrements are bounded by the streams that were in flight, and transient increments by the
+     * acquires racing the seal — both bounded by the connection ceiling, which is orders of magnitude
+     * below the margin. The old exact sentinel had the opposite property: it sat one decrement away
+     * from wrapping to {@link Integer#MAX_VALUE}.
+     */
+    private static final int SEALED = Integer.MIN_VALUE / 2;
 
     private static final VarHandle BUSY_STREAMS;
     private static final VarHandle DRAINING;
@@ -102,7 +119,10 @@ public final class DrainCoordinator {
      */
     public int busyStreams() {
         int count = (int) BUSY_STREAMS.getAcquire(this);
-        return count == SEALED ? 0 : count;
+        // Negative means sealed, not "equal to the marker": post-seal releases drive it further down,
+        // and a transient acquire nudges it up. Comparing for equality would report a sealed
+        // coordinator as carrying a billion live streams.
+        return count < 0 ? 0 : count;
     }
 
     /**
@@ -136,15 +156,14 @@ public final class DrainCoordinator {
      * @return {@code true} if a count was taken and must later be released
      */
     private boolean tryAcquire() {
-        while (true) {
-            int current = (int) BUSY_STREAMS.getAcquire(this);
-            if (current == SEALED) {
-                return false;
-            }
-            if (BUSY_STREAMS.compareAndSet(this, current, current + 1)) {
-                return true;
-            }
+        int previous = (int) BUSY_STREAMS.getAndAdd(this, 1);
+        if (previous < 0) {
+            // Sealed. Take the count back; the marker's headroom absorbs the round trip, and this
+            // branch is only reachable after teardown has committed.
+            BUSY_STREAMS.getAndAdd(this, -1);
+            return false;
         }
+        return true;
     }
 
     /**
@@ -170,26 +189,17 @@ public final class DrainCoordinator {
     /**
      * Returns one count, unless the coordinator is sealed.
      *
-     * <p>Symmetric with {@link #tryAcquire()} and for the same reason: the sentinel must not be
-     * arithmetic on. {@link #sealNow()} discards whatever was in flight, so a handler that finishes
-     * after the deadline still calls this — and {@code SEALED} is {@code Integer.MIN_VALUE}, so an
-     * unguarded decrement wraps it to {@code Integer.MAX_VALUE}. That is no longer the sentinel, so
-     * {@code tryAcquire} starts handing out counts again and a stream can report itself busy during
-     * teardown: the failure this class exists to prevent, reopened through the forced path.
+     * <p>Unconditional, and safe only because {@link #SEALED} marks a <em>range</em>. {@link #sealNow()}
+     * discards whatever was in flight, so a handler that finishes after the deadline still calls this;
+     * the decrement drives the marker further negative, which still reads as sealed. An exact sentinel
+     * at {@link Integer#MIN_VALUE} sat one decrement from wrapping to {@link Integer#MAX_VALUE} —
+     * no longer sealed, so acquisition resumed and a stream could report itself busy during teardown.
      *
-     * <p>Once sealed the count is not a count, so declining to touch it is the whole contract — the
-     * handle's flag and the owner's count are deliberately allowed to disagree from that point on.
+     * <p>Once sealed the count is not a count, and the handle's flag and the owner's count are
+     * deliberately allowed to disagree from that point on.
      */
     private void release() {
-        while (true) {
-            int current = (int) BUSY_STREAMS.getAcquire(this);
-            if (current == SEALED) {
-                return;
-            }
-            if (BUSY_STREAMS.compareAndSet(this, current, current - 1)) {
-                return;
-            }
-        }
+        BUSY_STREAMS.getAndAdd(this, -1);
     }
 
     /**
