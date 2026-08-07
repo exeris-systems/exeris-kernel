@@ -107,8 +107,9 @@ The alternative gate is also unmet: `exeris-benchmarks` contains no cache or sla
 all, and its compose README advertises a redis *"Cache fixture (optional)"* that no compose file
 defines.
 
-Stellar-Tactics is not checkable from this machine and no claim is made about it here. What can be said
-is that the kernel's own transcription of its dogfooding produced six attributed gaps — the Events
+A second downstream consumer is closed-source and not checkable from this repository, so no claim is
+made about it here. What can be said is that the kernel's own transcription of that dogfooding
+produced six attributed gaps — the Events
 `topic` seam, streaming/SSE, shared scope, client addressing, multi-node coordination, the Events
 multi-node contract — and not one is about caching.
 
@@ -239,8 +240,8 @@ declared staleness contract**, with the durable log rather than the bus as the c
 Recording that now is the durable output: it stops the next person from re-deriving a discharge that was
 never there, and it means the gate, when it opens, opens onto a shape that has already survived a check.
 
-Residual uncertainty, stated plainly. Stellar-Tactics is not inspectable from here, so the pull's
-strongest possible source is unverified — the finding is "not met on everything checkable", not "not met
+Residual uncertainty, stated plainly. One downstream consumer is closed-source and not inspectable
+from here, so the pull's strongest possible source is unverified — the finding is "not met on everything checkable", not "not met
 anywhere". And Option D leaves five SDK annotations advertising a behaviour that does not exist; that is
 a real cost, and the follow-up below is how it gets paid rather than forgotten.
 
