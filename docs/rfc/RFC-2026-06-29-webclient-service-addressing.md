@@ -18,13 +18,13 @@
 
 ## Context
 
-This surfaced during downstream dogfooding (the Stellar-Tactics multi-service split, 2026-06; finding **K4**, Medium). It is the kernel-side half of the tooling mesh gap **T12** (owned by `exeris-tooling`): even once the generator can import a *cross-app contract* and emit a typed client for a peer application, that client has **nowhere to resolve the peer's address**. So today every caller hard-codes peer hostnames, which does not survive the moment the ecosystem becomes a mesh of generated apps — exactly the direction the platform is committing to (Tier 3 SKU compositions, Family products, the marketplace of composable units).
+This surfaced during downstream dogfooding (a multi-service split, 2026-06; finding **K4**, Medium). It is the kernel-side half of the tooling mesh gap **T12** (owned by `exeris-tooling`): even once the generator can import a *cross-app contract* and emit a typed client for a peer application, that client has **nowhere to resolve the peer's address**. So today every caller hard-codes peer hostnames, which does not survive the moment the ecosystem becomes a mesh of generated apps — exactly the direction the platform is committing to (Tier 3 SKU compositions, Family products, the marketplace of composable units).
 
 The cost of leaving it unanswered is concrete: T12 cannot land a usable cross-app client without picking *some* addressing strategy, and picking one ad-hoc inside the generator (or inside `KernelWebClient`) would bake a deployment-environment assumption into the substrate. The option space is genuinely wide and the strategies have very different boundary costs (a config map vs. a DNS dependency vs. a new SPI vs. an ops/mesh dependency), which is why this is an RFC rather than a straight-to-ADR — no decision is committed yet.
 
 Several cross-cutting constraints bound any answer and must not be lost in the strategy debate: resolution must compose with the request enricher (ADR-032) and ADR-040's outbound-credential audience binding so that **identity survives re-addressing**; the failure modes (name unresolved / no healthy endpoint / resolution timeout) must be classifiable; whether resolution is per-call or cached-with-TTL must be decided; and **The Wall** must hold — no framework DI, no `ThreadLocal`, and resolution must not couple the client to a concrete registry/mesh type.
 
-Note the pre-1.0 honesty discipline: the kernel is TRL-3 with no external SPI consumers. The only consumers of this decision are Stellar dogfooding and T12. So whatever shape is chosen is **designed now, built when T12 / a real multi-app corpus actually consume it** — the same design-now / build-on-usage gate the SDK's universe and presentation RFCs used.
+Note the pre-1.0 honesty discipline: the kernel is TRL-3 with no external SPI consumers. The only consumers of this decision are downstream dogfooding and T12. So whatever shape is chosen is **designed now, built when T12 / a real multi-app corpus actually consume it** — the same design-now / build-on-usage gate the SDK's universe and presentation RFCs used.
 
 ## Investigation
 
@@ -128,7 +128,7 @@ Option C is the only shape that keeps a generated client's *source* identical ac
 
 Crucially, C is the shape that preserves the platform's ability to let a generated application **self-describe its peers** by logical name — the property the composable-unit / cross-app-contract / marketplace direction depends on. A and B each hard-bind the substrate to one environment; D hands peer addressing entirely to ops and so removes that self-description property for any non-mesh deployment.
 
-The cost is honestly the highest of the options — a new SPI plus its TCK and identity-propagation contract — and it is only justified because the build gate ties implementation to real T12 / Stellar consumption: design the seam in the resulting ADR now, ship the static-map + DNS-SRV Community drivers when T12 actually emits logical-name clients, and leave registry drivers to Enterprise. Residual uncertainty is real and lives in §Open questions — chiefly the `HttpClientEngine` per-host-vs-per-request binding question, which the pre-ADR spike must settle.
+The cost is honestly the highest of the options — a new SPI plus its TCK and identity-propagation contract — and it is only justified because the build gate ties implementation to real T12 / downstream consumption: design the seam in the resulting ADR now, ship the static-map + DNS-SRV Community drivers when T12 actually emits logical-name clients, and leave registry drivers to Enterprise. Residual uncertainty is real and lives in §Open questions — chiefly the `HttpClientEngine` per-host-vs-per-request binding question, which the pre-ADR spike must settle.
 
 ### Why not the alternatives?
 

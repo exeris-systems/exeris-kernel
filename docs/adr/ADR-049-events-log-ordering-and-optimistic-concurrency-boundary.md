@@ -8,7 +8,7 @@
 | **Date**        | 2026-07-01                                                                                                                                                                                 |
 | **Scope**       | kernel/events                                                                                                                                                                             |
 | **Owning Repo** | `exeris-kernel`                                                                                                                                                                            |
-| **Driven By**   | The "one log, four views" sourcing/streaming fundament (v0.10 ROADMAP §"Events: Log-Ordering & Optimistic-Concurrency Boundary"); the gate on v0.12 KV-as-projection + distributed; downstream dogfooding (Stellar-Tactics, 2026-06). |
+| **Driven By**   | The "one log, four views" sourcing/streaming fundament (v0.10 ROADMAP §"Events: Log-Ordering & Optimistic-Concurrency Boundary"); the gate on v0.12 KV-as-projection + distributed; downstream dogfooding (2026-06). |
 | **Compliance**  | The Wall (ADR-006); No Waste Compute; Java-26 idioms (immutable carriers, `ScopedValue`); distinct from — and consistent with — the `FlowSnapshot` CAS (ADR-013).                          |
 
 ## Context and Problem Statement
