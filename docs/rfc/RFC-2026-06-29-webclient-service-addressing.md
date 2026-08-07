@@ -149,48 +149,38 @@ The cost is honestly the highest of the options — a new SPI plus its TCK and i
 
 | Field            | Value |
 |:-----------------|:------|
-| **Outcome**      | **ACCEPTED** — Option C, a `ServiceResolver` SPI seam, with the static map (A) and DNS-SRV (B) as the two first-party Community drivers and the mesh case (D) reframed as a pass-through driver. Recommendation adopted unchanged; its **disposition is split** — multi-peer addressing on the existing `spi.http` surface is 1.0 scope, the resolver seam itself stays post-1.0 (see below). |
+| **Outcome**      | **ACCEPTED** — Option C, a `ServiceResolver` SPI seam, with the static map (A) and DNS-SRV (B) as the two first-party Community drivers and the mesh case (D) reframed as a pass-through driver. Recommendation adopted unchanged; its **disposition is split** — multi-peer addressing on the existing `spi.http` surface is 1.0 scope, the resolver seam itself stays post-1.0. The split fixes *when*, not *how*: the addressing shape stays open as Open Question 1 and is owed its own decision record (see below). |
 | **Date**         | 2026-08-07 |
 | **Resulting ADR(s)** | **none at acceptance.** The number is reserved in the global index when the implementation build gate opens, per the header's `Target ADR(s)` note — accepting this RFC commits no kernel surface. |
 | **Notes**        | See below. |
 
 ### What was re-verified before accepting
 
-This RFC was drafted on 2026-06-29 and accepted six weeks later, so its §"Data gathered" was re-checked
-against source rather than taken on trust — the two RFCs accepted alongside it (cache provider,
-cross-node coordination) each found a roadmap premise that had aged into being false, so an unverified
-one here would have been the third.
-
-Both premises hold. `KernelWebClient` is still single-host — its constructor Javadoc still reads "a
-started client engine targeting a single host" at three overloads — and `ServiceResolver` still does not
-exist anywhere in tracked Java. The recommendation is therefore adopted unchanged.
+Drafted 2026-06-29, accepted six weeks later, so §"Data gathered" was re-checked against source rather
+than taken on trust — the two RFCs accepted alongside it each found a roadmap premise that had aged into
+being false, and an unverified one here would have been the third. Both hold: `KernelWebClient`'s
+constructor Javadoc still reads "a started client engine targeting a single host" at three overloads,
+and `ServiceResolver` still does not exist in tracked Java. Recommendation adopted unchanged.
 
 ### Two constraints that post-date the draft and bind the implementation gate
 
 Neither was knowable on 2026-06-29, and both narrow what the eventual ADR may do:
 
 1. **The "1.0 = narrow, deep, defensible core" ruling names `ServiceResolver` among the SPIs held out
-   of 1.0 — and applying that to the *whole* of this RFC would be a misreading, corrected here.** The
-   ruling holds out **new SPIs that are each a real subsystem**. This RFC contains two separable things,
-   and only one of them is that:
+   of 1.0 — and applying that to the *whole* of this RFC misreads it.** The ruling holds out **new SPIs
+   that are each a real subsystem**. `HttpClientEngine`'s SPI surface never mentions a host and
+   `HttpRequest` carries no authority, so single-host is not a contract decision — it falls out of the
+   carrier having nowhere to put an addressee. **Multi-peer addressing is therefore the shape of an
+   existing subsystem and is 1.0 scope**; a 1.0 that claims to be unbreakable on `http` cannot ship a
+   client that structurally cannot address a second peer. **`ServiceResolver` itself stays post-1.0.**
 
-   - **Multi-peer addressing is not a new subsystem — it is the shape of an existing one, and it is
-     1.0 scope.** `HttpClientEngine`'s SPI surface (`start` / `send(HttpRequest)` / `isRunning` /
-     `engineName` / `close`) never mentions a host, and `HttpRequest` carries `method`, `path`,
-     `version`, `headers`, `body` and no authority. Single-host is therefore not a contract decision at
-     all: it falls out of the carrier having nowhere to put an addressee, so the driver must be handed
-     one at construction (`CommunityHttpClientEngine.targetHost`). 1.0 claims to be *unbreakable* on
-     `http`. A client that structurally cannot address a second peer is not unbreakable on `http`; it is
-     incomplete on it — and every generated application in the composable-unit direction would hard-code
-     its peers, which is the property that direction cannot survive.
-   - **`ServiceResolver` — logical name → endpoint, with static / DNS-SRV / registry drivers — is a new
-     subsystem, and stays post-1.0.** That is exactly what the ruling holds out, and nothing here
-     disputes it.
+   **This fixes *when*, not *how*, and deliberately stops there.** Options A–E all answer how a logical
+   name resolves; none evaluates addressing without a resolver. Settling that shape here would decide by
+   prose what this repo decides by option table, cost and recorded dissent — so it is not settled here.
+   It is Open Question 1, whose weight this raises; see it for what is now owed before the pre-ADR spike
+   may treat multi-peer addressing as settled input. An earlier revision of this record wrote "adding an
+   authority component" as though a shape had been chosen; it has not been, and that is withdrawn.
 
-   So the disposition is split rather than flat. The cost of the 1.0 half is known and precedented, not
-   open-ended: `HttpRequest` and `HttpClientEngine` are both in the gate's `stable` bucket, so adding an
-   authority component takes the retained-canonical-constructor bridge `FlowSnapshot` used three times
-   this milestone, and any new engine method takes a refusing `default` as `registerMigration` did.
 2. **ADR-065's SPI compatibility gate now fails the build on an unclassified SPI class.** A resolver
    surface must land with its `docs/stability-matrix.md` row and its `stability-surfaces.conf` entry in
    the *same* commit. `…spi.http` is `mixed` in the matrix — a per-surface breakdown — so the resolver
@@ -214,7 +204,7 @@ The dissent bites only on the resolver seam, which is the half that waits on T12
 
 ## Open questions / follow-ups
 
-- **`HttpClientEngine` binding model (implementation crux — ADR-shape blocker).** `KernelWebClient` holds one engine bound to one host. Does resolution (a) hand the engine a resolved endpoint per `send`, (b) maintain a per-host engine/connection-pool behind the resolver, or (c) make the client hold a resolver + an engine factory? The SPI surface differs *materially* between (a)/(b)/(c), so this **must be settled in the pre-ADR spike before the ADR can be drafted** — it is the gate condition on the resulting ADR, not a detail. — owner: `exeris-kernel` HTTP subsystem.
+- **`HttpClientEngine` binding model (implementation crux — ADR-shape blocker).** `KernelWebClient` holds one engine bound to one host. Does resolution (a) hand the engine a resolved endpoint per `send`, (b) maintain a per-host engine/connection-pool behind the resolver, or (c) make the client hold a resolver + an engine factory? The SPI surface differs *materially* between (a)/(b)/(c), so this **must be settled in the pre-ADR spike before the ADR can be drafted** — it is the gate condition on the resulting ADR, not a detail. **Raised in weight by the split disposition (2026-08-07):** this question now carries a 1.0-scope commitment, so it is owed an option table, costs and recorded dissent of its own — the Decision Record above fixes only *that* multi-peer addressing is in 1.0, never *how*. — owner: `exeris-kernel` HTTP subsystem.
 - **`ServiceResolver` return type — single vs. weighted set.** Does `resolve(logicalName)` return one `Endpoint` or a `List<WeightedEndpoint>`? Option B's DNS-SRV carries weight/priority for client-side balancing, so this decides whether load-balancing lives in `KernelWebClient` or behind the resolver driver, and shapes the SPI signature. The resulting ADR must pick one; scope it in the spike. — owner: resulting ADR.
 - **Cache ownership + TTL / health-recheck contract.** Roadmap leans toward driver-owned caching; pin the invalidation and health-recheck semantics. — owner: resulting ADR.
 - **Identity / IDP audience binding across re-addressing.** Lock the resolve → enrich → send ordering and the audience-binding rule against ADR-040 (`IdentityProvider` SPI) outbound-credential audience binding. — owner: security + HTTP, resulting ADR.
