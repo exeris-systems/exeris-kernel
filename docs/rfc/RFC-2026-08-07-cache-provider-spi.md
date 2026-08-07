@@ -2,11 +2,11 @@
 
 | Field             | Value                                                                    |
 |:------------------|:-------------------------------------------------------------------------|
-| **Status**        | **DRAFT**                                                                |
+| **Status**        | **ACCEPTED**                                                             |
 | **Author(s)**     | Arkadiusz Przychocki                                                     |
 | **Date Opened**   | 2026-08-07                                                               |
-| **Date Closed**   | —                                                                        |
-| **Target ADR(s)** | TBD — none is authored by accepting this RFC (see §Recommendation)       |
+| **Date Closed**   | 2026-08-07                                                               |
+| **Target ADR(s)** | none — this RFC recommends no SPI, so it authors no ADR (see §Recommendation) |
 | **Affected Repos**| `exeris-kernel`, `exeris-sdk`, `exeris-tooling`                          |
 | **Reviewers**     | —                                                                        |
 
@@ -268,14 +268,12 @@ a real cost, and the follow-up below is how it gets paid rather than forgotten.
 
 ## Decision Record
 
-<!-- Filled in when status reaches ACCEPTED / REJECTED / WITHDRAWN. -->
-
 | Field                | Value |
 |:---------------------|:------|
-| **Outcome**          | —     |
-| **Date**             | —     |
-| **Resulting ADR(s)** | —     |
-| **Notes**            | —     |
+| **Outcome**          | **ACCEPTED** — Option D (stay RFC-only; the SPI gate stays closed), with Option B's coherence model pre-committed as the shape the SPI takes when the gate opens. |
+| **Date**             | 2026-08-07 |
+| **Resulting ADR(s)** | **none.** Accepting this RFC commits no kernel surface, so it authors no ADR — matching the ROADMAP merge gate's "no kernel SPI commits in this gate (decision-only track)". An ADR is authored when the gate opens and the SPI is actually designed. |
+| **Notes**            | Dissent recorded rather than suppressed: Option B is the *right shape* and a reasonable reviewer could argue for building it now, on the grounds that a declared staleness contract is cheap and the SDK annotations have been inert for four milestones. It is rejected on timing, not on merit — designing a coherence envelope with no second backend to falsify it is the specific failure the gate exists to prevent. If the gate opens and Option B proves wrong under a real backend, that is the outcome this RFC most wants to be corrected by. Two ROADMAP claims were refuted in the course of accepting this: the second-backend pull is not met, and invalidation over the Events **bus** cannot discharge the coherence requirement (the ordered channel is the durable **log**). Both corrections landed with the RFC. |
 
 ## Open questions / follow-ups
 
