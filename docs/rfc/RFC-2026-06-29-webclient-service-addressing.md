@@ -149,7 +149,7 @@ The cost is honestly the highest of the options — a new SPI plus its TCK and i
 
 | Field            | Value |
 |:-----------------|:------|
-| **Outcome**      | **ACCEPTED** — Option C, a `ServiceResolver` SPI seam, with the static map (A) and DNS-SRV (B) as the two first-party Community drivers and the mesh case (D) reframed as a pass-through driver. Recommendation adopted unchanged. |
+| **Outcome**      | **ACCEPTED** — Option C, a `ServiceResolver` SPI seam, with the static map (A) and DNS-SRV (B) as the two first-party Community drivers and the mesh case (D) reframed as a pass-through driver. Recommendation adopted unchanged; its **disposition is split** — multi-peer addressing on the existing `spi.http` surface is 1.0 scope, the resolver seam itself stays post-1.0 (see below). |
 | **Date**         | 2026-08-07 |
 | **Resulting ADR(s)** | **none at acceptance.** The number is reserved in the global index when the implementation build gate opens, per the header's `Target ADR(s)` note — accepting this RFC commits no kernel surface. |
 | **Notes**        | See below. |
@@ -169,10 +169,28 @@ exist anywhere in tracked Java. The recommendation is therefore adopted unchange
 
 Neither was knowable on 2026-06-29, and both narrow what the eventual ADR may do:
 
-1. **`ServiceResolver` is now explicitly post-1.0.** The "1.0 = narrow, deep, defensible core" ruling
-   names it among the v0.11/v0.12 SPIs held out of 1.0. That does not change the shape this RFC
-   selects; it does mean the build gate this RFC ties implementation to (T12 consumption) is no longer
-   the only gate — the milestone disposition is.
+1. **The "1.0 = narrow, deep, defensible core" ruling names `ServiceResolver` among the SPIs held out
+   of 1.0 — and applying that to the *whole* of this RFC would be a misreading, corrected here.** The
+   ruling holds out **new SPIs that are each a real subsystem**. This RFC contains two separable things,
+   and only one of them is that:
+
+   - **Multi-peer addressing is not a new subsystem — it is the shape of an existing one, and it is
+     1.0 scope.** `HttpClientEngine`'s SPI surface (`start` / `send(HttpRequest)` / `isRunning` /
+     `engineName` / `close`) never mentions a host, and `HttpRequest` carries `method`, `path`,
+     `version`, `headers`, `body` and no authority. Single-host is therefore not a contract decision at
+     all: it falls out of the carrier having nowhere to put an addressee, so the driver must be handed
+     one at construction (`CommunityHttpClientEngine.targetHost`). 1.0 claims to be *unbreakable* on
+     `http`. A client that structurally cannot address a second peer is not unbreakable on `http`; it is
+     incomplete on it — and every generated application in the composable-unit direction would hard-code
+     its peers, which is the property that direction cannot survive.
+   - **`ServiceResolver` — logical name → endpoint, with static / DNS-SRV / registry drivers — is a new
+     subsystem, and stays post-1.0.** That is exactly what the ruling holds out, and nothing here
+     disputes it.
+
+   So the disposition is split rather than flat. The cost of the 1.0 half is known and precedented, not
+   open-ended: `HttpRequest` and `HttpClientEngine` are both in the gate's `stable` bucket, so adding an
+   authority component takes the retained-canonical-constructor bridge `FlowSnapshot` used three times
+   this milestone, and any new engine method takes a refusing `default` as `registerMigration` did.
 2. **ADR-065's SPI compatibility gate now fails the build on an unclassified SPI class.** A resolver
    surface must land with its `docs/stability-matrix.md` row and its `stability-surfaces.conf` entry in
    the *same* commit. `…spi.http` is `mixed` in the matrix — a per-surface breakdown — so the resolver
@@ -189,6 +207,10 @@ difference relied on is that C's two Community drivers (static map, DNS-SRV) pro
 pressure from within the repo, where a cache seam's second backend would have had to come from outside
 it. If T12 does not materialise, that difference is thinner than it looks and Option E should be
 revisited rather than the seam shipped on momentum.
+
+The split disposition narrows this dissent without dissolving it: the 1.0 half (multi-peer addressing)
+has a consumer today — any application talking to more than one peer — so Option E does not apply to it.
+The dissent bites only on the resolver seam, which is the half that waits on T12.
 
 ## Open questions / follow-ups
 
