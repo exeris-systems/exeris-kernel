@@ -2,10 +2,10 @@
 
 | Field             | Value                                                                 |
 |:------------------|:----------------------------------------------------------------------|
-| **Status**        | **DRAFT**                                                            |
+| **Status**        | **ACCEPTED**                                                         |
 | **Author(s)**     | arkstack-dev                                                          |
 | **Date Opened**   | 2026-06-29                                                           |
-| **Date Closed**   | —                                                                    |
+| **Date Closed**   | 2026-08-07                                                           |
 | **Scope**         | substrate / Tier 1 (kernel HTTP client addressing; kernel half of the tooling "mesh" gap T12) |
 | **Owning Repo**   | `exeris-kernel` — the addressing seam lives on `KernelWebClient` / the `HttpClientEngine` SPI. Hosted here as a **kernel-transport SPI RFC**, per the convention that each repo holds the RFCs for the SPI it owns (cf. `RFC-2026-06-18-http-streaming-spi`); the eventual ADR is kernel-scoped. A downstream consumer (`exeris-tooling` T12) tracks it from its own docs — the same way tooling's SSE-emitter RFC tracks the kernel HTTP-streaming SPI RFC — rather than the RFC living in `exeris-docs`. |
 | **Target ADR(s)** | TBD — a kernel-scope "WebClient service addressing" ADR once accepted; number reserved in the global `exeris-docs/adr-index.md` **only** when the implementation build gate opens (not at RFC time — RFCs carry no registry number) |
@@ -147,14 +147,48 @@ The cost is honestly the highest of the options — a new SPI plus its TCK and i
 
 ## Decision Record
 
-<Filled in when status reaches ACCEPTED / REJECTED / WITHDRAWN.>
+| Field            | Value |
+|:-----------------|:------|
+| **Outcome**      | **ACCEPTED** — Option C, a `ServiceResolver` SPI seam, with the static map (A) and DNS-SRV (B) as the two first-party Community drivers and the mesh case (D) reframed as a pass-through driver. Recommendation adopted unchanged. |
+| **Date**         | 2026-08-07 |
+| **Resulting ADR(s)** | **none at acceptance.** The number is reserved in the global index when the implementation build gate opens, per the header's `Target ADR(s)` note — accepting this RFC commits no kernel surface. |
+| **Notes**        | See below. |
 
-| Field            | Value                                                                  |
-|:-----------------|:-----------------------------------------------------------------------|
-| **Outcome**      | —                                                                     |
-| **Date**         | —                                                                     |
-| **Resulting ADR(s)** | —                                                                 |
-| **Notes**        | —                                                                     |
+### What was re-verified before accepting
+
+This RFC was drafted on 2026-06-29 and accepted six weeks later, so its §"Data gathered" was re-checked
+against source rather than taken on trust — the two RFCs accepted alongside it (cache provider,
+cross-node coordination) each found a roadmap premise that had aged into being false, so an unverified
+one here would have been the third.
+
+Both premises hold. `KernelWebClient` is still single-host — its constructor Javadoc still reads "a
+started client engine targeting a single host" at three overloads — and `ServiceResolver` still does not
+exist anywhere in tracked Java. The recommendation is therefore adopted unchanged.
+
+### Two constraints that post-date the draft and bind the implementation gate
+
+Neither was knowable on 2026-06-29, and both narrow what the eventual ADR may do:
+
+1. **`ServiceResolver` is now explicitly post-1.0.** The "1.0 = narrow, deep, defensible core" ruling
+   names it among the v0.11/v0.12 SPIs held out of 1.0. That does not change the shape this RFC
+   selects; it does mean the build gate this RFC ties implementation to (T12 consumption) is no longer
+   the only gate — the milestone disposition is.
+2. **ADR-065's SPI compatibility gate now fails the build on an unclassified SPI class.** A resolver
+   surface must land with its `docs/stability-matrix.md` row and its `stability-surfaces.conf` entry in
+   the *same* commit. `…spi.http` is `mixed` in the matrix — a per-surface breakdown — so the resolver
+   takes its own row rather than inheriting the package's tier. The RFC predates the gate and mentions
+   neither; recorded here so the ADR does not rediscover it at CI.
+
+### Dissent recorded
+
+Option E (do nothing) remains the honest alternative and is not obviously wrong. This RFC selects an SPI
+whose sole named consumer is a downstream tooling item (T12) that has not landed, in a project that
+states pre-1.0 honesty as a constraint and elsewhere refuses to ship a seam without a second consumer —
+the reasoning that kept the `CacheProvider` gate closed on the same day this was accepted. The
+difference relied on is that C's two Community drivers (static map, DNS-SRV) provide genuine contract
+pressure from within the repo, where a cache seam's second backend would have had to come from outside
+it. If T12 does not materialise, that difference is thinner than it looks and Option E should be
+revisited rather than the seam shipped on momentum.
 
 ## Open questions / follow-ups
 
