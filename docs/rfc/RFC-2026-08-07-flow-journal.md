@@ -22,8 +22,8 @@ whether the rest is worth designing.
 `FlowSnapshotStore` is a **last-value row store, not a log**. `save` upserts one row per instance and
 `complete()` calls `deleteSnapshot`, so a saga that finishes successfully leaves **no trace at all** —
 the durable record of a correct run is its absence. The nearest thing to a transition vocabulary is
-seven JFR event classes in `core/flow`, which are diagnostic and ephemeral: they answer "what is this
-process doing", never "what did this saga do last Tuesday".
+nine flow JFR event classes, which are diagnostic and ephemeral: they answer "what is this process
+doing", never "what did this saga do last Tuesday".
 
 For an orchestration engine that is a product-level gap. Audit, replay, and after-the-fact dispute
 resolution ("did we charge that card before or after the reservation expired?") all need history the
@@ -102,13 +102,20 @@ concurrency via `expectedVersion`, with the durable DDL's primary key
 AND"* the concurrency discriminator — and it is TCK-bound on **two** bindings, JDBC and Kafka. A
 second durable log would be a second answer to a question the repo has already answered once.
 
-**The entry-contents question is a diff against a known inventory, not a blank page.** Seven JFR event
-classes already exist in `core/flow`, covering step failure, timeout, schema mismatch (with reason plus
-both step names), wake-on-load fallback, optimistic-lock conflict, snapshot-save failure and definition
-migration. What none of them carries is the pair the prerequisites just added — no event carries
-`definitionVersion`, and the transient progress payload carries a step *index* rather than a step
-*name*. So the journal's contents are: the existing vocabulary, re-expressed in identities rather than
-positions, plus the version.
+**The entry-contents question is a diff against a known inventory, not a blank page.** Nine flow JFR
+event classes already exist, and they sit in two tiers that matter differently here. **Seven are
+driver-agnostic, in `core/flow`:** step failure, timeout, schema mismatch (with reason plus both step
+names), wake-on-load fallback, definition migration, bootstrap provider selection and engine shutdown.
+**Two are Community/JDBC diagnostics** emitted only by `JdbcFlowSnapshotStore` — optimistic-lock
+conflict and snapshot-save failure. Only the Core seven are candidates for a substrate-agnostic
+journal vocabulary; the Community pair describes one store's failure modes and would stay where it is.
+
+What the Core seven do not carry is the pair the prerequisites just added. `definitionVersion` appears
+on exactly one of them — `FlowDefinitionMigratedEvent`, as `fromVersion`/`toVersion` — so it is present
+at the migration, absent everywhere the version would let a later reader interpret a step. And step
+*names* appear only on the schema-mismatch diagnostic; the ordinary progress and failure events carry a
+step *position* (`stepIndex`, `currentStep`). So the journal's contents are: the existing Core
+vocabulary, re-expressed in identities rather than positions, plus the version on every entry.
 
 ### Spike outcomes
 
@@ -174,7 +181,7 @@ today writes nothing because the row is deleted).
 **Pros:** zero surface; the prerequisites keep, and nothing built on a guess.
 
 **Cons:** leaves the product-level gap — a completed saga's durable record is its absence — and leaves
-seven JFR classes as the only transition vocabulary, none of which survives the process.
+nine JFR classes as the only transition vocabulary, none of which survives the process.
 
 **Cost:** zero now.
 

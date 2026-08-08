@@ -100,6 +100,8 @@ See also: [Flow Subsystem](./subsystems/flow.md) — TCK Coverage.
 
 **Merge Gate:** Extend `AbstractFlowEngineTck` with `RecordingStream` assertion for shutdown event emission; require Community binding pass.
 
+**Status (v0.6): DELIVERED** — entry left stale until 2026-08-08, when the v0.11 FlowJournal RFC's inventory of flow JFR events contradicted it. `FlowEngineShutdownEvent` shipped in 0.6.0 (`5c56395d`) as `eu.exeris.kernel.core.flow.FlowEngineShutdownEvent` — package-private, `@Name("eu.exeris.kernel.flow.Shutdown")`, `@StackTrace(false)` — emitted from `CoreFlowEngine.close()` once at the end of the drain, carrying the elapsed close duration. Two deviations from the Resolution above, kept because the delivered shape is the better one: the class sits in `core.flow` rather than a `core.flow.jfr` sub-package (matching the six sibling flow events), and the counter set is `activeFlows` / `parkedFlows` / `completedFlows` / `failedFlows` plus `persistenceEnabled` / `compensationEnabled` rather than the proposed `parkedFlowCount` / `interruptedFlowCount` — a full `FlowEngineStats` snapshot instead of two hand-picked numbers. The merge gate is met on both sides: `AbstractFlowEngineTck` asserts the event via `RecordingStream` within 5 s of `close()`, and `CoreFlowRuntimeTest` carries two Core-side assertions.
+
 See also: [Flow Subsystem](./subsystems/flow.md) — JFR Events.
 
 ---
@@ -2228,7 +2230,7 @@ Carried, not closed:
 
 ### Flow: FlowJournal — durable saga history (RFC track)
 
-**Gap:** the kernel keeps no history of what a saga did. `FlowSnapshotStore` is a **last-value row store, not a log** — `save` upserts one row per instance and `complete()` calls `deleteSnapshot`, so a saga that finishes successfully leaves **no trace at all**. The nearest thing to a transition vocabulary is seven JFR event classes in `core/flow`, which are diagnostic and ephemeral: they answer "what is this process doing", never "what did this saga do last Tuesday". For an orchestration engine that is a product-level gap, not only an operational one — audit, replay and after-the-fact dispute resolution all need history the runtime does not keep.
+**Gap:** the kernel keeps no history of what a saga did. `FlowSnapshotStore` is a **last-value row store, not a log** — `save` upserts one row per instance and `complete()` calls `deleteSnapshot`, so a saga that finishes successfully leaves **no trace at all**. The nearest thing to a transition vocabulary is nine flow JFR event classes — seven driver-agnostic in `core/flow`, two Community/JDBC diagnostics emitted by `JdbcFlowSnapshotStore` — which are diagnostic and ephemeral: they answer "what is this process doing", never "what did this saga do last Tuesday". For an orchestration engine that is a product-level gap, not only an operational one — audit, replay and after-the-fact dispute resolution all need history the runtime does not keep.
 
 **Owner:** Flow subsystem.
 
