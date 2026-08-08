@@ -48,6 +48,7 @@ public final class CommunitySecurityProvider implements SecurityProvider {
     private static final String JWT_TYPE = "JWT";
 
     private final IdentityProviderRegistry registry;
+    private final IdentityProvider identityProvider;
 
     /** Public no-arg constructor required by {@link java.util.ServiceLoader}. */
     public CommunitySecurityProvider() {
@@ -57,10 +58,12 @@ public final class CommunitySecurityProvider implements SecurityProvider {
     public CommunitySecurityProvider(Map<String, RSAPublicKey> keysByKid,
                                      String expectedIssuer,
                                      String expectedAudience) {
-        this(new CommunityOidcIdentityProvider(keysByKid, expectedIssuer, expectedAudience));
+        this(new CommunityOidcIdentityProvider(keysByKid, expectedIssuer, expectedAudience)
+                .withClaimsMapper(CommunityClaimsMapperResolver.resolve()));
     }
 
     private CommunitySecurityProvider(IdentityProvider identityProvider) {
+        this.identityProvider = identityProvider;
         this.registry = IdentityProviderRegistry.of(List.of(identityProvider));
     }
 
@@ -72,7 +75,18 @@ public final class CommunitySecurityProvider implements SecurityProvider {
     /* default */ static CommunitySecurityProvider withKeyResolver(
             JwksKeyResolver keyResolver, String expectedIssuer, String expectedAudience) {
         return new CommunitySecurityProvider(
-                new CommunityOidcIdentityProvider(keyResolver, expectedIssuer, expectedAudience));
+                new CommunityOidcIdentityProvider(keyResolver, expectedIssuer, expectedAudience)
+                        .withClaimsMapper(CommunityClaimsMapperResolver.resolve()));
+    }
+
+    /**
+     * Package-private: lets the wiring test assert that this provider was assembled through
+     * {@link CommunityClaimsMapperResolver}. Without it the reachability fix has no failing test —
+     * reverting the wiring compiles and every other assertion still passes, which is exactly what a
+     * mutation run showed before this existed.
+     */
+    /* default */ IdentityProvider identityProvider() {
+        return identityProvider;
     }
 
     @Override
