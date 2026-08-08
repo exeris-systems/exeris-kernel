@@ -35,7 +35,7 @@
 
         The bar is not lowered: `main` runs Checkstyle over the same sources on JDK 25, where no
         `value` modifier appears. RE-ENABLE when Checkstyle's grammar accepts JEP 401. Test it by
-        deleting this property and running `mvn -pl exeris-kernel-spi checkstyle:check`.
+        deleting this property and running `mvn -pl exeris-kernel-core checkstyle:check`.
         -->
     <checkstyle.skip>true</checkstyle.skip>
         <!--

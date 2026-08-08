@@ -15,8 +15,9 @@ package eu.exeris.kernel.spi.crypto;
  * <p>Declared {@code value record} on the `preview` line (JEP 401, preview in JDK 28); the
  * distributed line compiles the same source as an identity {@code record}. Asserted by
  * {@code Class::isValue} in this carrier's ValhallaReadiness test.
- * At that point the {@code sentCloseNotify}/{@code receivedCloseNotify} booleans
- * and the status ordinal can be flattened to minimize header and pointer overhead.
+ * The {@code sentCloseNotify}/{@code receivedCloseNotify} booleans and the status ordinal are
+ * therefore flattenable, saving header and pointer overhead where a JVM chooses to do so — an
+ * opportunity, not a behaviour this contract assumes.
  *
  * <h2>Zero-Allocation Contract</h2>
  * <p>{@link #COMPLETE} and {@link #ERROR} are pre-allocated singletons.
