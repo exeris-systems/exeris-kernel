@@ -274,7 +274,8 @@ public final class SecurityInterceptor {
      * <p>Both {@link eu.exeris.kernel.spi.context.KernelProviders#PRINCIPAL_CONTEXT} and
      * {@link eu.exeris.kernel.spi.context.KernelProviders#STORAGE_CONTEXT} are bound
      * atomically in a single {@link ScopedValue.Carrier}. Virtual threads forked within
-     * {@code requestHandler} via {@code StructuredTaskScope} inherit both slots automatically.
+     * {@code requestHandler} on the request thread observe both slots; a scope that forks must carry
+     * them explicitly (ADR-066).
      *
      * @param principal       pre-authenticated identity; must not be {@code null}
      * @param requestHandler  logic to execute within the authenticated scope; must not be {@code null}

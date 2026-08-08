@@ -27,7 +27,8 @@ import java.util.concurrent.atomic.AtomicLong;
  *
  * <p>No {@code ScheduledExecutorService} — it computes deadlines from {@code System.nanoTime()} with
  * no seam to displace, which would put a deterministic trigger test out of reach (ADR-057 §3). No
- * {@code StructuredTaskScope} either: it is the kernel's last preview dependency, and a new subsystem
+ * {@code StructuredTaskScope} either: it was the kernel's last preview dependency until ADR-066
+ * removed it from the distributed line, and a new subsystem
  * must not become a fifth taint site (§2). Containment comes from {@link JobHandle#cancel()} plus the
  * drain in {@link #close()} instead (§6).
  *

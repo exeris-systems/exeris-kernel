@@ -37,7 +37,17 @@ We reject event loops in favor of the **Virtual Thread-per-request** model (Proj
   `WrongThreadException` for any caller that did not open the scope, making a shared long-lived STS
   incompatible with the multi-carrier ingress model (NIO selectors + io_uring rings calling `schedule()`
   concurrently). Per-stream VTs spawned by PAQS act as Request Tree roots; all operations within them
-  MUST use `StructuredTaskScope`.
+  MUST run inside a structured scope.
+
+  > **Amended 2026-08-08 by ADR-066 — mechanism, not principle.** The requirement that every parallel
+  > operation be bound within a scope that owns its lifetime stands unchanged; what changed is which
+  > scope implements it, and it now differs by distribution line. The distributed artifact uses
+  > `eu.exeris.kernel.core.concurrent.StructuredScope` (virtual threads + explicit `ScopedValue`
+  > carrier, both GA) so that it imposes no `--enable-preview` on its consumers; the `preview` branch
+  > keeps `StructuredTaskScope`. Two call sites reached the principle a third way: where a task must
+  > observe `ScopedValue` bindings the kernel does not define — an application's own — no fork can
+  > deliver them, and the work runs on the calling thread instead. The owner-thread constraint cited
+  > above for PAQS is unchanged: `StructuredScope` enforces the same confinement, by design.
 
 ### 3. Protocol-Agnostic Transport (L2)
 

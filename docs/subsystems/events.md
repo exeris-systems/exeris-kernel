@@ -125,7 +125,7 @@ the payload immediately — eliminating silent leaks from dead events.
   saturation.
 - **`busPublishFailFast = true` (Enterprise default; opt-in for Community).** Persistent publishes
   raise `EX-EVENT-6002` carrying `rawArgs == [String eventType, long queueDepth, long queueCapacity]`
-  the moment the queue would overflow — the publisher's `StructuredTaskScope` joiner can then
+  the moment the queue would overflow — the publisher's structured scope can then
   decide whether to fail-fast or shed the event. On every fail-fast refusal `CommunityEventQueue`
   also emits `CommunityEventQueueOverflowEvent` (JFR name `eu.exeris.kernel.events.CommunityEventQueueOverflow`,
   fields `engineName, eventType, queueDepth, queueCapacity`; EVENT-111, v0.8 Sprint 5) so operators
@@ -145,7 +145,7 @@ the payload immediately — eliminating silent leaks from dead events.
 |:------------------|:----------------------------------------------------------------------------------------|
 | **`EventBus`**    | Pub/Sub. Manages subscriptions (returns `SubscriptionToken`), publishes fire-and-forget |
 | **`EventQueue`**  | Durable backpressure buffer                                                             |
-| **`EventLoop`**   | Drains the queue. Community: `StructuredTaskScope` (Virtual Threads)                    |
+| **`EventLoop`**   | Drains the queue. Community: a structured scope, one virtual thread per handler — `StructuredScope` on the distributed line, `StructuredTaskScope` on `preview` (ADR-066) |
 | **`EventRegistry`** | Type system. Maps event names → `int` ordinals for O(1) hot-path routing            |
 
 `EventRegistry` is the critical performance gate: ordinal-based routing eliminates `String` comparison on
@@ -276,7 +276,7 @@ The SDK `@DomainEvent.topic` attribute captures an author's routing target; **[A
 | `EX-EVENT-6008` | Append Version Conflict | `[0] String streamType, [1] long expectedVersion, [2] long actualVersion`                           |
 
 **Backpressure note for `EX-EVENT-6002`:** When thrown, the publisher MUST NOT retry inline. The
-`EventBus` must propagate this exception to the caller's `StructuredTaskScope` boundary, allowing
+`EventBus` must propagate this exception to the caller's structured-scope boundary, allowing
 the Joiner policy to decide whether to fail-fast or shed the event.
 
 ---
