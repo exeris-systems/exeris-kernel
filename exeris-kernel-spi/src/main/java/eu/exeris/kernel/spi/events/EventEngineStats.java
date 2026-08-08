@@ -14,10 +14,11 @@ package eu.exeris.kernel.spi.events;
  * <h2>JFR-First</h2>
  * <p>This record is the data carrier for the {@code EventEngineStatsEvent} JFR event.
  * All fields are primitives — low-allocation snapshot (zero-allocation ready for
- * {@code value record} migration once JEP 401 is mainline).
+ * {@code value record} on the `preview` line).
  *
  * <h2>Valhalla Readiness</h2>
- * <p>All fields are primitives. No identity operations. Ready for {@code value record} migration.
+ * <p>All fields are primitives. No identity operations. Declared {@code value record} on the
+ * `preview` line (JEP 401); asserted by {@code Class::isValue} in its ValhallaReadiness test.
  *
  * @param publishedTotal    total number of events published since engine start
  * @param processedTotal    total number of events processed (dispatched to handlers)

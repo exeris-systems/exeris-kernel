@@ -18,7 +18,8 @@ import java.lang.invoke.MethodHandle;
  * <p>This is a standard {@code record} whose fields are all identity-free.
  * No {@code ==}, no {@code synchronized}, no {@code System.identityHashCode()} — it
  * scalarizes cleanly via C2 JIT Escape Analysis on the hot path.
- * Will be migrated to {@code value record} once JEP 401 is mainline.
+ * Declared {@code value record} on the `preview` line (JEP 401); asserted by
+ * {@code Class::isValue} in its ValhallaReadiness test.
  *
  * <h2>C-type to ValueLayout mapping</h2>
  * <pre>

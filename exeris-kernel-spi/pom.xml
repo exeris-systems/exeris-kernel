@@ -16,6 +16,24 @@
     <description>The "Invisible Wall" — agnostic L0/L1/L2 contracts and RAII memory protocols.</description>
 
     <properties>
+    <!--
+        PREVIEW LINE ONLY — the FOURTH tool this line outruns, and the one this document
+        previously singled out as unaffected ("Checkstyle stays ON — it is syntax-level").
+        JEP 401 value classes falsify that: Checkstyle's Java grammar does not know the `value`
+        modifier and fails to PARSE the file — "no viable alternative at input 'value'" — so it
+        reports a configuration error, not a style finding.
+
+        Note the difference from PMD / ArchUnit / JaCoCo, because it widens the rule rather than
+        repeating it: those three fail on the class-file MAJOR VERSION, so they break when this
+        line bumps its JDK. Checkstyle fails on preview SOURCE SYNTAX, so it breaks the moment
+        this line uses a preview language feature at all — which is what the line exists to do.
+        Tool lag reaches source-level tools too, not only bytecode readers.
+
+        The bar is not lowered: `main` runs Checkstyle over the same sources on JDK 25, where no
+        `value` modifier appears. RE-ENABLE when Checkstyle's grammar accepts JEP 401. Test it by
+        deleting this property and running `mvn -pl exeris-kernel-spi checkstyle:check`.
+        -->
+    <checkstyle.skip>true</checkstyle.skip>
         <!--
             v0.8 Sprint 6 (Coverage C-P0-01): LINE coverage floor for the SPI bundle.
             Current measurement: ~36% (records / enums / interface skeletons inflate

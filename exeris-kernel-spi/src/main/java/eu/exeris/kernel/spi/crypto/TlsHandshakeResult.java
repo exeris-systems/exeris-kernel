@@ -12,7 +12,7 @@ package eu.exeris.kernel.spi.crypto;
  * SPI: Immutable result of a single TLS handshake step.
  *
  * <h2>Valhalla Readiness</h2>
- * <p>Immutable data carrier and candidate for {@code value record} once JEP 401
+ * <p>Immutable data carrier, declared {@code value record} on the `preview` line (JEP 401,
  * is mainline — at that point JVMs will be able to flatten instances in arrays and
  * as fields of other value types, eliminating object headers on the heap.
  *

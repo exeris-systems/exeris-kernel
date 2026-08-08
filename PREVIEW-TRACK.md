@@ -64,7 +64,7 @@ unavailable on this line as a standing condition**. Each is recorded rather than
   the suites' own non-empty-analysis assertions (`verifyClassesArePresent`,
   `allThreeTiersAreOnTheAnalysisClasspath`), which exist precisely so an empty analysis can never pass
   as a green one.
-- **Checkstyle** (`checkstyle.skip` in the root POM). **This is the one this document previously
+- **Checkstyle** (`checkstyle.skip` in `exeris-kernel-spi` and `exeris-kernel-core` only — **not** the root, because unlike the other three this failure is not reactor-wide: those two are the only modules carrying `value` syntax, and `community`, `community-kafka`, `community-testkit`, `tck` and `diagnostics-cli` keep real Checkstyle coverage; verified in the build log). **This is the one this document previously
   singled out as unaffected** — "syntax-level and unaffected" — and JEP 401 falsified it. Checkstyle
   13.2.0's Java grammar does not know the `value` modifier and fails to *parse* the file: "no viable
   alternative at input 'value'", reported as a configuration error rather than a style finding.
@@ -168,6 +168,12 @@ this work — so converting them tests the claim rather than asserting a new one
 **Verified in the bytecode, with a control.** `ACC_IDENTITY` (0x0020, formerly `ACC_SUPER`) is **clear**
 on all six and **set** on an untouched carrier (`FlowSnapshot`). Compiling is not evidence that the
 modifier did anything; the flag is.
+
+**And the check is repeatable, not a one-time inspection.** Each carrier's pre-existing
+`ValhallaReadiness` test now asserts `Class::isValue`, because the structural-equality cases already
+there pass for an identity record too — nothing in the suite would have noticed the modifier being
+lost to a merge or a reformat. Proven non-vacuous by mutation: dropping `value` from `MemoryStats`
+reddens exactly `isValueClass` with the message naming `ACC_IDENTITY`.
 
 **Three semantics change, all silently**, which is why the selection criterion mattered more than the
 conversion:

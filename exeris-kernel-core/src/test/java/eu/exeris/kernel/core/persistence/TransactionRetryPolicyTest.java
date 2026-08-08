@@ -131,6 +131,21 @@ class TransactionRetryPolicyTest {
     @DisplayName("Valhalla-readiness — identity-free record")
     class ValhallaReadiness {
 
+        /**
+         * The {@code value} modifier is the only difference between this carrier on the two
+         * distribution lines, and nothing else in the suite would notice if it were lost to a merge
+         * or a reformat — the structural equality cases below pass for an identity record too. This
+         * asserts the modifier itself, so the bytecode check that first proved it is repeatable
+         * rather than a one-time inspection.
+         */
+        @Test
+        @DisplayName("TransactionRetryPolicy is a value class on the preview line (JEP 401)")
+        void isValueClass() {
+            assertThat(TransactionRetryPolicy.class.isValue())
+                    .as("TransactionRetryPolicy must carry the value modifier; ACC_IDENTITY must be clear")
+                    .isTrue();
+        }
+
         @Test
         @DisplayName("Two equal policies are equal by value — no identity dependency")
         void equalByValue() {
