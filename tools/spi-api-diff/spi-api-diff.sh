@@ -27,7 +27,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 SURFACES_CONF="$SCRIPT_DIR/stability-surfaces.conf"
 SPI_PATH="exeris-kernel-spi/src/main/java"
-RELEASE_FLAG="${SPI_API_DIFF_RELEASE:-26}"
+# Derived from the running JDK rather than hardcoded. A fixed value silently rots the moment the
+# build's baseline moves: this defaulted to 26 and broke the gate the day CI pinned JDK 25 LTS
+# (ADR-066), with "release version 26 not supported" — a message that names the flag, not the cause.
+# --enable-preview below is only legal when the release equals the running JDK, so deriving keeps
+# the two consistent by construction. Override with SPI_API_DIFF_RELEASE when diffing deliberately
+# against another level.
+DETECTED_RELEASE="$(java -XshowSettings:properties -version 2>&1 \
+  | awk -F'= ' '/java\.specification\.version/ {gsub(/ /,"",$2); print $2}')"
+RELEASE_FLAG="${SPI_API_DIFF_RELEASE:-${DETECTED_RELEASE:-25}}"
 
 OLD_REF=""; NEW_REF=""; OUT_DIR=""; FAIL_ON_STABLE=0; HISTORY=""; VERIFY_ONLY=0
 

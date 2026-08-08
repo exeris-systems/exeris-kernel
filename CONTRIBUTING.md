@@ -20,7 +20,7 @@ in Java 26:
 | Feature                            | JEP       | Status in JDK              | Used in Kernel                                    |
 |:-----------------------------------|:----------|:---------------------------|:--------------------------------------------------|
 | Virtual Threads                    | JEP 444   | Stable (JDK 21)            | Every request-handling path                       |
-| Structured Concurrency (Joiner)    | JEP 525   | Preview → finalising       | `StructuredTaskScope.open(Joiner)` in Core/Bootstrap |
+| Structured Concurrency             | GA / preview | **Track-dependent** — see ADR-066 | `StructuredScope` on `main`; `StructuredTaskScope.open(Joiner)` on the `preview` branch |
 | Scoped Values                      | JEP 506   | Preview → finalising       | `KernelContext`, `StorageContext`, `PrincipalContext` |
 | Foreign Function & Memory (FFM)    | JEP 454   | Stable (JDK 22)            | OpenSSL bindings, off-heap I/O, `io_uring`        |
 | Flexible Constructor Bodies        | JEP 513   | **Closed / Delivered (JDK 25)** | Field pre-init before `super()` in value-ready types |
@@ -244,8 +244,8 @@ Before submitting a PR, verify the following:
 | Pattern                                  | Why banned                                           | What to use instead               |
 |:-----------------------------------------|:-----------------------------------------------------|:-----------------------------------|
 | `ThreadLocal`                            | Memory leaks with Virtual Threads                    | `ScopedValue` (JEP 506)            |
-| `ExecutorService` / `Executors`          | Unstructured concurrency, orphan threads             | `StructuredTaskScope` (JEP 525)    |
-| `CompletableFuture`                      | Unstructured concurrency                             | `StructuredTaskScope`              |
+| `ExecutorService` / `Executors`          | Unstructured concurrency, orphan threads             | `StructuredScope` (`main`) / `StructuredTaskScope` (`preview`) |
+| `CompletableFuture`                      | Unstructured concurrency                             | `StructuredScope` (`main`) / `StructuredTaskScope` (`preview`) |
 | `ByteBuffer` on the cipher path          | Allocates wrapper objects per record                 | `LoanedBuffer` + `MemorySegment`   |
 | `Arena.ofConfined()` in business logic   | Bypasses `WatermarkManager`                          | `MemoryAllocator.allocate()`       |
 | `sun.misc.Unsafe`                        | Unsafe, no arena bounds checking                     | FFM API / `VarHandle`              |
@@ -308,7 +308,7 @@ Calling `LoanedBuffer.close()` twice decrements `refCount` below zero. The alloc
 the same slab. The old holder's `MemorySegment` address is now reused — the next `segment().address()`
 call is a use-after-free. On Enterprise tier: `SIGSEGV`. Write all tests with `LeakDetectionMode.PARANOID`.
 
-### Rule 3: `retain()` Before `StructuredTaskScope.fork()`
+### Rule 3: `retain()` Before Any `fork()`
 
 ```java
 buffer.retain();   // refCount +1 BEFORE forking

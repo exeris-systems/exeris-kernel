@@ -16,7 +16,7 @@ import eu.exeris.kernel.spi.exceptions.events.EventEngineException;
  * <h2>Implementations</h2>
  * <ul>
  *   <li><b>Community</b>: Drains the {@link EventQueue} and forks handler invocations
- *       via {@code StructuredTaskScope} (JEP 525). One virtual thread per handler
+ *       via a structured scope. One virtual thread per handler
  *       invocation. Structured concurrency ensures all handlers complete before the
  *       loop tick finishes — no orphan threads.</li>
  *   <li><b>Enterprise</b>: Lock-free single-thread event loop with optional CPU affinity.

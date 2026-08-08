@@ -19,7 +19,7 @@ import eu.exeris.kernel.spi.exceptions.flow.FlowProviderException;
  * The SPI contract is implementation-blind:
  * <ul>
  *   <li><b>Community binding</b> (free, priority 0): heap-based orchestration,
- *       {@code StructuredTaskScope} scheduler, no ordering guarantees, no off-heap,
+ *       virtual-thread scheduler, no ordering guarantees, no off-heap,
  *       no raw pointers. Lives in {@code exeris-kernel-community}.</li>
  *   <li><b>Enterprise binding</b> (secret sauce, priority 100): off-heap flow descriptors,
  *       lock-free state transitions, slab-based flow nodes, zero-GC, zero dynamic

@@ -86,8 +86,12 @@ public interface EventBus {
      * Publishes an event and blocks until all handlers have completed.
      *
      * <p>Same RAII ownership transfer as {@link #publish} — caller must NOT close payload.
-     * Standard implementations join structured concurrency after forking all handlers.
-     * High-performance native implementations spin on the processed-event counter (bounded wait).
+     * How the wait is implemented is not part of this contract, and the bindings a handler observes
+     * follow from it: the in-memory binding runs handlers on the calling thread, so they observe
+     * every {@code ScopedValue} the publisher had bound — including values the kernel does not
+     * define (ADR-066). A binding that dispatches onto other threads can only deliver what it can
+     * name. High-performance native implementations spin on the processed-event counter
+     * (bounded wait).
      *
      * <p>MUST NOT be called from within an event handler — deadlock risk.
      *

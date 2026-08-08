@@ -14,9 +14,12 @@ package eu.exeris.kernel.spi.bootstrap;
  * <h2>The Holy Order</h2>
  * <p>A subsystem in phase N may only start after <em>all</em> subsystems in phase N-1
  * have reached the {@code RUNNING} state (i.e., their {@link Subsystem#start()} has
- * returned cleanly). Subsystems within the same phase may run in
- * parallel (via {@code StructuredTaskScope}) provided their
- * {@link Subsystem#dependsOn()} graph allows it.
+ * returned cleanly). Subsystems within the same phase are grouped into dependency-safe
+ * rounds by their {@link Subsystem#dependsOn()} graph. Whether a round's members run
+ * concurrently is an implementation choice and not part of this contract — the Core
+ * orchestrator starts them in order on the booting thread (ADR-066), because a subsystem's
+ * {@code start()} must observe the {@code ScopedValue} bindings the application established
+ * around {@code boot()}, and those cannot be carried onto another thread.
  *
  * <pre>
  * FOUNDATION (L0) — sequential:  memory → crypto → telemetry
@@ -47,8 +50,8 @@ public enum BootstrapPhase {
     FOUNDATION(0),
 
     /**
-     * Service subsystems — initialized in <b>parallel</b> via {@code StructuredTaskScope}
-     * after all {@link #FOUNDATION} subsystems have reached the {@code RUNNING} state.
+     * Service subsystems — started after all {@link #FOUNDATION} subsystems have reached the
+     * {@code RUNNING} state, in dependency-safe rounds within the phase.
      *
      * <p>Typical members: {@code security}, {@code persistence}, {@code transport},
      * {@code graph}.
@@ -56,8 +59,8 @@ public enum BootstrapPhase {
     SERVICES(1),
 
     /**
-     * Runtime subsystems — initialized in <b>parallel</b> via {@code StructuredTaskScope}
-     * after all {@link #SERVICES} subsystems have reached the {@code RUNNING} state.
+     * Runtime subsystems — started after all {@link #SERVICES} subsystems have reached the
+     * {@code RUNNING} state, in dependency-safe rounds within the phase.
      *
      * <p>Typical members: {@code events}, {@code flow}.
      */

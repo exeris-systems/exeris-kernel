@@ -9,6 +9,7 @@
 package eu.exeris.kernel.community.events;
 
 import eu.exeris.kernel.community.events.jfr.EventLoopFailureEvent;
+import eu.exeris.kernel.core.concurrent.StructuredScope;
 import eu.exeris.kernel.spi.events.EventBatchProcessor;
 import eu.exeris.kernel.spi.events.EventDescriptor;
 import eu.exeris.kernel.spi.events.EventLoop;
@@ -29,7 +30,6 @@ import java.util.Queue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.StructuredTaskScope;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -200,8 +200,10 @@ final class CommunityEventLoop implements EventLoop {
         List<EventDescriptor> readonlyDescriptors = Collections.unmodifiableList(descriptors);
         Queue<Throwable> failures = new ConcurrentLinkedQueue<>();
 
-        try (StructuredTaskScope<Void, Void> scope =
-                     StructuredTaskScope.open(StructuredTaskScope.Joiner.<Void>awaitAll())) {
+        // openWithoutBindings states the status quo rather than narrowing it: the loop thread is
+        // started by a plain Thread.ofVirtual(), so it holds no ScopedValue bindings, and the
+        // StructuredTaskScope this replaces therefore inherited an empty set into every processor.
+        try (StructuredScope scope = StructuredScope.openWithoutBindings()) {
             for (EventBatchProcessor processor : processors) {
                 forkProcessor(scope, processor, readonlyDescriptors, payloads, failures);
             }
@@ -217,7 +219,7 @@ final class CommunityEventLoop implements EventLoop {
         dispatchNanosTotal.addAndGet(System.nanoTime() - started);
     }
 
-    private static void forkProcessor(StructuredTaskScope<Void, Void> scope,
+    private static void forkProcessor(StructuredScope scope,
                                       EventBatchProcessor processor,
                                       List<EventDescriptor> readonlyDescriptors,
                                       List<EventPayload> payloads,
