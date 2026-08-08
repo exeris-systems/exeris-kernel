@@ -111,12 +111,21 @@ Two standing costs, so neither is a surprise next time:
 **Always finish a merge-up by running `mvn clean verify -P coverage` — the command CI runs.** A clean
 merge is not evidence of a correct one.
 
-**And sweep the docs, not just the code.** The first pass of this merge-up caught the two SPI javadocs
-and missed two more instances in `docs/subsystems/` — an `EventLoop` table row and a `bootstrap.md`
-diagram label, both naming the default line's mechanism unqualified. The reason is worth keeping: the
-sweep was a grep restricted to `*.java`, so `.md` files could not appear in it, and
-`docs/subsystems/*.md` is precedence tier 1. The sweep after a merge-up is
-`grep -rn StructuredScope --include=*.md` as much as it is the source one.
+**Sweep the incoming delta, not the files you thought of.** The same miss happened three times on the
+v0.11 merge-up — two SPI javadocs, then two subsystem docs, then two CHANGELOG bullets — and each time
+the sweep was a grep over files chosen by hand, which is why each round found a different subset. The
+check that catches all three looks at what the merge *brought in*:
+
+```bash
+git diff "$(git merge-base origin/preview HEAD)"..HEAD -- '*.md' '*.java' \
+  | grep -nE '^\+.*(calling thread|booting thread|in-thread|`StructuredScope`|preview-clean)' \
+  | grep -vE 'on the .0\.[0-9]+\.[0-9]+. artifact|distributed line|on .main.'
+```
+
+The first grep finds every added line that describes a mechanism; the second drops the ones already
+qualified by line. Run it after every merge-up, before pushing. Verified against this milestone's
+history: it flags both CHANGELOG bullets and both subsystem-doc sites that three hand-made sweeps
+missed.
 
 ## Still to do on this line
 

@@ -53,14 +53,15 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   the pre-1.0 framing now distinguishes "no consumer under a support contract" from "no consumers",
   and points at the generated record.
 
-- **`EventBus.publishAndAwait` runs handlers on the calling thread**, in subscription order (ADR-066).
+- **`EventBus.publishAndAwait` runs handlers on the calling thread — on the `0.11.0` artifact**, in
+  subscription order (ADR-066); `0.11.0-preview` keeps the `StructuredTaskScope` fan-out.
   Handler durations now sum rather than overlap, and a slow handler delays its successors; `publish`
   is unchanged. This is what preserves the path's `ScopedValue` contract without a preview API — a
   handler observes every value the publisher bound, including ones the kernel cannot name, which no
   fork-based GA mechanism can deliver.
-- **Subsystem start runs on the booting thread** in dependency-safe rounds, so a phase takes the sum
-  of its subsystems' start times rather than the longest — once per JVM, and `FOUNDATION` was already
-  sequential. Forking with a rebuilt kernel carrier was implemented and booted the HTTP subsystem with
+- **Subsystem start runs on the booting thread — on the `0.11.0` artifact** in dependency-safe rounds,
+  so a phase takes the sum of its subsystems' start times rather than the longest; once per JVM, and
+  `FOUNDATION` was already sequential. `0.11.0-preview` still forks the round. Forking with a rebuilt kernel carrier was implemented and booted the HTTP subsystem with
   no handler bound, because `HTTP_SERVER_HANDLER` is bound by the application around `boot()`.
 - **A failed subsystem in a parallel phase now throws `BootstrapException`** instead of escaping as
   the unchecked preview type `StructuredTaskScope.FailedException` — which had also made the
