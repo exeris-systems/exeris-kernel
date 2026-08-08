@@ -145,7 +145,7 @@ the payload immediately — eliminating silent leaks from dead events.
 |:------------------|:----------------------------------------------------------------------------------------|
 | **`EventBus`**    | Pub/Sub. Manages subscriptions (returns `SubscriptionToken`), publishes fire-and-forget |
 | **`EventQueue`**  | Durable backpressure buffer                                                             |
-| **`EventLoop`**   | Drains the queue. Community: `StructuredScope` (Virtual Threads)                        |
+| **`EventLoop`**   | Drains the queue. Community: a structured scope, one virtual thread per handler — `StructuredScope` on the distributed line, `StructuredTaskScope` on `preview` (ADR-066) |
 | **`EventRegistry`** | Type system. Maps event names → `int` ordinals for O(1) hot-path routing            |
 
 `EventRegistry` is the critical performance gate: ordinal-based routing eliminates `String` comparison on

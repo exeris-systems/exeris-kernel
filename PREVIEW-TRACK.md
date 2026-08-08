@@ -111,6 +111,13 @@ Two standing costs, so neither is a surprise next time:
 **Always finish a merge-up by running `mvn clean verify -P coverage` — the command CI runs.** A clean
 merge is not evidence of a correct one.
 
+**And sweep the docs, not just the code.** The first pass of this merge-up caught the two SPI javadocs
+and missed two more instances in `docs/subsystems/` — an `EventLoop` table row and a `bootstrap.md`
+diagram label, both naming the default line's mechanism unqualified. The reason is worth keeping: the
+sweep was a grep restricted to `*.java`, so `.md` files could not appear in it, and
+`docs/subsystems/*.md` is precedence tier 1. The sweep after a merge-up is
+`grep -rn StructuredScope --include=*.md` as much as it is the source one.
+
 ## Still to do on this line
 
 - **Exercise JEP 401 (Value Objects) and JEP 539 (Strict Field Initialization)**, both preview in

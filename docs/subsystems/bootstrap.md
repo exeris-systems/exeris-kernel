@@ -183,7 +183,7 @@ flowchart LR
     NIC["NIC (Hardware)"]
     IOR["io_uring<br/>(kernel ring)"]
     ANA["Panama Arena<br/>(MemorySegment — off-heap)"]
-    WRK["Worker VThread<br/>(StructuredScope)"]
+    WRK["Worker VThread<br/>(structured scope)"]
     DB["Persistence SPI<br/>(LoanedBuffer)"]
 
     NIC -- DMA --> IOR
