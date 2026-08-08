@@ -94,15 +94,28 @@ graph TD
    exclusively via `ServiceLoader` and SPI contracts.
 2. **Orchestration Only:** Core makes decisions (Watermarks, Load Shedding, Backpressure), but does not execute the
    physical I/O.
-3. **Structured Concurrency (JDK 25+ Joiner API):** By default, all concurrent *subtasks* in Core must be created via
-   `StructuredTaskScope.open(Joiner)` with an explicit `Joiner`. `ThreadLocal` and raw `ExecutorService` are entirely
-   BANNED. Custom `Joiner` implementations should be used for complex aggregation to ensure typed, zero-cast handover
-   of subtask results (e.g., `LoanedBuffer`). `ScopedValue` context is propagated strictly into forked subtasks. The only
-   sanctioned exceptions are: (a) request-root / entrypoint virtual threads that own their own structured scopes (e.g.,
-   the root thread that opens a `StructuredTaskScope` for downstream work), (b) long-lived background maintenance loops
-   whose lifetime equals the JVM or subsystem (e.g., `MemoryMaintenanceTask`), and (c) PAQS per-stream virtual threads
-   where the stream lifecycle defines the concurrency scope (`PaqsScheduler`). These exceptions must be explicitly
-   documented in-code and must not reintroduce ad-hoc executors or unstructured concurrency.
+3. **Structured Concurrency — mechanism depends on the distribution line (ADR-066):** all concurrent *subtasks* in Core
+   must run inside a structured scope that owns their lifetime. `ThreadLocal` and raw `ExecutorService` are entirely
+   BANNED, and an ad-hoc `Thread.ofVirtual().start(...)` outside a scope is not an alternative. Which scope depends on
+   the track:
+   - **Default line (`main`, the distributable artifact):** `eu.exeris.kernel.core.concurrent.StructuredScope`, built on
+     virtual threads and `ScopedValue` (both GA), so the artifact imposes no `--enable-preview` on consumers. It is
+     await-all: `join()` returns whether tasks succeeded or failed, and the caller inspects `ForkedTask.state()`.
+   - **`preview` branch:** `StructuredTaskScope.open(Joiner)` with an explicit `Joiner`, and custom `Joiner`
+     implementations for typed, zero-cast handover of subtask results (e.g. `LoanedBuffer`).
+
+   `ScopedValue` context is propagated strictly into forked subtasks — but the two mechanisms achieve it differently, and
+   the difference is a correctness trap rather than a detail. `StructuredTaskScope` forks **inherit** the bindings in
+   effect at scope open; a plain virtual thread does **not**, and no GA API can snapshot a thread's live bindings. So
+   `StructuredScope` requires the bindings to be handed in as a `ScopedValue.Carrier` and re-establishes them inside each
+   task. Choosing `openWithoutBindings()` is a statement that the task bodies read no scoped value, directly or through
+   any SPI they call.
+
+   The only sanctioned exceptions are: (a) request-root / entrypoint virtual threads that own their own structured scopes,
+   (b) long-lived background maintenance loops whose lifetime equals the JVM or subsystem (e.g., `MemoryMaintenanceTask`),
+   and (c) PAQS per-stream virtual threads where the stream lifecycle defines the concurrency scope (`PaqsScheduler`).
+   These exceptions must be explicitly documented in-code and must not reintroduce ad-hoc executors or unstructured
+   concurrency.
 4. **Fail-Fast Bootstrap:** Must validate all injected SPI providers at T-minus 0 and halt the JVM if contracts are not
    met.
 5. **Synchronization (JEP 491 Amendment):** The `synchronized` keyword is **permitted exclusively** in off-heap memory

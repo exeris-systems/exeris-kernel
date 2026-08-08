@@ -70,14 +70,20 @@ public class ExerisArchitectureTest {
             .that().resideInAPackage("eu.exeris.kernel..")
             .should().dependOnClassesThat().haveFullyQualifiedName("java.util.concurrent.Executors")
             .allowEmptyShould(true)
-            .because("All concurrency must use StructuredTaskScope (JEP 525).");
+            .because("All concurrency must run inside a structured scope that owns the task's "
+                    + "lifetime: StructuredScope (GA virtual threads + ScopedValue) on the default "
+                    + "line, StructuredTaskScope on the preview branch. See docs/modules/02-core.md "
+                    + "rule 3 and ADR-066 — the rule bans the unstructured escape hatch, not one of "
+                    + "the two sanctioned mechanisms.");
 
     @ArchTest
     static final ArchRule noCompletableFuture = noClasses()
             .that().resideInAPackage("eu.exeris.kernel..")
             .should().dependOnClassesThat().haveFullyQualifiedName("java.util.concurrent.CompletableFuture")
             .allowEmptyShould(true)
-            .because("CompletableFuture is unstructured concurrency. Use StructuredTaskScope.");
+            .because("CompletableFuture is unstructured concurrency. Use the structured scope for "
+                    + "the distribution line — StructuredScope on the default line, "
+                    + "StructuredTaskScope on the preview branch (docs/modules/02-core.md rule 3).");
 
     @ArchTest
     static final ArchRule noThreadLocal = noClasses()
