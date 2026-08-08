@@ -145,10 +145,10 @@ Contracts live in **spi**, orchestration in **core**, and execution in the **dri
 - Lightweight, scheduler‑managed threads
 - Memory cost: ~100 bytes (vs ~1 MB for OS threads)
 - Enables **1 thread per request** on Carrier Threads
-- Managed within `StructuredTaskScope` — never spawned unstructured
+- Managed within a structured scope that owns their lifetime — never spawned unstructured
 
 ### 5. Structured Concurrency (JEP 525 / JDK 25 Joiner API)
-- All parallel operations use `StructuredTaskScope.open(Joiner)` — never raw `ExecutorService`
+- All parallel operations run inside a structured scope — `StructuredScope` on the distributed line, `StructuredTaskScope` on the `preview` branch (ADR-066) — never raw `ExecutorService`
 - `Joiner.awaitAllSuccessfulOrThrow()` for bootstrap: one failure cancels the entire scope
 - `Joiner.anySuccessfulResultOrThrow()` for competitive I/O: first result wins, rest cancelled immediately
 - `join()` returns a typed result `R` — zero-cast `LoanedBuffer` handover between subtasks
@@ -175,7 +175,7 @@ Contracts live in **spi**, orchestration in **core**, and execution in the **dri
 ┌─────────────────────────────────────────────────────────────┐
 │  1. Packet Arrives -> Transport parses into Arena (Panama)  │
 ├─────────────────────────────────────────────────────────────┤
-│  2. Dispatcher opens StructuredTaskScope with Joiner (1/stream)│
+│  2. Dispatcher opens a structured scope (1 per stream)         │
 ├─────────────────────────────────────────────────────────────┤
 │  3. Priority-Aware Scheduler applies load-shedding          │
 ├─────────────────────────────────────────────────────────────┤

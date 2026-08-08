@@ -22,9 +22,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Queue;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -192,7 +190,9 @@ public final class InMemoryEventBus implements EventBus {
         // early-exit path (interrupt, RuntimeException) — every retain() is balanced.
         List<TrackingWrapper> wrappers = buildWrappers(payload, slotCount);
 
-        Queue<Throwable> failures = new ConcurrentLinkedQueue<>();
+        // Plain list, deliberately: dispatch no longer crosses a thread boundary, so the
+        // concurrent queue this used to be would buy nothing but an allocation and a CAS per add.
+        List<Throwable> failures = new ArrayList<>(slotCount);
         try {
             dispatchOnCallingThread(slots, wrappers, descriptor, failures);
         } catch (InterruptedException interruptEx) {
@@ -261,7 +261,7 @@ public final class InMemoryEventBus implements EventBus {
     private static void dispatchOnCallingThread(List<Slot> slots,
                                                 List<TrackingWrapper> wrappers,
                                                 EventDescriptor descriptor,
-                                                Queue<Throwable> failures) throws InterruptedException {
+                                                List<Throwable> failures) throws InterruptedException {
         int slotCount = slots.size();
         for (int i = 0; i < slotCount; i++) {
             if (Thread.interrupted()) {
@@ -284,7 +284,7 @@ public final class InMemoryEventBus implements EventBus {
         }
     }
 
-    private static void throwIfFailed(Queue<Throwable> failures) {
+    private static void throwIfFailed(List<Throwable> failures) {
         if (failures.isEmpty()) {
             return;
         }

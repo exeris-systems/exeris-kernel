@@ -52,7 +52,7 @@ per second on a single thread** via L1 cache alignment after value-type flatteni
 Exeris replaces legacy reactive event loops with massive, blocking concurrency.
 
 - **Thread-per-Request:** Simplified programming model with sub-millisecond context switching on Carrier Threads.
-- **Structured Concurrency:** Guaranteed resource cleanup and fail-safe error propagation via `StructuredTaskScope`
+- **Structured Concurrency:** Guaranteed resource cleanup and fail-safe error propagation — every task's lifetime is owned by the scope that started it. The distributed artifact implements this on GA APIs (virtual threads + `ScopedValue`) so it requires no preview flag of its consumers (ADR-066)
   (JEP 525). All parallel operations are strictly bound — never unstructured.
 
 ### 2.3 The Graph Paradox (Data over Driver)

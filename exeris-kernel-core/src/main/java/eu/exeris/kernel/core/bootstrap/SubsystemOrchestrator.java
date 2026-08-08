@@ -703,7 +703,11 @@ public final class SubsystemOrchestrator {
                 }
                 try {
                     doStart(subsystem, phase, profile);
-                } catch (BootstrapException | SubsystemException failure) {
+                } catch (BootstrapException failure) {
+                    // BootstrapException only: doStart catches SubsystemException itself and routes
+                    // it through handleFailure, which either rethrows as BootstrapException or —
+                    // under DEGRADE — removes the subsystem and returns. A SubsystemException arm
+                    // here would be unreachable.
                     failures.add(failure);
                 }
             }
