@@ -196,10 +196,16 @@ slices:
 2. **`ExerisArchitectureTest`** gains a rule forbidding `java.util.concurrent.StructuredTaskScope` inside
    `eu.exeris.kernel..scheduling..` (obligation 2). The existing `noThreadLocal` rule already covers
    obligation 5's `ScopedValue`-only requirement.
-3. **Guard-rationale correction.** The existing `noExecutorsAnywhere` rule states its reason as "All
-   concurrency must use `StructuredTaskScope` (JEP 525)". That rationale predates the Platform Baseline
-   and now contradicts it — the rule itself stays, only its stated reason is stale. Correcting the text
-   rides the SPI PR; the rule is not weakened.
+3. **Guard-rationale correction — DISCHARGED 2026-08-08, not by the SPI PR.** The existing
+   `noExecutorsAnywhere` rule stated its reason as "All concurrency must use `StructuredTaskScope`
+   (JEP 525)". That rationale predates the Platform Baseline and contradicted it — the rule itself
+   stays, only its stated reason was stale. This obligation said the correction "rides the SPI PR";
+   it did not, and was carried unnoticed until the ADR-066 slice that introduced
+   `eu.exeris.kernel.core.concurrent.StructuredScope` re-falsified the same sentence and had to fix
+   it. `noCompletableFuture` carried the identical defect and was not named in this obligation; both
+   now state the invariant as "concurrency must run inside a structured scope that owns the task's
+   lifetime" — `StructuredScope` on the default line, `StructuredTaskScope` on `preview`. Rule
+   predicates unchanged; neither guard is weakened.
 4. **`docs/subsystems/scheduling.md`** lands with the SPI slice, per the one-contract-doc-per-subsystem
    convention.
 5. **Registry check:** `EX-JOB-*` codes present in `KernelErrorCodes` before any throw site references

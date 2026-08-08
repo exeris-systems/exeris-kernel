@@ -78,6 +78,39 @@ does not have, the coverage borrowed from `main` disappears with it.
 Each skip carries its own re-enable trigger and the one command that tests it, in the POM comment
 beside it.
 
+## Keeping this line in sync with `development/*`
+
+Shared work lands on `development/*` first and reaches this branch by **merge-up**, not by a second
+PR. Authoring twice is how `tools/spi-api-diff/spi-api-diff.sh` ended up with the same fix made
+independently on both lines with different fallbacks, conflicting with itself.
+
+Measured on the v0.11 merge-up: **13 conflicts, 35 files clean**, and every conflict was one or two
+hunks. The resolution is mechanical, and `git rerere` records it:
+
+| conflict group | resolution |
+|---|---|
+| the four concurrency sites + `CoreFailurePolicyTckTest` | keep this branch's — the two mechanisms are in direct opposition |
+| root POM, `build-config` POM, both annotation processors and their tests, `maven.yml`, `spi-api-diff.sh` | keep this branch's — JDK level and toolchain |
+| everything else | take the incoming side |
+
+**The conflicts are the safe part. The hazard is what merges cleanly.** Two SPI javadocs arrived with
+no conflict and were **false here**: `EventBus.publishAndAwait` claimed the in-memory binding runs
+handlers on the calling thread, and `BootstrapPhase` claimed the orchestrator starts subsystems on the
+booting thread. Both describe the default line. They have been rewritten to state the *contract* and
+the constraint behind it rather than one line's mechanism, so they are now true on both — **`main`
+should adopt the same wording**, at which point those two files stop conflicting forever.
+
+Two standing costs, so neither is a surprise next time:
+- `core/concurrent/StructuredScope` and its test are **deleted here** — they are the default line's
+  downgrade artefact and would be dead code on a branch that uses `StructuredTaskScope`. The price is
+  a modify/delete conflict on every future merge-up that touches them.
+- `tools/preview-bytecode-scan/` is **kept, byte-identical to `main`'s, and deliberately unwired**
+  here: it asserts zero preview bytecode, which is the exact inverse of this line's design. Identical
+  files never conflict, which is why keeping it costs less than deleting it.
+
+**Always finish a merge-up by running `mvn clean verify -P coverage` — the command CI runs.** A clean
+merge is not evidence of a correct one.
+
 ## Still to do on this line
 
 - **Exercise JEP 401 (Value Objects) and JEP 539 (Strict Field Initialization)**, both preview in
