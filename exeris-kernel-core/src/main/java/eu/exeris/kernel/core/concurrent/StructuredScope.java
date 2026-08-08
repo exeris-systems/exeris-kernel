@@ -52,8 +52,31 @@ import java.util.concurrent.Callable;
  * try-with-resources; {@code fork} and {@code join} are confined to the thread that opened the
  * scope and reject calls from any other.
  *
- * <p>This class is not thread-safe by design: confinement to the owner thread is the invariant that
- * makes the task list safe to publish without synchronization.
+ * <h2>Memory model</h2>
+ *
+ * <p>Two groups of state, protected by two different things — the mix of plain and {@code volatile}
+ * fields below is deliberate, not an oversight.
+ *
+ * <p><strong>Scope state</strong> ({@code joined}, {@code closed}, the task list) is plain, and is
+ * confined to the owning thread: every method that touches it calls {@code ensureOwner()} before
+ * doing so, {@code close()} included. Nothing here is safe to call from another thread, and the API
+ * rejects the attempt rather than tolerating it.
+ *
+ * <p><strong>Task results</strong> ({@code result}, {@code exception}) are written by the forked
+ * thread and read by the owner, and are plain fields made safe by two independent happens-before
+ * edges — either one alone would suffice:
+ * <ul>
+ *   <li>{@code Thread.join()} in {@code awaitTermination()}: everything the forked thread did
+ *       happens-before the owner returns from the join, so after {@link #join()} the owner sees the
+ *       results (JLS 17.4.5).</li>
+ *   <li>the {@code volatile} write to {@code state}, which every task performs <em>after</em>
+ *       writing its result or exception. A reader that observes {@code SUCCESS} or {@code FAILED}
+ *       therefore also observes what was written before it — which is what makes
+ *       {@link ForkedTask#state()} safe to poll before joining, not merely after.</li>
+ * </ul>
+ *
+ * <p>{@code state} moves once, monotonically, from {@code RUNNING} to a terminal value, so a reader
+ * can never observe it going backwards.
  *
  * @since 0.11.0
  */
@@ -175,10 +198,14 @@ public final class StructuredScope implements AutoCloseable {
     @SuppressWarnings("java:S2142")
     @Override
     public void close() {
+        // Owner check FIRST: `closed` is a plain field, so reading it before establishing that we
+        // are on the owning thread would be an unsynchronized read of a field another thread wrote.
+        // Harmless in outcome — the worst case is a stale `false` followed by the check below — but
+        // it is the one place that would have made "these booleans are thread-confined" untrue.
+        ensureOwner();
         if (closed) {
             return;
         }
-        ensureOwner();
         closed = true;
         for (ForkedTask<?> task : tasks) {
             task.interruptIfRunning();

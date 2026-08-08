@@ -310,6 +310,57 @@ class StructuredScopeTest {
         }
     }
 
+    @Nested
+    @DisplayName("Memory model")
+    class MemoryModel {
+
+        /**
+         * Reads the result through the {@code volatile state} edge alone, never through
+         * {@code join()}. If the terminal state were published without the result that precedes it,
+         * this is where it would show. A passing run is a regression guard, not a proof — ruling a
+         * data race out rather than failing to observe one needs jcstress, which this repository
+         * does not yet run.
+         */
+        @Test
+        @DisplayName("observing a terminal state() implies the result is visible, without joining")
+        void terminalStateImpliesVisibleResult() throws Exception {
+            for (int round = 0; round < 500; round++) {
+                String payload = "payload-" + round;
+                try (StructuredScope scope = StructuredScope.openWithoutBindings()) {
+                    StructuredScope.ForkedTask<String> task = scope.fork(() -> payload);
+
+                    while (task.state() == StructuredScope.State.RUNNING) {
+                        Thread.onSpinWait();
+                    }
+
+                    assertThat(task.result())
+                            .as("round %d: SUCCESS was visible but the result was not", round)
+                            .isEqualTo(payload);
+                    scope.join();
+                }
+            }
+        }
+
+        @Test
+        @DisplayName("close() rejects a foreign thread even once the scope is already closed")
+        void foreignCloseIsRejectedEvenWhenAlreadyClosed() throws Exception {
+            StructuredScope scope = StructuredScope.openWithoutBindings();
+            scope.fork(() -> "ok");
+            scope.join();
+            scope.close();
+
+            AtomicReference<Throwable> failure = new AtomicReference<>();
+            Thread foreign = Thread.ofVirtual().start(() -> failure.set(catchThrowableOf(scope::close)));
+            foreign.join();
+
+            assertThat(failure.get())
+                    .as("an early return on the plain `closed` field would have let a foreign "
+                            + "thread read it unsynchronized")
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("confined");
+        }
+    }
+
     private interface ThrowingBlock {
         void run() throws Exception;
     }
