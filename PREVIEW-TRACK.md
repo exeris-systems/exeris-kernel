@@ -155,8 +155,25 @@ missed.
 - **A benchmark for the value carriers.** Six are declared (below) and none is measured; the numbers
   need the benchmark harness and are deliberately post-cut. This document makes **no claim** about
   what value classes buy until one exists.
-- Decide whether this line publishes `0.11.0-preview-SNAPSHOT` to GitHub Packages. The workflow's
-  publish step is currently gated on `main` and `development/*`, so today it does not.
+- **Decide the coordinates for a preview RELEASE, before the cut.** SNAPSHOT publishing is on as of
+  v0.11 (the workflow's publish step now includes this branch), and for SNAPSHOTs the risk below is
+  tolerable because consuming one is always an explicit act. A *release* version is different, and
+  the reason is measured rather than assumed:
+
+  ```
+  ComparableVersion:  0.11.0-preview  >  0.11.0     and  >  0.10.2
+  ```
+
+  Maven sorts an **unknown qualifier after the release**, so `0.11.0-preview` published under the
+  same `groupId:artifactId` would win a `[0.11.0,)` range and `RELEASE` metadata resolution — it
+  would capture precisely the consumers who came for the preview-clean artifact. Publishing it that
+  way is worse than not publishing it at all.
+
+  Three ways out, none yet chosen: a distinct **groupId** (`eu.exeris.preview:*`, so opting in is an
+  explicit coordinate change and the version can stay plain `0.11.0`); a distinct **artifactId**
+  suffix on all eleven modules; or a qualifier Maven sorts *before* the release, which means one of
+  its known set (`alpha`/`beta`/`milestone`/`rc`) and therefore a name that misdescribes what this
+  line is.
 
 ## JEP 401: six carriers are value classes here
 

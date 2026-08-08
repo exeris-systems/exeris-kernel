@@ -155,8 +155,16 @@ jobs:
       #   * SNAPSHOTs are MUTABLE — every push to an RC trunk overwrites the previous
       #     SNAPSHOT artifact so downstream consumers (e.g. exeris-spring-runtime) always
       #     pull the latest RC trunk HEAD.
+      #
+      # THE PREVIEW LINE PUBLISHES TOO (since v0.11) — but read the coordinate note below before
+      # changing its version. Maven's ComparableVersion sorts an UNKNOWN qualifier AFTER the release:
+      # measured, `0.11.0-preview` > `0.11.0` and > `0.10.2`. A release version carrying `-preview`
+      # under the same groupId:artifactId would therefore win a `[0.11.0,)` range and `RELEASE`
+      # metadata resolution — capturing exactly the consumers who wanted the preview-clean artifact.
+      # This line currently publishes only `-SNAPSHOT`s, where consumption is explicit anyway; the
+      # coordinates for a preview RELEASE are an open decision recorded in PREVIEW-TRACK.md.
       - name: Publish to GitHub Packages
-        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/development/'))
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/preview' || startsWith(github.ref, 'refs/heads/development/'))
         continue-on-error: true
         run: |
           mvn deploy -B -e \
