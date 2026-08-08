@@ -156,7 +156,7 @@ jobs:
       #     SNAPSHOT artifact so downstream consumers (e.g. exeris-spring-runtime) always
       #     pull the latest RC trunk HEAD.
       #
-      # THE PREVIEW LINE PUBLISHES TOO (since v0.11) — but read the coordinate note below before
+      # THE PREVIEW LINE PUBLISHES TOO (since v0.11) — but read the rest of this comment before
       # changing its version. Maven's ComparableVersion sorts an UNKNOWN qualifier AFTER the release:
       # measured, `0.11.0-preview` > `0.11.0` and > `0.10.2`. A release version carrying `-preview`
       # under the same groupId:artifactId would therefore win a `[0.11.0,)` range and `RELEASE`
