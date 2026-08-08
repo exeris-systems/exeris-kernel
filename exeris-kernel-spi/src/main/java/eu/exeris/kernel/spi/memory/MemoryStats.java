@@ -14,8 +14,10 @@ import java.util.Objects;
  * Immutable snapshot of {@link MemoryAllocator} diagnostics.
  *
  * <h2>Valhalla Readiness</h2>
- * <p>This is a primitive-only {@code record} structured so it can be migrated to a
- * {@code value record} (JEP 401) once Valhalla is available in the target toolchain.
+ * <p>Primitive-only, and declared {@code value record} on the `preview` line (JEP 401, preview in
+ * JDK 28). The distributed line compiles the same source as an identity {@code record}; the
+ * modifier is the only difference, and it is asserted by {@code Class::isValue} in this carrier's
+ * ValhallaReadiness test rather than left to a one-time inspection.
  * Arrays of {@code MemoryStats} are therefore expected to benefit from header elimination
  * and heap flattening on future JVMs, but no such behaviour is assumed or required today.
  *
@@ -40,7 +42,7 @@ import java.util.Objects;
  * @see MemoryAllocator#stats()
  * @since 0.5.0
  */
-public record MemoryStats(
+public value record MemoryStats(
         long totalBytes,
         long allocatedBytes,
         long freeBytes,

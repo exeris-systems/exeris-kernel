@@ -12,9 +12,12 @@ package eu.exeris.kernel.spi.crypto;
  * SPI: Immutable result of a single TLS shutdown step.
  *
  * <h2>Valhalla Readiness</h2>
- * <p>Designed as a candidate for {@code value record} once JEP 401 is mainline.
- * At that point the {@code sentCloseNotify}/{@code receivedCloseNotify} booleans
- * and the status ordinal can be flattened to minimize header and pointer overhead.
+ * <p>Declared {@code value record} on the `preview` line (JEP 401, preview in JDK 28); the
+ * distributed line compiles the same source as an identity {@code record}. Asserted by
+ * {@code Class::isValue} in this carrier's ValhallaReadiness test.
+ * The {@code sentCloseNotify}/{@code receivedCloseNotify} booleans and the status ordinal are
+ * therefore flattenable, saving header and pointer overhead where a JVM chooses to do so — an
+ * opportunity, not a behaviour this contract assumes.
  *
  * <h2>Zero-Allocation Contract</h2>
  * <p>{@link #COMPLETE} and {@link #ERROR} are pre-allocated singletons.
@@ -25,7 +28,7 @@ package eu.exeris.kernel.spi.crypto;
  * @param receivedCloseNotify whether the peer's close-notify has been received
  * @since 0.5.0
  */
-public record TlsShutdownResult(Status status,
+public value record TlsShutdownResult(Status status,
                                 boolean sentCloseNotify,
                                 boolean receivedCloseNotify) {
 

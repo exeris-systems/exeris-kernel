@@ -188,6 +188,21 @@ class SyscallHandlesTest {
     @DisplayName("Valhalla-readiness — identity-free record")
     class ValhallaReadiness {
 
+        /**
+         * The {@code value} modifier is the only difference between this carrier on the two
+         * distribution lines, and nothing else in the suite would notice if it were lost to a merge
+         * or a reformat — the structural equality cases below pass for an identity record too. This
+         * asserts the modifier itself, so the bytecode check that first proved it is repeatable
+         * rather than a one-time inspection.
+         */
+        @Test
+        @DisplayName("SyscallHandles is a value class on the preview line (JEP 401)")
+        void isValueClass() {
+            assertThat(SyscallHandles.class.isValue())
+                    .as("SyscallHandles must carry the value modifier; ACC_IDENTITY must be clear")
+                    .isTrue();
+        }
+
         @Test
         @DisplayName("Two SyscallHandles with identical fields are equal (value semantics)")
         void equalByValue() {

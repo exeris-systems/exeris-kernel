@@ -12,9 +12,12 @@ package eu.exeris.kernel.spi.crypto;
  * SPI: Immutable result of a single TLS handshake step.
  *
  * <h2>Valhalla Readiness</h2>
- * <p>Immutable data carrier and candidate for {@code value record} once JEP 401
- * is mainline — at that point JVMs will be able to flatten instances in arrays and
- * as fields of other value types, eliminating object headers on the heap.
+ * <p>Immutable data carrier, declared {@code value record} on the `preview` line (JEP 401, preview
+ * in JDK 28). The distributed line compiles the same source as an identity {@code record}; the
+ * modifier is the only difference, and it is asserted by {@code Class::isValue} in this carrier's
+ * ValhallaReadiness test rather than left to a one-time inspection.
+ * A JVM is therefore free to flatten instances in arrays and as fields of other value types,
+ * eliminating object headers on the heap — an opportunity, not a behaviour this contract assumes.
  *
  * <h2>Zero-Allocation Contract</h2>
  * <p>Callers retrieve one of the three pre-allocated singleton instances
@@ -26,7 +29,7 @@ package eu.exeris.kernel.spi.crypto;
  *                        interpretation is left to the implementation tier
  * @since 0.5.0
  */
-public record TlsHandshakeResult(Status status, int nativeErrorCode) {
+public value record TlsHandshakeResult(Status status, int nativeErrorCode) {
 
     /** Pre-allocated singleton: handshake complete. */
     public static final TlsHandshakeResult COMPLETE    = new TlsHandshakeResult(Status.COMPLETE, 0);

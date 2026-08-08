@@ -69,6 +69,7 @@
             `mvn -P coverage -pl exeris-kernel-build-config verify`.
         -->
         <jacoco.skip>true</jacoco.skip>
+
         <coverage.argLine/>
 
         <!--
