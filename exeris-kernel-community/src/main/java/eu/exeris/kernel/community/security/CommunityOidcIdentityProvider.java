@@ -135,6 +135,11 @@ public final class CommunityOidcIdentityProvider implements IdentityProvider {
         return new CommunityOidcIdentityProvider(validator, expectedIssuer);
     }
 
+    /** Package-private: lets the wiring test observe which mapper this provider was built with. */
+    /* default */ ClaimsMapper claimsMapper() {
+        return claimsMapper;
+    }
+
     @Override
     public String providerId() {
         return PROVIDER_ID;
