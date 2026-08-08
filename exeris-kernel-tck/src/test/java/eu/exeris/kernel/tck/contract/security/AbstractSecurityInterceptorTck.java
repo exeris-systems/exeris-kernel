@@ -351,6 +351,11 @@ public abstract class AbstractSecurityInterceptorTck<I> {
                     } catch (InterruptedException e) {
                         Thread.currentThread().interrupt();
                         throw new AssertionError("interrupted", e);
+                    } catch (java.util.concurrent.ExecutionException e) {
+                        // JDK 28: a failed subtask now surfaces here as a checked exception rather than
+                        // the unchecked FailedException of JDK 26. The bodies capture their own failures
+                        // into `failure`, so reaching this means the scope itself gave up.
+                        throw new AssertionError("subtask failed", e);
                     }
                 });
             }
@@ -504,6 +509,11 @@ public abstract class AbstractSecurityInterceptorTck<I> {
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     throw new AssertionError("interrupted", e);
+                } catch (java.util.concurrent.ExecutionException e) {
+                    // JDK 28: a failed subtask now surfaces here as a checked exception rather than
+                    // the unchecked FailedException of JDK 26. The bodies capture their own failures
+                    // into `failure`, so reaching this means the scope itself gave up.
+                    throw new AssertionError("subtask failed", e);
                 }
             });
 

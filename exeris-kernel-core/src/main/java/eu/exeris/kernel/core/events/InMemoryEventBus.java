@@ -167,8 +167,13 @@ public final class InMemoryEventBus implements EventBus {
         List<TrackingWrapper> wrappers = buildWrappers(payload, slotCount);
 
         Queue<Throwable> failures = new ConcurrentLinkedQueue<>();
-        try (StructuredTaskScope<Void, Void> scope =
-                     StructuredTaskScope.open(StructuredTaskScope.Joiner.<Void>awaitAll())) {
+        // JDK 28 changed this shape twice: StructuredTaskScope gained a third type parameter
+        // (the exception join() throws), and Joiner.awaitAll() was REMOVED. allUntil with a
+        // never-true predicate is the same policy — every subtask runs to completion,
+        // failures included — which is what this dispatch has always required.
+        try (StructuredTaskScope<Void, List<StructuredTaskScope.Subtask<Void>>, RuntimeException> scope =
+                     StructuredTaskScope.open(
+                             StructuredTaskScope.Joiner.<Void>allUntil(_ -> false))) {
             forkHandlers(scope, slots, wrappers, descriptor, failures);
             try {
                 scope.join();
@@ -229,7 +234,8 @@ public final class InMemoryEventBus implements EventBus {
         return wrappers;
     }
 
-    private static void forkHandlers(StructuredTaskScope<Void, Void> scope,
+    private static void forkHandlers(
+            StructuredTaskScope<Void, List<StructuredTaskScope.Subtask<Void>>, RuntimeException> scope,
                                      List<Slot> slots,
                                      List<TrackingWrapper> wrappers,
                                      EventDescriptor descriptor,

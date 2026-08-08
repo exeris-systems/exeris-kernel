@@ -220,12 +220,16 @@ public abstract class AbstractMemoryAllocatorTck {
         @Test
         @DisplayName("100 000 Virtual Threads: allocate → write → verify → release — zero leaks")
         @Timeout(60)
-        void avalanche() throws InterruptedException {
+        void avalanche() throws InterruptedException, java.util.concurrent.ExecutionException {
             AtomicLong errors = new AtomicLong(0);
             int threads = avalancheThreadCount();
 
-            try (StructuredTaskScope<Void, Void> scope = StructuredTaskScope.open(
-                    StructuredTaskScope.Joiner.awaitAllSuccessfulOrThrow())) {
+            // JDK 28: StructuredTaskScope gained a third type parameter — the exception join()
+            // throws — so the explicit spelling carries ExecutionException, which is what
+            // awaitAllSuccessfulOrThrow() now reports a failed subtask as.
+            try (StructuredTaskScope<Void, Void, java.util.concurrent.ExecutionException> scope =
+                    StructuredTaskScope.open(
+                            StructuredTaskScope.Joiner.awaitAllSuccessfulOrThrow())) {
 
                 for (int i = 0; i < threads; i++) {
                     final int threadId = i;
@@ -257,14 +261,18 @@ public abstract class AbstractMemoryAllocatorTck {
         @Test
         @DisplayName("Mixed hint sizes: MICRO, SMALL, MEDIUM — no cross-thread corruption")
         @Timeout(60)
-        void mixedHints() throws InterruptedException {
+        void mixedHints() throws InterruptedException, java.util.concurrent.ExecutionException {
             AllocationHint[] hints = {AllocationHint.MICRO, AllocationHint.SMALL, AllocationHint.MEDIUM};
 
             int total = avalancheThreadCount();
             AtomicLong errors = new AtomicLong(0);
 
-            try (StructuredTaskScope<Void, Void> scope = StructuredTaskScope.open(
-                    StructuredTaskScope.Joiner.awaitAllSuccessfulOrThrow())) {
+            // JDK 28: StructuredTaskScope gained a third type parameter — the exception join()
+            // throws — so the explicit spelling carries ExecutionException, which is what
+            // awaitAllSuccessfulOrThrow() now reports a failed subtask as.
+            try (StructuredTaskScope<Void, Void, java.util.concurrent.ExecutionException> scope =
+                    StructuredTaskScope.open(
+                            StructuredTaskScope.Joiner.awaitAllSuccessfulOrThrow())) {
 
                 for (int i = 0; i < total; i++) {
                     AllocationHint hint = hints[i % hints.length];

@@ -200,8 +200,13 @@ final class CommunityEventLoop implements EventLoop {
         List<EventDescriptor> readonlyDescriptors = Collections.unmodifiableList(descriptors);
         Queue<Throwable> failures = new ConcurrentLinkedQueue<>();
 
-        try (StructuredTaskScope<Void, Void> scope =
-                     StructuredTaskScope.open(StructuredTaskScope.Joiner.<Void>awaitAll())) {
+        // JDK 28 changed this shape twice: StructuredTaskScope gained a third type parameter
+        // (the exception join() throws), and Joiner.awaitAll() was REMOVED. allUntil with a
+        // never-true predicate is the same policy — every subtask runs to completion,
+        // failures included — which is what this dispatch has always required.
+        try (StructuredTaskScope<Void, List<StructuredTaskScope.Subtask<Void>>, RuntimeException> scope =
+                     StructuredTaskScope.open(
+                             StructuredTaskScope.Joiner.<Void>allUntil(_ -> false))) {
             for (EventBatchProcessor processor : processors) {
                 forkProcessor(scope, processor, readonlyDescriptors, payloads, failures);
             }
@@ -217,7 +222,8 @@ final class CommunityEventLoop implements EventLoop {
         dispatchNanosTotal.addAndGet(System.nanoTime() - started);
     }
 
-    private static void forkProcessor(StructuredTaskScope<Void, Void> scope,
+    private static void forkProcessor(
+            StructuredTaskScope<Void, List<StructuredTaskScope.Subtask<Void>>, RuntimeException> scope,
                                       EventBatchProcessor processor,
                                       List<EventDescriptor> readonlyDescriptors,
                                       List<EventPayload> payloads,

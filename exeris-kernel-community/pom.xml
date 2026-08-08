@@ -7,7 +7,7 @@
     <parent>
         <groupId>eu.exeris</groupId>
         <artifactId>exeris-kernel-parent</artifactId>
-        <version>0.11.0-SNAPSHOT</version>
+        <version>0.11.0-preview-SNAPSHOT</version>
         <relativePath>../exeris-kernel-parent/pom.xml</relativePath>
     </parent>
     <artifactId>exeris-kernel-community</artifactId>
@@ -204,6 +204,22 @@
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.2.5</version>
                 <configuration>
+                    <!--
+                        PREVIEW LINE ONLY — the driver-side ArchUnit guards are excluded for the same
+                        reason as ExerisArchitectureTest in exeris-kernel-tck: ArchUnit 1.4.2 does not
+                        read class-file major 72 (JDK 28), so the importer loads zero classes. Both
+                        suites carry their own non-empty-analysis assertion
+                        (`allThreeTiersAreOnTheAnalysisClasspath`), which is what caught it — an empty
+                        analysis is never allowed to pass as a green one here.
+
+                        `main` runs both suites on JDK 25 LTS over the same boundaries. See the longer
+                        note in exeris-kernel-tck/pom.xml for the limit of that argument and the
+                        re-enable check.
+                    -->
+                    <excludes>
+                        <exclude>**/KernelTierDirectionArchitectureTest.java</exclude>
+                        <exclude>**/CommunitySchedulingArchitectureTest.java</exclude>
+                    </excludes>
                     <!-- Inherit common JVM flags (ZGC + JFR + preview) from the parent POM. -->
                     <argLine>@{coverage.argLine} ${jvm.args} --add-opens java.base/sun.nio.ch=ALL-UNNAMED --add-opens java.base/java.io=ALL-UNNAMED</argLine>
                     <!-- Optional include filter, e.g. -DincludedGroups=flamegraph -->

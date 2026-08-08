@@ -299,7 +299,7 @@ class ResourceArbiterTest {
         @Test
         @DisplayName("10 000 VTs calling decide() during grace — all return ALLOW, zero exceptions")
         @Timeout(30)
-        void concurrentDecideDuringGrace() throws InterruptedException {
+        void concurrentDecideDuringGrace() throws InterruptedException, java.util.concurrent.ExecutionException {
             WatermarkManager mgr = new WatermarkManager(stubAllocator(0, 1_000_000));
             ResourceArbiter arbiter = new ResourceArbiter(mgr);
             AtomicLong nonAllow = new AtomicLong(0);
@@ -323,7 +323,7 @@ class ResourceArbiterTest {
         @Test
         @DisplayName("10 000 VTs calling decide() post-grace at SHEDDING — all return SHED_LOAD")
         @Timeout(30)
-        void concurrentDecidePostGraceShedding() throws InterruptedException {
+        void concurrentDecidePostGraceShedding() throws InterruptedException, java.util.concurrent.ExecutionException {
             ResourceArbiter arbiter = arbiterPastGrace(WatermarkLevel.SHEDDING);
             AtomicLong nonShed = new AtomicLong(0);
 

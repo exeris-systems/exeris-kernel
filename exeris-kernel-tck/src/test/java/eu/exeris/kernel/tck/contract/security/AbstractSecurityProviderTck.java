@@ -766,7 +766,7 @@ public abstract class AbstractSecurityProviderTck {
 
         @Test
         @DisplayName("100 concurrent VT authenticate() calls — no crashes, no data corruption")
-        void concurrentAuthenticate() throws InterruptedException {
+        void concurrentAuthenticate() throws InterruptedException, java.util.concurrent.ExecutionException {
             AtomicReference<Throwable> failure = new AtomicReference<>();
 
             try (var scope = StructuredTaskScope.open()) {

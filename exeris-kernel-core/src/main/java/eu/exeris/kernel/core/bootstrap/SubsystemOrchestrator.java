@@ -704,6 +704,16 @@ public final class SubsystemOrchestrator {
                 Thread.currentThread().interrupt();
                 throw new BootstrapException(
                         "Bootstrap interrupted during phase " + phase, ex);
+            } catch (java.util.concurrent.ExecutionException ex) {
+                // JDK 28: the bare open() joins with awaitAllSuccessfulOrThrow, whose join() now
+                // reports a failed subtask as a CHECKED ExecutionException — JDK 26 threw the
+                // unchecked FailedException, which escaped this method entirely and made the
+                // failure-collection block above unreachable. Catching it here means a mandatory
+                // subsystem failure finally surfaces as BootstrapException on this line too.
+                Throwable cause = ex.getCause() == null ? ex : ex.getCause();
+                throw new BootstrapException(
+                        "Subsystem(s) failed in phase " + phase
+                        + ". First failure: " + cause.getMessage(), cause);
             }
 
             Set<String> readyNames = ready.stream()

@@ -110,7 +110,12 @@ class CoreFailurePolicyTckTest extends AbstractFailurePolicyTck {
 		try {
 			orchestrator.start(minimalConfig());
 			return false;
-		} catch (SubsystemOrchestrator.BootstrapException | StructuredTaskScope.FailedException _) {
+		} catch (SubsystemOrchestrator.BootstrapException _) {
+			// JDK 28 REMOVED StructuredTaskScope.FailedException, which this used to catch
+			// alongside BootstrapException because join() threw it unchecked and the orchestrator's
+			// own failure path was therefore unreachable. On 28 join() reports a failed subtask as a
+			// checked ExecutionException, the orchestrator catches it and wraps it, and a mandatory
+			// subsystem failure finally arrives as the one type the contract always named.
 			return true;
 		}
 	}

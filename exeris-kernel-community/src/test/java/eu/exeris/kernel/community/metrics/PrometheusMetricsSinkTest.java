@@ -119,7 +119,7 @@ class PrometheusMetricsSinkTest {
 
     @Test
     @DisplayName("Concurrent updates produce a consistent total")
-    void concurrentIncrementsAccumulateCorrectly() throws InterruptedException {
+    void concurrentIncrementsAccumulateCorrectly() throws InterruptedException, java.util.concurrent.ExecutionException {
         PrometheusMetricsSink sink = new PrometheusMetricsSink();
         int threads = 16;
         int perThread = 1_000;

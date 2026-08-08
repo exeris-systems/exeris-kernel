@@ -157,8 +157,13 @@ public final class OutboxOrchestrator implements AutoCloseable {
      * are always called by the same owner thread — Java 26 owner-thread rule satisfied.
      */
     private void ownerLoop() {
-        try (StructuredTaskScope<Void, Void> scope =
-                     StructuredTaskScope.open(StructuredTaskScope.Joiner.awaitAll())) {
+        // JDK 28 changed this shape twice: StructuredTaskScope gained a third type parameter
+        // (the exception join() throws), and Joiner.awaitAll() was REMOVED. allUntil with a
+        // never-true predicate is the same policy — every subtask runs to completion,
+        // failures included — which is what this dispatch has always required.
+        try (StructuredTaskScope<Void, List<StructuredTaskScope.Subtask<Void>>, RuntimeException> scope =
+                     StructuredTaskScope.open(
+                             StructuredTaskScope.Joiner.<Void>allUntil(_ -> false))) {
             scope.fork(() -> {
                 runLoop();
                 return null;

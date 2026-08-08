@@ -5,7 +5,7 @@
 
     <groupId>eu.exeris</groupId>
     <artifactId>exeris-kernel-root</artifactId>
-    <version>0.11.0-SNAPSHOT</version>
+    <version>0.11.0-preview-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <name>Exeris Kernel :: Root</name>
@@ -29,11 +29,46 @@
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
-        <maven.compiler.source>26</maven.compiler.source>
-        <maven.compiler.target>26</maven.compiler.target>
-        <maven.compiler.release>26</maven.compiler.release>
+        <maven.compiler.source>28</maven.compiler.source>
+        <maven.compiler.target>28</maven.compiler.target>
+        <maven.compiler.release>28</maven.compiler.release>
 
         <jdk.preview.enable>--enable-preview</jdk.preview.enable>
+
+        <!--
+            PREVIEW LINE ONLY — PMD is skipped here, and this is a tooling limit, not a lowered bar.
+            PMD 7.22.0 cannot parse JDK 28 class files: its type resolution fails on `java/lang/String`
+            itself ("Parsing failed in ParseLock#doParse() of ClassStub"). With types unresolved, rules
+            that need them start reporting false positives — 20 of them on SPI sources that are clean
+            under the same PMD on JDK 25/26, LooseCoupling on interface-typed fields being the bulk.
+            Running it in that state would not be analysis; it would be noise that teaches the team to
+            ignore lint.
+
+            The bar is NOT lowered, because this line converges into `main`: `main` runs the same PMD
+            on JDK 25 LTS with working type resolution, and every commit here has to survive that gate
+            before it can land there. Checkstyle stays ON — it is syntax-level and unaffected.
+
+            RE-ENABLE when PMD ships a release that resolves types against JDK 28 class files. Test it
+            by deleting this property and running `mvn -pl exeris-kernel-spi pmd:check`: if the
+            ClassStub parse errors are gone, so is the reason for this.
+        -->
+        <pmd.skip>true</pmd.skip>
+
+        <!--
+            PREVIEW LINE ONLY — third tool that cannot read this JDK, same shape as PMD above.
+            JaCoCo 0.8.14 fails report generation with "Unsupported class file major version 72"
+            on the FIRST module it reaches, and would fail identically on every one, since the whole
+            reactor compiles to major 72. Unlike PMD and ArchUnit this one is not merely noisy: it
+            fails `mvn clean verify -P coverage`, which is exactly what CI runs.
+
+            Coverage floors are NOT abandoned. They are ratcheted per module and enforced on `main`
+            (JDK 25 LTS) over the same sources; this line converges into that one. What is lost here
+            is only the ability to observe coverage on the preview toolchain.
+
+            RE-ENABLE when JaCoCo supports class-file major 72: delete this property and run
+            `mvn -P coverage -pl exeris-kernel-build-config verify`.
+        -->
+        <jacoco.skip>true</jacoco.skip>
         <coverage.argLine/>
 
         <!--

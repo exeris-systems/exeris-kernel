@@ -76,7 +76,7 @@ import java.util.TreeMap;
  * {@code eu.exeris.kernel.spi.security.KernelRoles}.
  */
 @SupportedAnnotationTypes(RequiresRoleProcessor.REQUIRES_ROLE_FQN)
-@SupportedSourceVersion(SourceVersion.RELEASE_26)
+@SupportedSourceVersion(SourceVersion.RELEASE_28)
 public final class RequiresRoleProcessor extends AbstractProcessor {
 
     /** Fully-qualified name of the SPI annotation processed by this implementation. */

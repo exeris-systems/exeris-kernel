@@ -206,7 +206,7 @@ class WatermarkManagerTest {
         @Test
         @DisplayName("100 concurrent refresh() calls converge to the correct level")
         @Timeout(10)
-        void concurrentRefreshConverges() throws InterruptedException {
+        void concurrentRefreshConverges() throws InterruptedException, java.util.concurrent.ExecutionException {
             var stub = allocatorWith(850_000, 1_000_000);
             var mgr = new WatermarkManager(stub);
 
