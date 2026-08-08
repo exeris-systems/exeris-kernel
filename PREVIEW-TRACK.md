@@ -43,9 +43,10 @@ rather than the `BootstrapException` the contract names. The checked exception f
 catch restores the intended type. The default line reached the same outcome by a different route
 (ADR-066 §2).
 
-## Two gates cannot run here, and neither is a lowered bar
+## Three gates cannot run here, and none is a lowered bar
 
-Both are **tooling limits on an EA JDK**, recorded rather than quietly skipped:
+All three are **tooling limits on an EA JDK**, recorded rather than quietly skipped. None of them was
+predicted — each was found by running the gate:
 
 - **PMD** (`pmd.skip` in the root POM). PMD 7.22.0 cannot parse JDK 28 class files — type resolution
   fails on `java/lang/String` itself. With types unresolved it reports ~20 false positives on SPI
@@ -55,10 +56,22 @@ Both are **tooling limits on an EA JDK**, recorded rather than quietly skipped:
   the suites' own non-empty-analysis assertions (`verifyClassesArePresent`,
   `allThreeTiersAreOnTheAnalysisClasspath`), which exist precisely so an empty analysis can never pass
   as a green one.
+- **JaCoCo** (`jacoco.skip` in the root POM). JaCoCo 0.8.14 fails report generation outright —
+  "Unsupported class file major version 72" — on the first module it reaches, and would fail
+  identically on every one. Unlike the other two this is not noise: it fails
+  `mvn clean verify -P coverage`, which is precisely the command CI runs. Coverage floors are not
+  abandoned; they are ratcheted per module and enforced on `main` over the same sources. What is lost
+  here is the ability to *observe* coverage on the preview toolchain.
 
-**Why the bar is not lowered:** both gates' subject is identical on the two lines — the SPI / Core /
-Community boundaries and the source they constrain — and `main` runs both on JDK 25 LTS where the
-tools work. **That argument has a limit, and it is the branch's main standing risk:** it holds only
+**How this one was missed, and the rule it produced.** The first version of this branch reported
+"`mvn clean install` green, 4123 tests" — true, and irrelevant, because CI runs
+`mvn clean verify -P coverage` and `install` does not activate that profile. The JaCoCo failure was
+invisible locally for exactly that reason. **Verify this line with the command CI runs, not a
+neighbouring one**; the same slip produced two red gates on the default line's PR in the same week.
+
+**Why the bar is not lowered:** all three gates' subject is identical on the two lines — the SPI /
+Core / Community boundaries, the lint rules, and the coverage floors, over the same sources — and
+`main` runs all three on JDK 25 LTS where the tools work. **That argument has a limit, and it is the branch's main standing risk:** it holds only
 while the two lines differ solely in the concurrency mechanism. If this branch grows structure `main`
 does not have, the coverage borrowed from `main` disappears with it.
 
