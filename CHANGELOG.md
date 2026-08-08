@@ -9,6 +9,14 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 ## [Unreleased]
 
 ### Added
+- **The distributed artifact no longer requires `--enable-preview`, and baselines on JDK 25 LTS**
+  (ADR-066). `--enable-preview` is a whole-compilation and whole-JVM flag whose bytecode is stamped
+  and major-pinned, so a published artifact carrying it forces every consumer's entire build under the
+  same flag and the same exact JDK. As of 0.11.0: 930 distributed classes, class-file major 69, zero
+  preview-stamped, enforced by a CI gate that reads the shipped class files rather than the sources
+  (`tools/preview-bytecode-scan/`). The JDK baseline moves 26 → 25, which is a widening for
+  consumers. A second artifact, `0.11.0-preview`, carries `StructuredTaskScope` on the newest JDK for
+  JVM-controlled deployments.
 - **Flow resume binds to identity, not position** — `FlowSnapshot` gains three components across v0.11:
   `currentStepName` (ADR-062), `definitionVersion` (ADR-064) and `compensationStepNames` (ADR-064
   amendment A5). Each replaces an inference the runtime used to make from a bare index: which step a
@@ -44,6 +52,20 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   surfaces it had never described — client retry (ADR-045) and route authorization (ADR-061); and
   the pre-1.0 framing now distinguishes "no consumer under a support contract" from "no consumers",
   and points at the generated record.
+
+- **`EventBus.publishAndAwait` runs handlers on the calling thread**, in subscription order (ADR-066).
+  Handler durations now sum rather than overlap, and a slow handler delays its successors; `publish`
+  is unchanged. This is what preserves the path's `ScopedValue` contract without a preview API — a
+  handler observes every value the publisher bound, including ones the kernel cannot name, which no
+  fork-based GA mechanism can deliver.
+- **Subsystem start runs on the booting thread** in dependency-safe rounds, so a phase takes the sum
+  of its subsystems' start times rather than the longest — once per JVM, and `FOUNDATION` was already
+  sequential. Forking with a rebuilt kernel carrier was implemented and booted the HTTP subsystem with
+  no handler bound, because `HTTP_SERVER_HANDLER` is bound by the application around `boot()`.
+- **A failed subsystem in a parallel phase now throws `BootstrapException`** instead of escaping as
+  the unchecked preview type `StructuredTaskScope.FailedException` — which had also made the
+  orchestrator's own failure-collection path unreachable. Callers catching that preview type should
+  remove it.
 
 ## [0.10.2] — 2026-07-19
 
