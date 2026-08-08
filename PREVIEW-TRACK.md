@@ -43,10 +43,18 @@ rather than the `BootstrapException` the contract names. The checked exception f
 catch restores the intended type. The default line reached the same outcome by a different route
 (ADR-066 §2).
 
-## Three gates cannot run here, and none is a lowered bar
+## Four gates cannot run here — and the reason is structural, not temporary
 
-All three are **tooling limits on an EA JDK**, recorded rather than quietly skipped. None of them was
-predicted — each was found by running the gate:
+Three of the four read class files, and **class-file readers ship support after a JDK releases**. This
+line tracks the newest JDK, usually while it is still EA. The two facts do not reconcile: by the time
+a tool supports the JDK this branch is on, this branch has moved to the next one.
+
+That was measured, not assumed. ArchUnit 1.4.2's shaded ASM knows class-file versions only up to
+**V26**; even the newest ArchUnit reaches 27, and JDK 28 is major 72. JaCoCo **0.8.15** — a release
+newer than the one the build pins — still fails with "Unsupported class file major version 72".
+
+So the correct expectation is not "re-enable when the tool catches up" but **these gates are
+unavailable on this line as a standing condition**. Each is recorded rather than quietly skipped:
 
 - **PMD** (`pmd.skip` in the root POM). PMD 7.22.0 cannot parse JDK 28 class files — type resolution
   fails on `java/lang/String` itself. With types unresolved it reports ~20 false positives on SPI
@@ -56,6 +64,15 @@ predicted — each was found by running the gate:
   the suites' own non-empty-analysis assertions (`verifyClassesArePresent`,
   `allThreeTiersAreOnTheAnalysisClasspath`), which exist precisely so an empty analysis can never pass
   as a green one.
+- **Checkstyle** (`checkstyle.skip` in the root POM). **This is the one this document previously
+  singled out as unaffected** — "syntax-level and unaffected" — and JEP 401 falsified it. Checkstyle
+  13.2.0's Java grammar does not know the `value` modifier and fails to *parse* the file: "no viable
+  alternative at input 'value'", reported as a configuration error rather than a style finding.
+
+  It also **widens the rule rather than repeating it.** PMD, ArchUnit and JaCoCo fail on the class-file
+  **major version**, so they break when this line bumps its JDK. Checkstyle fails on preview **source
+  syntax**, so it breaks the moment this line uses a preview *language* feature at all — which is what
+  the line exists to do. Tool lag reaches source-level tools too, not only bytecode readers.
 - **JaCoCo** (`jacoco.skip` in the root POM). JaCoCo 0.8.14 fails report generation outright —
   "Unsupported class file major version 72" — on the first module it reaches, and would fail
   identically on every one. Unlike the other two this is not noise: it fails
@@ -69,14 +86,19 @@ predicted — each was found by running the gate:
 invisible locally for exactly that reason. **Verify this line with the command CI runs, not a
 neighbouring one**; the same slip produced two red gates on the default line's PR in the same week.
 
-**Why the bar is not lowered:** all three gates' subject is identical on the two lines — the SPI /
+**Why the bar is not lowered:** all four gates' subject is identical on the two lines — the SPI /
 Core / Community boundaries, the lint rules, and the coverage floors, over the same sources — and
-`main` runs all three on JDK 25 LTS where the tools work. **That argument has a limit, and it is the branch's main standing risk:** it holds only
-while the two lines differ solely in the concurrency mechanism. If this branch grows structure `main`
-does not have, the coverage borrowed from `main` disappears with it.
+`main` runs all three on JDK 25 LTS where the tools work.
 
-Each skip carries its own re-enable trigger and the one command that tests it, in the POM comment
-beside it.
+**The permanence of the gap makes one constraint governing rather than advisory.** This line is
+**never self-verifying** for boundaries, lint, or coverage; that verification is always inherited from
+`main`. Inheriting is only sound while the two lines differ solely in the concurrency mechanism and
+the build. **Keeping the delta small is therefore not a matter of taste — it is what makes this branch
+verifiable at all.** Any structure added here that `main` does not have arrives with no boundary
+guard, no lint and no coverage floor behind it, and nothing will say so.
+
+The POM comment beside each skip carries the one command that re-tests the tool. Worth re-running at
+each JDK bump — but expect the answer to stay "no" more often than not, for the reason above.
 
 ## Keeping this line in sync with `development/*`
 
@@ -129,10 +151,36 @@ missed.
 
 ## Still to do on this line
 
-- **Exercise JEP 401 (Value Objects) and JEP 539 (Strict Field Initialization)**, both preview in
-  JDK 28. This is the reason the line exists beyond `StructuredTaskScope`: the "Valhalla-ready
-  carriers" guardrail is a style rule on `main` and becomes *executable* here. Nothing has been
-  measured yet — no value class has been declared and no benchmark has been run, so this document
-  makes no claim about what it buys.
+- **JEP 539 (Strict Field Initialization)** — not yet exercised.
+- **A benchmark for the value carriers.** Six are declared (below) and none is measured; the numbers
+  need the benchmark harness and are deliberately post-cut. This document makes **no claim** about
+  what value classes buy until one exists.
 - Decide whether this line publishes `0.11.0-preview-SNAPSHOT` to GitHub Packages. The workflow's
   publish step is currently gated on `main` and `development/*`, so today it does not.
+
+## JEP 401: six carriers are value classes here
+
+Declared `public value record`: `MemoryStats`, `TlsShutdownResult`, `TlsHandshakeResult`,
+`EventEngineStats` (SPI), `TransactionRetryPolicy`, `SyscallHandles` (Core). Chosen because the
+repository already *claimed* they were Valhalla-ready — each has a `ValhallaReadiness` test predating
+this work — so converting them tests the claim rather than asserting a new one.
+
+**Verified in the bytecode, with a control.** `ACC_IDENTITY` (0x0020, formerly `ACC_SUPER`) is **clear**
+on all six and **set** on an untouched carrier (`FlowSnapshot`). Compiling is not evidence that the
+modifier did anything; the flag is.
+
+**Three semantics change, all silently**, which is why the selection criterion mattered more than the
+conversion:
+
+| | identity `record` | `value record` |
+|:--|:--|:--|
+| `a == b` for structurally equal | `false` | **`true`** — comparison is by value |
+| `System.identityHashCode` differs | yes | **no** |
+| `IdentityHashMap` holding two equal instances | size 2 | **size 1** |
+
+`synchronized` on a value throws `IdentityException` — **at runtime, not at compile time**, so a
+converted carrier needs test coverage to prove the guardrail, not a green compile.
+
+The criterion applied before converting: **zero identity comparisons and zero identity-keyed lookups
+on the carrier anywhere in `*/src/main`** — checked per carrier, all six at zero. A carrier used as an
+identity key would break silently, and nothing in the toolchain would say so.

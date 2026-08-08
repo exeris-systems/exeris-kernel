@@ -61,7 +61,7 @@ import java.lang.invoke.MethodHandle;
  *                        Must be invoked to pair with {@code WSAStartup} before the owning arena is closed.
  * @since 0.5.0
  */
-public record SyscallHandles(
+public value record SyscallHandles(
         MethodHandle socket,
         MethodHandle bind,
         MethodHandle listen,

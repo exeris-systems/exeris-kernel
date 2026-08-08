@@ -30,7 +30,7 @@ package eu.exeris.kernel.spi.events;
  * @since 0.5.0
  * @see EventEngine#stats()
  */
-public record EventEngineStats(
+public value record EventEngineStats(
         long publishedTotal,
         long processedTotal,
         long failedTotal,

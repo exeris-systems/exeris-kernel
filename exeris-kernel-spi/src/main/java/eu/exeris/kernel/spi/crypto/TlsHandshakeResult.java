@@ -26,7 +26,7 @@ package eu.exeris.kernel.spi.crypto;
  *                        interpretation is left to the implementation tier
  * @since 0.5.0
  */
-public record TlsHandshakeResult(Status status, int nativeErrorCode) {
+public value record TlsHandshakeResult(Status status, int nativeErrorCode) {
 
     /** Pre-allocated singleton: handshake complete. */
     public static final TlsHandshakeResult COMPLETE    = new TlsHandshakeResult(Status.COMPLETE, 0);

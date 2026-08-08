@@ -40,7 +40,7 @@ import java.util.Objects;
  * @see MemoryAllocator#stats()
  * @since 0.5.0
  */
-public record MemoryStats(
+public value record MemoryStats(
         long totalBytes,
         long allocatedBytes,
         long freeBytes,

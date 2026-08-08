@@ -25,7 +25,7 @@ package eu.exeris.kernel.spi.crypto;
  * @param receivedCloseNotify whether the peer's close-notify has been received
  * @since 0.5.0
  */
-public record TlsShutdownResult(Status status,
+public value record TlsShutdownResult(Status status,
                                 boolean sentCloseNotify,
                                 boolean receivedCloseNotify) {
 
