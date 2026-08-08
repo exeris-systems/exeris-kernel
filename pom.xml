@@ -29,10 +29,16 @@
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
-        <maven.compiler.source>26</maven.compiler.source>
-        <maven.compiler.target>26</maven.compiler.target>
-        <maven.compiler.release>26</maven.compiler.release>
+        <maven.compiler.source>25</maven.compiler.source>
+        <maven.compiler.target>25</maven.compiler.target>
+        <maven.compiler.release>25</maven.compiler.release>
 
+        <!--
+            ADR-066: the DISTRIBUTED artifact is preview-clean, so main sources compile without
+            this flag. Test and TCK fixtures still use StructuredTaskScope (26 files) and are not
+            distributed, so it is applied to the test-compile execution only, and to the surefire
+            JVM below because preview-stamped test classes will not load without it.
+        -->
         <jdk.preview.enable>--enable-preview</jdk.preview.enable>
         <coverage.argLine/>
 
@@ -79,10 +85,17 @@
                     <version>3.14.1</version>
                     <configuration>
                         <release>${maven.compiler.release}</release>
-                        <compilerArgs>
-                            <arg>${jdk.preview.enable}</arg>
-                        </compilerArgs>
                     </configuration>
+                    <executions>
+                        <execution>
+                            <id>default-testCompile</id>
+                            <configuration>
+                                <compilerArgs>
+                                    <arg>${jdk.preview.enable}</arg>
+                                </compilerArgs>
+                            </configuration>
+                        </execution>
+                    </executions>
                 </plugin>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>

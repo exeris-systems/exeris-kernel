@@ -26,7 +26,6 @@ import java.util.Queue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.StructuredTaskScope;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -47,18 +46,29 @@ import java.util.concurrent.atomic.AtomicLong;
  *       forking; total refCount = N; each handler's close() decrements by 1.</li>
  * </ul>
  *
- * <h2>Concurrency (Java 26)</h2>
+ * <h2>Concurrency</h2>
  * <p>{@link #publish} is fire-and-forget: after retain normalization, the calling thread
  * starts one virtual thread per handler and returns immediately without waiting.
  *
- * <p>{@link #publishAndAwait} opens the scope directly on the <em>calling</em> thread
- * (which is the owner), forks all handlers, joins, and returns — blocking until all
- * handlers complete. This is the preferred pattern when the caller needs delivery confirmation.
+ * <p>{@link #publishAndAwait} runs the handlers <em>on the calling thread</em>, in subscription
+ * order, and returns once all have completed. This is the preferred pattern when the caller needs
+ * delivery confirmation.
  *
  * <h2>ScopedValue Propagation (JEP 506)</h2>
- * <p>Virtual threads started by {@code publish()} and {@code publishAndAwait()} are created
- * from the calling thread's execution context, so they inherit active {@code ScopedValue}
- * bindings at call time — zero {@code ThreadLocal}, zero manual propagation.
+ * <p>The two paths differ, and the difference is not cosmetic:
+ * <ul>
+ *   <li>{@link #publishAndAwait} — a handler observes <b>every</b> binding the publisher had,
+ *       including scoped values the kernel does not know about, because it never leaves the
+ *       publisher's thread. This is the contract {@code AbstractEventBusTck}'s golden case
+ *       asserts, and running in-thread is what keeps it reachable without {@code --enable-preview}
+ *       (ADR-066).</li>
+ *   <li>{@link #publish} — a handler observes <b>no</b> bindings. A plain
+ *       {@code Thread.ofVirtual().start(...)} does not inherit {@code ScopedValue} bindings; only
+ *       a fork inside a structured scope does. This has always been the behaviour of this path;
+ *       the previous claim here that both paths inherit was measured false and corrected in
+ *       v0.11.</li>
+ * </ul>
+ * <p>Zero {@code ThreadLocal} either way.
  *
  * @since 0.5.0
  */
@@ -144,8 +154,24 @@ public final class InMemoryEventBus implements EventBus {
     /**
      * {@inheritDoc}
      *
-     * <p>The calling thread opens the scope and is the owner — it forks all handlers,
-     * joins (blocks), and closes. ScopedValue bindings are inherited by all handler VTs.
+     * <p><b>Handlers run on the calling thread, in subscription order</b> — the method blocks until
+     * all of them have completed, which is what it promises, so it does the work rather than
+     * delegating it and waiting.
+     *
+     * <p>That choice is what preserves this path's {@code ScopedValue} contract without a preview
+     * API (ADR-066). The contract is that a handler observes <em>whatever</em> the publisher had
+     * bound, including scoped values the kernel has never heard of — an application's own trace or
+     * tenant context. {@code StructuredTaskScope} delivered that by inheriting bindings into forked
+     * subtasks; no GA mechanism can, because building a {@code ScopedValue.Carrier} requires naming
+     * each value and nothing can enumerate a thread's live bindings. Staying on the publisher's
+     * thread satisfies the contract by construction instead of reconstructing it.
+     *
+     * <p>The trade is latency: handler durations now sum rather than overlap, and a slow handler
+     * delays its successors. Callers that want fan-out have {@link #publish}, which is
+     * fire-and-forget and unchanged.
+     *
+     * <p>Failure handling is unchanged — every handler runs, failures are collected, and the first
+     * is thrown once all have finished.
      */
     @Override
     public void publishAndAwait(EventDescriptor descriptor, EventPayload payload)
@@ -167,16 +193,12 @@ public final class InMemoryEventBus implements EventBus {
         List<TrackingWrapper> wrappers = buildWrappers(payload, slotCount);
 
         Queue<Throwable> failures = new ConcurrentLinkedQueue<>();
-        try (StructuredTaskScope<Void, Void> scope =
-                     StructuredTaskScope.open(StructuredTaskScope.Joiner.<Void>awaitAll())) {
-            forkHandlers(scope, slots, wrappers, descriptor, failures);
-            try {
-                scope.join();
-            } catch (InterruptedException interruptEx) {
-                closeUnclosed(wrappers);
-                Thread.currentThread().interrupt();
-                throw interruptEx;
-            }
+        try {
+            dispatchOnCallingThread(slots, wrappers, descriptor, failures);
+        } catch (InterruptedException interruptEx) {
+            closeUnclosed(wrappers);
+            Thread.currentThread().interrupt();
+            throw interruptEx;
         }
         throwIfFailed(failures);
     }
@@ -229,23 +251,28 @@ public final class InMemoryEventBus implements EventBus {
         return wrappers;
     }
 
-    private static void forkHandlers(StructuredTaskScope<Void, Void> scope,
-                                     List<Slot> slots,
-                                     List<TrackingWrapper> wrappers,
-                                     EventDescriptor descriptor,
-                                     Queue<Throwable> failures) {
+    /**
+     * Invokes each handler in subscription order on the caller's thread.
+     *
+     * <p>Interruption is honoured <em>between</em> handlers rather than inside one: a handler is an
+     * application SPI callback with its own resources, so aborting mid-invocation would leave it no
+     * chance to unwind. The remaining wrappers are closed by the caller's catch.
+     */
+    private static void dispatchOnCallingThread(List<Slot> slots,
+                                                List<TrackingWrapper> wrappers,
+                                                EventDescriptor descriptor,
+                                                Queue<Throwable> failures) throws InterruptedException {
         int slotCount = slots.size();
         for (int i = 0; i < slotCount; i++) {
+            if (Thread.interrupted()) {
+                throw new InterruptedException("publishAndAwait interrupted after " + i + " handler(s)");
+            }
             Slot slot = slots.get(i);
-            TrackingWrapper wrapper = wrappers.get(i);
-            scope.fork(() -> {
-                try (TrackingWrapper twrClose = wrapper) {
-                    slot.handler().handle(descriptor, twrClose);
-                } catch (RuntimeException handlerEx) { //NOPMD AvoidCatchingGenericException — SPI boundary
-                    failures.add(handlerEx);
-                }
-                return null;
-            });
+            try (TrackingWrapper wrapper = wrappers.get(i)) {
+                slot.handler().handle(descriptor, wrapper);
+            } catch (RuntimeException handlerEx) { //NOPMD AvoidCatchingGenericException — SPI boundary
+                failures.add(handlerEx);
+            }
         }
     }
 

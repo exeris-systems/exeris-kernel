@@ -19,11 +19,20 @@ on:
     - cron: '0 2 * * *'   # nightly at 02:00 UTC on default branch (main)
 
 env:
-  MAVEN_OPTS: "--enable-preview --enable-final-field-mutation=ALL-UNNAMED --enable-native-access=ALL-UNNAMED"
-  JDK_URL: "https://download.java.net/java/GA/jdk26/c3cc523845074aa0af4f5e1e1ed4151d/35/GPL/openjdk-26_linux-x64_bin.tar.gz"
-  JDK_SHA256: "83c78367f8c81257beef72aca4bbbf8e6dac8ca2b3a4546a85879a09e6e4e128"
-  JDK_CACHE_KEY: "jdk-26-b35-linux-x64"
-  JDK_VER: "26.0.0"
+  # ADR-066 — the build baselines on JDK 25 LTS.
+  #
+  # --enable-preview stays because TEST and TCK fixtures still use StructuredTaskScope and are
+  # compiled with it (they are not distributed); main sources are preview-clean, which the
+  # Preview-Bytecode Gate below asserts against the shipped class files rather than the sources.
+  #
+  # --enable-final-field-mutation was REMOVED, not overlooked: it is a JDK 26 flag (JEP 500
+  # integrity-by-default) and JDK 25 refuses to start with it. There is nothing to re-enable on
+  # 25, since that is the release the restriction has not reached yet.
+  MAVEN_OPTS: "--enable-preview --enable-native-access=ALL-UNNAMED"
+  JDK_URL: "https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.4%2B7/OpenJDK25U-jdk_x64_linux_hotspot_25.0.4_7.tar.gz"
+  JDK_SHA256: "e58fcdcd637b25c03ca84cbbcefc70d11efb8f4b4cbd05decc9f661769d77f94"
+  JDK_CACHE_KEY: "jdk-25.0.4-7-linux-x64"
+  JDK_VER: "25.0.4"
 
 jobs:
   build-and-verify:
@@ -97,6 +106,20 @@ jobs:
           mvn clean verify -B -e \
             -P coverage \
             -Dexeris.tck.transport.drainTimeoutSeconds=30
+
+      - name: Preview-Bytecode Gate
+        # ADR-066. Reads the class files this build just produced and fails if anything the
+        # project DISTRIBUTES carries a preview stamp (minor_version 0xFFFF) or targets a
+        # class-file major above the declared LTS baseline.
+        #
+        # Placed here, in the job that already built the reactor, so it inspects real artifacts
+        # rather than rebuilding them. It reads bytecode rather than sources deliberately: the
+        # stamp is what a consumer trips over, it survives generated and processor-emitted code
+        # that a grep would miss, and it cannot be satisfied by a comment claiming compliance.
+        #
+        # Test and TCK fixtures are out of scope by design — 26 of them still use
+        # StructuredTaskScope, compile with --enable-preview, and are never published.
+        run: tools/preview-bytecode-scan/preview-bytecode-scan.sh --expect-major 69
 
       - name: SonarQube Cloud Analysis
         # Runs in this job, immediately after the build, so it consumes the compiled classes and the
