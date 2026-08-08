@@ -178,6 +178,16 @@ public class SecurityInterceptor {
   scope set and a route requiring any scope denies it. Roles now reach `PrincipalContext.roles()`,
   so the `roleMask` behind `@RequiresRole` is no longer permanently `0L`.
 - **The mapping is substitutable (since 0.11).** `ClaimsMapper` is documented as the only application-customisable point in the identity pipeline, but `CommunityOidcIdentityProvider` constructed the default inline, so there was no way to supply one — an application needing a different subject or scope shape had to reimplement `IdentityProvider` outright. `withClaimsMapper(ClaimsMapper)` returns a provider using the supplied mapping, mirroring `enforcingSharedScope()`: a new provider rather than a mutation, because the mapping takes part in a security decision on every request and must be fixed at construction, never swapped behind a live provider. The two withers compose in either order. Declaring nothing still gets `CommunityClaimsMapper`.
+- **And it is substitutable from a booted kernel, not only from the API (since 0.11).** The wither
+  above was reachable only by constructing the provider yourself, which the ServiceLoader boot path
+  does not do — so until this landed, a deployment that registered a mapping had no way to make the
+  kernel use it, and the bullet above was true of the API and false of a running process.
+  `CommunityClaimsMapperResolver` discovers a `ClaimsMapper` through `ServiceLoader` on the context
+  class loader, and `CommunitySecurityProvider` assembles through it. **Exactly one may be
+  registered**: `ClaimsMapper` declares no `priority()`, so two would leave classpath order deciding
+  how every principal in the deployment is identified, and that is refused at construction with both
+  class names rather than resolved by accident. None registered keeps `CommunityClaimsMapper`, so an
+  unconfigured deployment is unchanged.
 - **Substituting the mapper cannot widen isolation.** A custom mapper produces a `PrincipalContext` only. Tenant routing stays with `IdentityStorageMapping`, which every provider passes through (ADR-012 §4a), so a mapper cannot reach a tenant the token does not entitle it to — the customisable surface is identity shape, the non-negotiable surface is isolation deny semantics. This is also the seam a host-runtime binding uses: kernel scopes and a framework's own authority objects are **two mappings of the same verified token**, derived independently from the same claims, not one derived from the other. Neither is the source of truth for the other, and a kernel-side decision never consults framework authorities.
 - `KernelProviders.SECURITY_PROVIDER` is bound by `CommunitySecuritySubsystem` (since 0.11). Before that it was bound by nothing, so the interceptor was never constructed and the whole Citadel path was unreachable in a default boot.
 
