@@ -239,7 +239,7 @@ class LeakTrackerTest {
         @Test
         @DisplayName("1000 concurrent VTs each tracking and cancelling — leakCount == 0")
         @Timeout(30)
-        void concurrentTrackAndCancelNoLeaks() throws InterruptedException {
+        void concurrentTrackAndCancelNoLeaks() throws InterruptedException, java.util.concurrent.ExecutionException {
             var tracker = new LeakTracker(LeakDetectionMode.PARANOID);
             var errorFlag = new AtomicLong(0);
 

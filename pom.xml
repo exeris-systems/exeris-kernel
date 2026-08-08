@@ -5,7 +5,7 @@
 
     <groupId>eu.exeris</groupId>
     <artifactId>exeris-kernel-root</artifactId>
-    <version>0.11.0-SNAPSHOT</version>
+    <version>0.11.0-preview-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <name>Exeris Kernel :: Root</name>
@@ -29,11 +29,30 @@
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
-        <maven.compiler.source>26</maven.compiler.source>
-        <maven.compiler.target>26</maven.compiler.target>
-        <maven.compiler.release>26</maven.compiler.release>
+        <maven.compiler.source>28</maven.compiler.source>
+        <maven.compiler.target>28</maven.compiler.target>
+        <maven.compiler.release>28</maven.compiler.release>
 
         <jdk.preview.enable>--enable-preview</jdk.preview.enable>
+
+        <!--
+            PREVIEW LINE ONLY — PMD is skipped here, and this is a tooling limit, not a lowered bar.
+            PMD 7.22.0 cannot parse JDK 28 class files: its type resolution fails on `java/lang/String`
+            itself ("Parsing failed in ParseLock#doParse() of ClassStub"). With types unresolved, rules
+            that need them start reporting false positives — 20 of them on SPI sources that are clean
+            under the same PMD on JDK 25/26, LooseCoupling on interface-typed fields being the bulk.
+            Running it in that state would not be analysis; it would be noise that teaches the team to
+            ignore lint.
+
+            The bar is NOT lowered, because this line converges into `main`: `main` runs the same PMD
+            on JDK 25 LTS with working type resolution, and every commit here has to survive that gate
+            before it can land there. Checkstyle stays ON — it is syntax-level and unaffected.
+
+            RE-ENABLE when PMD ships a release that resolves types against JDK 28 class files. Test it
+            by deleting this property and running `mvn -pl exeris-kernel-spi pmd:check`: if the
+            ClassStub parse errors are gone, so is the reason for this.
+        -->
+        <pmd.skip>true</pmd.skip>
         <coverage.argLine/>
 
         <!--

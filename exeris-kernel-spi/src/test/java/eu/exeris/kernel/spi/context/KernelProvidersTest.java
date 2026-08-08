@@ -198,6 +198,13 @@ class KernelProvidersTest {
                     scope.join();
                 } catch (InterruptedException _) {
                     Thread.currentThread().interrupt();
+                } catch (java.util.concurrent.ExecutionException failure) {
+                    // JDK 28 (JEP 5xx, seventh preview): awaitAllSuccessfulOrThrow's join() now
+                    // reports a failed subtask as ExecutionException. On JDK 26 the same call threw
+                    // StructuredTaskScope.FailedException, which is unchecked — hence no catch here
+                    // before. This is the API churn the preview line exists to absorb ahead of the
+                    // LTS it converges into.
+                    throw new AssertionError("subtask failed", failure);
                 }
             });
 

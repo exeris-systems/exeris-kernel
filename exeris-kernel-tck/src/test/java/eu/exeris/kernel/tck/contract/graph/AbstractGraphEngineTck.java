@@ -153,7 +153,7 @@ public abstract class AbstractGraphEngineTck {
         @Test
         @DisplayName("100 VTs registering nodes concurrently — no crash, no data loss")
         @Timeout(30)
-        void concurrentNodeRegistration() throws InterruptedException {
+        void concurrentNodeRegistration() throws InterruptedException, java.util.concurrent.ExecutionException {
             AtomicInteger errors = new AtomicInteger(0);
 
             try (var scope = StructuredTaskScope.open()) {

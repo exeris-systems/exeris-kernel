@@ -156,7 +156,7 @@ class ImmutableConfigProcessorTest {
                     fileManager,
                     diagnostic -> diagnostics.append(diagnostic.getKind())
                             .append(": ").append(diagnostic.getMessage(null)).append('\n'),
-                    List.of("-proc:full", "--release", "26"),
+                    List.of("-proc:full", "--release", "28"),
                     null,
                     units
             ).call();

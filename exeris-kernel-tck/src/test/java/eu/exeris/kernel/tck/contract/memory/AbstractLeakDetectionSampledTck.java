@@ -213,7 +213,7 @@ public abstract class AbstractLeakDetectionSampledTck {
         @Test
         @DisplayName("10 000 VTs allocate + close in SAMPLED mode — leakCount stays 0")
         @Timeout(value = 60, unit = TimeUnit.SECONDS)
-        void concurrentAllocateCloseNoLeaks() throws InterruptedException {
+        void concurrentAllocateCloseNoLeaks() throws InterruptedException, java.util.concurrent.ExecutionException {
             int threads = 10_000;
             AtomicLong errors = new AtomicLong(0);
 

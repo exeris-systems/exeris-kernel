@@ -315,7 +315,9 @@ class CommunityTlsEngineLoopbackIntegrationTest {
         Instant deadline = Instant.now().plus(HANDSHAKE_TIMEOUT);
 
         try (var scope = StructuredTaskScope.open(
-                StructuredTaskScope.Joiner.awaitAll(),
+                // JDK 28 removed Joiner.awaitAll(); allUntil with a never-true predicate is the
+                // same policy — run every subtask to completion, failures included.
+                StructuredTaskScope.Joiner.allUntil(_ -> false),
                 config -> config
                         .withThreadFactory(Thread.ofPlatform().daemon(true).factory())
                         .withTimeout(HANDSHAKE_TIMEOUT))) {

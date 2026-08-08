@@ -240,7 +240,12 @@ public abstract class AbstractAlgoOrchestratorTck {
     @Test
     @DisplayName("100 VTs calling findShortestPath() concurrently — no crash, no data corruption")
     @Timeout(30)
-    void concurrentPathFinding() throws InterruptedException {
+    // JDK 28: the bare StructuredTaskScope.open() joins with awaitAllSuccessfulOrThrow, whose
+    // join() now reports a failed subtask as a CHECKED ExecutionException. On JDK 26 the same
+    // call threw the unchecked FailedException, so no declaration was needed. The subtask bodies
+    // below already swallow their own failures, so this cannot fire in practice — it is the
+    // signature change, not a new failure mode.
+    void concurrentPathFinding() throws InterruptedException, java.util.concurrent.ExecutionException {
         PathFinder pf = createPathFinder();
         AtomicInteger errors = new AtomicInteger(0);
         try (var scope = StructuredTaskScope.open()) {

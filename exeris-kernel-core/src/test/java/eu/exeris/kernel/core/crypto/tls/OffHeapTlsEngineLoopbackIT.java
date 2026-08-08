@@ -684,7 +684,9 @@ class OffHeapTlsEngineLoopbackIT {
                                        OffHeapTlsEngine client, LoanedBuffer clientBuf) {
         Instant deadline = Instant.now().plusSeconds(15);
         try (var scope = StructuredTaskScope.open(
-                StructuredTaskScope.Joiner.awaitAll(),
+                // JDK 28 removed Joiner.awaitAll(); allUntil with a never-true predicate is the
+                // same policy — run every subtask to completion, failures included.
+                StructuredTaskScope.Joiner.allUntil(_ -> false),
                 config -> config
                         .withThreadFactory(Thread.ofPlatform().daemon(true).factory())
                         .withTimeout(Duration.ofSeconds(15)))) {

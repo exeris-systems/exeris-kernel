@@ -185,6 +185,10 @@ class SecurityIntegrationTest {
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     throw new AssertionError("StructuredTaskScope interrupted", e);
+                } catch (java.util.concurrent.ExecutionException e) {
+                    // JDK 28: a failed subtask arrives here as a checked exception. The bodies
+                    // capture their own failures into `failure`, so this means the scope gave up.
+                    throw new AssertionError("subtask failed", e);
                 }
             });
 
@@ -199,7 +203,7 @@ class SecurityIntegrationTest {
         @Test
         @DisplayName("Concurrent 100-VT authentication — no data corruption, no context cross-contamination")
         @SuppressWarnings("PMD.AvoidInstantiatingObjectsInLoops")
-        void concurrentAuthenticationIsolation() throws InterruptedException {
+        void concurrentAuthenticationIsolation() throws InterruptedException, java.util.concurrent.ExecutionException {
             CitadelGuard guard = new CitadelGuard();
             guard.preAllocate("ROLE_ADMIN");
 
