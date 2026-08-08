@@ -66,6 +66,10 @@ public final class StructuredScope implements AutoCloseable {
     private boolean joined;
     private boolean closed;
 
+    // java:S8432 — the carrier is deliberately NOT run here. Storing it and applying it later, on
+    // each child thread, is the whole mechanism: the binding must be re-established where the work
+    // runs, not where the scope is opened.
+    @SuppressWarnings("java:S8432")
     private StructuredScope(ScopedValue.Carrier bindings) {
         this.bindings = bindings;
         this.owner = Thread.currentThread();
@@ -164,6 +168,11 @@ public final class StructuredScope implements AutoCloseable {
      * every task has terminated: leaving a forked thread alive would break the structured
      * guarantee, which is the stronger obligation.
      */
+    // java:S2142 — the interrupt is re-asserted after the loop, not inside the catch, and that
+    // ordering is load-bearing: re-interrupting immediately would make the very next join() throw
+    // at once, so the "uninterruptible join" would spin instead of waiting. The obvious fix breaks
+    // the structured guarantee this method exists to provide.
+    @SuppressWarnings("java:S2142")
     @Override
     public void close() {
         if (closed) {
@@ -225,6 +234,9 @@ public final class StructuredScope implements AutoCloseable {
         private T result;
         private Throwable exception;
 
+        // java:S8432 — see StructuredScope's constructor: the carrier is applied in execute(),
+        // which runs on the forked thread, not here on the forking one.
+        @SuppressWarnings("java:S8432")
         private ForkedTask(Callable<T> body, ScopedValue.Carrier bindings) {
             this.body = body;
             this.bindings = bindings;
@@ -246,6 +258,11 @@ public final class StructuredScope implements AutoCloseable {
             thread.join();
         }
 
+        // java:S1181 — a task's failure is data, and that has to include Errors: a subsystem that
+        // fails with NoClassDefFoundError must be reportable to the caller, not lost to a dying
+        // virtual thread with only a default handler printout. StructuredTaskScope makes the same
+        // choice — Subtask.exception() is typed Throwable.
+        @SuppressWarnings("java:S1181")
         private void execute() {
             try {
                 if (bindings == null) {

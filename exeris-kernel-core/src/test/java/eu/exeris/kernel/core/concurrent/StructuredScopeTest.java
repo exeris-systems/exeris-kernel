@@ -214,11 +214,16 @@ class StructuredScopeTest {
             CountDownLatch started = new CountDownLatch(1);
             StructuredScope.ForkedTask<Void> straggler;
 
+            CountDownLatch neverReleased = new CountDownLatch(1);
+
             try (StructuredScope scope = StructuredScope.openWithoutBindings()) {
                 straggler = scope.fork(() -> {
                     started.countDown();
                     try {
-                        Thread.sleep(java.time.Duration.ofMinutes(5));
+                        // Blocks until interrupted. An unbounded await says exactly that, where a
+                        // Thread.sleep(5 min) would only have said it by picking a duration no test
+                        // run reaches.
+                        neverReleased.await();
                     } catch (InterruptedException _) {
                         observedInterrupt.set(true);
                         spinFor(java.time.Duration.ofMillis(300));
