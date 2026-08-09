@@ -1,51 +1,86 @@
 [ {
   "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
-  "count" : 53,
-  "bytes" : 5369784,
-  "category" : "TEST_HARNESS"
-}, {
-  "class" : "eu.exeris.kernel.community.memory.CommunityArenaShardPool$Allocation",
-  "count" : 17,
-  "bytes" : 40288,
+  "count" : 100,
+  "bytes" : 5727056,
   "category" : "TEST_HARNESS"
 }, {
   "class" : "java.util.concurrent.ConcurrentLinkedQueue$Node",
-  "count" : 17,
-  "bytes" : 3363704,
+  "count" : 21,
+  "bytes" : 43616,
   "category" : "JVM_NOISE"
 }, {
   "class" : "java.lang.VirtualThread",
-  "count" : 8,
-  "bytes" : 737576,
+  "count" : 11,
+  "bytes" : 389328,
   "category" : "LOOM_RUNTIME"
 }, {
+  "class" : "eu.exeris.kernel.tck.contract.AbstractSubsystemCarrierPinningTck$$Lambda.0x000000006d303d28",
+  "count" : 11,
+  "bytes" : 392392,
+  "category" : "TEST_HARNESS"
+}, {
+  "class" : "java.util.LinkedHashMap$Entry",
+  "count" : 7,
+  "bytes" : 177664,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "[Ljava.util.HashMap$Node;",
+  "count" : 7,
+  "bytes" : 146160,
+  "category" : "JVM_NOISE"
+}, {
   "class" : "java.util.LinkedHashMap",
+  "count" : 6,
+  "bytes" : 142104,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "[Ljava.lang.Object;",
+  "count" : 5,
+  "bytes" : 74416,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "java.lang.String",
   "count" : 4,
-  "bytes" : 280584,
+  "bytes" : 78560,
   "category" : "JVM_NOISE"
 }, {
   "class" : "java.util.HashMap",
   "count" : 3,
-  "bytes" : 184440,
+  "bytes" : 71072,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "[Ljava.lang.Object;",
-  "count" : 3,
-  "bytes" : 184888,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "jdk.jfr.internal.SettingsManager$InternalSetting",
+  "class" : "[B",
   "count" : 2,
-  "bytes" : 92216,
+  "bytes" : 390192,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "[Ljava.util.HashMap$Node;",
-  "count" : 1,
-  "bytes" : 91064,
+  "class" : "java.util.HashMap$KeySet",
+  "count" : 2,
+  "bytes" : 9372168,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "java.lang.Long",
+  "class" : "eu.exeris.kernel.community.memory.CommunityArenaShardPool$Allocation",
+  "count" : 2,
+  "bytes" : 4338352,
+  "category" : "TEST_HARNESS"
+}, {
+  "class" : "java.util.HashMap$KeyIterator",
   "count" : 1,
-  "bytes" : 6758248,
+  "bytes" : 35448,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "jdk.internal.foreign.SharedSession$SharedResourceList",
+  "count" : 1,
+  "bytes" : 2152,
+  "category" : "PANAMA"
+}, {
+  "class" : "jdk.internal.foreign.SegmentFactories$1",
+  "count" : 1,
+  "bytes" : 2168,
+  "category" : "PANAMA"
+}, {
+  "class" : "java.util.concurrent.ForkJoinTask$AdaptedRunnableAction",
+  "count" : 1,
+  "bytes" : 20248,
   "category" : "JVM_NOISE"
 } ]
