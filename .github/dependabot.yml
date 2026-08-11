@@ -1,0 +1,30 @@
+version: 2
+
+# Actions are pinned by commit SHA (OpenSSF Scorecard "Pinned-Dependencies"), which makes them
+# immune to a moved tag but also invisible to a human reading the file — nothing about
+# `@3d3c42e5…` says it is three majors behind. Dependabot is what closes that: it rewrites the SHA
+# and the trailing `# vX.Y.Z` comment together, so the pin stays current without anyone auditing
+# eleven refs by hand. Without it, SHA-pinning trades a supply-chain risk for a staleness one.
+#
+# Only the actions ecosystem is enabled. Maven dependency bumps land through the milestone flow
+# with the full reactor and the tagged gates behind them; opening them as individual PRs would put
+# version changes on a path that does not run those gates.
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "ci(actions)"
+    labels:
+      - dependencies
+    groups:
+      # One PR for the routine github/actions bumps rather than five. Third-party actions
+      # (Sonar, Pages, claude-code-action) stay ungrouped: those are the ones worth reading
+      # a changelog for before merging.
+      github-owned:
+        patterns:
+          - "actions/*"
+          - "github/*"

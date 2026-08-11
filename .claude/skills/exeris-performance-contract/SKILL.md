@@ -57,7 +57,7 @@ This skill validates that changes respect:
 7. **Modern replacement guidance (mandatory recommendations)**
    For every violation, suggest nearest compliant replacement:
    - `ScopedValue` instead of `ThreadLocal`
-   - `StructuredTaskScope` instead of unstructured async primitives
+   - `core.concurrent.StructuredScope` instead of unstructured async primitives (`StructuredTaskScope` only on the `preview` branch — it is a preview API)
    - `MemorySegment` and zero-copy APIs instead of legacy buffers/IO
    - `LoanedBuffer` for managed off-heap ownership
    - `VarHandle` for lock-free state transitions
@@ -89,7 +89,7 @@ Use this structure in PR feedback:
 4. **JFR findings** (present/missing lifecycle events)
 5. **Verdict** (`APPROVE` / `CONDITIONAL` / `REJECT`)
 6. **Required actions** (minimal root-cause fixes)
-7. **Compliant alternatives** (ScopedValue, StructuredTaskScope, MemorySegment, LoanedBuffer, VarHandle, sentinel/enum errors)
+7. **Compliant alternatives** (ScopedValue, StructuredScope, MemorySegment, LoanedBuffer, VarHandle, sentinel/enum errors)
 
 ## Non-Negotiable Rules
 - No banned APIs in runtime hot paths.
