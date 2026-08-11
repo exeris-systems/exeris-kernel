@@ -482,6 +482,12 @@ operational differences relevant when targeting Kafka vs. Redpanda:
   > **(TCK gap — not yet implemented for the in-memory bus; the Kafka driver inherits per-key partition ordering from the broker by routing on `streamId` as the message key.)**
 - **Zero Subscriber Fast-Free:** Publish to a bus with zero subscribers; verify `payload.refCount() == 0`
   and slab is immediately returned to the pool (no silent leak).
+- **Broken Fan-Out Balance:** Fail the dispatch part-way — a `retain()` that throws, or a handler thread
+  that cannot be started — and verify the refs no handler will ever own are released before the failure
+  reaches the caller. Both `publish` and `publishAndAwait` owe this: the retain protocol above balances
+  only when every subscriber is actually reached, and the paths that do not reach them are the ones
+  where a leak is permanent. *(Closed for the in-memory bus by `InMemoryEventBusTest`; the retain
+  protocol is Core-local, so there is no `Abstract*Tck` anchor to inherit it.)*
 
 ---
 
