@@ -22,7 +22,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.StructuredTaskScope;
+import eu.exeris.kernel.tck.support.TckScope;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -324,26 +324,36 @@ public abstract class AbstractSecurityInterceptorTck<I> {
     class ScopedValuePropagation {
 
         @Test
-        @DisplayName("50 child VTs all see the correct PRINCIPAL_CONTEXT via StructuredTaskScope")
-        void childVirtualThreadsInheritPrincipalContext() {
+        @DisplayName("50 child VTs bound with the request's context all see it — the values, not the propagation")
+        void boundChildVirtualThreadsSeePrincipalContext() {
             int vtCount = 50;
             AtomicInteger successCount = new AtomicInteger(0);
             AtomicReference<Throwable> failure = new AtomicReference<>();
 
             try (LoanedBuffer token = createTokenBuffer()) {
                 intercept(successInterceptor, token, () -> {
-                    try (var scope = StructuredTaskScope.open()) {
+                    // Captured on the request thread, rebound inside each child. Inheritance across a
+                    // fork is a StructuredTaskScope property, not a kernel one, and the default line is
+                    // preview-clean (ADR-066) — so what this pins is the kernel's part: the values the
+                    // interceptor established are the ones a bound child observes, for all of them.
+                    PrincipalContext bound = KernelProviders.principal();
+                    StorageContext boundStorage = KernelProviders.STORAGE_CONTEXT.get();
+                    try (TckScope scope = TckScope.open()) {
                         for (int i = 0; i < vtCount; i++) {
                             scope.fork(() -> {
-                                try {
-                                    PrincipalContext p = KernelProviders.principal();
-                                    StorageContext s = KernelProviders.STORAGE_CONTEXT.get();
-                                    if (p.equals(testPrincipal) && s.equals(testStorage)) {
-                                        successCount.incrementAndGet();
-                                    }
-                                } catch (Exception e) {
-                                    failure.compareAndSet(null, e);
-                                }
+                                ScopedValue.where(KernelProviders.PRINCIPAL_CONTEXT, bound)
+                                        .where(KernelProviders.STORAGE_CONTEXT, boundStorage)
+                                        .run(() -> {
+                                            try {
+                                                PrincipalContext p = KernelProviders.principal();
+                                                StorageContext st = KernelProviders.STORAGE_CONTEXT.get();
+                                                if (p.equals(testPrincipal) && st.equals(testStorage)) {
+                                                    successCount.incrementAndGet();
+                                                }
+                                            } catch (RuntimeException e) {
+                                                failure.compareAndSet(null, e);
+                                            }
+                                        });
                                 return null;
                             });
                         }
@@ -357,6 +367,61 @@ public abstract class AbstractSecurityInterceptorTck<I> {
 
             assertThat(failure.get()).isNull();
             assertThat(successCount.get()).isEqualTo(vtCount);
+        }
+
+        @Test
+        @DisplayName("the binding does not outlive intercept() — a ThreadLocal implementation would")
+        void bindingIsUnboundAfterIntercept() {
+            try (LoanedBuffer token = createTokenBuffer()) {
+                intercept(successInterceptor, token,
+                        () -> assertThat(KernelProviders.PRINCIPAL_CONTEXT.isBound())
+                                .as("inside the callback the interceptor's binding must be visible, "
+                                        + "or everything below is asserting an empty scope")
+                                .isTrue());
+            }
+
+            // The case above this one binds each child explicitly and then asserts the child sees
+            // what it was given — which is a property of ScopedValue, not of any provider, and would
+            // certify a kernel that propagated context through a ThreadLocal just as happily. THIS is
+            // the assertion those cases were missing: a ThreadLocal set during the callback is still
+            // set after it returns, and only a scoped binding is guaranteed gone.
+            assertThat(KernelProviders.PRINCIPAL_CONTEXT.isBound())
+                    .as("a request's identity must not survive the request. If it does, the next "
+                            + "piece of work on this carrier thread inherits an authority nobody "
+                            + "granted it — the failure mode ADR-012 rules out")
+                    .isFalse();
+        }
+
+        @Test
+        @DisplayName("an unstructured virtual thread inherits NOTHING — propagation is explicit")
+        void plainVirtualThreadDoesNotInheritTheBinding() throws InterruptedException {
+            AtomicBoolean childSawBinding = new AtomicBoolean(true);
+
+            try (LoanedBuffer token = createTokenBuffer()) {
+                intercept(successInterceptor, token, () -> {
+                    assertThat(KernelProviders.PRINCIPAL_CONTEXT.isBound())
+                            .as("the PARENT must hold the binding, or the child observing none "
+                                    + "proves nothing about inheritance")
+                            .isTrue();
+                    // Not a fork inside a scope: a bare Thread.ofVirtual().start(). ScopedValue
+                    // bindings are inherited across a structured fork and NOWHERE else, and the
+                    // kernel has already shipped one claim to the contrary that measurement refuted.
+                    // Pinning the negative keeps the next change from assuming the convenient answer.
+                    Thread child = Thread.ofVirtual().start(
+                            () -> childSawBinding.set(KernelProviders.PRINCIPAL_CONTEXT.isBound()));
+                    try {
+                        child.join();
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        throw new AssertionError("interrupted joining the child", e);
+                    }
+                });
+            }
+
+            assertThat(childSawBinding)
+                    .as("a driver that hands work to a plain virtual thread must rebind explicitly; "
+                            + "believing inheritance happens is how work runs with no identity at all")
+                    .isFalse();
         }
     }
 
@@ -384,8 +449,7 @@ public abstract class AbstractSecurityInterceptorTck<I> {
                 interceptorList.add(createInterceptor(createSuccessProvider(p, storage)));
             }
 
-            try (var scope = StructuredTaskScope.open(
-                    StructuredTaskScope.Joiner.<Void>awaitAllSuccessfulOrThrow())) {
+            try (TckScope scope = TckScope.openFailFast()) {
                 for (int i = 0; i < concurrency; i++) {
                     final int idx = i;
                     scope.fork(() -> {
@@ -479,24 +543,29 @@ public abstract class AbstractSecurityInterceptorTck<I> {
         }
 
         @Test
-        @DisplayName("child virtual threads inherit PRINCIPAL_CONTEXT via StructuredTaskScope")
-        void childVirtualThreadsInheritPrincipalContext() {
+        @DisplayName("a child virtual thread bound with the pre-authenticated principal observes it")
+        void boundChildVirtualThreadsSeePrincipalContext() {
             int count = 10;
             AtomicInteger successCount = new AtomicInteger(0);
             AtomicReference<Throwable> failure = new AtomicReference<>();
 
             interceptPreAuthenticated(successInterceptor, testPrincipal, () -> {
-                try (var scope = StructuredTaskScope.open()) {
+                // Same reformulation as the ScopedValuePropagation case: bound explicitly, because a
+                // plain virtual thread does not inherit and the default line has no fork that does.
+                PrincipalContext bound = KernelProviders.PRINCIPAL_CONTEXT.get();
+                try (TckScope scope = TckScope.open()) {
                     for (int i = 0; i < count; i++) {
                         scope.fork(() -> {
-                            try {
-                                PrincipalContext p = KernelProviders.PRINCIPAL_CONTEXT.get();
-                                if (p.equals(testPrincipal)) {
-                                    successCount.incrementAndGet();
+                            ScopedValue.where(KernelProviders.PRINCIPAL_CONTEXT, bound).run(() -> {
+                                try {
+                                    PrincipalContext p = KernelProviders.PRINCIPAL_CONTEXT.get();
+                                    if (p.equals(testPrincipal)) {
+                                        successCount.incrementAndGet();
+                                    }
+                                } catch (RuntimeException e) {
+                                    failure.compareAndSet(null, e);
                                 }
-                            } catch (Exception e) {
-                                failure.compareAndSet(null, e);
-                            }
+                            });
                             return null;
                         });
                     }
