@@ -26,8 +26,15 @@ final class CommunityJobHandle implements JobHandle {
 
     private final CommunityJobRegistry registry;
     private final String jobId;
-    private final JobDescriptor descriptor;
-    private final CapturedContext context;
+    private final String jobName;
+
+    // Not final, and nulled on terminal settle: the descriptor holds the application's job body and
+    // the captured context holds the submitter's PrincipalContext and StorageContext. A handle stays
+    // addressable by id after the job ends, so keeping these alive would pin one closure and one
+    // identity per job the scheduler has ever run, for the scheduler's lifetime. Nothing reads them
+    // past the settle — the trigger is consulted while deciding it, not after.
+    private JobDescriptor descriptor;
+    private CapturedContext context;
 
     private long dueNanos;
     private JobState state = JobState.SCHEDULED;
@@ -39,6 +46,8 @@ final class CommunityJobHandle implements JobHandle {
         this.jobId = jobId;
         this.descriptor = descriptor;
         this.context = context;
+        // Copied out because jobName() must keep answering once the descriptor is released.
+        this.jobName = descriptor.jobName();
         this.dueNanos = dueNanos;
     }
 
@@ -49,7 +58,7 @@ final class CommunityJobHandle implements JobHandle {
 
     @Override
     public String jobName() {
-        return descriptor.jobName();
+        return jobName;
     }
 
     @Override
@@ -70,6 +79,17 @@ final class CommunityJobHandle implements JobHandle {
 
     /* default */ CapturedContext context() {
         return context;
+    }
+
+    /**
+     * Drops the job body and the submitter's identity once the job can no longer run.
+     *
+     * <p>Caller holds the lock. Idempotent — a settle can be reached from cancellation, from a
+     * one-shot completing, and from scheduler shutdown.
+     */
+    /* default */ void releasePayload() {
+        this.descriptor = null;
+        this.context = null;
     }
 
     /* default */ long dueNanos() {
