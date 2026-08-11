@@ -11,6 +11,7 @@ package eu.exeris.kernel.community.http;
 import eu.exeris.kernel.community.memory.CommunityMemoryProvider;
 import eu.exeris.kernel.community.security.CommunitySecurityProvider;
 import eu.exeris.kernel.community.testkit.security.TestJwt;
+import eu.exeris.kernel.core.http.routing.HttpRouter;
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.http.HttpClientEngine;
 import eu.exeris.kernel.spi.http.HttpConfig;
@@ -189,6 +190,49 @@ class CommunityHttpSecurityAdmissionIntegrationTest {
         case "/api/public" -> RouteRequirement.permitAll();
         default -> HttpRoutePolicy.unmatched();
     };
+
+    @Test
+    @DisplayName("A STREAMING route on a protected path is denied too — it used to bypass the gate entirely")
+    void protectedStreamRouteWithoutAuthorizationReturnsUnauthorized() {
+        AtomicBoolean streamHandlerInvoked = new AtomicBoolean(false);
+
+        withHttpSecurityScope(() -> {
+            int port = nextFreePort();
+            HttpProvider provider = new CommunityHttpProvider();
+
+            try (HttpServerEngine server = provider.createServerEngine(serverConfig(port));
+                 HttpClientEngine client = provider.createClientEngine(clientConfig(port))) {
+                // Same protected path as the respond-once case above, but reached through a stream
+                // route. The dispatch branches apart well before authorization, which is exactly how
+                // this went unnoticed: the sibling tests here all take the respond-once branch.
+                server.setHandler(HttpRouter.builder()
+                        .streamRoute(HttpMethod.GET, "/api/orders", exchange -> streamHandlerInvoked.set(true))
+                        .build());
+
+                server.start();
+                client.start();
+
+                HttpResponse response = client.send(HttpRequest.noBody(
+                        HttpMethod.GET,
+                        "/api/orders",
+                        HttpVersion.HTTP_1_1,
+                        List.of()));
+                try {
+                    assertThat(response.status().code())
+                            .as("a stream open on a scope-protected path must be denied like any request")
+                            .isEqualTo(401);
+                } finally {
+                    if (response.body() != null) {
+                        response.body().close();
+                    }
+                }
+            }
+        });
+
+        assertThat(streamHandlerInvoked.get())
+                .as("the SSE handler ran without an identity — ADR-061 was not applied to the stream branch")
+                .isFalse();
+    }
 
     @Test
     @DisplayName("A token carrying the admin scope reaches the admin route — the 403 above was about the scope")

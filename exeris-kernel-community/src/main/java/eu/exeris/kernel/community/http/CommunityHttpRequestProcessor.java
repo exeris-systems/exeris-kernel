@@ -290,7 +290,16 @@ public final class CommunityHttpRequestProcessor {
             //     stream-opens shed under load — still holds via carrier-edge PAQS (NativeTcpCarrier's
             //     AdmissionController), which sheds any new stream including an SSE open. Plumbing the
             //     carrier arbiter through to a dedicated streaming ceiling is a v0.10 follow-up.
-            streamDispatcher.dispatchStream(request, stream, streamRoute);
+            // ADR-061 applies to a stream open exactly as it does to a request. Routed through the
+            // request dispatcher rather than checked here, so there is one implementation of the
+            // route requirement and one place it can drift from.
+            // Supplied, not built: an admitted open never writes through this exchange, and the
+            // admitted case is the one every stream takes.
+            requestDispatcher.dispatchStream(
+                    request,
+                    () -> new CommunityHttpExchange(
+                            request, stream, allocator, readResult.keepAlive(), encoderRegistry),
+                    () -> streamDispatcher.dispatchStream(request, stream, streamRoute));
             return true;
         }
 
