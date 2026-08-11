@@ -116,9 +116,16 @@ public final class TckScope implements AutoCloseable {
      * @throws InterruptedException if the caller is interrupted while waiting
      */
     public void join() throws InterruptedException {
-        joined = true;
-        for (Thread thread : forked) {
-            thread.join();
+        try {
+            for (Thread thread : forked) {
+                thread.join();
+            }
+        } finally {
+            // Set AFTER the loop, and in a finally so an interrupt mid-join still records that a
+            // join was attempted. Setting it first made close() a no-op on exactly the path where
+            // it matters: join() throwing InterruptedException part-way left threads running, and
+            // the try-with-resources then returned claiming the scope was clean.
+            joined = true;
         }
         reportFailures();
     }
@@ -131,6 +138,10 @@ public final class TckScope implements AutoCloseable {
         try {
             join();
         } catch (InterruptedException e) {
+            // Interrupt the stragglers before unwinding. Joining alone cannot end a task that is
+            // not going to finish, so a close() that only joins hands the suite a hang instead of
+            // the failure that caused it.
+            cancelSiblings();
             Thread.currentThread().interrupt();
             throw new IllegalStateException("interrupted while joining TCK scope", e);
         }
