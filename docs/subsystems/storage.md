@@ -93,7 +93,9 @@ promise: scheme, structure, whether credentials are embedded, or whether it can 
 
 ## Filesystem driver notes
 
-Layout is `<root>/t-<hex(isolationKey)>/<container>/<key>`.
+Layout is `<root>/t-<hex(isolationKey)>/objects/<container>/<key>`, alongside two sibling trees the
+caller never addresses: `sidecars/<container>/<key>` for content types, and `staging/` for uploads in
+flight.
 
 The tenant directory is hex-encoded rather than used verbatim. `StorageContext.isolationKey()` is an
 unconstrained `String` — `ImmutableStorageContext.shared` does not validate it — so what it may contain
@@ -108,9 +110,32 @@ cases. A containment check after resolution backs it up.
 separator-bearing, deep-traversal, and injectivity cases fail, while the bare-`..` case still passes —
 which is why the claim above is stated in terms of separators rather than `..`.
 
-Uploads land in a `.uploading` staging file and are atomically moved into place on commit. Content type
-is kept in a `.ctype` sidecar, because a filesystem has nowhere else to put it; extended attributes would
-be tidier but are not portable across the filesystems a Community driver must run on.
+Uploads land in a staging file under `staging/` and are atomically moved into place on commit. Content
+type is kept in a sidecar under `sidecars/`, because a filesystem has nowhere else to put it; extended
+attributes would be tidier but are not portable across the filesystems a Community driver must run on.
+The default content type is represented by the *absence* of a sidecar, so recording it means deleting
+any the previous object left — an overwrite that only ever wrote would keep reporting the old type.
+
+Both files used to be named by appending `.uploading` and `.ctype` to the object's own path. `BlobRef`
+rejects traversal, not extensions, so those are endings a tenant may legitimately use: the suffix named
+another object of the same tenant rather than a private file, and an upload to `report` truncated and
+then moved away whatever was stored at `report.uploading`. Separate trees remove the collision instead
+of forbidding the keys that expose it; disjointness is structural, since a container is always a child
+of `objects` and nothing the caller controls is a direct child of the tenant directory. Staging files
+are named by a random id rather than by the target key, so two concurrent uploads to one key no longer
+share a file. `CommunityFilesystemBlobNamespaceTest` holds these properties.
+
+**A staging file can outlive the process that made it, and the store does not sweep them.** A commit
+either moves the staging file into place or deletes it, and an abort deletes it — but a kill signal
+between opening the file and either outcome leaves it behind. The residue is bounded and harmless: it
+is a random id under `staging/`, addressable by nothing, and never resolved by a read.
+
+No sweep runs at store open, deliberately. A store root can be shared — two kernel instances, a rolling
+deployment overlapping old and new — and from the filesystem an orphan and another process's in-flight
+upload are the same thing: a staging file nobody here opened. Age does not separate them either, since
+a large upload is legitimately old. Deleting one mid-flight would fail a live commit for the sake of
+reclaiming a file nothing addresses. Reclaiming the space is therefore an operator task, and one they
+can do safely because they know which instances are running.
 
 ## Guards
 
@@ -164,9 +189,11 @@ is enough to locate a fault without putting caller data into telemetry.
 
 ## S3-compatible driver notes
 
-Layout is the filesystem driver's, in a bucket: `t-<hex(isolationKey)>/<container>/<key>` under one
-bucket, path-style. One layout across both drivers means an operator reading a bucket listing and a
-directory tree sees the same structure. There is no containment re-check after resolution, unlike the
+Layout is `t-<hex(isolationKey)>/<container>/<key>` under one bucket, path-style — the filesystem
+driver's tenant prefix, without its `objects/` tree. S3 carries a content type as object metadata and
+stages a multipart upload server-side, so it has no private files to keep out of the caller's namespace
+and nothing to separate them from. The two layouts agree on everything an operator has to reason about
+— the tenant prefix, its encoding, and the container/key tail. There is no containment re-check after resolution, unlike the
 filesystem driver: nothing here normalises the key, so an assertion that a just-concatenated string
 starts with its own prefix would confirm its own last statement. `BlobRef` refuses relative-navigation
 segments, and the hex prefix is one opaque segment — the same two properties the filesystem layout rests

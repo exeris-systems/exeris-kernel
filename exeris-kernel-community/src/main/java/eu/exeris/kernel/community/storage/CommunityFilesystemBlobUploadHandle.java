@@ -36,7 +36,7 @@ final class CommunityFilesystemBlobUploadHandle implements BlobUploadHandle {
             CommunityBlobFailures.forProvider(CommunityBlobFailures.FILESYSTEM_PROVIDER);
 
     private final Path staging;
-    private final Path target;
+    private final CommunityFilesystemBlobLayout.BlobPaths paths;
     private final BlobRef ref;
     private final long declaredLength;
     private final String contentType;
@@ -46,10 +46,11 @@ final class CommunityFilesystemBlobUploadHandle implements BlobUploadHandle {
     private boolean committed;
     private boolean closed;
 
-    /* default */ CommunityFilesystemBlobUploadHandle(Path staging, Path target, BlobRef ref,
-                                                      long declaredLength, String contentType) {
+    /* default */ CommunityFilesystemBlobUploadHandle(
+            Path staging, CommunityFilesystemBlobLayout.BlobPaths paths, BlobRef ref,
+            long declaredLength, String contentType) {
         this.staging = staging;
-        this.target = target;
+        this.paths = paths;
         this.ref = ref;
         this.declaredLength = declaredLength;
         this.contentType = contentType;
@@ -108,15 +109,27 @@ final class CommunityFilesystemBlobUploadHandle implements BlobUploadHandle {
         try {
             channel.force(true);
             channel.close();
-            CommunityFilesystemBlobLayout.writeContentType(target, contentType);
-            Files.move(staging, target, StandardCopyOption.REPLACE_EXISTING,
+            // Bytes first, then the type. Reversed, a move that fails leaves the previous object in
+            // place wearing the new upload's content type — a stat that is wrong about an object the
+            // caller was never told had changed. This order can only lose the type of an object that
+            // did land, which stat reports as the default rather than as someone else's value.
+            Files.move(staging, paths.object(), StandardCopyOption.REPLACE_EXISTING,
                     StandardCopyOption.ATOMIC_MOVE);
+            // Set BEFORE the sidecar write, because the object is already visible at this point.
+            // A sidecar failure leaves a committed object the caller is told about by exception; if
+            // the flags stayed clear, that caller could commit() again against a closed channel and
+            // get a second, unrelated failure for an upload that had in fact landed.
+            committed = true;
+            closed = true;
+            CommunityFilesystemBlobLayout.writeContentType(paths.sidecar(), contentType);
         } catch (IOException e) {
+            // Flags deliberately left alone. If the move never ran, they are still clear and the
+            // caller's try-with-resources reaches close(), which deletes the staging file exactly as
+            // an abort would. If the SIDECAR was what failed, they were set above and close() is a
+            // no-op — which is right, because the staging file has already moved.
             throw FAILURES.transferFailed(
                     CommunityBlobFailures.OP_UPLOAD, ref.container(), e);
         }
-        committed = true;
-        closed = true;
         return new BlobMetadata(ref, written, contentType);
     }
 

@@ -45,7 +45,7 @@ class CommunityFilesystemBlobLayoutTest {
         CommunityFilesystemBlobLayout layout = new CommunityFilesystemBlobLayout(root);
         return ScopedValue.where(KernelProviders.STORAGE_CONTEXT,
                         ImmutableStorageContext.shared(isolationKey))
-                .call(() -> layout.resolve(new BlobRef(CONTAINER, KEY), OPERATION));
+                .call(() -> layout.resolve(new BlobRef(CONTAINER, KEY), OPERATION).object());
     }
 
     @Nested
@@ -81,8 +81,9 @@ class CommunityFilesystemBlobLayoutTest {
 
             Path resolved = resolveAs(root, "a/b/c");
 
-            // Encoded, the whole key is one directory name: root -> tenant -> container -> object.
-            assertThat(root.relativize(resolved).getNameCount()).isEqualTo(3);
+            // Encoded, the whole key is one directory name:
+            // root -> tenant -> objects -> container -> object.
+            assertThat(root.relativize(resolved).getNameCount()).isEqualTo(4);
         }
 
         @Test
