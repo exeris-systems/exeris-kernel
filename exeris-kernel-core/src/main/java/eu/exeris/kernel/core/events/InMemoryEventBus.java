@@ -199,6 +199,13 @@ public final class InMemoryEventBus implements EventBus {
             closeUnclosed(wrappers);
             Thread.currentThread().interrupt();
             throw interruptEx;
+        } catch (Throwable escaped) { //NOPMD AvoidCatchingThrowable — release before rethrow, SPI boundary
+            // Only InterruptedException was caught here, so anything else — an Error out of a handler,
+            // or a failure closing one wrapper — left the remaining wrappers open and leaked the
+            // payload's off-heap refcount permanently. The per-handler try-with-resources inside the
+            // loop covers the handler that threw; it cannot cover the ones never reached.
+            closeUnclosed(wrappers);
+            throw escaped;
         }
         throwIfFailed(failures);
     }
