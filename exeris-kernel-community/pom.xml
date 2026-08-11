@@ -309,11 +309,17 @@
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-compiler-plugin</artifactId>
+                        <!--
+                            ADR-066: compilerArgs sit in the test-compile EXECUTION, not in plugin-level
+                            <configuration>. Plugin level applies to default-compile too, so the JMH
+                            profile silently rebuilt MAIN sources with the preview flag; javac stamps
+                            minor_version 0xFFFF whenever the flag is on, whether or not a preview
+                            feature is used. The Preview-Bytecode Gate does not run in the benchmarks
+                            build, so nothing caught it; the benchmark job simply measured different
+                            class files from the ones this project ships.
+                        -->
                         <configuration>
                             <release>${maven.compiler.release}</release>
-                            <compilerArgs>
-                                <arg>${jdk.preview.enable}</arg>
-                            </compilerArgs>
                             <annotationProcessorPaths>
                                 <path>
                                     <groupId>org.openjdk.jmh</groupId>
@@ -322,6 +328,16 @@
                                 </path>
                             </annotationProcessorPaths>
                         </configuration>
+                        <executions>
+                            <execution>
+                                <id>default-testCompile</id>
+                                <configuration>
+                                    <compilerArgs>
+                                        <arg>${jdk.preview.enable}</arg>
+                                    </compilerArgs>
+                                </configuration>
+                            </execution>
+                        </executions>
                     </plugin>
                     <plugin>
                         <groupId>org.codehaus.mojo</groupId>
