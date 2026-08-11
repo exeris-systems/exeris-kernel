@@ -125,6 +125,18 @@ of `objects` and nothing the caller controls is a direct child of the tenant dir
 are named by a random id rather than by the target key, so two concurrent uploads to one key no longer
 share a file. `CommunityFilesystemBlobNamespaceTest` holds these properties.
 
+**A staging file can outlive the process that made it, and the store does not sweep them.** A commit
+either moves the staging file into place or deletes it, and an abort deletes it — but a kill signal
+between opening the file and either outcome leaves it behind. The residue is bounded and harmless: it
+is a random id under `staging/`, addressable by nothing, and never resolved by a read.
+
+No sweep runs at store open, deliberately. A store root can be shared — two kernel instances, a rolling
+deployment overlapping old and new — and from the filesystem an orphan and another process's in-flight
+upload are the same thing: a staging file nobody here opened. Age does not separate them either, since
+a large upload is legitimately old. Deleting one mid-flight would fail a live commit for the sake of
+reclaiming a file nothing addresses. Reclaiming the space is therefore an operator task, and one they
+can do safely because they know which instances are running.
+
 ## Guards
 
 | Guard | What it holds |

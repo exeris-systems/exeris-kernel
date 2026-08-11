@@ -17,6 +17,7 @@ import eu.exeris.kernel.spi.memory.MemoryProviderConfig;
 import eu.exeris.kernel.spi.security.ImmutableStorageContext;
 import eu.exeris.kernel.spi.storage.blob.BlobDownloadHandle;
 import eu.exeris.kernel.spi.storage.blob.BlobMetadata;
+import eu.exeris.kernel.spi.exceptions.storage.BlobStorageException;
 import eu.exeris.kernel.spi.storage.blob.BlobRef;
 import eu.exeris.kernel.spi.storage.blob.BlobStorageConfig;
 import eu.exeris.kernel.spi.storage.blob.BlobStore;
@@ -29,12 +30,17 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * The store's private files must not be reachable as objects, and vice versa.
@@ -182,6 +188,61 @@ class CommunityFilesystemBlobNamespaceTest {
                 assertThat(store.stat(ref("sheet")).orElseThrow().contentType())
                         .isEqualTo(BlobMetadata.DEFAULT_CONTENT_TYPE);
             });
+        }
+    }
+
+    @Nested
+    @DisplayName("a sidecar failure after the object has landed")
+    class SidecarFailureAfterCommit {
+
+        @Test
+        @DisplayName("the object is readable and the handle is spent, not reusable")
+        void sidecarFailureLeavesACommittedHandle() throws IOException {
+            asTenant(() -> {
+                upload(ref("typed"), NEIGHBOUR, "text/csv");
+                blockSidecarPath();
+
+                BlobRef ref = ref("typed");
+                try (BlobUploadHandle handle = store.beginUpload(ref, SUBJECT.length, "text/csv")) {
+                    writeAll(handle, SUBJECT);
+
+                    assertThatThrownBy(handle::commit)
+                            .as("the sidecar write failed, and the caller has to hear about it")
+                            .isInstanceOf(BlobStorageException.class);
+
+                    // The bytes moved BEFORE the sidecar was written, so the object is already
+                    // visible. A handle left un-flagged would let this caller retry a commit whose
+                    // channel is closed, and get a second, unrelated failure for an upload that in
+                    // fact landed.
+                    assertThatThrownBy(handle::commit)
+                            .as("spent, and spent as COMMITTED — the object did land, so the refusal "
+                                + "is a lifecycle error and not a second transfer failure for an "
+                                + "upload that already succeeded")
+                            .isInstanceOf(IllegalStateException.class)
+                            .hasMessageContaining("already committed");
+                }
+
+                assertThat(download(ref))
+                        .as("the move succeeded, so the new bytes are what a reader sees; only the "
+                            + "recorded content type was lost, which stat reports as the default")
+                        .isEqualTo(SUBJECT);
+            });
+        }
+
+        /** Makes the next sidecar write fail by putting a directory where the file must go. */
+        private void blockSidecarPath() {
+            try (Stream<Path> tree = Files.walk(storeRoot)) {
+                Path sidecar = tree
+                        .filter(Files::isRegularFile)
+                        .filter(path -> path.toString().contains("sidecar"))
+                        .findFirst()
+                        .orElseThrow(() -> new IllegalStateException(
+                                "no sidecar written — the fixture assumes the first upload made one"));
+                Files.delete(sidecar);
+                Files.createDirectory(sidecar);
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
         }
     }
 

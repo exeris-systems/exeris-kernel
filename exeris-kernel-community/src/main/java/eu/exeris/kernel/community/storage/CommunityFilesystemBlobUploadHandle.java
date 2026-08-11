@@ -115,13 +115,21 @@ final class CommunityFilesystemBlobUploadHandle implements BlobUploadHandle {
             // did land, which stat reports as the default rather than as someone else's value.
             Files.move(staging, paths.object(), StandardCopyOption.REPLACE_EXISTING,
                     StandardCopyOption.ATOMIC_MOVE);
+            // Set BEFORE the sidecar write, because the object is already visible at this point.
+            // A sidecar failure leaves a committed object the caller is told about by exception; if
+            // the flags stayed clear, that caller could commit() again against a closed channel and
+            // get a second, unrelated failure for an upload that had in fact landed.
+            committed = true;
+            closed = true;
             CommunityFilesystemBlobLayout.writeContentType(paths.sidecar(), contentType);
         } catch (IOException e) {
+            // Flags deliberately left alone. If the move never ran, they are still clear and the
+            // caller's try-with-resources reaches close(), which deletes the staging file exactly as
+            // an abort would. If the SIDECAR was what failed, they were set above and close() is a
+            // no-op — which is right, because the staging file has already moved.
             throw FAILURES.transferFailed(
                     CommunityBlobFailures.OP_UPLOAD, ref.container(), e);
         }
-        committed = true;
-        closed = true;
         return new BlobMetadata(ref, written, contentType);
     }
 
