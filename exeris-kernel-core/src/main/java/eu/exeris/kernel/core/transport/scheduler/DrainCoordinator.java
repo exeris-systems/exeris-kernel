@@ -80,12 +80,14 @@ public final class DrainCoordinator {
 
     private static final VarHandle BUSY_STREAMS;
     private static final VarHandle DRAINING;
+    private static final VarHandle BUSY_AT_SEAL;
 
     static {
         try {
             MethodHandles.Lookup lookup = MethodHandles.lookup();
             BUSY_STREAMS = lookup.findVarHandle(DrainCoordinator.class, "busyStreams", int.class);
             DRAINING = lookup.findVarHandle(DrainCoordinator.class, "draining", boolean.class);
+            BUSY_AT_SEAL = lookup.findVarHandle(DrainCoordinator.class, "busyAtSeal", int.class);
         } catch (ReflectiveOperationException e) {
             throw new ExceptionInInitializerError(e);
         }
@@ -96,6 +98,9 @@ public final class DrainCoordinator {
 
     @SuppressWarnings("unused") // VarHandle-accessed
     private volatile boolean draining;
+
+    @SuppressWarnings("unused") // VarHandle-accessed
+    private volatile int busyAtSeal;
 
     /**
      * Registers a starting stream as busy.
@@ -145,7 +150,26 @@ public final class DrainCoordinator {
      * keep taking counts serves nothing and lets a late arrival believe it is protected.
      */
     public void sealNow() {
-        BUSY_STREAMS.setVolatile(this, SEALED);
+        int previous = (int) BUSY_STREAMS.getAndSet(this, SEALED);
+        // Recorded here because it is unrecoverable afterwards: a sealed count is negative, and
+        // busyStreams() reports negative as 0 so a sealed coordinator does not read as a billion live
+        // streams. That clamp makes "how much did the deadline abandon" unanswerable after the fact —
+        // which is what made the drain JFR event's busyRemaining structurally zero on every shutdown,
+        // including the ones that gave up on live streams.
+        BUSY_AT_SEAL.setRelease(this, previous < 0 ? 0 : previous);
+    }
+
+    /**
+     * How many streams were still being served when the coordinator sealed.
+     *
+     * <p>{@code 0} after a clean drain — {@link #sealIfIdle()} only succeeds on zero — and the
+     * abandoned count after {@link #sealNow()} took the deadline. Reportable telemetry, not a control
+     * signal: by the time it is non-zero, shutdown has already decided to proceed.
+     *
+     * @return the busy count at seal time, or {@code 0} if not sealed
+     */
+    public int busyAtSeal() {
+        return (int) BUSY_AT_SEAL.getAcquire(this);
     }
 
     /**

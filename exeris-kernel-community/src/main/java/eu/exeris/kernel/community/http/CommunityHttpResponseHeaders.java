@@ -49,7 +49,16 @@ final class CommunityHttpResponseHeaders {
         boolean hasConnection = false;
         for (HttpHeader header : headers) {
             hasContentLength |= header.nameEqualsIgnoreCase(HEADER_CONTENT_LENGTH);
-            hasConnection |= header.nameEqualsIgnoreCase(HEADER_CONNECTION);
+            boolean isConnection = header.nameEqualsIgnoreCase(HEADER_CONNECTION);
+            // An application Connection header is honoured only while the kernel is still willing to
+            // keep the connection. When it is not — a graceful drain resolves keepAlive to false and
+            // then closes the socket regardless — letting the application's value through announces
+            // keep-alive on a connection about to be torn down, which is the one thing the drain's
+            // Connection: close exists to prevent. Connection lifetime is the kernel's to state.
+            if (isConnection && !keepAlive) {
+                continue;
+            }
+            hasConnection |= isConnection;
             pos = Http1ResponseEncoder.writeHeader(target, pos, header.name(), header.value());
         }
 

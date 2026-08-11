@@ -215,44 +215,55 @@ public final class NativeTcpCarrier implements TransportEngine {
             return;
         }
 
-        // Phase 1 — close ingress. No new connections; the reactors keep serving admitted ones.
-        closeQuietly(serverChannel);
+        try {
+            // Phase 1 — close ingress. No new connections; the reactors keep serving admitted ones.
+            closeQuietly(serverChannel);
 
-        Thread acceptor = acceptorThread;
-        if (acceptor != null) {
-            try {
-                acceptor.join(2_000L);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
+            Thread acceptor = acceptorThread;
+            if (acceptor != null) {
+                try {
+                    acceptor.join(2_000L);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
             }
-        }
 
-        // Phase 2 — drain in-flight streams while the write path is still alive.
-        long drainStartNanos = System.nanoTime();
-        PaqsScheduler localPaqs = paqs;
-        int openAtStart = paqsActiveStreams();
-        int busyAtStart = localPaqs == null ? 0 : localPaqs.drainCoordinator().busyStreams();
-        if (localPaqs != null) {
-            localPaqs.close();
-        }
-        int busyRemaining = localPaqs == null ? 0 : localPaqs.drainCoordinator().busyStreams();
-        CommunityTransportDrainEvent.emit(
-                engineName(),
-                busyAtStart,
-                busyRemaining,
-                openAtStart,
-                System.nanoTime() - drainStartNanos);
+            // Phase 2 — drain in-flight streams while the write path is still alive.
+            long drainStartNanos = System.nanoTime();
+            PaqsScheduler localPaqs = paqs;
+            int openAtStart = paqsActiveStreams();
+            int busyAtStart = localPaqs == null ? 0 : localPaqs.drainCoordinator().busyStreams();
+            if (localPaqs != null) {
+                localPaqs.close();
+            }
+            // busyAtSeal(), not busyStreams(): close() always leaves the coordinator sealed, and a
+            // sealed count reads as 0 by design, so asking after the fact reported "nothing was left
+            // behind" even when the 60s deadline had just abandoned live streams. The coordinator
+            // records what it discarded at the moment it sealed.
+            int busyRemaining = localPaqs == null ? 0 : localPaqs.drainCoordinator().busyAtSeal();
+            CommunityTransportDrainEvent.emit(
+                    engineName(),
+                    busyAtStart,
+                    busyRemaining,
+                    openAtStart,
+                    System.nanoTime() - drainStartNanos);
+        } finally {
+            // Phase 3 — the drain is over by completion, by deadline, or by a throw above; either way
+            // the loops come down. In a finally because `draining` is this method's own re-entry
+            // guard: leaving it raised makes the engine permanently unstoppable. The reactors' liveness
+            // predicate is `running || draining`, `running` is already false, and a second stop() loses
+            // the entry CAS and returns — so the reactors would spin forever and every accepted fd
+            // would leak, with no recovery short of restarting the JVM.
+            draining.set(false);
+            for (NativeTcpReactor reactor : reactors) {
+                reactor.wakeup();
+            }
+            for (NativeTcpReactor reactor : reactors) {
+                reactor.join(2_000L);
+            }
 
-        // Phase 3 — the drain is over by completion or by deadline; take the loops down.
-        draining.set(false);
-        for (NativeTcpReactor reactor : reactors) {
-            reactor.wakeup();
+            closeSelectorAndChannels();
         }
-        for (NativeTcpReactor reactor : reactors) {
-            reactor.join(2_000L);
-        }
-
-        closeSelectorAndChannels();
     }
 
     private int paqsActiveStreams() {
