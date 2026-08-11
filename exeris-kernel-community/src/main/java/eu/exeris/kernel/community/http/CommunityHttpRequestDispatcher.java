@@ -82,30 +82,65 @@ final class CommunityHttpRequestDispatcher {
             }
         }
 
-        // A route the application never described about is decided by the policy, not by this
-        // driver. With no policy bound the requirement is permit-all, which is exactly how the kernel
-        // behaved before ADR-061 — declaring nothing changes nothing.
-        RouteRequirement requirement =
-                routePolicy == null ? RouteRequirement.permitAll() : routePolicy.requirementFor(method, path);
-
-        if (requirement != null && requirement.kind() == RouteRequirement.Kind.PERMIT_ALL) {
-            handleWithinRequestSession(method, request, exchange, handler);
-        } else {
-            // Identity is required — or the policy returned null, which is a defect the enforcer
-            // turns into a denial rather than an admission.
-            boolean admitted = securityInterceptor != null
-                    && interceptRequest(
-                    request,
-                    () -> handleAuthorizedRequest(requirement, method, request, exchange, handler));
-            if (!admitted) {
-                exchange.respond(HttpResponse.noBody(HttpStatus.UNAUTHORIZED, request.version()));
-                return;
-            }
+        if (!authorize(request, exchange,
+                () -> handleWithinRequestSession(method, request, exchange, handler))) {
+            return;
         }
 
         if (!isResponded(exchange)) {
             exchange.respond(HttpResponse.noBody(HttpStatus.INTERNAL_SERVER_ERROR, request.version()));
         }
+    }
+
+    /**
+     * Applies the ADR-061 route requirement to a streaming open, running {@code openStream} only if the
+     * request is admitted.
+     *
+     * <p>Separate entry point from {@link #dispatch} because a stream writes its own response head and
+     * must not get this dispatcher's respond-once tail — but the authorization itself is the same code,
+     * deliberately. Streaming routes previously reached the handler without passing any of it: the
+     * stream branch returns before {@code dispatch} is ever called, so a bound {@link HttpRoutePolicy}
+     * and the {@link SecurityInterceptor} were both simply skipped, and an SSE handler ran with no
+     * {@code PRINCIPAL_CONTEXT} bound.
+     *
+     * <p>The binding holds for the stream's whole life, not just its open: the stream dispatcher runs
+     * the handler's emit loop on the calling thread, so it executes inside
+     * {@link SecurityInterceptor#intercept}'s scope.
+     *
+     * @param request    the parsed request that opened the stream
+     * @param exchange   used only to write a denial; an admitted stream responds through its engine
+     * @param openStream opens the stream and runs its emit loop
+     */
+    /* default */ void dispatchStream(HttpRequest request, HttpExchange exchange, Runnable openStream) {
+        authorize(request, exchange, openStream);
+    }
+
+    /**
+     * Resolves the route requirement and runs {@code admitted} if the request passes it.
+     *
+     * @return {@code false} if the request was denied and a response has already been written
+     */
+    private boolean authorize(HttpRequest request, HttpExchange exchange, Runnable admitted) {
+        // A route the application never described about is decided by the policy, not by this
+        // driver. With no policy bound the requirement is permit-all, which is exactly how the kernel
+        // behaved before ADR-061 — declaring nothing changes nothing.
+        RouteRequirement requirement = routePolicy == null
+                ? RouteRequirement.permitAll()
+                : routePolicy.requirementFor(request.method(), request.path());
+
+        if (requirement != null && requirement.kind() == RouteRequirement.Kind.PERMIT_ALL) {
+            admitted.run();
+            return true;
+        }
+        // Identity is required — or the policy returned null, which is a defect the enforcer
+        // turns into a denial rather than an admission.
+        boolean intercepted = securityInterceptor != null
+                && interceptRequest(request, () -> handleAuthorizedRequest(requirement, request, exchange, admitted));
+        if (!intercepted) {
+            exchange.respond(HttpResponse.noBody(HttpStatus.UNAUTHORIZED, request.version()));
+            return false;
+        }
+        return true;
     }
 
     private boolean interceptRequest(HttpRequest request, Runnable admittedHandler) {
@@ -124,16 +159,15 @@ final class CommunityHttpRequestDispatcher {
     }
 
     private void handleAuthorizedRequest(RouteRequirement requirement,
-                                         HttpMethod method,
                                          HttpRequest request,
                                          HttpExchange exchange,
-                                         HttpHandler handler) {
+                                         Runnable admitted) {
         PrincipalContext principal = KernelProviders.PRINCIPAL_CONTEXT.isBound()
                 ? KernelProviders.PRINCIPAL_CONTEXT.get()
                 : null;
 
         switch (RouteAuthorizationEnforcer.decide(requirement, principal)) {
-            case ADMIT -> handleWithinRequestSession(method, request, exchange, handler);
+            case ADMIT -> admitted.run();
             case FORBIDDEN ->
                     exchange.respond(HttpResponse.noBody(HttpStatus.FORBIDDEN, request.version()));
             case UNAUTHENTICATED ->
