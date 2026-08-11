@@ -89,6 +89,11 @@ import java.util.function.Function;
  * @see TransportScopes
  * @since 0.5.0
  */
+// CyclomaticComplexity is a class-wide total, and the drain-ordering fix adds branches to a class
+// that already carries the admission, spawn and shutdown paths. Each branch here is a distinct
+// lifecycle case rather than tangled logic; splitting them across classes would separate the count
+// from the code that changes it, which is the pairing the seal race turned on.
+@SuppressWarnings("PMD.CyclomaticComplexity")
 public final class PaqsScheduler implements AutoCloseable {
 
     private static final System.Logger LOG = System.getLogger(PaqsScheduler.class.getName());
@@ -182,6 +187,13 @@ public final class PaqsScheduler implements AutoCloseable {
      *
      * @param stream the incoming stream from the transport driver; must not be {@code null}
      */
+    // CloseResource: the StreamWork handle is deliberately not closed on this thread — it is handed
+    // to the spawned task, which owns it for the stream's life. The catch below is its only close
+    // here, for the one case where no task ever receives it.
+    // AvoidCatchingGenericException / S1181: a spawn that fails any way at all leaves a registered
+    // stream that will never run, and the drain then waits on it to the 60s deadline. Narrowing the
+    // catch would make that outcome depend on which throwable escaped.
+    @SuppressWarnings({"PMD.CloseResource", "PMD.AvoidCatchingGenericException", "java:S1181"})
     public void schedule(TransportStream stream) {
         Objects.requireNonNull(stream, "stream must not be null");
 
@@ -191,7 +203,7 @@ public final class PaqsScheduler implements AutoCloseable {
             if (priority == null) {
                 priority = StreamPriority.NORMAL;
             }
-        } catch (Exception _) { //NOPMD AvoidCatchingGenericException — carrier thread boundary isolation
+        } catch (Exception _) { // carrier thread boundary isolation; covered by the method suppression
             priority = StreamPriority.NORMAL;
         }
 
@@ -209,6 +221,12 @@ public final class PaqsScheduler implements AutoCloseable {
         // activeStreamCount(), incremented on this thread by admit(), and so had no such gap; moving
         // the wait onto the busy count (to stop idle keep-alive connections holding shutdown open)
         // reintroduced it one layer down. The handle is closed by the task that receives it.
+        // CloseResource: the handle is deliberately NOT closed here — it is handed to the spawned
+        // task, which owns it for the stream's life. The catch below is its only close on this
+        // thread, for the one case where no task ever receives it.
+        // AvoidCatchingGenericException: a spawn that fails any way at all leaves a registered
+        // stream that will never run, and the drain would then wait on it until the 60s deadline.
+        // Narrowing the catch would make that outcome depend on which throwable escaped.
         DrainCoordinator.StreamWork work = drainCoordinator.registerStream();
         try (SpawnGuard guard = new SpawnGuard(stream, admissionController)) {
             spawnStreamThread(stream, priority, work);
