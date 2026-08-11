@@ -1,6 +1,6 @@
 # Exeris Kernel
 
-Repository for the Exeris runtime kernel (Java 26 GA with preview stack), organized as a multi-module Maven build.
+Repository for the Exeris runtime kernel (JDK 25 LTS, preview-clean), organized as a multi-module Maven build.
 
 This README is a developer entrypoint for the current repository state.
 
@@ -50,10 +50,14 @@ Authoritative references:
 ## Requirements
 
 - Linux, macOS, or Windows
-- JDK 26 with preview features enabled
+- JDK 25 LTS — the distributed artifact is preview-clean and needs no `--enable-preview`
 - Maven 3.9+
 
-The build is configured for Java 26 preview and native access flags in [pom.xml](pom.xml).
+The build baselines on JDK 25 LTS and native-access flags in [pom.xml](pom.xml). Main sources compile
+without `--enable-preview`, and so does the TCK's test-jar — the one published artifact built from
+test sources (ADR-066). Other test sources still compile and run with the flag; they are not
+distributed, so nothing a consumer downloads carries preview bytecode. A second artifact ships from
+the `preview` branch on the newest JDK, with preview features on.
 
 ## Build and Test
 
