@@ -29,6 +29,28 @@ class CommunityCronScheduleTest {
 
     /** Enough repeats to separate a bounded search from an unbounded one — see the case below. */
     private static final int REFUSAL_REPEATS = 20;
+    /**
+     * How much dearer a refusal may be than a resolution. Measured ~2600x with the step bound and
+     * ~5x with the horizon, so this separates them by an order of magnitude on either side.
+     */
+    private static final double MAX_REFUSAL_COST_RATIO = 50.0;
+
+    /** Pays the JIT and class-loading cost on both paths before either is timed. */
+    private static void warmUp() {
+        for (int repeat = 0; repeat < REFUSAL_REPEATS; repeat++) {
+            next("0 0 29 2 *", TUESDAY_NOON);
+            assertThatThrownBy(() -> next("0 0 30 2 *", TUESDAY_NOON))
+                    .isInstanceOf(IllegalStateException.class);
+        }
+    }
+
+    private static long timeRepeated(Runnable work) {
+        long startNanos = System.nanoTime();
+        for (int repeat = 0; repeat < REFUSAL_REPEATS; repeat++) {
+            work.run();
+        }
+        return Math.max(1L, System.nanoTime() - startNanos);
+    }
 
     private static Instant next(String expression, Instant after) {
         return new CommunityCronSchedule(expression).nextFireAfter(after);
@@ -148,23 +170,25 @@ class CommunityCronScheduleTest {
             //
             // Cost is the only observable difference: this cron subset has no year field, so its
             // longest satisfiable gap is the eight-year leap-day one and the two bounds agree on
-            // every expression that fires at all. Hence a timing assertion — repeated, because one
-            // call does not separate them widely enough to assert on. Measured: 130 ms per call
-            // under the step bound; 2 ms for the first call with the horizon and sub-millisecond
-            // after. Twenty calls are therefore ~2.6 s against ~5 ms, and the threshold sits two
-            // orders of magnitude below the defect and two above the fix — which is what keeps a
-            // timing assertion off the flaky list.
-            long startNanos = System.nanoTime();
-            for (int repeat = 0; repeat < REFUSAL_REPEATS; repeat++) {
-                assertThatThrownBy(() -> next("0 0 30 2 *", TUESDAY_NOON))
-                        .isInstanceOf(IllegalStateException.class)
-                        .hasMessageContaining("never fires");
-            }
-            long elapsedMillis = (System.nanoTime() - startNanos) / 1_000_000L;
+            // every expression that fires at all.
+            //
+            // Hence a RATIO against a satisfiable expression measured on the same machine in the
+            // same run, not an absolute millisecond bound. An absolute threshold encodes the speed
+            // of the machine that wrote it, and the assertion then means something different on a
+            // loaded CI runner than it did here. The ratio is what the defect actually changes:
+            // measured at ~2600x under the step bound and ~5x with the horizon, so the bound below
+            // sits an order of magnitude clear of both.
+            warmUp();
+            long satisfiableNanos = timeRepeated(() -> next("0 0 29 2 *", TUESDAY_NOON));
+            long unsatisfiableNanos = timeRepeated(() -> assertThatThrownBy(
+                    () -> next("0 0 30 2 *", TUESDAY_NOON))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("never fires"));
 
-            assertThat(elapsedMillis)
-                    .as("a horizon in calendar time, not a step count")
-                    .isLessThan(500L);
+            assertThat((double) unsatisfiableNanos / satisfiableNanos)
+                    .as("refusing must cost about what resolving costs — a horizon in calendar time, "
+                        + "not a step count walked to exhaustion")
+                    .isLessThan(MAX_REFUSAL_COST_RATIO);
         }
 
         @Test

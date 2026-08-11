@@ -455,6 +455,24 @@ public abstract class AbstractBlobStorageTck {
                     .as("an already-expired grant is a caller error, not a valid request")
                     .isInstanceOf(IllegalArgumentException.class));
         }
+
+        @Test
+        @DisplayName("a sub-second time-to-live is rejected, signing store or not")
+        void subSecondTtlRejected() {
+            BlobRef ref = new BlobRef(CONTAINER, "signed-subsecond.bin");
+
+            // Expiry is expressed in whole seconds by the signing schemes, so a sub-second request
+            // has two possible outcomes and both break the promise above: truncating to zero returns
+            // an already-expired URL, rounding up grants longer than asked. Anchored here rather than
+            // in one driver because the harm from divergence is silent — the same call that a strict
+            // store rejects would be quietly over-granted by a lax one, and a deployment moving
+            // between them would never see an error.
+            asTenant(TENANT_A, () -> assertThatThrownBy(
+                    () -> store.signedUrl(ref, BlobAccess.READ, Duration.ofMillis(500)))
+                    .as("the floor is BlobStorageConfig.MIN_SIGNED_URL_TTL, and it binds every store "
+                            + "— a store that cannot sign still validates its arguments")
+                    .isInstanceOf(IllegalArgumentException.class));
+        }
     }
 
     // =========================================================================

@@ -10,6 +10,7 @@ package eu.exeris.kernel.community.storage;
 
 import eu.exeris.kernel.spi.http.HttpHeader;
 import eu.exeris.kernel.spi.http.HttpMethod;
+import eu.exeris.kernel.spi.storage.blob.BlobStorageConfig;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -57,7 +58,7 @@ final class CommunityS3Signer {
     /* default */ static final String UNSIGNED_PAYLOAD = "UNSIGNED-PAYLOAD";
 
     /** Shortest grant {@code X-Amz-Expires} can express: the field is whole seconds. */
-    private static final long MIN_EXPIRES_SECONDS = 1L;
+    private static final long MIN_EXPIRES_SECONDS = BlobStorageConfig.MIN_SIGNED_URL_TTL.toSeconds();
 
     /** The algorithm token, and the prefix of the derived signing key. */
     private static final String ALGORITHM = "AWS4-HMAC-SHA256";
