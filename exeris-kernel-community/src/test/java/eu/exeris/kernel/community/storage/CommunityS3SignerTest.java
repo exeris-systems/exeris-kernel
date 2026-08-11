@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * SigV4 signing, checked where a live store cannot check it.
@@ -193,6 +194,26 @@ class CommunityS3SignerTest {
 
             assertThat(signer.presign(HttpMethod.GET, PATH, Duration.ofMinutes(1)))
                     .isNotEqualTo(signer.presign(HttpMethod.GET, PATH, Duration.ofMinutes(5)));
+        }
+
+        @Test
+        @DisplayName("a sub-second grant is refused rather than signed as X-Amz-Expires=0")
+        void subSecondGrantRefused() {
+            // toSeconds() truncated, so 500ms became Expires=0 — outside SigV4's accepted range.
+            // The caller was handed a URL that no endpoint accepts, from a store that had just
+            // reported it signs uniformly. Refusing is the only answer that neither lies nor
+            // over-grants: rounding up to one second would exceed the ttl the SPI promises to honour.
+            assertThatThrownBy(() ->
+                    signerAt(FIXED, SECRET).presign(HttpMethod.GET, PATH, Duration.ofMillis(500)))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("at least one second");
+        }
+
+        @Test
+        @DisplayName("a one-second grant is the shortest that signs")
+        void oneSecondGrantSigns() {
+            assertThat(signerAt(FIXED, SECRET).presign(HttpMethod.GET, PATH, Duration.ofSeconds(1)))
+                    .contains("X-Amz-Expires=1");
         }
     }
 

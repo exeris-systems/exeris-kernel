@@ -10,6 +10,7 @@ package eu.exeris.kernel.community.storage;
 
 import eu.exeris.kernel.spi.http.HttpHeader;
 import eu.exeris.kernel.spi.http.HttpMethod;
+import eu.exeris.kernel.spi.storage.blob.BlobStorageConfig;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -55,6 +56,9 @@ final class CommunityS3Signer {
 
     /** Payload hash a presigned URL carries: the bytes are the holder's, not ours. */
     /* default */ static final String UNSIGNED_PAYLOAD = "UNSIGNED-PAYLOAD";
+
+    /** Shortest grant {@code X-Amz-Expires} can express: the field is whole seconds. */
+    private static final long MIN_EXPIRES_SECONDS = BlobStorageConfig.MIN_SIGNED_URL_TTL.toSeconds();
 
     /** The algorithm token, and the prefix of the derived signing key. */
     private static final String ALGORITHM = "AWS4-HMAC-SHA256";
@@ -150,6 +154,17 @@ final class CommunityS3Signer {
      * @return the absolute URL, signature included
      */
     /* default */ String presign(HttpMethod method, String encodedPath, Duration ttl) {
+        long expiresSeconds = ttl.toSeconds();
+        if (expiresSeconds < MIN_EXPIRES_SECONDS) {
+            // X-Amz-Expires is whole seconds, so a sub-second grant has no representation here.
+            // Truncating produces Expires=0, outside SigV4's accepted range: the caller would be
+            // handed a URL that every endpoint rejects, by a method whose contract says it signs
+            // uniformly or declines uniformly. Rounding up to one second is the other option and is
+            // worse — the SPI promises a URL "valid no longer than ttl", and over-granting breaks
+            // that promise silently where refusing states the limit.
+            throw new IllegalArgumentException(
+                    "ttl must be at least one second: signed-URL expiry has one-second granularity");
+        }
         Instant now = clock.instant();
         String amzDateTime = AMZ_DATE_TIME.format(now);
         String scope = AMZ_DATE.format(now) + "/" + settings.region() + "/" + SERVICE + "/" + TERMINATOR;
@@ -162,7 +177,7 @@ final class CommunityS3Signer {
                 + "&X-Amz-Credential="
                 + CommunityS3ObjectKey.encodeQueryComponent(settings.accessKey() + "/" + scope)
                 + "&X-Amz-Date=" + amzDateTime
-                + "&X-Amz-Expires=" + ttl.toSeconds()
+                + "&X-Amz-Expires=" + expiresSeconds
                 + "&X-Amz-SignedHeaders=host";
         //CHECKSTYLE:ON
         String canonicalRequest = method.name() + NEWLINE
