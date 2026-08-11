@@ -25,6 +25,10 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * @since 0.11.0
  */
+// TooManyMethods: settle/settleUnrunnable are two more terminal paths on a class that already owns
+// every one of them. Concentrating them here is what makes "a settled job releases its payload"
+// checkable in one place.
+@SuppressWarnings("PMD.TooManyMethods")
 final class CommunityJobRegistry {
 
     private final CommunitySchedulerClock clock;

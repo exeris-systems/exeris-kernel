@@ -22,6 +22,11 @@ import eu.exeris.kernel.spi.scheduling.JobState;
  *
  * @since 0.11.0
  */
+// TooManyMethods: the JobHandle contract itself is most of them, and releasePayload/settle add the
+// lifecycle the payload release needs. Splitting would put the released fields and the code that
+// releases them in different classes, which is the one arrangement that makes the invariant harder
+// to check.
+@SuppressWarnings("PMD.TooManyMethods")
 final class CommunityJobHandle implements JobHandle {
 
     private final CommunityJobRegistry registry;
@@ -87,6 +92,10 @@ final class CommunityJobHandle implements JobHandle {
      * <p>Caller holds the lock. Idempotent — a settle can be reached from cancellation, from a
      * one-shot completing, and from scheduler shutdown.
      */
+    // NullAssignment is the point, not a smell: absence is the state being recorded. There is no
+    // sentinel a JobDescriptor or a CapturedContext could take instead that would not itself keep a
+    // closure and an identity alive, which is the whole reason for the release.
+    @SuppressWarnings("PMD.NullAssignment")
     /* default */ void releasePayload() {
         this.descriptor = null;
         this.context = null;
