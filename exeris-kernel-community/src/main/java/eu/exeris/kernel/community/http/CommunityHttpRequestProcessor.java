@@ -293,9 +293,12 @@ public final class CommunityHttpRequestProcessor {
             // ADR-061 applies to a stream open exactly as it does to a request. Routed through the
             // request dispatcher rather than checked here, so there is one implementation of the
             // route requirement and one place it can drift from.
-            CommunityHttpExchange denial = new CommunityHttpExchange(
-                    request, stream, allocator, readResult.keepAlive(), encoderRegistry);
-            requestDispatcher.dispatchStream(request, denial,
+            // Supplied, not built: an admitted open never writes through this exchange, and the
+            // admitted case is the one every stream takes.
+            requestDispatcher.dispatchStream(
+                    request,
+                    () -> new CommunityHttpExchange(
+                            request, stream, allocator, readResult.keepAlive(), encoderRegistry),
                     () -> streamDispatcher.dispatchStream(request, stream, streamRoute));
             return true;
         }

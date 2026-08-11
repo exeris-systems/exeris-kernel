@@ -21,6 +21,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -76,7 +77,7 @@ class CommunityStreamRouteAuthorizationTest {
         RecordingExchange exchange = new RecordingExchange();
 
         dispatcherWith(RouteRequirement.authenticated())
-                .dispatchStream(STREAM_REQUEST, exchange, () -> opened.set(true));
+                .dispatchStream(STREAM_REQUEST, () -> exchange, () -> opened.set(true));
 
         assertThat(opened)
                 .withFailMessage("the stream handler ran despite the route requiring an identity")
@@ -89,14 +90,24 @@ class CommunityStreamRouteAuthorizationTest {
     void permitAllOpensTheStream() {
         AtomicBoolean opened = new AtomicBoolean();
         RecordingExchange exchange = new RecordingExchange();
+        AtomicInteger exchangesBuilt = new AtomicInteger();
 
-        dispatcherWith(RouteRequirement.permitAll())
-                .dispatchStream(STREAM_REQUEST, exchange, () -> opened.set(true));
+        dispatcherWith(RouteRequirement.permitAll()).dispatchStream(
+                STREAM_REQUEST,
+                () -> {
+                    exchangesBuilt.incrementAndGet();
+                    return exchange;
+                },
+                () -> opened.set(true));
 
         assertThat(opened).isTrue();
         assertThat(exchange.status())
                 .withFailMessage("an admitted stream must respond through its engine, not the exchange")
                 .isNull();
+        assertThat(exchangesBuilt)
+                .withFailMessage("an admitted open must not build a denial exchange at all — it is "
+                        + "the common path, and this one exists only to be written to on refusal")
+                .hasValue(0);
     }
 
     @Test
@@ -105,7 +116,7 @@ class CommunityStreamRouteAuthorizationTest {
         AtomicBoolean opened = new AtomicBoolean();
 
         new CommunityHttpRequestDispatcher(mock(MemoryAllocator.class), null, null, null, null)
-                .dispatchStream(STREAM_REQUEST, new RecordingExchange(), () -> opened.set(true));
+                .dispatchStream(STREAM_REQUEST, RecordingExchange::new, () -> opened.set(true));
 
         assertThat(opened).isTrue();
     }

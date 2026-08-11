@@ -34,6 +34,7 @@ import java.lang.foreign.MemorySegment;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Objects;
+import java.util.function.Supplier;
 
 // CyclomaticComplexity: route dispatch table (auth, health, user handlers) — each branch is a
 // terminal decision, not reducible without introducing opaque indirection.
@@ -81,7 +82,7 @@ final class CommunityHttpRequestDispatcher {
             }
         }
 
-        if (!authorize(request, exchange,
+        if (!authorize(request, () -> exchange,
                 () -> handleWithinRequestSession(method, request, exchange, handler))) {
             return;
         }
@@ -107,11 +108,15 @@ final class CommunityHttpRequestDispatcher {
      * {@link SecurityInterceptor#intercept}'s scope.
      *
      * @param request    the parsed request that opened the stream
-     * @param exchange   used only to write a denial; an admitted stream responds through its engine
+     * @param denial     supplies an exchange used ONLY to write a denial. A supplier rather than an
+     *                   exchange because the admitted case — the common one — never needs it, and
+     *                   building one per stream open would spend an allocation on the path whose
+     *                   whole point is that it hands the socket to the stream engine instead
      * @param openStream opens the stream and runs its emit loop
      */
-    /* default */ void dispatchStream(HttpRequest request, HttpExchange exchange, Runnable openStream) {
-        authorize(request, exchange, openStream);
+    /* default */ void dispatchStream(HttpRequest request, Supplier<HttpExchange> denial,
+                                      Runnable openStream) {
+        authorize(request, denial, openStream);
     }
 
     /**
@@ -119,7 +124,7 @@ final class CommunityHttpRequestDispatcher {
      *
      * @return {@code false} if the request was denied and a response has already been written
      */
-    private boolean authorize(HttpRequest request, HttpExchange exchange, Runnable admitted) {
+    private boolean authorize(HttpRequest request, Supplier<HttpExchange> exchange, Runnable admitted) {
         // A route the application never described about is decided by the policy, not by this
         // driver. With no policy bound the requirement is permit-all, which is exactly how the kernel
         // behaved before ADR-061 — declaring nothing changes nothing.
@@ -136,7 +141,7 @@ final class CommunityHttpRequestDispatcher {
         boolean intercepted = securityInterceptor != null
                 && interceptRequest(request, () -> handleAuthorizedRequest(requirement, request, exchange, admitted));
         if (!intercepted) {
-            exchange.respond(HttpResponse.noBody(HttpStatus.UNAUTHORIZED, request.version()));
+            exchange.get().respond(HttpResponse.noBody(HttpStatus.UNAUTHORIZED, request.version()));
             return false;
         }
         return true;
@@ -159,7 +164,7 @@ final class CommunityHttpRequestDispatcher {
 
     private void handleAuthorizedRequest(RouteRequirement requirement,
                                          HttpRequest request,
-                                         HttpExchange exchange,
+                                         Supplier<HttpExchange> exchange,
                                          Runnable admitted) {
         PrincipalContext principal = KernelProviders.PRINCIPAL_CONTEXT.isBound()
                 ? KernelProviders.PRINCIPAL_CONTEXT.get()
@@ -168,9 +173,9 @@ final class CommunityHttpRequestDispatcher {
         switch (RouteAuthorizationEnforcer.decide(requirement, principal)) {
             case ADMIT -> admitted.run();
             case FORBIDDEN ->
-                    exchange.respond(HttpResponse.noBody(HttpStatus.FORBIDDEN, request.version()));
+                    exchange.get().respond(HttpResponse.noBody(HttpStatus.FORBIDDEN, request.version()));
             case UNAUTHENTICATED ->
-                    exchange.respond(HttpResponse.noBody(HttpStatus.UNAUTHORIZED, request.version()));
+                    exchange.get().respond(HttpResponse.noBody(HttpStatus.UNAUTHORIZED, request.version()));
         }
     }
 
