@@ -11,103 +11,127 @@ package eu.exeris.kernel.tck.support;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Fan-out / join-all for TCK fixtures, on GA APIs only.
  *
- * <h2>Why this exists rather than an import</h2>
- * <p>The fixtures here used {@code StructuredTaskScope}, which is a preview API: every class using it
- * is stamped {@code minor_version 0xFFFF} and will not load without {@code --enable-preview}. That is
- * fine for a fixture nobody ships — but this module is the one exception. {@code exeris-kernel-tck}
- * has no {@code src/main}; its whole distributed surface IS the test-jar, and a provider author
- * binding {@code Abstract*Tck} to prove conformance consumes exactly those classes. Leaving them
- * stamped forces the flag, and the exact JDK, on every such author — which is the constraint ADR-066
- * exists to lift.
+ * <h2>Why this is duplicated rather than reused</h2>
+ * <p>{@code eu.exeris.kernel.core.concurrent.StructuredScope} already does this and has tests for it.
+ * It cannot be used here, and the reason is mechanical rather than architectural: {@code
+ * exeris-kernel-core}, {@code -community} and {@code -community-kafka} all depend on this module's
+ * test-jar, so a dependency from here onto Core would be a <b>cycle in the reactor</b>, which Maven
+ * refuses whatever the scope. The Wall is a weaker argument than it looks — {@code StructuredScope}
+ * imports only {@code java.lang} and {@code java.util}. Anyone tempted to collapse the duplication
+ * will hit the cycle; that is why it is written down here.
  *
- * <p>It is not {@code core.concurrent.StructuredScope} because this module depends on SPI alone. An
- * edge to Core would buy deduplication at the cost of The Wall (ADR-006), which is not a trade a test
- * fixture gets to make. What the fixtures need is also narrower than what the runtime needs: fork a
- * batch, wait for all of it, surface the first failure, and — where a fixture asserts teardown —
- * interrupt the rest. No deadlines, and no {@code ScopedValue} carrier: a plain virtual thread does
- * NOT inherit bindings, which is a real difference from the preview API and is called out below.
+ * <p>The fixtures previously used {@code StructuredTaskScope}, a preview API: every class using it is
+ * stamped {@code minor_version 0xFFFF} and will not load without {@code --enable-preview}. This module
+ * has no {@code src/main} — its whole distributed surface IS the test-jar, and a provider author
+ * binding {@code Abstract*Tck} consumes exactly these classes. Leaving them stamped forces the flag,
+ * and the exact JDK, on every such author.
  *
  * <h2>Semantics</h2>
- * <p>{@link #join()} waits for every forked task. {@link #open()} collects failures and reports them
- * as suppressed exceptions of one {@link IllegalStateException}; {@link #openFailFast()} throws on the
- * first failure it observes after all tasks have finished. Neither interrupts siblings — a TCK
- * fixture asserts on what a contract does under concurrency, and killing half the batch mid-assertion
- * makes the result unreadable; {@link #openCancelOnFailure()} is the exception, for fixtures whose
- * subject IS the teardown.
+ * <ul>
+ *   <li>{@link #open()} — wait for every task, then report all failures together.</li>
+ *   <li>{@link #openFailFast()} — <b>cancel on the first failure</b>, then rethrow it. Cancelling is
+ *       the half that is easy to omit and expensive to omit: a fixture forking many tasks would
+ *       otherwise run all of them to completion before failing, turning an assertion error into a
+ *       suite timeout.</li>
+ *   <li>{@link #openCancelOnFailure()} — cancel on the first failure and report nothing, for fixtures
+ *       whose subject IS the teardown and which throw on purpose to trigger it.</li>
+ * </ul>
+ *
+ * <p><b>Cancellation is sticky and one-shot.</b> Once triggered it interrupts the tasks running at
+ * that moment, and any task forked afterwards is never started — a scope that kept accepting work
+ * after deciding to tear down would leave the fixture asserting against a moving target. One-shot
+ * because re-running the cascade per failure re-arms interrupts on threads that already consumed
+ * theirs, which surfaces as a spurious interrupt inside unrelated task code.
  *
  * <p><b>Bindings are not inherited.</b> {@code StructuredTaskScope.fork} propagates the caller's
  * {@code ScopedValue} bindings; {@code Thread.ofVirtual()} does not. A fixture that asserts a child
- * sees a binding must establish it inside the task, and one whose subject IS that inheritance is
- * asserting a property of the preview API rather than of the kernel.
+ * sees a binding must establish it inside the task.
  *
- * <p>{@link #close()} joins if {@link #join()} was not called, so a try-with-resources block cannot
- * leak a running task past its scope.
+ * <p>{@link #close()} joins if {@link #join()} was not called, and interrupts stragglers if that join
+ * is itself interrupted — joining alone cannot end a task that is not going to finish.
  */
 public final class TckScope implements AutoCloseable {
 
-    private final List<Thread> forked = new ArrayList<>();
+    /**
+     * Concurrent, because {@link #cancelSiblings} iterates it from a <em>worker</em> thread while the
+     * owner may still be appending in {@link #fork}. A plain {@code ArrayList} there is a data race
+     * whose usual symptom is a missed interrupt — that is, a hang, blamed on the fixture.
+     */
+    private final List<Thread> forked = new CopyOnWriteArrayList<>();
     private final List<Throwable> failures = new ArrayList<>();
+    private final AtomicBoolean cancelled = new AtomicBoolean();
+
     private final boolean failFast;
+    private final boolean cancelOnFailure;
+    private final boolean failuresAreTheSignal;
 
     private boolean joined;
-    private boolean cancelOnFailure;
-    private boolean failuresAreTheSignal;
 
-    private TckScope(boolean failFast) {
+    private TckScope(boolean failFast, boolean cancelOnFailure, boolean failuresAreTheSignal) {
         this.failFast = failFast;
+        this.cancelOnFailure = cancelOnFailure;
+        this.failuresAreTheSignal = failuresAreTheSignal;
     }
 
     /** A scope that waits for every task and reports all failures together. */
     public static TckScope open() {
-        return new TckScope(false);
+        return new TckScope(false, false, false);
     }
 
-    /** A scope that waits for every task and then rethrows the first failure. */
+    /** A scope that cancels its remaining tasks on the first failure, then rethrows it. */
     public static TckScope openFailFast() {
-        return new TckScope(true);
+        return new TckScope(true, true, false);
     }
 
     /**
-     * A scope that interrupts its remaining tasks as soon as one fails.
+     * A scope that cancels on the first failure and does not report it.
      *
-     * <p>For the fixtures that assert cancellation itself — that parked work is actually torn down
-     * when a sibling blows up, rather than left to run to completion. That is a property of the scope,
-     * not of the contract under test, so it has to be reproduced here rather than assumed away.
-     *
-     * <p>Failures are the trigger, not the outcome: this variant does not rethrow them, because the
-     * fixture deliberately throws to start the teardown and then asserts on what survived.
+     * <p>For fixtures that assert cancellation itself — that parked work is actually torn down when a
+     * sibling blows up. Those throw deliberately to start the teardown, so the failure is the trigger
+     * and not the verdict; rethrowing it would fail the test with its own stimulus.
      */
     public static TckScope openCancelOnFailure() {
-        TckScope scope = new TckScope(false);
-        scope.cancelOnFailure = true;
-        scope.failuresAreTheSignal = true;
-        return scope;
+        return new TckScope(false, true, true);
     }
 
     /**
      * Runs {@code task} on a virtual thread owned by this scope.
      *
+     * <p>A fork after cancellation is a no-op: the scope has already decided to tear down.
+     *
      * @param task the body; its return value is discarded, as no fixture here reads one
      */
     public void fork(Callable<?> task) {
-        Thread thread = Thread.ofVirtual().unstarted(() -> {
-            try {
-                task.call();
-            } catch (Throwable t) { // NOPMD — a fixture must report what escaped, whatever it was
-                synchronized (failures) {
-                    failures.add(t);
-                }
-                if (cancelOnFailure) {
-                    cancelSiblings();
-                }
-            }
-        });
+        if (cancelled.get()) {
+            return;
+        }
+        Thread thread = Thread.ofVirtual().unstarted(() -> runCapturing(task));
         forked.add(thread);
+        // Re-checked after publishing: a cancellation between the check above and here would
+        // otherwise start a thread the cascade has already walked past.
+        if (cancelled.get()) {
+            thread.interrupt();
+        }
         thread.start();
+    }
+
+    private void runCapturing(Callable<?> task) {
+        try {
+            task.call();
+        } catch (Throwable t) { // NOPMD — a fixture must report what escaped, whatever it was
+            synchronized (failures) {
+                failures.add(t);
+            }
+            if (cancelOnFailure) {
+                cancelSiblings();
+            }
+        }
     }
 
     /**
@@ -121,10 +145,9 @@ public final class TckScope implements AutoCloseable {
                 thread.join();
             }
         } finally {
-            // Set AFTER the loop, and in a finally so an interrupt mid-join still records that a
-            // join was attempted. Setting it first made close() a no-op on exactly the path where
-            // it matters: join() throwing InterruptedException part-way left threads running, and
-            // the try-with-resources then returned claiming the scope was clean.
+            // After the loop, and in a finally. Set first, it made close() a no-op on exactly the
+            // path where it matters: a join interrupted part-way left tasks running, and the
+            // try-with-resources then returned claiming a clean scope over live threads.
             joined = true;
         }
         reportFailures();
@@ -138,16 +161,17 @@ public final class TckScope implements AutoCloseable {
         try {
             join();
         } catch (InterruptedException e) {
-            // Interrupt the stragglers before unwinding. Joining alone cannot end a task that is
-            // not going to finish, so a close() that only joins hands the suite a hang instead of
-            // the failure that caused it.
             cancelSiblings();
             Thread.currentThread().interrupt();
             throw new IllegalStateException("interrupted while joining TCK scope", e);
         }
     }
 
+    /** Interrupts every task but the caller's own, once — see the class note on stickiness. */
     private void cancelSiblings() {
+        if (!cancelled.compareAndSet(false, true)) {
+            return;
+        }
         Thread self = Thread.currentThread();
         for (Thread thread : forked) {
             if (thread != self) {
@@ -157,28 +181,37 @@ public final class TckScope implements AutoCloseable {
     }
 
     private void reportFailures() {
+        List<Throwable> observed;
         synchronized (failures) {
             if (failures.isEmpty() || failuresAreTheSignal) {
-                // A cancel-on-failure fixture throws on purpose to trigger the teardown it is
-                // asserting on. Rethrowing that would turn the trigger into the verdict — which is
-                // what StructuredTaskScope's allUntil joiner also declines to do: it consumes the
-                // failure as the cancellation signal and leaves the fixture to assert on state.
                 return;
             }
-            if (failFast) {
-                Throwable first = failures.get(0);
-                if (first instanceof RuntimeException runtimeFailure) {
-                    throw runtimeFailure;
-                }
-                if (first instanceof Error errorFailure) {
-                    throw errorFailure;
-                }
-                throw new IllegalStateException("forked task failed", first);
+            observed = List.copyOf(failures);
+        }
+        Throwable first = observed.get(0);
+        if (failFast) {
+            // The first failure is what the fixture is told about, but the rest are not discarded: a
+            // fail-fast scope that dropped them would hide a second, different failure behind
+            // whichever task happened to lose the race.
+            attachRest(first, observed);
+            switch (first) {
+                case RuntimeException runtimeFailure -> throw runtimeFailure;
+                case Error errorFailure -> throw errorFailure;
+                default -> throw new IllegalStateException("forked task failed", first);
             }
-            IllegalStateException aggregate =
-                    new IllegalStateException(failures.size() + " forked task(s) failed");
-            failures.forEach(aggregate::addSuppressed);
-            throw aggregate;
+        }
+        IllegalStateException aggregate =
+                new IllegalStateException(observed.size() + " forked task(s) failed", first);
+        attachRest(aggregate, observed);
+        throw aggregate;
+    }
+
+    private static void attachRest(Throwable carrier, List<Throwable> observed) {
+        for (int i = 1; i < observed.size(); i++) {
+            Throwable other = observed.get(i);
+            if (other != carrier) {
+                carrier.addSuppressed(other);
+            }
         }
     }
 }
