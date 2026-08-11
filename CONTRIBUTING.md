@@ -64,7 +64,7 @@ export DYLD_LIBRARY_PATH="$(brew --prefix openssl@3)/lib:$DYLD_LIBRARY_PATH"
 | Tool       | Minimum Version | Purpose                                      |
 |:-----------|:----------------|:---------------------------------------------|
 | Maven      | 3.9+            | Build system                                 |
-| Docker     | 24+             | Local environment (Postgres, Redis)          |
+| Docker     | 24+             | Testcontainers-backed tests (Postgres, Kafka) |
 | Podman     | 4.x (alternative) | Drop-in Docker replacement                 |
 | `jcmd`     | bundled with JDK | JFR snapshot inspection                    |
 | JDK Mission Control (JMC) | 9.0+ | Visual JFR analysis (optional)        |

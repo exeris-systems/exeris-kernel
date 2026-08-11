@@ -45,10 +45,12 @@ next best thing; javadoc is the weakest, because nothing breaks when it goes sta
 **Check that every cited path still exists** after a refactor that moves files:
 
 ```bash
-grep -ohE '[A-Za-z0-9_./-]+\.(java|xml|md):[0-9]+' docs/guides/*.md \
+grep -ohE '[A-Za-z0-9_./-]+\.(java|xml|md):[0-9]+' docs/guides/*.md CONTRIBUTING.md \
   | cut -d: -f1 | sort -u \
   | while read -r p; do [ -e "$p" ] || echo "MISSING: $p"; done
 ```
+
+Widen the file list as `path:line` citations spread — the check is only worth as much as its glob.
 
 This catches renames and deletions — the common real failure. It does **not** verify that a line
 range still contains what the guide claims; that needs a human, and it is the one step worth doing by

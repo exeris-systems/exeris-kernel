@@ -14,8 +14,10 @@ coordinates.
 
 ## What implementing a provider means
 
-You implement one of 15 root interfaces in `exeris-kernel-spi`, register it in a
-`META-INF/services` file, and the kernel finds it through `java.util.ServiceLoader` at bootstrap.
+You implement a root interface in `exeris-kernel-spi`. Most of them — 15 of the 16 — are found
+through `java.util.ServiceLoader` at bootstrap, which means registering the class in a
+`META-INF/services` file. One is not: see *The contract that is not ServiceLoader-discovered* below,
+and check which kind yours is before you write that file.
 
 There is no dependency injection, and that is enforced rather than encouraged —
 `exeris-kernel-tck/src/test/java/eu/exeris/kernel/tck/arch/ExerisArchitectureTest.java:107-113`
@@ -24,7 +26,7 @@ use pure constructors and ServiceLoader."*
 
 ---
 
-## The 15 root provider interfaces
+## The 15 ServiceLoader-discovered root interfaces
 
 Each is registered under its fully-qualified name in `META-INF/services/`. This inventory is the
 contents of `exeris-kernel-community/src/main/resources/META-INF/services/` read on 2026-08-11.
@@ -50,11 +52,35 @@ contents of `exeris-kernel-community/src/main/resources/META-INF/services/` read
 Check [`docs/stability-matrix.md`](../stability-matrix.md) before you build on one — some of these
 surfaces are `preview` and may still move.
 
+### The contract that is not ServiceLoader-discovered
+
+`security.identity.IdentityProvider`
+(`exeris-kernel-spi/src/main/java/eu/exeris/kernel/spi/security/identity/IdentityProvider.java`,
+ADR-040) is a full root contract — it has its own `AbstractIdentityProviderTck` and a Community
+binding in `CommunityOidcIdentityProviderTckTest` — but it appears in **no** `META-INF/services`
+file, and writing one for it accomplishes nothing.
+
+It is selected per-token instead of per-boot, so a static classpath scan is the wrong mechanism.
+`IdentityProviderRegistry` picks **exactly one** provider: highest `priority()` wins, ties resolve by
+registration order, and the first candidate whose `canAttempt(rawToken)` returns `true` is selected
+(`exeris-kernel-spi/src/main/java/eu/exeris/kernel/spi/security/identity/IdentityProviderRegistry.java`).
+`SecurityProvider` — which *is* ServiceLoader-discovered — owns the registry and dispatches into it.
+
+The dispatch is fail-closed by contract, and that constrains your implementation: if the selected
+provider's `authenticate` fails, the caller must **not** re-select another provider for the same
+token. Re-dispatch on failure is token-confusion — a token its rightful issuer rejected getting
+accepted by a laxer provider. If no provider claims the token, the registry returns `null` and the
+dispatcher maps that to a terminal `EX-SEC-2002` deny.
+
+So before writing artifact 3 below, check which kind of contract yours is. The four-artifact recipe
+is right for the 15 above; for `IdentityProvider` the third artifact is registry wiring, not a
+services file.
+
 ---
 
 ## The four artifacts
 
-Every provider is exactly four things. **Omitting the third or fourth is the standard failure**: the
+A ServiceLoader-discovered provider is exactly four things. **Omitting the third or fourth is the standard failure**: the
 code compiles, the tests you wrote pass, and the kernel never loads your class.
 
 1. The **SPI interface** you implement.
