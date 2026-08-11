@@ -39,6 +39,11 @@ class InMemoryEventBusTest {
     private static final String TYPE_ORDER = "OrderPlaced";
     private static final int    ORD_ORDER  = 200;
 
+    /** Subscribers in the mid-fan-out failure case: enough that the failing retain is not the last. */
+    private static final int SUBSCRIBER_COUNT = 4;
+    /** 1-based ordinal of the retain that throws — the third of the three the bus issues for N=4. */
+    private static final int FAILING_RETAIN = 3;
+
     private InMemoryEventBusTestFixture fixture;
 
     @BeforeEach
@@ -151,6 +156,49 @@ class InMemoryEventBusTest {
                     + "process's life; only the throwing handler's own wrapper was released")
                 .isEqualTo(retains.get() + 1);
         assertThat(closes.get()).isEqualTo(3);
+    }
+
+    @Test
+    @DisplayName("a retain failing mid-fan-out releases what was already retained — publish")
+    @Timeout(value = 5, unit = TimeUnit.SECONDS)
+    void retainFailingMidFanOutDoesNotLeakPayloadRefcount() {
+        AtomicInteger retains = new AtomicInteger(0);
+        AtomicInteger closes  = new AtomicInteger(0);
+
+        // retain() throwing is not a contrived fixture: EventPayload specifies IllegalStateException
+        // once the payload is fully released, so a racing release reaches exactly this state. The
+        // THIRD retain fails, which is the interesting index — refs are already outstanding and no
+        // handler thread has been started to own any of them.
+        EventPayload tracking = new EventPayload() {
+            @Override public java.lang.foreign.MemorySegment segment() { return java.lang.foreign.MemorySegment.NULL; }
+            @Override public int length() { return 0; }
+            @Override public int refCount() { return Integer.MAX_VALUE; }
+            @Override public boolean isAlive() { return true; }
+            @Override public void retain() {
+                if (retains.incrementAndGet() == FAILING_RETAIN) {
+                    throw new IllegalStateException("payload already fully released");
+                }
+            }
+            @Override public void close() { closes.incrementAndGet(); }
+        };
+
+        for (int i = 0; i < SUBSCRIBER_COUNT; i++) {
+            fixture.bus().subscribe(TYPE_ORDER, (d, p) -> {
+                try (p) { /* never reached — the fan-out fails before any thread starts */ }
+            });
+        }
+
+        assertThatThrownBy(() -> fixture.bus().publish(descriptor(ORD_ORDER), tracking))
+                .as("publish is fire-and-forget, but a failure BEFORE any handler thread exists "
+                    + "still belongs to the caller — swallowing it would hide the release too")
+                .isInstanceOf(IllegalStateException.class);
+
+        assertThat(closes.get())
+                .as("two retains succeeded before the third threw, so three refs were outstanding "
+                    + "(the caller's plus those two) with no handler thread to own any of them. "
+                    + "The fan-out used to leave all three, pinning the payload's segment for the "
+                    + "life of the process")
+                .isEqualTo(3);
     }
 
     @Test
