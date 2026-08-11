@@ -98,6 +98,23 @@ public final class PaqsScheduler implements AutoCloseable {
 
     private static final System.Logger LOG = System.getLogger(PaqsScheduler.class.getName());
     private static final long SPIN_THRESHOLD = 10_000L;
+
+    /**
+     * Hard ceiling on the drain, after which shutdown proceeds regardless.
+     *
+     * <p>Sixty seconds, and deliberately <b>longer than a typical container grace period</b> — the
+     * Kubernetes default is thirty. That looks backwards until you ask what each bound protects. The
+     * orchestrator's timer decides how long the platform waits; this one decides how long the kernel
+     * is willing to strand a request that is still being served. Setting it under the platform's
+     * would make the kernel the one that severs live work, quietly, while the platform still had
+     * time to spare. Above it, the platform stays the authority — a handler that blocks this long is
+     * an application defect, and SIGKILL is the correct answer to it.
+     *
+     * <p>Not configurable. Since 0.11 the drain waits on streams being <em>served</em> rather than
+     * open, so a normal shutdown ends in milliseconds and this bound is only reached when a handler
+     * will not return. Adding a knob would invite tuning it in place of fixing that.
+     */
+    private static final long DRAIN_DEADLINE_NANOS = 60_000_000_000L;
     private static final String PHASE_HANDLER = "HANDLER";
 
     private final AdmissionController admissionController;
@@ -282,7 +299,7 @@ public final class PaqsScheduler implements AutoCloseable {
         // connections it would otherwise keep alive, so the count below can actually reach zero.
         drainCoordinator.markDraining();
 
-        final long deadlineNanos = System.nanoTime() + 60_000_000_000L;
+        final long deadlineNanos = System.nanoTime() + DRAIN_DEADLINE_NANOS;
         long spins = 0L;
         // Waits on streams being SERVED, not on streams being OPEN. A stream is busy from the moment
         // it starts and only a protocol that knows it is between requests reports otherwise, so a raw
