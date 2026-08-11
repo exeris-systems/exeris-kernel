@@ -76,12 +76,19 @@ final class CommunityJobHandle implements JobHandle {
         return registry.cancel(this);
     }
 
+    /**
+     * The job body and trigger, or {@code null} once the job has settled.
+     *
+     * <p>Callers on the dispatch path never see null: a settled job is out of the queue, so nothing
+     * reaches {@code execute()} for it. Callers deciding what happens NEXT must order their checks
+     * so this is not read after a settle — {@code finishRun} tests {@code !running} first for
+     * exactly that reason.
+     */
     /* default */ JobDescriptor descriptor() {
         return descriptor;
     }
 
-
-
+    /** The submitter's captured identity, or {@code null} once the job has settled. */
     /* default */ CapturedContext context() {
         return context;
     }
