@@ -25,7 +25,7 @@ Implement this as an Exeris Community/Open-Core change.
 Constraints:
 - Do not re-litigate architecture unless a direct violation is detected.
 - Preserve existing module boundaries.
-- Prefer explicit construction, ScopedValue, StructuredTaskScope, immutable carriers, and zero-copy/off-heap-safe patterns where relevant.
+- Prefer explicit construction, ScopedValue, structured concurrency (`core.concurrent.StructuredScope` on the preview-clean default line; `StructuredTaskScope` only on the `preview` branch), immutable carriers, and zero-copy/off-heap-safe patterns where relevant.
 - Avoid framework DI, ThreadLocal for runtime context, and unstructured orchestration in runtime paths.
 - Keep changes minimal and targeted.
 - If the change affects SPI-observable behavior, explicitly mark that TCK review is required.

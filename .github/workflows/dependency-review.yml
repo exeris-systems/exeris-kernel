@@ -19,19 +19,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: 'Checkout repository'
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: 'Dependency Review'
-        uses: actions/dependency-review-action@v4
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
         with:
           comment-summary-in-pr: always
           fail-on-severity: moderate
-          # `deny-licenses` is deprecated upstream (actions/dependency-review-action#997) and slated
-          # for removal in the action's 5.x; the maintainers' argument is that a deny list is
-          # structurally incomplete — it only catches the copyleft/commercial licences someone
-          # thought to enumerate. It still functions on 4.x, so it stays for now. Migrating to
-          # `allow-licenses` means enumerating every licence in the transitive Maven graph first,
-          # which is its own piece of work and not something to do inside a release cut.
+          # `deny-licenses` is deprecated upstream (actions/dependency-review-action#997): the
+          # maintainers' argument is that a deny list is structurally incomplete — it only catches
+          # the copyleft/commercial licences someone thought to enumerate. The removal was announced
+          # for 5.x, but v5.0.0 turned out to be a node24 runtime bump that still declares the input,
+          # so it keeps working here (checked against that release's action.yml, not the issue).
+          # Migrating to `allow-licenses` means first enumerating every licence in the transitive
+          # Maven graph, which is its own piece of work and not a release-cut task.
           deny-licenses: >
             GPL-1.0-only, GPL-1.0-or-later, GPL-2.0-only, GPL-2.0-or-later, GPL-3.0-only, GPL-3.0-or-later,
             LGPL-2.0-only, LGPL-2.0-or-later, LGPL-2.1-only, LGPL-2.1-or-later, LGPL-3.0-only, LGPL-3.0-or-later,
