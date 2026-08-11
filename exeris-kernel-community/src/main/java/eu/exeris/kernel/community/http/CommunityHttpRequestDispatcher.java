@@ -67,7 +67,6 @@ final class CommunityHttpRequestDispatcher {
     }
 
     /* default */ void dispatch(HttpRequest request, HttpExchange exchange, HttpHandler handler) {
-        String path = request.path();
         HttpMethod method = request.method();
 
         if (persistenceEngine != null) {
