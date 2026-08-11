@@ -404,17 +404,29 @@ final class CoreFlowRuntime { // NOPMD
             return null;
         }
         clearParkedLookupMiss(key);
+        boolean migrationPersisted = false;
         if (migrated != null) {
             // ADR-064 A3. Not persisting would leave the row naming a version the saga no longer
             // runs, and would make transform purity an unstated obligation by re-running the chain
             // on every wake.
-            persistMigratedSnapshot(migrated);
+            migrationPersisted = persistMigratedSnapshot(migrated);
             FlowDefinitionMigratedEvent.emit(
                     config.engineName(), migrated.definitionName(),
                     migrated.instanceIdMost(), migrated.instanceIdLeast(),
                     persisted.definitionVersion(), migrated.definitionVersion());
         }
-        return RuntimeFlowInstance.fromSnapshot(resolvedPlan, resumable, lifecycleGeneration.get());
+        RuntimeFlowInstance instance =
+                RuntimeFlowInstance.fromSnapshot(resolvedPlan, resumable, lifecycleGeneration.get());
+        if (migrationPersisted) {
+            // ADR-013 §5, as on every other save. The migrated snapshot is built from the loaded one
+            // and carries ITS schemaVersion, so the instance seeds the version the row held BEFORE
+            // the migration write — which the store has already advanced. Without the bump the
+            // saga's first checkpoint after a migration arrives one version behind and a durable
+            // store rejects it as OPTIMISTIC_LOCK_CONFLICT: migration would work only on stores
+            // that ignore the field, which is exactly where every migration case is exercised.
+            instance.markPersisted();
+        }
+        return instance;
     }
 
     private FlowSnapshot loadSnapshot(FlowKey key, FlowState requiredState, boolean suppressRepeatedMisses) {
@@ -654,10 +666,12 @@ final class CoreFlowRuntime { // NOPMD
                 after.opaqueState(), from.schemaVersion());
     }
 
-    private void persistMigratedSnapshot(FlowSnapshot migrated) {
-        if (snapshotStore != null) {
-            snapshotStore.save(migrated);
+    private boolean persistMigratedSnapshot(FlowSnapshot migrated) {
+        if (snapshotStore == null) {
+            return false;
         }
+        snapshotStore.save(migrated);
+        return true;
     }
 
     private CoreFlowExecutionPlan resolveVersionedPlan(FlowSnapshot persisted) {

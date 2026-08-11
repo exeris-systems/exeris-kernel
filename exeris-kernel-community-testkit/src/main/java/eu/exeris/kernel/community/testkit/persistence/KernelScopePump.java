@@ -64,11 +64,18 @@ final class KernelScopePump {
     /* default */ void submitAndWait(Runnable body, long timeoutSeconds) {
         CountDownLatch done = new CountDownLatch(1);
         AtomicReference<Throwable> failure = new AtomicReference<>();
-        tasks.add(() -> runCapturing(body, failure, done));
+        Runnable task = () -> runCapturing(body, failure, done);
+        tasks.add(task);
 
         try {
             if (!done.await(timeoutSeconds, TimeUnit.SECONDS)) {
-                throw new IllegalStateException("Timed out running work inside the kernel scope");
+                // Withdraw it if the pump has not taken it yet. Left queued, an abandoned body runs
+                // later against fixture state the test has already given up on, and — since the pump
+                // is single-consumer — it runs AHEAD of the next submitAndWait, whose own wait then
+                // starts behind work nobody is waiting for. One timeout becomes a cascade.
+                boolean withdrawn = tasks.remove(task);
+                throw new IllegalStateException("Timed out running work inside the kernel scope"
+                        + (withdrawn ? "" : " (already running; it cannot be withdrawn)"));
             }
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();

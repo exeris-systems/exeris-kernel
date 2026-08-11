@@ -89,10 +89,32 @@ import java.util.function.Function;
  * @see TransportScopes
  * @since 0.5.0
  */
+// CyclomaticComplexity is a class-wide total, and the drain-ordering fix adds branches to a class
+// that already carries the admission, spawn and shutdown paths. Each branch here is a distinct
+// lifecycle case rather than tangled logic; splitting them across classes would separate the count
+// from the code that changes it, which is the pairing the seal race turned on.
+@SuppressWarnings("PMD.CyclomaticComplexity")
 public final class PaqsScheduler implements AutoCloseable {
 
     private static final System.Logger LOG = System.getLogger(PaqsScheduler.class.getName());
     private static final long SPIN_THRESHOLD = 10_000L;
+
+    /**
+     * Hard ceiling on the drain, after which shutdown proceeds regardless.
+     *
+     * <p>Sixty seconds, and deliberately <b>longer than a typical container grace period</b> — the
+     * Kubernetes default is thirty. That looks backwards until you ask what each bound protects. The
+     * orchestrator's timer decides how long the platform waits; this one decides how long the kernel
+     * is willing to strand a request that is still being served. Setting it under the platform's
+     * would make the kernel the one that severs live work, quietly, while the platform still had
+     * time to spare. Above it, the platform stays the authority — a handler that blocks this long is
+     * an application defect, and SIGKILL is the correct answer to it.
+     *
+     * <p>Not configurable. Since 0.11 the drain waits on streams being <em>served</em> rather than
+     * open, so a normal shutdown ends in milliseconds and this bound is only reached when a handler
+     * will not return. Adding a knob would invite tuning it in place of fixing that.
+     */
+    private static final long DRAIN_DEADLINE_NANOS = 60_000_000_000L;
     private static final String PHASE_HANDLER = "HANDLER";
 
     private final AdmissionController admissionController;
@@ -182,6 +204,13 @@ public final class PaqsScheduler implements AutoCloseable {
      *
      * @param stream the incoming stream from the transport driver; must not be {@code null}
      */
+    // CloseResource: the StreamWork handle is deliberately not closed on this thread — it is handed
+    // to the spawned task, which owns it for the stream's life. The catch below is its only close
+    // here, for the one case where no task ever receives it.
+    // AvoidCatchingGenericException / S1181: a spawn that fails any way at all leaves a registered
+    // stream that will never run, and the drain then waits on it to the 60s deadline. Narrowing the
+    // catch would make that outcome depend on which throwable escaped.
+    @SuppressWarnings({"PMD.CloseResource", "PMD.AvoidCatchingGenericException", "java:S1181"})
     public void schedule(TransportStream stream) {
         Objects.requireNonNull(stream, "stream must not be null");
 
@@ -191,7 +220,7 @@ public final class PaqsScheduler implements AutoCloseable {
             if (priority == null) {
                 priority = StreamPriority.NORMAL;
             }
-        } catch (Exception _) { //NOPMD AvoidCatchingGenericException — carrier thread boundary isolation
+        } catch (Exception _) { // carrier thread boundary isolation; covered by the method suppression
             priority = StreamPriority.NORMAL;
         }
 
@@ -202,9 +231,26 @@ public final class PaqsScheduler implements AutoCloseable {
             return;
         }
 
+        // Registered HERE, on the carrier thread, not inside the spawned task. Between admit() and the
+        // task actually running there is a scheduling gap, and the drain waits on this count: a stream
+        // admitted but not yet registered is invisible to sealIfIdle(), which then observes zero and
+        // commits to teardown on a connection already accepted. The old drain waited on
+        // activeStreamCount(), incremented on this thread by admit(), and so had no such gap; moving
+        // the wait onto the busy count (to stop idle keep-alive connections holding shutdown open)
+        // reintroduced it one layer down. The handle is closed by the task that receives it.
+        // CloseResource: the handle is deliberately NOT closed here — it is handed to the spawned
+        // task, which owns it for the stream's life. The catch below is its only close on this
+        // thread, for the one case where no task ever receives it.
+        // AvoidCatchingGenericException: a spawn that fails any way at all leaves a registered
+        // stream that will never run, and the drain would then wait on it until the 60s deadline.
+        // Narrowing the catch would make that outcome depend on which throwable escaped.
+        DrainCoordinator.StreamWork work = drainCoordinator.registerStream();
         try (SpawnGuard guard = new SpawnGuard(stream, admissionController)) {
-            spawnStreamThread(stream, priority);
+            spawnStreamThread(stream, priority, work);
             guard.markSpawned();
+        } catch (RuntimeException | Error spawnFailure) {
+            work.close();
+            throw spawnFailure;
         }
     }
 
@@ -253,7 +299,7 @@ public final class PaqsScheduler implements AutoCloseable {
         // connections it would otherwise keep alive, so the count below can actually reach zero.
         drainCoordinator.markDraining();
 
-        final long deadlineNanos = System.nanoTime() + 60_000_000_000L;
+        final long deadlineNanos = System.nanoTime() + DRAIN_DEADLINE_NANOS;
         long spins = 0L;
         // Waits on streams being SERVED, not on streams being OPEN. A stream is busy from the moment
         // it starts and only a protocol that knows it is between requests reports otherwise, so a raw
@@ -300,21 +346,25 @@ public final class PaqsScheduler implements AutoCloseable {
      * @param stream   the admitted stream
      * @param priority the resolved priority
      */
-    private void spawnStreamThread(TransportStream stream, StreamPriority priority) {
+    private void spawnStreamThread(TransportStream stream, StreamPriority priority,
+                                   DrainCoordinator.StreamWork work) {
         long streamId = stream.streamId();
         String threadName = buildThreadName(priority, streamId);
         String priorityName = priority.name();
 
         StreamAcceptedEvent.emit(streamId, priorityName, engineName, threadName);
 
-        // ARCHITECTURE NOTE: This is the SOLE deliberate exception to the StructuredTaskScope mandate.
-        // PAQS bridges a continuous, unbounded stream of events from concurrent carrier threads
-        // (NIO selectors, io_uring rings). JDK 26 STS.fork() enforces WrongThreadException for any
-        // caller that did not open the scope — making a shared long-lived STS incompatible with the
-        // multi-carrier ingress model. The default StreamExecutionBackend spawns one Virtual Thread
-        // per stream, acting as the Root of the Request Tree. All subsequent concurrent operations
-        // within runStream() MUST use StructuredTaskScope.
-        executionBackend.start(threadName, () -> runStream(stream, priority, streamId, priorityName));
+        // ARCHITECTURE NOTE: PAQS bridges a continuous, unbounded stream of events from concurrent
+        // carrier threads (NIO selectors, io_uring rings), so its ingress cannot sit inside one
+        // structured scope: fork() rejects any caller that did not open the scope, which is
+        // incompatible with the multi-carrier model. The default StreamExecutionBackend spawns one
+        // Virtual Thread per stream, acting as the Root of the Request Tree.
+        //
+        // Concurrency *within* runStream() must be structured, but the mechanism is track-dependent
+        // (ADR-066): core.concurrent.StructuredScope on the preview-clean default line, and
+        // StructuredTaskScope only on the preview branch. This note used to mandate the latter
+        // outright, which is exactly what v0.11 removed from the distributed artifact.
+        executionBackend.start(threadName, () -> runStream(stream, priority, streamId, priorityName, work));
     }
 
     /**
@@ -331,12 +381,13 @@ public final class PaqsScheduler implements AutoCloseable {
      * @param priorityName the priority name string (pre-captured to avoid enum.name() on exit path)
      */
     @SuppressWarnings("java:S1181") // Mandatory for L0 VT Boundary Resource Safety
-    private void runStream(TransportStream stream, StreamPriority priority, long streamId, String priorityName) {
+    private void runStream(TransportStream stream, StreamPriority priority, long streamId,
+                           String priorityName, DrainCoordinator.StreamWork registeredWork) {
         long startNs = System.nanoTime();
         String outcome = StreamLifecycleEvent.OUTCOME_COMPLETE;
 
         try {
-            try (DrainCoordinator.StreamWork work = drainCoordinator.registerStream()) {
+            try (DrainCoordinator.StreamWork work = registeredWork) {
                 ScopedValue.where(TransportScopes.STREAM_PRIORITY, priority)
                         .where(TransportScopes.STREAM_ID, streamId)
                         .where(TransportScopes.ENGINE_NAME, engineName)

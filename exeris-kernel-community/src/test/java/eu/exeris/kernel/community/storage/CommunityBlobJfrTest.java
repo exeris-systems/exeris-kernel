@@ -125,10 +125,16 @@ class CommunityBlobJfrTest {
     /** Creates a regular file exactly where the container directory would go. */
     private static void blockContainerPath(Path root) {
         CommunityFilesystemBlobLayout layout = new CommunityFilesystemBlobLayout(root);
-        Path tenantDir = layout.requireTenantDirectory(CommunityBlobFailures.OP_UPLOAD);
+        // Asked of the layout rather than assembled here: the container directory is not a child of
+        // the tenant directory any more, and a fixture that spells the layout out itself stops
+        // blocking anything the moment placement changes — silently, since "no exception" is what
+        // this test would then observe.
+        Path containerDir = layout
+                .resolve(new BlobRef("docs", "probe"), CommunityBlobFailures.OP_UPLOAD)
+                .object().getParent();
         try {
-            Files.createDirectories(tenantDir);
-            Files.writeString(tenantDir.resolve("docs"), "not-a-directory");
+            Files.createDirectories(containerDir.getParent());
+            Files.writeString(containerDir, "not-a-directory");
         } catch (IOException e) {
             throw new IllegalStateException("test fixture setup failed", e);
         }

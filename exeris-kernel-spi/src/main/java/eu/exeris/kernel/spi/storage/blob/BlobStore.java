@@ -116,13 +116,22 @@ public interface BlobStore extends AutoCloseable {
      * declines for every input. One that sometimes returns a URL cannot be programmed against, because
      * a caller could not tell an unsupported operation from a missing object.
      *
+     * <h2>Expiry granularity</h2>
+     * <p>{@code ttl} must be <b>at least one second</b>, and stores reject anything shorter whether or
+     * not they sign. The signing schemes in use express expiry in whole seconds, so a sub-second
+     * request has only two possible outcomes and both break a promise: truncating to zero produces an
+     * already-expired URL, and rounding up grants longer than asked. Validation is uniform across
+     * stores so that moving between drivers cannot turn a rejected call into a silently over-granted
+     * one.
+     *
      * @param ref    tenant-relative reference the URL should address
      * @param access the single operation to grant
-     * @param ttl    requested validity; capped by the configured ceiling. Must be positive
+     * @param ttl    requested validity; capped by the configured ceiling. Must be at least one
+     *               second — see the granularity note above
      * @return the signed URL, or empty if this store does not sign
      * @throws BlobStorageException     if the ambient context carries no isolation key
      * @throws NullPointerException     if any argument is {@code null}
-     * @throws IllegalArgumentException if {@code ttl} is not positive
+     * @throws IllegalArgumentException if {@code ttl} is shorter than one second
      */
     Optional<URI> signedUrl(BlobRef ref, BlobAccess access, Duration ttl);
 

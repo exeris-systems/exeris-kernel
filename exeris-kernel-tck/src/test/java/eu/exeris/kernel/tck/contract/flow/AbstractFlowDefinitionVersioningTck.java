@@ -62,8 +62,17 @@ public abstract class AbstractFlowDefinitionVersioningTck {
     private static final String DEFINITION = "versioned-saga";
     private static final String PARKED_STEP = "parked-step";
     private static final long AWAIT_SECONDS = 15L;
+    /** Migration write, then the resumed step's checkpoint — the second is the one under test. */
+    private static final int WRITES_BEFORE_CHECKPOINT = 2;
 
-    protected abstract FlowEngine createEngine();
+    /**
+     * Builds an engine that persists through the supplied store.
+     *
+     * <p>The store is a parameter rather than something the binding wires privately so a case can
+     * hand the engine an instrument — see {@link OptimisticLock}, which needs a store that enforces
+     * the version contract most bindings' stores are entitled to ignore.
+     */
+    protected abstract FlowEngine createEngine(FlowSnapshotStore store);
 
     protected abstract FlowSnapshotStore snapshotStore();
 
@@ -71,7 +80,7 @@ public abstract class AbstractFlowDefinitionVersioningTck {
 
     @BeforeEach
     final void setUpEngine() {
-        engine = createEngine();
+        engine = createEngine(snapshotStore());
         engine.start();
     }
 
@@ -84,6 +93,25 @@ public abstract class AbstractFlowDefinitionVersioningTck {
      * Registers a version whose single step records that it ran, so a resume can be observed by
      * <em>which</em> version executed rather than merely by the flow completing.
      */
+    /**
+     * As {@link #register}, but on a caller-supplied engine and parking instead of completing.
+     *
+     * <p>PARK, not COMPLETE: a completing saga has its row DELETED, so it never writes the checkpoint
+     * whose version {@link OptimisticLock} is about, and the defect would sail through.
+     */
+    private void registerOn(FlowEngine target, int version, AtomicInteger executions) {
+        FlowDefinition base = target.plans().newDefinition(DEFINITION)
+                .step(PARKED_STEP, _ -> FlowOutcome.PARK, null)
+                .step("resumed-step", _ -> {
+                    executions.incrementAndGet();
+                    return FlowOutcome.PARK;
+                }, null)
+                .transition(0, 1)
+                .build();
+        target.plans().compile(new FlowDefinition(
+                base.name(), version, base.steps(), base.timeoutDurationNanos(), base.maxRetries()));
+    }
+
     private FlowExecutionPlan register(int version, AtomicInteger executions) {
         // Two steps on purpose. A saga parked AT step 0 resumes at step 0+1, so a single-step
         // definition has nothing to run on wake and the resume looks identical to a refusal.
@@ -840,6 +868,59 @@ public abstract class AbstractFlowDefinitionVersioningTck {
      * no assertion that could distinguish the two silent outcomes after the fact, which is the whole
      * argument for moving the check to the resume path.
      */
+    /**
+     * Migration bookkeeping, measured against a store that actually enforces the version.
+     *
+     * <p>Every case in {@link Migration} passes against a runtime whose migration write leaves the
+     * instance one version behind the row, because the store a binding supplies is entitled to ignore
+     * {@code schemaVersion} (ADR-013 §5) and every one of them does. The defect is only visible to a
+     * store that keeps the durable half of the bargain, so this class supplies one and re-runs the
+     * plainest migration there is.
+     */
+    @Nested
+    @DisplayName("Optimistic lock: a migrated saga checkpoints against the row the migration wrote")
+    class OptimisticLock {
+
+        @Test
+        @Timeout(value = 30, unit = TimeUnit.SECONDS)
+        @DisplayName("the checkpoint after a migration is not rejected as a conflict")
+        void migratedSagaCheckpointsAgainstTheMigratedRow() {
+            VersionEnforcingSnapshotStore store = new VersionEnforcingSnapshotStore();
+            AtomicInteger resumed = new AtomicInteger();
+            UUID id = UUID.randomUUID();
+            store.seed(parkedSnapshot(id, DEFINITION, 1));
+
+            // A second engine, on the instrument rather than the binding's own store. The shared one
+            // from setUp cannot be reused: a store is bound when an engine starts, so swapping it
+            // afterwards would leave the running workers writing to the old one.
+            FlowEngine instrumented = createEngine(store);
+            try {
+                instrumented.start();
+                registerOn(instrumented, 2, resumed);
+                instrumented.plans().registerMigration(DEFINITION, 1, parked -> parked);
+
+                instrumented.scheduler().wake(contextFor(id));
+                // Two writes: the migration's, then the checkpoint the resumed step's PARK produces.
+                // Waiting on the step counter would return BEFORE the step returns, and the engine
+                // would close over the very checkpoint under test.
+                awaitTrue(() -> store.writes() >= WRITES_BEFORE_CHECKPOINT);
+            } finally {
+                instrumented.close();
+            }
+
+            assertThat(resumed.get())
+                    .as("the saga must reach v2's step at all — a refused migration would leave this "
+                            + "at 0 and make the assertion below vacuous")
+                    .isEqualTo(1);
+            assertThat(store.conflicts())
+                    .as("the migration write advanced the row, but an instance seeded from the "
+                            + "migrated snapshot carries the version the row held BEFORE that write. "
+                            + "Its first checkpoint then arrives one behind, and a durable store "
+                            + "rejects that as EX-FLOW-7002 / OPTIMISTIC_LOCK_CONFLICT")
+                    .isZero();
+        }
+    }
+
     @Nested
     @DisplayName("Compensation-stack step identity (ADR-064 A5)")
     class StackIdentity {

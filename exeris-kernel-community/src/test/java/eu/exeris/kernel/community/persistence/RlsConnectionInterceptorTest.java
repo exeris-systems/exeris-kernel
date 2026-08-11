@@ -143,6 +143,49 @@ class RlsConnectionInterceptorTest {
                 .bindString(1, "");
     }
 
+    // =========================================================================
+    // search_path — pool-recycle isolation (ADR-012)
+    // =========================================================================
+
+    @Test
+    @DisplayName("shared strategy resets search_path — a SEPARATED_SCHEMA request may have set it")
+    void sharedStrategyResetsSearchPath() {
+        when(storageContext.strategy()).thenReturn(StorageContext.IsolationStrategy.SHARED);
+        when(storageContext.isolationKey()).thenReturn(Optional.of("tenant-key-01"));
+        stubStatement(SQL_TENANT_AND_SCOPE);
+
+        RlsConnectionInterceptor.INSTANCE.onConnectionAcquired(connection, storageContext);
+
+        // Unconditional: with persistence.perTenantPooling defaulting to false, SHARED and
+        // SEPARATED_SCHEMA are served from one pool, and SET search_path is session-scoped — so
+        // skipping this when the context declares no schema inherits the previous tenant's.
+        verify(connection).executeUpdate("RESET search_path");
+    }
+
+    @Test
+    @DisplayName("dedicated strategy resets search_path for the same pool-recycle reason")
+    void dedicatedStrategyResetsSearchPath() {
+        when(storageContext.strategy()).thenReturn(StorageContext.IsolationStrategy.DEDICATED);
+        stubStatement(SQL_SCOPE_ONLY);
+
+        RlsConnectionInterceptor.INSTANCE.onConnectionAcquired(connection, storageContext);
+
+        verify(connection).executeUpdate("RESET search_path");
+    }
+
+    @Test
+    @DisplayName("separatedSchema does not reset — its own SET overwrites whatever was there")
+    void separatedSchemaDoesNotResetSearchPath() {
+        when(storageContext.strategy()).thenReturn(StorageContext.IsolationStrategy.SEPARATED_SCHEMA);
+        when(storageContext.schemaName()).thenReturn(Optional.of("tenant_01"));
+        stubStatement(SQL_SCOPE_ONLY);
+
+        RlsConnectionInterceptor.INSTANCE.onConnectionAcquired(connection, storageContext);
+
+        verify(connection, never()).executeUpdate("RESET search_path");
+        verify(connection).executeUpdate("SET search_path TO tenant_01, public");
+    }
+
     @Test
     @DisplayName("dedicated strategy publishes the shared scope — orthogonal to pool-level routing")
     void dedicatedStrategyPublishesSharedScope() {

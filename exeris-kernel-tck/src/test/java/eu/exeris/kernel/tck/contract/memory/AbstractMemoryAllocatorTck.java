@@ -21,7 +21,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
 import java.lang.foreign.ValueLayout;
-import java.util.concurrent.StructuredTaskScope;
+import eu.exeris.kernel.tck.support.TckScope;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -224,8 +224,7 @@ public abstract class AbstractMemoryAllocatorTck {
             AtomicLong errors = new AtomicLong(0);
             int threads = avalancheThreadCount();
 
-            try (StructuredTaskScope<Void, Void> scope = StructuredTaskScope.open(
-                    StructuredTaskScope.Joiner.awaitAllSuccessfulOrThrow())) {
+            try (TckScope scope = TckScope.openFailFast()) {
 
                 for (int i = 0; i < threads; i++) {
                     final int threadId = i;
@@ -263,8 +262,7 @@ public abstract class AbstractMemoryAllocatorTck {
             int total = avalancheThreadCount();
             AtomicLong errors = new AtomicLong(0);
 
-            try (StructuredTaskScope<Void, Void> scope = StructuredTaskScope.open(
-                    StructuredTaskScope.Joiner.awaitAllSuccessfulOrThrow())) {
+            try (TckScope scope = TckScope.openFailFast()) {
 
                 for (int i = 0; i < total; i++) {
                     AllocationHint hint = hints[i % hints.length];

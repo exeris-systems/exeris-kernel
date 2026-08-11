@@ -40,6 +40,11 @@ final class CommunityTriggerClock {
         }
     }
 
+    /** Drops a settled job's compiled cron schedule; harmless for a job that never had one. */
+    /* default */ void forget(String jobId) {
+        cronSchedules.remove(jobId);
+    }
+
     /* default */ long firstDue(String jobId, JobTrigger trigger) {
         return switch (trigger) {
             case JobTrigger.OneShot(Duration delay) -> clock.nanoTime() + delay.toNanos();

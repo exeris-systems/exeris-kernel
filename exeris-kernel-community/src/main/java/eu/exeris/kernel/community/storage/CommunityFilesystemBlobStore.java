@@ -43,7 +43,6 @@ public final class CommunityFilesystemBlobStore implements BlobStore {
     private static final CommunityBlobFailures FAILURES =
             CommunityBlobFailures.forProvider(CommunityBlobFailures.FILESYSTEM_PROVIDER);
 
-    private static final String UPLOAD_SUFFIX = ".uploading";
     private static final String REF_REQUIRED = "ref must not be null";
     private static final String ROOT_CONTAINER = "[root]";
 
@@ -68,12 +67,13 @@ public final class CommunityFilesystemBlobStore implements BlobStore {
         if (contentLength < 0) {
             throw new IllegalArgumentException("contentLength must not be negative");
         }
-        Path target = layout.resolve(ref, CommunityBlobFailures.OP_UPLOAD);
+        CommunityFilesystemBlobLayout.BlobPaths paths =
+                layout.resolve(ref, CommunityBlobFailures.OP_UPLOAD);
         try {
-            Files.createDirectories(target.getParent());
-            Path staging = target.resolveSibling(target.getFileName() + UPLOAD_SUFFIX);
+            Files.createDirectories(paths.object().getParent());
+            Path staging = layout.stagingFile(CommunityBlobFailures.OP_UPLOAD);
             return new CommunityFilesystemBlobUploadHandle(
-                    staging, target, ref, contentLength,
+                    staging, paths, ref, contentLength,
                     contentType == null ? BlobMetadata.DEFAULT_CONTENT_TYPE : contentType);
         } catch (IOException e) {
             throw FAILURES.transferFailed(
@@ -89,7 +89,9 @@ public final class CommunityFilesystemBlobStore implements BlobStore {
     @Override
     public BlobDownloadHandle openDownload(BlobRef ref, BlobRange range) {
         Objects.requireNonNull(ref, REF_REQUIRED);
-        Path target = layout.resolve(ref, CommunityBlobFailures.OP_DOWNLOAD);
+        CommunityFilesystemBlobLayout.BlobPaths paths =
+                layout.resolve(ref, CommunityBlobFailures.OP_DOWNLOAD);
+        Path target = paths.object();
         if (!Files.isRegularFile(target)) {
             throw FAILURES.notFound(ref.container());
         }
@@ -97,7 +99,8 @@ public final class CommunityFilesystemBlobStore implements BlobStore {
             long size = Files.size(target);
             return new CommunityFilesystemBlobDownloadHandle(
                     target,
-                    new BlobMetadata(ref, size, CommunityFilesystemBlobLayout.contentTypeOf(target)),
+                    new BlobMetadata(ref, size,
+                            CommunityFilesystemBlobLayout.contentTypeOf(paths.sidecar())),
                     range);
         } catch (IOException e) {
             throw FAILURES.transferFailed(
@@ -108,13 +111,14 @@ public final class CommunityFilesystemBlobStore implements BlobStore {
     @Override
     public Optional<BlobMetadata> stat(BlobRef ref) {
         Objects.requireNonNull(ref, REF_REQUIRED);
-        Path target = layout.resolve(ref, CommunityBlobFailures.OP_STAT);
-        if (!Files.isRegularFile(target)) {
+        CommunityFilesystemBlobLayout.BlobPaths paths =
+                layout.resolve(ref, CommunityBlobFailures.OP_STAT);
+        if (!Files.isRegularFile(paths.object())) {
             return Optional.empty();
         }
         try {
-            return Optional.of(new BlobMetadata(
-                    ref, Files.size(target), CommunityFilesystemBlobLayout.contentTypeOf(target)));
+            return Optional.of(new BlobMetadata(ref, Files.size(paths.object()),
+                    CommunityFilesystemBlobLayout.contentTypeOf(paths.sidecar())));
         } catch (IOException e) {
             throw FAILURES.transferFailed(
                     CommunityBlobFailures.OP_STAT, ref.container(), e);
@@ -124,10 +128,11 @@ public final class CommunityFilesystemBlobStore implements BlobStore {
     @Override
     public boolean delete(BlobRef ref) {
         Objects.requireNonNull(ref, REF_REQUIRED);
-        Path target = layout.resolve(ref, CommunityBlobFailures.OP_DELETE);
+        CommunityFilesystemBlobLayout.BlobPaths paths =
+                layout.resolve(ref, CommunityBlobFailures.OP_DELETE);
         try {
-            boolean removed = Files.deleteIfExists(target);
-            Files.deleteIfExists(CommunityFilesystemBlobLayout.sidecar(target));
+            boolean removed = Files.deleteIfExists(paths.object());
+            Files.deleteIfExists(paths.sidecar());
             return removed;
         } catch (IOException e) {
             throw FAILURES.transferFailed(
@@ -145,8 +150,9 @@ public final class CommunityFilesystemBlobStore implements BlobStore {
         Objects.requireNonNull(ref, REF_REQUIRED);
         Objects.requireNonNull(access, "access must not be null");
         Objects.requireNonNull(ttl, "ttl must not be null");
-        if (ttl.isZero() || ttl.isNegative()) {
-            throw new IllegalArgumentException("ttl must be positive");
+        if (ttl.compareTo(BlobStorageConfig.MIN_SIGNED_URL_TTL) < 0) {
+            throw new IllegalArgumentException(
+                    "ttl must be at least one second: signed-URL expiry has one-second granularity");
         }
         layout.requireTenantDirectory(CommunityBlobFailures.OP_SIGNED_URL);
         return Optional.empty();

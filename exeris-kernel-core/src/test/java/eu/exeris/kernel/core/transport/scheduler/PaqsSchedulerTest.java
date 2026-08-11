@@ -27,6 +27,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
 import java.lang.foreign.MemorySegment;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -209,6 +211,47 @@ class PaqsSchedulerTest {
         private static PaqsScheduler buildWithBlankEngineName(ResourceArbiter arbiter) {
             return new PaqsScheduler(new AdmissionController(arbiter), new StreamLoadShedder(ENGINE),
                     stream -> {}, s -> StreamPriority.NORMAL, "");
+        }
+    }
+
+    @Nested
+    @DisplayName("Drain registration happens before the task runs")
+    class DrainRegistrationTiming {
+
+        /**
+         * An admitted stream must count against the drain the moment {@code schedule()} returns.
+         *
+         * <p>Registering inside the spawned task instead leaves a window between admission and the
+         * task being scheduled in which the stream is invisible: {@code sealIfIdle()} observes zero,
+         * commits to teardown, and the connection that was just accepted is severed by it. The
+         * backend below never runs the task, which is the window held open indefinitely.
+         */
+        @Test
+        @DisplayName("an admitted stream is busy before its task starts, so the drain cannot seal past it")
+        void admittedStreamCountsBeforeTaskRuns() {
+            List<Runnable> unstarted = new ArrayList<>();
+            PaqsScheduler scheduler = schedulerWithBackend((name, task) -> unstarted.add(task));
+
+            scheduler.schedule(stubStream(1L, new AtomicBoolean()));
+
+            assertThat(unstarted)
+                    .withFailMessage("precondition: the task must not have run")
+                    .hasSize(1);
+            assertThat(scheduler.drainCoordinator().busyStreams())
+                    .withFailMessage("the admitted stream is invisible to the drain until its task runs")
+                    .isEqualTo(1);
+            assertThat(scheduler.drainCoordinator().sealIfIdle())
+                    .withFailMessage("the drain sealed past a stream that was already admitted")
+                    .isFalse();
+        }
+
+        private PaqsScheduler schedulerWithBackend(StreamExecutionBackend backend) {
+            MemoryAllocator alloc = stubAllocator(500_000L, 1_000_000L);
+            WatermarkManager mgr = new WatermarkManager(alloc);
+            mgr.refresh();
+            ResourceArbiter arbiter = ResourceArbiterTestHelper.expiredGraceArbiter(mgr);
+            return new PaqsScheduler(new AdmissionController(arbiter), new StreamLoadShedder(ENGINE),
+                    stream -> {}, s -> StreamPriority.NORMAL, ENGINE, backend);
         }
     }
 

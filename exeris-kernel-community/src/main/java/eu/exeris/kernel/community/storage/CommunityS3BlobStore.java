@@ -137,8 +137,9 @@ public final class CommunityS3BlobStore implements BlobStore {
         Objects.requireNonNull(ref, REF_REQUIRED);
         Objects.requireNonNull(access, "access must not be null");
         Objects.requireNonNull(ttl, "ttl must not be null");
-        if (ttl.isZero() || ttl.isNegative()) {
-            throw new IllegalArgumentException("ttl must be positive");
+        if (ttl.compareTo(BlobStorageConfig.MIN_SIGNED_URL_TTL) < 0) {
+            throw new IllegalArgumentException(
+                    "ttl must be at least one second: signed-URL expiry has one-second granularity");
         }
         String objectKey = CommunityS3ObjectKey.resolve(ref, CommunityBlobFailures.OP_SIGNED_URL);
         return Optional.of(URI.create(client.presign(access, objectKey, ttl)));

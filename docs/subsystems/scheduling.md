@@ -61,9 +61,17 @@ Two semantics worth stating because they surprise people:
 `PrincipalContext` and `StorageContext` are captured at `submit` and rebound with `ScopedValue` on
 the dispatching thread. Two consequences are normative:
 
-- **A job with no captured context fails closed.** It does not run under an ambient or default
-  identity — the same reasoning as ADR-012 §4a, that a resolution the kernel cannot honour is a deny
-  rather than a downgrade. The refusal is a JFR event carrying `EX-JOB-9001`.
+- **A job with no captured context fails closed, and does so once.** It does not run under an
+  ambient or default identity — the same reasoning as ADR-012 §4a, that a resolution the kernel
+  cannot honour is a deny rather than a downgrade. The refusal is a JFR event carrying
+  `EX-JOB-9001`, and it **retires the job**, repeating trigger or not. Because the capture is a
+  snapshot (below), a refusal is a permanent property of that job rather than a bad run: rescheduling
+  it would re-refuse on every interval forever, turning one deny into an unbounded failure stream.
+- **A settled job releases what it was holding.** The handle stays addressable by id — that is what
+  post-mortem lookup needs — but the job body and the captured identity are dropped once the job can
+  no longer run. Keeping them would pin one closure and one identity per job the scheduler has ever
+  run, for the scheduler's whole life. A job cancelled mid-flight releases when the body returns, not
+  when the cancel lands.
 - **The capture is a snapshot.** A job firing an hour after submission carries the identity that
   scheduled it, which may since have lost the rights it holds. Re-validating a token at dispatch time
   is an identity decision, not a scheduling one, and is out of scope here.

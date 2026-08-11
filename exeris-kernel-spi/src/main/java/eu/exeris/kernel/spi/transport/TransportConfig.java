@@ -35,7 +35,12 @@ package eu.exeris.kernel.spi.transport;
  * @param keyPath           path to TLS private key (PEM); {@code null} if TLS not configured
  * @param maxConnections    hard cap on concurrent connections across all reactors;
  *                          ignored and not validated when mode is {@link TransportMode#DISABLED}
- * @param idleTimeoutMillis connection idle timeout in milliseconds (0 = no timeout);
+ * @param idleTimeoutMillis connection idle timeout in milliseconds (0 = no timeout). Validated and
+ *                          carried to the driver, but <b>not enforced by the Community NIO carrier</b>,
+ *                          which has no idle reaper: setting it there changes nothing. Stated rather
+ *                          than implied, because a timeout an operator believes is active and is not
+ *                          is worse than one that is documented as absent. A driver is free to honour
+ *                          it;
  *                          ignored and not validated when mode is {@link TransportMode#DISABLED}
  * @see TransportProvider
  * @see TransportEngine
