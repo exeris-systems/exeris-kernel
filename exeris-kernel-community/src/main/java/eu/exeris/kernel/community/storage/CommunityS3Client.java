@@ -50,6 +50,14 @@ final class CommunityS3Client implements AutoCloseable {
     private static final CommunityBlobFailures FAILURES =
             CommunityBlobFailures.forProvider(CommunityBlobFailures.S3_PROVIDER);
 
+    /**
+     * Both are positional arguments {@link HttpConfig} requires and neither reaches anything on this
+     * path, so they are named here rather than read as tuning. {@code maxConnections} bounds the
+     * listener backlog and the accept-time slot reservation, and a {@code CLIENT}-mode carrier never
+     * listens or accepts; {@code idleTimeoutMillis} is carried into {@code TransportConfig} and no
+     * carrier reads it at all. Values kept plausible so a future enforcement point inherits a sane
+     * default instead of a placeholder.
+     */
     private static final int MAX_CONNECTIONS = 64;
     private static final long IDLE_TIMEOUT_MS = 30_000L;
     private static final int MAX_HEADER_COUNT = 64;
