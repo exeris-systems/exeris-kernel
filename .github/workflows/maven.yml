@@ -143,9 +143,15 @@ jobs:
         #
         # REMOVE once a CI-based analysis has been confirmed green; leaving it in permanently would
         # let the analysis rot silently.
+        #
+        # Pinned by commit SHA, not by tag. Two high-severity advisories (GHSA-f79p-9c5r-xg88,
+        # GHSA-5xq9-5g24-4g6f) cover every 4.x/5.x release of this action, so `@v5` resolved to a
+        # vulnerable revision and failed the Dependency Review gate on PRs into main; both are
+        # cleared from 6.0.0 onward. The SHA below is tag v8.2.1. A moving tag is also mutable —
+        # SHA-pinning is what makes the reviewed revision the one that actually runs.
         continue-on-error: true
         if: ${{ env.SONAR_TOKEN != '' }}
-        uses: SonarSource/sonarqube-scan-action@v5
+        uses: SonarSource/sonarqube-scan-action@22918119ff8e1ca75a623e15c8296b6ea4fbe28f # v8.2.1
 
       - name: Upload TCK JFR recordings
         if: always() && (github.event_name == 'push' || github.event_name == 'schedule') && github.ref == 'refs/heads/main'
@@ -892,7 +898,7 @@ jobs:
           path: build/jmh-results/core/
 
       - name: Publish latest to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v4
+        uses: peaceiris/actions-gh-pages@84c30a85c19949d7eee79c4ff27748b70285e453 # v4.0.0
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: build/jfr-report/
@@ -900,7 +906,7 @@ jobs:
           keep_files: true
 
       - name: Publish run snapshot to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v4
+        uses: peaceiris/actions-gh-pages@84c30a85c19949d7eee79c4ff27748b70285e453 # v4.0.0
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: build/jfr-report/
@@ -909,7 +915,7 @@ jobs:
 
       - name: Publish JMH results latest to GitHub Pages
         continue-on-error: true
-        uses: peaceiris/actions-gh-pages@v4
+        uses: peaceiris/actions-gh-pages@84c30a85c19949d7eee79c4ff27748b70285e453 # v4.0.0
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: build/jmh-results/
@@ -918,7 +924,7 @@ jobs:
 
       - name: Publish JMH results snapshot to GitHub Pages
         continue-on-error: true
-        uses: peaceiris/actions-gh-pages@v4
+        uses: peaceiris/actions-gh-pages@84c30a85c19949d7eee79c4ff27748b70285e453 # v4.0.0
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: build/jmh-results/

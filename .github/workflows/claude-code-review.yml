@@ -45,8 +45,18 @@ jobs:
             Review this PR. The repo is `exeris-kernel` — the open-core runtime
             kernel: an SPI tier (`exeris-kernel-spi`), a driver-agnostic Core
             (`exeris-kernel-core`), Community drivers (`exeris-kernel-community*`),
-            and a contract TCK (`exeris-kernel-tck`). Java 26 (GA) with preview
-            features enabled (`--enable-preview`), built with Maven.
+            and a contract TCK (`exeris-kernel-tck`). Built with Maven.
+
+            **Which distribution track a PR is on decides what is correct**
+            (ADR-066). The default line — `main` and `development/*` — baselines
+            on **JDK 25 LTS** and its main sources are **preview-clean**: no
+            `--enable-preview` on distributed code, and therefore no
+            `StructuredTaskScope`. Test and TCK fixtures are exempt (not
+            distributed) and still compile with it. The `preview` branch is the
+            opposite: newest JDK, `--enable-preview`, `StructuredTaskScope`, JEP
+            401 value classes. Check the base branch before applying any rule
+            below that mentions preview features — the same code can be correct
+            on one track and disqualifying on the other.
 
             Source-of-truth docs (in precedence order):
             1. `docs/modules/*.md`, `docs/subsystems/*.md` — placement + behavior
@@ -73,15 +83,24 @@ jobs:
                `ExecutorService`/`Executors`/`CompletableFuture` (replacing structured
                orchestration), `java.io.*`/`Socket`/`ByteBuffer` (in zero-copy paths),
                `sun.misc.Unsafe`, checked exceptions on hot state-machine paths.
-            4. **Java 26 runtime idioms.** `ScopedValue` (NOT `ThreadLocal`) for
-               context propagation; `StructuredTaskScope` for orchestration concurrency;
-               Panama FFM for native interop; carriers Valhalla-ready (records /
-               immutable final, no identity-sensitive ops).
+            4. **Runtime idioms.** `ScopedValue` (NOT `ThreadLocal`) for context
+               propagation; Panama FFM for native interop; carriers Valhalla-ready
+               (records / immutable final, no identity-sensitive ops). For
+               orchestration concurrency the mechanism is track-dependent: on the
+               default line it is `core.concurrent.StructuredScope` (the kernel's own
+               GA fork/join/cancel layer over virtual threads) — flagging its use as
+               "should be `StructuredTaskScope`" is WRONG there and reverses ADR-066.
+               Note also that two sites deliberately run in-thread rather than fork
+               (`InMemoryEventBus.publishAndAwait`, `SubsystemOrchestrator` phase
+               start): their contracts require `ScopedValue` bindings an application
+               owns and the kernel cannot enumerate, so a `Carrier` cannot carry them.
+               On the `preview` branch, `StructuredTaskScope` is correct.
             5. **JFR-first telemetry.** Lifecycle/failure points (bootstrap, allocation
                failure, bind/start, state transitions) emit JFR events. Emission is
                lightweight, payloads are secret-safe (NO key/token bytes, no raw args),
                and commits are SINGLE-PHASE — never begin()->blocking-op->commit() on a
-               virtual thread (carrier-bound `EventWriter` → SIGSEGV on JDK 26).
+               virtual thread (carrier-bound `EventWriter`; first observed as a
+               SIGSEGV on JDK 26, but the hazard is the straddle, not the release).
             6. **TCK-first discipline.** Any change to observable SPI behavior or a
                provider binding needs executable `Abstract*Tck` coverage plus a
                concrete binding (Community in-repo; Enterprise obligation declared). A

@@ -2,7 +2,12 @@ name: 'Dependency Review (Supply Chain)'
 
 on:
   pull_request:
-    branches: [ "main" ]
+    # `development/**` as well as main, deliberately. Scanning only PRs into main meant a
+    # dependency or action introduced during a milestone stayed unscanned until the release cut,
+    # where it surfaces as a red gate on an 87-commit PR that nobody wants to reopen — which is
+    # exactly how the vulnerable `sonarqube-scan-action` pin reached the v0.11 cut. The scan
+    # belongs where the dependency actually enters the tree.
+    branches: [ "main", "development/**" ]
 
 permissions:
   contents: read
@@ -21,6 +26,12 @@ jobs:
         with:
           comment-summary-in-pr: always
           fail-on-severity: moderate
+          # `deny-licenses` is deprecated upstream (actions/dependency-review-action#997) and slated
+          # for removal in the action's 5.x; the maintainers' argument is that a deny list is
+          # structurally incomplete — it only catches the copyleft/commercial licences someone
+          # thought to enumerate. It still functions on 4.x, so it stays for now. Migrating to
+          # `allow-licenses` means enumerating every licence in the transitive Maven graph first,
+          # which is its own piece of work and not something to do inside a release cut.
           deny-licenses: >
             GPL-1.0-only, GPL-1.0-or-later, GPL-2.0-only, GPL-2.0-or-later, GPL-3.0-only, GPL-3.0-or-later,
             LGPL-2.0-only, LGPL-2.0-or-later, LGPL-2.1-only, LGPL-2.1-or-later, LGPL-3.0-only, LGPL-3.0-or-later,
@@ -28,6 +39,19 @@ jobs:
             SSPL-1.0,
             EPL-1.0, EPL-2.0,
             MPL-2.0
+          # The `eu.exeris/*` entries are this repository's own reactor modules, which the reactor
+          # POMs declare as dependencies of each other. They report an unknown licence because the
+          # dependency graph reads each module POM on its own and does not resolve the parent that
+          # carries the `<licenses>` block — so the warning is about POM inheritance, not about an
+          # unlicensed artifact. The licence is Apache-2.0 with Commons Clause, declared once in
+          # `exeris-kernel-parent/pom.xml` and shipped as LICENSE-COMMUNITY.
           allow-dependencies-licenses: >
             pkg:maven/com.puppycrawl.tools/checkstyle,
-            pkg:maven/org.jacoco/jacoco-maven-plugin
+            pkg:maven/org.jacoco/jacoco-maven-plugin,
+            pkg:maven/eu.exeris/exeris-kernel-bom,
+            pkg:maven/eu.exeris/exeris-kernel-build-config,
+            pkg:maven/eu.exeris/exeris-kernel-spi,
+            pkg:maven/eu.exeris/exeris-kernel-core,
+            pkg:maven/eu.exeris/exeris-kernel-community,
+            pkg:maven/eu.exeris/exeris-kernel-community-kafka,
+            pkg:maven/eu.exeris/exeris-kernel-community-testkit
