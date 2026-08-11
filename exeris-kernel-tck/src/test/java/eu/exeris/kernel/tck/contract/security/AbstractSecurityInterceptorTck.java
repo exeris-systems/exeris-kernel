@@ -368,6 +368,61 @@ public abstract class AbstractSecurityInterceptorTck<I> {
             assertThat(failure.get()).isNull();
             assertThat(successCount.get()).isEqualTo(vtCount);
         }
+
+        @Test
+        @DisplayName("the binding does not outlive intercept() — a ThreadLocal implementation would")
+        void bindingIsUnboundAfterIntercept() {
+            try (LoanedBuffer token = createTokenBuffer()) {
+                intercept(successInterceptor, token,
+                        () -> assertThat(KernelProviders.PRINCIPAL_CONTEXT.isBound())
+                                .as("inside the callback the interceptor's binding must be visible, "
+                                        + "or everything below is asserting an empty scope")
+                                .isTrue());
+            }
+
+            // The case above this one binds each child explicitly and then asserts the child sees
+            // what it was given — which is a property of ScopedValue, not of any provider, and would
+            // certify a kernel that propagated context through a ThreadLocal just as happily. THIS is
+            // the assertion those cases were missing: a ThreadLocal set during the callback is still
+            // set after it returns, and only a scoped binding is guaranteed gone.
+            assertThat(KernelProviders.PRINCIPAL_CONTEXT.isBound())
+                    .as("a request's identity must not survive the request. If it does, the next "
+                            + "piece of work on this carrier thread inherits an authority nobody "
+                            + "granted it — the failure mode ADR-012 rules out")
+                    .isFalse();
+        }
+
+        @Test
+        @DisplayName("an unstructured virtual thread inherits NOTHING — propagation is explicit")
+        void plainVirtualThreadDoesNotInheritTheBinding() throws InterruptedException {
+            AtomicBoolean childSawBinding = new AtomicBoolean(true);
+
+            try (LoanedBuffer token = createTokenBuffer()) {
+                intercept(successInterceptor, token, () -> {
+                    assertThat(KernelProviders.PRINCIPAL_CONTEXT.isBound())
+                            .as("the PARENT must hold the binding, or the child observing none "
+                                    + "proves nothing about inheritance")
+                            .isTrue();
+                    // Not a fork inside a scope: a bare Thread.ofVirtual().start(). ScopedValue
+                    // bindings are inherited across a structured fork and NOWHERE else, and the
+                    // kernel has already shipped one claim to the contrary that measurement refuted.
+                    // Pinning the negative keeps the next change from assuming the convenient answer.
+                    Thread child = Thread.ofVirtual().start(
+                            () -> childSawBinding.set(KernelProviders.PRINCIPAL_CONTEXT.isBound()));
+                    try {
+                        child.join();
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        throw new AssertionError("interrupted joining the child", e);
+                    }
+                });
+            }
+
+            assertThat(childSawBinding)
+                    .as("a driver that hands work to a plain virtual thread must rebind explicitly; "
+                            + "believing inheritance happens is how work runs with no identity at all")
+                    .isFalse();
+        }
     }
 
     // =========================================================================

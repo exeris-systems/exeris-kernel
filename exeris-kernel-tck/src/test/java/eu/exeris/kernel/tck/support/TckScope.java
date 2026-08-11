@@ -124,7 +124,7 @@ public final class TckScope implements AutoCloseable {
     private void runCapturing(Callable<?> task) {
         try {
             task.call();
-        } catch (Throwable t) { // NOPMD — a fixture must report what escaped, whatever it was
+        } catch (Throwable t) { // a fixture must report what escaped, whatever it was
             synchronized (failures) {
                 failures.add(t);
             }
