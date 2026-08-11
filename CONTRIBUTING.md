@@ -14,8 +14,10 @@ the barrier to contribution, not to enforce bureaucracy.
 
 ### Java Version
 
-**Java 26 (EA or GA) is required.** The kernel actively uses APIs that are preview or finalising
-in Java 26:
+**JDK 25 LTS is required on this line.** The distributed artifact is preview-clean (ADR-066): main
+sources compile without `--enable-preview`, and since the TCK's test-jar is the one published
+artifact built from test sources, its fixtures are preview-clean too. The `preview` branch is the
+opposite — newest JDK, preview features on — and ships separately as `1.0-preview`.
 
 | Feature                            | JEP       | Status in JDK              | Used in Kernel                                    |
 |:-----------------------------------|:----------|:---------------------------|:--------------------------------------------------|
@@ -25,10 +27,11 @@ in Java 26:
 | Foreign Function & Memory (FFM)    | JEP 454   | Stable (JDK 22)            | OpenSSL bindings, off-heap I/O, `io_uring`        |
 | Flexible Constructor Bodies        | JEP 513   | **Closed / Delivered (JDK 25)** | Field pre-init before `super()` in value-ready types |
 | Valhalla Value Classes (prep)      | JEP 401   | Early Access preview       | **Not yet used.** All data carriers (`record`, `final class`) are designed to be migration-ready: no `synchronized`, no `System.identityHashCode()`, no identity `==` on domain objects. C2 JIT Escape Analysis scalarises them on hot-paths today. |
-| Lazy Constants                     | JEP 526   | **Closed / Delivered (JDK 26)** | `LazyConstant.of(...)` for singleton config caches and expensive one-time initialisations |
+| Lazy Constants                     | JEP 526   | Delivered in JDK 26 — **not available on this line** | Not used on `main`; the JDK 25 baseline predates it |
 
-The project POM enables preview features globally. Do **not** disable `--enable-preview` flags
-in any module — doing so will break compilation of `exeris-kernel-enterprise` and parts of Core.
+The project POM does **not** enable preview features globally. Do not add `--enable-preview` to a
+module's main sources on this line: the Preview-Bytecode Gate reads the published jars and fails on
+any class stamped `minor_version 0xFFFF`, which is exactly what a consumer would trip over.
 
 **Recommended toolchain:**
 ```
@@ -190,7 +193,6 @@ jcmd <pid> JFR.start name=exeris-debug settings=profile duration=60s filename=de
 
 # Or start the JVM with recording enabled from the beginning:
 java -XX:StartFlightRecording=name=boot,settings=profile,filename=boot.jfr \
-     --enable-preview \
      -jar exeris-kernel-core/target/exeris-kernel-core.jar
 ```
 
@@ -219,7 +221,6 @@ The TCK automatically validates this during `mvn install`. For manual investigat
 ```bash
 # Run with GC allocation profiling
 java -XX:StartFlightRecording=settings=profile \
-     --enable-preview \
      -jar exeris-kernel-core/target/exeris-kernel-core.jar
 ```
 
