@@ -13,7 +13,7 @@
 > callers are responsible for invoking `boot()` and managing JVM shutdown.
 
 **Layer:** L0 (Orchestration)  
-**Status:** Validated Architectural Prototype (TRL‑3) — targeting JDK 26 GA / Valhalla EA
+**Status:** Validated Architectural Prototype (TRL‑3) — JDK 25 LTS baseline / Valhalla-ready carriers
 
 ---
 
@@ -233,7 +233,7 @@ Bootstrap decides the fate of the Kernel:
 - **FAIL_FAST** → Strict Mode (Target Standard). Mandatory for high-density edge environments.
 - **DEGRADE** → Reserved for local dev or emergency maintenance only. Never deploy to production in this mode.
 
-> Exeris targets **JDK 26 LTS** with **Valhalla Readiness (JEP 401 EA Preview)**. The heap-allocation budgets
+> Exeris targets **JDK 25 LTS** with **Valhalla Readiness (JEP 401, preview on JDK 28)**. The heap-allocation budgets
 > in `performance-contract.md` are met today via C2 JIT Escape Analysis scalarisation of `record`/`final class`
 > data carriers. Migration to `value record`/`value class` (requiring `value` keyword) is deferred until
 > JEP 401 reaches mainline GA — at that point, object-header elimination will further reduce memory pressure

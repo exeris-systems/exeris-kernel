@@ -40,7 +40,7 @@ Boots the `http` subsystem on a reserved loopback port with a caller-supplied `H
 
 ```java
 try (EmbeddedHttpEngineFixture fixture = EmbeddedHttpEngineFixtures.kernelBootstrapFixture()) {
-    fixture.start(exchange -> exchange.respond(200, "ok"));
+    fixture.start(exchange -> exchange.respond(HttpStatus.OK));
     int port = fixture.boundPort();
     // drive a real client at 127.0.0.1:port
 }
@@ -151,3 +151,5 @@ data-integrity behaviour.
 - [`03-community.md`](03-community.md) — the providers these fixtures boot.
 - [`05-tck.md`](05-tck.md) — `Abstract*Tck` contract suites. Different job: the TCK verifies a
   *provider* against the contract; the testkit lets a *consumer* run against a real provider.
+- [`guides/02-build-an-application.md`](../guides/02-build-an-application.md) — the consumer-side
+  path these fixtures serve: booting the kernel, serving HTTP, then testing it.

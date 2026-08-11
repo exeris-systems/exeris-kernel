@@ -6,6 +6,10 @@
 ## Overview
 The TCK (Technology Compatibility Kit) ensures that any implementation of Exeris SPIs (Community or Enterprise) adheres to strict performance and safety contracts.
 
+> Implementing a provider and looking for the end-to-end path — SPI interface, `META-INF/services`
+> registration, TCK binding? See
+> [`docs/guides/03-implement-a-provider.md`](../docs/guides/03-implement-a-provider.md).
+
 ## 🧪 Testing Scope
 - **Lifecycle Compliance:** Verifies that subsystems respect topological initialization order.
 - **Memory Safety:** Ensures zero-copy buffers are correctly released via `LoanedBuffer` `retain()`/`release()` through the `MemoryAllocator` SPI.
