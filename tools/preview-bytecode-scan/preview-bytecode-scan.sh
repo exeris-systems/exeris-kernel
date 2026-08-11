@@ -33,26 +33,47 @@ REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$REPO_ROOT"
 
 python3 - "$EXPECT_MAJOR" <<'PY'
-import pathlib, struct, sys
+import pathlib, struct, sys, zipfile
 
 expect_major = int(sys.argv[1])
 scanned = 0
 preview = []
 wrong_major = []
 
-for path in pathlib.Path('.').glob('*/target/classes/**/*.class'):
-    raw = path.read_bytes()
+
+def inspect(name, entry, raw):
+    global scanned
     if len(raw) < 8 or raw[:4] != b'\xca\xfe\xba\xbe':
-        continue
+        return
     minor, major = struct.unpack('>HH', raw[4:8])
     scanned += 1
+    # Preview stamp: checked on EVERY class in the jar. A stamped third-party class would break a
+    # consumer exactly as one of ours would, and the uber-jar CLI bundles its dependencies.
     if minor == 0xFFFF:
-        preview.append(str(path))
-    if major != expect_major:
-        wrong_major.append((str(path), major))
+        preview.append(name)
+    # Class-file major: only on classes this project authors. A vendored dependency compiled for an
+    # older release is normal — the shaded diagnostics CLI carries slf4j at major 52 — and holding it
+    # to our baseline would fail the gate on someone else's build choice.
+    if entry.startswith('eu/exeris/') and major != expect_major:
+        wrong_major.append((name, major))
+
+
+# Read the JARS, not a directory glob. The scope of this gate has to be derived from what the build
+# actually publishes, because the thing it is protecting against is a consumer tripping over a stamp
+# in a downloaded artifact. A `*/target/classes/**` glob looked equivalent and was not:
+# exeris-kernel-tck has no src/main at all, so its entire distributed surface is a test-jar built
+# from src/test — 55 of its classes shipped preview-stamped, invisible to this gate by construction,
+# for the whole milestone that advertised the opposite.
+for jar in sorted(pathlib.Path('.').glob('*/target/*.jar')):
+    if jar.name.endswith(('-sources.jar', '-javadoc.jar')):
+        continue
+    with zipfile.ZipFile(jar) as zf:
+        for entry in zf.namelist():
+            if entry.endswith('.class'):
+                inspect(f"{jar}!{entry}", entry, zf.read(entry))
 
 if scanned == 0:
-    print("preview-bytecode gate: FAILED — scanned 0 classes; build the reactor first")
+    print("preview-bytecode gate: FAILED — scanned 0 classes; run `mvn package` first")
     sys.exit(1)
 
 print(f"preview-bytecode gate: scanned {scanned} distributed classes "

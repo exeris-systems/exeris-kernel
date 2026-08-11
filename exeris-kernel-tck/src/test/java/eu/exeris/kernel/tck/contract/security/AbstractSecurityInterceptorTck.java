@@ -22,7 +22,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.StructuredTaskScope;
+import eu.exeris.kernel.tck.support.TckScope;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -324,26 +324,36 @@ public abstract class AbstractSecurityInterceptorTck<I> {
     class ScopedValuePropagation {
 
         @Test
-        @DisplayName("50 child VTs all see the correct PRINCIPAL_CONTEXT via StructuredTaskScope")
-        void childVirtualThreadsInheritPrincipalContext() {
+        @DisplayName("50 child VTs bound with the request's context all see it — the values, not the propagation")
+        void boundChildVirtualThreadsSeePrincipalContext() {
             int vtCount = 50;
             AtomicInteger successCount = new AtomicInteger(0);
             AtomicReference<Throwable> failure = new AtomicReference<>();
 
             try (LoanedBuffer token = createTokenBuffer()) {
                 intercept(successInterceptor, token, () -> {
-                    try (var scope = StructuredTaskScope.open()) {
+                    // Captured on the request thread, rebound inside each child. Inheritance across a
+                    // fork is a StructuredTaskScope property, not a kernel one, and the default line is
+                    // preview-clean (ADR-066) — so what this pins is the kernel's part: the values the
+                    // interceptor established are the ones a bound child observes, for all of them.
+                    PrincipalContext bound = KernelProviders.principal();
+                    StorageContext boundStorage = KernelProviders.STORAGE_CONTEXT.get();
+                    try (TckScope scope = TckScope.open()) {
                         for (int i = 0; i < vtCount; i++) {
                             scope.fork(() -> {
-                                try {
-                                    PrincipalContext p = KernelProviders.principal();
-                                    StorageContext s = KernelProviders.STORAGE_CONTEXT.get();
-                                    if (p.equals(testPrincipal) && s.equals(testStorage)) {
-                                        successCount.incrementAndGet();
-                                    }
-                                } catch (Exception e) {
-                                    failure.compareAndSet(null, e);
-                                }
+                                ScopedValue.where(KernelProviders.PRINCIPAL_CONTEXT, bound)
+                                        .where(KernelProviders.STORAGE_CONTEXT, boundStorage)
+                                        .run(() -> {
+                                            try {
+                                                PrincipalContext p = KernelProviders.principal();
+                                                StorageContext st = KernelProviders.STORAGE_CONTEXT.get();
+                                                if (p.equals(testPrincipal) && st.equals(testStorage)) {
+                                                    successCount.incrementAndGet();
+                                                }
+                                            } catch (RuntimeException e) {
+                                                failure.compareAndSet(null, e);
+                                            }
+                                        });
                                 return null;
                             });
                         }
@@ -384,8 +394,7 @@ public abstract class AbstractSecurityInterceptorTck<I> {
                 interceptorList.add(createInterceptor(createSuccessProvider(p, storage)));
             }
 
-            try (var scope = StructuredTaskScope.open(
-                    StructuredTaskScope.Joiner.<Void>awaitAllSuccessfulOrThrow())) {
+            try (TckScope scope = TckScope.openFailFast()) {
                 for (int i = 0; i < concurrency; i++) {
                     final int idx = i;
                     scope.fork(() -> {
@@ -479,24 +488,29 @@ public abstract class AbstractSecurityInterceptorTck<I> {
         }
 
         @Test
-        @DisplayName("child virtual threads inherit PRINCIPAL_CONTEXT via StructuredTaskScope")
-        void childVirtualThreadsInheritPrincipalContext() {
+        @DisplayName("a child virtual thread bound with the pre-authenticated principal observes it")
+        void boundChildVirtualThreadsSeePrincipalContext() {
             int count = 10;
             AtomicInteger successCount = new AtomicInteger(0);
             AtomicReference<Throwable> failure = new AtomicReference<>();
 
             interceptPreAuthenticated(successInterceptor, testPrincipal, () -> {
-                try (var scope = StructuredTaskScope.open()) {
+                // Same reformulation as the ScopedValuePropagation case: bound explicitly, because a
+                // plain virtual thread does not inherit and the default line has no fork that does.
+                PrincipalContext bound = KernelProviders.PRINCIPAL_CONTEXT.get();
+                try (TckScope scope = TckScope.open()) {
                     for (int i = 0; i < count; i++) {
                         scope.fork(() -> {
-                            try {
-                                PrincipalContext p = KernelProviders.PRINCIPAL_CONTEXT.get();
-                                if (p.equals(testPrincipal)) {
-                                    successCount.incrementAndGet();
+                            ScopedValue.where(KernelProviders.PRINCIPAL_CONTEXT, bound).run(() -> {
+                                try {
+                                    PrincipalContext p = KernelProviders.PRINCIPAL_CONTEXT.get();
+                                    if (p.equals(testPrincipal)) {
+                                        successCount.incrementAndGet();
+                                    }
+                                } catch (RuntimeException e) {
+                                    failure.compareAndSet(null, e);
                                 }
-                            } catch (Exception e) {
-                                failure.compareAndSet(null, e);
-                            }
+                            });
                             return null;
                         });
                     }

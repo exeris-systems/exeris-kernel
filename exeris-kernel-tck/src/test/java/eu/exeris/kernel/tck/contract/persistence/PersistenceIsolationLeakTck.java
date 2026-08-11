@@ -21,7 +21,7 @@ import org.junit.jupiter.api.Timeout;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.StructuredTaskScope;
+import eu.exeris.kernel.tck.support.TckScope;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -209,8 +209,7 @@ public abstract class PersistenceIsolationLeakTck {
         List<String> seenByA = new ArrayList<>();
         List<String> seenByB = new ArrayList<>();
 
-        try (var scope = StructuredTaskScope.open(
-                StructuredTaskScope.Joiner.<Void>awaitAllSuccessfulOrThrow())) {
+        try (TckScope scope = TckScope.openFailFast()) {
 
             scope.fork(() ->
                     ScopedValue.where(KernelProviders.STORAGE_CONTEXT, contextFor(isolationKeyA())).call(() -> {

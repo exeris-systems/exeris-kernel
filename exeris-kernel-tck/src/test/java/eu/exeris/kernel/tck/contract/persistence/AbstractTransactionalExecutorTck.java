@@ -20,7 +20,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
-import java.util.concurrent.StructuredTaskScope;
+import eu.exeris.kernel.tck.support.TckScope;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -423,8 +423,7 @@ public abstract class AbstractTransactionalExecutorTck {
         @Timeout(value = 10, unit = TimeUnit.SECONDS)
         void concurrentQueriesDoNotShareConnection() throws Exception {
             AtomicInteger completed = new AtomicInteger(0);
-            try (var scope = StructuredTaskScope.open(
-                    StructuredTaskScope.Joiner.awaitAllSuccessfulOrThrow())) {
+            try (TckScope scope = TckScope.openFailFast()) {
                 for (int i = 0; i < 10; i++) {
                     scope.fork(() -> {
                         executor.query(conn -> {

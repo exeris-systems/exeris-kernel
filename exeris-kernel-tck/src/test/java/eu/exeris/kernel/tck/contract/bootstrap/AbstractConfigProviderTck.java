@@ -18,7 +18,7 @@ import org.junit.jupiter.api.Test;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Modifier;
 import java.util.Objects;
-import java.util.concurrent.StructuredTaskScope;
+import eu.exeris.kernel.tck.support.TckScope;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
@@ -129,7 +129,7 @@ public abstract class AbstractConfigProviderTck {
             AtomicReference<Object> firstSeen = new AtomicReference<>(null);
             AtomicReference<AssertionError> failure = new AtomicReference<>(null);
 
-            try (var scope = StructuredTaskScope.open()) {
+            try (var scope = TckScope.open()) {
                 for (int i = 0; i < threads; i++) {
                     scope.fork(() -> {
                         var settings = provider.kernelSettings().get();
