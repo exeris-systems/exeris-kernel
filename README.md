@@ -54,8 +54,10 @@ Authoritative references:
 - Maven 3.9+
 
 The build baselines on JDK 25 LTS and native-access flags in [pom.xml](pom.xml). Main sources compile
-without `--enable-preview`; test and TCK fixtures no longer need it either (ADR-066). A second
-artifact ships from the `preview` branch on the newest JDK, with preview features on.
+without `--enable-preview`, and so does the TCK's test-jar — the one published artifact built from
+test sources (ADR-066). Other test sources still compile and run with the flag; they are not
+distributed, so nothing a consumer downloads carries preview bytecode. A second artifact ships from
+the `preview` branch on the newest JDK, with preview features on.
 
 ## Build and Test
 

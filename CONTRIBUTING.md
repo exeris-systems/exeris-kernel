@@ -29,9 +29,15 @@ opposite — newest JDK, preview features on — and ships separately as `1.0-pr
 | Valhalla Value Classes (prep)      | JEP 401   | Early Access preview       | **Not yet used.** All data carriers (`record`, `final class`) are designed to be migration-ready: no `synchronized`, no `System.identityHashCode()`, no identity `==` on domain objects. C2 JIT Escape Analysis scalarises them on hot-paths today. |
 | Lazy Constants                     | JEP 526   | Delivered in JDK 26 — **not available on this line** | Not used on `main`; the JDK 25 baseline predates it |
 
-The project POM does **not** enable preview features globally. Do not add `--enable-preview` to a
-module's main sources on this line: the Preview-Bytecode Gate reads the published jars and fails on
-any class stamped `minor_version 0xFFFF`, which is exactly what a consumer would trip over.
+The root POM enables preview features for **test** sources only — `--enable-preview` on every
+module's `default-testCompile` and on the surefire JVM ([pom.xml](pom.xml) lines 70, 91-94, 105) —
+and never for main sources. Do not add it to a module's main sources on this line: the
+Preview-Bytecode Gate reads the published jars and fails on any class stamped
+`minor_version 0xFFFF`, which is exactly what a consumer would trip over.
+
+The TCK is the exception that needs stating, because its test-jar *is* a published artifact: its
+fixtures were moved off `StructuredTaskScope` so they carry no stamp. Other modules' test sources
+still use it and still need the flag.
 
 **Recommended toolchain:**
 ```
