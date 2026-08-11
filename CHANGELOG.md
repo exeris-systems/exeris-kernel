@@ -6,15 +6,15 @@ This file is intentionally terse: it lists what landed, with a pointer to the re
 
 Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project versions follow [SemVer](https://semver.org/spec/v2.0.0.html), with the pre-1.0 caveat that minor versions may carry observable contract additions while remaining backwards-compatible at the SPI level. Which SPI surfaces are `stable` / `preview` / `experimental`, and what each label commits to for semver, is declared in [`docs/stability-matrix.md`](docs/stability-matrix.md) — the authoritative source for the semver policy.
 
-## [0.11.0] — 2026-08-08
+## [0.11.0] — 2026-08-11
 
 ### Added
 - **The distributed artifact no longer requires `--enable-preview`, and baselines on JDK 25 LTS**
   (ADR-066). `--enable-preview` is a whole-compilation and whole-JVM flag whose bytecode is stamped
   and major-pinned, so a published artifact carrying it forces every consumer's entire build under the
-  same flag and the same exact JDK. As of 0.11.0: 930 distributed classes, class-file major 69, zero
-  preview-stamped, enforced by a CI gate that reads the shipped class files rather than the sources
-  (`tools/preview-bytecode-scan/`). The JDK baseline moves 26 → 25, which is a widening for
+  same flag and the same exact JDK. As of 0.11.0: 2 282 classes of ours across the eight published modules, class-file major 69, zero preview-stamped — and 15 181 classes scanned in total, because the gate checks the dependencies the diagnostics CLI shades in as well: a vendored stamped class breaks a consumer exactly as one of ours would. Enforced by a CI gate that reads the published
+  JARS rather than the sources, scoped to the reactor's declared modules so a partial build fails
+  instead of passing on whatever is on disk (`tools/preview-bytecode-scan/`). The JDK baseline moves 26 → 25, which is a widening for
   consumers. A second artifact, `0.11.0-preview`, carries `StructuredTaskScope` on the newest JDK for
   JVM-controlled deployments.
 - **Flow resume binds to identity, not position** — `FlowSnapshot` gains three components across v0.11:
@@ -44,6 +44,49 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 - **Reconstructed v0.6.0 release notes** — `docs/release/v0.6.0-release-notes.md`. v0.6.0 shipped
   without notes and predates this changelog, while carrying the only pre-declaration removal of
   `stable`-surface SPI types; the record is now closed.
+
+### Fixed
+
+Found by a pre-release review of the cut itself. Grouped because they share one shape: in most
+cases the code was right and the thing that should have caught it could not see it.
+
+- **Two off-heap refcount leaks in the in-memory event bus.** A `Throwable` escaping a handler left
+  every unreached wrapper open in `publishAndAwait`, and the identical defect sat five lines away in
+  `publish`, where a failing `retain()` or a thread that cannot start stranded every ref taken so far.
+- **A settled job kept the application's body and the submitter's identity**, once per job the
+  scheduler had ever run, for the scheduler's whole life. A *repeating* job refused for having no
+  captured context also never retired — and since the context is captured once at submission, it was
+  re-refused on every interval forever.
+- **A failed standalone write poisoned its pooled connection.** With the pool's `autoCommit=false`
+  baseline every statement opens a real transaction; there was no rollback counterpart on the failure
+  path, so the connection returned to the pool inside an aborted transaction and the next request to
+  receive it died on its first statement. An RLS `WITH CHECK` rejection — the security control working
+  as designed — reached this the ordinary way.
+- **Streaming routes were not authorized.** The stream branch returned before the request dispatcher
+  was reached, so a bound route policy and the security interceptor were both skipped and an SSE
+  handler ran with no principal bound. See the security section below.
+- **The blob store's private files were reachable as objects**, because staging and sidecar files were
+  named by appending a suffix to the object's own path — endings a tenant may legitimately use.
+- **A migrated saga's first checkpoint lost the optimistic-lock race**, arriving one version behind
+  the row the migration had just written.
+- **Four drain defects**, from an engine that could not be stopped to a request dropped in silence.
+- **Signed-URL validity below one second** was rejected by one driver and silently mishandled by
+  another; the floor now lives in the SPI and is anchored in the TCK.
+
+### Fixed — verification
+
+The review's recurring finding was not in the code:
+
+- **The preview-bytecode gate could report success on work it had not done.** It scanned a directory
+  glob, and `exeris-kernel-tck` has no `src/main` at all — so 55 of its classes shipped
+  preview-stamped for the whole milestone that advertised the opposite, invisible by construction. It
+  now reads the published jars, scoped to the reactor's declared modules.
+- **The flow-versioning TCK covered migration exhaustively while every case passed against a real
+  bug**, because `FlowSnapshot` lets an in-memory store ignore `schemaVersion` and every binding's
+  store does. A version-enforcing store now ships in the TCK so bindings inherit the instrument.
+- **The security-interceptor TCK's propagation cases asserted a property of `ScopedValue`, not of the
+  kernel** — a `ThreadLocal`-based implementation would have certified green. They now assert what
+  separates the two: the binding is gone once the request is.
 
 ### Changed
 - **Stability matrix** — added the missing `…spi.scheduling` and `…spi.storage.blob` rows (both
