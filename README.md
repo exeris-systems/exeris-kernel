@@ -23,6 +23,8 @@ Root reactor modules from [pom.xml](pom.xml):
 - exeris-kernel-core
 - exeris-kernel-community-testkit
 - exeris-kernel-community
+- exeris-kernel-community-kafka
+- exeris-kernel-diagnostics-cli
 
 Related directories present in workspace but not part of the root reactor include:
 
@@ -78,6 +80,7 @@ mvn -pl exeris-kernel-core -am clean install
 
 ## Documentation Index
 
+- Getting started (developer guides): [docs/guides](docs/guides)
 - Architecture overview: [docs/architecture.md](docs/architecture.md)
 - Performance contract: [docs/performance-contract.md](docs/performance-contract.md)
 - Whitepaper: [docs/whitepaper.md](docs/whitepaper.md)
