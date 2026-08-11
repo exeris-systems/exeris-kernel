@@ -1,22 +1,27 @@
 [ {
-  "class" : "java.util.HashMap",
-  "count" : 2,
-  "bytes" : 261576,
+  "class" : "[Ljava.util.HashMap$Node;",
+  "count" : 3,
+  "bytes" : 784456,
   "category" : "JVM_NOISE"
 }, {
   "class" : "java.util.LinkedHashMap$Entry",
   "count" : 2,
-  "bytes" : 523112,
+  "bytes" : 261600,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "[Ljdk.jfr.internal.util.TimespanUnit;",
-  "count" : 2,
-  "bytes" : 261624,
+  "class" : "java.nio.HeapByteBuffer",
+  "count" : 1,
+  "bytes" : 1024,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "java.util.HashMap$KeySet",
-  "count" : 2,
-  "bytes" : 1178880,
+  "class" : "java.lang.String",
+  "count" : 1,
+  "bytes" : 261568,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "java.util.HashMap$KeyIterator",
+  "count" : 1,
+  "bytes" : 261544,
   "category" : "JVM_NOISE"
 }, {
   "class" : "[B",
@@ -26,11 +31,11 @@
 }, {
   "class" : "java.lang.VirtualThread$VThreadContinuation",
   "count" : 1,
-  "bytes" : 261512,
+  "bytes" : 261544,
   "category" : "LOOM_RUNTIME"
 }, {
-  "class" : "java.lang.VirtualThread",
+  "class" : "java.lang.VirtualThread$VThreadContinuation$1",
   "count" : 1,
-  "bytes" : 128664,
+  "bytes" : 231000,
   "category" : "LOOM_RUNTIME"
 } ]
