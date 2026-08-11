@@ -46,7 +46,16 @@ jobs:
           # carries the `<licenses>` block — so the warning is about POM inheritance, not about an
           # unlicensed artifact. The licence is Apache-2.0 with Commons Clause, declared once in
           # `exeris-kernel-parent/pom.xml` and shipped as LICENSE-COMMUNITY.
+          #
+          # `sonarqube-scan-action` is LGPL-3.0, which the deny list above rejects — correctly for a
+          # dependency, wrongly for this one. The deny list exists to keep copyleft out of the
+          # DISTRIBUTED kernel; a GitHub Action is build infrastructure that runs on a runner,
+          # links against nothing we ship, and is never redistributed. (It only became visible once
+          # the SHA pin made the licence resolvable at all — under the `@v5` tag it reported as
+          # unknown and slipped through as a warning.) Excluding the whole action rather than the
+          # pin, so a Dependabot bump does not re-trip the gate.
           allow-dependencies-licenses: >
+            pkg:githubactions/SonarSource/sonarqube-scan-action,
             pkg:maven/com.puppycrawl.tools/checkstyle,
             pkg:maven/org.jacoco/jacoco-maven-plugin,
             pkg:maven/eu.exeris/exeris-kernel-bom,
