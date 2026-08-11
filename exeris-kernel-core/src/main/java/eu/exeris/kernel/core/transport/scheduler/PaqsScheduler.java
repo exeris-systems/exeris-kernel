@@ -202,9 +202,20 @@ public final class PaqsScheduler implements AutoCloseable {
             return;
         }
 
+        // Registered HERE, on the carrier thread, not inside the spawned task. Between admit() and the
+        // task actually running there is a scheduling gap, and the drain waits on this count: a stream
+        // admitted but not yet registered is invisible to sealIfIdle(), which then observes zero and
+        // commits to teardown on a connection already accepted. The old drain waited on
+        // activeStreamCount(), incremented on this thread by admit(), and so had no such gap; moving
+        // the wait onto the busy count (to stop idle keep-alive connections holding shutdown open)
+        // reintroduced it one layer down. The handle is closed by the task that receives it.
+        DrainCoordinator.StreamWork work = drainCoordinator.registerStream();
         try (SpawnGuard guard = new SpawnGuard(stream, admissionController)) {
-            spawnStreamThread(stream, priority);
+            spawnStreamThread(stream, priority, work);
             guard.markSpawned();
+        } catch (RuntimeException | Error spawnFailure) {
+            work.close();
+            throw spawnFailure;
         }
     }
 
@@ -300,21 +311,25 @@ public final class PaqsScheduler implements AutoCloseable {
      * @param stream   the admitted stream
      * @param priority the resolved priority
      */
-    private void spawnStreamThread(TransportStream stream, StreamPriority priority) {
+    private void spawnStreamThread(TransportStream stream, StreamPriority priority,
+                                   DrainCoordinator.StreamWork work) {
         long streamId = stream.streamId();
         String threadName = buildThreadName(priority, streamId);
         String priorityName = priority.name();
 
         StreamAcceptedEvent.emit(streamId, priorityName, engineName, threadName);
 
-        // ARCHITECTURE NOTE: This is the SOLE deliberate exception to the StructuredTaskScope mandate.
-        // PAQS bridges a continuous, unbounded stream of events from concurrent carrier threads
-        // (NIO selectors, io_uring rings). JDK 26 STS.fork() enforces WrongThreadException for any
-        // caller that did not open the scope — making a shared long-lived STS incompatible with the
-        // multi-carrier ingress model. The default StreamExecutionBackend spawns one Virtual Thread
-        // per stream, acting as the Root of the Request Tree. All subsequent concurrent operations
-        // within runStream() MUST use StructuredTaskScope.
-        executionBackend.start(threadName, () -> runStream(stream, priority, streamId, priorityName));
+        // ARCHITECTURE NOTE: PAQS bridges a continuous, unbounded stream of events from concurrent
+        // carrier threads (NIO selectors, io_uring rings), so its ingress cannot sit inside one
+        // structured scope: fork() rejects any caller that did not open the scope, which is
+        // incompatible with the multi-carrier model. The default StreamExecutionBackend spawns one
+        // Virtual Thread per stream, acting as the Root of the Request Tree.
+        //
+        // Concurrency *within* runStream() must be structured, but the mechanism is track-dependent
+        // (ADR-066): core.concurrent.StructuredScope on the preview-clean default line, and
+        // StructuredTaskScope only on the preview branch. This note used to mandate the latter
+        // outright, which is exactly what v0.11 removed from the distributed artifact.
+        executionBackend.start(threadName, () -> runStream(stream, priority, streamId, priorityName, work));
     }
 
     /**
@@ -331,12 +346,13 @@ public final class PaqsScheduler implements AutoCloseable {
      * @param priorityName the priority name string (pre-captured to avoid enum.name() on exit path)
      */
     @SuppressWarnings("java:S1181") // Mandatory for L0 VT Boundary Resource Safety
-    private void runStream(TransportStream stream, StreamPriority priority, long streamId, String priorityName) {
+    private void runStream(TransportStream stream, StreamPriority priority, long streamId,
+                           String priorityName, DrainCoordinator.StreamWork registeredWork) {
         long startNs = System.nanoTime();
         String outcome = StreamLifecycleEvent.OUTCOME_COMPLETE;
 
         try {
-            try (DrainCoordinator.StreamWork work = drainCoordinator.registerStream()) {
+            try (DrainCoordinator.StreamWork work = registeredWork) {
                 ScopedValue.where(TransportScopes.STREAM_PRIORITY, priority)
                         .where(TransportScopes.STREAM_ID, streamId)
                         .where(TransportScopes.ENGINE_NAME, engineName)

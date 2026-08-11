@@ -154,7 +154,17 @@ public final class CommunityHttpRequestProcessor {
         // Parked on the next request, this connection is serving nothing — it must not hold graceful
         // shutdown open, because an idle keep-alive connection never closes on its own (issue #282).
         // Streams are busy by default, so a protocol that cannot tell simply never reaches this.
-        markIdle();
+        //
+        // Only from the second iteration, though: "parked on the next request" is false for a
+        // connection that has served none. Reporting idle before the first read makes a connection
+        // that just passed accept, TLS and PAQS admission eligible to be sealed out, and the
+        // !rearmed branch below then drops its request after reading it in full — no response at
+        // all, on a request that arrived before the drain. The comment there about the peer having
+        // been told to close describes a later iteration; there is no previous response here.
+        boolean parkedBetweenRequests = state.totalRequestCount() > 0;
+        if (parkedBetweenRequests) {
+            markIdle();
+        }
         ReadResult readResult;
         boolean rearmed;
         try {
