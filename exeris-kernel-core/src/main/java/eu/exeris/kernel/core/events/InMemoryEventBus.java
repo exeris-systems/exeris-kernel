@@ -171,7 +171,13 @@ public final class InMemoryEventBus implements EventBus {
      * <p>Failure handling is unchanged — every handler runs, failures are collected, and the first
      * is thrown once all have finished.
      */
+    // java:S1181 — the same exemption the five other release-before-rethrow sites carry (see
+    // NativeCipherContext, SecurityInterceptor, PaqsScheduler). The Throwable is not handled here:
+    // it is rethrown unchanged, and the catch exists only so the wrappers no handler will ever
+    // reach are released first. Narrowing it would restore the leak for exactly the types that
+    // reach this path — an Error out of a handler is the one that motivated the fix.
     @Override
+    @SuppressWarnings("java:S1181")
     public void publishAndAwait(EventDescriptor descriptor, EventPayload payload)
             throws InterruptedException {
         Objects.requireNonNull(descriptor, "descriptor");
