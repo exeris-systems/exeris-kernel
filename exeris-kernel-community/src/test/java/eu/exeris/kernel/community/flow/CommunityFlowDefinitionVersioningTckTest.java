@@ -22,8 +22,8 @@ class CommunityFlowDefinitionVersioningTckTest extends AbstractFlowDefinitionVer
     private final FlowSnapshotStore sharedStore = new CommunityFlowSnapshotStore();
 
     @Override
-    protected FlowEngine createEngine() {
-        return new ScopedStoreFlowEngine(provider.createEngine(persistenceConfig()), sharedStore);
+    protected FlowEngine createEngine(FlowSnapshotStore store) {
+        return new ScopedStoreFlowEngine(provider.createEngine(persistenceConfig()), store);
     }
 
     @Override
