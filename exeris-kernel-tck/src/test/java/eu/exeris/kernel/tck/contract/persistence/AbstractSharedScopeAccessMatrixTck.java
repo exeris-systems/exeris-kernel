@@ -110,7 +110,16 @@ public abstract class AbstractSharedScopeAccessMatrixTck {
                 .as("reads widening MUST NOT relax writes: inside the shared partition a tenant may "
                         + "still only write rows it owns. A binding that lets this through has made "
                         + "cross-tenant mutation possible, which ADR-012 §4b.4 puts out of scope")
-                .isInstanceOf(Exception.class);
+                // Exception.class alone accepted anything at all, so a fixture that never reached
+                // the database — a missing table, an unbound context, a null connection — read as
+                // "the store refused the write". The strongest claim this case can make portably is
+                // that the failure came from the persistence layer rather than from the harness;
+                // the exact SQLSTATE is the binding's business, not the contract's.
+                .isInstanceOf(Exception.class)
+                .isNotInstanceOf(NullPointerException.class)
+                .isNotInstanceOf(IllegalStateException.class)
+                .isNotInstanceOf(IllegalArgumentException.class)
+                .isNotInstanceOf(UnsupportedOperationException.class);
 
         assertThat(readVisible(CTX_B_SHARED))
                 .as("and the refused write left nothing behind")

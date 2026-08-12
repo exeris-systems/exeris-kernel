@@ -33,6 +33,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 
 /**
  * Contract for {@link JobScheduler} (ADR-057).
@@ -60,6 +61,9 @@ public abstract class AbstractJobSchedulerTck {
     private static final long SILENCE_MILLIS = 250L;
 
     private static final String TENANT = "tenant-alpha";
+
+    /** A second close() must return promptly; the first one is what drains. */
+    private static final int SECOND_CLOSE_TIMEOUT_SECONDS = 5;
 
     /** Attempts for the shutdown-race case; see {@link #assertDrainIsTotal} for what that buys. */
     private static final int DRAIN_ATTEMPTS = 20;
@@ -267,10 +271,25 @@ public abstract class AbstractJobSchedulerTck {
         }
 
         @Test
-        @DisplayName("close is idempotent")
+        @DisplayName("close is idempotent — and the second call is not a second drain")
         void closeIsIdempotent() {
             scheduler.close();
-            scheduler.close();
+
+            // The first close() is the one that drains. A second must not repeat the wait: a drain
+            // loop whose exit condition can only be satisfied once — a terminal seal, a queue
+            // already emptied — spins its whole deadline on the second call before giving up, so a
+            // shutdown that nests a try-with-resources inside an explicit close pays it in full.
+            // Bounded here rather than asserted as "fast": the point is that it terminates promptly
+            // without an operator noticing, and a wall-clock bound is what a caller experiences.
+            assertTimeoutPreemptively(Duration.ofSeconds(SECOND_CLOSE_TIMEOUT_SECONDS),
+                    () -> scheduler.close(),
+                    "the second close() did not return promptly — it is repeating the drain");
+
+            assertThatThrownBy(() -> scheduler.submit(new JobDescriptor(
+                    "after-double-close", new JobTrigger.OneShot(Duration.ZERO), () -> { })))
+                    .as("and the scheduler is still closed afterwards: idempotent means the second "
+                        + "call changes nothing, not that it reopens anything")
+                    .isInstanceOf(JobSchedulerException.class);
         }
 
         @Test

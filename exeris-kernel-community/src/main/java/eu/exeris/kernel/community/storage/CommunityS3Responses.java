@@ -32,6 +32,9 @@ final class CommunityS3Responses {
     /** Header carrying the declared media type. */
     /* default */ static final String HEADER_CONTENT_TYPE = "Content-Type";
 
+    /** Returned by {@link #sizeOf} when the response does not say how large the object is. */
+    /* default */ static final long SIZE_UNDECLARED = -1L;
+
     private CommunityS3Responses() {
         // Utility holder — not instantiable.
     }
@@ -53,24 +56,33 @@ final class CommunityS3Responses {
     }
 
     /**
-     * Returns the object size a response reports.
+     * Returns the object size a response reports, or {@link #SIZE_UNDECLARED} if it does not.
      *
-     * <p>A missing or unparseable {@code Content-Length} reads as zero rather than as a failure. The
-     * store has already established that the object exists; refusing to describe it because one header
-     * was malformed would turn a cosmetic fault at the store into an outage for the caller.
+     * <p>This used to answer {@code 0} for a missing or unparseable {@code Content-Length},
+     * reasoning that refusing to describe an object over one malformed header turns a cosmetic fault
+     * at the store into an outage. That holds for {@code stat}, where an unknown size is a degraded
+     * description of an object the caller still learns exists. It does not hold for {@code download},
+     * which is the other consumer of this HEAD: there, {@code 0} does not read as "size unknown", it
+     * reads as "no bytes to fetch" — the range comes out empty, the download completes, and the
+     * caller is handed an empty object that is not empty. A successful wrong answer, not an outage
+     * avoided.
+     *
+     * <p>So the two cases are separated here and the caller decides. Distinguishing them is the whole
+     * change; nothing about the {@code 0}-versus-absent question can be recovered downstream once
+     * both have been flattened into a {@code long}.
      *
      * @param response the response to read
-     * @return the size in bytes, or {@code 0} when the header is absent or malformed
+     * @return the size in bytes, or {@link #SIZE_UNDECLARED} when absent or malformed
      */
     /* default */ static long sizeOf(HttpResponse response) {
         Optional<String> declared = header(response, HEADER_CONTENT_LENGTH);
         if (declared.isEmpty()) {
-            return 0L;
+            return SIZE_UNDECLARED;
         }
         try {
             return Math.max(0L, Long.parseLong(declared.get().strip()));
         } catch (NumberFormatException e) {
-            return 0L;
+            return SIZE_UNDECLARED;
         }
     }
 

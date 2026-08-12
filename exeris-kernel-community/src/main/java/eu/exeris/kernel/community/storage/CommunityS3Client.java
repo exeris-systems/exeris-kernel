@@ -154,7 +154,15 @@ final class CommunityS3Client implements AutoCloseable {
             if (code != HttpStatus.OK.code()) {
                 throw FAILURES.remoteRefused(operation, ref.container(), code);
             }
-            return Optional.of(new BlobMetadata(ref, CommunityS3Responses.sizeOf(response),
+            long size = CommunityS3Responses.sizeOf(response);
+            if (size == CommunityS3Responses.SIZE_UNDECLARED) {
+                // A HEAD that does not say how large the object is cannot be answered with a size.
+                // Every S3-compatible store returns Content-Length here, so its absence is a broken
+                // answer rather than a store quirk to paper over — and papering over it with 0 makes
+                // download() return an empty object, which the caller cannot tell from a real one.
+                throw FAILURES.transferFailed(operation, ref.container(), null);
+            }
+            return Optional.of(new BlobMetadata(ref, size,
                     CommunityS3Responses.contentTypeOf(response)));
         } finally {
             CommunityS3Responses.closeBody(response);

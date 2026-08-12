@@ -79,6 +79,7 @@ final class CronSyntax {
         if (value < MIN_STEP) {
             throw new IllegalArgumentException("cron step must be at least 1, got " + value);
         }
+        CronFieldBounds.requireStepInBounds(value, index);
     }
 
     private static void requireValidRange(String range, int index) {

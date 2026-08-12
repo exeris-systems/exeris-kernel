@@ -39,12 +39,34 @@ final class CronFieldBounds {
     }
 
     /**
+     * Rejects a step wider than the field it steps through.
+     *
+     * <p>A step is a stride, not a value, so it is not bounded by {@link #requireInBounds}: a step of
+     * 30 on the minute field is a legitimate half-hourly schedule even though 30 is not a minute
+     * anyone asked for. What it cannot exceed is the field's own span. A step of 9 on day-of-week
+     * strides past every day there is, so the schedule fires on the first value and never again
+     * within the field — a typo with a plausible reading, and reading it silently is worse than
+     * refusing it.
+     */
+    /* default */ static void requireStepInBounds(int step, int index) {
+        if (step > MAX[index]) {
+            throw new IllegalArgumentException(
+                    "cron step " + step + " is wider than field " + (index + 1)
+                            + ", which spans " + MIN[index] + "-" + MAX[index]);
+        }
+    }
+
+    /**
      * Parses one to two digits.
      *
      * <p>The two-digit cap is not arbitrary: the largest value any field admits is 59, so a longer
      * run of digits cannot be in bounds anyway, and capping the length means the parse cannot
-     * overflow and needs no {@code NumberFormatException} path. A step wider than its field — a
-     * nonsense schedule — is rejected by the same cap.
+     * overflow and needs no {@code NumberFormatException} path.
+     *
+     * <p>It does <em>not</em> also reject a step wider than its field, which this javadoc claimed
+     * until v0.11. The cap counts digits, so it stops a step of 100 and admits one of 99 — and on
+     * day-of-week it admits everything from 7 up. {@link #requireStepInBounds} is what actually
+     * enforces that, and {@link CronSyntax} calls it.
      */
     /* default */ static int parseNumber(String text, int index) {
         if (text.isEmpty() || text.length() > MAX_DIGITS) {
