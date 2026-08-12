@@ -12,7 +12,7 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 - **The distributed artifact no longer requires `--enable-preview`, and baselines on JDK 25 LTS**
   (ADR-066). `--enable-preview` is a whole-compilation and whole-JVM flag whose bytecode is stamped
   and major-pinned, so a published artifact carrying it forces every consumer's entire build under the
-  same flag and the same exact JDK. As of 0.11.0: 2 282 classes of ours across the eight published modules, class-file major 69, zero preview-stamped — and 15 181 classes scanned in total, because the gate checks the dependencies the diagnostics CLI shades in as well: a vendored stamped class breaks a consumer exactly as one of ours would. Enforced by a CI gate that reads the published
+  same flag and the same exact JDK. As of 0.11.0: 2 286 classes of ours across the eight published modules, class-file major 69, zero preview-stamped — and 15 185 classes scanned in total, because the gate checks the dependencies the diagnostics CLI shades in as well: a vendored stamped class breaks a consumer exactly as one of ours would. Enforced by a CI gate that reads the published
   JARS rather than the sources, scoped to the reactor's declared modules so a partial build fails
   instead of passing on whatever is on disk (`tools/preview-bytecode-scan/`). The JDK baseline moves 26 → 25, which is a widening for
   consumers. A second artifact, `0.11.0-preview`, carries `StructuredTaskScope` on the newest JDK for
@@ -29,8 +29,14 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 - **SPI compatibility gate** — `tools/spi-api-diff/` compiles `exeris-kernel-spi` at any two revisions
   straight from git (the module depends only on `java.*`/`jdk.*`, so every revision in history builds
   with nothing but a JDK) and diffs them with japicmp, classifying each finding by the maturity label
-  declared in `docs/stability-matrix.md`. A binary-incompatible change to a surface declared `stable`
-  fails CI (`spi-compatibility-gate` job); `preview`/`experimental` changes are reported, not gated.
+  declared in `docs/stability-matrix.md`. An incompatible change to a surface declared `stable` fails
+  CI (`spi-compatibility-gate` job); `preview`/`experimental` changes are reported, not gated. The
+  gate asks that in **both** senses — binary and source — because they disagree on the change a
+  stability promise most needs to catch: adding an abstract method to an interface is binary
+  compatible (an existing implementor's class file still links, then fails at invoke time with
+  `AbstractMethodError`), so a binary-only check speaks to callers and says nothing to implementors.
+  `FlowExecutionPlan.definitionVersion()` landed abstract on a `stable` surface during this milestone
+  and the binary-only gate reported it green.
   A second check fails the build when any SPI class resolves to no maturity label — which is how
   `spi.scheduling` and `spi.storage.blob` were found missing from the matrix, and then 25
   unclassified `eu.exeris.kernel.spi.http` classes (including the `HttpRequest` / `HttpResponse` /

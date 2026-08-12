@@ -142,8 +142,8 @@ inspection.
 ## Consequences
 
 - The distributed artifact loads on JDK 25 LTS with no flags, and imposes none on consumers.
-- Measured after the change: **2 282 classes of ours across the eight published modules, class-file
-  major 69, zero preview-stamped**, out of 15 181 the gate scans in total — it checks the
+- Measured after the change: **2 286 classes of ours across the eight published modules, class-file
+  major 69, zero preview-stamped**, out of 15 185 the gate scans in total — it checks the
   dependencies the diagnostics CLI shades in as well. Test fixtures outside those jars remain
   preview-stamped and are not published.
 - The figure first recorded here was **930 classes**, and it is worth keeping the correction visible
