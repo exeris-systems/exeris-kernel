@@ -58,6 +58,12 @@ final class CommunityS3DownloadHandle implements BlobDownloadHandle {
         // size() is the write cursor: what this response actually put there.
         this.available = body == null
                 ? 0L
+                // Math.max/Math.min, not Math.clamp, and Sonar will keep asking. clamp is partial:
+                // it throws when min > max, so a negative `available` — which this floors to zero —
+                // would become an IllegalArgumentException from a constructor whose whole job here
+                // is to be defensive. Unreachable through today's two call sites, both of which pass
+                // a floored slice length, but trading a total expression for a throwing one to
+                // satisfy a style rule is the wrong direction.
                 : Math.max(0L, Math.min(available, body.size() - start));
     }
 
