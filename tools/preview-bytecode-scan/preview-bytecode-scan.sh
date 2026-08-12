@@ -38,6 +38,7 @@ import pathlib, struct, sys, xml.etree.ElementTree as ET, zipfile
 
 expect_major = int(sys.argv[1])
 scanned = 0
+owned = 0
 preview = []
 wrong_major = []
 
@@ -67,11 +68,13 @@ def owned_by_us(entry):
 
 
 def inspect(name, entry, raw):
-    global scanned
+    global scanned, owned
     if len(raw) < 8 or raw[:4] != b'\xca\xfe\xba\xbe':
         return
     minor, major = struct.unpack('>HH', raw[4:8])
     scanned += 1
+    if owned_by_us(entry):
+        owned += 1
     # Preview stamp: checked on EVERY class in the jar. A stamped third-party class would break a
     # consumer exactly as one of ours would, and the uber-jar CLI bundles its dependencies.
     if minor == 0xFFFF:
@@ -144,7 +147,13 @@ if scanned == 0:
     print("preview-bytecode gate: FAILED — scanned 0 classes; run `mvn package` first")
     sys.exit(1)
 
-print(f"preview-bytecode gate: scanned {scanned} distributed classes across "
+# BOTH counts, because the docs quote both and only one of them was ever printed. The release
+# notes, the CHANGELOG, ADR-066 and the platform guide all cite "N classes of ours out of M
+# scanned"; M came from this line and N came from whoever re-derived it alongside. That
+# re-derivation has been wrong twice — a "930" that predated this gate reading the TCK test-jar,
+# and a "311 of 927" on the preview line for the same reason. A figure a document quotes should
+# come out of the instrument that measures it, not from a script standing next to it.
+print(f"preview-bytecode gate: {owned} classes of ours out of {scanned} scanned across "
       f"{len(expected_modules)} reactor module(s) "
       f"(expecting class-file major {expect_major}, no preview stamp)")
 

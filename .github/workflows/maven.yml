@@ -239,7 +239,14 @@ jobs:
           # Highest released version, NOT `git describe`: patch releases are cut on main, so on a
           # development/* branch the last *reachable* tag can be older than the latest published
           # one. Reachability is irrelevant — this compares two API surfaces, not two histories.
-          BASELINE="$(git tag --sort=-v:refname --list 'v*' | head -1)"
+          # Strict vMAJOR.MINOR.PATCH, not the bare `v*` glob this used to take. The glob picks the
+          # highest tag matching a pattern, so any tag that lands inside it decides the baseline —
+          # and `git tag --sort=-v:refname` sorts `v0.11.0-preview` ABOVE `v0.11.0` (measured). One
+          # suffixed tag on the preview line would therefore have made THIS line diff its SPI
+          # against a tree that is not its ancestor: value classes, StructuredTaskScope signatures,
+          # a baseline that is garbage in either direction. The preview line tags `preview/vX.Y.Z`
+          # for that reason, but a naming convention nobody can enforce is not a guard — this is.
+          BASELINE="$(git tag --list 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)"
           if [ -z "$BASELINE" ]; then
             echo "no release tag found — nothing to compare against"; exit 0
           fi
