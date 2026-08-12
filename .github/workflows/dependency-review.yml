@@ -40,7 +40,7 @@ jobs:
             SSPL-1.0,
             EPL-1.0, EPL-2.0,
             MPL-2.0
-          # The `eu.exeris/*` entries are this repository's own reactor modules, which the reactor
+          # The `eu.exeris.preview/*` entries are this repository's own reactor modules, which the reactor
           # POMs declare as dependencies of each other. They report an unknown licence because the
           # dependency graph reads each module POM on its own and does not resolve the parent that
           # carries the `<licenses>` block — so the warning is about POM inheritance, not about an
@@ -58,10 +58,10 @@ jobs:
             pkg:githubactions/SonarSource/sonarqube-scan-action,
             pkg:maven/com.puppycrawl.tools/checkstyle,
             pkg:maven/org.jacoco/jacoco-maven-plugin,
-            pkg:maven/eu.exeris/exeris-kernel-bom,
-            pkg:maven/eu.exeris/exeris-kernel-build-config,
-            pkg:maven/eu.exeris/exeris-kernel-spi,
-            pkg:maven/eu.exeris/exeris-kernel-core,
-            pkg:maven/eu.exeris/exeris-kernel-community,
-            pkg:maven/eu.exeris/exeris-kernel-community-kafka,
-            pkg:maven/eu.exeris/exeris-kernel-community-testkit
+            pkg:maven/eu.exeris.preview/exeris-kernel-bom,
+            pkg:maven/eu.exeris.preview/exeris-kernel-build-config,
+            pkg:maven/eu.exeris.preview/exeris-kernel-spi,
+            pkg:maven/eu.exeris.preview/exeris-kernel-core,
+            pkg:maven/eu.exeris.preview/exeris-kernel-community,
+            pkg:maven/eu.exeris.preview/exeris-kernel-community-kafka,
+            pkg:maven/eu.exeris.preview/exeris-kernel-community-testkit

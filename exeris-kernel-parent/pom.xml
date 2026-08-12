@@ -5,9 +5,9 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>eu.exeris</groupId>
+        <groupId>eu.exeris.preview</groupId>
         <artifactId>exeris-kernel-root</artifactId>
-        <version>0.11.0-preview-SNAPSHOT</version>
+        <version>0.11.0</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
@@ -90,7 +90,7 @@
     <dependencyManagement>
         <dependencies>
             <dependency>
-                <groupId>eu.exeris</groupId>
+                <groupId>eu.exeris.preview</groupId>
                 <artifactId>exeris-kernel-bom</artifactId>
                 <version>${project.version}</version>
                 <type>pom</type>
@@ -126,7 +126,7 @@
                         <version>7.22.0</version>
                     </dependency>
                     <dependency>
-                        <groupId>eu.exeris</groupId>
+                        <groupId>eu.exeris.preview</groupId>
                         <artifactId>exeris-kernel-build-config</artifactId>
                         <version>${project.version}</version>
                     </dependency>
@@ -155,7 +155,7 @@
                 <version>3.6.0</version>
                 <dependencies>
                     <dependency>
-                        <groupId>eu.exeris</groupId>
+                        <groupId>eu.exeris.preview</groupId>
                         <artifactId>exeris-kernel-build-config</artifactId>
                         <version>${project.version}</version>
                     </dependency>
@@ -189,7 +189,7 @@
                 <version>4.3</version>
                 <dependencies>
                     <dependency>
-                        <groupId>eu.exeris</groupId>
+                        <groupId>eu.exeris.preview</groupId>
                         <artifactId>exeris-kernel-build-config</artifactId>
                         <version>${project.version}</version>
                     </dependency>
