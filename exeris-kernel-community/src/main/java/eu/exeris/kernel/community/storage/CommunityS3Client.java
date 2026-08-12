@@ -145,6 +145,16 @@ final class CommunityS3Client implements AutoCloseable {
      * @return the metadata, or empty when no such object exists
      */
     /* default */ Optional<BlobMetadata> head(String objectKey, BlobRef ref, String operation) {
+        return head(objectKey, ref, operation, false);
+    }
+
+    /**
+     * As {@link #head(String, BlobRef, String)}, but refuses a response that does not declare a size.
+     *
+     * @param requireDeclaredSize {@code true} for callers that turn the size into a byte count
+     */
+    /* default */ Optional<BlobMetadata> head(String objectKey, BlobRef ref, String operation,
+                                              boolean requireDeclaredSize) {
         HttpResponse response = send(HttpMethod.HEAD, objectKey, List.of());
         try {
             int code = response.status().code();
@@ -154,7 +164,23 @@ final class CommunityS3Client implements AutoCloseable {
             if (code != HttpStatus.OK.code()) {
                 throw FAILURES.remoteRefused(operation, ref.container(), code);
             }
-            return Optional.of(new BlobMetadata(ref, CommunityS3Responses.sizeOf(response),
+            long size = CommunityS3Responses.sizeOf(response);
+            if (size == CommunityS3Responses.SIZE_UNDECLARED) {
+                if (requireDeclaredSize) {
+                    // Only the download path refuses. It is the one that turns this number into
+                    // "how many bytes to fetch", where an invented 0 becomes an empty object the
+                    // caller cannot distinguish from a real one.
+                    throw FAILURES.transferFailed(operation, ref.container(), null);
+                }
+                // stat() and delete() do not. stat() reporting an unknown size as 0 is a degraded
+                // description of an object the caller still learns exists; delete() uses this call
+                // only as an existence probe and never reads the size at all. Refusing here would
+                // make an existing object undeletable on a store that omits Content-Length, and
+                // undeletable identically on every retry — which is precisely the idempotent retry
+                // BlobStore.delete promises is safe.
+                size = 0L;
+            }
+            return Optional.of(new BlobMetadata(ref, size,
                     CommunityS3Responses.contentTypeOf(response)));
         } finally {
             CommunityS3Responses.closeBody(response);

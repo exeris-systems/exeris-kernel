@@ -9,6 +9,7 @@
 package eu.exeris.kernel.tck.contract.persistence;
 
 import eu.exeris.kernel.spi.security.ImmutableStorageContext;
+import eu.exeris.kernel.spi.exceptions.persistence.PersistenceProviderException;
 import eu.exeris.kernel.spi.security.StorageContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -110,7 +111,14 @@ public abstract class AbstractSharedScopeAccessMatrixTck {
                 .as("reads widening MUST NOT relax writes: inside the shared partition a tenant may "
                         + "still only write rows it owns. A binding that lets this through has made "
                         + "cross-tenant mutation possible, which ADR-012 §4b.4 puts out of scope")
-                .isInstanceOf(Exception.class);
+                // PersistenceProviderException, not Exception. Exception.class accepted anything at
+                // all, so a fixture that never reached the database — a missing table, an unbound
+                // context, a null connection — read as "the store refused the write", which is the
+                // one reading this case must not have. Excluding a list of harness-failure types
+                // instead was no better: it still passes on any type nobody thought to list.
+                // Naming the persistence family says the refusal came from the store; the SQLSTATE
+                // underneath stays the binding's business.
+                .isInstanceOf(PersistenceProviderException.class);
 
         assertThat(readVisible(CTX_B_SHARED))
                 .as("and the refused write left nothing behind")

@@ -39,6 +39,14 @@ Five numeric fields — `minute hour day-of-month month day-of-week` — over `0
 `1-12`, `0-7` (both `0` and `7` mean Sunday). Each field is a comma-separated list of terms, where a
 term is `*`, a value, a `lo-hi` range, or either followed by `/step`.
 
+**Steps are strides and have no upper bound.** `/step` must be at least `1`, and beyond that only the
+two-digit parse limits it — a step of `100` is refused for its length, not for its size. A step wider
+than the field it strides through is a schedule, not a typo: it passes every value but the first, so
+it fires exactly once per cycle. That is what `0 */24 * * *` means, and it is the common spelling of
+"daily". Note the consequence, which reads backwards at first: `*/24` on hours fires **once**, while
+`*/23` fires **twice** (at `0` and `23`). Any bound placed at the field's upper value would therefore
+reject the first and admit the second.
+
 **Deliberately absent:** a seconds field, `@reboot` and friends, `?`, `L`, `W`, `#`, and name aliases
 such as `MON` or `JAN`. Names are excluded despite being common because implementations disagree on
 whether day-of-week `0` is Sunday or Monday, and the alias spelling hides that disagreement; numbers

@@ -33,7 +33,10 @@ final class CommunityHttpResponseHeaders {
 
     /**
      * Writes the header block, supplying {@code Content-Length} and {@code Connection} only where the
-     * response did not already state them — an explicit header from the application wins.
+     * response did not already state them — an explicit header from the application wins, with one
+     * exception: a {@code Connection} header is dropped when {@code keepAlive} is false. Connection
+     * lifetime is the kernel's to state, and a drain that has resolved to close the socket must not
+     * announce keep-alive on it. See the loop below.
      *
      * @param keepAlive whether the connection survives this response; see
      *                  {@code CommunityHttpExchange#resolveKeepAlive()} for when that is decided
