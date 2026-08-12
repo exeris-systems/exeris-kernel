@@ -98,6 +98,8 @@ layer above it, unchanged.
 7. **The default is "no policy declared", and it preserves today's behaviour.** An application that
    supplies nothing sees exactly what it sees now. The mechanism is opt-in, consistent with the
    ROADMAP's discipline that new SPI surface arrives as an option rather than a new default cost.
+   *Second sentence corrected during implementation — see amendment A1. The decision stands; the
+   claim about what it preserves did not.*
 8. **`AbstractHttpRoutePolicyTck` plus a Community binding are the merge gate.** New SPI surface
    without executable contract coverage does not merge. The TCK must assert the deny paths and the
    unmatched-route path, not only that a matching rule admits — a policy suite that only proves
@@ -128,6 +130,29 @@ Also corrected **in this slice**, because it misled the very analysis that produ
 claimed registry wiring was still pending when Sprint 4 had shipped it. That is a factual error about
 the past, not target state, so it is fixed now rather than deferred to the implementation — leaving a
 known-false sentence in place while citing it as misleading would be indefensible.
+
+## Amendments (settled during implementation, v0.11)
+
+**A1 — The default is opt-in, but it does not "preserve today's behaviour".** Obligation 7 said an
+application that supplies nothing "sees exactly what it sees now". That was wrong about the code it
+replaced. Up to 0.10 `CommunityHttpRequestDispatcher` gated on a `/secure` prefix with
+`security:read` / `security:write` compiled in, and obligation 4 deletes that convention on purpose.
+So an application that declares no policy does not keep what it had: routes the prefix used to cover
+are served to anonymous callers.
+
+The decision is unchanged — the seam stays opt-in, and the trade-off entry "the default leaves
+applications unprotected" already said so in the same breath. What changes is that the ADR may not
+also claim continuity. Both things cannot be true, and the sentence that softened the exposure is the
+one that has to go. It survived into the dispatcher comment and into `security.md`, where it read as
+a reassurance that nothing needed doing on upgrade; the migration step is real and the release notes
+carry it.
+
+Related: the last trade-off entry predicted that binding `SECURITY_PROVIDER` would mean requests
+under `/secure` "will now be authenticated". With no policy declared they are not. `permitAll()`
+returns before the interceptor runs, so no `PrincipalContext` is established even for a caller
+presenting a valid token. That is correct for a route with no requirement — `authenticated()` is the
+`RouteRequirement.Kind` that asks for an identity without demanding a scope — but it is not what the
+trade-off described.
 
 ## Consequences
 

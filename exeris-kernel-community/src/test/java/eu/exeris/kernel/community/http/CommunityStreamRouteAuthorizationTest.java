@@ -8,6 +8,7 @@
  */
 package eu.exeris.kernel.community.http;
 
+import eu.exeris.kernel.core.security.SecurityInterceptor;
 import eu.exeris.kernel.spi.http.HttpExchange;
 import eu.exeris.kernel.spi.http.HttpMethod;
 import eu.exeris.kernel.spi.http.HttpRequest;
@@ -25,7 +26,10 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 
 /**
  * A streaming route is subject to ADR-061 exactly as a respond-once route is.
@@ -111,13 +115,34 @@ class CommunityStreamRouteAuthorizationTest {
     }
 
     @Test
-    @DisplayName("no policy bound leaves streaming exactly as it behaved before ADR-061")
+    @DisplayName("no policy bound admits this route — which is not the same as changing nothing")
     void noPolicyOpensTheStream() {
         AtomicBoolean opened = new AtomicBoolean();
 
+        // `/events` never started with `/secure`, so this route is genuinely unchanged. A route that
+        // DID would also be admitted here, and that is the ADR-061 migration step: the prefix
+        // convention is gone, so declaring no policy does not preserve what the prefix enforced.
         new CommunityHttpRequestDispatcher(mock(MemoryAllocator.class), null, null, null, null)
                 .dispatchStream(STREAM_REQUEST, RecordingExchange::new, () -> opened.set(true));
 
         assertThat(opened).isTrue();
+    }
+
+    @Test
+    @DisplayName("a permit-all route establishes no principal, even with an interceptor bound")
+    void permitAllRunsNoInterceptor() {
+        SecurityInterceptor interceptor = mock(SecurityInterceptor.class);
+        AtomicBoolean opened = new AtomicBoolean();
+
+        new CommunityHttpRequestDispatcher(mock(MemoryAllocator.class), interceptor, null, null,
+                (method, path) -> RouteRequirement.permitAll())
+                .dispatchStream(STREAM_REQUEST, RecordingExchange::new, () -> opened.set(true));
+
+        assertThat(opened).isTrue();
+        // Documented in security.md, and asserted here because it is the kind of property a later
+        // refactor flips silently: permitAll() means no requirement, so the interceptor never runs
+        // and the handler sees no PrincipalContext even from a caller presenting a valid token. A
+        // route that wants an identity without demanding a scope declares authenticated() instead.
+        verify(interceptor, never()).intercept(any(), any());
     }
 }
