@@ -133,6 +133,13 @@ public final class RlsConnectionInterceptor implements ConnectionInterceptor {
         // neither session key on a pooled connection that still carries the previous request's — the
         // silent cross-tenant read this class was repaired for, reintroduced by an enum edit
         // elsewhere and reported by nothing.
+        //
+        // The guarantee survives version skew, which a statement's would not have. IsolationStrategy
+        // ships in exeris-kernel-spi and this class in exeris-kernel-community, and the two publish
+        // independently — so a newer SPI can hand an older driver a constant it was never compiled
+        // against. javac emits a synthetic MatchException throw for an exhaustive enum switch
+        // expression (verified in the bytecode, not assumed), so that request fails loudly instead
+        // of being served with an unpublished tenant key.
         boolean setsOwnSearchPath = switch (strategy) {
             case SEPARATED_SCHEMA -> true;
             case SHARED, DEDICATED -> false;

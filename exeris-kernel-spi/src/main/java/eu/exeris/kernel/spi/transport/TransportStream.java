@@ -126,11 +126,17 @@ public interface TransportStream extends AutoCloseable {
      *
      * @param buffer loaned buffer to send; ownership transferred on normal return, retained by
      *               the caller on any thrown exception (the caller must then close it)
-     * @param length number of valid bytes in the buffer (from offset 0)
+     * @param length number of valid bytes in the buffer (from offset 0); must be in
+     *               {@code [0, buffer.capacity()]}
      * @throws eu.exeris.kernel.spi.exceptions.transport.TransportException on failure — the
      *         caller owns and must close {@code buffer}
      * @throws IllegalStateException if this stream has been closed — the caller owns and must
      *         close {@code buffer}
+     * @throws IllegalArgumentException if {@code length} is negative or exceeds
+     *         {@code buffer.capacity()} — the caller owns and must close {@code buffer}.
+     *         Stated here because the TCK gates it: the in-tree driver has always rejected an
+     *         out-of-range length, but a contract that named only the other two throws left an
+     *         out-of-tree implementation free to read past the buffer instead
      */
     void queueWrite(LoanedBuffer buffer, int length);
 

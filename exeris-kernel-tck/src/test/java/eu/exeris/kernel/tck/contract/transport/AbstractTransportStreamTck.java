@@ -486,13 +486,21 @@ public abstract class AbstractTransportStreamTck {
         }
 
         @Test
-        @DisplayName("queueWrite() after reset() is rejected (and the buffer is released)")
+        @DisplayName("queueWrite() after reset() is rejected, and the buffer stays with the caller")
         void queueWriteAfterResetThrows() {
             TransportStream writer = streams.writer();
             writer.reset(0L);
-            LoanedBuffer buf = allocator.allocate(AllocationHint.MICRO);
-            assertThatThrownBy(() -> writer.queueWrite(buf, 1))
-                    .isInstanceOf(IllegalStateException.class);
+            // try-with-resources, and the name no longer says "the buffer is released". It said that
+            // because the driver used to close on this branch — which the SPI never asked for and
+            // v0.11 removed, so from then on this test allocated a buffer, asserted the throw, and
+            // released nothing. A leak inside the suite that runs LeakDetectionMode.PARANOID.
+            try (LoanedBuffer buf = allocator.allocate(AllocationHint.MICRO)) {
+                assertThatThrownBy(() -> writer.queueWrite(buf, 1))
+                        .isInstanceOf(IllegalStateException.class);
+                assertThat(buf.isAlive())
+                        .as("the caller still owns it after the throw, so it must still be closeable")
+                        .isTrue();
+            }
         }
     }
 
