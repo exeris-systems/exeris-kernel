@@ -5,9 +5,9 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>eu.exeris</groupId>
+        <groupId>eu.exeris.preview</groupId>
         <artifactId>exeris-kernel-parent</artifactId>
-        <version>0.11.0-preview-SNAPSHOT</version>
+        <version>0.11.0</version>
         <relativePath>../exeris-kernel-parent/pom.xml</relativePath>
     </parent>
     <artifactId>exeris-kernel-diagnostics-cli</artifactId>
@@ -34,7 +34,7 @@
     <dependencies>
         <!-- Brings spi + core + the Community providers to bootstrap and introspect. -->
         <dependency>
-            <groupId>eu.exeris</groupId>
+            <groupId>eu.exeris.preview</groupId>
             <artifactId>exeris-kernel-community</artifactId>
             <version>${project.version}</version>
         </dependency>

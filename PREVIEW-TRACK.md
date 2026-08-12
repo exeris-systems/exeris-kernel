@@ -15,8 +15,8 @@ here, where `StructuredTaskScope` is the mechanism.
 | JDK | 25 LTS | **newest, LTS or not** — JDK 28 EA today |
 | Preview flag | main sources compile without it | `--enable-preview`, by definition |
 | Concurrency | `core.concurrent.StructuredScope` (virtual threads + explicit `ScopedValue` carrier) | `StructuredTaskScope` |
-| Artifact | `0.11.0-SNAPSHOT` | `0.11.0-preview-SNAPSHOT` |
-| Distributed bytecode | major 69, **zero** preview-stamped | major 72, **311 of 927** preview-stamped — expected here |
+| Artifact | `eu.exeris:*:0.11.0` | **`eu.exeris.preview:*:0.11.0`** — a distinct groupId, same version line |
+| Distributed bytecode | major 69, **zero** preview-stamped | major 72, **783 of 2275** preview-stamped — expected here |
 
 Tracking the newest JDK is a **requirement, not an indulgence**: this line converges into an LTS, so
 it has to have absorbed the API churn *before* that LTS lands, not after.
@@ -201,25 +201,31 @@ missed.
 - **A benchmark for the value carriers.** Six are declared (below) and none is measured; the numbers
   need the benchmark harness and are deliberately post-cut. This document makes **no claim** about
   what value classes buy until one exists.
-- **Decide the coordinates for a preview RELEASE, before the cut.** SNAPSHOT publishing is on as of
-  v0.11 (the workflow's publish step now includes this branch), and for SNAPSHOTs the risk below is
-  tolerable because consuming one is always an explicit act. A *release* version is different, and
-  the reason is measured rather than assumed:
+- **Coordinates for a preview RELEASE: decided at the 0.11.0 cut — a distinct groupId,
+  `eu.exeris.preview:*`, with the version staying plain `0.11.0`.** Opting in is therefore an explicit
+  coordinate change, and the two lines never share a version axis to compete on.
+
+  The hazard that forced the decision is real but narrower than this document first claimed. Measured
+  on `maven-artifact` 3.9.16:
 
   ```
   ComparableVersion:  0.11.0-preview  >  0.11.0     and  >  0.10.2
+  VersionRange     :  [0.11.0,) contains 0.11.0-preview  ->  true
+  exact pin        :  <version>0.11.0</version>          ->  resolves to 0.11.0
   ```
 
-  Maven sorts an **unknown qualifier after the release**, so `0.11.0-preview` published under the
-  same `groupId:artifactId` would win a `[0.11.0,)` range and `RELEASE` metadata resolution — it
-  would capture precisely the consumers who came for the preview-clean artifact. Publishing it that
-  way is worse than not publishing it at all.
+  So an **exact pin is immune** — Maven never upgrades a pinned version. What `0.11.0-preview` under
+  shared coordinates would have captured is narrower: a version **range**, `RELEASE`/`LATEST`
+  resolution, and the `<release>` field of `maven-metadata.xml`, which makes update tooling report a
+  "newer" version to mainline consumers. The earlier wording here — that it "would capture precisely
+  the consumers who came for the preview-clean artifact" — overstated it, and that overstatement is
+  what made this read as a blocker on every cut.
 
-  Three ways out, none yet chosen: a distinct **groupId** (`eu.exeris.preview:*`, so opting in is an
-  explicit coordinate change and the version can stay plain `0.11.0`); a distinct **artifactId**
-  suffix on all eleven modules; or a qualifier Maven sorts *before* the release, which means one of
-  its known set (`alpha`/`beta`/`milestone`/`rc`) and therefore a name that misdescribes what this
-  line is.
+  It was still worth closing now rather than at the first Central deploy, and that is the actual
+  reason: today both lines publish only to GitHub Packages, which nobody resolves without configuring
+  it, so the exposure is theoretical. **Maven Central is where it stops being reversible** — a
+  published version can never be replaced or withdrawn there. Changing coordinates today costs an
+  edit to eleven poms; after a Central deploy it costs a groupId migration for every consumer.
 
 ## JEP 401: six carriers are value classes here
 

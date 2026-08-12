@@ -5,9 +5,9 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>eu.exeris</groupId>
+        <groupId>eu.exeris.preview</groupId>
         <artifactId>exeris-kernel-parent</artifactId>
-        <version>0.11.0-preview-SNAPSHOT</version>
+        <version>0.11.0</version>
         <relativePath>../exeris-kernel-parent/pom.xml</relativePath>
     </parent>
 
@@ -51,7 +51,7 @@
     <dependencies>
         <!-- SPI contracts — The Wall -->
         <dependency>
-            <groupId>eu.exeris</groupId>
+            <groupId>eu.exeris.preview</groupId>
             <artifactId>exeris-kernel-spi</artifactId>
         </dependency>
 
@@ -68,7 +68,7 @@
 
         <!-- TCK abstract test contracts — test scope only -->
         <dependency>
-            <groupId>eu.exeris</groupId>
+            <groupId>eu.exeris.preview</groupId>
             <artifactId>exeris-kernel-tck</artifactId>
             <classifier>tests</classifier>
             <type>test-jar</type>

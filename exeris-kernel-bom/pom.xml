@@ -5,9 +5,9 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>eu.exeris</groupId>
+        <groupId>eu.exeris.preview</groupId>
         <artifactId>exeris-kernel-root</artifactId>
-        <version>0.11.0-preview-SNAPSHOT</version>
+        <version>0.11.0</version>
     </parent>
 
     <artifactId>exeris-kernel-bom</artifactId>
@@ -48,38 +48,38 @@
     <dependencyManagement>
         <dependencies>
             <dependency>
-                <groupId>eu.exeris</groupId>
+                <groupId>eu.exeris.preview</groupId>
                 <artifactId>exeris-kernel-spi</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>eu.exeris</groupId>
+                <groupId>eu.exeris.preview</groupId>
                 <artifactId>exeris-kernel-core</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>eu.exeris</groupId>
+                <groupId>eu.exeris.preview</groupId>
                 <artifactId>exeris-kernel-community</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>eu.exeris</groupId>
+                <groupId>eu.exeris.preview</groupId>
                 <artifactId>exeris-kernel-community-testkit</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>eu.exeris</groupId>
+                <groupId>eu.exeris.preview</groupId>
                 <artifactId>exeris-kernel-community-kafka</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>eu.exeris</groupId>
+                <groupId>eu.exeris.preview</groupId>
                 <artifactId>exeris-kernel-tck</artifactId>
                 <version>${project.version}</version>
                 <scope>test</scope>
             </dependency>
             <dependency>
-                <groupId>eu.exeris</groupId>
+                <groupId>eu.exeris.preview</groupId>
                 <artifactId>exeris-kernel-tck</artifactId>
                 <version>${project.version}</version>
                 <classifier>tests</classifier>
