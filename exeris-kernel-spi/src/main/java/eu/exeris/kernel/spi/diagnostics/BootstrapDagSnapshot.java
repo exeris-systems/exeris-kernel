@@ -23,7 +23,7 @@ import java.util.Objects;
  * @param nodes         the DAG nodes; defensively copied, never {@code null}
  * @since 0.9.0
  */
-public record BootstrapDagSnapshot(
+public value record BootstrapDagSnapshot(
         String schemaVersion,
         Instant capturedAt,
         List<DagNode> nodes) {

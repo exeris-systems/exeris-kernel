@@ -23,7 +23,7 @@ import java.util.Objects;
  * @param providers     the discovered providers; defensively copied, never {@code null}
  * @since 0.9.0
  */
-public record ProvidersSnapshot(
+public value record ProvidersSnapshot(
         String schemaVersion,
         Instant capturedAt,
         List<ProviderDescriptor> providers) {

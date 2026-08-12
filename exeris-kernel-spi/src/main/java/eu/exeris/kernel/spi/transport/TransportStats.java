@@ -13,9 +13,10 @@ package eu.exeris.kernel.spi.transport;
  *
  * <h2>Zero-Allocation</h2>
  * <p>This record is designed for periodic sampling (every 1–5 s) by the telemetry
- * subsystem. It is a small, shallow data carrier, designed to be Valhalla-ready
- * (future {@code value record} migration is expected once JEP 401 is mainline,
- * at which point instances will scalarise on hot paths via JIT Escape Analysis).
+ * subsystem. It is a small, shallow data carrier, declared {@code value record} on the
+ * `preview` line (JEP 401); the distributed line compiles the same source as an identity
+ * {@code record}, and the modifier is asserted by {@code Class::isValue} in the module's
+ * value-carrier registry test.
  *
  * <h2>Protocol Blindness</h2>
  * <p>Fields are protocol-agnostic. Both Community and Enterprise transport bindings
@@ -39,7 +40,7 @@ package eu.exeris.kernel.spi.transport;
  * @see TransportEngine#stats()
  * @since 0.5.0
  */
-public record TransportStats(
+public value record TransportStats(
         int activeConnections,
         long activeStreams,
         long totalAccepted,

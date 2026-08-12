@@ -30,9 +30,9 @@ import java.util.function.Supplier;
  *
  * <h2>Design Philosophy</h2>
  * <p>Configuration is no longer a {@code Map<String, Object>} or a mutable POJO.
- * Each section is an immutable, identity-free data carrier: today a {@code record},
- * tomorrow a {@code value record} (JEP 401 / Valhalla). The JVM can flatten value
- * records into arrays and stack frames, eliminating pointer-chasing on hot-paths.
+ * Each section is an immutable, identity-free data carrier — a {@code value record} on the
+ * `preview` line (JEP 401), the same source compiled as an identity {@code record} on the
+ * distributed line.
  *
  * <h2>Lazy Initialization (JEP 526 Readiness)</h2>
  * <p>{@link #kernelSettings()} returns a {@link Supplier}{@code <KernelSettings>} today.
@@ -192,17 +192,17 @@ public interface ConfigProvider {
     // =========================================================================
     // Value Records — Kernel Settings Hierarchy
     //
-    // All records are @ValueCandidate — ready for 'value record' (JEP 401).
-    // No identity operations (==, synchronized, identityHashCode) are used,
-    // enabling clean scalarization via C2 JIT Escape Analysis today.
+    // All records are declared 'value record' on the preview line (JEP 401).
+    // No identity operations (==, synchronized, identityHashCode) are used.
     // =========================================================================
 
     /**
      * Top-level, immutable kernel settings.
      *
      * <h3>Memory layout</h3>
-     * <p>Today: 3 references + 1 long ≈ 40 bytes on heap per instance.
-     * With {@code value record} (JEP 401): inlined into parent, zero heap allocation.
+     * <p>3 references + 1 long ≈ 40 bytes on heap per instance as an identity record.
+     * Declared {@code value record} here; what that buys is unmeasured on this line and
+     * this document claims nothing about it.
      *
      * <h3>Strong Typing</h3>
      * <p>{@code profile} is now a {@link KernelProfile} enum — JVM singletons, zero heap
@@ -219,7 +219,7 @@ public interface ConfigProvider {
      * @param telemetry      telemetry and observability settings
      */
     @ValueCandidate
-    record KernelSettings(
+    value record KernelSettings(
             KernelProfile profile,
             long globalMemoryMb,
             NetworkSettings network,
@@ -266,7 +266,7 @@ public interface ConfigProvider {
      * @param quicEnabled              whether QUIC transport is active
      */
     @ValueCandidate
-    record NetworkSettings(
+    value record NetworkSettings(
             int port,
             int bufferSize,
             boolean nativeTransportPreferred,
@@ -292,7 +292,7 @@ public interface ConfigProvider {
      * @param runMigrations  whether to run schema migrations on startup
      */
     @ValueCandidate
-    record PersistenceSettings(
+    value record PersistenceSettings(
             String jdbcUrl,
             String username,
             String password,
@@ -389,7 +389,7 @@ public interface ConfigProvider {
      *                       (dormant until the tracing milestone; see the reserved-knobs note above)
      */
     @ValueCandidate
-    record TelemetrySettings(
+    value record TelemetrySettings(
             boolean jfrEnabled,
             boolean metricsEnabled,
             boolean tracingEnabled,
@@ -406,8 +406,8 @@ public interface ConfigProvider {
     // =========================================================================
 
     /**
-     * Documents that this record is a candidate for promotion to
-     * {@code value record} (JEP 401 / Project Valhalla).
+     * Documents that this record satisfies the requirements for {@code value record}
+     * (JEP 401 / Project Valhalla), which it is declared as on the {@code preview} line.
      *
      * <p>Requirements already satisfied:
      * <ul>

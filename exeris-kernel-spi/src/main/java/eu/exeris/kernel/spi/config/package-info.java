@@ -13,7 +13,7 @@
  * <p>This package is implementation-blind. It contains only:
  * <ul>
  *   <li>{@link eu.exeris.kernel.spi.config.ConfigProvider} — the single SPI entry point,
- *       loaded via {@code ServiceLoader}. Contains all Valhalla-ready Value Record types.</li>
+ *       loaded via {@code ServiceLoader}. Contains all the kernel-settings value records.</li>
  *   <li>{@link eu.exeris.kernel.spi.config.Dynamic} — annotation for hot-reload fields.</li>
  *   <li>{@link eu.exeris.kernel.spi.config.KernelProfile} — profile enum (DEV/TEST/PROD).</li>
  * </ul>
@@ -26,10 +26,9 @@
  * </pre>
  *
  * <h2>Valhalla Readiness</h2>
- * <p>All records in this package are annotated {@code @ValueCandidate}.
- * No identity operations ({@code ==}, {@code synchronized}, {@code identityHashCode})
- * are used, enabling clean scalarization via C2 JIT Escape Analysis today and
- * heap-flattening once JEP 401 is mainline.
+ * <p>All records in this package are declared {@code value record} on the `preview` line
+ * (JEP 401) and annotated {@code @ValueCandidate}. No identity operations ({@code ==},
+ * {@code synchronized}, {@code identityHashCode}) are used.
  *
  * @see eu.exeris.kernel.spi.config.ConfigProvider
  * @since 0.5.0

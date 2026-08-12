@@ -17,7 +17,7 @@
  *   <li>{@link eu.exeris.kernel.spi.bootstrap.SubsystemProvider} — the
  *       {@code ServiceLoader} discovery point for subsystem sets.</li>
  *   <li>{@link eu.exeris.kernel.spi.bootstrap.BootstrapSelector} — immutable
- *       Valhalla-ready record expressing which subsystems to activate.</li>
+ *       value record expressing which subsystems to activate.</li>
  *   <li>{@link eu.exeris.kernel.spi.bootstrap.BootstrapPhase} — ordered phases
  *       ({@code FOUNDATION → SERVICES → RUNTIME}).</li>
  *   <li>{@link eu.exeris.kernel.spi.exceptions.SubsystemException} — lifecycle

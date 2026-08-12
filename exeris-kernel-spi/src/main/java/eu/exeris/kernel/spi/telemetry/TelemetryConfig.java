@@ -11,9 +11,9 @@ package eu.exeris.kernel.spi.telemetry;
 /**
  * SPI: Immutable telemetry configuration record.
  *
- * <p>Valhalla readiness: candidate for {@code value record} once JEP&nbsp;401 is mainline.
- * All components are primitives or immutable references, making this record suitable for
- * header-less, flattenable representation in future runtimes.</p>
+ * <p>Valhalla readiness: declared {@code value record} on the `preview` line (JEP&nbsp;401),
+ * asserted by {@code Class::isValue} in the module's value-carrier registry test. All components
+ * are primitives or immutable references.</p>
  *
  * @param consoleSinkEnabled   Whether to activate the text console sink (Community).
  * @param jfrSinkEnabled       Whether to emit JFR events (Community + Enterprise).
@@ -23,7 +23,7 @@ package eu.exeris.kernel.spi.telemetry;
  * @param maxEventQueueDepth   Maximum buffered events before backpressure/drop.
  * @since 0.5.0
  */
-public record TelemetryConfig(
+public value record TelemetryConfig(
         boolean consoleSinkEnabled,
         boolean jfrSinkEnabled,
         String fileSinkPath,

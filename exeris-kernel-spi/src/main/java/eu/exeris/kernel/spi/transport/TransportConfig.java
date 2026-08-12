@@ -18,9 +18,12 @@ package eu.exeris.kernel.spi.transport;
  * concern and MUST NOT leak into this record.
  *
  * <h2>Valhalla Readiness</h2>
- * <p>This is a standard {@code record} — no identity operations ({@code ==},
- * {@code synchronized}, {@code System.identityHashCode()}) may be performed on instances.
- * Future migration to {@code value record} (JEP 401) is expected.
+ * <p>Declared {@code value record} on the `preview` line (JEP 401, preview in JDK 28). The
+ * distributed line compiles the same source as an identity {@code record}; the modifier is the
+ * only difference, and it is asserted by {@code Class::isValue} in the module's value-carrier
+ * registry test rather than left to a one-time inspection.
+ * No identity operations ({@code ==}, {@code synchronized},
+ * {@code System.identityHashCode()}) may be performed on instances.
  *
  * @param mode              operational mode (SERVER/CLIENT/DUAL/DISABLED)
  * @param bindAddress       listener bind address (e.g. {@code "0.0.0.0"}); required for
@@ -46,7 +49,7 @@ package eu.exeris.kernel.spi.transport;
  * @see TransportEngine
  * @since 0.5.0
  */
-public record TransportConfig(
+public value record TransportConfig(
         TransportMode mode,
         String bindAddress,
         int port,

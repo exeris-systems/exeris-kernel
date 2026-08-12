@@ -36,9 +36,9 @@ import java.util.Optional;
  * <p>This carrier deliberately uses {@link Optional} components (an identity class today) over
  * sentinel-{@code long}s + a presence bitmask: it is a cold-path diagnostic snapshot (never on a hot
  * path or in an allocation budget), and the {@code Optional.empty()} degradation contract is materially
- * clearer than sentinels. A future Valhalla value-class migration would flatten the {@code long}/{@code int}
- * components but not the {@code Optional} ones — that is an accepted, documented cost for this record, not
- * an oversight to re-litigate during a Valhalla sweep.
+ * clearer than sentinels. This carrier is declared {@code value record} on the `preview` line, which
+ * flattens the {@code long}/{@code int} components but not the {@code Optional} ones — an accepted,
+ * documented cost for this record, settled rather than re-litigated by that sweep.
  *
  * @param schemaVersion         the wire-schema version (see {@link KernelDiagnostics#SCHEMA_VERSION})
  * @param capturedAt            the instant this snapshot was captured (best-effort, per-call)
@@ -58,7 +58,7 @@ import java.util.Optional;
  * @param aotCacheActive        whether an AOT cache is active; empty if undeterminable
  * @since 0.9.0
  */
-public record RuntimeErgonomicsSnapshot(
+public value record RuntimeErgonomicsSnapshot(
         String schemaVersion,
         Instant capturedAt,
         String gcName,

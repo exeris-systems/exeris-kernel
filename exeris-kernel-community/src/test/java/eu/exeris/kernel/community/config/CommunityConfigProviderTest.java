@@ -57,6 +57,7 @@ class CommunityConfigProviderTest {
         System.clearProperty(SYS_PREFIX + "test.long.key");
         System.clearProperty(SYS_PREFIX + "test.long.bad");
         System.clearProperty(SYS_PREFIX + "test.bool.key");
+        System.clearProperty(SYS_PREFIX + "network.port");
     }
 
     // =========================================================================
@@ -271,12 +272,19 @@ class CommunityConfigProviderTest {
         }
 
         @Test
-        @DisplayName("kernelSettings().get() returns the same instance on repeated calls (lazy-init)")
-        void lazyInitIsIdempotent() {
-            ConfigProvider.KernelSettings first  = provider.kernelSettings().get();
-            ConfigProvider.KernelSettings second = provider.kernelSettings().get();
-            // Must be exactly the same object — not just equal
-            assertThat(second).isSameAs(first);
+        @DisplayName("kernelSettings().get() resolves once — a later property change is not observed")
+        void lazyInitResolvesOnce() {
+            ConfigProvider.KernelSettings first = provider.kernelSettings().get();
+            int resolvedPort = first.network().port();
+            // Identity is no longer evidence of caching: KernelSettings is a value class on this
+            // line, so two structurally equal instances compare ==, and isSameAs() would pass for
+            // a provider that recomputed on every call. Changing an input the resolver reads and
+            // observing that the answer does not move is evidence.
+            System.setProperty(SYS_PREFIX + "network.port", String.valueOf(resolvedPort + 1));
+            assertThat(provider.kernelSettings().get().network().port())
+                    .as("settings are resolved once and cached, so a property set after the "
+                            + "first get() must not be observed")
+                    .isEqualTo(resolvedPort);
         }
 
         @Test

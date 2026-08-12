@@ -63,9 +63,27 @@ class ValhallaValueCarrierRegistryTest {
     /** Carriers declared {@code value} in this module. Every entry must carry the modifier. */
     private static final List<String> VALUE_CARRIERS = List.of(
             "eu.exeris.kernel.spi.memory.MemoryStats",
+            "eu.exeris.kernel.spi.memory.MemoryProviderConfig",
             "eu.exeris.kernel.spi.crypto.TlsHandshakeResult",
             "eu.exeris.kernel.spi.crypto.TlsShutdownResult",
-            "eu.exeris.kernel.spi.events.EventEngineStats");
+            "eu.exeris.kernel.spi.events.EventEngineStats",
+            "eu.exeris.kernel.spi.transport.TransportStats",
+            "eu.exeris.kernel.spi.transport.TransportConfig",
+            "eu.exeris.kernel.spi.telemetry.KernelEvent",
+            "eu.exeris.kernel.spi.telemetry.TelemetryConfig",
+            "eu.exeris.kernel.spi.config.ConfigProvider$KernelSettings",
+            "eu.exeris.kernel.spi.config.ConfigProvider$NetworkSettings",
+            "eu.exeris.kernel.spi.config.ConfigProvider$PersistenceSettings",
+            "eu.exeris.kernel.spi.config.ConfigProvider$TelemetrySettings",
+            "eu.exeris.kernel.spi.bootstrap.BootstrapSelector",
+            "eu.exeris.kernel.spi.bootstrap.HealthProbe$ProbeSnapshot",
+            "eu.exeris.kernel.spi.diagnostics.ProvidersSnapshot",
+            "eu.exeris.kernel.spi.diagnostics.BootstrapDagSnapshot",
+            "eu.exeris.kernel.spi.diagnostics.RuntimeErgonomicsSnapshot",
+            "eu.exeris.kernel.spi.diagnostics.SubsystemSnapshot",
+            "eu.exeris.kernel.spi.diagnostics.ProviderDescriptor",
+            "eu.exeris.kernel.spi.diagnostics.SubsystemDescriptor",
+            "eu.exeris.kernel.spi.diagnostics.DagNode");
 
     // =========================================================================
     // 1. The sweep itself must not be vacuous

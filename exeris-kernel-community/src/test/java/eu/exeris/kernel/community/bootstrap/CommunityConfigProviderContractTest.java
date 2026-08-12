@@ -65,11 +65,15 @@ class CommunityConfigProviderContractTest {
     }
 
     @Test
-    @DisplayName("kernelSettings() Supplier is idempotent — same instance on repeated calls")
+    @DisplayName("kernelSettings() Supplier is idempotent — repeated calls agree")
     void kernelSettingsIsIdempotent() {
         ConfigProvider.KernelSettings first  = provider.kernelSettings().get();
         ConfigProvider.KernelSettings second = provider.kernelSettings().get();
-        assertThat(first).isSameAs(second);
+        // Equality, not identity: KernelSettings is a value class on this line, where isSameAs()
+        // holds for any two structurally equal instances and so proves nothing about the supplier.
+        // The resolve-once guarantee is pinned by CommunityConfigProviderTest instead, which
+        // changes an input between calls.
+        assertThat(first).isEqualTo(second);
     }
 
     @Test
