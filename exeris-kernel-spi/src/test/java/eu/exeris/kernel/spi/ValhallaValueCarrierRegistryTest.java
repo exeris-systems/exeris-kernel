@@ -18,6 +18,7 @@ import java.net.URISyntaxException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -39,10 +40,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  * how {@code ExerisArchitectureTest} came to inspect zero Core and Community classes while reporting
  * green. The discovery floor below is the guard: a broken walk reports zero and reddens instead.
  *
- * <h2>Scope on this branch</h2>
- * <p>{@link #VALUE_CARRIERS} lists the carriers converted so far. The exhaustive form of this
- * check — every discovered record must be a value class unless explicitly excused — is added per
- * module as that module's sweep completes, because it cannot pass while the sweep is in flight.
+ * <h2>Why the assertion is exhaustive rather than a list</h2>
+ * <p>This module's sweep is complete, so the check is stated in the strong direction: <em>every</em>
+ * record discovered here must be a value class unless it appears in {@link #IDENTITY_BY_DESIGN} with
+ * a reason. A list of converted carriers would have to be edited in step with every conversion and
+ * would silently under-report when someone forgot; this form cannot be under-reported, and a newly
+ * added record has to be a deliberate decision either way.
  *
  * @since 0.11.0
  */
@@ -60,56 +63,18 @@ class ValhallaValueCarrierRegistryTest {
     private static final int CLASS_FLOOR = 150;
     private static final int RECORD_FLOOR = 50;
 
-    /** Carriers declared {@code value} in this module. Every entry must carry the modifier. */
-    private static final List<String> VALUE_CARRIERS = List.of(
-            "eu.exeris.kernel.spi.memory.MemoryStats",
-            "eu.exeris.kernel.spi.memory.MemoryProviderConfig",
-            "eu.exeris.kernel.spi.crypto.TlsHandshakeResult",
-            "eu.exeris.kernel.spi.crypto.TlsShutdownResult",
-            "eu.exeris.kernel.spi.events.EventEngineStats",
-            "eu.exeris.kernel.spi.transport.TransportStats",
-            "eu.exeris.kernel.spi.transport.TransportConfig",
-            "eu.exeris.kernel.spi.telemetry.KernelEvent",
-            "eu.exeris.kernel.spi.telemetry.TelemetryConfig",
-            "eu.exeris.kernel.spi.config.ConfigProvider$KernelSettings",
-            "eu.exeris.kernel.spi.config.ConfigProvider$NetworkSettings",
-            "eu.exeris.kernel.spi.config.ConfigProvider$PersistenceSettings",
-            "eu.exeris.kernel.spi.config.ConfigProvider$TelemetrySettings",
-            "eu.exeris.kernel.spi.bootstrap.BootstrapSelector",
-            "eu.exeris.kernel.spi.bootstrap.HealthProbe$ProbeSnapshot",
-            "eu.exeris.kernel.spi.diagnostics.ProvidersSnapshot",
-            "eu.exeris.kernel.spi.diagnostics.BootstrapDagSnapshot",
-            "eu.exeris.kernel.spi.diagnostics.RuntimeErgonomicsSnapshot",
-            "eu.exeris.kernel.spi.diagnostics.SubsystemSnapshot",
-            "eu.exeris.kernel.spi.diagnostics.ProviderDescriptor",
-            "eu.exeris.kernel.spi.diagnostics.SubsystemDescriptor",
-            "eu.exeris.kernel.spi.diagnostics.DagNode",
-            "eu.exeris.kernel.spi.http.HttpHeader",
-            "eu.exeris.kernel.spi.http.HttpStatus",
-            "eu.exeris.kernel.spi.http.HttpRequest",
-            "eu.exeris.kernel.spi.http.HttpResponse",
-            "eu.exeris.kernel.spi.http.HttpConfig",
-            "eu.exeris.kernel.spi.http.HttpEncodedBody",
-            "eu.exeris.kernel.spi.http.HttpTypedResponse",
-            "eu.exeris.kernel.spi.http.HttpAttemptOutcome",
-            "eu.exeris.kernel.spi.http.HttpRequestDecodingContext",
-            "eu.exeris.kernel.spi.http.HttpRequestEncodingContext",
-            "eu.exeris.kernel.spi.http.HttpResponseDecodingContext",
-            "eu.exeris.kernel.spi.http.HttpResponseEncodingContext",
-            "eu.exeris.kernel.spi.http.RetryDecision",
-            "eu.exeris.kernel.spi.http.StreamEvent",
-            "eu.exeris.kernel.spi.http.RouteRequirement",
-            "eu.exeris.kernel.spi.flow.FlowEngineCapabilities",
-            "eu.exeris.kernel.spi.flow.FlowEngineStats",
-            "eu.exeris.kernel.spi.flow.FlowEngineConfig",
-            "eu.exeris.kernel.spi.flow.ChoreographyDecision$Ignore",
-            "eu.exeris.kernel.spi.flow.ChoreographyDecision$Wake",
-            "eu.exeris.kernel.spi.flow.ChoreographyDecision$Start",
-            "eu.exeris.kernel.spi.flow.model.FlowDefinition",
-            "eu.exeris.kernel.spi.flow.model.FlowSnapshot",
-            "eu.exeris.kernel.spi.flow.model.FlowMigrationState",
-            "eu.exeris.kernel.spi.flow.model.FlowStepDescriptor",
-            "eu.exeris.kernel.spi.flow.model.FlowTransitionDescriptor");
+    /**
+     * Records this module deliberately keeps as identity classes, each with the reason.
+     *
+     * <p>Empty here: every record in the SPI is a value class. An entry is not a to-do — it is a
+     * decision, and the test below asserts such a record has <em>not</em> been converted, so
+     * converting one without removing it from this map reddens.
+     */
+    private static final Map<String, String> IDENTITY_BY_DESIGN = Map.of();
+
+    /** The hand-written {@code value class}es, which are not records and so are checked by name. */
+    private static final List<String> VALUE_CLASSES =
+            List.of("eu.exeris.kernel.spi.http.RouteRequirement");
 
     // =========================================================================
     // 1. The sweep itself must not be vacuous
@@ -142,18 +107,38 @@ class ValhallaValueCarrierRegistryTest {
     // =========================================================================
 
     @Nested
-    @DisplayName("2. Declared value carriers")
-    class DeclaredCarriers {
+    @DisplayName("2. Every carrier carries the modifier")
+    class Carriers {
 
         @Test
-        @DisplayName("Every registered carrier is a value class")
-        void registeredCarriersAreValueClasses() throws ClassNotFoundException {
-            for (String fqn : VALUE_CARRIERS) {
-                Class<?> carrier = Class.forName(fqn, false,
-                        ValhallaValueCarrierRegistryTest.class.getClassLoader());
-                assertThat(carrier.isValue())
-                        .as("%s must carry the value modifier; ACC_IDENTITY must be clear", fqn)
-                        .isTrue();
+        @DisplayName("Every record in this module is a value class, or is excused by name")
+        void everyRecordIsAValueClass() throws Exception {
+            List<String> identityRecords = discoverClasses().stream()
+                    .filter(Class::isRecord)
+                    .filter(type -> !type.isValue())
+                    .map(Class::getName)
+                    .filter(name -> !IDENTITY_BY_DESIGN.containsKey(name))
+                    .sorted()
+                    .toList();
+            assertThat(identityRecords)
+                    .as("these records still carry ACC_IDENTITY; convert them, or record the "
+                            + "reason in IDENTITY_BY_DESIGN so the decision is visible")
+                    .isEmpty();
+        }
+
+        /**
+         * The direction that keeps the exclusion map honest: an excused record must actually still
+         * be an identity class. Converting one while leaving it excused reddens here, so the map
+         * cannot quietly rot into a list of stale to-dos.
+         */
+        @Test
+        @DisplayName("Excused records really are still identity classes")
+        void excusedRecordsAreStillIdentityClasses() throws ClassNotFoundException {
+            for (Map.Entry<String, String> excused : IDENTITY_BY_DESIGN.entrySet()) {
+                assertThat(load(excused.getKey()).isValue())
+                        .as("%s is excused because %s — if that no longer holds, "
+                                + "convert it and drop the entry", excused.getKey(), excused.getValue())
+                        .isFalse();
             }
         }
 
@@ -162,15 +147,32 @@ class ValhallaValueCarrierRegistryTest {
          * through different APIs. Asserting both means a change in either reflective surface is
          * caught rather than silently trusted.
          */
+        /**
+         * Interfaces are excluded because they are neither: an interface is not a value class and
+         * does not carry {@code ACC_IDENTITY} either, so for them both reads answer "no" without
+         * disagreeing about anything.
+         */
         @Test
-        @DisplayName("accessFlags() agrees with isValue() on every registered carrier")
-        void accessFlagsAgreeWithIsValue() throws ClassNotFoundException {
-            for (String fqn : VALUE_CARRIERS) {
-                Class<?> carrier = Class.forName(fqn, false,
-                        ValhallaValueCarrierRegistryTest.class.getClassLoader());
-                assertThat(carrier.accessFlags())
-                        .as("%s is a value class, so ACC_IDENTITY must be absent", fqn)
-                        .doesNotContain(AccessFlag.IDENTITY);
+        @DisplayName("accessFlags() agrees with isValue() across the module")
+        void accessFlagsAgreeWithIsValue() throws Exception {
+            List<String> disagreeing = discoverClasses().stream()
+                    .filter(type -> !type.isInterface())
+                    .filter(type -> type.isValue() == type.accessFlags().contains(AccessFlag.IDENTITY))
+                    .map(Class::getName)
+                    .sorted()
+                    .toList();
+            assertThat(disagreeing)
+                    .as("for a class, exactly one of isValue() and ACC_IDENTITY must hold")
+                    .isEmpty();
+        }
+
+        @Test
+        @DisplayName("The hand-written value classes carry the modifier")
+        void handWrittenValueClassesCarryTheModifier() throws ClassNotFoundException {
+            for (String fqn : VALUE_CLASSES) {
+                assertThat(load(fqn).isValue())
+                        .as("%s must carry the value modifier; ACC_IDENTITY must be clear", fqn)
+                        .isTrue();
             }
         }
     }
@@ -207,6 +209,10 @@ class ValhallaValueCarrierRegistryTest {
     // =========================================================================
     // Discovery helper
     // =========================================================================
+
+    private static Class<?> load(String fqn) throws ClassNotFoundException {
+        return Class.forName(fqn, false, ValhallaValueCarrierRegistryTest.class.getClassLoader());
+    }
 
     /**
      * Loads every class this module compiled, from the module's own output directory.

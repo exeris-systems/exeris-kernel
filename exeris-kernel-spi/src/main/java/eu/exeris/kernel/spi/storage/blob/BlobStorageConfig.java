@@ -26,7 +26,7 @@ import java.util.Objects;
  * @param properties        opaque key-value options for driver-specific settings; never {@code null}
  * @since 0.11.0
  */
-public record BlobStorageConfig(String location, Duration maxSignedUrlTtl,
+public value record BlobStorageConfig(String location, Duration maxSignedUrlTtl,
                                 Map<String, String> properties) {
 
     /** Default ceiling on signed-URL lifetime when a deployment states none. */

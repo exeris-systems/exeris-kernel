@@ -22,7 +22,7 @@ import java.util.Objects;
  * @param body    the work; may block, and runs on a virtual thread
  * @since 0.11.0
  */
-public record JobDescriptor(String jobName, JobTrigger trigger, Runnable body) {
+public value record JobDescriptor(String jobName, JobTrigger trigger, Runnable body) {
 
     /**
      * Canonical constructor.

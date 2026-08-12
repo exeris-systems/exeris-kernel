@@ -13,7 +13,10 @@ package eu.exeris.kernel.spi.persistence;
  *
  * <h2>Valhalla Readiness</h2>
  * <p>Standard {@code record} — scalarizable by C2 JIT Escape Analysis.
- * No identity operations permitted. Will migrate to {@code value record} (JEP 401).
+ * No identity operations permitted.
+ * Declared {@code value record} on the `preview` line (JEP 401); the distributed line compiles
+ * the same source as an identity {@code record}, and the modifier is asserted by
+ * {@code Class::isValue} in the module's value-carrier registry test.
  *
  * <h2>Zero-Allocation Telemetry</h2>
  * <p>Instances are created on the monitoring path (every 5s), not the hot path.
@@ -30,7 +33,7 @@ package eu.exeris.kernel.spi.persistence;
  * @see PersistenceEngine#stats()
  * @since 0.5.0
  */
-public record EngineStats(
+public value record EngineStats(
         int activeConnections,
         int idleConnections,
         int maxConnections,

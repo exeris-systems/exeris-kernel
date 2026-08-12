@@ -51,7 +51,7 @@ package eu.exeris.kernel.spi.events;
  * @see EventRegistry
  * @see EventDescriptor#eventTypeOrdinal()
  */
-public record EventTypeSpec(
+public value record EventTypeSpec(
         String name,
         int    ordinal,
         boolean persistent,

@@ -37,7 +37,7 @@ import java.util.Objects;
  *                         deny; must be non-null and non-negative
  * @since 0.10.0
  */
-public record KeyRotationPolicy(Duration overlapWindow, Duration staleFetchBudget) {
+public value record KeyRotationPolicy(Duration overlapWindow, Duration staleFetchBudget) {
 
     private static final Duration DEFAULT_OVERLAP_WINDOW = Duration.ofMinutes(10L);
     private static final Duration DEFAULT_STALE_FETCH_BUDGET = Duration.ofHours(1L);

@@ -19,7 +19,7 @@ package eu.exeris.kernel.spi.storage.blob;
  * @param length number of bytes to read; strictly positive
  * @since 0.11.0
  */
-public record BlobRange(long offset, long length) {
+public value record BlobRange(long offset, long length) {
 
     /**
      * Canonical constructor.

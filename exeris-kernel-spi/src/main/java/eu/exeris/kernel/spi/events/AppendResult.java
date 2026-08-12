@@ -27,7 +27,7 @@ package eu.exeris.kernel.spi.events;
  * @since 0.10.0
  * @see EventStreamAppender
  */
-public record AppendResult(long committedSequence) {
+public value record AppendResult(long committedSequence) {
 
     /** Lowest valid committed sequence — the 1-based head of a stream's first event. */
     public static final long FIRST_SEQUENCE = 1L;

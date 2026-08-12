@@ -65,10 +65,11 @@ class StorageContextBridgeTest {
         }
 
         @Test
-        @DisplayName("returns GLOBAL singleton when principal has no tenantId")
+        @DisplayName("returns the GLOBAL context when principal has no tenantId")
         void returnsGlobalForSystemPrincipal() {
             StorageContext ctx = StorageContextBridge.derive(SYSTEM_PRINCIPAL);
-            assertThat(ctx).isSameAs(ImmutableStorageContext.GLOBAL);
+            // Equality, not identity: ImmutableStorageContext is a value class on this line.
+            assertThat(ctx).isEqualTo(ImmutableStorageContext.GLOBAL);
         }
 
         @Test
@@ -112,7 +113,7 @@ class StorageContextBridgeTest {
             ScopedValue.where(KernelProviders.PRINCIPAL_CONTEXT, SYSTEM_PRINCIPAL)
                     .where(KernelProviders.STORAGE_CONTEXT, ImmutableStorageContext.GLOBAL)
                     .run(() -> result.set(StorageContextBridge.deriveFromActivePrincipal()));
-            assertThat(result.get()).isSameAs(ImmutableStorageContext.GLOBAL);
+            assertThat(result.get()).isEqualTo(ImmutableStorageContext.GLOBAL);
         }
 
         @Test
@@ -132,11 +133,14 @@ class StorageContextBridgeTest {
     class GlobalSingleton {
 
         @Test
-        @DisplayName("repeated derive() calls for system principal return the same singleton")
-        void sameInstanceOnRepeatCalls() {
+        @DisplayName("repeated derive() calls for system principal agree")
+        void sameValueOnRepeatCalls() {
             StorageContext a = StorageContextBridge.derive(SYSTEM_PRINCIPAL);
             StorageContext b = StorageContextBridge.derive(SYSTEM_PRINCIPAL);
-            assertThat(a).isSameAs(b);
+            // This used to assert instance reuse. With a value class that is neither observable
+            // nor a contract: substitutability makes two equal contexts indistinguishable, and
+            // whether either was allocated is left to the JVM.
+            assertThat(a).isEqualTo(b);
         }
     }
 }

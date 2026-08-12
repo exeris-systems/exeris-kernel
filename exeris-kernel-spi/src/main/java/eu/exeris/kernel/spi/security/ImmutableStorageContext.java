@@ -36,7 +36,7 @@ import java.util.Optional;
  * @since 0.5.0
  * @see StorageContext
  */
-public record ImmutableStorageContext(
+public value record ImmutableStorageContext(
         Optional<String> isolationKey,
         IsolationStrategy strategy,
         Optional<String> schemaName,

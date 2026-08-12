@@ -218,9 +218,13 @@ class SecurityValueTypesTest {
         }
 
         @Test
-        @DisplayName("system() returns the GLOBAL singleton reference")
+        @DisplayName("system() returns the GLOBAL context")
         void systemReturnsGlobal() {
-            assertThat(ImmutableStorageContext.system()).isSameAs(ImmutableStorageContext.GLOBAL);
+            // Equality, not identity. ImmutableStorageContext is a value class on this line, so
+            // isSameAs() holds for any two structurally equal instances and can no longer tell a
+            // shared constant from a fresh one. Whether the JVM allocates is its business, not a
+            // contract this test can assert.
+            assertThat(ImmutableStorageContext.system()).isEqualTo(ImmutableStorageContext.GLOBAL);
         }
 
         @Test

@@ -58,7 +58,7 @@ package eu.exeris.kernel.spi.events;
  * @see EventBus
  * @see EventRegistry
  */
-public record EventDescriptor(
+public value record EventDescriptor(
         long eventIdHigh,
         long eventIdLow,
         long streamIdHigh,

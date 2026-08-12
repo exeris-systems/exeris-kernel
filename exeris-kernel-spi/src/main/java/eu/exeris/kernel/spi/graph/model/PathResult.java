@@ -17,7 +17,9 @@ import java.util.UUID;
 /**
  * Valhalla-Ready: Result of a shortest-path algorithm execution.
  *
- * <p>Will be migrated to {@code value record} once JEP 401 is mainline.
+ * <p>Declared {@code value record} on the `preview` line (JEP 401); the distributed line compiles
+ * the same source as an identity {@code record}, and the modifier is asserted by
+ * {@code Class::isValue} in the module's value-carrier registry test.
  * Avoid identity operations.
  *
  * @param source    source node ID
@@ -32,7 +34,7 @@ import java.util.UUID;
 @SuppressWarnings("PMD.UnusedAssignment") // hopCount record component is normalised in the compact
 // constructor (path.size()-1) — the caller-supplied value is intentionally discarded to enforce
 // the path/hopCount invariant. Documented in the compact constructor Javadoc.
-public record PathResult(
+public value record PathResult(
         UUID source,
         UUID target,
         List<UUID> path,

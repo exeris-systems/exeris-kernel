@@ -15,7 +15,9 @@ import java.util.Objects;
  *
  * <h2>Valhalla Readiness</h2>
  * <p>Standard {@code record} — all fields are interface references (no identity ops).
- * Ready for {@code value record} migration (JEP 401) once toolchain supports it.
+ * Declared {@code value record} on the `preview` line (JEP 401); the distributed line compiles
+ * the same source as an identity {@code record}, and the modifier is asserted by
+ * {@code Class::isValue} in the module's value-carrier registry test.
  * No identity operations ({@code ==}, {@code synchronized}, {@code System.identityHashCode()})
  * are permitted on instances of this type.
  *
@@ -38,7 +40,7 @@ import java.util.Objects;
  * @see PrincipalContext
  * @see StorageContext
  */
-public record AuthenticationResult(
+public value record AuthenticationResult(
         PrincipalContext principal,
         StorageContext storage
 ) {

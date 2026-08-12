@@ -22,7 +22,7 @@ import java.util.Objects;
  * @param contentType the declared media type, or {@code "application/octet-stream"} when none was given
  * @since 0.11.0
  */
-public record BlobMetadata(BlobRef ref, long sizeBytes, String contentType) {
+public value record BlobMetadata(BlobRef ref, long sizeBytes, String contentType) {
 
     /** The media type assumed when a caller declares none. */
     public static final String DEFAULT_CONTENT_TYPE = "application/octet-stream";

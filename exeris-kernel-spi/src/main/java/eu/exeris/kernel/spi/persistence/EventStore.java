@@ -99,7 +99,7 @@ public interface EventStore {
      * @param occurredAt    epoch-millisecond timestamp of when the event was raised
      * @since 0.5.0
      */
-    record OutboxEvent(
+    value record OutboxEvent(
             UUID eventId,
             String aggregateId,
             String aggregateType,

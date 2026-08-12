@@ -11,10 +11,10 @@ package eu.exeris.kernel.spi.graph.algorithm;
 import java.util.UUID;
 
 /**
- * Valhalla-Ready: Function to calculate weight for a graph edge.
+ * Function to calculate weight for a graph edge.
  *
- * <p>Avoid identity operations. Will migrate to {@code value} interface
- * when JEP 401 is mainline.
+ * <p>Avoid identity operations. This is an interface and therefore can never carry the
+ * {@code value} modifier — JEP 401 admits only classes — but implementations may.
  *
  * @since 0.5.0
  */

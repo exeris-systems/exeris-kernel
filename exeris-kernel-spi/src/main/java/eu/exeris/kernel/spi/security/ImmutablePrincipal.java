@@ -41,7 +41,9 @@ import java.util.UUID;
  *
  * <h2>Valhalla Readiness</h2>
  * <p>Standard {@code record} — all fields are value-safe types.
- * Ready for {@code value record} migration (JEP 401).
+ * Declared {@code value record} on the `preview` line (JEP 401); the distributed line compiles
+ * the same source as an identity {@code record}, and the modifier is asserted by
+ * {@code Class::isValue} in the module's value-carrier registry test.
  * No identity operations ({@code ==}, {@code synchronized},
  * {@code System.identityHashCode()}) are permitted.
  *
@@ -57,7 +59,7 @@ import java.util.UUID;
  * @since 0.5.0
  * @see PrincipalContext
  */
-public record ImmutablePrincipal(
+public value record ImmutablePrincipal(
         UUID principalId,
         Optional<UUID> tenantId,
         Set<String> roles,

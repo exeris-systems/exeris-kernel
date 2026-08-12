@@ -16,7 +16,7 @@
  *   <li>{@link eu.exeris.kernel.spi.crypto.TlsEngine} — stateful TLS session facade:
  *       wrap/unwrap, handshake, and graceful shutdown operations</li>
  *   <li>{@link eu.exeris.kernel.spi.crypto.CryptoProviderConfig} — immutable configuration record
- *       (Valhalla-ready, candidate for {@code value record} once JEP 401 is mainline)</li>
+ *       (declared {@code value record} on the `preview` line, JEP 401)</li>
  *   <li>{@link eu.exeris.kernel.spi.crypto.TlsHandshakeResult} — immutable single-step handshake
  *       outcome; pre-allocated singletons ({@code COMPLETE}, {@code NEED_UNWRAP}, {@code NEED_WRAP})
  *       ensure zero allocation on the hot handshake path</li>

@@ -14,7 +14,9 @@ import java.util.Objects;
 /**
  * Valhalla-Ready: Immutable configuration for the Graph subsystem.
  *
- * <p>Will be migrated to {@code value record} once JEP 401 is mainline.
+ * <p>Declared {@code value record} on the `preview` line (JEP 401); the distributed line compiles
+ * the same source as an identity {@code record}, and the modifier is asserted by
+ * {@code Class::isValue} in the module's value-carrier registry test.
  * Avoid identity operations.
  *
  * <h2>The Wall (SPI Compliance)</h2>
@@ -32,7 +34,7 @@ import java.util.Objects;
  *
  * @since 0.5.0
  */
-public record GraphConfig(
+public value record GraphConfig(
         String backendType,
         String graphName,
         boolean cachingEnabled,

@@ -33,7 +33,7 @@ import java.util.Objects;
  * @param eventTypeName the event-type name for diagnostics; never null (may be empty)
  * @since 0.10.0
  */
-public record EventCodecContext(String contentType, String eventTypeName) {
+public value record EventCodecContext(String contentType, String eventTypeName) {
 
     /** The default content-type when a producer does not request a specific one. */
     public static final String JSON = "application/json";

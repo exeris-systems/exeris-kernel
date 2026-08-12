@@ -19,7 +19,7 @@ import java.util.Objects;
  * @param schedulerName name used in JFR events and diagnostics
  * @since 0.11.0
  */
-public record JobSchedulerConfig(String schedulerName) {
+public value record JobSchedulerConfig(String schedulerName) {
 
     /** Name used when a caller does not care to pick one. */
     public static final String DEFAULT_NAME = "default";
