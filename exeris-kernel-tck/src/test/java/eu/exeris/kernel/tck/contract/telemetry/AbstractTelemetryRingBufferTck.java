@@ -16,7 +16,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
-import eu.exeris.kernel.tck.support.TckScope;
+import java.util.concurrent.StructuredTaskScope;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -112,7 +112,8 @@ public abstract class AbstractTelemetryRingBufferTck {
         AtomicLong emitted = new AtomicLong(0L);
 
         assertThatCode(() -> {
-            try (TckScope scope = TckScope.openFailFast()) {
+            try (var scope = StructuredTaskScope.open(
+                    StructuredTaskScope.Joiner.<Void>awaitAllSuccessfulOrThrow())) {
 
                 for (int t = 0; t < emitters; t++) {
                     // Distribute the remainder to the first thread so the test always

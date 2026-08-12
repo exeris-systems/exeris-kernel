@@ -26,7 +26,7 @@ import org.junit.jupiter.api.Timeout;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
-import eu.exeris.kernel.tck.support.TckScope;
+import java.util.concurrent.StructuredTaskScope;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -259,7 +259,8 @@ public abstract class AbstractFlowSchedulerTck {
             AtomicInteger submitted = new AtomicInteger(0);
 
             // awaitAllSuccessfulOrThrow — fails fast if any subtask throws
-            try (TckScope scope = TckScope.openFailFast()) {
+            try (var scope = StructuredTaskScope.open(
+                    StructuredTaskScope.Joiner.<Void>awaitAllSuccessfulOrThrow())) {
                 for (int i = 0; i < count; i++) {
                     int idx = i;
                     scope.fork(() -> {
@@ -292,8 +293,11 @@ public abstract class AbstractFlowSchedulerTck {
             List<String>  completedIds = new CopyOnWriteArrayList<>();
             AtomicBoolean bombFired    = new AtomicBoolean(false);
 
-            // Cancel-on-failure: the 50 parked tasks must be torn down when the bomb throws.
-            try (TckScope scope = TckScope.openCancelOnFailure()) {
+            // allUntil: cancel scope when any subtask fails (predicate returns true)
+            var joiner = StructuredTaskScope.Joiner.<Void>allUntil(
+                    subtask -> subtask.state() == StructuredTaskScope.Subtask.State.FAILED);
+
+            try (var scope = StructuredTaskScope.open(joiner)) {
 
                 // 50 "long-running" parked tasks
                 for (int i = 0; i < 50; i++) {

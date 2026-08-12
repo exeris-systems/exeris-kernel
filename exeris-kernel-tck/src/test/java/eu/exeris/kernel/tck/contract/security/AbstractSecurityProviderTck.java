@@ -23,7 +23,7 @@ import org.junit.jupiter.api.Test;
 import java.time.Duration;
 import java.util.Comparator;
 import java.util.ServiceLoader;
-import eu.exeris.kernel.tck.support.TckScope;
+import java.util.concurrent.StructuredTaskScope;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -769,7 +769,7 @@ public abstract class AbstractSecurityProviderTck {
         void concurrentAuthenticate() throws InterruptedException, java.util.concurrent.ExecutionException {
             AtomicReference<Throwable> failure = new AtomicReference<>();
 
-            try (var scope = TckScope.open()) {
+            try (var scope = StructuredTaskScope.open()) {
                 for (int i = 0; i < 100; i++) {
                     scope.fork(() -> {
                         try (LoanedBuffer token = createValidTokenBuffer()) {

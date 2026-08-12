@@ -8,6 +8,7 @@
  */
 package eu.exeris.kernel.core.events;
 
+import eu.exeris.kernel.spi.exceptions.events.EventBusException;
 import eu.exeris.kernel.core.events.projection.Projection;
 import eu.exeris.kernel.core.events.projection.ProjectionEngine;
 import eu.exeris.kernel.spi.events.EventDescriptor;
@@ -145,15 +146,25 @@ class InMemoryEventBusTest {
             try (p) { /* never reached */ }
         });
 
+        // Both lines must let the Error reach the publisher; they differ in how it arrives, because
+        // they differ in whether dispatch is sequential. On the distributed line the handlers run
+        // in-thread, so the first one's Error unwinds the publisher's own stack and arrives
+        // unwrapped. Here they fork, all three run, and the failures are aggregated — so it arrives
+        // suppressed inside EventBusException. What must NOT differ is that it arrives at all: this
+        // case reported "expecting code to raise a throwable" on this line until the subtask states
+        // were inspected after join(), because an Error kills a subtask without the fork body's
+        // catch (RuntimeException) ever seeing it.
         assertThatThrownBy(() -> fixture.bus().publishAndAwait(descriptor(ORD_ORDER), tracking))
                 .as("the Error must still reach the publisher — releasing the wrappers is not the "
                     + "same as swallowing what caused the unwind")
-                .isInstanceOf(StackOverflowError.class);
+                .isInstanceOf(EventBusException.class)
+                .satisfies(thrown -> assertThat(thrown.getSuppressed())
+                        .hasAtLeastOneElementOfType(StackOverflowError.class));
 
         assertThat(closes.get())
-                .as("N=3, so the bus retains twice and owes three closes. The unwind used to leave "
-                    + "the two unreached wrappers open, pinning the payload's segment for the "
-                    + "process's life; only the throwing handler's own wrapper was released")
+                .as("every wrapper is closed by its own try-with-resources, including the one whose "
+                    + "handler died — the refcount balance is the claim, and it holds on both lines "
+                    + "even though the number of handlers actually reached does not")
                 .isEqualTo(retains.get() + 1);
         assertThat(closes.get()).isEqualTo(3);
     }

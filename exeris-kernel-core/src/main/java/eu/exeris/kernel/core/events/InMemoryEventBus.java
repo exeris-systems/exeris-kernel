@@ -211,8 +211,9 @@ public final class InMemoryEventBus implements EventBus {
                      StructuredTaskScope.open(
                              StructuredTaskScope.Joiner.<Void>allUntil(_ -> false))) {
             forkHandlers(scope, slots, wrappers, descriptor, failures);
+            List<StructuredTaskScope.Subtask<Void>> tasks;
             try {
-                scope.join();
+                tasks = scope.join();
             } catch (InterruptedException interruptEx) {
                 closeUnclosed(wrappers);
                 // The handlers that already ran and threw are not un-run by the interrupt.
@@ -224,6 +225,18 @@ public final class InMemoryEventBus implements EventBus {
                 failures.forEach(interruptEx::addSuppressed);
                 Thread.currentThread().interrupt();
                 throw interruptEx;
+            }
+            // allUntil is await-all: join() returns normally whether a subtask finished or died, and
+            // the caller inspects state(). The fork body collects a handler's RuntimeException
+            // itself, so the only thing that reaches this loop is what it does NOT catch — an Error
+            // out of a handler killed its subtask silently, leaving `failures` empty and
+            // publishAndAwait returning as though delivery had succeeded. Found by running the
+            // default line's regression case here after the merge-up: it expected a throwable and
+            // got none.
+            for (StructuredTaskScope.Subtask<Void> task : tasks) {
+                if (task.state() == StructuredTaskScope.Subtask.State.FAILED) {
+                    failures.add(task.exception());
+                }
             }
         }
         throwIfFailed(failures);

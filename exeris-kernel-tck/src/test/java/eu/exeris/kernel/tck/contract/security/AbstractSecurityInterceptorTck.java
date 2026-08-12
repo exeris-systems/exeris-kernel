@@ -22,7 +22,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
-import eu.exeris.kernel.tck.support.TckScope;
+import java.util.concurrent.StructuredTaskScope;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -338,7 +338,9 @@ public abstract class AbstractSecurityInterceptorTck<I> {
                     // interceptor established are the ones a bound child observes, for all of them.
                     PrincipalContext bound = KernelProviders.principal();
                     StorageContext boundStorage = KernelProviders.STORAGE_CONTEXT.get();
-                    try (TckScope scope = TckScope.open()) {
+                    try (StructuredTaskScope<Object, List<StructuredTaskScope.Subtask<Object>>, RuntimeException> scope =
+                                 StructuredTaskScope.open(
+                                         StructuredTaskScope.Joiner.allUntil(_ -> false))) {
                         for (int i = 0; i < vtCount; i++) {
                             scope.fork(() -> {
                                 ScopedValue.where(KernelProviders.PRINCIPAL_CONTEXT, bound)
@@ -361,11 +363,6 @@ public abstract class AbstractSecurityInterceptorTck<I> {
                     } catch (InterruptedException e) {
                         Thread.currentThread().interrupt();
                         throw new AssertionError("interrupted", e);
-                    } catch (java.util.concurrent.ExecutionException e) {
-                        // JDK 28: a failed subtask now surfaces here as a checked exception rather than
-                        // the unchecked FailedException of JDK 26. The bodies capture their own failures
-                        // into `failure`, so reaching this means the scope itself gave up.
-                        throw new AssertionError("subtask failed", e);
                     }
                 });
             }
@@ -454,7 +451,7 @@ public abstract class AbstractSecurityInterceptorTck<I> {
                 interceptorList.add(createInterceptor(createSuccessProvider(p, storage)));
             }
 
-            try (TckScope scope = TckScope.openFailFast()) {
+            try (var scope = StructuredTaskScope.open()) {
                 for (int i = 0; i < concurrency; i++) {
                     final int idx = i;
                     scope.fork(() -> {
@@ -558,7 +555,9 @@ public abstract class AbstractSecurityInterceptorTck<I> {
                 // Same reformulation as the ScopedValuePropagation case: bound explicitly, because a
                 // plain virtual thread does not inherit and the default line has no fork that does.
                 PrincipalContext bound = KernelProviders.PRINCIPAL_CONTEXT.get();
-                try (TckScope scope = TckScope.open()) {
+                try (StructuredTaskScope<Object, List<StructuredTaskScope.Subtask<Object>>, RuntimeException> scope =
+                                 StructuredTaskScope.open(
+                                         StructuredTaskScope.Joiner.allUntil(_ -> false))) {
                     for (int i = 0; i < count; i++) {
                         scope.fork(() -> {
                             ScopedValue.where(KernelProviders.PRINCIPAL_CONTEXT, bound).run(() -> {
@@ -578,11 +577,6 @@ public abstract class AbstractSecurityInterceptorTck<I> {
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     throw new AssertionError("interrupted", e);
-                } catch (java.util.concurrent.ExecutionException e) {
-                    // JDK 28: a failed subtask now surfaces here as a checked exception rather than
-                    // the unchecked FailedException of JDK 26. The bodies capture their own failures
-                    // into `failure`, so reaching this means the scope itself gave up.
-                    throw new AssertionError("subtask failed", e);
                 }
             });
 

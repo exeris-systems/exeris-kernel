@@ -37,12 +37,35 @@ this line is never a fast-forward:
 - **`SubsystemOrchestrator`'s round fail-fast fix does NOT apply here.** It repaired a property the
   in-thread substitution lost. This line still forks with `StructuredTaskScope.open()`, whose default
   joiner cancels siblings on the first failure, so the property was never lost. Preview's shape kept.
-- **`InMemoryEventBus`: mechanism kept, one fix taken.** Handlers still fork here. The interrupt path
-  dropping already-collected handler failures was the same defect on both lines, so that carried.
+- **`InMemoryEventBus`: mechanism kept, two fixes — and one of them is this line's alone.** Handlers
+  still fork here. The interrupt path dropping already-collected handler failures was the same defect
+  on both lines, so that carried. Running the default line's regression case here then reported
+  "expecting code to raise a throwable": an `Error` out of a forked handler killed its subtask
+  without the fork body's `catch (RuntimeException)` seeing it, `allUntil` returned normally, and
+  `publishAndAwait` told the publisher delivery had succeeded. Fixed by inspecting `Subtask.state()`
+  after `join()` — the same shape as the outbox fix above, found the same way. The two lines still
+  differ in HOW the failure arrives: unwrapped on the distributed line, where dispatch is sequential
+  and unwinds the publisher's own stack; suppressed inside `EventBusException` here, where it is
+  aggregated. The case says so.
+
+**`TckScope` is not carried.** It is the TCK's own copy of the same downgrade — the default line
+needs a GA fork helper there because the TCK cannot depend on Core (the reactor cycle), and this line
+has `StructuredTaskScope` directly. The merge brought it into 13 call sites across 10 files; nine
+files took `preview`'s spelling back wholesale, `AbstractSecurityInterceptorTck` was converted by hand
+because it also carries real new cases, and the class and its test are deleted here.
+
+**Pre-existing on this line, not introduced by a merge-up:** CLAUDE.md's standalone architecture-guard
+command (`mvn -pl exeris-kernel-tck -am -Dtest=ExerisArchitectureTest ... test`) fails here with
+`[No Class Loaded]` — the guard's own non-vacuity assertion, reporting that it scanned nothing. Checked
+against a clean `origin/preview` checkout, where it fails identically. The guard itself is fine: it runs
+and passes inside the full `mvn clean install`, which is what CI does. It is the isolated invocation
+that does not set this line's classpath up, and anyone following the default line's runbook here will
+read a tooling gap as a boundary breach.
 
 **Still to measure on JDK 28:** the bytecode row in the table above (`311 of 927`) predates this
-merge and is stale by whatever it added. It cannot be recomputed from a JDK 25 machine, since this
-line does not compile there at all.
+merge and is stale by whatever it added. Recomputing it needs a JDK 28 build, which
+this merge-up now has — but the figure is a release-time measurement and belongs with the next cut of
+this line, not with a merge-up.
 
 ## What the first JDK 28 build already absorbed
 
