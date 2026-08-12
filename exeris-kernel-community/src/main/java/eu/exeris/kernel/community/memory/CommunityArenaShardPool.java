@@ -237,7 +237,7 @@ final class CommunityArenaShardPool {
         return upper;
     }
 
-    /* default */ record Allocation(MemorySegment segment, int originShard) {
+    /* default */ value record Allocation(MemorySegment segment, int originShard) {
     }
 
     private static final class Bucket {

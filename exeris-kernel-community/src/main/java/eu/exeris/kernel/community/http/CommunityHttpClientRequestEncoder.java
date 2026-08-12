@@ -145,9 +145,9 @@ final class CommunityHttpClientRequestEncoder {
         };
     }
 
-    /* default */ record HeaderPresence(boolean hasHost, boolean hasContentLength, boolean hasConnection) {
+    /* default */ value record HeaderPresence(boolean hasHost, boolean hasContentLength, boolean hasConnection) {
     }
 
-    /* default */ record HeaderWriteResult(long position, HeaderPresence presence) {
+    /* default */ value record HeaderWriteResult(long position, HeaderPresence presence) {
     }
 }

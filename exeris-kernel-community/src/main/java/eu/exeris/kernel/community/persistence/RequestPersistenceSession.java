@@ -16,7 +16,9 @@ import eu.exeris.kernel.spi.persistence.TransactionIsolation;
  *
  * <h2>Semantics</h2>
  * <p>Wraps an active persistence connection and its transaction state scoped to a single HTTP request.
- * Immutable and Valhalla-ready (record, no mutable state, no identity-sensitive operations).
+ * Immutable, with no identity-sensitive operations, and declared {@code value record} on the
+ * `preview` line (JEP 401). The {@code PersistenceConnection} it carries keeps its own identity
+ * and its own lifecycle; only the carrier around it loses identity.
  *
  * <h2>Lifecycle</h2>
  * <p>Created at HTTP entry (with {@code active = true}) and deactivated at HTTP exit (exception or nominal).
@@ -39,7 +41,7 @@ import eu.exeris.kernel.spi.persistence.TransactionIsolation;
  *
  * @since 0.5.0
  */
-public record RequestPersistenceSession(
+public value record RequestPersistenceSession(
     PersistenceConnection connection,
     TransactionIsolation isolation,
     boolean readOnly,

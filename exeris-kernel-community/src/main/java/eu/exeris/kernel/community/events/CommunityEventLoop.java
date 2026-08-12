@@ -59,7 +59,7 @@ final class CommunityEventLoop implements EventLoop {
     private final AtomicLong dispatchNanosTotal = new AtomicLong(0L);
     private final AtomicReference<Thread> loopThread = new AtomicReference<>();
 
-    private record QueuedEvent(EventDescriptor descriptor, EventPayload payload) {
+    private value record QueuedEvent(EventDescriptor descriptor, EventPayload payload) {
     }
 
     /* default */ CommunityEventLoop(EventRegistry registry, EventQueue queue, int batchSize) {

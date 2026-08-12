@@ -195,7 +195,7 @@ final class NativeTcpSocketBackend {
         }
     }
 
-    /* default */ record SocketBackendSelection(SocketBackendMode requestedMode,
+    /* default */ value record SocketBackendSelection(SocketBackendMode requestedMode,
                                                 Arena socketBackendArena,
                                                 SyscallHandles socketHandles,
                                                 boolean ffmSocketBackendArmed,

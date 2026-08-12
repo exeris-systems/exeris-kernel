@@ -55,7 +55,7 @@ import eu.exeris.kernel.spi.config.Dynamic;
  * @see CommunityPersistenceAdmissionController
  * @see Dynamic
  */
-public record CommunityAdmissionConfig(
+public value record CommunityAdmissionConfig(
         double hardSaturationThreshold,
         double guardBandThreshold,
         double fairnessStressThreshold,

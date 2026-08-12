@@ -161,6 +161,6 @@ public final class KafkaEventStreamAppender implements EventStreamAppender {
         return headResolver.applyAsLong(key.high(), key.low());
     }
 
-    private record StreamKey(long high, long low) {
+    private value record StreamKey(long high, long low) {
     }
 }

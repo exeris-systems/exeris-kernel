@@ -37,7 +37,7 @@ final class CommunityHttp2FrameFragments {
      * Inner payload after stripping the optional pad-length byte, optional
      * 5-byte priority section, and the trailing padding bytes.
      */
-    /* default */ record Fragment(long offset, int length) {
+    /* default */ value record Fragment(long offset, int length) {
     }
 
     /* default */ static Fragment extractHeadersFragment(LoanedBuffer aggregate,

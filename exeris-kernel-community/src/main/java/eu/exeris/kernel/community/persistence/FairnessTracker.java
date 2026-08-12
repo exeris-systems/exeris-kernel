@@ -176,7 +176,7 @@ final class FairnessTracker {
         return now - previous;
     }
 
-    private record CachedSnapshot(long refreshedAtNanos, long decisionSequence, FairnessSnapshot snapshot) {
+    private value record CachedSnapshot(long refreshedAtNanos, long decisionSequence, FairnessSnapshot snapshot) {
         private static CachedSnapshot initial() {
             return new CachedSnapshot(
                     Long.MIN_VALUE,
@@ -185,7 +185,7 @@ final class FairnessTracker {
         }
     }
 
-    private record SnapshotRefreshPolicy(long refreshIntervalNanos, long decisionStride) {
+    private value record SnapshotRefreshPolicy(long refreshIntervalNanos, long decisionStride) {
         private boolean shouldRefresh(CachedSnapshot snapshot, long now, long currentDecisionSequence) {
             if (snapshot.refreshedAtNanos() == Long.MIN_VALUE) {
                 return true;
@@ -196,14 +196,14 @@ final class FairnessTracker {
         }
     }
 
-    private record WindowAggregate(
+    private value record WindowAggregate(
             long totalAccepted,
             long totalRejected,
             long depthSampleCount,
             long waitSampleCount) {
     }
 
-    /* default */ record FairnessSnapshot(double fairnessRatio, long queueDepthP95, long queueWaitP95Ms) {
+    /* default */ value record FairnessSnapshot(double fairnessRatio, long queueDepthP95, long queueWaitP95Ms) {
     }
 
     private static final class WindowMetricsAggregator {

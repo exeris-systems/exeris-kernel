@@ -222,6 +222,6 @@ final class CommunityHttpClientResponseDecoder {
         return new String(bytes, StandardCharsets.US_ASCII);
     }
 
-    /* default */ record StatusLine(HttpVersion version, HttpStatus status) {
+    /* default */ value record StatusLine(HttpVersion version, HttpStatus status) {
     }
 }

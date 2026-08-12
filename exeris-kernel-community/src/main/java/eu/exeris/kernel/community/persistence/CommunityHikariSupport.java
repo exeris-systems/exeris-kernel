@@ -233,7 +233,7 @@ final class CommunityHikariSupport {
         return pool.getHikariPoolMXBean();
     }
 
-    /* default */ record AdmissionSnapshot(
+    /* default */ value record AdmissionSnapshot(
             int activeConnections,
             int idleConnections,
             int pendingAcquires,

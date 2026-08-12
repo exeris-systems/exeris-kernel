@@ -16,6 +16,24 @@
     <name>Exeris Kernel :: Community Testkit</name>
     <description>Reusable fixtures that boot the real kernel for tests across modules and for downstream consumers.</description>
 
+    <properties>
+        <!--
+            PREVIEW LINE ONLY — same reason as exeris-kernel-spi and exeris-kernel-core, now that
+            this module carries a `value` modifier too: Checkstyle's Java grammar does not know the
+            modifier and fails to PARSE the file, so it reports a configuration error rather than a
+            style finding.
+
+            The bar is not lowered, and the argument is the one this line already rests on
+            (PREVIEW-TRACK.md: "never self-verifying ... that verification is always inherited from
+            `main`"): these same sources, minus the modifier, are fully Checkstyle-gated on `main`
+            over JDK 25. Nothing preview-only is left unchecked, because the delta IS the modifier.
+
+            RE-ENABLE when Checkstyle's grammar accepts JEP 401. Test it by deleting this property
+            and running `mvn -pl exeris-kernel-community-testkit checkstyle:check`.
+        -->
+        <checkstyle.skip>true</checkstyle.skip>
+    </properties>
+
     <dependencies>
         <dependency>
             <groupId>eu.exeris.preview</groupId>

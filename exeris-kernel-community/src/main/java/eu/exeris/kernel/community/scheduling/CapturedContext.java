@@ -22,7 +22,7 @@ import eu.exeris.kernel.spi.security.StorageContext;
  * @param storage   the submitting storage context, or {@code null} if none was bound
  * @since 0.11.0
  */
-record CapturedContext(PrincipalContext principal, StorageContext storage) {
+value record CapturedContext(PrincipalContext principal, StorageContext storage) {
 
     /** Snapshots whatever is bound on the submitting thread. */
     /* default */ static CapturedContext capture() {

@@ -40,6 +40,6 @@ public final class CommunityFlowSnapshotStore implements FlowSnapshotStore {
         return snapshots.containsKey(new FlowKey(instanceIdMost, instanceIdLeast));
     }
 
-    private record FlowKey(long instanceIdMost, long instanceIdLeast) {
+    private value record FlowKey(long instanceIdMost, long instanceIdLeast) {
     }
 }

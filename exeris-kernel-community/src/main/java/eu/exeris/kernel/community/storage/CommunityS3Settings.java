@@ -39,7 +39,7 @@ import java.util.Map;
  * @param maxObjectBytes ceiling on a single object, in bytes
  * @since 0.11.0
  */
-/* default */ record CommunityS3Settings(String host, int port, String bucket, String accessKey,
+/* default */ value record CommunityS3Settings(String host, int port, String bucket, String accessKey,
                                          String secretKey, String region, long maxObjectBytes) {
 
     /** Property key: the bucket every object lands in. */

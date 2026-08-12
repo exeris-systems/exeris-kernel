@@ -172,7 +172,7 @@ import java.util.concurrent.atomic.AtomicReference;
      * the epoch-millis instant it was installed ({@code previousInstalledAtMillis} is unused
      * when {@code previous} is {@code null}). Swapped atomically — never mutated in place.
      */
-    private record Generations(
+    private value record Generations(
             Map<String, RSAPublicKey> current,
             long currentInstalledAtMillis,
             Map<String, RSAPublicKey> previous,

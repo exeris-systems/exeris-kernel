@@ -13,7 +13,7 @@ import eu.exeris.kernel.spi.http.HttpMethod;
 
 import java.util.List;
 
-record Http2DecodedRequest(int streamId,
+value record Http2DecodedRequest(int streamId,
                            HttpMethod method,
                            String path,
                            List<HttpHeader> headers,

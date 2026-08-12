@@ -286,7 +286,7 @@ final class SocketChannelFdReflectionResolver {
             return ChannelFdFieldResolution.unavailable();
         }
 
-        private record ChannelFdFieldResolution(Field field, TlsHandshakeException failure) {
+        private value record ChannelFdFieldResolution(Field field, TlsHandshakeException failure) {
 
             private static ChannelFdFieldResolution available(Field field) {
                 return new ChannelFdFieldResolution(field, null);

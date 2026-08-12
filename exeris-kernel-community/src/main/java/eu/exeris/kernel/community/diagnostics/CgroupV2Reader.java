@@ -32,7 +32,7 @@ final class CgroupV2Reader {
     private static final long DEFAULT_CPU_PERIOD_MICROS = 100_000L;
 
     /** Resolved cgroup-v2 limits; every field is {@link Optional#empty()} when unlimited / absent. */
-    /* default */ record CgroupLimits(Optional<Long> cpuQuotaMicros, Optional<Long> cpuPeriodMicros,
+    /* default */ value record CgroupLimits(Optional<Long> cpuQuotaMicros, Optional<Long> cpuPeriodMicros,
                         Optional<Long> memoryMaxBytes, Optional<String> cpusetEffective) {
 
         /* default */ static final CgroupLimits NONE =

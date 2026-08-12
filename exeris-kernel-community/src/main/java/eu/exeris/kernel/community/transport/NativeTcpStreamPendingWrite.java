@@ -58,7 +58,7 @@ final class NativeTcpStreamPendingWrite implements AutoCloseable {
      * touches its ciphertext argument, so the same placeholder used by ingress unwrap is
      * passed to {@code wrap} on egress instead of allocating a per-write cipher buffer.
      */
-    /* default */ record TlsContext(TlsEngine tlsEngine, Object tlsLock,
+    /* default */ value record TlsContext(TlsEngine tlsEngine, Object tlsLock,
                                     LoanedBuffer ciphertextPlaceholder) {
     }
 

@@ -37,7 +37,7 @@ final class CommunityCarrierBindings {
         return operator;
     }
 
-    record Binding<T>(ScopedValue<T> key, T value) {
+    value record Binding<T>(ScopedValue<T> key, T value) {
         @SuppressWarnings("java:S2201")
         private UnaryOperator<ScopedValue.Carrier> operator() {
             return carrier -> carrier.where(key, value); // NOSONAR: returns a carrier for bootstrap

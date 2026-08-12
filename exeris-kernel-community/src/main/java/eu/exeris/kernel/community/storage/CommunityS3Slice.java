@@ -23,7 +23,7 @@ import eu.exeris.kernel.spi.storage.blob.BlobRange;
  * @param length number of bytes covered; {@code 0} when the range lies at or past the end
  * @since 0.11.0
  */
-/* default */ record CommunityS3Slice(long offset, long length) {
+/* default */ value record CommunityS3Slice(long offset, long length) {
 
     /**
      * Resolves a requested range against the object that exists.

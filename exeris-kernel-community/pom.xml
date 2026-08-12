@@ -20,6 +20,22 @@
     </description>
 
     <properties>
+        <!--
+            PREVIEW LINE ONLY — same reason as exeris-kernel-spi and exeris-kernel-core, now that
+            this module carries `value` modifiers too: Checkstyle's Java grammar does not know the
+            modifier and fails to PARSE the file, so it reports a configuration error rather than a
+            style finding.
+
+            The bar is not lowered, and the argument is the one this line already rests on
+            (PREVIEW-TRACK.md: "never self-verifying ... that verification is always inherited from
+            `main`"): these same sources, minus the modifier, are fully Checkstyle-gated on `main`
+            over JDK 25. Nothing preview-only is left unchecked, because the delta IS the modifier.
+
+            RE-ENABLE when Checkstyle's grammar accepts JEP 401. Test it by deleting this property
+            and running `mvn -pl <this module> checkstyle:check`.
+        -->
+        <checkstyle.skip>true</checkstyle.skip>
+
         <!-- Empty by default; can be set to run only selected @Tag groups -->
         <includedGroups/>
         <!--

@@ -215,6 +215,6 @@ public final class CommunityKernelCryptoProvider implements KernelCryptoProvider
 		return new PathCString(buffer, buffer.segment().address());
 	}
 
-	private record PathCString(LoanedBuffer buffer, long address) {
+	private value record PathCString(LoanedBuffer buffer, long address) {
 	}
 }

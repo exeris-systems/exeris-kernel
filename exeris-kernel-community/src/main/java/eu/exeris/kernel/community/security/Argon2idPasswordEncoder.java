@@ -130,7 +130,7 @@ public final class Argon2idPasswordEncoder implements KernelPasswordEncoder {
 	}
 
 	@SuppressWarnings("java:S6218")
-	private record PhcFields(byte[] salt, byte[] hash, int memoryCostKib, int iterations, int parallelism) {
+	private value record PhcFields(byte[] salt, byte[] hash, int memoryCostKib, int iterations, int parallelism) {
 
 		/* default */ static PhcFields parse(String encoded) {
 			String[] parts = encoded.split("\\$", -1);
