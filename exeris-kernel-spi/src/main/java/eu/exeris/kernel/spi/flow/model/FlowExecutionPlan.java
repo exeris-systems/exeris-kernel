@@ -54,6 +54,14 @@ public interface FlowExecutionPlan {
      * milestone has one for the same reason, and an interface this old cannot grow an abstract method
      * without breaking every out-of-tree implementation of it at invoke time.
      *
+     * <p><b>The default trades a loud failure for a quiet one, so the TCK is now what enforces
+     * this.</b> Before, a plan that did not implement this did not compile. Now a v3 plan that
+     * forgets to override registers and writes its snapshots as version 1, and a genuine v1 plan
+     * will resume them — the resume check compares this value against the snapshot's, and they
+     * agree. {@code AbstractFlowDefinitionVersioningTck} pins the returned version to the compiled
+     * definition's, so a provider that runs the TCK is covered; one that does not is on its own in
+     * a way the compiler used to prevent.
+     *
      * @return the declared version, {@code >= FlowDefinition.INITIAL_VERSION}
      * @since 0.11.0
      */

@@ -712,9 +712,11 @@ public final class SubsystemOrchestrator {
                     // a half-built kernel before it admits it. The fork-per-subsystem round this
                     // replaced cancelled its siblings on the first failure; running in-thread has
                     // to say so explicitly. Nothing rolls http back once it is listening.
-                    throw new BootstrapException(
-                            "Subsystem " + subsystem.name() + " failed in phase " + phase
-                            + ": " + failure.getMessage(), failure);
+                    // Rethrown as-is. handleFailure already built "Subsystem 'X' failed: <msg>"
+                    // with the SubsystemException as cause; wrapping it again restates the message
+                    // and pushes the exception carrying the error code one level deeper for anyone
+                    // walking getCause().
+                    throw failure;
                 }
             }
 

@@ -191,8 +191,14 @@ public final class OutboxOrchestrator implements AutoCloseable {
         event.stateAtFailure = stateMachine.currentStateName();
         event.commit();
 
-        running.set(false);
-        stateMachine.transitionTo(OutboxStateMachine.STOPPED, 0);
+        // The state machine, not `running`. `running` is stop()'s latch: stop() gates on
+        // compareAndSet(true, false), so clearing it here would make the kernel's later shutdown
+        // return immediately without interrupting the owner, joining it, or forcing the stopped
+        // transition — disarming the drain in exactly the failure case this reporting exists to
+        // surface. What falsely claimed to be running was the state machine, and that is what this
+        // corrects; forceTransitionToStopped() is what stop() itself calls, so a later stop() finds
+        // nothing left to do rather than finding its own guard already tripped.
+        stateMachine.forceTransitionToStopped();
     }
 
     private void runLoop() {
