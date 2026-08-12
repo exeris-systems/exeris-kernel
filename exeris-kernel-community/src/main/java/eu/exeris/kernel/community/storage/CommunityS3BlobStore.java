@@ -153,7 +153,7 @@ public final class CommunityS3BlobStore implements BlobStore {
     private BlobDownloadHandle download(BlobRef ref, BlobRange range) {
         Objects.requireNonNull(ref, REF_REQUIRED);
         String objectKey = CommunityS3ObjectKey.resolve(ref, CommunityBlobFailures.OP_DOWNLOAD);
-        BlobMetadata metadata = client.head(objectKey, ref, CommunityBlobFailures.OP_DOWNLOAD)
+        BlobMetadata metadata = client.head(objectKey, ref, CommunityBlobFailures.OP_DOWNLOAD, true)
                 .orElseThrow(() -> FAILURES.notFound(ref.container()));
 
         CommunityS3Slice slice = CommunityS3Slice.covering(range, metadata.sizeBytes());

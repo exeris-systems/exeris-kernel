@@ -125,14 +125,22 @@ final class CommunityHttpRequestDispatcher {
      * @return {@code false} if the request was denied and a response has already been written
      */
     private boolean authorize(HttpRequest request, Supplier<HttpExchange> exchange, Runnable admitted) {
-        // A route the application never described about is decided by the policy, not by this
-        // driver. With no policy bound the requirement is permit-all, which is exactly how the kernel
-        // behaved before ADR-061 — declaring nothing changes nothing.
+        // A route the application never described is decided by the policy, not by this driver. With
+        // no policy bound the requirement is permit-all — an opt-in seam, so an application that
+        // declares nothing carries no edge authorization at all.
+        //
+        // That is NOT "unchanged behaviour": up to 0.10 this driver enforced a /secure prefix with
+        // security:read / security:write compiled in, and ADR-061 obligation 4 deleted the
+        // convention deliberately. An application that relied on the prefix and declares no policy
+        // serves those routes to anonymous callers. The release notes carry the migration step.
         RouteRequirement requirement = routePolicy == null
                 ? RouteRequirement.permitAll()
                 : routePolicy.requirementFor(request.method(), request.path());
 
         if (requirement != null && requirement.kind() == RouteRequirement.Kind.PERMIT_ALL) {
+            // No requirement means no interceptor run, so the handler sees no PRINCIPAL_CONTEXT even
+            // when the caller presented a valid token. A route that wants identity without demanding
+            // a scope declares authenticated(), which is a different Kind — not permitAll().
             admitted.run();
             return true;
         }
@@ -170,12 +178,24 @@ final class CommunityHttpRequestDispatcher {
                 ? KernelProviders.PRINCIPAL_CONTEXT.get()
                 : null;
 
-        switch (RouteAuthorizationEnforcer.decide(requirement, principal)) {
-            case ADMIT -> admitted.run();
-            case FORBIDDEN ->
-                    exchange.get().respond(HttpResponse.noBody(HttpStatus.FORBIDDEN, request.version()));
-            case UNAUTHENTICATED ->
-                    exchange.get().respond(HttpResponse.noBody(HttpStatus.UNAUTHORIZED, request.version()));
+        // A switch EXPRESSION, so javac requires every RouteDecision to be answered. As a statement
+        // it did not, and a decision added later would match no arm: the request would fall out of
+        // this method having neither run the handler nor written a response, which the dispatcher's
+        // respond-once tail then turns into a 500. A new way to deny would arrive as an unexplained
+        // server error rather than as a compile failure — and as an admission, on the paths where
+        // falling through means the handler already ran. Under artifact skew (RouteDecision lives in
+        // the SPI, this dispatcher in Community) javac's synthetic MatchException makes it a loud
+        // failure rather than either.
+        HttpStatus denial = switch (RouteAuthorizationEnforcer.decide(requirement, principal)) {
+            case ADMIT -> null;
+            case FORBIDDEN -> HttpStatus.FORBIDDEN;
+            case UNAUTHENTICATED -> HttpStatus.UNAUTHORIZED;
+        };
+
+        if (denial == null) {
+            admitted.run();
+        } else {
+            exchange.get().respond(HttpResponse.noBody(denial, request.version()));
         }
     }
 

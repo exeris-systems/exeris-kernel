@@ -103,6 +103,20 @@
                     <version>3.2.5</version>
                     <configuration>
                         <argLine>@{coverage.argLine} ${jvm.args}</argLine>
+                        <systemPropertyVariables>
+                            <!--
+                              A test that hangs is worse than a test that fails: it holds the build
+                              open with no message, and CI reports a timeout on the job rather than a
+                              name. This repository tests concurrency primitives, so several suites
+                              wait on a latch whose only other exit is an interrupt from the very
+                              teardown they are checking — StructuredScopeTest's neverReleased is the
+                              clearest case, and the regression named in its own @DisplayName would
+                              hang it rather than fail it. Nothing bounded them: no @Timeout on those
+                              methods, no forkedProcessTimeoutInSeconds here or in any parent.
+                              Ten minutes is far above any test in the reactor and far below "never".
+                            -->
+                            <junit.jupiter.execution.timeout.default>10 m</junit.jupiter.execution.timeout.default>
+                        </systemPropertyVariables>
                     </configuration>
                 </plugin>
             </plugins>

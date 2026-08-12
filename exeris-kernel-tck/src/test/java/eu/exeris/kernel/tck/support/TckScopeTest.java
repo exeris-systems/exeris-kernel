@@ -13,12 +13,14 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
+import java.time.Duration;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
@@ -151,11 +153,33 @@ class TckScopeTest {
         @DisplayName("cancel-on-failure reports nothing — the failure is the stimulus")
         void cancelOnFailureReportsNothing() throws InterruptedException {
             TckScope scope = TckScope.openCancelOnFailure();
+            CountDownLatch siblingStarted = new CountDownLatch(1);
+            AtomicBoolean siblingFinished = new AtomicBoolean();
+
             scope.fork(() -> {
+                siblingStarted.await();
+                // Long enough that a scope which did NOT cancel would still be in here when join()
+                // returns, so the assertion below distinguishes "cancelled" from "raced ahead".
+                Thread.sleep(Duration.ofSeconds(5));
+                siblingFinished.set(true);
+                return null;
+            });
+            scope.fork(() -> {
+                siblingStarted.countDown();
                 throw new IllegalStateException("deliberate trigger");
             });
 
-            scope.join();
+            // Two claims, and the test asserted neither. It had no assertion at all: it passed
+            // because join() happened not to throw, which is also what it would do if
+            // cancel-on-failure had silently stopped cancelling.
+            assertThatCode(scope::join)
+                    .as("cancel-on-failure swallows the failure — it is the stimulus for cancelling "
+                        + "the siblings, not something the caller is asked to handle")
+                    .doesNotThrowAnyException();
+            assertThat(siblingFinished)
+                    .as("and the sibling was actually cancelled, which is the half that makes the "
+                        + "silence worth having")
+                    .isFalse();
         }
     }
 

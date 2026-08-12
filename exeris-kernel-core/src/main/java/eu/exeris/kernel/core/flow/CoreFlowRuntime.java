@@ -894,7 +894,19 @@ final class CoreFlowRuntime { // NOPMD
                 .name("exeris-flow-" + instance.key().instanceIdMost() + '-' + instance.key().instanceIdLeast())
                 .unstarted(() -> runInstance(instance, startStep));
         runningThreads.add(thread);
-        thread.start();
+        try {
+            thread.start();
+        } catch (RuntimeException | Error startFailure) { //NOPMD AvoidCatchingGenericException
+            // Only runInstance()'s finally releases these, and a thread that never started never
+            // reaches it. Left in place, each refused start costs one activeFlows slot and one
+            // queueDepth permanently, so the engine's budget shrinks per occurrence until every
+            // launch is rejected with no flow running.
+            runningThreads.remove(thread);
+            queueDepth.decrementAndGet();
+            activeFlows.decrementAndGet();
+            instance.markNotScheduled();
+            throw startFailure;
+        }
     }
 
     private void runInstance(RuntimeFlowInstance instance, int startStep) {
@@ -951,7 +963,36 @@ final class CoreFlowRuntime { // NOPMD
         if (parkedInstances.remove(instance.key()) != null) {
             parkedFlows.decrement();
         }
-        launch(instance, startStep);
+        try {
+            launch(instance, startStep);
+        } catch (RuntimeException | Error failure) { //NOPMD AvoidCatchingGenericException — see below
+            // This runs from runInstance()'s finally, so an exception leaving here would replace
+            // whatever the run was already failing with — and destroy the wake either way, since
+            // claimPendingWake() consumed it and beginScheduleAfterWake() flipped the instance to
+            // RUNNING. The saga would sit marked RUNNING with no thread and no wake left to arrive,
+            // indistinguishable from working until someone asks why it never finished.
+            restoreParkedAfterFailedWake(instance, failure);
+        }
+    }
+
+    /** Puts back everything the claimed-but-unlaunched wake took, so it stays recoverable. */
+    private void restoreParkedAfterFailedWake(RuntimeFlowInstance instance, Throwable failure) {
+        instance.abandonScheduleAfterWake();
+        if (!instance.isTerminal()) {
+            // Both registries. The commoner failure here is maxConcurrentFlows — a load condition,
+            // not an OOM — and launch() drops the instance from liveInstances before throwing.
+            // Restoring only the parked index leaves it parked but invisible to every liveInstances
+            // lookup, so park() and its neighbours no-op on it; a later wake still recovers it
+            // through resolveParkedInstance, which is why this reads as nothing being wrong.
+            liveInstances.putIfAbsent(instance.key(), instance);
+            if (parkedInstances.putIfAbsent(instance.key(), instance) == null) {
+                parkedFlows.increment();
+            }
+        }
+        FlowDeferredWakeFailedEvent event = new FlowDeferredWakeFailedEvent();
+        event.definitionName = instance.definitionName();
+        event.exceptionType = failure.getClass().getName();
+        event.commit();
     }
 
     /**
