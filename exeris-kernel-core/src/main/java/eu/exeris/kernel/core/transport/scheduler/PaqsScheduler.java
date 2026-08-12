@@ -295,6 +295,14 @@ public final class PaqsScheduler implements AutoCloseable {
      */
     @Override
     public void close() {
+        // Idempotent. A seal is terminal — sealIfIdle() CASes against zero and a sealed count is
+        // negative — so a second close() could never satisfy the loop below and would spin the whole
+        // 60-second deadline before sealing an already-sealed coordinator. AutoCloseable asks
+        // implementations to make close() idempotent, and callers oblige it: a try-with-resources
+        // nested inside an explicit shutdown is two calls.
+        if (drainCoordinator.isSealed()) {
+            return;
+        }
         // Tell the protocol layers first: a codec that knows shutdown started stops extending
         // connections it would otherwise keep alive, so the count below can actually reach zero.
         drainCoordinator.markDraining();

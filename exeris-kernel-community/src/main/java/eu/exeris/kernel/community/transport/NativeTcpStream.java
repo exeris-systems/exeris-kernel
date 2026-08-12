@@ -330,7 +330,16 @@ final class NativeTcpStream implements TransportStream {
             MemorySegment.copy(source, 0, plain.segment(), 0, length);
             plain.setSize(length);
             plain.retain();
-            queueWrite(plain, length);
+            try {
+                queueWrite(plain, length);
+            } catch (RuntimeException failure) {
+                // queueWrite keeps the buffer with the caller when it throws, so the retain() above
+                // is a ref nothing will ever release: try-with-resources drops the allocation's own
+                // ref and leaves this one, and the PARANOID leak detector reports it as a
+                // LeakDetectedError rather than the write failure that caused it.
+                plain.close();
+                throw failure;
+            }
         }
     }
 
@@ -340,7 +349,10 @@ final class NativeTcpStream implements TransportStream {
             throw new IllegalArgumentException("buffer must not be null");
         }
         if (length < 0 || length > buffer.capacity()) {
-            buffer.close();
+            // Not closed here. The SPI puts the buffer back with the caller on any thrown exception,
+            // so closing it too makes the caller's own release a double-free — the SIGSEGV shape the
+            // ownership policy exists to rule out, reached by both sides obeying different halves of
+            // one contract.
             throw new IllegalArgumentException("length out of range for loaned buffer");
         }
         if (closeRequested.get() || closed.get()) {

@@ -38,8 +38,11 @@ import static org.assertj.core.api.Assertions.fail;
  * <h2>Contract</h2>
  * <ul>
  *   <li>{@code read()} and {@code write()} operate on {@link MemorySegment} slices</li>
- *   <li>{@code queueWrite(LoanedBuffer, length)} transfers buffer ownership —
- *       caller MUST NOT close the buffer after the call</li>
+ *   <li>{@code queueWrite(LoanedBuffer, length)} transfers buffer ownership <b>on normal return</b> —
+ *       the caller MUST NOT close the buffer after a successful call, and MUST close it after a
+ *       thrown one. The unconditional "never close" stated here until v0.11 contradicted the SPI
+ *       javadoc, which puts the buffer back with the caller on any throw; a driver written against
+ *       this wording closes on its own error paths, and then both sides release the same ref</li>
  *   <li>{@code close()} is idempotent</li>
  *   <li>{@code streamId()} returns a non-negative identifier</li>
  *   <li>{@code connection()} returns non-null parent</li>

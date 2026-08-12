@@ -220,18 +220,29 @@ public final class CommunityJobScheduler implements JobScheduler {
         return JobState.COMPLETED;
     }
 
+    /**
+     * Drops the worker and settles the job in one critical section — the mirror of
+     * {@link #takeDueWorker()}, and for the same reason.
+     *
+     * <p>Split across two, the job is momentarily in neither the queue nor {@code inFlight}: the
+     * state the class javadoc calls impossible and {@code close()}'s drain relies on. A snapshot
+     * taken in that window misses the job, so {@code close()} returns while the handle still reports
+     * {@code RUNNING} and still holds the application's body and the submitter's captured identity —
+     * the containment ADR-057 §6 exists to promise. The registry takes the same
+     * {@code ReentrantLock}, so nesting here is reentrant, not a deadlock.
+     */
     private void retire(CommunityJobHandle handle, JobState outcome, boolean unrunnable) {
         clock.lock().lock();
         try {
             inFlight.remove(Thread.currentThread());
+            if (unrunnable) {
+                registry.settleUnrunnable(handle, outcome);
+            } else {
+                registry.finishRun(handle, outcome);
+            }
         } finally {
             clock.lock().unlock();
         }
-        if (unrunnable) {
-            registry.settleUnrunnable(handle, outcome);
-            return;
-        }
-        registry.finishRun(handle, outcome);
     }
 
     private static void join(Thread thread) {
