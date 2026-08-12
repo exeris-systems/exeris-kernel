@@ -167,8 +167,8 @@ public final class InMemoryEventBus implements EventBus {
             for (int i = 0; i < unowned; i++) {
                 try {
                     payload.close();
-                } catch (Throwable ignored) { //NOPMD AvoidCatchingThrowable — best-effort release
-                    continue;
+                } catch (Throwable _) { //NOPMD AvoidCatchingThrowable — best-effort release
+                    // Deliberately empty: one wrapper refusing to release must not strand the rest.
                 }
             }
             throw escaped;

@@ -58,7 +58,7 @@ final class CommunityS3DownloadHandle implements BlobDownloadHandle {
         // size() is the write cursor: what this response actually put there.
         this.available = body == null
                 ? 0L
-                : Math.max(0L, Math.min(available, body.size() - start));
+                : Math.clamp(Math.min(available, body.size() - start), 0L, available);
     }
 
     @Override
