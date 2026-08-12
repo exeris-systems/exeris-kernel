@@ -178,12 +178,24 @@ final class CommunityHttpRequestDispatcher {
                 ? KernelProviders.PRINCIPAL_CONTEXT.get()
                 : null;
 
-        switch (RouteAuthorizationEnforcer.decide(requirement, principal)) {
-            case ADMIT -> admitted.run();
-            case FORBIDDEN ->
-                    exchange.get().respond(HttpResponse.noBody(HttpStatus.FORBIDDEN, request.version()));
-            case UNAUTHENTICATED ->
-                    exchange.get().respond(HttpResponse.noBody(HttpStatus.UNAUTHORIZED, request.version()));
+        // A switch EXPRESSION, so javac requires every RouteDecision to be answered. As a statement
+        // it did not, and a decision added later would match no arm: the request would fall out of
+        // this method having neither run the handler nor written a response, which the dispatcher's
+        // respond-once tail then turns into a 500. A new way to deny would arrive as an unexplained
+        // server error rather than as a compile failure — and as an admission, on the paths where
+        // falling through means the handler already ran. Under artifact skew (RouteDecision lives in
+        // the SPI, this dispatcher in Community) javac's synthetic MatchException makes it a loud
+        // failure rather than either.
+        HttpStatus denial = switch (RouteAuthorizationEnforcer.decide(requirement, principal)) {
+            case ADMIT -> null;
+            case FORBIDDEN -> HttpStatus.FORBIDDEN;
+            case UNAUTHENTICATED -> HttpStatus.UNAUTHORIZED;
+        };
+
+        if (denial == null) {
+            admitted.run();
+        } else {
+            exchange.get().respond(HttpResponse.noBody(denial, request.version()));
         }
     }
 
