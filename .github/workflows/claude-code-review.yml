@@ -4,8 +4,20 @@ on:
   pull_request:
     types: [opened, synchronize, ready_for_review, reopened]
 
+# One review per PR at a time. `synchronize` fires on every push, so without this a
+# quick follow-up push leaves two full reviews running against different commits —
+# the older one finishes and posts a verdict on code that no longer exists.
+concurrency:
+  group: claude-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   claude-review:
+    # Drafts and dependency bumps do not need a full review pass. Draft PRs still
+    # fire `opened`, and a bot PR would otherwise be reviewed once per push.
+    if: >-
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.user.login != 'dependabot[bot]'
     runs-on: ubuntu-latest
     # Permissions:
     #   - `pull-requests: write` is required so Claude can actually post the review
