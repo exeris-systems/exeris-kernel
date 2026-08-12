@@ -168,7 +168,7 @@ public final class InMemoryEventBus implements EventBus {
                 try {
                     payload.close();
                 } catch (Throwable _) { //NOPMD AvoidCatchingThrowable — best-effort release
-                    // Deliberately empty: one wrapper refusing to release must not strand the rest.
+                    // Deliberately empty: one failed release must not strand the refs still owed.
                 }
             }
             throw escaped;
