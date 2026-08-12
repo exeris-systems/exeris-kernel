@@ -29,7 +29,7 @@ import java.util.Objects;
  * @param allocator allocator for off-heap request buffers; non-null
  * @since 0.8.0
  */
-public record HttpRequestEncodingContext(
+public value record HttpRequestEncodingContext(
         HttpMethod method,
         String path,
         MemoryAllocator allocator

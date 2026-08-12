@@ -17,7 +17,10 @@ package eu.exeris.kernel.spi.flow;
  * atomic counters.
  *
  * <h2>Valhalla Readiness</h2>
- * <p>All fields are primitives. No identity operations used. Ready for {@code value record}.
+ * <p>All fields are primitives. No identity operations used.
+ * Declared {@code value record} on the `preview` line (JEP 401); the distributed line compiles
+ * the same source as an identity {@code record}, and the modifier is asserted by
+ * {@code Class::isValue} in the module's value-carrier registry test.
  *
  * @param activeFlows         current number of concurrently executing flow instances
  * @param parkedFlows         current number of suspended (parked) flow instances
@@ -32,7 +35,7 @@ package eu.exeris.kernel.spi.flow;
  *
  * @since 0.5.0
  */
-public record FlowEngineStats(
+public value record FlowEngineStats(
         long activeFlows,
         long parkedFlows,
         long completedFlows,

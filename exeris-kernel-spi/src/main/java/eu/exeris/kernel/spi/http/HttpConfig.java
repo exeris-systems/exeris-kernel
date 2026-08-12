@@ -20,9 +20,10 @@ import java.util.Objects;
  * the implementation's private concern and MUST NOT leak into this record.
  *
  * <h2>Valhalla Readiness</h2>
- * <p>Standard {@code record}. No identity operations ({@code ==},
- * {@code System.identityHashCode()}, {@code synchronized}) on instances.
- * Will migrate to {@code value record} (JEP 401) once mainline GA is reached.
+ * <p>No identity operations ({@code ==}, {@code System.identityHashCode()},
+ * {@code synchronized}) on instances. Declared {@code value record} on the `preview` line (JEP 401); the distributed line compiles
+ * the same source as an identity {@code record}, and the modifier is asserted by
+ * {@code Class::isValue} in the module's value-carrier registry test.
  *
  * @param mode                  operational mode (SERVER / CLIENT / DUAL / DISABLED)
  * @param bindHost              listener bind address for SERVER / DUAL modes;
@@ -40,7 +41,7 @@ import java.util.Objects;
  *                              {@link HttpVersion#HTTP_3} requires Enterprise provider
  * @since 0.5.0
  */
-public record HttpConfig(
+public value record HttpConfig(
         HttpMode mode,
         String bindHost,
         int port,

@@ -20,7 +20,7 @@ package eu.exeris.kernel.spi.http;
  * @param delayMillis delay before the next attempt in milliseconds; {@code >= 0}
  * @since 0.10.0
  */
-public record RetryDecision(boolean retry, long delayMillis) {
+public value record RetryDecision(boolean retry, long delayMillis) {
 
     private static final RetryDecision GIVE_UP = new RetryDecision(false, 0L);
 

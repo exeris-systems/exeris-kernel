@@ -27,10 +27,12 @@ import java.util.Optional;
  * the current {@link HttpExchange} scope.
  *
  * <h2>Valhalla Readiness</h2>
- * <p>Standard {@code record}. No identity operations ({@code ==},
- * {@code System.identityHashCode()}, {@code synchronized}) on instances.
- * Scalarises via C2 JIT Escape Analysis when used transiently within a handler scope.
- * Will migrate to {@code value record} (JEP 401) once mainline GA is reached.
+ * <p>No identity operations ({@code ==}, {@code System.identityHashCode()},
+ * {@code synchronized}) on instances. Declared {@code value record} on the `preview` line (JEP 401); the distributed line compiles
+ * the same source as an identity {@code record}, and the modifier is asserted by
+ * {@code Class::isValue} in the module's value-carrier registry test.
+ * The {@code LoanedBuffer} component keeps its own identity and its own lifecycle: making the
+ * carrier a value changes nothing about ownership, retain/release, or leak accounting.
  *
  * <h2>Thread Safety</h2>
  * <p>This record is immutable. The {@link LoanedBuffer} body must only be accessed
@@ -43,7 +45,7 @@ import java.util.Optional;
  * @param body    request body buffer, or {@code null} if the request has no body
  * @since 0.5.0
  */
-public record HttpRequest(
+public value record HttpRequest(
         HttpMethod method,
         String path,
         HttpVersion version,

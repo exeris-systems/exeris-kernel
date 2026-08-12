@@ -26,7 +26,7 @@ import java.util.Objects;
  * @param allocator allocator for any auxiliary off-heap buffers a decoder may need; non-null
  * @since 0.8.0
  */
-public record HttpResponseDecodingContext(
+public value record HttpResponseDecodingContext(
         int status,
         List<HttpHeader> headers,
         MemoryAllocator allocator

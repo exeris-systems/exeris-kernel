@@ -19,7 +19,7 @@ import java.util.Objects;
  * @param allocator allocator for off-heap response buffers; non-null
  * @since 0.5.0
  */
-public record HttpResponseEncodingContext(
+public value record HttpResponseEncodingContext(
         HttpRequest request,
         MemoryAllocator allocator
 ) {
