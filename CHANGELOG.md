@@ -9,6 +9,16 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 ## [Unreleased]
 
 ### Added
+- **`0.11.0-preview` only — the kernel's carriers are JEP 401 value classes** (159: 157 `value record`
+  plus `RouteRequirement` and `CoreSslHandles`). The distributed artifact is unaffected: it compiles
+  the same sources without the modifier, and per JEP 401 adding or removing `value` on a final class
+  with final fields is binary-compatible. Two records stay identity classes on purpose — one holds a
+  `Map` mutated in place during a topological sort, the other belongs to the annotation processor.
+  Held by a per-module registry test asserting that *every* record is a value class unless excused by
+  name. Details, including the rubric and the four semantics that change silently, in
+  [`PREVIEW-TRACK.md`](PREVIEW-TRACK.md). Checkstyle now skips in five modules rather than two,
+  because its grammar cannot parse the modifier; that coverage is inherited from the distributed line,
+  where the same sources are gated on JDK 25.
 - **The distributed artifact no longer requires `--enable-preview`, and baselines on JDK 25 LTS**
   (ADR-066). `--enable-preview` is a whole-compilation and whole-JVM flag whose bytecode is stamped
   and major-pinned, so a published artifact carrying it forces every consumer's entire build under the

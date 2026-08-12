@@ -16,8 +16,8 @@ delivered; every word of it applies to this artifact too, because this line carr
 subsystems, the same SPI, and the same fixes.
 
 This document is the **delta**, and only the delta: what differs is the table below, the
-`StructuredTaskScope` sites the default line substituted away, the six JEP 401 value classes, and the
-coordinates. There is deliberately no parallel release-notes file. A second copy of the same
+`StructuredTaskScope` sites the default line substituted away, the JEP 401 value-class modifiers on
+the kernel's carriers, and the coordinates. There is deliberately no parallel release-notes file. A second copy of the same
 milestone would need keeping in step with the first, and this repository has already paid for that
 lesson twice in one milestone — a class count of `930`, then `15 181`, each true when written and
 false by the next merge, in documents nobody thought to re-measure.
@@ -124,10 +124,18 @@ unavailable on this line as a standing condition**. Each is recorded rather than
   the suites' own non-empty-analysis assertions (`verifyClassesArePresent`,
   `allThreeTiersAreOnTheAnalysisClasspath`), which exist precisely so an empty analysis can never pass
   as a green one.
-- **Checkstyle** (`checkstyle.skip` in `exeris-kernel-spi` and `exeris-kernel-core` only — **not** the root, because unlike the other three this failure is not reactor-wide: those two are the only modules carrying `value` syntax, and `community`, `community-kafka`, `community-testkit`, `tck` and `diagnostics-cli` keep real Checkstyle coverage; verified in the build log). **This is the one this document previously
+- **Checkstyle** (`checkstyle.skip` in `exeris-kernel-spi`, `exeris-kernel-core`,
+  `exeris-kernel-community`, `exeris-kernel-community-kafka` and `exeris-kernel-community-testkit` —
+  **not** the root: `tck` and `diagnostics-cli` carry no `value` syntax and keep real Checkstyle
+  coverage, verified in the build log). **This is the one this document previously
   singled out as unaffected** — "syntax-level and unaffected" — and JEP 401 falsified it. Checkstyle
   13.2.0's Java grammar does not know the `value` modifier and fails to *parse* the file: "no viable
   alternative at input 'value'", reported as a configuration error rather than a style finding.
+
+  The skip started in two modules because only two carried the modifier. The full carrier sweep put
+  it in three more, and that is a real cost, paid deliberately: PR #307 had gone out of its way to
+  keep those modules gated. What makes it acceptable is the inheritance argument below, and only
+  that — the same sources, minus the modifier, are fully Checkstyle-gated on `main`.
 
   It also **widens the rule rather than repeating it.** PMD, ArchUnit and JaCoCo fail on the class-file
   **major version**, so they break when this line bumps its JDK. Checkstyle fails on preview **source
@@ -211,10 +219,13 @@ missed.
 
 ## Still to do on this line
 
-- **JEP 539 (Strict Field Initialization)** — not yet exercised.
-- **A benchmark for the value carriers.** Six are declared (below) and none is measured; the numbers
+- **JEP 539 (Strict Field Initialization)** — now exercised, but only incidentally: every value class
+  gets strict init, so the 159 carriers below carry it. Nothing here yet exercises it *deliberately*,
+  and the two hand-written value classes were the only places it constrained anything.
+- **A benchmark for the value carriers.** 159 are declared (below) and none is measured; the numbers
   need the benchmark harness and are deliberately post-cut. This document makes **no claim** about
-  what value classes buy until one exists.
+  what value classes buy until one exists — and most of these carriers hold reference components,
+  which will not flatten.
 - **Coordinates for a preview RELEASE: decided at the 0.11.0 cut — a distinct groupId,
   `eu.exeris.preview:*`, with the version staying plain `0.11.0`.** Opting in is therefore an explicit
   coordinate change, and the two lines never share a version axis to compete on.
@@ -241,35 +252,143 @@ missed.
   published version can never be replaced or withdrawn there. Changing coordinates today costs an
   edit to eleven poms; after a Central deploy it costs a groupId migration for every consumer.
 
-## JEP 401: six carriers are value classes here
+## JEP 401: the carriers are value classes here
 
-Declared `public value record`: `MemoryStats`, `TlsShutdownResult`, `TlsHandshakeResult`,
-`EventEngineStats` (SPI), `TransactionRetryPolicy`, `SyscallHandles` (Core). Chosen because the
-repository already *claimed* they were Valhalla-ready — each has a `ValhallaReadiness` test predating
-this work — so converting them tests the claim rather than asserting a new one.
+**159 carriers** — 157 `value record` and two hand-written `value class` (`RouteRequirement` in SPI,
+`CoreSslHandles` in Core). Per module: SPI 79, Core 41, community 35, kafka 3, testkit 1. This is the
+whole of the kernel's carrier surface; what is left out is left out for a stated reason, below.
 
-**Verified in the bytecode, with a control.** `ACC_IDENTITY` (0x0020, formerly `ACC_SUPER`) is **clear**
-on all six and **set** on an untouched carrier (`FlowSnapshot`). Compiling is not evidence that the
-modifier did anything; the flag is.
+This began as six, chosen because the repository already *claimed* they were Valhalla-ready and
+converting them tested the claim rather than asserting a new one. The claim held, so the sweep
+discharged it everywhere else.
 
-**And the check is repeatable, not a one-time inspection.** Each carrier's pre-existing
-`ValhallaReadiness` test now asserts `Class::isValue`, because the structural-equality cases already
-there pass for an identity record too — nothing in the suite would have noticed the modifier being
-lost to a merge or a reformat. Proven non-vacuous by mutation: dropping `value` from `MemoryStats`
-reddens exactly `isValueClass` with the message naming `ACC_IDENTITY`.
+### Two records are deliberately not value classes
 
-**Three semantics change, all silently**, which is why the selection criterion mattered more than the
-conversion:
+- **`SubsystemTopologicalSorter.DependencyGraph`** — it would compile and run correctly as a value
+  record. Its fields are final and nothing compares it with `==`. But `runKahnBfs` mutates the `Map`
+  it holds, in place, during the sort, so the modifier would assert an immutability that is false.
+  This is the one criterion below a compiler cannot check.
+- **`RequiresRoleProcessor.MethodDescriptor`** in `exeris-kernel-build-config` — the annotation
+  processor. Build tooling, not a runtime carrier, and never in scope.
+
+The `AbstractLoanedBuffer` / `LoanedBuffer` family is **permanently** excluded rather than re-audited
+each cycle: it has a mutable ref-count behind a `VarHandle`, registers with `Cleaner`, uses
+`System.identityHashCode` as its forensic leak id, and is recycled by slab pools. It hits four
+disqualifiers at once, and every one of them is load-bearing.
+
+JFR event classes are excluded by construction, not judgement: they extend `jdk.jfr.Event`, and a
+value class may extend only `Object` or an abstract value class.
+
+### The rubric
+
+Applied in order; first hit disqualifies. This is the reusable part — a reader deciding about a new
+carrier needs this section and nothing else.
+
+| # | Disqualifier | How to check it |
+|:--|:--|:--|
+| D0 | Not a carrier — not a `record`, or a `final class` with any non-final field | declaration site; a non-final field is a compile error under `value` |
+| D1 | The type is used as a monitor | `grep -rhoE 'synchronized *\([^)]*\)' --include=*.java */src/main/java \| sort -u` — **enumerable once for the whole repo**, not per type |
+| D2 | Reaches `WeakReference` / `Soft` / `Phantom` / `Cleaner` / `WeakHashMap` | one site repo-wide, in the buffer family |
+| D3 | Reaches `System.identityHashCode` or `IdentityHashMap` | one site repo-wide, same family |
+| D4 | Compared with `==` / `!=` | **exception**: `this == other` as a fast path inside the type's *own* `equals`/`compareTo` is fine — it becomes a deep compare that still implies `equals` |
+| D5 | Is the **non-null expected value** of a reference CAS | the silent one; `compareAndSet(null, x)` is unaffected |
+| D6 | Owns mutation machinery — `VarHandle` on its own field, pooling, `resetForReuse` | the buffer shape |
+| D7 | `Serializable` and not a record | zero hits repo-wide |
+| D8 | The *represented value* mutates in place — fields final, but a held object is mutated | the only judgement call |
+
+**Not disqualifiers**, each compiled to confirm on 28-ea+10: a `MethodHandle`, `MemorySegment`,
+`Arena` or `SymbolLookup` component; a live service, engine, handler or `Runnable` component; array
+components; a ref-counted resource as a component; an `Object` component that is used as a monitor
+*elsewhere*; generics; nesting inside an interface; implementing a sealed interface; a compact
+constructor doing null-checks or defensive copies.
+
+The three that look worst and are fine: `HttpRequest`/`HttpResponse`/`HttpEncodedBody` carry a
+`LoanedBuffer`, `RequestPersistenceSession` carries a live JDBC connection, and `TlsContext` carries
+the `Object` that `NativeTcpStreamPendingWrite` synchronizes on. In each case the *component* keeps
+its identity and its lifecycle; only the carrier around it loses identity. Monitor-as-component is
+not monitor-as-carrier.
+
+**JEP 539 costs nothing on records.** Under `--enable-preview` on JDK 28 every record already adopts
+strict field initialization, so `record` → `value record` adds no construction constraint whatsoever.
+The burden falls only on hand-written classes: all fields final, every field assigned before any use
+of `this`, no instance initializer block.
+
+### Four semantics change, all silently
 
 | | identity `record` | `value record` |
 |:--|:--|:--|
 | `a == b` for structurally equal | `false` | **`true`** — comparison is by value |
 | `System.identityHashCode` differs | yes | **no** |
 | `IdentityHashMap` holding two equal instances | size 2 | **size 1** |
+| `compareAndSet(expected, x)`, `expected` non-null | succeeds only for *that instance* | **succeeds for any equal value** |
 
-`synchronized` on a value throws `IdentityException` — **at runtime, not at compile time**, so a
-converted carrier needs test coverage to prove the guardrail, not a green compile.
+The fourth is the one this sweep added to the table, because it is the one that actually blocked a
+conversion. `AtomicReference.compareAndSet` is specified against `==`, and on JDK 28 `Unsafe` takes a
+substitutability path for value objects — verified in the JDK source and by execution. A CAS that
+means *"only if nobody swapped this exact object"* silently degrades to *"only if the contents still
+look like this"*. It does not throw and it does not warn.
 
-The criterion applied before converting: **zero identity comparisons and zero identity-keyed lookups
-on the carrier anywhere in `*/src/main`** — checked per carrier, all six at zero. A carrier used as an
-identity key would break silently, and nothing in the toolchain would say so.
+`synchronized` on a statically value-typed expression is a **compile error**; on an `Object`-typed
+reference holding a value it is a runtime `IdentityException`. Weak references and `Cleaner.register`
+throw `IdentityException` too. Those are the loud ones — the table above is the dangerous half.
+
+### Two identity dependencies were removed before the sweep
+
+- **`FileSink`** compared queued events against a `POISON` sentinel with `!=`. Deleted rather than
+  relocated: `close()` already clears `running` and the loop already knew how to stop. Removing it
+  exposed that the drain-on-close contract, stated in the test class's own javadoc, was pinned by
+  nothing — a writer discarding its entire backlog passed all 16 tests.
+- **`CommunityRotatingKeySet`** used `compareAndSet` with a non-null expected value on `Generations`.
+  Every write is inside `synchronized (refreshLock)` and there is no second writer, so the CAS always
+  succeeded and would still succeed after conversion — it was not a live defect. It was a redundant
+  CAS asserting an exclusivity witness that value semantics cannot provide.
+
+### How the modifier is held in place
+
+Per-carrier `ValhallaReadiness` blocks do not scale to 159, and a list of converted names is worse
+than useless: it silently under-reports the moment someone forgets an entry. Each module has a
+`ValhallaValueCarrierRegistryTest` stating the check in the strong direction instead — **every record
+discovered in the module must be a value class** unless it appears in `IDENTITY_BY_DESIGN` with a
+reason, and an excused record must still *be* an identity class, so the exclusion map cannot rot into
+stale to-dos.
+
+Non-vacuity is the point, and it is guarded three ways, because a reflective sweep that discovers
+nothing passes every assertion made over it — which is exactly how `ExerisArchitectureTest` came to
+inspect zero Core and Community classes while reporting green:
+
+- a discovery floor per module, so a broken class-file walk reddens instead of passing;
+- `isValue()` and `accessFlags()` asserted as two independent reads of the same bit (interfaces
+  excluded — they are neither, and the first draft of this check got that wrong);
+- JDK controls in both directions: `Integer` is a value class on this JDK, `String` is not.
+
+Proven by mutation, in both directions: dropping `value` from `StreamId` reddens
+`everyRecordIsAValueClass` naming the type, and adding `value` to `DependencyGraph` reddens
+`excusedRecordsAreStillIdentityClasses` printing its stated reason back.
+
+**Verified in the bytecode, with a control**, because compiling only proves the modifier parsed:
+`ACC_IDENTITY` (0x0020, formerly `ACC_SUPER`) is clear on converted carriers across all three tiers
+and **set** on `DependencyGraph`. The control is now that record — the previous version of this
+document used `FlowSnapshot`, which this sweep converted.
+
+The Core registry also pins **`ScopedValue.Carrier` as an identity class**. Nothing else does, and
+`SubsystemOrchestrator:575` decides whether a provider contributed bindings by comparing two carriers
+with `!=`. If a future JDK migrates `Carrier`, that probe silently reports "no bindings" and provider
+wiring is dropped at boot with nothing thrown.
+
+### What this sweep does not claim
+
+**No benchmark.** 159 carriers are declared and none is measured. Most of them hold reference
+components and will not flatten. This document still makes **no claim** about what value classes buy.
+
+**The SPI compatibility gate was never in question, and that was checked rather than assumed.**
+`spi.memory` is on the `stable` list and has carried a `value record` since #307 with
+`spi-api-diff --fail-on-stable` green. JEP 401 is explicit that adding or removing `value` on a final
+class with final fields is binary-compatible.
+
+**One open question, recorded rather than closed.** `CommunityConnectionRefusalTest` failed three
+times in seven runs on the sweep branch and zero times in two runs on the pre-conversion baseline.
+The mechanism is a check-then-stop race in the test — `recordRefusal` increments the counter *before*
+emitting the JFR event, and the test stopped the recording as soon as the counter moved. The test now
+waits for the event; four consecutive clean runs followed. Whether the conversion widened that window
+was not established: `emit()` reads five accessors off `TransportConfig`, a value class, in exactly
+that gap, and a two-run baseline cannot separate that from machine load.
