@@ -128,17 +128,24 @@ public final class RlsConnectionInterceptor implements ConnectionInterceptor {
                                      StorageContext storageContext) {
         StorageContext.IsolationStrategy strategy = storageContext.strategy();
 
-        switch (strategy) {
-            // Neither sets search_path, so both must undo whatever a SEPARATED_SCHEMA request left.
-            case SHARED, DEDICATED -> {
-                publishSessionKeys(connection, storageContext);
-                resetSearchPath(connection, storageContext);
-            }
-            // Its own SET overwrites the path, so there is nothing to reset.
-            case SEPARATED_SCHEMA  -> {
-                injectSchemaPath(connection, storageContext);
-                publishSessionKeys(connection, storageContext);
-            }
+        // A switch EXPRESSION, so javac requires every constant to be answered. As a statement it did
+        // not: a strategy added later would match no arm and fall straight through, publishing
+        // neither session key on a pooled connection that still carries the previous request's — the
+        // silent cross-tenant read this class was repaired for, reintroduced by an enum edit
+        // elsewhere and reported by nothing.
+        boolean setsOwnSearchPath = switch (strategy) {
+            case SEPARATED_SCHEMA -> true;
+            case SHARED, DEDICATED -> false;
+        };
+
+        if (setsOwnSearchPath) {
+            injectSchemaPath(connection, storageContext);
+        }
+        publishSessionKeys(connection, storageContext);
+        if (!setsOwnSearchPath) {
+            // Neither SHARED nor DEDICATED sets search_path, so both must undo whatever a
+            // SEPARATED_SCHEMA request left behind.
+            resetSearchPath(connection, storageContext);
         }
     }
 

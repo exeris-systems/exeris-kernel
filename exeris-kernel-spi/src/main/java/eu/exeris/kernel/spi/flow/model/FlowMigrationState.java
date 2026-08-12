@@ -40,7 +40,9 @@ import java.util.Objects;
  *                          steps it renumbered them onto, so there is no absent case to represent here
  * @param stackPointer      number of valid entries in {@code compensationStack}
  * @param opaqueState       implementation-specific payload; kernel-opaque, and the only component
- *                          here that is user data rather than definition metadata
+ *                          here that is user data rather than definition metadata. Capped at
+ *                          {@link FlowSnapshot#MAX_OPAQUE_STATE_BYTES}, because that is where these
+ *                          bytes are going
  * @since 0.11.0
  */
 public record FlowMigrationState(
@@ -84,6 +86,15 @@ public record FlowMigrationState(
                 throw new IllegalArgumentException(
                         "compensationStepNames[" + index + "] must not be null or blank");
             }
+        }
+        // The same cap FlowSnapshot enforces, checked here because this is where the bytes are
+        // authored. A transform's output is written straight into a snapshot, so an oversized
+        // payload was already refused — one type later, at persist time, by a constructor the
+        // migration author never called. Raising it here names the transform that produced it.
+        if (opaqueState.length > FlowSnapshot.MAX_OPAQUE_STATE_BYTES) {
+            throw new IllegalArgumentException(
+                    "opaqueState exceeds max size: " + opaqueState.length
+                    + " > " + FlowSnapshot.MAX_OPAQUE_STATE_BYTES);
         }
         compensationStack = Arrays.copyOf(compensationStack, compensationStack.length);
         compensationStepNames = Arrays.copyOf(compensationStepNames, compensationStepNames.length);

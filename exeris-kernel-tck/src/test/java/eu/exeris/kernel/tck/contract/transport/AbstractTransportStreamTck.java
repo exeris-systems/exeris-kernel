@@ -331,6 +331,53 @@ public abstract class AbstractTransportStreamTck {
                             + "ownership transfer must not corrupt the stream state")
                     .isGreaterThanOrEqualTo(0L);
         }
+
+        @Test
+        @DisplayName("a rejected length leaves the buffer with the caller")
+        @Timeout(value = 5, unit = TimeUnit.SECONDS)
+        void rejectedLengthLeavesBufferWithCaller() {
+            try (LoanedBuffer buf = allocator.allocate(AllocationHint.MICRO)) {
+                int before = buf.refCount();
+
+                assertThatThrownBy(() -> streams.writer().queueWrite(buf, -1))
+                        .isInstanceOf(IllegalArgumentException.class);
+
+                // The other half of the transfer, and nothing executed it until now. This suite
+                // asserted the successful return above and stated "caller MUST NOT close the buffer
+                // after the call" without qualifying it — so a driver reading the contract before
+                // writing its error paths would close on a throw, and the caller doing what the SPI
+                // tells it then double-frees.
+                assertThat(buf.refCount())
+                        .as("ownership transfers on normal return only; after a throw the buffer is "
+                            + "still the caller's, so its refcount must be untouched")
+                        .isEqualTo(before);
+                assertThat(buf.isAlive())
+                        .as("and still usable — the caller has to be able to close it")
+                        .isTrue();
+            }
+        }
+
+        @Test
+        @DisplayName("a closed stream leaves the buffer with the caller")
+        @Timeout(value = 5, unit = TimeUnit.SECONDS)
+        void closedStreamLeavesBufferWithCaller() {
+            try (LoanedBuffer buf = allocator.allocate(AllocationHint.MICRO)) {
+                buf.setSize(Long.BYTES);
+                int before = buf.refCount();
+
+                TransportStream writer = streams.writer();
+                writer.close();
+
+                // The SPI names IllegalStateException as a caller-owns case explicitly, so both
+                // throwing branches of one method have to agree. One closing and the other not is
+                // the same defect wearing a smaller hat.
+                assertThatThrownBy(() -> writer.queueWrite(buf, Long.BYTES))
+                        .isInstanceOf(IllegalStateException.class);
+
+                assertThat(buf.refCount()).isEqualTo(before);
+                assertThat(buf.isAlive()).isTrue();
+            }
+        }
     }
 
     // =========================================================================
