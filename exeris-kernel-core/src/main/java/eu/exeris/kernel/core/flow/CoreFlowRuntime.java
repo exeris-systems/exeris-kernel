@@ -951,7 +951,33 @@ final class CoreFlowRuntime { // NOPMD
         if (parkedInstances.remove(instance.key()) != null) {
             parkedFlows.decrement();
         }
-        launch(instance, startStep);
+        try {
+            launch(instance, startStep);
+        } catch (RuntimeException | Error failure) { //NOPMD AvoidCatchingGenericException — see below
+            // This runs from runInstance()'s finally. An exception leaving here would replace
+            // whatever the run was already failing with, so the operator is shown a scheduling
+            // failure and never the step failure underneath it — and the wake is destroyed either
+            // way, because claimPendingWake() already consumed it and beginScheduleAfterWake()
+            // already flipped the instance to RUNNING. The saga would then sit marked RUNNING with
+            // no thread running it and no wake left to arrive, which is indistinguishable from
+            // working until someone asks why it never finished.
+            restoreParkedAfterFailedWake(instance, failure);
+        }
+    }
+
+    /**
+     * Puts back everything the claimed-but-unlaunched wake took, so the deferred wake is recoverable
+     * rather than merely reported.
+     */
+    private void restoreParkedAfterFailedWake(RuntimeFlowInstance instance, Throwable failure) {
+        instance.abandonScheduleAfterWake();
+        if (!instance.isTerminal() && parkedInstances.putIfAbsent(instance.key(), instance) == null) {
+            parkedFlows.increment();
+        }
+        FlowDeferredWakeFailedEvent event = new FlowDeferredWakeFailedEvent();
+        event.definitionName = instance.definitionName();
+        event.exceptionType = failure.getClass().getName();
+        event.commit();
     }
 
     /**

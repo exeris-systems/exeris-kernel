@@ -233,6 +233,11 @@ public final class InMemoryEventBus implements EventBus {
             dispatchOnCallingThread(slots, wrappers, descriptor, failures);
         } catch (InterruptedException interruptEx) {
             closeUnclosed(wrappers);
+            // The handlers that already ran and threw are not un-run by the interrupt. throwIfFailed
+            // is only reachable on the normal exit, so without this the caller is told delivery was
+            // cut short and never told that part of what was delivered also failed — the more
+            // actionable of the two facts, and the one it cannot recover by retrying.
+            failures.forEach(interruptEx::addSuppressed);
             Thread.currentThread().interrupt();
             throw interruptEx;
         } catch (Throwable escaped) { //NOPMD AvoidCatchingThrowable — release before rethrow, SPI boundary
@@ -339,8 +344,21 @@ public final class InMemoryEventBus implements EventBus {
 
     private List<Slot> resolveSlots(int ordinal) {
         List<Slot> slots = subscribers.get(ordinal);
-        // CopyOnWriteArrayList already provides safe snapshot iteration; no copy needed.
-        return slots == null ? List.of() : slots;
+        // A snapshot, not the live list. CopyOnWriteArrayList makes a single ITERATION safe, and
+        // that was the whole argument for handing the live list out — but neither publish path
+        // iterates only once. Both read size() to decide how many refs to hold, then walk the list
+        // separately, and a subscribe or unsubscribe landing between those two reads makes the
+        // count describe a different list than the one dispatched to.
+        //
+        // publish(): three handler threads against two retained refs means the third close() is an
+        // over-release — a SIGSEGV in the allocator, arriving where the memory policy exists to
+        // prevent it. publishAndAwait(): more slots than wrappers is an IndexOutOfBoundsException
+        // thrown at the publisher; fewer is a wrapper nobody closes and a refcount that never
+        // reaches zero.
+        //
+        // One copy of a list that is typically empty or a single element, and the empty case
+        // returns the shared List.of() without copying anything.
+        return slots == null ? List.of() : List.copyOf(slots);
     }
 
     private static void emitJfr(int ordinal, int handlerCount, boolean awaitMode) {

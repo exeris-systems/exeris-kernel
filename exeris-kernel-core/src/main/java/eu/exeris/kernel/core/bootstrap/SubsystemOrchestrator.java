@@ -674,11 +674,7 @@ public final class SubsystemOrchestrator {
                 "Phase {0}: start in dependency rounds ({1} subsystem(s))",
                 phase, subsystems.size());
         List<Subsystem> pending = new ArrayList<>(subsystems);
-        // Hoisted and reused per round: a round that fails throws, so this only ever grows on the
-        // way out of the phase.
-        List<Throwable> failures = new ArrayList<>();
         while (!pending.isEmpty()) {
-            failures.clear();
             Set<String> pendingNames = pending.stream()
                     .map(Subsystem::name)
                     .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
@@ -708,15 +704,18 @@ public final class SubsystemOrchestrator {
                     // it through handleFailure, which either rethrows as BootstrapException or —
                     // under DEGRADE — removes the subsystem and returns. A SubsystemException arm
                     // here would be unreachable.
-                    failures.add(failure);
+                    //
+                    // Thrown here rather than collected across the round. Reaching this arm means
+                    // the profile is fail-fast, and the rest of the round is the subsystems that
+                    // bind sockets and accept traffic: collecting failures and checking after the
+                    // loop starts them anyway, so a boot that is already doomed serves requests on
+                    // a half-built kernel before it admits it. The fork-per-subsystem round this
+                    // replaced cancelled its siblings on the first failure; running in-thread has
+                    // to say so explicitly. Nothing rolls http back once it is listening.
+                    throw new BootstrapException(
+                            "Subsystem " + subsystem.name() + " failed in phase " + phase
+                            + ": " + failure.getMessage(), failure);
                 }
-            }
-
-            if (!failures.isEmpty()) {
-                Throwable first = failures.getFirst();
-                throw new BootstrapException(
-                        failures.size() + " subsystem(s) failed in phase " + phase
-                        + ". First failure: " + first.getMessage(), first);
             }
 
             Set<String> readyNames = ready.stream()

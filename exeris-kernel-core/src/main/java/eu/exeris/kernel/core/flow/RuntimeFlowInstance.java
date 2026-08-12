@@ -294,6 +294,28 @@ final class RuntimeFlowInstance implements RuntimeFlowContextStateView { // NOPM
         }
     }
 
+    /**
+     * Undoes a {@link #beginScheduleAfterWake()} claim whose re-submission never started.
+     *
+     * <p>That claim flips the instance to {@code RUNNING} and marks it scheduled <em>before</em> the
+     * thread that will run it exists. If creating that thread fails, releasing the schedule flag
+     * alone is not enough: the claim also consumed the pending wake, and a choreography wake is one
+     * event per business trigger rather than a poll — nothing will send it again. So the wake goes
+     * back with it, and the instance returns to {@code PARKED}, which is what it was.
+     *
+     * <p>Leaves a terminal instance terminal. A flow that finished while the wake was in flight has
+     * nothing to park.
+     */
+    public void abandonScheduleAfterWake() {
+        synchronized (monitor) {
+            scheduled.set(false);
+            if (!isTerminal()) {
+                state = FlowState.PARKED;
+                wakePending = true;
+            }
+        }
+    }
+
     public boolean isTerminal() {
         return state.isTerminal();
     }

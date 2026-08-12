@@ -196,6 +196,58 @@ class SubsystemOrchestratorKahnTest {
     // =========================================================================
 
     @Nested
+    @DisplayName("A round stops at the first failure")
+    class RoundFailFast {
+
+        /** Records start() calls and optionally throws for one named subsystem. */
+        private Subsystem startStub(String name, List<String> started, String failOn) {
+            return new Subsystem() {
+                private volatile boolean running;
+
+                @Override public String name()            { return name; }
+                @Override public List<String> dependsOn() { return List.of(); }
+                @Override public BootstrapPhase phase()   { return BootstrapPhase.SERVICES; }
+                @Override public void initialize()        { /* nothing to set up */ }
+
+                @Override
+                public void start() throws SubsystemException {
+                    started.add(name);
+                    if (name.equals(failOn)) {
+                        throw new SubsystemException(name, SubsystemException.Phase.START,
+                                "deliberate failure in " + name);
+                    }
+                    running = true;
+                }
+
+                @Override public void stop()         { running = false; }
+                @Override public boolean isRunning() { return running; }
+            };
+        }
+
+        @Test
+        @DisplayName("a subsystem later in the round does not start after an earlier one failed")
+        void laterSubsystemInRoundDoesNotStart() throws Exception {
+            List<String> started = new ArrayList<>();
+            // No dependency between them, so both are ready in the same round and run in name order.
+            Subsystem alpha = startStub("alpha", started, "alpha");
+            Subsystem bravo = startStub("bravo", started, null);
+
+            SubsystemOrchestrator orchestrator = buildOrchestrator(List.of(alpha, bravo));
+            orchestrator.initialize(minimalConfig());
+
+            assertThatThrownBy(() -> orchestrator.start(minimalConfig()))
+                    .isInstanceOf(SubsystemOrchestrator.BootstrapException.class);
+
+            // The round used to collect failures and check them only after the loop, so bravo —
+            // in the real graph, the subsystem that binds a socket and accepts traffic — started
+            // on a kernel already known to be broken, and nothing rolls that back.
+            assertThat(started)
+                    .as("alpha failed; bravo must never have been asked to start")
+                    .containsExactly("alpha");
+        }
+    }
+
+    @Nested
     @DisplayName("Topological ordering (Kahn BFS)")
     class TopologicalOrdering {
 
