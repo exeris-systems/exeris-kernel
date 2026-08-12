@@ -25,7 +25,7 @@ requirements.
 v0.11 ships two artifacts. They carry the **same kernel** — same SPI, same subsystems, same tests —
 and differ in one axis plus the build that follows from it.
 
-| | `0.11.0` | `0.11.0-preview` |
+| | `eu.exeris:*:0.11.0` | `eu.exeris.preview:*:0.11.0` |
 |:--|:--|:--|
 | **JDK** | **25 LTS** | newest available — JDK 28 EA today |
 | **`--enable-preview`** | **not required, and not imposed on you** | required, by definition |
@@ -73,7 +73,18 @@ would. The decision and its reasoning are ADR-066 ([`docs/adr/`](../adr/)).
 
 ## Coordinates
 
-groupId is `eu.exeris` throughout. Import the BOM to inherit validated versions:
+**The two lines differ by groupId, not by version.** The distributed line is `eu.exeris:*`; this
+branch, the `preview` line, publishes `eu.exeris.preview:*` at the same plain version. Opting in is
+therefore an explicit coordinate change rather than something a range can drift onto — see
+[`PREVIEW-TRACK.md`](../../PREVIEW-TRACK.md) for why that was chosen over a `-preview` version
+suffix.
+
+**Every snippet below shows `eu.exeris`, the distributed line's groupId.** On this branch substitute
+`eu.exeris.preview`. They are quoted verbatim from the BOM README so they stay correct at their
+source; qualifying them here rather than rewriting them is what keeps this page from drifting out of
+step with it.
+
+groupId is `eu.exeris` on the distributed line. Import the BOM to inherit validated versions:
 
 Source: `exeris-kernel-bom/README.md:16-23` (adapted — `${project.version}` replaced by a literal;
 that property only resolves inside this reactor).
@@ -166,8 +177,10 @@ The `classifier` and `type` are both required: the abstract TCK suites live in t
 
 ## Resolving today
 
-**No `0.11.0` has been released.** This repository's HEAD is `0.11.0-SNAPSHOT`, and the publish
-target is GitHub Packages (`pom.xml`, `distributionManagement`), which requires authentication.
+**`0.11.0` is released on the distributed line, and this branch is cut at `0.11.0` too** — under
+`eu.exeris.preview`, so the two do not collide. The publish target is GitHub Packages (`pom.xml`,
+`distributionManagement`), which requires authentication, so a consumer still has to configure that
+repository before either line resolves.
 
 So the path that actually works right now is local:
 

@@ -4,7 +4,8 @@
 configure it, and test it.
 
 **Prerequisite:** [01 — Platform and Dependencies](./01-platform-and-dependencies.md). This page
-assumes `eu.exeris:exeris-kernel-community` is on your classpath.
+assumes `exeris-kernel-community` is on your classpath — `eu.exeris:*` on the distributed line,
+`eu.exeris.preview:*` on this branch. Guide 01 states the coordinates.
 
 > **Verified against** `0.11.0-SNAPSHOT` at commit `1b93bf65`, 2026-08-11. Every snippet below is
 > quoted or minimally adapted from the cited file, and the citation is printed above it. If a
