@@ -8,6 +8,20 @@ Cut from `development/0.11.0` at `e9f5aefe`, deliberately **before** the ADR-066
 (#301) landed — the GA `StructuredScope` layer is `main`'s downgrade artefact and would be dead code
 here, where `StructuredTaskScope` is the mechanism.
 
+## What `0.11.0-preview` contains
+
+**The milestone itself is the distributed line's, and it is not restated here.** Read
+[`docs/release/v0.11.0-release-notes.md`](docs/release/v0.11.0-release-notes.md) for what v0.11
+delivered; every word of it applies to this artifact too, because this line carries the same
+subsystems, the same SPI, and the same fixes.
+
+This document is the **delta**, and only the delta: what differs is the table below, the
+`StructuredTaskScope` sites the default line substituted away, the six JEP 401 value classes, and the
+coordinates. There is deliberately no parallel release-notes file. A second copy of the same
+milestone would need keeping in step with the first, and this repository has already paid for that
+lesson twice in one milestone — a class count of `930`, then `15 181`, each true when written and
+false by the next merge, in documents nobody thought to re-measure.
+
 ## How this line differs from `main`
 
 | | `main` | `preview` (this branch) |
