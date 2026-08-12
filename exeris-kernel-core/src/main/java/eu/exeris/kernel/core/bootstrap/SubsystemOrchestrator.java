@@ -31,12 +31,11 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.StructuredTaskScope;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.UnaryOperator;
 
 /**
- * Core: Subsystem lifecycle orchestrator — Kahn's topological sort, sequential init + phase-grouped parallel start.
+ * Core: Subsystem lifecycle orchestrator — Kahn's topological sort, sequential init + phase-grouped start.
  *
  * <h2>Zero External Dependencies (L0 Mandate)</h2>
  * <p>This class uses {@link System.Logger} (JEP 264, JDK 9+) for all logging.
@@ -56,9 +55,9 @@ import java.util.function.UnaryOperator;
  *   <li><b>Topological Sort:</b> Kahn's BFS algorithm, O(V+E). Detects cycles and
  *       throws {@link SubsystemCircularDependencyException} immediately — FAIL_FAST
  *       with no recovery, no degradation, JVM halts.</li>
- *   <li><b>Lifecycle:</b> Initialization is sequential in topological order; start is
- *       grouped by phase with FOUNDATION sequential and SERVICES/RUNTIME parallel via
- *       {@link StructuredTaskScope} (JEP 525).</li>
+ *   <li><b>Lifecycle:</b> Initialization is sequential in topological order; start is grouped by
+ *       phase into dependency-safe rounds. Every subsystem starts on the booting thread — see
+ *       {@code startParallel} for why the per-subsystem fork was removed in v0.11 (ADR-066).</li>
  *   <li><b>Reverse Shutdown:</b> Always the strict reverse of topological init order.</li>
  *   <li><b>JFR Telemetry:</b> Every init/start/stop/boot-ready/shutdown event is
  *       emitted via {@link BootstrapJfrEvents}.</li>
@@ -85,7 +84,7 @@ import java.util.function.UnaryOperator;
 // QA-018b extracted SubsystemRegistryLoader (ServiceLoader discovery + selector closure) and
 // SubsystemTopologicalSorter (Kahn's BFS + DependencyGraph). Residual orchestrator owns
 // lifecycle (initialize/start/shutdown), subsystem-state callbacks, phased start strategies
-// (sequential vs parallel via StructuredTaskScope), failure policy + transitive removal, and
+// (single-pass vs dependency-round), failure policy + transitive removal, and
 // cycle-side-effects (JFR + entropy banner) on top of the pure sorter.
 //
 // Retained suppressions:
@@ -306,7 +305,7 @@ public final class SubsystemOrchestrator {
     /**
      * Phase 2 — calls {@link Subsystem#start()} grouped by {@link BootstrapPhase}.
      * FOUNDATION starts sequentially; SERVICES and RUNTIME start in parallel via
-     * {@link StructuredTaskScope}.
+     * dependency-safe rounds on the booting thread.
      *
      * @param config the active kernel config
      * @throws BootstrapException if any mandatory subsystem fails to start
@@ -649,16 +648,30 @@ public final class SubsystemOrchestrator {
         }
     }
 
-    @SuppressWarnings({"preview", "PMD.UseExplicitTypes"})
-    // preview: StructuredTaskScope (JEP 525 — stable in JDK 24)
-    // UseExplicitTypes: var is required here — StructuredTaskScope.open() returns
-    // a two-parameter generic type whose spelling triggers a separate compile error.
+    /**
+     * Starts a phase's subsystems in dependency-safe rounds, each round in order on the calling
+     * thread.
+     *
+     * <p><b>This ran one virtual thread per subsystem until v0.11 and no longer does</b>, and the
+     * reason is a hard limit rather than a preference (ADR-066). A subsystem's {@code start()} reads
+     * {@link ScopedValue} bindings established by two callers the orchestrator cannot see through:
+     * {@code KernelBootstrap} binds {@code CURRENT_CONFIG} around the boot, and the <em>application</em>
+     * binds its own — {@code HTTP_SERVER_HANDLER} is the load-bearing example, and an application is
+     * free to bind values the kernel has never heard of. {@code StructuredTaskScope} forks inherited
+     * all of it; a plain virtual thread inherits none of it, and a {@code ScopedValue.Carrier} can
+     * only carry values named in advance. Rebuilding the kernel's own carrier was tried and produced
+     * a boot that started the HTTP subsystem with no handler bound — every route answering 404.
+     *
+     * <p>The cost is boot latency: a phase now takes the sum of its subsystems' start times rather
+     * than the longest. It is paid once per JVM, {@code FOUNDATION} was already sequential, and the
+     * dependency-round structure is unchanged — only the execution inside a round is.
+     */
     private void startParallel(List<Subsystem> subsystems,
                                 BootstrapPhase phase,
                     String profile,
                     Set<String> startedNames) throws BootstrapException {
         LOG.log(System.Logger.Level.INFO,
-                "Phase {0}: parallel start ({1} subsystem(s))",
+                "Phase {0}: start in dependency rounds ({1} subsystem(s))",
                 phase, subsystems.size());
         List<Subsystem> pending = new ArrayList<>(subsystems);
         while (!pending.isEmpty()) {
@@ -676,34 +689,24 @@ public final class SubsystemOrchestrator {
                         + pendingNames);
             }
 
-            try (var scope = StructuredTaskScope.open()) {
-                // Fork one VT per ready subsystem for this dependency-safe round.
-                List<StructuredTaskScope.Subtask<Object>> tasks = ready.stream()
-                        .<StructuredTaskScope.Subtask<Object>>map(
-                                subsystem -> scope.fork(() -> {
-                                    doStart(subsystem, phase, profile);
-                                    return null;
-                                }))
-                        .toList();
-
-                scope.join();
-
-                // Collect failures after join — ordered and deterministic
-                List<Throwable> failures = tasks.stream()
-                        .filter(task -> task.state() == StructuredTaskScope.Subtask.State.FAILED)
-                        .map(StructuredTaskScope.Subtask::exception)
-                        .toList();
-
-                if (!failures.isEmpty()) {
-                    Throwable first = failures.getFirst();
-                    throw new BootstrapException(
-                            failures.size() + " subsystem(s) failed in phase " + phase
-                            + ". First failure: " + first.getMessage(), first);
+            // Each round runs on THIS thread, in order. See the method javadoc: a subsystem's
+            // start() reads scoped values the orchestrator cannot enumerate — the application's
+            // own, bound around boot() — and only staying on the binding thread delivers them.
+            for (Subsystem subsystem : ready) {
+                if (Thread.interrupted()) {
+                    Thread.currentThread().interrupt();
+                    throw new BootstrapException("Bootstrap interrupted during phase " + phase);
                 }
-            } catch (InterruptedException ex) {
-                Thread.currentThread().interrupt();
-                throw new BootstrapException(
-                        "Bootstrap interrupted during phase " + phase, ex);
+                // Propagated, not collected. doStart routes a SubsystemException through
+                // handleFailure, which under DEGRADE removes the subsystem and returns — so a
+                // BootstrapException escaping here means the profile is fail-fast. The rest of the
+                // round is the subsystems that bind sockets and accept traffic: collecting failures
+                // and checking after the loop starts them anyway, and a boot already known to be
+                // doomed then serves requests on a half-built kernel before it admits it. The
+                // fork-per-subsystem round this replaced cancelled its siblings on the first
+                // failure; running in-thread has to let the first one out. Nothing rolls http back
+                // once it is listening.
+                doStart(subsystem, phase, profile);
             }
 
             Set<String> readyNames = ready.stream()

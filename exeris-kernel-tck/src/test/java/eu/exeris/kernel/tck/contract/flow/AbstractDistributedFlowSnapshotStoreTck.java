@@ -9,6 +9,7 @@
 package eu.exeris.kernel.tck.contract.flow;
 
 import eu.exeris.kernel.spi.exceptions.flow.FlowEngineException;
+import eu.exeris.kernel.spi.flow.model.FlowDefinition;
 import eu.exeris.kernel.spi.flow.model.FlowSnapshot;
 import eu.exeris.kernel.spi.flow.model.FlowSnapshotStore;
 import eu.exeris.kernel.spi.flow.model.FlowState;
@@ -111,11 +112,16 @@ public abstract class AbstractDistributedFlowSnapshotStoreTck {
                 id.getMostSignificantBits(),
                 id.getLeastSignificantBits(),
                 "demo-saga",
+                FlowDefinition.INITIAL_VERSION,
                 currentStep,
+                // The store must round-trip the identity, so the fixture always carries one.
+                Optional.of("step-" + currentStep),
                 state,
                 Instant.parse("2026-05-02T10:00:00Z"),
                 Instant.parse("2026-05-02T11:00:00Z"),
                 new int[]{7, 9},
+                // The store must round-trip the stack identities too, so the fixture always carries them.
+                new String[]{"step-7", "step-9"},
                 2,
                 new byte[]{0x01, 0x02},
                 schemaVersion);
@@ -141,6 +147,21 @@ public abstract class AbstractDistributedFlowSnapshotStoreTck {
             assertThat(got.state()).isEqualTo(original.state());
             assertThat(got.stackPointer()).isEqualTo(original.stackPointer());
             assertThat(got.compensationStack()).containsExactly(7, 9);
+            // The three components v0.11 added to this record. The fixture has populated
+            // currentStepName and definitionVersion since ADR-062/ADR-064 landed but nothing asserted
+            // they survived the round trip, so a store that silently dropped a column passed this
+            // contract. Every one of them is what a resume guard reads, so losing one in transit turns
+            // a sound saga into a fail-closed refusal — or worse for the stack, into a rollback the
+            // runtime can no longer check.
+            assertThat(got.compensationStepNames())
+                    .as("ADR-064 A5: the stack's step identities must survive the store")
+                    .containsExactly("step-7", "step-9");
+            assertThat(got.currentStepName())
+                    .as("ADR-062: the cursor identity must survive the store")
+                    .isEqualTo(original.currentStepName());
+            assertThat(got.definitionVersion())
+                    .as("ADR-064: the definition version must survive the store")
+                    .isEqualTo(original.definitionVersion());
             assertThat(got.opaqueState()).containsExactly(0x01, 0x02);
             assertThat(got.schemaVersion())
                     .as("ADR-013 §5: durable stores advance schema_version by one on every accepted write")

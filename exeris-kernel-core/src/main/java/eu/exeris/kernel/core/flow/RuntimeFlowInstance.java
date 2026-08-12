@@ -17,6 +17,7 @@ import eu.exeris.kernel.spi.flow.model.FlowState;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Arrays;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -25,11 +26,14 @@ final class RuntimeFlowInstance implements RuntimeFlowContextStateView { // NOPM
 
     /* default */ static final int PARKED_SCHEDULE_NOOP = -2;
 
-    private static final int[]  EMPTY_STACK        = new int[0];
-    private static final byte[] EMPTY_OPAQUE_STATE = new byte[0];
+    private static final int[]    EMPTY_STACK        = new int[0];
+    private static final String[] EMPTY_STEP_NAMES   = new String[0];
+    private static final byte[]   EMPTY_OPAQUE_STATE = new byte[0];
 
     private final FlowKey key;
     private final String definitionName;
+    /** The definition version this instance runs under; written into every snapshot (ADR-064). */
+    private final int definitionVersion;
     private final long lifecycleGeneration;
     private final AtomicBoolean scheduled = new AtomicBoolean(false);
     private final Object monitor = new Object();
@@ -37,6 +41,8 @@ final class RuntimeFlowInstance implements RuntimeFlowContextStateView { // NOPM
     private volatile CoreFlowExecutionPlan plan;
     private volatile EventEngine eventEngine;
     private volatile FlowState state;
+    /** A wake refused because a run still held the instance; guarded by {@code monitor}. */
+    private boolean wakePending;
     private volatile int currentStep;
     private volatile long timeoutNanos;
     private int[] compensationStack;
@@ -75,6 +81,7 @@ final class RuntimeFlowInstance implements RuntimeFlowContextStateView { // NOPM
     @SuppressWarnings("java:S6218")
     private record Seed(FlowKey key,
                         String definitionName,
+                        int definitionVersion,
                         long lifecycleGeneration,
                         CoreFlowExecutionPlan plan,
                         FlowState state,
@@ -87,6 +94,7 @@ final class RuntimeFlowInstance implements RuntimeFlowContextStateView { // NOPM
     private RuntimeFlowInstance(Seed seed) {
         this.key = seed.key();
         this.definitionName = seed.definitionName();
+        this.definitionVersion = seed.definitionVersion();
         this.lifecycleGeneration = seed.lifecycleGeneration();
         this.contextView = new RuntimeFlowContext(seed.key(), seed.definitionName(), this);
         this.plan = seed.plan();
@@ -108,6 +116,7 @@ final class RuntimeFlowInstance implements RuntimeFlowContextStateView { // NOPM
         return new RuntimeFlowInstance(new Seed(
                 FlowKey.from(context),
                 context.definitionName(),
+                plan.definitionVersion(),
                 lifecycleGeneration,
                 plan,
                 context.state(),
@@ -137,6 +146,7 @@ final class RuntimeFlowInstance implements RuntimeFlowContextStateView { // NOPM
         return new RuntimeFlowInstance(new Seed(
                 new FlowKey(snapshot.instanceIdMost(), snapshot.instanceIdLeast()),
                 snapshot.definitionName(),
+                plan.definitionVersion(),
                 lifecycleGeneration,
                 plan,
                 snapshot.state(),
@@ -248,12 +258,61 @@ final class RuntimeFlowInstance implements RuntimeFlowContextStateView { // NOPM
 
     public int beginScheduleAfterWake() {
         synchronized (monitor) {
-            if (scheduled.get() || isTerminal()) {
+            if (isTerminal()) {
+                return -1;
+            }
+            if (scheduled.get()) {
+                // A run still owns this instance, so it cannot be re-submitted yet. Recording the
+                // intent under the same monitor that guards `scheduled` makes the refusal and the
+                // deferral atomic: FlowScheduler.wake() promises to re-submit the flow for
+                // execution, and dropping the request here left a parked saga stranded with no
+                // trace — a choreography wake is one event per business trigger, not a poll.
+                wakePending = true;
                 return -1;
             }
             scheduled.set(true);
             state = FlowState.RUNNING;
             return Math.min(currentStep + 1, plan.stepCount());
+        }
+    }
+
+    /**
+     * Claims a wake that arrived while a run was still in flight, if there was one.
+     *
+     * <p>Called once by the draining run so the deferred wake is honoured exactly once; a second
+     * caller sees nothing pending.
+     *
+     * @return {@code true} if a deferred wake was claimed by this caller
+     */
+    public boolean claimPendingWake() {
+        synchronized (monitor) {
+            if (!wakePending) {
+                return false;
+            }
+            wakePending = false;
+            return true;
+        }
+    }
+
+    /**
+     * Undoes a {@link #beginScheduleAfterWake()} claim whose re-submission never started.
+     *
+     * <p>That claim flips the instance to {@code RUNNING} and marks it scheduled <em>before</em> the
+     * thread that will run it exists. If creating that thread fails, releasing the schedule flag
+     * alone is not enough: the claim also consumed the pending wake, and a choreography wake is one
+     * event per business trigger rather than a poll — nothing will send it again. So the wake goes
+     * back with it, and the instance returns to {@code PARKED}, which is what it was.
+     *
+     * <p>Leaves a terminal instance terminal. A flow that finished while the wake was in flight has
+     * nothing to park.
+     */
+    public void abandonScheduleAfterWake() {
+        synchronized (monitor) {
+            scheduled.set(false);
+            if (!isTerminal()) {
+                state = FlowState.PARKED;
+                wakePending = true;
+            }
         }
     }
 
@@ -267,15 +326,61 @@ final class RuntimeFlowInstance implements RuntimeFlowContextStateView { // NOPM
                 key.instanceIdMost(),
                 key.instanceIdLeast(),
                 definitionName,
+                definitionVersion,
                 Math.max(0, stepIndex),
+                stepNameAt(Math.max(0, stepIndex)),
                 snapshotState,
                 Instant.now(),
                 timeoutInstant(),
                 stack,
+                compensationStepNames(),
                 stackPointer,
                 EMPTY_OPAQUE_STATE,
                 schemaVersion.get()
         );
+    }
+
+    /**
+     * Resolves the identity of every live compensation-stack entry (ADR-064 A5).
+     *
+     * <p>Derived at snapshot time rather than tracked alongside {@code compensationStack}, because in
+     * memory the two can never disagree: every push comes from a descriptor the bound plan resolved, so
+     * a parallel in-heap array would be redundant state whose only distinctive behaviour is the way it
+     * desynchronises — {@code pushCompensation} grows the stack by doubling off {@code
+     * compensationStack.length} alone, and a second array that missed a growth would silently shift.
+     *
+     * <p>Cold path: a snapshot is written on park, eviction or a terminal transition, never per step.
+     *
+     * @return one name per live entry, or an empty array when nothing is live
+     */
+    private String[] compensationStepNames() {
+        CoreFlowExecutionPlan currentPlan = plan;
+        if (stackPointer == 0 || currentPlan == null) {
+            return EMPTY_STEP_NAMES;
+        }
+        String[] names = new String[stackPointer];
+        for (int index = 0; index < stackPointer; index++) {
+            names[index] = currentPlan.stepAt(compensationStack[index]).name();
+        }
+        return names;
+    }
+
+    /**
+     * Resolves the identity of the step this snapshot parks at (ADR-062).
+     *
+     * <p>Empty when the index addresses no step — which happens on completion, where
+     * {@code stepIndex == stepCount}. That is not a missing identity: a terminal snapshot is never
+     * resumed, so the resume-side identity check skips it before the absence could matter.
+     *
+     * @param stepIndex the index being recorded
+     * @return the step's name, or empty when the index addresses no step
+     */
+    private Optional<String> stepNameAt(int stepIndex) {
+        CoreFlowExecutionPlan currentPlan = plan;
+        if (currentPlan == null || stepIndex >= currentPlan.stepCount()) {
+            return Optional.empty();
+        }
+        return Optional.of(currentPlan.stepAt(stepIndex).name());
     }
 
     /**

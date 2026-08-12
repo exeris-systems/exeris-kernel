@@ -20,7 +20,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.StructuredTaskScope;
+import eu.exeris.kernel.tck.support.TckScope;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -243,7 +243,7 @@ public abstract class AbstractAlgoOrchestratorTck {
     void concurrentPathFinding() throws InterruptedException {
         PathFinder pf = createPathFinder();
         AtomicInteger errors = new AtomicInteger(0);
-        try (var scope = StructuredTaskScope.open()) {
+        try (var scope = TckScope.open()) {
             for (int i = 0; i < 100; i++) {
                 scope.fork(() -> {
                     try {

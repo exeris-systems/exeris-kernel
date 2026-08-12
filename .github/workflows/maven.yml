@@ -19,11 +19,20 @@ on:
     - cron: '0 2 * * *'   # nightly at 02:00 UTC on default branch (main)
 
 env:
-  MAVEN_OPTS: "--enable-preview --enable-final-field-mutation=ALL-UNNAMED --enable-native-access=ALL-UNNAMED"
-  JDK_URL: "https://download.java.net/java/GA/jdk26/c3cc523845074aa0af4f5e1e1ed4151d/35/GPL/openjdk-26_linux-x64_bin.tar.gz"
-  JDK_SHA256: "83c78367f8c81257beef72aca4bbbf8e6dac8ca2b3a4546a85879a09e6e4e128"
-  JDK_CACHE_KEY: "jdk-26-b35-linux-x64"
-  JDK_VER: "26.0.0"
+  # ADR-066 — the build baselines on JDK 25 LTS.
+  #
+  # --enable-preview stays because TEST and TCK fixtures still use StructuredTaskScope and are
+  # compiled with it (they are not distributed); main sources are preview-clean, which the
+  # Preview-Bytecode Gate below asserts against the shipped class files rather than the sources.
+  #
+  # --enable-final-field-mutation was REMOVED, not overlooked: it is a JDK 26 flag (JEP 500
+  # integrity-by-default) and JDK 25 refuses to start with it. There is nothing to re-enable on
+  # 25, since that is the release the restriction has not reached yet.
+  MAVEN_OPTS: "--enable-preview --enable-native-access=ALL-UNNAMED"
+  JDK_URL: "https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.4%2B7/OpenJDK25U-jdk_x64_linux_hotspot_25.0.4_7.tar.gz"
+  JDK_SHA256: "e58fcdcd637b25c03ca84cbbcefc70d11efb8f4b4cbd05decc9f661769d77f94"
+  JDK_CACHE_KEY: "jdk-25.0.4-7-linux-x64"
+  JDK_VER: "25.0.4"
 
 jobs:
   build-and-verify:
@@ -33,13 +42,22 @@ jobs:
       contents: read
       packages: write   # required for GitHub Packages publish
 
+    env:
+      # Job-level so the guard on the analysis step can read it — `secrets` is not available in a
+      # step-level `if`. Empty on forked PRs, which is exactly when the step must skip rather than fail.
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Sonar needs full history to attribute new code and blame; a shallow clone silently
+          # degrades the new-code period into "everything".
+          fetch-depth: 0
 
       - name: Cache JDK tarball
         id: jdk-cache
-        uses: actions/cache@v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/jdk.tar.gz
           key: ${{ env.JDK_CACHE_KEY }}
@@ -52,7 +70,7 @@ jobs:
           echo "${{ env.JDK_SHA256 }}  ${{ runner.temp }}/jdk.tar.gz" | sha256sum -c
 
       - name: Inject JDK into Runner
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
         with:
           distribution: 'jdkfile'
           jdkFile: ${{ runner.temp }}/jdk.tar.gz
@@ -89,9 +107,55 @@ jobs:
             -P coverage \
             -Dexeris.tck.transport.drainTimeoutSeconds=30
 
+      - name: Preview-Bytecode Gate
+        # ADR-066. Reads the class files this build just produced and fails if anything the
+        # project DISTRIBUTES carries a preview stamp (minor_version 0xFFFF) or targets a
+        # class-file major above the declared LTS baseline.
+        #
+        # Placed here, in the job that already built the reactor, so it inspects real artifacts
+        # rather than rebuilding them. It reads bytecode rather than sources deliberately: the
+        # stamp is what a consumer trips over, it survives generated and processor-emitted code
+        # that a grep would miss, and it cannot be satisfied by a comment claiming compliance.
+        #
+        # Test and TCK fixtures are out of scope by design — 26 of them still use
+        # StructuredTaskScope, compile with --enable-preview, and are never published.
+        run: tools/preview-bytecode-scan/preview-bytecode-scan.sh --expect-major 69
+
+      - name: SonarQube Cloud Analysis
+        # Runs in this job, immediately after the build, so it consumes the compiled classes and the
+        # JaCoCo XML that `-P coverage` just produced rather than rebuilding them. That reuse is the
+        # whole point: SonarCloud Automatic Analysis never builds the project, so the
+        # `sonar.coverage.jacoco.xmlReportPaths` in sonar-project.properties could never resolve and
+        # coverage on new code read 0.0% on every pull request regardless of the tests written.
+        #
+        # Skipped when the secret is absent (forked pull requests) — a missing token must not fail
+        # the build gate.
+        #
+        # continue-on-error, deliberately: this job is the ROOT of the entire pipeline — all eight
+        # other jobs depend on it directly or transitively — so an unhealthy analysis step would take
+        # down every merge gate for a reason unrelated to the code under test. Static analysis is not
+        # a correctness gate here and must never be able to do that.
+        #
+        # It is load-bearing right now, not just prudent: the SonarQube Cloud organisation is
+        # currently without an administrator, so Automatic Analysis cannot be switched off — and
+        # SonarQube Cloud *rejects* a CI submission while it is enabled. Until that is resolved this
+        # step is expected to fail whenever a token is present.
+        #
+        # REMOVE once a CI-based analysis has been confirmed green; leaving it in permanently would
+        # let the analysis rot silently.
+        #
+        # Pinned by commit SHA, not by tag. Two high-severity advisories (GHSA-f79p-9c5r-xg88,
+        # GHSA-5xq9-5g24-4g6f) cover every 4.x/5.x release of this action, so `@v5` resolved to a
+        # vulnerable revision and failed the Dependency Review gate on PRs into main; both are
+        # cleared from 6.0.0 onward. The SHA below is tag v8.2.1. A moving tag is also mutable —
+        # SHA-pinning is what makes the reviewed revision the one that actually runs.
+        continue-on-error: true
+        if: ${{ env.SONAR_TOKEN != '' }}
+        uses: SonarSource/sonarqube-scan-action@22918119ff8e1ca75a623e15c8296b6ea4fbe28f # v8.2.1
+
       - name: Upload TCK JFR recordings
         if: always() && (github.event_name == 'push' || github.event_name == 'schedule') && github.ref == 'refs/heads/main'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: jfr-tck-${{ github.run_number }}
           path: |
@@ -122,20 +186,27 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  persistence-rls-gate:
-    name: Persistence RLS/Interceptor Gate
+  spi-compatibility-gate:
+    name: SPI Compatibility Gate
     runs-on: ubuntu-latest
-    needs: build-and-verify
+    # Deliberately NOT `needs: build-and-verify`. The gate compiles only exeris-kernel-spi
+    # (which depends on nothing but java.*/jdk.*), so it finishes in well under a minute and
+    # gives the fastest possible signal on a contract break — the one class of mistake that is
+    # expensive to discover after a release rather than before one.
     permissions:
       contents: read
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Full history + tags: the gate diffs the SPI at the last released tag against this
+          # revision, and a shallow clone has neither.
+          fetch-depth: 0
 
       - name: Cache JDK tarball
         id: jdk-cache
-        uses: actions/cache@v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/jdk.tar.gz
           key: ${{ env.JDK_CACHE_KEY }}
@@ -148,7 +219,71 @@ jobs:
           echo "${{ env.JDK_SHA256 }}  ${{ runner.temp }}/jdk.tar.gz" | sha256sum -c
 
       - name: Inject JDK into Runner
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: 'jdkfile'
+          jdkFile: ${{ runner.temp }}/jdk.tar.gz
+          java-version: ${{ env.JDK_VER }}
+          architecture: x64
+          cache: maven
+
+      - name: Every SPI class resolves to a maturity label
+        # Checked per class, not per package: inside a `mixed` package one matching
+        # class would otherwise mark the whole directory classified, and the rest would
+        # fall out of both include lists below — neither gated nor reported.
+        run: tools/spi-api-diff/spi-api-diff.sh --verify-surfaces
+
+      - name: Diff SPI against the last released version
+        run: |
+          set -euo pipefail
+          # Highest released version, NOT `git describe`: patch releases are cut on main, so on a
+          # development/* branch the last *reachable* tag can be older than the latest published
+          # one. Reachability is irrelevant — this compares two API surfaces, not two histories.
+          BASELINE="$(git tag --sort=-v:refname --list 'v*' | head -1)"
+          if [ -z "$BASELINE" ]; then
+            echo "no release tag found — nothing to compare against"; exit 0
+          fi
+          echo "baseline: $BASELINE"
+          tools/spi-api-diff/spi-api-diff.sh \
+            --old "$BASELINE" --new HEAD \
+            --out "${{ github.workspace }}/target/spi-api-diff" \
+            --fail-on-stable
+
+      - name: Publish SPI diff report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: spi-api-diff
+          path: target/spi-api-diff/
+          if-no-files-found: warn
+
+  persistence-rls-gate:
+    name: Persistence RLS/Interceptor Gate
+    runs-on: ubuntu-latest
+    needs: build-and-verify
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Cache JDK tarball
+        id: jdk-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/jdk.tar.gz
+          key: ${{ env.JDK_CACHE_KEY }}
+
+      - name: Fetch JDK
+        if: steps.jdk-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          wget -q -O ${{ runner.temp }}/jdk.tar.gz ${{ env.JDK_URL }}
+          echo "${{ env.JDK_SHA256 }}  ${{ runner.temp }}/jdk.tar.gz" | sha256sum -c
+
+      - name: Inject JDK into Runner
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
         with:
           distribution: 'jdkfile'
           jdkFile: ${{ runner.temp }}/jdk.tar.gz
@@ -166,7 +301,7 @@ jobs:
 
       - name: Upload persistence JFR recordings
         if: always() && (github.event_name == 'push' || github.event_name == 'schedule') && github.ref == 'refs/heads/main'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: jfr-persistence-${{ github.run_number }}
           path: exeris-kernel-community/target/*.jfr
@@ -201,11 +336,11 @@ jobs:
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Cache JDK tarball
         id: jdk-cache
-        uses: actions/cache@v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/jdk.tar.gz
           key: ${{ env.JDK_CACHE_KEY }}
@@ -218,7 +353,7 @@ jobs:
           echo "${{ env.JDK_SHA256 }}  ${{ runner.temp }}/jdk.tar.gz" | sha256sum -c
 
       - name: Inject JDK into Runner
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
         with:
           distribution: 'jdkfile'
           jdkFile: ${{ runner.temp }}/jdk.tar.gz
@@ -236,7 +371,7 @@ jobs:
 
       - name: Upload kafka JFR recordings
         if: always() && (github.event_name == 'push' || github.event_name == 'schedule') && github.ref == 'refs/heads/main'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: jfr-kafka-${{ github.run_number }}
           path: exeris-kernel-community-kafka/target/*.jfr
@@ -263,11 +398,11 @@ jobs:
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Cache JDK tarball
         id: jdk-cache
-        uses: actions/cache@v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/jdk.tar.gz
           key: ${{ env.JDK_CACHE_KEY }}
@@ -280,7 +415,7 @@ jobs:
           echo "${{ env.JDK_SHA256 }}  ${{ runner.temp }}/jdk.tar.gz" | sha256sum -c
 
       - name: Inject JDK into Runner
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
         with:
           distribution: 'jdkfile'
           jdkFile: ${{ runner.temp }}/jdk.tar.gz
@@ -298,7 +433,7 @@ jobs:
 
       - name: Upload continuity JFR recordings
         if: always() && (github.event_name == 'push' || github.event_name == 'schedule') && github.ref == 'refs/heads/main'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: jfr-continuity-${{ github.run_number }}
           path: |
@@ -329,11 +464,11 @@ jobs:
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Cache JDK tarball
         id: jdk-cache
-        uses: actions/cache@v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/jdk.tar.gz
           key: ${{ env.JDK_CACHE_KEY }}
@@ -346,7 +481,7 @@ jobs:
           echo "${{ env.JDK_SHA256 }}  ${{ runner.temp }}/jdk.tar.gz" | sha256sum -c
 
       - name: Inject JDK into Runner
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
         with:
           distribution: 'jdkfile'
           jdkFile: ${{ runner.temp }}/jdk.tar.gz
@@ -381,7 +516,7 @@ jobs:
 
       - name: Upload transport stress JFR recordings
         if: always() && (github.event_name == 'push' || github.event_name == 'schedule') && github.ref == 'refs/heads/main'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: jfr-transport-stress-${{ github.run_number }}
           path: exeris-kernel-community/target/*.jfr
@@ -425,11 +560,11 @@ jobs:
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Cache JDK tarball
         id: jdk-cache
-        uses: actions/cache@v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/jdk.tar.gz
           key: ${{ env.JDK_CACHE_KEY }}
@@ -442,7 +577,7 @@ jobs:
           echo "${{ env.JDK_SHA256 }}  ${{ runner.temp }}/jdk.tar.gz" | sha256sum -c
 
       - name: Inject JDK into Runner
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
         with:
           distribution: 'jdkfile'
           jdkFile: ${{ runner.temp }}/jdk.tar.gz
@@ -452,7 +587,7 @@ jobs:
 
       - name: Cache OpenSSL ${{ matrix.openssl_version }} build
         id: openssl-cache
-        uses: actions/cache@v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.OPENSSL_PREFIX }}
           # Key embeds the EXACT version + a hash of the literal configure flags string.
@@ -553,7 +688,7 @@ jobs:
 
       - name: Upload OpenSSL ${{ matrix.openssl_version }} TLS JFR recordings
         if: always() && (github.event_name == 'push' || github.event_name == 'schedule') && github.ref == 'refs/heads/main'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: jfr-tls-openssl-${{ matrix.openssl_version }}-${{ github.run_number }}
           path: exeris-kernel-*/target/*.jfr
@@ -571,11 +706,11 @@ jobs:
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Cache JDK tarball
         id: jdk-cache
-        uses: actions/cache@v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/jdk.tar.gz
           key: ${{ env.JDK_CACHE_KEY }}
@@ -588,7 +723,7 @@ jobs:
           echo "${{ env.JDK_SHA256 }}  ${{ runner.temp }}/jdk.tar.gz" | sha256sum -c
 
       - name: Inject JDK into Runner
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
         with:
           distribution: 'jdkfile'
           jdkFile: ${{ runner.temp }}/jdk.tar.gz
@@ -618,14 +753,14 @@ jobs:
             verify -DskipTests -B -e
 
       - name: Upload Community benchmark results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: jmh-community-results
           path: exeris-kernel-community/target/jmh-results.json
           if-no-files-found: warn
 
       - name: Upload Core benchmark results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: jmh-core-results
           path: exeris-kernel-core/target/jmh-results.json
@@ -633,7 +768,7 @@ jobs:
 
       - name: Upload Community benchmark JFR
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: jfr-benchmarks-community-${{ github.run_number }}
           path: exeris-kernel-community/target/jfr-reports/jmh-benchmarks.jfr
@@ -642,7 +777,7 @@ jobs:
 
       - name: Upload Core benchmark JFR
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: jfr-benchmarks-core-${{ github.run_number }}
           path: exeris-kernel-core/target/jfr-reports/jmh-benchmarks.jfr
@@ -659,11 +794,11 @@ jobs:
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Cache JDK tarball
         id: jdk-cache
-        uses: actions/cache@v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/jdk.tar.gz
           key: ${{ env.JDK_CACHE_KEY }}
@@ -676,7 +811,7 @@ jobs:
           echo "${{ env.JDK_SHA256 }}  ${{ runner.temp }}/jdk.tar.gz" | sha256sum -c
 
       - name: Inject JDK into Runner
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
         with:
           distribution: 'jdkfile'
           jdkFile: ${{ runner.temp }}/jdk.tar.gz
@@ -688,21 +823,21 @@ jobs:
         run: mvn -f tools/jfr-reporter/pom.xml clean package -q
 
       - name: Download TCK JFR recordings
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: jfr-tck-${{ github.run_number }}
           path: .
 
       - name: Download persistence JFR recordings
         continue-on-error: true
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: jfr-persistence-${{ github.run_number }}
           path: .
 
       - name: Download benchmark JFR recordings
         continue-on-error: true
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: jfr-benchmarks-*-${{ github.run_number }}
           path: .
@@ -723,7 +858,7 @@ jobs:
             --out       build/jfr-report/
 
       - name: Upload Lab JSON
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: jfr-lab-json-${{ github.run_number }}
           path: build/jfr-report/
@@ -740,30 +875,30 @@ jobs:
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Download Lab JSON
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: jfr-lab-json-${{ github.run_number }}
           path: build/jfr-report/
 
       - name: Download Community benchmark results
         continue-on-error: true
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: jmh-community-results
           path: build/jmh-results/community/
 
       - name: Download Core benchmark results
         continue-on-error: true
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: jmh-core-results
           path: build/jmh-results/core/
 
       - name: Publish latest to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v4
+        uses: peaceiris/actions-gh-pages@84c30a85c19949d7eee79c4ff27748b70285e453 # v4.0.0
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: build/jfr-report/
@@ -771,7 +906,7 @@ jobs:
           keep_files: true
 
       - name: Publish run snapshot to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v4
+        uses: peaceiris/actions-gh-pages@84c30a85c19949d7eee79c4ff27748b70285e453 # v4.0.0
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: build/jfr-report/
@@ -780,7 +915,7 @@ jobs:
 
       - name: Publish JMH results latest to GitHub Pages
         continue-on-error: true
-        uses: peaceiris/actions-gh-pages@v4
+        uses: peaceiris/actions-gh-pages@84c30a85c19949d7eee79c4ff27748b70285e453 # v4.0.0
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: build/jmh-results/
@@ -789,7 +924,7 @@ jobs:
 
       - name: Publish JMH results snapshot to GitHub Pages
         continue-on-error: true
-        uses: peaceiris/actions-gh-pages@v4
+        uses: peaceiris/actions-gh-pages@84c30a85c19949d7eee79c4ff27748b70285e453 # v4.0.0
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: build/jmh-results/

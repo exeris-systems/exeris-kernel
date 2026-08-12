@@ -22,11 +22,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Queue;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.StructuredTaskScope;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -47,18 +44,29 @@ import java.util.concurrent.atomic.AtomicLong;
  *       forking; total refCount = N; each handler's close() decrements by 1.</li>
  * </ul>
  *
- * <h2>Concurrency (Java 26)</h2>
+ * <h2>Concurrency</h2>
  * <p>{@link #publish} is fire-and-forget: after retain normalization, the calling thread
  * starts one virtual thread per handler and returns immediately without waiting.
  *
- * <p>{@link #publishAndAwait} opens the scope directly on the <em>calling</em> thread
- * (which is the owner), forks all handlers, joins, and returns — blocking until all
- * handlers complete. This is the preferred pattern when the caller needs delivery confirmation.
+ * <p>{@link #publishAndAwait} runs the handlers <em>on the calling thread</em>, in subscription
+ * order, and returns once all have completed. This is the preferred pattern when the caller needs
+ * delivery confirmation.
  *
  * <h2>ScopedValue Propagation (JEP 506)</h2>
- * <p>Virtual threads started by {@code publish()} and {@code publishAndAwait()} are created
- * from the calling thread's execution context, so they inherit active {@code ScopedValue}
- * bindings at call time — zero {@code ThreadLocal}, zero manual propagation.
+ * <p>The two paths differ, and the difference is not cosmetic:
+ * <ul>
+ *   <li>{@link #publishAndAwait} — a handler observes <b>every</b> binding the publisher had,
+ *       including scoped values the kernel does not know about, because it never leaves the
+ *       publisher's thread. This is the contract {@code AbstractEventBusTck}'s golden case
+ *       asserts, and running in-thread is what keeps it reachable without {@code --enable-preview}
+ *       (ADR-066).</li>
+ *   <li>{@link #publish} — a handler observes <b>no</b> bindings. A plain
+ *       {@code Thread.ofVirtual().start(...)} does not inherit {@code ScopedValue} bindings; only
+ *       a fork inside a structured scope does. This has always been the behaviour of this path;
+ *       the previous claim here that both paths inherit was measured false and corrected in
+ *       v0.11.</li>
+ * </ul>
+ * <p>Zero {@code ThreadLocal} either way.
  *
  * @since 0.5.0
  */
@@ -110,8 +118,16 @@ public final class InMemoryEventBus implements EventBus {
      * <p>Fire-and-forget semantics are preserved: the calling thread returns immediately
      * after starting all handler virtual threads. ScopedValue bindings are inherited at
      * virtual thread creation time — no latch, no wait.
+     *
+     * <p>If the fan-out itself fails part-way, the refs no handler thread will ever own are released
+     * before the failure is rethrown. Fire-and-forget applies to the handlers, not to setting them
+     * up: a caller that never learns the dispatch failed also never learns its payload is stranded.
      */
+    // java:S1181 — same exemption as publishAndAwait: the Throwable is rethrown unchanged and the
+    // catch exists only to release refs no handler will reach. Narrowing it restores the leak for
+    // exactly the types that reach this path.
     @Override
+    @SuppressWarnings("java:S1181")
     public void publish(EventDescriptor descriptor, EventPayload payload) {
         Objects.requireNonNull(descriptor, "descriptor");
         Objects.requireNonNull(payload,    "payload");
@@ -124,16 +140,38 @@ public final class InMemoryEventBus implements EventBus {
             return;
         }
 
+        // unowned = refs currently held that no handler will ever close. It starts at one (the
+        // caller's), rises with each retain(), and falls as each successful start() transfers
+        // ownership to that thread; whatever it holds when something throws is exactly what the bus
+        // must release. Both throwing sites are real: retain() is specified to throw once the
+        // payload is fully released, and start() throws OutOfMemoryError when a thread cannot be
+        // allocated — precisely the moment an off-heap leak matters most.
         int slotCount = slots.size();
-        if (slotCount > MULTI_SUBSCRIBER_THRESHOLD) {
-            for (int i = 1; i < slotCount; i++) {
-                payload.retain();
+        int unowned   = 1;
+        try {
+            if (slotCount > MULTI_SUBSCRIBER_THRESHOLD) {
+                for (int i = 1; i < slotCount; i++) {
+                    payload.retain();
+                    unowned++;
+                }
             }
-        }
-
-        for (Slot slot : slots) {
-            EventPayload slotPayload = payload;
-            Thread.ofVirtual().start(() -> slot.handler().handle(descriptor, slotPayload));
+            for (Slot slot : slots) {
+                EventPayload slotPayload = payload;
+                Thread.ofVirtual().start(() -> slot.handler().handle(descriptor, slotPayload));
+                unowned--;
+            }
+        } catch (Throwable escaped) { //NOPMD AvoidCatchingThrowable — release before rethrow
+            // Each close() is guarded on its own: a throw here would replace the caller's original
+            // failure with a secondary one AND abandon the refs still outstanding, so the loop has
+            // to finish whatever any single release does.
+            for (int i = 0; i < unowned; i++) {
+                try {
+                    payload.close();
+                } catch (Throwable _) { //NOPMD AvoidCatchingThrowable — best-effort release
+                    // Deliberately empty: one failed release must not strand the refs still owed.
+                }
+            }
+            throw escaped;
         }
     }
 
@@ -144,10 +182,32 @@ public final class InMemoryEventBus implements EventBus {
     /**
      * {@inheritDoc}
      *
-     * <p>The calling thread opens the scope and is the owner — it forks all handlers,
-     * joins (blocks), and closes. ScopedValue bindings are inherited by all handler VTs.
+     * <p><b>Handlers run on the calling thread, in subscription order</b> — the method blocks until
+     * all of them have completed, which is what it promises, so it does the work rather than
+     * delegating it and waiting.
+     *
+     * <p>That choice is what preserves this path's {@code ScopedValue} contract without a preview
+     * API (ADR-066). The contract is that a handler observes <em>whatever</em> the publisher had
+     * bound, including scoped values the kernel has never heard of — an application's own trace or
+     * tenant context. {@code StructuredTaskScope} delivered that by inheriting bindings into forked
+     * subtasks; no GA mechanism can, because building a {@code ScopedValue.Carrier} requires naming
+     * each value and nothing can enumerate a thread's live bindings. Staying on the publisher's
+     * thread satisfies the contract by construction instead of reconstructing it.
+     *
+     * <p>The trade is latency: handler durations now sum rather than overlap, and a slow handler
+     * delays its successors. Callers that want fan-out have {@link #publish}, which is
+     * fire-and-forget and unchanged.
+     *
+     * <p>Failure handling is unchanged — every handler runs, failures are collected, and the first
+     * is thrown once all have finished.
      */
+    // java:S1181 — the same exemption the five other release-before-rethrow sites carry (see
+    // NativeCipherContext, SecurityInterceptor, PaqsScheduler). The Throwable is not handled here:
+    // it is rethrown unchanged, and the catch exists only so the wrappers no handler will ever
+    // reach are released first. Narrowing it would restore the leak for exactly the types that
+    // reach this path — an Error out of a handler is the one that motivated the fix.
     @Override
+    @SuppressWarnings("java:S1181")
     public void publishAndAwait(EventDescriptor descriptor, EventPayload payload)
             throws InterruptedException {
         Objects.requireNonNull(descriptor, "descriptor");
@@ -166,17 +226,27 @@ public final class InMemoryEventBus implements EventBus {
         // early-exit path (interrupt, RuntimeException) — every retain() is balanced.
         List<TrackingWrapper> wrappers = buildWrappers(payload, slotCount);
 
-        Queue<Throwable> failures = new ConcurrentLinkedQueue<>();
-        try (StructuredTaskScope<Void, Void> scope =
-                     StructuredTaskScope.open(StructuredTaskScope.Joiner.<Void>awaitAll())) {
-            forkHandlers(scope, slots, wrappers, descriptor, failures);
-            try {
-                scope.join();
-            } catch (InterruptedException interruptEx) {
-                closeUnclosed(wrappers);
-                Thread.currentThread().interrupt();
-                throw interruptEx;
-            }
+        // Plain list, deliberately: dispatch no longer crosses a thread boundary, so the
+        // concurrent queue this used to be would buy nothing but an allocation and a CAS per add.
+        List<Throwable> failures = new ArrayList<>(slotCount);
+        try {
+            dispatchOnCallingThread(slots, wrappers, descriptor, failures);
+        } catch (InterruptedException interruptEx) {
+            closeUnclosed(wrappers);
+            // The handlers that already ran and threw are not un-run by the interrupt. throwIfFailed
+            // is only reachable on the normal exit, so without this the caller is told delivery was
+            // cut short and never told that part of what was delivered also failed — the more
+            // actionable of the two facts, and the one it cannot recover by retrying.
+            failures.forEach(interruptEx::addSuppressed);
+            Thread.currentThread().interrupt();
+            throw interruptEx;
+        } catch (Throwable escaped) { //NOPMD AvoidCatchingThrowable — release before rethrow, SPI boundary
+            // Only InterruptedException was caught here, so anything else — an Error out of a handler,
+            // or a failure closing one wrapper — left the remaining wrappers open and leaked the
+            // payload's off-heap refcount permanently. The per-handler try-with-resources inside the
+            // loop covers the handler that threw; it cannot cover the ones never reached.
+            closeUnclosed(wrappers);
+            throw escaped;
         }
         throwIfFailed(failures);
     }
@@ -229,23 +299,28 @@ public final class InMemoryEventBus implements EventBus {
         return wrappers;
     }
 
-    private static void forkHandlers(StructuredTaskScope<Void, Void> scope,
-                                     List<Slot> slots,
-                                     List<TrackingWrapper> wrappers,
-                                     EventDescriptor descriptor,
-                                     Queue<Throwable> failures) {
+    /**
+     * Invokes each handler in subscription order on the caller's thread.
+     *
+     * <p>Interruption is honoured <em>between</em> handlers rather than inside one: a handler is an
+     * application SPI callback with its own resources, so aborting mid-invocation would leave it no
+     * chance to unwind. The remaining wrappers are closed by the caller's catch.
+     */
+    private static void dispatchOnCallingThread(List<Slot> slots,
+                                                List<TrackingWrapper> wrappers,
+                                                EventDescriptor descriptor,
+                                                List<Throwable> failures) throws InterruptedException {
         int slotCount = slots.size();
         for (int i = 0; i < slotCount; i++) {
+            if (Thread.interrupted()) {
+                throw new InterruptedException("publishAndAwait interrupted after " + i + " handler(s)");
+            }
             Slot slot = slots.get(i);
-            TrackingWrapper wrapper = wrappers.get(i);
-            scope.fork(() -> {
-                try (TrackingWrapper twrClose = wrapper) {
-                    slot.handler().handle(descriptor, twrClose);
-                } catch (RuntimeException handlerEx) { //NOPMD AvoidCatchingGenericException — SPI boundary
-                    failures.add(handlerEx);
-                }
-                return null;
-            });
+            try (TrackingWrapper wrapper = wrappers.get(i)) {
+                slot.handler().handle(descriptor, wrapper);
+            } catch (RuntimeException handlerEx) { //NOPMD AvoidCatchingGenericException — SPI boundary
+                failures.add(handlerEx);
+            }
         }
     }
 
@@ -257,7 +332,7 @@ public final class InMemoryEventBus implements EventBus {
         }
     }
 
-    private static void throwIfFailed(Queue<Throwable> failures) {
+    private static void throwIfFailed(List<Throwable> failures) {
         if (failures.isEmpty()) {
             return;
         }
@@ -269,8 +344,21 @@ public final class InMemoryEventBus implements EventBus {
 
     private List<Slot> resolveSlots(int ordinal) {
         List<Slot> slots = subscribers.get(ordinal);
-        // CopyOnWriteArrayList already provides safe snapshot iteration; no copy needed.
-        return slots == null ? List.of() : slots;
+        // A snapshot, not the live list. CopyOnWriteArrayList makes a single ITERATION safe, and
+        // that was the whole argument for handing the live list out — but neither publish path
+        // iterates only once. Both read size() to decide how many refs to hold, then walk the list
+        // separately, and a subscribe or unsubscribe landing between those two reads makes the
+        // count describe a different list than the one dispatched to.
+        //
+        // publish(): three handler threads against two retained refs means the third close() is an
+        // over-release — a SIGSEGV in the allocator, arriving where the memory policy exists to
+        // prevent it. publishAndAwait(): more slots than wrappers is an IndexOutOfBoundsException
+        // thrown at the publisher; fewer is a wrapper nobody closes and a refcount that never
+        // reaches zero.
+        //
+        // One copy of a list that is typically empty or a single element, and the empty case
+        // returns the shared List.of() without copying anything.
+        return slots == null ? List.of() : List.copyOf(slots);
     }
 
     private static void emitJfr(int ordinal, int handlerCount, boolean awaitMode) {

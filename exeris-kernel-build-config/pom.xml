@@ -6,7 +6,7 @@
 	<parent>
 		<groupId>eu.exeris</groupId>
 		<artifactId>exeris-kernel-root</artifactId>
-		<version>0.10.2</version>
+		<version>0.11.0</version>
 		<relativePath>../pom.xml</relativePath>
 	</parent>
 
@@ -19,7 +19,7 @@
 	<properties>
 		<maven.deploy.skip>false</maven.deploy.skip>
 		<pmd.skip>true</pmd.skip>
-		<maven.compiler.release>26</maven.compiler.release>
+		<maven.compiler.release>25</maven.compiler.release>
 
 		<!--
 			v0.8 Sprint 6 (Coverage C-P0-01): LINE coverage floor for the

@@ -73,6 +73,21 @@ class CoreSecurityProviderTckTest extends AbstractSecurityProviderTck {
         return new StubLoanedBuffer(12L); // fixture denies: unrecognized strategy value
     }
 
+    @Override
+    protected LoanedBuffer createTokenWithWrongTypedStrategy() {
+        return new StubLoanedBuffer(13L); // fixture denies: wrong-typed strategy claim
+    }
+
+    @Override
+    protected LoanedBuffer createTokenWithSharedScopeClaim() {
+        return new StubLoanedBuffer(14L); // fixture denies: shared scope declared but unenforceable
+    }
+
+    @Override
+    protected LoanedBuffer createTokenWithWrongTypedSharedScope() {
+        return new StubLoanedBuffer(15L); // fixture denies: wrong-typed shared-scope claim
+    }
+
     private static final class StubLoanedBuffer implements LoanedBuffer {
         private long size;
 

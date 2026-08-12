@@ -23,8 +23,13 @@ package eu.exeris.kernel.spi.flow.model;
  * The {@code stepId} field maps directly to the slab slot:
  * {@code address = stepSlabBase + stepId * STEP_DESCRIPTOR_STRIDE}.
  *
- * @param stepId       unique step identifier within the flow definition (0-based index)
- * @param name         human-readable step name (for JFR / diagnostics)
+ * @param stepId       the step's <b>position</b> in the definition (0-based) and its slab slot
+ *                     address. Not an identity: it changes when steps are reordered, which is
+ *                     exactly why {@link #name()} exists (ADR-062)
+ * @param name         the step's <b>identity</b> — distinct within a definition (enforced by
+ *                     {@link FlowDefinition}) and stable across redeployments. A parked saga
+ *                     records it, and resume refuses to continue if the plan disagrees. Also
+ *                     what JFR and diagnostics display
  * @param action       the action to execute; must not be {@code null}
  * @param compensation the compensation action for backward recovery; {@code null} if not defined
  *

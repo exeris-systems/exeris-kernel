@@ -23,6 +23,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Map;
 
 @DisplayName("Community: SecurityProvider TCK")
@@ -35,7 +36,8 @@ class CommunitySecurityProviderTckTest extends AbstractSecurityProviderTck {
 
     @Override
     protected LoanedBuffer createValidTokenBuffer() {
-        return TestJwt.builder().toBuffer();
+        // Since 0.11 the mapper grants only what the token claims, so the fixture has to say it.
+        return TestJwt.builder().claim("scope", "security:read").toBuffer();
     }
 
     @Override
@@ -137,6 +139,30 @@ class CommunitySecurityProviderTckTest extends AbstractSecurityProviderTck {
     protected LoanedBuffer createTokenWithUnrecognizedStrategy() {
         return TestJwt.builder()
                 .claim(KernelIsolationClaims.ISOLATION_STRATEGY, "UNKNOWN_STRATEGY_XYZ")
+                .toBuffer();
+    }
+
+    @Override
+    protected LoanedBuffer createTokenWithWrongTypedStrategy() {
+        // A JSON number where a strategy string belongs. Discharged by the driver's own token
+        // validation — the kernel mapping cannot see this case (see the TCK factory's Javadoc).
+        return TestJwt.builder()
+                .claimRaw(KernelIsolationClaims.ISOLATION_STRATEGY, 42)
+                .toBuffer();
+    }
+
+    @Override
+    protected LoanedBuffer createTokenWithWrongTypedSharedScope() {
+        // A JSON array where a shared-scope string belongs — one partition name, not a list.
+        return TestJwt.builder()
+                .claimRaw(KernelIsolationClaims.SHARED_SCOPE_KEY, List.of("world-alpha"))
+                .toBuffer();
+    }
+
+    @Override
+    protected LoanedBuffer createTokenWithSharedScopeClaim() {
+        return TestJwt.builder()
+                .claim(KernelIsolationClaims.SHARED_SCOPE_KEY, "world-alpha")
                 .toBuffer();
     }
 

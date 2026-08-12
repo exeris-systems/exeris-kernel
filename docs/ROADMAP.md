@@ -100,6 +100,8 @@ See also: [Flow Subsystem](./subsystems/flow.md) — TCK Coverage.
 
 **Merge Gate:** Extend `AbstractFlowEngineTck` with `RecordingStream` assertion for shutdown event emission; require Community binding pass.
 
+**Status (v0.6): DELIVERED** — entry left stale until 2026-08-08, when the v0.11 FlowJournal RFC's inventory of flow JFR events contradicted it. `FlowEngineShutdownEvent` shipped in 0.6.0 (`5c56395d`) as `eu.exeris.kernel.core.flow.FlowEngineShutdownEvent` — package-private, `@Name("eu.exeris.kernel.flow.Shutdown")`, `@StackTrace(false)` — emitted from `CoreFlowEngine.close()` once at the end of the drain, carrying the elapsed close duration. Two deviations from the Resolution above, kept because the delivered shape is the better one: the class sits in `core.flow` rather than a `core.flow.jfr` sub-package (matching the six sibling flow events), and the counter set is `activeFlows` / `parkedFlows` / `completedFlows` / `failedFlows` plus `persistenceEnabled` / `compensationEnabled` rather than the proposed `parkedFlowCount` / `interruptedFlowCount` — a full `FlowEngineStats` snapshot instead of two hand-picked numbers. The merge gate is met on both sides: `AbstractFlowEngineTck` asserts the event via `RecordingStream` within 5 s of `close()`, and `CoreFlowRuntimeTest` carries two Core-side assertions.
+
 See also: [Flow Subsystem](./subsystems/flow.md) — JFR Events.
 
 ---
@@ -146,6 +148,10 @@ See also: [Security Subsystem](./subsystems/security.md) — Responsibilities.
 
 **Merge Gate:** `TransportCarrierPinningTck` must pass with no pinning regressions; add community-scale sustained ingress load validation in CI/perf pipeline.
 
+**Status (v0.11): DISCHARGED** — by PERF-063, not by a later slice of this entry, which is why it sat open: the work landed under a different name and nobody closed the row. `NativeTcpReactor.pendingRequests` is an `MpscUnboundedArrayQueue` (`NativeTcpReactor.java:66`), so the cross-VT handoff this entry describes is lock-free today. Both merge-gate halves exist: `CommunityTransportCarrierPinningTckTest` plus its 2- and 4-reactor variants, and `NativeTcpTransportStressTest` behind the dedicated `transport-stress-gate` CI job.
+
+Two deviations from the text above, recorded so the row is not re-opened by someone diffing wording against code: the queue is **JCTools**, not Agrona (`org.jctools:jctools-core` is already a Community dependency, so no new one was taken), and it lives in `NativeTcpReactor` rather than `NativeTcpCarrier` — the reactor is where the cross-VT handoff actually is. No separate per-connection ingress queue was added and none is indicated; the Sprint-8e Hot-Path Collections Review discharged that question for the carrier as a whole.
+
 See also: [Transport Subsystem](./subsystems/transport.md) — Testing Strategy / Load Tests.
 
 ---
@@ -159,6 +165,14 @@ See also: [Transport Subsystem](./subsystems/transport.md) — Testing Strategy 
 **Resolution:** Migrate the Community carrier incrementally from primary NIO socket lifecycle management to the Core-provided FFM syscall path backed by `CoreSyscallLoader`. Preserve SPI blindness, PAQS semantics, and current TLS FD-owner binding while moving socket bootstrap and readiness operations onto the shared POSIX / Winsock layer. Java NIO remains the explicit portability / compatibility fallback when FFM socket bootstrap is unavailable, unsupported, or temporarily disabled.
 
 **Merge Gate:** Add Community integration and TCK coverage proving boot, bind, connect, ingress, and load-shed behavior through the FFM-backed socket path. Linux validation is mandatory; Windows-capable CI coverage is required for Winsock compatibility before milestone close.
+
+**Status (v0.11): PARTIAL — validation seam delivered, carrier migration deferred to v0.12 candidate.**
+
+What landed: `SyscallLoopbackRoundTripIT` drives the resolved handles through a real loopback connection — socket → bind → listen → connect → accept → send → recv with a byte-exact comparison, plus a refusal case with a positive control. Until it, the seam had only non-nullness assertions, so the build could not distinguish working socket handles from merely-present ones. That is the precondition for trusting the path enough to move a carrier onto it, and it is now in the default build (Failsafe, `**/*IT.java`).
+
+What did not land, and why it is not a slip: migrating `NativeTcpCarrier` off NIO is a live-traffic change to the one component every request crosses, and it should not be attempted while the Winsock half of the seam is unexecuted anywhere. **Named precondition, verified rather than assumed:** every job in `.github/workflows/maven.yml` is `ubuntu-latest`. There is no Windows runner, so `CoreSyscallLoader.loadWindows` and the Windows branch of the new IT have never run in CI or locally here. The migration's own merge gate demands Winsock compatibility coverage before milestone close, which no v0.11 slice could have satisfied.
+
+**v0.12 entry condition:** a Windows CI runner exists and the new IT is green on it. Absent that, the honest v0.12 scope is Linux-only migration behind a fallback, with NIO retained as the documented portability path — which the Resolution above already anticipates.
 
 See also: [Transport Subsystem](./subsystems/transport.md) — Responsibilities / Zero-Copy Ingress.
 
@@ -1375,7 +1389,7 @@ the same change (Obligation 9 four-method → five-method; EP step 8 `EX-DIAG-10
 
 **Owner:** Security / Bootstrap subsystem.
 
-**Resolution:** Open an RFC in `exeris-docs/` (`RFC-YYYY-MM-DD Identity Provider SPI Shape.md`, per `exeris-docs/templates/RFC-TEMPLATE.md` — RFC not ADR because this is a multi-option strategic question with no committed decision yet). Scope enumerates: option space (OIDC-first vs PASETO-first vs federation-first vs custom-claim-first), interaction with the existing v0.9 JWKS rotation item, claims-to-`PrincipalContext` mapping contract, multi-IDP composition (per-tenant IDP selection driven by `StorageContext.isolationKey`), failure-mode classification (signature invalid / claims malformed / token expired / IDP unreachable), and TCK strategy. RFC accepted → reserve next free ADR number in `~/exeris-systems/exeris-docs/adr-index.md` → ADR drafted → SPI implementation lands in v0.10.
+**Resolution:** Open an RFC in this repo's `docs/rfc/` — the owning repo holds the RFC for an SPI it will own (#230); `exeris-docs/` hosts only ecosystem-wide and business-shaped RFCs (`RFC-YYYY-MM-DD Identity Provider SPI Shape.md`, per `exeris-docs/templates/RFC-TEMPLATE.md` — RFC not ADR because this is a multi-option strategic question with no committed decision yet). Scope enumerates: option space (OIDC-first vs PASETO-first vs federation-first vs custom-claim-first), interaction with the existing v0.9 JWKS rotation item, claims-to-`PrincipalContext` mapping contract, multi-IDP composition (per-tenant IDP selection driven by `StorageContext.isolationKey`), failure-mode classification (signature invalid / claims malformed / token expired / IDP unreachable), and TCK strategy. RFC accepted → ADR number reserved when the implementing change reaches its build gate, **not** at RFC acceptance (deferring the reservation keeps the global namespace free of numbers that may never be written) → ADR drafted → SPI implementation lands in v0.10.
 
 **Outbound / WebClient touchpoint (MUST be in RFC scope — added 2026-06-02).** The IDP SPI is not inbound-only. `PrincipalContext` is the convergence point for *both* directions: IDP **writes** it inbound (token → `PrincipalContext` via `ScopedValue`), and the outbound `HttpClientRequestEnricher` SPI (ADR-032, consumed by `KernelWebClient`) **reads** it to propagate identity downstream. The two never couple directly — they meet only at `PrincipalContext` (no `KernelWebClient`→IDP compile edge; The Wall preserved). The RFC MUST resolve the service-to-service auth question, because today the enricher seam carries only parsed identity (`X-Tenant-Id` / `X-Principal-Id`), **not** the raw `Bearer` — the kernel holds the parsed `PrincipalContext`, not the raw token. Enumerate the propagation options: (a) parsed-identity headers only, downstream re-validates via its own IDP; (b) pass-through bearer — requires the IDP SPI to retain/expose the raw credential, which the enricher forwards; (c) token exchange / on-behalf-of / client-credentials — IDP exposes an *outbound credential / token-source seam* the enricher consumes. The decision determines whether `HttpClientRequestEnricher` needs a companion `OutboundCredentialProvider` seam (or an IDP method `outboundCredential(PrincipalContext) → Optional<Credential>`). Decide one contract in the same RFC → the reserved ADR covers both inbound validation and outbound propagation. See the deferred WebClient entries (Symmetric Body Codec, Retry/Backoff) for the adjacent client-side SPI surface that lands alongside.
 
@@ -1548,7 +1562,7 @@ Phase 4 **DELIVERED — `IsolationStrategyContract` fail-OPEN → fail-closed (S
 
 ### Events: Binding-Agnostic `topic` Concept on the Event Descriptor SPI
 
-**Gap:** The Open-Core event descriptor carries no `topic` concept, so the event routing target is not portable across `EventEngine` bindings. The Community in-memory `EventBus` ignores any topic notion entirely, while the `exeris-kernel-community-kafka` driver invents its own topic mapping at the binding layer — there is no shared SPI seam that both implementations honour, so the routing target is not swappable between the in-memory and Kafka bindings. The SDK `@DomainEvent.topic` annotation (owned by `exeris-sdk`) already captures author intent at design time and is carried through codegen, but it has no sink on the kernel side: the descriptor SPI offers nowhere to land it. The deliberate tiering decision (why the open-core descriptor omits `topic`) is also undocumented. Surfaced during downstream dogfooding (Stellar-Tactics multi-service build, 2026-06; finding K1 + the `@DomainEvent.topic` twin).
+**Gap:** The Open-Core event descriptor carries no `topic` concept, so the event routing target is not portable across `EventEngine` bindings. The Community in-memory `EventBus` ignores any topic notion entirely, while the `exeris-kernel-community-kafka` driver invents its own topic mapping at the binding layer — there is no shared SPI seam that both implementations honour, so the routing target is not swappable between the in-memory and Kafka bindings. The SDK `@DomainEvent.topic` annotation (owned by `exeris-sdk`) already captures author intent at design time and is carried through codegen, but it has no sink on the kernel side: the descriptor SPI offers nowhere to land it. The deliberate tiering decision (why the open-core descriptor omits `topic`) is also undocumented. Surfaced during downstream dogfooding (a multi-service build, 2026-06; finding K1 + the `@DomainEvent.topic` twin).
 
 **Owner:** Events subsystem (kernel SPI seam). The `@DomainEvent.topic` annotation itself stays owned by `exeris-sdk` — this entry covers only the kernel-side descriptor field that would consume it.
 
@@ -1601,7 +1615,7 @@ See also: [Events Subsystem](./subsystems/events.md); v0.7 EVENT-203 (skeleton d
 
 ### Multi-Tenancy: Shared-World / `Universe` Scope Tier — RFC Track
 
-**Gap:** The kernel models isolation through a single tenant-scoping primitive (`StorageContext.isolationKey`, per ADR-012). There is no scope tier above (or beside) the tenant for a *shared* world that multiple tenants observe and mutate together — e.g. a shared game universe, a common reference dataset, or a cross-tenant collaboration space. Today applications needing this force `isolationKey` to do double duty (one key meaning both "tenant" and "shared world"), which collapses the two concerns and either over-isolates (no sharing possible) or under-isolates (the tenant boundary leaks). Surfaced during downstream dogfooding (Stellar-Tactics multi-service build, 2026-06; finding K3, High).
+**Gap:** The kernel models isolation through a single tenant-scoping primitive (`StorageContext.isolationKey`, per ADR-012). There is no scope tier above (or beside) the tenant for a *shared* world that multiple tenants observe and mutate together — e.g. a shared game universe, a common reference dataset, or a cross-tenant collaboration space. Today applications needing this force `isolationKey` to do double duty (one key meaning both "tenant" and "shared world"), which collapses the two concerns and either over-isolates (no sharing possible) or under-isolates (the tenant boundary leaks). Surfaced during downstream dogfooding (a multi-service build, 2026-06; finding K3, High).
 
 **Owner:** Security / Persistence subsystem (isolation model) + SDK/Tooling (scope expression at design time).
 
@@ -1619,7 +1633,7 @@ See also: ADR-012 (isolation model); `exeris-sdk/docs/rfc/RFC-2026-06-24-univers
 
 ### HTTP: Generated-App Boot-Path Reachability — Path-Parameter Routing + Request-Decoder Scope
 
-**Gap:** Two distinct kernel-side gaps surface only when a generated Entity-First app is driven over a *real* kernel HTTP boot (not a handler unit test) — the exact thing Stellar's `GeneratedAppHttpBootTest` does, and which substring assertions on emitted `RuntimeLifecycle` text cannot see:
+**Gap:** Two distinct kernel-side gaps surface only when a generated Entity-First app is driven over a *real* kernel HTTP boot (not a handler unit test) — the exact thing a downstream generated-app HTTP boot test does, and which substring assertions on emitted `RuntimeLifecycle` text cannot see:
 - **Path-parameter routing (finding T21, High).** `HttpRouter.resolve()` (`exeris-kernel-core/.../http/routing/HttpRouter.java`) matches by exact `path.equals` + opt-in prefix only — there is **no `{id}` placeholder capture**. The generated `RuntimeLifecycle` registers `GET/PUT/DELETE /x/{id}`, so `{id}` is matched *literally*: `/x/<uuid>` never equals `/x/{id}` and every by-id / update / delete route — plus every `@Action` route, which is also id-bearing (finding T1) — **404s on a real boot**; only collection routes serve. The generated handler is correct (`extractPathId` parses the trailing segment) — it just never gets called. Latent because the handler unit test invokes `handleGetById(exchange)` directly, bypassing the router. Confirmed still open on `0.10.0-SNAPSHOT` (the SSE work did not touch it; SSE routes are collection-level `{base}/stream` and sidestep it).
 - **Request-decoder request-scope (write-over-HTTP, High).** The server-side request-body decoder quadrant shipped in v0.8 (ADR-036: `HttpRequestBodyDecoderRegistry` + the `HttpKernelProviders.HTTP_REQUEST_BODY_DECODER_REGISTRY` ScopedValue slot), and Community ships `CommunityJsonRequestBodyDecoder`. But the community testkit boot fixture `KernelBootstrapHttpEngineFixture` binds only `HttpKernelProviders.HTTP_SERVER_HANDLER` into request scope — **not** the decoder registry — so a `POST` with a JSON body through the testkit boot returns **500** (the decoder is never in the handler's request scope). Notably asymmetric: the *response* encoder is effective (reads serialize to JSON over the wire) and **SSE works**, but request decoding does not — so server-side validation-over-HTTP (finding T10) and action-`POST`-create cannot be exercised through the testkit boot. Whether this is a fixture gap (it does not bind the codec registries a real app boot would) or a scope-propagation issue is the open question to pin down.
 
@@ -1637,7 +1651,7 @@ See also: ADR-012 (isolation model); `exeris-sdk/docs/rfc/RFC-2026-06-24-univers
 - **Generated SSE stream routes unreachable on a real boot (finding T23).** The kernel stream dispatcher (`CommunityHttpStreamDispatcher`) resolves a streaming route only when the engine's active handler **is** an `HttpRouter` (`handler instanceof HttpRouter router → router.resolveStream(...)`). The generated boot publishes a `router::handle` **lambda** (and `Application` forwards a lambda), so the `HttpRouter` type is lost and every generated stream route falls back to respond-once / 404 on a real boot — even though the handler and route are emitted. The fix is on the generator side (hand the engine the `HttpRouter` *instance*: `handlerSlot.set(router)` — the router already implements `HttpHandler`, so respond-once is unaffected). Kernel-side it is worth a deliberate note on whether stream resolution should remain coupled to a concrete-type `instanceof` (`exeris-tooling` follow-up; kernel design note).
 - **`--enable-preview` at runtime to boot the kernel (K-boot).** kernel-core bootstrap classes are preview-compiled (`SubsystemOrchestrator` class-file minor `0xFFFF`) while the persistence classes are not (`TransactionOrchestrator` minor `0`); embedding the persistence stack needs only JDK 26, but *booting* the kernel needs `--enable-preview`. Resolved by the Platform-Baseline preview-clean work (see below) for the default artifact; until then, generated-app run scripts / poms must set the flag, and this is a documentation point for downstream boot consumers.
 
-All three were surfaced during downstream dogfooding (Stellar-Tactics multi-service build, re-verified against `origin/development/0.10.0` on 2026-06-24).
+All three were surfaced during downstream dogfooding (a closed-source downstream consumer multi-service build, re-verified against `origin/development/0.10.0` on 2026-06-24).
 
 See also: ADR-036 (request-body decoder SPI quadrant); ADR-043 (SSE streaming); "Platform Baseline for 1.0 GA" (K-boot / `--enable-preview`); [HTTP Subsystem](./subsystems/http.md).
 
@@ -1645,7 +1659,19 @@ See also: ADR-036 (request-body decoder SPI quadrant); ADR-043 (SSE streaming); 
 
 ## Known Gaps / Future Work planned for v0.11
 
-### Storage: `BlobStorageProvider` SPI
+### Transport: PAQS Execution-Seam Port (M1) + Locality Re-Test Disposition
+
+**Gap:** The `StreamExecutionBackend` seam — the PAQS injection point at which an admitted stream's root task is started — existed only on the parked `research/loom-continuation-locality` branch (v0.6). `PaqsScheduler` on the default line still spawned the root VT inline, so the seam (a **refactor-neutral M1 extraction, proven neutral at M2**) lived one `git branch -D` away from loss. Two forward consumers depend on this injection point: (1) the Enterprise/custom-scheduler **locality re-test**, and (2) the post-1.0 **DST `SimulationScheduler`** (see "Road to 1.0" §DST). Leaving M1 stranded meant "the architecturally risky part is done" was true only on paper.
+
+**Owner:** Transport subsystem.
+
+**Resolution:** Port M1 onto `development/0.11.0` as the milestone's **first move** — `StreamExecutionBackend` (Core-internal `core.transport.scheduler`, **not** SPI; no driver/native detail crosses The Wall) + an additive 6-arg `PaqsScheduler` constructor whose default backend is the exact prior inline `Thread.ofVirtual().name().start()` (behaviourally identical: no admission, load-shed, or JFR change). The `LocalityAwareExecutionBackend` impl, the reflective VT custom-scheduler dependency, io_uring, and the A/B benchmark harness (`CoreContinuationLocalityBaseline`) do **not** come — they are the *subsequent* research track, not a v0.11 default-reactor deliverable, and the benchmark belongs in `exeris-benchmarks`. Records the locality NO_GO as **config-scoped** (Community-only, stock scheduler with the custom-scheduler override reflectively absent, no `pullerMode=3`; Enterprise io_uring M4/M5 never ran) so the seam's continued existence is justified by the open re-test, not the closed Community result.
+
+**Merge Gate:** `AbstractPaqsSchedulerTck` gains an execution-backend-seam contract case (custom backend preserves `ScopedValue` bindings) bound in `CorePaqsSchedulerTckTest`; `PaqsSchedulerTest` proves default-backend behaviour is unchanged (thread-name format, task runs) — all pre-existing PAQS tests stay green (refactor-neutral); no new `StructuredTaskScope` import; companion ADR reserved via `exeris-adr-register` recording the seam intent + config-scoped-NO_GO + named re-test regime. Distinct from the Platform-Baseline `fork`/`join`/`cancel` orchestration seam (Stream H) — different injection point (transport continuation-resume vs subsystem orchestration); do not conflate.
+
+---
+
+### Storage: `BlobStorageProvider` SPI (ADR-056)
 
 **Gap:** File and media handling has no kernel SPI seam. Application generators that need to emit upload widgets, signed-URL flows, or download streams cannot rely on a kernel-side adapter — every host application hand-wires its own S3 / MinIO / GCS / local-FS code, with no zero-copy story and no isolation-key scoping. Blob I/O is a runtime hot path (large-payload streaming, native sendfile candidate) with ≥2 plausible drivers, qualifying as kernel SPI territory under the Wall test.
 
@@ -1655,9 +1681,23 @@ See also: ADR-036 (request-body decoder SPI quadrant); ADR-043 (SSE streaming); 
 
 **Merge Gate:** SPI green on TCK with at least two bindings (local FS + S3-compatible HTTP); zero-leak assertion on `LoanedBuffer` lifecycle through upload + download paths; `StorageContext` isolation honored per ADR-012; ArchTest forbids `java.io.File` / `java.nio.file.Files` imports inside the SPI package (consistent with existing scoped bans in runtime hot paths).
 
+**Status (v0.11): DELIVERED.** SPI + `AbstractBlobStorageTck` + filesystem driver (ADR-056), then the
+S3-compatible driver against MinIO — the merge gate's two-binding requirement is closed. The S3 binding's
+scope is recorded as an ADR-056 §10 amendment rather than left to folklore: header signing over
+`host` / `x-amz-content-sha256` / `x-amz-date` plus query-signed presigned URLs, no multipart, no chunked
+payload signing; an `https://` endpoint is **rejected at construction** because the Community HTTP client
+engine has no client-side TLS; and the single-object ceiling is a named knob (`s3.maxObjectBytes`, default
+8 MiB) rather than an implicit one, refused loudly through `EX-BLOB-8005` before any allocation.
+
+Two things this slice deliberately did **not** close, both tracked below: bootstrap wiring for the
+subsystem (so two same-priority providers still need a configured selection rather than a discovery
+order), and the client engine's fixed per-response buffer.
+
+See also: `docs/adr/ADR-056-blob-storage-provider-spi.md` (Accepted 2026-07-30) — rules package placement, the `LoanedBuffer` ownership rule across both transfer directions, tenant-relative `BlobRef` addressing, the absent-`isolationKey` deny, and the signed-URL capability contract. One deviation from the Resolution text above is recorded there: the operational type is **`BlobStore`**, with `BlobStorageProvider` kept as the ServiceLoader discovery handle, matching the `*Provider` + `createEngine` convention every sibling package already follows.
+
 ---
 
-### Runtime: `JobScheduler` SPI
+### Runtime: `JobScheduler` SPI (ADR-057)
 
 **Gap:** Background-job execution (cron triggers, queued retries, scheduled emissions) has no kernel SPI. Applications wanting "run this every 5 minutes" or "schedule this to fire in 24h" hand-roll a scheduler or pull in Quartz, losing `PrincipalContext` / `StorageContext` propagation and missing JFR observability. Job dispatch is a runtime concern that composes with the existing event publisher and Flow engine, and has plausible alternative drivers (in-process Loom-based scheduler vs DB-backed durable queue vs external orchestrator hook).
 
@@ -1667,17 +1707,28 @@ See also: ADR-036 (request-body decoder SPI quadrant); ADR-043 (SSE streaming); 
 
 **Merge Gate:** SPI green on TCK with Community in-process driver bound; context propagation TCK verifies `PrincipalContext` + `StorageContext` round-trip across submit → dispatch; ArchTest confirms no `ThreadLocal` use for context propagation (`ScopedValue` only); JFR `JobDispatchEvent` / `JobCompletionEvent` / `JobFailureEvent` carried for observability; companion ADR documents the `ScheduledExecutorService` scoped-ban exception with explicit scope.
 
+See also: `docs/adr/ADR-057-job-scheduler-spi.md` (Accepted 2026-07-30). It deviates from the Resolution text above on both concurrency primitives, and the second deviation also retires the Merge-Gate clause immediately above. (a) **Dispatch is virtual threads + explicit `ScopedValue` rebind, not `StructuredTaskScope`** — a new subsystem on STS would have been a fifth preview-taint site on the default line, against the "Platform Baseline for 1.0 GA" mandate below. **The other four are gone as of v0.11 / ADR-066** — `OutboxOrchestrator` and `CommunityEventLoop` on `StructuredScope`, `InMemoryEventBus.publishAndAwait` and `SubsystemOrchestrator` phase start now in-thread — so this ruling reads today as the one that kept the count from ever reaching five, and the scheduler needs no follow-up. (b) **There is no `ScheduledExecutorService` and therefore no scoped-ban exception to document** — this entry asks for an injectable time source in the same breath, and `ScheduledThreadPoolExecutor` times off `System.nanoTime()` internally with no seam to displace, so the deterministic trigger TCK this gate requires is unreachable through it; the driver owns its timing loop instead. (c) A third, smaller departure: **`JobTrigger` carries three kinds, not four** — the event-driven kind listed in the Resolution text above is excluded on coupling direction (an event handler calling `submit` already expresses it, whereas a trigger kind would put an `spi.events` dependency inside the scheduling contract).
+
+**Status (v0.11): DELIVERED.** SPI + Community driver + `AbstractJobSchedulerTck` (18 cases); contract doc at `docs/subsystems/scheduling.md`. **The bootstrap wiring this entry called "the remaining slice" has since landed and the line was left stale** — corrected 2026-08-08 during the pre-cut audit. `CommunitySchedulingSubsystem` carries the full lifecycle (`initialize` / `start` / `stop` / `providerBindings`), resolves `scheduling.schedulerName` through `ConfigProvider` with `JobSchedulerConfig.DEFAULT_NAME` as the fallback, binds both `KernelProviders.JOB_SCHEDULER_PROVIDER` and `KernelProviders.JOB_SCHEDULER`, and is discovered at boot through `CommunitySubsystemProvider` — the single `SubsystemProvider` service entry, where it sits alongside the other nine subsystems.
+
+Two findings from the implementation, both recorded rather than papered over:
+
+1. **The ArchTest clause of this Merge Gate could not be met where it was written.** `ExerisArchitectureTest` runs in `exeris-kernel-tck`, whose only production dependency is the SPI — so no Core or Community class is ever on its analysis classpath, and a rule there naming a Community package can never fire. The driver-side guards (no `StructuredTaskScope`, no `ThreadLocal`, no `ScheduledExecutorService`) therefore live in `CommunitySchedulingArchitectureTest`, in the module that can see them, and assert a non-empty analysis set before asserting anything else. **This generalises beyond scheduling:** every `eu.exeris.kernel..`-scoped rule in `ExerisArchitectureTest` — including `noThreadLocal`, `noExecutorsAnywhere`, `noCompletableFuture`, `noUnsafe` — currently covers only SPI and TCK classes, which is narrower than both the rule text and `CLAUDE.md` §"Scoped Bans" imply. Closing that gap repo-wide is its own slice: it needs ArchUnit wired into Core and Community and will surface pre-existing violations.
+2. **`noExecutorsAnywhere`'s stated reason is stale — RESOLVED 2026-08-08.** It read "All concurrency must use `StructuredTaskScope` (JEP 525)", which contradicted the Platform Baseline directly above it. Both that rule and `noCompletableFuture` — which carried the same defect and was not part of the original finding — now state the actual invariant: concurrency must run inside a structured scope that owns the task's lifetime, which is `StructuredScope` on the default line and `StructuredTaskScope` on the `preview` branch. What the rules ban is the unstructured escape hatch, not either sanctioned mechanism. Rule predicates unchanged, so the guard's coverage is exactly what it was. Finding 1 above is **still open** and is the substantive half: correcting a rule's stated reason does not widen the classpath it can see.
+
 ---
 
 ### Runtime: Cross-Node Coordination (Leader Election / Distributed Lock) — RFC Track
 
-**Gap:** The "5 instances = the same app" deployment shape is standard scale-out, and the kernel already provides most of the substrate: stateless per-request handling (`ScopedValue` context, Flow/HTTP per request — any instance serves any request), shared durable state via Postgres (ADR-013 + ADR-022), and cross-node fan-out via the Kafka Events driver. What has **no** first-class kernel seam is cross-node *coordination*: distributed lock, leader election, and singleton execution ("only one instance runs this cron / drain / migration"). Today this can be hand-rolled over Kafka consumer groups or Postgres advisory locks, but with no SPI every application reinvents it and the correctness burden (fencing tokens, lease expiry, split-brain) lands on application code. The `JobScheduler` SPI (v0.11) already anticipates a *subset* — its durable backend carries leader-election semantics for singleton job dispatch — but a general-purpose coordination primitive usable outside scheduling does not exist. Surfaced during downstream dogfooding (Stellar-Tactics multi-node framing, 2026-06).
+**Gap:** The "5 instances = the same app" deployment shape is standard scale-out, and the kernel already provides most of the substrate: stateless per-request handling (`ScopedValue` context, Flow/HTTP per request — any instance serves any request), shared durable state via Postgres (ADR-013 + ADR-022), and cross-node fan-out via the Kafka Events driver. What has **no** first-class kernel seam is cross-node *coordination*: distributed lock, leader election, and singleton execution ("only one instance runs this cron / drain / migration"). Today this can be hand-rolled over Kafka consumer groups or Postgres advisory locks, but with no SPI every application reinvents it and the correctness burden (fencing tokens, lease expiry, split-brain) lands on application code. **Corrected 2026-08-07 by [`RFC-2026-08-07`](rfc/RFC-2026-08-07-cross-node-coordination-seam.md): this paragraph had the dependency backwards.** It previously read that the `JobScheduler` SPI "already anticipates a subset — its durable backend carries leader-election semantics for singleton job dispatch". There is no durable backend and no singleton dispatch: [`scheduling.md`](subsystems/scheduling.md) lists durable job stores, leader election and distributed coordination under what is excluded **by contract, not merely unimplemented**, and `JobSchedulerProvider` states that a distributed binding "would select a leader through the coordination seam rather than inventing a parallel mechanism". The scheduler is a *future consumer* of this seam, not a partial implementation of it. Surfaced during downstream dogfooding (a multi-node framing, 2026-06).
 
 **Owner:** Runtime / Coordination subsystem.
 
-**Resolution:** Open an RFC in `exeris-docs/` (`RFC-YYYY-MM-DD Cross-Node Coordination Seam.md`, per `exeris-docs/templates/RFC-TEMPLATE.md` — RFC not ADR because the option space is open and no decision is committed). **Design constraint, load-bearing:** keep this a thin seam over substrate the kernel already owns (Kafka consumer groups, Postgres advisory locks) — explicitly *not* a new "cluster subsystem": no membership protocol, no gossip, no embedded consensus. Scope enumerates: the minimal contract (`tryLock(key, lease)` / `renew` / `release` with a fencing token, and a `leadership(group)` observer), the backend strategies (Postgres advisory-lock driver for the no-Kafka deployment, Kafka-consumer-group driver for the eventing deployment), lease-expiry / fencing-token semantics so a paused leader cannot act after losing leadership, the relationship to `JobScheduler` leader-election (coordination becomes the shared primitive the scheduler's durable backend consumes, not a parallel mechanism), failure-mode classification (backend unreachable → fail-closed deny vs degraded single-node), and TCK strategy including an adversarial split-brain probe. RFC accepted → reserve next free ADR number in `~/exeris-systems/exeris-docs/adr-index.md` → ADR → SPI/driver in a later milestone.
+**Resolution:** Open an RFC in this repo's `docs/rfc/` — the owning repo holds the RFC for an SPI it will own (#230); `exeris-docs/` hosts only ecosystem-wide and business-shaped RFCs (`RFC-YYYY-MM-DD Cross-Node Coordination Seam.md`, per `exeris-docs/templates/RFC-TEMPLATE.md` — RFC not ADR because the option space is open and no decision is committed). **Design constraint, load-bearing — and REFUTED on its own premise, 2026-08-07.** The constraint as written was "keep this a thin seam over substrate the kernel already owns (Kafka consumer groups, Postgres advisory locks)". The kernel owns neither in usable form. **Postgres advisory locks:** zero occurrences in tracked source or migrations, and structurally inexpressible — a session-scoped lock needs a pinned connection, but `PersistenceEngine` exposes only pooled `openConnection()` (`openPhysical()` is Community-internal), so outside a request scope `tryLock` and `release` land on different sessions; `close()` performs no `DISCARD ALL`, so a leaked lock rides the recycled connection into the next checkout — the same pooled-session hazard `RlsConnectionInterceptor` already calls a fail-open bug — and Hikari's `maxLifetime` drops it on a timer with no error path. The transaction-scoped variant cannot outlive a transaction, so it can express a critical section but never `tryLock(key, lease)` + `renew`. **Kafka consumer groups:** the group exists, but the observation surface does not — zero `ConsumerRebalanceListener`, zero `ConsumerGroupMetadata.generationId()` (Kafka's own free fencing token) anywhere in the repo — and the single required `events.kafka.group-id` is used raw, so a coordination driver reusing it would entangle leadership with event delivery. The "not a cluster subsystem" half of the constraint stands and is unaffected: no membership protocol, no gossip, no embedded consensus. What changes is the cost estimate — the seam is **new substrate** (a lease table), not a thin wrapper. Scope enumerated: the minimal contract (`tryLock(key, lease)` / `renew` / `release` with a fencing token, and a `leadership(group)` observer); the backend strategy; lease-expiry / fencing-token semantics so a paused leader cannot act after losing leadership; the relationship to `JobScheduler` leader election; failure-mode classification on an unreachable backend; and TCK strategy including an adversarial split-brain probe. **Three of those six were stated here in terms the RFC refuted, and are corrected rather than left standing.** *Backend strategy:* this line originally named two drivers — Postgres advisory-lock for the no-Kafka deployment, Kafka-consumer-group for the eventing one — which are exactly the two options the RFC rejects, for the reasons given above; the selected strategy is a single Postgres lease-table driver, usable in both deployments because Postgres is already required. *JobScheduler:* this line originally read that coordination becomes "the shared primitive the scheduler's durable backend consumes"; there is no durable backend, and the dependency runs the other way — see the corrected paragraph above. *Split-brain probe:* the RFC found it unbuildable with today's test infrastructure (no partition tooling, no way to pause a holder past lease expiry), so the implementation gate below splits it into a contract-level and a container-level half rather than asking for one test that cannot exist. *Failure-mode classification* is settled by the RFC in favour of the fail-closed doctrine's existing reading — deny **and** drain, as `CommunityDegradedModeIntegrationTest` already does for Postgres loss — not "grant the lock anyway". RFC accepted → ADR number reserved when the implementing change reaches its build gate, **not** at RFC acceptance (deferring the reservation keeps the global namespace free of numbers that may never be written) → ADR → SPI/driver in a later milestone.
 
-**Merge Gate:** RFC accepted with one shape selected and dissenting positions recorded; no kernel SPI commits in this gate (decision-only track). If a coordination seam is chosen, the implementation gate requires `AbstractCoordinationTck` (lock acquire/release, lease expiry, fencing-token monotonicity, leadership handoff, adversarial split-brain), at least one Community driver (Postgres advisory lock), `JobScheduler` singleton dispatch refactored to consume it (no duplicate leader-election path), and The Wall preserved (no framework DI; coordination must not couple Core to a concrete backend type).
+**Status (v0.11): RFC DELIVERED — shape selected, implementation post-1.0.** [`RFC-2026-08-07: What substrate can a cross-node coordination seam actually stand on?`](rfc/RFC-2026-08-07-cross-node-coordination-seam.md) selects a **Postgres lease table with a fencing epoch**, using the conditional-UPDATE CAS idiom `JdbcFlowSnapshotStore` already runs, and labels it new substrate rather than a thin wrapper. Dissent recorded: no-seam remains defensible now that the cost estimate is corrected.
+
+**Merge Gate (as satisfied):** RFC accepted with one shape selected and dissenting positions recorded; no kernel SPI commits in this gate (decision-only track). **Implementation gate, restated** — the original text asked for a Postgres *advisory-lock* driver and for "`JobScheduler` singleton dispatch refactored to consume it"; the first is inexpressible (above) and the second is vacuous, since there is no singleton dispatch to refactor. It requires instead: `AbstractCoordinationTck` (lock acquire/release, lease expiry, fencing-token monotonicity, leadership handoff, and a split-brain probe **split explicitly into a contract-level half with a controllable clock and backend and a container-level half** — today's test infrastructure can express neither an asymmetric partition nor a holder paused past lease expiry); one Community driver over the lease table; at least one resource that actually **validates** the fencing token, without which the token is decorative; a module-local ArchUnit guard, since `ExerisArchitectureTest` sees only SPI and TCK; a `docs/stability-matrix.md` row plus a `stability-surfaces.conf` entry in the same commit (ADR-065 fails the build on an unclassified SPI class), entering at `preview`; and a decision on node identity, which does not exist today — `exeris.node.id` defaults to the literal `local` on every instance.
 
 See also: v0.11 §"Runtime: `JobScheduler` SPI" (leader-election subset); ADR-013 / ADR-022 (Postgres-durable distributed state).
 
@@ -1685,7 +1736,7 @@ See also: v0.11 §"Runtime: `JobScheduler` SPI" (leader-election subset); ADR-01
 
 ### Events: Multi-Node Delivery Boundary — Default Driver Is Single-Node (Documentation Clarity)
 
-**Gap:** The multi-node operational contract of the Events subsystem is undocumented, and the default Community Events driver is easy to mistake for cross-node. The default driver (Postgres Outbox + JVM-heap pub/sub) is **single-node**: the in-heap event bus does not cross the node boundary. The Outbox gives durable *emission* (an event survives crash and is retried), but **cross-node delivery requires the Kafka driver** (`exeris-kernel-community-kafka`) — a multi-node deployment that fans events out to peers must run on the Kafka driver, not the default. This is a real distinction operators need stated explicitly, not a code gap. Surfaced during downstream dogfooding (Stellar-Tactics multi-node framing, 2026-06).
+**Gap:** The multi-node operational contract of the Events subsystem is undocumented, and the default Community Events driver is easy to mistake for cross-node. The default driver (Postgres Outbox + JVM-heap pub/sub) is **single-node**: the in-heap event bus does not cross the node boundary. The Outbox gives durable *emission* (an event survives crash and is retried), but **cross-node delivery requires the Kafka driver** (`exeris-kernel-community-kafka`) — a multi-node deployment that fans events out to peers must run on the Kafka driver, not the default. This is a real distinction operators need stated explicitly, not a code gap. Surfaced during downstream dogfooding (a multi-node framing, 2026-06).
 
 **Owner:** Events subsystem (documentation) / Docs.
 
@@ -1693,21 +1744,395 @@ See also: v0.11 §"Runtime: `JobScheduler` SPI" (leader-election subset); ADR-01
 
 **Merge Gate:** `docs/subsystems/events.md` states the single-node-default vs Kafka-cross-node delivery boundary; the multi-node substrate inventory is recorded in one authoritative place (events.md or the operator deployment doc). No TCK / SPI change.
 
+**Status (v0.11): DELIVERED.** `events.md` §"Delivery Boundary: Single-Node Default vs Cross-Node (Kafka)" states the boundary and hosts the substrate inventory; `support-matrix.md` and `operations/reference-deployment.md` link there instead of restating it.
+
+One finding from writing it, recorded because it is sharper than the gap this entry described: **the durable-emission and cross-node-delivery paths are not composable today.** The Gap text above reads as though an operator picks the Kafka driver and keeps the Outbox. They do not — `KafkaEventEngine` runs no outbox orchestrator (its `EventQueue` slot is a `NoOpQueue`, and `KafkaEventBrokerPort` is a built adapter wired into no runtime path), while `CommunityEventEngine` constructs its local broker port directly with no seam to substitute. So the choice today is durable emission on one node *or* cross-node fan-out, not both. Documented as a current limit; tracked separately as §"Events: Durable Emission And Cross-Node Delivery Cannot Be Had Together" below, because the operator-visible cost (adopting Kafka silently drops the transactional outbox) is a gap in its own right, not a documentation shortfall.
+
 ---
 
 ### HTTP Client: Service Discovery & Logical Addressing for `KernelWebClient` — RFC Track
 
-**Gap:** `KernelWebClient` (ADR-034 — the tier-neutral Core facade in `eu.exeris.kernel.core.http.client`, superseding ADR-026's `CommunityWebClient`; on the `HttpClientEngine` SPI) targets a single, statically-configured host: the caller supplies a concrete base URL and the generated typed client emits own-app / relative-host paths only. There is no seam to resolve a *logical* service name (e.g. `billing-service`) to a concrete address at call time — no static service-map config, no DNS/SRV strategy, no registry lookup, no sidecar/mesh hook. The moment an ecosystem splits into N generated applications that must call each other, every caller hard-codes peer hostnames. This is the kernel-side half of the tooling "mesh" gap (T12, owned by `exeris-tooling`): even once the generator can import a cross-app contract, the client has nowhere to resolve the target's address. Surfaced during downstream dogfooding (Stellar-Tactics multi-service split, 2026-06; finding K4, Medium; kernel touchpoint of T12).
+**Gap:** `KernelWebClient` (ADR-034 — the tier-neutral Core facade in `eu.exeris.kernel.core.http.client`, superseding ADR-026's `CommunityWebClient`; on the `HttpClientEngine` SPI) targets a single, statically-configured host: the caller supplies a concrete base URL and the generated typed client emits own-app / relative-host paths only. There is no seam to resolve a *logical* service name (e.g. `billing-service`) to a concrete address at call time — no static service-map config, no DNS/SRV strategy, no registry lookup, no sidecar/mesh hook. The moment an ecosystem splits into N generated applications that must call each other, every caller hard-codes peer hostnames. This is the kernel-side half of the tooling "mesh" gap (T12, owned by `exeris-tooling`): even once the generator can import a cross-app contract, the client has nowhere to resolve the target's address. Surfaced during downstream dogfooding (a multi-service split, 2026-06; finding K4, Medium; kernel touchpoint of T12).
 
 **Owner:** HTTP subsystem (client addressing). The cross-app contract import / generated-client side is owned by `exeris-tooling` (T12) and tracked there.
 
-**Resolution:** Open an RFC in `exeris-docs/` (`RFC-YYYY-MM-DD WebClient Service Addressing.md`, per `exeris-docs/templates/RFC-TEMPLATE.md` — RFC not ADR because the option space is wide and no decision is committed). Scope enumerates the resolution strategies and their boundary cost: (a) static logical-name → endpoint map in config (zero new runtime dependency, no liveness); (b) DNS / DNS-SRV resolution (standard, env-provided, no kernel registry); (c) a `ServiceResolver` SPI seam that `KernelWebClient` consults to turn a logical name into an endpoint (Community static/DNS driver; Enterprise/registry drivers out-of-repo); (d) delegate entirely to a service-mesh sidecar (kernel stays single-host; addressing is an ops concern). Cross-cutting questions: interaction with the existing `HttpClientRequestEnricher` (ADR-032) and the v0.9 IDP outbound-credential decision (identity must survive re-addressing); failure-mode classification (name unresolved / no healthy endpoint / resolution timeout); whether resolution is per-call or cached with TTL; and Wall integrity (no DI container, no `ThreadLocal`, resolution must not couple the client to a concrete registry type). RFC accepted → reserve next free ADR number in `~/exeris-systems/exeris-docs/adr-index.md` → ADR → SPI/driver lands in a later milestone.
+**Resolution:** Open an RFC in this repo's `docs/rfc/` — the owning repo holds the RFC for an SPI it will own (#230); `exeris-docs/` hosts only ecosystem-wide and business-shaped RFCs (`RFC-YYYY-MM-DD WebClient Service Addressing.md`, per `exeris-docs/templates/RFC-TEMPLATE.md` — RFC not ADR because the option space is wide and no decision is committed). Scope enumerates the resolution strategies and their boundary cost: (a) static logical-name → endpoint map in config (zero new runtime dependency, no liveness); (b) DNS / DNS-SRV resolution (standard, env-provided, no kernel registry); (c) a `ServiceResolver` SPI seam that `KernelWebClient` consults to turn a logical name into an endpoint (Community static/DNS driver; Enterprise/registry drivers out-of-repo); (d) delegate entirely to a service-mesh sidecar (kernel stays single-host; addressing is an ops concern). Cross-cutting questions: interaction with the existing `HttpClientRequestEnricher` (ADR-032) and the v0.9 IDP outbound-credential decision (identity must survive re-addressing); failure-mode classification (name unresolved / no healthy endpoint / resolution timeout); whether resolution is per-call or cached with TTL; and Wall integrity (no DI container, no `ThreadLocal`, resolution must not couple the client to a concrete registry type). RFC accepted → ADR number reserved when the implementing change reaches its build gate, **not** at RFC acceptance (deferring the reservation keeps the global namespace free of numbers that may never be written) → ADR → SPI/driver lands in a later milestone.
 
-**Merge Gate:** RFC accepted with one shape selected and dissenting positions recorded; no kernel SPI commits in this gate (decision-only track). If a `ServiceResolver` seam is chosen, the subsequent implementation gate requires `AbstractServiceResolverTck` (logical-name resolve, unresolved-name failure, endpoint-health/timeout behavior), a Community binding, identity propagation preserved across resolution (ADR-032 enricher composes), and The Wall preserved (no framework DI / registry type leak into SPI / Core).
+**Status (v0.11): RFC ACCEPTED — shape selected; disposition SPLIT, multi-peer addressing is 1.0 scope and the resolver seam is post-1.0.** [`RFC-2026-06-29`](rfc/RFC-2026-06-29-webclient-service-addressing.md) selects **option (c), a `ServiceResolver` SPI seam**, with (a) static map and (b) DNS-SRV as its two first-party Community drivers and (d) the mesh case reframed as a pass-through driver rather than a kernel non-feature. Its premises were re-verified at acceptance six weeks after drafting and still hold — `KernelWebClient` is still single-host and no resolver surface exists. **The disposition is split, and the split is the correction.** `HttpClientEngine`'s SPI surface never mentions a host and `HttpRequest` carries no authority, so single-host is not a contract decision — it falls out of the carrier having nowhere to put an addressee, forcing the driver to be handed one at construction (`CommunityHttpClientEngine.targetHost`). **Multi-peer addressing is therefore the shape of an existing subsystem, not a new one, and belongs in 1.0**: the narrow-core ruling holds out *new SPIs that are each a real subsystem*, and 1.0 claims to be unbreakable on `http` — a client that structurally cannot address a second peer is incomplete on `http`, and would force every generated application in the composable-unit direction to hard-code its peers. The **`ServiceResolver` seam itself stays post-1.0**, which is what the ruling actually holds out. **The split fixes *when*, not *how*.** It decides a milestone disposition — an interpretation of the narrow-core ruling — and decides nothing about the addressing shape. Whether the addressee rides on `HttpRequest`, whether the client keeps a per-host engine pool, or whether it holds a resolver plus an engine factory is the RFC's own Open Question 1, still open and still gating the pre-ADR spike; that question is **owed its own option table, costs and recorded dissent** before the spike treats it as settled, because none of the RFC's options A–E evaluates addressing-without-a-resolver. What can be said without choosing a shape: the cost is bounded, since `HttpRequest` and `HttpClientEngine` are both in the compatibility gate's `stable` bucket and the mitigations for that bucket already exist in-repo — the retained-canonical-constructor bridge `FlowSnapshot` used three times this milestone, and the refusing `default` `registerMigration` used. That is evidence the disposition is affordable, not that any shape is chosen. Dissent recorded, and narrowed by the split: option (e) do-nothing stays live for the resolver half if T12 does not materialise, since C's justification there rests on its two in-repo drivers supplying the contract pressure a single external consumer would otherwise have to. It does not apply to the 1.0 half, which has a consumer today — any application talking to more than one peer.
+
+**Merge Gate (as satisfied):** RFC accepted with one shape selected and dissenting positions recorded; no kernel SPI commits in this gate (decision-only track). **Implementation gate, with two requirements that post-date the RFC:** `AbstractServiceResolverTck` (logical-name resolve, unresolved-name failure, endpoint-health/timeout behavior); a Community binding; identity propagation preserved across resolution (ADR-032 enricher composes after resolution, so a re-addressed request carries the right audience); The Wall preserved (no framework DI / registry type leak into SPI / Core); **plus** a `docs/stability-matrix.md` row and a `stability-surfaces.conf` entry in the same commit, since ADR-065's gate fails the build on an unclassified SPI class and `…spi.http` is `mixed` — the resolver takes its own row rather than inheriting the package tier; **and** the `HttpClientEngine` per-host-vs-per-request binding question settled by the pre-ADR spike, which the RFC names as the ADR-shape blocker rather than a detail.
 
 See also: ADR-034 (`KernelWebClient` facade, superseding ADR-026), ADR-032 (`HttpClientRequestEnricher`); v0.9 §"Security: `IdentityProvider` SPI Direction — RFC Track" (outbound-credential touchpoint).
 
 ---
+
+### HTTP: Stream-Route Table Is Exact-Path Only — Generated Per-Action Stream Routes Unreachable
+
+**Gap:** The router's streaming table is exact-match only: `streamRoutes` is a `Map<StreamRouteKey, HttpStreamHandler>` and `resolveStream` / `isStreamRoute` are plain map lookups (`HttpRouter.java:52,80-93`); the `streamRoute(...)` Javadoc pins "exact request path". The W7 `{id}` path-template machinery (`PathTemplateRoute`) applies only to respond-once `route(...)` registrations (`HttpRouter.java:231-237`). The `exeris-tooling` generator emits `streamRoute(POST, "<base>/{id}/actions/<kebab>")` for per-action streams (ADR-044 Slice 2; `KernelApplicationGenerator.java:488`), so the literal `{id}` map key never matches a concrete id and every generated per-action stream 404s on a real boot — the same dead-route failure class T23 fixed one layer below. Aggravating detail: `Builder.streamRoute` silently accepts `{` in a path today, so the dead registration is invisible at build time. Not yet user-visible only because the per-action driver is still a keep-alive scaffold. Surfaced during downstream dogfooding (EV1-stream, 2026-07).
+
+**Owner:** HTTP subsystem (router); shape decision shared with `exeris-tooling` (ADR-044 EV1-stream slice).
+
+**Status (v0.11): DELIVERED — kernel-side template matching.** The streaming table now compiles `{name}`
+paths through the same `PathTemplate` the respond-once table uses, with the same exact-before-template
+precedence, and captured values reach the handler through the new `HttpStreamExchange.pathParams()` (a
+`PathParamStreamExchange` decorator, mirroring `PathParamHttpExchange`). One compiled template type
+serves both tables, so they cannot drift into disagreeing about what `/x/{id}` means. The fail-fast half
+landed with it: a malformed brace throws at `Builder.streamRoute`, so a silently-dead stream registration
+is unrepresentable. This is the default direction below, chosen without waiting on the tooling ruling —
+it subsumes the fail-fast property and stays correct under either tooling outcome, exactly as the
+alternative anticipated.
+
+**Resolution:** Rule the shape inside the tooling EV1-stream slice, then land the kernel side in v0.11. Default direction — kernel-side template matching: extend the streaming table with the same template semantics the unary table already has (reuse `PathTemplateRoute` compile/match for `streamRoute` paths containing `{name}`; exact stream routes take precedence over template stream routes, mirroring unary precedence; captured params exposed on the streaming path). Alternative — ADR-044 amendment (tooling repo) redesigns per-action stream paths onto exact routes, and the kernel change collapses to a Javadoc clarification plus a build-time guard. **Either way, fail-fast becomes mandatory:** a `{` in a stream path must either resolve via templates or be rejected in `Builder.streamRoute` — a silently-dead registered route must become impossible.
+
+**Merge Gate:** Fail-fast property enforced (template resolution or `IllegalArgumentException` at registration — no third state). If template matching lands: router unit coverage for stream-template resolve + exact-over-template precedence, plus a streaming TCK (or router-level) case proving a `{id}` stream route opens an `HttpStreamExchange` for a concrete id; ADR-043 obligation 7 stays true (streaming resolves only via `resolveStream`, never through `handle`). Tooling lockstep (ADR-044 Slice 2 per-action driver impl) tracked in `exeris-tooling`, non-gating for the kernel merge.
+
+See also: ADR-043 (streaming SPI, obligation 7); ADR-044 (`exeris-tooling` SSE emitter shape — Slice 2 ratified, impl pending); v0.10 §"HTTP: generated-app boot-path reachability" (W7 template routing, T23 cross-repo note).
+
+---
+
+### Transport: Accept-Loop `RuntimeException` Is Swallowed Whole (surfaced 2026-07-31)
+
+**Gap:** `NativeTcpCarrier`'s accept loop binds the exception and never uses it:
+
+```java
+} catch (RuntimeException exception) {
+    if (connection != null) {
+        connection.close();
+    } else {
+        closeQuietly(currentChannel);
+    }
+}
+```
+
+Anything thrown while setting up an accepted connection — `configureAcceptedChannel`, TLS engine construction, `buildAcceptedStream`, `registerConnection` — is discarded. No log line, no JFR event, no counter. The loop proceeds to the next accept and the client sees a dropped connection.
+
+This is a different kind of silence from the `maxConnections` refusal recorded under §"Road to 1.0". That one hid a **policy** decision at a known limit; this hides **defects**. An allocator exhaustion, a TLS init failure, or a registry inconsistency during accept produces exactly the same externally-visible symptom as a healthy server under no load — and a *repeating* fault here is indistinguishable from an intermittent network problem, which is the failure mode that costs the most triage time.
+
+The asymmetry is local and visible: the sibling paths in the same file close the same resources and then **rethrow**. Only the accept loop swallows.
+
+**Owner:** Transport subsystem.
+
+**Resolution:** Emit a JFR event carrying the exception class (class only — no message, matching `CommunityReactorDispatchFaultEvent`'s secret-safe shape) and count the failure. Do **not** change the recovery behaviour: continuing the accept loop after a per-connection setup failure is correct, and conflating "make it visible" with "make it fatal" would trade a silent drop for an availability regression.
+
+**Merge Gate:** Driver-local JFR test that forces a setup failure on an accepted connection and asserts the event; the fault count exposed alongside the refusal count; `docs/subsystems/transport.md` records both accept-path failure modes together, since an operator sees the same symptom from either.
+
+**Status (v0.11): implemented, merge gate 2 of 3.** Added 2026-08-08 — this section carried no disposition at all while the work it describes merged in #265 on 2026-07-31, which is how it stayed invisible. The silence is gone: `NativeTcpCarrier.recordAcceptFault` emits `CommunityAcceptFaultEvent` carrying the exception's **class name only** (secret-safe, as the Resolution required — no message) plus a running fault total, and recovery is deliberately unchanged, so a per-connection setup failure still continues the loop rather than becoming fatal.
+
+Two gate clauses are **not** met, and neither is cosmetic:
+- **No driver-local JFR test.** Nothing forces a setup failure and asserts the event, in the Community suite or the TCK. The emission is verified by reading the call site, which is exactly the standard of evidence this document exists to refuse elsewhere. Same gap as the refusal event under §"Road to 1.0".
+- **The fault count is not exposed alongside the refusal count.** `acceptFaults` is a private counter that reaches an operator only inside the JFR event payload; `TransportStats` has no field for it, and it is deliberately *excluded* from `totalRejected` because a setup fault is not declined work. So the two accept-path failure modes are documented together but not *observable* together, which is the half of the gate that matters to the operator the section was written for.
+
+`docs/subsystems/transport.md` §"Accept-path failure modes" does record both together, with a per-event comparison table — that clause is met.
+
+---
+
+### HTTP Client: Every Response Buffer Is Sized For The Largest Possible One (surfaced 2026-08-01)
+
+**Gap:** `CommunityHttpClientEngine.readResponse` allocates its aggregate buffer from
+`resolveAggregateCapacity()`, which is derived once from `HttpConfig.maxRequestBodyBytes` and does not
+vary per request. Every response — a `HEAD` with no body, a `204` from a `DELETE`, a small JSON reply —
+pays the allocation sized for the largest body the engine is configured to accept.
+
+Two separate problems sit in that one line:
+
+1. **Waste.** An engine configured for an 8 MiB ceiling allocates 8 MiB to read a 200-byte `HEAD`
+   response. Surfaced by the S3 blob driver, where the object ceiling *is* the engine ceiling, so raising
+   the largest storable object also raises the cost of every `stat` — the knob does two unrelated things
+   at once. Directly against No Waste Compute, on a path that runs per request.
+2. **A misnamed knob.** `maxRequestBodyBytes` is a *server-side request* limit by name and Javadoc; the
+   client reuses it as a *response* ceiling. A deployment tuning ingress limits silently retunes its
+   outbound client, and neither name says so.
+
+Not a correctness bug: an oversized response is refused loudly (`decodeResponse` throws
+`Truncated HTTP response body: expected N bytes but received M`), which is why the blob driver can size
+the engine deliberately and rely on the refusal. The cost is memory and clarity, not silence.
+
+**Owner:** HTTP subsystem.
+
+**Resolution:** Size the aggregate from what the response actually declares — read the status line and
+headers into a small buffer, then allocate the body from `Content-Length` (bounded by the ceiling), which
+is the shape the decoder already computes in `resolveExpectedTotal`. Give the client its own
+`maxResponseBodyBytes` rather than borrowing the request limit, and keep the loud refusal on overrun.
+
+**1.0 disposition:** the separate client-side knob is 1.0 (configuration surface — a limit that cannot be
+set independently is a limit an operator cannot reason about); the per-response sizing is a No Waste
+Compute improvement that can follow.
+
+**Merge Gate:** a `HEAD` and a small `GET` allocate proportional to what arrived, not to the ceiling
+(assert on allocator stats, not on timing); the overrun refusal still fires at the configured limit; the
+S3 driver's ceiling stops being the engine's ceiling.
+
+---
+
+### Storage: Two Blob Providers, No Way To Choose Between Them (surfaced 2026-08-01)
+
+**Gap:** `CommunityFilesystemBlobStorageProvider` and `CommunityS3BlobStorageProvider` are both
+registered in `META-INF/services` at the same Community priority, and nothing in this repository loads
+`BlobStorageProvider` through `ServiceLoader` yet. Today that is inert — a deployment gets the store whose
+provider it constructs — but the moment a storage subsystem bootstraps the SPI, discovery order decides
+which backend a tenant's objects land in. Ordering is not a contract, and the two stores are not
+interchangeable: one needs credentials and a reachable endpoint, the other needs a writable directory.
+
+The scheduling subsystem already shows the shape this needs (`SchedulingBootstrap` +
+`SchedulingBootstrapSelected` JFR event), with one addition: scheduling had a single provider, so
+recording the winner was enough. Storage has two at equal priority, so the choice must be *stated* by
+configuration, not merely *recorded*.
+
+**Owner:** Storage / Bootstrap.
+
+**Resolution:** A `StorageBootstrap` in Core plus a Community subsystem binding the selected store into
+`KernelProviders`, selecting by an explicit config key rather than by priority or discovery order. An
+unset key with more than one provider present is a startup failure, not a default — picking silently is
+the failure this entry exists to prevent. Emit the selection as a JFR event, as scheduling does.
+
+**Merge Gate:** binding test proving the configured provider wins with both on the classpath; a test
+proving an ambiguous configuration fails at startup rather than choosing; `docs/subsystems/storage.md`
+loses its "provider selection is an open gap" paragraph.
+
+---
+
+### Events: Durable Emission And Cross-Node Delivery Cannot Be Had Together (surfaced 2026-08-02)
+
+**Gap:** The Outbox and the Kafka driver are described throughout the docs as complementary — durable
+emission plus cross-node fan-out — but no deployment can run both. `KafkaEventEngine` starts no outbox
+orchestrator: its `EventQueue` slot is a `NoOpQueue`, and `KafkaEventBrokerPort` exists as a built,
+Wall-clean adapter that nothing wires into a runtime path. `CommunityEventEngine` constructs
+`CommunityEventBusOutboxBrokerPort` inline, so its relay target is the local bus with no seam to
+substitute. Provider selection then picks exactly one engine.
+
+The consequence is not a lost event but a lost *guarantee*, and it lands on the deployment that needs
+both most: a multi-node operator who adopts Kafka for fan-out silently gives up the transactional
+outbox — the crash-survival property that made the event atomic with the entity that caused it. Nothing
+warns them; the SPI surface is identical either way. Surfaced while writing the delivery-boundary
+section that this milestone's documentation slice required.
+
+**Owner:** Events subsystem.
+
+**Resolution:** Make the broker port a selection, not a construction detail. The two adapters already
+implement the same Core port, so the work is a seam plus config, not a new mechanism: let the engine
+take its `OutboxBrokerPort` from configuration, and let the Kafka module run the orchestrator with
+`KafkaEventBrokerPort` bound. The publish-path duplication needs settling in the same change — with a
+Kafka broker port the outbox relay and `KafkaPublishBus` are two routes to the same topic, so one of
+them has to become the only one. That the port is unwired is already on record — [ADR-050](adr/ADR-050-events-binding-agnostic-topic.md)
+§Consequences notes it, and the module's `package-info` lists it as deferred — so no ADR is contradicted
+here; this entry is where the operator-visible *cost* of the deferral is recorded, which neither of
+those does.
+
+**Merge Gate:** an integration test proving an event committed in a transaction reaches a *second*
+kernel instance after a crash of the first — the property neither engine can demonstrate today; the
+delivery-boundary section in `docs/subsystems/events.md` loses its "not composable today" paragraph.
+
+---
+
+### Testkit: No Real-Runtime Fixtures Outside HTTP — Downstream Verifies Against Its Own Stubs (surfaced 2026-08-02)
+
+**Gap:** `exeris-kernel-community-testkit` ships four classes: three HTTP fixtures and `TestJwt`. There
+is nothing for persistence, transactions, events, flow, graph, scheduling, storage, or telemetry. A
+downstream host runtime binding those SPIs has no way to test against the real engine, so it writes
+stubs — and a stub encodes how its author *read* the contract, not how the runtime *behaves*. Ordering,
+lifecycle, and threading are exactly the properties a stub cannot get wrong loudly.
+
+This is not speculative. The kernel's own graceful-drain defect (§"Transport: drain in-flight streams"
+above, fixed in v0.11) is this class: the drain machinery existed, the SPI documented it, and every
+in-repo test passed because the TCK asserted the state machine rather than the semantics. Downstream
+reports the same shape repeatedly — compat datasource under load, JWT decoding when the servlet stack
+is absent, provider scope inside a filter and inside flow steps, routing with a query string — each
+found by a consuming application rather than by any test suite on either side.
+
+The sharpest exposure is transactions: propagation matrix, rollback, the second connection under
+`REQUIRES_NEW`, `ScopedValue` resolution inside `doBegin`. That is data-integrity behaviour currently
+proven only against hand-written doubles.
+
+**Owner:** Testkit / Community.
+
+**Resolution:** Extend the testkit with fixtures that stand up the *real* Community providers in a
+consumer's test scope, following the shape `KernelBootstrapHttpEngineFixture` already establishes —
+`ServiceLoader` discovery through a real bootstrap, engine pulled from the bound `KernelProviders` slot.
+Priority order by exposure: persistence/transactions first, then events + flow (which compose with it),
+then the rest.
+
+**Feasibility is established, not assumed.** `CommunityPersistenceProvider.createEngine(...)` against
+`jdbc:h2:mem:…;MODE=PostgreSQL;DB_CLOSE_DELAY=-1` yields a working engine in-process with no
+Testcontainers and no external schema step: the engine carries its own DDL
+(`db/migration/V0.5.0__create_outbox.sql`, `V0.7.0__create_saga_state.sql`,
+`V0.10.0__create_event_log.sql`) and applies it when `run.migrations=true` is set in
+`PersistenceConfig.properties()` — it defaults to `false`, which is the only non-obvious step. The
+in-repo persistence TCK bindings already do exactly this.
+
+One packaging decision to settle in the implementing PR: H2 is `test`-scoped in
+`exeris-kernel-community`, so a fixture defaulting to it must declare the driver `provided`/optional
+rather than drag a database into every consumer's classpath.
+
+**Merge Gate:** a downstream-shaped test — outside `exeris-kernel-community`, depending only on the
+testkit — that drives a transaction through the real engine and observes a rollback; the fixture
+surface documented in `docs/modules/` alongside the HTTP one. No new SPI: the fixtures compose
+existing contracts, so nothing here widens the kernel's public surface.
+
+**Status (v0.11): PARTIAL — persistence delivered, the rest open.**
+
+`EmbeddedPersistenceEngineFixture` boots the real `persistence` subsystem (transitively `memory`)
+through `KernelBootstrap` + `ServiceLoader`, with `inMemoryH2()` applying the engine's own DDL and
+`forJdbcUrl(url, runMigrations)` for a container-backed or pre-migrated database. `runInKernelScope`
+carries consumer work to the thread holding the boot, since a `ScopedValue` binding cannot be handed
+out — that is what makes the fixture usable by a host runtime's transaction manager, which resolves the
+engine from the slot rather than from a reference. Surface documented in `docs/modules/06-testkit.md`,
+which also covers the previously undocumented HTTP fixture.
+
+The merge gate is met with one stated compromise: the consumer-shaped test imports only the testkit and
+SPI — nothing from `eu.exeris.kernel.community.*` — but it *lives* in that module's test scope, because
+the testkit builds before Community in the reactor and cannot depend on a provider. A genuinely
+external consumer module would be stronger, and is worth creating if this pattern grows past one or two
+subsystems.
+
+**Still open:** events, flow, graph, scheduling, storage, telemetry. Persistence was taken first
+because transactions are the sharpest exposure; events + flow are the natural next pair, since they
+compose with the engine this slice now makes reachable.
+
+---
+
+### Security: Route Authorization Is a Hardcoded `/secure` Prefix, Not Something an Application Can Declare (surfaced 2026-08-05, ADR-061)
+
+**Gap:** the HTTP admission gate is fail-closed but unaddressable. `CommunityHttpRequestDispatcher`
+hardcodes `SECURE_PATH_PREFIX = "/secure"`, `ADMIN_PATH_PREFIX = "/secure/admin"` and the literal scope
+names `security:read` / `security:write` (`:50-53`); `requiresAdmission()` is `startsWith("/secure")`
+(`:207-209`). Every other path takes the `else` branch of `dispatch()` (`:96`) straight to the handler
+— no admission, no `PrincipalContext` bound. An application whose routes live under `/api/**` has no
+edge authorization and no supported way to ask for it.
+
+Three findings from the same audit:
+
+- **The gate is unreachable in a default boot.** `CommunityHttpRequestProcessor:83-86` builds the
+  `SecurityInterceptor` only when `KernelProviders.SECURITY_PROVIDER.isBound()`, and nothing in
+  production binds that slot. `CommunitySecurityProvider` exists and is `ServiceLoader`-registered, but
+  Community ships **no security `Subsystem`** — while `bootstrap.md` already places Security in the L1
+  parallel-init DAG (`:39`, `:323`, `:552`). So `/secure/*` answers `401` unconditionally and the whole
+  Citadel path (interceptor, role mask, `StorageContextBridge`) never executes.
+- **`isPublicPath` is unreachable code** (`:211-220`). It is consulted only behind
+  `startsWith("/secure")`, so no path can satisfy both conditions. A leftover from when the health
+  routes lived in the dispatcher; they now live in `CommunityHttpHealthRoutes`.
+- **Half the RBAC machinery is already live.** Contrary to the stale note at `security.md:6`,
+  `GeneratedRoleRegistryLoader.load()` *is* wired in production (`CommunityHttpRequestProcessor:86`) and
+  `SecurityInterceptor.enrichWithRoleMask` binds a precomputed `roleMask()`. Only the enforcement call
+  site is missing — and it cannot be the `methodId` one (see below).
+
+**Owner:** Security / HTTP subsystems; SPI + Core + Community.
+
+**Resolution:** ADR-061. A route-authorization contract in `eu.exeris.kernel.spi.http` behind an
+`Optional` slot on `HttpKernelProviders` (the ADR-036 shape), a driver-agnostic decision helper in
+`eu.exeris.kernel.core.security` beside `RoleCheckEnforcer` so every transport inherits one decision
+layer, rules **declared in code** (ADR-014 §3 rejected a configuration-file rule surface), a Community
+security `Subsystem` binding `SECURITY_PROVIDER`, and removal of the prefix constants plus the dead
+allowlist. Default is "no policy declared" — behaviour unchanged for an application that declares
+nothing.
+
+**Explicitly not a revision of the Sprint-4 descoping.** URL→`methodId` enforcement stays out: `methodId`
+is assigned at compile time from alphabetical ordering under `@Retention(SOURCE)`, so the kernel cannot
+reconstruct that map at runtime *at all*. The path-based mechanism is the only one the kernel executes
+unaided — it does not depend on `exeris-tooling`, which is a helper layer, not a prerequisite. An
+application written directly against the kernel, with no annotation processing anywhere in its build,
+gets edge authorization. `@RequiresRole` remains the method-level layer above it.
+
+**Merge Gate:** `AbstractHttpRoutePolicyTck` + a Community binding, with the deny paths and the
+unmatched-route path as mandatory cases — a suite that only proves admission would pass against an
+implementation that admits everything. `ExerisArchitectureTest` green. `security.md`, `http.md` and
+`bootstrap.md` updated in the implementing slice — not before it, since they describe what the kernel
+does. (The stale `security.md:6` note is a separate matter: it stated something false about the past,
+so it was corrected with ADR-061 itself.) Release notes record the default-boot behaviour change:
+`/secure/*` stops answering `401` unconditionally once a provider is bound.
+
+**Status (v0.11): DELIVERED.**
+
+`HttpRoutePolicy` + `RouteRequirement` in `eu.exeris.kernel.spi.http` behind
+`HttpKernelProviders.HTTP_ROUTE_POLICY`, `RouteAuthorizationEnforcer` in `eu.exeris.kernel.core.security`
+beside `RoleCheckEnforcer`, `CommunitySecuritySubsystem` binding `KernelProviders.SECURITY_PROVIDER`,
+and `CommunityHttpRequestDispatcher` resolving the route through the policy instead of
+`SECURE_PATH_PREFIX`. The unreachable `isPublicPath` allowlist is gone with the prefix constants.
+
+Two defects were caught by the gates rather than by review. `AbstractHttpRoutePolicyTck`'s
+`nullAnswerDenies` case failed the first enforcer, which substituted `HttpRoutePolicy.unmatched()` —
+that is `authenticated()` — for a `null` policy answer, so a broken policy would have admitted any
+logged-in caller to a route that may have demanded an admin scope. And placing new Core code that
+Community calls surfaced that **nothing guarded the tier direction at all**: `ExerisArchitectureTest`
+lives in `exeris-kernel-tck`, which has only the SPI on its analysis classpath, so a
+Core-must-not-depend-on-Community rule written there would have matched zero classes and passed
+forever. `KernelTierDirectionArchitectureTest` now holds that line from `exeris-kernel-community`,
+mutation-proven non-vacuous.
+
+**Behaviour change:** `/secure/*` no longer answers `401` unconditionally, because a provider is now
+bound. An application that declares no policy gets permit-all everywhere, which is what the kernel did
+before — and which means **declaring nothing means no edge authorization**. The subsystem docs say so
+rather than implying that installing the kernel confers protection.
+
+**Additive follow-on (v0.11): the claims mapping is substitutable.** `ClaimsMapper` has been
+documented since 0.10 as the only application-customisable point in the identity pipeline, but
+`CommunityOidcIdentityProvider` constructed the Community default inline, so nothing could supply
+one — an application needing a different subject or scope shape had to reimplement `IdentityProvider`
+outright, and a host-runtime binding had no seam to translate the same token into its own authority
+shape. `withClaimsMapper(ClaimsMapper)` mirrors `enforcingSharedScope()`: a new provider rather than a
+mutation, because the mapping takes part in a security decision on every request and must be fixed at
+construction. Not an issue and not a defect report — the contract was right, the producer just had no
+entry point; scoped as additive because the default is unchanged for every existing caller.
+
+Isolation is deliberately **not** part of what a mapper can influence: it produces a
+`PrincipalContext` only, and tenant routing stays with `IdentityStorageMapping` on the path every
+provider crosses (ADR-012 §4a). Pinned by a Community test whose composition case is mutation-proven —
+an `enforcingSharedScope()` that failed to carry the mapper would silently revert it to the default in
+one call order and nothing else in the suite would notice.
+
+**Claim-driven scopes and roles: DELIVERED.** `CommunityClaimsMapper` now reads `scope` / `scp` /
+`roles` from the verified token, with no fallback — a token declaring nothing grants nothing. This
+was the iteration ADR-040 §"Implementation" already specified ("sub → principalId, roles/scopes
+claims → PrincipalContext") and the 0.10 refactor deliberately deferred to avoid changing
+observable behaviour, so it needed no new ADR. It also makes `security:write` grantable for the
+first time: the admission integration suite gains a case where an admin-scoped token reaches
+`/api/admin`, which was unwritable while nothing could grant that scope — meaning the existing 403
+case would have passed even against a route no caller could ever reach.
+
+**Behaviour change:** every principal used to receive `security:read` unconditionally. Fixtures and
+TCK token builders now declare their scopes explicitly, which is what makes them honest about what
+they grant.
+
+---
+
+### CI: The Persistence Gate Ran None of the Tests It Is Named After (surfaced 2026-08-05) — DELIVERED
+
+**Gap:** `exeris-kernel-community` held 11 `@Tag("integration")` classes, every one named `*IT`, and the
+CI job that exists to run them selected **none**.
+
+`.github/workflows/maven.yml:194-201` runs
+`mvn -pl exeris-kernel-community -DincludedGroups=integration -DexcludedGroups= test`. That is Surefire,
+whose 3.2.5 defaults are `Test*` / `*Test` / `*Tests` / `*TestCase` — and the module declared no
+`<includes>`. So the job named **"persistence RLS integration gate" ran no persistence RLS test**. What
+kept it green were three unrelated `*Test` classes that happen to carry the tag (crypto TLS loopback,
+transport ingress, carrier pinning).
+
+Dead alongside them: the JDBC event-stream TCK bindings, the graph parity and churn ITs, the S3 blob
+TCK, and the Keycloak OIDC conformance test. Several are the only executable evidence behind contracts
+ADR-012 and ADR-056 rest on.
+
+**The fix already existed one module away.** `exeris-kernel-community-kafka` added exactly this
+`<includes>` block in v0.8 Sprint 6 (Coverage C-P0-02), with a comment describing the same failure —
+"the three IT files end in IT and were silently dead before this include addition". It was never
+applied to `exeris-kernel-community`, and the Kafka gate has been genuinely running its ITs ever since
+while the persistence gate has not.
+
+**Resolution:** the same `<includes>` block, in `exeris-kernel-community/pom.xml`.
+
+**Evidence, by the two commands that matter:**
+
+- `mvn -pl exeris-kernel-community test` selects **zero** `*IT` classes — every one is
+  `@Tag("integration")`, so no Testcontainers start in a default build.
+- `mvn -pl exeris-kernel-community -DincludedGroups=integration -DexcludedGroups= test` — the gate's
+  own command — now runs all 11: **74 tests, 0 failures**. They were never broken. They had simply
+  never run.
+
+**Lesson this repeats.** Same shape as the "verify skips PMD" myth (PR #238) and the JaCoCo floor that
+only began applying once a module gained its first test: a gate believed because it was green, when
+green meant it had nothing to check. A gate's name is not evidence; the `Running …` lines in its log
+are.
+
+---
+
 
 ## Known Gaps / Future Work planned for v0.12
 
@@ -1737,11 +2162,15 @@ See also: ADR-034 (`KernelWebClient` facade, superseding ADR-026), ADR-032 (`Htt
 
 **Binding-agnostic shape (same open-core pattern as Events `topic`, transport NIO/`io_uring`).** Specify a single `CacheProvider` SPI that is swappable across bindings exactly as K1 proposes for the Events `topic` seam: Community ships an in-process cache behind the SPI; enterprise / adapter bindings provide Redis / Hazelcast. Application code is written against the contract, not the backend. **Distributed invalidation rides the Events bus, not a separate channel:** a region flush / key invalidate is published as an event, so the cache seam reuses the multi-node substrate already in place rather than introducing a second coordination mechanism. For single-node deployments the in-heap `CommunityEventBus` is itself the channel — coherent invalidation with no Kafka dependency; Kafka is the multi-node path only (the Community binding must not require Kafka for correctness). K1 (`topic`) + `CacheProvider` + invalidation-over-events = one coherent multi-node story with zero new data-plane in the kernel.
 
-**Coherence is a `[CONTRACT]` landmine.** Local (in-process) and distributed cache backends have *different* coherence semantics; if the SPI hides this, business code written against the contract is subtly wrong after a backend swap (a stale read that never happens on Caffeine surfaces under Redis). The RFC must resolve this one of two ways: make coherence an explicit part of the contract (stated staleness / read-after-write / invalidation guarantees the caller can rely on regardless of backend), or bind invalidation to the Events bus so coherence is delivered by the same mechanism on every backend. The invalidation-over-events choice above discharges this automatically.
+**Coherence is a `[CONTRACT]` landmine.** Local (in-process) and distributed cache backends have *different* coherence semantics; if the SPI hides this, business code written against the contract is subtly wrong after a backend swap (a stale read that never happens on Caffeine surfaces under Redis). The RFC must resolve this one of two ways: make coherence an explicit part of the contract (stated staleness / read-after-write / invalidation guarantees the caller can rely on regardless of backend), or bind invalidation to the Events bus so coherence is delivered by the same mechanism on every backend. **The invalidation-over-events choice above does NOT discharge this** — corrected 2026-08-07 by [`RFC-2026-08-07`](rfc/RFC-2026-08-07-cache-provider-spi.md). The substrate cannot carry the guarantee: `InMemoryEventBus.publish` starts one virtual thread per handler and returns *before any handler runs*; the bus contract promises no ordering at all (`AbstractEventBusTck`: "No-Ordering by Design (ADR-049) … callers needing ordering use the durable log"); the in-heap bus cannot cross a node boundary; and the Kafka *bus* binding polls with `enable.auto.commit=true`, so a dropped invalidation leaves a permanently stale entry with no error anywhere. The ordered, manually-committed channel does exist — `KafkaEventLog` sets `enable.auto.commit=false` and ADR-049 gives the durable log per-stream total ordering — but that is a different channel from the bus, and conflating the two is what made the discharge look automatic. The RFC resolves this in favour of the first option: an **explicit declared staleness contract**, with the durable log rather than the bus as the channel if one is needed.
 
-**Audit note (2026-06-22) — the "second-backend pull" precondition may already be met.** The SDK already carries `cacheable` / `cacheRegion` / `cacheTtl` on `ExerisDomain` / `Graph` / `Projection` (`exeris-sdk-annotations/.../ExerisDomain.java:258,266,274`) and they round-trip through the APT processor, source model, and TS model — but **no emitter or kernel sink consumes them** (audit: captured-but-dead). The kernel cache primitive is confirmed **ABSENT**. The RFC's "SPI lands only on a concrete second-backend pull" gate should be re-evaluated rather than assumed unmet: downstream dogfooding (Stellar-Tactics, BudgetHQ) is the Redis pull, and the dead SDK flags are already waiting for a sink. If the pull is confirmed, the cache seam graduates from RFC-only to an implementation milestone.
+**Audit note (2026-06-22), CORRECTED 2026-08-07 by [`RFC-2026-08-07`](rfc/RFC-2026-08-07-cache-provider-spi.md).** The 2026-06-22 note speculated that the second-backend pull "may already be met" and named downstream dogfooding as the puller. Checked against source, it is **NOT met**, and the note is refuted on its checkable half. BudgetHQ — the active consumer, twelve backend poms declaring `exeris-kernel-community` / `exeris-spring-runtime-web` — has zero cache dependency in any pom, zero Spring Cache annotation, and zero Redis client code; it provisions a `redis:8-alpine` container that nothing connects to. Every place it touches caching it recorded a decision *against* a distributed cache, each with an explicit **drop trigger** (widget catalog: "p95 > 100ms OR > 1000 req/min per pod"; sync-service token cache: "when sync-service scales beyond single-replica"; gateway rate limiter: "in-memory is correct and does not require Redis"). A drop trigger is the opposite of a pull — it is the consumer stating in writing that the condition has not arrived, and those triggers are now the observable re-evaluation condition for this gate. The benchmark alternative is also unmet: `exeris-benchmarks` contains no cache or slab-cache benchmark, and its compose README advertises a redis fixture no compose file defines. One further downstream consumer is closed-source and not inspectable from the open tree, so no claim is made about it here — note only that the dogfooding gaps this ROADMAP records from that source contain no cache item.
 
-**Merge Gate:** RFC accepted with the coherence-semantics contract resolved (explicit staleness/invalidation guarantees, or invalidation bound to the Events bus) so a backend swap cannot silently change correctness; no kernel SPI commits in this gate (decision-only track). SPI implementation gate deferred to a future version, conditional on real second-backend pull (re-evaluate per the audit note above); when it lands, distributed invalidation reuses the Events bus rather than a new channel.
+**What survives of the note:** the kernel cache primitive is confirmed **ABSENT**, and the SDK flags are dead — in fact deader than recorded. Only `@ExerisDomain` reaches the source model; `@Graph`'s cache attributes are read and then discarded (`extractGraphMetadata` returns a `GraphMetadata` with no cache component to receive them) and `@Projection` is never extracted at all. The real surface is five annotations with three boolean names (`cacheable`, `cacheQueries`, `cacheReadModel`, `cached`, `cacheAggregates`) and two incompatible TTL encodings. The line citation `ExerisDomain.java:258,266,274` is two releases stale — current coordinates are `:370,378,386`.
+
+**Status (v0.11): RFC DELIVERED — gate resolved, SPI gate stays CLOSED.** [`RFC-2026-08-07: Should the kernel own a CacheProvider SPI, and what coherence does it promise?`](rfc/RFC-2026-08-07-cache-provider-spi.md) recommends staying RFC-only because the second-backend pull is not met (see the corrected audit note above), and resolves the coherence-semantics requirement in favour of an **explicit declared staleness contract** — the "invalidation bound to the Events bus" alternative the original gate offered turned out not to be available.
+
+**Merge Gate (as satisfied):** RFC accepted with the coherence-semantics contract resolved so a backend swap cannot silently change correctness; no kernel SPI commits in this gate (decision-only track). SPI implementation gate deferred to a future version, conditional on a real second-backend pull — **re-evaluate when one of BudgetHQ's own drop triggers trips**, not on a calendar and not on a recollection: widget-catalog p95 > 100ms or > 1000 req/min per pod, or sync-service scaling beyond a single replica. When it lands, distributed invalidation rides the ordered durable log, not the bus.
 
 ---
 
@@ -1772,19 +2201,54 @@ See also: v0.10 §"Events: Log-Ordering & Optimistic-Concurrency Boundary" (the 
 
 **Gap:** Replacing an orchestration layer (Camunda/Temporal) is not credible without the one thing those engines all handle: a long-running saga outliving a deploy that changed its definition. Today the kernel has **no versioned flow definition and no in-flight migration**, and the documented safety net does not exist:
 - `FlowDefinition` is keyed solely by `String name` (`exeris-kernel-spi/.../flow/model/FlowDefinition.java:34`) — no version field. `FlowSnapshot.schemaVersion` is a CAS optimistic-lock counter, *not* a definition version.
-- Resume is **version-blind**: `CoreFlowRuntime.resolvePlanForSnapshot` (`:468`) rebinds a parked saga to *whatever plan is currently registered under that name*, then replays the persisted `currentStep` `int` index into the new plan with **no bounds check and no step-identity check**. A deploy that reorders/removes steps makes the old index silently point at a different step — a data-corruption-class bug, not a missing feature.
-- **Doc-vs-code drift (correctness landmine):** `docs/subsystems/flow.md:36` claims removing a step makes wake throw `EX-FLOW-7002 / phase="SCHEMA_MISMATCH"`. **No such phase or step-bounds validation exists anywhere in code** — the only guard is a name-mismatch exception. The promised fail-closed behavior is aspirational; the real behavior is a silent index replay.
+- Resume is **position-bound**: `CoreFlowRuntime.resolvePlanForSnapshot` (`:468`) rebinds a parked saga to whatever plan is currently registered under that name, then replays the persisted `currentStep` `int` into it. Since v0.10 a **bounds/arity** guard rejects an out-of-range index, so the removed-step case fails closed. The **same-arity reorder** is still open and is the data-corruption case: the index stays in range and the saga resumes on a different step. **ADR-062 closes it** by recording the parked step's identity in the snapshot and validating it on wake — the first slice of this epic, and the prerequisite for FlowJournal, since a history recorded in positions becomes false at the next deploy.
+- **~~Doc-vs-code drift (correctness landmine)~~ — CORRECTED 2026-08-05.** This bullet claimed `docs/subsystems/flow.md:36`'s `EX-FLOW-7002 / phase="SCHEMA_MISMATCH"` guard was aspirational and that "no such phase or step-bounds validation exists anywhere in code". It shipped in **v0.10**: `CoreFlowRuntime.validateSnapshotStepBounds` (`:504`, called from `:474` and `:484`) rejects a snapshot whose step no longer indexes the plan, emitting `FlowSchemaMismatchEvent` first. The audit that wrote this bullet ran 2026-06-22, before v0.10 (2026-07-02), and nobody revisited it — so the note itself became the drift, accusing the code of a gap the code had closed. Verified by reading `CoreFlowRuntime`, not by re-reading the doc that made the claim.
 - `loadByDefinition()` is explicitly deferred to "the definition-versioning epic" (FLOW-101) — an epic never written into this roadmap until now.
 
 **Owner:** Flow subsystem.
 
 **Resolution (two-stage):**
-1. **Correctness guard (small):** make version-blind resume fail closed *now* — implement the `SCHEMA_MISMATCH` guard the docs already promise (validate persisted `currentStep` against the current plan's step identity/arity; throw `EX-FLOW-7002 phase=SCHEMA_MISMATCH` on mismatch instead of replaying a stale index), or correct `flow.md:36` to state the real unsafe behavior. A 1.0 that silently mis-replays sagas across deploys is not shippable.
-2. **Definition-versioning epic (v0.11 — candidate to pull earlier):** add a version to `FlowDefinition` (name+version key), carry it in `FlowSnapshot`, make resume resolve the *exact* definition version the saga was parked under, and define an in-flight migration contract (migrate a parked saga vN→vN+1 via an explicit testable transform; reject/quarantine on no migration path). Wire `loadByDefinition()` once the version key exists.
+1. **Correctness guard — DONE.** The arity half shipped in **v0.10**: `CoreFlowRuntime.validateSnapshotStepBounds` (`:504`) throws `EX-FLOW-7002 phase=SCHEMA_MISMATCH` when the persisted `currentStep` no longer indexes the plan, so a removed step fails closed and `flow.md:36` is accurate. The **identity** half — a same-arity reorder, where the index stays in range and the saga resumes on a different step — shipped in **v0.11** under **ADR-062**: the snapshot records the parked step's identity and the wake validates it. `AbstractSagaRecoveryTck` covers both reasons, the reorder (`STEP_IDENTITY_MISMATCH`) and the pre-0.11 row that carries no identity (`STEP_IDENTITY_ABSENT`). This item previously read "implement the guard the docs already promise", which stopped being true when v0.10 shipped. A 1.0 that silently mis-replays sagas across deploys is not shippable.
+2. **Definition-versioning epic (v0.11) — decided by ADR-064.** Add a version to `FlowDefinition` (name+version key), carry it in `FlowSnapshot`, make resume resolve the *exact* definition version the saga was parked under, and define an in-flight migration contract (migrate a parked saga vN→vN+1 via an explicit testable transform). The concrete blocker is that `planCatalog` is a `ConcurrentMap<String, CoreFlowExecutionPlan>` (`CoreFlowRuntime:52`) keyed by name alone, so two versions cannot coexist — registering a changed definition evicts the one every in-flight saga parked under. `loadByDefinition()` waits on the version key; it does not exist in code today and ADR-064 does not add it.
 
-**Merge Gate:** stage 1 — `AbstractSagaRecoveryTck` gains a "definition changed under a parked saga" case asserting fail-closed `SCHEMA_MISMATCH`; flow.md drift corrected. Stage 2 — `AbstractFlowDefinitionVersioningTck` covers version-keyed resume, vN→vN+1 in-flight migration, no-migration-path rejection; Community JDBC + Kafka bindings green; additive only.
+   Two points ADR-064 rules that this entry previously left open. **No-migration-path is a rejection that does not mutate the row** — the saga stays `PARKED` and stays recoverable, so deploying the missing version or registering the missing transform gets it back; a quarantine `FlowState` is deliberately not introduced, because marking it terminal would be irreversible and would run compensation for a definition the runtime cannot bind. And **a migration's output is validated rather than trusted**, so application code on the resume path is not a new trust boundary — the accepted text named ADR-062's identity check as the whole of that validation, which covered the cursor and not the compensation stack — corrected by A4 and completed by A5 below.
 
-**1.0 disposition:** stage 1 **1.0-BLOCKING** (correctness); stage 2 **v0.11 differentiator** — the go-to-market wedge; pull earlier if BudgetHQ/Stellar need it. *This is the most urgent item in this section* — it strikes the strongest concrete claim (the Camunda wedge).
+**Merge Gate:** stage 1 — `AbstractSagaRecoveryTck` gains a "definition changed under a parked saga" case asserting fail-closed `SCHEMA_MISMATCH` on a same-arity reorder; `flow.md`'s compatibility matrix updated so the reorder row stops being a warning and becomes a guard (that row is accurate today — it describes an open gap, not drift). Stage 2 — `AbstractFlowDefinitionVersioningTck` covers version-keyed resume, vN→vN+1 in-flight migration, no-migration-path rejection; Community JDBC + Kafka bindings green; additive only.
+
+**1.0 disposition:** stage 1 **1.0-BLOCKING** (correctness); stage 2 **v0.11 differentiator** — the go-to-market wedge; pull earlier if downstream consumers need it. *This is the most urgent item in this section* — it strikes the strongest concrete claim (the Camunda wedge).
+
+**Status (v0.11): stage 1 DELIVERED (ADR-062); stage 2 DELIVERED (ADR-064, both halves, incl. amendments A4 and A5).**
+
+Coexistence: `FlowDefinition` carries a version, the plan catalog is keyed by `(name, version)` so versions coexist, `FlowSnapshot` records the version a saga parked under, and both resume entry points — `wake()` and `schedule()` — bind to that exact version or refuse fail-closed.
+
+In-flight migration: `FlowDefinitionMigration` is registered per `(definitionName, fromVersion)` through `FlowExecutionPlanFactory.registerMigration`; on wake the runtime walks adjacent hops until it reaches a hosted version and stops at the first one, persisting the result before the resumed step runs. A gap in the chain is the no-path rejection that leaves the row intact. `AbstractFlowDefinitionVersioningTck` is the gate for both halves.
+
+Points settled during implementation and recorded as ADR-064 amendments rather than left as silent divergence: migration is scoped to the **resume-restore** path — `wake()` and `lookupParked()`'s durable-store fallback, which is a restore rather than a read and is how choreography wakes a cross-engine saga — while `schedule()` keeps refusing (the resubmit path fixes the target version at the caller's plan, which makes the chain's terminating condition path-dependent); a successful migration is **persisted**, so the chain does not re-run on every wake and transform purity stays an implementation detail rather than an unstated obligation; and `FlowMigrationState` carries the step the saga **parked at**, not the step it would resume into.
+
+**A4 was found while auditing those two carried items and is the reason this entry now names three amendments rather than two.** Obligation 9 claimed a transform's output is validated by ADR-062's identity check; that check reads the cursor only, so two of `FlowMigrationState`'s five components were covered and the compensation stack — the component that drives rollback — was not. The failure mode is not a bad resume but an aborted rollback: `runCompensationStep` resolves entries with `plan.stepAt(entry)` outside its own catch, so a stale entry skips the remaining unwind *and* `finalizeFailedInstance`, leaving the saga mid-compensation with its guard held. The bounds half is enforced on every resume (`COMPENSATION_STACK_OUT_OF_RANGE`), and the identity half by A5 (`COMPENSATION_STACK_IDENTITY_MISMATCH` / `..._ABSENT`).
+
+Carried, not closed:
+
+- **Compensation-stack step identity — DELIVERED (ADR-064 amendment A5).** The stack now carries `compensationStepNames` beside its positions, and resume refuses when the two disagree with the plan it is binding to. Taken inside v0.11 as planned: the record's component list had already changed this milestone, so the third component added nothing to the stability ledger, whereas deferring to v0.12 would have been a fresh change to a surface declared stable since 0.5.0. **A5 also corrected A4's failure-mode sentence.** A4 described a stale entry as producing an aborted rollback; that is what an *out-of-range* entry does — the half A4 closed. An in-range entry addressing a different step throws nothing at all: the unwind silently skips a compensation that was owed, or runs a different step's. So the half carried was the quieter and the less recoverable of the two, and the record did not say so — a compensation is a side effect that has already happened by the time anyone can look, whereas an aborted unwind leaves the parked row intact. Verified by mutation rather than by a green suite: disabling the guard reddens three TCK cases, disabling the pre-transform refusal reddens a fourth with the exact bare exception its assertion predicts, and disabling the *recording* side reddened nothing until a seventh case was added that runs a real saga through park and resume.
+- **Miss-suppression on a rejected migration** — previously listed here as a defect; it is not. `loadSnapshot` consults the miss cache *before* reading the store, so suppressing a version refusal would make the documented remedy ("register the missing transform and wake again") silently do nothing. The mechanism to make suppression safe already half-exists: `compile()` clears the tracking via `clearLookupSuppressionAfterPlanCompile`, `registerMigration` does not. Until suppression is wanted, the residual cost is one snapshot-store read per wake of an unmigratable saga.
+
+**FlowJournal follows this, it does not precede it** — and now has an entry of its own rather than living as this paragraph; see ["Flow: FlowJournal — durable saga history"](#flow-flowjournal--durable-saga-history-rfc-track) below. The ordering was wrong in planning for the same reason ADR-062 gave about positions: an entry recording *which step completed* is durable history only if it also records *which version produced it*, or it ages out at the next deploy exactly as a position does. Both prerequisites landed this milestone, so the ordering objection is discharged.
+
+---
+
+### Flow: FlowJournal — durable saga history (RFC track)
+
+**Gap:** the kernel keeps no history of what a saga did. `FlowSnapshotStore` is a **last-value row store, not a log** — `save` upserts one row per instance and `complete()` calls `deleteSnapshot`, so a saga that finishes successfully leaves **no trace at all**. The nearest thing to a transition vocabulary is nine flow JFR event classes — seven driver-agnostic in `core/flow`, two Community/JDBC diagnostics emitted by `JdbcFlowSnapshotStore` — which are diagnostic and ephemeral: they answer "what is this process doing", never "what did this saga do last Tuesday". For an orchestration engine that is a product-level gap, not only an operational one — audit, replay and after-the-fact dispute resolution all need history the runtime does not keep.
+
+**Owner:** Flow subsystem.
+
+**Resolution:** Open an RFC in this repo's `docs/rfc/`. Its prerequisites are met: ADR-062 gives an entry a step identity that survives a deploy, and ADR-064 gives it the definition version that makes the identity meaningful. What is open is the shape — entry contents, SPI-vs-Community placement, durability substrate, retention, and write cost on the checkpoint path — which is an RFC's question, not a decision already made. Two of those the repo can already argue: the substrate has a working candidate in `EventStreamAppender` (append-only, per-stream monotonic head, OCC via `expectedVersion`, TCK-bound on **two** bindings), and placement is hard-constrained by `spi.flow` being `stable` under the ADR-065 gate. One it cannot: **write cost**, and that is the decisive one.
+
+**Why write cost decides it.** `persistSnapshot` has exactly four call sites — `PARKED` (×2), `COMPENSATING`, `FAILED_ROLLEDBACK` — all state-transition-scoped, with **no write on step completion**. So a ten-step saga that never parks writes **zero** durable rows today. A per-step journal makes that ten. That is a change of write-frequency *class*, not an increment, on a runtime whose first rule is No Waste Compute — and there is nothing in the repo to measure it against: `docs/performance-contract.md` carries no flow or saga SLO, and no benchmark touches a durable write at all.
+
+**Status (v0.11): RFC ACCEPTED — shape selected, implementation gated on a measurement.** [`RFC-2026-08-07: What should a durable saga journal record, where should it live, and what may it cost?`](rfc/RFC-2026-08-07-flow-journal.md) selects a **per-step journal on `EventStreamAppender`, opt-in per definition**. Substrate is settled by elimination — `FlowSnapshotStore` is last-value and deletes on success, so it cannot host history. Dissent recorded: the state-boundary-only variant is the cheap answer and is where this should land if the measurement rules the per-step one out.
+
+**Merge Gate (as satisfied):** RFC accepted with one shape selected and dissent recorded; **no kernel SPI commits in this gate** (decision-only track). Implementation gate deferred and conditional on a checkpoint-write measurement that does not exist yet — building that benchmark closes a standing gap in the flow subsystem's performance contract regardless of whether the journal is ever built. When it lands: additive placement only (a new package or reuse of the events log — **not** a component on `FlowSnapshot`, whose component list already moved three times this milestone, and **not** an abstract method on `FlowSnapshotStore` without a `default`, since the compatibility gate is silent about both while neither is free), with the `docs/stability-matrix.md` row and `stability-surfaces.conf` entry in the same commit — an unclassified SPI class fails `--verify-surfaces`.
 
 ---
 
@@ -1792,7 +2256,7 @@ See also: v0.10 §"Events: Log-Ordering & Optimistic-Concurrency Boundary" (the 
 
 **Gap:** "Deterministic runtime" today means *local* predictable mechanisms (deterministic deny, net-counter admission without wall-clock, LIFO unwind) — it does **not** mean "run the whole runtime under a controlled scheduler, inject a fault, replay bit-for-bit." That second meaning is what TigerBeetle (VOPR) and FoundationDB (Flow simulation) built their reputations on, and **no JVM runtime has it** — Lincheck/JPF model-check *structures*, not a whole runtime with native IO. Retrofitting determinism onto a mature runtime normally breaks on the absence of a clean scheduler injection point without rewriting the world. **The kernel now has both hard seams already in place and validated:**
 - **IO swap — via The Wall:** all IO sits behind SPI, so real transport/persistence/events swap for an in-memory simulation via one binding. Under simulated (deterministic) IO, unmount/park points become deterministic for free.
-- **Execution swap — via the PAQS/stream execution seam:** the parked `research/loom-continuation-locality` branch (v0.6) produced, as its byproduct, an extracted execution backend (M1) **proven refactor-neutral on PAQS/stream** (M2). The branch closed **NO_GO on the locality hypothesis** (transport-affine continuation gave no payoff — shop-order-saga CPU +12.97%, latency 4.9→6.1 ms, throughput flat), but that result is **orthogonal to DST**: locality asked "does affine scheduling raise RPS?" (no); DST asks "does deterministic single-stepping give reproducibility?" — not an RPS question, so the negative locality result does not touch it. DST's value is *reproducibility, not throughput*.
+- **Execution swap — via the PAQS/stream execution seam:** the `research/loom-continuation-locality` branch (v0.6) produced, as its byproduct, an extracted execution backend (M1) **proven refactor-neutral on PAQS/stream** (M2). The M1 seam (`StreamExecutionBackend` + default VT-per-stream backend) is **ported onto the default line in v0.11** (see v0.11 §"Transport: PAQS Execution-Seam Port (M1)") — the injection point now lives in-tree, not only on a prunable research branch. The branch closed **NO_GO on the locality hypothesis**, but that verdict is **config-scoped, not a refutation**: it ran Community-only, on the stock VT scheduler (the affine backend's carrier pinning rode a *reflective* VT custom-scheduler override, absent unless running a Loom custom-scheduler JDK — so the "locality-aware" arm could not actually pin carriers), and without `pullerMode=3`. The Enterprise io_uring track (M4/M5: native reaper + affine + multishot + drain) **never ran**, and io_uring is the regime where continuation-locality effects should be strongest (the split between kernel I/O completion reaping and user-space continuation execution is most pronounced there) — that (io_uring + Loom custom scheduler + `pullerMode=3`) is the materially-different hypothesis the research's own conclusion demanded, now the live locality re-test on the ported seam. The Community null result is separately **orthogonal to DST**: locality asked "does affine scheduling raise RPS?"; DST asks "does deterministic single-stepping give reproducibility?" — not an RPS question, so it is untouched either way. DST's value is *reproducibility, not throughput*.
 
 So the seams — the architecturally risky part — are done. What remains is **work, not architectural risk**: deterministic implementations behind the two seams + an injectable clock (see "Unified Clock" — being unified anyway) + a seeded RNG + a sim-driver steering all of it with fault injection and replay.
 
@@ -1806,7 +2270,7 @@ So the seams — the architecturally risky part — are done. What remains is **
 
 **1.0 disposition:** **POST-1.0** — the largest long-term moat, but not a GA gate. Cost/benefit has tilted sharply *toward* it now that the seam removed the most expensive leg. Land the **prerequisites** (unified Clock, seeded-RNG discipline, in-memory SPI bindings) opportunistically so the harness is a small later step, not a rewrite.
 
-See also: parked research `research/loom-continuation-locality` (the execution seam, NO_GO on locality); "Road to 1.0" §"Cross-Cutting: Unified Injectable Clock Seam".
+See also: v0.11 §"Transport: PAQS Execution-Seam Port (M1)" (seam landed on the default line); research `research/loom-continuation-locality` (locality NO_GO is **config-scoped** — Enterprise io_uring + custom-scheduler re-test still open); "Road to 1.0" §"Cross-Cutting: Unified Injectable Clock Seam".
 
 ---
 
@@ -1910,7 +2374,7 @@ See also: parked research `research/loom-continuation-locality` (the execution s
 
 ### Scope Discipline & Declared Stances
 
-**1.0 = narrow, deep, defensible core.** v0.11/v0.12 stack a row of new SPIs — `BlobStorageProvider`, `JobScheduler`, `CacheProvider`, `WebSocketProvider`, `ServiceResolver`, cross-node coordination — each a real subsystem. For a solo founder, bundling these into 1.0 is scope-explosion risk. **Decision: explicitly mark all of these as post-1.0.** 1.0 is the narrow, deep, *unfalsifiable* core — `transport / http / security / persistence / flow / events` (+ `memory` foundation) — plus the cross-cutting 1.0-blocking items above (preview-clean baseline, supply-chain integrity, SPI binary-compat gate, schema evolution, flow-resume correctness). Better 1.0 unbreakable on six things than shallow on fifteen. RFC-gating already applies to most of these — this makes the post-1.0 tag explicit rather than implied.
+**1.0 = narrow, deep, defensible core.** v0.11/v0.12 stack a row of new SPIs — `BlobStorageProvider`, `JobScheduler`, `CacheProvider`, `WebSocketProvider`, `ServiceResolver`, cross-node coordination — each a real subsystem. For a solo founder, bundling these into 1.0 is scope-explosion risk. **Decision: explicitly mark all of these as post-1.0.** *Clarified 2026-08-07 (see [`RFC-2026-06-29`](rfc/RFC-2026-06-29-webclient-service-addressing.md)):* this holds out each named item **as a new SPI/subsystem**. It does not hold out fixing the shape of a subsystem 1.0 already commits to — so `ServiceResolver` stays post-1.0 while multi-peer addressing on the existing `spi.http` client surface is 1.0 scope. Reading the two as one item would let the ruling quietly narrow `http` rather than narrow the SPI count, which is not what it decides. 1.0 is the narrow, deep, *unfalsifiable* core — `transport / http / security / persistence / flow / events` (+ `memory` foundation) — plus the cross-cutting 1.0-blocking items above (preview-clean baseline, supply-chain integrity, SPI binary-compat gate, schema evolution, flow-resume correctness). Better 1.0 unbreakable on six things than shallow on fifteen. RFC-gating already applies to most of these — this makes the post-1.0 tag explicit rather than implied.
 
 **Graph in 1.0 — DECIDED: stays in 1.0.** The earlier keep-or-split question is closed. Graph is substantially complete well before 1.0 and its claims are TCK-backed like the rest of the core: GRAPH-111 (v0.8 Sprint 7) delivered `ExecutionGraphZeroAllocTck` + `GraphChurnRatioTck` with Community bindings (`CommunityExecutionGraphZeroAllocTckTest`, `CommunityGraphChurnRatioTckIT`). No dilution-of-focus concern — Graph is a finished in-scope subsystem, not an open scope risk.
 
@@ -1921,6 +2385,93 @@ See also: parked research `research/loom-continuation-locality` (the execution s
 **Actions:** (1) **Pin the zero-alloc / No-Waste-Compute contract explicitly to HotSpot-C2** in `docs/performance-contract.md` — otherwise someone benchmarks the claim under native-image, sees it not hold, and concludes it is *false*; scoping the contract defends the claim. (2) Declare the 1.0 stance in the support matrix: **edge/lightweight = native-image target (enablement is a post-1.0 gated track); throughput tier = HotSpot/C2** — explicitly stated, not silently absent. (3) Track native-image *enablement* as a separate gated track (post-1.0): reachability metadata for FFM downcalls, reflection config for reflective loaders (`GeneratedRoleRegistryLoader` resolves FQNs via reflection), `ServiceLoader` registration, and JFR feature-parity (JFR-first telemetry + `RecordingStream` in TCK — *not* zero-risk; verify custom events and streaming under SubstrateVM).
 
 **1.0 disposition:** declare the **contract** in 1.0 (cheap, defends the claim — the `performance-contract.md` pin is near-term); native-image **enablement** is a **post-1.0** gated track.
+
+### Transport: Connection Cap Refuses Silently (surfaced by load-test triage, 2026-07-31)
+
+**Gap:** `NativeTcpCarrier`'s accept loop reserves a slot against `TransportConfig.maxConnections()` (default `HttpConfig.DEFAULT_MAX_CONNECTIONS` = 1000, `http.maxConnections`). When the cap is reached it calls `closeQuietly(currentChannel)` and continues: the connection is **accepted at TCP level and then closed with no log line and no JFR event**. From the client the socket opens and dies; from the server nothing happened.
+
+Sharper than "no counter", which is how this was first written: `TransportStats` already carries `totalRejected` — *"cumulative number of connections/streams rejected (load shedding)"* — and the carrier fed it from the PAQS load-shedder alone. The one field an operator consults when asking whether the server is turning work away therefore read **zero while every connection was being refused**. That is worse than absent telemetry, because a zero is read as evidence the fault lies elsewhere.
+
+This is the only refusal path in the kernel with no telemetry at all, which makes it the hardest failure to diagnose and the easiest to misattribute. A load test that trips it sees connection-level errors with a clean server log and will reasonably conclude the fault is elsewhere — a shape that has already cost triage time (see below). It also breaks the Glass-Box premise: every other shed or deny in the kernel emits an event, and admission decisions in persistence emit `AdmissionDecisionEvent` specifically so operators can attribute them.
+
+Two properties make this cap easy to hit unexpectedly: it counts **concurrent connections, not rate**, so a transient overlap of two client phases can cross it at a request rate that is otherwise comfortable; and 1000 is low enough that a keep-alive client pool plus a draining previous pool can exceed it without either alone coming close.
+
+**Owner:** Transport subsystem.
+
+**Resolution:** Emit a JFR event on refusal (`schedulerName`-style shape: bind address, active count, configured cap) and expose the refusal count in transport stats; the event must be single-phase and must not carry peer identity beyond what the transport already records. Independently, review whether a default of 1000 is right for the reference deployment, and whether an accept-time cap is the correct mechanism at all versus admitting and shedding at request level where the response can carry a status. **Do not change the cap's behaviour and its observability in the same commit** — the silence is the defect being fixed; the policy is a separate decision.
+
+**Merge Gate:** Refusal event registered in `docs/subsystems/telemetry.md` §Required Events and asserted by a driver-local JFR test that drives the cap to its limit; transport stats expose a monotonic refusal counter; `docs/subsystems/transport.md` documents the cap, its default, and what a client observes when it trips.
+
+**1.0 disposition:** 1.0-recommended. Transport *is* in the 1.0 core, and an undiagnosable refusal path is the kind of thing that turns a support conversation into an accusation.
+
+**Status (v0.11): observability half DELIVERED; policy half open.** The previous text read "implemented in a separate change and **not yet on the development branch**" and was **true when written and stale by the next morning**: #265 merged 2026-07-31. Corrected 2026-08-08 during the pre-cut audit, and worth keeping as the cautionary example — the sentence was carefully hedged against an unverifiable claim and still ended up asserting something false, because a status pinned to a moment needs re-reading at the cut, not just honest phrasing at the time.
+
+What is on `development/*`: `CommunityConnectionRefusedEvent` and `CommunityAcceptFaultEvent`, both emitted from `NativeTcpCarrier`, and `TransportStats.totalRejected` now summing the accept-time refusals (`refusedConnections`) together with PAQS load-sheds instead of counting only the latter. One deliberate asymmetry is recorded in the event's own javadoc: an accept **fault** is excluded from `totalRejected`, because that field means work the engine *declined*, and a setup failure is not a decision. **Not covered by any test** — neither event has a `RecordingStream` assertion in the Community suite or the TCK, so the emission is verified by reading the call sites only; that gap is real and is the first thing to close if either event is relied on.
+
+The policy half is open and deliberately unbundled: whether an accept-time cap is the right mechanism against request-level shedding that can answer with a status, and whether 1000 is the right default for the reference deployment.
+
+---
+
+### Graph: Heterogeneous Multi-Hop Traversal (surfaced by dogfooding, 2026-07-31)
+
+**Gap:** `GraphTraversal` (`exeris-kernel-spi/.../graph/model/GraphTraversal.java:28`) carries exactly **one** `GraphEdgeDescriptor`, and every `GraphSession` entry point that consumes a traversal takes that single-edge shape: `traverseBreadthFirst(GraphTraversal)`, `streamBfsJson(GraphTraversal)`, and `findShortestPath(GraphEdgeDescriptor, source, target)`. There is no method accepting a heterogeneous path. A two-hop query over different relationship types — `User -[PURCHASED]-> Product -[SIMILAR_TO]-> Product` — is therefore not expressible as one request; a caller must issue hop one, materialise the intermediate node set, and issue hop two per node.
+
+That is not merely inconvenient. It moves the join into application code, which (a) costs one round trip per hop and an N+1 fan-out on the second, (b) puts the intermediate result set on the heap, against the No-Waste-Compute contract the graph subsystem otherwise honours through `streamBfsJson`'s `LoanedBuffer`, and (c) leaves the second hop's tenant scoping to the caller rather than to the engine. Recommendation traversal is the canonical graph use case, so this is closer to a missing primitive than to a missing convenience.
+
+**Owner:** Graph subsystem.
+
+**Resolution:** RFC before ADR — the option space is open and the choice is a contract shape, not a defect fix. Options to compare: (a) a `GraphPathSpec` carrying an ordered `List<GraphEdgeDescriptor>` with a per-hop depth, consumed by a new `traversePath(...)`; (b) generalising `GraphTraversal.edgeDescriptor` to a set with a per-hop predicate; (c) declining the primitive and documenting the client-side composition as the supported pattern, on the grounds that arbitrary path expressions are a query-language problem the kernel deliberately does not own. Any option that lands must state how depth interacts with hop count (a five-hop path with `maxDepth=3` needs a defined meaning), and must keep `StorageContext` scoping engine-side on every hop.
+
+**Merge Gate:** RFC accepted with one shape and dissent recorded. If a primitive lands: `AbstractGraphSessionTck` covers a heterogeneous two-hop path, a hop that matches nothing (empty result, not error), depth interaction, and a cross-tenant probe proving the second hop cannot escape the caller's isolation key; both bindings green; the zero-copy streaming variant covered, not only the `List<UUID>` one.
+
+**1.0 disposition:** post-1.0 — but the reason is narrower than "graph is not 1.0", which would contradict the **"Graph in 1.0 — DECIDED: stays in 1.0"** ruling in this same section. Graph the subsystem *is* in 1.0: it is substantially complete and TCK-backed. What is post-1.0 is *this contract widening*. The 1.0 decision was taken about the graph surface as it stands, on the strength of GRAPH-111's zero-alloc and churn-ratio TCKs; a new traversal primitive is new surface that ruling never assessed, and adding it inside the 1.0 window would re-open a scope question that was deliberately closed.
+
+---
+
+### Flow: No Way to Await a Flow (surfaced by dogfooding, 2026-07-31)
+
+**Gap:** `FlowScheduler` exposes `schedule(FlowExecutionPlan, FlowContext)` returning `void`, plus `park`, `wake`, and `lookupParked`. Neither it nor `FlowEngine` offers any completion surface — no handle, no join, no completion callback, no terminal-state future. A caller that starts a flow has no supported way to learn that it finished, short of polling a snapshot store or subscribing to an event the flow itself must be written to emit.
+
+This is a genuine product-SPI gap rather than a stylistic one. Request/response over a flow — "run this saga, answer the HTTP call when it settles" — is a shape downstream applications reach for immediately, and today it has no kernel answer at all. Every consumer invents its own correlation and waiting mechanism, which is the duplicated-unaudited-code failure the kernel exists to remove.
+
+**Owner:** Flow subsystem.
+
+**Resolution:** RFC. The design question is not "add a future" — it is what completion *means* for a durable, parkable, cross-restart flow, and that is exactly where a naive API would mislead. Points the RFC must settle: whether awaiting is even coherent for a flow that may park across a restart (the awaiting caller does not survive it); whether the surface is a terminal-state observer rather than a join; the relationship to the existing terminal-state catalog and to `FlowSnapshotStore`; the timeout contract and what a caller observes when a flow outlives its awaiter; and whether this composes with, or duplicates, the choreography wake path. **Must not acquire a `CompletableFuture`** — banned on orchestration paths — nor a new `StructuredTaskScope` site, per the Platform Baseline below.
+
+**Merge Gate:** RFC accepted with one shape and dissent recorded. If a surface lands: `AbstractFlowSchedulerTck` covers completion after a normal terminal state, after a compensating/failed terminal state, a timeout, an awaiter racing a park, and an awaiter that gives up before the flow settles (no leak, no orphaned registration); Community binding green.
+
+**1.0 disposition:** 1.0-recommended. Flow *is* in the 1.0 core, and "replaces the orchestration layer" is one of the two load-bearing product claims — a flow nobody can wait on weakens it. Sequenced behind the v0.11 flow-versioning and continuity work rather than ahead of it.
+
+---
+
+### Cross-Cutting: Operational Limits With No Configuration Path (surfaced 2026-07-31)
+
+**Gap:** Several protective limits are compile-time constants with no key, no override, and no way to disable them. They are reasonable *defaults* and poor *only settings* — a deployment cannot raise one for scale, lower one for a constrained node, or switch one off to measure something else.
+
+**PAQS has no configuration surface at all.** `AdmissionController` is constructed as `new AdmissionController(arbiter)` — no config object — and neither the transport scheduler package nor the community events package reads the config provider once. There is no `paqs.*` or `events.*` key anywhere.
+
+| Constant | Value | Location | Note |
+|---|---|---|---|
+| `MAX_ACTIVE_STREAMS` | 5 000 | `AdmissionController` | Its own Javadoc: sheds "regardless of memory pressure" |
+| `SPIN_THRESHOLD` | 10 000 | `PaqsScheduler` | |
+| `MAX_HEADER_BLOCK_SIZE` | 65 536 | `Http2HeaderBlockAssembler` | HTTP/1 equivalent **is** configurable |
+| `MAX_STRING_LITERAL` | 65 536 | `HpackDecoder` | HTTP/1 equivalent **is** configurable |
+| `TRANSLATION_CACHE_MAX_ENTRIES` | 1 024 | `JdbcPersistenceConnection` | |
+| `DEFAULT_NETWORK_OFF_HEAP_THRESHOLD` | 32 KiB | `CommunityMemoryAllocator` | |
+| `FLOW_PROGRESS_ORDINAL_PROBE_LIMIT` | 32 | `FlowProgressPublisher` | |
+| `MAX_RECLAIM_CADENCE_MS` | 5 000 | `CommunityTenantPoolRegistry` | |
+
+The HTTP/1 ÷ HTTP/2 rows are the sharpest: `http.maxRequestHeaderSize` and `http.maxRequestHeaderCount` are honoured on HTTP/1 and silently stop applying once a client negotiates h2. Nothing on the config surface says so.
+
+**A second class is worse than hardcoding — knobs that are not configuration.** Four settings are read straight from `System.getProperty`, so they sit outside the config provider: not hot-reloadable, invisible to `KernelConfigRegistry`, and undocumented beside the `http.*` / `transport.*` keys — `exeris.transport.maxTlsRecordsPerRead` (32), `exeris.transport.queueBackpressureEnabled` (false), the memory JFR sampling interval, and the socket-backend selector. These *look* configurable to whoever wrote them and are undiscoverable to whoever operates them.
+
+**Owner:** Transport / HTTP / Persistence / Memory, coordinated — the shape of the answer should be one convention, not four.
+
+**Resolution:** Promote the operational limits above onto the config provider under their subsystem namespaces, and decide **once** what "disable" means for a protective limit — an explicit unbounded sentinel, or a documented refusal to offer one. That decision is the substantive part: an admission controller with no ceiling is a legitimate configuration for a JVM-controlled deployment and a foot-gun for a shared one, and the contract should say which it supports rather than leaving it to whether a constant happens to be reachable. The four system properties either become real keys or are documented as deliberate escape hatches; the present state is neither. Protocol invariants (HPACK table shapes, status-code ranges, UTF-8 boundaries) stay hardcoded and are explicitly out of scope.
+
+**Merge Gate:** Each promoted limit has a key, a documented default, and a stated disable semantics; TCK coverage where the limit changes observable behaviour under load (admission and the HTTP/2 header limits at minimum); `docs/subsystems/*.md` config tables updated; no remaining `System.getProperty` reads for operational policy in `src/main`.
+
+**1.0 disposition:** **1.0-blocking.** A runtime that cannot be tuned for the deployment it runs in is not operable, and the HTTP/2 asymmetry means an operator can believe a limit is set while it is not. Both are the kind of thing that has to be right *before* external consumers exist, because changing a limit's default or its disable semantics afterwards is the change nobody can absorb quietly.
 
 ---
 
@@ -1937,10 +2488,36 @@ This matters because `--enable-preview` is **not** a per-library opt-in — it i
 - The preview *taint* lives in **shipped Core/Community bytecode**. Load-bearing `StructuredTaskScope` type usage (actual imports, verified on HEAD) is in exactly **four** default-path sites — `core/bootstrap/SubsystemOrchestrator` (parallel subsystem start), `core/events/InMemoryEventBus`, `core/events/outbox/OutboxOrchestrator`, and `community/events/CommunityEventLoop`. These compile with `--enable-preview` and ship as major-pinned bytecode.
 - **Anticipated, not yet present:** the planned `KafkaEventLoop` (ROADMAP §"Events: Kafka/Redpanda Driver — Core-Shared Implementation Model", step 4) *intends* to wrap the consumer poll cycle with `StructuredTaskScope`, but it is **not implemented** today (zero `StructuredTaskScope` in `exeris-kernel-community-kafka/src/main`). Build it on the GA structured-concurrency layer from the start so it never becomes a fifth taint site.
 
+**Track policy, stated as a rule rather than left implicit (settled 2026-08-06).** The two lines select
+their JDK by opposite criteria, and every guardrail below reads differently depending on which one it is
+about:
+
+| | Default line (`main`) | `preview` branch |
+|---|---|---|
+| JDK | **LTS only** — JDK 25 today, 29 next | **Latest, LTS or not** — JDK 28 today |
+| Preview flags | none; `--enable-preview` is the thing being removed | `--enable-preview`, by definition |
+| Concurrency | virtual threads + explicit `ScopedValue` rebind (both GA) | `StructuredTaskScope` |
+| Carriers | records / immutable finals, Valhalla-*ready* by discipline | JEP 401 value classes, once exercised |
+| Artifact | the distributable `1.0` | `1.0-preview`, for JVM-controlled deployments |
+
+The preview branch is not a research fork: it is the intended future `main`, and it converges at an LTS.
+If `StructuredTaskScope` exits preview in **JDK 29 LTS**, the preview line *becomes* the GA line at that
+release — which is why "track the newest JDK" is a requirement on it and not an indulgence. It has to
+have already absorbed the API churn by the time the LTS lands.
+
+**JDK 28 confirmed (checked 2026-08-04), and it does not move the GA floor.** Targeted JEPs: **401 Value
+Objects (Preview)**, **539 Strict Field Initialization in the JVM (Preview)**, 535 Shenandoah
+generational-by-default. Both Valhalla-relevant JEPs are **preview**, so 28 changes nothing for `main` —
+it is the preview branch's next JDK, exactly as step 3 anticipated. JEP 539 was not in the original
+analysis and is worth naming: strict field initialization is the companion that makes value classes
+sound, so the "Valhalla-ready carriers" guardrail moves from a style rule to something **executable on
+the preview branch** once that branch is on 28. Testing it there is the point of the branch existing;
+`main` keeps the discipline without the flag.
+
 **Resolution (target: complete before 1.0 RC; phased across v0.10–v0.12):**
 1. **Baseline at JDK 25 LTS**; compile the *default* artifacts **without** `--enable-preview`. (First confirm via audit that no *other* preview API is on the critical path or in shipped bytecode — STS is believed to be the only one; treat this as the first acceptance step.) A syntactic audit of **JEP 507** (primitive types in patterns / `instanceof` / `switch`, preview in 25/26 — the obvious second candidate given the kernel's primitive density) found **zero** usage in `*/src/main`: no primitive `instanceof`, no `case <primitive> var` type patterns, and all 37 `switch` selectors are over enum / `String` / `char` / `int` (i.e. pre-JEP-507 GA forms — no `long`/`float`/`double`/`boolean` selector). So STS remains the sole *known* preview dependency; the **definitive** confirmation is a clean no-`--enable-preview` compile of the default reactor (the gate below).
 2. **GA-clean substitution at the orchestration seam the bootstrap already exposes — for the distributed `main` only** (The Wall): a thin GA implementation — `fork` / `join-as-unit` / `cancel-on-failure` over **virtual threads** (GA 21) with **`ScopedValue`** binding-propagation re-established manually in the fork helper (`ScopedValue.where(...).call(...)` around each child, since automatic inheritance is the part ergonomically fused to STS). Substitute it at the four STS sites on `main` at the existing concurrency-policy method boundary (e.g. the private `startParallel` in `SubsystemOrchestrator`) — not a new injectable strategy, and `main` holds only the substitution, never two implementations side by side. This is a **temporary GA-clean cut, not a permanent replacement**: `StructuredTaskScope` stays the *intended* implementation (carried on the preview branch, step 3) and returns to `main` once STS is GA. Determinism + per-phase custom JFR startup events make the substitution a usable property in its own right, but it is not positioned as the long-term default.
-3. **The `StructuredTaskScope` version (and, later, the JEP 401 value-class version of the carriers) lives on a thin, temporary `preview` branch — the *intended* future `main`, not an adapter artifact.** Direction matters: `preview` is the richer, target kernel; `main` is its preview-clean cut (step 2), not the other way round. The preview branch builds with `--enable-preview` on the STS-target JDK and **tracks the moving STS API across releases** (26 → 27 → 28 …) — a separate build line on its own toolchain absorbs that naturally, where a same-reactor module would not (`--enable-preview` pins bytecode to one major). It is published as a separate `1.0-preview` artifact for JVM-controlled deployments (BudgetHQ, Stellar-Tactics) and EA testing. When STS — and value classes — reach GA, **`preview` replaces `main`** and the branch dissolves. Because the preview-bearing code is never on `main`, the default tree cannot be accidentally contaminated (there is nothing to pull in).
+3. **The `StructuredTaskScope` version (and, later, the JEP 401 value-class version of the carriers) lives on a thin, temporary `preview` branch — the *intended* future `main`, not an adapter artifact.** Direction matters: `preview` is the richer, target kernel; `main` is its preview-clean cut (step 2), not the other way round. The preview branch builds with `--enable-preview` on the **newest** JDK, LTS or not, and **tracks the moving STS API across releases** (26 → 27 → 28 …) — a separate build line on its own toolchain absorbs that naturally, where a same-reactor module would not (`--enable-preview` pins bytecode to one major). Tracking the newest is a requirement, not a preference: this branch converges into `main` at an LTS, so it must have absorbed the churn before that LTS lands, not after. It is published as a separate `1.0-preview` artifact for JVM-controlled deployments (BudgetHQ and a closed-source consumer) and EA testing. When STS — and value classes — reach GA, **`preview` replaces `main`** and the branch dissolves. Because the preview-bearing code is never on `main`, the default tree cannot be accidentally contaminated (there is nothing to pull in).
 4. **Certify on JDK 29 LTS from launch.** 28 is an STS (~6-month) release; the enterprise segment runs LTS. Since the GA primitives in 25 are also present in 29 (29 ⊇ 28 ⊇ 25 for GA features), certifying 29 is near-free — do **not** pin 1.0 solely to JDK 28. "Ready for JEP 401 value classes on 28" stays a forward-portability / marketing-position story, not a floor pin.
 
 **Note on the CLAUDE.md guardrail:** the repo strong-default "prefer `StructuredTaskScope` for orchestration concurrency" remains the *design ideal* and stays in force for JVM-controlled deployments and the `preview` branch (which is, after all, the intended future `main`). This baseline is the justified exception for the **distributable default artifact**, where the preview-distribution constraint (whole-app flag + bytecode major-pinning + enterprise preview bans) outweighs the ergonomic preference. The exception is scoped to the four sites on `main`; everywhere a JVM is controlled, STS stays preferred.
@@ -1949,7 +2526,27 @@ This matters because `--enable-preview` is **not** a per-library opt-in — it i
 
 **ADR:** the GA-clean orchestration substitution on `main` + the `preview`-branch distribution model (`preview` = intended future `main`) is an architecture decision and warrants a dedicated ADR — **reserve the next free number in `~/exeris-systems/exeris-docs/adr-index.md` when the design firms up** (do not claim a number now). It ties to the existing bootstrap-orchestration-seam direction.
 
-**Status:** **NOT STARTED** — surfaced 2026-06-18 from the JEP 401 (Valhalla → JDK 28 *preview*) + `StructuredTaskScope` GA-timeline analysis. This is a **1.0-GA-blocking** baseline: until the default critical path is preview-clean on a GA LTS, the word "GA" cannot honestly be applied. Distinct from the per-feature roadmap items above because it constrains the *distribution contract*, not a single subsystem.
+**Status (v0.11): DELIVERED.** Surfaced 2026-06-18 from the JEP 401 + `StructuredTaskScope` GA-timeline analysis; closed 2026-08-08 under **ADR-066**. The distributed artifact now builds on **JDK 25 LTS with no `--enable-preview` on main sources** and imposes neither on consumers.
+
+**Measured, not asserted.** Acceptance step 1 asked for "a clean no-`--enable-preview` compile of the default reactor" as the definitive confirmation that `StructuredTaskScope` was the only preview dependency. Run on a real JDK 25 LTS, the two blockers proved separable and very unequal:
+
+- **The JDK-26 target cost nothing.** The full reactor is green at `--release 25` on JDK 25 — no JDK-26-only API is used anywhere, so the `26` was never load-bearing. What it did cost was four constants that fail the build *before* any preview error appears, and therefore mislead anyone attempting this without measuring first: `@SupportedSourceVersion(SourceVersion.RELEASE_26)` in both `build-config` annotation processors, and a hardcoded `--release 26` in two processor tests. A fifth, found only by running it: **`--enable-final-field-mutation=ALL-UNNAMED` in CI's `MAVEN_OPTS` is a JDK 26 flag and JDK 25 refuses to start with it.**
+- **The preview flag was the whole of the work**, and `exeris-kernel-spi` compiled clean without it — upgrading "the SPI is already preview-clean" from a grep result to a compiler result.
+
+**Two of the four sites did not become forks, and that is the finding worth carrying forward.** `OutboxOrchestrator` and `CommunityEventLoop` moved to `StructuredScope.openWithoutBindings()` — not a compromise, since both loop threads are plain virtual threads holding no bindings, so the scope they replace inherited an empty set anyway. The other two could not be ported to *any* fork-based helper:
+
+- **`InMemoryEventBus.publishAndAwait`** — `AbstractEventBusTck`'s golden case binds a `ScopedValue` created inside the test and asserts the handler reads it. A `Carrier` can only carry values named in advance, so no GA mechanism reaches that contract. Handlers now run on the calling thread, in subscription order; the golden test passes **unchanged**.
+- **`SubsystemOrchestrator` phase start** — rebuilding the kernel's own carrier and forking with it was implemented and **failed**: the HTTP subsystem started with no handler bound and every route answered 404. The lost binding was `HTTP_SERVER_HANDLER`, bound by the *application* around `boot()`; `KernelBootstrap` binds `CURRENT_CONFIG` in a second invisible layer. Subsystems now start in dependency-safe rounds on the booting thread.
+
+The rule this establishes: **you cannot propagate what you cannot enumerate.** Forking stays correct where the body needs only kernel-defined slots, which `open(Carrier)` carries explicitly.
+
+**A preview leak no signature audit could have found.** `StructuredTaskScope.open()` defaulted to `Joiner.awaitAllSuccessfulOrThrow()`, so `join()` threw the **preview** class `FailedException` (unchecked, verified by running it). Every non-FOUNDATION phase started in parallel, so a mandatory subsystem failure reached callers as a preview type — `CoreFailurePolicyTckTest` already caught `BootstrapException \| FailedException` for that reason. It also meant `startParallel`'s failure-collection block was **dead code**; a phase now always throws `BootstrapException`.
+
+**Costs, stated rather than buried.** `publishAndAwait` latency is the sum of handler durations rather than the longest. Boot latency is the sum of a phase's subsystem start times rather than the longest — paid once per JVM, and `FOUNDATION` was already sequential.
+
+**Gate:** `tools/preview-bytecode-scan/` reads the published jars — scoped to the reactor's declared modules, so a partial build fails rather than passing on one scanned artifact — and fails on any distributed class carrying `minor_version 0xFFFF` or a class-file major other than the LTS baseline — bytecode rather than a source grep, because the stamp is what a consumer trips over and it survives generated code a grep would miss. Proven to fail on both modes by byte-level mutation, and on a partial build by removing a module's jar. Current state: **15 177 classes scanned across 8 published modules, of which 2 278 are ours — all at major 69, zero preview-stamped**. The larger figure counts the dependencies the diagnostics CLI shades in, which the gate checks for the preview stamp too: a vendored stamped class breaks a consumer exactly as one of ours would. Test fixtures outside those jars remain preview-stamped and are not published.
+
+**Not done here, deliberately:** promotion of `StructuredScope` to SPI. It is a Core class, so ADR-065's compatibility gate does not cover it and it carries no stability row — it is not a supported consumer surface today, and making it one (with or without richer joiner policies) is its own decision.
 
 ---
 
@@ -1972,7 +2569,7 @@ Community 1.0 requires:
 - no unresolved ambiguity in docs about what is supported vs planned vs enterprise-only,
 - TCK-complete coverage for all SPI-observable behavior introduced by roadmap items (with Community bindings and explicit out-of-repo Enterprise obligations),
 - **a preview-clean critical path on a GA LTS baseline (JDK 25 LTS)** — the default artifact must build and run with **no `--enable-preview`** and impose none on consumers (see "Platform Baseline for 1.0 GA").
-- **flow-resume correctness across deploys** — version-blind saga resume must fail closed (real `SCHEMA_MISMATCH` guard, not the documented-but-absent one), so a definition change cannot silently mis-replay an in-flight saga (see "Differentiator: Flow/Saga Definition Versioning").
+- **flow-resume correctness across deploys** — position-bound saga resume must fail closed so a definition change cannot silently mis-replay an in-flight saga. The arity guard shipped in v0.10; the same-arity reorder is closed by **ADR-062** (step identity in the snapshot, validated on wake). This line previously said the `SCHEMA_MISMATCH` guard was "documented-but-absent" — it has existed since v0.10 (see "Differentiator: Flow/Saga Definition Versioning").
 - **kernel-owned schema evolution** — a versioned migration runner (schema-version ledger + apply-once ordering) so a kernel upgrade cannot silently break in-flight sagas (correctness, see "Table-Stakes: Kernel-Owned Table Schema Evolution").
 - **supply-chain integrity** — published artifacts carry CycloneDX SBOM + verifiable signature + provenance attestation; a "1.0 GA" on Maven Central cannot ship unsigned (see "Table-Stakes: Supply-Chain Integrity").
 - **automated SPI binary-compatibility gate** — revapi/japicmp baselined at the 1.0 SPI surface, enforcing the stability declaration in CI (see "Table-Stakes: SPI Binary-Compatibility Gate").

@@ -15,6 +15,7 @@ import eu.exeris.kernel.spi.security.AuthenticationResult;
 import eu.exeris.kernel.spi.security.PrincipalContext;
 import eu.exeris.kernel.spi.security.StorageContext;
 import eu.exeris.kernel.spi.security.identity.IdentityProvider;
+import eu.exeris.kernel.spi.security.identity.IdentityStorageMapping;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -52,6 +53,27 @@ public abstract class AbstractIdentityProviderTck {
 
     /** A token whose signature verifies but whose expiry is in the past — must deny. */
     protected abstract LoanedBuffer expiredTokenBuffer();
+
+    /**
+     * A verifiable token declaring
+     * {@link eu.exeris.kernel.spi.security.KernelIsolationClaims#SHARED_SCOPE_KEY} — the shared-scope
+     * partition the subject asks to participate in.
+     *
+     * <p>The same buffer drives both sides of the seam: {@link #createProvider()} must deny it, and
+     * {@link #createSharedScopeEnforcingProvider()} must honour it (ADR-012 §4b.5 / §4b.7).
+     */
+    protected abstract LoanedBuffer sharedScopeTokenBuffer();
+
+    /**
+     * The same provider constructed for a deployment that asserts it enforces the shared-scope policy
+     * contract — a read predicate widening on the published scope, a write predicate still pinned to the
+     * owner (ADR-012 §4b.4, {@link IdentityStorageMapping#SHARED_SCOPE_ENFORCED_KEY}).
+     *
+     * <p>Abstract rather than a hook defaulting to "skip": ADR-012 §4a routes every provider through the
+     * one kernel-owned mapping, so no binding is exempt from the enforced path, and a skipping default
+     * would make this contract vacuous for precisely the bindings that never looked at it.
+     */
+    protected abstract IdentityProvider createSharedScopeEnforcingProvider();
 
     /** A scope expected on the principal produced from {@link #validTokenBuffer()}. */
     protected String expectedGrantedScope() {
@@ -126,6 +148,10 @@ public abstract class AbstractIdentityProviderTck {
                 StorageContext storage = result.storage();
                 assertThat(storage).isNotNull();
                 assertThat(storage.strategy()).as("isolation strategy").isNotNull();
+                assertThat(storage.sharedScopeKey())
+                        .as("a token declaring no shared scope MUST stay tenant-private "
+                                + "(ADR-012 §4b.5)")
+                        .isEmpty();
             }
         }
 
@@ -166,6 +192,77 @@ public abstract class AbstractIdentityProviderTck {
             IdentityProvider provider = createProvider();
             try (LoanedBuffer token = expiredTokenBuffer()) {
                 assertThatThrownBy(() -> provider.authenticate(token))
+                        .isInstanceOf(SecurityAuthenticationException.class)
+                        .extracting(e -> ((SecurityAuthenticationException) e).errorCode())
+                        .isEqualTo(KernelErrorCodes.EX_SEC_2002);
+            }
+        }
+
+        @Test
+        @DisplayName("a declared shared scope is a terminal EX-SEC-2002 deny while unenforceable")
+        void declaredSharedScopeDenies() {
+            IdentityProvider provider = createProvider();
+            try (LoanedBuffer token = sharedScopeTokenBuffer()) {
+                assertThatThrownBy(() -> provider.authenticate(token))
+                        .as("ADR-012 §4b.5 / §4b.7 — this provider was not constructed for a "
+                                + "deployment asserting it enforces the policy contract, so neither "
+                                + "narrowing the request to tenant-private nor honouring it unenforced "
+                                + "is permitted. Asserted from this suite as well as "
+                                + "AbstractSecurityProviderTck because ADR-012 §4a routes every "
+                                + "provider through one mapping site — the contract must hold from "
+                                + "both entry surfaces")
+                        .isInstanceOf(SecurityAuthenticationException.class)
+                        .extracting(e -> ((SecurityAuthenticationException) e).errorCode())
+                        .isEqualTo(KernelErrorCodes.EX_SEC_2002);
+            }
+        }
+    }
+
+    // =========================================================================
+    // authenticate — the enforcing side of the shared-scope seam (ADR-012 §4b.7)
+    // =========================================================================
+
+    @Nested
+    @DisplayName("authenticate — deployment asserting shared-scope enforcement")
+    class SharedScopeEnforcement {
+
+        @Test
+        @DisplayName("a declared shared scope reaches the resolved StorageContext")
+        void declaredSharedScopeIsCarried() {
+            IdentityProvider provider = createSharedScopeEnforcingProvider();
+            try (LoanedBuffer token = sharedScopeTokenBuffer()) {
+                assertThat(provider.authenticate(token).storage().sharedScopeKey())
+                        .as("the deny above is conditional on the deployment, not absolute — where "
+                                + "enforcement is asserted the declaration must be honoured, or the "
+                                + "tier is unreachable and §4b.7 buys nothing. This is also the only "
+                                + "executable assertion that a binding actually threads its "
+                                + "enforcement flag into IdentityStorageMapping")
+                        .isNotEmpty();
+            }
+        }
+
+        @Test
+        @DisplayName("enforcement invents no scope — a token declaring none stays tenant-private")
+        void noDeclarationStaysTenantPrivate() {
+            IdentityProvider provider = createSharedScopeEnforcingProvider();
+            try (LoanedBuffer token = validTokenBuffer()) {
+                assertThat(provider.authenticate(token).storage().sharedScopeKey())
+                        .as("asserting the schema CAN enforce a shared scope says nothing about any "
+                                + "particular subject asking for one — enforcement must never become a "
+                                + "blanket widening (S-P0-07)")
+                        .isEmpty();
+            }
+        }
+
+        @Test
+        @DisplayName("enforcement weakens no validation gate — an unverifiable token still denies")
+        void enforcementDoesNotWeakenValidation() {
+            IdentityProvider provider = createSharedScopeEnforcingProvider();
+            try (LoanedBuffer token = unverifiableTokenBuffer()) {
+                assertThatThrownBy(() -> provider.authenticate(token))
+                        .as("the enforcing instance must carry the same validation pipeline — a "
+                                + "binding that rebuilt its validator while opting in would relax the "
+                                + "gates guarding the very tier it just widened")
                         .isInstanceOf(SecurityAuthenticationException.class)
                         .extracting(e -> ((SecurityAuthenticationException) e).errorCode())
                         .isEqualTo(KernelErrorCodes.EX_SEC_2002);

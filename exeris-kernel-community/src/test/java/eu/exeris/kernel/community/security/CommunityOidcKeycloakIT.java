@@ -52,6 +52,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -139,6 +140,13 @@ class CommunityOidcKeycloakIT {
         String subject = parsed.getJWTClaimsSet().getSubject();
 
         assertThat(subject).as("Keycloak sub == imported user id").isEqualTo(SUBJECT_ID);
+
+        String scopeClaim = parsed.getJWTClaimsSet().getStringClaim("scope");
+        assertThat(scopeClaim)
+                .as("a real Keycloak access token carries a scope claim; without one the mapping "
+                        + "assertion below would hold vacuously")
+                .isNotBlank();
+        Set<String> grantedScopes = Set.of(scopeClaim.trim().split("\\s+"));
         assertThat(parsed.getJWTClaimsSet().getAudience())
                 .as("audience mapper added the kernel audience").contains(AUDIENCE);
 
@@ -158,7 +166,12 @@ class CommunityOidcKeycloakIT {
                 try (LoanedBuffer token = TestJwt.bufferOf(accessToken)) {
                     AuthenticationResult result = provider.authenticate(token);
                     assertThat(result.principal().principalId()).isEqualTo(UUID.fromString(SUBJECT_ID));
-                    assertThat(result.principal().hasScope("security:read")).isTrue();
+                    assertThat(result.principal().scopes())
+                            .as("the mapper must carry through exactly what the IdP granted — "
+                                    + "pinning a scope name here would test Keycloak's realm "
+                                    + "defaults, and asserting a name the realm never issued is "
+                                    + "how this passed before 0.11, when the mapper invented one")
+                            .isEqualTo(grantedScopes);
                     assertThat(result.storage().strategy()).as("isolation strategy").isNotNull();
                 }
 

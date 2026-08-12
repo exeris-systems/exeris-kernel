@@ -8,9 +8,11 @@
  */
 package eu.exeris.kernel.community.http;
 
+import eu.exeris.kernel.core.http.routing.HttpRouter;
 import eu.exeris.kernel.community.persistence.PersistenceSessionBox;
 import eu.exeris.kernel.core.http.http1.Http1Codec;
 import eu.exeris.kernel.core.security.GeneratedRoleRegistryLoader;
+import eu.exeris.kernel.core.transport.TransportScopes;
 import eu.exeris.kernel.core.security.SecurityInterceptor;
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.http.HttpConfig;
@@ -18,8 +20,8 @@ import eu.exeris.kernel.spi.http.HttpHandler;
 import eu.exeris.kernel.spi.http.HttpKernelProviders;
 import eu.exeris.kernel.spi.http.HttpRequest;
 import eu.exeris.kernel.spi.http.HttpRequestBodyDecoderRegistry;
+import eu.exeris.kernel.spi.http.HttpRoutePolicy;
 import eu.exeris.kernel.spi.http.HttpResponseBodyEncoderRegistry;
-import eu.exeris.kernel.spi.http.HttpStreamHandler;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.persistence.PersistenceEngine;
@@ -98,11 +100,16 @@ public final class CommunityHttpRequestProcessor {
         HttpRequestBodyDecoderRegistry requestBodyDecoderRegistry =
                 HttpKernelProviders.httpRequestBodyDecoderRegistry().orElse(null);
 
+        // ADR-061: captured here for the same reason as the decoder registry above — the route policy
+        // is read on the admission path, which runs on reactor threads outside this carrier scope.
+        HttpRoutePolicy routePolicy = HttpKernelProviders.httpRoutePolicy().orElse(null);
+
         this.requestDispatcher = new CommunityHttpRequestDispatcher(
                 this.allocator,
                 securityInterceptor,
                 persistenceEngine,
-                requestBodyDecoderRegistry);
+                requestBodyDecoderRegistry,
+                routePolicy);
         this.streamDispatcher = new CommunityHttpStreamDispatcher(this.allocator);
         this.http2SessionProcessor = new CommunityHttp2SessionProcessor(
                 this.allocator,
@@ -144,8 +151,36 @@ public final class CommunityHttpRequestProcessor {
             state.resetBufferForNewAggregate();
         }
 
-        ReadResult readResult = readRequest(codec, stream, handler, state, state.bufferedBytes());
+        // Parked on the next request, this connection is serving nothing — it must not hold graceful
+        // shutdown open, because an idle keep-alive connection never closes on its own (issue #282).
+        // Streams are busy by default, so a protocol that cannot tell simply never reaches this.
+        //
+        // Only from the second iteration, though: "parked on the next request" is false for a
+        // connection that has served none. Reporting idle before the first read makes a connection
+        // that just passed accept, TLS and PAQS admission eligible to be sealed out, and the
+        // !rearmed branch below then drops its request after reading it in full — no response at
+        // all, on a request that arrived before the drain. The comment there about the peer having
+        // been told to close describes a later iteration; there is no previous response here.
+        boolean parkedBetweenRequests = state.totalRequestCount() > 0;
+        if (parkedBetweenRequests) {
+            markIdle();
+        }
+        ReadResult readResult;
+        boolean rearmed;
+        try {
+            readResult = readRequest(codec, stream, handler, state, state.bufferedBytes());
+        } finally {
+            rearmed = markBusy();
+        }
         if (readResult == null) {
+            return false;
+        }
+        if (!rearmed) {
+            // The drain committed to teardown while this connection was parked on the next request,
+            // so this stream is not being waited for. Serving now would race a teardown already in
+            // progress — the failure the drain exists to prevent, reached from the other side. The
+            // peer was told to close on the previous response; a request sent anyway is racing us,
+            // and RFC 9112 §9.6 requires a client to tolerate a persistent connection closing.
             return false;
         }
 
@@ -173,10 +208,41 @@ public final class CommunityHttpRequestProcessor {
         if (!readResult.keepAlive()) {
             return false;
         }
+        if (isDraining()) {
+            // Shutdown began while this connection was being served. Extending it would put the
+            // connection back into the idle state the drain cannot wait out; the response already
+            // told the peer to close (see CommunityHttpExchange#resolveKeepAlive).
+            //
+            // Accepted residual: the drain can begin between that write and this check, so a peer can
+            // be told keep-alive and then find the connection closed. There is no I/O between the two
+            // to widen the window, and RFC 9112 §9.6 requires a client to tolerate exactly this — a
+            // persistent connection may close at any time, and an idempotent request is retried.
+            return false;
+        }
 
         CommunityHttpAggregateTelemetry.applyAndRelease(state, MAX_AGGREGATE_BYTES);
         state.releaseAggregateIfIdle();
         return true;
+    }
+
+    private static void markIdle() {
+        if (TransportScopes.STREAM_WORK.isBound()) {
+            TransportScopes.STREAM_WORK.get().markIdle();
+        }
+    }
+
+    /**
+     * @return {@code false} only when the drain has committed to teardown; unbound means no drain
+     *         coordinator is in play at all, which must not close connections
+     */
+    private static boolean markBusy() {
+        return !TransportScopes.STREAM_WORK.isBound()
+                || TransportScopes.STREAM_WORK.get().markBusy();
+    }
+
+    private static boolean isDraining() {
+        return TransportScopes.DRAIN_COORDINATOR.isBound()
+                && TransportScopes.DRAIN_COORDINATOR.get().isDraining();
     }
 
     private boolean handleRequest(ReadResult readResult,
@@ -221,8 +287,8 @@ public final class CommunityHttpRequestProcessor {
                 readResult.headers(),
                 bodyBuffer);
 
-        HttpStreamHandler streamHandler = streamDispatcher.resolveStreamHandler(request, handler);
-        if (streamHandler != null) {
+        HttpRouter.StreamMatch streamRoute = streamDispatcher.resolveStreamHandler(request, handler);
+        if (streamRoute != null) {
             // v0.10 streaming dispatch (ADR-043). Two obligation mechanisms are built + TCK-pinned
             // (HttpStreamEngine deadline / StreamAdmissionController) but their PRODUCTION binding is
             // deliberately deferred here, not wired:
@@ -234,10 +300,21 @@ public final class CommunityHttpRequestProcessor {
             //     stream-opens shed under load — still holds via carrier-edge PAQS (NativeTcpCarrier's
             //     AdmissionController), which sheds any new stream including an SSE open. Plumbing the
             //     carrier arbiter through to a dedicated streaming ceiling is a v0.10 follow-up.
-            streamDispatcher.dispatchStream(request, stream, streamHandler);
+            // ADR-061 applies to a stream open exactly as it does to a request. Routed through the
+            // request dispatcher rather than checked here, so there is one implementation of the
+            // route requirement and one place it can drift from.
+            // Supplied, not built: an admitted open never writes through this exchange, and the
+            // admitted case is the one every stream takes.
+            requestDispatcher.dispatchStream(
+                    request,
+                    () -> new CommunityHttpExchange(
+                            request, stream, allocator, readResult.keepAlive(), encoderRegistry),
+                    () -> streamDispatcher.dispatchStream(request, stream, streamRoute));
             return true;
         }
 
+        // The exchange decides Connection: keep-alive when it writes, not here — see
+        // CommunityHttpExchange#resolveKeepAlive.
         CommunityHttpExchange exchange = new CommunityHttpExchange(
                 request, stream, allocator, readResult.keepAlive(), encoderRegistry);
 

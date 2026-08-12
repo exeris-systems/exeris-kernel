@@ -8,13 +8,13 @@
 ## Executive Summary
 
 The **Exeris Kernel** is a next‑generation, zero‑copy runtime for cloud‑native, high‑performance applications.  
-Built on **Java 26**, it leverages:
+Built on **JDK 25 LTS** (distributed preview-clean, ADR-066), it leverages:
 
 - **Virtual Threads** (Project Loom, JEP 444) for 1:1 request‑to‑thread mapping.
 - **Panama FFM** (JEP 454) for zero‑copy I/O and deterministic off‑heap memory management.
 - **Scoped Values** (JEP 506) for strict, ThreadLocal-free context propagation.
 - **Flexible Constructor Bodies** (JEP 513, Closed/Delivered in JDK 25) for pre-initialising fields before `super()` in value-ready types.
-- **Lazy Constants** (JEP 526, Closed/Delivered in JDK 26) for JVM constant-folding of singleton config caches.
+- **Compute-once config caches** via the Supplier + `AtomicReference` CAS pattern, mirroring the `LazyConstant` semantic (JEP 526) without depending on it — JEP 526 is not on the JDK 25 baseline.
 - **Valhalla Readiness (JEP 401):** All data carriers (`record`, `final class`) avoid `synchronized`, `System.identityHashCode()`, and identity `==` so they scalarise via C2 JIT Escape Analysis today. Migration to `value record`/`value class` will be performed once JEP 401 reaches mainline GA.
 
 **No Waste Compute** is the core principle:
@@ -145,10 +145,10 @@ Contracts live in **spi**, orchestration in **core**, and execution in the **dri
 - Lightweight, scheduler‑managed threads
 - Memory cost: ~100 bytes (vs ~1 MB for OS threads)
 - Enables **1 thread per request** on Carrier Threads
-- Managed within `StructuredTaskScope` — never spawned unstructured
+- Managed within a structured scope that owns their lifetime — never spawned unstructured
 
 ### 5. Structured Concurrency (JEP 525 / JDK 25 Joiner API)
-- All parallel operations use `StructuredTaskScope.open(Joiner)` — never raw `ExecutorService`
+- All parallel operations run inside a structured scope — `StructuredScope` on the distributed line, `StructuredTaskScope` on the `preview` branch (ADR-066) — never raw `ExecutorService`
 - `Joiner.awaitAllSuccessfulOrThrow()` for bootstrap: one failure cancels the entire scope
 - `Joiner.anySuccessfulResultOrThrow()` for competitive I/O: first result wins, rest cancelled immediately
 - `join()` returns a typed result `R` — zero-cast `LoanedBuffer` handover between subtasks
@@ -175,7 +175,7 @@ Contracts live in **spi**, orchestration in **core**, and execution in the **dri
 ┌─────────────────────────────────────────────────────────────┐
 │  1. Packet Arrives -> Transport parses into Arena (Panama)  │
 ├─────────────────────────────────────────────────────────────┤
-│  2. Dispatcher opens StructuredTaskScope with Joiner (1/stream)│
+│  2. Dispatcher opens a structured scope (1 per stream)         │
 ├─────────────────────────────────────────────────────────────┤
 │  3. Priority-Aware Scheduler applies load-shedding          │
 ├─────────────────────────────────────────────────────────────┤
@@ -271,17 +271,22 @@ For the complete deployment diagram, infrastructure requirements, and SLA/SLO ba
 
 To understand how these concepts map to actual code, read the subsystem definitions:
 
+**Getting started:**
+- [Developer Guides](guides/) – task-oriented paths: platform and dependencies, building an application, implementing a provider
+
 **Physical Modules (The Wall):**
 - [SPI Module](modules/01-spi.md) – The Constitution & Contracts
 - [Core Module](modules/02-core.md) – The Brain & Orchestration
 - [Community Module](modules/03-community.md) – NIO.2-backed Java 26 subsystem drivers (OSS)
 - [Enterprise Module](modules/04-enterprise.md) - High-Performance Native Drivers
 - [TCK Module](modules/05-tck.md) - Technology Compatibility Kit
+- [Testkit Module](modules/06-testkit.md) - Fixtures that boot the real kernel for consumers
 
 **Logical Subsystems:**
 - [Bootstrap](subsystems/bootstrap.md) | [Config](subsystems/config.md) | [Memory](subsystems/memory.md) | [Security](subsystems/security.md)
 - [Transport](subsystems/transport.md) | [Persistence](subsystems/persistence.md) | [Graph](subsystems/graph.md) | [Flow](subsystems/flow.md)
 - [Crypto](subsystems/crypto.md) | [Telemetry](subsystems/telemetry.md) | [Events](subsystems/events.md)
+- [HTTP](subsystems/http.md) | [Scheduling](subsystems/scheduling.md) | [Storage](subsystems/storage.md) | [Exceptions](subsystems/exceptions.md)
 
 ---
 

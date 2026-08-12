@@ -42,18 +42,48 @@ public class ExerisArchitectureTest {
             .because("SPI must use java.nio or Panama FFM, never legacy java.io");
 
     @ArchTest
+    static final ArchRule noFilesystemTypesInStorageSpi = noClasses()
+            .that().resideInAPackage("eu.exeris.kernel.spi.storage..")
+            .should().dependOnClassesThat().resideInAPackage("java.nio.file..")
+            .allowEmptyShould(true)
+            .because("ADR-056 §9 — a filesystem type in the blob contract would encode one driver's "
+                    + "addressing model into the seam. Scoped to the storage package rather than the "
+                    + "whole SPI because CryptoProviderConfig legitimately carries a Path, and scoped "
+                    + "to java.nio.file only because noJavaIoInSpi already covers java.io repo-wide.");
+
+    @ArchTest
+    static final ArchRule noStructuredTaskScopeInSchedulingSpi = noClasses()
+            .that().resideInAPackage("eu.exeris.kernel.spi.scheduling..")
+            .should().dependOnClassesThat()
+            .haveFullyQualifiedName("java.util.concurrent.StructuredTaskScope")
+            .allowEmptyShould(true)
+            .because("ADR-057 §2 — StructuredTaskScope is the kernel's last preview dependency and "
+                    + "the Platform Baseline commits the default artifact to being preview-clean for "
+                    + "1.0 GA. Scoped to the SPI half only: this suite runs in exeris-kernel-tck, "
+                    + "whose only production dependency is the SPI, so no Community class is ever on "
+                    + "its analysis classpath and a rule naming one here could never fire. The "
+                    + "driver half is held by CommunitySchedulingArchitectureTest, in the module "
+                    + "that can see it.");
+
+    @ArchTest
     static final ArchRule noExecutorsAnywhere = noClasses()
             .that().resideInAPackage("eu.exeris.kernel..")
             .should().dependOnClassesThat().haveFullyQualifiedName("java.util.concurrent.Executors")
             .allowEmptyShould(true)
-            .because("All concurrency must use StructuredTaskScope (JEP 525).");
+            .because("All concurrency must run inside a structured scope that owns the task's "
+                    + "lifetime: StructuredScope (GA virtual threads + ScopedValue) on the default "
+                    + "line, StructuredTaskScope on the preview branch. See docs/modules/02-core.md "
+                    + "rule 3 and ADR-066 — the rule bans the unstructured escape hatch, not one of "
+                    + "the two sanctioned mechanisms.");
 
     @ArchTest
     static final ArchRule noCompletableFuture = noClasses()
             .that().resideInAPackage("eu.exeris.kernel..")
             .should().dependOnClassesThat().haveFullyQualifiedName("java.util.concurrent.CompletableFuture")
             .allowEmptyShould(true)
-            .because("CompletableFuture is unstructured concurrency. Use StructuredTaskScope.");
+            .because("CompletableFuture is unstructured concurrency. Use the structured scope for "
+                    + "the distribution line — StructuredScope on the default line, "
+                    + "StructuredTaskScope on the preview branch (docs/modules/02-core.md rule 3).");
 
     @ArchTest
     static final ArchRule noThreadLocal = noClasses()

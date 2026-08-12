@@ -9,6 +9,8 @@
 package eu.exeris.kernel.community.http;
 
 import eu.exeris.kernel.core.http.http1.Http1ResponseEncoder;
+import eu.exeris.kernel.core.transport.TransportScopes;
+import eu.exeris.kernel.core.transport.scheduler.DrainCoordinator;
 import eu.exeris.kernel.spi.http.HttpEncodedBody;
 import eu.exeris.kernel.spi.http.HttpExchange;
 import eu.exeris.kernel.spi.http.HttpHeader;
@@ -23,22 +25,19 @@ import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.transport.TransportStream;
 
 import java.lang.foreign.MemorySegment;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 final class CommunityHttpExchange implements HttpExchange {
 
-    private static final String HEADER_CONTENT_LENGTH = "Content-Length";
-    private static final String HEADER_CONNECTION = "Connection";
-    private static final String HEADER_CLOSE = "close";
     private static final int RESPONSE_HEADROOM_BYTES = 2048;
 
     private final HttpRequest request;
     private final TransportStream stream;
     private final MemoryAllocator allocator;
-    private final boolean keepAlive;
+    private final boolean requestedKeepAlive;
+    private final DrainCoordinator drainCoordinator;
     private final HttpResponseBodyEncoderRegistry encoderRegistry;
     private final AtomicBoolean responded = new AtomicBoolean(false);
 
@@ -50,7 +49,14 @@ final class CommunityHttpExchange implements HttpExchange {
         this.request = Objects.requireNonNull(request, "request must not be null");
         this.stream = Objects.requireNonNull(stream, "stream must not be null");
         this.allocator = Objects.requireNonNull(allocator, "allocator must not be null");
-        this.keepAlive = keepAlive;
+        this.requestedKeepAlive = keepAlive;
+        // Captured here, not read in respond(): this constructor runs on the stream's own Virtual
+        // Thread where the scope is bound, while an application is free to complete its exchange
+        // from elsewhere. An unbound slot (a carrier that drains without a coordinator, or a unit
+        // test) leaves this null and the connection behaves exactly as the request asked.
+        this.drainCoordinator = TransportScopes.DRAIN_COORDINATOR.isBound()
+                ? TransportScopes.DRAIN_COORDINATOR.get()
+                : null;
         this.encoderRegistry = Objects.requireNonNull(encoderRegistry, "encoderRegistry must not be null");
     }
 
@@ -66,6 +72,33 @@ final class CommunityHttpExchange implements HttpExchange {
         respondInternalClaimed(response);
     }
 
+    @Override
+    public void respond(HttpTypedResponse typedResponse) {
+        Objects.requireNonNull(typedResponse, "typedResponse must not be null");
+        Object payload = typedResponse.payload();
+        Class<?> payloadType = payload == null ? Void.class : payload.getClass();
+        HttpResponseBodyEncoder encoder = encoderRegistry.resolve(payloadType);
+        if (encoder == null) {
+            throw new UnsupportedOperationException("No encoder registered for payload type: " + payloadType.getName());
+        }
+        HttpResponseEncodingContext context = new HttpResponseEncodingContext(request, allocator);
+        HttpEncodedBody encoded = encoder.encode(typedResponse.payload(), context);
+        List<HttpHeader> mergedHeaders =
+                CommunityHttpResponseHeaders.merge(typedResponse.headers(), encoded.headers());
+        try {
+            respond(new HttpResponse(typedResponse.status(), request.version(), mergedHeaders, encoded.body()));
+        } catch (IllegalStateException ex) {
+            if (encoded.body() != null) {
+                encoded.body().close();
+            }
+            throw ex;
+        }
+    }
+
+    /* default */ boolean isResponded() {
+        return responded.get();
+    }
+
     private void claimResponse() {
         if (!responded.compareAndSet(false, true)) {
             throw new IllegalStateException("respond() already called for this exchange");
@@ -76,6 +109,9 @@ final class CommunityHttpExchange implements HttpExchange {
         LoanedBuffer responseBody = response.body();
         int bodyBytes = responseBody == null ? 0 : (int) responseBody.size();
         int bufferSize = RESPONSE_HEADROOM_BYTES + bodyBytes;
+        // Resolved once, here: the header written below and the socket teardown after it must agree,
+        // and the drain flag can flip between them.
+        boolean keepAlive = resolveKeepAlive();
 
         try (LoanedBuffer bodyOwned = responseBody;
              LoanedBuffer outbound = allocator.allocateNetwork(bufferSize)) {
@@ -85,7 +121,8 @@ final class CommunityHttpExchange implements HttpExchange {
                     position,
                     response.status().code(),
                     response.status().reasonPhrase());
-            position = writeHeaders(outbound.segment(), response.headers(), bodyBytes, position);
+            position = CommunityHttpResponseHeaders.write(
+                    outbound.segment(), response.headers(), bodyBytes, position, keepAlive);
 
             if (bodyOwned != null && bodyBytes > 0) {
                 MemorySegment.copy(bodyOwned.segment(), 0, outbound.segment(), position, bodyBytes);
@@ -100,76 +137,15 @@ final class CommunityHttpExchange implements HttpExchange {
         }
     }
 
-    /* default */ boolean isResponded() {
-        return responded.get();
-    }
-
-    @Override
-    public void respond(HttpTypedResponse typedResponse) {
-        Objects.requireNonNull(typedResponse, "typedResponse must not be null");
-        Object payload = typedResponse.payload();
-        Class<?> payloadType = payload == null ? Void.class : payload.getClass();
-        HttpResponseBodyEncoder encoder = encoderRegistry.resolve(payloadType);
-        if (encoder == null) {
-            throw new UnsupportedOperationException("No encoder registered for payload type: " + payloadType.getName());
-        }
-        HttpResponseEncodingContext context = new HttpResponseEncodingContext(request, allocator);
-        HttpEncodedBody encoded = encoder.encode(typedResponse.payload(), context);
-        List<HttpHeader> mergedHeaders = mergeHeaders(typedResponse.headers(), encoded.headers());
-        try {
-            respond(new HttpResponse(typedResponse.status(), request.version(), mergedHeaders, encoded.body()));
-        } catch (IllegalStateException ex) {
-            if (encoded.body() != null) {
-                encoded.body().close();
-            }
-            throw ex;
-        }
-    }
-
-    private static List<HttpHeader> mergeHeaders(List<HttpHeader> typedHeaders, List<HttpHeader> encodedHeaders) {
-        if (typedHeaders.isEmpty()) {
-            return encodedHeaders;
-        }
-        if (encodedHeaders.isEmpty()) {
-            return typedHeaders;
-        }
-        List<HttpHeader> merged = new ArrayList<>(typedHeaders.size() + encodedHeaders.size());
-        merged.addAll(typedHeaders);
-        merged.addAll(encodedHeaders);
-        return merged;
-    }
-
-    private long writeHeaders(MemorySegment target,
-                              List<HttpHeader> headers,
-                              int bodyBytes,
-                              long position) {
-        long pos = position;
-        boolean hasContentLength = false;
-        boolean hasConnection = false;
-        for (HttpHeader header : headers) {
-            if (header.nameEqualsIgnoreCase(HEADER_CONTENT_LENGTH)) {
-                hasContentLength = true;
-            }
-            if (header.nameEqualsIgnoreCase(HEADER_CONNECTION)) {
-                hasConnection = true;
-            }
-            pos = Http1ResponseEncoder.writeHeader(target, pos, header.name(), header.value());
-        }
-
-        if (!hasContentLength) {
-            pos = Http1ResponseEncoder.writeHeader(
-                    target,
-                    pos,
-                    HEADER_CONTENT_LENGTH,
-                    Integer.toString(bodyBytes));
-        }
-        if (!hasConnection) {
-            pos = Http1ResponseEncoder.writeHeader(
-                    target,
-                    pos,
-                    HEADER_CONNECTION,
-                    keepAlive ? "keep-alive" : HEADER_CLOSE);
-        }
-        return Http1ResponseEncoder.writeHeaderEnd(target, pos);
+    /**
+     * Whether this response may keep the connection alive.
+     *
+     * <p>Asked <em>now</em>, not when the request was parsed. The request that most needs to tell its
+     * peer to let go is the one already in flight when graceful shutdown began; answered at parse
+     * time it always gets the pre-shutdown answer, so the peer keeps a pooled connection it will
+     * never be asked about again and the next shutdown waits on it as idle.
+     */
+    private boolean resolveKeepAlive() {
+        return requestedKeepAlive && (drainCoordinator == null || !drainCoordinator.isDraining());
     }
 }

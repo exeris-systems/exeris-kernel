@@ -904,6 +904,142 @@ public final class KernelErrorCodes {
     /** {@link eu.exeris.kernel.spi.diagnostics.KernelDiagnostics#getJvmErgonomics()} was invoked. */
     public static final String EX_DIAG_1005 = "EX-DIAG-1005";
 
+    // =======================================================================
+    // EX-BLOB-8xxx — Blob storage (ADR-056)
+    // =======================================================================
+
+    /**
+     * The referenced object does not exist in the resolved tenant namespace.
+     *
+     * <p>rawArgs layout:
+     * <ul>
+     *   <li>index 0 – {@code String} providerName</li>
+     *   <li>index 1 – {@code String} container — never the object key, which can carry
+     *       application data</li>
+     * </ul>
+     */
+    public static final String EX_BLOB_8001 = "EX-BLOB-8001";
+
+    /**
+     * A blob operation was attempted with no isolation key in the ambient
+     * {@link eu.exeris.kernel.spi.security.StorageContext} — there is no namespace to resolve the
+     * tenant-relative reference against, so the operation is denied rather than placed unscoped
+     * (ADR-056 §5).
+     *
+     * <p>rawArgs layout:
+     * <ul>
+     *   <li>index 0 – {@code String} providerName</li>
+     *   <li>index 1 – {@code String} deny reason — the isolation strategy name of the ambient
+     *       context when it carries no key, or a driver reason code when resolution left the
+     *       tenant namespace</li>
+     * </ul>
+     */
+    public static final String EX_BLOB_8002 = "EX-BLOB-8002";
+
+    /**
+     * I/O failure during an upload or download transfer.
+     *
+     * <p>rawArgs layout:
+     * <ul>
+     *   <li>index 0 – {@code String} providerName</li>
+     *   <li>index 1 – {@code String} container</li>
+     * </ul>
+     */
+    public static final String EX_BLOB_8003 = "EX-BLOB-8003";
+
+    /**
+     * An upload wrote a different number of bytes than the content length it declared.
+     *
+     * <p>rawArgs layout:
+     * <ul>
+     *   <li>index 0 – {@code String} providerName</li>
+     *   <li>index 1 – {@code long}   declaredLength</li>
+     *   <li>index 2 – {@code long}   actualLength</li>
+     * </ul>
+     */
+    public static final String EX_BLOB_8004 = "EX-BLOB-8004";
+
+    /**
+     * A transfer was refused because it exceeds the driver's configured single-object ceiling.
+     *
+     * <p>Distinct from {@link #EX_BLOB_8003}: nothing failed. A driver that must hold an object in one
+     * buffer has a size beyond which it will not try, and an operator who sees this code raises the
+     * ceiling or reaches for a driver that streams. Folding it into a transfer failure would leave that
+     * operator debugging an I/O fault that never happened.
+     *
+     * <p>rawArgs layout:
+     * <ul>
+     *   <li>index 0 – {@code String} providerName</li>
+     *   <li>index 1 – {@code long}   declaredBytes — the object size the caller asked for</li>
+     *   <li>index 2 – {@code long}   ceilingBytes — the configured limit</li>
+     * </ul>
+     */
+    public static final String EX_BLOB_8005 = "EX-BLOB-8005";
+
+    /**
+     * A remote blob store answered, and refused.
+     *
+     * <p>The status code is carried rather than wrapped in a cause, because it is the whole diagnosis:
+     * {@code 403} is a credential or clock-skew fault in the caller's own configuration, {@code 5xx} is
+     * the store's problem. Reporting both as a generic transfer failure would erase the one field that
+     * decides who has to act.
+     *
+     * <p>rawArgs layout:
+     * <ul>
+     *   <li>index 0 – {@code String} providerName</li>
+     *   <li>index 1 – {@code String} container — never the object key, which can carry
+     *       application data</li>
+     *   <li>index 2 – {@code int}    statusCode</li>
+     * </ul>
+     */
+    public static final String EX_BLOB_8006 = "EX-BLOB-8006";
+
+    // -----------------------------------------------------------------------
+    // Scheduling (EX-JOB-9xxx) — ADR-057
+    // -----------------------------------------------------------------------
+
+    /**
+     * Job dispatch refused: the submission captured no identity context, and running under an
+     * ambient or default identity is not an option (ADR-057 §5).
+     *
+     * <p>Never carried on a thrown exception, so it has no {@code rawArgs} layout: a dispatched job
+     * runs on its own thread and has no caller to throw to. It is recorded on the
+     * {@code eu.exeris.kernel.scheduling.JobFailure} JFR event, alongside {@code schedulerName},
+     * {@code jobName} and {@code jobId}.
+     */
+    public static final String EX_JOB_9001 = "EX-JOB-9001";
+
+    /**
+     * A job was submitted to a scheduler that has already been closed.
+     *
+     * <p>rawArgs layout:
+     * <ul>
+     *   <li>index 0 – {@code String} schedulerName</li>
+     *   <li>index 1 – {@code String} jobName</li>
+     * </ul>
+     */
+    public static final String EX_JOB_9002 = "EX-JOB-9002";
+
+    /**
+     * A dispatched job body threw. The scheduler records the failure and keeps running; a repeating
+     * job stays scheduled, because one failed run is not evidence the schedule is wrong.
+     *
+     * <p>JFR-only, for the same reason as {@link #EX_JOB_9001}: recorded on the
+     * {@code eu.exeris.kernel.scheduling.JobFailure} event with {@code schedulerName},
+     * {@code jobName}, {@code jobId}, and the body's exception class as the reason.
+     */
+    public static final String EX_JOB_9003 = "EX-JOB-9003";
+
+    /**
+     * No {@code JobSchedulerProvider} was found on the classpath at bootstrap.
+     *
+     * <p>rawArgs layout:
+     * <ul>
+     *   <li>index 0 – {@code String} component that attempted the selection</li>
+     * </ul>
+     */
+    public static final String EX_JOB_9004 = "EX-JOB-9004";
+
     // -----------------------------------------------------------------------
     // Constructor – utility class, no instantiation
     // -----------------------------------------------------------------------

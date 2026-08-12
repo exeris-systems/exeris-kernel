@@ -15,7 +15,6 @@ import eu.exeris.kernel.spi.http.HttpStatus;
 import eu.exeris.kernel.spi.http.HttpStreamHandler;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -40,6 +39,14 @@ import java.util.Objects;
  * A path registered with at least one {@code {name}} segment is matched as a template:
  * each placeholder captures the corresponding request segment and is exposed to the handler
  * via {@link HttpExchange#pathParams()}.
+ *
+ * <p>The streaming table follows the same rules — exact before template, same placeholder syntax,
+ * captured values reaching the handler through
+ * {@link eu.exeris.kernel.spi.http.HttpStreamExchange#pathParams()}. It did not always: the streaming
+ * table was an exact-match {@code Map} while the generator emitted templated stream paths, so every
+ * per-action stream route registered successfully and then never matched a concrete request. A
+ * registration that cannot match is now unrepresentable — a malformed brace throws at
+ * {@link Builder#streamRoute}, and a well-formed one is compiled as a template.
  */
 public final class HttpRouter implements HttpHandler {
 
@@ -49,36 +56,39 @@ public final class HttpRouter implements HttpHandler {
     private final List<RouteEntry> exactRoutes;
     private final List<PathTemplateRoute> templateRoutes;
     private final List<RouteEntry> prefixRoutes;
-    private final Map<StreamRouteKey, HttpStreamHandler> streamRoutes;
+    private final StreamRouteTable streamRoutes;
     private final HttpHandler notFoundHandler;
 
     private HttpRouter(List<RouteEntry> exactRoutes,
                        List<PathTemplateRoute> templateRoutes,
                        List<RouteEntry> prefixRoutes,
-                       Map<StreamRouteKey, HttpStreamHandler> streamRoutes,
+                       StreamRouteTable streamRoutes,
                        HttpHandler notFoundHandler) {
         this.exactRoutes = List.copyOf(exactRoutes);
         this.templateRoutes = List.copyOf(templateRoutes);
         this.prefixRoutes = List.copyOf(prefixRoutes);
-        this.streamRoutes = Map.copyOf(streamRoutes);
+        this.streamRoutes = streamRoutes;
         this.notFoundHandler = notFoundHandler;
     }
 
     /**
-     * Resolves a streaming-flagged route to its {@link HttpStreamHandler}, or {@code null} when the
-     * route is not registered as a stream (ADR-043 obligation 7).
+     * Resolves a streaming-flagged route, or {@code null} when the route is not registered as a stream
+     * (ADR-043 obligation 7).
      *
      * <p>A streaming route resolves <em>only</em> here, never through {@link #handle(HttpExchange)} —
      * so a streaming route never delivers a respond-once {@link HttpExchange}, and a respond-once route
      * never resolves to an {@link HttpStreamHandler}. The transport tier consults this first; on a hit
      * it opens an {@code HttpStreamExchange}, otherwise it falls back to respond-once dispatch.
      *
+     * <p>Exact stream routes win over template stream routes, mirroring the respond-once precedence:
+     * a deployment that registers both a literal and a templated path meant the literal to be special.
+     *
      * @param method request method
      * @param path   request path (query stripped)
-     * @return the stream handler for a streaming route, or {@code null}
+     * @return the resolved stream route, or {@code null}
      */
-    public HttpStreamHandler resolveStream(HttpMethod method, String path) {
-        return streamRoutes.get(new StreamRouteKey(method, stripQuery(path)));
+    public StreamMatch resolveStream(HttpMethod method, String path) {
+        return streamRoutes.resolve(method, stripQuery(path));
     }
 
     /**
@@ -89,7 +99,7 @@ public final class HttpRouter implements HttpHandler {
      * @return whether the route is streaming
      */
     public boolean isStreamRoute(HttpMethod method, String path) {
-        return streamRoutes.containsKey(new StreamRouteKey(method, stripQuery(path)));
+        return resolveStream(method, path) != null;
     }
 
     public static Builder builder() {
@@ -185,7 +195,24 @@ public final class HttpRouter implements HttpHandler {
 
     private record RouteEntry(HttpMethod method, String path, HttpHandler handler) {}
 
-    private record StreamRouteKey(HttpMethod method, String path) {}
+    /**
+     * A resolved streaming route: the handler, and whatever its template captured.
+     *
+     * @param handler the streaming handler to drive
+     * @param params  captured path parameters; empty for an exact stream route
+     */
+    public record StreamMatch(HttpStreamHandler handler, Map<String, String> params) {
+
+        /**
+         * A match with nothing captured — what an exact stream route resolves to.
+         *
+         * @param handler the streaming handler
+         * @return the match; never {@code null}
+         */
+        public static StreamMatch exact(HttpStreamHandler handler) {
+            return new StreamMatch(handler, Map.of());
+        }
+    }
 
     public static final class Builder {
 
@@ -195,7 +222,7 @@ public final class HttpRouter implements HttpHandler {
         private final List<RouteEntry> exactRoutes = new ArrayList<>();
         private final List<PathTemplateRoute> templateRoutes = new ArrayList<>();
         private final List<RouteEntry> prefixRoutes = new ArrayList<>();
-        private final Map<StreamRouteKey, HttpStreamHandler> streamRoutes = new HashMap<>();
+        private final StreamRouteTable.Builder streamRoutes = new StreamRouteTable.Builder();
         private HttpHandler notFoundHandler = DEFAULT_NOT_FOUND;
 
         private Builder() {}
@@ -229,7 +256,9 @@ public final class HttpRouter implements HttpHandler {
         }
 
         private void addRoute(HttpMethod method, String path, HttpHandler handler) {
-            if (path.indexOf('{') >= 0) {
+            // The shared predicate, not a second copy of it: one type decides what counts as a template
+            // for both tables, which is the whole reason PathTemplate was extracted.
+            if (PathTemplate.isTemplate(path)) {
                 templateRoutes.add(PathTemplateRoute.compile(method, path, handler));
             } else {
                 exactRoutes.add(new RouteEntry(method, path, handler));
@@ -268,7 +297,7 @@ public final class HttpRouter implements HttpHandler {
             Objects.requireNonNull(method, METHOD_PARAM);
             Objects.requireNonNull(path, "path");
             Objects.requireNonNull(handler, HANDLER_PARAM);
-            streamRoutes.put(new StreamRouteKey(method, path), handler);
+            streamRoutes.add(method, path, handler);
             return this;
         }
 
@@ -281,7 +310,8 @@ public final class HttpRouter implements HttpHandler {
         /** Builds the immutable router and emits a JFR lifecycle event. */
         public HttpRouter build() {
             HttpRouterRegisteredEvent.emit(exactRoutes.size(), templateRoutes.size(), prefixRoutes.size());
-            return new HttpRouter(exactRoutes, templateRoutes, prefixRoutes, streamRoutes, notFoundHandler);
+            return new HttpRouter(exactRoutes, templateRoutes, prefixRoutes, streamRoutes.build(),
+                    notFoundHandler);
         }
     }
 }

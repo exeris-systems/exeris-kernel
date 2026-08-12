@@ -101,14 +101,16 @@ public final class JdbcFlowSnapshotStore implements FlowSnapshotStore {
             "INSERT INTO exeris_saga_state ("
                     + "instance_id_most, instance_id_least, definition_name, current_step, "
                     + "state, last_update, timeout_at, compensation_stack, stack_pointer, "
-                    + "opaque_state, schema_version) "
-                    + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                    + "opaque_state, step_name, definition_version, compensation_step_names, "
+                    + "schema_version) "
+                    + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
     private static final String SQL_UPDATE_OCC =
             "UPDATE exeris_saga_state SET "
                     + "definition_name = ?, current_step = ?, state = ?, "
                     + "last_update = ?, timeout_at = ?, compensation_stack = ?, "
-                    + "stack_pointer = ?, opaque_state = ?, "
+                    + "stack_pointer = ?, opaque_state = ?, step_name = ?, definition_version = ?, "
+                    + "compensation_step_names = ?, "
                     + "schema_version = schema_version + 1 "
                     + "WHERE instance_id_most = ? AND instance_id_least = ? "
                     + "AND schema_version = ?";
@@ -116,7 +118,8 @@ public final class JdbcFlowSnapshotStore implements FlowSnapshotStore {
     private static final String SQL_SELECT_BY_PK =
             "SELECT instance_id_most, instance_id_least, definition_name, current_step, "
                     + "state, last_update, timeout_at, compensation_stack, stack_pointer, "
-                    + "opaque_state, schema_version "
+                    + "opaque_state, step_name, schema_version, definition_version, "
+                    + "compensation_step_names "
                     + "FROM exeris_saga_state "
                     + "WHERE instance_id_most = ? AND instance_id_least = ?";
 
@@ -131,7 +134,8 @@ public final class JdbcFlowSnapshotStore implements FlowSnapshotStore {
     private static final String SQL_LIST_PARKED =
             "SELECT instance_id_most, instance_id_least, definition_name, current_step, "
                     + "state, last_update, timeout_at, compensation_stack, stack_pointer, "
-                    + "opaque_state, schema_version "
+                    + "opaque_state, step_name, schema_version, definition_version, "
+                    + "compensation_step_names "
                     + "FROM exeris_saga_state "
                     + "WHERE state = '" + /* FlowState.PARKED.name() */ "PARKED" + "'";
 
@@ -320,13 +324,15 @@ public final class JdbcFlowSnapshotStore implements FlowSnapshotStore {
 
     private long tryOptimisticUpdate(PersistenceConnection conn, FlowSnapshot snapshot) {
         try (PersistenceStatement stmt = conn.prepare(SQL_UPDATE_OCC)) {
-            // SET clause bindings (0..7): definition_name, current_step, state,
-            // last_update, timeout_at, compensation_stack, stack_pointer, opaque_state.
+            // SET clause bindings (0..10): definition_name, current_step, state, last_update,
+            // timeout_at, compensation_stack, stack_pointer, opaque_state, step_name,
+            // definition_version, compensation_step_names. Payload is eleven values since ADR-064 A5,
+            // so the WHERE parameters start one slot later again.
             JdbcFlowSnapshotCodec.bindSnapshotPayload(stmt, snapshot, 0);
-            // WHERE clause bindings (8..10): instance_id_most, instance_id_least, schema_version.
-            stmt.bindLong(8, snapshot.instanceIdMost());
-            stmt.bindLong(9, snapshot.instanceIdLeast());
-            stmt.bindLong(10, snapshot.schemaVersion());
+            // WHERE clause bindings (11..13): instance_id_most, instance_id_least, schema_version.
+            stmt.bindLong(11, snapshot.instanceIdMost());
+            stmt.bindLong(12, snapshot.instanceIdLeast());
+            stmt.bindLong(13, snapshot.schemaVersion());
             return stmt.executeUpdate();
         }
     }
@@ -335,13 +341,14 @@ public final class JdbcFlowSnapshotStore implements FlowSnapshotStore {
         try (PersistenceStatement stmt = conn.prepare(SQL_INSERT)) {
             stmt.bindLong(0, snapshot.instanceIdMost());
             stmt.bindLong(1, snapshot.instanceIdLeast());
-            // definition_name, current_step, state, last_update, timeout_at,
-            // compensation_stack, stack_pointer, opaque_state -> bindings 2..9.
+            // definition_name, current_step, state, last_update, timeout_at, compensation_stack,
+            // stack_pointer, opaque_state, step_name, definition_version,
+            // compensation_step_names -> 2..12.
             JdbcFlowSnapshotCodec.bindSnapshotPayload(stmt, snapshot, 2);
             // ADR-013 §5: advance the on-disk version by exactly one on every accepted
             // write — INSERT and UPDATE share this semantic, so the caller can blindly
             // bump its local schemaVersion by 1 after any successful save.
-            stmt.bindLong(10, snapshot.schemaVersion() + 1L);
+            stmt.bindLong(13, snapshot.schemaVersion() + 1L);
             stmt.executeUpdate();
         }
     }

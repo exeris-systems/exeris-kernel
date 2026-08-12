@@ -14,6 +14,7 @@ import eu.exeris.kernel.spi.flow.model.FlowContext;
 import eu.exeris.kernel.spi.flow.model.FlowDefinition;
 import eu.exeris.kernel.spi.flow.model.FlowExecutionPlan;
 import eu.exeris.kernel.spi.flow.model.FlowOutcome;
+import eu.exeris.kernel.spi.flow.model.FlowState;
 import eu.exeris.kernel.spi.flow.model.FlowStepAction;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -25,10 +26,12 @@ import org.junit.jupiter.api.Timeout;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.StructuredTaskScope;
+import eu.exeris.kernel.tck.support.TckScope;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.LockSupport;
+import java.util.function.BooleanSupplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -44,6 +47,9 @@ import static org.assertj.core.api.Assertions.assertThatCode;
  * @since 0.5.0
  */
 public abstract class AbstractFlowSchedulerTck {
+
+    /** Generous: this waits on a real flow resuming, not on a poll interval. */
+    private static final long WAKE_TIMEOUT_SECONDS = 30L;
 
     protected abstract FlowEngine createEngine();
 
@@ -98,6 +104,143 @@ public abstract class AbstractFlowSchedulerTck {
             }).as("park() then wake() MUST not throw for a validly scheduled context")
               .doesNotThrowAnyException();
         }
+
+        /**
+         * A wake refused because a run still holds the instance MUST still be honoured once that
+         * run drains.
+         *
+         * <p>{@link FlowScheduler#wake} promises to re-submit the flow for execution, and expressly
+         * allows an implementation to tolerate the immediate schedule/park/wake window rather than
+         * throwing. Tolerating is not discarding: a choreography wake is one event per business
+         * trigger, not a poll, so a request dropped here strands the saga — and because the instance
+         * stays discoverable through {@code lookupParked}, no miss-path telemetry marks the loss.
+         * Enterprise's ring-buffer scheduler has the same window on its CAS-enqueue path.
+         */
+        @Test
+        @Timeout(value = 60, unit = TimeUnit.SECONDS)
+        @DisplayName("a wake arriving while a run is still in flight is honoured, not dropped")
+        void wakeDuringRunIsNotLost() {
+            FlowScheduler scheduler = engine.scheduler();
+            CountDownLatch insideStep = new CountDownLatch(1);
+            CountDownLatch releaseStep = new CountDownLatch(1);
+
+            FlowDefinition definition = engine.plans().newDefinition("wake-during-run-flow")
+                    .step("gate", _ -> {
+                        insideStep.countDown();
+                        awaitQuietly(releaseStep);
+                        return FlowOutcome.CONTINUE;
+                    }, null)
+                    .step("after-gate", _ -> FlowOutcome.CONTINUE, null)
+                    .transition(0, 1)
+                    .build();
+            FlowExecutionPlan plan = engine.plans().compile(definition);
+            FlowContext ctx = TestFlowContexts.create("wake-during-run-1", definition.name());
+
+            scheduler.schedule(plan, ctx);
+            assertThat(awaitQuietly(insideStep))
+                    .as("the run must be in flight before park/wake, or this asserts nothing")
+                    .isTrue();
+
+            // The step is held on a latch, so the instance is provably still owned by a run when
+            // the wake below lands. No timing assumption — this is the window a scheduler may
+            // legitimately refuse to schedule into, and the one it must not lose the request in.
+            scheduler.park(ctx);
+            scheduler.wake(ctx);
+            releaseStep.countDown();
+
+            awaitTrue(WAKE_TIMEOUT_SECONDS, () -> engine.stats().completedFlows() >= 1);
+        }
+
+        /**
+         * A flow resumed by a deferred wake MUST stop being reported as parked.
+         *
+         * <p>Distinct from the case above, which resumes a flow parked from outside: here the step
+         * itself returns {@code PARK} on the very run that already carries a deferred wake, so the
+         * park registration is taken <em>inside</em> the draining run and the resume follows it
+         * immediately. Miss that shed and the instance runs while {@code lookupParked} still hands
+         * it out and {@code parkedFlows} still counts it — a scheduler would hand the same instance
+         * to a second wake.
+         */
+        @Test
+        @Timeout(value = 60, unit = TimeUnit.SECONDS)
+        @DisplayName("a flow that parks itself while a wake is deferred is not left registered as parked")
+        void deferredWakeAfterSelfParkClearsParkedRegistration() {
+            FlowScheduler scheduler = engine.scheduler();
+            CountDownLatch insideStep = new CountDownLatch(1);
+            CountDownLatch releaseStep = new CountDownLatch(1);
+
+            CountDownLatch insideResumedStep = new CountDownLatch(1);
+            CountDownLatch releaseResumedStep = new CountDownLatch(1);
+
+            FlowDefinition definition = engine.plans().newDefinition("self-park-deferred-wake-flow")
+                    .step("gate-then-park", _ -> {
+                        insideStep.countDown();
+                        awaitQuietly(releaseStep);
+                        return FlowOutcome.PARK;
+                    }, null)
+                    // Held open so the assertions below run while the resumed flow is live. Checked
+                    // after completion they prove nothing: lookupParked consults the terminal
+                    // catalogue first and returns empty for a finished flow however the parked index
+                    // looks, and completion clears the registration anyway.
+                    .step("after-park", _ -> {
+                        insideResumedStep.countDown();
+                        awaitQuietly(releaseResumedStep);
+                        return FlowOutcome.CONTINUE;
+                    }, null)
+                    .transition(0, 1)
+                    .build();
+            FlowExecutionPlan plan = engine.plans().compile(definition);
+
+            // Same instance id, two views: schedule() must see a runnable context, while wake()
+            // declares the parked intent that lets it resolve an instance a run still owns.
+            FlowContext running = TestFlowContexts.create("self-park-wake-1", definition.name());
+            FlowContext parked = TestFlowContexts.createWithState(
+                    "self-park-wake-1", definition.name(), FlowState.PARKED);
+
+            scheduler.schedule(plan, running);
+            assertThat(awaitQuietly(insideStep))
+                    .as("the run must be in flight before the wake, or nothing is deferred")
+                    .isTrue();
+
+            scheduler.wake(parked);
+            releaseStep.countDown();
+
+            assertThat(awaitQuietly(insideResumedStep))
+                    .as("the deferred wake must resume the flow past the step that parked it")
+                    .isTrue();
+
+            assertThat(scheduler.lookupParked(parked.instanceIdMost(), parked.instanceIdLeast()))
+                    .as("this instance is running right now; handing it out as parked would let a "
+                            + "second wake schedule the same flow again")
+                    .isEmpty();
+            assertThat(engine.stats().parkedFlows())
+                    .as("the park registration taken inside the run must be shed when the deferred "
+                            + "wake resumes it, or the parked-flow gauge drifts up for good")
+                    .isZero();
+
+            releaseResumedStep.countDown();
+            awaitTrue(WAKE_TIMEOUT_SECONDS, () -> engine.stats().completedFlows() >= 1);
+        }
+    }
+
+    private static void awaitTrue(long timeoutSeconds, BooleanSupplier condition) {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(timeoutSeconds);
+        while (!condition.getAsBoolean()) {
+            if (System.nanoTime() > deadline) {
+                throw new AssertionError(
+                        "a wake delivered while a run was in flight never resumed the flow");
+            }
+            LockSupport.parkNanos(10_000_000L);
+        }
+    }
+
+    private static boolean awaitQuietly(CountDownLatch latch) {
+        try {
+            return latch.await(WAKE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
     }
 
     // =========================================================================
@@ -116,8 +259,7 @@ public abstract class AbstractFlowSchedulerTck {
             AtomicInteger submitted = new AtomicInteger(0);
 
             // awaitAllSuccessfulOrThrow — fails fast if any subtask throws
-            try (var scope = StructuredTaskScope.open(
-                    StructuredTaskScope.Joiner.<Void>awaitAllSuccessfulOrThrow())) {
+            try (TckScope scope = TckScope.openFailFast()) {
                 for (int i = 0; i < count; i++) {
                     int idx = i;
                     scope.fork(() -> {
@@ -150,11 +292,8 @@ public abstract class AbstractFlowSchedulerTck {
             List<String>  completedIds = new CopyOnWriteArrayList<>();
             AtomicBoolean bombFired    = new AtomicBoolean(false);
 
-            // allUntil: cancel scope when any subtask fails (predicate returns true)
-            var joiner = StructuredTaskScope.Joiner.<Void>allUntil(
-                    subtask -> subtask.state() == StructuredTaskScope.Subtask.State.FAILED);
-
-            try (var scope = StructuredTaskScope.open(joiner)) {
+            // Cancel-on-failure: the 50 parked tasks must be torn down when the bomb throws.
+            try (TckScope scope = TckScope.openCancelOnFailure()) {
 
                 // 50 "long-running" parked tasks
                 for (int i = 0; i < 50; i++) {

@@ -41,7 +41,7 @@ Typed Response Encoding contracts:
 - `HttpResponseEncodingContext` — encoding parameter carrier
 - `HttpEncodedBody` — encoded output carrier
 
-Streaming (server-push) contracts — 🚧 Planned v0.10, ratified by [ADR-043](../adr/ADR-043-kernel-http-streaming-spi.md) (ACCEPTED):
+Streaming (server-push) contracts — ✅ shipped v0.10, ratified by [ADR-043](../adr/ADR-043-kernel-http-streaming-spi.md) (ACCEPTED); per-item delivery status below:
 
 - `HttpStreamExchange` — sibling of `HttpExchange` for SSE server-push; `emit(StreamEvent)` may be called repeatedly until the stream closes. The respond-once `HttpExchange` invariant is left **untouched** — streaming is a separate, opt-in surface selected by route metadata.
 - `StreamEvent` — Valhalla-ready record (`event` / `data` / `id` / `retryMillis`) mapping directly to the SSE wire format; event-shaped and implementation-blind (never a raw byte buffer).
@@ -80,6 +80,7 @@ Implemented components:
 - **HTTP/2 framing:** `http2.*`
 - **HTTP/1.1 codec:** `http1.*`
 - **Routing:** `routing/` — `HttpRouter` — transport-agnostic `HttpHandler` implementation with exact, path-template (`{name}` placeholder), and prefix routing plus HEAD→GET fallback (RFC 9110 §9.3.2). Resolution precedence is exact → template → prefix; a template hit captures each placeholder and exposes it to the handler via `HttpExchange.pathParams()` (the router wraps the exchange in a `PathParamHttpExchange` decorator — Core never depends on a concrete transport-side exchange). `HttpRouterRegisteredEvent` (JFR) records exact/template/prefix route counts.
+  The **streaming table follows the same rules** — exact before template, same `{name}` syntax, captured values reaching the handler through `HttpStreamExchange.pathParams()` via a `PathParamStreamExchange` decorator. It did not always: until v0.11 the streaming table was an exact-match map while the tooling generator emitted templated stream paths, so a per-action stream route registered successfully and then never matched a concrete request. A registration that cannot match is now unrepresentable — a malformed brace throws at `Builder.streamRoute`, and a well-formed one compiles to a template. Both tables share one compiled `PathTemplate`, so they cannot drift into disagreeing about what `/x/{id}` means.
 
 Current placement reality:
 
@@ -105,7 +106,7 @@ HTTP abstract TCK suites present:
 - `AbstractHttpExchangeTck`
 - `AbstractHttpProviderLoopbackTck` — verifies real transport round-trip; bound at Community tier (`CommunityHttpProviderLoopbackTckTest`)
 - `AbstractHealthEndpointTck` (since 0.7.0) — pins the readiness/liveness endpoint contract for any `HttpHandler` binding that surfaces a `HealthProbe`. Bound at Community tier (`CommunityHealthEndpointTckTest`).
-- `AbstractHttpStreamExchangeTck` — 🚧 Planned v0.10 ([ADR-043](../adr/ADR-043-kernel-http-streaming-spi.md)) — pins the SSE streaming contract: open / emit-N / graceful close / disconnect-via-`StreamClosedException`, backpressure park-and-resume on window credit, and no respond-once regression. Community binding required; Enterprise native overlay declared as a cross-repo obligation.
+- `AbstractHttpStreamExchangeTck` (since 0.10.0, [ADR-043](../adr/ADR-043-kernel-http-streaming-spi.md)) — pins the SSE streaming contract: open / emit-N / graceful close / disconnect-via-`StreamClosedException`, backpressure park-and-resume on window credit, no respond-once regression, and (v0.11) `pathParams()` being non-null and immutable — the map is routing state, so a handler able to write to it could change what a later request resolves to. Community binding required; Enterprise native overlay declared as a cross-repo obligation.
 
 These verify SPI-level HTTP contract behavior and ServiceLoader/provider semantics.
 
@@ -187,6 +188,48 @@ buffer), not the `java.io`-on-hot-path case the guardrails warn about. Ownership
 the sink transfers the buffer to the returned `HttpEncodedBody` on success and releases it on every
 failure path. The mirror-image `CommunityJsonRequestBodyEncoder` (client request bodies) streams
 through the same `SegmentSink` with identical ownership semantics.
+
+### Route authorization (since 0.11, ADR-061)
+
+`HttpKernelProviders.HTTP_ROUTE_POLICY` carries an application-supplied `HttpRoutePolicy`, read
+defensively via `httpRoutePolicy()`. The slot follows the ADR-036 `HTTP_REQUEST_BODY_DECODER_REGISTRY`
+shape: optional, application-bound, empty meaning "none supplied".
+
+`CommunityHttpRequestProcessor` captures it at construction rather than reading it per request — the
+same reason the decoder registry is captured there. The admission path runs on reactor threads that
+are not structured forks of the boot scope, so a request-time read would see an unbound slot.
+
+**Operational trap when adopting a policy.** Before 0.11 the driver's own `/health`, `/health/live`,
+`/health/ready` and `/db/ping` routes were unconditionally reachable — they did not start with
+`/secure`, so the admission test was always false for them. They are now ordinary routes: a policy
+with a fail-closed unmatched default denies them, and an orchestrator's liveness and readiness probes
+start failing against a perfectly healthy process. This bites the deployment that binds a policy but
+**no** `HTTP_SERVER_HANDLER`, since that is exactly when the driver installs its built-in health
+handler (`CommunityHttpSubsystem` falls back to `CommunityHttpHealthRoutes` only when the application
+supplied no handler). Declare those paths `permitAll()`. The kernel deliberately does not exempt them:
+ADR-061 obligation 5 rules that a driver-local notion of "public" would be a competing answer to a
+question the policy now owns.
+
+The policy answers `RouteRequirement` (`permitAll` / `authenticated` / `requiringAnyScope` /
+`requiringAllScopes`); `RouteAuthorizationEnforcer` in Core turns that plus the bound
+`PrincipalContext` into admit / `401` / `403`. Roles are not expressible here — see
+[`security.md`](security.md) for why the edge checks scopes and `@RequiresRole` stays at the method.
+
+**A stream open passes the same gate as a request, through the same code.** Opening an SSE stream is
+a request that happens to be answered by an engine rather than an exchange, so it is subject to the
+route requirement identically: `CommunityHttpRequestDispatcher.dispatchStream` runs the same
+`authorize` as `dispatch`, and only the response tail differs, because a stream writes its own head
+and must not receive the respond-once tail. Until 0.11 it did not: the streaming branch returned
+before `dispatch` was ever reached, so a bound policy and the `SecurityInterceptor` were both skipped
+and an SSE handler ran with no `PrincipalContext` bound. The separate entry point exists to keep the
+response handling apart, **not** the decision — one implementation, one place it can drift.
+
+The binding covers the stream's whole life rather than its open alone: the stream dispatcher runs the
+handler's emit loop on the calling thread, inside `SecurityInterceptor.intercept`'s scope. The denial
+exchange is supplied lazily, so an admitted open — every open, in a healthy deployment — does not
+allocate one.
+
+---
 
 ### HTTP/2 stream admission (since v0.8 Sprint 5, HTTP-112)
 

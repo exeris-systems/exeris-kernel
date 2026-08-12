@@ -8,7 +8,7 @@ into the current development baseline (TRL-3) and the final Enterprise goals.
 | Profile             | Hardware Context                          | Purpose                     |
 |:--------------------|:------------------------------------------|:----------------------------|
 | **L0 (Developer)**  | Ryzen 5600 (or equiv) / 1 vCPU / 4GB RAM | Daily PR validation         |
-| **L1 (Enterprise)** | AWS c7g.4xlarge (16 vCPU, 32GB RAM)       | Official Tier certification |
+| **L1 (Enterprise)** | `perf-box-amd64` — EU dedicated bare metal, Hetzner AX-class (AMD x86-64, 16 HW threads, 64 GB RAM, NVMe; Falkenstein DE / Helsinki FI) | Official Tier certification |
 
 ---
 
@@ -16,7 +16,7 @@ into the current development baseline (TRL-3) and the final Enterprise goals.
 
 ### 2.1 Network Throughput per Core
 
-Measured with a "Hello World" **1 KB payload**.
+Defined against a "Hello World" **1 KB payload** scenario; the scenario id and build tag are pinned per published run in `exeris-benchmarks`.
 
 > **Note:** For 8 KB entity payloads, we expect ~50% of the targets below due to MTU network
 > frame pressure.
@@ -24,7 +24,7 @@ Measured with a "Hello World" **1 KB payload**.
 | Stage               | Target (SLO)         | Breach Threshold | Context                              |
 |:--------------------|:---------------------|:-----------------|:-------------------------------------|
 | **Current (TRL-3)** | **> 1,500 RPS/vCPU** | < 1,000 RPS/vCPU | Standard TCP Sockets / Off-Heap      |
-| **Enterprise**      | **> 8,500 RPS/vCPU** | < 6,000 RPS/vCPU | `io_uring` / Native Kernel Bypass    |
+| **Enterprise**      | **> 8,500 RPS/vCPU** (target — not yet measured end-to-end; pending Enterprise bootstrap wiring) | < 6,000 RPS/vCPU | `io_uring` / Native Kernel Bypass    |
 
 ---
 

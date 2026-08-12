@@ -177,7 +177,7 @@ class RequiresRoleProcessorTest {
                     fileManager,
                     diagnostic -> diagnostics.append(diagnostic.getKind())
                             .append(": ").append(diagnostic.getMessage(null)).append('\n'),
-                    List.of("-proc:full", "--release", "26"),
+                    List.of("-proc:full", "--release", "25"),
                     null,
                     units
             ).call();

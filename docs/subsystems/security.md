@@ -3,7 +3,9 @@
 **Physical Layout:**
 
 - SPI: `eu.exeris.kernel.spi.security.*` (PrincipalContext, StorageContext, SecurityProvider, AuthenticationResult, ImmutablePrincipal, ImmutableStorageContext, KernelIsolationClaims, credentials/KernelPasswordEncoder, credentials/PasswordEncoderConfig, **`@RequiresRole` + `RoleMatch` + `KernelRoles` + `RoleRegistry` + `PrincipalContext.roleMask()`** since 0.7.0)
-  > **Note:** the SPI surface for compile-time RBAC ships in 0.7.0 — annotation + role-bit catalogue (Sprint 8a), `RoleRegistry` interface + `roleMask()` carrier (Sprint 8b-ii). The APT processor in `exeris-kernel-build-config` ships in Sprint 8b-i; the Core `RoleCheckEnforcer` runtime decision helper ships in Sprint 8b-ii. Wiring the generated registry into a `LazyConstant` bootstrap loader and auto-binding the enforcer into the transport admission path remain operator concerns until the auto-bind landing.
+  > **Note:** the SPI surface for compile-time RBAC ships in 0.7.0 — annotation + role-bit catalogue (Sprint 8a), `RoleRegistry` interface + `roleMask()` carrier (Sprint 8b-ii). The APT processor in `exeris-kernel-build-config` ships in Sprint 8b-i; the Core `RoleCheckEnforcer` runtime decision helper ships in Sprint 8b-ii.
+  >
+  > **Corrected 2026-08-05.** This note previously said that wiring the generated registry into a bootstrap loader and auto-binding the enforcer into the transport admission path "remain operator concerns until the auto-bind landing". Both halves of that were wrong by 0.8.0 and the sentence misled a later audit, so it is replaced rather than amended. Registry wiring **shipped** in Sprint 4 (SEC-080): `GeneratedRoleRegistryLoader.load()` is called in production from `CommunityHttpRequestProcessor`, and `SecurityInterceptor` binds a `MaskedPrincipal` carrying the precomputed `roleMask()`. Enforcer auto-binding is not pending either — kernel-edge `methodId` enforcement was **descoped**, for the reason recorded in §"`@RequiresRole` Processing" below, which is the authoritative statement.
 - Community: `eu.exeris.kernel.community.security.*` (`CommunitySecurityProvider`, `Argon2idPasswordEncoder`, `CommunityJwksValidator`)
 - Core: `eu.exeris.kernel.core.security.*` (Token Extractors, ScopedValue Orchestration)
 
@@ -164,6 +166,30 @@ public class SecurityInterceptor {
   cross-tenant access and asserting row count is zero.
 - Fail-Closed: invalid token at transport edge results in `EX-SEC-2002` and zero downstream calls.
 - Community HTTP admission semantics (implemented): missing/invalid token maps to HTTP `401`; authenticated principal without required scope maps to HTTP `403`; steady-state scope checks remain membership tests over immutable in-memory scope sets.
+- **Which routes require what is declared by the application, not by the driver (since 0.11, ADR-061).** `CommunityHttpRequestDispatcher` no longer gates on a `/secure` path prefix with the literal scopes `security:read` / `security:write` compiled into it. It resolves the route through `HttpRoutePolicy` (bound at `HttpKernelProviders.HTTP_ROUTE_POLICY`) and hands the resulting `RouteRequirement` to `RouteAuthorizationEnforcer` in Core, so every transport shares one decision layer. With no policy bound the requirement is permit-all, which means an application that never declares a policy has **no edge authorization**. Read that as written: it is not "unchanged behaviour". Up to 0.10 the driver enforced `/secure` by convention, so an application that declares nothing does not keep what it had — it serves those routes to anonymous callers. Migrating means declaring the routes the prefix used to cover. A route that wants an identity established without demanding a scope declares `authenticated()`; `permitAll()` runs no interceptor, so its handler sees no `PrincipalContext` even when the caller presented a valid token. The unmatched route is the application's call: `HttpRoutePolicy.unmatched()` is fail-closed, and a policy returning `null` is treated as a defect and denies outright rather than being read as unmatched.
+- **The token grants what it claims, and nothing else (since 0.11).** `CommunityClaimsMapper` reads
+  `scope` (OAuth 2.0 space-delimited, RFC 6749 §3.3), `scp` (the array form some identity providers
+  emit, unioned with the former) and `roles`. Until 0.11 it handed every authenticated principal a
+  hardcoded `security:read` and no roles regardless of the token — the deferral ADR-040 left open,
+  although that ADR already specifies this mapper as "sub → principalId, roles/scopes claims →
+  PrincipalContext". Two consequences: no route could tell one caller's permissions from another's,
+  and `security:write` was a scope **nothing could grant**, so any policy requiring it denied
+  everyone. There is deliberately **no fallback** — a token carrying no scope claim yields an empty
+  scope set and a route requiring any scope denies it. Roles now reach `PrincipalContext.roles()`,
+  so the `roleMask` behind `@RequiresRole` is no longer permanently `0L`.
+- **The mapping is substitutable (since 0.11).** `ClaimsMapper` is documented as the only application-customisable point in the identity pipeline, but `CommunityOidcIdentityProvider` constructed the default inline, so there was no way to supply one — an application needing a different subject or scope shape had to reimplement `IdentityProvider` outright. `withClaimsMapper(ClaimsMapper)` returns a provider using the supplied mapping, mirroring `enforcingSharedScope()`: a new provider rather than a mutation, because the mapping takes part in a security decision on every request and must be fixed at construction, never swapped behind a live provider. The two withers compose in either order. Declaring nothing still gets `CommunityClaimsMapper`.
+- **And it is substitutable from a booted kernel, not only from the API (since 0.11).** The wither
+  above was reachable only by constructing the provider yourself, which the ServiceLoader boot path
+  does not do — so until this landed, a deployment that registered a mapping had no way to make the
+  kernel use it, and the bullet above was true of the API and false of a running process.
+  `CommunityClaimsMapperResolver` discovers a `ClaimsMapper` through `ServiceLoader` on the context
+  class loader, and `CommunitySecurityProvider` assembles through it. **Exactly one may be
+  registered**: `ClaimsMapper` declares no `priority()`, so two would leave classpath order deciding
+  how every principal in the deployment is identified, and that is refused at construction with both
+  class names rather than resolved by accident. None registered keeps `CommunityClaimsMapper`, so an
+  unconfigured deployment is unchanged.
+- **Substituting the mapper cannot widen isolation.** A custom mapper produces a `PrincipalContext` only. Tenant routing stays with `IdentityStorageMapping`, which every provider passes through (ADR-012 §4a), so a mapper cannot reach a tenant the token does not entitle it to — the customisable surface is identity shape, the non-negotiable surface is isolation deny semantics. This is also the seam a host-runtime binding uses: kernel scopes and a framework's own authority objects are **two mappings of the same verified token**, derived independently from the same claims, not one derived from the other. Neither is the source of truth for the other, and a kernel-side decision never consults framework authorities.
+- `KernelProviders.SECURITY_PROVIDER` is bound by `CommunitySecuritySubsystem` (since 0.11). Before that it was bound by nothing, so the interceptor was never constructed and the whole Citadel path was unreachable in a default boot.
 
 ---
 

@@ -51,7 +51,7 @@ import java.util.Set;
         ImmutableConfigProcessor.IMMUTABLE_FQN,
         ImmutableConfigProcessor.DYNAMIC_FQN
 })
-@SupportedSourceVersion(SourceVersion.RELEASE_26)
+@SupportedSourceVersion(SourceVersion.RELEASE_25)
 public final class ImmutableConfigProcessor extends AbstractProcessor {
 
     /** Fully-qualified name of the sealed-key annotation. */

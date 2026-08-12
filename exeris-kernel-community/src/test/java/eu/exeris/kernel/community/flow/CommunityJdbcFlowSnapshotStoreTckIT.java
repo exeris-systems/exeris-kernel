@@ -10,6 +10,7 @@ package eu.exeris.kernel.community.flow;
 
 import eu.exeris.kernel.community.persistence.CommunityPersistenceProvider;
 import eu.exeris.kernel.spi.exceptions.flow.FlowEngineException;
+import eu.exeris.kernel.spi.flow.model.FlowDefinition;
 import eu.exeris.kernel.spi.flow.model.FlowSnapshot;
 import eu.exeris.kernel.spi.flow.model.FlowSnapshotStore;
 import eu.exeris.kernel.spi.flow.model.FlowState;
@@ -31,6 +32,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.time.Instant;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -216,12 +218,14 @@ class CommunityJdbcFlowSnapshotStoreTckIT extends AbstractDistributedFlowSnapsho
         return new FlowSnapshot(
                 id.getMostSignificantBits(),
                 id.getLeastSignificantBits(),
-                "occ-jfr-saga",
+                "occ-jfr-saga", FlowDefinition.INITIAL_VERSION,
                 currentStep,
+                Optional.of("step-" + currentStep),
                 state,
                 Instant.parse("2026-05-08T10:00:00Z"),
                 Instant.parse("2026-05-08T11:00:00Z"),
                 new int[0],
+                new String[0],
                 0,
                 new byte[]{0x01},
                 schemaVersion);
@@ -231,12 +235,14 @@ class CommunityJdbcFlowSnapshotStoreTckIT extends AbstractDistributedFlowSnapsho
         return new FlowSnapshot(
                 loaded.instanceIdMost(),
                 loaded.instanceIdLeast(),
-                loaded.definitionName(),
+                loaded.definitionName(), FlowDefinition.INITIAL_VERSION,
                 newStep,
+                Optional.of("step-" + newStep),
                 newState,
                 loaded.lastUpdate(),
                 loaded.timeout(),
                 loaded.compensationStack(),
+                loaded.compensationStepNames(),
                 loaded.stackPointer(),
                 loaded.opaqueState(),
                 loaded.schemaVersion());

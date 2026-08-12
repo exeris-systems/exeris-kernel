@@ -260,7 +260,7 @@ class SecurityValueTypesTest {
             Map<String, String> noAttrs = Map.of();
             assertThatThrownBy(() -> new ImmutableStorageContext(
                     isolationKey, StorageContext.IsolationStrategy.SHARED,
-                    schemaName, noDataSource, noAttrs))
+                    schemaName, noDataSource, Optional.empty(), noAttrs))
                     .isInstanceOf(IllegalArgumentException.class);
         }
 
@@ -273,7 +273,7 @@ class SecurityValueTypesTest {
             Map<String, String> noAttrs = Map.of();
             assertThatThrownBy(() -> new ImmutableStorageContext(
                     isolationKey, StorageContext.IsolationStrategy.SEPARATED_SCHEMA,
-                    noSchema, noDataSource, noAttrs))
+                    noSchema, noDataSource, Optional.empty(), noAttrs))
                     .isInstanceOf(IllegalArgumentException.class);
         }
 
@@ -286,8 +286,86 @@ class SecurityValueTypesTest {
             Map<String, String> noAttrs = Map.of();
             assertThatThrownBy(() -> new ImmutableStorageContext(
                     isolationKey, StorageContext.IsolationStrategy.DEDICATED,
-                    noSchema, noDataSource, noAttrs))
+                    noSchema, noDataSource, Optional.empty(), noAttrs))
                     .isInstanceOf(IllegalArgumentException.class);
+        }
+
+        @Test
+        @DisplayName("sharedScopeKey without isolationKey throws IllegalArgumentException")
+        void sharedScopeWithoutIsolationKeyThrows() {
+            Optional<String> noIsolationKey = Optional.empty();
+            Optional<String> noSchema = Optional.empty();
+            Optional<String> noDataSource = Optional.empty();
+            Optional<String> sharedScope = Optional.of("world-alpha");
+            Map<String, String> noAttrs = Map.of();
+            assertThatThrownBy(() -> new ImmutableStorageContext(
+                    noIsolationKey, StorageContext.IsolationStrategy.SHARED,
+                    noSchema, noDataSource, sharedScope, noAttrs))
+                    .as("a shared scope with no owner gives the write predicate nothing to pin to "
+                            + "(ADR-012 §4b.2)")
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+
+        @Test
+        @DisplayName("sharedScopeKey composes with every physical strategy (orthogonal axis)")
+        void sharedScopeComposesWithEveryStrategy() {
+            assertThat(ImmutableStorageContext.shared("tenant")
+                    .withSharedScope("world-alpha").sharedScopeKey())
+                    .contains("world-alpha");
+            assertThat(ImmutableStorageContext.separatedSchema("tenant", "my_schema")
+                    .withSharedScope("world-alpha"))
+                    .satisfies(ctx -> {
+                        assertThat(ctx.strategy())
+                                .isEqualTo(StorageContext.IsolationStrategy.SEPARATED_SCHEMA);
+                        assertThat(ctx.schemaName()).contains("my_schema");
+                        assertThat(ctx.sharedScopeKey()).contains("world-alpha");
+                    });
+            assertThat(ImmutableStorageContext.dedicated("tenant", "ds-primary-eu")
+                    .withSharedScope("world-alpha"))
+                    .satisfies(ctx -> {
+                        assertThat(ctx.strategy())
+                                .isEqualTo(StorageContext.IsolationStrategy.DEDICATED);
+                        assertThat(ctx.dataSourceKey()).contains("ds-primary-eu");
+                        assertThat(ctx.sharedScopeKey()).contains("world-alpha");
+                    });
+        }
+
+        @Test
+        @DisplayName("GLOBAL cannot be given a shared scope — no owner to pin writes to")
+        void globalRejectsSharedScope() {
+            assertThatThrownBy(() -> ImmutableStorageContext.GLOBAL.withSharedScope("world-alpha"))
+                    .as("system/tenant-less scope has no isolationKey, so it is structurally "
+                            + "incapable of carrying a shared scope (ADR-012 §4b.2)")
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+
+        @Test
+        @DisplayName("default StorageContext.sharedScopeKey() is empty — tenant-private")
+        void defaultSharedScopeKeyIsTenantPrivate() {
+            StorageContext bareImplementation = new StorageContext() {
+                @Override
+                public Optional<String> isolationKey() {
+                    return Optional.of("tenant");
+                }
+
+                @Override
+                public IsolationStrategy strategy() {
+                    return IsolationStrategy.SHARED;
+                }
+
+                @Override
+                public Optional<String> schemaName() {
+                    return Optional.empty();
+                }
+
+                @Override
+                public Optional<String> dataSourceKey() {
+                    return Optional.empty();
+                }
+            };
+            assertThat(bareImplementation.sharedScopeKey())
+                    .as("an SPI implementor that predates the accessor must stay tenant-private")
+                    .isEmpty();
         }
 
         @Test

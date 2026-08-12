@@ -31,12 +31,14 @@ public final class CommunitySubsystemProvider implements SubsystemProvider {
         return List.of(
                 new CommunityMemorySubsystem(),
                 new CommunityCryptoSubsystem(),
+                new CommunitySecuritySubsystem(),
                 new CommunityPersistenceSubsystem(),
                 new CommunityEventsSubsystem(),
                 new CommunityGraphSubsystem(),
                 new CommunityTransportSubsystem(),
                 new CommunityHttpSubsystem(),
-                new CommunityFlowSubsystem()
+                new CommunityFlowSubsystem(),
+                new CommunitySchedulingSubsystem()
         );
     }
 

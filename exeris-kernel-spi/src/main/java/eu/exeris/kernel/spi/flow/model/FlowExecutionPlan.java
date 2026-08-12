@@ -40,6 +40,36 @@ public interface FlowExecutionPlan {
     String definitionName();
 
     /**
+     * The version of the {@link FlowDefinition} this plan was compiled from.
+     *
+     * <p>Together with {@link #definitionName()} this is the key a parked saga resumes on: several
+     * versions of one definition may be registered at once, and a snapshot binds to the exact one it
+     * parked under rather than to whichever is newest (ADR-064).
+     *
+     * <p>Defaults to {@link FlowDefinition#INITIAL_VERSION}, which is the honest answer for a plan
+     * compiled before versioning existed: it was the only version of its definition, and a snapshot
+     * written by it carries no version to disagree with. The default is what keeps this addition off
+     * the implementor's critical path — the sibling
+     * {@link eu.exeris.kernel.spi.flow.FlowExecutionPlanFactory#registerMigration} added in the same
+     * milestone has one for the same reason, and an interface this old cannot grow an abstract method
+     * without breaking every out-of-tree implementation of it at invoke time.
+     *
+     * <p><b>The default trades a loud failure for a quiet one, so the TCK is now what enforces
+     * this.</b> Before, a plan that did not implement this did not compile. Now a v3 plan that
+     * forgets to override registers and writes its snapshots as version 1, and a genuine v1 plan
+     * will resume them — the resume check compares this value against the snapshot's, and they
+     * agree. {@code AbstractFlowDefinitionVersioningTck} pins the returned version to the compiled
+     * definition's, so a provider that runs the TCK is covered; one that does not is on its own in
+     * a way the compiler used to prevent.
+     *
+     * @return the declared version, {@code >= FlowDefinition.INITIAL_VERSION}
+     * @since 0.11.0
+     */
+    default int definitionVersion() {
+        return FlowDefinition.INITIAL_VERSION;
+    }
+
+    /**
      * The total number of steps in this plan.
      *
      * @return step count ≥ 1

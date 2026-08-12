@@ -8,7 +8,7 @@
 | **Date**        | 2026-07-01                                                                                                                                                                                 |
 | **Scope**       | kernel/events                                                                                                                                                                             |
 | **Owning Repo** | `exeris-kernel`                                                                                                                                                                            |
-| **Driven By**   | v0.10 ROADMAP §"Events: Binding-Agnostic `topic` Concept on the Event Descriptor SPI"; downstream dogfooding (Stellar-Tactics multi-service build, 2026-06 — finding K1 + the `@DomainEvent.topic` twin); sequenced with the Event-Payload Codec (ADR-046). |
+| **Driven By**   | v0.10 ROADMAP §"Events: Binding-Agnostic `topic` Concept on the Event Descriptor SPI"; downstream dogfooding (a multi-service build, 2026-06 — finding K1 + the `@DomainEvent.topic` twin); sequenced with the Event-Payload Codec (ADR-046). |
 | **Compliance**  | The Wall (ADR-006); No Waste Compute; Valhalla-ready carriers (JEP 401); consistent with the transient-bus no-ordering stance (ADR-049 H2).                                                |
 
 ## Context and Problem Statement

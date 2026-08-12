@@ -12,6 +12,7 @@ import eu.exeris.kernel.community.memory.CommunityMemoryProvider;
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.memory.MemoryProviderConfig;
+import eu.exeris.kernel.spi.transport.StreamHandler;
 import eu.exeris.kernel.spi.transport.TransportConfig;
 import eu.exeris.kernel.spi.transport.TransportEngine;
 import eu.exeris.kernel.spi.transport.TransportMode;
@@ -33,6 +34,30 @@ class CommunityNativeTcpCarrierTckTest extends AbstractTransportEngineTck {
     @SuppressWarnings("unused")
     static void releaseAllocator() {
         ALLOCATOR.close();
+    }
+
+    @Override
+    protected TransportEngine createEngineWithConnectionCeiling(int maxConnections, int port) {
+        TransportConfig config = new TransportConfig(
+                TransportMode.SERVER, "127.0.0.1", port, 1, null, null, maxConnections, 30_000);
+        TransportEngine[] holder = new TransportEngine[1];
+        ScopedValue.where(KernelProviders.MEMORY_ALLOCATOR, ALLOCATOR)
+                .run(() -> holder[0] = new NativeTcpTransportProvider().createEngine(config));
+        // Accepted connections are parked, never served: closing them here would free slots
+        // underneath the ceiling and the refusal path would never be reached.
+        holder[0].setStreamHandler(stream -> { });
+        return holder[0];
+    }
+
+    @Override
+    protected TransportEngine createEngineWithHandler(int port, StreamHandler handler) {
+        TransportConfig config = new TransportConfig(
+                TransportMode.SERVER, "127.0.0.1", port, 1, null, null, 16, 30_000);
+        TransportEngine[] holder = new TransportEngine[1];
+        ScopedValue.where(KernelProviders.MEMORY_ALLOCATOR, ALLOCATOR)
+                .run(() -> holder[0] = new NativeTcpTransportProvider().createEngine(config));
+        holder[0].setStreamHandler(handler);
+        return holder[0];
     }
 
     @Override

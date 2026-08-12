@@ -227,18 +227,18 @@ public final class HttpStreamEngine implements HttpStreamExchange {
             throw error;
         }
         try {
-            // Ownership transfers to the transport; on a dead stream queueWrite closes the buffer
-            // (the close-action returns the credit) and throws — either IllegalStateException
-            // ("stream closed") or a TransportException surfaced from a synchronous flush whose
-            // socket write faulted (broken pipe / RST after peer disconnect). Both mean the peer is
-            // gone: map them to the unchecked StreamClosedException the emit loop unwinds on.
+            // Ownership transfers to the transport. On a dead stream queueWrite throws — either
+            // IllegalStateException ("stream closed") or a TransportException surfaced from a
+            // synchronous flush whose socket write faulted (broken pipe / RST after peer
+            // disconnect). Both mean the peer is gone: map them to the unchecked
+            // StreamClosedException the emit loop unwinds on. On throw the buffer is ours to free
+            // (see the catch).
             stream.queueWrite(buffer, frameBytes);
         } catch (RuntimeException streamClosed) {
-            // Safety net for the credit accounting: the TransportStream.queueWrite contract closes the
-            // buffer before throwing (its close-action returns the credit), but close() is idempotent and
-            // the close-action runs exactly once (refcount CAS), so a defensive close() here cannot
-            // double-release — it only guarantees the credit is returned if an implementation ever throws
-            // without closing.
+            // On throw the caller owns the buffer (queueWrite releases only on success), so we close
+            // it here to return the credit via its close-action. close() is idempotent and the
+            // close-action runs exactly once (refcount CAS), so this cannot double-release even if an
+            // implementation also released the loan while unwinding.
             buffer.close();
             abortiveTeardown(StreamClosedException.peerDisconnect(eventsEmitted.get()), streamClosed);
         }

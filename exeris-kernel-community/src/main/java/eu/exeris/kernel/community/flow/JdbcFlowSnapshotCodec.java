@@ -14,7 +14,11 @@ import eu.exeris.kernel.spi.persistence.PersistenceStatement;
 import eu.exeris.kernel.spi.persistence.RowCursor;
 
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
 
 /**
  * Package-private codec for {@link FlowSnapshot} ↔ {@code exeris_saga_state}
@@ -34,7 +38,8 @@ import java.time.Instant;
  *   0: instance_id_most       1: instance_id_least    2: definition_name
  *   3: current_step           4: state                5: last_update
  *   6: timeout_at             7: compensation_stack   8: stack_pointer
- *   9: opaque_state          10: schema_version
+ *   9: opaque_state          10: step_name          11: schema_version
+ *  12: definition_version    13: compensation_step_names
  * </pre>
  *
  * <h2>Instant.MAX encoding</h2>
@@ -52,7 +57,7 @@ final class JdbcFlowSnapshotCodec {
     }
 
     /**
-     * Binds the eight payload columns (definition_name through opaque_state)
+     * Binds the eleven payload columns (definition_name through compensation_step_names)
      * starting at the given parameter index. Used by both INSERT (offset 2)
      * and UPDATE (offset 0).
      */
@@ -75,9 +80,24 @@ final class JdbcFlowSnapshotCodec {
         stmt.bindInt(idx++, snapshot.stackPointer());
         byte[] opaque = snapshot.opaqueState();
         if (opaque.length == 0) {
+            stmt.bindBytes(idx++, null);
+        } else {
+            stmt.bindBytes(idx++, opaque);
+        }
+        // NULL rather than a placeholder: the column has to be able to say "no identity recorded",
+        // because that is what the resume guard keys on (ADR-062).
+        stmt.bindString(idx++, snapshot.currentStepName().orElse(null));
+        // Same reasoning one field along: 0 is VERSION_ABSENT, never a real version, and the resume
+        // guard rejects it rather than binding the saga to whichever version is newest (ADR-064).
+        stmt.bindInt(idx++, snapshot.definitionVersion());
+        // NULL for the same reason step_name is NULL-able: the column must be able to say "no
+        // identities recorded", which is what the resume guard keys on (ADR-064 A5). Empty maps to
+        // NULL here rather than in the packer, mirroring opaqueState above.
+        byte[] stepNames = packCompensationStepNames(snapshot);
+        if (stepNames.length == 0) {
             stmt.bindBytes(idx, null);
         } else {
-            stmt.bindBytes(idx, opaque);
+            stmt.bindBytes(idx, stepNames);
         }
     }
 
@@ -99,6 +119,65 @@ final class JdbcFlowSnapshotCodec {
             buf.putInt(stack[i]);
         }
         return bytes;
+    }
+
+    /**
+     * Packs the active prefix of the compensation-stack step identities into a BYTEA blob
+     * (ADR-064 A5).
+     *
+     * <p>Each entry is a 4-byte big-endian UTF-8 byte count followed by that many bytes, so the blob
+     * carries no delimiter and needs no escaping. A delimited encoding was not available: step names
+     * are validated only as non-blank, so no character is reserved and any separator would have to
+     * escape one that is not.
+     *
+     * <p>Returns a zero-length array when there is nothing to record; the bind site turns that into a
+     * NULL column, the same way it already does for an empty {@code opaqueState}. Keeping the empty/
+     * NULL translation at the binding rather than here means this method never returns {@code null}.
+     */
+    /* default */ static byte[] packCompensationStepNames(FlowSnapshot snapshot) {
+        int activeDepth = snapshot.stackPointer();
+        String[] names = snapshot.compensationStepNames();
+        if (activeDepth == 0 || names.length == 0) {
+            return new byte[0];
+        }
+        byte[][] encoded = new byte[activeDepth][];
+        int total = 0;
+        for (int i = 0; i < activeDepth; i++) {
+            encoded[i] = names[i].getBytes(StandardCharsets.UTF_8);
+            total += COMPENSATION_STACK_INT_BYTES + encoded[i].length;
+        }
+        ByteBuffer buf = ByteBuffer.allocate(total);
+        for (byte[] entry : encoded) {
+            buf.putInt(entry.length);
+            buf.put(entry);
+        }
+        return buf.array();
+    }
+
+    /**
+     * Reverse of {@link #packCompensationStepNames}. {@code null} or empty input yields an empty
+     * array, which the resume guard reads as "no identities recorded" whenever the stack is live.
+     */
+    /* default */ static String[] unpackCompensationStepNames(byte[] bytes) {
+        if (bytes == null || bytes.length == 0) {
+            return new String[0];
+        }
+        ByteBuffer buf = ByteBuffer.wrap(bytes);
+        List<String> names = new ArrayList<>();
+        while (buf.remaining() >= COMPENSATION_STACK_INT_BYTES) {
+            int length = buf.getInt();
+            if (length < 0 || length > buf.remaining()) {
+                // A truncated or corrupt blob is not silently shortened into a shorter identity list:
+                // that would make the guard validate a prefix and wave the rest through. An empty
+                // result reads as absent, which the guard refuses.
+                return new String[0];
+            }
+            // Decoded straight out of the backing array: the only allocation per entry is the String
+            // itself, where a copy-then-decode would allocate a throwaway byte[] alongside it.
+            names.add(new String(bytes, buf.position(), length, StandardCharsets.UTF_8));
+            buf.position(buf.position() + length);
+        }
+        return names.toArray(new String[0]);
     }
 
     /**
@@ -140,12 +219,21 @@ final class JdbcFlowSnapshotCodec {
         if (opaqueState == null) {
             opaqueState = new byte[0];
         }
-        long schemaVersion = row.getLong(10);
+        // NULL means the row predates ADR-062 — absence, not a name. The resume guard rejects it.
+        Optional<String> stepName = Optional.ofNullable(row.getString(10));
+        long schemaVersion = row.getLong(11);
+        // 0 is VERSION_ABSENT — the migration backfills it for rows written before the column
+        // existed. Never NULL: the cursor's getInt has no NULL representation, so the migration
+        // carries the absence instead of the read having to (ADR-064).
+        int definitionVersion = row.getInt(12);
+        // NULL means the row predates ADR-064 A5 — no identities recorded, not an empty stack. The
+        // resume guard refuses it whenever the stack is live (ADR-064 A5).
+        String[] compensationStepNames = unpackCompensationStepNames(row.getBytes(13));
         return new FlowSnapshot(
                 instanceIdMost, instanceIdLeast,
-                definitionName, currentStep, state,
+                definitionName, definitionVersion, currentStep, stepName, state,
                 lastUpdate, timeout,
-                compensationStack, stackPointer,
+                compensationStack, compensationStepNames, stackPointer,
                 opaqueState, schemaVersion);
     }
 }

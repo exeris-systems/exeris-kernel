@@ -13,7 +13,7 @@
 > callers are responsible for invoking `boot()` and managing JVM shutdown.
 
 **Layer:** L0 (Orchestration)  
-**Status:** Validated Architectural Prototype (TRL‑3) — targeting JDK 26 GA / Valhalla EA
+**Status:** Validated Architectural Prototype (TRL‑3) — JDK 25 LTS baseline / Valhalla-ready carriers
 
 ---
 
@@ -35,8 +35,13 @@ Memory) are fully operational before higher‑level logic (Transport, Flow) is a
   Directed acyclic graph (DAG) resolves subsystem order.  
   Config always first → Memory seconds → everything else follows.
 
-- **Virtual Thread Parallelization**  
-  L1 and L2 subsystems (Security, Persistence, Graph, Transport) initialize in parallel using `StructuredTaskScope`.
+- **Dependency-Round Start**  
+  L1 and L2 subsystems (Security, Persistence, Graph, Transport) start in dependency-safe rounds on the
+  booting thread — see "Phase Start Strategy" below for why the per-subsystem fork was removed in v0.11.
+  > **Note (0.11):** Community ships `CommunitySecuritySubsystem` from 0.11 onward. Before that this
+  > document described a Security subsystem the Community module did not have, so
+  > `KernelProviders.SECURITY_PROVIDER` was bound by nothing and the Citadel path was unreachable
+  > in a default boot. Closed as drift repair by ADR-061.
 
 - **Fail‑Fast vs Degrade**  
   Configurable failure policies:
@@ -178,7 +183,7 @@ flowchart LR
     NIC["NIC (Hardware)"]
     IOR["io_uring<br/>(kernel ring)"]
     ANA["Panama Arena<br/>(MemorySegment — off-heap)"]
-    WRK["Worker VThread<br/>(StructuredTaskScope)"]
+    WRK["Worker VThread<br/>(StructuredScope)"]
     DB["Persistence SPI<br/>(LoanedBuffer)"]
 
     NIC -- DMA --> IOR
@@ -228,7 +233,7 @@ Bootstrap decides the fate of the Kernel:
 - **FAIL_FAST** → Strict Mode (Target Standard). Mandatory for high-density edge environments.
 - **DEGRADE** → Reserved for local dev or emergency maintenance only. Never deploy to production in this mode.
 
-> Exeris targets **JDK 26 LTS** with **Valhalla Readiness (JEP 401 EA Preview)**. The heap-allocation budgets
+> Exeris targets **JDK 25 LTS** with **Valhalla Readiness (JEP 401, preview on JDK 28)**. The heap-allocation budgets
 > in `performance-contract.md` are met today via C2 JIT Escape Analysis scalarisation of `record`/`final class`
 > data carriers. Migration to `value record`/`value class` (requiring `value` keyword) is deferred until
 > JEP 401 reaches mainline GA — at that point, object-header elimination will further reduce memory pressure
@@ -309,26 +314,45 @@ public class PersistenceSubsystem implements Subsystem {
 
 ---
 
-### 2. Parallel Boot Strategy (Core — JDK 26 Joiner API)
+### 2. Phase Start Strategy (Core — on the booting thread, since v0.11)
 
-Exeris targets JDK 26 LTS / Valhalla EA. Parallel layers (L1/L2) are joined using
-`awaitAllSuccessfulOrThrow`, ensuring that a single failure in any native module triggers an immediate,
-safe cancellation of the entire boot sequence.
+Subsystems start in dependency-safe rounds, and **every round runs on the thread that called
+`boot()`** rather than one virtual thread per subsystem. This changed in v0.11 under
+[ADR-066](../adr/ADR-066-preview-clean-ga-baseline.md), and the reason is a hard limit rather than a
+preference.
+
+A subsystem's `start()` reads `ScopedValue` bindings established by two callers the orchestrator
+cannot see through: `KernelBootstrap` binds `CURRENT_CONFIG` around the boot, and the **application**
+binds its own — `HTTP_SERVER_HANDLER` is the load-bearing example, and an application is free to bind
+values the kernel has never heard of. `StructuredTaskScope` forks inherited all of it; a plain virtual
+thread inherits none of it, and a `ScopedValue.Carrier` can only carry values named in advance.
+Rebuilding the kernel's own carrier was implemented and produced a boot that started the HTTP
+subsystem with no handler bound — every route answering 404.
 
 ```java
-import java.util.concurrent.StructuredTaskScope;
-import java.util.concurrent.StructuredTaskScope.Joiner;
-
-try (var scope = StructuredTaskScope.open(Joiner.awaitAllSuccessfulOrThrow())) {
-    scope.fork(() -> security.start());
-    scope.fork(() -> persistence.start());
-
-    scope.join();
-
-} catch (StructuredTaskScope.FailedException e) {
-    throw new KernelBootstrapException(KernelErrorCodes.EX_BOOT_0002, e.getCause());
+// SubsystemOrchestrator: one dependency-safe round, in order, on the booting thread.
+for (Subsystem subsystem : ready) {
+    if (Thread.interrupted()) {
+        Thread.currentThread().interrupt();
+        throw new BootstrapException("Bootstrap interrupted during phase " + phase);
+    }
+    try {
+        doStart(subsystem, phase, profile);
+    } catch (BootstrapException | SubsystemException failure) {
+        failures.add(failure);
+    }
 }
+// every subsystem in the round is attempted; the phase throws afterwards if any failed
 ```
+
+**Failure semantics changed with it, and for the better.** The old `StructuredTaskScope.open()` used
+`awaitAllSuccessfulOrThrow` by default, so `join()` threw `StructuredTaskScope.FailedException` — a
+preview type — and the orchestrator's own failure-collection block was never reached. A phase now
+always throws `BootstrapException` naming how many subsystems failed and carrying the first as its
+cause.
+
+**Cost:** a phase takes the sum of its subsystems' start times rather than the longest. It is paid
+once per JVM, and `FOUNDATION` was already sequential.
 
 ---
 
@@ -353,7 +377,7 @@ try (var scope = StructuredTaskScope.open(Joiner.awaitAllSuccessfulOrThrow())) {
 ## Summary
 
 The Bootstrap subsystem is the guardian of the Kernel's lifecycle. By enforcing a strict, dependency-aware boot sequence
-and using JDK 26 Joiner-based `StructuredTaskScope`, it ensures that the Exeris Kernel starts fast, fails safely,
+and starting each phase in dependency-safe rounds on the booting thread, it ensures that the Exeris Kernel starts fast, fails safely,
 and shuts down gracefully with **deterministic hard timeouts** at every layer boundary, maintaining system integrity
 at all times.
 

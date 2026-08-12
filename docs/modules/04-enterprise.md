@@ -71,7 +71,7 @@ flowchart TD
 
 ## 🚀 Architectural Rules (L0 Enforcement)
 
-1. **Hyper-Density:** Designed for extreme throughput (>8,500 RPS/vCPU). Uses `GlobalMemoryArbiter` with pre-allocated
+1. **Hyper-Density:** Designed for extreme throughput (target: >8,500 RPS/vCPU). Uses `GlobalMemoryArbiter` with pre-allocated
    `mmap` regions for strictly off-heap, zero-GC execution across all subsystems.
 2. **Off-Heap Native Drivers (`io_uring`, QUIC):** Leverages `io_uring` (Linux) for syscall batching and QUIC
    (via advanced OpenSSL Memory BIOs) for kernel-bypass networking with zero Head-of-Line Blocking.

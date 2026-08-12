@@ -13,6 +13,7 @@ import eu.exeris.kernel.spi.flow.FlowDefinitionBuilder;
 import eu.exeris.kernel.spi.flow.FlowEngineConfig;
 import eu.exeris.kernel.spi.flow.FlowExecutionPlanFactory;
 import eu.exeris.kernel.spi.flow.model.FlowDefinition;
+import eu.exeris.kernel.spi.flow.model.FlowDefinitionMigration;
 import eu.exeris.kernel.spi.flow.model.FlowExecutionPlan;
 import eu.exeris.kernel.spi.flow.model.FlowStepAction;
 import eu.exeris.kernel.spi.flow.model.FlowStepDescriptor;
@@ -33,17 +34,20 @@ final class CoreFlowPlanFactory implements FlowExecutionPlanFactory {
 
     private final FlowEngineConfig config;
     private final CoreFlowRegistry registry;
-    private final ConcurrentMap<String, CoreFlowExecutionPlan> planCatalog;
+    private final ConcurrentMap<PlanKey, CoreFlowExecutionPlan> planCatalog;
+    private final CoreMigrationRegistry migrationRegistry;
     private final Runnable onPlanCompiled;
     private final ConcurrentMap<String, List<FlowTransitionDescriptor>> transitionsByDefinition =
             new ConcurrentHashMap<>();
 
     /* default */ CoreFlowPlanFactory(FlowEngineConfig config, CoreFlowRegistry registry,
-                                      ConcurrentMap<String, CoreFlowExecutionPlan> planCatalog,
+                                      ConcurrentMap<PlanKey, CoreFlowExecutionPlan> planCatalog,
+                                      ConcurrentMap<MigrationKey, FlowDefinitionMigration> migrations,
                                       Runnable onPlanCompiled) {
         this.config = Objects.requireNonNull(config, "config");
         this.registry = Objects.requireNonNull(registry, "registry");
         this.planCatalog = Objects.requireNonNull(planCatalog, "planCatalog");
+        this.migrationRegistry = new CoreMigrationRegistry(config, migrations);
         this.onPlanCompiled = Objects.requireNonNull(onPlanCompiled, "onPlanCompiled");
     }
 
@@ -64,19 +68,25 @@ final class CoreFlowPlanFactory implements FlowExecutionPlanFactory {
 
             CoreFlowExecutionPlan plan = new CoreFlowExecutionPlan(
                     definitionName,
+                    definition.version(),
                     steps,
                     adjacency,
                     nextSteps,
                     definition.timeoutDurationNanos()
             );
             registry.replace(steps, adjacency);
+            // Keyed by (name, version) since ADR-064: registering a changed definition must not
+            // evict the one every in-flight saga parked under. The ceiling therefore bounds retained
+            // versions as well as distinct definitions — an application that bumps on every deploy
+            // and never retires an old version will reach it.
+            PlanKey key = new PlanKey(definitionName, definition.version());
             synchronized (planCatalog) {
-                if (!planCatalog.containsKey(definitionName)
+                if (!planCatalog.containsKey(key)
                         && planCatalog.size() >= config.maxExecutionPlans()) {
                     throw new IllegalStateException(
                             "maxExecutionPlans limit reached: " + config.maxExecutionPlans());
                 }
-                planCatalog.put(definitionName, plan);
+                planCatalog.put(key, plan);
             }
             transitionsByDefinition.remove(definitionName);
             onPlanCompiled.run();
@@ -226,4 +236,10 @@ final class CoreFlowPlanFactory implements FlowExecutionPlanFactory {
             return definition;
         }
     }
+    /** Registers an adjacent-hop migration (ADR-064); admission rules live in the registry. */
+    @Override
+    public void registerMigration(String definitionName, int fromVersion, FlowDefinitionMigration migration) {
+        migrationRegistry.register(definitionName, fromVersion, migration);
+    }
+
 }

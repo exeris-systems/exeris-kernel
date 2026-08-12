@@ -17,6 +17,7 @@ import java.util.Arrays;
 final class CoreFlowExecutionPlan implements FlowExecutionPlan {
 
     private final String definitionName;
+    private final int definitionVersion;
     private final FlowStepDescriptor[] steps;
     private final FlowTransitionDescriptor[][] transitions;
     private final int[] nextSteps;
@@ -24,11 +25,13 @@ final class CoreFlowExecutionPlan implements FlowExecutionPlan {
 
     /* default */
     CoreFlowExecutionPlan(String definitionName,
+                          int definitionVersion,
                           FlowStepDescriptor[] steps,
                           FlowTransitionDescriptor[][] transitions,
                           int[] nextSteps,
                           long timeoutDurationNanos) {
         this.definitionName = definitionName;
+        this.definitionVersion = definitionVersion;
         this.steps = Arrays.copyOf(steps, steps.length);
         this.transitions = Arrays.copyOf(transitions, transitions.length);
         this.nextSteps = Arrays.copyOf(nextSteps, nextSteps.length);
@@ -38,6 +41,11 @@ final class CoreFlowExecutionPlan implements FlowExecutionPlan {
     @Override
     public String definitionName() {
         return definitionName;
+    }
+
+    @Override
+    public int definitionVersion() {
+        return definitionVersion;
     }
 
     @Override

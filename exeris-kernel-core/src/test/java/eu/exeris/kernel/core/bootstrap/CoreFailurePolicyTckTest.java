@@ -20,7 +20,6 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.StructuredTaskScope;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
@@ -110,7 +109,11 @@ class CoreFailurePolicyTckTest extends AbstractFailurePolicyTck {
 		try {
 			orchestrator.start(minimalConfig());
 			return false;
-		} catch (SubsystemOrchestrator.BootstrapException | StructuredTaskScope.FailedException _) {
+		} catch (SubsystemOrchestrator.BootstrapException _) {
+			// The StructuredTaskScope.FailedException arm is gone with the preview type itself.
+			// It existed because the bare open() joined with awaitAllSuccessfulOrThrow, whose join()
+			// threw that unchecked preview class straight past the orchestrator's own failure
+			// handling. A phase now always throws BootstrapException (ADR-066).
 			return true;
 		}
 	}

@@ -10,6 +10,7 @@ package eu.exeris.kernel.community.security;
 
 import eu.exeris.kernel.community.testkit.security.TestJwt;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
+import eu.exeris.kernel.spi.security.KernelIsolationClaims;
 import eu.exeris.kernel.spi.security.identity.IdentityProvider;
 import eu.exeris.kernel.tck.contract.security.AbstractIdentityProviderTck;
 import org.junit.jupiter.api.DisplayName;
@@ -30,7 +31,8 @@ class CommunityOidcIdentityProviderTckTest extends AbstractIdentityProviderTck {
 
     @Override
     protected LoanedBuffer validTokenBuffer() {
-        return TestJwt.builder().toBuffer();
+        // Since 0.11 the mapper grants only what the token claims, so the fixture has to say it.
+        return TestJwt.builder().claim("scope", "security:read").toBuffer();
     }
 
     @Override
@@ -46,5 +48,19 @@ class CommunityOidcIdentityProviderTckTest extends AbstractIdentityProviderTck {
     @Override
     protected LoanedBuffer expiredTokenBuffer() {
         return TestJwt.builder().expired().toBuffer();
+    }
+
+    @Override
+    protected LoanedBuffer sharedScopeTokenBuffer() {
+        return TestJwt.builder()
+                .claim(KernelIsolationClaims.SHARED_SCOPE_KEY, "world-alpha")
+                .toBuffer();
+    }
+
+    @Override
+    protected IdentityProvider createSharedScopeEnforcingProvider() {
+        return new CommunityOidcIdentityProvider(
+                TestJwt.keySet(), TestJwt.EXPECTED_ISSUER, TestJwt.EXPECTED_AUDIENCE)
+                .enforcingSharedScope();
     }
 }

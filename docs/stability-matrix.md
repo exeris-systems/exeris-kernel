@@ -15,10 +15,20 @@ for consumers** — primarily `exeris-ai-bridge`, downstream host runtimes, and 
 implementors — telling them how much they can lean on each contract today and what the
 compatibility intent is for v1.0.
 
-It is **not** a present-day semver guarantee. Exeris is pre-1.0 / TRL-3 with no external SPI
-consumers under contract; per `CHANGELOG.md`, minor versions may still carry observable
-contract additions. The maturity labels below describe **stability intent**, not a binding
-patch-line promise. See [Semver policy](#semver-policy) for exactly what each label commits to.
+It is **not** a present-day semver guarantee. Exeris is pre-1.0 / TRL-3, and per `CHANGELOG.md`
+minor versions may still carry observable contract additions. The maturity labels below describe
+**stability intent**, not a binding patch-line promise. See [Semver policy](#semver-policy) for
+exactly what each label commits to.
+
+Intent alone is not checkable, so it is paired with evidence: every release transition is diffed at
+the bytecode level and published in [`release/spi-api-history.md`](./release/spi-api-history.md), and
+an incompatible change to a surface declared `stable` fails CI ([ADR-065](./adr/ADR-065-spi-compatibility-gate.md)).
+The gate asks that in both senses — binary *and* source. They diverge on the change a stability
+promise most needs to catch: adding an abstract method to an interface is binary-compatible, since an
+existing implementor's class file still links and only fails at invoke time with `AbstractMethodError`.
+Checking binary compatibility alone speaks to callers and says nothing to implementors.
+Consumers upgrading across several minors should start from
+[`release/upgrade-0.5-to-0.10.md`](./release/upgrade-0.5-to-0.10.md).
 
 > **One namespace, one source of truth.** When a subsystem or module doc says a surface is
 > `stable` / `preview` / `experimental`, it MUST match this table. If they ever disagree,
@@ -49,7 +59,17 @@ this is informational and **not** a dependency of the open-core surface.
 |---|---|---|---|---|---|
 | `…spi.diagnostics` | **stable** | 0.9.0 | ADR-033 | `AbstractKernelDiagnosticsTck` (+ JSON schema fixture) | `KernelDiagnosticsProvider` priority=100 (follow-up) |
 | `…spi.persistence` | **stable** | 0.5.0 | ADR-022 | `AbstractPersistenceProviderTck`, `…EngineTck`, `…OutboxGuaranteeTck`, +6 | yes (slab/FFM tier) |
-| `…spi.flow` | **stable** | 0.5.0 | ADR-013 | `AbstractFlowEngineTck`, `…SagaRecoveryTck`, `…IdempotencyGuardTck`, +3 | — |
+| `…spi.flow` | **stable** | 0.5.0 | ADR-013 | `AbstractFlowEngineTck`, `…SagaRecoveryTck`, `…IdempotencyGuardTck`, +3 | v0.11 record-component note below |
+
+> **`spi.flow` in v0.11 — `FlowSnapshot` gains three record components.** `currentStepName` (ADR-062), `definitionVersion` (ADR-064) and `compensationStepNames` (ADR-064 amendment A5) move the canonical constructor from eleven parameters to fourteen. The 0.10.0 constructor descriptor is **restored as an overload**, so code compiled against 0.10.0 still constructs snapshots — and all three new components default to their fail-closed sentinels (`Optional.empty()`, `VERSION_ABSENT`, an empty identity array), so the bridge buys compilation and never a bypass of the resume guards those decisions added (`AbstractFlowDefinitionVersioningTck$StabilityCompatibility` asserts both halves). Because 0.11 is unreleased, the intermediate twelve- and thirteen-parameter descriptors never shipped, so no further bridge is owed — one overload covers the whole milestone.
+>
+> `FlowMigrationState` also gains a component in A5 and deliberately gets **no** overload: the record is `@since 0.11.0` and unreleased, so nothing compiled against a released artifact constructs it, and a bridge defaulting the identities to absent would hand a migration transform the one input the new guard exists to refuse.
+>
+> What the overload cannot restore, stated rather than glossed: adding a component changes the record's **component list**. Record deconstruction patterns and reflection over `RecordComponent[]` observe a different shape, and no overload can hide that — it is irreducible for a record.
+>
+> **No automated gate reports this.** A binary-compatibility diff (japicmp) finds nothing, because nothing was removed: the 0.10.0 constructor descriptor is still present and the new components only add accessors. A source diff of the record declaration does show the components arriving, but not that anything downstream depends on their number or order. So this row is the record — not a redundant human note ahead of a machine that would have caught it anyway.
+>
+> The same asymmetry governs `FlowExecutionPlanFactory.registerMigration`, added to this package in v0.11: an abstract method on an interface is *binary*-compatible (implementors link until it is invoked) and *source*-incompatible. It ships with a refusing default so implementors keep compiling — again a change no binary gate would have flagged.
 | `…spi.memory` | **stable** | 0.5.0 | — (foundational) | `AbstractMemoryAllocatorTck`, `…LoanedBufferTck`, `…MemoryGovernorTck`, +5 | yes (slab pools) |
 | `…spi.transport` | **stable** | 0.5.0 | — (foundational) | `AbstractTransportProviderTck`, `…EngineTck`, `…StreamTck`, `…ConnectionTck` | yes (`io_uring`/QUIC) |
 | `…spi.exceptions` | **stable** | 0.5.0 | — (Glass-Box contract) | `AbstractDisclosureModeTck` (+ `…GlassBoxTckTest` in TCK) | — |
@@ -60,8 +80,11 @@ this is informational and **not** a dependency of the open-core surface.
 | `…spi.events` | **preview** | 0.5.0 | — | `AbstractEventBusTck`, `…EventLoopTck`, `…KafkaEventEngineTck`, +5 | — |
 | `…spi.graph` | **preview** | 0.5.0 | — | `AbstractGraphProviderTck`, `…GraphEngineTck`, `…GraphDialectTck`, +3 | — |
 | `…spi.security` | **preview** | 0.5.0 | ADR-014 (RBAC) | `AbstractSecurityProviderTck`, `…RequiresRoleTck`, `…CitadelGuardTck`, +6 | — |
+| `…spi.security.identity` | **preview** | 0.10.0 | ADR-040 | `AbstractIdentityProviderTck` | — |
 | `…spi.crypto` | **preview** | 0.5.0 | ADR-008 (TLS engine) | `AbstractCryptoEngineTck` | yes (FFM crypto) |
-| `…spi.http` | **mixed** | 0.5.0 | ADR-009 / ADR-032 / ADR-034 | see per-surface rows below | yes (HTTP/3 path) |
+| `…spi.scheduling` | **preview** | 0.11.0 | ADR-057 | `AbstractJobSchedulerTck` | — |
+| `…spi.storage.blob` | **preview** | 0.11.0 | ADR-056 | `AbstractBlobStorageTck` | — |
+| `…spi.http` | **mixed** | 0.5.0 | ADR-009 / ADR-032 / ADR-034 / ADR-043 | see per-surface rows below | yes (HTTP/3 path) |
 | `…spi.util` | _internal_ | 0.5.0 | — | — | — |
 
 ¹ `config`: `ConfigProvider` / `KernelProfile` / `Dynamic` are mature 0.5.0 contracts and treated
@@ -71,15 +94,39 @@ as `stable`. The `@Immutable` annotation + watcher-refusal semantics (since 0.9.
 
 ### `…spi.http` per-surface breakdown
 
+Because this package is `mixed`, the breakdown is **exhaustive**: every class in
+`eu.exeris.kernel.spi.http` appears in exactly one row. A class named in no row would be neither
+gated nor reported by the compatibility gate, so completeness here is enforced, not aspirational —
+`spi-api-diff.sh --verify-surfaces` checks per fully-qualified class name.
+
 | HTTP surface | Level | Since | Anchor ADR | TCK |
 |---|---|---|---|---|
 | `HttpClientEngine`, `HttpServerEngine`, `HttpProvider`, `HttpExchange`, `HttpHandler` | **stable** | 0.5.0 | ADR-009 | `AbstractHttpClientEngineTck`, `…HttpServerEngineTck`, `…HttpProviderTck`, `…HttpExchangeTck`, `…HttpHandlerTck` |
+| Request/response carriers: `HttpRequest`, `HttpResponse`, `HttpTypedResponse`, `HttpStatus`, `HttpMethod`, `HttpVersion`, `HttpHeader` | **stable** | 0.5.0 | ADR-009 | exercised through the engine/exchange/handler TCKs above |
+| Engine wiring: `HttpConfig`, `HttpMode`, `HttpKernelProviders` | **stable** | 0.5.0 | ADR-009 | `AbstractHttpProviderTck`, `…HttpProviderLoopbackTck` |
 | `HttpClientRequestEnricher` | **stable** | 0.8.0 | ADR-032 | `AbstractHttpClientRequestEnricherTck` |
-| `HttpRequestBodyEncoder` / `HttpRequestBodyDecoder` / `HttpResponseBodyDecoder` | **preview** | 0.8.0 | ADR-034 | `AbstractHttpRequestBodyEncoderTck`, `…RequestBodyDecoderTck`, `…ResponseBodyDecoderTck` |
+| Body codecs: `HttpRequestBodyEncoder`, `HttpRequestBodyDecoder`, `HttpResponseBodyEncoder`, `HttpResponseBodyDecoder`, `HttpRequestBodyEncoderRegistry`, `HttpRequestBodyDecoderRegistry`, `HttpResponseBodyEncoderRegistry`, `HttpResponseBodyDecoderRegistry`, `HttpRequestEncodingContext`, `HttpRequestDecodingContext`, `HttpResponseEncodingContext`, `HttpResponseDecodingContext`, `HttpEncodedBody` | **preview** | 0.8.0 | ADR-034 / ADR-036 | `AbstractHttpRequestBodyEncoderTck`, `…RequestBodyDecoderTck`, `…ResponseBodyDecoderTck` |
+| Client retry: `HttpRetryPolicy`, `RetryDecision`, `HttpAttemptOutcome` | **preview** | 0.10.0 | ADR-045 | `AbstractHttpRetryPolicyTck` |
+| Route authorization: `HttpRoutePolicy`, `RouteRequirement` | **preview** | 0.11.0 | ADR-061 | `AbstractHttpRoutePolicyTck` |
+| `HttpStreamExchange` / `HttpStreamHandler` / `StreamEvent` (SSE server-push) | **preview** | 0.10.0 | ADR-043 | `AbstractHttpStreamExchangeTck` |
+
+> One asymmetry is deliberate and worth stating, because it looks like an error: `HttpProvider` is
+> `stable` while the four codec `…Registry` types it returns are `preview`. Every such method is a
+> `default` returning `empty()` / `Optional.empty()`, so the codec seam is opt-in and a provider
+> implementor inherits no obligation from it — the settled part of `HttpProvider` is unaffected by
+> the quadrant still moving. If the registries' shape changes, the gate reports it without failing
+> the build, which is the intended reading of `preview` and not a hole in `stable`.
 
 > The body-codec quadrant has an **accepted ADR (ADR-034)** and executable TCKs, so it is past
 > `experimental` — but the server-side generator that consumes the request decoder lands in a
 > later cycle, so the contract is held at `preview` until that loop closes.
+
+> The streaming surface is wired end-to-end and TCK-pinned, but changes are still in flight rather
+> than merely possible: the wire framing is HTTP/1.1 close-delimited today (per-event chunked framing
+> and an HTTP/2 `DATA` path are follow-ups), the JWT-expiry deadline is built and TCK-pinned but not
+> yet passed by production dispatch, and 0.11 added `pathParams()` to the interface. `preview` is the
+> honest label until those close — see [`subsystems/http.md`](./subsystems/http.md) for the per-item
+> delivery status.
 
 `util` is excluded from the consumer matrix: `eu.exeris.kernel.spi.util` currently contains only
 `SpiDiagnostics`, an internal helper — not a consumer-facing SPI surface.
@@ -102,11 +149,19 @@ elsewhere; `CHANGELOG.md` links here for the authoritative version.
 
 ### Pre-1.0 / TRL-3 framing
 
-Exeris is pre-1.0 / TRL-3. There are no external SPI consumers under contract today. This matrix is
-a **statement of intent for v1.0**, not a present-day patch-line guarantee — a v0.9.x patch may
-still carry an observable contract addition. The matrix exists so that, as the first external
-consumer (`exeris-ai-bridge`) integrates, both sides share one honest picture of what is settled and
-what is still moving. v1.0 release notes will restate this framing explicitly.
+Exeris is pre-1.0 / TRL-3, and no SPI consumer is under a support contract today. This matrix is a
+**statement of intent for v1.0**, not a present-day patch-line guarantee — a patch release may still
+carry an observable contract addition. v1.0 release notes will restate this framing explicitly.
+
+"No support contract" is not the same as "no consumers": integrations against released versions
+exist, both inside the ecosystem (`exeris-ai-bridge`, host runtimes) and outside it. The matrix
+exists so that everyone integrating shares one honest picture of what is settled and what is still
+moving — and, since v0.11, so does the generated compatibility record that backs it.
+
+Where that record and this table disagree, the record wins and this table is the bug. The gate that
+produces it (`tools/spi-api-diff/`) reads its labels from
+`tools/spi-api-diff/stability-surfaces.conf`, which must be updated in the same commit as any
+maturity change here.
 
 ---
 

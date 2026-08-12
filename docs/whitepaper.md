@@ -52,8 +52,10 @@ per second on a single thread** via L1 cache alignment after value-type flatteni
 Exeris replaces legacy reactive event loops with massive, blocking concurrency.
 
 - **Thread-per-Request:** Simplified programming model with sub-millisecond context switching on Carrier Threads.
-- **Structured Concurrency:** Guaranteed resource cleanup and fail-safe error propagation via `StructuredTaskScope`
-  (JEP 525). All parallel operations are strictly bound — never unstructured.
+- **Structured Concurrency:** Guaranteed resource cleanup and fail-safe error propagation — every
+  task's lifetime is owned by the scope that started it, and all parallel operations are strictly
+  bound, never unstructured. The distributed artifact implements this on GA APIs (virtual threads
+  plus `ScopedValue`), so it requires no preview flag of its consumers; see ADR-066.
 
 ### 2.3 The Graph Paradox (Data over Driver)
 
@@ -156,12 +158,17 @@ Community and Enterprise tiers are measured separately.
 | **Bootstrap cold start P99**        | ≤ 500 ms                 | ≤ 800 ms                   | JFR `BootstrapJfrEvents.KernelBootReadyEvent`          |
 | **Saga state transition P99**       | ≤ 5 ms (DB-bound)        | ≤ 1 µs (memory-bound)      | JMH `AbstractFlowParkWakeBenchmark`         |
 | **OpenSSL ABI symbol resolution**   | 100% (all bound symbols) | 100% (all bound symbols)   | Planned: ABI symbol TCK (OpenSSL/FFM)       |
-| **Throughput (reference profile)**  | ~2,800 RPS/vCPU          | ~8,500 RPS/vCPU            | JMH + flame graph analysis          |
+| **Throughput (reference profile)**  | ~2,800 RPS/vCPU (target) | ~8,500 RPS/vCPU (target — `io_uring` path not yet measured end-to-end) | JMH + flame graph analysis          |
 
-> **Measurement context for throughput:** "RPS/vCPU" measured with synthetic HTTP/1.1 workload,
-> no persistence (in-memory mock), 10k concurrent connections. Persistence-bound workloads will
-> be lower (Community: JDBC-limited; Enterprise: native driver dependent). Flame graph–based
-> profiling was used to validate tier-specific hotspots and throughput characteristics.
+> **Throughput-row context:** the RPS/vCPU figures are **design targets**, defined against a synthetic
+> HTTP/1.1 workload (1 KB hello-world-class payload, no persistence — in-memory mock, 10k concurrent
+> connections); the concrete scenario id and build tag are pinned per published run in `exeris-benchmarks`.
+> Persistence-bound workloads will be lower (Community: JDBC-limited; Enterprise: native driver dependent).
+> Neither figure is a certified measurement yet: the Community figure awaits the reference-profile
+> (`perf-box-amd64`) validation campaign (§5.1), and the Enterprise figure's `io_uring`/native-bypass
+> transport has not been measured end-to-end (Enterprise transport benchmarks pending bootstrap wiring).
+> Flame-graph profiling to date informs hotspot analysis on the measured paths; it does not substitute
+> for those end-to-end runs.
 
 ---
 

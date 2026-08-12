@@ -155,6 +155,52 @@ class CoreFlowRuntimeTest {
 
     @Test
     @Timeout(value = 10, unit = TimeUnit.SECONDS)
+    @DisplayName("a wake refused because a run holds the instance is recorded, and claimed exactly once")
+    void refusedWakeIsRecordedAndClaimedExactlyOnce() {
+        try (CoreFlowEngine engine = startedEngine()) {
+            FlowDefinition definition = engine.plans().newDefinition("deferred-wake-bookkeeping")
+                    .step("park", _ -> FlowOutcome.PARK, null)
+                    .step("resume", _ -> FlowOutcome.COMPLETE, null)
+                    .build();
+
+            CoreFlowExecutionPlan plan = (CoreFlowExecutionPlan) engine.plans().compile(definition);
+            RuntimeFlowInstance instance = RuntimeFlowInstance.fromContext(
+                    plan,
+                    context("deferred-wake-bookkeeping-instance", definition.name(), 0, FlowState.PARKED),
+                    1L
+            );
+
+            assertThat(instance.claimPendingWake())
+                    .as("an instance nobody tried to wake has nothing deferred")
+                    .isFalse();
+
+            assertThat(instance.beginScheduleAfterWake())
+                    .as("the first wake claims scheduling outright")
+                    .isEqualTo(1);
+            assertThat(instance.beginScheduleAfterWake())
+                    .as("a second wake cannot schedule — the first run still owns the instance")
+                    .isNegative();
+
+            assertThat(instance.claimPendingWake())
+                    .as("that refusal must leave the intent recorded; dropping it here is the defect "
+                            + "this pins, and it is invisible from outside the instance")
+                    .isTrue();
+            assertThat(instance.claimPendingWake())
+                    .as("claimed exactly once — a second claimant would launch the flow twice")
+                    .isFalse();
+
+            assertThat(instance.beginScheduleAfterWake())
+                    .as("still scheduled, so this refuses too")
+                    .isNegative();
+            assertThat(instance.claimPendingWake())
+                    .as("each refusal re-arms; a wake after an earlier one was consumed is a "
+                            + "separate request and must not be swallowed by the previous claim")
+                    .isTrue();
+        }
+    }
+
+    @Test
+    @Timeout(value = 10, unit = TimeUnit.SECONDS)
     @DisplayName("lookupParked suppresses repeated snapshot-store probes after a miss")
     void lookupParkedSuppressesRepeatedSnapshotStoreProbesAfterMiss() {
         CountingSnapshotStore snapshotStore = new CountingSnapshotStore();

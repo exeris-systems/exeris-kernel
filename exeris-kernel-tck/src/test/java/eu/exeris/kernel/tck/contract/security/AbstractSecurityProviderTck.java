@@ -23,7 +23,7 @@ import org.junit.jupiter.api.Test;
 import java.time.Duration;
 import java.util.Comparator;
 import java.util.ServiceLoader;
-import java.util.concurrent.StructuredTaskScope;
+import eu.exeris.kernel.tck.support.TckScope;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -294,6 +294,81 @@ public abstract class AbstractSecurityProviderTck {
      * Caller owns the buffer lifecycle.
      */
     protected abstract LoanedBuffer createTokenWithUnrecognizedStrategy();
+
+    /**
+     * Creates a {@link LoanedBuffer} containing a token whose isolation strategy claim is
+     * <b>present but not representable as a single string</b> — e.g. a JSON number, boolean, array,
+     * or object as the value of
+     * {@link eu.exeris.kernel.spi.security.KernelIsolationClaims#ISOLATION_STRATEGY}. An unrecognised
+     * <i>string</i> value is a different case, covered by {@link #createTokenWithUnrecognizedStrategy()}.
+     *
+     * <p>The provider MUST <b>deny</b> this token ({@link SecurityAuthenticationException},
+     * {@code EX-SEC-2002}).
+     *
+     * <h2>Why this case is the binding's own obligation</h2>
+     * <p>Every other isolation deny in this contract is enforced centrally: bindings route through
+     * {@link eu.exeris.kernel.spi.security.identity.IdentityStorageMapping#fromClaims} and inherit
+     * them for free. This one they do not inherit.
+     * {@link eu.exeris.kernel.spi.security.identity.VerifiedClaims#claim(String)} deliberately carries
+     * no deny logic and reports a present-but-not-single-string claim as <b>absent</b>, so a
+     * wrong-typed strategy arrives at the mapping as the permissive "no isolation intent" case and
+     * resolves to {@link StorageContext.IsolationStrategy#SHARED}. The deny must therefore happen
+     * earlier, in the binding's own token validation.
+     *
+     * <p>A binding that omits that check silently downgrades malformed security input to the weakest
+     * isolation tier — fail-OPEN — while passing every other case in this suite. That is why the case
+     * exists here rather than only in a binding-local unit test.
+     *
+     * <p>Caller owns the buffer lifecycle.
+     */
+    protected abstract LoanedBuffer createTokenWithWrongTypedStrategy();
+
+    /**
+     * Creates a {@link LoanedBuffer} containing a token whose
+     * {@link eu.exeris.kernel.spi.security.KernelIsolationClaims#SHARED_SCOPE_KEY} claim is
+     * <b>present but not representable as a single string</b> — the shared-scope counterpart of
+     * {@link #createTokenWithWrongTypedStrategy()}.
+     *
+     * <p>The provider MUST <b>deny</b> this token ({@link SecurityAuthenticationException},
+     * {@code EX-SEC-2002}).
+     *
+     * <h2>Why this is a second obligation and not the same one</h2>
+     * <p>The structural cause is shared — {@code claim()} reports the wrong-typed value as absent, so
+     * the mapping never sees it — but the resulting harm is not, so discharging one check does not
+     * discharge the other. A wrong-typed strategy resolves to {@code SHARED} and weakens the
+     * provisioned tier. A wrong-typed shared scope resolves to tenant-private: it grants nothing, and
+     * instead <em>withholds</em> visibility the caller asked for and an enforcing deployment was ready
+     * to grant, with no signal that anything was wrong.
+     *
+     * <p>That silent withholding is why this case did not exist before v0.11: while every declared
+     * shared scope was denied outright, the mistyped token reached the same outcome as the well-typed
+     * one, so nothing was hidden. ADR-012 §4b.7 removed that coincidence by making the deny conditional
+     * on the deployment (see §10).
+     *
+     * <p>Caller owns the buffer lifecycle.
+     */
+    protected abstract LoanedBuffer createTokenWithWrongTypedSharedScope();
+
+    /**
+     * Creates a {@link LoanedBuffer} containing a token declaring
+     * {@link eu.exeris.kernel.spi.security.KernelIsolationClaims#SHARED_SCOPE_KEY} — a shared-scope
+     * partition the subject asks to participate in.
+     *
+     * <p>The provider MUST <b>deny</b> this token ({@link SecurityAuthenticationException},
+     * {@code EX-SEC-2002}) unless it was constructed for a deployment asserting it enforces the
+     * shared-scope policy contract (ADR-012 §4b.7). Neither alternative is permitted (ADR-012 §4b.5):
+     * resolving it to a tenant-private context silently narrows what the caller asked for, and honouring
+     * it produces a context claiming visibility that nothing enforces — the S-P0-07 class.
+     *
+     * <p>That inversion has now happened, and the case did not disappear: it became conditional on the
+     * deployment, so there is still no window in which a declared shared scope resolves to anything but
+     * deny or correct enforcement. The enforcing half of the seam is asserted in
+     * {@code AbstractIdentityProviderTck}, whose SUT is a template method and can therefore supply an
+     * enforcing instance; this suite pins the unenforced default.
+     *
+     * <p>Caller owns the buffer lifecycle.
+     */
+    protected abstract LoanedBuffer createTokenWithSharedScopeClaim();
 
     // =========================================================================
     // Optional rotation harness — default-skip for non-rotating subclasses
@@ -694,7 +769,7 @@ public abstract class AbstractSecurityProviderTck {
         void concurrentAuthenticate() throws InterruptedException {
             AtomicReference<Throwable> failure = new AtomicReference<>();
 
-            try (var scope = StructuredTaskScope.open()) {
+            try (var scope = TckScope.open()) {
                 for (int i = 0; i < 100; i++) {
                     scope.fork(() -> {
                         try (LoanedBuffer token = createValidTokenBuffer()) {
@@ -897,6 +972,72 @@ public abstract class AbstractSecurityProviderTck {
                         .as("a declared-but-unrecognised strategy value cannot be honoured and MUST "
                                 + "be denied \u2014 downgrading to SHARED grants a session on an injection "
                                 + "probe instead of rejecting it (S-P0-07 / ADR-012 \u00a74a amended)")
+                        .isInstanceOfSatisfying(SecurityAuthenticationException.class, ex ->
+                                assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_SEC_2002));
+            }
+        }
+
+        @Test
+        @DisplayName("wrong-typed strategy claim \u2192 terminal deny (EX-SEC-2002)")
+        void assert_authenticate_denies_on_wrong_typed_strategy() {
+            try (LoanedBuffer token = createTokenWithWrongTypedStrategy()) {
+                assertThatThrownBy(() -> provider.authenticate(token))
+                        .as("a present-but-not-string ISOLATION_STRATEGY is malformed security input "
+                                + "and MUST be denied. This is the one isolation deny the kernel cannot "
+                                + "make on a binding's behalf: VerifiedClaims.claim() reports a "
+                                + "wrong-typed claim as ABSENT, so it reaches "
+                                + "IdentityStorageMapping.fromClaims as the permissive no-intent case "
+                                + "and would resolve to SHARED. A binding that does not type-check "
+                                + "during validation fails OPEN here with every other gate green "
+                                + "(S-P0-07 / ADR-012 \u00a74a amended, \u00a79 enforcement layers)")
+                        .isInstanceOfSatisfying(SecurityAuthenticationException.class, ex ->
+                                assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_SEC_2002));
+            }
+        }
+
+        @Test
+        @DisplayName("wrong-typed shared-scope claim \u2192 terminal deny (EX-SEC-2002)")
+        void assert_authenticate_denies_wrong_typed_shared_scope() {
+            try (LoanedBuffer token = createTokenWithWrongTypedSharedScope()) {
+                assertThatThrownBy(() -> provider.authenticate(token))
+                        .as("a present-but-not-string SHARED_SCOPE_KEY is malformed security input and "
+                                + "MUST be denied by the binding's own validation \u2014 "
+                                + "VerifiedClaims.claim() reports it as ABSENT, so it reaches "
+                                + "IdentityStorageMapping.fromClaims as \"no shared scope declared\". "
+                                + "A binding that skips the check does not fail open here; it fails "
+                                + "SILENT, resolving the request to tenant-private and withholding "
+                                + "visibility an enforcing deployment was ready to grant, with every "
+                                + "other gate green (ADR-012 \u00a74b.7, \u00a79 enforcement layers)")
+                        .isInstanceOfSatisfying(SecurityAuthenticationException.class, ex ->
+                                assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_SEC_2002));
+            }
+        }
+
+        @Test
+        @DisplayName("no shared-scope claim \u2192 tenant-private (sharedScopeKey empty)")
+        void assert_authenticate_defaults_to_tenant_private_scope() {
+            try (LoanedBuffer token = createTokenWithNoIsolationClaim()) {
+                StorageContext storage = provider.authenticate(token).storage();
+                assertThat(storage.sharedScopeKey())
+                        .as("absence of a shared-scope claim MUST mean the tenant-private default \u2014 "
+                                + "the behaviour of every deployment predating the accessor "
+                                + "(ADR-012 \u00a74b.5)")
+                        .isEmpty();
+            }
+        }
+
+        @Test
+        @DisplayName("declared shared scope \u2192 terminal deny while unenforceable (EX-SEC-2002)")
+        void assert_authenticate_denies_declared_shared_scope_while_unenforceable() {
+            try (LoanedBuffer token = createTokenWithSharedScopeClaim()) {
+                assertThatThrownBy(() -> provider.authenticate(token))
+                        .as("this provider is not constructed for a deployment asserting it enforces "
+                                + "the shared-scope policy contract (ADR-012 §4b.7), so a declared "
+                                + "shared scope MUST deny. Resolving it tenant-private would silently "
+                                + "narrow what the caller asked for; honouring it would hand back a "
+                                + "context claiming visibility nothing enforces (S-P0-07 class). "
+                                + "ADR-012 \u00a74b.5 forbids both \u2014 there must be no window where a "
+                                + "declared scope resolves to anything but deny or enforcement")
                         .isInstanceOfSatisfying(SecurityAuthenticationException.class, ex ->
                                 assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_SEC_2002));
             }

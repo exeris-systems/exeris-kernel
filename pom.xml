@@ -5,7 +5,7 @@
 
     <groupId>eu.exeris</groupId>
     <artifactId>exeris-kernel-root</artifactId>
-    <version>0.10.2</version>
+    <version>0.11.0</version>
     <packaging>pom</packaging>
 
     <name>Exeris Kernel :: Root</name>
@@ -29,10 +29,16 @@
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
-        <maven.compiler.source>26</maven.compiler.source>
-        <maven.compiler.target>26</maven.compiler.target>
-        <maven.compiler.release>26</maven.compiler.release>
+        <maven.compiler.source>25</maven.compiler.source>
+        <maven.compiler.target>25</maven.compiler.target>
+        <maven.compiler.release>25</maven.compiler.release>
 
+        <!--
+            ADR-066: the DISTRIBUTED artifact is preview-clean, so main sources compile without
+            this flag. Test and TCK fixtures still use StructuredTaskScope (26 files) and are not
+            distributed, so it is applied to the test-compile execution only, and to the surefire
+            JVM below because preview-stamped test classes will not load without it.
+        -->
         <jdk.preview.enable>--enable-preview</jdk.preview.enable>
         <coverage.argLine/>
 
@@ -79,10 +85,17 @@
                     <version>3.14.1</version>
                     <configuration>
                         <release>${maven.compiler.release}</release>
-                        <compilerArgs>
-                            <arg>${jdk.preview.enable}</arg>
-                        </compilerArgs>
                     </configuration>
+                    <executions>
+                        <execution>
+                            <id>default-testCompile</id>
+                            <configuration>
+                                <compilerArgs>
+                                    <arg>${jdk.preview.enable}</arg>
+                                </compilerArgs>
+                            </configuration>
+                        </execution>
+                    </executions>
                 </plugin>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
@@ -90,6 +103,20 @@
                     <version>3.2.5</version>
                     <configuration>
                         <argLine>@{coverage.argLine} ${jvm.args}</argLine>
+                        <systemPropertyVariables>
+                            <!--
+                              A test that hangs is worse than a test that fails: it holds the build
+                              open with no message, and CI reports a timeout on the job rather than a
+                              name. This repository tests concurrency primitives, so several suites
+                              wait on a latch whose only other exit is an interrupt from the very
+                              teardown they are checking — StructuredScopeTest's neverReleased is the
+                              clearest case, and the regression named in its own @DisplayName would
+                              hang it rather than fail it. Nothing bounded them: no @Timeout on those
+                              methods, no forkedProcessTimeoutInSeconds here or in any parent.
+                              Ten minutes is far above any test in the reactor and far below "never".
+                            -->
+                            <junit.jupiter.execution.timeout.default>10 m</junit.jupiter.execution.timeout.default>
+                        </systemPropertyVariables>
                     </configuration>
                 </plugin>
             </plugins>

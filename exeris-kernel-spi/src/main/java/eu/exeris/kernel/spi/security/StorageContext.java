@@ -96,6 +96,38 @@ public interface StorageContext {
     Optional<String> dataSourceKey();
 
     /**
+     * The shared-scope partition this request participates in, if any.
+     *
+     * <h2>An orthogonal dimension, not a fourth strategy</h2>
+     * <p>{@link #strategy()} answers <i>where rows physically live</i>; this answers <i>who may read a
+     * given row</i>. The two are independent: a shared dataset is valid under
+     * {@link IsolationStrategy#SHARED}, {@link IsolationStrategy#SEPARATED_SCHEMA}, and
+     * {@link IsolationStrategy#DEDICATED} alike (ADR-012 §4b).
+     *
+     * <h2>Presence is the mode</h2>
+     * <p>There is deliberately no separate visibility-mode accessor to reconcile this against:
+     * <ul>
+     *   <li><b>empty</b> — tenant-private. Rows are visible only to {@link #isolationKey()}. This is the
+     *       default and matches the behaviour of every deployment that predates this accessor.</li>
+     *   <li><b>present</b> — reads widen to the shared partition; writes stay pinned to
+     *       {@link #isolationKey()} as the owner, so a tenant can never create or mutate another owner's
+     *       row (ADR-012 §4b.4).</li>
+     * </ul>
+     *
+     * <p>A context carrying a shared scope always carries an {@link #isolationKey()} too — the write
+     * predicate has nothing to pin to otherwise. Implementations MUST reject that combination.
+     *
+     * <p>Like every other accessor here this is an <em>outcome</em>, not a mechanism: no RLS predicate,
+     * policy object, or driver type crosses this interface.
+     *
+     * @return the shared-scope partition key, or empty for the tenant-private default
+     * @since 0.11.0
+     */
+    default Optional<String> sharedScopeKey() {
+        return Optional.empty();
+    }
+
+    /**
      * Opaque key-value attributes for passing interceptor metadata.
      *
      * <p>Allows callers to attach additional context that

@@ -87,6 +87,7 @@ public final class NativeTcpCarrier implements TransportEngine {
     private final NativeTcpSocketBackend backend;
 
     private final AtomicBoolean running = new AtomicBoolean(false);
+    private final AtomicBoolean draining = new AtomicBoolean(false);
     private final AtomicBoolean closed = new AtomicBoolean(false);
 
     private final AtomicLong streamSeq = new AtomicLong(1);
@@ -94,6 +95,8 @@ public final class NativeTcpCarrier implements TransportEngine {
     private final AtomicLong activeConnections = new AtomicLong();
     private final AtomicLong activeStreams = new AtomicLong();
     private final AtomicLong totalAccepted = new AtomicLong();
+    private final AtomicLong refusedConnections = new AtomicLong();
+    private final AtomicLong acceptFaults = new AtomicLong();
 
     private volatile StreamHandler streamHandler;
     private volatile ConnectionHandler connectionHandler = connection -> {
@@ -178,36 +181,94 @@ public final class NativeTcpCarrier implements TransportEngine {
         }
     }
 
+    /**
+     * Graceful stop per the {@code TransportEngine.stop()} contract: stop accepting, drain in-flight
+     * streams for a bounded period, then force-close whatever is left.
+     *
+     * <p>The drain machinery is {@link PaqsScheduler#close()} — it waits for the admission
+     * controller's active-stream count to reach zero under a 60-second hard deadline. It was already
+     * here, but it ran <em>last</em>, after {@code closeSelectorAndChannels()} had closed the sockets
+     * and the reactors had exited. Handlers were therefore drained against dead file descriptors:
+     * a request that had reached its handler completed, and its response went nowhere. The peer saw a
+     * connection closed with no reply, and an idempotent client retried into a listener that was
+     * already gone.
+     *
+     * <p>So the order below is the fix, not the mechanism. Ingress closes first, the reactors stay up
+     * to carry responses out, the drain runs while they can still flush, and only then does anything
+     * get torn down.
+     */
     @Override
     public void stop() {
+        // Claim the stop before clearing `running`, and in this order. The reactors' liveness
+        // predicate is `running || draining`, so raising `draining` second would leave a window where
+        // both read false and a reactor could exit before the drain has even begun — the very failure
+        // this method exists to prevent, reintroduced at instruction scale. Entering through the
+        // `draining` CAS also makes the guard atomic: a concurrent second stop() loses the race here
+        // and returns, instead of both threads passing a separate check.
+        if (!draining.compareAndSet(false, true)) {
+            return;
+        }
         if (!running.compareAndSet(true, false)) {
+            // Not running — nothing to drain, and `draining` must not stay raised or the reactors of a
+            // subsequent start() would never be allowed to exit.
+            draining.set(false);
             return;
         }
 
-        closeQuietly(serverChannel);
+        try {
+            // Phase 1 — close ingress. No new connections; the reactors keep serving admitted ones.
+            closeQuietly(serverChannel);
 
-        Thread acceptor = acceptorThread;
-        if (acceptor != null) {
-            try {
-                acceptor.join(2_000L);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
+            Thread acceptor = acceptorThread;
+            if (acceptor != null) {
+                try {
+                    acceptor.join(2_000L);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
             }
-        }
 
-        for (NativeTcpReactor reactor : reactors) {
-            reactor.wakeup();
-        }
-        for (NativeTcpReactor reactor : reactors) {
-            reactor.join(2_000L);
-        }
+            // Phase 2 — drain in-flight streams while the write path is still alive.
+            long drainStartNanos = System.nanoTime();
+            PaqsScheduler localPaqs = paqs;
+            int openAtStart = paqsActiveStreams();
+            int busyAtStart = localPaqs == null ? 0 : localPaqs.drainCoordinator().busyStreams();
+            if (localPaqs != null) {
+                localPaqs.close();
+            }
+            // busyAtSeal(), not busyStreams(): close() always leaves the coordinator sealed, and a
+            // sealed count reads as 0 by design, so asking after the fact reported "nothing was left
+            // behind" even when the 60s deadline had just abandoned live streams. The coordinator
+            // records what it discarded at the moment it sealed.
+            int busyRemaining = localPaqs == null ? 0 : localPaqs.drainCoordinator().busyAtSeal();
+            CommunityTransportDrainEvent.emit(
+                    engineName(),
+                    busyAtStart,
+                    busyRemaining,
+                    openAtStart,
+                    System.nanoTime() - drainStartNanos);
+        } finally {
+            // Phase 3 — the drain is over by completion, by deadline, or by a throw above; either way
+            // the loops come down. In a finally because `draining` is this method's own re-entry
+            // guard: leaving it raised makes the engine permanently unstoppable. The reactors' liveness
+            // predicate is `running || draining`, `running` is already false, and a second stop() loses
+            // the entry CAS and returns — so the reactors would spin forever and every accepted fd
+            // would leak, with no recovery short of restarting the JVM.
+            draining.set(false);
+            for (NativeTcpReactor reactor : reactors) {
+                reactor.wakeup();
+            }
+            for (NativeTcpReactor reactor : reactors) {
+                reactor.join(2_000L);
+            }
 
-        closeSelectorAndChannels();
+            closeSelectorAndChannels();
+        }
+    }
 
+    private int paqsActiveStreams() {
         PaqsScheduler localPaqs = paqs;
-        if (localPaqs != null) {
-            localPaqs.close();
-        }
+        return localPaqs == null ? 0 : localPaqs.admissionController().activeStreamCount();
     }
 
     @Override
@@ -283,10 +344,12 @@ public final class NativeTcpCarrier implements TransportEngine {
         if (!running.get()) {
             return TransportStats.EMPTY;
         }
-        long rejected = 0L;
+        // Both refusal paths, not just the PAQS one. A caller reading totalRejected is asking "is
+        // this server turning work away", and an accept-time refusal is the most total form of that.
+        long rejected = refusedConnections.get();
         PaqsScheduler localPaqs = paqs;
         if (localPaqs != null) {
-            rejected = localPaqs.loadShedder().shedCount();
+            rejected += localPaqs.loadShedder().shedCount();
         }
         return new TransportStats(
                 (int) activeConnections.get(),
@@ -317,6 +380,25 @@ public final class NativeTcpCarrier implements TransportEngine {
 
     /* default */ boolean isRunning() {
         return running.get();
+    }
+
+    /**
+     * Whether the reactor loops should keep selecting.
+     *
+     * <p>Distinct from {@link #isRunning()} because a graceful stop has two phases, and collapsing
+     * them is what broke the drain: {@code running} goes false the instant {@link #stop()} decides to
+     * stop <em>accepting</em>, while the reactors must keep flushing responses for streams already
+     * admitted. A reactor that exits on {@code running} alone takes the write path down with it, so
+     * the drain that follows has nothing left to drain through.
+     *
+     * <p>These are two independent reads, not one atomic state, so {@link #stop()} owes them an
+     * ordering invariant: at least one of the two flags reads true from the moment a stop is claimed
+     * until the drain has finished. {@code stop()} raises {@code draining} <em>before</em> clearing
+     * {@code running} for exactly that reason — the reverse order leaves a window, however narrow, in
+     * which both read false and a reactor exits ahead of the drain.
+     */
+    /* default */ boolean isReactorActive() {
+        return running.get() || draining.get();
     }
 
     /* default */ String requestedSocketBackend() {
@@ -457,6 +539,34 @@ public final class NativeTcpCarrier implements TransportEngine {
         }
     }
 
+    /**
+     * Records a connection refused at the {@code maxConnections} ceiling.
+     *
+     * <p>Observability only — the refusal itself is unchanged. Whether an accept-time cap is the
+     * right mechanism, and whether its default is right, are separate decisions; this makes the
+     * existing behaviour visible so they can be taken on evidence.
+     */
+    private void recordRefusal() {
+        long total = refusedConnections.incrementAndGet();
+        CommunityConnectionRefusedEvent.emit(
+                config.bindAddress(), config.port(), activeConnections.get(),
+                config.maxConnections(), total);
+    }
+
+    /**
+     * Records a connection that was accepted and then failed during setup.
+     *
+     * <p>Recovery is unchanged — continuing the accept loop after a per-connection failure is
+     * correct, and making this fatal would trade a silent drop for an availability regression. Only
+     * the silence is removed.
+     */
+    private void recordAcceptFault(RuntimeException exception) {
+        long total = acceptFaults.incrementAndGet();
+        CommunityAcceptFaultEvent.emit(
+                config.bindAddress(), config.port(), exception.getClass().getName(), total);
+    }
+
+
     private boolean tryReserveConnectionSlot() {
         long maxConnections = config.maxConnections();
         while (true) {
@@ -509,6 +619,7 @@ public final class NativeTcpCarrier implements TransportEngine {
             try {
                 slotReserved = tryReserveConnectionSlot();
                 if (!slotReserved) {
+                    recordRefusal();
                     closeQuietly(currentChannel);
                     acceptedChannel = serverChannel.accept();
                     continue;
@@ -526,6 +637,7 @@ public final class NativeTcpCarrier implements TransportEngine {
                 connectionManagedByStreamLifecycle = true;
                 registerConnection(connection, stream, currentChannel);
             } catch (RuntimeException exception) {
+                recordAcceptFault(exception);
                 if (connection != null) {
                     connection.close();
                 } else {

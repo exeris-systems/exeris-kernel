@@ -8,6 +8,9 @@
  */
 package eu.exeris.kernel.community.testkit.http;
 
+import eu.exeris.kernel.community.testkit.FixtureBootLock;
+import eu.exeris.kernel.community.testkit.FixtureThreads;
+import eu.exeris.kernel.community.testkit.SystemPropertySnapshot;
 import eu.exeris.kernel.core.bootstrap.KernelBootstrap;
 import eu.exeris.kernel.spi.bootstrap.BootstrapSelector;
 import eu.exeris.kernel.spi.http.HttpHandler;
@@ -16,8 +19,6 @@ import eu.exeris.kernel.spi.http.HttpServerEngine;
 
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -28,7 +29,7 @@ import java.util.concurrent.atomic.AtomicReference;
 /**
  * KernelBootstrap-based fixture that keeps HTTP running until explicitly closed.
  */
-@SuppressWarnings({"PMD.CyclomaticComplexity", "PMD.AvoidUsingHardCodedIP"})
+@SuppressWarnings("PMD.AvoidUsingHardCodedIP")
 public final class KernelBootstrapHttpEngineFixture implements EmbeddedHttpEngineFixture {
 
     private static final long START_TIMEOUT_SECONDS = 10L;
@@ -54,58 +55,68 @@ public final class KernelBootstrapHttpEngineFixture implements EmbeddedHttpEngin
                 throw new IllegalStateException("Fixture is already started");
             }
 
-            int reservedPort = reserveLoopbackPort();
-            PropertySnapshot propertySnapshot = PropertySnapshot.capture(
-                    "exeris.http.mode",
-                    "exeris.http.bindHost",
-                    "exeris.http.port",
-                    "http.mode",
-                    "http.bindHost",
-                    "http.port");
-
-            CountDownLatch startedSignal = new CountDownLatch(1);
-            CountDownLatch stop = new CountDownLatch(1);
-            AtomicReference<Throwable> startupFailure = new AtomicReference<>();
-
-            Thread thread = Thread.ofPlatform()
-                    .name("kernel-bootstrap-http-fixture")
-                    .uncaughtExceptionHandler((_, throwable) -> {
-                        startupFailure.compareAndSet(null, throwable);
-                        startedSignal.countDown();
-                    })
-                    .start(() -> runFixtureRuntime(
-                            handler,
-                            reservedPort,
-                            propertySnapshot,
-                            startedSignal,
-                            stop,
-                            startupFailure));
-
-            try {
-                if (!startedSignal.await(START_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
-                    stop.countDown();
-                    joinQuietly(thread);
-                    throw new IllegalStateException("Timed out while starting kernel HTTP fixture");
-                }
-            } catch (InterruptedException interruptedException) {
-                Thread.currentThread().interrupt();
-                stop.countDown();
-                joinQuietly(thread);
-                throw new IllegalStateException("Interrupted while starting kernel HTTP fixture",
-                        interruptedException);
-            }
-
-            Throwable failure = startupFailure.get();
-            if (failure != null) {
-                stop.countDown();
-                joinQuietly(thread);
-                throw new IllegalStateException("Kernel HTTP fixture failed to start", failure);
-            }
-
-            runtimeThread = thread;
-            stopSignal = stop;
-            started.set(true);
+            FixtureBootLock.bootExclusively(() -> bootAndAwaitStart(handler));
         }
+    }
+
+    /**
+     * Publishes configuration, starts the runtime thread, and returns once it has booted or failed.
+     *
+     * <p>Runs under {@link FixtureBootLock}: the properties are JVM-global and the kernel reads them
+     * uncached during subsystem initialisation, so no other fixture may boot while this is in flight.
+     */
+    private void bootAndAwaitStart(HttpHandler handler) {
+        int reservedPort = reserveLoopbackPort();
+        SystemPropertySnapshot propertySnapshot = SystemPropertySnapshot.capture(
+                "exeris.http.mode",
+                "exeris.http.bindHost",
+                "exeris.http.port",
+                "http.mode",
+                "http.bindHost",
+                "http.port");
+
+        CountDownLatch startedSignal = new CountDownLatch(1);
+        CountDownLatch stop = new CountDownLatch(1);
+        AtomicReference<Throwable> startupFailure = new AtomicReference<>();
+
+        Thread thread = Thread.ofPlatform()
+                .name("kernel-bootstrap-http-fixture")
+                .uncaughtExceptionHandler((_, throwable) -> {
+                    startupFailure.compareAndSet(null, throwable);
+                    startedSignal.countDown();
+                })
+                .start(() -> runFixtureRuntime(
+                        handler,
+                        reservedPort,
+                        propertySnapshot,
+                        startedSignal,
+                        stop,
+                        startupFailure));
+
+        try {
+            if (!startedSignal.await(START_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                stop.countDown();
+                FixtureThreads.joinQuietly(thread, STOP_TIMEOUT_SECONDS);
+                throw new IllegalStateException("Timed out while starting kernel HTTP fixture");
+            }
+        } catch (InterruptedException interruptedException) {
+            Thread.currentThread().interrupt();
+            stop.countDown();
+            FixtureThreads.joinQuietly(thread, STOP_TIMEOUT_SECONDS);
+            throw new IllegalStateException("Interrupted while starting kernel HTTP fixture",
+                    interruptedException);
+        }
+
+        Throwable failure = startupFailure.get();
+        if (failure != null) {
+            stop.countDown();
+            FixtureThreads.joinQuietly(thread, STOP_TIMEOUT_SECONDS);
+            throw new IllegalStateException("Kernel HTTP fixture failed to start", failure);
+        }
+
+        runtimeThread = thread;
+        stopSignal = stop;
+        started.set(true);
     }
 
     @Override
@@ -148,7 +159,7 @@ public final class KernelBootstrapHttpEngineFixture implements EmbeddedHttpEngin
         if (stopToSignal != null) {
             stopToSignal.countDown();
         }
-        joinQuietly(threadToJoin);
+        FixtureThreads.joinQuietly(threadToJoin, STOP_TIMEOUT_SECONDS);
 
         synchronized (lifecycleLock) {
             started.set(false);
@@ -158,7 +169,7 @@ public final class KernelBootstrapHttpEngineFixture implements EmbeddedHttpEngin
 
     private void runFixtureRuntime(HttpHandler handler,
                                    int reservedPort,
-                                   PropertySnapshot propertySnapshot,
+                                   SystemPropertySnapshot propertySnapshot,
                                    CountDownLatch startedSignal,
                                    CountDownLatch stop,
                                    AtomicReference<Throwable> startupFailure) {
@@ -208,57 +219,6 @@ public final class KernelBootstrapHttpEngineFixture implements EmbeddedHttpEngin
             return socket.getLocalPort();
         } catch (java.io.IOException exception) {
             throw new IllegalStateException("Unable to reserve loopback HTTP port", exception);
-        }
-    }
-
-    private static void joinQuietly(Thread thread) {
-        if (thread == null) {
-            return;
-        }
-
-        long deadlineNanos = System.nanoTime() + TimeUnit.SECONDS.toNanos(STOP_TIMEOUT_SECONDS);
-        while (thread.isAlive() && System.nanoTime() < deadlineNanos) {
-            try {
-                thread.join(100L);
-            } catch (InterruptedException _) {
-                Thread.currentThread().interrupt();
-                break;
-            }
-        }
-
-        if (thread.isAlive()) {
-            thread.interrupt();
-        }
-    }
-
-    private static final class PropertySnapshot {
-
-        private final List<String> keys;
-        private final List<String> values;
-
-        private PropertySnapshot(List<String> keys, List<String> values) {
-            this.keys = keys;
-            this.values = values;
-        }
-
-        private static PropertySnapshot capture(String... propertyKeys) {
-            List<String> capturedKeys = List.of(propertyKeys);
-            List<String> snapshotValues = new ArrayList<>(capturedKeys.size());
-            for (String key : capturedKeys) {
-                snapshotValues.add(System.getProperty(key));
-            }
-            return new PropertySnapshot(capturedKeys, snapshotValues);
-        }
-
-        private void restore() {
-            for (int index = 0; index < keys.size(); index++) {
-                String value = values.get(index);
-                if (value == null) {
-                    System.clearProperty(keys.get(index));
-                } else {
-                    System.setProperty(keys.get(index), value);
-                }
-            }
         }
     }
 }

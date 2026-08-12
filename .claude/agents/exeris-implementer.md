@@ -12,7 +12,7 @@ Delivery agent for writing and refactoring code without re-litigating architectu
 
 ## Primary Responsibilities
 - Implement requested behavior with minimal, targeted changes.
-- Apply Java 26+ runtime idioms where relevant (`ScopedValue`, `StructuredTaskScope`, FFM, immutable carriers).
+- Apply current runtime idioms where relevant (`ScopedValue`, FFM, immutable carriers, and structured concurrency through `core.concurrent.StructuredScope` — `StructuredTaskScope` is preview and belongs only on the `preview` branch).
 - Preserve The Wall and existing module boundaries.
 - Surface risks early when requested change conflicts with architecture constraints.
 

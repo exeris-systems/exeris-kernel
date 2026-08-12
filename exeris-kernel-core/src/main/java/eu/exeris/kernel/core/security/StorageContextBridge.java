@@ -39,18 +39,26 @@ import eu.exeris.kernel.spi.security.StorageContext;
  *
  * <p>For advanced isolation modes ({@link StorageContext.IsolationStrategy#SEPARATED_SCHEMA},
  * {@link StorageContext.IsolationStrategy#DEDICATED}), the correct
- * {@link StorageContext} is produced directly by the {@link eu.exeris.kernel.spi.security.SecurityProvider}
- * during authentication and bound by the Security Interceptor. This bridge
- * serves the common SHARED/RLS case and the tenant-less global path.
+ * {@link StorageContext} is produced from verified token claims by
+ * {@link eu.exeris.kernel.spi.security.identity.IdentityStorageMapping#fromClaims} and
+ * bound by the Security Interceptor. This bridge serves the common SHARED/RLS case
+ * and the tenant-less global path.
  *
  * <h2>SHARED-only path</h2>
  * <p>This bridge derives only SHARED contexts. For
  * {@link StorageContext.IsolationStrategy#SEPARATED_SCHEMA} and
  * {@link StorageContext.IsolationStrategy#DEDICATED} strategies the
  * {@link StorageContext} is produced exclusively by
- * {@link eu.exeris.kernel.spi.security.SecurityProvider#authenticate} and
- * bound by the Security Interceptor. Callers that require a non-SHARED
- * context MUST NOT call this bridge.
+ * {@link eu.exeris.kernel.spi.security.identity.IdentityStorageMapping#fromClaims} — the single
+ * kernel-owned fail-closed mapping site (ADR-040 §2.4, ADR-012 §4a) — and bound by the Security
+ * Interceptor. Callers that require a non-SHARED context MUST NOT call this bridge.
+ *
+ * <h2>Never a shared scope</h2>
+ * <p>Both derivation paths produce an empty {@link StorageContext#sharedScopeKey()}: the tenant path
+ * builds a plain {@code shared(...)} context and the tenant-less path returns
+ * {@link ImmutableStorageContext#GLOBAL}, which the record's own invariant forbids from carrying one.
+ * System and anonymous requests therefore stay tenant-private by construction, with no code here to
+ * audit for widening (ADR-012 §4b).
  *
  * <h2>JFR-First</h2>
  * <p>Every derivation emits a {@code StorageContextDerived} JFR event.

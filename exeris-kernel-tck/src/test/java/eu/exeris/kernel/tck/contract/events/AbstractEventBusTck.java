@@ -266,10 +266,12 @@ public abstract class AbstractEventBusTck {
         @DisplayName("GOLDEN: Handler reads ScopedValue bound in structured publish scope (JEP 506)")
         @Timeout(value = 5, unit = TimeUnit.SECONDS)
         void handlerInheritsPublishScopeScopedValue() throws Exception {
-            // We use a custom ScopedValue to simulate KernelProviders propagation.
-            // The bus must NOT use ThreadLocal (banned) — it uses VTs spawned within
-            // the StructuredTaskScope of the publish call, which inherits ScopedValues
-            // from the binding scope automatically.
+            // A custom ScopedValue, created here and unknown to the kernel — that is the point of
+            // the case, not an incidental detail. A binding can only be carried onto another thread
+            // by naming it, so an implementation that dispatches handlers elsewhere cannot deliver
+            // this one. The in-memory binding satisfies it by running handlers on the publisher's
+            // thread (ADR-066); a StructuredTaskScope-based one satisfied it by inheritance.
+            // ThreadLocal remains banned either way.
             ScopedValue<String> traceId = ScopedValue.newInstance();
             String expectedTrace = "trace-" + UUID.randomUUID();
 
@@ -278,8 +280,7 @@ public abstract class AbstractEventBusTck {
 
             engine.bus().subscribe(TYPE_USER_CREATED, (d, payload) -> {
                 try (payload) {
-                    // If the bus uses VTs correctly (StructuredTaskScope / virtual thread
-                    // spawned within the binding scope), traceId is inherited automatically.
+                    // Reads the publisher's binding, however the implementation arranges it.
                     capturedTrace.set(traceId.orElse("NOT_PROPAGATED"));
                     handled.countDown();
                 }
@@ -297,11 +298,10 @@ public abstract class AbstractEventBusTck {
             assertThat(handled.await(5, TimeUnit.SECONDS))
                     .as("Handler must be invoked within 5 seconds").isTrue();
 
-            // NOTE: This assertion targets the structured dispatch path (publishAndAwait).
-            // Community implementations that spawn VTs inside a StructuredTaskScope
-            // within the ScopedValue binding will pass this test automatically.
-            // Implementations using a background thread pool (ThreadLocal, ExecutorService)
-            // will fail — the trace will be "NOT_PROPAGATED".
+            // NOTE: This assertion targets the blocking dispatch path (publishAndAwait). An
+            // implementation that runs handlers on the publisher's thread, or forks them somewhere
+            // that inherits bindings, passes. One that hands them to a background pool
+            // (ThreadLocal, ExecutorService) fails — the trace reads "NOT_PROPAGATED".
             assertThat(capturedTrace.get())
                     .as("Handler MUST receive the ScopedValue bound in the publish scope. " +
                         "Failure = the implementation uses a banned background ThreadPool " +

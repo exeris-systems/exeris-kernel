@@ -101,20 +101,42 @@ public interface TransportStream extends AutoCloseable {
     void write(MemorySegment source, int length);
 
     /**
-     * Queues a {@link LoanedBuffer} for asynchronous transmission.
+     * Queues a {@link LoanedBuffer} for transmission on this stream.
      *
-     * <p><strong>Ownership transfer:</strong> the transport takes ownership of the buffer.
-     * The caller MUST NOT close the buffer after this call — the transport will close it
-     * after the write completes. If this method throws any exception (including
-     * {@link IllegalStateException}), the buffer is closed by the transport before
-     * the exception propagates. The caller must NOT close the buffer after an exception.
+     * <p><strong>Ownership — callee-closes-on-success, caller-closes-on-throw:</strong>
+     * this method takes ownership of {@code buffer}.
+     * <ul>
+     *   <li><strong>On normal return</strong> the transport owns the loan and releases it —
+     *       immediately for a synchronous transmission, or after the asynchronous flush
+     *       completes. The caller MUST NOT close {@code buffer}.</li>
+     *   <li><strong>If this method throws</strong> (including {@link IllegalStateException}),
+     *       ownership returns to the caller, who MUST close {@code buffer} to avoid leaking it.
+     *       Because {@link LoanedBuffer#close()} is idempotent, this caller-close is safe even
+     *       if an implementation happened to release the loan while unwinding.</li>
+     * </ul>
+     * The rule is simply: the callee closes on success, the caller closes on throw. A caller
+     * that never frees on exception (as some earlier revisions of this doc implied) leaks one
+     * buffer per failed write against transports that release only on success.
      *
-     * <p>This method is non-blocking: data is queued and flushed by the carrier loop.
+     * <p><strong>Blocking is implementation-defined.</strong> Despite the {@code queue} in the
+     * name, the call is not guaranteed to be non-blocking: a synchronous transport completes
+     * the write before returning (blocking until the bytes are sent), while an asynchronous
+     * transport enqueues the buffer and flushes it on a carrier loop (returning before
+     * transmission). Callers MUST NOT rely on non-blocking semantics.
      *
-     * @param buffer loaned buffer to send (ownership transferred)
-     * @param length number of valid bytes in the buffer (from offset 0)
-     * @throws eu.exeris.kernel.spi.exceptions.transport.TransportException on failure
-     * @throws IllegalStateException if this stream has been closed
+     * @param buffer loaned buffer to send; ownership transferred on normal return, retained by
+     *               the caller on any thrown exception (the caller must then close it)
+     * @param length number of valid bytes in the buffer (from offset 0); must be in
+     *               {@code [0, buffer.capacity()]}
+     * @throws eu.exeris.kernel.spi.exceptions.transport.TransportException on failure — the
+     *         caller owns and must close {@code buffer}
+     * @throws IllegalStateException if this stream has been closed — the caller owns and must
+     *         close {@code buffer}
+     * @throws IllegalArgumentException if {@code length} is negative or exceeds
+     *         {@code buffer.capacity()} — the caller owns and must close {@code buffer}.
+     *         Stated here because the TCK gates it: the in-tree driver has always rejected an
+     *         out-of-range length, but a contract that named only the other two throws left an
+     *         out-of-tree implementation free to read past the buffer instead
      */
     void queueWrite(LoanedBuffer buffer, int length);
 

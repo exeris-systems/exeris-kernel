@@ -12,15 +12,11 @@ import eu.exeris.kernel.spi.bootstrap.BootstrapPhase;
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.crypto.KernelCryptoProvider;
 
-import java.util.Comparator;
 import java.util.List;
-import java.util.ServiceLoader;
-import java.util.function.UnaryOperator;
+import java.util.function.ToIntFunction;
 
 @SuppressWarnings({"PMD.CloseResource", "PMD.AvoidCatchingGenericException"})
-final class CommunityCryptoSubsystem extends AbstractCommunitySubsystem {
-
-    private KernelCryptoProvider cryptoProvider;
+final class CommunityCryptoSubsystem extends AbstractSingleProviderSubsystem<KernelCryptoProvider> {
 
     @Override
     public String name() {
@@ -38,24 +34,25 @@ final class CommunityCryptoSubsystem extends AbstractCommunitySubsystem {
     }
 
     @Override
-    public void initialize() {
-        cryptoProvider = ServiceLoader.load(KernelCryptoProvider.class)
-                .stream()
-                .map(ServiceLoader.Provider::get)
-                .max(Comparator.comparingInt(KernelCryptoProvider::priority)
-                        .thenComparing(provider -> provider.getClass().getName()))
-                .orElse(null);
+    protected Class<KernelCryptoProvider> contract() {
+        return KernelCryptoProvider.class;
     }
 
     @Override
-    public void start() {
-        markRunning(cryptoProvider != null);
+    protected ToIntFunction<KernelCryptoProvider> priority() {
+        return KernelCryptoProvider::priority;
     }
 
+    @Override
+    protected ScopedValue<KernelCryptoProvider> slot() {
+        return KernelProviders.CRYPTO_PROVIDER;
+    }
+
+    /** Crypto is the one that owns a native handle, so it closes on the way down. */
     @Override
     public void stop() {
-        markRunning(false);
-        if (cryptoProvider instanceof AutoCloseable closeable) {
+        super.stop();
+        if (provider() instanceof AutoCloseable closeable) {
             try {
                 closeable.close();
             } catch (InterruptedException _) {
@@ -64,15 +61,5 @@ final class CommunityCryptoSubsystem extends AbstractCommunitySubsystem {
                 // best effort close, ignore any exception
             }
         }
-    }
-
-    @Override
-    public UnaryOperator<ScopedValue.Carrier> providerBindings() {
-        if (cryptoProvider == null) {
-            return defaultProviderBindings();
-        }
-        return CommunityCarrierBindings.operator(
-                CommunityCarrierBindings.binding(KernelProviders.CRYPTO_PROVIDER, cryptoProvider)
-        );
     }
 }

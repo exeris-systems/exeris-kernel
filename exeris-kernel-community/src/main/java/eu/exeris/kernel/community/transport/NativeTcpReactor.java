@@ -131,10 +131,10 @@ final class NativeTcpReactor {
     @SuppressWarnings("PMD.CognitiveComplexity") // selector loop drains MPSC + polls keys; per-key
     // dispatch extracted to dispatchSelectedKey (PERF-073) so cyclomatic complexity no longer trips.
     private void runLoop() {
-        while (host.isRunning()) {
+        while (host.isReactorActive()) {
             try {
                 boolean drainedRequests = drainPendingRequests();
-                if (!host.isRunning()) {
+                if (!host.isReactorActive()) {
                     return;
                 }
 
@@ -165,7 +165,7 @@ final class NativeTcpReactor {
                     }
                 }
             } catch (IOException e) {
-                if (host.isRunning()) {
+                if (host.isReactorActive()) {
                     host.handleAsyncFailure("reactor/" + index, e);
                 }
                 return;

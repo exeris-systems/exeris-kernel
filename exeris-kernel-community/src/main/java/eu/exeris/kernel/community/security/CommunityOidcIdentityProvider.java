@@ -48,6 +48,7 @@ public final class CommunityOidcIdentityProvider implements IdentityProvider {
     private final TokenValidator tokenValidator;
     private final ClaimsMapper claimsMapper;
     private final String expectedIssuer;
+    private final boolean sharedScopeEnforced;
 
     public CommunityOidcIdentityProvider(Map<String, RSAPublicKey> keysByKid,
                                          String expectedIssuer,
@@ -62,9 +63,55 @@ public final class CommunityOidcIdentityProvider implements IdentityProvider {
     }
 
     private CommunityOidcIdentityProvider(TokenValidator tokenValidator, String expectedIssuer) {
+        this(tokenValidator, expectedIssuer, false, new CommunityClaimsMapper());
+    }
+
+    private CommunityOidcIdentityProvider(TokenValidator tokenValidator, String expectedIssuer,
+                                          boolean sharedScopeEnforced, ClaimsMapper claimsMapper) {
         this.tokenValidator = Objects.requireNonNull(tokenValidator, "tokenValidator must not be null");
-        this.claimsMapper = new CommunityClaimsMapper();
+        this.claimsMapper = Objects.requireNonNull(claimsMapper, "claimsMapper must not be null");
         this.expectedIssuer = Objects.requireNonNull(expectedIssuer, "expectedIssuer must not be null");
+        this.sharedScopeEnforced = sharedScopeEnforced;
+    }
+
+    /**
+     * Returns a provider that maps verified claims onto a principal with {@code claimsMapper}
+     * instead of the Community default.
+     *
+     * <p>{@link ClaimsMapper} is documented as the only application-customisable point in the
+     * identity pipeline, and until 0.11 this provider gave no way to supply one — an application
+     * needing a different subject or scope shape had to reimplement {@link IdentityProvider}
+     * outright. It maps identity only: tenant-isolation routing stays kernel-owned and fail-closed
+     * (ADR-012), so a custom mapper cannot widen what a token may reach.
+     *
+     * <p>Returns a new provider rather than mutating, for the same reason as
+     * {@link #enforcingSharedScope()} — the mapping takes part in a security decision on every
+     * request and is fixed at construction, never swapped behind a live provider. The two withers
+     * compose in either order.
+     *
+     * @param claimsMapper the mapping to use; must not be {@code null}
+     * @return a provider identical to this one but mapping claims with {@code claimsMapper}
+     * @since 0.11.0
+     */
+    public CommunityOidcIdentityProvider withClaimsMapper(ClaimsMapper claimsMapper) {
+        return new CommunityOidcIdentityProvider(
+                tokenValidator, expectedIssuer, sharedScopeEnforced, claimsMapper);
+    }
+
+    /**
+     * Declares that this deployment's storage schema implements the shared-scope policy contract, so a
+     * token declaring a shared scope resolves to a scoped context instead of being denied
+     * (see {@link IdentityStorageMapping#SHARED_SCOPE_ENFORCED_KEY}).
+     *
+     * <p>Returns a new provider rather than mutating. The flag takes part in a security decision on
+     * every request, so it is fixed at construction and never becomes reconfigurable state behind a live
+     * provider — and the default stays fail-closed for anyone who does not call this.
+     *
+     * @return a provider identical to this one but honouring declared shared scopes
+     * @since 0.11.0
+     */
+    public CommunityOidcIdentityProvider enforcingSharedScope() {
+        return new CommunityOidcIdentityProvider(tokenValidator, expectedIssuer, true, claimsMapper);
     }
 
     /**
@@ -86,6 +133,11 @@ public final class CommunityOidcIdentityProvider implements IdentityProvider {
         // Same clock drives both rotation timing and token-expiry — no wall-clock skew between them.
         TokenValidator validator = new CommunityOidcTokenValidator(resolver, expectedIssuer, expectedAudience, clock);
         return new CommunityOidcIdentityProvider(validator, expectedIssuer);
+    }
+
+    /** Package-private: lets the wiring test observe which mapper this provider was built with. */
+    /* default */ ClaimsMapper claimsMapper() {
+        return claimsMapper;
     }
 
     @Override
@@ -126,7 +178,8 @@ public final class CommunityOidcIdentityProvider implements IdentityProvider {
         try {
             VerifiedClaims claims = tokenValidator.validate(rawToken);
             PrincipalContext principal = claimsMapper.map(claims);
-            StorageContext storage = IdentityStorageMapping.fromClaims(claims, principal.principalId(), JWT_TYPE);
+            StorageContext storage = IdentityStorageMapping.fromClaims(
+                    claims, principal.principalId(), JWT_TYPE, sharedScopeEnforced);
             // Single-phase JFR commit AFTER (possibly blocking) validation — never straddle a VT.
             CommunityIdentityJfrEvents.emitValidation(PROVIDER_ID, claims.issuer(), startNanos);
             return new AuthenticationResult(principal, storage);

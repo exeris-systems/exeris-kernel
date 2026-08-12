@@ -29,6 +29,56 @@ off-heap `LoanedBuffer` slabs via Panama FFM — no JVM heap contact on the ingr
 
 ---
 
+## Connection ceiling
+
+`TransportConfig.maxConnections()` (`http.maxConnections`, default `HttpConfig.DEFAULT_MAX_CONNECTIONS`
+= 1000) is a hard cap on **concurrent connections across all reactors**, enforced at accept time. When
+it is reached, `NativeTcpCarrier` accepts the connection at TCP level and immediately closes it.
+
+What a client observes: the socket opens and then dies, with no HTTP response — a transport-level
+failure, not a status code. There is no way for the client to distinguish this from a network fault.
+
+Two properties make the ceiling easy to reach at a request rate that feels comfortable. It counts
+**concurrent connections, not rate**, so a client whose connection pool overlaps with a draining
+previous pool can cross it while neither pool alone comes close. And it is enforced before anything
+else — no queue, no shed decision, no response.
+
+Refusals are visible in two places, and were visible in neither before v0.11:
+
+- `TransportStats.totalRejected` includes them. It previously counted only PAQS load-sheds, so it read
+  zero during a total accept-time refusal — a value an operator reasonably reads as "this server is
+  healthy, look elsewhere".
+- `eu.exeris.kernel.transport.CommunityConnectionRefused` is emitted per refusal, carrying the active
+  count, the configured ceiling, and a cumulative total whose slope distinguishes a blip from a wall.
+
+Whether an accept-time cap is the right mechanism — as opposed to admitting and shedding at request
+level, where the response can carry a status — and whether 1000 is the right default, are open
+questions tracked in `docs/ROADMAP.md`. The behaviour above is unchanged; only its visibility is new.
+
+## Accept-path failure modes
+
+There are two ways an accepted connection ends without being served, and they look identical from the
+client: the socket opens and dies. They are different in kind, and the kernel now distinguishes them.
+
+| | Refusal | Setup fault |
+|---|---|---|
+| Event | `CommunityConnectionRefused` | `CommunityAcceptFault` |
+| Cause | the connection ceiling was reached | something threw while configuring the channel, resolving the peer, building the stream, or registering it |
+| Nature | a **policy** decision at a known limit | a **defect** — allocator failure, TLS engine that would not initialise, registry inconsistency |
+| In `totalRejected` | yes | **no** |
+
+A setup fault is deliberately **not** counted as a refusal. `totalRejected` means work the engine
+*declined*, and a setup that broke declined nothing. Folding the two together would leave an operator
+reading a spike unable to tell a capacity problem from a bug — the one distinction that changes what
+they do next.
+
+Both paths recover: the accept loop continues. That is correct for a per-connection failure, and
+making a setup fault fatal would trade a silent drop for an outage. What changed is only that neither
+is silent.
+
+The fault event carries the exception **class** and never its message, matching
+`CommunityReactorDispatchFault` — a message can carry request-derived text.
+
 ## Core Philosophy
 
 ### 1. Carrier Loop Architecture
@@ -78,7 +128,7 @@ The Community carrier transfers bytes from the network socket directly into off-
    a shared long-lived STS is architecturally incompatible with the multi-carrier ingress model. These
    unstructured VTs act as roots of the Request Tree. All subsequent concurrent operations within
    the stream handler MUST use `StructuredTaskScope`.
-4. Expose cross-platform POSIX / Winsock socket symbol loading via `CoreSyscallLoader` (Panama FFM). Migration of the active Community carrier onto this shared socket path is planned; the current in-repo carrier remains NIO-backed, and NIO is retained as the explicit fallback path for portability and degraded-operation scenarios.
+4. Expose cross-platform POSIX / Winsock socket symbol loading via `CoreSyscallLoader` (Panama FFM). The POSIX half of that seam is exercised end-to-end since 0.11 (`SyscallLoopbackRoundTripIT`, below); the Winsock half has never run, because CI carries no Windows runner. Migration of the active Community carrier onto this shared socket path is planned but gated on that coverage; the current in-repo carrier remains NIO-backed, and NIO is retained as the explicit fallback path for portability and degraded-operation scenarios.
 
 ---
 
@@ -255,6 +305,94 @@ When PAQS sheds a stream or the Kernel initiates graceful shutdown:
 > `StreamLifecycleEvent` for the reset transition is deferred to the security/transport
 > validation-stage JFR pass (Phase 4 N1) — the reset call sites are the intended emission points.
 
+### Graceful-shutdown phase order (since 0.11)
+
+`NativeTcpCarrier.stop()` runs three phases, and the order is load-bearing rather than incidental:
+
+1. **Close ingress** — the listening channel closes and the acceptor joins. No new connections; the
+   reactors keep serving the ones already admitted.
+2. **Drain** — `PaqsScheduler.close()` marks the engine draining and waits for the count of **busy**
+   streams to reach zero, under its 60-second hard deadline. The reactors are deliberately still
+   looping here, so a handler that completes during the drain can still have its response flushed.
+3. **Teardown** — reactors are woken and joined, then the selector and all remaining channels close.
+
+**Observing zero and committing to teardown are one step.** `DrainCoordinator.sealIfIdle()` is a
+compare-and-set on the busy count, not a read followed by a decision. Read as two steps, a request that
+arrived while the drain was looking flips the count back to one on an engine already past its commit
+point, and phase 3 severs the stream serving it — the failure phase ordering exists to prevent, reached
+from the other side. Asking protocols to check `isDraining()` first does not close it: a request already
+sitting in the socket buffer when the drain began has nobody left to ask.
+
+After the seal, `StreamWork.markBusy()` answers `false` and the protocol layer closes rather than
+serves — `CommunityHttpRequestProcessor` returns from its keep-alive loop. That is the honest reading of
+a connection the peer was already told to close: a request arriving after that is racing teardown, not
+being dropped by it. On the 60-second deadline the coordinator seals unconditionally, because once
+shutdown proceeds regardless, letting a late arrival believe it is protected is worse than closing on it.
+
+**The per-stream handle is not thread-confined.** `StreamWork` reaches protocol code through the
+`STREAM_WORK` `ScopedValue` — chosen precisely so it survives down the stack and across a task
+boundary. The reachable route is track-independent and does not rest on `StructuredTaskScope` (which
+the default line must not ship for 1.0 GA): `StreamExecutionBackend`, the seam at which an admitted
+stream's root task is started, is contractually required to preserve `ScopedValue` bindings across
+whatever thread a backend chooses, and its forward consumers — an Enterprise locality-aware backend,
+the post-1.0 DST simulation scheduler — are exactly the ones that run the task on a thread the
+scheduler did not create. On the `preview` artifact `StructuredTaskScope.fork()`'s binding inheritance
+is a second route to the same place. Both the shared count and the handle's flag are therefore
+compare-and-set. A double release drops the
+count below the truth and ends the drain early; a double acquire means it never ends. Neither is
+reachable by anything short of a stress harness, so the guarantee is a property of the type rather than
+an assumption about callers.
+
+Until 0.11 the drain ran *after* teardown, which made it inert: handlers were waited on while their
+sockets were already closed, so an in-flight request completed and its response went nowhere. The peer
+observed a connection closed with no reply, and an idempotent client retried into a listener that was
+already gone. `AbstractTransportEngineTck$GracefulDrain` now pins the contract — it holds a stream
+mid-exchange across `stop()` and asserts the response still arrives.
+
+**Busy, not open — and busy by default (since 0.11, issue #282).** The drain waits for streams being
+*served*, not for streams being *open*. Until this was separated it waited on the admission
+controller's active-stream count, which counts connections: a keep-alive connection holds a slot for
+its whole life, so an idle one burned the entire 60-second deadline. Every connection-pooling client,
+load balancer and service mesh holds connections idle, and a container runtime's default grace period
+is shorter than the deadline — so the normal outcome was SIGKILL mid-shutdown on every rollout.
+
+A stream is **busy from the moment it starts** and stays busy unless its protocol reports otherwise
+(`DrainCoordinator.StreamWork`). The default is load-bearing in the opposite direction from the
+obvious one: counting only work a protocol explicitly declares means a protocol that declares nothing
+looks finished, so teardown severs a handler still writing its response — the very regression the
+phase order above exists to prevent. A raw `StreamHandler` therefore keeps the full drain; only a
+codec that knows it is parked between requests — the HTTP/1.1 keep-alive loop — reports idle.
+
+**The 60-second deadline is longer than the platform's, on purpose.** A container runtime's default
+grace period is shorter — thirty seconds on Kubernetes — so a drain that ran to this deadline would be
+SIGKILLed before reaching it. That is the intended ordering, not an oversight: the orchestrator's timer
+decides how long the *platform* waits, while this one decides how long the *kernel* is willing to
+strand a request still being served. A shorter kernel deadline would make the kernel sever live work
+while the platform still had time to spare, and it would do so silently. Above it, the platform stays
+the authority.
+
+Since the busy/open separation above, a normal shutdown ends in milliseconds and this bound is reached
+only when a handler will not return — an application defect, for which SIGKILL is the right answer.
+It is therefore **not configurable**; a knob here would be tuned in place of fixing the handler. An
+idle-connection reaper, which would let the drain close connections parked past a threshold rather
+than waiting on them, is a separate question and is not implemented.
+
+**`Connection: close` while draining.** A response encoded after the drain has begun carries it,
+whatever the request asked for. Without it a well-behaved peer has no way to learn it should release a
+pooled connection, and the next shutdown waits on the same idle connection again.
+
+The question is asked when the response is written, not when the request was parsed — and the
+distinction is the whole point. The request that most needs to tell its peer to let go is the one
+already in flight when shutdown began; answered at parse time it always gets the pre-shutdown answer,
+so the peer keeps a connection it will never be asked about again.
+
+**Telemetry.** `CommunityTransportDrainEvent` (JFR `eu.exeris.kernel.transport.CommunityTransportDrain`)
+records `busyAtStart`, `busyRemaining`, `openAtStart` and duration. A non-zero `busyRemaining` means
+the deadline fired while work was still in flight — the signal that in-flight work was severed, and
+the number to tune `terminationGracePeriodSeconds` against. `openAtStart` is reported for context: it
+is the number the drain waited on before 0.11, and the gap between it and `busyAtStart` is exactly the
+idle connections that used to hold shutdown open.
+
 ---
 
 ## WebSocket / SSE — Design Stance
@@ -263,12 +401,14 @@ When PAQS sheds a stream or the Kernel initiates graceful shutdown:
 
 | Protocol     | Status      | Rationale                                                                                              |
 |:-------------|:------------|:-------------------------------------------------------------------------------------------------------|
-| **SSE**       | 🚧 Planned v0.10 — ratified by [ADR-043](../adr/ADR-043-kernel-http-streaming-spi.md) (ACCEPTED) | One-directional server push via HTTP/1.1 chunked transfer (a thin `data:…\n\n` framing layer over the existing `Http1ChunkedEncoder`) or HTTP/2. Surfaced as the sibling `HttpStreamExchange` SPI (respond-once `HttpExchange` untouched). **SSE-first** — the minimal server-push primitive; see [http.md](http.md) for the SPI surface. |
+| **SSE**       | ✅ Shipped v0.10 — ratified by [ADR-043](../adr/ADR-043-kernel-http-streaming-spi.md) (ACCEPTED) | One-directional server push, surfaced as the sibling `HttpStreamExchange` SPI (respond-once `HttpExchange` untouched). **SSE-first** — the minimal server-push primitive. The delivered wire framing is a close-delimited HTTP/1.1 response, not chunked transfer as sketched here before it landed; per-event chunked framing and an HTTP/2 `DATA` path are follow-ups. See [http.md](http.md) for the SPI surface and the per-item delivery status. |
 | **WebSocket** | Deferred — separately-justified follow-up (not milestone-pinned) | Full duplex; requires an HTTP Upgrade (H1) / Extended CONNECT (H2 RFC 8441) handshake + frame protocol. Decided separately once a bidirectional/low-latency client-streaming use case is proven; may precede 1.0 but is not pinned to a release milestone (see ADR-043 §What is NOT in scope). |
 | **gRPC streaming** | 🚧 Planned TRL-5 | Modelled as HTTP/2 streams — follows transport carrier maturity. |
 
-Before SSE lands, real-time push uses the **Events subsystem (L3)** with a Kafka/Redpanda
-backend and a polling client. The PAQS scheduler handles priority-based delivery.
+Full-duplex traffic still has no kernel primitive: until WebSocket is decided, a bidirectional
+use case pairs SSE downstream with ordinary requests upstream, or falls back to the **Events
+subsystem (L3)** with a Kafka/Redpanda backend and a polling client. The PAQS scheduler handles
+priority-based delivery.
 
 ---
 
@@ -319,13 +459,16 @@ for client IP preservation behind load balancers (HAProxy, NGINX, AWS NLB, GCP L
 - **Zero-Allocation Hot-Path:** JFR baseline shows zero heap allocations during `processIngress()`.
 - **PAQS Integration:** `WatermarkManager` pressure increase correctly raises PAQS threshold and
   triggers `EX-NET-4006` for low-priority streams. 🚧 Planned — not yet implemented. `AbstractPaqsIntegrationTck` covering WatermarkManager→PAQS→EX-NET-4006 chain does not yet exist.
+- **Berkeley socket seam round-trip (since 0.11):** `SyscallLoopbackRoundTripIT` (Core) drives the handles resolved by `CoreSyscallLoader` through a real loopback connection — bind, listen, connect, accept, send, recv, byte-exact comparison — plus a refusal case that pairs a successful connect with a refused one so neither can pass alone. Runs in the default build via Failsafe; Linux and Windows only, since BSD `sockaddr_in` carries a leading `sin_len` byte that the shared 16-byte layout does not model. Integer-width entries in the C-type→`ValueLayout` table stay reviewed-not-tested: the x86-64 SysV ABI zero-extends, so a `size_t` mis-declared as `JAVA_INT` passes this gate.
 
 **Full TCK abstract class set (all have full Community bindings):** `AbstractTransportEngineTck`, `AbstractTransportProviderTck`, `AbstractTransportConnectionTck`, `AbstractTransportStreamTck`, `TransportZeroAllocTck`, `TransportCarrierPinningTck`.
 
 ### Load Tests
 
-- **Carrier Stress:** `MpscArrayQueue` (Agrona) throughput under millions of network events per second with
-  zero `CarrierPinnedEvent` emissions.
+- **Carrier Stress:** reactor-handoff queue throughput under sustained network events with zero
+  `CarrierPinnedEvent` emissions — `NativeTcpTransportStressTest`, behind the `transport-stress-gate`
+  CI job. The queue is JCTools `MpscUnboundedArrayQueue` (PERF-063); the Agrona attribution this line
+  carried was never what the code used.
 
 ---
 
