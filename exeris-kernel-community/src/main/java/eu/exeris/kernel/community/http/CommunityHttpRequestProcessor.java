@@ -154,7 +154,17 @@ public final class CommunityHttpRequestProcessor {
         // Parked on the next request, this connection is serving nothing — it must not hold graceful
         // shutdown open, because an idle keep-alive connection never closes on its own (issue #282).
         // Streams are busy by default, so a protocol that cannot tell simply never reaches this.
-        markIdle();
+        //
+        // Only from the second iteration, though: "parked on the next request" is false for a
+        // connection that has served none. Reporting idle before the first read makes a connection
+        // that just passed accept, TLS and PAQS admission eligible to be sealed out, and the
+        // !rearmed branch below then drops its request after reading it in full — no response at
+        // all, on a request that arrived before the drain. The comment there about the peer having
+        // been told to close describes a later iteration; there is no previous response here.
+        boolean parkedBetweenRequests = state.totalRequestCount() > 0;
+        if (parkedBetweenRequests) {
+            markIdle();
+        }
         ReadResult readResult;
         boolean rearmed;
         try {
@@ -290,7 +300,16 @@ public final class CommunityHttpRequestProcessor {
             //     stream-opens shed under load — still holds via carrier-edge PAQS (NativeTcpCarrier's
             //     AdmissionController), which sheds any new stream including an SSE open. Plumbing the
             //     carrier arbiter through to a dedicated streaming ceiling is a v0.10 follow-up.
-            streamDispatcher.dispatchStream(request, stream, streamRoute);
+            // ADR-061 applies to a stream open exactly as it does to a request. Routed through the
+            // request dispatcher rather than checked here, so there is one implementation of the
+            // route requirement and one place it can drift from.
+            // Supplied, not built: an admitted open never writes through this exchange, and the
+            // admitted case is the one every stream takes.
+            requestDispatcher.dispatchStream(
+                    request,
+                    () -> new CommunityHttpExchange(
+                            request, stream, allocator, readResult.keepAlive(), encoderRegistry),
+                    () -> streamDispatcher.dispatchStream(request, stream, streamRoute));
             return true;
         }
 

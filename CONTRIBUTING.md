@@ -14,8 +14,10 @@ the barrier to contribution, not to enforce bureaucracy.
 
 ### Java Version
 
-**Java 26 (EA or GA) is required.** The kernel actively uses APIs that are preview or finalising
-in Java 26:
+**JDK 25 LTS is required on this line.** The distributed artifact is preview-clean (ADR-066): main
+sources compile without `--enable-preview`, and since the TCK's test-jar is the one published
+artifact built from test sources, its fixtures are preview-clean too. The `preview` branch is the
+opposite — newest JDK, preview features on — and ships separately as `1.0-preview`.
 
 | Feature                            | JEP       | Status in JDK              | Used in Kernel                                    |
 |:-----------------------------------|:----------|:---------------------------|:--------------------------------------------------|
@@ -25,10 +27,17 @@ in Java 26:
 | Foreign Function & Memory (FFM)    | JEP 454   | Stable (JDK 22)            | OpenSSL bindings, off-heap I/O, `io_uring`        |
 | Flexible Constructor Bodies        | JEP 513   | **Closed / Delivered (JDK 25)** | Field pre-init before `super()` in value-ready types |
 | Valhalla Value Classes (prep)      | JEP 401   | Early Access preview       | **Not yet used.** All data carriers (`record`, `final class`) are designed to be migration-ready: no `synchronized`, no `System.identityHashCode()`, no identity `==` on domain objects. C2 JIT Escape Analysis scalarises them on hot-paths today. |
-| Lazy Constants                     | JEP 526   | **Closed / Delivered (JDK 26)** | `LazyConstant.of(...)` for singleton config caches and expensive one-time initialisations |
+| Lazy Constants                     | JEP 526   | Delivered in JDK 26 — **not available on this line** | Not used on `main`; the JDK 25 baseline predates it |
 
-The project POM enables preview features globally. Do **not** disable `--enable-preview` flags
-in any module — doing so will break compilation of `exeris-kernel-enterprise` and parts of Core.
+The root POM enables preview features for **test** sources only — `--enable-preview` on every
+module's `default-testCompile` and on the surefire JVM ([pom.xml](pom.xml) lines 70, 91-94, 105) —
+and never for main sources. Do not add it to a module's main sources on this line: the
+Preview-Bytecode Gate reads the published jars and fails on any class stamped
+`minor_version 0xFFFF`, which is exactly what a consumer would trip over.
+
+The TCK is the exception that needs stating, because its test-jar *is* a published artifact: its
+fixtures were moved off `StructuredTaskScope` so they carry no stamp. Other modules' test sources
+still use it and still need the flag.
 
 **Recommended toolchain:**
 ```
@@ -64,7 +73,7 @@ export DYLD_LIBRARY_PATH="$(brew --prefix openssl@3)/lib:$DYLD_LIBRARY_PATH"
 | Tool       | Minimum Version | Purpose                                      |
 |:-----------|:----------------|:---------------------------------------------|
 | Maven      | 3.9+            | Build system                                 |
-| Docker     | 24+             | Local environment (Postgres, Redis)          |
+| Docker     | 24+             | Testcontainers-backed tests (Postgres, Kafka) |
 | Podman     | 4.x (alternative) | Drop-in Docker replacement                 |
 | `jcmd`     | bundled with JDK | JFR snapshot inspection                    |
 | JDK Mission Control (JMC) | 9.0+ | Visual JFR analysis (optional)        |
@@ -152,28 +161,33 @@ mvn test -pl exeris-kernel-tck
 
 ## Local Environment
 
-The full local environment requires only **Docker or Podman**. No cloud account, no managed service,
-no port-forwarding magic. This is a direct consequence of ADR-001 (Cloud Agnostic Infrastructure).
+**There is no local stack to start.** The repository has no `docker-compose.yml`, and nothing needs
+one. Tests that require Postgres or Kafka start their own containers through Testcontainers and tear
+them down again — so the only prerequisite is a running **Docker or Podman** daemon. This is a direct
+consequence of ADR-001 (Cloud Agnostic Infrastructure): no cloud account, no managed service, no
+port-forwarding magic.
 
-### Start the Local Stack
+Container images are pinned in the test sources, e.g.
+`new PostgreSQLContainer<>("postgres:16")` in
+`exeris-kernel-community/src/test/java/eu/exeris/kernel/community/persistence/CommunityPersistenceIsolationLeakTckIT.java:37`.
+
+### You do not need a daemon for the default build
+
+Container-backed tests are tagged (`integration`, `continuity`, `stress`) and are **excluded from
+`mvn clean install`**. A machine with no Docker daemon still gets a green default build — and that
+green build is not evidence those tests pass. Run them explicitly when you touch what they cover:
 
 ```bash
-docker compose up -d
+mvn -pl <module> -DincludedGroups=integration -DexcludedGroups= test
 ```
 
-The `docker-compose.yml` at the repository root provisions:
-- **PostgreSQL 16** on `localhost:5432` (used by `JdbcCitadelRepository` in Community tier)
-- **Redis 7** on `localhost:6379` (session/distributed cache, used by Security subsystem)
+The exclusion list is per-module — see the `excludedGroups` property in each module's `pom.xml`
+(e.g. `exeris-kernel-community-kafka/pom.xml:31`) for which tags that module holds back and why.
 
-Default credentials are aligned with the repository's test fixtures. Do not change them without updating the corresponding test fixtures.
+### Consuming the kernel rather than contributing to it
 
-### Stopping the Stack
-
-```bash
-docker compose down
-```
-
-Data is ephemeral by default (no named volume mounts). Each `up` starts with a clean database.
+Different requirements — notably no `--enable-preview` — and different coordinates. See
+[docs/guides/01-platform-and-dependencies.md](docs/guides/01-platform-and-dependencies.md).
 
 ---
 
@@ -190,7 +204,6 @@ jcmd <pid> JFR.start name=exeris-debug settings=profile duration=60s filename=de
 
 # Or start the JVM with recording enabled from the beginning:
 java -XX:StartFlightRecording=name=boot,settings=profile,filename=boot.jfr \
-     --enable-preview \
      -jar exeris-kernel-core/target/exeris-kernel-core.jar
 ```
 
@@ -219,7 +232,6 @@ The TCK automatically validates this during `mvn install`. For manual investigat
 ```bash
 # Run with GC allocation profiling
 java -XX:StartFlightRecording=settings=profile \
-     --enable-preview \
      -jar exeris-kernel-core/target/exeris-kernel-core.jar
 ```
 

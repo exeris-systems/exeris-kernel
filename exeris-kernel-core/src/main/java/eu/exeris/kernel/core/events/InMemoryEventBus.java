@@ -110,8 +110,16 @@ public final class InMemoryEventBus implements EventBus {
      * <p>Fire-and-forget semantics are preserved: the calling thread returns immediately
      * after starting all handler virtual threads. ScopedValue bindings are inherited at
      * virtual thread creation time — no latch, no wait.
+     *
+     * <p>If the fan-out itself fails part-way, the refs no handler thread will ever own are released
+     * before the failure is rethrown. Fire-and-forget applies to the handlers, not to setting them
+     * up: a caller that never learns the dispatch failed also never learns its payload is stranded.
      */
+    // java:S1181 — same exemption as publishAndAwait: the Throwable is rethrown unchanged and the
+    // catch exists only to release refs no handler will reach. Narrowing it restores the leak for
+    // exactly the types that reach this path.
     @Override
+    @SuppressWarnings("java:S1181")
     public void publish(EventDescriptor descriptor, EventPayload payload) {
         Objects.requireNonNull(descriptor, "descriptor");
         Objects.requireNonNull(payload,    "payload");
@@ -124,16 +132,38 @@ public final class InMemoryEventBus implements EventBus {
             return;
         }
 
+        // unowned = refs currently held that no handler will ever close. It starts at one (the
+        // caller's), rises with each retain(), and falls as each successful start() transfers
+        // ownership to that thread; whatever it holds when something throws is exactly what the bus
+        // must release. Both throwing sites are real: retain() is specified to throw once the
+        // payload is fully released, and start() throws OutOfMemoryError when a thread cannot be
+        // allocated — precisely the moment an off-heap leak matters most.
         int slotCount = slots.size();
-        if (slotCount > MULTI_SUBSCRIBER_THRESHOLD) {
-            for (int i = 1; i < slotCount; i++) {
-                payload.retain();
+        int unowned   = 1;
+        try {
+            if (slotCount > MULTI_SUBSCRIBER_THRESHOLD) {
+                for (int i = 1; i < slotCount; i++) {
+                    payload.retain();
+                    unowned++;
+                }
             }
-        }
-
-        for (Slot slot : slots) {
-            EventPayload slotPayload = payload;
-            Thread.ofVirtual().start(() -> slot.handler().handle(descriptor, slotPayload));
+            for (Slot slot : slots) {
+                EventPayload slotPayload = payload;
+                Thread.ofVirtual().start(() -> slot.handler().handle(descriptor, slotPayload));
+                unowned--;
+            }
+        } catch (Throwable escaped) { //NOPMD AvoidCatchingThrowable — release before rethrow
+            // Each close() is guarded on its own: a throw here would replace the caller's original
+            // failure with a secondary one AND abandon the refs still outstanding, so the loop has
+            // to finish whatever any single release does.
+            for (int i = 0; i < unowned; i++) {
+                try {
+                    payload.close();
+                } catch (Throwable ignored) { //NOPMD AvoidCatchingThrowable — best-effort release
+                    continue;
+                }
+            }
+            throw escaped;
         }
     }
 
@@ -147,7 +177,13 @@ public final class InMemoryEventBus implements EventBus {
      * <p>The calling thread opens the scope and is the owner — it forks all handlers,
      * joins (blocks), and closes. ScopedValue bindings are inherited by all handler VTs.
      */
+    // java:S1181 — the same exemption the five other release-before-rethrow sites carry (see
+    // NativeCipherContext, SecurityInterceptor, PaqsScheduler). The Throwable is not handled here:
+    // it is rethrown unchanged, and the catch exists only so the wrappers no handler will ever
+    // reach are released first. Narrowing it would restore the leak for exactly the types that
+    // reach this path — an Error out of a handler is the one that motivated the fix.
     @Override
+    @SuppressWarnings("java:S1181")
     public void publishAndAwait(EventDescriptor descriptor, EventPayload payload)
             throws InterruptedException {
         Objects.requireNonNull(descriptor, "descriptor");
@@ -179,6 +215,13 @@ public final class InMemoryEventBus implements EventBus {
                 scope.join();
             } catch (InterruptedException interruptEx) {
                 closeUnclosed(wrappers);
+                // The handlers that already ran and threw are not un-run by the interrupt.
+                // throwIfFailed is only reachable on the normal exit, so without this the caller is
+                // told delivery was cut short and never told that part of what was delivered also
+                // failed — the more actionable of the two facts, and the one it cannot recover by
+                // retrying. Same defect as on the default line; the dispatch mechanism differs, the
+                // dropped failures do not.
+                failures.forEach(interruptEx::addSuppressed);
                 Thread.currentThread().interrupt();
                 throw interruptEx;
             }
@@ -275,8 +318,21 @@ public final class InMemoryEventBus implements EventBus {
 
     private List<Slot> resolveSlots(int ordinal) {
         List<Slot> slots = subscribers.get(ordinal);
-        // CopyOnWriteArrayList already provides safe snapshot iteration; no copy needed.
-        return slots == null ? List.of() : slots;
+        // A snapshot, not the live list. CopyOnWriteArrayList makes a single ITERATION safe, and
+        // that was the whole argument for handing the live list out — but neither publish path
+        // iterates only once. Both read size() to decide how many refs to hold, then walk the list
+        // separately, and a subscribe or unsubscribe landing between those two reads makes the
+        // count describe a different list than the one dispatched to.
+        //
+        // publish(): three handler threads against two retained refs means the third close() is an
+        // over-release — a SIGSEGV in the allocator, arriving where the memory policy exists to
+        // prevent it. publishAndAwait(): more slots than wrappers is an IndexOutOfBoundsException
+        // thrown at the publisher; fewer is a wrapper nobody closes and a refcount that never
+        // reaches zero.
+        //
+        // One copy of a list that is typically empty or a single element, and the empty case
+        // returns the shared List.of() without copying anything.
+        return slots == null ? List.of() : List.copyOf(slots);
     }
 
     private static void emitJfr(int ordinal, int handlerCount, boolean awaitMode) {

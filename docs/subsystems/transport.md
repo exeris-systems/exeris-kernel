@@ -363,6 +363,20 @@ looks finished, so teardown severs a handler still writing its response — the 
 phase order above exists to prevent. A raw `StreamHandler` therefore keeps the full drain; only a
 codec that knows it is parked between requests — the HTTP/1.1 keep-alive loop — reports idle.
 
+**The 60-second deadline is longer than the platform's, on purpose.** A container runtime's default
+grace period is shorter — thirty seconds on Kubernetes — so a drain that ran to this deadline would be
+SIGKILLed before reaching it. That is the intended ordering, not an oversight: the orchestrator's timer
+decides how long the *platform* waits, while this one decides how long the *kernel* is willing to
+strand a request still being served. A shorter kernel deadline would make the kernel sever live work
+while the platform still had time to spare, and it would do so silently. Above it, the platform stays
+the authority.
+
+Since the busy/open separation above, a normal shutdown ends in milliseconds and this bound is reached
+only when a handler will not return — an application defect, for which SIGKILL is the right answer.
+It is therefore **not configurable**; a knob here would be tuned in place of fixing the handler. An
+idle-connection reaper, which would let the drain close connections parked past a threshold rather
+than waiting on them, is a separate question and is not implemented.
+
 **`Connection: close` while draining.** A response encoded after the drain has begun carries it,
 whatever the request asked for. Without it a well-behaved peer has no way to learn it should release a
 pooled connection, and the next shutdown waits on the same idle connection again.

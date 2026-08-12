@@ -33,7 +33,10 @@ final class CommunityHttpResponseHeaders {
 
     /**
      * Writes the header block, supplying {@code Content-Length} and {@code Connection} only where the
-     * response did not already state them — an explicit header from the application wins.
+     * response did not already state them — an explicit header from the application wins, with one
+     * exception: a {@code Connection} header is dropped when {@code keepAlive} is false. Connection
+     * lifetime is the kernel's to state, and a drain that has resolved to close the socket must not
+     * announce keep-alive on it. See the loop below.
      *
      * @param keepAlive whether the connection survives this response; see
      *                  {@code CommunityHttpExchange#resolveKeepAlive()} for when that is decided
@@ -49,7 +52,16 @@ final class CommunityHttpResponseHeaders {
         boolean hasConnection = false;
         for (HttpHeader header : headers) {
             hasContentLength |= header.nameEqualsIgnoreCase(HEADER_CONTENT_LENGTH);
-            hasConnection |= header.nameEqualsIgnoreCase(HEADER_CONNECTION);
+            boolean isConnection = header.nameEqualsIgnoreCase(HEADER_CONNECTION);
+            // An application Connection header is honoured only while the kernel is still willing to
+            // keep the connection. When it is not — a graceful drain resolves keepAlive to false and
+            // then closes the socket regardless — letting the application's value through announces
+            // keep-alive on a connection about to be torn down, which is the one thing the drain's
+            // Connection: close exists to prevent. Connection lifetime is the kernel's to state.
+            if (isConnection && !keepAlive) {
+                continue;
+            }
+            hasConnection |= isConnection;
             pos = Http1ResponseEncoder.writeHeader(target, pos, header.name(), header.value());
         }
 

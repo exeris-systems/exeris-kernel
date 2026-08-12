@@ -20,7 +20,8 @@ import java.util.Objects;
  * storage topology.
  *
  * @param location          driver-interpreted root location; non-blank
- * @param maxSignedUrlTtl   ceiling applied to any signed-URL time-to-live a caller requests; positive.
+ * @param maxSignedUrlTtl   ceiling applied to any signed-URL time-to-live a caller requests; at
+ *                          least one second, matching the floor {@code BlobStore.signedUrl} enforces.
  *                          A store that cannot sign ignores it
  * @param properties        opaque key-value options for driver-specific settings; never {@code null}
  * @since 0.11.0
@@ -32,10 +33,19 @@ public record BlobStorageConfig(String location, Duration maxSignedUrlTtl,
     public static final Duration DEFAULT_MAX_SIGNED_URL_TTL = Duration.ofMinutes(15);
 
     /**
+     * Shortest signed-URL validity any store accepts.
+     *
+     * <p>One second, because that is the granularity the signing schemes express expiry in. Declared
+     * here rather than in each driver so the floor a caller must satisfy and the ceiling a deployment
+     * configures are read from one place — a driver-local copy is how the two drift apart.
+     */
+    public static final Duration MIN_SIGNED_URL_TTL = Duration.ofSeconds(1);
+
+    /**
      * Canonical constructor; defensively copies {@code properties}.
      *
      * @throws NullPointerException     if any component is {@code null}
-     * @throws IllegalArgumentException if {@code location} is blank or the TTL ceiling is not positive
+     * @throws IllegalArgumentException if {@code location} is blank or the TTL ceiling is under a second
      */
     public BlobStorageConfig {
         Objects.requireNonNull(location, "location must not be null");
@@ -44,8 +54,11 @@ public record BlobStorageConfig(String location, Duration maxSignedUrlTtl,
         if (location.isBlank()) {
             throw new IllegalArgumentException("location must not be blank");
         }
-        if (maxSignedUrlTtl.isZero() || maxSignedUrlTtl.isNegative()) {
-            throw new IllegalArgumentException("maxSignedUrlTtl must be positive");
+        // Not merely positive: a ceiling below the one-second floor BlobStore.signedUrl enforces
+        // would make every signing call unsatisfiable, and the failure would surface per call as a
+        // caller error rather than here as the misconfiguration it is.
+        if (maxSignedUrlTtl.compareTo(MIN_SIGNED_URL_TTL) < 0) {
+            throw new IllegalArgumentException("maxSignedUrlTtl must be at least one second");
         }
         properties = Map.copyOf(properties);
     }

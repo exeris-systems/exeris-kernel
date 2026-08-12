@@ -21,6 +21,29 @@ here, where `StructuredTaskScope` is the mechanism.
 Tracking the newest JDK is a **requirement, not an indulgence**: this line converges into an LTS, so
 it has to have absorbed the API churn *before* that LTS lands, not after.
 
+## Merge-up: the v0.11 review sweep (#324, #325, #326)
+
+Carried up from `development/0.11.0`. Most of it is track-neutral — the RLS session-key fix, the S3
+download clamp and HEAD/GET split, the cron step revert, `FlowMigrationState`'s payload cap, the two
+arrow-switch conversions, the `queueWrite` ownership TCK, and the japicmp gate now asking source
+compatibility as well as binary. Three items needed a decision, and they are the reason a merge-up on
+this line is never a fast-forward:
+
+- **`OutboxOrchestrator`'s swallowed loop failure applies here too, and by a different route.** The
+  default line lost it through `StructuredScope.join()` being await-all. This line reaches the same
+  place through `Joiner.allUntil(_ -> false)`, whose `join()` also returns normally on a failed
+  subtask. The fix is ported against `Subtask.state()` rather than `ForkedTask.state()`; the
+  mechanism differs, the hole did not.
+- **`SubsystemOrchestrator`'s round fail-fast fix does NOT apply here.** It repaired a property the
+  in-thread substitution lost. This line still forks with `StructuredTaskScope.open()`, whose default
+  joiner cancels siblings on the first failure, so the property was never lost. Preview's shape kept.
+- **`InMemoryEventBus`: mechanism kept, one fix taken.** Handlers still fork here. The interrupt path
+  dropping already-collected handler failures was the same defect on both lines, so that carried.
+
+**Still to measure on JDK 28:** the bytecode row in the table above (`311 of 927`) predates this
+merge and is stale by whatever it added. It cannot be recomputed from a JDK 25 machine, since this
+line does not compile there at all.
+
 ## What the first JDK 28 build already absorbed
 
 The `StructuredTaskScope` API moved in four ways between JDK 26 and 28. Every one of them was found

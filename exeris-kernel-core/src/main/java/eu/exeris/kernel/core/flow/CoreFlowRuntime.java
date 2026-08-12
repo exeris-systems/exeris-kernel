@@ -404,17 +404,29 @@ final class CoreFlowRuntime { // NOPMD
             return null;
         }
         clearParkedLookupMiss(key);
+        boolean migrationPersisted = false;
         if (migrated != null) {
             // ADR-064 A3. Not persisting would leave the row naming a version the saga no longer
             // runs, and would make transform purity an unstated obligation by re-running the chain
             // on every wake.
-            persistMigratedSnapshot(migrated);
+            migrationPersisted = persistMigratedSnapshot(migrated);
             FlowDefinitionMigratedEvent.emit(
                     config.engineName(), migrated.definitionName(),
                     migrated.instanceIdMost(), migrated.instanceIdLeast(),
                     persisted.definitionVersion(), migrated.definitionVersion());
         }
-        return RuntimeFlowInstance.fromSnapshot(resolvedPlan, resumable, lifecycleGeneration.get());
+        RuntimeFlowInstance instance =
+                RuntimeFlowInstance.fromSnapshot(resolvedPlan, resumable, lifecycleGeneration.get());
+        if (migrationPersisted) {
+            // ADR-013 §5, as on every other save. The migrated snapshot is built from the loaded one
+            // and carries ITS schemaVersion, so the instance seeds the version the row held BEFORE
+            // the migration write — which the store has already advanced. Without the bump the
+            // saga's first checkpoint after a migration arrives one version behind and a durable
+            // store rejects it as OPTIMISTIC_LOCK_CONFLICT: migration would work only on stores
+            // that ignore the field, which is exactly where every migration case is exercised.
+            instance.markPersisted();
+        }
+        return instance;
     }
 
     private FlowSnapshot loadSnapshot(FlowKey key, FlowState requiredState, boolean suppressRepeatedMisses) {
@@ -654,10 +666,12 @@ final class CoreFlowRuntime { // NOPMD
                 after.opaqueState(), from.schemaVersion());
     }
 
-    private void persistMigratedSnapshot(FlowSnapshot migrated) {
-        if (snapshotStore != null) {
-            snapshotStore.save(migrated);
+    private boolean persistMigratedSnapshot(FlowSnapshot migrated) {
+        if (snapshotStore == null) {
+            return false;
         }
+        snapshotStore.save(migrated);
+        return true;
     }
 
     private CoreFlowExecutionPlan resolveVersionedPlan(FlowSnapshot persisted) {
@@ -880,7 +894,19 @@ final class CoreFlowRuntime { // NOPMD
                 .name("exeris-flow-" + instance.key().instanceIdMost() + '-' + instance.key().instanceIdLeast())
                 .unstarted(() -> runInstance(instance, startStep));
         runningThreads.add(thread);
-        thread.start();
+        try {
+            thread.start();
+        } catch (RuntimeException | Error startFailure) { //NOPMD AvoidCatchingGenericException
+            // Only runInstance()'s finally releases these, and a thread that never started never
+            // reaches it. Left in place, each refused start costs one activeFlows slot and one
+            // queueDepth permanently, so the engine's budget shrinks per occurrence until every
+            // launch is rejected with no flow running.
+            runningThreads.remove(thread);
+            queueDepth.decrementAndGet();
+            activeFlows.decrementAndGet();
+            instance.markNotScheduled();
+            throw startFailure;
+        }
     }
 
     private void runInstance(RuntimeFlowInstance instance, int startStep) {
@@ -937,7 +963,36 @@ final class CoreFlowRuntime { // NOPMD
         if (parkedInstances.remove(instance.key()) != null) {
             parkedFlows.decrement();
         }
-        launch(instance, startStep);
+        try {
+            launch(instance, startStep);
+        } catch (RuntimeException | Error failure) { //NOPMD AvoidCatchingGenericException — see below
+            // This runs from runInstance()'s finally, so an exception leaving here would replace
+            // whatever the run was already failing with — and destroy the wake either way, since
+            // claimPendingWake() consumed it and beginScheduleAfterWake() flipped the instance to
+            // RUNNING. The saga would sit marked RUNNING with no thread and no wake left to arrive,
+            // indistinguishable from working until someone asks why it never finished.
+            restoreParkedAfterFailedWake(instance, failure);
+        }
+    }
+
+    /** Puts back everything the claimed-but-unlaunched wake took, so it stays recoverable. */
+    private void restoreParkedAfterFailedWake(RuntimeFlowInstance instance, Throwable failure) {
+        instance.abandonScheduleAfterWake();
+        if (!instance.isTerminal()) {
+            // Both registries. The commoner failure here is maxConcurrentFlows — a load condition,
+            // not an OOM — and launch() drops the instance from liveInstances before throwing.
+            // Restoring only the parked index leaves it parked but invisible to every liveInstances
+            // lookup, so park() and its neighbours no-op on it; a later wake still recovers it
+            // through resolveParkedInstance, which is why this reads as nothing being wrong.
+            liveInstances.putIfAbsent(instance.key(), instance);
+            if (parkedInstances.putIfAbsent(instance.key(), instance) == null) {
+                parkedFlows.increment();
+            }
+        }
+        FlowDeferredWakeFailedEvent event = new FlowDeferredWakeFailedEvent();
+        event.definitionName = instance.definitionName();
+        event.exceptionType = failure.getClass().getName();
+        event.commit();
     }
 
     /**

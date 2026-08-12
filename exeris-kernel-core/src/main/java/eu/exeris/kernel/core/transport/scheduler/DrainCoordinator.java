@@ -80,12 +80,14 @@ public final class DrainCoordinator {
 
     private static final VarHandle BUSY_STREAMS;
     private static final VarHandle DRAINING;
+    private static final VarHandle BUSY_AT_SEAL;
 
     static {
         try {
             MethodHandles.Lookup lookup = MethodHandles.lookup();
             BUSY_STREAMS = lookup.findVarHandle(DrainCoordinator.class, "busyStreams", int.class);
             DRAINING = lookup.findVarHandle(DrainCoordinator.class, "draining", boolean.class);
+            BUSY_AT_SEAL = lookup.findVarHandle(DrainCoordinator.class, "busyAtSeal", int.class);
         } catch (ReflectiveOperationException e) {
             throw new ExceptionInInitializerError(e);
         }
@@ -96,6 +98,9 @@ public final class DrainCoordinator {
 
     @SuppressWarnings("unused") // VarHandle-accessed
     private volatile boolean draining;
+
+    @SuppressWarnings("unused") // VarHandle-accessed
+    private volatile int busyAtSeal;
 
     /**
      * Registers a starting stream as busy.
@@ -145,7 +150,45 @@ public final class DrainCoordinator {
      * keep taking counts serves nothing and lets a late arrival believe it is protected.
      */
     public void sealNow() {
-        BUSY_STREAMS.setVolatile(this, SEALED);
+        int previous = (int) BUSY_STREAMS.getAndSet(this, SEALED);
+        if (previous < 0) {
+            // Already sealed, so `previous` is the SEALED sentinel rather than a stream count.
+            // Clamping it to 0 and recording that would overwrite the figure the seal that actually
+            // happened left behind — restoring the structural zero this field was added to remove,
+            // and only on the shutdowns that abandoned streams, since a clean drain records 0
+            // anyway. The first seal is the one that saw the streams; it keeps the record.
+            return;
+        }
+        // Recorded here because it is unrecoverable afterwards: a sealed count is negative, and
+        // busyStreams() reports negative as 0 so a sealed coordinator does not read as a billion live
+        // streams. That clamp makes "how much did the deadline abandon" unanswerable after the fact —
+        // which is what made the drain JFR event's busyRemaining structurally zero on every shutdown,
+        // including the ones that gave up on live streams.
+        BUSY_AT_SEAL.setRelease(this, previous);
+    }
+
+    /**
+     * Whether the coordinator has sealed, by either route.
+     *
+     * <p>A seal is terminal: {@link #sealIfIdle()} compares against zero and a sealed count is
+     * negative, so nothing re-opens it. Callers use this to avoid waiting for a drain that has
+     * already finished.
+     */
+    public boolean isSealed() {
+        return (int) BUSY_STREAMS.getVolatile(this) < 0;
+    }
+
+    /**
+     * How many streams were still being served when the coordinator sealed.
+     *
+     * <p>{@code 0} after a clean drain — {@link #sealIfIdle()} only succeeds on zero — and the
+     * abandoned count after {@link #sealNow()} took the deadline. Reportable telemetry, not a control
+     * signal: by the time it is non-zero, shutdown has already decided to proceed.
+     *
+     * @return the busy count at seal time, or {@code 0} if not sealed
+     */
+    public int busyAtSeal() {
+        return (int) BUSY_AT_SEAL.getAcquire(this);
     }
 
     /**

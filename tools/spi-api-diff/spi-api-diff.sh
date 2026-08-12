@@ -2,10 +2,18 @@
 #
 # spi-api-diff.sh — per-release SPI compatibility diff for exeris-kernel.
 #
-# Produces a machine-checked binary-compatibility report between two revisions of
+# Produces a machine-checked compatibility report between two revisions of
 # `exeris-kernel-spi`, classified by the maturity labels declared in
 # docs/stability-matrix.md, and (optionally) fails when a surface labelled `stable`
-# takes a binary-incompatible change.
+# takes an incompatible change.
+#
+# "Incompatible" is asked in BOTH senses, because the two disagree on the change a
+# stability promise most needs to catch. Adding an abstract method to an interface is
+# binary-compatible — an existing implementor's class file still links, and fails at
+# invoke time with AbstractMethodError — but source-incompatible. A gate that asks only
+# the binary question is blind to implementors, who are half of who `stable` speaks to.
+# This is not hypothetical: FlowExecutionPlan.definitionVersion() landed abstract on a
+# `stable` surface in the 0.11 line and the binary-only gate reported it green.
 #
 # Why it compiles from git rather than resolving published artifacts: the SPI module
 # depends only on `java.*` / `jdk.*` (The Wall), so every revision in history compiles
@@ -205,6 +213,33 @@ assert_filter_selects() {  # <old-jar> <new-jar> <include-list-csv> <label>
     || die "the '$label' include filter selected no classes — check stability-surfaces.conf against the SPI tree"
 }
 
+# Asks japicmp's own source-compatibility verdict instead of counting markers.
+#
+# `--only-incompatible` reports the BINARY notion, and the two notions disagree on
+# exactly the change a `stable` label is a promise against: adding an abstract method
+# to an interface is binary-compatible, because an existing implementor's class file
+# still links — it fails later, at invoke time, with AbstractMethodError. Callers are
+# unaffected; implementors are broken. A gate that only asks the binary question is
+# blind to the half of the audience that implements the contract.
+#
+# Measured on this repository, v0.10.2 -> the 0.11 line, restricted to the `stable`
+# include list: --error-on-binary-incompatibility exits 0 on
+# FlowExecutionPlan.definitionVersion(), --error-on-source-incompatibility exits 1.
+# The exit code, not a marker count, because the marker count is what missed it.
+japicmp_source_break() {  # <old-jar> <new-jar> <include-list-csv> -> 0 clean, 1 break
+  local out rc=0
+  out="$(java -jar "$JAPICMP" -o "$1" -n "$2" -a public --ignore-missing-classes \
+         -i "$(to_japicmp_list "$3")" --error-on-source-incompatibility 2>&1)" || rc=$?
+  # Same guard as japicmp_run: a tooling failure also exits non-zero, and must not be
+  # read as "the API broke" any more than as "the API held".
+  grep -q '^Comparing' <<< "$out" \
+    || die "japicmp produced no comparison header for the source-compatibility check"
+  [[ $rc -eq 0 || $rc -eq 1 ]] \
+    || die "japicmp failed the source-compatibility check (exit $rc)"
+  SOURCE_BREAK_REPORT="$(grep -E '^[[:space:]]+[-+*]{3}\*' <<< "$out" || true)"
+  return $rc
+}
+
 # A jar that failed to build must abort the run. Without this an empty artifact
 # compares as "no differences", which is the one failure mode a compatibility
 # gate must never have.
@@ -236,6 +271,11 @@ compare_refs() {  # <old-ref> <new-ref>
   local stable_breaks
   stable_breaks="$(grep -cE '^(---!|\*\*\*!)' <<< "$stable_out" || true)"
 
+  SOURCE_BREAK_REPORT=""
+  local stable_source_breaks=0
+  japicmp_source_break "$old_jar" "$new_jar" "$STABLE_INC" || stable_source_breaks=1
+  local stable_source_detail="$SOURCE_BREAK_REPORT"
+
   local non_stable="${PREVIEW_INC}${EXPERIMENTAL_INC:+,$EXPERIMENTAL_INC}"
   local preview_breaks=0
   preview_out=""
@@ -254,6 +294,7 @@ compare_refs() {  # <old-ref> <new-ref>
     echo "|---|---|"
     echo "| Semver suggestion (japicmp) | \`$semver\` |"
     echo "| Binary-incompatible changes on \`stable\` surfaces | **$stable_breaks** |"
+    echo "| Source-incompatible changes on \`stable\` surfaces | **$stable_source_breaks** |"
     echo "| Binary-incompatible changes on \`preview\`/\`experimental\` surfaces | $preview_breaks |"
     echo
     echo "Maturity labels are read from \`tools/spi-api-diff/stability-surfaces.conf\`,"
@@ -261,8 +302,22 @@ compare_refs() {  # <old-ref> <new-ref>
     echo
     echo "## \`stable\` surfaces"
     echo
-    if [[ "$stable_breaks" -eq 0 ]]; then
-      echo "No binary-incompatible change. The stability declaration held across this release."
+    if [[ "$stable_source_breaks" -ne 0 ]]; then
+      echo "> **Gate failure — source compatibility.** A \`stable\` surface changed in a way that"
+      echo "> compiles and links for callers but breaks implementors. The usual shape is a new"
+      echo "> abstract method on an interface: an existing implementation still links and fails at"
+      echo "> invoke time with \`AbstractMethodError\`, which is why the binary check below reports"
+      echo "> nothing. Give the member a \`default\`, or demote the surface deliberately."
+      echo
+      echo '```'
+      echo "$stable_source_detail"
+      echo '```'
+      echo
+    fi
+    if [[ "$stable_breaks" -eq 0 && "$stable_source_breaks" -eq 0 ]]; then
+      echo "No binary- or source-incompatible change. The stability declaration held across this release."
+    elif [[ "$stable_breaks" -eq 0 ]]; then
+      echo "No *binary*-incompatible change — which is the finding above, not a reassurance against it."
     else
       echo "> **Gate failure.** A surface declared \`stable\` changed incompatibly. Either restore"
       echo "> compatibility, or make the change deliberate: demote the surface in"
@@ -287,10 +342,11 @@ compare_refs() {  # <old-ref> <new-ref>
     fi
   } > "$report"
 
-  printf '%-10s -> %-10s  semver=%-7s stable-breaks=%-3s preview-breaks=%-3s  %s\n' \
-    "$old_ref" "$new_ref" "$semver" "$stable_breaks" "$preview_breaks" "$report"
+  printf '%-10s -> %-10s  semver=%-7s stable-breaks=%-3s stable-src-breaks=%-3s preview-breaks=%-3s  %s\n' \
+    "$old_ref" "$new_ref" "$semver" "$stable_breaks" "$stable_source_breaks" "$preview_breaks" "$report"
 
-  if [[ "$stable_breaks" -gt 0 && $FAIL_ON_STABLE -eq 1 ]]; then rc=1; fi
+  if [[ $FAIL_ON_STABLE -eq 1 ]] \
+     && { [[ "$stable_breaks" -gt 0 ]] || [[ "$stable_source_breaks" -gt 0 ]]; }; then rc=1; fi
   return $rc
 }
 

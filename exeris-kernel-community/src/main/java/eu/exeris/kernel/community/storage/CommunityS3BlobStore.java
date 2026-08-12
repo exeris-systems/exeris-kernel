@@ -137,8 +137,9 @@ public final class CommunityS3BlobStore implements BlobStore {
         Objects.requireNonNull(ref, REF_REQUIRED);
         Objects.requireNonNull(access, "access must not be null");
         Objects.requireNonNull(ttl, "ttl must not be null");
-        if (ttl.isZero() || ttl.isNegative()) {
-            throw new IllegalArgumentException("ttl must be positive");
+        if (ttl.compareTo(BlobStorageConfig.MIN_SIGNED_URL_TTL) < 0) {
+            throw new IllegalArgumentException(
+                    "ttl must be at least one second: signed-URL expiry has one-second granularity");
         }
         String objectKey = CommunityS3ObjectKey.resolve(ref, CommunityBlobFailures.OP_SIGNED_URL);
         return Optional.of(URI.create(client.presign(access, objectKey, ttl)));
@@ -152,7 +153,7 @@ public final class CommunityS3BlobStore implements BlobStore {
     private BlobDownloadHandle download(BlobRef ref, BlobRange range) {
         Objects.requireNonNull(ref, REF_REQUIRED);
         String objectKey = CommunityS3ObjectKey.resolve(ref, CommunityBlobFailures.OP_DOWNLOAD);
-        BlobMetadata metadata = client.head(objectKey, ref, CommunityBlobFailures.OP_DOWNLOAD)
+        BlobMetadata metadata = client.head(objectKey, ref, CommunityBlobFailures.OP_DOWNLOAD, true)
                 .orElseThrow(() -> FAILURES.notFound(ref.container()));
 
         CommunityS3Slice slice = CommunityS3Slice.covering(range, metadata.sizeBytes());

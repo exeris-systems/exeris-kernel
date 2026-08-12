@@ -23,7 +23,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
 import java.lang.foreign.ValueLayout;
-import java.util.concurrent.StructuredTaskScope;
+import eu.exeris.kernel.tck.support.TckScope;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.LockSupport;
@@ -217,8 +217,7 @@ public abstract class AbstractLeakDetectionSampledTck {
             int threads = 10_000;
             AtomicLong errors = new AtomicLong(0);
 
-            try (var scope = StructuredTaskScope.open(
-                    StructuredTaskScope.Joiner.<Void>awaitAllSuccessfulOrThrow())) {
+            try (TckScope scope = TckScope.openFailFast()) {
                 for (int i = 0; i < threads; i++) {
                     scope.fork(() -> {
                         try (LoanedBuffer buf = allocator.allocate(AllocationHint.MICRO)) {
