@@ -25,8 +25,10 @@ import java.util.Objects;
  * <h2>Valhalla Readiness (JEP 401)</h2>
  * <p>All fields are primitives or immutable value types. No identity operations
  * ({@code ==}, {@code synchronized}, {@code System.identityHashCode()}) are used
- * on instances of this record. Ready for {@code value record} migration without
- * structural change.
+ * on instances of this record.
+ * Declared {@code value record} on the `preview` line (JEP 401); the distributed line compiles
+ * the same source as an identity {@code record}, and the modifier is asserted by
+ * {@code Class::isValue} in the module's value-carrier registry test.
  *
  * <h2>Predefined Profiles</h2>
  * <p>Use {@link #premium()}, {@link #standard()}, or {@link #free()} factory methods
@@ -53,7 +55,7 @@ import java.util.Objects;
  * @see <a href="../../../../docs/subsystems/memory.md">Memory Subsystem: ScalingContext</a>
  * @since 0.5.0
  */
-public record ScalingContext(
+public value record ScalingContext(
         String tierName,
         double throttleUtilization,
         double rejectUtilization,

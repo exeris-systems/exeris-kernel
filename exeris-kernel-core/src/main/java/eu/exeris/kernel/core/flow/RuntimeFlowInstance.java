@@ -79,7 +79,7 @@ final class RuntimeFlowInstance implements RuntimeFlowContextStateView { // NOPM
      * avoids accidental array copies on a path that runs once per flow instance.
      */
     @SuppressWarnings("java:S6218")
-    private record Seed(FlowKey key,
+    private value record Seed(FlowKey key,
                         String definitionName,
                         int definitionVersion,
                         long lifecycleGeneration,

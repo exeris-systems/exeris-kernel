@@ -190,14 +190,16 @@ public final class MemoryEnvironmentProbe {
      *
      * <h2>Valhalla Readiness (JEP 401)</h2>
      * <p>All fields are primitive {@code long}s. No identity operations used.
-     * Ready for {@code value record} migration.
+     * Declared {@code value record} on the `preview` line (JEP 401); the distributed line compiles
+ * the same source as an identity {@code record}, and the modifier is asserted by
+ * {@code Class::isValue} in the module's value-carrier registry test.
      *
      * @param totalMemoryBytes        total physical or container-constrained memory
      * @param jvmHeapMaxBytes         JVM max heap in bytes as reported by the runtime
      * @param recommendedOffHeapBytes computed off-heap budget ({@code total - heap - headroom})
      * @param headroomBytes           headroom reservation used in this calculation
      */
-    public record MemoryBoundaries(
+    public value record MemoryBoundaries(
             long totalMemoryBytes,
             long jvmHeapMaxBytes,
             long recommendedOffHeapBytes,

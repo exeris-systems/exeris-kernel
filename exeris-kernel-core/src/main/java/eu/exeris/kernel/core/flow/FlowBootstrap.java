@@ -29,7 +29,7 @@ public final class FlowBootstrap {
             "No FlowProvider found on classpath. "
             + "Add exeris-kernel-community or exeris-kernel-enterprise to your dependencies.";
 
-    public record BootstrapResult(FlowProvider provider, FlowEngine engine) {
+    public value record BootstrapResult(FlowProvider provider, FlowEngine engine) {
     }
 
     private FlowBootstrap() {

@@ -24,10 +24,10 @@ import java.util.Map;
  * @param segments   ordered literal and placeholder segments
  * @param paramCount number of placeholder segments, sized once for the capture map
  */
-record PathTemplate(List<Segment> segments, int paramCount) {
+value record PathTemplate(List<Segment> segments, int paramCount) {
 
     /** One compiled path segment: a {@code {name}} placeholder ({@code param=true}) or a literal. */
-    /* default */ record Segment(boolean param, String text) {}
+    /* default */ value record Segment(boolean param, String text) {}
 
     /**
      * Compiles a path into a template.

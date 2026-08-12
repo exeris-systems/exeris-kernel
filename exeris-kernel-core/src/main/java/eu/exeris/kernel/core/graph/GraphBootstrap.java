@@ -49,7 +49,7 @@ public final class GraphBootstrap {
             "No GraphProvider found on classpath. "
             + "Add exeris-kernel-community or exeris-kernel-enterprise to your dependencies.";
 
-    public record BootstrapResult(GraphProvider provider, GraphEngine engine) {
+    public value record BootstrapResult(GraphProvider provider, GraphEngine engine) {
     }
 
     private GraphBootstrap() {

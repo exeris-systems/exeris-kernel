@@ -76,6 +76,7 @@ class CommunityConnectionRefusalTest {
                 sockets.add(openQuietly(port));
             }
             awaitRefusal(engine);
+            awaitRefusalEvent(recording, tmp);
 
             recording.stop();
             recording.dump(jfr);
@@ -99,6 +100,31 @@ class CommunityConnectionRefusalTest {
         assertThat(first.getLong("activeConnections")).isEqualTo(MAX_CONNECTIONS);
         assertThat(first.getLong("totalRefused")).isPositive();
         assertThat(first.getString("bindAddress")).isEqualTo("127.0.0.1");
+    }
+
+    /**
+     * Waits for the refusal <em>event</em>, not merely for the counter.
+     *
+     * <p>{@code NativeTcpCarrier.recordRefusal} increments {@code refusedConnections} and only then
+     * calls {@code CommunityConnectionRefusedEvent.emit}, so an observer that stops the recording as
+     * soon as {@code totalRejected} moves can stop it before the commit has run. That is a
+     * check-then-stop race in this test, not a defect in the carrier: the counter is deliberately
+     * the first thing to become visible. Polling a dump closes it, and the assertions afterwards
+     * stay exactly as strict.
+     */
+    private static void awaitRefusalEvent(Recording recording, Path scratch) throws IOException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(SETTLE_TIMEOUT_SECONDS);
+        int probe = 0;
+        while (System.nanoTime() < deadline) {
+            Path dump = scratch.resolve("probe-" + probe++ + ".jfr");
+            recording.dump(dump);
+            boolean present = RecordingFile.readAllEvents(dump).stream()
+                    .anyMatch(event -> REFUSED.equals(event.getEventType().getName()));
+            if (present) {
+                return;
+            }
+        }
+        // Fall through: the assertion in the caller reports the empty list with its own message.
     }
 
     private static void awaitRefusal(TransportEngine engine) {

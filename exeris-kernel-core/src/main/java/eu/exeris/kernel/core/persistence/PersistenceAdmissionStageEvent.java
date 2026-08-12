@@ -53,7 +53,7 @@ public final class PersistenceAdmissionStageEvent {
         }
     }
 
-    public record Payload(String providerId,
+    public value record Payload(String providerId,
                           String stage,
                           int queueDepth,
                           long queueWaitP95Ms,

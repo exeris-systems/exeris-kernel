@@ -109,7 +109,7 @@ public final class KernelConfigRegistry {
      * @param key      dot-path key (e.g., {@code "network.idleTimeoutMillis"})
      * @param callback invoked with the new raw string value; must be non-null
      */
-    public record Registration(String file, String key, Consumer<String> callback) {
+    public value record Registration(String file, String key, Consumer<String> callback) {
 
         public Registration {
             Objects.requireNonNull(key,      "key must not be null");
@@ -135,7 +135,7 @@ public final class KernelConfigRegistry {
      * @param file config file name (relative to config dir), or {@code null} = any file
      * @param key  dot-path key sealed against hot-reload; must be non-null
      */
-    public record ImmutableRegistration(String file, String key) {
+    public value record ImmutableRegistration(String file, String key) {
 
         public ImmutableRegistration {
             Objects.requireNonNull(key, "key must not be null");

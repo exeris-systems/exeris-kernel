@@ -32,7 +32,7 @@ import java.lang.invoke.MethodHandle;
  *
  * @since 0.5.0
  */
-public final class CoreSslHandles {
+public value class CoreSslHandles {
 
     private final CtxHandles ctx;
     private final HandshakeHandles handshake;
@@ -75,7 +75,7 @@ public final class CoreSslHandles {
      *
      * @since 0.5.0
      */
-    public record CtxHandles(
+    public value record CtxHandles(
             MethodHandle sslServerMethod,
             MethodHandle sslClientMethod,
             MethodHandle sslCtxNewEx,
@@ -223,7 +223,7 @@ public final class CoreSslHandles {
      *
      * @since 0.5.0
      */
-    public record HandshakeHandles(
+    public value record HandshakeHandles(
             MethodHandle sslNew,
             MethodHandle sslFree,
             MethodHandle sslAccept,
@@ -311,7 +311,7 @@ public final class CoreSslHandles {
      *
      * @since 0.5.0
      */
-    public record IoHandles(
+    public value record IoHandles(
             MethodHandle sslRead,
             MethodHandle sslWrite,
             MethodHandle sslShutdown,

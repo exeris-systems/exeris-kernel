@@ -40,8 +40,11 @@ class CoreOpenSslRuntimeTest {
     void handlesReturnsInjectedCarrier() {
         CoreSslHandles handles = CoreSslHandlesTestFactory.build(null, null, null);
 
+        // Equality, not identity: CoreSslHandles is a value class on this line, so isSameAs()
+        // holds for any two equal carriers. Equality is still exact here -- the nested handle
+        // records compare their MethodHandle components, which keep their own identity.
         assertThat(newRuntime(EMPTY_LOOKUP,
-            EMPTY_LOOKUP, handles).handles()).isSameAs(handles);
+            EMPTY_LOOKUP, handles).handles()).isEqualTo(handles);
     }
 
     @Test

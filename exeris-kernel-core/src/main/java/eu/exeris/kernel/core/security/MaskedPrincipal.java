@@ -47,7 +47,7 @@ import java.util.UUID;
  * @see PrincipalContext#roleMask()
  * @see SecurityInterceptor
  */
-public record MaskedPrincipal(PrincipalContext delegate, long roleMask) implements PrincipalContext {
+public value record MaskedPrincipal(PrincipalContext delegate, long roleMask) implements PrincipalContext {
 
     /**
      * Compact constructor — fail-fast on a {@code null} delegate.

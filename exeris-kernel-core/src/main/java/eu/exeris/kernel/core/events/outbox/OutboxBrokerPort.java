@@ -69,5 +69,5 @@ public interface OutboxBrokerPort {
      * @param descriptor routing metadata
      * @param payload    RAII payload — the port must NOT call retain() or close()
      */
-    record OutboxEntry(EventDescriptor descriptor, EventPayload payload) {}
+    value record OutboxEntry(EventDescriptor descriptor, EventPayload payload) {}
 }

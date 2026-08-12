@@ -18,6 +18,7 @@ import java.net.URISyntaxException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -39,10 +40,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  * how {@code ExerisArchitectureTest} came to inspect zero Core and Community classes while reporting
  * green. The discovery floor below is the guard: a broken walk reports zero and reddens instead.
  *
- * <h2>Scope on this branch</h2>
- * <p>{@link #VALUE_CARRIERS} lists the carriers converted so far. The exhaustive form of this
- * check — every discovered record must be a value class unless explicitly excused — is added per
- * module as that module's sweep completes, because it cannot pass while the sweep is in flight.
+ * <h2>Why the assertion is exhaustive rather than a list</h2>
+ * <p>This module's sweep is complete, so the check is stated in the strong direction: <em>every</em>
+ * record discovered here must be a value class unless it appears in {@link #IDENTITY_BY_DESIGN} with
+ * a reason. A list of converted carriers would have to be edited in step with every conversion and
+ * would silently under-report when someone forgot; this form cannot be under-reported, and a newly
+ * added record has to be a deliberate decision either way.
  *
  * @since 0.11.0
  */
@@ -60,10 +63,21 @@ class ValhallaValueCarrierRegistryTest {
     private static final int CLASS_FLOOR = 150;
     private static final int RECORD_FLOOR = 25;
 
-    /** Carriers declared {@code value} in this module. Every entry must carry the modifier. */
-    private static final List<String> VALUE_CARRIERS = List.of(
-            "eu.exeris.kernel.core.persistence.TransactionRetryPolicy",
-            "eu.exeris.kernel.core.transport.syscall.SyscallHandles");
+    /**
+     * Records this module deliberately keeps as identity classes, each with the reason.
+     *
+     * <p>An entry is not a to-do — it is a decision, and the test below asserts such a record has
+     * <em>not</em> been converted, so converting one without removing it from this map reddens.
+     */
+    private static final Map<String, String> IDENTITY_BY_DESIGN = Map.of(
+            "eu.exeris.kernel.core.bootstrap.SubsystemTopologicalSorter$DependencyGraph",
+            "its Map components are mutated in place during the sort (SubsystemTopologicalSorter"
+                    + " runKahnBfs), so `value` would assert an immutability that is false — it would"
+                    + " compile and run correctly, which is exactly why the modifier must not be there");
+
+    /** The hand-written {@code value class}es, which are not records and so are checked by name. */
+    private static final List<String> VALUE_CLASSES =
+            List.of("eu.exeris.kernel.core.crypto.openssl.CoreSslHandles");
 
     // =========================================================================
     // 1. The sweep itself must not be vacuous
@@ -96,31 +110,67 @@ class ValhallaValueCarrierRegistryTest {
     // =========================================================================
 
     @Nested
-    @DisplayName("2. Declared value carriers")
-    class DeclaredCarriers {
+    @DisplayName("2. Every carrier carries the modifier")
+    class Carriers {
 
         @Test
-        @DisplayName("Every registered carrier is a value class")
-        void registeredCarriersAreValueClasses() throws ClassNotFoundException {
-            for (String fqn : VALUE_CARRIERS) {
-                assertThat(load(fqn).isValue())
-                        .as("%s must carry the value modifier; ACC_IDENTITY must be clear", fqn)
-                        .isTrue();
+        @DisplayName("Every record in this module is a value class, or is excused by name")
+        void everyRecordIsAValueClass() throws Exception {
+            List<String> identityRecords = discoverClasses().stream()
+                    .filter(Class::isRecord)
+                    .filter(type -> !type.isValue())
+                    .map(Class::getName)
+                    .filter(name -> !IDENTITY_BY_DESIGN.containsKey(name))
+                    .sorted()
+                    .toList();
+            assertThat(identityRecords)
+                    .as("these records still carry ACC_IDENTITY; convert them, or record the "
+                            + "reason in IDENTITY_BY_DESIGN so the decision is visible")
+                    .isEmpty();
+        }
+
+        /**
+         * The direction that keeps the exclusion map honest: an excused record must actually still
+         * be an identity class. Converting one while leaving it excused reddens here, so the map
+         * cannot quietly rot into a list of stale to-dos.
+         */
+        @Test
+        @DisplayName("Excused records really are still identity classes")
+        void excusedRecordsAreStillIdentityClasses() throws ClassNotFoundException {
+            for (Map.Entry<String, String> excused : IDENTITY_BY_DESIGN.entrySet()) {
+                assertThat(load(excused.getKey()).isValue())
+                        .as("%s is excused because %s — if that no longer holds, "
+                                + "convert it and drop the entry", excused.getKey(), excused.getValue())
+                        .isFalse();
             }
         }
 
         /**
-         * {@code isValue()} and the {@code ACC_IDENTITY} access flag are two reads of the same bit
-         * through different APIs. Asserting both means a change in either reflective surface is
-         * caught rather than silently trusted.
+         * Interfaces are excluded because they are neither: an interface is not a value class and
+         * does not carry {@code ACC_IDENTITY} either, so for them both reads answer "no" without
+         * disagreeing about anything.
          */
         @Test
-        @DisplayName("accessFlags() agrees with isValue() on every registered carrier")
-        void accessFlagsAgreeWithIsValue() throws ClassNotFoundException {
-            for (String fqn : VALUE_CARRIERS) {
-                assertThat(load(fqn).accessFlags())
-                        .as("%s is a value class, so ACC_IDENTITY must be absent", fqn)
-                        .doesNotContain(AccessFlag.IDENTITY);
+        @DisplayName("accessFlags() agrees with isValue() across the module")
+        void accessFlagsAgreeWithIsValue() throws Exception {
+            List<String> disagreeing = discoverClasses().stream()
+                    .filter(type -> !type.isInterface())
+                    .filter(type -> type.isValue() == type.accessFlags().contains(AccessFlag.IDENTITY))
+                    .map(Class::getName)
+                    .sorted()
+                    .toList();
+            assertThat(disagreeing)
+                    .as("for a class, exactly one of isValue() and ACC_IDENTITY must hold")
+                    .isEmpty();
+        }
+
+        @Test
+        @DisplayName("The hand-written value classes carry the modifier")
+        void handWrittenValueClassesCarryTheModifier() throws ClassNotFoundException {
+            for (String fqn : VALUE_CLASSES) {
+                assertThat(load(fqn).isValue())
+                        .as("%s must carry the value modifier; ACC_IDENTITY must be clear", fqn)
+                        .isTrue();
             }
         }
     }

@@ -15,7 +15,7 @@ import eu.exeris.kernel.spi.http.HttpMethod;
 /**
  * A respond-once path-template route: a method, a compiled {@link PathTemplate}, and its handler.
  */
-record PathTemplateRoute(HttpMethod method, PathTemplate template, HttpHandler handler) {
+value record PathTemplateRoute(HttpMethod method, PathTemplate template, HttpHandler handler) {
 
     // Package-private factory for the HttpRouter builder.
     /* default */ static PathTemplateRoute compile(HttpMethod method, String path,
