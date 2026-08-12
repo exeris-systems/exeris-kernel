@@ -122,8 +122,32 @@ class FileSinkTest {
             assertThat(logFile).exists();
             List<String> lines = Files.readAllLines(logFile, StandardCharsets.UTF_8);
             assertThat(lines)
-                    .as("At least some events should be persisted to the log file after close()")
-                    .isNotEmpty();
+                    .as("close() flushes every emitted event — none may be lost at shutdown")
+                    .hasSize(10);
+        }
+
+        @Test
+        @DisplayName("A queue backlog at close() is drained, not discarded")
+        void backlogIsDrainedOnClose() throws IOException {
+            Path logFile = tempDir.resolve("backlog.log");
+            // The producer enqueues an order of magnitude faster than the writer formats and
+            // writes, so a burst this size guarantees a backlog is still queued when close()
+            // clears the running flag. Capacity exceeds the burst, so nothing is dropped and
+            // the expected line count is exact. Without drain-on-close this loses thousands of
+            // lines; the weaker isNotEmpty() assertion above used to pass either way.
+            int burst = 5_000;
+            FileSink sink = new FileSink(logFile, 8_192);
+            for (int i = 0; i < burst; i++) {
+                sink.emit(KernelEvent.info("EX-BACKLOG-" + i, "event " + i));
+            }
+            sink.close();
+
+            assertThat(sink.droppedCount())
+                    .as("queue capacity exceeds the burst, so no event may be dropped")
+                    .isZero();
+            assertThat(Files.readAllLines(logFile, StandardCharsets.UTF_8))
+                    .as("every queued event survives close()")
+                    .hasSize(burst);
         }
 
         @Test

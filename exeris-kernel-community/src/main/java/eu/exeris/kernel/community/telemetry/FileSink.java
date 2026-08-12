@@ -52,8 +52,6 @@ public final class FileSink implements TelemetrySink {
             DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'")
                              .withZone(ZoneOffset.UTC);
 
-    private static final KernelEvent POISON = KernelEvent.info("POISON", "FileSink");
-
     private static final AtomicInteger INSTANCE_COUNTER = new AtomicInteger(0);
     private static final long ZERO_NANOS = 0L;
 
@@ -121,13 +119,7 @@ public final class FileSink implements TelemetrySink {
 
     @Override
     public void close() {
-        if (running) {
-            running = false;
-            if (!queue.offer(POISON)) {
-                // Queue saturated — writer loop will exit via the !running + isEmpty() guard.
-                droppedCount.incrementAndGet();
-            }
-        }
+        running = false;
         // Wait for the writer thread to finish and close the file handle.
         // Required for test correctness (@TempDir cleanup) and graceful shutdown.
         long gracefulNanos = TimeUnit.SECONDS.toNanos(5L);
@@ -178,20 +170,15 @@ public final class FileSink implements TelemetrySink {
                 StandardOpenOption.CREATE,
                 StandardOpenOption.APPEND)) {
 
-            KernelEvent event = queue.poll(100L, TimeUnit.MILLISECONDS);
-            while (event != POISON) {
+            // Termination is carried by `running` plus queue emptiness, never by a sentinel
+            // event: KernelEvent is a value class on this line, so `event != SENTINEL` would
+            // compare by field values and any real event equal to the sentinel would end the
+            // loop. The 100 ms poll bounds shutdown latency well inside close()'s 5 s budget.
+            while (running || !queue.isEmpty()) {
+                KernelEvent event = queue.poll(100L, TimeUnit.MILLISECONDS);
                 if (event != null) {
                     writeLine(writer, event);
-                } else if (!running && queue.isEmpty()) {
-                    break; // single exit point when shutdown + empty
                 }
-                event = queue.poll(100L, TimeUnit.MILLISECONDS);
-            }
-            // Drain any remaining events enqueued before POISON arrived
-            KernelEvent remaining = queue.poll();
-            while (remaining != null && remaining != POISON) {
-                writeLine(writer, remaining);
-                remaining = queue.poll();
             }
         } catch (InterruptedException _) {
             Thread.currentThread().interrupt();
