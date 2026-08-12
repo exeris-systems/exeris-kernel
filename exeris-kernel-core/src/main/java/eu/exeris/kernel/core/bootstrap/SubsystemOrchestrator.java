@@ -697,27 +697,16 @@ public final class SubsystemOrchestrator {
                     Thread.currentThread().interrupt();
                     throw new BootstrapException("Bootstrap interrupted during phase " + phase);
                 }
-                try {
-                    doStart(subsystem, phase, profile);
-                } catch (BootstrapException failure) {
-                    // BootstrapException only: doStart catches SubsystemException itself and routes
-                    // it through handleFailure, which either rethrows as BootstrapException or —
-                    // under DEGRADE — removes the subsystem and returns. A SubsystemException arm
-                    // here would be unreachable.
-                    //
-                    // Thrown here rather than collected across the round. Reaching this arm means
-                    // the profile is fail-fast, and the rest of the round is the subsystems that
-                    // bind sockets and accept traffic: collecting failures and checking after the
-                    // loop starts them anyway, so a boot that is already doomed serves requests on
-                    // a half-built kernel before it admits it. The fork-per-subsystem round this
-                    // replaced cancelled its siblings on the first failure; running in-thread has
-                    // to say so explicitly. Nothing rolls http back once it is listening.
-                    // Rethrown as-is. handleFailure already built "Subsystem 'X' failed: <msg>"
-                    // with the SubsystemException as cause; wrapping it again restates the message
-                    // and pushes the exception carrying the error code one level deeper for anyone
-                    // walking getCause().
-                    throw failure;
-                }
+                // Propagated, not collected. doStart routes a SubsystemException through
+                // handleFailure, which under DEGRADE removes the subsystem and returns — so a
+                // BootstrapException escaping here means the profile is fail-fast. The rest of the
+                // round is the subsystems that bind sockets and accept traffic: collecting failures
+                // and checking after the loop starts them anyway, and a boot already known to be
+                // doomed then serves requests on a half-built kernel before it admits it. The
+                // fork-per-subsystem round this replaced cancelled its siblings on the first
+                // failure; running in-thread has to let the first one out. Nothing rolls http back
+                // once it is listening.
+                doStart(subsystem, phase, profile);
             }
 
             Set<String> readyNames = ready.stream()
