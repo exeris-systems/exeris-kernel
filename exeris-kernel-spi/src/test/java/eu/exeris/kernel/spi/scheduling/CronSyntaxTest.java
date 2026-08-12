@@ -128,32 +128,36 @@ class CronSyntaxTest {
     }
 
     @Nested
-    @DisplayName("Steps are bounded by the field they stride through")
-    class StepBounds {
+    @DisplayName("Steps wider than their field are schedules, not typos")
+    class WideSteps {
 
         @Test
-        @DisplayName("a step wider than its field is rejected")
-        void rejectsStepWiderThanField() {
-            // Two digits, so parseNumber admits it; 99 minutes is not a minute stride. The javadoc on
-            // parseNumber claimed its digit cap already rejected this, which is what kept anyone from
-            // looking: the cap stops 100 and lets 99 through.
-            assertThatThrownBy(() -> new JobTrigger.Cron("*/99 * * * *"))
-                    .isInstanceOf(IllegalArgumentException.class);
+        @DisplayName("a step at or past the field's span fires once per cycle and is accepted")
+        void acceptsStepWiderThanField() {
+            // The common spellings of "every hour" and "every day". Both stride past every value but
+            // the first, so each fires exactly once per cycle. A bound at the field's upper value
+            // would reject these two while admitting */59 and */23, which fire twice — backwards
+            // from the reading that would motivate the bound, and a v0.10 schedule that stops
+            // constructing on v0.11.
+            assertThatCode(() -> new JobTrigger.Cron("0 */24 * * *")).doesNotThrowAnyException();
+            assertThatCode(() -> new JobTrigger.Cron("*/60 * * * *")).doesNotThrowAnyException();
+            assertThatCode(() -> new JobTrigger.Cron("* * * * */9")).doesNotThrowAnyException();
+        }
 
-            // Day-of-week spans 0-7, so the field runs out well inside two digits. A stride of 9
-            // fires on the first matching value and never again within the field — a schedule that
-            // looks weekly and is not.
-            assertThatThrownBy(() -> new JobTrigger.Cron("* * * * */9"))
+        @Test
+        @DisplayName("a step of zero is still rejected — it is not a stride at all")
+        void rejectsZeroStep() {
+            assertThatThrownBy(() -> new JobTrigger.Cron("*/0 * * * *"))
                     .isInstanceOf(IllegalArgumentException.class);
         }
 
         @Test
-        @DisplayName("a step equal to its field's upper bound is still a schedule")
-        void acceptsStepAtTheFieldBound() {
-            // 59 strides past every minute but the first, which is a legitimate hourly schedule
-            // spelled unusually. The bound rejects what cannot fit, not what is merely odd.
-            assertThatCode(() -> new JobTrigger.Cron("*/59 * * * *")).doesNotThrowAnyException();
-            assertThatCode(() -> new JobTrigger.Cron("*/30 * * * *")).doesNotThrowAnyException();
+        @DisplayName("a three-digit step is rejected by the digit cap, not by a field bound")
+        void rejectsThreeDigitStep() {
+            // parseNumber's two-digit cap. Worth pinning because its javadoc used to claim it also
+            // rejected steps wider than their field, which it never did.
+            assertThatThrownBy(() -> new JobTrigger.Cron("*/100 * * * *"))
+                    .isInstanceOf(IllegalArgumentException.class);
         }
     }
 }

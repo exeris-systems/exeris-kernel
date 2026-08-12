@@ -272,15 +272,23 @@ public abstract class AbstractJobSchedulerTck {
 
         @Test
         @DisplayName("close is idempotent — and the second call is not a second drain")
-        void closeIsIdempotent() {
+        void closeIsIdempotent() throws InterruptedException {
+            // A scheduler with nothing in it drains instantly, so timing a second close against an
+            // empty one proves nothing. Give the first close real work to drain, so the second is
+            // the only call that could still be waiting on anything.
+            CountDownLatch started = new CountDownLatch(1);
+            submitAsTenant("draining", new JobTrigger.OneShot(Duration.ZERO), () -> {
+                started.countDown();
+                sleepQuietly(BODY_MILLIS);
+            });
+            assertThat(started.await(FIRE_TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
+
             scheduler.close();
 
-            // The first close() is the one that drains. A second must not repeat the wait: a drain
-            // loop whose exit condition can only be satisfied once — a terminal seal, a queue
-            // already emptied — spins its whole deadline on the second call before giving up, so a
-            // shutdown that nests a try-with-resources inside an explicit close pays it in full.
-            // Bounded here rather than asserted as "fast": the point is that it terminates promptly
-            // without an operator noticing, and a wall-clock bound is what a caller experiences.
+            // The failure this bounds is a drain loop whose exit condition can only be satisfied
+            // once — a terminal seal, a queue already emptied. The second call cannot satisfy it, so
+            // it waits out its whole deadline before giving up, and a shutdown that nests a
+            // try-with-resources inside an explicit close pays that in full.
             assertTimeoutPreemptively(Duration.ofSeconds(SECOND_CLOSE_TIMEOUT_SECONDS),
                     () -> scheduler.close(),
                     "the second close() did not return promptly — it is repeating the drain");
@@ -515,6 +523,15 @@ public abstract class AbstractJobSchedulerTck {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(FIRE_TIMEOUT_SECONDS);
         while (handle.state() != expected && System.nanoTime() < deadline) {
             Thread.onSpinWait();
+        }
+    }
+
+    /** Occupies the body long enough that an unwaited-for run is still going when close() returns. */
+    private static void sleepQuietly(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException _) {
+            Thread.currentThread().interrupt();
         }
     }
 

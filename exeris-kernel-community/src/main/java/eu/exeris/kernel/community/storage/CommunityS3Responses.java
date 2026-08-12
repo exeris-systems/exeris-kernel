@@ -80,7 +80,13 @@ final class CommunityS3Responses {
             return SIZE_UNDECLARED;
         }
         try {
-            return Math.max(0L, Long.parseLong(declared.get().strip()));
+            long parsed = Long.parseLong(declared.get().strip());
+            // A negative length is undeclared, not zero. Clamping it to 0 — which is what this did —
+            // put it back on the exact path the sentinel was added to close: 0 is a legitimate size,
+            // so it passes the undeclared test and download() hands back an empty handle for an
+            // object that is not empty. The clamp cannot simply be dropped either, since -1 is now
+            // the sentinel and would read as "undeclared" by accident rather than by decision.
+            return parsed < 0 ? SIZE_UNDECLARED : parsed;
         } catch (NumberFormatException e) {
             return SIZE_UNDECLARED;
         }
