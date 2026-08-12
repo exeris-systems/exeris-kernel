@@ -171,6 +171,7 @@ public final class CommunityJobScheduler implements JobScheduler {
         // Pessimistic: an Error escaping the body unwinds through the finally below, and retiring it
         // as COMPLETED would record a job that died as one that succeeded.
         JobState outcome = JobState.FAILED;
+        boolean unrunnable = false;
         try {
             if (!registry.isRunningNow()) {
                 // close() may have snapshotted inFlight and joined this worker before it was ever
@@ -184,11 +185,16 @@ public final class CommunityJobScheduler implements JobScheduler {
                 // acquires authority nobody granted it.
                 CommunityJobJfrEvents.emitFailure(schedulerName, handle.jobName(), handle.jobId(),
                         KernelErrorCodes.EX_JOB_9001, NO_CONTEXT_REASON);
+                // Terminal, not just failed. The context is captured once at submission, so a refusal
+                // here is a permanent property of this job, not a bad run: rescheduling a repeating
+                // one re-refuses on every interval, forever, emitting the same failure event and
+                // never settling. A job that can never dispatch must stop being due.
+                unrunnable = true;
                 return;
             }
             outcome = execute(handle);
         } finally {
-            retire(handle, outcome);
+            retire(handle, outcome, unrunnable);
         }
     }
 
@@ -214,14 +220,29 @@ public final class CommunityJobScheduler implements JobScheduler {
         return JobState.COMPLETED;
     }
 
-    private void retire(CommunityJobHandle handle, JobState outcome) {
+    /**
+     * Drops the worker and settles the job in one critical section — the mirror of
+     * {@link #takeDueWorker()}, and for the same reason.
+     *
+     * <p>Split across two, the job is momentarily in neither the queue nor {@code inFlight}: the
+     * state the class javadoc calls impossible and {@code close()}'s drain relies on. A snapshot
+     * taken in that window misses the job, so {@code close()} returns while the handle still reports
+     * {@code RUNNING} and still holds the application's body and the submitter's captured identity —
+     * the containment ADR-057 §6 exists to promise. The registry takes the same
+     * {@code ReentrantLock}, so nesting here is reentrant, not a deadlock.
+     */
+    private void retire(CommunityJobHandle handle, JobState outcome, boolean unrunnable) {
         clock.lock().lock();
         try {
             inFlight.remove(Thread.currentThread());
+            if (unrunnable) {
+                registry.settleUnrunnable(handle, outcome);
+            } else {
+                registry.finishRun(handle, outcome);
+            }
         } finally {
             clock.lock().unlock();
         }
-        registry.finishRun(handle, outcome);
     }
 
     private static void join(Thread thread) {

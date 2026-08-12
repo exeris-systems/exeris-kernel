@@ -8,6 +8,7 @@
  */
 package eu.exeris.kernel.core.events;
 
+import eu.exeris.kernel.spi.exceptions.events.EventBusException;
 import eu.exeris.kernel.core.events.projection.Projection;
 import eu.exeris.kernel.core.events.projection.ProjectionEngine;
 import eu.exeris.kernel.spi.events.EventDescriptor;
@@ -38,6 +39,11 @@ class InMemoryEventBusTest {
 
     private static final String TYPE_ORDER = "OrderPlaced";
     private static final int    ORD_ORDER  = 200;
+
+    /** Subscribers in the mid-fan-out failure case: enough that the failing retain is not the last. */
+    private static final int SUBSCRIBER_COUNT = 4;
+    /** 1-based ordinal of the retain that throws — the third of the three the bus issues for N=4. */
+    private static final int FAILING_RETAIN = 3;
 
     private InMemoryEventBusTestFixture fixture;
 
@@ -105,6 +111,105 @@ class InMemoryEventBusTest {
 
         assertThat(retains.get()).isEqualTo(2);
         assertThat(closes.get()).isEqualTo(3);
+    }
+
+    @Test
+    @DisplayName("an Error escaping a handler still balances every retain — publishAndAwait")
+    @Timeout(value = 5, unit = TimeUnit.SECONDS)
+    void errorEscapingHandlerDoesNotLeakPayloadRefcount() {
+        AtomicInteger retains = new AtomicInteger(0);
+        AtomicInteger closes  = new AtomicInteger(0);
+
+        // Counts retain/close rather than allocating off-heap under PARANOID leak detection. The
+        // claim is about the REFCOUNT balance across N wrappers, and a fake payload states that
+        // directly; a LeakDetectedError would report the same fact one indirection away, and only
+        // for the subset of payloads backed by a LoanedBuffer.
+        EventPayload tracking = new EventPayload() {
+            @Override public java.lang.foreign.MemorySegment segment() { return java.lang.foreign.MemorySegment.NULL; }
+            @Override public int length() { return 0; }
+            @Override public int refCount() { return Integer.MAX_VALUE; }
+            @Override public boolean isAlive() { return true; }
+            @Override public void retain() { retains.incrementAndGet(); }
+            @Override public void close() { closes.incrementAndGet(); }
+        };
+
+        // The FIRST of three handlers throws, so two wrappers are still unreached when the stack
+        // unwinds. An Error, not a RuntimeException: the loop collects those per handler, and it
+        // was the types it did NOT collect that escaped past it.
+        fixture.bus().subscribe(TYPE_ORDER, (d, p) -> {
+            throw new StackOverflowError("handler blew up");
+        });
+        fixture.bus().subscribe(TYPE_ORDER, (d, p) -> {
+            try (p) { /* never reached */ }
+        });
+        fixture.bus().subscribe(TYPE_ORDER, (d, p) -> {
+            try (p) { /* never reached */ }
+        });
+
+        // Both lines must let the Error reach the publisher; they differ in how it arrives, because
+        // they differ in whether dispatch is sequential. On the distributed line the handlers run
+        // in-thread, so the first one's Error unwinds the publisher's own stack and arrives
+        // unwrapped. Here they fork, all three run, and the failures are aggregated — so it arrives
+        // suppressed inside EventBusException. What must NOT differ is that it arrives at all: this
+        // case reported "expecting code to raise a throwable" on this line until the subtask states
+        // were inspected after join(), because an Error kills a subtask without the fork body's
+        // catch (RuntimeException) ever seeing it.
+        assertThatThrownBy(() -> fixture.bus().publishAndAwait(descriptor(ORD_ORDER), tracking))
+                .as("the Error must still reach the publisher — releasing the wrappers is not the "
+                    + "same as swallowing what caused the unwind")
+                .isInstanceOf(EventBusException.class)
+                .satisfies(thrown -> assertThat(thrown.getSuppressed())
+                        .hasAtLeastOneElementOfType(StackOverflowError.class));
+
+        assertThat(closes.get())
+                .as("every wrapper is closed by its own try-with-resources, including the one whose "
+                    + "handler died — the refcount balance is the claim, and it holds on both lines "
+                    + "even though the number of handlers actually reached does not")
+                .isEqualTo(retains.get() + 1);
+        assertThat(closes.get()).isEqualTo(3);
+    }
+
+    @Test
+    @DisplayName("a retain failing mid-fan-out releases what was already retained — publish")
+    @Timeout(value = 5, unit = TimeUnit.SECONDS)
+    void retainFailingMidFanOutDoesNotLeakPayloadRefcount() {
+        AtomicInteger retains = new AtomicInteger(0);
+        AtomicInteger closes  = new AtomicInteger(0);
+
+        // retain() throwing is not a contrived fixture: EventPayload specifies IllegalStateException
+        // once the payload is fully released, so a racing release reaches exactly this state. The
+        // THIRD retain fails, which is the interesting index — refs are already outstanding and no
+        // handler thread has been started to own any of them.
+        EventPayload tracking = new EventPayload() {
+            @Override public java.lang.foreign.MemorySegment segment() { return java.lang.foreign.MemorySegment.NULL; }
+            @Override public int length() { return 0; }
+            @Override public int refCount() { return Integer.MAX_VALUE; }
+            @Override public boolean isAlive() { return true; }
+            @Override public void retain() {
+                if (retains.incrementAndGet() == FAILING_RETAIN) {
+                    throw new IllegalStateException("payload already fully released");
+                }
+            }
+            @Override public void close() { closes.incrementAndGet(); }
+        };
+
+        for (int i = 0; i < SUBSCRIBER_COUNT; i++) {
+            fixture.bus().subscribe(TYPE_ORDER, (d, p) -> {
+                try (p) { /* never reached — the fan-out fails before any thread starts */ }
+            });
+        }
+
+        assertThatThrownBy(() -> fixture.bus().publish(descriptor(ORD_ORDER), tracking))
+                .as("publish is fire-and-forget, but a failure BEFORE any handler thread exists "
+                    + "still belongs to the caller — swallowing it would hide the release too")
+                .isInstanceOf(IllegalStateException.class);
+
+        assertThat(closes.get())
+                .as("two retains succeeded before the third threw, so three refs were outstanding "
+                    + "(the caller's plus those two) with no handler thread to own any of them. "
+                    + "The fan-out used to leave all three, pinning the payload's segment for the "
+                    + "life of the process")
+                .isEqualTo(3);
     }
 
     @Test

@@ -12,7 +12,7 @@
 
 | Component        | Supported                                  | Notes |
 |:-----------------|:-------------------------------------------|:------|
-| **JDK**          | Java 26 (preview features enabled)         | `--enable-preview`; Loom VTs, Panama FFM, `ScopedValue`, `StructuredTaskScope`. Maven itself must run on JDK 26. |
+| **JDK**          | Java 25 LTS or newer                       | The distributed `0.11.0` artifact is preview-clean — **`--enable-preview` is not required** (ADR-066). Uses Loom VTs, Panama FFM, `ScopedValue`. Pass `--enable-native-access=ALL-UNNAMED` for the FFM transport/crypto paths. The separate `0.11.0-preview` artifact targets the newest JDK and does require the flag — see [guides/01](./guides/01-platform-and-dependencies.md). |
 | **Database**     | PostgreSQL 16                              | Persistence + Flow snapshot store + outbox; validated via Testcontainers `postgres:16`. |
 | **Event broker** | Kafka 3.6 wire (validated on CP 7.6.x)     | Optional — only when the Events subsystem uses the Kafka driver (`exeris-kernel-community-kafka`). |
 | **TLS**          | OpenSSL 3.0 – 4.x (multi-version)          | Community fd-owner TLS engine; 3.x floor retained for FIPS provider compatibility (ADR-008, OpenSSL-4 migration). |

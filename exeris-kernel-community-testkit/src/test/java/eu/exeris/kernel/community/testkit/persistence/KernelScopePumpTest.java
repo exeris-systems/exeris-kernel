@@ -124,6 +124,36 @@ class KernelScopePumpTest {
                     .as("swallowing the interrupt would strand a caller that relies on it to unwind")
                     .isTrue();
         }
+
+        @Test
+        @DisplayName("a timed-out submission is withdrawn, not left for the pump to run later")
+        void timedOutWorkIsWithdrawn() throws InterruptedException {
+            KernelScopePump pump = new KernelScopePump();
+            AtomicBoolean abandonedBodyRan = new AtomicBoolean(false);
+
+            // No pump running yet, so the submission cannot be taken and the wait must expire.
+            assertThatThrownBy(() ->
+                    pump.submitAndWait(() -> abandonedBodyRan.set(true), 1L))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("Timed out");
+
+            Thread pumpThread = startPump(pump);
+            try {
+                // A round trip the pump must complete: it proves the pump drained everything queued
+                // before this point, which is what makes the assertion below a fact rather than a race.
+                pump.submitAndWait(() -> { }, TIMEOUT_SECONDS);
+            } finally {
+                pump.requestStop();
+                pumpThread.join(TimeUnit.SECONDS.toMillis(TIMEOUT_SECONDS));
+            }
+
+            assertThat(abandonedBodyRan)
+                    .as("left queued, an abandoned body runs against fixture state the caller has "
+                        + "already given up on — and, since the pump is single-consumer, it runs "
+                        + "ahead of the next submission, whose own wait then starts behind work "
+                        + "nobody is waiting for. One timeout becomes a cascade.")
+                    .isFalse();
+        }
     }
 
     private static void runOnPump(Runnable body) throws InterruptedException {

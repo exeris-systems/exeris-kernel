@@ -330,7 +330,16 @@ final class NativeTcpStream implements TransportStream {
             MemorySegment.copy(source, 0, plain.segment(), 0, length);
             plain.setSize(length);
             plain.retain();
-            queueWrite(plain, length);
+            try {
+                queueWrite(plain, length);
+            } catch (RuntimeException failure) {
+                // queueWrite keeps the buffer with the caller when it throws, so the retain() above
+                // is a ref nothing will ever release: try-with-resources drops the allocation's own
+                // ref and leaves this one, and the PARANOID leak detector reports it as a
+                // LeakDetectedError rather than the write failure that caused it.
+                plain.close();
+                throw failure;
+            }
         }
     }
 
@@ -339,12 +348,17 @@ final class NativeTcpStream implements TransportStream {
         if (buffer == null) {
             throw new IllegalArgumentException("buffer must not be null");
         }
+        // Neither of these closes the buffer. The SPI puts it back with the caller on any thrown
+        // exception — it says so for IllegalStateException by name — so closing it here too makes
+        // the caller's own release a double-free: the SIGSEGV shape the ownership policy exists to
+        // rule out, reached by both sides obeying different halves of one contract. The two branches
+        // must agree; one of them closing and the other not is the same defect wearing a smaller
+        // hat, and in write() — which allocates and retains, so holds two refs — a close landing
+        // between ensureOpen() and here would issue three releases against them.
         if (length < 0 || length > buffer.capacity()) {
-            buffer.close();
             throw new IllegalArgumentException("length out of range for loaned buffer");
         }
         if (closeRequested.get() || closed.get()) {
-            buffer.close();
             throw new IllegalStateException(STREAM_CLOSED_MESSAGE);
         }
         if (length == 0) {

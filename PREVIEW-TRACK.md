@@ -21,6 +21,52 @@ here, where `StructuredTaskScope` is the mechanism.
 Tracking the newest JDK is a **requirement, not an indulgence**: this line converges into an LTS, so
 it has to have absorbed the API churn *before* that LTS lands, not after.
 
+## Merge-up: the v0.11 review sweep (#324, #325, #326)
+
+Carried up from `development/0.11.0`. Most of it is track-neutral — the RLS session-key fix, the S3
+download clamp and HEAD/GET split, the cron step revert, `FlowMigrationState`'s payload cap, the two
+arrow-switch conversions, the `queueWrite` ownership TCK, and the japicmp gate now asking source
+compatibility as well as binary. Three items needed a decision, and they are the reason a merge-up on
+this line is never a fast-forward:
+
+- **`OutboxOrchestrator`'s swallowed loop failure applies here too, and by a different route.** The
+  default line lost it through `StructuredScope.join()` being await-all. This line reaches the same
+  place through `Joiner.allUntil(_ -> false)`, whose `join()` also returns normally on a failed
+  subtask. The fix is ported against `Subtask.state()` rather than `ForkedTask.state()`; the
+  mechanism differs, the hole did not.
+- **`SubsystemOrchestrator`'s round fail-fast fix does NOT apply here.** It repaired a property the
+  in-thread substitution lost. This line still forks with `StructuredTaskScope.open()`, whose default
+  joiner cancels siblings on the first failure, so the property was never lost. Preview's shape kept.
+- **`InMemoryEventBus`: mechanism kept, two fixes — and one of them is this line's alone.** Handlers
+  still fork here. The interrupt path dropping already-collected handler failures was the same defect
+  on both lines, so that carried. Running the default line's regression case here then reported
+  "expecting code to raise a throwable": an `Error` out of a forked handler killed its subtask
+  without the fork body's `catch (RuntimeException)` seeing it, `allUntil` returned normally, and
+  `publishAndAwait` told the publisher delivery had succeeded. Fixed by inspecting `Subtask.state()`
+  after `join()` — the same shape as the outbox fix above, found the same way. The two lines still
+  differ in HOW the failure arrives: unwrapped on the distributed line, where dispatch is sequential
+  and unwinds the publisher's own stack; suppressed inside `EventBusException` here, where it is
+  aggregated. The case says so.
+
+**`TckScope` is not carried.** It is the TCK's own copy of the same downgrade — the default line
+needs a GA fork helper there because the TCK cannot depend on Core (the reactor cycle), and this line
+has `StructuredTaskScope` directly. The merge brought it into 13 call sites across 10 files; nine
+files took `preview`'s spelling back wholesale, `AbstractSecurityInterceptorTck` was converted by hand
+because it also carries real new cases, and the class and its test are deleted here.
+
+**Pre-existing on this line, not introduced by a merge-up:** CLAUDE.md's standalone architecture-guard
+command (`mvn -pl exeris-kernel-tck -am -Dtest=ExerisArchitectureTest ... test`) fails here with
+`[No Class Loaded]` — the guard's own non-vacuity assertion, reporting that it scanned nothing. Checked
+against a clean `origin/preview` checkout, where it fails identically. The guard itself is fine: it runs
+and passes inside the full `mvn clean install`, which is what CI does. It is the isolated invocation
+that does not set this line's classpath up, and anyone following the default line's runbook here will
+read a tooling gap as a boundary breach.
+
+**Still to measure on JDK 28:** the bytecode row in the table above (`311 of 927`) predates this
+merge and is stale by whatever it added. Recomputing it needs a JDK 28 build, which
+this merge-up now has — but the figure is a release-time measurement and belongs with the next cut of
+this line, not with a merge-up.
+
 ## What the first JDK 28 build already absorbed
 
 The `StructuredTaskScope` API moved in four ways between JDK 26 and 28. Every one of them was found

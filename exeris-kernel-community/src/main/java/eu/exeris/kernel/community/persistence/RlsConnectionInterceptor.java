@@ -31,10 +31,15 @@ import eu.exeris.kernel.spi.security.StorageContext;
  *       <td>{@code set_config('exeris.tenant_id', $1, false)} and
  *           {@code set_config('exeris.shared_scope', $2, false)} in one statement</td></tr>
  *   <tr><td>{@link StorageContext.IsolationStrategy#SEPARATED_SCHEMA}</td>
- *       <td>{@code SET search_path TO &lt;schemaName&gt;, public}, then the shared-scope setting</td></tr>
+ *       <td>{@code SET search_path TO &lt;schemaName&gt;, public}, then the same session-key statement</td></tr>
  *   <tr><td>{@link StorageContext.IsolationStrategy#DEDICATED}</td>
- *       <td>Routing is handled at the pool level by the engine; only the shared-scope setting is issued</td></tr>
+ *       <td>Routing is handled at the pool level by the engine; the session-key statement is issued anyway</td></tr>
  * </table>
+ *
+ * <p><b>Every strategy publishes both session keys.</b> Physical placement decides which connection a
+ * request lands on; it does not decide what the previous borrower left in the session. A strategy that
+ * skips {@code exeris.tenant_id} because its own isolation does not depend on it still hands the next
+ * request whatever tenant the last one published — see {@link #publishSessionKeys}.
  *
  * <h2>Shared Scope — Row Visibility (ADR-012 §4b)</h2>
  * <p>{@code exeris.shared_scope} is published alongside the tenant key on every strategy, because
@@ -84,24 +89,18 @@ public final class RlsConnectionInterceptor implements ConnectionInterceptor {
     public static final RlsConnectionInterceptor INSTANCE = new RlsConnectionInterceptor();
 
     /**
-     * SQL for SHARED strategy — injects tenant ID as a session-level variable.
+     * Publishes both session keys in one round-trip, on every strategy.
      * PostgreSQL RLS policies read {@code current_setting('exeris.tenant_id')}.
      *
      * <p>Uses parameterised bind to prevent SQL injection (isolationKey is untrusted data).
      */
-    private static final String SQL_SET_TENANT =
+    private static final String SQL_SET_SESSION_KEYS =
             "SELECT set_config('exeris.tenant_id', ?, false), set_config('exeris.shared_scope', ?, false)";
-
-    /**
-     * Shared-scope publication for the strategies whose own injection cannot carry it
-     * ({@code SEPARATED_SCHEMA}, {@code DEDICATED}). One extra round-trip; see
-     * {@link #injectSharedScope} for why it is unconditional.
-     */
-    private static final String SQL_SET_SHARED_SCOPE =
-            "SELECT set_config('exeris.shared_scope', ?, false)";
 
     private static final String SQL_SET_SCHEMA_PREFIX = "SET search_path TO ";
     private static final String SQL_SET_SCHEMA_SUFFIX = ", public";
+
+    private static final String SQL_RESET_SEARCH_PATH = "RESET search_path";
 
     private static final String INTERCEPTOR_NAME = "RlsConnectionInterceptor";
     private static final String ISOLATION_KEY_NONE = "[none]";
@@ -114,11 +113,11 @@ public final class RlsConnectionInterceptor implements ConnectionInterceptor {
      * Injects the isolation key from the current {@link eu.exeris.kernel.spi.context.KernelProviders#STORAGE_CONTEXT}
      * into the database connection before it is returned to the caller.
      *
-     * <p>O(1) per invocation. SHARED costs one round-trip (tenant key and shared scope are published by
-     * the same statement). SEPARATED_SCHEMA and DEDICATED each cost one more than before this contract
-     * gained a shared scope: the setting is orthogonal to physical placement, so it cannot ride their
-     * strategy-specific injection, and it cannot be skipped when absent without leaving a stale value on
-     * a pooled connection — see {@link #injectSharedScope}.
+     * <p>O(1) per invocation, two round-trips per strategy. Every strategy publishes both session keys
+     * in one statement; they differ only in what they do about {@code search_path}, which is the one
+     * thing placement actually decides. Nothing here is conditional on the context declaring a value:
+     * every setting is session-scoped, so on a pooled connection an unpublished setting is the previous
+     * request's, not a default — see {@link #publishSessionKeys} and {@link #resetSearchPath}.
      *
      * @param connection     the freshly acquired connection; must not be closed
      * @param storageContext the isolation descriptor resolved by the Security edge
@@ -129,16 +128,31 @@ public final class RlsConnectionInterceptor implements ConnectionInterceptor {
                                      StorageContext storageContext) {
         StorageContext.IsolationStrategy strategy = storageContext.strategy();
 
-        switch (strategy) {
-            // SHARED publishes both settings in one round-trip — the statement already existed.
-            case SHARED           -> injectTenantId(connection, storageContext);
-            case SEPARATED_SCHEMA -> {
-                injectSchemaPath(connection, storageContext);
-                injectSharedScope(connection, storageContext);
-            }
-            // Pool-level routing still needs no tenant injection, but the shared-scope setting is
-            // orthogonal to placement and must be published (or cleared) here too.
-            case DEDICATED        -> injectSharedScope(connection, storageContext);
+        // A switch EXPRESSION, so javac requires every constant to be answered. As a statement it did
+        // not: a strategy added later would match no arm and fall straight through, publishing
+        // neither session key on a pooled connection that still carries the previous request's — the
+        // silent cross-tenant read this class was repaired for, reintroduced by an enum edit
+        // elsewhere and reported by nothing.
+        //
+        // The guarantee survives version skew, which a statement's would not have. IsolationStrategy
+        // ships in exeris-kernel-spi and this class in exeris-kernel-community, and the two publish
+        // independently — so a newer SPI can hand an older driver a constant it was never compiled
+        // against. javac emits a synthetic MatchException throw for an exhaustive enum switch
+        // expression (verified in the bytecode, not assumed), so that request fails loudly instead
+        // of being served with an unpublished tenant key.
+        boolean setsOwnSearchPath = switch (strategy) {
+            case SEPARATED_SCHEMA -> true;
+            case SHARED, DEDICATED -> false;
+        };
+
+        if (setsOwnSearchPath) {
+            injectSchemaPath(connection, storageContext);
+        }
+        publishSessionKeys(connection, storageContext);
+        if (!setsOwnSearchPath) {
+            // Neither SHARED nor DEDICATED sets search_path, so both must undo whatever a
+            // SEPARATED_SCHEMA request left behind.
+            resetSearchPath(connection, storageContext);
         }
     }
 
@@ -146,13 +160,28 @@ public final class RlsConnectionInterceptor implements ConnectionInterceptor {
     // Private injection helpers
     // =========================================================================
 
-    private static void injectTenantId(PersistenceConnection connection,
-                                       StorageContext storageContext) {
+    /**
+     * Publishes {@code exeris.tenant_id} and {@code exeris.shared_scope}, on every strategy.
+     *
+     * <p><b>Unconditional in both senses</b> — every strategy runs it, and it always binds a value.
+     * {@code set_config(..., false)} is <em>session</em>-scoped, so a key left unpublished on a pooled
+     * connection is the previous borrower's, not a default. That is why absence is published as
+     * {@code ""} rather than skipped, and it is the same reason the non-SHARED strategies cannot opt
+     * out: with {@code persistence.perTenantPooling} at its default of {@code false}, a
+     * SEPARATED_SCHEMA or DEDICATED request is served from the pool a SHARED request last used. Its
+     * own isolation does not depend on {@code exeris.tenant_id}, but any RLS policy on a table it
+     * touches still reads whatever is in the session — which would be the previous tenant's key.
+     *
+     * <p>Publishing both keys together costs nothing: one {@code set_config} statement carries both,
+     * so the strategies that previously issued a scope-only statement issue this one instead. Same
+     * round-trip count, one fewer way to be wrong.
+     */
+    private static void publishSessionKeys(PersistenceConnection connection,
+                                           StorageContext storageContext) {
         String isolationKey = storageContext.isolationKey().orElse(null);
-        // For global/system context use "" to clear any prior tenant from the pooled connection.
-        // set_config(..., false) is session-level, so prior tenant values survive pool recycle.
         String effectiveKey = (isolationKey == null || isolationKey.isBlank()) ? "" : isolationKey;
-        executeSetConfig(connection, SQL_SET_TENANT, effectiveKey,
+        executeSetConfig(connection, SQL_SET_SESSION_KEYS,
+                effectiveKey.isEmpty() ? ISOLATION_KEY_NONE : effectiveKey,
                 effectiveKey, effectiveSharedScope(storageContext));
     }
 
@@ -181,29 +210,42 @@ public final class RlsConnectionInterceptor implements ConnectionInterceptor {
     }
 
     /**
-     * Publishes {@code exeris.shared_scope} for the strategies whose own injection cannot carry it.
-     *
-     * <p><b>Unconditional by design.</b> It would be cheaper to skip the round-trip when the context
-     * declares no shared scope, and that would be a fail-open bug: {@code set_config(..., false)} is
-     * <em>session</em>-scoped, so on a pooled connection the previous request's shared scope survives
-     * into the next one. A request that never asked to participate in a shared partition would then have
-     * its reads widened into it — the same pool-recycle hazard the tenant key already guards against by
-     * always writing a value. Absence must be published as {@code ""}, not left unpublished.
-     */
-    private static void injectSharedScope(PersistenceConnection connection,
-                                          StorageContext storageContext) {
-        executeSetConfig(connection, SQL_SET_SHARED_SCOPE,
-                storageContext.isolationKey().orElse(ISOLATION_KEY_NONE),
-                effectiveSharedScope(storageContext));
-    }
-
-    /**
      * The shared-scope value to publish: the declared partition, or {@code ""} to clear a stale one
      * left on a recycled connection. Never {@code null}.
      */
     private static String effectiveSharedScope(StorageContext storageContext) {
         String sharedScope = storageContext.sharedScopeKey().orElse(null);
         return (sharedScope == null || sharedScope.isBlank()) ? "" : sharedScope;
+    }
+
+    /**
+     * Returns {@code search_path} to the session default for the strategies that never set it.
+     *
+     * <p><b>Unconditional, for the same reason {@link #publishSessionKeys} is.</b> {@code SET search_path}
+     * is session-scoped, and with {@code persistence.perTenantPooling} at its default of {@code false}
+     * every non-DEDICATED tenant is served from one pool — so a connection a SEPARATED_SCHEMA request
+     * pointed at its own schema is handed, unchanged, to whatever runs next. A SHARED request inheriting
+     * it still has its {@code exeris.tenant_id} enforced by RLS, but it is resolving unqualified table
+     * names in another tenant's schema, where those policies are not what it thinks they are.
+     *
+     * <p>{@code RESET} rather than {@code SET search_path TO public}: the inverse of a session-level
+     * override is the session default, which a deployment may have set per role or per database. Writing
+     * a literal here would silently overrule that for every SHARED request.
+     *
+     * <p>Costs SHARED one round-trip it did not pay before. That is the same trade the shared-scope
+     * setting already makes, and for the same reason — a connection cannot be asked what the last
+     * request left on it.
+     */
+    private static void resetSearchPath(PersistenceConnection connection,
+                                        StorageContext storageContext) {
+        try {
+            connection.executeUpdate(SQL_RESET_SEARCH_PATH);
+        } catch (PersistenceProviderException ppe) {
+            throw PersistenceProviderException.interceptorInitFailed(
+                    INTERCEPTOR_NAME,
+                    storageContext.isolationKey().orElse(ISOLATION_KEY_NONE),
+                    ppe);
+        }
     }
 
     private static void injectSchemaPath(PersistenceConnection connection,

@@ -23,7 +23,10 @@ import java.util.Objects;
  * No identity operations. Ready for {@code value record} when JEP 401 is stable.
  *
  * @param name                  unique flow definition name (used as a key in the registry)
- * @param steps                 ordered list of step descriptors; must not be empty
+ * @param steps                 ordered list of step descriptors; must not be empty, and step names
+ *                              must be distinct — a parked saga records the name it stopped at, and
+ *                              two steps sharing one would let resume bind to the wrong step while
+ *                              the identity check still passes
  * @param timeoutDurationNanos  default duration limit for instances compiled from this definition;
  *                              scheduler computes the absolute deadline as
  *                              {@code System.nanoTime() + timeoutDurationNanos}

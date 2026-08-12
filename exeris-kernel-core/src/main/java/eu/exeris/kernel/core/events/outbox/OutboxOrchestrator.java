@@ -8,6 +8,7 @@
  */
 package eu.exeris.kernel.core.events.outbox;
 
+import eu.exeris.kernel.core.events.jfr.OutboxLoopFailureEvent;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.StructuredTaskScope;
@@ -164,7 +165,7 @@ public final class OutboxOrchestrator implements AutoCloseable {
         try (StructuredTaskScope<Void, List<StructuredTaskScope.Subtask<Void>>, RuntimeException> scope =
                      StructuredTaskScope.open(
                              StructuredTaskScope.Joiner.<Void>allUntil(_ -> false))) {
-            scope.fork(() -> {
+            StructuredTaskScope.Subtask<Void> loop = scope.fork(() -> {
                 runLoop();
                 return null;
             });
@@ -173,7 +174,35 @@ public final class OutboxOrchestrator implements AutoCloseable {
             } catch (InterruptedException _) {
                 Thread.currentThread().interrupt();
             }
+            // allUntil(_ -> false) is await-all: join() returns normally whether the subtask
+            // succeeded or threw, and the caller inspects state(). That is the same hole the default
+            // line had through StructuredScope, reached by a different mechanism — so discarding the
+            // handle here made every escaping Throwable vanish on this track too: `running` stayed
+            // true, the state machine kept reporting a live poll loop, and the outbox stalled for
+            // good with unpublished events piling up behind a green health check. executeTick()
+            // absorbs RuntimeException itself, so what reaches this is what the loop was never going
+            // to survive — an Error such as NoClassDefFoundError from a broker driver.
+            reportLoopFailure(loop);
         }
+    }
+
+    private void reportLoopFailure(StructuredTaskScope.Subtask<Void> loop) {
+        if (loop.state() != StructuredTaskScope.Subtask.State.FAILED) {
+            return;
+        }
+        OutboxLoopFailureEvent event = new OutboxLoopFailureEvent();
+        event.exceptionType = loop.exception().getClass().getName();
+        event.stateAtFailure = stateMachine.currentStateName();
+        event.commit();
+
+        // The state machine, not `running`. `running` is stop()'s latch: stop() gates on
+        // compareAndSet(true, false), so clearing it here would make the kernel's later shutdown
+        // return immediately without interrupting the owner, joining it, or forcing the stopped
+        // transition — disarming the drain in exactly the failure case this reporting exists to
+        // surface. What falsely claimed to be running was the state machine, and that is what this
+        // corrects; forceTransitionToStopped() is what stop() itself calls, so a later stop() finds
+        // nothing left to do rather than finding its own guard already tripped.
+        stateMachine.forceTransitionToStopped();
     }
 
     private void runLoop() {

@@ -121,11 +121,20 @@ distributed**. Main sources compile without it. This is the whole of the distinc
 
 ### 4. The gate reads bytecode, not sources
 
-`tools/preview-bytecode-scan/` scans `*/target/classes` and fails the build if any distributed class
-carries `minor_version 0xFFFF` or targets a class-file major above the LTS baseline. Bytecode rather
-than a source grep, for three reasons: the stamp is what a consumer actually trips over; it survives
-generated and annotation-processor-emitted code that a grep would miss; and it cannot be satisfied by
-a comment claiming compliance.
+`tools/preview-bytecode-scan/` reads the **published jars** and fails the build if any distributed
+class carries `minor_version 0xFFFF` or targets a class-file major other than the LTS baseline.
+Bytecode rather than a source grep, for three reasons: the stamp is what a consumer actually trips
+over; it survives generated and annotation-processor-emitted code that a grep would miss; and it
+cannot be satisfied by a comment claiming compliance.
+
+Jars rather than `*/target/classes`, and the reactor's declared modules rather than a disk glob —
+both because a gate must not be able to report success on work it did not do. `exeris-kernel-tck`
+has no `src/main` at all, so its entire distributed surface is a test-jar that a `classes` glob
+cannot see; 55 of its classes shipped preview-stamped for a whole milestone, invisible by
+construction. And a glob answers "what did this build happen to produce", which after a partial
+`mvn -pl <module> package` means the gate scans one jar and prints a clean result. The module list
+now comes from the reactor POM, a module that published no jar is a failure rather than an absence,
+and an unreadable artifact is reported as unscanned instead of ending the run in a traceback.
 
 Both failure modes are proven to fail the gate by byte-level mutation of a built class, not by
 inspection.

@@ -215,6 +215,20 @@ The policy answers `RouteRequirement` (`permitAll` / `authenticated` / `requirin
 `PrincipalContext` into admit / `401` / `403`. Roles are not expressible here — see
 [`security.md`](security.md) for why the edge checks scopes and `@RequiresRole` stays at the method.
 
+**A stream open passes the same gate as a request, through the same code.** Opening an SSE stream is
+a request that happens to be answered by an engine rather than an exchange, so it is subject to the
+route requirement identically: `CommunityHttpRequestDispatcher.dispatchStream` runs the same
+`authorize` as `dispatch`, and only the response tail differs, because a stream writes its own head
+and must not receive the respond-once tail. Until 0.11 it did not: the streaming branch returned
+before `dispatch` was ever reached, so a bound policy and the `SecurityInterceptor` were both skipped
+and an SSE handler ran with no `PrincipalContext` bound. The separate entry point exists to keep the
+response handling apart, **not** the decision — one implementation, one place it can drift.
+
+The binding covers the stream's whole life rather than its open alone: the stream dispatcher runs the
+handler's emit loop on the calling thread, inside `SecurityInterceptor.intercept`'s scope. The denial
+exchange is supplied lazily, so an admitted open — every open, in a healthy deployment — does not
+allocate one.
+
 ---
 
 ### HTTP/2 stream admission (since v0.8 Sprint 5, HTTP-112)

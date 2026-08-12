@@ -42,14 +42,29 @@ final class CommunityS3DownloadHandle implements BlobDownloadHandle {
      * @param body      the response buffer, or {@code null} when there is nothing to read
      * @param start     offset within {@code body} where the readable bytes begin — non-zero only when a
      *                  store answered a ranged request with the whole object
-     * @param available number of readable bytes from {@code start}
+     * @param available number of bytes the slice expects from {@code start}, derived from the HEAD
+     *                  metadata; clamped here to what the GET actually delivered
      */
     /* default */ CommunityS3DownloadHandle(BlobMetadata metadata, LoanedBuffer body, long start,
                                             long available) {
         this.metadata = metadata;
         this.body = body;
         this.start = start;
-        this.available = available;
+        // `available` comes from the HEAD size; the bytes come from a separate GET. The two can
+        // disagree — the object is overwritten smaller between the two calls, or the store answers a
+        // Range with less than asked. Trusting the HEAD figure would copy past the delivered bytes,
+        // and segment() spans the pooled slot's whole capacity rather than the response, so the copy
+        // would succeed and hand the caller whatever the previous response left in that slot.
+        // size() is the write cursor: what this response actually put there.
+        this.available = body == null
+                ? 0L
+                // Math.max/Math.min, not Math.clamp, and Sonar will keep asking. clamp is partial:
+                // it throws when min > max, so a negative `available` — which this floors to zero —
+                // would become an IllegalArgumentException from a constructor whose whole job here
+                // is to be defensive. Unreachable through today's two call sites, both of which pass
+                // a floored slice length, but trading a total expression for a throwing one to
+                // satisfy a style rule is the wrong direction.
+                : Math.max(0L, Math.min(available, body.size() - start));
     }
 
     @Override

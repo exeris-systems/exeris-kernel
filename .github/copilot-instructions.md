@@ -26,7 +26,7 @@ Current repository realities to respect:
 - No unstructured concurrency in runtime orchestration paths where structured scope is expected.
 
 ### B) Strong Defaults (enforce by default, allow justified exceptions)
-- Prefer `StructuredTaskScope` for orchestration concurrency.
+- Prefer structured orchestration concurrency. On the preview-clean default line that is the kernel's own `core.concurrent.StructuredScope` (fork/join/cancel over virtual threads); `StructuredTaskScope` is a preview API and belongs only on the `preview` branch (ADR-066).
 - Prefer `MemorySegment`, `LoanedBuffer`, and `VarHandle` on runtime hot paths.
 - Prefer JFR-first instrumentation for subsystem lifecycle/failure points (bootstrap, allocation failure, bind/start, state transitions).
 - Prefer expanding TCK coverage when observable SPI behavior changes.

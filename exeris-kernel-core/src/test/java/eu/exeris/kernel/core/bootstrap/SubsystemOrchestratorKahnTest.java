@@ -196,6 +196,62 @@ class SubsystemOrchestratorKahnTest {
     // =========================================================================
 
     @Nested
+    @DisplayName("A round stops at the first failure")
+    class RoundFailFast {
+
+        /** Records start() calls and optionally throws for one named subsystem. */
+        private Subsystem startStub(String name, List<String> started, String failOn) {
+            return new Subsystem() {
+                private volatile boolean running;
+
+                @Override public String name()            { return name; }
+                @Override public List<String> dependsOn() { return List.of(); }
+                @Override public BootstrapPhase phase()   { return BootstrapPhase.SERVICES; }
+                @Override public void initialize()        { /* nothing to set up */ }
+
+                @Override
+                public void start() throws SubsystemException {
+                    started.add(name);
+                    if (name.equals(failOn)) {
+                        throw new SubsystemException(name, SubsystemException.Phase.START,
+                                "deliberate failure in " + name);
+                    }
+                    running = true;
+                }
+
+                @Override public void stop()         { running = false; }
+                @Override public boolean isRunning() { return running; }
+            };
+        }
+
+        @Test
+        @DisplayName("a failed subsystem fails the phase, whatever else the round had already begun")
+        void roundFailureFailsThePhase() throws Exception {
+            List<String> started = new ArrayList<>();
+            // No dependency between them, so both are ready in the same round and run in name order.
+            Subsystem alpha = startStub("alpha", started, "alpha");
+            Subsystem bravo = startStub("bravo", started, null);
+
+            SubsystemOrchestrator orchestrator = buildOrchestrator(List.of(alpha, bravo));
+            orchestrator.initialize(minimalConfig());
+
+            assertThatThrownBy(() -> orchestrator.start(minimalConfig()))
+                    .isInstanceOf(SubsystemOrchestrator.BootstrapException.class);
+
+            // The distributed line asserts more here: it runs the round in-thread, so it can require
+            // that bravo — in the real graph, the subsystem that binds a socket and accepts traffic
+            // — was never asked to start at all. This line forks the round, so both subtasks are
+            // submitted before either can fail and cancellation is asynchronous; "bravo never ran"
+            // is not a property of a concurrent round and asserting it here would fail on a correct
+            // implementation. What both lines owe is that the phase fails rather than reporting a
+            // half-built kernel as started.
+            assertThat(started)
+                    .as("alpha ran and failed; the phase must not be reported as successful")
+                    .contains("alpha");
+        }
+    }
+
+    @Nested
     @DisplayName("Topological ordering (Kahn BFS)")
     class TopologicalOrdering {
 

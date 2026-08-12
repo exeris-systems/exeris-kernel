@@ -17,6 +17,8 @@ import eu.exeris.kernel.spi.security.StorageContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -46,6 +48,11 @@ class RlsConnectionInterceptorTest {
 
     private static final String SQL_TENANT_AND_SCOPE =
             "SELECT set_config('exeris.tenant_id', ?, false), set_config('exeris.shared_scope', ?, false)";
+    /**
+     * The retired scope-only statement. SEPARATED_SCHEMA and DEDICATED used to issue this, which is
+     * exactly how they left {@code exeris.tenant_id} at the previous borrower's value. Kept here so
+     * {@link #noStrategyPublishesScopeWithoutTenant} can assert nothing brings it back.
+     */
     private static final String SQL_SCOPE_ONLY =
             "SELECT set_config('exeris.shared_scope', ?, false)";
 
@@ -61,7 +68,7 @@ class RlsConnectionInterceptorTest {
     void separatedSchemaValidSchemaExecutesExactSql() {
         when(storageContext.strategy()).thenReturn(StorageContext.IsolationStrategy.SEPARATED_SCHEMA);
         when(storageContext.schemaName()).thenReturn(Optional.of("tenant_01"));
-        stubStatement(SQL_SCOPE_ONLY);
+        stubStatement(SQL_TENANT_AND_SCOPE);
 
         RlsConnectionInterceptor.INSTANCE.onConnectionAcquired(connection, storageContext);
 
@@ -112,6 +119,47 @@ class RlsConnectionInterceptorTest {
     }
 
     // =========================================================================
+    // Tenant key — published on every strategy, not just the one that reads it
+    // =========================================================================
+
+    @ParameterizedTest
+    @EnumSource(StorageContext.IsolationStrategy.class)
+    @DisplayName("every strategy republishes exeris.tenant_id, whatever its own isolation rests on")
+    void everyStrategyRepublishesTenantId(StorageContext.IsolationStrategy strategy) {
+        when(storageContext.strategy()).thenReturn(strategy);
+        when(storageContext.isolationKey()).thenReturn(Optional.of("tenant-key-01"));
+        if (strategy == StorageContext.IsolationStrategy.SEPARATED_SCHEMA) {
+            when(storageContext.schemaName()).thenReturn(Optional.of("tenant_01"));
+        }
+        stubStatement(SQL_TENANT_AND_SCOPE);
+
+        RlsConnectionInterceptor.INSTANCE.onConnectionAcquired(connection, storageContext);
+
+        // SEPARATED_SCHEMA and DEDICATED do not rely on exeris.tenant_id for their own isolation, and
+        // that is precisely why leaving it unpublished is unsafe: with perTenantPooling at its default
+        // of false they are served from the pool a SHARED request last used, and set_config(..., false)
+        // is session-scoped. An RLS policy on any table they touch would read the previous tenant's key.
+        verify(statement).bindString(0, "tenant-key-01");
+    }
+
+    @ParameterizedTest
+    @EnumSource(StorageContext.IsolationStrategy.class)
+    @DisplayName("no strategy publishes the shared scope without the tenant key")
+    void noStrategyPublishesScopeWithoutTenant(StorageContext.IsolationStrategy strategy) {
+        when(storageContext.strategy()).thenReturn(strategy);
+        if (strategy == StorageContext.IsolationStrategy.SEPARATED_SCHEMA) {
+            when(storageContext.schemaName()).thenReturn(Optional.of("tenant_01"));
+        }
+        stubStatement(SQL_TENANT_AND_SCOPE);
+
+        RlsConnectionInterceptor.INSTANCE.onConnectionAcquired(connection, storageContext);
+
+        // The two settings travel in one statement. A branch that reaches for the scope-only statement
+        // is a branch that decided the tenant key was somebody else's problem.
+        verify(connection, never()).prepare(SQL_SCOPE_ONLY);
+    }
+
+    // =========================================================================
     // Shared scope — ADR-012 §4b row visibility
     // =========================================================================
 
@@ -127,7 +175,6 @@ class RlsConnectionInterceptorTest {
 
         verify(statement).bindString(0, "tenant-key-01");
         verify(statement).bindString(1, "world-alpha");
-        verify(connection, never()).prepare(SQL_SCOPE_ONLY);
     }
 
     @Test
@@ -143,29 +190,72 @@ class RlsConnectionInterceptorTest {
                 .bindString(1, "");
     }
 
+    // =========================================================================
+    // search_path — pool-recycle isolation (ADR-012)
+    // =========================================================================
+
+    @Test
+    @DisplayName("shared strategy resets search_path — a SEPARATED_SCHEMA request may have set it")
+    void sharedStrategyResetsSearchPath() {
+        when(storageContext.strategy()).thenReturn(StorageContext.IsolationStrategy.SHARED);
+        when(storageContext.isolationKey()).thenReturn(Optional.of("tenant-key-01"));
+        stubStatement(SQL_TENANT_AND_SCOPE);
+
+        RlsConnectionInterceptor.INSTANCE.onConnectionAcquired(connection, storageContext);
+
+        // Unconditional: with persistence.perTenantPooling defaulting to false, SHARED and
+        // SEPARATED_SCHEMA are served from one pool, and SET search_path is session-scoped — so
+        // skipping this when the context declares no schema inherits the previous tenant's.
+        verify(connection).executeUpdate("RESET search_path");
+    }
+
+    @Test
+    @DisplayName("dedicated strategy resets search_path for the same pool-recycle reason")
+    void dedicatedStrategyResetsSearchPath() {
+        when(storageContext.strategy()).thenReturn(StorageContext.IsolationStrategy.DEDICATED);
+        stubStatement(SQL_TENANT_AND_SCOPE);
+
+        RlsConnectionInterceptor.INSTANCE.onConnectionAcquired(connection, storageContext);
+
+        verify(connection).executeUpdate("RESET search_path");
+    }
+
+    @Test
+    @DisplayName("separatedSchema does not reset — its own SET overwrites whatever was there")
+    void separatedSchemaDoesNotResetSearchPath() {
+        when(storageContext.strategy()).thenReturn(StorageContext.IsolationStrategy.SEPARATED_SCHEMA);
+        when(storageContext.schemaName()).thenReturn(Optional.of("tenant_01"));
+        stubStatement(SQL_TENANT_AND_SCOPE);
+
+        RlsConnectionInterceptor.INSTANCE.onConnectionAcquired(connection, storageContext);
+
+        verify(connection, never()).executeUpdate("RESET search_path");
+        verify(connection).executeUpdate("SET search_path TO tenant_01, public");
+    }
+
     @Test
     @DisplayName("dedicated strategy publishes the shared scope — orthogonal to pool-level routing")
     void dedicatedStrategyPublishesSharedScope() {
         when(storageContext.strategy()).thenReturn(StorageContext.IsolationStrategy.DEDICATED);
         when(storageContext.sharedScopeKey()).thenReturn(Optional.of("world-alpha"));
-        stubStatement(SQL_SCOPE_ONLY);
+        stubStatement(SQL_TENANT_AND_SCOPE);
 
         RlsConnectionInterceptor.INSTANCE.onConnectionAcquired(connection, storageContext);
 
-        verify(connection).prepare(SQL_SCOPE_ONLY);
-        verify(statement).bindString(0, "world-alpha");
+        verify(connection).prepare(SQL_TENANT_AND_SCOPE);
+        verify(statement).bindString(1, "world-alpha");
     }
 
     @Test
     @DisplayName("dedicated strategy clears the shared scope when none is declared")
     void dedicatedStrategyClearsSharedScopeWhenAbsent() {
         when(storageContext.strategy()).thenReturn(StorageContext.IsolationStrategy.DEDICATED);
-        stubStatement(SQL_SCOPE_ONLY);
+        stubStatement(SQL_TENANT_AND_SCOPE);
 
         RlsConnectionInterceptor.INSTANCE.onConnectionAcquired(connection, storageContext);
 
         verify(statement)
-                .bindString(0, "");
+                .bindString(1, "");
     }
 
     @Test
@@ -174,11 +264,11 @@ class RlsConnectionInterceptorTest {
         when(storageContext.strategy()).thenReturn(StorageContext.IsolationStrategy.SEPARATED_SCHEMA);
         when(storageContext.schemaName()).thenReturn(Optional.of("tenant_01"));
         when(storageContext.sharedScopeKey()).thenReturn(Optional.of("world-alpha"));
-        stubStatement(SQL_SCOPE_ONLY);
+        stubStatement(SQL_TENANT_AND_SCOPE);
 
         RlsConnectionInterceptor.INSTANCE.onConnectionAcquired(connection, storageContext);
 
         verify(connection).executeUpdate("SET search_path TO tenant_01, public");
-        verify(statement).bindString(0, "world-alpha");
+        verify(statement).bindString(1, "world-alpha");
     }
 }

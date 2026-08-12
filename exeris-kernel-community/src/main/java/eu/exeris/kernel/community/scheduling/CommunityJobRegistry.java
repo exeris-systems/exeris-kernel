@@ -25,6 +25,10 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * @since 0.11.0
  */
+// TooManyMethods: settle/settleUnrunnable are two more terminal paths on a class that already owns
+// every one of them. Concentrating them here is what makes "a settled job releases its payload"
+// checkable in one place.
+@SuppressWarnings("PMD.TooManyMethods")
 final class CommunityJobRegistry {
 
     private final CommunitySchedulerClock clock;
@@ -97,8 +101,14 @@ final class CommunityJobRegistry {
             if (handle.isTerminal() || handle.rawState() == JobState.CANCELLED) {
                 return false;
             }
+            boolean wasRunning = handle.rawState() == JobState.RUNNING;
             handle.rawState(JobState.CANCELLED);
             queue.remove(handle);
+            // Not while a body is in flight — it is still reading the descriptor. finishRun() releases
+            // that one when the run ends.
+            if (!wasRunning) {
+                settle(handle);
+            }
             clock.signal();
             return true;
         } finally {
@@ -118,10 +128,13 @@ final class CommunityJobRegistry {
         clock.lock().lock();
         try {
             if (handle.rawState() == JobState.CANCELLED) {
+                // Cancelled mid-run: the body has now finished, so the payload it was reading can go.
+                settle(handle);
                 return;
             }
             if (!running || handle.descriptor().trigger() instanceof JobTrigger.OneShot) {
                 handle.rawState(outcome);
+                settle(handle);
                 return;
             }
             // SCHEDULED, not the outcome: a requeued job reporting COMPLETED would look terminal to
@@ -136,6 +149,42 @@ final class CommunityJobRegistry {
         }
     }
 
+    /**
+     * Caller holds the lock. Drops what a job that can no longer run was holding.
+     *
+     * <p>The handle itself stays in {@link #jobs} so {@code scheduler.handle(id)} keeps answering —
+     * that reachability is what ADR-057 §6 asks for. What goes is the application's job body and the
+     * submitter's identity, which would otherwise be pinned for the scheduler's whole life, once per
+     * job it has ever run.
+     */
+    private void settle(CommunityJobHandle handle) {
+        handle.releasePayload();
+        triggers.forget(handle.jobId());
+    }
+
+    /**
+     * Retires a job that can never dispatch, whatever its trigger says.
+     *
+     * <p>Distinct from {@link #finishRun}: that one asks the trigger whether to run again, which is
+     * the right question after a run and the wrong one after a refusal. A job refused for having no
+     * captured context will be refused identically on every future fire — the context is captured at
+     * submission and does not come back — so requeueing it produces an endless failure loop rather
+     * than a retry.
+     */
+    /* default */ void settleUnrunnable(CommunityJobHandle handle, JobState outcome) {
+        clock.lock().lock();
+        try {
+            if (handle.rawState() != JobState.CANCELLED) {
+                handle.rawState(outcome);
+            }
+            queue.remove(handle);
+            settle(handle);
+            clock.signal();
+        } finally {
+            clock.lock().unlock();
+        }
+    }
+
     /** Caller holds the lock. Stops accepting work and settles everything still queued. */
     /* default */ void shutdown() {
         running = false;
@@ -143,6 +192,7 @@ final class CommunityJobRegistry {
             if (!handle.isTerminal()) {
                 handle.rawState(JobState.COMPLETED);
             }
+            settle(handle);
         }
         queue.clear();
         clock.signal();

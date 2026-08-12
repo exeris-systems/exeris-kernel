@@ -34,6 +34,7 @@ import java.lang.foreign.MemorySegment;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Objects;
+import java.util.function.Supplier;
 
 // CyclomaticComplexity: route dispatch table (auth, health, user handlers) — each branch is a
 // terminal decision, not reducible without introducing opaque indirection.
@@ -67,7 +68,6 @@ final class CommunityHttpRequestDispatcher {
     }
 
     /* default */ void dispatch(HttpRequest request, HttpExchange exchange, HttpHandler handler) {
-        String path = request.path();
         HttpMethod method = request.method();
 
         if (persistenceEngine != null) {
@@ -82,30 +82,77 @@ final class CommunityHttpRequestDispatcher {
             }
         }
 
-        // A route the application never described about is decided by the policy, not by this
-        // driver. With no policy bound the requirement is permit-all, which is exactly how the kernel
-        // behaved before ADR-061 — declaring nothing changes nothing.
-        RouteRequirement requirement =
-                routePolicy == null ? RouteRequirement.permitAll() : routePolicy.requirementFor(method, path);
-
-        if (requirement != null && requirement.kind() == RouteRequirement.Kind.PERMIT_ALL) {
-            handleWithinRequestSession(method, request, exchange, handler);
-        } else {
-            // Identity is required — or the policy returned null, which is a defect the enforcer
-            // turns into a denial rather than an admission.
-            boolean admitted = securityInterceptor != null
-                    && interceptRequest(
-                    request,
-                    () -> handleAuthorizedRequest(requirement, method, request, exchange, handler));
-            if (!admitted) {
-                exchange.respond(HttpResponse.noBody(HttpStatus.UNAUTHORIZED, request.version()));
-                return;
-            }
+        if (!authorize(request, () -> exchange,
+                () -> handleWithinRequestSession(method, request, exchange, handler))) {
+            return;
         }
 
         if (!isResponded(exchange)) {
             exchange.respond(HttpResponse.noBody(HttpStatus.INTERNAL_SERVER_ERROR, request.version()));
         }
+    }
+
+    /**
+     * Applies the ADR-061 route requirement to a streaming open, running {@code openStream} only if the
+     * request is admitted.
+     *
+     * <p>Separate entry point from {@link #dispatch} because a stream writes its own response head and
+     * must not get this dispatcher's respond-once tail — but the authorization itself is the same code,
+     * deliberately. Streaming routes previously reached the handler without passing any of it: the
+     * stream branch returns before {@code dispatch} is ever called, so a bound {@link HttpRoutePolicy}
+     * and the {@link SecurityInterceptor} were both simply skipped, and an SSE handler ran with no
+     * {@code PRINCIPAL_CONTEXT} bound.
+     *
+     * <p>The binding holds for the stream's whole life, not just its open: the stream dispatcher runs
+     * the handler's emit loop on the calling thread, so it executes inside
+     * {@link SecurityInterceptor#intercept}'s scope.
+     *
+     * @param request    the parsed request that opened the stream
+     * @param denial     supplies an exchange used ONLY to write a denial. A supplier rather than an
+     *                   exchange because the admitted case — the common one — never needs it, and
+     *                   building one per stream open would spend an allocation on the path whose
+     *                   whole point is that it hands the socket to the stream engine instead
+     * @param openStream opens the stream and runs its emit loop
+     */
+    /* default */ void dispatchStream(HttpRequest request, Supplier<HttpExchange> denial,
+                                      Runnable openStream) {
+        authorize(request, denial, openStream);
+    }
+
+    /**
+     * Resolves the route requirement and runs {@code admitted} if the request passes it.
+     *
+     * @return {@code false} if the request was denied and a response has already been written
+     */
+    private boolean authorize(HttpRequest request, Supplier<HttpExchange> exchange, Runnable admitted) {
+        // A route the application never described is decided by the policy, not by this driver. With
+        // no policy bound the requirement is permit-all — an opt-in seam, so an application that
+        // declares nothing carries no edge authorization at all.
+        //
+        // That is NOT "unchanged behaviour": up to 0.10 this driver enforced a /secure prefix with
+        // security:read / security:write compiled in, and ADR-061 obligation 4 deleted the
+        // convention deliberately. An application that relied on the prefix and declares no policy
+        // serves those routes to anonymous callers. The release notes carry the migration step.
+        RouteRequirement requirement = routePolicy == null
+                ? RouteRequirement.permitAll()
+                : routePolicy.requirementFor(request.method(), request.path());
+
+        if (requirement != null && requirement.kind() == RouteRequirement.Kind.PERMIT_ALL) {
+            // No requirement means no interceptor run, so the handler sees no PRINCIPAL_CONTEXT even
+            // when the caller presented a valid token. A route that wants identity without demanding
+            // a scope declares authenticated(), which is a different Kind — not permitAll().
+            admitted.run();
+            return true;
+        }
+        // Identity is required — or the policy returned null, which is a defect the enforcer
+        // turns into a denial rather than an admission.
+        boolean intercepted = securityInterceptor != null
+                && interceptRequest(request, () -> handleAuthorizedRequest(requirement, request, exchange, admitted));
+        if (!intercepted) {
+            exchange.get().respond(HttpResponse.noBody(HttpStatus.UNAUTHORIZED, request.version()));
+            return false;
+        }
+        return true;
     }
 
     private boolean interceptRequest(HttpRequest request, Runnable admittedHandler) {
@@ -124,20 +171,31 @@ final class CommunityHttpRequestDispatcher {
     }
 
     private void handleAuthorizedRequest(RouteRequirement requirement,
-                                         HttpMethod method,
                                          HttpRequest request,
-                                         HttpExchange exchange,
-                                         HttpHandler handler) {
+                                         Supplier<HttpExchange> exchange,
+                                         Runnable admitted) {
         PrincipalContext principal = KernelProviders.PRINCIPAL_CONTEXT.isBound()
                 ? KernelProviders.PRINCIPAL_CONTEXT.get()
                 : null;
 
-        switch (RouteAuthorizationEnforcer.decide(requirement, principal)) {
-            case ADMIT -> handleWithinRequestSession(method, request, exchange, handler);
-            case FORBIDDEN ->
-                    exchange.respond(HttpResponse.noBody(HttpStatus.FORBIDDEN, request.version()));
-            case UNAUTHENTICATED ->
-                    exchange.respond(HttpResponse.noBody(HttpStatus.UNAUTHORIZED, request.version()));
+        // A switch EXPRESSION, so javac requires every RouteDecision to be answered. As a statement
+        // it did not, and a decision added later would match no arm: the request would fall out of
+        // this method having neither run the handler nor written a response, which the dispatcher's
+        // respond-once tail then turns into a 500. A new way to deny would arrive as an unexplained
+        // server error rather than as a compile failure — and as an admission, on the paths where
+        // falling through means the handler already ran. Under artifact skew (RouteDecision lives in
+        // the SPI, this dispatcher in Community) javac's synthetic MatchException makes it a loud
+        // failure rather than either.
+        HttpStatus denial = switch (RouteAuthorizationEnforcer.decide(requirement, principal)) {
+            case ADMIT -> null;
+            case FORBIDDEN -> HttpStatus.FORBIDDEN;
+            case UNAUTHENTICATED -> HttpStatus.UNAUTHORIZED;
+        };
+
+        if (denial == null) {
+            admitted.run();
+        } else {
+            exchange.get().respond(HttpResponse.noBody(denial, request.version()));
         }
     }
 

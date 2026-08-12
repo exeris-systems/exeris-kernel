@@ -1,6 +1,6 @@
 ---
 name: exeris-java26-panama-loom
-description: 'Java 26+ runtime PR review for Exeris Kernel. Use for every PR that touches concurrency, memory, native interop, and data carriers to enforce ScopedValue, StructuredTaskScope, Panama FFM, Valhalla readiness, immutable/early construction, and removal of legacy framework idioms.'
+description: 'Runtime PR review for Exeris Kernel. Use for every PR that touches concurrency, memory, native interop, and data carriers to enforce ScopedValue, structured concurrency (track-dependent), Panama FFM, Valhalla readiness, immutable/early construction, and removal of legacy framework idioms.'
 argument-hint: 'PR scope, changed files, and intended Java/runtime impact'
 user-invocable: true
 disable-model-invocation: false
@@ -38,7 +38,7 @@ This skill validates changes against:
    - Flag deep context parameter threading when `ScopedValue` is the cleaner runtime-aligned option.
 
 3. **Structured concurrency discipline**
-   - Verify fan-out/fan-in concurrency uses `StructuredTaskScope`.
+   - Verify fan-out/fan-in concurrency is structured — `core.concurrent.StructuredScope` on the default line, `StructuredTaskScope` only on the `preview` branch.
    - Flag unstructured async orchestration and thread-pool-centric patterns in runtime paths.
 
 4. **Panama FFM correctness and suitability**
@@ -70,7 +70,7 @@ This skill validates changes against:
 ## Completion Criteria
 A review is complete only if all are true:
 - Context propagation model was assessed (`ScopedValue` suitability).
-- Concurrency model was assessed (`StructuredTaskScope` suitability).
+- Concurrency model was assessed (structured-scope suitability).
 - Native interop and memory handling were assessed for FFM direction (`MemorySegment`, `Linker`, `SymbolLookup`, `FunctionDescriptor`) where relevant.
 - Carrier design was assessed for value-oriented/flattenable readiness where logical.
 - Construction and mutability patterns were assessed for early/immutable guarantees.
@@ -81,7 +81,7 @@ A review is complete only if all are true:
 Use this structure in PR feedback:
 1. **Scope analyzed** (modules/subsystems/hot paths)
 2. **Context findings** (`ScopedValue`)
-3. **Concurrency findings** (`StructuredTaskScope`)
+3. **Concurrency findings** (structured scope)
 4. **FFM findings** (`MemorySegment`, `Linker`, `SymbolLookup`, `FunctionDescriptor`)
 5. **Carrier and construction findings** (Valhalla readiness, immutability, early construction)
 6. **Legacy idiom findings**
@@ -90,7 +90,7 @@ Use this structure in PR feedback:
 
 ## Non-Negotiable Rules
 - Prefer `ScopedValue` for scoped runtime context.
-- Prefer `StructuredTaskScope` for orchestration concurrency.
+- Prefer structured orchestration concurrency. On the preview-clean default line that is the kernel's own `core.concurrent.StructuredScope` (fork/join/cancel over virtual threads); `StructuredTaskScope` is a preview API and belongs only on the `preview` branch (ADR-066).
 - Prefer FFM-first native interop where native boundaries exist.
 - Keep carrier/state models immutable and value-oriented where logical.
 - Do not reintroduce legacy framework idioms in Exeris runtime paths.

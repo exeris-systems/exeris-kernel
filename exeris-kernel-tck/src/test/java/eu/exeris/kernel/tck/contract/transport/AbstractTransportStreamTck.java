@@ -38,8 +38,11 @@ import static org.assertj.core.api.Assertions.fail;
  * <h2>Contract</h2>
  * <ul>
  *   <li>{@code read()} and {@code write()} operate on {@link MemorySegment} slices</li>
- *   <li>{@code queueWrite(LoanedBuffer, length)} transfers buffer ownership —
- *       caller MUST NOT close the buffer after the call</li>
+ *   <li>{@code queueWrite(LoanedBuffer, length)} transfers buffer ownership <b>on normal return</b> —
+ *       the caller MUST NOT close the buffer after a successful call, and MUST close it after a
+ *       thrown one. The unconditional "never close" stated here until v0.11 contradicted the SPI
+ *       javadoc, which puts the buffer back with the caller on any throw; a driver written against
+ *       this wording closes on its own error paths, and then both sides release the same ref</li>
  *   <li>{@code close()} is idempotent</li>
  *   <li>{@code streamId()} returns a non-negative identifier</li>
  *   <li>{@code connection()} returns non-null parent</li>
@@ -328,6 +331,53 @@ public abstract class AbstractTransportStreamTck {
                             + "ownership transfer must not corrupt the stream state")
                     .isGreaterThanOrEqualTo(0L);
         }
+
+        @Test
+        @DisplayName("a rejected length leaves the buffer with the caller")
+        @Timeout(value = 5, unit = TimeUnit.SECONDS)
+        void rejectedLengthLeavesBufferWithCaller() {
+            try (LoanedBuffer buf = allocator.allocate(AllocationHint.MICRO)) {
+                int before = buf.refCount();
+
+                assertThatThrownBy(() -> streams.writer().queueWrite(buf, -1))
+                        .isInstanceOf(IllegalArgumentException.class);
+
+                // The other half of the transfer, and nothing executed it until now. This suite
+                // asserted the successful return above and stated "caller MUST NOT close the buffer
+                // after the call" without qualifying it — so a driver reading the contract before
+                // writing its error paths would close on a throw, and the caller doing what the SPI
+                // tells it then double-frees.
+                assertThat(buf.refCount())
+                        .as("ownership transfers on normal return only; after a throw the buffer is "
+                            + "still the caller's, so its refcount must be untouched")
+                        .isEqualTo(before);
+                assertThat(buf.isAlive())
+                        .as("and still usable — the caller has to be able to close it")
+                        .isTrue();
+            }
+        }
+
+        @Test
+        @DisplayName("a closed stream leaves the buffer with the caller")
+        @Timeout(value = 5, unit = TimeUnit.SECONDS)
+        void closedStreamLeavesBufferWithCaller() {
+            try (LoanedBuffer buf = allocator.allocate(AllocationHint.MICRO)) {
+                buf.setSize(Long.BYTES);
+                int before = buf.refCount();
+
+                TransportStream writer = streams.writer();
+                writer.close();
+
+                // The SPI names IllegalStateException as a caller-owns case explicitly, so both
+                // throwing branches of one method have to agree. One closing and the other not is
+                // the same defect wearing a smaller hat.
+                assertThatThrownBy(() -> writer.queueWrite(buf, Long.BYTES))
+                        .isInstanceOf(IllegalStateException.class);
+
+                assertThat(buf.refCount()).isEqualTo(before);
+                assertThat(buf.isAlive()).isTrue();
+            }
+        }
     }
 
     // =========================================================================
@@ -436,13 +486,21 @@ public abstract class AbstractTransportStreamTck {
         }
 
         @Test
-        @DisplayName("queueWrite() after reset() is rejected (and the buffer is released)")
+        @DisplayName("queueWrite() after reset() is rejected, and the buffer stays with the caller")
         void queueWriteAfterResetThrows() {
             TransportStream writer = streams.writer();
             writer.reset(0L);
-            LoanedBuffer buf = allocator.allocate(AllocationHint.MICRO);
-            assertThatThrownBy(() -> writer.queueWrite(buf, 1))
-                    .isInstanceOf(IllegalStateException.class);
+            // try-with-resources, and the name no longer says "the buffer is released". It said that
+            // because the driver used to close on this branch — which the SPI never asked for and
+            // v0.11 removed, so from then on this test allocated a buffer, asserted the throw, and
+            // released nothing. A leak inside the suite that runs LeakDetectionMode.PARANOID.
+            try (LoanedBuffer buf = allocator.allocate(AllocationHint.MICRO)) {
+                assertThatThrownBy(() -> writer.queueWrite(buf, 1))
+                        .isInstanceOf(IllegalStateException.class);
+                assertThat(buf.isAlive())
+                        .as("the caller still owns it after the throw, so it must still be closeable")
+                        .isTrue();
+            }
         }
     }
 

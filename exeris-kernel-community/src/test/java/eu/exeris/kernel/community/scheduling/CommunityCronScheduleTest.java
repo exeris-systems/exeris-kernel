@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Test;
 import java.time.Instant;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * What a validated expression <em>means</em>. The SPI proves which expressions are accepted; this
@@ -25,6 +26,31 @@ class CommunityCronScheduleTest {
 
     /** A Tuesday, mid-month, mid-year: no month boundary, no weekend, no DST edge anywhere. */
     private static final Instant TUESDAY_NOON = Instant.parse("2026-03-10T12:00:00Z");
+
+    /** Enough repeats to separate a bounded search from an unbounded one — see the case below. */
+    private static final int REFUSAL_REPEATS = 20;
+    /**
+     * How much dearer a refusal may be than a resolution. Measured ~2600x with the step bound and
+     * ~5x with the horizon, so this separates them by an order of magnitude on either side.
+     */
+    private static final double MAX_REFUSAL_COST_RATIO = 50.0;
+
+    /** Pays the JIT and class-loading cost on both paths before either is timed. */
+    private static void warmUp() {
+        for (int repeat = 0; repeat < REFUSAL_REPEATS; repeat++) {
+            next("0 0 29 2 *", TUESDAY_NOON);
+            assertThatThrownBy(() -> next("0 0 30 2 *", TUESDAY_NOON))
+                    .isInstanceOf(IllegalStateException.class);
+        }
+    }
+
+    private static long timeRepeated(Runnable work) {
+        long startNanos = System.nanoTime();
+        for (int repeat = 0; repeat < REFUSAL_REPEATS; repeat++) {
+            work.run();
+        }
+        return Math.max(1L, System.nanoTime() - startNanos);
+    }
 
     private static Instant next(String expression, Instant after) {
         return new CommunityCronSchedule(expression).nextFireAfter(after);
@@ -132,6 +158,47 @@ class CommunityCronScheduleTest {
         void leapDay() {
             assertThat(next("0 0 29 2 *", TUESDAY_NOON))
                     .isEqualTo(Instant.parse("2028-02-29T00:00:00Z"));
+        }
+
+        @Test
+        @DisplayName("an unsatisfiable expression refuses quickly, not after two million steps")
+        void unsatisfiableExpressionRefusesPromptly() {
+            // 30 February. The search bound used to be a STEP count sized as minutes-in-four-years,
+            // while the search advances by days and months — so this walked 2 108 160 ZonedDateTime
+            // operations, thousands of years past the horizon the message named, before refusing.
+            // It does that inside CommunityJobScheduler.submit, under the scheduler's single lock.
+            //
+            // Cost is the only observable difference: this cron subset has no year field, so its
+            // longest satisfiable gap is the eight-year leap-day one and the two bounds agree on
+            // every expression that fires at all.
+            //
+            // Hence a RATIO against a satisfiable expression measured on the same machine in the
+            // same run, not an absolute millisecond bound. An absolute threshold encodes the speed
+            // of the machine that wrote it, and the assertion then means something different on a
+            // loaded CI runner than it did here. The ratio is what the defect actually changes:
+            // measured at ~2600x under the step bound and ~5x with the horizon, so the bound below
+            // sits an order of magnitude clear of both.
+            warmUp();
+            long satisfiableNanos = timeRepeated(() -> next("0 0 29 2 *", TUESDAY_NOON));
+            long unsatisfiableNanos = timeRepeated(() -> assertThatThrownBy(
+                    () -> next("0 0 30 2 *", TUESDAY_NOON))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("never fires"));
+
+            assertThat((double) unsatisfiableNanos / satisfiableNanos)
+                    .as("refusing must cost about what resolving costs — a horizon in calendar time, "
+                        + "not a step count walked to exhaustion")
+                    .isLessThan(MAX_REFUSAL_COST_RATIO);
+        }
+
+        @Test
+        @DisplayName("a leap day across a non-leap century still resolves")
+        void leapDayAcrossNonLeapCentury() {
+            // 2100 is not a leap year, so the gap here is eight years — the longest this subset can
+            // produce, and the reason the horizon is eight rather than the four the old message
+            // claimed. A four-year horizon would refuse a schedule that is perfectly satisfiable.
+            assertThat(next("0 0 29 2 *", Instant.parse("2096-03-01T00:00:00Z")))
+                    .isEqualTo(Instant.parse("2104-02-29T00:00:00Z"));
         }
 
         @Test

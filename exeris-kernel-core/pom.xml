@@ -167,11 +167,23 @@
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-compiler-plugin</artifactId>
+                        <!--
+                            ADR-066: no plugin-level compilerArgs here. Plugin level applies to
+                            default-compile too, so this profile handed the preview flag to MAIN
+                            sources as well; the root POM's pluginManagement already puts it on
+                            default-testCompile, which is the only place it belongs.
+
+                            It was NOT producing preview-stamped main classes. Measured both ways:
+                            307 main classes, 0 stamped. javac stamps minor_version 0xFFFF on
+                            classes that actually USE a preview feature, not on everything compiled
+                            under the flag, and main sources use none. What the plugin-level
+                            placement did produce is a profile that silently disagreed with the
+                            default build about what main sources may contain: the day a preview
+                            feature lands in one, the normal build refuses it and the benchmark
+                            build compiles it.
+                        -->
                         <configuration>
                             <release>${maven.compiler.release}</release>
-                            <compilerArgs>
-                                <arg>${jdk.preview.enable}</arg>
-                            </compilerArgs>
                             <annotationProcessorPaths>
                                 <path>
                                     <groupId>org.openjdk.jmh</groupId>

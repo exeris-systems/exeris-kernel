@@ -2,7 +2,12 @@ name: 'Dependency Review (Supply Chain)'
 
 on:
   pull_request:
-    branches: [ "main" ]
+    # `development/**` as well as main, deliberately. Scanning only PRs into main meant a
+    # dependency or action introduced during a milestone stayed unscanned until the release cut,
+    # where it surfaces as a red gate on an 87-commit PR that nobody wants to reopen — which is
+    # exactly how the vulnerable `sonarqube-scan-action` pin reached the v0.11 cut. The scan
+    # belongs where the dependency actually enters the tree.
+    branches: [ "main", "development/**" ]
 
 permissions:
   contents: read
@@ -14,13 +19,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: 'Checkout repository'
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: 'Dependency Review'
-        uses: actions/dependency-review-action@v4
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
         with:
           comment-summary-in-pr: always
           fail-on-severity: moderate
+          # `deny-licenses` is deprecated upstream (actions/dependency-review-action#997): the
+          # maintainers' argument is that a deny list is structurally incomplete — it only catches
+          # the copyleft/commercial licences someone thought to enumerate. The removal was announced
+          # for 5.x, but v5.0.0 turned out to be a node24 runtime bump that still declares the input,
+          # so it keeps working here (checked against that release's action.yml, not the issue).
+          # Migrating to `allow-licenses` means first enumerating every licence in the transitive
+          # Maven graph, which is its own piece of work and not a release-cut task.
           deny-licenses: >
             GPL-1.0-only, GPL-1.0-or-later, GPL-2.0-only, GPL-2.0-or-later, GPL-3.0-only, GPL-3.0-or-later,
             LGPL-2.0-only, LGPL-2.0-or-later, LGPL-2.1-only, LGPL-2.1-or-later, LGPL-3.0-only, LGPL-3.0-or-later,
@@ -28,6 +40,28 @@ jobs:
             SSPL-1.0,
             EPL-1.0, EPL-2.0,
             MPL-2.0
+          # The `eu.exeris/*` entries are this repository's own reactor modules, which the reactor
+          # POMs declare as dependencies of each other. They report an unknown licence because the
+          # dependency graph reads each module POM on its own and does not resolve the parent that
+          # carries the `<licenses>` block — so the warning is about POM inheritance, not about an
+          # unlicensed artifact. The licence is Apache-2.0 with Commons Clause, declared once in
+          # `exeris-kernel-parent/pom.xml` and shipped as LICENSE-COMMUNITY.
+          #
+          # `sonarqube-scan-action` is LGPL-3.0, which the deny list above rejects — correctly for a
+          # dependency, wrongly for this one. The deny list exists to keep copyleft out of the
+          # DISTRIBUTED kernel; a GitHub Action is build infrastructure that runs on a runner,
+          # links against nothing we ship, and is never redistributed. (It only became visible once
+          # the SHA pin made the licence resolvable at all — under the `@v5` tag it reported as
+          # unknown and slipped through as a warning.) Excluding the whole action rather than the
+          # pin, so a Dependabot bump does not re-trip the gate.
           allow-dependencies-licenses: >
+            pkg:githubactions/SonarSource/sonarqube-scan-action,
             pkg:maven/com.puppycrawl.tools/checkstyle,
-            pkg:maven/org.jacoco/jacoco-maven-plugin
+            pkg:maven/org.jacoco/jacoco-maven-plugin,
+            pkg:maven/eu.exeris/exeris-kernel-bom,
+            pkg:maven/eu.exeris/exeris-kernel-build-config,
+            pkg:maven/eu.exeris/exeris-kernel-spi,
+            pkg:maven/eu.exeris/exeris-kernel-core,
+            pkg:maven/eu.exeris/exeris-kernel-community,
+            pkg:maven/eu.exeris/exeris-kernel-community-kafka,
+            pkg:maven/eu.exeris/exeris-kernel-community-testkit

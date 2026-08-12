@@ -33,6 +33,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 
 /**
  * Contract for {@link JobScheduler} (ADR-057).
@@ -60,6 +61,9 @@ public abstract class AbstractJobSchedulerTck {
     private static final long SILENCE_MILLIS = 250L;
 
     private static final String TENANT = "tenant-alpha";
+
+    /** A second close() must return promptly; the first one is what drains. */
+    private static final int SECOND_CLOSE_TIMEOUT_SECONDS = 5;
 
     /** Attempts for the shutdown-race case; see {@link #assertDrainIsTotal} for what that buys. */
     private static final int DRAIN_ATTEMPTS = 20;
@@ -267,10 +271,33 @@ public abstract class AbstractJobSchedulerTck {
         }
 
         @Test
-        @DisplayName("close is idempotent")
-        void closeIsIdempotent() {
+        @DisplayName("close is idempotent — and the second call is not a second drain")
+        void closeIsIdempotent() throws InterruptedException {
+            // A scheduler with nothing in it drains instantly, so timing a second close against an
+            // empty one proves nothing. Give the first close real work to drain, so the second is
+            // the only call that could still be waiting on anything.
+            CountDownLatch started = new CountDownLatch(1);
+            submitAsTenant("draining", new JobTrigger.OneShot(Duration.ZERO), () -> {
+                started.countDown();
+                sleepQuietly(BODY_MILLIS);
+            });
+            assertThat(started.await(FIRE_TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
+
             scheduler.close();
-            scheduler.close();
+
+            // The failure this bounds is a drain loop whose exit condition can only be satisfied
+            // once — a terminal seal, a queue already emptied. The second call cannot satisfy it, so
+            // it waits out its whole deadline before giving up, and a shutdown that nests a
+            // try-with-resources inside an explicit close pays that in full.
+            assertTimeoutPreemptively(Duration.ofSeconds(SECOND_CLOSE_TIMEOUT_SECONDS),
+                    () -> scheduler.close(),
+                    "the second close() did not return promptly — it is repeating the drain");
+
+            assertThatThrownBy(() -> scheduler.submit(new JobDescriptor(
+                    "after-double-close", new JobTrigger.OneShot(Duration.ZERO), () -> { })))
+                    .as("and the scheduler is still closed afterwards: idempotent means the second "
+                        + "call changes nothing, not that it reopens anything")
+                    .isInstanceOf(JobSchedulerException.class);
         }
 
         @Test
@@ -496,6 +523,15 @@ public abstract class AbstractJobSchedulerTck {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(FIRE_TIMEOUT_SECONDS);
         while (handle.state() != expected && System.nanoTime() < deadline) {
             Thread.onSpinWait();
+        }
+    }
+
+    /** Occupies the body long enough that an unwaited-for run is still going when close() returns. */
+    private static void sleepQuietly(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException _) {
+            Thread.currentThread().interrupt();
         }
     }
 

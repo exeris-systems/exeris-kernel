@@ -8,13 +8,13 @@
 ## Executive Summary
 
 The **Exeris Kernel** is a next‑generation, zero‑copy runtime for cloud‑native, high‑performance applications.  
-Built on **Java 26**, it leverages:
+Built on **JDK 25 LTS** (distributed preview-clean, ADR-066), it leverages:
 
 - **Virtual Threads** (Project Loom, JEP 444) for 1:1 request‑to‑thread mapping.
 - **Panama FFM** (JEP 454) for zero‑copy I/O and deterministic off‑heap memory management.
 - **Scoped Values** (JEP 506) for strict, ThreadLocal-free context propagation.
 - **Flexible Constructor Bodies** (JEP 513, Closed/Delivered in JDK 25) for pre-initialising fields before `super()` in value-ready types.
-- **Lazy Constants** (JEP 526, Closed/Delivered in JDK 26) for JVM constant-folding of singleton config caches.
+- **Compute-once config caches** via the Supplier + `AtomicReference` CAS pattern, mirroring the `LazyConstant` semantic (JEP 526) without depending on it — JEP 526 is not on the JDK 25 baseline.
 - **Valhalla Readiness (JEP 401):** All data carriers (`record`, `final class`) avoid `synchronized`, `System.identityHashCode()`, and identity `==` so they scalarise via C2 JIT Escape Analysis today. Migration to `value record`/`value class` will be performed once JEP 401 reaches mainline GA.
 
 **No Waste Compute** is the core principle:
@@ -271,6 +271,9 @@ For the complete deployment diagram, infrastructure requirements, and SLA/SLO ba
 
 To understand how these concepts map to actual code, read the subsystem definitions:
 
+**Getting started:**
+- [Developer Guides](guides/) – task-oriented paths: platform and dependencies, building an application, implementing a provider
+
 **Physical Modules (The Wall):**
 - [SPI Module](modules/01-spi.md) – The Constitution & Contracts
 - [Core Module](modules/02-core.md) – The Brain & Orchestration
@@ -283,6 +286,7 @@ To understand how these concepts map to actual code, read the subsystem definiti
 - [Bootstrap](subsystems/bootstrap.md) | [Config](subsystems/config.md) | [Memory](subsystems/memory.md) | [Security](subsystems/security.md)
 - [Transport](subsystems/transport.md) | [Persistence](subsystems/persistence.md) | [Graph](subsystems/graph.md) | [Flow](subsystems/flow.md)
 - [Crypto](subsystems/crypto.md) | [Telemetry](subsystems/telemetry.md) | [Events](subsystems/events.md)
+- [HTTP](subsystems/http.md) | [Scheduling](subsystems/scheduling.md) | [Storage](subsystems/storage.md) | [Exceptions](subsystems/exceptions.md)
 
 ---
 

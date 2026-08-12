@@ -18,6 +18,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HexFormat;
+import java.util.UUID;
 
 /**
  * Where a {@link BlobRef} lands on disk, and nothing else.
@@ -27,7 +28,26 @@ import java.util.HexFormat;
  * isolation key from becoming a directory name. The store's job is transfer mechanics; keeping the two
  * apart means a change to one is not read as a change to the other.
  *
- * <p>Layout: {@code <root>/t-<hex(isolationKey)>/<container>/<key>}.
+ * <p>Layout: {@code <root>/t-<hex(isolationKey)>/<tree>/…}, where {@code <tree>} is one of three
+ * fixed names — {@code objects}, {@code sidecars}, {@code staging}.
+ *
+ * <h2>Why three trees rather than suffixes</h2>
+ * <p>Content types and in-flight uploads used to be named by appending {@code .ctype} and
+ * {@code .uploading} to the object's own path. Both are legal key endings: {@link BlobRef} rejects
+ * traversal, not extensions, so {@code "report.uploading"} and {@code "photo.ctype"} are objects a
+ * tenant may legitimately store. The suffix therefore did not name a private file — it named
+ * <em>another object of the same tenant</em>, and every operation on the shorter key silently reached
+ * the longer one: an upload to {@code "report"} truncated and then moved away whatever was stored at
+ * {@code "report.uploading"}, and deleting {@code "photo"} deleted {@code "photo.ctype"} with it.
+ *
+ * <p>A driver may restrict keys further than the contract does, so refusing the two endings would
+ * have been permitted. It would also make one key work on one blob driver and fail on another for a
+ * reason the caller cannot see. Separating the namespaces removes the collision instead of forbidding
+ * the keys that expose it, and costs one path segment.
+ *
+ * <p>Disjointness is structural, not conventional: a container is always a child of {@code objects},
+ * so a container named {@code sidecars} lands at {@code objects/sidecars} and collides with nothing.
+ * Nothing the caller controls is ever a direct child of the tenant directory.
  *
  * @since 0.11.0
  */
@@ -37,13 +57,24 @@ final class CommunityFilesystemBlobLayout {
             CommunityBlobFailures.forProvider(CommunityBlobFailures.FILESYSTEM_PROVIDER);
 
     private static final String TENANT_PREFIX = "t-";
-    private static final String SIDECAR_SUFFIX = ".ctype";
+    private static final String OBJECT_TREE = "objects";
+    private static final String SIDECAR_TREE = "sidecars";
+    private static final String STAGING_TREE = "staging";
 
     private final Path root;
 
     /* default */ CommunityFilesystemBlobLayout(Path root) {
         this.root = root;
     }
+
+    /**
+     * The two paths one reference occupies: its bytes, and the sidecar recording its content type.
+     *
+     * <p>Resolved together because they share a tenant directory and a relative path, and because a
+     * caller that has one almost always needs the other — {@code stat} reads both, {@code delete}
+     * removes both.
+     */
+    /* default */ record BlobPaths(Path object, Path sidecar) { }
 
     /**
      * Resolves a tenant-relative reference to an absolute path inside the caller's tenant directory.
@@ -56,15 +87,38 @@ final class CommunityFilesystemBlobLayout {
      * @param operation the {@code CommunityBlobFailures.OP_*} constant for the call in flight, so a
      *                  denial is attributed to the operation the caller made rather than to resolution
      */
-    /* default */ Path resolve(BlobRef ref, String operation) {
+    /* default */ BlobPaths resolve(BlobRef ref, String operation) {
         StorageContext context = KernelProviders.storageContextOrSystem();
         Path tenantDir = tenantDirectoryOf(context, operation);
-        Path resolved = tenantDir.resolve(ref.container()).resolve(ref.key()).normalize();
-        if (!resolved.startsWith(tenantDir)) {
+        return new BlobPaths(
+                contain(tenantDir.resolve(OBJECT_TREE), ref, operation, context),
+                contain(tenantDir.resolve(SIDECAR_TREE), ref, operation, context));
+    }
+
+    private Path contain(Path treeRoot, BlobRef ref, String operation, StorageContext context) {
+        Path resolved = treeRoot.resolve(ref.container()).resolve(ref.key()).normalize();
+        if (!resolved.startsWith(treeRoot)) {
             throw FAILURES.isolationDenied(
                     operation, CommunityBlobFailures.REASON_PATH_ESCAPE, context.strategy().name());
         }
         return resolved;
+    }
+
+    /**
+     * Returns a fresh staging path for one upload, inside the caller's tenant directory.
+     *
+     * <p>Named by a random id rather than by the target key. That the old name collided with a real
+     * object is the headline, but the id also removes a second corruption the key-derived name
+     * carried: two concurrent uploads to the same key shared one staging file, and the later
+     * {@code TRUNCATE_EXISTING} cut the earlier transfer out from under itself. Uploads to one key
+     * are still last-commit-wins, which is the contract; they no longer interleave into one file.
+     */
+    /* default */ Path stagingFile(String operation) throws IOException {
+        Path stagingDir =
+                tenantDirectoryOf(KernelProviders.storageContextOrSystem(), operation)
+                        .resolve(STAGING_TREE);
+        Files.createDirectories(stagingDir);
+        return stagingDir.resolve(UUID.randomUUID().toString());
     }
 
     /**
@@ -103,25 +157,27 @@ final class CommunityFilesystemBlobLayout {
     }
 
     /**
-     * Returns the sidecar path holding an object's declared content type.
+     * Records a content type, keeping the sidecar tree in step with an overwrite.
      *
-     * <p>A filesystem has nowhere else to keep it. Extended attributes would be tidier but are not
-     * portable across the filesystems a Community driver has to run on.
+     * <p>The default type is represented by <em>no</em> sidecar, so recording it means removing any
+     * the previous object left behind. Skipping the write without the delete — which is what this did
+     * — let an overwrite keep the old type: re-uploading a {@code text/csv} object as the default
+     * still reported {@code text/csv}, because absence was only ever written, never restored.
+     *
+     * <p>A filesystem has nowhere tidier to keep this. Extended attributes would avoid the second file
+     * but are not portable across the filesystems a Community driver has to run on.
      */
-    /* default */ static Path sidecar(Path objectPath) {
-        return objectPath.resolveSibling(objectPath.getFileName() + SIDECAR_SUFFIX);
-    }
-
-    /** Records a content type, skipping the sidecar entirely for the default. */
-    /* default */ static void writeContentType(Path objectPath, String contentType) throws IOException {
-        if (!BlobMetadata.DEFAULT_CONTENT_TYPE.equals(contentType)) {
-            Files.writeString(sidecar(objectPath), contentType, StandardCharsets.UTF_8);
+    /* default */ static void writeContentType(Path sidecar, String contentType) throws IOException {
+        if (BlobMetadata.DEFAULT_CONTENT_TYPE.equals(contentType)) {
+            Files.deleteIfExists(sidecar);
+            return;
         }
+        Files.createDirectories(sidecar.getParent());
+        Files.writeString(sidecar, contentType, StandardCharsets.UTF_8);
     }
 
     /** Reads a recorded content type, falling back to the default when none was recorded. */
-    /* default */ static String contentTypeOf(Path objectPath) {
-        Path sidecar = sidecar(objectPath);
+    /* default */ static String contentTypeOf(Path sidecar) {
         if (!Files.isRegularFile(sidecar)) {
             return BlobMetadata.DEFAULT_CONTENT_TYPE;
         }

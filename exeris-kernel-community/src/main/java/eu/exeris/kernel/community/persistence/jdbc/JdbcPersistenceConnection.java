@@ -182,14 +182,16 @@ public final class JdbcPersistenceConnection implements PersistenceConnection {
             return;
         }
         try {
-            if (inTransaction) {
-                try {
-                    conn.rollback();
-                } catch (SQLException _) {
-                    // Best-effort rollback
-                }
-                inTransaction = false;
-            }
+            // Not conditional on inTransaction. The pool baseline is autoCommit=false, so EVERY
+            // statement opens a real transaction whether or not an SPI caller opened one — which is
+            // why commitStandaloneWriteIfNeeded exists for the success path. Its counterpart was
+            // missing here: a standalone write that THREW got neither the commit nor a rollback, so
+            // the physical connection went back to the pool inside an aborted transaction and the
+            // next request to receive it died on its first statement, whatever that statement was.
+            // An RLS WITH CHECK rejection is the ordinary way to reach that — the security control
+            // working as designed poisoned a pooled connection for an unrelated later request.
+            rollbackQuietly();
+            inTransaction = false;
             try {
                 conn.close();
             } catch (SQLException _) {
@@ -514,6 +516,24 @@ public final class JdbcPersistenceConnection implements PersistenceConnection {
     private void ensureOpen() {
         if (closed.get()) {
             throw new IllegalStateException("JdbcPersistenceConnection is closed");
+        }
+    }
+
+    /**
+     * Rolls back whatever transaction the physical connection is in, if any, swallowing failure.
+     *
+     * <p>Asks the driver rather than this object's own {@code inTransaction} flag: that flag tracks
+     * SPI-level transactions, and the pool baseline of {@code autoCommit=false} means a caller who
+     * never opened one is still inside a database transaction.
+     */
+    private void rollbackQuietly() {
+        try {
+            if (!conn.getAutoCommit()) {
+                conn.rollback();
+            }
+        } catch (SQLException _) {
+            // Best-effort: the connection is being discarded to the pool either way, and a rollback
+            // that cannot run leaves it no worse than not attempting one.
         }
     }
 

@@ -37,11 +37,24 @@ import java.time.temporal.ChronoUnit;
 final class CommunityCronSchedule {
 
     /**
-     * Bound on the minute-wise search. Four years covers any schedule the subset can express,
-     * including 29 February; beyond it the expression is unsatisfiable (30 February, say), and
-     * looping forever would turn a typo into a hung dispatcher.
+     * Bound on the search, in <em>calendar time</em> rather than in steps. Past it the expression is
+     * unsatisfiable (30 February, say), and looping forever would turn a typo into a hung dispatcher.
+     *
+     * <p>It was a step count — minutes in four years, 2 108 160 — which bounds only the worst case
+     * where every step advances one minute. The search advances coarsest-field-first, so an
+     * unsatisfiable expression steps by days and months and runs the full count while walking
+     * thousands of years past the horizon its own message named: {@code "0 0 30 2 *"} spent two
+     * million {@code ZonedDateTime} operations before refusing. That happens inside
+     * {@code CommunityJobScheduler.submit}, which holds the scheduler's single lock, so one bad
+     * expression stalls every other submit, cancel and dispatch behind it. A horizon costs one
+     * comparison per step and refuses the same expression in roughly forty.
+     *
+     * <p>Eight years, not the four the old message claimed: the longest gap between consecutive
+     * 29 Februaries is eight, across a century that is not a leap year (2096 to 2104). A four-year
+     * horizon would refuse a legitimate leap-day schedule in that window — which the step count,
+     * being far looser than its own message, happened to accept.
      */
-    private static final int MAX_STEPS = 4 * 366 * 24 * 60;
+    private static final int HORIZON_YEARS = 8;
 
     private static final int MINUTE_COUNT = 60;
     private static final int HOUR_COUNT = 24;
@@ -79,21 +92,23 @@ final class CommunityCronSchedule {
      *
      * @param after the reference instant
      * @return the next fire time, truncated to the minute
-     * @throws IllegalStateException if the expression cannot fire within four years
+     * @throws IllegalStateException if the expression cannot fire within {@link #HORIZON_YEARS} years
      */
     /* default */ Instant nextFireAfter(Instant after) {
         ZonedDateTime candidate = after.atZone(ZoneOffset.UTC)
                 .truncatedTo(ChronoUnit.MINUTES)
                 .plusMinutes(1);
+        ZonedDateTime horizon = candidate.plusYears(HORIZON_YEARS);
 
-        for (int step = 0; step < MAX_STEPS; step++) {
+        while (!candidate.isAfter(horizon)) {
             ZonedDateTime advanced = advanceToNextCandidate(candidate);
             if (advanced == null) {
                 return candidate.toInstant();
             }
             candidate = advanced;
         }
-        throw new IllegalStateException("cron expression never fires within four years");
+        throw new IllegalStateException(
+                "cron expression never fires within " + HORIZON_YEARS + " years");
     }
 
     /**

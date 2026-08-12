@@ -12,7 +12,6 @@ import eu.exeris.kernel.spi.exceptions.storage.BlobStorageException;
 import eu.exeris.kernel.spi.http.HttpHeader;
 import eu.exeris.kernel.spi.http.HttpMethod;
 import eu.exeris.kernel.spi.http.HttpResponse;
-import eu.exeris.kernel.spi.http.HttpStatus;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.storage.blob.BlobMetadata;
 import eu.exeris.kernel.spi.storage.blob.BlobRef;
@@ -131,7 +130,11 @@ final class CommunityS3UploadHandle implements BlobUploadHandle {
                 ? client.send(HttpMethod.PUT, objectKey, extra)
                 : sendBody(extra);
         try {
-            if (response.status().code() != HttpStatus.OK.code()) {
+            // isSuccess, not a literal 200. MinIO and Ceph RGW answer a PUT with 204, and this was
+            // the one place in the driver that decided success on its own: the object is durably
+            // stored, the caller is handed a BlobStorageException, and its retry overwrites what was
+            // already there.
+            if (!CommunityS3Responses.isSuccess(response)) {
                 throw FAILURES.remoteRefused(
                         CommunityBlobFailures.OP_UPLOAD, ref.container(), response.status().code());
             }
