@@ -72,6 +72,13 @@ the dispatching thread. Two consequences are normative:
   no longer run. Keeping them would pin one closure and one identity per job the scheduler has ever
   run, for the scheduler's whole life. A job cancelled mid-flight releases when the body returns, not
   when the cancel lands.
+- **The handle itself is retained for the scheduler's life, and that is currently unbounded.** ADR-057
+  §6 keeps a `JobHandle` addressable after the job ends, so the Community registry never removes a
+  settled job from its id map. What accumulates is the handle shell and its id — the body and the
+  captured identity are already gone, per the bullet above — but a service submitting one-shot jobs
+  per unit of work grows that map forever, with no cap and no TTL. **Do not treat this as a settled
+  design.** Bounding it means choosing how long "addressable" lasts, which is a revision of §6 and
+  needs its own decision record rather than a quietly-added eviction policy.
 - **The capture is a snapshot.** A job firing an hour after submission carries the identity that
   scheduled it, which may since have lost the rights it holds. Re-validating a token at dispatch time
   is an identity decision, not a scheduling one, and is out of scope here.

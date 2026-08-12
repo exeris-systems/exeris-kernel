@@ -23,6 +23,10 @@ exactly what each label commits to.
 Intent alone is not checkable, so it is paired with evidence: every release transition is diffed at
 the bytecode level and published in [`release/spi-api-history.md`](./release/spi-api-history.md), and
 an incompatible change to a surface declared `stable` fails CI ([ADR-065](./adr/ADR-065-spi-compatibility-gate.md)).
+The gate asks that in both senses — binary *and* source. They diverge on the change a stability
+promise most needs to catch: adding an abstract method to an interface is binary-compatible, since an
+existing implementor's class file still links and only fails at invoke time with `AbstractMethodError`.
+Checking binary compatibility alone speaks to callers and says nothing to implementors.
 Consumers upgrading across several minors should start from
 [`release/upgrade-0.5-to-0.10.md`](./release/upgrade-0.5-to-0.10.md).
 

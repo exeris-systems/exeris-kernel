@@ -125,14 +125,22 @@ final class CommunityHttpRequestDispatcher {
      * @return {@code false} if the request was denied and a response has already been written
      */
     private boolean authorize(HttpRequest request, Supplier<HttpExchange> exchange, Runnable admitted) {
-        // A route the application never described about is decided by the policy, not by this
-        // driver. With no policy bound the requirement is permit-all, which is exactly how the kernel
-        // behaved before ADR-061 — declaring nothing changes nothing.
+        // A route the application never described is decided by the policy, not by this driver. With
+        // no policy bound the requirement is permit-all — an opt-in seam, so an application that
+        // declares nothing carries no edge authorization at all.
+        //
+        // That is NOT "unchanged behaviour": up to 0.10 this driver enforced a /secure prefix with
+        // security:read / security:write compiled in, and ADR-061 obligation 4 deleted the
+        // convention deliberately. An application that relied on the prefix and declares no policy
+        // serves those routes to anonymous callers. The release notes carry the migration step.
         RouteRequirement requirement = routePolicy == null
                 ? RouteRequirement.permitAll()
                 : routePolicy.requirementFor(request.method(), request.path());
 
         if (requirement != null && requirement.kind() == RouteRequirement.Kind.PERMIT_ALL) {
+            // No requirement means no interceptor run, so the handler sees no PRINCIPAL_CONTEXT even
+            // when the caller presented a valid token. A route that wants identity without demanding
+            // a scope declares authenticated(), which is a different Kind — not permitAll().
             admitted.run();
             return true;
         }

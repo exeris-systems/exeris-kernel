@@ -99,6 +99,17 @@ Exeris supports three levels of physical isolation, resolved transparently throu
 | **Dedicated Schema**    | `SET search_path TO [schema]` | Professional Tier, easier migrations   |
 | **Dedicated Database**  | Dynamic DataSource Routing    | Maximum physical isolation             |
 
+The Mechanism column is what each strategy adds, not all it issues. **Every strategy publishes both
+`exeris.tenant_id` and `exeris.shared_scope` on connection acquisition**, in one `set_config` statement,
+whether or not its own isolation reads them — and publishes `""` when the context declares none.
+
+Placement decides which connection a request lands on; it does not decide what the previous borrower
+left in the session. `set_config(..., false)` is session-scoped, so with `persistence.perTenantPooling`
+at its default of `false` a Dedicated-Schema request is served from the pool a Shared-Schema request
+last used. Skipping the tenant key there leaves the predecessor's value in place for any RLS policy on
+a table the request touches. The same reasoning is why Shared and Dedicated Database both `RESET
+search_path`: a setting a strategy never writes is not a setting it is free to ignore.
+
 ---
 
 ## Admission Control & Backpressure Integration

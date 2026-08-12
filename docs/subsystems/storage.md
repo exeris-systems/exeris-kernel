@@ -233,6 +233,14 @@ arrived, or reporting a range length as the object size. `DELETE` pays the same 
 reason: S3 answers `204` whether or not anything was there, and the contract promises the caller can tell
 a removal from a no-op.
 
+Two round trips means two answers that can disagree. The object may be overwritten smaller between the
+`HEAD` and the `GET`, or a store may answer a `Range` with less than was asked. **The `GET` bounds the
+read; the `HEAD` size only sizes the request.** A download handle hands out no more than the response
+buffer's write cursor holds, and a slice offset past that is an immediate end-of-stream. The buffer is
+pooled, so its segment spans the whole slot rather than this response — reading to the `HEAD` figure
+would succeed and return whatever the previous response left there. `BlobMetadata.sizeBytes()` still
+reports what `HEAD` said, so a caller that reads to end-of-stream can tell the two apart.
+
 **Signing subset.** Header signing over a fixed three-header set (`host`, `x-amz-content-sha256`,
 `x-amz-date`) and query signing for presigned URLs. Not implemented: chunked (`STREAMING-*`) payload
 signing, session tokens, and signing arbitrary caller-supplied `x-amz-*` headers — each serves a
