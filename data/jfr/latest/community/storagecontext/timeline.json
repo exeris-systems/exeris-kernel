@@ -1,5 +1,5 @@
 [ {
-  "t" : 1786592428249,
+  "t" : 1786594166512,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "[Ljava.util.HashMap$Node;",
   "thread" : "main",
@@ -7,19 +7,19 @@
   "stackId" : "stk_0001",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1786592428268,
+  "t" : 1786594166521,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.LinkedHashMap",
+  "class" : "java.util.HashMap",
   "thread" : "main",
-  "size" : 261568,
+  "size" : 261520,
   "stackId" : "stk_0002",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1786592428268,
+  "t" : 1786594166521,
   "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.util.LinkedHashMap",
+  "class" : "java.util.HashMap",
   "thread" : "main",
-  "size" : 88,
+  "size" : 64,
   "stackId" : "stk_0002",
   "category" : "JVM_NOISE"
 } ]
