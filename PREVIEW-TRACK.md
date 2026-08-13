@@ -8,7 +8,7 @@ Cut from `development/0.11.0` at `e9f5aefe`, deliberately **before** the ADR-066
 (#301) landed — the GA `StructuredScope` layer is `main`'s downgrade artefact and would be dead code
 here, where `StructuredTaskScope` is the mechanism.
 
-## What `0.11.0-preview` contains
+## What `0.11.1-preview` contains
 
 **The milestone itself is the distributed line's, and it is not restated here.** Read
 [`docs/release/v0.11.0-release-notes.md`](docs/release/v0.11.0-release-notes.md) for what v0.11
@@ -22,6 +22,12 @@ milestone would need keeping in step with the first, and this repository has alr
 lesson twice in one milestone — a class count of `930`, then `15 181`, each true when written and
 false by the next merge, in documents nobody thought to re-measure.
 
+**`0.11.1` is the first version this line carries that the distributed one does not**, and its
+entire content is [§JEP 401](#jep-401-the-carriers-are-value-classes-here) below: the kernel's
+carriers became value classes. That section *is* the release note — the same reason there is no
+`docs/release/v0.11.1-*.md`. Nothing else moved: no SPI type gained, lost or retyped a component, and
+the distributed artifact stays at `0.11.0`, compiling the same sources without the modifier.
+
 ## How this line differs from `main`
 
 | | `main` | `preview` (this branch) |
@@ -29,7 +35,7 @@ false by the next merge, in documents nobody thought to re-measure.
 | JDK | 25 LTS | **newest, LTS or not** — JDK 28 EA today |
 | Preview flag | main sources compile without it | `--enable-preview`, by definition |
 | Concurrency | `core.concurrent.StructuredScope` (virtual threads + explicit `ScopedValue` carrier) | `StructuredTaskScope` |
-| Artifact | `eu.exeris:*:0.11.0` | **`eu.exeris.preview:*:0.11.0`** — a distinct groupId, same version line |
+| Artifact | `eu.exeris:*:0.11.0` | **`eu.exeris.preview:*:0.11.1`** — a distinct groupId, same version line |
 | Distributed bytecode | major 69, **zero** preview-stamped | major 72, **783 of 2275** preview-stamped — expected here |
 
 Tracking the newest JDK is a **requirement, not an indulgence**: this line converges into an LTS, so
@@ -227,8 +233,10 @@ missed.
   what value classes buy until one exists — and most of these carriers hold reference components,
   which will not flatten.
 - **Coordinates for a preview RELEASE: decided at the 0.11.0 cut — a distinct groupId,
-  `eu.exeris.preview:*`, with the version staying plain `0.11.0`.** Opting in is therefore an explicit
-  coordinate change, and the two lines never share a version axis to compete on.
+  `eu.exeris.preview:*`, with the version staying plain — `0.11.1` today.** Opting in is therefore an
+  explicit coordinate change, and the two lines never share a version axis to compete on. The version
+  numbers advance independently: this line reached `0.11.1` for a change the distributed one does not
+  carry.
 
   The hazard that forced the decision is real but narrower than this document first claimed. Measured
   on `maven-artifact` 3.9.16:

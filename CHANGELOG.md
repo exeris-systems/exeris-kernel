@@ -6,19 +6,40 @@ This file is intentionally terse: it lists what landed, with a pointer to the re
 
 Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project versions follow [SemVer](https://semver.org/spec/v2.0.0.html), with the pre-1.0 caveat that minor versions may carry observable contract additions while remaining backwards-compatible at the SPI level. Which SPI surfaces are `stable` / `preview` / `experimental`, and what each label commits to for semver, is declared in [`docs/stability-matrix.md`](docs/stability-matrix.md) — the authoritative source for the semver policy.
 
-## [Unreleased]
+## [0.11.1] — 2026-08-13
+
+**`preview` line only** — `eu.exeris.preview:*:0.11.1`. The distributed line stays at `0.11.0`; this
+version does not exist under `eu.exeris`.
 
 ### Added
-- **`0.11.0-preview` only — the kernel's carriers are JEP 401 value classes** (159: 157 `value record`
-  plus `RouteRequirement` and `CoreSslHandles`). The distributed artifact is unaffected: it compiles
-  the same sources without the modifier, and per JEP 401 adding or removing `value` on a final class
-  with final fields is binary-compatible. Two records stay identity classes on purpose — one holds a
-  `Map` mutated in place during a topological sort, the other belongs to the annotation processor.
-  Held by a per-module registry test asserting that *every* record is a value class unless excused by
-  name. Details, including the rubric and the four semantics that change silently, in
-  [`PREVIEW-TRACK.md`](PREVIEW-TRACK.md). Checkstyle now skips in five modules rather than two,
-  because its grammar cannot parse the modifier; that coverage is inherited from the distributed line,
-  where the same sources are gated on JDK 25.
+- **The kernel's carriers are JEP 401 value classes** (159: 157 `value record` plus `RouteRequirement`
+  and `CoreSslHandles`). The distributed artifact is unaffected: it compiles the same sources without
+  the modifier, and per JEP 401 adding or removing `value` on a final class with final fields is
+  binary-compatible. No SPI type gained, lost or retyped a component. Two records stay identity classes
+  on purpose — one holds a `Map` mutated in place during a topological sort, the other belongs to the
+  annotation processor. Held by a per-module registry test asserting that *every* record is a value
+  class unless excused by name. Details, including the rubric and the four semantics that change
+  silently, in [`PREVIEW-TRACK.md`](PREVIEW-TRACK.md). Checkstyle now skips in five modules rather than
+  two, because its grammar cannot parse the modifier; that coverage is inherited from the distributed
+  line, where the same sources are gated on JDK 25.
+
+### Fixed
+- **`FileSink` no longer terminates on a sentinel event.** The shutdown poison pill was compared by
+  identity, which under value semantics would end the writer loop on any real event equal to it;
+  termination is now carried by the running flag plus queue emptiness. A backlog test covering the
+  drain-on-close contract went in with it — the previous suite passed against a writer that discarded
+  the entire backlog.
+- **`CommunityRotatingKeySet` stores its refreshed generations directly** instead of through a
+  `compareAndSet` whose expected value is a record. Both call sites already held `refreshLock`, so the
+  CAS was redundant; under value semantics it would also have stopped asking the question it was
+  written to ask.
+
+## [0.11.0] — 2026-08-11
+
+> This line's copy of the 0.11.0 section predates the review-sweep edits `main` received after the
+> cut; `main`'s text is the authoritative one, and reconciling them belongs to the next merge-up.
+
+### Added
 - **The distributed artifact no longer requires `--enable-preview`, and baselines on JDK 25 LTS**
   (ADR-066). `--enable-preview` is a whole-compilation and whole-JVM flag whose bytecode is stamped
   and major-pinned, so a published artifact carrying it forces every consumer's entire build under the
