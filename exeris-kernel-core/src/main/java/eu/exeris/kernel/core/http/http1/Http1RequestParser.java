@@ -63,7 +63,7 @@ public final class Http1RequestParser {
      * @param target  request target (e.g. "/index.html")
      * @param version HTTP version (e.g. "HTTP/1.1")
      */
-    public record RequestLine(String method, String target, String version) {}
+    public value record RequestLine(String method, String target, String version) {}
 
     /**
      * Callback for parsed header fields.

@@ -41,8 +41,8 @@ final class CommunityPathFinder implements PathFinder {
 
     private final Map<UUID, List<Neighbor>> adjacency;
 
-    /** Package-private Valhalla-ready neighbor carrier. */
-    /* default */ record Neighbor(UUID target, double weight, String properties) {}
+    /** Package-private neighbor carrier, declared {@code value record} on the `preview` line. */
+    /* default */ value record Neighbor(UUID target, double weight, String properties) {}
 
     /* package */ CommunityPathFinder(Map<UUID, List<Neighbor>> adjacency) {
         Map<UUID, List<Neighbor>> copy = new HashMap<>();
@@ -138,14 +138,14 @@ final class CommunityPathFinder implements PathFinder {
     // Private carriers
     // =========================================================================
 
-    private record PathEntry(List<UUID> path, double cost) implements Comparable<PathEntry> {
+    private value record PathEntry(List<UUID> path, double cost) implements Comparable<PathEntry> {
         @Override
         public int compareTo(PathEntry other) {
             return Double.compare(this.cost, other.cost);
         }
     }
 
-    private record Item(UUID node, double distance) implements Comparable<Item> {
+    private value record Item(UUID node, double distance) implements Comparable<Item> {
         @Override
         public int compareTo(Item other) {
             return Double.compare(this.distance, other.distance);

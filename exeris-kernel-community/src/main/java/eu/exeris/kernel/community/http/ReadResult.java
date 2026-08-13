@@ -14,7 +14,7 @@ import eu.exeris.kernel.spi.http.HttpVersion;
 
 import java.util.List;
 
-record ReadResult(HttpMethod method,
+value record ReadResult(HttpMethod method,
                   String path,
                   HttpVersion version,
                   List<HttpHeader> headers,

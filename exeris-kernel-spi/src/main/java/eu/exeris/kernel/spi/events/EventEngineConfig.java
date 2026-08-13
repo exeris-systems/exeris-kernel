@@ -20,7 +20,10 @@ import java.util.Objects;
  *
  * <h2>Valhalla Readiness</h2>
  * <p>Mostly primitive fields. The {@link String} fields ({@code partitionName},
- * {@code engineName}) are not on the hot path. Ready for {@code value record} when JEP 401 is stable.
+ * {@code engineName}) are not on the hot path.
+ * Declared {@code value record} on the `preview` line (JEP 401); the distributed line compiles
+ * the same source as an identity {@code record}, and the modifier is asserted by
+ * {@code Class::isValue} in the module's value-carrier registry test.
  *
  * @param engineName          human-readable engine name (for JFR/logging)
  * @param queueCapacity       maximum event queue capacity (power-of-2 recommended for Enterprise)
@@ -49,7 +52,7 @@ import java.util.Objects;
  */
 // 12 fields — flat-record config carrier; nesting would obscure ServiceLoader mapping
 @SuppressWarnings("PMD.ExcessiveParameterList")
-public record EventEngineConfig(
+public value record EventEngineConfig(
         String  engineName,
         int     queueCapacity,
         int     batchSize,

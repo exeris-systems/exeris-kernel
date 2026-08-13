@@ -223,7 +223,7 @@ final class CommunityTenantPoolRegistry {
         return TimeUnit.MILLISECONDS.toNanos(cadenceMs);
     }
 
-    /* default */ record PoolShutdownPlan(List<HikariDataSource> tenantPools, List<HikariDataSource> dedicatedPools) {
+    /* default */ value record PoolShutdownPlan(List<HikariDataSource> tenantPools, List<HikariDataSource> dedicatedPools) {
     }
 
     private static final class TenantPoolState {

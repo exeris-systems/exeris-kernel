@@ -88,7 +88,7 @@ final class CoreFlowRegistry implements FlowRegistry {
         ));
     }
 
-    private record RegistrySnapshot(FlowStepDescriptor[] steps, FlowTransitionDescriptor[][] transitions) {
+    private value record RegistrySnapshot(FlowStepDescriptor[] steps, FlowTransitionDescriptor[][] transitions) {
         @Override
         public boolean equals(Object other) {
             if (this == other) {

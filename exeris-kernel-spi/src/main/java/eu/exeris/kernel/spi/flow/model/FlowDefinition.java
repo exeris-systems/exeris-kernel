@@ -20,7 +20,10 @@ import java.util.Objects;
  * <h2>Valhalla Readiness</h2>
  * <p>The {@code steps} list is always an immutable {@link List#copyOf} snapshot.
  * The {@code String name} field is only on the bootstrap path, not the hot path.
- * No identity operations. Ready for {@code value record} when JEP 401 is stable.
+ * No identity operations.
+ * Declared {@code value record} on the `preview` line (JEP 401); the distributed line compiles
+ * the same source as an identity {@code record}, and the modifier is asserted by
+ * {@code Class::isValue} in the module's value-carrier registry test.
  *
  * @param name                  unique flow definition name (used as a key in the registry)
  * @param steps                 ordered list of step descriptors; must not be empty, and step names
@@ -36,7 +39,7 @@ import java.util.Objects;
  * @see FlowStepDescriptor
  * @see FlowExecutionPlan
  */
-public record FlowDefinition(
+public value record FlowDefinition(
         String                    name,
         int                       version,
         List<FlowStepDescriptor>  steps,

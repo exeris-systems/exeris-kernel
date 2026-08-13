@@ -33,8 +33,9 @@ import java.util.Objects;
  * </ul>
  *
  * <h2>Valhalla Readiness</h2>
- * <p>Standard immutable {@code record}. No {@code synchronized}, no identity {@code ==}. Will migrate to
- * {@code value record} (JEP 401) once mainline GA is reached.
+ * <p>No {@code synchronized}, no identity {@code ==}. Declared {@code value record} on the `preview` line (JEP 401); the distributed line compiles
+ * the same source as an identity {@code record}, and the modifier is asserted by
+ * {@code Class::isValue} in the module's value-carrier registry test.
  *
  * @param event       event type name; {@code null}/blank omits the SSE {@code event:} field
  * @param data        event payload; must not be {@code null} (empty string is a valid SSE {@code data:})
@@ -44,7 +45,7 @@ import java.util.Objects;
  */
 @SuppressWarnings({"PMD.ShortMethodName", "PMD.ShortVariable"})
 // 'of' is the standard Java factory idiom (cf. List.of, Map.of); 'id' is the canonical SSE field name.
-public record StreamEvent(String event, String data, String id, long retryMillis) {
+public value record StreamEvent(String event, String data, String id, long retryMillis) {
 
     public StreamEvent {
         Objects.requireNonNull(data, "StreamEvent data must not be null");

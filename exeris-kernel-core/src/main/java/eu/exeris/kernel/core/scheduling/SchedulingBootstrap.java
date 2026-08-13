@@ -38,7 +38,7 @@ public final class SchedulingBootstrap {
      * @param provider  the selected provider
      * @param scheduler the scheduler it produced, already started
      */
-    public record BootstrapResult(JobSchedulerProvider provider, JobScheduler scheduler) {
+    public value record BootstrapResult(JobSchedulerProvider provider, JobScheduler scheduler) {
     }
 
     /**

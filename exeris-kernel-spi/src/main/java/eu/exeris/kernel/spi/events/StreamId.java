@@ -42,7 +42,7 @@ import java.util.UUID;
  * @see EventStreamReader
  * @see EventStreamAppender
  */
-public record StreamId(long streamIdHigh, long streamIdLow, String streamType) {
+public value record StreamId(long streamIdHigh, long streamIdLow, String streamType) {
 
     /**
      * Compact constructor — validates {@code streamType} is non-null and non-blank.

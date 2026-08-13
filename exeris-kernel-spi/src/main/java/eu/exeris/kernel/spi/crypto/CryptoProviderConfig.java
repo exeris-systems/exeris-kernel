@@ -26,7 +26,9 @@ import java.util.Objects;
  * {@code protocol == QUIC}.
  *
  * <h2>Valhalla Readiness</h2>
- * <p>Standard {@code record} — candidate for {@code value record} once JEP 401 is mainline.
+ * <p>Declared {@code value record} on the `preview` line (JEP 401); the distributed line compiles
+ * the same source as an identity {@code record}, and the modifier is asserted by
+ * {@code Class::isValue} in the module's value-carrier registry test.
  *
  * @param protocol           target transport protocol
  * @param certChainPath      path to PEM certificate chain file (may be null for client-only)
@@ -38,7 +40,7 @@ import java.util.Objects;
  *
  * @since 0.5.0
  */
-public record CryptoProviderConfig(
+public value record CryptoProviderConfig(
         Protocol protocol,
         Path certChainPath,
         Path privateKeyPath,

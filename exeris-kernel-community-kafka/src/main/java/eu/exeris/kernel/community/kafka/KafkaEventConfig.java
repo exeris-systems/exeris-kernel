@@ -40,7 +40,7 @@ import java.util.Objects;
  *
  * @since 0.7.0
  */
-public record KafkaEventConfig(
+public value record KafkaEventConfig(
         String   bootstrapServers,
         String   consumerGroupId,
         String   topicPrefix,

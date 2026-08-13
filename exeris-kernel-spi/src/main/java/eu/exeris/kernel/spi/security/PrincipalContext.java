@@ -58,8 +58,10 @@ import java.util.UUID;
  * before the request enters the kernel.
  *
  * <h2>Valhalla Readiness</h2>
- * <p>Implementations SHOULD be {@code record}-based (deeply immutable,
- * no identity ops). Ready for {@code value record} migration (JEP 401).
+ * <p>Implementations SHOULD be {@code record}-based (deeply immutable, no identity ops).
+ * The canonical implementation, {@link ImmutablePrincipal}, is declared {@code value record}
+ * on the `preview` line (JEP 401). Note that the interface itself cannot carry the modifier:
+ * only classes can be value classes.
  *
  * <h2>Contract</h2>
  * <ul>

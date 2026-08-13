@@ -20,7 +20,7 @@ import java.util.Objects;
  * response-body ownership stays inside the client façade ({@code KernelWebClient}).
  * The headers are exposed so a policy can honour {@code Retry-After} on a
  * {@code 503} (ADR-010 {@code SHED_LOAD}) without touching the body. Immutable,
- * identity-free, Valhalla-ready (per ADR-045). Exactly one of the two states
+ * identity-free and declared {@code value record} (per ADR-045). Exactly one of the two states
  * holds: {@code failure == null} (a response with {@code statusCode > 0}) or
  * {@code failure != null} (a transport failure with {@code statusCode == 0} and
  * empty headers).
@@ -30,7 +30,7 @@ import java.util.Objects;
  * @param failure         the transport-level failure, or {@code null} when a response arrived
  * @since 0.10.0
  */
-public record HttpAttemptOutcome(int statusCode, List<HttpHeader> responseHeaders, Throwable failure) {
+public value record HttpAttemptOutcome(int statusCode, List<HttpHeader> responseHeaders, Throwable failure) {
 
     /**
      * Canonical constructor — defensively copies the headers, rejects a null list, and enforces the

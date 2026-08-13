@@ -14,7 +14,9 @@ import java.util.UUID;
 /**
  * Valhalla-Ready: Immutable graph traversal request.
  *
- * <p>Will be migrated to {@code value record} once JEP 401 is mainline.
+ * <p>Declared {@code value record} on the `preview` line (JEP 401); the distributed line compiles
+ * the same source as an identity {@code record}, and the modifier is asserted by
+ * {@code Class::isValue} in the module's value-carrier registry test.
  * Avoid identity operations.
  *
  * @param startNodeId      UUID of the starting node
@@ -25,7 +27,7 @@ import java.util.UUID;
  *
  * @since 0.5.0
  */
-public record GraphTraversal(
+public value record GraphTraversal(
         UUID startNodeId,
         GraphEdgeDescriptor edgeDescriptor,
         int maxDepth,

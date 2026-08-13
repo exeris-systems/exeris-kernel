@@ -47,7 +47,7 @@ public final class Http2FrameParser {
      * @param flags    frame flags byte
      * @param streamId stream identifier (31-bit, R bit masked)
      */
-    public record FrameHeader(int length, int type, int flags, int streamId) {
+    public value record FrameHeader(int length, int type, int flags, int streamId) {
 
         /**
          * Resolves the {@link Http2FrameType} enum for this frame.

@@ -22,7 +22,7 @@
  *   <li>{@link eu.exeris.kernel.spi.telemetry.KernelEvent} — immutable event record carrying
  *       a structured code, {@link eu.exeris.kernel.spi.telemetry.EventLevel}, wall-clock
  *       timestamp, optional {@link eu.exeris.kernel.spi.exceptions.ExerisKernelException},
- *       and a component label; candidate for {@code value record} once JEP 401 is mainline</li>
+ *       and a component label; declared {@code value record} on the `preview` line (JEP 401)</li>
  *   <li>{@link eu.exeris.kernel.spi.telemetry.EventLevel} — severity enum:
  *       {@code INFO}, {@code WARN}, {@code ERROR}, {@code FATAL}</li>
  *   <li>{@link eu.exeris.kernel.spi.telemetry.TelemetryConfig} — immutable configuration record

@@ -25,7 +25,7 @@ import java.util.Optional;
  * @param subsystem     the subsystem detail, or empty when not found
  * @since 0.9.0
  */
-public record SubsystemSnapshot(
+public value record SubsystemSnapshot(
         String schemaVersion,
         Instant capturedAt,
         String requestedName,

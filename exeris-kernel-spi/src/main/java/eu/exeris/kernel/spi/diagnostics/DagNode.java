@@ -21,7 +21,7 @@ import java.util.Objects;
  * @param optional  whether the subsystem is optional (skippable under a DEGRADE failure policy)
  * @since 0.9.0
  */
-public record DagNode(
+public value record DagNode(
         String name,
         String phase,
         List<String> dependsOn,

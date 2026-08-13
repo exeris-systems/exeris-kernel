@@ -42,10 +42,12 @@ public final class HpackDynamicTable {
     private long maxSize;
 
     /**
-     * Valhalla-Ready: Will be migrated to {@code value record} once JEP 401 is mainline.
+     * Declared {@code value record} on the `preview` line (JEP 401); the distributed line compiles
+ * the same source as an identity {@code record}, and the modifier is asserted by
+ * {@code Class::isValue} in the module's value-carrier registry test.
      * Currently relies on C2 JIT Escape Analysis for scalarization on hot-paths.
      */
-    private record Entry(String name, String value) {
+    private value record Entry(String name, String value) {
         /* package */ long byteSize() {
             return HpackUtf8.byteLength(name)
                     + HpackUtf8.byteLength(value)

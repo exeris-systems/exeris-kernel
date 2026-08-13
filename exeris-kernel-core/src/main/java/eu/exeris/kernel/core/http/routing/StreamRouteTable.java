@@ -64,9 +64,9 @@ final class StreamRouteTable {
         return null;
     }
 
-    private record Key(HttpMethod method, String path) {}
+    private value record Key(HttpMethod method, String path) {}
 
-    private record TemplateEntry(HttpMethod method, PathTemplate template,
+    private value record TemplateEntry(HttpMethod method, PathTemplate template,
                                  HttpStreamHandler handler) {}
 
     /** Accumulates registrations, compiling each path once at build time. */

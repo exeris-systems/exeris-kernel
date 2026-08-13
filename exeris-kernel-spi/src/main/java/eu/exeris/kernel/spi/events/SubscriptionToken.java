@@ -26,7 +26,7 @@ package eu.exeris.kernel.spi.events;
  * @since 0.5.0
  * @see EventBus#unsubscribe(SubscriptionToken)
  */
-public record SubscriptionToken(int busId, long subscriptionOrdinal) {
+public value record SubscriptionToken(int busId, long subscriptionOrdinal) {
 
     /**
      * A sentinel token representing an invalid / already-unsubscribed subscription.

@@ -1095,7 +1095,7 @@ final class CoreFlowRuntime { // NOPMD
      * {@code synchronized}); JIT escape analysis routinely scalarizes this carrier on the
      * Loom virtual-thread dispatch loop, so no heap pressure is introduced on the hot path.
      */
-    private record StepPlan(
+    private value record StepPlan(
             FlowStepDescriptor step,
             FlowStepAction     action,
             int                exitCode,

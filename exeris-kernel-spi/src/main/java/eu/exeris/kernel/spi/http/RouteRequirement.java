@@ -42,7 +42,7 @@ import java.util.Set;
 // kind(), and the three Object overrides a Valhalla-ready carrier is obliged to define. Splitting the
 // type to satisfy the count would put the shapes and the reads in different places for no gain.
 @SuppressWarnings("PMD.TooManyMethods")
-public final class RouteRequirement {
+public value class RouteRequirement {
 
     private static final RouteRequirement PERMIT_ALL = new RouteRequirement(Kind.PERMIT_ALL, Set.of());
     private static final RouteRequirement AUTHENTICATED =

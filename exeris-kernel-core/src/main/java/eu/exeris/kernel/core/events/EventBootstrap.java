@@ -29,7 +29,7 @@ public final class EventBootstrap {
             "No EventProvider found on classpath. "
             + "Add exeris-kernel-community or exeris-kernel-enterprise to your dependencies.";
 
-    public record BootstrapResult(EventProvider provider, EventEngine engine) {
+    public value record BootstrapResult(EventProvider provider, EventEngine engine) {
     }
 
     private EventBootstrap() {

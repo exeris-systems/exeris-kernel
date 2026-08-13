@@ -23,9 +23,13 @@ import java.time.Instant;
  * {@code rawArgs()} directly into off-heap mmap buffers.
  *
  * <h2>Valhalla Readiness</h2>
- * <p>Candidate for {@code value record} once JEP&nbsp;401 is mainline; currently a standard
- * {@code record} with reference components ({@link String}, {@link Instant},
- * {@link ExerisKernelException}).</p>
+ * <p>Declared {@code value record} on the `preview` line (JEP 401, preview in JDK 28). The
+ * distributed line compiles the same source as an identity {@code record}; the modifier is the
+ * only difference, and it is asserted by {@code Class::isValue} in the module's value-carrier
+ * registry test rather than left to a one-time inspection.
+ * The components are references ({@link String}, {@link Instant},
+ * {@link ExerisKernelException}), so instances are not flattenable; the modifier removes
+ * identity, which is what callers must not depend on.</p>
  *
  * @param code      structured error/event code (e.g. {@code "EX-MEM-1001"})
  * @param level     severity level
@@ -35,7 +39,7 @@ import java.time.Instant;
  * @param component kernel component name (compile-time constant on call site)
  * @since 0.5.0
  */
-public record KernelEvent(
+public value record KernelEvent(
         String code,
         EventLevel level,
         Instant timestamp,

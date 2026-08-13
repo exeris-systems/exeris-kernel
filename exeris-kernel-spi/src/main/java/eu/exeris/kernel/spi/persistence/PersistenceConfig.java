@@ -16,7 +16,9 @@ import java.util.Objects;
  *
  * <h2>Valhalla Readiness</h2>
  * <p>Standard {@code record} — all fields are primitives or value-safe types.
- * Ready for {@code value record} migration (JEP 401) once toolchain supports it.
+ * Declared {@code value record} on the `preview` line (JEP 401); the distributed line compiles
+ * the same source as an identity {@code record}, and the modifier is asserted by
+ * {@code Class::isValue} in the module's value-carrier registry test.
  * No identity operations ({@code ==}, {@code synchronized}, {@code System.identityHashCode()})
  * are permitted on instances of this type.
  *
@@ -63,7 +65,7 @@ import java.util.Objects;
  * @see PersistenceProvider
  * @since 0.5.0
  */
-public record PersistenceConfig(
+public value record PersistenceConfig(
         String connectionUrl,
         String username,
         String password,

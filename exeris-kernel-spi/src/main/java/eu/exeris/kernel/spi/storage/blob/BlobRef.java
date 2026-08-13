@@ -29,7 +29,7 @@ import java.util.Objects;
  * @param key       the object key within the container; non-blank, and free of traversal syntax
  * @since 0.11.0
  */
-public record BlobRef(String container, String key) {
+public value record BlobRef(String container, String key) {
 
     private static final String PARENT_SEGMENT = "..";
     private static final String CURRENT_SEGMENT = ".";

@@ -49,7 +49,7 @@ final class CommunityEventQueue implements EventQueue {
     private final int                  capacity;
     private final boolean              failFastOnFull;
 
-    private record Entry(EventDescriptor descriptor, EventPayload payload) {}
+    private value record Entry(EventDescriptor descriptor, EventPayload payload) {}
 
     /* default */ CommunityEventQueue(int capacity) {
         this(capacity, false);

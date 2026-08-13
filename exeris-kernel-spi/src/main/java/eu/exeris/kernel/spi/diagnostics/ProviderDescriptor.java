@@ -20,7 +20,7 @@ import java.util.Optional;
  * @param displayName  optional human-friendly name, when distinct from {@code providerName}
  * @since 0.9.0
  */
-public record ProviderDescriptor(
+public value record ProviderDescriptor(
         String providerName,
         String spiType,
         int priority,

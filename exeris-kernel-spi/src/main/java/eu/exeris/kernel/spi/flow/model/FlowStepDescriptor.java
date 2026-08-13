@@ -12,10 +12,11 @@ package eu.exeris.kernel.spi.flow.model;
  * Descriptor for a single executable step within a {@link FlowDefinition}.
  *
  * <h2>Valhalla Readiness</h2>
- * <p>Immutable record — all fields are primitives or effectively immutable references.
+ * <p>All components are primitives or effectively immutable references.
  * No identity operations ({@code ==}, {@code synchronized}, {@code identityHashCode}).
- * JIT C2 can scalarise this record on hot paths via Escape Analysis.
- * Ready for {@code value record} migration when JEP 401 is stable.
+ * Declared {@code value record} on the `preview` line (JEP 401); the distributed line compiles
+ * the same source as an identity {@code record}, and the modifier is asserted by
+ * {@code Class::isValue} in the module's value-carrier registry test.
  *
  * <h2>Enterprise Off-Heap Mapping</h2>
  * <p>In the Enterprise tier, the {@code action} and {@code compensation} references are
@@ -37,7 +38,7 @@ package eu.exeris.kernel.spi.flow.model;
  * @see FlowStepAction
  * @see FlowDefinition
  */
-public record FlowStepDescriptor(
+public value record FlowStepDescriptor(
         int            stepId,
         String         name,
         FlowStepAction action,

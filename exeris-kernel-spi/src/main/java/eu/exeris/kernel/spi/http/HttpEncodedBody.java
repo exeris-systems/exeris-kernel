@@ -20,7 +20,7 @@ import java.util.Objects;
  * @param body encoded body buffer; nullable for bodyless responses
  * @since 0.5.0
  */
-public record HttpEncodedBody(
+public value record HttpEncodedBody(
         List<HttpHeader> headers,
         LoanedBuffer body
 ) {

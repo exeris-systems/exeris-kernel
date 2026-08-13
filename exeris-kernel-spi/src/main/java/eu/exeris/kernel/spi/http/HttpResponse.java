@@ -25,9 +25,11 @@ import java.util.Objects;
  * {@link HttpExchange#respond(HttpResponse)}.
  *
  * <h2>Valhalla Readiness</h2>
- * <p>Standard {@code record}. No identity operations ({@code ==},
- * {@code System.identityHashCode()}, {@code synchronized}) on instances.
- * Will migrate to {@code value record} (JEP 401) once mainline GA is reached.
+ * <p>No identity operations ({@code ==}, {@code System.identityHashCode()},
+ * {@code synchronized}) on instances. Declared {@code value record} on the `preview` line (JEP 401); the distributed line compiles
+ * the same source as an identity {@code record}, and the modifier is asserted by
+ * {@code Class::isValue} in the module's value-carrier registry test.
+ * The {@code LoanedBuffer} component keeps its own identity and its own lifecycle.
  *
  * @param status  response status; non-null
  * @param version protocol version of the response; non-null
@@ -35,7 +37,7 @@ import java.util.Objects;
  * @param body    response body buffer, or {@code null} if the response has no body
  * @since 0.5.0
  */
-public record HttpResponse(
+public value record HttpResponse(
         HttpStatus status,
         HttpVersion version,
         List<HttpHeader> headers,

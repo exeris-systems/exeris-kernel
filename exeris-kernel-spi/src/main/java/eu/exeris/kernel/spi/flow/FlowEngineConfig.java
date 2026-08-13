@@ -22,7 +22,9 @@ import java.util.concurrent.TimeUnit;
  * <h2>Valhalla Readiness</h2>
  * <p>Purely primitive fields with {@code String} keys limited to bootstrap path.
  * No identity operations ({@code ==}, {@code synchronized}, {@code identityHashCode}).
- * Ready for {@code value record} when JEP 401 is stable.
+ * Declared {@code value record} on the `preview` line (JEP 401); the distributed line compiles
+ * the same source as an identity {@code record}, and the modifier is asserted by
+ * {@code Class::isValue} in the module's value-carrier registry test.
  *
  * @param engineName             human-readable engine name (for JFR / logging)
  * @param maxConcurrentFlows     maximum number of simultaneously active flow instances
@@ -63,7 +65,7 @@ import java.util.concurrent.TimeUnit;
  * @since 0.5.0
  */
 @SuppressWarnings("PMD.ExcessiveParameterList") // 14 fields — flat-record config carrier;
-public record FlowEngineConfig(
+public value record FlowEngineConfig(
         String  engineName,
         int     maxConcurrentFlows,
         long    timeoutDurationNanos,

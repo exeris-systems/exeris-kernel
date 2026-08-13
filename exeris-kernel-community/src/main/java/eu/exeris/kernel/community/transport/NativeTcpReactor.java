@@ -278,6 +278,6 @@ final class NativeTcpReactor {
         CANCEL
     }
 
-    /* default */ record ReactorRequest(ReactorRequestType type, SocketChannel channel) {
+    /* default */ value record ReactorRequest(ReactorRequestType type, SocketChannel channel) {
     }
 }

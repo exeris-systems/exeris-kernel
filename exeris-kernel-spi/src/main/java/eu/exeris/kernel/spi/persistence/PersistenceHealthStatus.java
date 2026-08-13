@@ -24,7 +24,9 @@ package eu.exeris.kernel.spi.persistence;
  * <p>This is a standard Java {@code record}. No identity operations are used
  * ({@code ==}, {@code synchronized}, {@code System.identityHashCode()}).
  * C2 JIT escape analysis will scalarise instances on the hot path.
- * Will be migrated to {@code value record} once JEP 401 is mainline.
+ * Declared {@code value record} on the `preview` line (JEP 401); the distributed line compiles
+ * the same source as an identity {@code record}, and the modifier is asserted by
+ * {@code Class::isValue} in the module's value-carrier registry test.
  *
  * <h2>Pre-allocated Constants</h2>
  * <p>Use {@link #UNKNOWN} and {@link #DEGRADED_LATENCY} as sentinel values.
@@ -34,7 +36,7 @@ package eu.exeris.kernel.spi.persistence;
  * @see PersistenceEngine
  * @since 0.5.0
  */
-public record PersistenceHealthStatus(
+public value record PersistenceHealthStatus(
         boolean healthy,
         String message,
         long latencyNanos

@@ -193,7 +193,7 @@ public final class HttpRouter implements HttpHandler {
         return idx < 0 ? path : path.substring(0, idx);
     }
 
-    private record RouteEntry(HttpMethod method, String path, HttpHandler handler) {}
+    private value record RouteEntry(HttpMethod method, String path, HttpHandler handler) {}
 
     /**
      * A resolved streaming route: the handler, and whatever its template captured.
@@ -201,7 +201,7 @@ public final class HttpRouter implements HttpHandler {
      * @param handler the streaming handler to drive
      * @param params  captured path parameters; empty for an exact stream route
      */
-    public record StreamMatch(HttpStreamHandler handler, Map<String, String> params) {
+    public value record StreamMatch(HttpStreamHandler handler, Map<String, String> params) {
 
         /**
          * A match with nothing captured — what an exact stream route resolves to.

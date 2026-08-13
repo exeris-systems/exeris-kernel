@@ -17,7 +17,7 @@ import eu.exeris.kernel.spi.flow.model.FlowState;
  *
  * @since 0.5.0
  */
-record HeapFlowContext(
+value record HeapFlowContext(
         long instanceIdMost,
         long instanceIdLeast,
         String definitionName,

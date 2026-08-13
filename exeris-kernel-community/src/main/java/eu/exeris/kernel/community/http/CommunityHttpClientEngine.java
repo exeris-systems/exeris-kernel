@@ -215,7 +215,7 @@ final class CommunityHttpClientEngine implements HttpClientEngine {
         return new ResolvedHttpClientDeps(allocator, transport, closeAllocatorOnClose);
     }
 
-    private record ResolvedHttpClientDeps(MemoryAllocator allocator,
+    private value record ResolvedHttpClientDeps(MemoryAllocator allocator,
                                           TransportEngine transport,
                                           boolean closeAllocatorOnClose) {
     }

@@ -74,7 +74,7 @@ final class CommunityFilesystemBlobLayout {
      * caller that has one almost always needs the other — {@code stat} reads both, {@code delete}
      * removes both.
      */
-    /* default */ record BlobPaths(Path object, Path sidecar) { }
+    /* default */ value record BlobPaths(Path object, Path sidecar) { }
 
     /**
      * Resolves a tenant-relative reference to an absolute path inside the caller's tenant directory.

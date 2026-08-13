@@ -43,7 +43,7 @@ package eu.exeris.kernel.spi.flow;
  *
  * @since 0.5.0
  */
-public record FlowEngineCapabilities(
+public value record FlowEngineCapabilities(
         boolean deterministicExecution,
         boolean offHeapDescriptors,
         boolean lockFreeScheduler,

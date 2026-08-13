@@ -45,7 +45,7 @@ import java.util.Objects;
  *                          bytes are going
  * @since 0.11.0
  */
-public record FlowMigrationState(
+public value record FlowMigrationState(
         int      parkedStep,
         String   parkedStepName,
         int[]    compensationStack,

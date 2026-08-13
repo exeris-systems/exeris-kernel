@@ -90,7 +90,7 @@ public final class AdmissionDecisionEvent {
     /**
      * Immutable payload for a single admission decision event.
      */
-    public record Payload(String providerId,
+    public value record Payload(String providerId,
                           boolean accepted,
                           int queueDepth,
                           double saturation,

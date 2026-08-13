@@ -151,7 +151,7 @@ public final class KernelHealthMonitor implements HealthProbe {
         FAILED
     }
 
-    private record SubsystemHealth(boolean requiredForReadiness, SubsystemState state) {
+    private value record SubsystemHealth(boolean requiredForReadiness, SubsystemState state) {
     }
 
     public enum SubsystemState {

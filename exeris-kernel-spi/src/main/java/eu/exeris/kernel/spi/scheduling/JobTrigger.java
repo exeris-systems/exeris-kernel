@@ -32,7 +32,7 @@ public sealed interface JobTrigger {
      *
      * @param expression a five-field cron expression, validated at construction
      */
-    record Cron(String expression) implements JobTrigger {
+    value record Cron(String expression) implements JobTrigger {
 
         /**
          * Canonical constructor.
@@ -56,7 +56,7 @@ public sealed interface JobTrigger {
      * @param initialDelay how long to wait before the first run; must not be negative
      * @param interval     the gap between runs; must be positive
      */
-    record FixedInterval(Duration initialDelay, Duration interval) implements JobTrigger {
+    value record FixedInterval(Duration initialDelay, Duration interval) implements JobTrigger {
 
         /**
          * Canonical constructor.
@@ -82,7 +82,7 @@ public sealed interface JobTrigger {
      *
      * @param delay how long to wait before the single run; must not be negative
      */
-    record OneShot(Duration delay) implements JobTrigger {
+    value record OneShot(Duration delay) implements JobTrigger {
 
         /**
          * Canonical constructor.

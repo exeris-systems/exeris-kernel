@@ -13,7 +13,7 @@ import java.util.Locale;
 import java.util.Set;
 
 /**
- * Immutable, Valhalla-ready selector expressing which subsystems to activate at boot.
+ * Immutable, identity-free selector expressing which subsystems to activate at boot.
  *
  * <h2>Usage</h2>
  * <pre>{@code
@@ -34,15 +34,16 @@ import java.util.Set;
  * {@code telemetry} are automatically pulled into the active set — no manual listing.
  *
  * <h2>Valhalla Readiness</h2>
- * <p>This is a standard {@code record} with no identity operations. It is
- * designed as a {@code ConfigProvider.ValueCandidate} and may be promoted to
- * a {@code value record} (JEP 401) once the toolchain supports it.
+ * <p>Declared {@code value record} on the `preview` line (JEP 401, preview in JDK 28). The
+ * distributed line compiles the same source as an identity {@code record}; the modifier is the
+ * only difference, and it is asserted by {@code Class::isValue} in the module's value-carrier
+ * registry test rather than left to a one-time inspection.
  *
  * @param requestedNames explicitly requested subsystem names; empty when {@link #selectAll} is true
  * @param selectAll      {@code true} = activate every subsystem found via ServiceLoader
  * @since 0.5.0
  */
-public record BootstrapSelector(Set<String> requestedNames, boolean selectAll) {
+public value record BootstrapSelector(Set<String> requestedNames, boolean selectAll) {
 
     // -------------------------------------------------------------------------
     // Compact canonical constructor — validates invariants

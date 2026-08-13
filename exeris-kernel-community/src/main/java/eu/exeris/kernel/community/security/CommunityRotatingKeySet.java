@@ -141,16 +141,16 @@ import java.util.concurrent.atomic.AtomicReference;
                 // Same material — refresh the stamp, do not rotate or evict previous.
                 Generations refreshed = new Generations(
                         gens.current(), now, gens.previous(), gens.previousInstalledAtMillis());
-                generations.compareAndSet(gens, refreshed);
-                return generations.get();
+                generations.set(refreshed);
+                return refreshed;
             }
 
             Map<String, RSAPublicKey> newCurrent = Map.copyOf(fresh);
             Generations rotated = new Generations(newCurrent, now, gens.current(), now);
-            generations.compareAndSet(gens, rotated);
+            generations.set(rotated);
             CommunityJwksKeyRotationEvent.emit(
                     PHASE_ROTATION, null, newCurrent.size(), gens.current().size());
-            return generations.get();
+            return rotated;
         }
     }
 
@@ -172,7 +172,7 @@ import java.util.concurrent.atomic.AtomicReference;
      * the epoch-millis instant it was installed ({@code previousInstalledAtMillis} is unused
      * when {@code previous} is {@code null}). Swapped atomically — never mutated in place.
      */
-    private record Generations(
+    private value record Generations(
             Map<String, RSAPublicKey> current,
             long currentInstalledAtMillis,
             Map<String, RSAPublicKey> previous,

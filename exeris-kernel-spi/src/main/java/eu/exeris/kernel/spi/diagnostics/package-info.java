@@ -13,7 +13,7 @@
  * <p>{@link eu.exeris.kernel.spi.diagnostics.KernelDiagnostics} is the single public contract for
  * reading kernel composition out-of-process; {@link eu.exeris.kernel.spi.diagnostics.KernelDiagnosticsProvider}
  * is its {@link java.util.ServiceLoader}-discovered factory. The {@code *Snapshot} records are the
- * immutable, Valhalla-ready JSON wire carriers (each leads with {@code schemaVersion}).
+ * immutable value records serving as JSON wire carriers (each leads with {@code schemaVersion}).
  *
  * <h2>Boundary (The Wall, ADR-006 / ADR-039)</h2>
  * <p>This package is implementation-blind and event-free: it MUST NOT depend on

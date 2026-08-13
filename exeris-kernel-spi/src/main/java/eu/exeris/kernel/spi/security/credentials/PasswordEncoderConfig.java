@@ -15,7 +15,7 @@ package eu.exeris.kernel.spi.security.credentials;
  *
  * @since 0.5.0
  */
-public record PasswordEncoderConfig(
+public value record PasswordEncoderConfig(
 		int memoryCostKib,
 		int iterations,
 		int parallelism,

@@ -22,7 +22,7 @@ import java.util.Objects;
  * @param payload typed payload object; may be null
  * @since 0.5.0
  */
-public record HttpTypedResponse(
+public value record HttpTypedResponse(
         HttpStatus status,
         List<HttpHeader> headers,
         Object payload

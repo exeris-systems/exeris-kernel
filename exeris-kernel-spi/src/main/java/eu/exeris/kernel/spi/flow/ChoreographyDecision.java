@@ -29,7 +29,7 @@ public sealed interface ChoreographyDecision
     /**
      * No action — the arriving event is irrelevant to any flow instance.
      */
-    record Ignore() implements ChoreographyDecision {}
+    value record Ignore() implements ChoreographyDecision {}
 
     /**
      * Wake the identified parked flow instance.
@@ -37,7 +37,7 @@ public sealed interface ChoreographyDecision
      * @param instanceIdMost  most-significant bits of the flow instance UUID
      * @param instanceIdLeast least-significant bits of the flow instance UUID
      */
-    record Wake(long instanceIdMost, long instanceIdLeast) implements ChoreographyDecision {}
+    value record Wake(long instanceIdMost, long instanceIdLeast) implements ChoreographyDecision {}
 
     /**
      * Start a new flow instance from the supplied plan.
@@ -46,6 +46,6 @@ public sealed interface ChoreographyDecision
      * @param instanceIdMost  most-significant bits of the new instance UUID
      * @param instanceIdLeast least-significant bits of the new instance UUID
      */
-    record Start(FlowExecutionPlan plan, long instanceIdMost, long instanceIdLeast)
+    value record Start(FlowExecutionPlan plan, long instanceIdMost, long instanceIdLeast)
             implements ChoreographyDecision {}
 }

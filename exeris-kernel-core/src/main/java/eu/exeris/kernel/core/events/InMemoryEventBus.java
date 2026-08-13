@@ -365,7 +365,7 @@ public final class InMemoryEventBus implements EventBus {
      * Internal subscription slot — pairs ordinalSeq with the handler.
      * Valhalla-ready: primitive {@code long} key, no identity operations.
      */
-    private record Slot(long ordinalSeq, EventHandler handler) {}
+    private value record Slot(long ordinalSeq, EventHandler handler) {}
 
     /**
      * Delegates all {@link EventPayload} operations to the underlying ref.

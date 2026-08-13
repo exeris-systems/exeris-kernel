@@ -14,9 +14,11 @@ import java.util.Objects;
  * SPI: Immutable configuration record consumed by {@link MemoryProvider#createAllocator}.
  *
  * <h2>Valhalla Readiness</h2>
- * <p>This is a {@code record} structured so it can be migrated to a {@code value record}
- * (JEP 401) once Valhalla is available in the target toolchain. No identity is required;
- * all fields are primitives or value-safe types.
+ * <p>Declared {@code value record} on the `preview` line (JEP 401, preview in JDK 28). The
+ * distributed line compiles the same source as an identity {@code record}; the modifier is the
+ * only difference, and it is asserted by {@code Class::isValue} in the module's value-carrier
+ * registry test rather than left to a one-time inspection.
+ * No identity is required; all components are primitives or value-safe types.
  *
  * <h2>Tier Separation (The Wall)</h2>
  * <p>This record exposes <em>logical</em> configuration knobs only. Enterprise
@@ -34,7 +36,7 @@ import java.util.Objects;
  * @see MemoryProvider
  * @since 0.5.0
  */
-public record MemoryProviderConfig(
+public value record MemoryProviderConfig(
         long totalOffHeapBytes,
         int networkOffHeapThreshold,
         int carrierCount,

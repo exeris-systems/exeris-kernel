@@ -25,7 +25,7 @@ requirements.
 v0.11 ships two artifacts. They carry the **same kernel** — same SPI, same subsystems, same tests —
 and differ in one axis plus the build that follows from it.
 
-| | `eu.exeris:*:0.11.0` | `eu.exeris.preview:*:0.11.0` |
+| | `eu.exeris:*:0.11.0` | `eu.exeris.preview:*:0.11.1` |
 |:--|:--|:--|
 | **JDK** | **25 LTS** | newest available — JDK 28 EA today |
 | **`--enable-preview`** | **not required, and not imposed on you** | required, by definition |
@@ -44,7 +44,7 @@ major. Had the distributed artifact carried that stamp, **you** would have to bu
 entire application with the flag and pin to our exact JDK. As of `0.11.0` it carries none of it —
 measured at the cut, not asserted: 2 282 classes of ours across the eight published modules,
 class-file major 69, zero preview-stamped. **Those figures describe `0.11.0`, not this branch** — you
-are reading the `preview` line, whose artifact is `eu.exeris.preview:*:0.11.0` and is preview-stamped by
+are reading the `preview` line, whose artifact is `eu.exeris.preview:*:0.11.1` and is preview-stamped by
 definition. See [`PREVIEW-TRACK.md`](../../PREVIEW-TRACK.md). A CI gate reads the published jars and fails the build on
 any preview stamp (`tools/preview-bytecode-scan/`); it scans 15 181 classes in total, because a
 preview-stamped class vendored into the shaded diagnostics CLI would break you exactly as one of ours
@@ -81,7 +81,7 @@ suffix.
 
 **Every snippet below shows the distributed line's coordinates** — groupId `eu.exeris`, and a
 `0.11.0-SNAPSHOT` version from before either line was cut. On this branch substitute
-`eu.exeris.preview` and `0.11.0`. They are quoted verbatim from the BOM README so they stay correct at their
+`eu.exeris.preview` and `0.11.1`. They are quoted verbatim from the BOM README so they stay correct at their
 source; qualifying them here rather than rewriting them is what keeps this page from drifting out of
 step with it.
 
@@ -178,7 +178,7 @@ The `classifier` and `type` are both required: the abstract TCK suites live in t
 
 ## Resolving today
 
-**`0.11.0` is released on the distributed line, and this branch is cut at `0.11.0` too** — under
+**`0.11.0` is released on the distributed line, and this branch is at `0.11.1`** — under
 `eu.exeris.preview`, so the two do not collide. The publish target is GitHub Packages (`pom.xml`,
 `distributionManagement`), which requires authentication, so a consumer still has to configure that
 repository before either line resolves.
@@ -192,7 +192,7 @@ mvn clean install
 ```
 
 then depend on what it installed — `eu.exeris:*:0.11.0` on the distributed line,
-`eu.exeris.preview:*:0.11.0` here — which resolves from your local repository. Nothing is published to
+`eu.exeris.preview:*:0.11.1` here — which resolves from your local repository. Nothing is published to
 Maven Central.
 
 ---

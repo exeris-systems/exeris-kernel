@@ -40,6 +40,10 @@ import java.util.Optional;
  * <h2>Valhalla Readiness</h2>
  * <p>Mostly primitive fields. {@code Instant} and array fields are on the cold
  * persistence path only — not used in the hot dispatch loop. No identity operations.
+ * Declared {@code value record} on the `preview` line (JEP 401); the distributed line compiles
+ * the same source as an identity {@code record}, and the modifier is asserted by
+ * {@code Class::isValue} in the module's value-carrier registry test. The hand-written value equality below is what makes
+ * that honest: the generated {@code equals} would compare the array components by reference.
  *
  * @param instanceIdMost    most-significant bits of the 128-bit flow instance UUID
  * @param instanceIdLeast   least-significant bits of the 128-bit flow instance UUID
@@ -71,7 +75,7 @@ import java.util.Optional;
  *
  * @since 0.5.0
  */
-public record FlowSnapshot(
+public value record FlowSnapshot(
         long      instanceIdMost,
         long      instanceIdLeast,
         String    definitionName,

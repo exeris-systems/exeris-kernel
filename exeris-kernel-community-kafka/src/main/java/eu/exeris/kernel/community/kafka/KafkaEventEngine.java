@@ -484,7 +484,7 @@ public final class KafkaEventEngine implements EventEngine {
     // instead.
     // =========================================================================
 
-    private record NoOpQueue(int capacity) implements EventQueue {
+    private value record NoOpQueue(int capacity) implements EventQueue {
 
         private static final String BYPASS_MESSAGE =
                 "KafkaEventEngine bypasses the local EventQueue (Kafka itself is the durable "

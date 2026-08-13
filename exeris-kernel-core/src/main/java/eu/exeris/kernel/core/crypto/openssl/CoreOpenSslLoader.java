@@ -274,7 +274,7 @@ public final class CoreOpenSslLoader {
      * @param text  full human-readable version string ({@code OpenSSL_version(OPENSSL_VERSION)})
      * @since 0.9.0
      */
-    /* package */ record OpenSslVersion(int major, int minor, String text) {
+    /* package */ value record OpenSslVersion(int major, int minor, String text) {
     }
 
     /**
@@ -470,7 +470,7 @@ public final class CoreOpenSslLoader {
      * @param path   the candidate string that resolved (filesystem path or SONAME)
      * @since 0.9.0
      */
-    /* package */ record ResolvedLibrary(SymbolLookup lookup, String path) {
+    /* package */ value record ResolvedLibrary(SymbolLookup lookup, String path) {
     }
 
     /**

@@ -17,5 +17,5 @@ import java.util.Map;
  * resolve to an empty param map; a path-template route carries the captured {@code {name} → value}
  * bindings.
  */
-record RouteMatch(HttpHandler handler, Map<String, String> params) {
+value record RouteMatch(HttpHandler handler, Map<String, String> params) {
 }

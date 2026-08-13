@@ -11,7 +11,7 @@ package eu.exeris.kernel.core.flow;
 import eu.exeris.kernel.spi.flow.model.FlowContext;
 
 @SuppressWarnings("PMD.PublicMemberInNonPublicType")
-record FlowKey(long instanceIdMost, long instanceIdLeast) {
+value record FlowKey(long instanceIdMost, long instanceIdLeast) {
 
     public static FlowKey from(FlowContext context) {
         return new FlowKey(context.instanceIdMost(), context.instanceIdLeast());

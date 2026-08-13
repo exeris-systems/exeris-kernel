@@ -32,7 +32,7 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  * @since 0.5.0
  * @see <a href="https://www.rfc-editor.org/rfc/rfc7540#section-6.5">RFC 7540 §6.5</a>
  */
-public record Http2Settings(
+public value record Http2Settings(
         long headerTableSize,
         boolean enablePush,
         long maxConcurrentStreams,

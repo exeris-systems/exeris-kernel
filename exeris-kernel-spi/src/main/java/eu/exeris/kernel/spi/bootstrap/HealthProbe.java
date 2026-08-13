@@ -60,6 +60,6 @@ public interface HealthProbe {
      * @param status  textual status; never {@code null}
      * @param healthy {@code true} if the probe is currently passing
      */
-    record ProbeSnapshot(String status, boolean healthy) {
+    value record ProbeSnapshot(String status, boolean healthy) {
     }
 }
