@@ -6,6 +6,22 @@ This file is intentionally terse: it lists what landed, with a pointer to the re
 
 Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project versions follow [SemVer](https://semver.org/spec/v2.0.0.html), with the pre-1.0 caveat that minor versions may carry observable contract additions while remaining backwards-compatible at the SPI level. Which SPI surfaces are `stable` / `preview` / `experimental`, and what each label commits to for semver, is declared in [`docs/stability-matrix.md`](docs/stability-matrix.md) — the authoritative source for the semver policy.
 
+## [Unreleased] — development/0.12.0
+
+### Added
+- **`FlowDefinitionBuilder.version(int)`** (ADR-064 amendment). ADR-064 made `(name, version)` the
+  plan's identity and called the version "explicit, application-declared" — but the builder, the only
+  supported way to assemble a definition and the one every generated saga uses, had no way to set it.
+  Every definition built through the fluent API was version 1. The workaround — build unversioned,
+  rebuild the record by hand through the five-argument `FlowDefinition` constructor — worked only by
+  side effect, because a definition's transitions are recorded when `build()` runs and read back by
+  name at compile: a hand-built record for a name never built through a builder compiled into a plan
+  with steps and **no transitions**, silently. The new method is `default` and throws
+  (out-of-tree-implementation compatibility, same constraint as `FlowExecutionPlan.definitionVersion()`);
+  unlike that one it refuses rather than returning a default, because silently ignoring a requested
+  version would build a v1 definition claiming to be v3. `AbstractFlowDefinitionVersioningTck` now
+  assembles every plan through the builder and pins the builder → definition → plan carry.
+
 ## [0.11.0] — 2026-08-11
 
 ### Added

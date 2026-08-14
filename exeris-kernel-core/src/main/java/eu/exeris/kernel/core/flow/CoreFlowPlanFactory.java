@@ -182,6 +182,7 @@ final class CoreFlowPlanFactory implements FlowExecutionPlanFactory {
         private final List<FlowTransitionDescriptor> transitions = new ArrayList<>();
         private long timeoutDurationNanos = config.timeoutDurationNanos();
         private int maxRetries;
+        private int version = FlowDefinition.INITIAL_VERSION;
 
         private Builder(String definitionName) {
             this.definitionName = Objects.requireNonNull(definitionName, "definitionName");
@@ -225,9 +226,23 @@ final class CoreFlowPlanFactory implements FlowExecutionPlanFactory {
         }
 
         @Override
+        public FlowDefinitionBuilder version(int version) {
+            // Validated here rather than at build(): a caller that passes 0 finds out at the call
+            // site that named the version, not three chained methods later.
+            if (version < FlowDefinition.INITIAL_VERSION) {
+                throw new IllegalArgumentException(
+                        "flow definition version must be >= " + FlowDefinition.INITIAL_VERSION
+                                + ", got: " + version);
+            }
+            this.version = version;
+            return this;
+        }
+
+        @Override
         public FlowDefinition build() {
             FlowDefinition definition = new FlowDefinition(
                     definitionName,
+                    version,
                     List.copyOf(steps),
                     timeoutDurationNanos,
                     maxRetries

@@ -261,6 +261,40 @@ structural corruption into a logged per-step failure.
 
 ---
 
+## Amendment (0.12) — the version was unexpressible through the builder
+
+The decision above says the version is "explicit, application-declared". For the whole of v0.11 an
+application could not declare it. `FlowDefinitionBuilder` — the only supported way to assemble a
+definition, and the one every generated saga uses — had `step`, `transition`, `timeoutDuration`,
+`maxRetries` and `build`, and no `version`. `Builder.build()` called the four-argument
+`FlowDefinition` constructor, which hardcodes `INITIAL_VERSION`. Every definition built through the
+fluent API was version 1, and a second version could not be created through it at all.
+
+**The workaround was worse than it looked.** You could build unversioned and then rebuild the record
+by hand through the five-argument constructor — which is exactly what this ADR's own TCK did. That
+works only by side effect: the Core factory records a definition's transitions when `build()` runs,
+keyed by name, and `compile` reads them back by name. A hand-built `FlowDefinition` for a name that
+was never built through a builder therefore compiles into a plan with steps and **no transitions** —
+a flow graph with no edges, no diagnostic, and a saga that never advances past step 0. The TCK's
+version of the workaround was accidentally sound because it always built first.
+
+**Correction:** `FlowDefinitionBuilder.version(int)`, `default` and throwing
+`UnsupportedOperationException` — an interface this old cannot grow an abstract method without
+breaking out-of-tree implementations at invoke time, the same constraint that gave
+`FlowExecutionPlan.definitionVersion()` its default. The *choice* of default differs deliberately:
+returning a value there is safe, whereas silently ignoring a requested version here would build a v1
+definition claiming to be v3 — precisely the confusion this ADR exists to prevent. The Core builder
+implements it and validates the bound at the call site. `AbstractFlowDefinitionVersioningTck` now
+assembles every plan through `builder.version(...)`, so the reach-around is gone from the contract
+suite, and a new `VersionThroughTheBuilder` group pins the builder → definition → plan carry.
+
+Found by a downstream Entity-First consumer: `exeris-tooling` cannot emit a versioned saga because
+`@Saga.version` reaches no AST — but the deeper reason it could not have emitted one anyway is that
+the kernel builder had nowhere to put it. The SDK-extraction and tooling-emission halves stay
+deferred to their own line; this closes the kernel-side impossibility underneath them.
+
+---
+
 ## Consequences
 
 ### ✅ Positive Outcomes
