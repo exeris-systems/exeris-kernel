@@ -6,6 +6,22 @@ This file is intentionally terse: it lists what landed, with a pointer to the re
 
 Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project versions follow [SemVer](https://semver.org/spec/v2.0.0.html), with the pre-1.0 caveat that minor versions may carry observable contract additions while remaining backwards-compatible at the SPI level. Which SPI surfaces are `stable` / `preview` / `experimental`, and what each label commits to for semver, is declared in [`docs/stability-matrix.md`](docs/stability-matrix.md) — the authoritative source for the semver policy.
 
+## [Unreleased] — development/0.12.0
+
+### Fixed
+- **A malformed HTTP request body is answered `400` again, not `500`** (ADR-036 amendment). Since
+  ADR-036 landed, every request body that failed to parse reached the caller as a server error: the
+  decoder contract asked drivers to wrap binding exceptions in a `java.*` `RuntimeException` and named
+  `IllegalStateException`, which is also what a *missing* decoder raises — so the status mapping the
+  same ADR places on the handler ("bad bytes ⇒ 400, no codec ⇒ 5xx") had one type for two meanings and
+  could not be performed. A body the decoder cannot bind now surfaces as
+  `spi.exceptions.http.RequestBodyDecodeException` (`EX-HTTP-4013`; `rawArgs` carry the target type
+  name and body size, never body content); a missing or unresolvable decoder stays
+  `IllegalStateException`. The TCK asserts the classification rather than the type family, and the
+  wrapping rule now reads `java.*` **or** SPI-owned — driver opacity never required the former.
+  Generated handlers need no change: their existing catch order already maps everything that is not an
+  `IllegalStateException` to `400`.
+
 ## [0.11.0] — 2026-08-11
 
 ### Added

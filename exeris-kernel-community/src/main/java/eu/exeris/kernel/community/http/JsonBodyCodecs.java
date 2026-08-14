@@ -8,6 +8,7 @@
  */
 package eu.exeris.kernel.community.http;
 
+import eu.exeris.kernel.spi.exceptions.http.RequestBodyDecodeException;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
@@ -34,6 +35,7 @@ final class JsonBodyCodecs {
     private static final String APPLICATION_PREFIX = "application/";
     private static final String JSON_SUFFIX = "+json";
     private static final long EMPTY_SIZE = 0L;
+    private static final byte[] EMPTY_BYTES = new byte[0];
 
     private JsonBodyCodecs() {
     }
@@ -72,25 +74,69 @@ final class JsonBodyCodecs {
      * exceptions are wrapped in {@link IllegalStateException} so no driver type
      * crosses the SPI boundary.
      *
+     * <p>This is the <em>response</em>-side path (a client decoding what a server sent). Its
+     * request-side twin is {@link #readRequestValue}: the two differ only in the failure they
+     * raise, because a malformed body means different things in the two directions — see that
+     * method for why the request side needs a distinguishable type and this one does not.
+     *
      * @param mapper     application-owned {@link ObjectMapper}; never null
      * @param body       off-heap body buffer; never null
      * @param targetType desired payload runtime class; never null
      * @return decoded payload, or {@code null} when the body is empty
      */
     /* default */ static Object readValue(ObjectMapper mapper, LoanedBuffer body, Class<?> targetType) {
-        Objects.requireNonNull(body, "body must not be null");
-        Objects.requireNonNull(targetType, "targetType must not be null");
-        long size = body.size();
-        if (size == EMPTY_SIZE) {
+        byte[] bytes = copyOffHeap(body, targetType);
+        if (bytes.length == EMPTY_SIZE) {
             return null;
         }
-        byte[] bytes = new byte[Math.toIntExact(size)];
-        MemorySegment.copy(body.segment(), 0L, MemorySegment.ofArray(bytes), 0L, size);
         try {
             return mapper.readValue(bytes, targetType);
         } catch (JacksonException ex) {
             throw new IllegalStateException(
                     "JSON deserialization failed for target type " + targetType.getName(), ex);
         }
+    }
+
+    /**
+     * Request-side twin of {@link #readValue}: identical off-heap read, but a decode failure
+     * surfaces as {@link RequestBodyDecodeException} rather than {@link IllegalStateException}.
+     *
+     * <p>A server handler is required by ADR-036 §2 to map codec failures to a status, and the
+     * two failures it must separate are "the caller sent bad bytes" ({@code 400}) and "no decoder
+     * is registered" ({@code 5xx}). Both used to arrive as {@code IllegalStateException}, so the
+     * mapping was not expressible and every malformed request became a 500 — the server taking
+     * the blame for a client's typo. The distinction is the type; the message is not load-bearing.
+     *
+     * <p>The Wall is unaffected: the thrown type is SPI-owned, so no {@code tools.jackson.*} type
+     * crosses the boundary.
+     *
+     * @param mapper     application-owned {@link ObjectMapper}; never null
+     * @param body       off-heap body buffer; never null
+     * @param targetType desired payload runtime class; never null
+     * @return decoded payload, or {@code null} when the body is empty
+     */
+    /* default */ static Object readRequestValue(ObjectMapper mapper, LoanedBuffer body, Class<?> targetType) {
+        byte[] bytes = copyOffHeap(body, targetType);
+        if (bytes.length == EMPTY_SIZE) {
+            return null;
+        }
+        try {
+            return mapper.readValue(bytes, targetType);
+        } catch (JacksonException ex) {
+            throw RequestBodyDecodeException.malformedBody(targetType.getName(), bytes.length, ex);
+        }
+    }
+
+    /** Single {@code MemorySegment} → {@code byte[]} copy; the shared empty array for an empty body. */
+    private static byte[] copyOffHeap(LoanedBuffer body, Class<?> targetType) {
+        Objects.requireNonNull(body, "body must not be null");
+        Objects.requireNonNull(targetType, "targetType must not be null");
+        long size = body.size();
+        if (size == EMPTY_SIZE) {
+            return EMPTY_BYTES;
+        }
+        byte[] bytes = new byte[Math.toIntExact(size)];
+        MemorySegment.copy(body.segment(), 0L, MemorySegment.ofArray(bytes), 0L, size);
+        return bytes;
     }
 }
