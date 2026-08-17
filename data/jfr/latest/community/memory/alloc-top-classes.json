@@ -1,51 +1,61 @@
 [ {
   "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
-  "count" : 52,
-  "bytes" : 2642480,
+  "count" : 59,
+  "bytes" : 1149648,
+  "category" : "TEST_HARNESS"
+}, {
+  "class" : "eu.exeris.kernel.community.memory.CommunityArenaShardPool$Allocation",
+  "count" : 12,
+  "bytes" : 459128,
   "category" : "TEST_HARNESS"
 }, {
   "class" : "java.util.concurrent.ConcurrentLinkedQueue$Node",
-  "count" : 36,
-  "bytes" : 107488,
+  "count" : 10,
+  "bytes" : 543880,
   "category" : "JVM_NOISE"
 }, {
   "class" : "java.lang.VirtualThread",
-  "count" : 9,
-  "bytes" : 785912,
+  "count" : 7,
+  "bytes" : 697112,
   "category" : "LOOM_RUNTIME"
 }, {
-  "class" : "java.lang.String",
-  "count" : 4,
-  "bytes" : 261744,
-  "category" : "JVM_NOISE"
-}, {
   "class" : "[Ljava.util.HashMap$Node;",
-  "count" : 2,
-  "bytes" : 87256,
+  "count" : 5,
+  "bytes" : 326152,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "[B",
+  "class" : "java.util.HashSet",
   "count" : 2,
-  "bytes" : 87280,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "java.util.ArrayList$Itr",
-  "count" : 2,
-  "bytes" : 4967296,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "java.util.LinkedHashMap",
-  "count" : 2,
-  "bytes" : 178552,
+  "bytes" : 108752,
   "category" : "JVM_NOISE"
 }, {
   "class" : "java.util.HashMap$KeySet",
   "count" : 2,
-  "bytes" : 87216,
+  "bytes" : 108688,
   "category" : "JVM_NOISE"
 }, {
   "class" : "java.util.HashMap$KeyIterator",
+  "count" : 2,
+  "bytes" : 108776,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "[B",
+  "count" : 2,
+  "bytes" : 543680,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "java.util.HashMap",
   "count" : 1,
-  "bytes" : 404728,
+  "bytes" : 108728,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "java.util.LinkedHashMap",
+  "count" : 1,
+  "bytes" : 108648,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "java.lang.String",
+  "count" : 1,
+  "bytes" : 3548152,
   "category" : "JVM_NOISE"
 } ]
