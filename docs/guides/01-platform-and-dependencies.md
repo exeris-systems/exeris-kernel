@@ -81,7 +81,8 @@ suffix.
 
 **Every snippet below shows the distributed line's coordinates** — groupId `eu.exeris`, and a
 `0.11.0-SNAPSHOT` version from before either line was cut. On this branch substitute
-`eu.exeris.preview` and `0.11.1`. They are quoted verbatim from the BOM README so they stay correct at their
+`eu.exeris.preview`, and the version you are actually resolving — `0.11.1` to pin this line's latest
+cut, `0.12.0-SNAPSHOT` if you built this branch yourself. They are quoted verbatim from the BOM README so they stay correct at their
 source; qualifying them here rather than rewriting them is what keeps this page from drifting out of
 step with it.
 
@@ -178,7 +179,7 @@ The `classifier` and `type` are both required: the abstract TCK suites live in t
 
 ## Resolving today
 
-**`0.11.0` is released on the distributed line, and this branch is at `0.11.1`** — under
+**`0.11.0` is released on the distributed line, and this line's latest cut is `0.11.1`** — under
 `eu.exeris.preview`, so the two do not collide. The publish target is GitHub Packages (`pom.xml`,
 `distributionManagement`), which requires authentication, so a consumer still has to configure that
 repository before either line resolves.
@@ -192,8 +193,10 @@ mvn clean install
 ```
 
 then depend on what it installed — `eu.exeris:*:0.11.0` on the distributed line,
-`eu.exeris.preview:*:0.11.1` here — which resolves from your local repository. Nothing is published to
-Maven Central.
+`eu.exeris.preview:*:0.12.0-SNAPSHOT` here, because this branch carries the next `-SNAPSHOT` between
+cuts (see [`PREVIEW-TRACK.md`](../../PREVIEW-TRACK.md)) — which resolves from your local repository.
+To pin a *released* preview artifact instead, use the latest cut, `eu.exeris.preview:*:0.11.1`.
+Nothing is published to Maven Central.
 
 ---
 

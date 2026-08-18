@@ -167,8 +167,17 @@ jobs:
       # measured, `0.11.0-preview` > `0.11.0` and > `0.10.2`. A release version carrying `-preview`
       # under the same groupId:artifactId would therefore win a `[0.11.0,)` range and `RELEASE`
       # metadata resolution — capturing exactly the consumers who wanted the preview-clean artifact.
-      # This line currently publishes only `-SNAPSHOT`s, where consumption is explicit anyway; the
-      # coordinates for a preview RELEASE are an open decision recorded in PREVIEW-TRACK.md.
+      # That is why the coordinate decision (#329) went to a distinct groupId, `eu.exeris.preview`,
+      # with a plain version: the two lines never share a version axis to compete on.
+      #
+      # So the preview line publishes RELEASES at a cut and `-SNAPSHOT`s between cuts — and the
+      # `continue-on-error` above is what makes leaving it on a release version silent. `preview` is
+      # a WORKING branch, not the GA line's `main`, so every push deploys; a branch still carrying the
+      # plain version it was cut at answers each one with a swallowed 409 and publishes nothing.
+      # Measured: `preview/v0.11.1` was cut at 673c0c2f and the branch ran five commits past it with
+      # the poms unchanged, none of them consumable. Reopening the next `-SNAPSHOT` in the same
+      # session as the cut is the step that prevents it — PREVIEW-TRACK.md §"Cutting a release on
+      # this line" is the ritual.
       - name: Publish to GitHub Packages
         if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/preview' || startsWith(github.ref, 'refs/heads/development/'))
         continue-on-error: true

@@ -174,6 +174,34 @@ guard, no lint and no coverage floor behind it, and nothing will say so.
 The POM comment beside each skip carries the one command that re-tests the tool. Worth re-running at
 each JDK bump — but expect the answer to stay "no" more often than not, for the reason above.
 
+## Cutting a release on this line — and reopening it
+
+The distributed line splits the two jobs across two branches: `main` carries release versions,
+`development/*` carries the `-SNAPSHOT`. **This line has one branch doing both**, which is why the
+reopen below is a step rather than an afterthought.
+
+1. **Cut.** Bump the eleven reactor poms and `sonar.projectVersion` to the plain version, land it,
+   then tag `preview/vX.Y.Z` on that commit. The `preview/` prefix is load-bearing: the SPI-diff gate
+   selects its baseline by a strict `vMAJOR.MINOR.PATCH` match, and an unprefixed `v0.11.1` on this
+   line would sort **above** the distributed line's `v0.11.0` and hand the GA baseline a tree that is
+   not its ancestor.
+2. **Reopen immediately.** Bump the same eleven poms and `sonar.projectVersion` to the next
+   `-SNAPSHOT` in the *same* session as the cut.
+
+**Step 2 is not hygiene, and skipping it is silent.** The publish step fires on *every* push to this
+branch (`.github/workflows/maven.yml`), GitHub Packages treats a release version as **immutable**, and
+the step carries `continue-on-error: true` — deliberately, so a 409 on a re-run of an already-published
+release cannot fail an unrelated merge. Put together: a branch left sitting at a plain version answers
+every subsequent push with a swallowed 409. Nothing is published and nothing says so.
+
+That is not hypothetical. `preview/v0.11.1` was cut at `673c0c2f` on 2026-08-13 and the branch then ran
+**five commits past it** — the #336 merge-up, the doc corrections, the sonar version fix and two
+dependabot bumps — with the poms still reading `0.11.1`. None of it was consumable, and the only way to
+find that out was to read the workflow.
+
+**Consumers depend on a cut, not on this branch.** `eu.exeris.preview:*:0.11.1` is what a preview
+adopter pins; `0.12.0-SNAPSHOT` is what a local `mvn clean install` from this branch produces.
+
 ## Keeping this line in sync with `development/*`
 
 Shared work lands on `development/*` first and reaches this branch by **merge-up**, not by a second
@@ -233,7 +261,9 @@ missed.
   what value classes buy until one exists — and most of these carriers hold reference components,
   which will not flatten.
 - **Coordinates for a preview RELEASE: decided at the 0.11.0 cut — a distinct groupId,
-  `eu.exeris.preview:*`, with the version staying plain — `0.11.1` today.** Opting in is therefore an
+  `eu.exeris.preview:*`, with a *cut* carrying a plain version — `0.11.1` is the latest.** Between cuts
+  the branch carries `-SNAPSHOT` (see [Cutting a release on this line](#cutting-a-release-on-this-line--and-reopening-it));
+  the plain version belongs to the tag, not to the working branch. Opting in is therefore an
   explicit coordinate change, and the two lines never share a version axis to compete on. The version
   numbers advance independently: this line reached `0.11.1` for a change the distributed one does not
   carry.
