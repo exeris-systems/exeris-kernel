@@ -430,21 +430,40 @@ void priorityIsCommunitySlot() {
 
 ## The Wall — guards your code must pass
 
-`ExerisArchitectureTest` (`exeris-kernel-tck/src/test/java/eu/exeris/kernel/tck/arch/`) is an ArchUnit
-suite, and these are the rules most likely to catch a new provider:
+**Two suites, and which one can see your provider depends on where it lives.**
+`ExerisArchitectureTest` (`exeris-kernel-tck/src/test/java/eu/exeris/kernel/tck/arch/`) runs in a
+module that depends only on the SPI, so every rule in it is an SPI rule whatever its name suggests —
+it cannot see your driver. `KernelTierBanArchitectureTest`
+(`exeris-kernel-community/src/test/java/eu/exeris/kernel/community/`) carries the scoped bans across
+SPI, Core and Community, which is where a Community provider is actually checked.
+
+Rules in `ExerisArchitectureTest`, all SPI-scoped:
 
 | Rule | Line | What it forbids |
 |:--|:--|:--|
-| `noJavaIoInSpi` | 38 | `java.io` in SPI — use `java.nio` or Panama FFM |
-| `noFilesystemTypesInStorageSpi` | 45 | `java.nio.file` in the blob contract (ADR-056 §9) |
-| `noStructuredTaskScopeInSchedulingSpi` | 55 | the last preview dependency, in scheduling SPI (ADR-057 §2) |
-| `noExecutorsAnywhere` | 69 | `Executors` / `ExecutorService` anywhere |
-| `noCompletableFuture` | 80 | unstructured async |
-| `noThreadLocal` | 89 | `ThreadLocal` — use `ScopedValue` |
-| `noImplLeaksInSpi` | 96 | driver types in SPI (Netty, Hikari, `java.sql`, Nimbus, Kafka) |
-| `noDiFrameworksInSpi` | 107 | Spring / Guice / `jakarta.inject` in SPI |
-| `noDirectArenaInSpi` | 116 | ad-hoc `Arena` — allocate through `MemoryAllocator` |
-| `noUnsafe` | 123 | `sun.misc.Unsafe` — use FFM |
+| `noJavaIoInSpi` | 52 | `java.io` in SPI — use `java.nio` or Panama FFM |
+| `noFilesystemTypesInStorageSpi` | 58 | `java.nio.file` in the blob contract (ADR-056 §9) |
+| `noStructuredTaskScopeInSchedulingSpi` | 67 | the last preview dependency, in scheduling SPI (ADR-057 §2) |
+| `noExecutorsInSpi` | 80 | `Executors` / `ExecutorService` in SPI |
+| `noCompletableFutureInSpi` | 90 | unstructured async in SPI |
+| `noThreadLocalInSpi` | 98 | `ThreadLocal` in SPI — use `ScopedValue` |
+| `noImplLeaksInSpi` | 104 | driver types in SPI (Netty, Hikari, `java.sql`, Nimbus, Kafka) |
+| `noDiFrameworksInSpi` | 114 | Spring / Guice / `jakarta.inject` in SPI |
+| `noDirectArenaInSpi` | 122 | ad-hoc `Arena` — allocate through `MemoryAllocator` |
+| `noUnsafeInSpi` | 128 | `sun.misc.Unsafe` in SPI — use FFM |
+
+Rules in `KernelTierBanArchitectureTest`, reaching Core and Community as well:
+
+| Rule | What it forbids |
+|:--|:--|
+| `noExecutors` | `Executors` / `ExecutorService` |
+| `noCompletableFuture` | unstructured async |
+| `noThreadLocal` | `java.lang.ThreadLocal` — use `ScopedValue` (note `ThreadLocalRandom` is a different type and is not banned) |
+| `noUnsafe` | `sun.misc.Unsafe` — use FFM |
+
+> A provider in `exeris-kernel-community-kafka` is checked by **neither**: nothing depends on that
+> module, so it is on no suite's analysis classpath. Same for `exeris-kernel-diagnostics-cli`. Run the
+> bans against your own module if you add one there.
 
 Run it yourself; do not assume CI covered it:
 

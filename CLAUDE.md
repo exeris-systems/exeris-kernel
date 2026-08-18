@@ -24,7 +24,7 @@ Reactor modules (root `pom.xml`) and their import rules:
 | `exeris-kernel-community` | Open providers (transport, persistence/JDBC, flow, events, security, …) | SPI only. **Never** core internals |
 | `exeris-kernel-community-kafka` | Kafka/Redpanda event/flow bindings | SPI, community |
 | `exeris-kernel-community-testkit` | Shared test fixtures | — |
-| `exeris-kernel-tck` | Contract tests (`Abstract*Tck`) + `ExerisArchitectureTest` (ArchUnit Wall guard) | SPI |
+| `exeris-kernel-tck` | Contract tests (`Abstract*Tck`) + `ExerisArchitectureTest` (ArchUnit Wall guard, **SPI reach only** — the Core/Community half is `KernelTierBanArchitectureTest` in Community) | SPI |
 | `exeris-kernel-diagnostics-cli` | Diagnostics tooling (thin, coverage-ungated) | — |
 | `exeris-kernel-bom` / `-parent` / `-build-config` | Build plumbing; build-config ships lint rulesets and is itself lint-exempt | — |
 
@@ -79,7 +79,7 @@ The following are banned in production runtime hot paths unless explicitly justi
 - `String.formatted()` / string concatenation on exception/failure paths — use the `rawArgs[]` primitive layout.
 - double-checked locking for lazy init — use the Supplier + `AtomicReference` CAS compute-once pattern (see CONTRIBUTING.md) or `LazyConstant`.
 
-These bans do not automatically apply to test fixtures, build tooling, migration scripts, or debug harnesses. The `ThreadLocal` and `Executors` bans are enforced by ArchUnit (`ExerisArchitectureTest`), not PMD — if the arch guard did not run, nothing has checked them.
+These bans do not automatically apply to test fixtures, build tooling, migration scripts, or debug harnesses. The `ThreadLocal`, `Executors`, `CompletableFuture` and `Unsafe` bans are enforced by ArchUnit, not PMD — if the arch guard did not run, nothing has checked them. **Two suites, and the split is about classpath reach, not about taste:** `ExerisArchitectureTest` (`exeris-kernel-tck`) sees only the SPI, because that module depends on nothing else; `KernelTierBanArchitectureTest` (`exeris-kernel-community`) is where the same four bans reach Core and Community, that being the first module with all three tiers on one classpath. Neither suite sees `exeris-kernel-community-kafka` or `exeris-kernel-diagnostics-cli` — both are leaves nothing depends on. Until v0.12 only the first existed and its rules named the whole repository, so a `ThreadLocal` in Core left it 13/13 green — measured, not supposed.
 
 ## Memory and Ownership Policy
 All native memory must have explicit owner and deterministic lifecycle.
@@ -120,7 +120,7 @@ CI (`.github/workflows/maven.yml`) runs `mvn clean verify -P coverage` (JaCoCo l
 **Definition of done — all of these, in order, before calling work finished:**
 1. `mvn clean install` green (full reactor for cross-module changes; `-pl <module> -am` acceptable for isolated ones).
 2. Lint-clean on changed modules — covered by step 1 **unless** any `-Dpmd.skip`/`-Dcheckstyle.skip` was used in the loop; then run the standalone command above. No new PMD/Checkstyle suppressions without written justification.
-3. `ExerisArchitectureTest` green.
+3. `ExerisArchitectureTest` green — and `KernelTierBanArchitectureTest` too if the change touched Core or Community, since that is the suite whose classpath can see them.
 4. Contract/SPI change → TCK + binding tests updated and green; tagged tests run if their subject changed.
 5. Docs/ADR impact triaged (`exeris-doc-impact-triage` skill); drift fixed or explicitly deferred with reason.
 6. Release notes/CHANGELOG describe only published behavior — no local-only links, no cross-repo private PR references.

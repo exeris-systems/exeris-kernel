@@ -59,7 +59,9 @@ import java.util.function.Function;
  * The sentence this paragraph replaced said concurrency inside {@code runStream()} MUST use
  * {@code StructuredTaskScope}. On the default line that mandates the one preview dependency 1.0 GA must
  * not ship — see ROADMAP §"Platform Baseline for 1.0 GA", which records the same staleness in
- * {@code ExerisArchitectureTest.noExecutorsAnywhere}'s reason text. Read it per track: the
+ * {@code KernelTierBanArchitectureTest.noExecutors}'s reason text (until v0.12 this named
+ * {@code ExerisArchitectureTest.noExecutorsAnywhere}, a rule whose reach never matched its
+ * name). Read it per track: the
  * {@code preview} artifact keeps {@code StructuredTaskScope}; the default line uses virtual threads
  * plus explicit {@code ScopedValue} rebind at the {@link StreamExecutionBackend} seam, both GA.
  * Either way structured lifetime is the requirement, not a specific class.
