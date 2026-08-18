@@ -42,11 +42,11 @@ Why this matters to you rather than to us: `--enable-preview` is not a per-libra
 whole-compilation and whole-JVM flag, and the bytecode it produces is pinned to one exact class-file
 major. Had the distributed artifact carried that stamp, **you** would have to build and run your
 entire application with the flag and pin to our exact JDK. As of `0.11.0` it carries none of it —
-measured at the cut, not asserted: 2 282 classes of ours across the eight published modules,
+measured at the cut, not asserted: 2 286 classes of ours across the eight published modules,
 class-file major 69, zero preview-stamped. **Those figures describe `0.11.0`, not this branch** — you
 are reading the `preview` line, whose artifact is `eu.exeris.preview:*:0.11.1` and is preview-stamped by
 definition. See [`PREVIEW-TRACK.md`](../../PREVIEW-TRACK.md). A CI gate reads the published jars and fails the build on
-any preview stamp (`tools/preview-bytecode-scan/`); it scans 15 181 classes in total, because a
+any preview stamp (`tools/preview-bytecode-scan/`); it scans 15 185 classes in total, because a
 preview-stamped class vendored into the shaded diagnostics CLI would break you exactly as one of ours
 would. The decision and its reasoning are ADR-066 ([`docs/adr/`](../adr/)).
 
