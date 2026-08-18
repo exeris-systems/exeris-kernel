@@ -8,6 +8,29 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ## [Unreleased] — development/0.12.0
 
+### Added
+- **`FlowDefinitionBuilder.version(int)`** (ADR-064 amendment). ADR-064 made `(name, version)` the
+  plan's identity and called the version "explicit, application-declared" — but the builder, the only
+  supported way to assemble a definition and the one every generated saga uses, had no way to set it.
+  Every definition built through the fluent API was version 1. The workaround — build unversioned,
+  rebuild the record by hand through the five-argument `FlowDefinition` constructor — worked only by
+  side effect, because a definition's transitions are recorded when `build()` runs and read back at
+  compile: a hand-built record for a name never built through a builder compiled into a plan with
+  steps and **no declared edges**, silently — which is not a stalled saga but a linearised one, since
+  a step with no outgoing transition falls back to `index + 1`. A definition whose edges are already
+  sequential is unaffected; one that declares a skip or a branch runs a path it never declared. The new method is `default` and throws
+  (out-of-tree-implementation compatibility, same constraint as `FlowExecutionPlan.definitionVersion()`);
+  unlike that one it refuses rather than returning a default, because silently ignoring a requested
+  version would build a v1 definition claiming to be v3. `AbstractFlowDefinitionVersioningTck` now
+  assembles every plan through the builder and pins the builder → definition → plan carry.
+- **The two PostgreSQL session keys the RLS contract rests on are constants**
+  (`ConnectionInterceptor.SESSION_KEY_TENANT_ID`, `SESSION_KEY_SHARED_SCOPE`). The name is a contract
+  between code the kernel ships and SQL it does not — the SPI itself says it cannot introspect a
+  deployment's policy — so both sides spelled the string by transcription with no compiler across the
+  gap. When they disagree the failure is the worst available: zero rows read, every write refused,
+  nothing pointing at the five characters responsible. A generator or migration tool can now reference
+  them; `RlsConnectionInterceptor` builds its statement from them.
+
 ### Fixed
 - **A malformed HTTP request body is answered `400` again, not `500`** (ADR-036 amendment). Since
   ADR-036 landed, every request body that failed to parse reached the caller as a server error: the
@@ -21,6 +44,25 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   wrapping rule now reads `java.*` **or** SPI-owned — driver opacity never required the former.
   Generated handlers need no change: their existing catch order already maps everything that is not an
   `IllegalStateException` to `400`.
+- **The RLS policy the kernel publishes now matches the one it tests.** The conforming-policy example
+  in `RlsConnectionInterceptor`'s Javadoc — the thing a deployment copies into its own migrations —
+  showed `CREATE POLICY` and nothing else, while all three integration tests holding this contract
+  issue `ENABLE` **and** `FORCE ROW LEVEL SECURITY` and connect as a non-owner role. PostgreSQL exempts
+  a table's owner from its own policies unless the table is forced, so an application connecting as the
+  role that owns its tables — the default in every quick-start — got a policy that is enabled, listed in
+  `pg_policies`, and never applied: no error, other tenants' rows in every read. The example also
+  compared `tenant_id` to `current_setting(...)` without stating that it assumes a `TEXT` column; a
+  deployment casting to `uuid` needs the empty-string guard on the tenant arm too, since the interceptor
+  publishes the key unconditionally. Both are now stated. `docs/subsystems/persistence.md` carries the
+  enforcement requirement.
+- **Two versions of one flow definition no longer consume each other's declared edges.** The handover
+  from `FlowDefinitionBuilder.build()` to `compile()` was keyed by definition *name* while the plan
+  catalog is keyed by `(name, version)`, so building two versions before compiling either — the shape
+  ADR-064 coexistence asks for, and one only reachable once the builder could express a version —
+  left the second plan with no declared edges. Not a stalled saga: a step with no outgoing transition
+  falls back to `index + 1`, so a sequential definition is unaffected and one declaring a skip or a
+  branch silently runs a path it never declared. Keyed by `(name, version)` now, pinned by a TCK case
+  whose declared edge skips a step, because a sequential one cannot observe the loss.
 
 ## [0.11.0] — 2026-08-11
 
