@@ -32,8 +32,11 @@ import java.util.Objects;
  *                              use {@code -1} as sentinel for CLIENT / DISABLED
  * @param maxConnections        hard cap on concurrent connections; ignored for DISABLED
  * @param idleTimeoutMillis     connection idle timeout in ms (0 = no timeout); ignored for DISABLED
- * @param maxRequestHeaderCount maximum number of header fields per request (DoS guard)
- * @param maxRequestHeaderSize  maximum byte size of a single header field (DoS guard)
+ * @param maxRequestHeaderCount maximum number of header fields per request (DoS guard); must be
+ *                              &gt; 0 — 0 is refused rather than read as "unlimited", because it
+ *                              refuses every request carrying a header (ADR-071)
+ * @param maxRequestHeaderSize  maximum byte size of a single header field (DoS guard); must be
+ *                              &gt; 0, refused on the same grounds
  * @param maxRequestBodyBytes   maximum request body size in bytes; ({@code -1} = unlimited)
  * @param h2cUpgradeEnabled     whether to accept HTTP/1.1 → HTTP/2 cleartext upgrade (RFC 7540 §3.2)
  * @param maxVersion            highest HTTP version this engine is permitted to negotiate;

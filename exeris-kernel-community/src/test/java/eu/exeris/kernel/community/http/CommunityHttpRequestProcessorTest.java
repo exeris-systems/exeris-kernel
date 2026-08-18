@@ -16,6 +16,7 @@ import eu.exeris.kernel.core.http.http2.Http2ErrorCode;
 import eu.exeris.kernel.core.http.http2.Http2FrameParser;
 import eu.exeris.kernel.core.http.http2.Http2FrameType;
 import eu.exeris.kernel.spi.http.HttpConfig;
+import eu.exeris.kernel.spi.http.HttpMode;
 import eu.exeris.kernel.spi.http.HttpHandler;
 import eu.exeris.kernel.spi.http.HttpHeader;
 import eu.exeris.kernel.spi.http.HttpResponse;
@@ -81,6 +82,89 @@ class CommunityHttpRequestProcessorTest {
 
         assertThat(stream.responseText()).startsWith("HTTP/1.1 200 OK");
         assertThat(recordingAllocator.maxRequestedNetworkAllocation()).isLessThan(64 * 1024);
+    }
+
+    /** A server config identical to the default except for the two header bounds. */
+    private static HttpConfig serverWithHeaderBounds(int maxHeaderCount, int maxHeaderSize) {
+        return new HttpConfig(
+                HttpMode.SERVER,
+                HttpConfig.DEFAULT_BIND_HOST,
+                HttpConfig.DEFAULT_PORT,
+                HttpConfig.DEFAULT_MAX_CONNECTIONS,
+                HttpConfig.DEFAULT_IDLE_TIMEOUT_MS,
+                maxHeaderCount,
+                maxHeaderSize,
+                HttpConfig.DEFAULT_MAX_REQUEST_BODY_BYTES,
+                true,
+                HttpVersion.HTTP_2);
+    }
+
+    private static final String THREE_HEADER_REQUEST = """
+            GET /x HTTP/1.1\r
+            Host: localhost\r
+            A: 1\r
+            B: 2\r
+            \r
+            """;
+
+    @Test
+    void configuredHeaderCountLimitReachesTheProductionParsePath() {
+        // The binding this PR is actually about: CommunityHttpRequestProcessor builds the codec from
+        // HttpConfig, and CommunityHttp1RequestReader parses with the codec's bounds on both passes.
+        // Asserted as a pair -- the same request under the default config and under a tight one --
+        // because either half alone would pass with the configured bound still ignored.
+        CommunityHttpRequestProcessor permissive = new CommunityHttpRequestProcessor(
+                ALLOCATOR, HttpResponseBodyEncoderRegistry.empty(), HttpConfig.defaultServer());
+        CapturingTransportStream allowed = new CapturingTransportStream(THREE_HEADER_REQUEST);
+        permissive.process(allowed, exchange ->
+                exchange.respond(HttpResponse.noBody(HttpStatus.OK, HttpVersion.HTTP_1_1)));
+        assertThat(allowed.responseText())
+                .as("three headers are well inside the default bound of 100")
+                .startsWith("HTTP/1.1 200 OK");
+
+        CommunityHttpRequestProcessor tight = new CommunityHttpRequestProcessor(
+                ALLOCATOR, HttpResponseBodyEncoderRegistry.empty(),
+                serverWithHeaderBounds(1, HttpConfig.DEFAULT_MAX_HEADER_SIZE));
+        CapturingTransportStream refused = new CapturingTransportStream(THREE_HEADER_REQUEST);
+        tight.process(refused, exchange ->
+                exchange.respond(HttpResponse.noBody(HttpStatus.OK, HttpVersion.HTTP_1_1)));
+
+        // No status line at all: a header-limit breach on the HTTP/1 path closes the stream rather
+        // than answering. That is pre-existing behaviour of the parse-fault path and not something
+        // this change introduces -- the default bound behaved identically, just at 100 instead of 1.
+        // It is worth its own slice (RFC 6585 defines 431 for exactly this) and is out of scope here.
+        assertThat(refused.responseText())
+                .as("the configured bound of 1 must decide the outcome, not the default of 100")
+                .isEmpty();
+    }
+
+    @Test
+    void configuredHeaderSizeLimitReachesTheProductionParsePath() {
+        String bigHeaderRequest = """
+                GET /x HTTP/1.1\r
+                Host: localhost\r
+                X-Big: %s\r
+                \r
+                """.formatted("v".repeat(200));
+
+        CommunityHttpRequestProcessor permissive = new CommunityHttpRequestProcessor(
+                ALLOCATOR, HttpResponseBodyEncoderRegistry.empty(), HttpConfig.defaultServer());
+        CapturingTransportStream allowed = new CapturingTransportStream(bigHeaderRequest);
+        permissive.process(allowed, exchange ->
+                exchange.respond(HttpResponse.noBody(HttpStatus.OK, HttpVersion.HTTP_1_1)));
+        assertThat(allowed.responseText())
+                .as("a 200-byte header is well inside the default bound of 8 192")
+                .startsWith("HTTP/1.1 200 OK");
+
+        CommunityHttpRequestProcessor tight = new CommunityHttpRequestProcessor(
+                ALLOCATOR, HttpResponseBodyEncoderRegistry.empty(),
+                serverWithHeaderBounds(HttpConfig.DEFAULT_MAX_HEADER_COUNT, 32));
+        CapturingTransportStream refused = new CapturingTransportStream(bigHeaderRequest);
+        tight.process(refused, exchange ->
+                exchange.respond(HttpResponse.noBody(HttpStatus.OK, HttpVersion.HTTP_1_1)));
+        assertThat(refused.responseText())
+                .as("the configured size bound must decide the outcome, not the default")
+                .isEmpty();
     }
 
     @Test
