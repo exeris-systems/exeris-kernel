@@ -225,13 +225,23 @@ final class CommunityHttpRequestDispatcher {
         // the kernel carrier scope): the per-request persistence session and — for write-over-HTTP —
         // the request-body decoder registry the generated handler resolves via
         // HttpKernelProviders.httpRequestBodyDecoderRegistry() (ADR-036 / W7 boot-path fix).
-        if (requestBodyDecoderRegistry == null) {
-            ScopedValue.where(CommunityHttpRequestProcessor.REQUEST_SESSION, box).run(invocation);
-        } else {
-            ScopedValue.where(CommunityHttpRequestProcessor.REQUEST_SESSION, box)
-                    .where(HttpKernelProviders.HTTP_REQUEST_BODY_DECODER_REGISTRY, requestBodyDecoderRegistry)
-                    .run(invocation);
+        //
+        // MEMORY_ALLOCATOR belongs in the same list and was missing from it. The kernel binds it as a
+        // FOUNDATION carrier binding around the boot callback, and the reactor threads are started
+        // with Thread.ofPlatform(), which does not inherit a ScopedValue — so kernel code that needs
+        // it on a request captures it at construction instead (NativeTcpTransportProvider does
+        // exactly that). Generated application code cannot: HttpRequestDecodingContext mandates an
+        // allocator, and the generated parseBody resolves one from this slot per request. Unbound, it
+        // raised NoSuchElementException inside the handler's try, which the handler reported as
+        // 400 Bad Request — a server-side missing binding blamed on the caller's body.
+        ScopedValue.Carrier carrier =
+                ScopedValue.where(CommunityHttpRequestProcessor.REQUEST_SESSION, box)
+                        .where(KernelProviders.MEMORY_ALLOCATOR, allocator);
+        if (requestBodyDecoderRegistry != null) {
+            carrier = carrier.where(
+                    HttpKernelProviders.HTTP_REQUEST_BODY_DECODER_REGISTRY, requestBodyDecoderRegistry);
         }
+        carrier.run(invocation);
     }
 
     private LoanedBuffer createBearerTokenBuffer(List<HttpHeader> headers) {

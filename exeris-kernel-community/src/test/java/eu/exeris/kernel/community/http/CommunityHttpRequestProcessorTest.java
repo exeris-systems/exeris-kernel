@@ -15,6 +15,7 @@ import eu.exeris.kernel.core.http.hpack.HpackEncoder;
 import eu.exeris.kernel.core.http.http2.Http2ErrorCode;
 import eu.exeris.kernel.core.http.http2.Http2FrameParser;
 import eu.exeris.kernel.core.http.http2.Http2FrameType;
+import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.http.HttpConfig;
 import eu.exeris.kernel.spi.http.HttpMode;
 import eu.exeris.kernel.spi.http.HttpHandler;
@@ -165,6 +166,51 @@ class CommunityHttpRequestProcessorTest {
         assertThat(refused.responseText())
                 .as("the configured size bound must decide the outcome, not the default")
                 .isEmpty();
+    }
+
+    @Test
+    void memoryAllocatorIsBoundOnTheRequestScope() {
+        // The reactor threads are started with Thread.ofPlatform(), which does not inherit a
+        // ScopedValue, so the kernel's FOUNDATION binding of MEMORY_ALLOCATOR is not visible on a
+        // request. Kernel code handles that by capturing the allocator at construction
+        // (NativeTcpTransportProvider does); generated application code cannot, because
+        // HttpRequestDecodingContext mandates an allocator and the generated parseBody resolves one
+        // from this slot per request. Unbound, that raised NoSuchElementException inside the
+        // handler's own try, which the handler answered as 400 -- a missing server-side binding
+        // reported as the caller's malformed body.
+        AtomicBoolean boundDuringDispatch = new AtomicBoolean();
+        AtomicBoolean sameInstance = new AtomicBoolean();
+
+        assertThat(KernelProviders.MEMORY_ALLOCATOR.isBound())
+                .as("precondition: nothing is bound on this thread before dispatch")
+                .isFalse();
+
+        CommunityHttpRequestProcessor processor = new CommunityHttpRequestProcessor(
+                ALLOCATOR, HttpResponseBodyEncoderRegistry.empty(), HttpConfig.defaultServer());
+        CapturingTransportStream stream = new CapturingTransportStream("""
+                GET /alloc HTTP/1.1\r
+                Host: localhost\r
+                \r
+                """);
+
+        processor.process(stream, exchange -> {
+            boundDuringDispatch.set(KernelProviders.MEMORY_ALLOCATOR.isBound());
+            if (boundDuringDispatch.get()) {
+                sameInstance.set(KernelProviders.MEMORY_ALLOCATOR.get() == ALLOCATOR);
+            }
+            exchange.respond(HttpResponse.noBody(HttpStatus.OK, HttpVersion.HTTP_1_1));
+        });
+
+        assertThat(stream.responseText()).startsWith("HTTP/1.1 200 OK");
+        assertThat(boundDuringDispatch.get())
+                .as("a handler must be able to resolve the allocator the SPI requires it to pass on")
+                .isTrue();
+        assertThat(sameInstance.get())
+                .as("and it must be the engine's allocator, not a second one")
+                .isTrue();
+        assertThat(KernelProviders.MEMORY_ALLOCATOR.isBound())
+                .as("the binding is request-scoped and must not outlive the dispatch")
+                .isFalse();
     }
 
     @Test
