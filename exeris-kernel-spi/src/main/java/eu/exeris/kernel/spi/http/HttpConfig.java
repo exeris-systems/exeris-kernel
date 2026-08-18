@@ -129,13 +129,19 @@ public record HttpConfig(
 
     private static void validateRequestLimits(int maxRequestHeaderCount, int maxRequestHeaderSize,
                                                long maxRequestBodyBytes) {
-        if (maxRequestHeaderCount < 0) {
+        // > 0, not >= 0 (ADR-071). Zero is not "unlimited" for either bound -- the parser refuses
+        // the first header at maxHeaders 0 and any non-empty field at maxHeaderSize 0, so a config
+        // carrying it serves nothing but 400s. Refused at construction, where the message names the
+        // key, rather than per request, where it looks like a client problem.
+        if (maxRequestHeaderCount <= 0) {
             throw new IllegalArgumentException(
-                    "maxRequestHeaderCount must be >= 0, got: " + maxRequestHeaderCount);
+                    "maxRequestHeaderCount must be > 0 (0 refuses every request, it is not "
+                            + "unlimited), got: " + maxRequestHeaderCount);
         }
-        if (maxRequestHeaderSize < 0) {
+        if (maxRequestHeaderSize <= 0) {
             throw new IllegalArgumentException(
-                    "maxRequestHeaderSize must be >= 0, got: " + maxRequestHeaderSize);
+                    "maxRequestHeaderSize must be > 0 (0 refuses every request, it is not "
+                            + "unlimited), got: " + maxRequestHeaderSize);
         }
         if (maxRequestBodyBytes < -1) {
             throw new IllegalArgumentException(

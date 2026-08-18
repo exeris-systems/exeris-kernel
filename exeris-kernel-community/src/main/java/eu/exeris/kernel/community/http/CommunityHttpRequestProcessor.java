@@ -125,7 +125,8 @@ public final class CommunityHttpRequestProcessor {
     // preserve HTTP/1.1 pipelined leftovers while still releasing when idle.
     /* default */ void process(TransportStream stream, HttpHandler handler) {
         try (stream; ProcessingState state = new ProcessingState()) {
-            Http1Codec codec = new Http1Codec();
+            Http1Codec codec = new Http1Codec(
+                    config.maxRequestHeaderCount(), config.maxRequestHeaderSize());
             boolean continueProcessing = true;
             while (continueProcessing) {
                 continueProcessing = processIteration(codec, stream, handler, state);
