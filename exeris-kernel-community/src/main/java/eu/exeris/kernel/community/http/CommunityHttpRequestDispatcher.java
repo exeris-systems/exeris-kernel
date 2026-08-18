@@ -116,8 +116,25 @@ final class CommunityHttpRequestDispatcher {
      */
     /* default */ void dispatchStream(HttpRequest request, Supplier<HttpExchange> denial,
                                       Runnable openStream) {
-        authorize(request, denial, openStream);
+        // The streaming counterpart of what handleWithinRequestSession establishes, and deliberately
+        // not the same set. The reactor thread inherits no kernel carrier binding, and a stream
+        // handler runs INLINE for the whole life of the stream (CommunityHttpStreamDispatcher calls
+        // handler.handle(engine) and returns when the emit loop ends), so whatever is bound here is
+        // bound for that entire duration. That is what makes the allocator and the decoder registry
+        // right to bind — both stateless engine-scoped instances — and exactly why REQUEST_SESSION is
+        // left out: PersistenceSessionBox lazily takes a pooled JDBC connection and holds it for the
+        // scope's duration, so one read inside a live feed would pin a connection for as long as the
+        // client stays connected. A streaming handler that needs the database wants a short-lived
+        // session per emit — a design, not a binding copied across.
+        ScopedValue.Carrier carrier = ScopedValue.where(KernelProviders.MEMORY_ALLOCATOR, allocator);
+        if (requestBodyDecoderRegistry != null) {
+            carrier = carrier.where(
+                    HttpKernelProviders.HTTP_REQUEST_BODY_DECODER_REGISTRY, requestBodyDecoderRegistry);
+        }
+        ScopedValue.Carrier streamScope = carrier;
+        authorize(request, denial, () -> streamScope.run(openStream));
     }
+
 
     /**
      * Resolves the route requirement and runs {@code admitted} if the request passes it.
