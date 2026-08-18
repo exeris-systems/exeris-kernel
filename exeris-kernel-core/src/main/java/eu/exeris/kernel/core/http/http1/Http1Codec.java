@@ -52,6 +52,7 @@ public final class Http1Codec {
 
     /** Sentinel value meaning the request carries no declared body. */
     public static final long NO_BODY = -1L;
+
     private static final long MIN_CONTENT_LENGTH = 0L;
 
     /**
@@ -83,14 +84,57 @@ public final class Http1Codec {
     private UpgradeState upgradeState;
     private String h2cSettingsPayload;
 
+    private final int maxHeaders;
+    private final int maxHeaderSize;
+
     /**
-     * Creates a codec with keep-alive enabled by default (HTTP/1.1 semantics).
+     * Codec enforcing explicit header limits, normally sourced from {@code HttpConfig}.
+     *
+     * @param maxHeaders    maximum number of header fields per request; must be &gt; 0
+     * @param maxHeaderSize maximum byte size of a single header field; must be &gt; 0
+     * @throws IllegalArgumentException if either bound is not positive — 0 here is not "unlimited",
+     *                                  it refuses every request carrying a header, so it is refused
+     *                                  at construction rather than at every request (ADR-071)
      */
-    public Http1Codec() {
+    public Http1Codec(int maxHeaders, int maxHeaderSize) {
+        if (maxHeaders <= 0) {
+            throw new IllegalArgumentException("maxHeaders must be > 0, got: " + maxHeaders);
+        }
+        if (maxHeaderSize <= 0) {
+            throw new IllegalArgumentException("maxHeaderSize must be > 0, got: " + maxHeaderSize);
+        }
+        this.maxHeaders = maxHeaders;
+        this.maxHeaderSize = maxHeaderSize;
         this.keepAlive = true;
         this.pendingContentLength = NO_BODY;
         this.upgradeState = UpgradeState.NONE;
         this.h2cSettingsPayload = NO_H2C_SETTINGS;
+    }
+
+
+    /**
+     * Creates a codec with keep-alive enabled by default (HTTP/1.1 semantics) and the parser's
+     * built-in DoS limits — {@link Http1RequestParser#DEFAULT_MAX_HEADERS} and
+     * {@link Http1RequestParser#DEFAULT_MAX_HEADER_SIZE}.
+     *
+     * <p>For callers with no {@code HttpConfig} in hand (tests, tooling). Production dispatch uses
+     * {@link #Http1Codec(int, int)}, so the operator's configured limits are the ones enforced:
+     * until v0.12 every call site used this constructor, which is how
+     * {@code http.maxRequestHeaderCount} and {@code http.maxRequestHeaderSize} came to be read,
+     * validated, carried on {@code HttpConfig} and enforced nowhere (ADR-071).
+     */
+    public Http1Codec() {
+        this(Http1RequestParser.DEFAULT_MAX_HEADERS, Http1RequestParser.DEFAULT_MAX_HEADER_SIZE);
+    }
+
+    /** The header-count bound this codec enforces. */
+    public int maxHeaders() {
+        return maxHeaders;
+    }
+
+    /** The single-header size bound this codec enforces. */
+    public int maxHeaderSize() {
+        return maxHeaderSize;
     }
 
 
@@ -174,7 +218,7 @@ public final class Http1Codec {
     public long parseHeaders(MemorySegment seg, long offset, long length) {
         HeaderParseState state = new HeaderParseState();
         long end = Http1RequestParser.parseHeaders(seg, offset, length,
-                state::processHeader);
+                maxHeaders, maxHeaderSize, state::processHeader);
 
         if (end >= 0) {
             keepAlive = state.keepAlive;

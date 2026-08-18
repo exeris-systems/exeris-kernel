@@ -54,10 +54,15 @@ import java.util.List;
         }
 
         List<HttpHeader> headers = new ArrayList<>();
+        // Same bounds as the codec's own pass above. Handing this call the parser defaults while
+        // the codec enforced the configured ones would make the limit depend on which of two passes
+        // hit it first, which is a worse failure than either bound alone (ADR-071).
         Http1RequestParser.parseHeaders(
                 aggregate.segment(),
                 headerStart,
                 total - headerStart,
+                codec.maxHeaders(),
+                codec.maxHeaderSize(),
                 (name, value) -> headers.add(new HttpHeader(name, value)));
 
         HttpMethod method = parseMethod(requestLine.method());

@@ -32,8 +32,11 @@ import java.util.Objects;
  *                              use {@code -1} as sentinel for CLIENT / DISABLED
  * @param maxConnections        hard cap on concurrent connections; ignored for DISABLED
  * @param idleTimeoutMillis     connection idle timeout in ms (0 = no timeout); ignored for DISABLED
- * @param maxRequestHeaderCount maximum number of header fields per request (DoS guard)
- * @param maxRequestHeaderSize  maximum byte size of a single header field (DoS guard)
+ * @param maxRequestHeaderCount maximum number of header fields per request (DoS guard); must be
+ *                              &gt; 0 — 0 is refused rather than read as "unlimited", because it
+ *                              refuses every request carrying a header (ADR-071)
+ * @param maxRequestHeaderSize  maximum byte size of a single header field (DoS guard); must be
+ *                              &gt; 0, refused on the same grounds
  * @param maxRequestBodyBytes   maximum request body size in bytes; ({@code -1} = unlimited)
  * @param h2cUpgradeEnabled     whether to accept HTTP/1.1 → HTTP/2 cleartext upgrade (RFC 7540 §3.2)
  * @param maxVersion            highest HTTP version this engine is permitted to negotiate;
@@ -129,13 +132,19 @@ public record HttpConfig(
 
     private static void validateRequestLimits(int maxRequestHeaderCount, int maxRequestHeaderSize,
                                                long maxRequestBodyBytes) {
-        if (maxRequestHeaderCount < 0) {
+        // > 0, not >= 0 (ADR-071). Zero is not "unlimited" for either bound -- the parser refuses
+        // the first header at maxHeaders 0 and any non-empty field at maxHeaderSize 0, so a config
+        // carrying it serves nothing but 400s. Refused at construction, where the message names the
+        // key, rather than per request, where it looks like a client problem.
+        if (maxRequestHeaderCount <= 0) {
             throw new IllegalArgumentException(
-                    "maxRequestHeaderCount must be >= 0, got: " + maxRequestHeaderCount);
+                    "maxRequestHeaderCount must be > 0 (0 refuses every request, it is not "
+                            + "unlimited), got: " + maxRequestHeaderCount);
         }
-        if (maxRequestHeaderSize < 0) {
+        if (maxRequestHeaderSize <= 0) {
             throw new IllegalArgumentException(
-                    "maxRequestHeaderSize must be >= 0, got: " + maxRequestHeaderSize);
+                    "maxRequestHeaderSize must be > 0 (0 refuses every request, it is not "
+                            + "unlimited), got: " + maxRequestHeaderSize);
         }
         if (maxRequestBodyBytes < -1) {
             throw new IllegalArgumentException(
