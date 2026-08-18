@@ -55,6 +55,37 @@ import eu.exeris.kernel.spi.security.StorageContext;
 public interface ConnectionInterceptor {
 
     /**
+     * PostgreSQL session setting carrying the isolation key of the current request scope, published
+     * on connection acquisition and read by a deployment's RLS policy as
+     * {@code current_setting('exeris.tenant_id', true)}.
+     *
+     * <p><b>Why this is a constant.</b> The name is a contract between code the kernel ships and SQL
+     * the kernel does not — the policy lives in the deployment's own migrations, and the kernel
+     * "cannot introspect" it. Both sides therefore used to spell the string by transcription, with no
+     * compiler between them, and a policy naming a key the runtime never publishes fails in the worst
+     * possible way: every read returns zero rows and every write is refused, with nothing pointing at
+     * the five characters responsible. A downstream consumer shipped exactly that (policies reading
+     * {@code app.tenant_id}) and only found it once row-level security was actually being enforced.
+     * A generator or a migration tool can now reference this instead of retyping it.
+     *
+     * @since 0.12.0
+     */
+    String SESSION_KEY_TENANT_ID = "exeris.tenant_id";
+
+    /**
+     * PostgreSQL session setting carrying the shared scope of the current request scope (ADR-012
+     * §4b), published alongside {@link #SESSION_KEY_TENANT_ID} on every isolation strategy so a
+     * policy can widen reads while keeping writes pinned to the owner.
+     *
+     * <p>Published unconditionally — as the empty string when the context declares no scope —
+     * because a session-scoped setting survives connection reuse, so a key left unpublished is a
+     * key inherited from the previous borrower.
+     *
+     * @since 0.12.0
+     */
+    String SESSION_KEY_SHARED_SCOPE = "exeris.shared_scope";
+
+    /**
      * Invoked immediately after a connection is checked out from the pool and before
      * it is returned to the caller.
      *

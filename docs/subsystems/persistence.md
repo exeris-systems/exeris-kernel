@@ -101,7 +101,19 @@ Exeris supports three levels of physical isolation, resolved transparently throu
 
 The Mechanism column is what each strategy adds, not all it issues. **Every strategy publishes both
 `exeris.tenant_id` and `exeris.shared_scope` on connection acquisition**, in one `set_config` statement,
-whether or not its own isolation reads them — and publishes `""` when the context declares none.
+whether or not its own isolation reads them — and publishes `""` when the context declares none. Both
+names are published as constants on the persistence SPI (`ConnectionInterceptor.SESSION_KEY_TENANT_ID`,
+`SESSION_KEY_SHARED_SCOPE`) so a generator or migration tool can reference them instead of retyping
+them: a policy naming a key the runtime never publishes returns zero rows and refuses every write,
+which is a hard failure with nothing pointing at its cause.
+
+**Publishing the keys is the kernel's half; enforcing them is the deployment's, and `ENABLE` alone
+does not enforce.** The kernel ships no RLS policy and cannot introspect one. A conforming policy —
+the canonical example is in `RlsConnectionInterceptor`'s javadoc — must `ALTER TABLE … ENABLE ROW LEVEL
+SECURITY` **and** `FORCE ROW LEVEL SECURITY`, because PostgreSQL exempts a table's owner from its own
+policies unless the table is forced. An application connecting as the role that owns its tables (the
+default in every quick-start) otherwise gets a policy that is enabled, listed in `pg_policies`, and
+never applied: no error, and other tenants' rows in every read.
 
 Placement decides which connection a request lands on; it does not decide what the previous borrower
 left in the session. `set_config(..., false)` is session-scoped, so with `persistence.perTenantPooling`
