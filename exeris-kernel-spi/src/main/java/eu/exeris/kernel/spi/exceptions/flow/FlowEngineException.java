@@ -29,6 +29,18 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  *       OPTIMISTIC_LOCK_CONFLICT, persisted resume step for SCHEMA_MISMATCH); {@code -1} when not applicable</li>
  * </ul>
  *
+ * <p><b>The {@code WAKE} phase carries five slots, not four (since 0.12).</b> Its context is a flow
+ * instance identity — 128 bits — which does not fit the {@code int} at index 3, and dropping it
+ * would remove the one thing an operator needs to act on the refusal. So for
+ * {@code phase = "WAKE"}:
+ * <ul>
+ *   <li>index 3 – {@code long} instanceIdMost</li>
+ *   <li>index 4 – {@code long} instanceIdLeast</li>
+ * </ul>
+ * A consumer must therefore read this layout <em>by phase</em> rather than assume a fixed arity.
+ * Index 2 stays the reason code on every phase, which is what makes
+ * {@link #isNotParked(Throwable)} safe to apply to any {@code EX-FLOW-7002}.
+ *
  * @since 0.5.0
  */
 // TooManyMethods: the count is the contract. One named factory per rawArgs layout is what keeps
@@ -123,6 +135,7 @@ public final class FlowEngineException extends ExerisKernelException {
     private static final String REASON_COMPILE      = "COMPILE_FAILED";
     private static final String REASON_QUEUE_FULL   = "QUEUE_FULL";
     private static final String REASON_STALE_VERSION = "STALE_VERSION";
+    private static final String REASON_NOT_PARKED   = "NOT_PARKED";
 
     public FlowEngineException(String message) {
         super(KernelErrorCodes.EX_FLOW_7002, message, (Throwable) null);
@@ -158,6 +171,46 @@ public final class FlowEngineException extends ExerisKernelException {
     public static FlowEngineException schedulerFull(String engineName, int queueDepth) {
         return new FlowEngineException(KernelErrorCodes.EX_FLOW_7002, MSG_ENGINE_FAILURE, null,
                 engineName, "SCHEDULE", REASON_QUEUE_FULL, queueDepth);
+    }
+
+    /**
+     * Creates the refusal for a wake aimed at an instance that is not parked.
+     *
+     * <p>rawArgs layout: {@code [engineName, "WAKE", "NOT_PARKED", instanceIdMost, instanceIdLeast]}.
+     * The identity rides as two {@code long}s rather than a formatted key, per the Glass-Box
+     * primitive layout — and the {@code NOT_PARKED} reason exists so callers can tell this refusal
+     * from every other {@code EX-FLOW-7002} without matching on message text. That distinction is
+     * load-bearing for {@code lookupParked(...).ifPresent(wake)}, which is inherently check-then-act:
+     * a concurrent waker between the two calls makes this refusal the expected outcome rather than a
+     * fault, and there was previously no way to say so structurally.
+     *
+     * @param engineName     the engine name
+     * @param instanceIdMost high 64 bits of the flow instance id
+     * @param instanceIdLeast low 64 bits of the flow instance id
+     * @since 0.12.0
+     */
+    public static FlowEngineException notParked(String engineName,
+                                                long instanceIdMost,
+                                                long instanceIdLeast) {
+        return new FlowEngineException(KernelErrorCodes.EX_FLOW_7002, MSG_ENGINE_FAILURE, null,
+                engineName, "WAKE", REASON_NOT_PARKED, instanceIdMost, instanceIdLeast);
+    }
+
+    /**
+     * Whether {@code throwable} is the not-parked refusal above — the check a caller doing
+     * {@code lookupParked(...).ifPresent(wake)} needs, since that pattern cannot be made atomic
+     * from outside the engine.
+     *
+     * @param throwable the throwable to classify; {@code null} yields {@code false}
+     * @return {@code true} if this is an {@code EX-FLOW-7002} refusal with reason {@code NOT_PARKED}
+     * @since 0.12.0
+     */
+    public static boolean isNotParked(Throwable throwable) {
+        if (!(throwable instanceof FlowEngineException flowEngineException)) {
+            return false;
+        }
+        Object[] rawArgs = flowEngineException.rawArgs();
+        return rawArgs.length > 2 && REASON_NOT_PARKED.equals(rawArgs[2]);
     }
 
     /**

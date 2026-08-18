@@ -241,9 +241,10 @@ final class CoreFlowRuntime { // NOPMD
                 new IllegalStateException("Flow engine is not started"));
     }
 
+    /** Structured, not concatenated — the reason is what lets a caller tell a race from a fault. */
     private FlowEngineException notParked(FlowKey key) {
-        return new FlowEngineException(
-                "Cannot wake flow that is not currently parked: " + key);
+        return FlowEngineException.notParked(
+                config.engineName(), key.instanceIdMost(), key.instanceIdLeast());
     }
 
     private void schedule(CoreFlowExecutionPlan plan, FlowContext context) {
