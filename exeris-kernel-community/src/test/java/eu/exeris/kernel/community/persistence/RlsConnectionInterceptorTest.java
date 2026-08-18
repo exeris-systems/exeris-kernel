@@ -10,6 +10,7 @@ package eu.exeris.kernel.community.persistence;
 
 import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 import eu.exeris.kernel.spi.exceptions.persistence.PersistenceProviderException;
+import eu.exeris.kernel.spi.persistence.ConnectionInterceptor;
 import eu.exeris.kernel.spi.persistence.PersistenceConnection;
 import eu.exeris.kernel.spi.persistence.PersistenceStatement;
 import eu.exeris.kernel.spi.persistence.QueryResult;
@@ -19,6 +20,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -140,6 +142,34 @@ class RlsConnectionInterceptorTest {
         // of false they are served from the pool a SHARED request last used, and set_config(..., false)
         // is session-scoped. An RLS policy on any table they touch would read the previous tenant's key.
         verify(statement).bindString(0, "tenant-key-01");
+    }
+
+    @Test
+    @DisplayName("the published session keys are the SPI constants, not a parallel spelling")
+    void publishedKeysAreTheSpiConstants() {
+        // The policy that reads these keys lives in the deployment's own migrations, which the kernel
+        // does not ship and cannot introspect -- so the name is a contract with no compiler across it.
+        // SQL_TENANT_AND_SCOPE above pins the exact statement; this pins that the statement is built
+        // from the constants a generator or migration tool would reference. Drift either way fails one
+        // of the two, which is the point of having both.
+        when(storageContext.strategy()).thenReturn(StorageContext.IsolationStrategy.SHARED);
+        when(storageContext.isolationKey()).thenReturn(Optional.of("tenant-key-01"));
+        // Deliberately NOT stubbed on the expected SQL: every other test here pins the statement by
+        // matching it, so a drifted key fails them as a Mockito stubbing error. This one accepts any
+        // statement and then reads it, so the same drift fails here as an assertion that names the key.
+        when(connection.prepare(anyString())).thenReturn(statement);
+        when(statement.bindString(anyInt(), anyString())).thenReturn(statement);
+        when(statement.executeQuery()).thenReturn(mock(QueryResult.class));
+
+        RlsConnectionInterceptor.INSTANCE.onConnectionAcquired(connection, storageContext);
+
+        ArgumentCaptor<String> issued = ArgumentCaptor.forClass(String.class);
+        verify(connection).prepare(issued.capture());
+        assertThat(issued.getValue())
+                .as("the tenant key the interceptor actually issues must be the SPI constant")
+                .contains("set_config('" + ConnectionInterceptor.SESSION_KEY_TENANT_ID + "'")
+                .as("and so must the shared scope")
+                .contains("set_config('" + ConnectionInterceptor.SESSION_KEY_SHARED_SCOPE + "'");
     }
 
     @ParameterizedTest
