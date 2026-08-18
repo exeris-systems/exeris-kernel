@@ -43,6 +43,17 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  * The body itself is request content and is never captured — a malformed payload is exactly the
  * kind of data most likely to be a secret sent to the wrong endpoint.
  *
+ * <p><b>The guarantee covers the cause chain, and that is where it is easy to lose.</b> This type
+ * retains the driver's own failure as {@link #getCause()} for forensics, and every stack-trace
+ * printer and logging bridge walks that chain — so a binding whose exception message quotes the
+ * offending input would publish the body through the back door while this class's own message stayed
+ * clean. Jackson 3 does not: {@code StreamReadFeature.INCLUDE_SOURCE_IN_LOCATION} is off by default
+ * (it was on in Jackson 2), so a parse failure reads {@code [Source: REDACTED …]}. That is a library
+ * default an application's {@code JsonMapperCustomizer} can flip, so it is not left to trust —
+ * {@code AbstractHttpRequestBodyDecoderTck} asserts that no link in the chain carries body content,
+ * and any driver enabling source capture fails the contract rather than the deployment discovering
+ * it in a log.
+ *
  * <h2>rawArgs Binary Layout</h2>
  * <pre>
  * EX-HTTP-4013 (malformed / unbindable request body):

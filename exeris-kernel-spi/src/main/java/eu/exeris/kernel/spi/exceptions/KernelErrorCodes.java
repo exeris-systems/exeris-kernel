@@ -458,7 +458,9 @@ public final class KernelErrorCodes {
      * different types, so the split is part of the SPI contract rather than a driver detail.
      *
      * <p>Secret-safe: carries the target type name and the body length only. The body itself is
-     * request content and never reaches telemetry.
+     * request content and never reaches telemetry — a guarantee the decoder TCK holds across the
+     * whole {@code getCause()} chain, not just this exception's own message, because consumers log
+     * causes and a binding that quotes the offending input would leak through that path.
      *
      * <p><b>rawArgs layout for Glass-Box:</b>
      * <ul>

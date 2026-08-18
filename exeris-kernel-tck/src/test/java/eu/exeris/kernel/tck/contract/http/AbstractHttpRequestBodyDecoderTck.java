@@ -58,6 +58,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *       so no caller relies on the empty-body return value.</li>
  *   <li><b>Null/empty content-type tolerance at decode time.</b> The decoder still
  *       decodes by target type when no content-type header was present.</li>
+ *   <li><b>Secret safety across the whole cause chain.</b> Neither the thrown exception nor any
+ *       link in its {@code getCause()} chain may carry body content — a malformed payload is the
+ *       data most likely to be a secret posted to the wrong endpoint, and consumers log causes.</li>
  *   <li><b>Malformed-body classification (ADR-036 §2).</b> A body the decoder cannot bind
  *       MUST surface as {@link RequestBodyDecodeException}, distinct from the
  *       {@link IllegalStateException} a missing decoder raises. The handler is required to
@@ -387,9 +390,31 @@ public abstract class AbstractHttpRequestBodyDecoderTck {
                             assertThat(e.rawArgs())
                                     .as("index 0 targetTypeName, index 1 bodySize")
                                     .containsExactly(validTargetType().getName(), (long) malformed.length);
+                            String payload = new String(malformed, StandardCharsets.UTF_8);
                             assertThat(e.getMessage())
                                     .as("the message is static — no body content is formatted into it")
-                                    .doesNotContain(new String(malformed, StandardCharsets.UTF_8));
+                                    .doesNotContain(payload);
+
+                            // The exception is not the only thing a consumer logs. Every stack-trace
+                            // printer and logging bridge walks the cause chain, so a driver that
+                            // retains a binding failure whose own message quotes the offending input
+                            // publishes the body through the back door — the outer type's guarantee
+                            // would be true and useless. Jackson 3 redacts the source snippet by
+                            // default (`StreamReadFeature.INCLUDE_SOURCE_IN_LOCATION` is off, unlike
+                            // Jackson 2), so the Community binding passes this as shipped; that is a
+                            // library default an application's JsonMapperCustomizer can flip, which
+                            // is exactly why the contract holds the whole chain rather than trusting
+                            // one. Bounded traversal: a self-referencing cause must not hang the TCK.
+                            int depth = 0;
+                            for (Throwable link = e; link != null && depth < 16;
+                                    link = link.getCause(), depth++) {
+                                if (link.getMessage() != null) {
+                                    assertThat(link.getMessage())
+                                            .as("no link in the cause chain may carry body content (%s)",
+                                                    link.getClass().getName())
+                                            .doesNotContain(payload);
+                                }
+                            }
                         });
             }
         }
