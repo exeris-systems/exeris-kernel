@@ -26,7 +26,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * reading as a repository-wide guarantee. Proven rather than assumed: a {@code ThreadLocal} field
  * added to {@code core.memory.LeakTracker} left this suite 13/13 green. They are now scoped and
  * named for what they check, and the repository-wide versions live in
- * {@code KernelWideBanArchitectureTest} in {@code exeris-kernel-community}, the first module where
+ * {@code KernelTierBanArchitectureTest} in {@code exeris-kernel-community}, the first module where
  * all three tiers are on one classpath.
  *
  * <p>{@code allowEmptyShould(true)} is deliberately absent throughout. Every subject below is a

@@ -17,7 +17,7 @@ import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * The four repository-wide API bans, checked where they can actually see the code they name.
+ * The four scoped-ban API rules, checked across the three tiers this module can see.
  *
  * <h2>Why this did not exist</h2>
  * <p>{@code ExerisArchitectureTest} declares these same four bans against
@@ -45,10 +45,21 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>So this class converts "clean, as far as anyone has looked" into "clean, and checked" — and
  * that is its whole value until the first time it fails.
  *
+ * <h2>Reach, stated because overclaiming it is the defect this class exists to fix</h2>
+ * <p>Three tiers, not the repository: {@code spi}, {@code core} and {@code community}. Two production
+ * modules are outside it, and for a structural reason rather than an oversight —
+ * {@code exeris-kernel-community-kafka} and {@code exeris-kernel-diagnostics-cli} are both leaves
+ * that nothing depends on, so neither is on any other module's analysis classpath and no suite
+ * anywhere in the reactor sees them. Covering them needs a suite per leaf, or a shared rules holder
+ * on a classpath all of them have; both are their own slice, recorded in ROADMAP rather than implied
+ * away here. An earlier revision of this class was called {@code KernelWideBanArchitectureTest},
+ * which claimed the reach it does not have — the same sentence-versus-classpath gap it was written
+ * to close.
+ *
  * @see KernelTierDirectionArchitectureTest for the placement rationale in full
  */
 @AnalyzeClasses(packages = "eu.exeris.kernel")
-class KernelWideBanArchitectureTest {
+class KernelTierBanArchitectureTest {
 
     @ArchTest
     static void allThreeTiersAreOnTheAnalysisClasspath(JavaClasses classes) {
