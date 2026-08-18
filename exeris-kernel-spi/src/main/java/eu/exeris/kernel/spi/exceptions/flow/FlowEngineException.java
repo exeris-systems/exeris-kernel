@@ -29,6 +29,18 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  *       OPTIMISTIC_LOCK_CONFLICT, persisted resume step for SCHEMA_MISMATCH); {@code -1} when not applicable</li>
  * </ul>
  *
+ * <p><b>The {@code WAKE} phase carries five slots, not four (since 0.12).</b> Its context is a flow
+ * instance identity — 128 bits — which does not fit the {@code int} at index 3, and dropping it
+ * would remove the one thing an operator needs to act on the refusal. So for
+ * {@code phase = "WAKE"}:
+ * <ul>
+ *   <li>index 3 – {@code long} instanceIdMost</li>
+ *   <li>index 4 – {@code long} instanceIdLeast</li>
+ * </ul>
+ * A consumer must therefore read this layout <em>by phase</em> rather than assume a fixed arity.
+ * Index 2 stays the reason code on every phase, which is what makes
+ * {@link #isNotParked(Throwable)} safe to apply to any {@code EX-FLOW-7002}.
+ *
  * @since 0.5.0
  */
 // TooManyMethods: the count is the contract. One named factory per rawArgs layout is what keeps
@@ -156,6 +168,11 @@ public final class FlowEngineException extends ExerisKernelException {
      * @param engineName the engine name
      * @param queueDepth current depth of the scheduler queue at the time of overflow
      */
+    public static FlowEngineException schedulerFull(String engineName, int queueDepth) {
+        return new FlowEngineException(KernelErrorCodes.EX_FLOW_7002, MSG_ENGINE_FAILURE, null,
+                engineName, "SCHEDULE", REASON_QUEUE_FULL, queueDepth);
+    }
+
     /**
      * Creates the refusal for a wake aimed at an instance that is not parked.
      *
@@ -194,11 +211,6 @@ public final class FlowEngineException extends ExerisKernelException {
         }
         Object[] rawArgs = flowEngineException.rawArgs();
         return rawArgs.length > 2 && REASON_NOT_PARKED.equals(rawArgs[2]);
-    }
-
-    public static FlowEngineException schedulerFull(String engineName, int queueDepth) {
-        return new FlowEngineException(KernelErrorCodes.EX_FLOW_7002, MSG_ENGINE_FAILURE, null,
-                engineName, "SCHEDULE", REASON_QUEUE_FULL, queueDepth);
     }
 
     /**

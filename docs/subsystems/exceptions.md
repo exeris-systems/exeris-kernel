@@ -170,7 +170,7 @@ formatting. It implements:
 | Code           | Description               | Glass-Box Payload                                                               |
 |:---------------|:--------------------------|:--------------------------------------------------------------------------------|
 | `EX-FLOW-7001` | Provider Engine Failure   | `[0] String providerName, [1] String reason`                                    |
-| `EX-FLOW-7002` | Engine Lifecycle Failure  | `[0] String engineName, [1] String phase, [2] String reasonCode, [3] int ctx`   |
+| `EX-FLOW-7002` | Engine Lifecycle Failure  | `[0] String engineName, [1] String phase, [2] String reasonCode, [3] int ctx` — **except `phase="WAKE"`, which carries five slots**: `[3] long instanceIdMost, [4] long instanceIdLeast` (since 0.12; a flow identity is 128 bits and does not fit the `int`). Read this layout by phase, not by arity; index 2 is the reason code on every phase |
 | `EX-FLOW-7003` | Step Execution Failure    | `[0] String definitionName, [1] long instanceIdMost, [2] long instanceIdLeast, [3] int stepIndex, [4] String staticReasonCode ("STEP_FAILED" \| "COMPENSATION_FAILED"), [5] String causeType (cause.getClass().getName() or "none")` |
 | `EX-FLOW-7004` | Registry Conflict         | `[0] int stepId, [1] String reason`                                             |
 

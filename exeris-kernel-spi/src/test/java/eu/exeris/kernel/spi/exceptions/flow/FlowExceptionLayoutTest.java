@@ -142,6 +142,65 @@ class FlowExceptionLayoutTest {
         }
     }
 
+    @Nested
+    @DisplayName("FlowEngineException.notParked (EX-FLOW-7002, phase WAKE)")
+    class NotParked {
+
+        @Test
+        @DisplayName("rawArgs[1]='WAKE', [2]='NOT_PARKED', [3]/[4]=instance identity (long, long)")
+        void rawArgsLayout() {
+            // The one factory in this class that is NOT the documented four-tuple, and it is the
+            // reason the class-level layout table now says to read by phase rather than by arity:
+            // a flow identity is 128 bits and does not fit the int at index 3.
+            FlowEngineException ex = FlowEngineException.notParked("SagaEngine", 42L, 7L);
+            Object[] raw = ex.rawArgs();
+            assertThat(raw).hasSize(5);
+            assertThat(raw[0]).isEqualTo("SagaEngine");
+            assertThat(raw[1]).isEqualTo("WAKE");
+            assertThat(raw[2]).isEqualTo("NOT_PARKED");
+            assertThat(raw[3]).isEqualTo(42L);
+            assertThat(raw[4]).isEqualTo(7L);
+        }
+
+        @Test
+        @DisplayName("slots 3 and 4 are Long — binary serializer contract")
+        void identitySlotsAreLong() {
+            Object[] raw = FlowEngineException.notParked("E", 1L, 2L).rawArgs();
+            assertThat(raw[3]).isInstanceOf(Long.class);
+            assertThat(raw[4]).isInstanceOf(Long.class);
+        }
+
+        @Test
+        @DisplayName("the message carries no identity — the whole point of moving it into rawArgs")
+        void messageIsStatic() {
+            // Until 0.12 this refusal built its message by concatenating the key, which is a banned
+            // pattern on a failure path and made message text the only discriminator.
+            FlowEngineException ex = FlowEngineException.notParked("E", 123456789L, 987654321L);
+            assertThat(ex.getMessage())
+                    .doesNotContain("123456789")
+                    .doesNotContain("987654321");
+        }
+
+        @Test
+        @DisplayName("isNotParked classifies this and nothing else in the family")
+        void classifierIsSelective() {
+            assertThat(FlowEngineException.isNotParked(
+                    FlowEngineException.notParked("E", 1L, 2L))).isTrue();
+            assertThat(FlowEngineException.isNotParked(
+                    FlowEngineException.schedulerFull("E", 1))).isFalse();
+            assertThat(FlowEngineException.isNotParked(
+                    FlowEngineException.startupFailure("E", new IllegalStateException("x")))).isFalse();
+            assertThat(FlowEngineException.isNotParked(null)).isFalse();
+            assertThat(FlowEngineException.isNotParked(new IllegalStateException("x"))).isFalse();
+        }
+
+        @Test
+        @DisplayName("getCause() is null — a lost race has no underlying failure")
+        void noCause() {
+            assertThat(FlowEngineException.notParked("E", 1L, 2L).getCause()).isNull();
+        }
+    }
+
     // -----------------------------------------------------------------------
     // FlowExecutionException — stepFailure
     // -----------------------------------------------------------------------
