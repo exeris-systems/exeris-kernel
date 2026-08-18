@@ -1,61 +1,51 @@
 [ {
-  "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
-  "count" : 37,
-  "bytes" : 934712,
-  "category" : "TEST_HARNESS"
-}, {
   "class" : "java.util.concurrent.ConcurrentLinkedQueue$Node",
-  "count" : 31,
-  "bytes" : 231136,
+  "count" : 41,
+  "bytes" : 854744,
   "category" : "JVM_NOISE"
+}, {
+  "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
+  "count" : 28,
+  "bytes" : 120848,
+  "category" : "TEST_HARNESS"
 }, {
   "class" : "eu.exeris.kernel.community.memory.CommunityArenaShardPool$Allocation",
-  "count" : 18,
-  "bytes" : 784400,
+  "count" : 17,
+  "bytes" : 833048,
   "category" : "TEST_HARNESS"
 }, {
-  "class" : "java.util.LinkedHashMap$Entry",
-  "count" : 5,
-  "bytes" : 294120,
+  "class" : "[B",
+  "count" : 7,
+  "bytes" : 623008,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "java.lang.VirtualThread",
-  "count" : 5,
-  "bytes" : 490016,
-  "category" : "LOOM_RUNTIME"
+  "class" : "jdk.jfr.internal.SettingsManager$InternalSetting",
+  "count" : 2,
+  "bytes" : 103864,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "java.lang.String",
+  "count" : 2,
+  "bytes" : 103872,
+  "category" : "JVM_NOISE"
 }, {
   "class" : "[Ljava.util.HashMap$Node;",
-  "count" : 4,
-  "bytes" : 200152,
+  "count" : 2,
+  "bytes" : 207712,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "[Ljava.lang.Object;",
-  "count" : 3,
-  "bytes" : 4392328,
+  "class" : "java.util.ArrayList$Itr",
+  "count" : 2,
+  "bytes" : 103880,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "java.util.HashMap",
+  "class" : "java.util.LinkedHashMap$Entry",
   "count" : 1,
-  "bytes" : 97968,
+  "bytes" : 103856,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "[Ljdk.jfr.internal.util.TimespanUnit;",
+  "class" : "java.util.HashMap$KeySet",
   "count" : 1,
-  "bytes" : 98000,
+  "bytes" : 3959952,
   "category" : "JVM_NOISE"
-}, {
-  "class" : "[B",
-  "count" : 1,
-  "bytes" : 490248,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000002a2fe580",
-  "count" : 1,
-  "bytes" : 98840,
-  "category" : "LOOM_RUNTIME"
-}, {
-  "class" : "java.lang.VirtualThread$VThreadContinuation",
-  "count" : 1,
-  "bytes" : 97952,
-  "category" : "LOOM_RUNTIME"
 } ]
