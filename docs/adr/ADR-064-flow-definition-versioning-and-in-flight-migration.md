@@ -273,10 +273,30 @@ fluent API was version 1, and a second version could not be created through it a
 **The workaround was worse than it looked.** You could build unversioned and then rebuild the record
 by hand through the five-argument constructor — which is exactly what this ADR's own TCK did. That
 works only by side effect: the Core factory records a definition's transitions when `build()` runs,
-keyed by name, and `compile` reads them back by name. A hand-built `FlowDefinition` for a name that
-was never built through a builder therefore compiles into a plan with steps and **no transitions** —
-a flow graph with no edges, no diagnostic, and a saga that never advances past step 0. The TCK's
-version of the workaround was accidentally sound because it always built first.
+keyed by `(name, version)` since this amendment — by name alone before it, which is a defect of its
+own recorded below — and `compile` reads them back under the same key. A hand-built `FlowDefinition`
+for a name that
+was never built through a builder therefore compiles into a plan with steps and **no declared
+edges**, silently. The TCK's version of the workaround was accidentally sound because it always
+built first.
+
+**What that costs is narrower than "the saga stops", and stating it precisely matters** — an earlier
+draft of this amendment claimed such a plan leaves a saga stuck at step 0, and that is wrong.
+`buildNextSteps` falls back to `index + 1` for any step with no outgoing transition, so a definition
+whose declared edges happen to be sequential compiles to the same `nextSteps` either way and behaves
+identically. The loss is observable exactly where a declared edge *differs* from the sequential
+default — a skip, a branch, a back-edge — and there it does something worse than stopping: the saga
+runs, on a path the definition did not declare, with no error. A guard that fails loudly would have
+been cheaper than one that silently linearises.
+
+**A second defect the correction exposed, fixed in the same change.** The pending-edge handover from
+`build()` to `compile()` was keyed by definition *name*, while the plan catalog it feeds is keyed by
+`(name, version)`. Building two versions of one definition before compiling either — the natural shape
+of the coexistence this ADR asks applications to adopt, and a shape only reachable once the builder
+could express a version at all — made the second `build()` overwrite the first's edges, and the first
+`compile()` consume the entry, so the second plan compiled with none. The map is now keyed the same
+way as the catalog. `AbstractFlowDefinitionVersioningTck` pins it with a definition whose declared
+edge skips a step, because a sequential one cannot observe the loss.
 
 **Correction:** `FlowDefinitionBuilder.version(int)`, `default` and throwing
 `UnsupportedOperationException` — an interface this old cannot grow an abstract method without

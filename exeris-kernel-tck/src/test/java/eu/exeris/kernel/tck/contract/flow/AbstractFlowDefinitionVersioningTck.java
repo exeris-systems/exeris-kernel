@@ -34,6 +34,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -112,6 +113,29 @@ public abstract class AbstractFlowDefinitionVersioningTck {
                 .build());
     }
 
+    /**
+     * A three-step definition whose declared edge <b>skips</b> the middle step, built but not
+     * compiled. Non-linear on purpose: {@code buildNextSteps} falls back to {@code index + 1} for a
+     * step with no outgoing transitions, so a linear definition compiled with its edges lost behaves
+     * exactly like one that kept them. Only a declared edge that differs from the sequential default
+     * can observe whether the edges survived.
+     */
+    private FlowDefinition branchingDefinition(int version, AtomicBoolean skipped, AtomicBoolean landed) {
+        return engine.plans().newDefinition(DEFINITION)
+                .step("fork", _ -> FlowOutcome.CONTINUE, null)
+                .step("must-be-skipped", _ -> {
+                    skipped.set(true);
+                    return FlowOutcome.COMPLETE;
+                }, null)
+                .step("must-be-reached", _ -> {
+                    landed.set(true);
+                    return FlowOutcome.COMPLETE;
+                }, null)
+                .transition(0, 2)
+                .version(version)
+                .build();
+    }
+
     private FlowExecutionPlan register(int version, AtomicInteger executions) {
         // Two steps on purpose. A saga parked AT step 0 resumes at step 0+1, so a single-step
         // definition has nothing to run on wake and the resume looks identical to a refusal.
@@ -119,7 +143,7 @@ public abstract class AbstractFlowDefinitionVersioningTck {
         // Built entirely through the builder since 0.12. It used to build unversioned and then
         // rebuild the record by hand through the five-argument constructor, because the builder had
         // no version(...) — and that reach-around worked only by side effect: build() is what
-        // records a definition's transitions, keyed by name, so the hand-built record inherited
+        // records a definition's transitions and hands them to compile, so the hand-built record inherited
         // them. An application copying the pattern without that prior build() got a plan with no
         // transitions and no diagnostic. See VersionThroughTheBuilder below.
         return engine.plans().compile(engine.plans().newDefinition(DEFINITION)
@@ -259,6 +283,39 @@ public abstract class AbstractFlowDefinitionVersioningTck {
         // FlowExecutionPlan exposes no transition accessor, so behaviour is the only honest probe —
         // and the better one: the pre-0.12 hand-rebuild's failure mode was a silently edgeless
         // graph, which is exactly a saga that never advances.
+
+        @Test
+        @Timeout(value = 30, unit = TimeUnit.SECONDS)
+        @DisplayName("two versions built before either is compiled each keep their own edges")
+        void versionsBuiltBeforeCompilingKeepTheirOwnEdges() {
+            // The hazard this suite could not see, because every other case compiles a definition in
+            // the same expression that builds it. Declaring two versions and then registering them is
+            // the natural shape of the coexistence ADR-064 exists for, and builder.version(...) is
+            // what makes that shape reachable at all -- so the pending-edge bookkeeping has to
+            // survive it.
+            //
+            // The probe is a declared edge that SKIPS a step, because that is the only kind whose
+            // loss is observable: a step with no outgoing transition falls back to index + 1, so a
+            // linear definition behaves identically whether its edges survived or not.
+            AtomicBoolean skipped = new AtomicBoolean();
+            AtomicBoolean landed = new AtomicBoolean();
+
+            FlowDefinition v1 = branchingDefinition(1, new AtomicBoolean(), new AtomicBoolean());
+            FlowDefinition v2 = branchingDefinition(2, skipped, landed);
+            engine.plans().compile(v1);
+            FlowExecutionPlan plan2 = engine.plans().compile(v2);
+
+            engine.scheduler().schedule(plan2, runningContextFor(UUID.randomUUID()));
+            awaitTrue(() -> landed.get() || skipped.get());
+
+            assertThat(skipped.get())
+                    .as("v2 declared 0 -> 2; running the step it skips means its edges were lost and "
+                            + "the sequential fallback took over -- silently, on the wrong path")
+                    .isFalse();
+            assertThat(landed.get())
+                    .as("v2's own declared edge must decide where it goes")
+                    .isTrue();
+        }
 
         @Test
         @DisplayName("a version below the initial one is refused at the call site that named it")

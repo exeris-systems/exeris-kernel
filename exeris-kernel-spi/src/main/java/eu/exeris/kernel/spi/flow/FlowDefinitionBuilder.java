@@ -115,10 +115,13 @@ public interface FlowDefinitionBuilder {
      * <p>The workaround was to build through the builder and then rebuild the record by hand with
      * the five-argument {@link FlowDefinition} constructor, which the kernel's own versioning TCK
      * did. That works only by side effect: the Core factory records a definition's transitions when
-     * {@link #build()} runs, keyed by name, so the hand-built record inherits them. An application
+     * {@link #build()} runs and hands them to {@code compile}, so the hand-built record inherits
+     * them. An application
      * that constructed a versioned {@code FlowDefinition} <em>without</em> first building one under
-     * the same name compiled to a plan with steps and <b>no transitions</b> — a flow graph with no
-     * edges, and no diagnostic.
+     * the same name compiled to a plan with steps and <b>no declared edges</b>, and no diagnostic.
+     * That linearises rather than stalls — a step with no outgoing transition falls back to
+     * {@code index + 1} — so a sequential definition is unaffected and one declaring a skip or a
+     * branch silently runs a path it never declared.
      *
      * <h2>Default behaviour</h2>
      * <p>{@code default}, and it throws. An interface this old cannot grow an abstract method

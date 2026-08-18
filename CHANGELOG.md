@@ -14,9 +14,11 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   supported way to assemble a definition and the one every generated saga uses, had no way to set it.
   Every definition built through the fluent API was version 1. The workaround — build unversioned,
   rebuild the record by hand through the five-argument `FlowDefinition` constructor — worked only by
-  side effect, because a definition's transitions are recorded when `build()` runs and read back by
-  name at compile: a hand-built record for a name never built through a builder compiled into a plan
-  with steps and **no transitions**, silently. The new method is `default` and throws
+  side effect, because a definition's transitions are recorded when `build()` runs and read back at
+  compile: a hand-built record for a name never built through a builder compiled into a plan with
+  steps and **no declared edges**, silently — which is not a stalled saga but a linearised one, since
+  a step with no outgoing transition falls back to `index + 1`. A definition whose edges are already
+  sequential is unaffected; one that declares a skip or a branch runs a path it never declared. The new method is `default` and throws
   (out-of-tree-implementation compatibility, same constraint as `FlowExecutionPlan.definitionVersion()`);
   unlike that one it refuses rather than returning a default, because silently ignoring a requested
   version would build a v1 definition claiming to be v3. `AbstractFlowDefinitionVersioningTck` now
