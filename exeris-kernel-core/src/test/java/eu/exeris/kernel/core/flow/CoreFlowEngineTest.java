@@ -204,9 +204,24 @@ class CoreFlowEngineTest {
                 engine.scheduler().schedule(plan, context);
                 assertThat(started.await(3, TimeUnit.SECONDS)).isTrue();
 
+                // "Clearly" now means structurally rather than in prose. The refusal used to build
+                // its message by concatenating the key, which is a banned pattern on a failure path
+                // and left message text as the only discriminator -- so this assertion and the
+                // choreography bridge both had to match on it. The detail moved into rawArgs, and
+                // asserting there is strictly more precise: it pins the reason AND the identity,
+                // where hasMessageContaining pinned neither.
                 org.assertj.core.api.Assertions.assertThatThrownBy(() -> engine.scheduler().wake(context))
-                        .isInstanceOf(eu.exeris.kernel.spi.exceptions.flow.FlowEngineException.class)
-                        .hasMessageContaining("not currently parked");
+                        .isInstanceOfSatisfying(
+                                eu.exeris.kernel.spi.exceptions.flow.FlowEngineException.class, ex -> {
+                                    assertThat(eu.exeris.kernel.spi.exceptions.flow.FlowEngineException
+                                            .isNotParked(ex))
+                                            .as("the refusal must be classifiable without reading its message")
+                                            .isTrue();
+                                    assertThat(ex.rawArgs())
+                                            .as("rawArgs layout: engineName, phase, reason, most, least")
+                                            .containsExactly("CoreFlowEngineTest", "WAKE", "NOT_PARKED",
+                                                    context.instanceIdMost(), context.instanceIdLeast());
+                                });
 
                 allowCompletion.countDown();
                 awaitTrue(5_000, () -> engine.stats().completedFlows() == 1L);
@@ -268,7 +283,18 @@ class CoreFlowEngineTest {
                         context.instanceIdMost(),
                         context.instanceIdLeast());
                 if (parked.isPresent()) {
-                    engine.scheduler().wake(parked.orElseThrow());
+                    // Same guard as the loop above, and for the same reason: lookupParked-then-wake
+                    // is check-then-act, so the engine can advance this instance between the two
+                    // calls. Guarding one and not the other is what made this test flaky -- it
+                    // failed here, on line 271, not in the 512-iteration loop it was written to
+                    // stress.
+                    try {
+                        engine.scheduler().wake(parked.orElseThrow());
+                    } catch (RuntimeException ex) {
+                        if (!isExpectedNotParkedRace(ex)) {
+                            throw ex;
+                        }
+                    }
                     awaitTrue(60_000, () -> engine.stats().completedFlows() >= 1);
                 }
 
@@ -742,11 +768,10 @@ class CoreFlowEngineTest {
     }
 
     private static boolean isExpectedNotParkedRace(Throwable throwable) {
-        if (!(throwable instanceof eu.exeris.kernel.spi.exceptions.flow.FlowEngineException flowEngineException)) {
-            return false;
-        }
-        String message = flowEngineException.getMessage();
-        return message != null && message.contains("not currently parked");
+        // Was a substring match on the message, which is why the refusal had to carry the key in a
+        // concatenated string. It is classified by rawArgs reason now (ADR-free, v0.12) -- a test
+        // matching on prose is a test that breaks when the prose improves.
+        return eu.exeris.kernel.spi.exceptions.flow.FlowEngineException.isNotParked(throwable);
     }
 
     private static CoreFlowEngine startedEngine(boolean persistenceEnabled) {

@@ -11,6 +11,7 @@ package eu.exeris.kernel.core.flow;
 import eu.exeris.kernel.spi.events.EventDescriptor;
 import eu.exeris.kernel.spi.events.EventHandler;
 import eu.exeris.kernel.spi.events.EventPayload;
+import eu.exeris.kernel.spi.exceptions.flow.FlowEngineException;
 import eu.exeris.kernel.spi.flow.ChoreographyDecision;
 import eu.exeris.kernel.spi.flow.FlowChoreographyMapper;
 import eu.exeris.kernel.spi.flow.FlowScheduler;
@@ -48,8 +49,23 @@ final class FlowChoreographyBridge implements EventHandler {
             ChoreographyDecision decision = mapper.map(descriptor);
             switch (decision) {
                 case ChoreographyDecision.Wake(long most, long least) -> {
-                    scheduler.lookupParked(most, least).ifPresent(scheduler::wake);
-                    // Stale or duplicate wake event if absent — instance no longer parked; idempotent no-op
+                    // Absent at lookup: stale or duplicate wake event, idempotent no-op.
+                    //
+                    // Present at lookup and gone by the time wake lands: the same event, losing a
+                    // race it cannot win. lookupParked-then-wake is check-then-act and cannot be
+                    // made atomic from out here, so the engine's refusal is the expected outcome,
+                    // not a fault — the choreographed instance is running, which is what the event
+                    // asked for. Discriminated by the NOT_PARKED reason rather than message text;
+                    // every other EX-FLOW-7002 still propagates.
+                    scheduler.lookupParked(most, least).ifPresent(parked -> {
+                        try {
+                            scheduler.wake(parked);
+                        } catch (FlowEngineException ex) {
+                            if (!FlowEngineException.isNotParked(ex)) {
+                                throw ex;
+                            }
+                        }
+                    });
                 }
                 case ChoreographyDecision.Start(FlowExecutionPlan plan, long most, long least) -> {
                     long timeoutNanos = System.nanoTime() + plan.timeoutDurationNanos();

@@ -123,6 +123,7 @@ public final class FlowEngineException extends ExerisKernelException {
     private static final String REASON_COMPILE      = "COMPILE_FAILED";
     private static final String REASON_QUEUE_FULL   = "QUEUE_FULL";
     private static final String REASON_STALE_VERSION = "STALE_VERSION";
+    private static final String REASON_NOT_PARKED   = "NOT_PARKED";
 
     public FlowEngineException(String message) {
         super(KernelErrorCodes.EX_FLOW_7002, message, (Throwable) null);
@@ -155,6 +156,46 @@ public final class FlowEngineException extends ExerisKernelException {
      * @param engineName the engine name
      * @param queueDepth current depth of the scheduler queue at the time of overflow
      */
+    /**
+     * Creates the refusal for a wake aimed at an instance that is not parked.
+     *
+     * <p>rawArgs layout: {@code [engineName, "WAKE", "NOT_PARKED", instanceIdMost, instanceIdLeast]}.
+     * The identity rides as two {@code long}s rather than a formatted key, per the Glass-Box
+     * primitive layout — and the {@code NOT_PARKED} reason exists so callers can tell this refusal
+     * from every other {@code EX-FLOW-7002} without matching on message text. That distinction is
+     * load-bearing for {@code lookupParked(...).ifPresent(wake)}, which is inherently check-then-act:
+     * a concurrent waker between the two calls makes this refusal the expected outcome rather than a
+     * fault, and there was previously no way to say so structurally.
+     *
+     * @param engineName     the engine name
+     * @param instanceIdMost high 64 bits of the flow instance id
+     * @param instanceIdLeast low 64 bits of the flow instance id
+     * @since 0.12.0
+     */
+    public static FlowEngineException notParked(String engineName,
+                                                long instanceIdMost,
+                                                long instanceIdLeast) {
+        return new FlowEngineException(KernelErrorCodes.EX_FLOW_7002, MSG_ENGINE_FAILURE, null,
+                engineName, "WAKE", REASON_NOT_PARKED, instanceIdMost, instanceIdLeast);
+    }
+
+    /**
+     * Whether {@code throwable} is the not-parked refusal above — the check a caller doing
+     * {@code lookupParked(...).ifPresent(wake)} needs, since that pattern cannot be made atomic
+     * from outside the engine.
+     *
+     * @param throwable the throwable to classify; {@code null} yields {@code false}
+     * @return {@code true} if this is an {@code EX-FLOW-7002} refusal with reason {@code NOT_PARKED}
+     * @since 0.12.0
+     */
+    public static boolean isNotParked(Throwable throwable) {
+        if (!(throwable instanceof FlowEngineException flowEngineException)) {
+            return false;
+        }
+        Object[] rawArgs = flowEngineException.rawArgs();
+        return rawArgs.length > 2 && REASON_NOT_PARKED.equals(rawArgs[2]);
+    }
+
     public static FlowEngineException schedulerFull(String engineName, int queueDepth) {
         return new FlowEngineException(KernelErrorCodes.EX_FLOW_7002, MSG_ENGINE_FAILURE, null,
                 engineName, "SCHEDULE", REASON_QUEUE_FULL, queueDepth);
