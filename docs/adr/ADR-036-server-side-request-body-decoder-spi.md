@@ -83,7 +83,7 @@ Contract clauses inherited **verbatim** from `HttpResponseBodyDecoder` (see `Htt
 - **Generics-free by design.** `decode` returns `Object` and accepts `Class<?>`, not `<T>`. The single `@SuppressWarnings("unchecked")` cast lives at the resolution call-site (the generated handler — §2), exactly as the client side confines it to `KernelWebClient.decodeSuccessBody` (`KernelWebClient.java:234`, ADR-034 §3). A generics-free SPI surface eases alternative bindings (Jackson `TypeReference`, Protobuf descriptors) without `<T>` propagation.
 - **Never sees `Void.class`.** The resolution site short-circuits bodyless / `Void` requests before invoking the decoder (the generated handler only calls `parseBody` for verbs that carry an entity body — `handleCreate` / `handleUpdate`).
 - **Content-type tolerance.** Implementations MUST tolerate `contentType == null` or empty (client omitted the header); the registry may still route a decoder claiming support for `targetType`.
-- **Driver exception wrapping.** Implementations MUST wrap binding-specific exceptions (Jackson `JacksonException`) into a **JDK-standard `java.*` `RuntimeException`** (the Community driver uses `IllegalStateException`) before returning. No driver-package exception type — not even a driver-defined `RuntimeException` subclass — may cross the SPI boundary; the contract is testable-as-written (`AbstractHttpRequestBodyDecoderTck` asserts the thrown type's package `startsWith("java.")` and `doesNotStartWith("tools.jackson")`).
+- **Driver exception wrapping.** Implementations MUST wrap binding-specific exceptions (Jackson `JacksonException`) before returning; no driver-package exception type — not even a driver-defined `RuntimeException` subclass — may cross the SPI boundary. **Amended in 0.12 (see §Amendment):** the wrapper must be `java.*` **or** SPI-owned, and the two failure classes must be *different types* — a body that will not bind surfaces as `RequestBodyDecodeException`, a missing decoder stays `IllegalStateException`. As originally written this clause named `IllegalStateException` for both, which made §2's status mapping unsatisfiable.
 - **Body ownership.** Implementations MUST NOT close, retain, or otherwise extend the lifetime of the `LoanedBuffer`. The caller (the generated handler) owns the buffer's lifecycle — the request body buffer is owned by the transport/codec and released when the exchange ends, per the existing `HttpRequest` contract the generator already documents (`KernelHandlerGenerator.java:261`).
 
 `HttpRequestDecodingContext` carries `(method, path, headers, allocator)` — the server-side mirror of `HttpResponseDecodingContext`'s `(status, headers, allocator)` (see `HttpResponseDecodingContext.java:29`). The status field is replaced by `method` + `path` because the decoder runs on the inbound request, not on a response. The context carries **no Core types** — no `HttpExchange`, no router carrier — so the SPI surface stays implementation-blind (The Wall, ADR-006).
@@ -190,6 +190,47 @@ Jackson 3 descends to the driver; the SPI never sees `ObjectMapper` (The Wall �
 **TCK scope boundary.** This kernel-side TCK verifies only the **SPI-boundary contract** (a present decoder decodes or throws a `java.*` `RuntimeException`; the registry resolves by priority). It deliberately does **not** assert the HTTP status mapping (decode-failure → 400, unresolved → 5xx) — per §2 that mapping is the *generated handler's* job, not the SPI's, and it is exercised by the generator e2e fixture in `exeris-tooling` (TOOL-139 / Engineering Protocol step 3), not here. The Community binding additionally carries one tier-specific `@Nested` wiring check that the `HTTP_REQUEST_BODY_DECODER_REGISTRY` slot is unbound outside the kernel scope and resolvable inside it (the read path the generated handler depends on).
 
 Bound in Community against `CommunityJsonRequestBodyDecoder` and **actually registered in CI** — no orphan `Abstract*Tck` (memory: `project_v080_coverage_audit` — unbound `Abstract*Tck` bases are a standing P0; this one ships bound, 19 cases green in the default `build-and-verify` lane).
+
+## Amendment (0.12) — §1's wrapping rule made §2's mapping impossible
+
+**What §2 promised did not happen in production.** Every malformed request body was answered `500`
+from the day this ADR landed until 0.12. §2 says a decode failure is a client error mapped to `400`
+and a missing decoder is a server error mapped to `5xx`; §1 says the driver MUST wrap into a
+`java.*` `RuntimeException` and names `IllegalStateException`. Those two clauses are jointly
+unsatisfiable: they give the two failures **one type**, and the generated `parseBody` cannot classify
+by a type it shares.
+
+§2's own text saw the collision and drew the wrong conclusion — *"Without this explicit catch the
+mapping would silently flip to 500, because the driver wraps into `IllegalStateException` … which the
+400 arm does not match."* The `catch (RuntimeException)` arm it relies on is not reached: the
+generated `parseBody` puts `catch (IllegalStateException e) { throw e; }` **first**, precisely to
+honour §2's other rule (a missing decoder is never downgraded to 400). The first-listed arm wins, so
+the malformed-body path exits as a 5xx. Both rules were implemented faithfully; only their
+combination was untestable, and the TCK could not have caught it because the TCK asserts the *type
+family* (`java.*`) rather than the classification the handler needs.
+
+Found by a downstream Entity-First consumer whose generated handlers implement exactly this split,
+on its first test that posted a body with a typo in it.
+
+**Correction:**
+
+- §1's wrapping rule now reads: no *driver-package* type may cross the SPI boundary; the wrapper is
+  either `java.*` **or** SPI-owned. Opacity is about keeping driver types out — restricting the
+  kernel to `java.*` was an over-tightening that removed the only vocabulary in which the two
+  failures could be distinguished.
+- A body the decoder cannot bind MUST surface as
+  `eu.exeris.kernel.spi.exceptions.http.RequestBodyDecodeException` (`EX-HTTP-4013`, `rawArgs` =
+  target type name + body size, never body content). A missing or unresolvable decoder stays
+  `IllegalStateException`. §2's mapping becomes expressible exactly as written.
+- `AbstractHttpRequestBodyDecoderTck` asserts the classification directly — malformed body is a
+  `RequestBodyDecodeException` and explicitly *not* an `IllegalStateException` — instead of asserting
+  only that the type lives in `java.*`.
+- No generator change: the emitted `parseBody` already routes everything that is not an
+  `IllegalStateException` to `400`. The generated code was right; the SPI has caught up with the
+  contract this ADR published.
+
+The `415` deferral in §"What is NOT in scope" is unaffected — this amendment corrects the `400`/`5xx`
+split, it does not add content-type negotiation.
 
 ## Consequences
 

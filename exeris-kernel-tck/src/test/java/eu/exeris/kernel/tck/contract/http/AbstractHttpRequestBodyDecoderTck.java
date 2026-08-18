@@ -8,6 +8,8 @@
  */
 package eu.exeris.kernel.tck.contract.http;
 
+import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
+import eu.exeris.kernel.spi.exceptions.http.RequestBodyDecodeException;
 import eu.exeris.kernel.spi.http.HttpMethod;
 import eu.exeris.kernel.spi.http.HttpRequestBodyDecoder;
 import eu.exeris.kernel.spi.http.HttpRequestBodyDecoderRegistry;
@@ -56,10 +58,19 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *       so no caller relies on the empty-body return value.</li>
  *   <li><b>Null/empty content-type tolerance at decode time.</b> The decoder still
  *       decodes by target type when no content-type header was present.</li>
- *   <li><b>Driver exception opacity (The Wall).</b> A malformed body MUST surface a
- *       generic {@link RuntimeException} (the Community driver wraps Jackson
- *       {@code JacksonException} into {@link IllegalStateException}); no
- *       {@code tools.jackson.*} type may cross the SPI boundary.</li>
+ *   <li><b>Secret safety across the whole cause chain.</b> Neither the thrown exception nor any
+ *       link in its {@code getCause()} chain may carry body content — a malformed payload is the
+ *       data most likely to be a secret posted to the wrong endpoint, and consumers log causes.</li>
+ *   <li><b>Malformed-body classification (ADR-036 §2).</b> A body the decoder cannot bind
+ *       MUST surface as {@link RequestBodyDecodeException}, distinct from the
+ *       {@link IllegalStateException} a missing decoder raises. The handler is required to
+ *       answer {@code 400} for the first and {@code 5xx} for the second, and can only do that
+ *       if the types differ — until 0.12 both were {@code IllegalStateException} and every
+ *       malformed request became a 500.</li>
+ *   <li><b>Driver exception opacity (The Wall).</b> No binding-specific type — no
+ *       {@code tools.jackson.*} — may cross the SPI boundary. The wrapper is either a
+ *       {@code java.*} exception or an SPI-owned one; opacity is about keeping <em>driver</em>
+ *       types out, not about restricting the kernel to {@code java.*}.</li>
  *   <li><b>Priority ordering.</b> {@link HttpRequestBodyDecoderRegistry#of(List)}
  *       resolves the higher-{@link HttpRequestBodyDecoder#priority()} candidate;
  *       ties resolve by registration order.</li>
@@ -325,7 +336,7 @@ public abstract class AbstractHttpRequestBodyDecoderTck {
         }
 
         @Test
-        @DisplayName("decode wraps driver exceptions into a generic RuntimeException — no tools.jackson.* escapes")
+        @DisplayName("decode wraps driver exceptions — no tools.jackson.* escapes")
         void decodeWrapsDriverExceptions() {
             HttpRequestBodyDecoder decoder = createDecoder();
             try (LoanedBuffer body = bufferOf(malformedEncodedBytes())) {
@@ -335,12 +346,75 @@ public abstract class AbstractHttpRequestBodyDecoderTck {
                         .extracting(Object::getClass)
                         .satisfies(cls -> {
                             String pkg = ((Class<?>) cls).getPackage().getName();
+                            // The wrapper may be a java.* exception or an SPI-owned one. Requiring
+                            // java.* is what previously forced malformed bodies to share a type with
+                            // configuration errors; opacity only ever meant "no driver types".
                             assertThat(pkg)
-                                    .as("wrapped exception MUST live in java.* (not the driver package)")
-                                    .startsWith("java.");
+                                    .as("wrapped exception MUST be java.* or SPI-owned, never the driver's")
+                                    .matches(p -> p.startsWith("java.") || p.startsWith("eu.exeris.kernel.spi."));
                             assertThat(pkg)
                                     .as("no tools.jackson.* type may cross the SPI boundary (The Wall)")
                                     .doesNotStartWith("tools.jackson");
+                        });
+            }
+        }
+
+        @Test
+        @DisplayName("a malformed body is classifiable as a caller fault, not a server one (ADR-036 §2)")
+        void decodeClassifiesMalformedBodyAsCallerFault() {
+            // The contract a generated handler actually depends on. It answers 400 for a body it
+            // cannot decode and 5xx for a decoder it cannot resolve, and it distinguishes them by
+            // type — never by matching on a message. A decoder that raises IllegalStateException
+            // here makes the handler blame the server for the caller's typo.
+            HttpRequestBodyDecoder decoder = createDecoder();
+            try (LoanedBuffer body = bufferOf(malformedEncodedBytes())) {
+                assertThatThrownBy(() -> decoder.decode(body, validTargetType(), context()))
+                        .as("a body that will not bind is the caller's fault and must be typed as one")
+                        .isInstanceOf(RequestBodyDecodeException.class)
+                        .isNotInstanceOf(IllegalStateException.class);
+            }
+        }
+
+        @Test
+        @DisplayName("the malformed-body failure carries its code and args, and never the body")
+        void malformedBodyFailureIsSecretSafe() {
+            // Glass-Box, with the one constraint that matters here: a payload that failed to parse
+            // is exactly the kind of data most likely to be a secret posted to the wrong endpoint,
+            // so rawArgs carry the target type and the length and nothing else.
+            HttpRequestBodyDecoder decoder = createDecoder();
+            byte[] malformed = malformedEncodedBytes();
+            try (LoanedBuffer body = bufferOf(malformed)) {
+                assertThatThrownBy(() -> decoder.decode(body, validTargetType(), context()))
+                        .isInstanceOfSatisfying(RequestBodyDecodeException.class, e -> {
+                            assertThat(e.errorCode()).isEqualTo(KernelErrorCodes.EX_HTTP_4013);
+                            assertThat(e.rawArgs())
+                                    .as("index 0 targetTypeName, index 1 bodySize")
+                                    .containsExactly(validTargetType().getName(), (long) malformed.length);
+                            String payload = new String(malformed, StandardCharsets.UTF_8);
+                            assertThat(e.getMessage())
+                                    .as("the message is static — no body content is formatted into it")
+                                    .doesNotContain(payload);
+
+                            // The exception is not the only thing a consumer logs. Every stack-trace
+                            // printer and logging bridge walks the cause chain, so a driver that
+                            // retains a binding failure whose own message quotes the offending input
+                            // publishes the body through the back door — the outer type's guarantee
+                            // would be true and useless. Jackson 3 redacts the source snippet by
+                            // default (`StreamReadFeature.INCLUDE_SOURCE_IN_LOCATION` is off, unlike
+                            // Jackson 2), so the Community binding passes this as shipped; that is a
+                            // library default an application's JsonMapperCustomizer can flip, which
+                            // is exactly why the contract holds the whole chain rather than trusting
+                            // one. Bounded traversal: a self-referencing cause must not hang the TCK.
+                            int depth = 0;
+                            for (Throwable link = e; link != null && depth < 16;
+                                    link = link.getCause(), depth++) {
+                                if (link.getMessage() != null) {
+                                    assertThat(link.getMessage())
+                                            .as("no link in the cause chain may carry body content (%s)",
+                                                    link.getClass().getName())
+                                            .doesNotContain(payload);
+                                }
+                            }
                         });
             }
         }

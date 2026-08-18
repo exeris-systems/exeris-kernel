@@ -41,9 +41,20 @@ import eu.exeris.kernel.spi.memory.LoanedBuffer;
  *
  * <h2>Driver exception wrapping</h2>
  * <p>Implementations MUST wrap binding-specific exceptions (e.g., Jackson
- * {@code JacksonException}) into a generic {@link RuntimeException} (typically
- * {@link IllegalStateException}) before returning. No driver-specific exception
- * types may cross the SPI boundary.
+ * {@code JacksonException}) before returning; no driver-specific exception type may
+ * cross the SPI boundary. Which wrapper is not free choice — the two failure classes
+ * are distinguished by <em>type</em>, because ADR-036 §2 puts status mapping on the
+ * handler and a handler cannot map what it cannot tell apart:
+ * <ul>
+ *   <li><b>A body the decoder cannot bind</b> (malformed syntax, wrong shape) MUST surface as
+ *       {@link eu.exeris.kernel.spi.exceptions.http.RequestBodyDecodeException} — a caller fault,
+ *       {@code 400 Bad Request}.</li>
+ *   <li><b>A missing or unresolvable decoder</b> stays an {@link IllegalStateException} — a
+ *       deployment fault, {@code 5xx}, never downgraded to 400.</li>
+ * </ul>
+ *
+ * <p>Until 0.12 both arrived as {@code IllegalStateException} and the mandated mapping was
+ * therefore not expressible: every malformed request reached the caller as a 500.
  *
  * @since 0.8.0
  */

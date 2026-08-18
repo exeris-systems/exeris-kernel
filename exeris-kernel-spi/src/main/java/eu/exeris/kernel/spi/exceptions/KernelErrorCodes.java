@@ -446,6 +446,30 @@ public final class KernelErrorCodes {
      */
     public static final String EX_HTTP_4012 = "EX-HTTP-4012";
 
+    /**
+     * Inbound request body could not be decoded into the handler's target type — the bytes are
+     * syntactically invalid for the binding, or do not bind to that type. A <em>caller</em> fault,
+     * carried by {@link eu.exeris.kernel.spi.exceptions.http.RequestBodyDecodeException} so a
+     * handler can answer {@code 400 Bad Request} without inspecting a message string.
+     *
+     * <p>Distinct from a decoder that is missing or unregistered, which stays an
+     * {@code IllegalStateException} and is a <em>deployment</em> fault ({@code 5xx}). ADR-036 §2
+     * puts status mapping on the handler; that mapping is only expressible if the two failures are
+     * different types, so the split is part of the SPI contract rather than a driver detail.
+     *
+     * <p>Secret-safe: carries the target type name and the body length only. The body itself is
+     * request content and never reaches telemetry — a guarantee the decoder TCK holds across the
+     * whole {@code getCause()} chain, not just this exception's own message, because consumers log
+     * causes and a binding that quotes the offending input would leak through that path.
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} targetTypeName (binary name of the requested payload type)</li>
+     *   <li>index 1 – {@code long}   bodySize (bytes offered to the decoder)</li>
+     * </ul>
+     */
+    public static final String EX_HTTP_4013 = "EX-HTTP-4013";
+
     // -----------------------------------------------------------------------
     // EX-PERS – Persistence subsystem
     // -----------------------------------------------------------------------
