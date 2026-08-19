@@ -1,29 +1,29 @@
 [ {
-  "t" : 1787033735023,
+  "t" : 1787108107891,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "jdk.jfr.internal.SettingsManager$InternalSetting",
+  "class" : "[B",
   "thread" : "main",
-  "size" : 261544,
+  "size" : 228168,
   "stackId" : "stk_0001",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1787033735024,
+  "t" : 1787108107891,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.HashMap",
+  "class" : "java.util.HashMap$KeyIterator",
   "thread" : "main",
-  "size" : 148152,
+  "size" : 261568,
   "stackId" : "stk_0002",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1787033735032,
+  "t" : 1787108107909,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "java.util.UUID",
   "thread" : "main",
-  "size" : 261544,
+  "size" : 261552,
   "stackId" : "stk_0003",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1787033735032,
+  "t" : 1787108107909,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "java.util.UUID",
   "thread" : "main",
@@ -31,35 +31,35 @@
   "stackId" : "stk_0003",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1787033735041,
+  "t" : 1787108107913,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "[B",
+  "class" : "java.util.LinkedHashMap",
   "thread" : "main",
-  "size" : 261568,
+  "size" : 261536,
   "stackId" : "stk_0004",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1787033735041,
+  "t" : 1787108107914,
   "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "[B",
+  "class" : "java.util.LinkedHashMap",
   "thread" : "main",
-  "size" : 32,
+  "size" : 88,
   "stackId" : "stk_0004",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1787033735044,
+  "t" : 1787108107914,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.HashMap$Node",
+  "class" : "[B",
   "thread" : "main",
   "size" : 261552,
   "stackId" : "stk_0005",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1787033735044,
+  "t" : 1787108107914,
   "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.util.HashMap$Node",
+  "class" : "[B",
   "thread" : "main",
-  "size" : 40,
+  "size" : 24,
   "stackId" : "stk_0005",
   "category" : "JVM_NOISE"
 } ]
