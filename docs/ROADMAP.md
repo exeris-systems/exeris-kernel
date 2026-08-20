@@ -2160,6 +2160,7 @@ are.
 
 - **No `Abstract*Tck` for the new `openConnection()` obligation.** It is only observable against a live RLS database, and the SPI offers no way to ask a connection about its isolation state, so expressing it in the TCK needs new SPI surface - a design decision, not a mechanical addition. Held today by the Community binding IT.
 - **The obligation binds implementations outside this repository.** An engine treating the no-arg overload as "no context" carries the same defect.
+- **A choreographed wake for a genuinely unknown key costs a second snapshot-store read.** `lookupParked` probes the store and records the miss; `wake()` clears that negative entry on entry, so `loadSnapshot`'s suppression does not catch the second probe. Not clearing it would let a stale negative outlive a park that happened on another engine and refuse a legitimate cross-engine wake, and skipping the delivery is the original bug - so the cost is deliberate. `terminalStateCatalog` short-circuits known terminal keys before either read, confining it to unknown or evicted keys. Threading the probe result through needs SPI surface.
 - **`applyParkOutcome` ordering is unchanged.** It sets `PARKED` and registers the instance before persisting, so a refused save leaves memory and the store disagreeing and the exception escapes `runInstance` uncaught. Reversing that alters the durability contract and wants its own TCK coverage; v0.12 only makes the failure observable.
 
 ---

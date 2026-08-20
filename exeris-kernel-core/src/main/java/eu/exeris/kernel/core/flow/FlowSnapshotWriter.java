@@ -8,6 +8,7 @@
  */
 package eu.exeris.kernel.core.flow;
 
+import eu.exeris.kernel.spi.flow.model.FlowSnapshot;
 import eu.exeris.kernel.spi.flow.model.FlowSnapshotStore;
 import eu.exeris.kernel.spi.flow.model.FlowState;
 
@@ -27,19 +28,34 @@ final class FlowSnapshotWriter {
     }
 
     /* default */ static void save(FlowSnapshotStore store,
-                     RuntimeFlowInstance instance,
-                     FlowState state,
-                     int stepIndex) {
+                                   RuntimeFlowInstance instance,
+                                   FlowState state,
+                                   int stepIndex) {
+        write(store, instance.toSnapshot(state, stepIndex), instance.definitionName(),
+                state.name(), stepIndex,
+                instance.key().instanceIdMost(), instance.key().instanceIdLeast());
+    }
+
+    /**
+     * The migration-on-load write, which carries a snapshot rather than a live instance.
+     *
+     * <p>Same guard for the same reason: this write also runs on a wake, so it meets the same
+     * exhausted pool, and a refusal here abandons a saga mid-migration rather than mid-park.
+     */
+    /* default */ static void save(FlowSnapshotStore store, FlowSnapshot snapshot) {
+        write(store, snapshot, snapshot.definitionName(), snapshot.state().name(),
+                snapshot.currentStep(), snapshot.instanceIdMost(), snapshot.instanceIdLeast());
+    }
+
+    private static void write(FlowSnapshotStore store, FlowSnapshot snapshot,
+                              String definitionName, String state, int stepIndex,
+                              long instanceIdMost, long instanceIdLeast) {
         try {
-            store.save(instance.toSnapshot(state, stepIndex));
+            store.save(snapshot);
         } catch (RuntimeException | Error saveFailure) { //NOPMD AvoidCatchingGenericException
             FlowSnapshotPersistFailedEvent.emit(
-                    instance.definitionName(),
-                    state.name(),
-                    stepIndex,
-                    instance.key().instanceIdMost(),
-                    instance.key().instanceIdLeast(),
-                    saveFailure);
+                    definitionName, state, stepIndex,
+                    instanceIdMost, instanceIdLeast, saveFailure);
             throw saveFailure;
         }
     }

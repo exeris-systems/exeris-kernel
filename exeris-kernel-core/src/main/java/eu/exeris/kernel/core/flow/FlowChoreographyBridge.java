@@ -67,6 +67,18 @@ final class FlowChoreographyBridge implements EventHandler {
                     // event per business trigger means nothing re-sends it. wake() with parked
                     // intent resolves that instance and defers it through wakePending; a genuinely
                     // stale key still fails NOT_PARKED and is swallowed exactly as before.
+                    // Cost, measured against the alternative rather than assumed away: for a key
+                    // the engine has never heard of, this pays a second snapshot-store read.
+                    // lookupParked already probed the store and recorded the miss, but wake()
+                    // clears that negative entry on entry, so loadSnapshot's suppression does
+                    // not catch the second probe. Both obvious repairs are worse: not clearing
+                    // it would make a stale negative outlive a park that happened on another
+                    // engine, refusing a legitimate cross-engine wake - the loss this fix
+                    // exists to remove; and skipping the delivery when lookupParked came back
+                    // empty is the original bug. terminalStateCatalog short-circuits known
+                    // terminal keys before either read, so the doubled I/O is confined to
+                    // genuinely unknown or evicted keys. Threading the probe result through
+                    // needs SPI surface and is tracked as follow-up work.
                     scheduler.lookupParked(most, least).ifPresentOrElse(
                             this::deliverWake,
                             () -> deliverWake(new HeapFlowContext(

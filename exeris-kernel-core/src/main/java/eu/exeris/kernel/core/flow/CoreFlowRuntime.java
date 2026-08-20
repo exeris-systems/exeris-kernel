@@ -671,7 +671,7 @@ final class CoreFlowRuntime { // NOPMD
         if (snapshotStore == null) {
             return false;
         }
-        snapshotStore.save(migrated);
+        FlowSnapshotWriter.save(snapshotStore, migrated);
         return true;
     }
 

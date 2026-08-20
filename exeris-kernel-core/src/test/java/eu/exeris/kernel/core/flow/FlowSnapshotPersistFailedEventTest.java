@@ -25,13 +25,17 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.Optional;
+import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * A refused durable checkpoint has to leave a machine-readable trace.
@@ -52,38 +56,60 @@ class FlowSnapshotPersistFailedEventTest {
     private static final String PERSIST_FAILED = "eu.exeris.kernel.flow.SnapshotPersistFailed";
 
     @Test
-    @Timeout(value = 20, unit = TimeUnit.SECONDS)
-    @DisplayName("a store that refuses the PARK checkpoint emits SnapshotPersistFailed")
-    void refusedParkCheckpointIsRecorded() throws InterruptedException {
-        AtomicReference<RecordedEvent> captured = new AtomicReference<>();
-        CountDownLatch eventReceived = new CountDownLatch(1);
+    @Timeout(value = 30, unit = TimeUnit.SECONDS)
+    @DisplayName("both save call sites emit SnapshotPersistFailed and still propagate")
+    void bothSaveCallSitesAreObservable() throws InterruptedException {
+        // One recording for both call sites. Two sequential RecordingStreams in one JVM shift
+        // chunk boundaries under each other and drop events that a single stream sees.
+        Queue<RecordedEvent> events = new ConcurrentLinkedQueue<>();
+        CountDownLatch bothSeen = new CountDownLatch(2);
 
         try (RecordingStream rs = new RecordingStream()) {
             rs.enable(PERSIST_FAILED);
             rs.onEvent(PERSIST_FAILED, event -> {
-                captured.compareAndSet(null, event);
-                eventReceived.countDown();
+                events.add(event);
+                bothSeen.countDown();
             });
+            // startAsync() returns before the stream is processing, and the first write below
+            // is immediate - without this the event is emitted into a stream that has not
+            // started and is lost. onFlush is the first point at which it demonstrably has.
+            CountDownLatch streaming = new CountDownLatch(1);
+            rs.onFlush(streaming::countDown);
             rs.startAsync();
+            assertThat(streaming.await(10, TimeUnit.SECONDS))
+                    .as("the recording stream must be live before any event is emitted")
+                    .isTrue();
 
-            runParkThatCannotPersist();
+            // Call site 1: the migration-on-load write, which carries a snapshot rather than a
+            // live instance. Asserted through the writer directly - building a real version
+            // migration would test the migration machinery, not whether this write is observable.
+            FlowSnapshot migrated = new FlowSnapshot(
+                    7L, 9L, "migrated-definition", 3, FlowState.PARKED,
+                    Instant.EPOCH, Instant.MAX, new int[0], 0, new byte[0], 1L);
+            assertThatThrownBy(() -> FlowSnapshotWriter.save(new RefusingSnapshotStore(), migrated))
+                    .as("behaviour is unchanged: the refusal still propagates")
+                    .isInstanceOf(IllegalStateException.class);
 
-            assertThat(eventReceived.await(10, TimeUnit.SECONDS))
-                    .as("a refused checkpoint must not be silent")
+            // Call site 2: the per-step PARK checkpoint, driven through a real engine. The
+            // engine stays open until both events land - closing it while the step is still
+            // returning would let the lifecycle write-fence skip the save under test.
+            assertThat(runParkThatCannotPersist(bothSeen))
+                    .as("a refused checkpoint must not be silent, at either call site")
                     .isTrue();
         }
 
-        RecordedEvent event = captured.get();
-        assertThat(event.getString("state"))
-                .as("the state the refused snapshot would have recorded")
-                .isEqualTo(FlowState.PARKED.name());
-        assertThat(event.getString("definitionName")).isEqualTo("persist-refusing-park");
-        assertThat(event.getString("failureReason"))
-                .as("type and message, no stack trace and no business payload")
-                .contains(IllegalStateException.class.getName());
+        assertThat(events).extracting(e -> e.getString("definitionName"))
+                .contains("migrated-definition", "persist-refusing-park");
+        assertThat(events).allSatisfy(event -> {
+            assertThat(event.getString("state")).isEqualTo(FlowState.PARKED.name());
+            assertThat(event.getString("failureReason"))
+                    .as("type and message, no stack trace and no business payload")
+                    .contains(IllegalStateException.class.getName());
+        });
     }
 
-    private static void runParkThatCannotPersist() throws InterruptedException {
+    private static boolean runParkThatCannotPersist(CountDownLatch bothSeen)
+            throws InterruptedException {
         CountDownLatch stepEntered = new CountDownLatch(1);
         FlowEngineConfig defaults = FlowEngineConfig.defaults("FlowSnapshotPersistFailedEventTest");
         FlowEngineConfig config = new FlowEngineConfig(
@@ -107,6 +133,7 @@ class FlowSnapshotPersistFailedEventTest {
             FlowExecutionPlan plan = engine.plans().compile(definition);
             engine.scheduler().schedule(plan, context("persist-refusing-instance", definition.name()));
             assertThat(stepEntered.await(5, TimeUnit.SECONDS)).isTrue();
+            return bothSeen.await(20, TimeUnit.SECONDS);
         }
     }
 
