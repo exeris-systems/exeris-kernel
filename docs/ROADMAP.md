@@ -2136,6 +2136,35 @@ are.
 
 ## Known Gaps / Future Work planned for v0.12
 
+### Persistence + Flow: Request-Session Scope Collision, Lost Choreography Wake, Silent Snapshot Refusal
+
+**Gap:** Three independent defects, surfaced by one investigation into why the saga benchmark exhausted a 128-connection pool while the Quarkus and Spring arms peaked at 21 and 47.
+
+1. **The engine keyed the per-request session from two sources.** `openConnection()` always keyed it `"shared"`; `openConnection(StorageContext)` keyed it by tenant. A request touching both mismatched by construction, and a Saga touches both: the flow snapshot store, the outbox adapter and the event log call the no-arg overload while repositories arrive through the context one. Measured on a v0.11 benchmark: 548,683 `BYPASS_SCOPE_MISMATCH`, 2.0 per request session, i.e. double the connection demand.
+
+2. **The bypass was not a neutral fallback.** It reached `openPhysicalConnection()`, which runs no `ConnectionInterceptor`, and `RlsConnectionInterceptor` publishes its session keys with `set_config(..., false)` - session scope, surviving pool checkin. The connection therefore arrived carrying the previous borrower tenant: under RLS a cross-tenant read, and a write judged by the wrong `WITH CHECK`. That is the failure the interceptor was hardened against; the bypass routed around it.
+
+3. **A choreographed wake arriving before the park it answers was destroyed.** `FlowChoreographyBridge` read an absent `lookupParked` as a stale or duplicate event. A third case was unnamed: the instance is live and still inside the step about to `PARK`. `lookupParked` filters on `state() == PARKED`, so it reported that instance absent, `wake()` was never called, and `wakePending` was never armed. One event per business trigger means nothing re-sends it.
+
+4. **A refused durable checkpoint was silent.** `FlowSnapshotSaveFailedEvent` (JFR-091) is emitted from inside the `JdbcFlowSnapshotStore.save` try-with-resources body, so a failure raised by the resource expression itself (`engine.openConnection()`) escapes every catch there. Pool exhaustion is precisely the failure that event cannot see; the only trace was an uncaught exception on the flow virtual thread.
+
+**Owner:** Persistence + Flow subsystems.
+
+**Resolution (v0.12, PR #346):** `openConnection()` resolves `KernelProviders.storageContextOrSystem()` and delegates to the context overload, so both keys come from one source and the un-intercepted acquire disappears with the mismatch. `CommunityGraphSession` routes through the engine rather than asking the session box directly. `FlowChoreographyBridge` delivers the wake on the empty branch as a `wake()` carrying `PARKED` intent, which `resolveParkedInstance` already admits and `beginScheduleAfterWake` defers through `wakePending`. `FlowSnapshotPersistFailedEvent` sits at the call site in `FlowSnapshotWriter`, so a refused checkpoint is recorded whatever the binding, with behaviour unchanged.
+
+**Merge Gate:** full-reactor `mvn clean install` with no skip flags (so Checkstyle and PMD are active), `ExerisArchitectureTest` and the `KernelTierBan` / `KernelTierDirection` suites green, and the tagged `integration` gate green for persistence RLS, the flow snapshot TCK and graph. Each new test verified to have teeth by reverting its own fix and confirming it fails.
+
+**Status: DELIVERED (v0.12).** Three commits, three tests. `CommunityRequestScopeBypassIsolationIT` pins the isolation rule against PostgreSQL with `FORCE ROW LEVEL SECURITY`; `FlowWakeBeforeParkTest` drives the bridge rather than a copy of its logic; `FlowSnapshotPersistFailedEventTest` asserts the event through a `RecordingStream`.
+
+**Carried forward, stated rather than left implicit:**
+
+- **No `Abstract*Tck` for the new `openConnection()` obligation.** It is only observable against a live RLS database, and the SPI offers no way to ask a connection about its isolation state, so expressing it in the TCK needs new SPI surface - a design decision, not a mechanical addition. Held today by the Community binding IT.
+- **The obligation binds implementations outside this repository.** An engine treating the no-arg overload as "no context" carries the same defect.
+- **A choreographed wake for a genuinely unknown key costs a second snapshot-store read.** `lookupParked` probes the store and records the miss; `wake()` clears that negative entry on entry, so `loadSnapshot`'s suppression does not catch the second probe. Not clearing it would let a stale negative outlive a park that happened on another engine and refuse a legitimate cross-engine wake, and skipping the delivery is the original bug - so the cost is deliberate. `terminalStateCatalog` short-circuits known terminal keys before either read, confining it to unknown or evicted keys. Threading the probe result through needs SPI surface.
+- **`applyParkOutcome` ordering is unchanged.** It sets `PARKED` and registers the instance before persisting, so a refused save leaves memory and the store disagreeing and the exception escapes `runInstance` uncaught. Reversing that alters the durability contract and wants its own TCK coverage; v0.12 only makes the failure observable.
+
+---
+
 ### HTTP: `WebSocketProvider` SPI (or SSE-Only Commitment)
 
 **Gap:** The `realTimeApi` flag on `DomainMetadata` (SDK) exists in v0.8 but no generator emits real-time wire code, and the kernel has no WebSocket primitive. Real-time delivery splits into two distinct wire shapes: **Server-Sent Events** (pure HTTP/1.1 chunked streaming, runs on existing `HttpServerEngine` with no new SPI), and **WebSocket** (RFC 6455 handshake + frame codec, wire-protocol territory equivalent to HTTP/2 — requires kernel SPI). Without a decision, the `realTimeApi` flag remains aspirational and downstream applications hand-roll incompatible solutions.

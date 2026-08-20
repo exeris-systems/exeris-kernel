@@ -130,15 +130,22 @@ final class CommunityGraphSession implements GraphSession {
         PersistenceSessionBox box = CommunityHttpRequestProcessor.REQUEST_SESSION.isBound()
                 ? CommunityHttpRequestProcessor.REQUEST_SESSION.get()
                 : null;
+        // Engine first, deliberately. It consults this same request session, but keys it from the
+        // ambient StorageContext - the one source the engine now derives every scope key from.
+        // Asking the box directly keyed the session "shared" regardless of context, which is half
+        // of the BYPASS_SCOPE_MISMATCH collision; and when this call arrived first it left the
+        // request's session connection with no ConnectionInterceptor run on it for its whole life.
+        if (KernelProviders.PERSISTENCE_ENGINE.isBound()) {
+            return KernelProviders.PERSISTENCE_ENGINE.get()
+                    .openConnection(KernelProviders.storageContextOrSystem());
+        }
+        // Fallback for a scope carrying the session but not the engine: the box holds its own
+        // engine reference and can still serve the request.
         if (box != null) {
             PersistenceConnection connection = box.requestScopedConnection();
             if (connection != null) {
                 return connection;
             }
-        }
-        if (KernelProviders.PERSISTENCE_ENGINE.isBound()) {
-            return KernelProviders.PERSISTENCE_ENGINE.get()
-                    .openConnection(KernelProviders.storageContextOrSystem());
         }
         throw new GraphQueryException(ACCESS_QUERY_TYPE,
                 "PersistenceEngine is not available in this request scope (no ScopedValue binding)");

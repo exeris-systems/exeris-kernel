@@ -124,6 +124,41 @@ search_path`: a setting a strategy never writes is not a setting it is free to i
 
 ---
 
+## Request Session and the Scope Key
+
+One HTTP request is one connection. `CommunityHttpRequestDispatcher` binds a
+`PersistenceSessionBox` for the request; the first persistence call acquires a
+connection, every later call reuses it, and `box.release()` in the handler's
+`finally` returns it to the pool.
+
+The box keys that session by a **scope key** taken from the request's
+`StorageContext`: `isolationKey`, `schemaName`, or `:dedicated:<ds>` per
+strategy, and `shared` when none is declared. A call whose scope key does not
+match the session's is refused (`BYPASS_SCOPE_MISMATCH`) and takes its own
+connection. That refusal is deliberate: a request genuinely addressing a
+second tenant must not be served the first tenant's session.
+
+**Both `openConnection()` overloads MUST derive that key from the same source.**
+The no-arg overload resolves `KernelProviders.storageContextOrSystem()` and
+delegates to the context overload; it does not key the session `shared` on its
+own. Until v0.12 it did, and the damage was not confined to connection counts:
+
+- Any request touching both overloads mismatched by construction. A Saga does:
+  the flow snapshot store, the outbox adapter and the event log all call the
+  no-arg overload while repositories arrive through the context one. Measured
+  on a v0.11 benchmark, 2.0 bypasses per request session.
+- The fallback ran **no** `ConnectionInterceptor`. `RlsConnectionInterceptor`
+  publishes its keys with session-scoped `set_config(..., false)`, which
+  survives pool checkin, so that connection arrived carrying the *previous
+  borrower's* tenant: a cross-tenant read under RLS, and a write judged by the
+  wrong `WITH CHECK`.
+
+The second point is why this is an isolation rule rather than a pooling
+optimisation. `CommunityRequestScopeBypassIsolationIT` pins it: two pooled
+connections primed under `tenant-a`, one `tenant-b` request, and the connection
+its second call receives must report `tenant-b`, see only `tenant-b` rows, and
+run on the same backend as its first call.
+
 ## Admission Control & Backpressure Integration
 
 ### Overview
