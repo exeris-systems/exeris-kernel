@@ -15,6 +15,7 @@ import eu.exeris.kernel.spi.exceptions.flow.FlowEngineException;
 import eu.exeris.kernel.spi.flow.ChoreographyDecision;
 import eu.exeris.kernel.spi.flow.FlowChoreographyMapper;
 import eu.exeris.kernel.spi.flow.FlowScheduler;
+import eu.exeris.kernel.spi.flow.model.FlowContext;
 import eu.exeris.kernel.spi.flow.model.FlowExecutionPlan;
 import eu.exeris.kernel.spi.flow.model.FlowState;
 
@@ -49,23 +50,27 @@ final class FlowChoreographyBridge implements EventHandler {
             ChoreographyDecision decision = mapper.map(descriptor);
             switch (decision) {
                 case ChoreographyDecision.Wake(long most, long least) -> {
-                    // Absent at lookup: stale or duplicate wake event, idempotent no-op.
-                    //
                     // Present at lookup and gone by the time wake lands: the same event, losing a
                     // race it cannot win. lookupParked-then-wake is check-then-act and cannot be
                     // made atomic from out here, so the engine's refusal is the expected outcome,
                     // not a fault — the choreographed instance is running, which is what the event
                     // asked for. Discriminated by the NOT_PARKED reason rather than message text;
                     // every other EX-FLOW-7002 still propagates.
-                    scheduler.lookupParked(most, least).ifPresent(parked -> {
-                        try {
-                            scheduler.wake(parked);
-                        } catch (FlowEngineException ex) {
-                            if (!FlowEngineException.isNotParked(ex)) {
-                                throw ex;
-                            }
-                        }
-                    });
+                    //
+                    // Absent at lookup is not, on its own, a stale event, which is why the empty
+                    // branch below still delivers the wake instead of dropping it. lookupParked
+                    // reports a live, running instance as absent deliberately: handing it out as
+                    // parked would let a second event schedule the same flow again (pinned by
+                    // AbstractFlowSchedulerTck.deferredWakeAfterSelfParkClearsParkedRegistration).
+                    // But a callback can land while the instance is still inside the step that is
+                    // about to PARK, and dropping it there strands the saga for good, since one
+                    // event per business trigger means nothing re-sends it. wake() with parked
+                    // intent resolves that instance and defers it through wakePending; a genuinely
+                    // stale key still fails NOT_PARKED and is swallowed exactly as before.
+                    scheduler.lookupParked(most, least).ifPresentOrElse(
+                            this::deliverWake,
+                            () -> deliverWake(new HeapFlowContext(
+                                    most, least, "", 0, FlowState.PARKED, Long.MAX_VALUE)));
                 }
                 case ChoreographyDecision.Start(FlowExecutionPlan plan, long most, long least) -> {
                     long timeoutNanos = System.nanoTime() + plan.timeoutDurationNanos();
@@ -80,6 +85,20 @@ final class FlowChoreographyBridge implements EventHandler {
                                     timeoutNanos));
                 }
                 case ChoreographyDecision.Ignore() -> { /* intentional no-op */ }
+            }
+        }
+    }
+
+    /**
+     * Hands one wake to the engine, absorbing only the refusal that means the instance is already
+     * running. Every other {@code EX-FLOW-7002} still propagates.
+     */
+    private void deliverWake(FlowContext context) {
+        try {
+            scheduler.wake(context);
+        } catch (FlowEngineException ex) {
+            if (!FlowEngineException.isNotParked(ex)) {
+                throw ex;
             }
         }
     }
