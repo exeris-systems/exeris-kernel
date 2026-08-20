@@ -118,6 +118,46 @@ public abstract class AbstractFlowSchedulerTck {
          */
         @Test
         @Timeout(value = 60, unit = TimeUnit.SECONDS)
+        @DisplayName("a key-addressed wake delivered before the park still resumes the saga")
+        void keyAddressedWakeBeforeParkIsNotLost() {
+            FlowScheduler scheduler = engine.scheduler();
+            CountDownLatch insideStep = new CountDownLatch(1);
+            CountDownLatch releaseStep = new CountDownLatch(1);
+            CountDownLatch resumed = new CountDownLatch(1);
+
+            FlowDefinition definition = engine.plans().newDefinition("key-wake-before-park-flow")
+                    .step("call-out", _ -> {
+                        insideStep.countDown();
+                        awaitQuietly(releaseStep);
+                        return FlowOutcome.PARK;
+                    }, null)
+                    .step("settle", _ -> {
+                        resumed.countDown();
+                        return FlowOutcome.CONTINUE;
+                    }, null)
+                    .transition(0, 1)
+                    .build();
+            FlowExecutionPlan plan = engine.plans().compile(definition);
+            FlowContext ctx = TestFlowContexts.create("key-wake-before-park-1", definition.name());
+
+            scheduler.schedule(plan, ctx);
+            assertThat(awaitQuietly(insideStep))
+                    .as("the run must be in flight, so the wake precedes the park it answers")
+                    .isTrue();
+
+            // The callback lands here. lookupParked reports a running instance absent by design,
+            // so the two-call form would drop this wake and nothing would re-send it.
+            scheduler.wake(ctx.instanceIdMost(), ctx.instanceIdLeast());
+            releaseStep.countDown();
+
+            assertThat(awaitQuietly(resumed))
+                    .as("a choreography wake is one event per business trigger: an implementation "
+                        + "that drops it because the instance had not parked yet strands the saga")
+                    .isTrue();
+        }
+
+        @Test
+        @Timeout(value = 60, unit = TimeUnit.SECONDS)
         @DisplayName("a wake arriving while a run is still in flight is honoured, not dropped")
         void wakeDuringRunIsNotLost() {
             FlowScheduler scheduler = engine.scheduler();

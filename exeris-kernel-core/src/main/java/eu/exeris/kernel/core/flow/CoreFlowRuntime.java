@@ -318,13 +318,30 @@ final class CoreFlowRuntime { // NOPMD
 
     private void wake(FlowContext context) {
         ensureStarted();
-        FlowKey key = FlowKey.from(context);
+        wake(FlowKey.from(context), context.state());
+    }
+
+    /**
+     * Key-addressed wake (SPI {@code FlowScheduler.wake(long, long)}).
+     *
+     * <p>Resolves inside the engine, so a choreography bridge no longer probes first: the
+     * two-call form could not see a live instance on its way to PARK, and paid a second
+     * store read on a genuine miss. Still emits the fallback event that probe emitted, so
+     * the durable-store consultation stays visible on this path.
+     */
+    private void wake(FlowKey key, FlowState requestedState) {
+        boolean inMemory = parkedInstances.containsKey(key) || liveInstances.containsKey(key);
         parkedLookupMisses.clearMiss(key);
         if (terminalStateCatalog.isTerminal(key)) {
             return;
         }
 
-        RuntimeFlowInstance instance = resolveParkedInstance(key, context.state());
+        long fallbackStartNanos = System.nanoTime();
+        RuntimeFlowInstance instance = resolveParkedInstance(key, requestedState);
+        if (!inMemory) {
+            WakeOnLoadFallbackEvent.emit(config.engineName(), key.instanceIdMost(),
+                    key.instanceIdLeast(), true, System.nanoTime() - fallbackStartNanos);
+        }
 
         if (instance.isTerminal() || terminalStateCatalog.isTerminal(key)) {
             liveInstances.remove(key, instance);
@@ -1345,6 +1362,13 @@ final class CoreFlowRuntime { // NOPMD
                 throw new FlowEngineException("FlowContext must not be null");
             }
             CoreFlowRuntime.this.wake(context);
+        }
+
+        @Override
+        public void wake(long instanceIdMost, long instanceIdLeast) {
+            ensureStarted();
+            CoreFlowRuntime.this.wake(new FlowKey(instanceIdMost, instanceIdLeast),
+                    FlowState.PARKED);
         }
 
         @Override
