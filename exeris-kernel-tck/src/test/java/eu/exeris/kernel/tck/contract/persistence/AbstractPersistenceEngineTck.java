@@ -8,6 +8,7 @@
  */
 package eu.exeris.kernel.tck.contract.persistence;
 
+import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 import eu.exeris.kernel.spi.exceptions.persistence.PersistenceProviderException;
 import eu.exeris.kernel.spi.persistence.BulkInserter;
@@ -25,6 +26,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -119,6 +123,29 @@ public abstract class AbstractPersistenceEngineTck {
                 assertThat(conn).isNotNull();
                 assertThat(conn.isOpen()).isTrue();
             }
+        }
+
+        @Test
+        @DisplayName("openConnection() configures the connection for the ambient StorageContext")
+        void openConnectionHonoursAmbientContext() {
+            ImmutableStorageContext ambient = ImmutableStorageContext.shared("tck-ambient-tenant");
+            List<StorageContext> configuredFor = new CopyOnWriteArrayList<>();
+            engine.registerInterceptor((connection, storageContext) ->
+                    configuredFor.add(storageContext));
+
+            ScopedValue.where(KernelProviders.STORAGE_CONTEXT, ambient).run(() -> {
+                try (PersistenceConnection conn = engine.openConnection()) {
+                    assertThat(conn.isOpen()).isTrue();
+                }
+            });
+
+            assertThat(configuredFor)
+                    .as("the no-arg overload must resolve the ambient context and configure the "
+                        + "connection for it exactly as the context overload would. Skipping that "
+                        + "is not neutral: session-scoped settings survive pool checkin, so a "
+                        + "connection handed over without isolation setup carries whatever the "
+                        + "previous borrower published")
+                    .containsExactly(ambient);
         }
 
         @Test
