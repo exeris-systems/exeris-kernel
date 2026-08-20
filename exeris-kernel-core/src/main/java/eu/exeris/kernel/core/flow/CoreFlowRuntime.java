@@ -25,8 +25,6 @@ import eu.exeris.kernel.spi.flow.model.FlowState;
 import eu.exeris.kernel.spi.flow.model.FlowStepAction;
 import eu.exeris.kernel.spi.flow.model.FlowStepDescriptor;
 
-import java.util.ArrayDeque;
-import java.util.Deque;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -44,7 +42,7 @@ final class CoreFlowRuntime { // NOPMD
     /** Blast-radius bound only: adjacency enforced at registration is what terminates the chain. */
     private static final int MAX_MIGRATION_HOPS = 32;
 
-    private static final int  MAX_PARKED_LOOKUP_MISSES = 256;
+
     private static final long NO_TIMEOUT_OVERRUN       = 0L;
     private static final int  STEP_PROCEED             = Integer.MIN_VALUE;
     private static final int  EXIT_RUN_LOOP            = -1;
@@ -57,9 +55,7 @@ final class CoreFlowRuntime { // NOPMD
     private final ConcurrentMap<PlanKey, CoreFlowExecutionPlan> planCatalog = new ConcurrentHashMap<>();
     private final ConcurrentMap<MigrationKey, FlowDefinitionMigration> migrations = new ConcurrentHashMap<>();
     private final TerminalStateCatalog terminalStateCatalog;
-    private final Set<FlowKey> parkedLookupMisses = ConcurrentHashMap.newKeySet();
-    private final Deque<FlowKey> parkedLookupMissOrder = new ArrayDeque<>();
-    private final Object parkedLookupMissLock = new Object();
+    private final ParkedLookupMissCache parkedLookupMisses = new ParkedLookupMissCache();
     private final Set<Thread> runningThreads = ConcurrentHashMap.newKeySet();
     private final AtomicLong lifecycleGeneration = new AtomicLong();
     private final AtomicInteger activeFlows = new AtomicInteger();
@@ -73,6 +69,8 @@ final class CoreFlowRuntime { // NOPMD
     // (totalSinceForever - baselineAtLifecycleTransition); baseline writes are atomic volatile
     // longs, so a stale worker that survives interruptAndJoinRunningThreads' 5s join timeout
     // cannot leave the next generation with a non-zero residual.
+    private volatile long nonDurableParkedAtClose;
+    private final FlowParkCheckpoint.Attempt parkAttempt = this::persistParkSnapshot;
     private volatile long parkedFlowsBaseline;
     private volatile long completedFlowsBaseline;
     private volatile long failedFlowsBaseline;
@@ -104,7 +102,7 @@ final class CoreFlowRuntime { // NOPMD
     }
 
     /* default */ void clearLookupSuppressionAfterPlanCompile() {
-        clearParkedLookupMissTracking();
+        parkedLookupMisses.clearAll();
     }
 
     public FlowEngineStats stats() {
@@ -151,10 +149,11 @@ final class CoreFlowRuntime { // NOPMD
         interruptAndJoinRunningThreads();
         shutdownFinalized = true;
         runningThreads.removeIf(thread -> !thread.isAlive());
+        nonDurableParkedAtClose = FlowParkCheckpoint.countNonDurable(parkedInstances.values());
         liveInstances.clear();
         parkedInstances.clear();
         terminalStateCatalog.clear();
-        clearParkedLookupMissTracking();
+        parkedLookupMisses.clearAll();
         activeFlows.set(0);
         queueDepth.set(0);
         parkedFlowsBaseline = parkedFlows.sum();
@@ -250,7 +249,7 @@ final class CoreFlowRuntime { // NOPMD
     private void schedule(CoreFlowExecutionPlan plan, FlowContext context) {
         ensureStarted();
         FlowKey key = FlowKey.from(context);
-        clearParkedLookupMiss(key);
+        parkedLookupMisses.clearMiss(key);
         if (terminalStateCatalog.isTerminal(key)) {
             return;
         }
@@ -302,7 +301,7 @@ final class CoreFlowRuntime { // NOPMD
     private void park(FlowContext context) {
         ensureStarted();
         FlowKey key = FlowKey.from(context);
-        clearParkedLookupMiss(key);
+        parkedLookupMisses.clearMiss(key);
         RuntimeFlowInstance instance = liveInstances.get(key);
         if (instance == null || instance.state() == FlowState.PARKED || instance.isTerminal()) {
             return;
@@ -313,14 +312,14 @@ final class CoreFlowRuntime { // NOPMD
             }
             instance.state(FlowState.PARKED);
             ensureParkedRegistration(instance);
-            persistSnapshot(instance, FlowState.PARKED, instance.currentStep());
+            FlowParkCheckpoint.persist(instance, instance.currentStep(), parkAttempt);
         }
     }
 
     private void wake(FlowContext context) {
         ensureStarted();
         FlowKey key = FlowKey.from(context);
-        clearParkedLookupMiss(key);
+        parkedLookupMisses.clearMiss(key);
         if (terminalStateCatalog.isTerminal(key)) {
             return;
         }
@@ -400,11 +399,11 @@ final class CoreFlowRuntime { // NOPMD
         CoreFlowExecutionPlan resolvedPlan = resolvePlanForSnapshot(directPlan, resumable);
         if (resolvedPlan == null) {
             if (suppressRepeatedMisses) {
-                recordParkedLookupMiss(key);
+                parkedLookupMisses.recordMiss(key);
             }
             return null;
         }
-        clearParkedLookupMiss(key);
+        parkedLookupMisses.clearMiss(key);
         boolean migrationPersisted = false;
         if (migrated != null) {
             // ADR-064 A3. Not persisting would leave the row naming a version the saga no longer
@@ -434,65 +433,23 @@ final class CoreFlowRuntime { // NOPMD
         if (snapshotStore == null) {
             return null;
         }
-        if (suppressRepeatedMisses && hasParkedLookupMiss(key)) {
+        if (suppressRepeatedMisses && parkedLookupMisses.hasMiss(key)) {
             return null;
         }
         FlowSnapshot snapshot = snapshotStore.load(key.instanceIdMost(), key.instanceIdLeast()).orElse(null);
         if (snapshot == null || !matchesRequiredState(snapshot, requiredState)) {
             if (suppressRepeatedMisses) {
-                recordParkedLookupMiss(key);
+                parkedLookupMisses.recordMiss(key);
             }
             return null;
         }
-        clearParkedLookupMiss(key);
+        parkedLookupMisses.clearMiss(key);
         return snapshot;
     }
 
-    private boolean hasParkedLookupMiss(FlowKey key) {
-        synchronized (parkedLookupMissLock) {
-            return parkedLookupMisses.contains(key);
-        }
-    }
-
-    private void recordParkedLookupMiss(FlowKey key) {
-        synchronized (parkedLookupMissLock) {
-            if (parkedLookupMisses.add(key)) {
-                parkedLookupMissOrder.offerLast(key);
-            }
-            trimParkedLookupMissOrderLocked();
-        }
-    }
-
-    private void clearParkedLookupMiss(FlowKey key) {
-        synchronized (parkedLookupMissLock) {
-            if (parkedLookupMisses.remove(key)) {
-                boolean removed;
-                do {
-                    removed = parkedLookupMissOrder.removeFirstOccurrence(key);
-                } while (removed);
-            }
-        }
-    }
-
-    private void clearParkedLookupMissTracking() {
-        synchronized (parkedLookupMissLock) {
-            parkedLookupMisses.clear();
-            parkedLookupMissOrder.clear();
-        }
-    }
-
-    private void trimParkedLookupMissOrderLocked() {
-        while (parkedLookupMissOrder.size() > MAX_PARKED_LOOKUP_MISSES) {
-            FlowKey oldest = parkedLookupMissOrder.pollFirst();
-            if (oldest == null) {
-                break;
-            }
-            parkedLookupMisses.remove(oldest);
-        }
-    }
 
     private void ensureParkedRegistration(RuntimeFlowInstance instance) {
-        clearParkedLookupMiss(instance.key());
+        parkedLookupMisses.clearMiss(instance.key());
         if (parkedInstances.putIfAbsent(instance.key(), instance) == null) {
             parkedFlows.increment();
         }
@@ -1179,7 +1136,7 @@ final class CoreFlowRuntime { // NOPMD
     private void applyParkOutcome(RuntimeFlowInstance instance, int stepIndex) {
         instance.state(FlowState.PARKED);
         ensureParkedRegistration(instance);
-        persistSnapshot(instance, FlowState.PARKED, stepIndex);
+        FlowParkCheckpoint.persist(instance, stepIndex, parkAttempt);
     }
 
     // step action is a user-supplied SPI callback; any Exception is a step failure (Errors propagate)
@@ -1261,7 +1218,7 @@ final class CoreFlowRuntime { // NOPMD
         if (!staleLifecycle && guard != null) {
             guard.releaseInstance(instance.key().instanceIdMost(), instance.key().instanceIdLeast());
         }
-        clearParkedLookupMiss(instance.key());
+        parkedLookupMisses.clearMiss(instance.key());
         if (!cleanupOnly) {
             failedFlows.increment();
             terminalStateCatalog.recordTerminal(instance.key(), FlowState.FAILED_ROLLEDBACK);
@@ -1282,7 +1239,7 @@ final class CoreFlowRuntime { // NOPMD
         boolean staleLifecycle = isStaleLifecycle(instance);
         boolean cleanupOnly = cleanupOnly(instance);
         instance.state(FlowState.COMPLETED);
-        clearParkedLookupMiss(instance.key());
+        parkedLookupMisses.clearMiss(instance.key());
         if (!cleanupOnly) {
             terminalStateCatalog.recordTerminal(instance.key(), FlowState.COMPLETED);
         }
@@ -1322,6 +1279,16 @@ final class CoreFlowRuntime { // NOPMD
         }
     }
 
+    /** Parked sagas the store refused: wakeable now, gone after a restart. */
+    /* default */ long nonDurableParkedFlows() {
+        return closed ? nonDurableParkedAtClose
+                      : FlowParkCheckpoint.countNonDurable(parkedInstances.values());
+    }
+
+    private void persistParkSnapshot(RuntimeFlowInstance instance, int stepIndex) {
+        persistSnapshot(instance, FlowState.PARKED, stepIndex);
+    }
+
     private void persistSnapshot(RuntimeFlowInstance instance, FlowState state, int stepIndex) {
         if (snapshotStore == null) {
             return;
@@ -1346,7 +1313,7 @@ final class CoreFlowRuntime { // NOPMD
         if (!isActiveLifecycle(instance) && !state.isTerminal()) {
             return;
         }
-        clearParkedLookupMiss(instance.key());
+        parkedLookupMisses.clearMiss(instance.key());
         FlowSnapshotWriter.save(snapshotStore, instance, state, stepIndex);
         // ADR-013 §5: durable stores advance schema_version by one on every accepted write.
         // Mirror that increment locally so the next save carries the now-current expected
@@ -1388,12 +1355,12 @@ final class CoreFlowRuntime { // NOPMD
             }
             RuntimeFlowInstance parked = parkedInstances.get(key);
             if (parked != null) {
-                clearParkedLookupMiss(key);
+                parkedLookupMisses.clearMiss(key);
                 return Optional.of(parked.contextView());
             }
             RuntimeFlowInstance live = liveInstances.get(key);
             if (live != null && live.state() == FlowState.PARKED) {
-                clearParkedLookupMiss(key);
+                parkedLookupMisses.clearMiss(key);
                 return Optional.of(live.contextView());
             }
             // In-memory miss → fall back to durable snapshot store. Distributed-saga JFR

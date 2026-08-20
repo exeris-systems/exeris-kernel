@@ -52,11 +52,18 @@ final class FlowEngineShutdownEvent extends Event {
     @Description("Whether compensation support was enabled for this engine")
     /* default */ boolean compensationEnabled;
 
+    @Label("Non-Durable Parked Flows")
+    @Description("Parked instances whose PARK checkpoint the store refused, so they are wakeable "
+            + "in this JVM but will not survive the restart that is about to happen. The number an "
+            + "operator needs before restarting; a non-zero value means sagas are about to be lost.")
+    /* default */ long nonDurableParkedFlows;
+
     @Label("Shutdown Duration (ns)")
-    @Description("Wall-clock time elapsed inside FlowEngine.close() — drain + interrupt + join")
+    @Description("Wall-clock time elapsed inside FlowEngine.close()")
     /* default */ long shutdownDurationNs;
 
-    /* default */ static void emit(FlowEngineConfig config, FlowEngineStats stats, long shutdownDurationNs) {
+    /* default */ static void emit(FlowEngineConfig config, FlowEngineStats stats,
+                                   long nonDurableParkedFlows, long shutdownDurationNs) {
         FlowEngineShutdownEvent event = new FlowEngineShutdownEvent();
         if (!event.isEnabled()) {
             return;
@@ -65,6 +72,7 @@ final class FlowEngineShutdownEvent extends Event {
         event.engineName = config.engineName();
         event.activeFlows = stats.activeFlows();
         event.parkedFlows = stats.parkedFlows();
+        event.nonDurableParkedFlows = nonDurableParkedFlows;
         event.completedFlows = stats.completedFlows();
         event.failedFlows = stats.failedFlows();
         event.persistenceEnabled = config.persistenceEnabled();

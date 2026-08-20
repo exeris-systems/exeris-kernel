@@ -43,6 +43,7 @@ final class RuntimeFlowInstance implements RuntimeFlowContextStateView { // NOPM
     private volatile FlowState state;
     /** A wake refused because a run still held the instance; guarded by {@code monitor}. */
     private boolean wakePending;
+    private volatile boolean checkpointDirty;
     private volatile int currentStep;
     private volatile long timeoutNanos;
     private int[] compensationStack;
@@ -400,6 +401,26 @@ final class RuntimeFlowInstance implements RuntimeFlowContextStateView { // NOPM
      */
     public void markPersisted() {
         schemaVersion.incrementAndGet();
+        checkpointDirty = false;
+    }
+
+    /**
+     * Records that this instance is running on a state the durable store refused.
+     *
+     * <p>Set when a PARK checkpoint cannot be written. The instance stays parked and stays
+     * wakeable in this JVM - dropping it there would turn a transient store outage into a
+     * lost saga - but it is not recoverable across a restart until a later write lands, so
+     * the flag is what keeps that difference visible instead of implied. Cleared by
+     * {@link #markPersisted()}, i.e. by the next accepted write, whichever transition
+     * carries it.
+     */
+    public void markCheckpointDirty() {
+        checkpointDirty = true;
+    }
+
+    /** Whether the durable store is known to be behind this instance's in-memory state. */
+    public boolean checkpointDirty() {
+        return checkpointDirty;
     }
 
     public RuntimeFlowContext contextView() {

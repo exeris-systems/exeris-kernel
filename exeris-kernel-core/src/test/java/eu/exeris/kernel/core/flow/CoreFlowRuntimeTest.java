@@ -1446,9 +1446,17 @@ class CoreFlowRuntimeTest {
             runtimeField.setAccessible(true);
             Object runtime = runtimeField.get(engine);
 
-            java.lang.reflect.Field orderField = CoreFlowRuntime.class.getDeclaredField("parkedLookupMissOrder");
+            // The miss cache moved to ParkedLookupMissCache in v0.12; the field it guards is
+            // the same deque, one object further down.
+            java.lang.reflect.Field cacheField =
+                    CoreFlowRuntime.class.getDeclaredField("parkedLookupMisses");
+            cacheField.setAccessible(true);
+            Object cache = cacheField.get(runtime);
+
+            java.lang.reflect.Field orderField =
+                    ParkedLookupMissCache.class.getDeclaredField("order");
             orderField.setAccessible(true);
-            java.util.Deque<?> order = (java.util.Deque<?>) orderField.get(runtime);
+            java.util.Deque<?> order = (java.util.Deque<?>) orderField.get(cache);
             return order.size();
         } catch (ReflectiveOperationException e) {
             throw new AssertionError("Unable to inspect parkedLookupMissOrder size", e);
