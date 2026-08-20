@@ -45,12 +45,25 @@ import eu.exeris.kernel.spi.security.StorageContext;
 public interface PersistenceEngine extends AutoCloseable {
 
     /**
-     * Opens a new connection from the shared (default) pool.
+     * Opens a new connection under the ambient {@link StorageContext}.
      *
      * <p>The returned connection MUST be closed via try-with-resources.
      * Closing returns the underlying resource to the pool.
      *
-     * @return pooled connection; caller must close
+     * <p><b>Isolation obligation (since 0.12).</b> An implementation MUST resolve the caller's
+     * ambient storage context — {@code KernelProviders.storageContextOrSystem()} — and configure
+     * the connection for it exactly as {@link #openConnection(StorageContext)} would. With no
+     * context bound that is the system context, whose isolation key is absent, and the result is
+     * the shared default pool as before.
+     *
+     * <p>The obligation is not cosmetic, and returning an untouched pooled connection does not
+     * satisfy it. Session-scoped settings survive checkin, so a connection that skips isolation
+     * setup carries the <em>previous borrower's</em>: an implementation treating this overload as
+     * "no context" hands one tenant a session configured for another. The same rule keeps one
+     * request on one connection — an implementation that keys a per-request session differently
+     * here than in the context overload forces a second acquire per request.
+     *
+     * @return pooled connection, configured for the ambient isolation context; caller must close
      * @throws PersistenceProviderException if a connection cannot be obtained
      */
     PersistenceConnection openConnection();
