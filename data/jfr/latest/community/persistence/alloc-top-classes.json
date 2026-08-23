@@ -1,241 +1,201 @@
 [ {
-  "class" : "jdk.internal.vm.StackChunk",
-  "count" : 19,
-  "bytes" : 303744,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "org.h2.expression.ExpressionVisitor",
-  "count" : 13,
-  "bytes" : 806736,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "[J",
-  "count" : 10,
-  "bytes" : 571480,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "[Ljava.lang.Object;",
-  "count" : 10,
-  "bytes" : 467568,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "java.util.ArrayList",
-  "count" : 8,
-  "bytes" : 449384,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "org.h2.mvstore.db.ValueDataType",
-  "count" : 8,
-  "bytes" : 483152,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "[Lorg.h2.value.TypeInfo;",
-  "count" : 8,
-  "bytes" : 414200,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "org.h2.command.query.Select",
-  "count" : 7,
-  "bytes" : 414576,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "eu.exeris.kernel.core.persistence.ConnectionAcquireEvent",
-  "count" : 7,
-  "bytes" : 417976,
-  "category" : "TEST_HARNESS"
-}, {
-  "class" : "java.util.LinkedHashMap$Entry",
-  "count" : 7,
-  "bytes" : 425080,
-  "category" : "JVM_NOISE"
-}, {
   "class" : "java.util.HashMap",
-  "count" : 6,
-  "bytes" : 1027024,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "[B",
-  "count" : 5,
-  "bytes" : 269616,
+  "count" : 12,
+  "bytes" : 1065992,
   "category" : "JVM_NOISE"
 }, {
   "class" : "java.util.ArrayList$Itr",
-  "count" : 4,
-  "bytes" : 267504,
+  "count" : 12,
+  "bytes" : 816656,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "org.h2.command.CommandContainer",
-  "count" : 4,
-  "bytes" : 215144,
+  "class" : "[Ljava.lang.Object;",
+  "count" : 11,
+  "bytes" : 813528,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "org.h2.table.Plan$$Lambda.0x0000000095335198",
-  "count" : 4,
-  "bytes" : 267536,
+  "class" : "org.h2.index.DualIndex",
+  "count" : 8,
+  "bytes" : 286920,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "org.h2.expression.ValueExpression",
-  "count" : 4,
-  "bytes" : 267472,
+  "class" : "[J",
+  "count" : 8,
+  "bytes" : 548544,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "org.h2.result.DefaultRow",
-  "count" : 4,
-  "bytes" : 267488,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "org.h2.command.Parser",
-  "count" : 4,
-  "bytes" : 268416,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "java.util.HashSet",
-  "count" : 4,
-  "bytes" : 267728,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "[Lcom.zaxxer.hikari.util.ConcurrentBag$IConcurrentBagEntry;",
-  "count" : 4,
-  "bytes" : 48352,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "java.lang.ThreadLocal$ThreadLocalMap$Entry",
-  "count" : 3,
-  "bytes" : 317168,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "[I",
-  "count" : 3,
-  "bytes" : 157624,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "[Ljava.lang.ThreadLocal$ThreadLocalMap$Entry;",
-  "count" : 3,
-  "bytes" : 50040,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "java.lang.String",
-  "count" : 2,
-  "bytes" : 826696,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "org.h2.index.IndexCursor",
-  "count" : 2,
-  "bytes" : 133848,
+  "class" : "org.h2.command.query.Select",
+  "count" : 6,
+  "bytes" : 785552,
   "category" : "JVM_NOISE"
 }, {
   "class" : "org.h2.command.query.Optimizer",
+  "count" : 4,
+  "bytes" : 280112,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "org.h2.index.IndexCursor",
+  "count" : 4,
+  "bytes" : 862720,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "[Ljava.util.HashMap$Node;",
+  "count" : 4,
+  "bytes" : 280024,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "[B",
+  "count" : 3,
+  "bytes" : 263664,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "java.lang.Object",
+  "count" : 3,
+  "bytes" : 265008,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "org.h2.result.LocalResult",
+  "count" : 3,
+  "bytes" : 270848,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "org.h2.expression.ExpressionVisitor",
+  "count" : 3,
+  "bytes" : 270872,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "org.h2.table.DualTable",
+  "count" : 3,
+  "bytes" : 270856,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "java.time.Instant",
+  "count" : 3,
+  "bytes" : 10040,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "org.h2.table.TableFilter",
   "count" : 2,
-  "bytes" : 133808,
+  "bytes" : 261688,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "org.h2.jdbc.JdbcResultSetMetaData",
+  "count" : 2,
+  "bytes" : 261608,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "org.h2.mvstore.db.RowDataType",
+  "count" : 2,
+  "bytes" : 261592,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "org.h2.jdbc.JdbcStatement",
+  "count" : 2,
+  "bytes" : 261576,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "java.util.HashMap$KeyIterator",
+  "count" : 2,
+  "bytes" : 261608,
   "category" : "JVM_NOISE"
 }, {
   "class" : "org.h2.result.ResultWithGeneratedKeys",
   "count" : 2,
-  "bytes" : 133768,
+  "bytes" : 261584,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "java.util.HashMap$Values",
+  "class" : "[Lorg.h2.table.Column;",
   "count" : 2,
-  "bytes" : 81496,
+  "bytes" : 261576,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "[Lorg.h2.table.TableFilter;",
+  "class" : "java.util.HashMap$Node",
   "count" : 2,
-  "bytes" : 133768,
+  "bytes" : 6576,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "org.h2.table.DualTable",
+  "class" : "org.h2.command.Tokenizer",
   "count" : 2,
-  "bytes" : 133872,
+  "bytes" : 6496,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "org.h2.result.RowFactory$DefaultRowFactory",
+  "class" : "java.lang.ThreadLocal$ThreadLocalMap$Entry",
   "count" : 2,
-  "bytes" : 133792,
+  "bytes" : 6576,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "org.h2.table.PlanItem",
+  "class" : "org.h2.mvstore.tx.Transaction",
   "count" : 2,
-  "bytes" : 133752,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "java.util.BitSet",
-  "count" : 2,
-  "bytes" : 133760,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "java.util.LinkedHashMap",
-  "count" : 1,
-  "bytes" : 133680,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "org.h2.index.DualIndex",
-  "count" : 1,
-  "bytes" : 563344,
+  "bytes" : 12560,
   "category" : "JVM_NOISE"
 }, {
   "class" : "eu.exeris.kernel.community.persistence.jdbc.JdbcQueryResult$StatementOwner",
   "count" : 1,
-  "bytes" : 8600,
+  "bytes" : 300016,
   "category" : "TEST_HARNESS"
 }, {
-  "class" : "java.util.concurrent.CopyOnWriteArrayList$COWIterator",
+  "class" : "eu.exeris.kernel.core.persistence.ConnectionAcquireEvent",
   "count" : 1,
-  "bytes" : 8520,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "org.h2.mvstore.tx.Transaction",
-  "count" : 1,
-  "bytes" : 23776,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "[Lorg.h2.table.IndexColumn;",
-  "count" : 1,
-  "bytes" : 23800,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "[Ljava.util.HashMap$Node;",
-  "count" : 1,
-  "bytes" : 23720,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "org.h2.mvstore.db.RowDataType",
-  "count" : 1,
-  "bytes" : 23752,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "java.util.concurrent.FutureTask",
-  "count" : 1,
-  "bytes" : 27792,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "org.h2.table.TableFilter",
-  "count" : 1,
-  "bytes" : 35752,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "eu.exeris.kernel.community.persistence.jdbc.JdbcQueryResult",
-  "count" : 1,
-  "bytes" : 673176,
+  "bytes" : 3336,
   "category" : "TEST_HARNESS"
 }, {
-  "class" : "java.util.HashMap$Node",
+  "class" : "java.util.ArrayList",
   "count" : 1,
-  "bytes" : 2064,
+  "bytes" : 3240,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "org.h2.index.DualCursor",
+  "class" : "org.h2.mvstore.db.ValueDataType",
   "count" : 1,
-  "bytes" : 2168,
+  "bytes" : 3336,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "org.h2.result.DefaultRow",
+  "count" : 1,
+  "bytes" : 3272,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "java.util.HashSet",
+  "count" : 1,
+  "bytes" : 9248,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "[Lcom.zaxxer.hikari.util.ConcurrentBag$IConcurrentBagEntry;",
+  "count" : 1,
+  "bytes" : 9264,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "java.util.BitSet",
+  "count" : 1,
+  "bytes" : 9344,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "[Lorg.h2.value.TypeInfo;",
+  "count" : 1,
+  "bytes" : 9248,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "org.h2.mvstore.tx.VersionedBitSet",
+  "count" : 1,
+  "bytes" : 9256,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "com.zaxxer.hikari.pool.HikariProxyStatement",
+  "count" : 1,
+  "bytes" : 9256,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "[I",
+  "count" : 1,
+  "bytes" : 9312,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "org.h2.command.query.Select$LazyResultQueryFlat",
+  "count" : 1,
+  "bytes" : 9280,
   "category" : "JVM_NOISE"
 }, {
   "class" : "java.lang.VirtualThread",
   "count" : 1,
-  "bytes" : 261328,
-  "category" : "LOOM_RUNTIME"
-}, {
-  "class" : "java.lang.VirtualThread$VThreadContinuation",
-  "count" : 1,
-  "bytes" : 261512,
+  "bytes" : 783368,
   "category" : "LOOM_RUNTIME"
 } ]
