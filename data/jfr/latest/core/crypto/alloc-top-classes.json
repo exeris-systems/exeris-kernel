@@ -1,31 +1,36 @@
 [ {
-  "class" : "java.util.LinkedHashMap",
+  "class" : "[Ljava.util.HashMap$Node;",
   "count" : 3,
-  "bytes" : 523128,
+  "bytes" : 659296,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "[Ljava.util.HashMap$Node;",
-  "count" : 2,
-  "bytes" : 523096,
+  "class" : "[B",
+  "count" : 3,
+  "bytes" : 568424,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "java.util.LinkedHashMap",
+  "count" : 1,
+  "bytes" : 261520,
   "category" : "JVM_NOISE"
 }, {
   "class" : "java.util.ArrayList$Itr",
-  "count" : 2,
-  "bytes" : 261600,
+  "count" : 1,
+  "bytes" : 261552,
   "category" : "JVM_NOISE"
-}, {
-  "class" : "java.lang.String",
-  "count" : 2,
-  "bytes" : 409008,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "java.lang.VirtualThread$VThreadContinuation",
-  "count" : 2,
-  "bytes" : 523088,
-  "category" : "LOOM_RUNTIME"
 }, {
   "class" : "java.util.HashMap",
   "count" : 1,
-  "bytes" : 261568,
+  "bytes" : 261544,
   "category" : "JVM_NOISE"
+}, {
+  "class" : "java.lang.VirtualThread$VThreadContinuation",
+  "count" : 1,
+  "bytes" : 261504,
+  "category" : "LOOM_RUNTIME"
+}, {
+  "class" : "java.lang.VirtualThread",
+  "count" : 1,
+  "bytes" : 261368,
+  "category" : "LOOM_RUNTIME"
 } ]
