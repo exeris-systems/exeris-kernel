@@ -391,9 +391,45 @@ are the responsibility of the application layer or a dedicated migration tool.
 > Kernel-owned tables and is explicitly disabled by default. The migration list is maintained in
 > `CommunityPersistenceEngine.MIGRATION_RESOURCES`; new internal tables follow the
 > `db/migration/V{version}__{name}.sql` naming convention. The runner is intentionally minimal
-> (string split on `;`, idempotent `CREATE TABLE IF NOT EXISTS`); it is not a Flyway substitute.
-> Application schemas continue to be the operator's responsibility (see the recommendation table
-> below).
+> (string split on `;`); it is not a Flyway substitute. Application schemas continue to be the
+> operator's responsibility (see the recommendation table below).
+
+### Apply-once is the runner's property, not the SQL's (since 0.12, ADR-073)
+
+Until v0.12 the runner executed **every** script on **every** boot and recorded nothing. Re-running
+was harmless only because every author had written `CREATE TABLE IF NOT EXISTS` — counted, not
+assumed: 14 DDL statements across six scripts, all 14 guarded. The first migration that cannot be
+written that way breaks it, and the shapes are ordinary: a data backfill re-applies **silently**
+(healthy boot, wrong data), a constraint tightening fails the second boot outright.
+
+`exeris_schema_history` now records one row per applied migration — version, script, checksum,
+timestamp. Three rules follow:
+
+| Rule | Behaviour |
+|---|---|
+| **Apply-once** | A version already in the ledger is skipped, not re-run. |
+| **Fail closed on drift** | A version in the ledger whose file now hashes differently **refuses the boot**. The database no longer matches the code, and warning-and-continuing is what makes a drifted database look healthy. Remedy: restore the file, or delete the row if the change is known to be applied already. |
+| **One transaction per migration** | The ledger row is committed with the migration's own statements, so the ledger cannot claim something the database lacks. A failure at migration 4 keeps 1–3 applied *and recorded*, and the next boot resumes at 4. |
+
+A refused boot also emits `eu.exeris.kernel.persistence.SchemaMigrationRefused` — version, script, and
+**both** checksums — so an operator can see which migration and which direction without reading the
+exception. Comparing the recorded checksum against another deployment tells a local edit from a bad
+artefact.
+
+The checksum folds `\r\n` to `\n` and normalises nothing else — without that, a checkout on Windows
+refuses every boot with nothing wrong; with more, an edit could slip past.
+
+The ledger table is created with `IF NOT EXISTS` and is deliberately not recorded in itself: it is
+the one piece of schema whose creation must stay idempotent.
+
+**Existing databases baseline themselves on first boot.** With no ledger the runner sees every
+version as unapplied and runs the set; the guards make it a no-op and the ledger is then correct.
+That works *because* the current scripts are idempotent — the property being retired — so it is a
+one-time debt, not a mechanism.
+
+**Not covered:** concurrent boot of multiple nodes (two kernels can both see an empty ledger; no lock
+is taken, unchanged from before and tracked with the cross-node coordination seam), repair/baseline
+tooling, out-of-order versions, and down-migrations.
 
 | Concern                             | Recommendation                                                                                           |
 |:------------------------------------|:---------------------------------------------------------------------------------------------------------|
