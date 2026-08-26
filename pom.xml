@@ -208,10 +208,19 @@
                     <schemaVersion>1.6</schemaVersion>
                     <outputFormat>json</outputFormat>
                     <includeBomSerialNumber>false</includeBomSerialNumber>
+                    <!--
+                        The scope set is written out even where it matches today's plugin
+                        defaults. For an audit artifact, WHICH scopes an SBOM covers is a
+                        decision someone should be able to read, and leaving it implicit would
+                        let a future plugin default silently redefine what the published SBOM
+                        claims. includeSystemScope is deliberately NOT among them: system scope
+                        is a legacy Maven feature, `<scope>system</scope>` appears nowhere in
+                        this reactor, and naming it would be stating a default about something
+                        that does not exist.
+                    -->
                     <includeCompileScope>true</includeCompileScope>
                     <includeProvidedScope>true</includeProvidedScope>
                     <includeRuntimeScope>true</includeRuntimeScope>
-                    <includeSystemScope>true</includeSystemScope>
                     <includeTestScope>false</includeTestScope>
                 </configuration>
             </plugin>

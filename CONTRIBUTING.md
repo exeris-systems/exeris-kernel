@@ -194,6 +194,13 @@ Two things break this, both easy to do by accident:
 `project.build.outputTimestamp` (root `pom.xml`) is bumped at each release cut. A stale value is
 not a defect: what makes the output reproducible is that the value is fixed, not that it is recent.
 
+> **Adding a script under `tools/`:** set its mode through git, not only through the filesystem —
+> `git update-index --chmod=+x <path>`. This repository is commonly cloned with
+> `core.fileMode=false`, which makes `chmod +x` invisible to git: the script runs perfectly for you
+> and lands in the commit as `100644`, so CI is the first thing to discover it with
+> `Permission denied` and exit 126. Check with `git ls-files -s tools/**/*.sh` — every gate there
+> should read `100755`.
+
 ---
 
 ## Local Environment
