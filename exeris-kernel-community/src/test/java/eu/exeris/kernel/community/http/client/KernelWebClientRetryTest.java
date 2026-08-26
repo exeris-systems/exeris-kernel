@@ -63,6 +63,40 @@ class KernelWebClientRetryTest {
     }
 
     @Test
+    @DisplayName("one engine serves two peers — withAuthority derives, it does not mutate")
+    void oneEngineServesManyPeers() {
+        ProgrammedEngine engine = new ProgrammedEngine(List.of(
+                okJson("{\"ok\":\"a\"}"), okJson("{\"ok\":\"b\"}"), okJson("{\"ok\":\"c\"}")));
+        engine.defaultAuthority = "default.internal:80";
+
+        KernelWebClient base = client(engine, HttpClientRequestEnricher.noop());
+        KernelWebClient payments = base.withAuthority("payments.internal:8443");
+
+        // This is the whole point of putting the authority on the request rather than on the engine,
+        // and until this method existed it was unreachable from the typed surface: every call went
+        // to whatever single peer the engine was configured with.
+        payments.get("/charge", Map.class);
+        base.get("/health", Map.class);
+        payments.get("/refund", Map.class);
+
+        assertThat(engine.received).extracting(HttpRequest::authority)
+                .as("the derived client addresses its peer and leaves the original addressing the default")
+                .containsExactly("payments.internal:8443", "default.internal:80", "payments.internal:8443");
+    }
+
+    @Test
+    @DisplayName("withAuthority returns the same instance when the peer is already the bound one")
+    void withAuthorityIsIdentityWhenUnchanged() {
+        ProgrammedEngine engine = new ProgrammedEngine(List.of());
+        KernelWebClient base = client(engine, HttpClientRequestEnricher.noop());
+
+        assertThat(base.withAuthority(null)).isSameAs(base);
+        KernelWebClient bound = base.withAuthority("a.internal:1");
+        assertThat(bound.withAuthority("a.internal:1")).isSameAs(bound);
+        assertThat(bound).isNotSameAs(base);
+    }
+
+    @Test
     @DisplayName("the enricher observes the resolved authority, not null (ADR-074 decision 5)")
     void enricherObservesTheResolvedAuthority() {
         ProgrammedEngine engine = new ProgrammedEngine(List.of(okJson("{\"ok\":\"yes\"}")));

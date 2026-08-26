@@ -109,6 +109,7 @@ public final class KernelWebClient {
     private final HttpResponseBodyDecoderRegistry responseDecoders;
     private final HttpClientRequestEnricher enricher;
     private final HttpRetryPolicy retryPolicy;
+    private final String authority;
 
     /**
      * Creates a client with explicit enricher composition (ADR-032) and retry
@@ -130,12 +131,24 @@ public final class KernelWebClient {
             HttpResponseBodyDecoderRegistry responseDecoders,
             HttpClientRequestEnricher enricher,
             HttpRetryPolicy retryPolicy) {
+        this(engine, allocator, requestEncoders, responseDecoders, enricher, retryPolicy, null);
+    }
+
+    private KernelWebClient(
+            HttpClientEngine engine,
+            MemoryAllocator allocator,
+            HttpRequestBodyEncoderRegistry requestEncoders,
+            HttpResponseBodyDecoderRegistry responseDecoders,
+            HttpClientRequestEnricher enricher,
+            HttpRetryPolicy retryPolicy,
+            String authority) {
         this.engine = Objects.requireNonNull(engine, "engine must not be null");
         this.allocator = Objects.requireNonNull(allocator, "allocator must not be null");
         this.requestEncoders = Objects.requireNonNull(requestEncoders, "requestEncoders must not be null");
         this.responseDecoders = Objects.requireNonNull(responseDecoders, "responseDecoders must not be null");
         this.enricher = Objects.requireNonNull(enricher, "enricher must not be null");
         this.retryPolicy = Objects.requireNonNull(retryPolicy, "retryPolicy must not be null");
+        this.authority = authority;
     }
 
     /**
@@ -181,11 +194,40 @@ public final class KernelWebClient {
     }
 
     /**
+     * Returns a client that addresses {@code authority}, sharing this one's engine, allocator,
+     * codecs, enricher and retry policy.
+     *
+     * <p>ADR-074 put the peer on the request so that one engine can serve many of them; this is the
+     * method that makes that reachable from the typed surface, which until now could only ever send
+     * to the engine's configured default. A view rather than four addressed overloads: the peer is
+     * usually fixed for a run of calls, and {@code client.withAuthority(payments).get(...)} keeps
+     * the verb methods to one shape each. The name mirrors {@link HttpRequest#withAuthority(String)}
+     * deliberately — same meaning, same derived-copy shape, one vocabulary rather than two.
+     *
+     * <p>No validation here on purpose. The authority's shape is checked in exactly two places —
+     * {@code HttpConfig} at construction for the configured default, and the engine at send for a
+     * request — and a third copy of that rule inside a façade would be the fourth hand-synced
+     * version of it. The engine's refusal already names the mistake.
+     *
+     * @param authority peer as {@code host:port} (IPv6 bracketed), or {@code null} to fall back to
+     *                  the engine's configured default
+     * @return a client bound to that peer, or {@code this} when it is already the bound one
+     * @since 0.12.0
+     */
+    public KernelWebClient withAuthority(String authority) {
+        if (Objects.equals(this.authority, authority)) {
+            return this;
+        }
+        return new KernelWebClient(engine, allocator, requestEncoders, responseDecoders,
+                enricher, retryPolicy, authority);
+    }
+
+    /**
      * Issues an HTTP {@code GET} against {@code path} and deserialises the
      * response body as {@code responseType}.
      *
      * @param <T>          response payload type
-     * @param path         request-target path (relative to the engine's target host)
+     * @param path         request-target path, relative to the addressed peer (see {@link #withAuthority(String)})
      * @param responseType target type, or {@code Void.class} to discard
      * @return the deserialised payload, or {@code null} when {@code responseType == Void.class}
      * @throws WebClientException on any non-2xx response
@@ -246,7 +288,7 @@ public final class KernelWebClient {
             // its default inside send(), which is strictly after enrichment — so an enricher binding
             // an outbound credential's audience to the peer (ADR-040) would observe null every time.
             // Resolving it here is what makes that decision true of the only path that exists.
-            HttpRequest addressed = buildRequest(method, path, requestBody);
+            HttpRequest addressed = buildRequest(method, path, requestBody).withAuthority(authority);
             if (addressed.authority() == null) {
                 addressed = addressed.withAuthority(engine.defaultAuthority());
             }
