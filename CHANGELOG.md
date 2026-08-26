@@ -10,6 +10,17 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Added
 
+- **`KernelWebClient.withAuthority(String)`** — the typed surface can now name its peer, which is
+  what makes ADR-074's "one engine serves many peers" reachable rather than merely decided. Until
+  this, every call built through the façade resolved to the engine's configured default, so the
+  argument that decided the carrier shape held only at the `HttpClientEngine` level. A derived view
+  rather than four addressed overloads: the peer is usually fixed for a run of calls, and the name
+  mirrors `HttpRequest.withAuthority` so there is one vocabulary rather than two. It deliberately
+  does **not** validate — the shape is checked at `HttpConfig` construction and at send, and a third
+  copy of that rule inside a façade would be the fourth hand-synced version of it.
+
+### Added
+
 - **A request can name the peer it is sent to** (ADR-074). `HttpRequest` gains a nullable
   `authority`, `HttpConfig` gains `defaultAuthority`, and both keep their previous canonical
   constructor as a bridge — the SPI gate reports `stable-breaks=0` against `v0.11.0`, measured.
