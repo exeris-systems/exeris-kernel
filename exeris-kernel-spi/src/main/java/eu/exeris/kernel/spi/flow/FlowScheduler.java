@@ -80,28 +80,6 @@ public interface FlowScheduler {
     void wake(FlowContext context);
 
     /**
-     * Looks up a currently parked flow instance by its UUID components.
-     *
-     * <p>The in-memory parked registry is the required O(1) fast path
-     * for live-runtime wake. When persistence is enabled, implementations
-     * may consult {@link eu.exeris.kernel.spi.flow.model.FlowSnapshotStore}
-     * only on an in-memory miss, and that fallback path should be bounded
-     * so repeated misses do not degenerate into unbounded repeated store probes.
-     * The default implementation always returns {@link java.util.Optional#empty()}.
-     *
-     * @param instanceIdMost  most-significant bits of the flow instance UUID
-     * @param instanceIdLeast least-significant bits of the flow instance UUID
-     * @return an {@link Optional} containing the {@link FlowContext} if a parked instance
-     *         with the given UUID is currently known to this scheduler; empty otherwise
-     * @throws eu.exeris.kernel.spi.exceptions.flow.FlowEngineException with
-     *         {@code phase=SCHEMA_MISMATCH} ({@code EX-FLOW-7002}) if a snapshot is found on the
-     *         fallback path but its persisted resume step no longer indexes a step in the active
-     *         flow definition (the definition changed under a parked saga). This is fail-closed by
-     *         design — resuming against an incompatible plan is a data-corruption-class outcome — so
-     *         a snapshot-fallback hit can surface this rather than {@link java.util.Optional#empty()};
-     *         the in-memory fast path never throws it.
-     */
-    /**
      * Wakes the instance identified by these ids, whatever the engine currently holds for it.
      *
      * <p>The key-addressed sibling of {@link #wake(FlowContext)}, added because the two-call form
@@ -127,6 +105,28 @@ public interface FlowScheduler {
         lookupParked(instanceIdMost, instanceIdLeast).ifPresent(this::wake);
     }
 
+    /**
+     * Looks up a currently parked flow instance by its UUID components.
+     *
+     * <p>The in-memory parked registry is the required O(1) fast path
+     * for live-runtime wake. When persistence is enabled, implementations
+     * may consult {@link eu.exeris.kernel.spi.flow.model.FlowSnapshotStore}
+     * only on an in-memory miss, and that fallback path should be bounded
+     * so repeated misses do not degenerate into unbounded repeated store probes.
+     * The default implementation always returns {@link java.util.Optional#empty()}.
+     *
+     * @param instanceIdMost  most-significant bits of the flow instance UUID
+     * @param instanceIdLeast least-significant bits of the flow instance UUID
+     * @return an {@link Optional} containing the {@link FlowContext} if a parked instance
+     *         with the given UUID is currently known to this scheduler; empty otherwise
+     * @throws eu.exeris.kernel.spi.exceptions.flow.FlowEngineException with
+     *         {@code phase=SCHEMA_MISMATCH} ({@code EX-FLOW-7002}) if a snapshot is found on the
+     *         fallback path but its persisted resume step no longer indexes a step in the active
+     *         flow definition (the definition changed under a parked saga). This is fail-closed by
+     *         design — resuming against an incompatible plan is a data-corruption-class outcome — so
+     *         a snapshot-fallback hit can surface this rather than {@link java.util.Optional#empty()};
+     *         the in-memory fast path never throws it.
+     */
     default Optional<FlowContext> lookupParked(long instanceIdMost, long instanceIdLeast) {
         return Optional.empty();
     }
