@@ -13,6 +13,7 @@ import com.zaxxer.hikari.HikariDataSource;
 import com.zaxxer.hikari.HikariPoolMXBean;
 import eu.exeris.kernel.community.persistence.jdbc.JdbcPersistenceConnection;
 import eu.exeris.kernel.core.persistence.ConnectionAcquireEvent;
+import eu.exeris.kernel.core.persistence.ConnectionHoldEvent;
 import eu.exeris.kernel.core.persistence.PersistenceErrorTranslator;
 import eu.exeris.kernel.spi.exceptions.persistence.PersistenceProviderException;
 import eu.exeris.kernel.spi.persistence.EngineStats;
@@ -132,11 +133,25 @@ final class CommunityHikariSupport {
         Objects.requireNonNull(onClose, "onClose must not be null");
         long startNs = System.nanoTime();
         boolean success = false;
+        // Both discriminators are sampled HERE, at acquire, not at release. A request session is a
+        // ScopedValue and the release can happen on a different thread than the acquire, so reading
+        // either at release would answer a question about the returning thread rather than about the
+        // hold. See ConnectionHoldEvent on why withinRequestScope is not an ownership claim.
+        boolean withinRequestScope = PersistenceSessionBox.currentOrNull() != null;
+        boolean onVirtualThread = Thread.currentThread().isVirtual();
         // The checkout below can park (and unmount) a virtual thread. The JFR event is
         // committed single-phase after it returns — never held across the unmount — to
         // avoid a carrier-bound EventWriter flushing a stale buffer. See ConnectionAcquireEvent.
         try (ConnectionLease lease = ConnectionLease.open(pool)) {
-            JdbcPersistenceConnection connection = lease.transferToJdbc(onClose);
+            long acquiredAtNs = System.nanoTime();
+            // Wrapping onClose rather than widening the signature: JdbcPersistenceConnection.close()
+            // runs it in a finally, so every close path is covered — including the rollback-and-close
+            // one — and the two call sites in CommunityPersistenceEngine stay untouched.
+            JdbcPersistenceConnection connection = lease.transferToJdbc(() -> {
+                ConnectionHoldEvent.commitHold(
+                        providerId, tenantKey, withinRequestScope, onVirtualThread, acquiredAtNs);
+                onClose.run();
+            });
             success = true;
             return connection;
         } finally {

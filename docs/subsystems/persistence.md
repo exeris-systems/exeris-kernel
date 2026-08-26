@@ -131,6 +131,34 @@ One HTTP request is one connection. `CommunityHttpRequestDispatcher` binds a
 connection, every later call reuses it, and `box.release()` in the handler's
 `finally` returns it to the pool.
 
+### Measuring how long a connection is actually held (since 0.12)
+
+Two JFR events cover the pool, and it is worth knowing which question each answers.
+`eu.exeris.kernel.persistence.ConnectionAcquire` carries `acquireLatencyNs` — the time spent
+*getting* a connection. `eu.exeris.kernel.persistence.ConnectionHold` is emitted when the connection
+goes back to the pool and carries `holdDurationNs` — the time it was *kept*.
+
+The second exists because the first has no counterpart on the release side, and the only hold
+measurement the kernel had came from `RequestSessionLifecycleEvent`, which is emitted from
+`PersistenceSessionBox` and nowhere else. A caller with no request session — a flow step on a bare
+virtual thread, a scheduled job, the migration runner — produced an acquire event and then nothing.
+That made pool residency for background work unmeasurable, and it made the *absence* of session
+events on those threads look like a finding when it is a property of where the instrument sits.
+`ConnectionHold` is emitted at the pool return itself, so every acquire has a matching hold whoever
+asked.
+
+Two fields make the residency apportionable, and both are sampled **at acquire**, not at release —
+the returning thread is not necessarily the acquiring one:
+
+| Field | Meaning |
+|---|---|
+| `withinRequestScope` | A request session was in scope on the acquiring thread. **Not an ownership claim** — a deliberate `openPhysical()` inside a request reads `true`, which is right for apportioning residency and wrong as a statement about who owns the connection. |
+| `acquiredOnVirtualThread` | The acquiring thread was virtual. Background work in this kernel runs virtual, so `withinRequestScope=false` with `acquiredOnVirtualThread=true` is the flow-step signature. |
+
+Both events are single-phase and hand their `commit()` to a platform thread through `JfrCommitGate`:
+a hold spans arbitrary caller work, so the release nearly always follows a park/remount, which is
+exactly the condition that makes a carrier-bound `EventWriter` flush a stale buffer.
+
 The box keys that session by a **scope key** taken from the request's
 `StorageContext`: `isolationKey`, `schemaName`, or `:dedicated:<ds>` per
 strategy, and `shared` when none is declared. A call whose scope key does not
