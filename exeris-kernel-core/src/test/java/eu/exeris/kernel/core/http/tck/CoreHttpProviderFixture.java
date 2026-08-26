@@ -129,9 +129,13 @@ public final class CoreHttpProviderFixture implements HttpProvider {
             if (authority == null || authority.isBlank()) {
                 throw new IllegalStateException("Request carries no authority and no default is configured");
             }
-            int separator = authority.lastIndexOf(':');
+            int close = authority.startsWith("[") ? authority.indexOf(']') : -1;
+            int separator = close >= 0 ? authority.indexOf(':', close) : authority.lastIndexOf(':');
             if (separator <= 0 || separator == authority.length() - 1) {
                 throw new IllegalStateException("Authority must carry an explicit port (host:port), got: " + authority);
+            }
+            if (close < 0 && authority.lastIndexOf(':', separator - 1) >= 0) {
+                throw new IllegalStateException("IPv6 authority must be bracketed as [address]:port, got: " + authority);
             }
             return HttpResponse.noBody(HttpStatus.OK, HttpVersion.HTTP_1_1);
         }

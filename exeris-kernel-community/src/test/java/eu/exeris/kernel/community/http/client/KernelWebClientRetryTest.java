@@ -33,6 +33,7 @@ import java.lang.foreign.MemorySegment;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.Deque;
 import java.util.List;
 import java.util.Map;
@@ -59,6 +60,30 @@ class KernelWebClientRetryTest {
 
     private KernelWebClient client(HttpClientEngine engine, HttpClientRequestEnricher enricher) {
         return new KernelWebClient(engine, ALLOCATOR, REQUEST_ENCODERS, RESPONSE_DECODERS, enricher, FAST_POLICY);
+    }
+
+    @Test
+    @DisplayName("the enricher observes the resolved authority, not null (ADR-074 decision 5)")
+    void enricherObservesTheResolvedAuthority() {
+        ProgrammedEngine engine = new ProgrammedEngine(List.of(okJson("{\"ok\":\"yes\"}")));
+        engine.defaultAuthority = "payments.internal:8443";
+        AtomicReference<String> seenByEnricher = new AtomicReference<>();
+
+        // ADR-074 decided the ordering as authority-THEN-enrich-THEN-send, and the reason is not
+        // tidiness: an enricher binding an outbound credential's audience to its peer (ADR-040) has
+        // only the request to read. If the engine substituted its default inside send(), enrichment
+        // would already have run and this would be null on every request — which was the case until
+        // KernelWebClient started resolving it first.
+        HttpClientRequestEnricher recording = request -> {
+            seenByEnricher.set(request.authority());
+            return request;
+        };
+
+        client(engine, recording).get("/widget/1", Map.class);
+
+        assertThat(seenByEnricher.get())
+                .as("the enricher must see the peer the request is actually sent to")
+                .isEqualTo("payments.internal:8443");
     }
 
     @Test
@@ -163,6 +188,13 @@ class KernelWebClientRetryTest {
 
         ProgrammedEngine(List<Supplier<HttpResponse>> responses) {
             this.script = new ArrayDeque<>(responses);
+        }
+
+        private String defaultAuthority;
+
+        @Override
+        public String defaultAuthority() {
+            return defaultAuthority;
         }
 
         @Override

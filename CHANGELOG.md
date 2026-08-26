@@ -27,6 +27,12 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   `TransportConnection.remoteAddress()`, whose SPI contract documents it as an *address*
   (`e.g. 192.168.1.1`) — building the header that selects a name-based virtual host out of an
   address breaks vhosting by construction.
+- **The S3 blob-storage driver and the OIDC JWKS fetch both reached their endpoint by the same
+  coincidence**, and both now state it. Each built a CLIENT engine with `bindHost` set to the
+  address it wanted to dial. `CommunityS3Client`'s own javadoc gave that as the load-bearing reason
+  it owns a private engine — "an engine is bound to a single host, so a shared application client
+  cannot address the storage endpoint at all" — which ADR-074 retires; the remaining reason,
+  head-of-line isolation for large object transfers, stands on its own and is now the one stated.
 
 ### Decided
 

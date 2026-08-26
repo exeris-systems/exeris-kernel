@@ -61,6 +61,22 @@ final class HttpConfigValidation {
                     "http.client.defaultAuthority is an authority (host or host:port), not a URL: "
                             + defaultAuthority);
         }
+        // The port is checked HERE and not only when a request is sent. This validator exists to
+        // catch operator mistakes at construction, where the message can name the key; deferring a
+        // missing port to the first request would report it as a per-request failure instead, which
+        // is the same defect ADR-071 fixed for the header limits.
+        int close = defaultAuthority.startsWith("[") ? defaultAuthority.indexOf(']') : -1;
+        int separator = close >= 0 ? defaultAuthority.indexOf(':', close) : defaultAuthority.lastIndexOf(':');
+        if (separator <= 0 || separator == defaultAuthority.length() - 1) {
+            throw new IllegalArgumentException(
+                    "http.client.defaultAuthority must carry an explicit port (host:port): "
+                            + defaultAuthority);
+        }
+        if (close < 0 && defaultAuthority.lastIndexOf(':', separator - 1) >= 0) {
+            throw new IllegalArgumentException(
+                    "http.client.defaultAuthority with an IPv6 address must be bracketed as "
+                            + "[address]:port — unbracketed is ambiguous: " + defaultAuthority);
+        }
     }
 
     /* default */ static void validatePort(HttpMode mode, int port, String bindHost) {

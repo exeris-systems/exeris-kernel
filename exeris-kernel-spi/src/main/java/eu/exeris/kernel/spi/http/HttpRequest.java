@@ -33,7 +33,7 @@ import java.util.Optional;
  * from the virtual thread that owns the corresponding {@link HttpExchange}.
  *
  * <h2>Naming the Peer (ADR-074)</h2>
- * <p>{@link #authority()} is the RFC 3986 authority — {@code host} or {@code host:port} — that an
+ * <p>{@link #authority()} is the RFC 3986 authority of the peer an
  * <em>outbound</em> request is addressed to. It exists because the client engine had nowhere to read
  * a peer from and therefore took one from {@code HttpConfig.bindHost}, the <em>listener</em> address:
  * through the supported path the client dialled the address its own server listened on, and an
@@ -50,8 +50,11 @@ import java.util.Optional;
  * through {@link #firstHeader(String)} as before.
  *
  * @param method    HTTP method; non-null
- * @param authority outbound addressee as {@code host} or {@code host:port}, or {@code null} for the
- *                  client engine's configured default peer; always {@code null} on inbound requests
+ * @param authority outbound addressee as {@code host:port}, or {@code null} for the client engine's
+ *                  configured default peer; always {@code null} on inbound requests. The port is
+ *                  REQUIRED — {@code HttpRequest} carries no scheme, so there is no basis for
+ *                  choosing 80 over 443, and an IPv6 address must be bracketed
+ *                  ({@code [::1]:8080}) because the unbracketed form is ambiguous
  * @param path      request-target path component, e.g. {@code "/api/v1/users?page=1"}; non-null
  * @param version   protocol version; non-null
  * @param headers   immutable list of header fields; non-null, may be empty
@@ -149,7 +152,8 @@ public record HttpRequest(
      * façade derives. Passing {@code null} returns a request bound to the engine's configured
      * default peer.
      *
-     * @param authority {@code host} or {@code host:port}, or {@code null} for the configured default
+     * @param authority {@code host:port} (port required, IPv6 bracketed), or {@code null} for the
+     *                  engine's configured default peer
      * @return derived request, or {@code this} when the authority is already the requested one
      * @since 0.12.0
      */

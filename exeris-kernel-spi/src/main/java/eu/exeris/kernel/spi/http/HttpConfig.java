@@ -35,13 +35,16 @@ import java.util.Objects;
  *                              &gt; 0, refused on the same grounds
  * @param maxRequestBodyBytes   maximum request body size in bytes; ({@code -1} = unlimited)
  * @param h2cUpgradeEnabled     whether to accept HTTP/1.1 → HTTP/2 cleartext upgrade (RFC 7540 §3.2)
- * @param defaultAuthority      CLIENT/DUAL default peer as {@code host} or {@code host:port}, used
- *                              when an {@link HttpRequest#authority()} is {@code null}; may itself be
- *                              {@code null}, in which case an unaddressed request is refused rather
- *                              than sent somewhere unintended (ADR-074). This is a DIAL address and
- *                              is deliberately not {@code bindHost}, which is a LISTEN address
  * @param maxVersion            highest HTTP version this engine is permitted to negotiate;
  *                              {@link HttpVersion#HTTP_3} requires Enterprise provider
+ * @param defaultAuthority      CLIENT/DUAL default peer as {@code host:port}, used when an
+ *                              {@link HttpRequest#authority()} is {@code null}. The port is
+ *                              REQUIRED and an IPv6 address must be bracketed; both are checked
+ *                              here rather than at send time, so the message can name the key.
+ *                              May itself be {@code null}, in which case an unaddressed request
+ *                              is refused rather than sent somewhere unintended (ADR-074). This
+ *                              is a DIAL address, deliberately not {@code bindHost}, which is a
+ *                              LISTEN address
  * @since 0.5.0
  */
 public record HttpConfig(

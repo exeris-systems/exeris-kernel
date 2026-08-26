@@ -222,7 +222,10 @@ class CommunityOidcKeycloakIT {
                 HttpConfig.DEFAULT_MAX_HEADER_SIZE,
                 HttpConfig.DEFAULT_MAX_REQUEST_BODY_BYTES,
                 false,
-                HttpVersion.HTTP_1_1
+                HttpVersion.HTTP_1_1,
+                // ADR-074: the JWKS fetch used to reach Keycloak because the engine dialled
+                // bindHost. Same value, now stated as the dial address it always was.
+                KEYCLOAK.getHost() + ":" + KEYCLOAK.getMappedPort(KC_PORT)
         );
     }
 }
