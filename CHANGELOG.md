@@ -62,6 +62,19 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   gap. When they disagree the failure is the worst available: zero rows read, every write refused,
   nothing pointing at the five characters responsible. A generator or migration tool can now reference
   them; `RlsConnectionInterceptor` builds its statement from them.
+- **Every published coordinate carries a CycloneDX SBOM, and builds are reproducible.** The SBOM is
+  attached under classifier `cyclonedx`, so `mvn deploy` publishes it beside the jar with no
+  workflow change; the invariant is exceptionless, and the pom-packaged coordinates carry an SBOM
+  with an empty component list rather than an exemption. Reproducibility is the half that had to
+  come first: an SBOM describing an artifact nobody else can rebuild identically documents a jar
+  instead of attesting to one. `project.build.outputTimestamp` alone would not have done it —
+  `maven-jar-plugin` carried no version anywhere in the reactor and resolved through Maven's
+  super-POM to 3.1.2, which predates reproducible archive support, so the pins are what make the
+  property hold rather than hygiene standing next to it. Measured, not assumed: on the previous
+  commit two consecutive builds differed in all 9 jars; they are now byte-identical, as are the 11
+  SBOMs. A new `Supply-Chain Gate` runs `artifact:check-buildplan` and `tools/sbom-gate` on every
+  pull request. Artifact signing and provenance attestation are the next slice and are **not** in
+  this one — an SBOM establishes what an artifact contains, not who built it.
 
 ### Fixed
 - **A malformed HTTP request body is answered `400` again, not `500`** (ADR-036 amendment). Since

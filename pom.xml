@@ -101,6 +101,23 @@
             -Xlog:jfr+startup=off
         </jvm.args>
         <maven.build.timestamp.format>yyyyMMdd-HHmmss</maven.build.timestamp.format>
+
+        <!--
+            v0.12 Stream B — reproducible builds. Every Maven plugin that writes an archive reads
+            this property and normalises entry timestamps and entry order to it instead of to the
+            wall clock. Without it two builds of the same commit differ in every jar's bytes, so
+            "this artifact was built from this source" is a claim only the builder can check —
+            which is precisely the class of report SECURITY.md solicits ("release artifacts that
+            cannot be traced back to source").
+
+            It is also a PREREQUISITE, not a companion, for the SBOM below: an SBOM that describes
+            an artifact nobody else can rebuild identically documents a jar rather than attesting
+            to one.
+
+            Bump at each release cut (docs/release ritual). A stale value is not a defect: what
+            makes the output reproducible is that the value is FIXED, not that it is recent.
+        -->
+        <project.build.outputTimestamp>2026-08-26T00:00:00Z</project.build.outputTimestamp>
     </properties>
 
     <build>
@@ -146,8 +163,95 @@
                         </systemPropertyVariables>
                     </configuration>
                 </plugin>
+
+                <!--
+                    v0.12 Stream B — pin the default-lifecycle plugins. Until now these carried no
+                    version anywhere in the reactor, so their versions came from whichever Maven's
+                    super-POM was on the machine: Maven 3.9.12 resolves maven-jar-plugin to 3.1.2,
+                    a release that predates reproducible archive support entirely. So the pin is not
+                    hygiene sitting next to the outputTimestamp property above — it is what makes
+                    that property do anything, and a build on a different Maven would have silently
+                    produced non-reproducible jars while the property sat there looking applied.
+
+                    Pinning them also removes the last way the published bytes can change without a
+                    commit changing.
+                -->
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-jar-plugin</artifactId>
+                    <version>3.5.0</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-resources-plugin</artifactId>
+                    <version>3.4.0</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-install-plugin</artifactId>
+                    <version>3.1.4</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-deploy-plugin</artifactId>
+                    <version>3.1.4</version>
+                </plugin>
             </plugins>
         </pluginManagement>
+
+        <plugins>
+            <!--
+                v0.12 Stream B — a CycloneDX SBOM is attached to every artifact this reactor
+                publishes, with no exceptions to remember. The three pom-packaged modules (root,
+                parent, bom) carry no code and get an SBOM with an empty component list, which is
+                true rather than useful; that is a deliberate trade, because an exceptionless
+                invariant ("every published coordinate has an SBOM beside it") is cheap to state in
+                the release checklist and cheap to verify, while a list of exemptions rots.
+
+                makeBom, not makeAggregateBom: a consumer resolves one coordinate, so the useful
+                SBOM is the one describing what THAT jar carries. Maven attaches it under classifier
+                `cyclonedx`, so `mvn deploy` publishes it beside the jar with no workflow change.
+
+                includeBomSerialNumber is off because the serial is a fresh UUID per run and would
+                make the SBOM the one output that never reproduces. Test scope is excluded: it is
+                not in the distributed artifact, and listing it would overstate what a consumer
+                actually resolves.
+            -->
+            <plugin>
+                <groupId>org.cyclonedx</groupId>
+                <artifactId>cyclonedx-maven-plugin</artifactId>
+                <version>2.9.1</version>
+                <executions>
+                    <execution>
+                        <id>cyclonedx-sbom</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>makeBom</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <projectType>library</projectType>
+                    <schemaVersion>1.6</schemaVersion>
+                    <outputFormat>json</outputFormat>
+                    <includeBomSerialNumber>false</includeBomSerialNumber>
+                    <!--
+                        The scope set is written out even where it matches today's plugin
+                        defaults. For an audit artifact, WHICH scopes an SBOM covers is a
+                        decision someone should be able to read, and leaving it implicit would
+                        let a future plugin default silently redefine what the published SBOM
+                        claims. includeSystemScope is deliberately NOT among them: system scope
+                        is a legacy Maven feature, `<scope>system</scope>` appears nowhere in
+                        this reactor, and naming it would be stating a default about something
+                        that does not exist.
+                    -->
+                    <includeCompileScope>true</includeCompileScope>
+                    <includeProvidedScope>true</includeProvidedScope>
+                    <includeRuntimeScope>true</includeRuntimeScope>
+                    <includeTestScope>false</includeTestScope>
+                </configuration>
+            </plugin>
+        </plugins>
     </build>
 
     <profiles>

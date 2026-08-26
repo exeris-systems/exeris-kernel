@@ -121,6 +121,42 @@ jobs:
         # StructuredTaskScope, compile with --enable-preview, and are never published.
         run: tools/preview-bytecode-scan/preview-bytecode-scan.sh --expect-major 69
 
+      - name: Supply-Chain Gate
+        # v0.12 Stream B. Two checks, deliberately at different ends of the build.
+        #
+        # `artifact:check-buildplan` reads the BUILD PLAN, so it fails on a newly added plugin that
+        # cannot produce reproducible output before that plugin has published anything. It needs no
+        # artifacts and would work on an empty target/; it is here rather than in its own job only
+        # because a separate job would spend a JDK download on a five-second check.
+        #
+        # The SBOM gate reads the artifacts this job just built, same as the preview gate above. It
+        # exists because the failure mode of an SBOM is a file that is present and wrong — empty
+        # component list, stale version, restored random serial — and each of those reads as success
+        # to anything that merely checks the file is there.
+        #
+        # Placed in the root job knowingly: every other job depends on this one, so a failure here
+        # takes the pipeline down. That is correct for this gate and not for the Sonar step below —
+        # the distinction is whether the failure is about the code under test. A plugin that breaks
+        # reproducibility, or an SBOM that misdescribes the jar, is a change someone made in this
+        # diff.
+        run: |
+          mvn -B org.apache.maven.plugins:maven-artifact-plugin:3.6.0:check-buildplan
+          tools/sbom-gate/sbom-gate.sh
+
+      - name: Upload SBOMs
+        # Published beside each artifact by `mvn deploy` (classifier `cyclonedx`), so this upload is
+        # not the distribution channel — it is what makes the SBOMs readable for a run that never
+        # deploys, which is every pull request.
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sbom-${{ github.run_number }}
+          path: |
+            target/bom.json
+            exeris-kernel-*/target/bom.json
+          if-no-files-found: warn
+          retention-days: 30
+
       - name: SonarQube Cloud Analysis
         # Runs in this job, immediately after the build, so it consumes the compiled classes and the
         # JaCoCo XML that `-P coverage` just produced rather than rebuilding them. That reuse is the
