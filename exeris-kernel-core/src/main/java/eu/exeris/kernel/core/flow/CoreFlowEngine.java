@@ -100,7 +100,8 @@ public final class CoreFlowEngine implements FlowEngine {
         }
         choreographySubscriptions.clear();
         runtime.close();
-        FlowEngineShutdownEvent.emit(config, runtime.stats(), System.nanoTime() - startNanos);
+        FlowEngineShutdownEvent.emit(config, runtime.stats(),
+                runtime.nonDurableParkedFlows(), System.nanoTime() - startNanos);
     }
 
     @Override

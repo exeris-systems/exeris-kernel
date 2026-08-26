@@ -16,10 +16,14 @@ import jdk.jfr.Name;
 import jdk.jfr.StackTrace;
 
 /**
- * JFR event emitted when {@code lookupParked} falls back to the durable
+ * JFR event emitted when a wake falls back to the durable
  * {@link eu.exeris.kernel.spi.flow.model.FlowSnapshotStore} because the saga
  * was not present in the in-memory {@code parkedInstances} or {@code liveInstances}
  * indices on this engine instance.
+ *
+ * <p>Since 0.12 the emit sits at the store read rather than at one caller, so every
+ * path that consults the store reports it - {@code lookupParked}, the key-addressed
+ * {@code wake(long, long)}, and {@code wake(FlowContext)}.
  *
  * <p>This is the observability primitive operators use to monitor distributed
  * choreography wake patterns: a non-zero rate of fallback events indicates that

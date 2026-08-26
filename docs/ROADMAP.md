@@ -2156,7 +2156,13 @@ are.
 
 **Status: DELIVERED (v0.12).** Three commits, three tests. `CommunityRequestScopeBypassIsolationIT` pins the isolation rule against PostgreSQL with `FORCE ROW LEVEL SECURITY`; `FlowWakeBeforeParkTest` drives the bridge rather than a copy of its logic; `FlowSnapshotPersistFailedEventTest` asserts the event through a `RecordingStream`.
 
-**Carried forward, stated rather than left implicit:**
+**Carried forward, all three closed in the follow-up (v0.12):**
+
+- The `openConnection()` obligation is now pinned by `AbstractPersistenceEngineTck.openConnectionHonoursAmbientContext`, and it needed **no new SPI**. The obligation is observable through surface that already exists: register a `ConnectionInterceptor` and assert `onConnectionAcquired` is invoked with the ambient `StorageContext`. The earlier note here proposed adding a way to interrogate a connection - that was the wrong shape, and adding it would have put a method on every driver to test something the interceptor seam already reports.
+- The park-checkpoint ordering is resolved as retry-and-mark rather than reorder; see the flow subsystem doc. Reordering was measured against and rejected: it converts a transient store outage into a saga lost even without a restart.
+- The doubled store read is gone with `FlowScheduler.wake(long, long)`, an additive `default` whose body is the old two-call form, so no implementation changes behaviour without overriding it.
+
+**Superseded, kept for the record:**
 
 - **No `Abstract*Tck` for the new `openConnection()` obligation.** It is only observable against a live RLS database, and the SPI offers no way to ask a connection about its isolation state, so expressing it in the TCK needs new SPI surface - a design decision, not a mechanical addition. Held today by the Community binding IT.
 - **The obligation binds implementations outside this repository.** An engine treating the no-arg overload as "no context" carries the same defect.
