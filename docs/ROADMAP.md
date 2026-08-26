@@ -2165,6 +2165,43 @@ are.
 
 ---
 
+### Persistence + HTTP: Connection Lifetime Is Bound to the Request, With No Opt-Out (surfaced by saga-benchmark triage, 2026-08-21)
+
+**Gap:** `CommunityHttpRequestDispatcher.handleWithinRequestSession` binds a `PersistenceSessionBox` around every non-streaming request. The first persistence call takes a pooled connection, `close()` on the handle it hands out is a no-op (`NonOwningPersistenceConnection`), and the pool gets the connection back only from `box.release()` in the handler's `finally`. Connection lifetime is therefore **request** lifetime, not transaction lifetime. The binding is unconditional: no configuration key anywhere in SPI or Community disables it, and no ADR governs it — it is described in `docs/subsystems/persistence.md` §Request Session and nowhere else.
+
+That is a sound design for a handler that returns promptly. For one that blocks it is hold-and-wait on a single pool, because the work that must finish before the handler can return draws from that same pool: flow steps run on bare `Thread.ofVirtual()` (`CoreFlowRuntime.launch`), inherit no `ScopedValue`, and acquire independently — including the park checkpoint write (`applyParkOutcome` → `persistSnapshot`), which every parked saga performs.
+
+**Measured** (cross-runtime saga benchmark; park 1000 ms, pool 32, ~38 sagas in flight, ~165 s, identical for all arms):
+
+| arm | exit | orders | conn-exhaustion |
+|---|---|---|---|
+| quarkus-lra-jdbc | 0 | 6273 | 0 |
+| spring-axon-jdbc | 0 | 6275 | 0 |
+| spring-axon-embedded | 0 | 6273 | 0 |
+| restate | 0 | 6275 | 0 |
+| **exeris-community** | **5** | **286** | **386** |
+
+- **Attribution is the request thread, not the flow engine.** `RequestSessionLifecycle` split by thread kind on a healthy run (park 250 ms, 6273 orders): 37,626 `ACQUIRE` / 37,626 `RELEASE` / 81,523 `REUSE`, **all** on HTTP request-carrier threads and **not one** on a flow virtual thread. p50 3 ms, p90 273 ms, and **6,271 sessions ≥200 ms against 6,273 orders** — of the 6.00 request-sessions each order costs, exactly one spans the park. One pinned connection per saga in flight, counted rather than modelled. The park itself pins nothing.
+- **A pool-bound ceiling does not explain the magnitude.** 32 concurrent × 1 s over ~165 s predicts ~5,280 orders; measured 286, an 18× over-prediction. Raising the pool 32 → 128 returns 6,275 orders and zero exhaustions — *offered-load parity*, not the 4× a ceiling would give. A non-linear jump straight to parity is the signature of a released deadlock, not a raised ceiling. The collapsed run's `RELEASE_NO_SESSION` = 15,434 (zero on the healthy run) is the same fact from the other side: those are requests whose very first acquire timed out.
+- **Admission control is not the lever, in either direction.** `AdmissionDecision.queueDepth` peaked at **71** against an allowance of `ceil(32 × 8.0)` = 256, so widening the allowance cannot bite — `queueDepthAllowanceRatio=32.0` was cancelled on that evidence rather than run. Tightening to `0.0` (STRICT) did reach the controller — rejections went from ~zero to **23.87 %** (1,490 of 6,240) — and returned **268** orders against 286. The gate fires on `idle <= 0 && queued > 0`, i.e. *after* every connection is already pinned, so it cannot prevent the deadlock forming; and a shed request is a lost order rather than a deferred one, so the shed rate is a straight throughput tax. This closes ADR-035 tunability as a remedy for this failure, measured from both ends.
+- **`BYPASS_SCOPE_MISMATCH` = 0.** The v0.11 scope-key collision fixed above does not fire here, and only because the benchmark's security provider returns `ImmutableStorageContext.GLOBAL` — deliberately, so exeris is not credited with tenant isolation the Quarkus and Spring arms do not carry. An exeris arm declaring a tenant on v0.11 takes a second, independent hold-and-wait on top of this one.
+
+**The kernel already names this hazard — for streams only.** `dispatchStream` deliberately omits `REQUEST_SESSION` because "one read inside a live feed would pin a connection for as long as the client stays connected … a design, not a binding copied across". A handler that blocks across a park is the same hazard two orders of magnitude down, and gets the binding anyway. The failure mode is recognised in-tree; the recognition is scoped to the case where the hold time is unbounded and therefore obvious.
+
+**Why the handler was blocking in the first place.** `FlowScheduler` exposes no completion surface (a separate gap, tracked under "Flow: No Way to Await a Flow" below), so an application wanting request/response over a saga resolves it inline in the handler — which is how the benchmark arrived at this hazard. That is the route in, not the defect: the subject here is the connection binding, and it punishes *any* handler that blocks long enough, saga or not. An application returning `202` and polling would never hold the connection. The two are fixed independently and neither substitutes for the other.
+
+**Owner:** Persistence + HTTP subsystems.
+
+**Resolution:** ADR, not a patch — number reserved in the global index before authoring. The question is what connection lifetime the kernel promises, and each candidate costs something: per-route opt-out (the application must know which routes block); an explicit detach seam for a handler about to block (a new SPI obligation, and a leak if missed); or transaction-scoped by default with the request session as opt-in (trades this pool hazard for the reuse and interceptor consistency the request session exists to guarantee — see the RLS reasoning in the entry above, which is why "just unbind it" is not the answer). **Do not narrow the binding and change admission defaults in the same commit**: the measurements above close admission as a lever, and re-opening it here would confound the fix.
+
+**Merge Gate:** ADR accepted with one shape and dissent recorded. If a surface lands: `docs/subsystems/persistence.md` §Request Session updated to state the chosen lifetime and its opt-out; TCK coverage for the lifetime contract plus a Community binding test; and a test with teeth for the mechanism itself — a handler that blocks while holding a session must not be able to starve the pool its own continuation draws from. Verified by reverting the fix and confirming it fails.
+
+**1.0 disposition:** 1.0-critical. Persistence and HTTP are both in the 1.0 core; the failure is an availability collapse rather than a slowdown; and it is reachable from an ordinary application shape with nothing unusual configured. It is also the first cross-runtime benchmark result where the kernel loses categorically, which makes it a product claim and not only an engineering one.
+
+**Status: OPEN (v0.12).** Measured and attributed; ADR not yet registered.
+
+---
+
 ### HTTP: `WebSocketProvider` SPI (or SSE-Only Commitment)
 
 **Gap:** The `realTimeApi` flag on `DomainMetadata` (SDK) exists in v0.8 but no generator emits real-time wire code, and the kernel has no WebSocket primitive. Real-time delivery splits into two distinct wire shapes: **Server-Sent Events** (pure HTTP/1.1 chunked streaming, runs on existing `HttpServerEngine` with no new SPI), and **WebSocket** (RFC 6455 handshake + frame codec, wire-protocol territory equivalent to HTTP/2 — requires kernel SPI). Without a decision, the `realTimeApi` flag remains aspirational and downstream applications hand-roll incompatible solutions.
