@@ -2376,7 +2376,7 @@ See also: v0.11 §"Transport: PAQS Execution-Seam Port (M1)" (seam landed on the
 
 ### Table-Stakes: Supply-Chain Integrity (SBOM, signed releases, provenance)
 
-**Gap:** Zero supply-chain integrity in the build — audit found no CycloneDX SBOM, no cosign/Sigstore signing, no SLSA provenance, no reproducible-build config, no GPG. The only release step is an unsigned, unattested `mvn deploy` (`.github/workflows/maven.yml:119`). PR-time dependency-review + CodeQL exist, but those are vulnerability scanning, not artifact integrity; Sonar/PMD/JaCoCo are code quality. This is the gap most aligned with the EU/FENG digital-sovereignty narrative — an *argument*, not just hygiene — and it is low-cost.
+**Gap:** Zero supply-chain integrity in the build — audit found no CycloneDX SBOM, no cosign/Sigstore signing, no SLSA provenance, no reproducible-build config, no GPG. The only release step is an unsigned, unattested `mvn deploy` (the `Publish to GitHub Packages` step in `.github/workflows/maven.yml`). PR-time dependency-review + CodeQL exist, but those are vulnerability scanning, not artifact integrity; Sonar/PMD/JaCoCo are code quality. This is the gap most aligned with the EU/FENG digital-sovereignty narrative — an *argument*, not just hygiene — and it is low-cost.
 
 **Owner:** Build / Release (seam in open-core; richer attestation can be enterprise).
 
@@ -2385,6 +2385,10 @@ See also: v0.11 §"Transport: PAQS Execution-Seam Port (M1)" (seam landed on the
 **Merge Gate:** every published 1.0 artifact carries a CycloneDX SBOM + verifiable signature + provenance attestation; a CI job verifies the signature on a fresh pull.
 
 **1.0 disposition:** **1.0-BLOCKING** — a credible "1.0 GA" on Maven Central cannot ship unsigned and SBOM-less; also the cheapest strategic win in this list.
+
+**Status (v0.12): PARTIAL — SBOM and reproducible builds delivered on `development/0.12.0`; signing and provenance are not.** Two of the four items the Resolution names are done and gated on every pull request by the `Supply-Chain Gate`: a CycloneDX SBOM per artifact, attached under classifier `cyclonedx` so `mvn deploy` publishes it beside the jar, and a reproducible-build baseline (`project.build.outputTimestamp` plus version pins on the default-lifecycle plugins). The Gap paragraph's "no reproducible-build config" was understated on one point worth keeping: `maven-jar-plugin` carried no version anywhere in the reactor and resolved through Maven's super-POM to 3.1.2, which predates reproducible archive support — so the pins are not hygiene accompanying the timestamp property, they are what makes it do anything. Measured rather than assumed: on the preceding commit two consecutive builds differed in all 9 jars; they are now byte-identical, as are the 11 SBOMs.
+
+**What remains, and it is the half that carries the argument:** artifact signing (cosign/Sigstore keyless) and SLSA provenance, plus the Merge Gate's "a CI job verifies the signature on a fresh pull". Until those land, a published SBOM establishes what an artifact contains, not who built it. The sequencing constraint is unchanged and binding: GitHub Packages **release** versions are immutable, so signing must precede the first artifact intended to carry a signature — a published-then-signed artifact is not a thing.
 
 ---
 

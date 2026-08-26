@@ -157,6 +157,43 @@ To run only the TCK:
 mvn test -pl exeris-kernel-tck
 ```
 
+### Supply-Chain Gate (SBOM + reproducible builds)
+
+Every module emits a CycloneDX SBOM at `package`, attached under classifier `cyclonedx` so
+`mvn deploy` publishes it beside the jar. Two checks guard it, and both run locally:
+
+```bash
+# Fails on a plugin that cannot produce reproducible output — reads the build PLAN, so it needs
+# no artifacts and catches the problem before anything is published.
+mvn -B org.apache.maven.plugins:maven-artifact-plugin:3.6.0:check-buildplan
+
+# Fails on an SBOM that is present and wrong: empty component list, stale version, restored
+# random serial. Needs a full `mvn package` first.
+tools/sbom-gate/sbom-gate.sh
+```
+
+To check reproducibility itself, build twice and compare — the property is that the bytes match,
+so that is what the check has to look at:
+
+```bash
+mvn -q clean package -DskipTests && find . -name '*.jar' -path '*/target/*' | sort | xargs sha256sum > /tmp/run1
+mvn -q clean package -DskipTests && find . -name '*.jar' -path '*/target/*' | sort | xargs sha256sum > /tmp/run2
+diff /tmp/run1 /tmp/run2   # must be empty
+```
+
+Two things break this, both easy to do by accident:
+
+- **Adding a plugin without a version.** Unversioned plugins resolve through Maven's super-POM, so
+  their versions come from whichever Maven is on the machine, and the published bytes then change
+  without a commit changing. `check-buildplan` catches it.
+- **Writing the build timestamp into an artifact.** `${maven.build.timestamp}` in a filtered
+  resource, a manifest entry, or a generated file defeats `project.build.outputTimestamp` for that
+  module only — so the reactor stays reproducible everywhere except the one place that regressed.
+  The double-build diff above is what finds it.
+
+`project.build.outputTimestamp` (root `pom.xml`) is bumped at each release cut. A stale value is
+not a defect: what makes the output reproducible is that the value is fixed, not that it is recent.
+
 ---
 
 ## Local Environment

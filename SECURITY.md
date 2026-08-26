@@ -196,6 +196,25 @@ Please report issues involving:
 - CI workflows that expose secrets to forks, pull requests, logs, caches, or artifacts;
 - Maven, GitHub Actions, or release automation behavior that allows tampering with security-relevant artifacts.
 
+#### What the build provides today
+
+Two of the properties this section invites reports about are now produced by the build rather than
+asserted by it, and both are checked on every pull request by the Supply-Chain Gate:
+
+- **Every published coordinate carries a CycloneDX SBOM.** It is attached as a Maven artifact under
+  classifier `cyclonedx` and therefore published beside the jar, so the dependency set an artifact
+  actually resolves can be audited without building it. The invariant has no exceptions: the
+  pom-packaged coordinates (`exeris-kernel-root`, `-parent`, `-bom`) carry an SBOM with an empty
+  component list, which is true of a pom and keeps the rule free of exemptions to remember.
+- **Builds are reproducible.** Archive entry timestamps and ordering are normalized to
+  `project.build.outputTimestamp`, and the default-lifecycle plugins are version-pinned, so two
+  builds of the same commit produce byte-identical jars. This is what makes "traceable back to
+  source" checkable by a third party rather than only by the builder.
+
+Neither is yet a *signed* attestation — artifact signing and provenance are tracked as the next
+slice of the same work. Until they land, an SBOM published beside an artifact establishes what that
+artifact contains, not who built it: treat it as an inventory, not as proof of origin.
+
 ---
 
 ## Denial-of-Service and No Waste Compute
