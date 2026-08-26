@@ -90,8 +90,8 @@ final class CommunityHttp2SessionProcessor {
             LOG.log(System.Logger.Level.INFO,
                     "HTTP/2 prior-knowledge preface detected; entering h2c request frame-loop mode");
         }
-        CommunityHttp2ControlFrames.sendServerSettings(allocator, stream);
-        try (Http2SessionContext session = Http2SessionContext.create(allocator)) {
+        CommunityHttp2ControlFrames.sendServerSettings(allocator, stream, config.maxHeaderBlockSize());
+        try (Http2SessionContext session = Http2SessionContext.create(allocator, config.maxHeaderBlockSize())) {
             processBufferedHttp2Frames(stream, handler, session, state, totalBytes, initialFrameOffset);
         }
     }
@@ -103,8 +103,8 @@ final class CommunityHttp2SessionProcessor {
         LoanedBuffer aggregate = state.aggregate();
         writeHttp11UpgradeResponse(stream);
         long bufferedHttp2Bytes = CommunityHttpBufferOps.retainUnreadBytes(aggregate, readResult.consumedBytes());
-        CommunityHttp2ControlFrames.sendServerSettings(allocator, stream);
-        try (Http2SessionContext session = Http2SessionContext.create(allocator)) {
+        CommunityHttp2ControlFrames.sendServerSettings(allocator, stream, config.maxHeaderBlockSize());
+        try (Http2SessionContext session = Http2SessionContext.create(allocator, config.maxHeaderBlockSize())) {
             processBufferedHttp2Frames(stream, handler, session, state, bufferedHttp2Bytes, 0);
         }
     }

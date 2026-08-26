@@ -519,15 +519,25 @@ class CommunityHttpRequestProcessorTest {
         assertThat(outbound).hasSizeGreaterThanOrEqualTo(27);
 
         MemorySegment outboundSegment = MemorySegment.ofArray(outbound);
-        Http2FrameParser.FrameHeader frame1 = Http2FrameParser.parseHeaderBigEndian(outboundSegment, 0);
+        // Walk by declared payload length rather than by 9-byte strides. The stride assumption held
+        // only while the server's initial SETTINGS was EMPTY, which was the defect ADR-071's tail
+        // named: it advertised no limits at all. Now it carries SETTINGS_MAX_HEADER_LIST_SIZE, so a
+        // fixed-offset walker reads the middle of a payload and reports whatever byte it lands on.
+        long pos = 0;
+        Http2FrameParser.FrameHeader frame1 = Http2FrameParser.parseHeaderBigEndian(outboundSegment, pos);
         assertThat(frame1.frameType()).isEqualTo(Http2FrameType.SETTINGS);
         assertThat(frame1.streamId()).isZero();
+        assertThat(frame1.length())
+                .as("the server must advertise the header-block bound it enforces, not an empty SETTINGS")
+                .isEqualTo(6);
+        pos += Http2FrameParser.FRAME_HEADER_SIZE + frame1.length();
 
-        Http2FrameParser.FrameHeader frame2 = Http2FrameParser.parseHeaderBigEndian(outboundSegment, 9);
+        Http2FrameParser.FrameHeader frame2 = Http2FrameParser.parseHeaderBigEndian(outboundSegment, pos);
         assertThat(frame2.frameType()).isEqualTo(Http2FrameType.SETTINGS);
         assertThat(frame2.isAck()).isTrue();
+        pos += Http2FrameParser.FRAME_HEADER_SIZE + frame2.length();
 
-        Http2FrameParser.FrameHeader frame3 = Http2FrameParser.parseHeaderBigEndian(outboundSegment, 18);
+        Http2FrameParser.FrameHeader frame3 = Http2FrameParser.parseHeaderBigEndian(outboundSegment, pos);
         assertThat(frame3.frameType()).isEqualTo(Http2FrameType.GOAWAY);
         assertThat(frame3.streamId()).isZero();
     }
@@ -561,22 +571,28 @@ class CommunityHttpRequestProcessorTest {
         assertThat(outbound).hasSizeGreaterThanOrEqualTo(52);
 
         MemorySegment outboundSegment = MemorySegment.ofArray(outbound);
-        Http2FrameParser.FrameHeader frame1 = Http2FrameParser.parseHeaderBigEndian(outboundSegment, 0);
+        // Same reason as above: stride by declared length, not by a constant.
+        long pos = 0;
+        Http2FrameParser.FrameHeader frame1 = Http2FrameParser.parseHeaderBigEndian(outboundSegment, pos);
         assertThat(frame1.frameType()).isEqualTo(Http2FrameType.SETTINGS);
+        pos += Http2FrameParser.FRAME_HEADER_SIZE + frame1.length();
 
-        Http2FrameParser.FrameHeader frame2 = Http2FrameParser.parseHeaderBigEndian(outboundSegment, 9);
+        Http2FrameParser.FrameHeader frame2 = Http2FrameParser.parseHeaderBigEndian(outboundSegment, pos);
         assertThat(frame2.frameType()).isEqualTo(Http2FrameType.SETTINGS);
         assertThat(frame2.isAck()).isTrue();
+        pos += Http2FrameParser.FRAME_HEADER_SIZE + frame2.length();
 
-        Http2FrameParser.FrameHeader frame3 = Http2FrameParser.parseHeaderBigEndian(outboundSegment, 18);
+        Http2FrameParser.FrameHeader frame3 = Http2FrameParser.parseHeaderBigEndian(outboundSegment, pos);
         assertThat(frame3.frameType()).isEqualTo(Http2FrameType.PING);
         assertThat(frame3.isAck()).isTrue();
+        pos += Http2FrameParser.FRAME_HEADER_SIZE;
 
         byte[] echoedPingPayload = new byte[8];
-        MemorySegment.copy(outboundSegment, 27, MemorySegment.ofArray(echoedPingPayload), 0, 8);
+        MemorySegment.copy(outboundSegment, pos, MemorySegment.ofArray(echoedPingPayload), 0, 8);
         assertThat(echoedPingPayload).containsExactly(pingPayload);
+        pos += frame3.length();
 
-        Http2FrameParser.FrameHeader frame4 = Http2FrameParser.parseHeaderBigEndian(outboundSegment, 35);
+        Http2FrameParser.FrameHeader frame4 = Http2FrameParser.parseHeaderBigEndian(outboundSegment, pos);
         assertThat(frame4.frameType()).isEqualTo(Http2FrameType.GOAWAY);
     }
 

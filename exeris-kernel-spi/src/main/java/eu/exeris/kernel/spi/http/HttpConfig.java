@@ -45,6 +45,13 @@ import java.util.Objects;
  *                              is refused rather than sent somewhere unintended (ADR-074). This
  *                              is a DIAL address, deliberately not {@code bindHost}, which is a
  *                              LISTEN address
+ * @param maxHeaderBlockSize    HTTP/2 only: bound in bytes on an assembled HEADERS +
+ *                              CONTINUATION block, also advertised to the peer as
+ *                              SETTINGS_MAX_HEADER_LIST_SIZE (RFC 9113 §6.5.2). It is a
+ *                              separate key from the two above BECAUSE they are a
+ *                              per-field size and a field count on HTTP/1 — multiplying
+ *                              them out would loosen this bound roughly twelvefold at the
+ *                              shipped defaults. Protective, so {@code > 0} is required
  * @since 0.5.0
  */
 public record HttpConfig(
@@ -58,7 +65,8 @@ public record HttpConfig(
         long maxRequestBodyBytes,
         boolean h2cUpgradeEnabled,
         HttpVersion maxVersion,
-        String defaultAuthority
+        String defaultAuthority,
+        int maxHeaderBlockSize
 ) {
 
     /** Default bind address: all interfaces. */
@@ -80,6 +88,14 @@ public record HttpConfig(
     /** Default max header field size in bytes (DoS guard). */
     public static final int DEFAULT_MAX_HEADER_SIZE = 8_192;
 
+    /**
+     * Default HTTP/2 header-block bound in bytes — the value the assembler enforced
+     * unconditionally before 0.12, kept so this key changes reachability and not behaviour.
+     *
+     * @since 0.12.0
+     */
+    public static final int DEFAULT_MAX_HEADER_BLOCK_SIZE = 65_536;
+
     /** Default max request body: 10 MiB. */
     public static final long DEFAULT_MAX_REQUEST_BODY_BYTES = 10L * 1_024 * 1_024;
 
@@ -93,6 +109,7 @@ public record HttpConfig(
                     maxRequestHeaderCount, maxRequestHeaderSize, maxRequestBodyBytes);
             HttpConfigValidation.validatePort(mode, port, bindHost);
             HttpConfigValidation.validateDefaultAuthority(defaultAuthority);
+            HttpConfigValidation.validateHeaderBlockSize(maxHeaderBlockSize);
         }
     }
 
@@ -127,7 +144,8 @@ public record HttpConfig(
                       boolean h2cUpgradeEnabled,
                       HttpVersion maxVersion) {
         this(mode, bindHost, port, maxConnections, idleTimeoutMillis, maxRequestHeaderCount,
-                maxRequestHeaderSize, maxRequestBodyBytes, h2cUpgradeEnabled, maxVersion, null);
+                maxRequestHeaderSize, maxRequestBodyBytes, h2cUpgradeEnabled, maxVersion, null,
+                DEFAULT_MAX_HEADER_BLOCK_SIZE);
     }
 
     /**
@@ -148,7 +166,8 @@ public record HttpConfig(
                 DEFAULT_MAX_REQUEST_BODY_BYTES,
                 true,
                 HttpVersion.HTTP_2,
-                null
+                null,
+                DEFAULT_MAX_HEADER_BLOCK_SIZE
         );
     }
 
@@ -169,7 +188,8 @@ public record HttpConfig(
                 DEFAULT_MAX_REQUEST_BODY_BYTES,
                 false,
                 HttpVersion.HTTP_2,
-                null
+                null,
+                DEFAULT_MAX_HEADER_BLOCK_SIZE
         );
     }
 }

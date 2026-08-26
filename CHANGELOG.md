@@ -10,6 +10,19 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Added
 
+- **HTTP/2 stops silently ignoring the header limits an operator configures.** ADR-071 left this as
+  its stated out-of-scope tail: `http.maxRequestHeaderCount` / `…Size` are honoured on HTTP/1 and
+  the h2 path referenced neither, so a limit could be believed set while it was not. Closing it
+  needed no new mechanism — `Http2Settings` already carried `ID_MAX_HEADER_LIST_SIZE` (RFC 9113
+  §6.5.2) and the server was sending an **empty** SETTINGS frame, telling a peer nothing at all.
+  It now advertises the bound it enforces, and `Http2HeaderBlockAssembler`'s 65 536 becomes the
+  documented default of a new `http.maxHeaderBlockSize` key rather than a constant.
+  **A separate key, not a product of the other two, and the reason is measured**: those describe a
+  per-field size and a field count on HTTP/1, so multiplying them out yields ~800 KiB at the shipped
+  defaults — a twelvefold *loosening* of a protective bound, which is the wrong direction for a
+  limit whose job is to refuse a header bomb. Protective per ADR-071, so `0` and negatives are
+  refused rather than read as unlimited.
+
 - **`KernelWebClient.withAuthority(String)`** — the typed surface can now name its peer, which is
   what makes ADR-074's "one engine serves many peers" reachable rather than merely decided. Until
   this, every call built through the façade resolved to the engine's configured default, so the
@@ -18,9 +31,6 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   mirrors `HttpRequest.withAuthority` so there is one vocabulary rather than two. It deliberately
   does **not** validate — the shape is checked at `HttpConfig` construction and at send, and a third
   copy of that rule inside a façade would be the fourth hand-synced version of it.
-
-### Added
-
 - **A request can name the peer it is sent to** (ADR-074). `HttpRequest` gains a nullable
   `authority`, `HttpConfig` gains `defaultAuthority`, and both keep their previous canonical
   constructor as a bridge — the SPI gate reports `stable-breaks=0` against `v0.11.0`, measured.

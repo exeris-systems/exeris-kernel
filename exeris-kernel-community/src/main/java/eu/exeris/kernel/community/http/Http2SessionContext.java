@@ -122,13 +122,13 @@ final class Http2SessionContext implements AutoCloseable {
         this.rapidResetCount = 0;
     }
 
-    /* default */ static Http2SessionContext create(MemoryAllocator allocator) {
+    /* default */ static Http2SessionContext create(MemoryAllocator allocator, int maxHeaderBlockSize) {
         HpackDynamicTable decodeTable = new HpackDynamicTable(HTTP2_MAX_DYNAMIC_TABLE_SIZE);
         HpackDynamicTable encodeTable = new HpackDynamicTable(HTTP2_MAX_DYNAMIC_TABLE_SIZE);
         HpackDecoder decoder = new HpackDecoder(decodeTable, allocator, HTTP2_MAX_HEADER_LIST_SIZE);
         HpackEncoder encoder = new HpackEncoder(encodeTable, allocator, false);
         Http2FrameCodec codec = new Http2FrameCodec();
-        Http2HeaderBlockAssembler assembler = new Http2HeaderBlockAssembler(allocator);
+        Http2HeaderBlockAssembler assembler = new Http2HeaderBlockAssembler(allocator, maxHeaderBlockSize);
         return new Http2SessionContext(encodeTable, decoder, encoder, codec, assembler);
     }
 

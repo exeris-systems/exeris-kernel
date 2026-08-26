@@ -47,7 +47,57 @@ class HttpConfigTest {
                 HttpConfig.DEFAULT_MAX_REQUEST_BODY_BYTES,
                 false,
                 HttpVersion.HTTP_1_1,
-                defaultAuthority);
+                defaultAuthority,
+                HttpConfig.DEFAULT_MAX_HEADER_BLOCK_SIZE);
+    }
+
+    private static HttpConfig withHeaderBlock(int maxHeaderBlockSize) {
+        return new HttpConfig(
+                HttpMode.SERVER,
+                HttpConfig.DEFAULT_BIND_HOST,
+                HttpConfig.DEFAULT_PORT,
+                HttpConfig.DEFAULT_MAX_CONNECTIONS,
+                HttpConfig.DEFAULT_IDLE_TIMEOUT_MS,
+                HttpConfig.DEFAULT_MAX_HEADER_COUNT,
+                HttpConfig.DEFAULT_MAX_HEADER_SIZE,
+                HttpConfig.DEFAULT_MAX_REQUEST_BODY_BYTES,
+                true,
+                HttpVersion.HTTP_2,
+                null,
+                maxHeaderBlockSize);
+    }
+
+    @Nested
+    @DisplayName("HTTP/2 header block — protective, so zero is refused (ADR-071 tail)")
+    class HeaderBlockBound {
+
+        @Test
+        @DisplayName("the pre-0.12 value is still the default, so the key changes reach and not behaviour")
+        void defaultIsUnchanged() {
+            assertThat(HttpConfig.defaultServer().maxHeaderBlockSize())
+                    .isEqualTo(HttpConfig.DEFAULT_MAX_HEADER_BLOCK_SIZE)
+                    .isEqualTo(65_536);
+        }
+
+        @Test
+        @DisplayName("zero is refused — a protective bound has no unlimited reading")
+        void zeroIsRefused() {
+            assertThatThrownBy(() -> withHeaderBlock(0))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("http.maxHeaderBlockSize");
+        }
+
+        @Test
+        @DisplayName("a negative bound is refused")
+        void negativeIsRefused() {
+            assertThatThrownBy(() -> withHeaderBlock(-1)).isInstanceOf(IllegalArgumentException.class);
+        }
+
+        @Test
+        @DisplayName("raising it is accepted — which is the point an operator could not reach before")
+        void raisingIsAccepted() {
+            assertThatCode(() -> withHeaderBlock(1_048_576)).doesNotThrowAnyException();
+        }
     }
 
     @Nested

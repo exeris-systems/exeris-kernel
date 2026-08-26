@@ -49,8 +49,18 @@ import java.lang.foreign.ValueLayout;
 @SuppressWarnings("PMD.CyclomaticComplexity")
 public final class Http2HeaderBlockAssembler {
 
+    /**
+     * Default bound on an assembled HEADERS + CONTINUATION block, in bytes.
+     *
+     * <p>The value this class enforced unconditionally until 0.12. It stays the default rather than
+     * becoming derived from {@code http.maxRequestHeaderCount} × {@code http.maxRequestHeaderSize}:
+     * those describe a per-field size and a field count on HTTP/1, and multiplying them out yields
+     * roughly 800 KiB at the shipped defaults — a twelve-fold LOOSENING of a protective bound, which
+     * is the wrong direction for a limit whose job is to refuse a header-bomb.
+     */
+    public static final int DEFAULT_MAX_HEADER_BLOCK_SIZE = 65_536;
+
     private static final int INITIAL_BUFFER_SIZE = 1_024;
-    private static final int MAX_HEADER_BLOCK_SIZE = 65_536;
     private static final String MSG_HEADERS_WHILE_AWAITING =
             "HTTP/2 PROTOCOL_ERROR: received HEADERS while awaiting CONTINUATION";
     private static final String MSG_HEADERS_ON_STREAM_ZERO =
@@ -71,6 +81,7 @@ public final class Http2HeaderBlockAssembler {
             "HTTP/2 PROTOCOL_ERROR: header block exceeds configured limit";
 
     private final MemoryAllocator allocator;
+    private final int maxHeaderBlockSize;
 
     private LoanedBuffer buffer;
     private int written;
@@ -83,7 +94,27 @@ public final class Http2HeaderBlockAssembler {
      * @param allocator memory allocator for HPACK fragment buffers
      */
     public Http2HeaderBlockAssembler(MemoryAllocator allocator) {
+        this(allocator, DEFAULT_MAX_HEADER_BLOCK_SIZE);
+    }
+
+    /**
+     * Creates an assembler that refuses an assembled header block larger than
+     * {@code maxHeaderBlockSize} bytes.
+     *
+     * @param allocator          memory allocator for HPACK fragment buffers
+     * @param maxHeaderBlockSize bound in bytes; must be {@code > 0} — this is a protective limit, so
+     *                           per ADR-071 it has no "0 means unlimited" reading
+     * @throws IllegalArgumentException if the bound is not positive
+     * @since 0.12.0
+     */
+    public Http2HeaderBlockAssembler(MemoryAllocator allocator, int maxHeaderBlockSize) {
+        if (maxHeaderBlockSize <= 0) {
+            throw new IllegalArgumentException(
+                    "maxHeaderBlockSize must be > 0 (a protective bound has no unlimited reading), got: "
+                            + maxHeaderBlockSize);
+        }
         this.allocator = allocator;
+        this.maxHeaderBlockSize = maxHeaderBlockSize;
     }
 
     /**
@@ -254,10 +285,10 @@ public final class Http2HeaderBlockAssembler {
                     srcOffset, length, src.byteSize());
         }
         long required = (long) written + length;
-        if (required > MAX_HEADER_BLOCK_SIZE) {
+        if (required > maxHeaderBlockSize) {
             throw new ContinuationViolationException(
                     MSG_HEADER_BLOCK_EXCEEDS_LIMIT,
-                    required, MAX_HEADER_BLOCK_SIZE);
+                    required, maxHeaderBlockSize);
         }
         ensureCapacity((int) required);
         MemorySegment.copy(src, ValueLayout.JAVA_BYTE, srcOffset,

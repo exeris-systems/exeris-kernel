@@ -6,6 +6,7 @@ package eu.exeris.kernel.community.http;
 
 import eu.exeris.kernel.core.http.http2.Http2ErrorCode;
 import eu.exeris.kernel.core.http.http2.Http2FrameEncoder;
+import eu.exeris.kernel.core.http.http2.Http2Settings;
 import eu.exeris.kernel.core.http.http2.Http2FrameParser;
 import eu.exeris.kernel.core.http.http2.Http2FrameType;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
@@ -58,9 +59,19 @@ final class CommunityHttp2ControlFrames {
         }
     }
 
-    /* default */ static void sendServerSettings(MemoryAllocator allocator, TransportStream stream) {
+    /**
+     * Sends the server's initial SETTINGS, advertising the header-block bound it actually enforces.
+     *
+     * <p>Until 0.12 this wrote an EMPTY SETTINGS frame, so a peer was told nothing and the 64 KiB the
+     * assembler enforced was discoverable only by tripping it. SETTINGS_MAX_HEADER_LIST_SIZE
+     * (RFC 9113 §6.5.2) is the protocol's own way to say it, which is why closing the HTTP/1÷HTTP/2
+     * asymmetry needed no new mechanism — only for the configured value to reach the frame.
+     */
+    /* default */ static void sendServerSettings(MemoryAllocator allocator, TransportStream stream,
+                                                 int maxHeaderBlockSize) {
         try (LoanedBuffer outbound = allocator.allocateNetwork(H2_HANDSHAKE_BUFFER_BYTES)) {
-            long written = Http2FrameEncoder.writeSettings(outbound.segment(), 0, 0, false);
+            long written = Http2FrameEncoder.writeSettings(outbound.segment(), 0, 0, false,
+                    Http2Settings.ID_MAX_HEADER_LIST_SIZE, maxHeaderBlockSize);
             outbound.setSize(written);
             stream.write(outbound.segment(), (int) written);
         }
