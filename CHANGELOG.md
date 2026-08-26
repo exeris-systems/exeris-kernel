@@ -8,6 +8,24 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ## [Unreleased] — development/0.12.0
 
+### Decided
+
+- **ADR-074 — a request names its own peer.** Discharges the one question RFC-2026-06-29 left
+  explicitly owed: its split disposition made multi-peer addressing 1.0 scope but fixed *when*, not
+  *how*. A code spike moved the problem before the option table was written. Every document here
+  calls the client *single-host*; it is narrower. `CommunityHttpClientEngine` has **zero public
+  constructors**, its only reachable path takes `targetHost` from `HttpConfig.bindHost` — documented
+  as the SERVER/DUAL **listener** address — and no client-target configuration key exists anywhere in
+  the tree. The client dials the address its own server listens on, so an application cannot address
+  even the *first* external peer. Decision: `HttpRequest` gains a nullable `authority` component with
+  the previous canonical constructor retained as a bridge; `Host` and TLS peer verification follow
+  the authority rather than the connection; the enricher observes the final authority so an outbound
+  credential's audience can bind to the peer it is sent to. Two spike findings decided it against the
+  per-host-engine alternative: `send` already opens a fresh connection per call, so there is no pool
+  the alternative would preserve, and `HttpClientRequestEnricher.enrich` receives only the request,
+  which makes audience binding structurally inexpressible when the peer lives on the engine.
+  Implementation follows; this slice is the decision.
+
 ### Added
 
 - **The Maven Central publication path exists, is gated, and has produced nothing yet.** Every
