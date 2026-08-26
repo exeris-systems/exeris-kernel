@@ -1,6 +1,7 @@
 # Trademark Policy
 
-"Exeris" and the Exeris logo are trademarks of Exeris Systems.
+"Exeris" and the Exeris logo are trademarks of Arkadiusz Przychocki, trading as
+Exeris Systems.
 
 This policy exists because the code licence and the name are governed by different
 instruments, and moving to Apache-2.0 changed only the first. Apache License 2.0
@@ -53,12 +54,18 @@ claim, not a copyright one. The two are separate, deliberately.
 
 ## Holder and status
 
-"Exeris Systems" is the trading identity under which this project is published. The
-marks are held by the project's founder pending incorporation, at which point the
-company will succeed to them. Registration has not been sought; a mark is enforceable
-from use, and registration strengthens enforcement rather than creating the claim.
-Use "Exeris™" when a symbol is appropriate — "®" is reserved for registered marks and
-would be inaccurate today.
+A trademark is held by a person, natural or legal. "Exeris Systems" is the trading
+identity under which this project is published and the name that appears in copyright
+notices, but it is not itself a legal person — so the marks are held by **Arkadiusz
+Przychocki**, and will transfer to the company on incorporation. The same reasoning,
+and the same succession, applies to the Contributor Licence Agreement described in
+`CONTRIBUTING.md`: both instruments name the person, while `NOTICE` and the per-file
+headers name the project.
+
+Registration has not been sought. A mark is enforceable from use; registration
+strengthens enforcement rather than creating the claim, and is worth its cost once
+there is adoption to protect. Use "Exeris™" when a symbol is appropriate — "®" is
+reserved for registered marks and would be inaccurate today.
 
 ## Questions
 

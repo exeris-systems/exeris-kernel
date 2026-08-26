@@ -27,7 +27,11 @@ tier. The CLA does. That is the whole of what it asks for beyond the licence you
 What it does **not** ask for:
 
 - **It does not transfer your copyright.** You keep it. The CLA is a non-exclusive licence,
-  not an assignment.
+  not an assignment. That is a deliberate construction and not merely a soft option: under
+  Polish law an assignment of economic copyright requires written form on pain of nullity
+  (art. 53 of the copyright act), which a click-through cannot satisfy, while a non-exclusive
+  licence carries no form requirement (art. 67(5), read the other way round). A CLA works
+  where a contributor assignment agreement would not.
 - **It does not take your code out of Apache-2.0.** The agreement carries a *promise back*:
   your contribution remains available under the licence in force on the day you submitted it.
   Nothing you contribute can be removed from the open kernel later.
@@ -35,6 +39,12 @@ What it does **not** ask for:
 We would rather state the asymmetry than pretend it is not there: the project gets a right you
 do not get in return. That is the honest shape of open-core, and if it is not acceptable to
 you, that is a reasonable position and we would rather know before you spend time on a patch.
+
+The agreement is with **Arkadiusz Przychocki**, trading as Exeris Systems, and carries a
+succession clause so the rights pass to the company on incorporation — a licence is granted to
+a person, natural or legal, and a GitHub organisation is neither. `NOTICE` and the per-file
+headers name the project rather than the person; the CLA and `TRADEMARK.md` name the person,
+because those two are the instruments that need one.
 
 > **Status:** the agreement text is being finalised and the signing flow is not yet wired up.
 > Until it is, a pull request will not be blocked on it — but a contribution merged in the

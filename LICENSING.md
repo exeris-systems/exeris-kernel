@@ -62,8 +62,11 @@ a native driver — is permitted and intended. The SPI is a contract, not a moat
 
 Apache-2.0 section 6 grants no rights in trade names, trademarks, service marks, or
 product names. Dropping the Commons Clause therefore does **not** put the name
-"Exeris" into the grant. See `TRADEMARK.md` for what use is permitted without a
-separate agreement.
+"Exeris" into the grant. The marks are held by Arkadiusz Przychocki, trading as
+Exeris Systems, and will transfer to the company on incorporation. See
+`TRADEMARK.md` for what use is permitted without a separate agreement — the short
+version is that naming the software to refer to it needs no permission, and shipping
+something else under its name does.
 
 ## Third-party dependencies
 

@@ -33,6 +33,12 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   header through a reformat that rewrote 1 275 files. `tools/jfr-reporter` was outside it too
   and carried no header at all. Both now declare the check themselves, reading the one header
   file rather than a second copy.
+- **Two published coordinates declared no licence at all.** `<licenses>` lived in
+  `exeris-kernel-parent`, but `exeris-kernel-bom` and `exeris-kernel-build-config` parent to the
+  root POM — so their effective POMs carried none, while every other module inherited one
+  (`help:effective-pom` resolved 1 for spi, 0 for both of those). The block moves to the root,
+  where all ten coordinates inherit it. This is also what Maven Central validates: per artifact,
+  not per reactor.
 
 ### Added
 - **`FlowDefinitionBuilder.version(int)`** (ADR-064 amendment). ADR-064 made `(name, version)` the
