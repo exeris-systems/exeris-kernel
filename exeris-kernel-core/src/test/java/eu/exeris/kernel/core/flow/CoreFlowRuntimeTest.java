@@ -568,6 +568,47 @@ class CoreFlowRuntimeTest {
 
     @Test
     @Timeout(value = 10, unit = TimeUnit.SECONDS)
+    @DisplayName("key-addressed wake for an unknown instance still emits WakeOnLoadFallbackEvent")
+    void keyAddressedWakeMissEmitsWakeOnLoadFallbackEvent() throws Exception {
+        InMemorySnapshotStore snapshotStore = new InMemorySnapshotStore();
+        CountDownLatch eventReceived = new CountDownLatch(1);
+        AtomicReference<RecordedEvent> captured = new AtomicReference<>();
+
+        try (CoreFlowEngine engine = startedEngine(true, snapshotStore);
+             RecordingStream rs = new RecordingStream()) {
+
+            rs.enable(WAKE_FALLBACK_EVENT);
+            rs.onEvent(WAKE_FALLBACK_EVENT, event -> {
+                if (captured.compareAndSet(null, event)) {
+                    eventReceived.countDown();
+                }
+            });
+            rs.startAsync();
+
+            UUID unknown = UUID.randomUUID();
+            assertThatThrownBy(() -> engine.scheduler().wake(
+                    unknown.getMostSignificantBits(), unknown.getLeastSignificantBits()))
+                    .as("a key the engine does not know MUST still fail NOT_PARKED")
+                    .isInstanceOf(FlowEngineException.class);
+
+            // The regression this pins: the key-addressed form resolves and refuses inside the
+            // engine, so the refusal must not swallow the telemetry the two-call form emitted.
+            // A miss is the case ADR-013 §8 names explicitly - a stale wake for an instance no
+            // engine holds - and it is the half an operator cannot infer from anything else.
+            assertThat(eventReceived.await(3, TimeUnit.SECONDS))
+                    .as("wake(long, long) MUST emit WakeOnLoadFallback on the store miss it pays for")
+                    .isTrue();
+            RecordedEvent event = captured.get();
+            assertThat(event.getLong("instanceIdMost")).isEqualTo(unknown.getMostSignificantBits());
+            assertThat(event.getLong("instanceIdLeast")).isEqualTo(unknown.getLeastSignificantBits());
+            assertThat(event.getBoolean("restored"))
+                    .as("snapshot store had no row, restored MUST be false")
+                    .isFalse();
+        }
+    }
+
+    @Test
+    @Timeout(value = 10, unit = TimeUnit.SECONDS)
     @DisplayName("rescheduling an already parked flow preserves its parked registration and count")
     void reschedulingAlreadyParkedFlowPreservesParkedRegistrationAndCount() throws Exception {
         InMemorySnapshotStore snapshotStore = new InMemorySnapshotStore();

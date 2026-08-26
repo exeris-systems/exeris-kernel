@@ -326,22 +326,16 @@ final class CoreFlowRuntime { // NOPMD
      *
      * <p>Resolves inside the engine, so a choreography bridge no longer probes first: the
      * two-call form could not see a live instance on its way to PARK, and paid a second
-     * store read on a genuine miss. Still emits the fallback event that probe emitted, so
-     * the durable-store consultation stays visible on this path.
+     * store read on a genuine miss. The fallback event that probe emitted still fires from
+     * the one store read that remains - see {@link #resolveParkedInstance}.
      */
     private void wake(FlowKey key, FlowState requestedState) {
-        boolean inMemory = parkedInstances.containsKey(key) || liveInstances.containsKey(key);
         parkedLookupMisses.clearMiss(key);
         if (terminalStateCatalog.isTerminal(key)) {
             return;
         }
 
-        long fallbackStartNanos = System.nanoTime();
         RuntimeFlowInstance instance = resolveParkedInstance(key, requestedState);
-        if (!inMemory) {
-            WakeOnLoadFallbackEvent.emit(config.engineName(), key.instanceIdMost(),
-                    key.instanceIdLeast(), true, System.nanoTime() - fallbackStartNanos);
-        }
 
         if (instance.isTerminal() || terminalStateCatalog.isTerminal(key)) {
             liveInstances.remove(key, instance);
@@ -373,7 +367,15 @@ final class CoreFlowRuntime { // NOPMD
             }
             throw notParked(key);
         }
+        // In-memory miss → durable store, the one probe this path pays. ADR-013 §8 telemetry
+        // contract: emit whichever way the read goes, because `restored` is the flag that
+        // separates a genuine cross-engine restore from a stale wake for a key this engine
+        // will never know. Emitting only on the hit would leave the miss - the case an
+        // operator most needs to see - dark on the key-addressed path.
+        long fallbackStartNanos = System.nanoTime();
         RuntimeFlowInstance restored = restoreParkedFromSnapshot(key, false);
+        WakeOnLoadFallbackEvent.emit(config.engineName(), key.instanceIdMost(),
+                key.instanceIdLeast(), restored != null, System.nanoTime() - fallbackStartNanos);
         if (restored == null) {
             throw notParked(key);
         }
