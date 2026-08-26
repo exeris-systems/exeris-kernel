@@ -2169,7 +2169,7 @@ are.
 
 **Gap:** `CommunityHttpRequestDispatcher.handleWithinRequestSession` binds a `PersistenceSessionBox` around every non-streaming request. The first persistence call takes a pooled connection, `close()` on the handle it hands out is a no-op (`NonOwningPersistenceConnection`), and the pool gets the connection back only from `box.release()` in the handler's `finally`. Connection lifetime is therefore **request** lifetime, not transaction lifetime. The binding is unconditional: no configuration key anywhere in SPI or Community disables it, and no ADR governs it — it is described in `docs/subsystems/persistence.md` §Request Session and nowhere else.
 
-That is a sound design for a handler that returns promptly. For one that blocks it is hold-and-wait on a single pool, because the work that must finish before the handler can return draws from that same pool: flow steps run on bare `Thread.ofVirtual()` (`CoreFlowRuntime.java:893`), inherit no `ScopedValue`, and acquire independently — including the park checkpoint write (`applyParkOutcome` → `persistSnapshot`), which every parked saga performs.
+That is a sound design for a handler that returns promptly. For one that blocks it is hold-and-wait on a single pool, because the work that must finish before the handler can return draws from that same pool: flow steps run on bare `Thread.ofVirtual()` (`CoreFlowRuntime.launch`), inherit no `ScopedValue`, and acquire independently — including the park checkpoint write (`applyParkOutcome` → `persistSnapshot`), which every parked saga performs.
 
 **Measured** (cross-runtime saga benchmark; park 1000 ms, pool 32, ~38 sagas in flight, ~165 s, identical for all arms):
 
