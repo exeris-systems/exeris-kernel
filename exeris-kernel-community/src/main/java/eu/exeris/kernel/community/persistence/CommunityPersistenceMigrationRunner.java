@@ -57,12 +57,11 @@ import java.util.regex.Matcher;
  *
  * @since 0.8.0
  */
-// CyclomaticComplexity: the class total is dominated by the SQL splitter
-// (`splitSqlStatements` + `stripLineComments` + `addStatement`) — a single-quote-aware
-// per-character scanner that cannot be meaningfully decomposed without fragmenting the
-// state machine. The contract is locked behind `CommunityPersistenceEngineMigrationTest`,
-// the highest per-method complexity stays at 9 (still inside the project default).
-@SuppressWarnings("PMD.CyclomaticComplexity")
+// The class total used to need a CyclomaticComplexity suppression, dominated by the SQL splitter
+// (`splitSqlStatements` + `stripLineComments` + `addStatement`) — a single-quote-aware per-character
+// scanner that cannot be decomposed without fragmenting the state machine. Moving the apply loop to
+// `SchemaMigrationApplier` (ADR-073) dropped the total under the threshold and the suppression with
+// it; PMD's own `UnnecessaryWarningSuppression` is what caught that it had become dead.
 final class CommunityPersistenceMigrationRunner {
 
     /**
@@ -82,7 +81,7 @@ final class CommunityPersistenceMigrationRunner {
             Comparator.comparing(CommunityPersistenceMigrationRunner::versionKey)
                     .thenComparing(Comparator.naturalOrder());
 
-    private static final Pattern VERSION_PATTERN = Pattern.compile("V(\\d+)\\.(\\d+)\\.(\\d+)__");
+    /* default */ static final Pattern VERSION_PATTERN = Pattern.compile("V(\\d+)\\.(\\d+)\\.(\\d+)__");
 
     private CommunityPersistenceMigrationRunner() {
         // utility — no instances
@@ -128,39 +127,14 @@ final class CommunityPersistenceMigrationRunner {
         List<String> sorted = new ArrayList<>(resources);
         sorted.sort(MIGRATION_ORDER);
         try (Connection connection = dataSource.getConnection()) {
-            runMigrationsInTransaction(connection, sorted);
+            SchemaHistoryLedger.ensureTable(connection);
+            SchemaMigrationApplier.applyPending(connection, sorted);
         } catch (SQLException | IllegalStateException | UncheckedIOException ex) {
             throw PersistenceProviderException.bootstrapFailure(providerId, connectionUrl, ex);
         }
     }
 
-    private static void runMigrationsInTransaction(Connection connection,
-                                                   List<String> resources) throws SQLException {
-        connection.setAutoCommit(false);
-        boolean committed = false;
-        try {
-            for (String resource : resources) {
-                executeMigrationScript(connection, resource);
-            }
-            connection.commit();
-            committed = true;
-        } finally {
-            restoreAutoCommit(connection, committed);
-        }
-    }
-
-    private static void restoreAutoCommit(Connection connection, boolean committed) throws SQLException {
-        try {
-            if (!committed) {
-                connection.rollback();
-            }
-        } finally {
-            connection.setAutoCommit(true);
-        }
-    }
-
-    private static void executeMigrationScript(Connection connection, String resourcePath) throws SQLException {
-        String migrationSql = readMigrationResource(resourcePath);
+    /* default */ static void executeStatements(Connection connection, String migrationSql) throws SQLException {
         for (String statementSql : splitSqlStatements(migrationSql)) {
             try (Statement statement = connection.createStatement()) {
                 statement.execute(statementSql);
@@ -169,7 +143,7 @@ final class CommunityPersistenceMigrationRunner {
     }
 
     @SuppressWarnings("PMD.LawOfDemeter")
-    private static String readMigrationResource(String resourcePath) {
+    /* default */ static String readMigrationResource(String resourcePath) {
         ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
         try (InputStream inputStream = classLoader.getResourceAsStream(resourcePath)) {
             if (inputStream == null) {
