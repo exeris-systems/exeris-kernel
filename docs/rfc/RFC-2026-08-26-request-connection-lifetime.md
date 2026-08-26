@@ -333,9 +333,12 @@ _(Filled in when status reaches ACCEPTED / REJECTED / WITHDRAWN.)_
 - **Measure the real acquire-rate multiplier.** The upper bound is 3.17×; the true figure needs a count
   of reuses that cross a transaction boundary, plus the cost of the interceptor's session-key statements
   at that rate. **This is what decides the default**, and the ADR should be gated on it.
-- **Instrument the flow-thread connection path.** `openPhysicalConnection` emits no lifecycle event, so
-  how long flow threads hold pooled connections is unknown. Until it is instrumented, no document can
-  honestly apportion the hold between the request session and the saga.
+- **~~Instrument the flow-thread connection path.~~ Done — the instrument exists; the measurement does
+  not.** `eu.exeris.kernel.persistence.ConnectionHold` is now emitted at the pool return rather than
+  from one caller, carrying `holdDurationNs` plus `withinRequestScope` and `acquiredOnVirtualThread`
+  sampled at acquire. That makes the apportionment *expressible*. It does not make it *known*: nobody
+  has re-run the benchmark with the event enabled, so this RFC's withdrawn attribution stays withdrawn
+  until someone does.
 - **Where does the lifetime facet belong on `RouteRequirement`?** It currently carries authorization
   kind and scopes; a lifetime facet is a second concern on one carrier. Owner: the ADR.
 - **Release ownership under a shorter lifetime.** Constraint 6's question — who returns the connection
