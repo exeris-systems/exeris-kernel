@@ -75,6 +75,13 @@ final class CommunityHttpConfigResolver {
         boolean h2cUpgradeEnabled = configProvider.getBoolean("http.h2cUpgradeEnabled")
             .orElse(true);
         HttpVersion maxVersion = resolveMaxVersion(configProvider);
+        // ADR-074. A DIAL address, deliberately distinct from http.bindHost, which is a LISTEN
+        // address — the client used to read the latter as the former. No default: an unaddressed
+        // request is refused rather than sent to whatever the server happens to bind.
+        String defaultAuthority = configProvider.getString("http.client.defaultAuthority")
+            .map(String::strip)
+            .filter(value -> !value.isEmpty())
+            .orElse(null);
 
         return new HttpConfig(
             mode,
@@ -86,7 +93,8 @@ final class CommunityHttpConfigResolver {
             maxHeaderSize,
             maxBodyBytes,
             h2cUpgradeEnabled,
-            maxVersion
+            maxVersion,
+            defaultAuthority
         );
     }
 

@@ -8,7 +8,6 @@ import eu.exeris.kernel.core.http.http1.Http1ResponseEncoder;
 import eu.exeris.kernel.spi.http.HttpHeader;
 import eu.exeris.kernel.spi.http.HttpRequest;
 import eu.exeris.kernel.spi.http.HttpVersion;
-import eu.exeris.kernel.spi.transport.TransportConnection;
 
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
@@ -31,7 +30,7 @@ import java.lang.foreign.ValueLayout;
  * </pre>
  *
  * <p>Default headers added when absent from {@link HttpRequest#headers()}:
- * {@code Host: host:port} (from {@link TransportConnection}), {@code Content-Length: N},
+ * {@code Host: host:port} (the request's effective authority, ADR-074), {@code Content-Length: N},
  * {@code Connection: close}.
  */
 final class CommunityHttpClientRequestEncoder {
@@ -51,7 +50,7 @@ final class CommunityHttpClientRequestEncoder {
      */
     /* default */ static long writeRequest(MemorySegment seg,
                                            HttpRequest request,
-                                           TransportConnection connection,
+                                           String effectiveAuthority,
                                            int bodyBytes) {
         long pos = writeRequestLine(seg, request);
         HeaderWriteResult headerWriteResult = writeRequestHeaders(seg, pos, request);
@@ -59,7 +58,7 @@ final class CommunityHttpClientRequestEncoder {
                 seg,
                 headerWriteResult.position(),
                 headerWriteResult.presence(),
-                connection,
+                effectiveAuthority,
                 bodyBytes);
         return writeRequestBody(seg, pos, request, bodyBytes);
     }
@@ -99,12 +98,17 @@ final class CommunityHttpClientRequestEncoder {
     private static long writeDefaultRequestHeaders(MemorySegment seg,
                                                    long startPos,
                                                    HeaderPresence presence,
-                                                   TransportConnection connection,
+                                                   String effectiveAuthority,
                                                    int bodyBytes) {
         long pos = startPos;
         if (!presence.hasHost()) {
-            pos = Http1ResponseEncoder.writeHeader(seg, pos, HEADER_HOST,
-                    connection.remoteAddress() + ":" + connection.remotePort());
+            // ADR-074: Host follows the AUTHORITY, not the connection. It used to be built from
+            // TransportConnection.remoteAddress(), whose SPI contract documents it as "the remote
+            // peer's address as a string (e.g. 192.168.1.1)" — an address, not a name. Building the
+            // header that selects a name-based virtual host out of an address breaks vhosting by
+            // construction, and would break it again the moment a resolver separates the name a
+            // caller wrote from the endpoint actually dialled.
+            pos = Http1ResponseEncoder.writeHeader(seg, pos, HEADER_HOST, effectiveAuthority);
         }
         if (!presence.hasContentLength()) {
             pos = Http1ResponseEncoder.writeHeader(seg, pos, HEADER_CONTENT_LENGTH,

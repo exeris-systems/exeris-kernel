@@ -8,6 +8,26 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ## [Unreleased] — development/0.12.0
 
+### Added
+
+- **A request can name the peer it is sent to** (ADR-074). `HttpRequest` gains a nullable
+  `authority`, `HttpConfig` gains `defaultAuthority`, and both keep their previous canonical
+  constructor as a bridge — the SPI gate reports `stable-breaks=0` against `v0.11.0`, measured.
+  A new `http.client.defaultAuthority` key supplies the peer for requests that name none.
+
+### Fixed
+
+- **The HTTP client dialled the address its own server listened on.** Not "single-host", which is
+  what every document said: `CommunityHttpClientEngine` has no public constructor, its only
+  reachable path took `targetHost` from `HttpConfig.bindHost` — documented as the SERVER/DUAL
+  *listener* address — and no client-target key existed anywhere. An application could not address
+  the *first* external peer, and `HttpConfig.defaultClient()` (bindHost `null`, port `-1`) produced
+  an engine that could not send at all. An unaddressed request is now refused rather than sent
+  somewhere the caller never named, and `Host` follows the request's authority instead of
+  `TransportConnection.remoteAddress()`, whose SPI contract documents it as an *address*
+  (`e.g. 192.168.1.1`) — building the header that selects a name-based virtual host out of an
+  address breaks vhosting by construction.
+
 ### Decided
 
 - **ADR-074 — a request names its own peer.** Discharges the one question RFC-2026-06-29 left

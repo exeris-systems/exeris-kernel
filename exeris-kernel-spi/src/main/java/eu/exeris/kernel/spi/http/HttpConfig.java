@@ -35,6 +35,11 @@ import java.util.Objects;
  *                              &gt; 0, refused on the same grounds
  * @param maxRequestBodyBytes   maximum request body size in bytes; ({@code -1} = unlimited)
  * @param h2cUpgradeEnabled     whether to accept HTTP/1.1 → HTTP/2 cleartext upgrade (RFC 7540 §3.2)
+ * @param defaultAuthority      CLIENT/DUAL default peer as {@code host} or {@code host:port}, used
+ *                              when an {@link HttpRequest#authority()} is {@code null}; may itself be
+ *                              {@code null}, in which case an unaddressed request is refused rather
+ *                              than sent somewhere unintended (ADR-074). This is a DIAL address and
+ *                              is deliberately not {@code bindHost}, which is a LISTEN address
  * @param maxVersion            highest HTTP version this engine is permitted to negotiate;
  *                              {@link HttpVersion#HTTP_3} requires Enterprise provider
  * @since 0.5.0
@@ -49,7 +54,8 @@ public record HttpConfig(
         int maxRequestHeaderSize,
         long maxRequestBodyBytes,
         boolean h2cUpgradeEnabled,
-        HttpVersion maxVersion
+        HttpVersion maxVersion,
+        String defaultAuthority
 ) {
 
     /** Default bind address: all interfaces. */
@@ -74,78 +80,51 @@ public record HttpConfig(
     /** Default max request body: 10 MiB. */
     public static final long DEFAULT_MAX_REQUEST_BODY_BYTES = 10L * 1_024 * 1_024;
 
-    private static final int MIN_SERVER_PORT = 0;
-    private static final int MIN_PORT = 1;
-    private static final int MAX_PORT = 65_535;
-    private static final int MIN_CONNECTIONS = 1;
 
     public HttpConfig {
         Objects.requireNonNull(mode,       "mode must not be null");
         Objects.requireNonNull(maxVersion, "maxVersion must not be null");
         if (mode != HttpMode.DISABLED) {
-            validateConnectionLimits(maxConnections, idleTimeoutMillis);
-            validateRequestLimits(maxRequestHeaderCount, maxRequestHeaderSize, maxRequestBodyBytes);
-            validatePort(mode, port, bindHost);
+            HttpConfigValidation.validateConnectionLimits(maxConnections, idleTimeoutMillis);
+            HttpConfigValidation.validateRequestLimits(
+                    maxRequestHeaderCount, maxRequestHeaderSize, maxRequestBodyBytes);
+            HttpConfigValidation.validatePort(mode, port, bindHost);
+            HttpConfigValidation.validateDefaultAuthority(defaultAuthority);
         }
     }
 
-    private static void validatePort(HttpMode mode, int port, String bindHost) {
-        if (mode == HttpMode.SERVER || mode == HttpMode.DUAL) {
-            validateServerDualBinding(bindHost, port);
-        } else {
-            validateClientPort(port);
-        }
-    }
-
-    private static void validateServerDualBinding(String bindHost, int port) {
-        if (bindHost == null || bindHost.isBlank()) {
-            throw new IllegalArgumentException(
-                    "bindHost must not be null or blank for SERVER/DUAL mode");
-        }
-        if (port < MIN_SERVER_PORT || port > MAX_PORT) {
-            throw new IllegalArgumentException(
-                    "port must be in range [0, 65535] for SERVER/DUAL mode (0 = ephemeral), got: " + port);
-        }
-    }
-
-    private static void validateClientPort(int port) {
-        if (port != -1 && (port < MIN_PORT || port > MAX_PORT)) {
-            throw new IllegalArgumentException(
-                    "port must be -1 (sentinel) or 1-65535 for CLIENT mode, got: " + port);
-        }
-    }
-
-    private static void validateConnectionLimits(int maxConnections, long idleTimeoutMillis) {
-        if (maxConnections < MIN_CONNECTIONS) {
-            throw new IllegalArgumentException(
-                    "maxConnections must be >= 1, got: " + maxConnections);
-        }
-        if (idleTimeoutMillis < 0) {
-            throw new IllegalArgumentException(
-                    "idleTimeoutMillis must be >= 0 (0 = no timeout), got: " + idleTimeoutMillis);
-        }
-    }
-
-    private static void validateRequestLimits(int maxRequestHeaderCount, int maxRequestHeaderSize,
-                                               long maxRequestBodyBytes) {
-        // > 0, not >= 0 (ADR-071). Zero is not "unlimited" for either bound -- the parser refuses
-        // the first header at maxHeaders 0 and any non-empty field at maxHeaderSize 0, so a config
-        // carrying it serves nothing but 400s. Refused at construction, where the message names the
-        // key, rather than per request, where it looks like a client problem.
-        if (maxRequestHeaderCount <= 0) {
-            throw new IllegalArgumentException(
-                    "maxRequestHeaderCount must be > 0 (0 refuses every request, it is not "
-                            + "unlimited), got: " + maxRequestHeaderCount);
-        }
-        if (maxRequestHeaderSize <= 0) {
-            throw new IllegalArgumentException(
-                    "maxRequestHeaderSize must be > 0 (0 refuses every request, it is not "
-                            + "unlimited), got: " + maxRequestHeaderSize);
-        }
-        if (maxRequestBodyBytes < -1) {
-            throw new IllegalArgumentException(
-                    "maxRequestBodyBytes must be >= -1 (-1 = unlimited), got: " + maxRequestBodyBytes);
-        }
+    /**
+     * Creates a configuration with no default client peer.
+     *
+     * <p>This is the canonical constructor as it stood before 0.12, retained as a compatibility
+     * bridge so that adding {@link #defaultAuthority()} to a {@code stable} carrier does not break
+     * existing callers. It delegates with a {@code null} default authority.
+     *
+     * @param mode                  operating mode
+     * @param bindHost              listener bind address for SERVER / DUAL modes
+     * @param port                  listener port for SERVER / DUAL modes
+     * @param maxConnections        maximum concurrent connections
+     * @param idleTimeoutMillis     idle connection timeout, {@code 0} disables
+     * @param maxRequestHeaderCount maximum request header count
+     * @param maxRequestHeaderSize  maximum single request header size in bytes
+     * @param maxRequestBodyBytes   maximum request body size in bytes
+     * @param h2cUpgradeEnabled     whether cleartext h2c upgrade is honoured
+     * @param maxVersion            highest negotiable HTTP version
+     * @since 0.5.0
+     */
+    @SuppressWarnings("PMD.ExcessiveParameterList") // backward-compat bridge
+    public HttpConfig(HttpMode mode,
+                      String bindHost,
+                      int port,
+                      int maxConnections,
+                      long idleTimeoutMillis,
+                      int maxRequestHeaderCount,
+                      int maxRequestHeaderSize,
+                      long maxRequestBodyBytes,
+                      boolean h2cUpgradeEnabled,
+                      HttpVersion maxVersion) {
+        this(mode, bindHost, port, maxConnections, idleTimeoutMillis, maxRequestHeaderCount,
+                maxRequestHeaderSize, maxRequestBodyBytes, h2cUpgradeEnabled, maxVersion, null);
     }
 
     /**
@@ -165,7 +144,8 @@ public record HttpConfig(
                 DEFAULT_MAX_HEADER_SIZE,
                 DEFAULT_MAX_REQUEST_BODY_BYTES,
                 true,
-                HttpVersion.HTTP_2
+                HttpVersion.HTTP_2,
+                null
         );
     }
 
@@ -185,7 +165,8 @@ public record HttpConfig(
                 DEFAULT_MAX_HEADER_SIZE,
                 DEFAULT_MAX_REQUEST_BODY_BYTES,
                 false,
-                HttpVersion.HTTP_2
+                HttpVersion.HTTP_2,
+                null
         );
     }
 }

@@ -6,11 +6,15 @@ package eu.exeris.kernel.tck.contract.http;
 
 import eu.exeris.kernel.spi.http.HttpClientEngine;
 import eu.exeris.kernel.spi.http.HttpConfig;
+import eu.exeris.kernel.spi.http.HttpMethod;
+import eu.exeris.kernel.spi.http.HttpRequest;
+import eu.exeris.kernel.spi.http.HttpVersion;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -108,6 +112,41 @@ public abstract class AbstractHttpClientEngineTck {
         void runningAfterStart() {
             engine.start();
             assertThat(engine.isRunning()).isTrue();
+        }
+    }
+
+    @Nested
+    @DisplayName("Peer addressing (ADR-074)")
+    class PeerAddressing {
+
+        @Test
+        @DisplayName("An unaddressed request with no configured default peer is refused, not guessed")
+        void unaddressedRequestWithNoDefaultIsRefused() {
+            engine.start();
+
+            // HttpConfig.defaultClient() carries no default authority, and this request names none.
+            // The engine must refuse rather than fall back to a host it was never given: before
+            // ADR-074 the fallback was HttpConfig.bindHost — the SERVER/DUAL *listener* address —
+            // so an unaddressed request was silently sent to whatever the local server bound.
+            assertThatThrownBy(() -> engine.send(HttpRequest.noBody(
+                    HttpMethod.GET, "/health", HttpVersion.HTTP_1_1, List.of())))
+                    .as("a request naming no peer, against an engine configured with none, must fail")
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("authority");
+        }
+
+        @Test
+        @DisplayName("An authority without an explicit port is refused")
+        void authorityWithoutPortIsRefused() {
+            engine.start();
+
+            // There is no scheme on HttpRequest, so there is no basis for defaulting to 80 or 443 —
+            // and defaulting to the listener port is what this ADR removed. Refusing names the fix.
+            assertThatThrownBy(() -> engine.send(HttpRequest
+                    .noBody(HttpMethod.GET, "/health", HttpVersion.HTTP_1_1, List.of())
+                    .withAuthority("service.internal")))
+                    .as("an authority carrying no port must be refused rather than assigned one")
+                    .isInstanceOf(IllegalStateException.class);
         }
     }
 
