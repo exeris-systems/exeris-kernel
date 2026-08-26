@@ -65,6 +65,42 @@
                     </execution>
                 </executions>
             </plugin>
+
+            <!--
+                This tool sits outside the reactor, so the license check declared in
+                exeris-kernel-parent never saw it and its six sources carried no header at all.
+                CI does build it (`mvn -f tools/jfr-reporter/pom.xml clean package`), so a
+                validate-phase check here is a gate that actually runs rather than one that
+                only looks like coverage. The header is read from the build-config module's
+                copy so there is one source for it, not two that drift.
+            -->
+            <plugin>
+                <groupId>com.mycila</groupId>
+                <artifactId>license-maven-plugin</artifactId>
+                <version>4.3</version>
+                <configuration>
+                    <licenseSets>
+                        <licenseSet>
+                            <header>${project.basedir}/../../exeris-kernel-build-config/src/main/resources/license-header.txt</header>
+                            <includes>
+                                <include>src/**/*.java</include>
+                            </includes>
+                        </licenseSet>
+                    </licenseSets>
+                    <mapping>
+                        <java>SLASHSTAR_STYLE</java>
+                    </mapping>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>check-licenses</id>
+                        <phase>validate</phase>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
     </build>
 </project>

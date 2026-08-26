@@ -8,6 +8,32 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ## [Unreleased] — development/0.12.0
 
+### Changed
+
+- **The kernel is now Apache License 2.0, unmodified.** The Commons Clause condition is gone,
+  so the open kernel is open source by the OSI definition for the first time — the previous
+  terms withheld the right to sell the software as a competing product, which is a condition
+  Apache-2.0 does not carry and which corporate licence scanners correctly flagged as
+  non-permissive. Every source file now carries `SPDX-License-Identifier: Apache-2.0` (1 285
+  files) in place of a six-line prose header, and `LICENSING.md` maps the open-core boundary
+  for a legal review while `TRADEMARK.md` states what Apache-2.0 §6 explicitly does not grant:
+  the name.
+- **The Apache 2.0 text itself was wrong, and that is the larger half of this change.** What
+  shipped through v0.11.0 as "Apache License Version 2.0" was an abridged paraphrase, not the
+  licence. It dropped the definition of "submitted" and the "Not a Contribution" carve-out from
+  §1, two sentences from §4(d) including "the contents of the NOTICE file … do not modify the
+  License", and the whole "Notwithstanding the above" sentence from §5 — the clause that lets a
+  separate contributor agreement coexist with the inbound-equals-outbound default. `LICENSE`
+  now matches the canonical text byte for byte, verified against four independent Apache-2.0
+  copies rather than against a transcription. The five files that carried it (root plus the
+  four module copies) are identical again.
+- **The licence header check now covers the module that ships the header.**
+  `exeris-kernel-build-config` is parented to the root POM while the check is declared in
+  `exeris-kernel-parent`, so its own four sources sat outside the gate — and kept the old
+  header through a reformat that rewrote 1 275 files. `tools/jfr-reporter` was outside it too
+  and carried no header at all. Both now declare the check themselves, reading the one header
+  file rather than a second copy.
+
 ### Added
 - **`FlowDefinitionBuilder.version(int)`** (ADR-064 amendment). ADR-064 made `(name, version)` the
   plan's identity and called the version "explicit, application-declared" — but the builder, the only
