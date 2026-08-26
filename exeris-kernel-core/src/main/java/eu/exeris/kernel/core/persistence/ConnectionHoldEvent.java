@@ -92,6 +92,18 @@ public final class ConnectionHoldEvent extends Event {
     public boolean acquiredOnVirtualThread;
 
     /**
+     * Whether the connection was <em>discarded</em> rather than returned to the pool. A pool
+     * eviction reaches the same {@code close()} as a healthy return, so without this the two are
+     * indistinguishable — and they are not the same event. The eviction path this kernel actually
+     * takes is {@code discardAfterInterceptorFailure}: a {@code ConnectionInterceptor} threw, so the
+     * connection is thrown away because the RLS session keys could not be published. Reported as an
+     * ordinary hold, a burst of those reads as a burst of very short healthy holds — that is, it
+     * reads as the opposite of what it is.
+     */
+    @Label("Discarded")
+    public boolean discarded;
+
+    /**
      * Commits a connection-hold event. Must be called when the connection goes back to the pool.
      *
      * <p>Both allocation and commit happen here, so nothing is held across the hold itself —
@@ -102,12 +114,14 @@ public final class ConnectionHoldEvent extends Event {
      * @param tenantKey               tenant isolation key, or {@code "shared"}
      * @param withinRequestScope      whether a request session was bound when the connection was taken
      * @param acquiredOnVirtualThread whether the acquiring thread was virtual
+     * @param discarded               whether the connection was evicted rather than returned
      * @param acquiredAtNs            {@link System#nanoTime()} captured when the connection was handed out
      */
     public static void commitHold(String providerId,
                                   String tenantKey,
                                   boolean withinRequestScope,
                                   boolean acquiredOnVirtualThread,
+                                  boolean discarded,
                                   long acquiredAtNs) {
         if (!FlightRecorder.isInitialized()) {
             return;
@@ -121,6 +135,7 @@ public final class ConnectionHoldEvent extends Event {
         event.holdDurationNs          = System.nanoTime() - acquiredAtNs;
         event.withinRequestScope      = withinRequestScope;
         event.acquiredOnVirtualThread = acquiredOnVirtualThread;
+        event.discarded               = discarded;
         // VT-JFR safety: commit off the caller's virtual thread (see class Javadoc / JfrCommitGate).
         // Inline commit only as a fallback when no committer is installed (tests / pre-bootstrap).
         if (!JfrCommitGate.offer(event)) {

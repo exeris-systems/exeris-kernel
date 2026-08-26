@@ -8,10 +8,12 @@
  */
 package eu.exeris.kernel.community.persistence;
 
+import eu.exeris.kernel.spi.persistence.ConnectionInterceptor;
 import eu.exeris.kernel.spi.persistence.PersistenceConfig;
 import eu.exeris.kernel.spi.persistence.PersistenceConnection;
 import eu.exeris.kernel.spi.persistence.PersistenceEngine;
 import eu.exeris.kernel.spi.persistence.TransactionIsolation;
+import eu.exeris.kernel.spi.security.StorageContext;
 import jdk.jfr.consumer.RecordedEvent;
 import jdk.jfr.consumer.RecordingStream;
 import org.junit.jupiter.api.DisplayName;
@@ -24,6 +26,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Pins the hold-side half of pool telemetry.
@@ -69,6 +72,9 @@ class CommunityConnectionHoldEventTest {
                 .as("hold duration MUST cover the time the connection was actually kept")
                 .isGreaterThanOrEqualTo(TimeUnit.MILLISECONDS.toNanos(HOLD_MILLIS) / 2);
         assertThat(event.getString("tenantKey")).isNotBlank();
+        assertThat(event.getBoolean("discarded"))
+                .as("a healthy return MUST NOT look like an eviction")
+                .isFalse();
     }
 
     @Test
@@ -132,6 +138,34 @@ class CommunityConnectionHoldEventTest {
         assertThat(event.getBoolean("withinRequestScope"))
                 .as("a bare virtual thread inherits no ScopedValue, so no request session is in scope")
                 .isFalse();
+    }
+
+    @Test
+    @Timeout(value = 20, unit = TimeUnit.SECONDS)
+    @DisplayName("a connection discarded after an interceptor failure is not reported as a healthy return")
+    void discardedConnectionIsDistinguishableFromAReturnedOne() throws Exception {
+        RecordedEvent event = captureHold(engine -> {
+            // The eviction path this kernel actually takes. An interceptor throwing means the RLS
+            // session keys could not be published, so the connection is thrown away rather than
+            // handed out — and it reaches the same close() a healthy return does.
+            engine.registerInterceptor(new ConnectionInterceptor() {
+                @Override
+                public void onConnectionAcquired(PersistenceConnection connection,
+                                                 StorageContext storageContext) {
+                    throw new IllegalStateException("interceptor refuses this connection");
+                }
+            });
+            assertThatThrownBy(() -> engine.openConnection())
+                    .as("an interceptor failure MUST NOT hand the connection out")
+                    .isInstanceOf(RuntimeException.class);
+        });
+
+        // Without this flag the event above is indistinguishable from a very short healthy hold,
+        // so a burst of interceptor failures would read as a burst of fast, healthy returns —
+        // the opposite of what it is.
+        assertThat(event.getBoolean("discarded"))
+                .as("an evicted connection MUST report discarded=true")
+                .isTrue();
     }
 
     /** Runs {@code work} against a fresh engine with a recording open, returning the first hold event. */

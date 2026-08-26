@@ -154,6 +154,7 @@ the returning thread is not necessarily the acquiring one:
 |---|---|
 | `withinRequestScope` | A request session was in scope on the acquiring thread. **Not an ownership claim** — a deliberate `openPhysical()` inside a request reads `true`, which is right for apportioning residency and wrong as a statement about who owns the connection. |
 | `acquiredOnVirtualThread` | The acquiring thread was virtual. Background work in this kernel runs virtual, so `withinRequestScope=false` with `acquiredOnVirtualThread=true` is the flow-step signature. |
+| `discarded` | The connection was **evicted, not returned**. A pool eviction reaches the same `close()` a healthy return does, so without this flag the two are the same event. The eviction path this kernel actually takes is `discardAfterInterceptorFailure` — a `ConnectionInterceptor` threw, so the connection is thrown away because the RLS session keys could not be published. Reported as an ordinary hold, a burst of those reads as a burst of very short *healthy* returns. |
 
 Both events are single-phase and hand their `commit()` to a platform thread through `JfrCommitGate`:
 a hold spans arbitrary caller work, so the release nearly always follows a park/remount, which is

@@ -29,6 +29,9 @@ import java.util.Objects;
 @SuppressWarnings({"PMD.TooManyMethods", "PMD.CyclomaticComplexity"})
 final class CommunityHikariSupport {
 
+    /** Bound only for the synchronous close inside {@link #discardConnection}; see there for why. */
+    private static final ScopedValue<Boolean> DISCARDING = ScopedValue.newInstance();
+
     private final HikariDataSource pool;
 
     private CommunityHikariSupport(HikariDataSource pool) {
@@ -148,8 +151,8 @@ final class CommunityHikariSupport {
             // runs it in a finally, so every close path is covered — including the rollback-and-close
             // one — and the two call sites in CommunityPersistenceEngine stay untouched.
             JdbcPersistenceConnection connection = lease.transferToJdbc(() -> {
-                ConnectionHoldEvent.commitHold(
-                        providerId, tenantKey, withinRequestScope, onVirtualThread, acquiredAtNs);
+                ConnectionHoldEvent.commitHold(providerId, tenantKey, withinRequestScope,
+                        onVirtualThread, DISCARDING.orElse(Boolean.FALSE), acquiredAtNs);
                 onClose.run();
             });
             success = true;
@@ -161,11 +164,18 @@ final class CommunityHikariSupport {
 
     /* default */ void discardConnection(JdbcPersistenceConnection connection) {
         Objects.requireNonNull(connection, "connection must not be null");
-        try (connection) {
-            pool.evictConnection(connection.rawJdbcConnection());
-        } catch (IllegalArgumentException | IllegalStateException _) {
-            // best-effort: connection already detached or pool is shutting down
-        }
+        // An eviction reaches the same close() as a healthy return, and the onClose captured at
+        // acquire cannot see which one it is. The reason is bound for the synchronous close below
+        // rather than threaded through JdbcPersistenceConnection, because the close is on this
+        // thread inside this scope and nothing else needs to know. ScopedValue, not a field on the
+        // connection: no per-connection state to reset, and nothing to leak if evictConnection throws.
+        ScopedValue.where(DISCARDING, Boolean.TRUE).run(() -> {
+            try (connection) {
+                pool.evictConnection(connection.rawJdbcConnection());
+            } catch (IllegalArgumentException | IllegalStateException _) {
+                // best-effort: connection already detached or pool is shutting down
+            }
+        });
     }
 
     private static final class ConnectionLease implements AutoCloseable {
