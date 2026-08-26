@@ -78,6 +78,45 @@
 				<artifactId>maven-surefire-plugin</artifactId>
 				<version>3.2.5</version>
 			</plugin>
+
+			<!--
+				This module SHIPS license-header.txt, and until now was the one module the header
+				check could not reach: the plugin is declared in exeris-kernel-parent, and this
+				module's parent is exeris-kernel-root. Its four sources therefore kept the old
+				header through a repo-wide reformat that rewrote 1275 files — the guard was blind
+				exactly where the thing it guards is authored.
+
+				Declared here rather than promoted to the root POM because the parent's copy resolves
+				the header from THIS module's installed artifact, which cannot work for this module
+				itself on a clean machine. Reading the file from disk has no such bootstrap problem.
+			-->
+			<plugin>
+				<groupId>com.mycila</groupId>
+				<artifactId>license-maven-plugin</artifactId>
+				<version>4.3</version>
+				<configuration>
+					<licenseSets>
+						<licenseSet>
+							<header>${project.basedir}/src/main/resources/license-header.txt</header>
+							<includes>
+								<include>src/**/*.java</include>
+							</includes>
+						</licenseSet>
+					</licenseSets>
+					<mapping>
+						<java>SLASHSTAR_STYLE</java>
+					</mapping>
+				</configuration>
+				<executions>
+					<execution>
+						<id>check-licenses</id>
+						<phase>validate</phase>
+						<goals>
+							<goal>check</goal>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
 		</plugins>
 	</build>
 </project>

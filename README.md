@@ -96,7 +96,9 @@ mvn -pl exeris-kernel-core -am clean install
 
 ## Licensing
 
-- Community-side modules (SPI, Core, Community, TCK): [LICENSE-COMMUNITY](LICENSE-COMMUNITY)
+- Everything in this repository: **Apache License, Version 2.0** — [LICENSE](LICENSE)
+- What is open and what is commercial, with SPDX identifiers: [LICENSING.md](LICENSING.md)
+- The name is not covered by the licence (Apache-2.0 §6): [TRADEMARK.md](TRADEMARK.md)
 - Enterprise license text: [LICENSE-ENTERPRISE](LICENSE-ENTERPRISE)
 - Additional module-level notes: module-local LICENSE/README files
 

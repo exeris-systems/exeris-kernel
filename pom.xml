@@ -12,6 +12,33 @@
     <description>Cloud-Native, Zero-Copy Runtime Platform (Java 26+, FFM, Open-Core)</description>
     <inceptionYear>2026</inceptionYear>
 
+    <!--
+        v0.12 — declared HERE rather than in exeris-kernel-parent, where it lived until now.
+        Two published coordinates parent to this POM and not to that one — exeris-kernel-bom and
+        exeris-kernel-build-config — so their effective POMs carried NO licence declaration at all
+        while every other module inherited one. Verified with `help:effective-pom`, not assumed:
+        `<licenses>` resolved 1 for spi and 0 for both of those.
+
+        That is a licensing gap on its own (a published artifact that states no licence), and it
+        is also the exact thing Maven Central validates per artifact rather than per reactor.
+        Declaring it at the root is what makes the claim in LICENSING.md true of all ten
+        coordinates instead of eight.
+    -->
+    <licenses>
+        <license>
+            <name>Apache License, Version 2.0</name>
+            <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
+            <distribution>repo</distribution>
+            <comments>
+                The Exeris Kernel open-core sources are distributed under the unmodified
+                Apache License, Version 2.0 — SPDX identifier "Apache-2.0". See LICENSE in
+                the repository root for the full text and LICENSING.md for the open-core map.
+                Apache-2.0 section 6 grants no trademark rights; TRADEMARK.md states the
+                policy that governs use of the name.
+            </comments>
+        </license>
+    </licenses>
+
     <modules>
         <module>exeris-kernel-build-config</module>
         <module>exeris-kernel-bom</module>
