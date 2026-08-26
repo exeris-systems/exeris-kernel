@@ -2204,7 +2204,7 @@ That is a sound design for a handler that returns promptly. For one that blocks 
 
 **1.0 disposition:** 1.0-critical. Persistence and HTTP are both in the 1.0 core; the failure is an availability collapse rather than a slowdown; and it is reachable from an ordinary application shape with nothing unusual configured. It is also the first cross-runtime benchmark result where the kernel loses categorically, which makes it a product claim and not only an engineering one.
 
-**Status: OPEN (v0.12).** Measured and attributed; ADR not yet registered.
+**Status: OPEN (v0.12).** Measured and attributed. The **option comparison now exists** — [RFC-2026-08-26](rfc/RFC-2026-08-26-request-connection-lifetime.md) evaluates the three candidate shapes named above plus do-nothing, and recommends transaction-scoped by default with the request session opt-in. Two things the RFC establishes that this entry got wrong: a shorter lifetime does **not** cost interceptor consistency (`RlsConnectionInterceptor.onConnectionAcquired` republishes the session keys on every acquire, so isolation is re-established per acquisition), and a detach seam is not a method addition because `PersistenceSessionBox.release()` is terminal. The ADR number is reserved on RFC acceptance, not before — and the RFC gates it on one measurement that does not exist yet: the acquire-rate cost of dropping the request-wide reuse (81,523 `REUSE` against 37,626 `ACQUIRE` = 2.17 per session).
 
 ---
 
