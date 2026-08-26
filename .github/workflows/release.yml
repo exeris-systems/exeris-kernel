@@ -42,12 +42,20 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Reject a SNAPSHOT version
+      - name: Refuse an unreleasable input
         run: |
           set -euo pipefail
           case "${{ inputs.version }}" in
             *-SNAPSHOT) echo "Central refuses SNAPSHOT release versions." >&2; exit 1 ;;
           esac
+          # A dry run is useful from any branch — it touches nothing remote and is the cheapest way
+          # to find out whether a change breaks the release path. An upload is not: releases are cut
+          # from main, and a Central version is spent the moment it is published.
+          if [ "${{ inputs.upload }}" = "true" ] && [ "${{ github.ref }}" != "refs/heads/main" ]; then
+            echo "Upload is allowed from main only; this ref is ${{ github.ref }}." >&2
+            echo "Re-run with upload unchecked to exercise the release path from here." >&2
+            exit 1
+          fi
 
       - name: Cache JDK tarball
         id: jdk-cache
@@ -104,6 +112,29 @@ jobs:
         # upload — after which the version number is spent, because a release is immutable.
         run: tools/release-readiness/release-readiness.sh
 
+      - name: Record the digests the gates covered
+        # The deploy step below is a SECOND Maven invocation, and Maven re-runs the lifecycle up to
+        # `deploy` — there is no way to upload previously built artifacts, because
+        # central-publishing stages the bundle during the deploy phase and nothing exists before it.
+        # So the bytes that get uploaded are produced by a different build than the one gated here.
+        #
+        # Measured rather than assumed, by building `-P release` twice and diffing: of 69 files, 45
+        # differ and every one of them is a `.asc`. OpenPGP signature packets carry a creation
+        # timestamp, so a second signing produces different — and equally valid — bytes over the
+        # same content. ZERO jars differ, javadoc included: maven-javadoc-plugin passes -notimestamp
+        # once `project.build.outputTimestamp` is set, so the reproducibility that CONTRIBUTING
+        # documents for the ordinary build holds on this path too.
+        #
+        # That makes the second build safe, but "safe because of a property nobody checks" is not a
+        # guarantee. This records the digests, and the step after the upload asserts they did not
+        # move. Signatures are excluded because they are expected to differ and the readiness gate
+        # has already verified that each one is a good signature by our key.
+        run: |
+          set -euo pipefail
+          find . -path ./.git -prune -o \( -name '*.jar' -o -name '*.pom' -o -name 'bom.json' \) -print \
+            | grep '/target/' | sort | xargs sha256sum > "${RUNNER_TEMP}/gated.sha256"
+          echo "recorded $(wc -l < "${RUNNER_TEMP}/gated.sha256") artifact digests"
+
       - name: Attest build provenance (SLSA)
         # Keyless Sigstore signing through the job's OIDC identity. This is the half GPG does not
         # cover: a GPG signature says the artifact was signed by whoever holds the key, provenance
@@ -120,11 +151,35 @@ jobs:
         # autoPublish=false, so this uploads a deployment and stops. Review the validation results
         # in the portal and press Publish there. Until you do, the deployment can be Dropped; after
         # you do, nothing can be changed, ever.
-        run: mvn -B -P release deploy -DskipTests --settings .github/maven-settings.xml
+        #
+        # `clean`, and it is load-bearing. Without it this second lifecycle run re-shades an
+        # already-shaded jar: exeris-kernel-diagnostics-cli came out byte-different from the gated
+        # build, which the digest assertion below caught on its first run. Two CLEAN `-P release`
+        # builds are byte-identical across all 69 files except the .asc signatures; a second build
+        # over a dirty target/ is not. Reproducibility here is a property of clean builds, and this
+        # is what keeps the uploaded artifact the one that was gated and attested.
+        run: mvn -B -P release clean deploy -DskipTests --settings .github/maven-settings.xml
         env:
           MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
           CENTRAL_TOKEN_USERNAME: ${{ secrets.CENTRAL_TOKEN_USERNAME }}
           CENTRAL_TOKEN_PASSWORD: ${{ secrets.CENTRAL_TOKEN_PASSWORD }}
+
+      - name: Assert the uploaded artifacts are the gated artifacts
+        if: ${{ inputs.upload }}
+        # Closes the gap the step above describes. If a jar, pom or SBOM changed between the gated
+        # build and the deploying build, then the readiness gate and the provenance attestation
+        # describe something other than what Central received — and the deployment must be DROPPED
+        # in the portal rather than published.
+        run: |
+          set -euo pipefail
+          find . -path ./.git -prune -o \( -name '*.jar' -o -name '*.pom' -o -name 'bom.json' \) -print \
+            | grep '/target/' | sort | xargs sha256sum > "${RUNNER_TEMP}/uploaded.sha256"
+          if ! diff -u "${RUNNER_TEMP}/gated.sha256" "${RUNNER_TEMP}/uploaded.sha256"; then
+            echo "::error::The deploying build produced different artifacts than the gated build." >&2
+            echo "::error::DROP the deployment in the Central portal. Do not publish it." >&2
+            exit 1
+          fi
+          echo "every gated artifact is byte-identical to the uploaded one"
 
       - name: Upload signed artifacts and SBOMs
         if: always()

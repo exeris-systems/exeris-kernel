@@ -23,6 +23,12 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   coordinate has a pom, jar, sources jar, javadoc jar and SBOM and that each verifies against the
   signing key. It found two real defects on its first run, both of which would have failed the
   upload rather than the build — see below.
+- **A digest assertion tying the uploaded artifacts to the gated ones.** Maven re-runs the lifecycle
+  up to `deploy` and central-publishing stages its bundle during that phase, so there is no way to
+  upload previously built artifacts — the release workflow necessarily builds twice, and without
+  this the gate and the provenance attestation would describe a different build than the one Central
+  receives. The second build now runs `clean` and every jar, pom and SBOM is asserted byte-identical
+  to the gated set.
 
 ### Fixed
 
@@ -34,6 +40,11 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   stayed green. Every Central release would have shipped SBOM-less with nothing reporting it.
   `skipNotDeployed` is now `false`, and the release-readiness gate checks the SBOM alongside the
   files Central itself requires.
+- **The shaded CLI jar was not reproducible across a second build over a dirty `target/`.** Two
+  clean `-P release` builds are byte-identical across all 69 files except the `.asc` signatures,
+  which carry a creation timestamp by design. A second build without `clean` re-shades an
+  already-shaded jar, and `exeris-kernel-diagnostics-cli` came out different — caught by the digest
+  assertion on its first run, which is what that assertion is for.
 
 ### Changed
 

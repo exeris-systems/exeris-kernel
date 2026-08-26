@@ -267,6 +267,21 @@ Two things this profile does that the ordinary build does not, both of which hav
 - A module with no `src/main` produces no sources or javadoc jar, and Central requires both per
   artifact. That is why `exeris-kernel-tck` is excluded rather than published empty.
 
+**Reproducibility on this path is a property of CLEAN builds, and the release workflow depends on
+it.** Measured by building `-P release` twice: of 69 files, 45 differ and every one is a `.asc` —
+OpenPGP signature packets carry a creation timestamp, so re-signing the same content produces
+different, equally valid bytes. **Zero jars differ, javadoc included**: `maven-javadoc-plugin`
+passes `-notimestamp` once `project.build.outputTimestamp` is set, so the property CONTRIBUTING
+documents for the ordinary build holds here too.
+
+Build a second time over a **dirty** `target/` and it does not.
+`exeris-kernel-diagnostics-cli` is shaded, and re-running shade over an already-shaded jar produces
+different bytes. The release workflow therefore uses `clean` on its deploy step and then asserts
+that every jar, pom and SBOM is byte-identical to the one the gates and the provenance attestation
+covered — because Maven re-runs the lifecycle up to `deploy` and there is no way to upload
+previously built artifacts (central-publishing stages its bundle during the deploy phase; nothing
+exists before it).
+
 > **Adding a script under `tools/`:** set its mode through git, not only through the filesystem —
 > `git update-index --chmod=+x <path>`. This repository is commonly cloned with
 > `core.fileMode=false`, which makes `chmod +x` invisible to git: the script runs perfectly for you
