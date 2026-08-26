@@ -9,8 +9,31 @@
     <packaging>pom</packaging>
 
     <name>Exeris Kernel :: Root</name>
-    <description>Cloud-Native, Zero-Copy Runtime Platform (Java 26+, FFM, Open-Core)</description>
+    <description>Cloud-Native, Zero-Copy Runtime Platform for the JVM (JDK 25 LTS, Panama FFM, Open-Core)</description>
+
+    <!--
+        v0.12 — url / organization / developers / scm are Maven Central publication requirements,
+        validated per artifact rather than per reactor, and none of them existed here before.
+
+        Inherited url and scm values have the child's artifactId APPENDED by default, which would
+        publish ten POMs each pointing at a path that does not exist — and Maven Central shows the
+        project URL on the artifact page an evaluator lands on, so "present but 404" is visible
+        rather than cosmetic. The documented fix is `child.*.inherit.append.path="false"`.
+
+        Measured rather than trusted, on Maven 3.9.12 against an isolated two-POM reproduction:
+        `child.scm.connection.inherit.append.path` WORKS — the connection appends the child's
+        artifactId without it and does not with it — while `child.project.url.inherit.append.path`
+        has NO effect, appending either way. So the scm attributes below are load-bearing and stay,
+        and the url attribute is not used at all: every module declares `<url>` explicitly instead,
+        which is verbatim by construction and needs no attribute to behave.
+    -->
+    <url>https://github.com/exeris-systems/exeris-kernel</url>
     <inceptionYear>2026</inceptionYear>
+
+    <organization>
+        <name>Exeris Systems</name>
+        <url>https://github.com/exeris-systems</url>
+    </organization>
 
     <!--
         v0.12 — declared HERE rather than in exeris-kernel-parent, where it lived until now.
@@ -38,6 +61,35 @@
             </comments>
         </license>
     </licenses>
+
+    <!--
+        Central requires at least one developer entry. It names the person because that is what the
+        element is for — a point of contact and the party behind the coordinate — while NOTICE and
+        the per-file headers name the project. TRADEMARK.md and CONTRIBUTING.md state the same
+        split and the reason for it: a licence and a trademark are granted to a person, a copyright
+        notice identifies a work's origin.
+    -->
+    <developers>
+        <developer>
+            <id>aprzychocki</id>
+            <name>Arkadiusz Przychocki</name>
+            <organization>Exeris Systems</organization>
+            <organizationUrl>https://github.com/exeris-systems</organizationUrl>
+            <roles>
+                <role>Founder</role>
+                <role>Lead Architect</role>
+            </roles>
+        </developer>
+    </developers>
+
+    <scm child.scm.connection.inherit.append.path="false"
+         child.scm.developerConnection.inherit.append.path="false"
+         child.scm.url.inherit.append.path="false">
+        <connection>scm:git:https://github.com/exeris-systems/exeris-kernel.git</connection>
+        <developerConnection>scm:git:ssh://git@github.com/exeris-systems/exeris-kernel.git</developerConnection>
+        <url>https://github.com/exeris-systems/exeris-kernel</url>
+        <tag>HEAD</tag>
+    </scm>
 
     <modules>
         <module>exeris-kernel-build-config</module>
@@ -236,6 +288,23 @@
                     <outputFormat>json</outputFormat>
                     <includeBomSerialNumber>false</includeBomSerialNumber>
                     <!--
+                        v0.12 S3 — defaults to TRUE, and that default silently removed the SBOM
+                        from exactly the build that matters. `skipNotDeployed` skips the goal when
+                        a module skips `deploy`, and central-publishing-maven-plugin declares
+                        <extensions>true</extensions>, which sets `maven.deploy.skip` because it
+                        replaces the deploy step with its own upload. So `mvn -P release verify`
+                        produced eleven signed artifacts and ZERO SBOMs, while the CI SBOM gate —
+                        which runs the ordinary build, where nothing skips deploy — stayed green.
+
+                        A gate that is green about a path it does not cover is the failure mode
+                        this whole stream exists to remove, so the release-readiness gate now
+                        asserts the SBOM's presence and signature on the release build too.
+
+                        Found by running `mvn -P release verify` against an ephemeral GPG key
+                        rather than by assuming the two plugins compose.
+                    -->
+                    <skipNotDeployed>false</skipNotDeployed>
+                    <!--
                         The scope set is written out even where it matches today's plugin
                         defaults. For an audit artifact, WHICH scopes an SBOM covers is a
                         decision someone should be able to read, and leaving it implicit would
@@ -324,6 +393,152 @@
                                 </configuration>
                             </execution>
                         </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <!--
+            v0.12 Stream B S3 — everything a Maven Central release needs, and NOTHING that the
+            ordinary build touches. Activated only by `-P release`.
+
+            The isolation is not tidiness. central-publishing-maven-plugin declares
+            <extensions>true</extensions>, which makes it TAKE OVER the `deploy` phase: declared
+            outside this profile it would hijack the SNAPSHOT publish that every push to
+            development/* performs against GitHub Packages, and the first symptom would be
+            downstream consumers silently stopping to receive snapshots. So the two channels stay
+            separate by construction — `mvn deploy` is GitHub Packages via <distributionManagement>,
+            `mvn -P release deploy` is Central.
+
+            OSSRH was shut down on 2025-06-30. nexus-staging-maven-plugin and the oss.sonatype.org
+            URLs it needs no longer exist; anything describing that flow is describing a dead
+            system.
+        -->
+        <profile>
+            <id>release</id>
+            <build>
+                <plugins>
+                    <!-- Central requires a sources jar for every published coordinate. -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-source-plugin</artifactId>
+                        <version>3.3.1</version>
+                        <executions>
+                            <execution>
+                                <id>attach-sources</id>
+                                <goals>
+                                    <goal>jar-no-fork</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+
+                    <!--
+                        Central requires a javadoc jar to EXIST; it does not inspect its quality.
+                        doclint is therefore off and failOnError false, deliberately and with the
+                        cost stated: this tree currently has ~160 doclint findings across spi, core
+                        and community (missing @param/@return, heading sequence), so a strict run
+                        would block every release on documentation debt that no consumer is waiting
+                        for. Measured before choosing, not assumed — with doclint off the jar builds
+                        clean. Tightening this is quality work with its own slice; coupling it to
+                        the ability to publish would be the wrong dependency.
+                    -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-javadoc-plugin</artifactId>
+                        <version>3.11.2</version>
+                        <executions>
+                            <execution>
+                                <id>attach-javadocs</id>
+                                <goals>
+                                    <goal>jar</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                        <configuration>
+                            <doclint>none</doclint>
+                            <failOnError>false</failOnError>
+                            <quiet>true</quiet>
+                        </configuration>
+                    </plugin>
+
+                    <!--
+                        Central verifies a detached GPG signature on every file it accepts — jar,
+                        sources, javadoc and pom alike. The loopback pinentry argument is what lets
+                        the passphrase arrive from the environment instead of a terminal prompt,
+                        which is the difference between a release job that runs unattended and one
+                        that hangs forever with no output.
+
+                        maven-gpg-plugin 3.1.0+ reads MAVEN_GPG_PASSPHRASE from the ENVIRONMENT and
+                        ignores the `gpg.passphrase` that actions/setup-java writes into
+                        settings.xml. The release workflow therefore passes it as `env:` and does
+                        NOT set setup-java's gpg-passphrase input.
+                    -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-gpg-plugin</artifactId>
+                        <version>3.2.8</version>
+                        <executions>
+                            <execution>
+                                <id>sign-artifacts</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>sign</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                        <configuration>
+                            <gpgArguments>
+                                <arg>--pinentry-mode</arg>
+                                <arg>loopback</arg>
+                            </gpgArguments>
+                        </configuration>
+                    </plugin>
+
+                    <!--
+                        autoPublish=false is not a placeholder to flip later without thinking. A
+                        deployment sitting in the portal can be DROPPED; a published one cannot be
+                        touched, ever. The first release goes through manual review of the portal's
+                        validation results, and waitUntil=validated makes the build block until
+                        there is something to review rather than exiting green on an upload.
+                    -->
+                    <plugin>
+                        <groupId>org.sonatype.central</groupId>
+                        <artifactId>central-publishing-maven-plugin</artifactId>
+                        <version>0.11.0</version>
+                        <extensions>true</extensions>
+                        <configuration>
+                            <publishingServerId>central</publishingServerId>
+                            <autoPublish>false</autoPublish>
+                            <waitUntil>validated</waitUntil>
+                            <!--
+                                exeris-kernel-tck is held back from the first Central publication,
+                                and the reason is a defect rather than a policy.
+
+                                The module has only `src/test/` and no `src/main` at all, so its
+                                published main jar contains 7 files and 4.6 kB of META-INF while
+                                all 492 real classes ship under the `tests` classifier. Central
+                                validates per artifact and requires a `-sources.jar` and a
+                                `-javadoc.jar`; maven-source-plugin and maven-javadoc-plugin both
+                                read the COMPILE source roots, which are empty here, so neither can
+                                produce one. The plugins' `test-jar` goals emit `-test-sources.jar`,
+                                a different classifier that does not satisfy the requirement.
+
+                                The real fix is that the Abstract*Tck classes are this module's
+                                published API and belong in `src/main` — which changes the
+                                coordinate every provider module and the enterprise distribution
+                                depend on, and is therefore its own slice, not a line in a signing
+                                PR. Publishing an empty main jar to an immutable channel in the
+                                meantime would be the worse of the two options.
+
+                                Consumers keep resolving it from GitHub Packages exactly as today.
+                                The release-readiness gate reads this list and reports what it
+                                skipped, so the exclusion cannot quietly become permanent.
+                            -->
+                            <excludeArtifacts>
+                                <excludeArtifact>exeris-kernel-tck</excludeArtifact>
+                            </excludeArtifacts>
+                        </configuration>
                     </plugin>
                 </plugins>
             </build>

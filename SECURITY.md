@@ -211,9 +211,22 @@ asserted by it, and both are checked on every pull request by the Supply-Chain G
   builds of the same commit produce byte-identical jars. This is what makes "traceable back to
   source" checkable by a third party rather than only by the builder.
 
-Neither is yet a *signed* attestation — artifact signing and provenance are tracked as the next
-slice of the same work. Until they land, an SBOM published beside an artifact establishes what that
-artifact contains, not who built it: treat it as an inventory, not as proof of origin.
+The signing half now exists as a pipeline but has **not yet produced a published artifact**, and
+the distinction matters if you are relying on it:
+
+- **GPG signatures** are produced for every file a release would carry — jar, sources, javadoc, pom
+  and SBOM alike — and a release-readiness gate verifies each one against the signing key before
+  anything is uploaded. Maven Central will not accept an unsigned file, so this is a hard
+  precondition rather than an option.
+- **SLSA build provenance** is attested through Sigstore keyless signing on the release workflow's
+  own OIDC identity, and answers the question a GPG signature does not: which workflow, at which
+  commit, on which runner produced this file. Verify with
+  `gh attestation verify <file> --repo exeris-systems/exeris-kernel`.
+
+**As of this writing no release has been published through that pipeline.** Artifacts you can
+resolve today come from GitHub Packages and carry an SBOM but no signature. Until the first signed
+release exists, treat a published SBOM as an inventory of what an artifact contains, not as proof
+of who built it.
 
 ---
 

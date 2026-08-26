@@ -1,0 +1,140 @@
+name: Release to Maven Central
+
+# Manual only, deliberately. A tag-triggered release is the right shape once one release has gone
+# through by hand — but a Maven Central release version is IMMUTABLE, and a `push: tags` trigger on
+# a project that has never published there turns a mistyped tag into a permanent artifact. The
+# upload itself is also held: `autoPublish=false` in the root POM's `release` profile means this
+# workflow uploads a deployment that a human still has to Publish in the portal, and that can be
+# DROPPED until they do.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g. 0.12.0) — must not end in -SNAPSHOT'
+        required: true
+        type: string
+      upload:
+        description: 'Upload to Central. Unchecked = build, sign and gate only, touching nothing remote.'
+        required: true
+        type: boolean
+        default: false
+
+env:
+  # Identical pins to maven.yml. A release must be built by the same JDK every gate ran against;
+  # a different patch release changes bytecode and the manifest's Build-Jdk-Spec, which would make
+  # the published artifact one that nothing in CI ever verified.
+  MAVEN_OPTS: "--enable-preview --enable-native-access=ALL-UNNAMED"
+  JDK_URL: "https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.4%2B7/OpenJDK25U-jdk_x64_linux_hotspot_25.0.4_7.tar.gz"
+  JDK_SHA256: "e58fcdcd637b25c03ca84cbbcefc70d11efb8f4b4cbd05decc9f661769d77f94"
+  JDK_CACHE_KEY: "jdk-25.0.4-7-linux-x64"
+  JDK_VER: "25.0.4"
+
+jobs:
+  release:
+    name: Build, sign, gate, publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write       # SLSA provenance signing (Sigstore, keyless)
+      attestations: write   # writing the attestation back to the repository
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Reject a SNAPSHOT version
+        run: |
+          set -euo pipefail
+          case "${{ inputs.version }}" in
+            *-SNAPSHOT) echo "Central refuses SNAPSHOT release versions." >&2; exit 1 ;;
+          esac
+
+      - name: Cache JDK tarball
+        id: jdk-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/jdk.tar.gz
+          key: ${{ env.JDK_CACHE_KEY }}
+
+      - name: Fetch JDK
+        if: steps.jdk-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          wget -q -O ${{ runner.temp }}/jdk.tar.gz ${{ env.JDK_URL }}
+          echo "${{ env.JDK_SHA256 }}  ${{ runner.temp }}/jdk.tar.gz" | sha256sum -c
+
+      - name: Inject JDK and import the signing key
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: 'jdkfile'
+          jdkFile: ${{ runner.temp }}/jdk.tar.gz
+          java-version: ${{ env.JDK_VER }}
+          architecture: x64
+          cache: maven
+          gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}
+          # `gpg-passphrase` is deliberately NOT set. This action would write it into settings.xml
+          # as the `gpg.passphrase` property, and maven-gpg-plugin 3.1.0+ ignores that property
+          # entirely — it reads the MAVEN_GPG_PASSPHRASE environment variable instead. Setting it
+          # here produces a build that looks configured and hangs waiting for a passphrase prompt
+          # that will never be answered. It is passed as `env:` on the build steps below.
+
+      - name: Set the release version
+        run: mvn -B versions:set -DnewVersion=${{ inputs.version }} -DgenerateBackupPoms=false
+
+      - name: Build, sign, and run every gate
+        # verify, not deploy: this produces and signs everything Central will receive without
+        # touching anything remote, so the gates below run against the exact bytes that would be
+        # uploaded rather than against a rehearsal of them.
+        run: mvn -B -P release clean verify -Dexeris.tck.transport.drainTimeoutSeconds=30
+        env:
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+
+      - name: Preview-Bytecode Gate
+        run: tools/preview-bytecode-scan/preview-bytecode-scan.sh --expect-major 69
+
+      - name: Supply-Chain Gate
+        run: |
+          mvn -B org.apache.maven.plugins:maven-artifact-plugin:3.6.0:check-buildplan
+          tools/sbom-gate/sbom-gate.sh
+
+      - name: Release-Readiness Gate
+        # The one gate that only exists on this path: every coordinate Central will validate has a
+        # pom, jar, sources jar, javadoc jar and SBOM, and every one of those verifies against the
+        # signing key. Central validates per artifact, so one module short of one file fails the
+        # upload — after which the version number is spent, because a release is immutable.
+        run: tools/release-readiness/release-readiness.sh
+
+      - name: Attest build provenance (SLSA)
+        # Keyless Sigstore signing through the job's OIDC identity. This is the half GPG does not
+        # cover: a GPG signature says the artifact was signed by whoever holds the key, provenance
+        # says which workflow, at which commit, on which runner produced it. Verify with
+        # `gh attestation verify <file> --repo exeris-systems/exeris-kernel`.
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            exeris-kernel-*/target/*.jar
+            !exeris-kernel-*/target/*-tests.jar
+
+      - name: Upload the deployment to Central
+        if: ${{ inputs.upload }}
+        # autoPublish=false, so this uploads a deployment and stops. Review the validation results
+        # in the portal and press Publish there. Until you do, the deployment can be Dropped; after
+        # you do, nothing can be changed, ever.
+        run: mvn -B -P release deploy -DskipTests --settings .github/maven-settings.xml
+        env:
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+          CENTRAL_TOKEN_USERNAME: ${{ secrets.CENTRAL_TOKEN_USERNAME }}
+          CENTRAL_TOKEN_PASSWORD: ${{ secrets.CENTRAL_TOKEN_PASSWORD }}
+
+      - name: Upload signed artifacts and SBOMs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-${{ inputs.version }}
+          path: |
+            exeris-kernel-*/target/*.jar
+            exeris-kernel-*/target/*.asc
+            exeris-kernel-*/target/*.pom
+            exeris-kernel-*/target/bom.json
+          if-no-files-found: warn
+          retention-days: 90

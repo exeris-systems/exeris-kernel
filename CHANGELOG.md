@@ -8,6 +8,33 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ## [Unreleased] — development/0.12.0
 
+### Added
+
+- **The Maven Central publication path exists, is gated, and has produced nothing yet.** Every
+  coordinate now carries the metadata Central validates per artifact (`url`, `scm`, `developers`,
+  `organization` — none of which existed before), a `release` profile produces sources and javadoc
+  jars and GPG-signs every file including the SBOM, and `central-publishing-maven-plugin` uploads
+  with `autoPublish=false` so a human reviews the portal's validation before anything becomes
+  permanent. SLSA build provenance is attested through Sigstore keyless signing on the release
+  workflow's OIDC identity, which answers what a GPG signature does not: which workflow, at which
+  commit, produced the file. **No release has been published through it** — the secrets are not set,
+  and the first one is manual by design.
+- **A release-readiness gate**, `tools/release-readiness/release-readiness.sh`, asserting that every
+  coordinate has a pom, jar, sources jar, javadoc jar and SBOM and that each verifies against the
+  signing key. It found two real defects on its first run, both of which would have failed the
+  upload rather than the build — see below.
+
+### Fixed
+
+- **The release build produced no SBOMs at all, and the SBOM gate could not see it.**
+  `cyclonedx-maven-plugin`'s `skipNotDeployed` defaults to `true`, and
+  `central-publishing-maven-plugin` sets `maven.deploy.skip` because `<extensions>true</extensions>`
+  makes it replace the deploy step. So `mvn -P release verify` emitted eleven signed artifacts and
+  zero SBOMs, while the CI SBOM gate — which runs the ordinary build, where nothing skips deploy —
+  stayed green. Every Central release would have shipped SBOM-less with nothing reporting it.
+  `skipNotDeployed` is now `false`, and the release-readiness gate checks the SBOM alongside the
+  files Central itself requires.
+
 ### Changed
 
 - **The kernel is now Apache License 2.0, unmodified.** The Commons Clause condition is gone,
