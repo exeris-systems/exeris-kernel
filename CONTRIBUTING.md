@@ -237,6 +237,51 @@ Two things break this, both easy to do by accident:
 `project.build.outputTimestamp` (root `pom.xml`) is bumped at each release cut. A stale value is
 not a defect: what makes the output reproducible is that the value is fixed, not that it is recent.
 
+### Exercising the release path locally
+
+The `release` profile is what a Maven Central release runs, and it is worth running before you need
+it — its failures are per-module and per-file, and Central discovers them on an **immutable**
+channel. Signing needs a key, so use a throwaway one in an isolated keyring rather than your own:
+
+```bash
+export GNUPGHOME=$(mktemp -d) && chmod 700 "$GNUPGHOME"
+gpg --batch --passphrase testpass --quick-gen-key 'Test <test@invalid.local>' rsa3072 sign 1d
+
+# verify, NOT deploy: builds and signs everything Central would receive, touching nothing remote
+MAVEN_GPG_PASSPHRASE=testpass mvn -P release clean verify -DskipTests
+
+tools/release-readiness/release-readiness.sh
+```
+
+The gate asserts that every coordinate has a pom, jar, sources jar, javadoc jar and SBOM, and that
+each verifies against the key. It reports what it deliberately skipped rather than staying silent —
+`exeris-kernel-tck` is currently held back from Central, and the root POM records why.
+
+Two things this profile does that the ordinary build does not, both of which have already bitten:
+
+- `central-publishing-maven-plugin` declares `<extensions>true</extensions>` and takes over
+  `deploy`, which sets `maven.deploy.skip`. That in turn made `cyclonedx` skip itself
+  (`skipNotDeployed` defaults to true), so the release build emitted signed artifacts and no SBOMs
+  while the ordinary SBOM gate stayed green. Anything you add under `-P release` needs checking
+  under `-P release`; the default build does not cover it.
+- A module with no `src/main` produces no sources or javadoc jar, and Central requires both per
+  artifact. That is why `exeris-kernel-tck` is excluded rather than published empty.
+
+**Reproducibility on this path is a property of CLEAN builds, and the release workflow depends on
+it.** Measured by building `-P release` twice: of 69 files, 45 differ and every one is a `.asc` —
+OpenPGP signature packets carry a creation timestamp, so re-signing the same content produces
+different, equally valid bytes. **Zero jars differ, javadoc included**: `maven-javadoc-plugin`
+passes `-notimestamp` once `project.build.outputTimestamp` is set, so the property CONTRIBUTING
+documents for the ordinary build holds here too.
+
+Build a second time over a **dirty** `target/` and it does not.
+`exeris-kernel-diagnostics-cli` is shaded, and re-running shade over an already-shaded jar produces
+different bytes. The release workflow therefore uses `clean` on its deploy step and then asserts
+that every jar, pom and SBOM is byte-identical to the one the gates and the provenance attestation
+covered — because Maven re-runs the lifecycle up to `deploy` and there is no way to upload
+previously built artifacts (central-publishing stages its bundle during the deploy phase; nothing
+exists before it).
+
 > **Adding a script under `tools/`:** set its mode through git, not only through the filesystem —
 > `git update-index --chmod=+x <path>`. This repository is commonly cloned with
 > `core.fileMode=false`, which makes `chmod +x` invisible to git: the script runs perfectly for you
