@@ -16,7 +16,9 @@ no additional condition, and no field-of-use restriction. Every source file carr
 repository root reach the same answer.
 
 Published Maven coordinates under the `eu.exeris` namespace that originate from this
-repository carry the same licence, declared in `exeris-kernel-parent/pom.xml`:
+repository carry the same licence, declared once in the root `pom.xml`
+(`eu.exeris:exeris-kernel-root`) so that every coordinate inherits it — including the
+two that parent to the root directly rather than through `exeris-kernel-parent`:
 
     eu.exeris:exeris-kernel-spi
     eu.exeris:exeris-kernel-core

@@ -44,8 +44,14 @@ jobs:
           # POMs declare as dependencies of each other. They report an unknown licence because the
           # dependency graph reads each module POM on its own and does not resolve the parent that
           # carries the `<licenses>` block — so the warning is about POM inheritance, not about an
-          # unlicensed artifact. The licence is Apache-2.0, declared once in
-          # `exeris-kernel-parent/pom.xml` and shipped as LICENSE.
+          # unlicensed artifact. The licence is Apache-2.0, declared once in the ROOT `pom.xml`
+          # and shipped as LICENSE.
+          #
+          # It moved there from `exeris-kernel-parent/pom.xml` in v0.12: two published coordinates
+          # (`exeris-kernel-bom`, `exeris-kernel-build-config`) parent to the root rather than to
+          # that module, so they inherited no licence at all. Note what did NOT change — the reason
+          # this scanner reports unknown is still parent resolution, not the location of the block,
+          # so moving it fixes the effective POMs and leaves this warning exactly as it was.
           #
           # `sonarqube-scan-action` is LGPL-3.0, which the deny list above rejects — correctly for a
           # dependency, wrongly for this one. The deny list exists to keep copyleft out of the
