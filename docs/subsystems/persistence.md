@@ -411,6 +411,11 @@ timestamp. Three rules follow:
 | **Fail closed on drift** | A version in the ledger whose file now hashes differently **refuses the boot**. The database no longer matches the code, and warning-and-continuing is what makes a drifted database look healthy. Remedy: restore the file, or delete the row if the change is known to be applied already. |
 | **One transaction per migration** | The ledger row is committed with the migration's own statements, so the ledger cannot claim something the database lacks. A failure at migration 4 keeps 1–3 applied *and recorded*, and the next boot resumes at 4. |
 
+A refused boot also emits `eu.exeris.kernel.persistence.SchemaMigrationRefused` — version, script, and
+**both** checksums — so an operator can see which migration and which direction without reading the
+exception. Comparing the recorded checksum against another deployment tells a local edit from a bad
+artefact.
+
 The checksum folds `\r\n` to `\n` and normalises nothing else — without that, a checkout on Windows
 refuses every boot with nothing wrong; with more, an edit could slip past.
 

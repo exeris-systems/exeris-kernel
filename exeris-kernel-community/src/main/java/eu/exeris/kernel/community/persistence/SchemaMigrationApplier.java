@@ -8,6 +8,8 @@
  */
 package eu.exeris.kernel.community.persistence;
 
+import eu.exeris.kernel.core.persistence.SchemaMigrationRefusedEvent;
+
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.time.Instant;
@@ -63,6 +65,11 @@ final class SchemaMigrationApplier {
      */
     private static void refuseIfChanged(String version, String resource, String checksum, String recorded) {
         if (!recorded.equals(checksum)) {
+            // The throw stops the boot; the event is how an operator learns why without parsing a
+            // log line. Emitted before the throw so the record exists even if the exception is
+            // swallowed or reshaped further up.
+            SchemaMigrationRefusedEvent.commitRefusal(new SchemaMigrationRefusedEvent.Payload(
+                    version, resource, recorded, checksum));
             throw new IllegalStateException(
                     "Migration " + version + " (" + resource + ") was applied with checksum "
                             + recorded + " but the file on the classpath now hashes to " + checksum
@@ -72,21 +79,47 @@ final class SchemaMigrationApplier {
         }
     }
 
+    // The catch is deliberately broad: anything that escapes a migration must not leave the
+    // connection in a transaction, and the cleanup must not become the reported failure.
+    @SuppressWarnings("PMD.AvoidCatchingGenericException")
     private static void applyOne(Connection connection,
                                  String resource,
                                  String version,
                                  String checksum,
                                  String migrationSql) throws SQLException {
         connection.setAutoCommit(false);
-        boolean committed = false;
         try {
             CommunityPersistenceMigrationRunner.executeStatements(connection, migrationSql);
             SchemaHistoryLedger.record(
                     connection, version, resource, checksum, Instant.now());
             connection.commit();
-            committed = true;
-        } finally {
-            restoreAutoCommit(connection, committed);
+        } catch (SQLException | RuntimeException failure) {
+            cleanUpAfter(connection, failure);
+            throw failure;
+        }
+        // Success path only, and it is allowed to throw: a connection that cannot leave the
+        // transaction is a real failure with nothing else competing to be reported.
+        connection.setAutoCommit(true);
+    }
+
+    /**
+     * Rolls back and restores auto-commit without ever becoming the reported failure.
+     *
+     * <p>The previous shape rolled back inside a {@code finally}, so a rollback that itself threw -
+     * a dropped connection is the ordinary way - **replaced** the migration error that caused it.
+     * The operator then saw the cleanup failure and lost the one fact that mattered. Both cleanup
+     * failures attach to the original as suppressed instead.
+     */
+    private static void cleanUpAfter(Connection connection, Exception primary) {
+        try {
+            connection.rollback();
+        } catch (SQLException rollbackFailure) {
+            primary.addSuppressed(rollbackFailure);
+        }
+        try {
+            connection.setAutoCommit(true);
+        } catch (SQLException restoreFailure) {
+            primary.addSuppressed(restoreFailure);
         }
     }
 
@@ -103,13 +136,4 @@ final class SchemaMigrationApplier {
         return matcher.group(1) + '.' + matcher.group(2) + '.' + matcher.group(3);
     }
 
-    private static void restoreAutoCommit(Connection connection, boolean committed) throws SQLException {
-        try {
-            if (!committed) {
-                connection.rollback();
-            }
-        } finally {
-            connection.setAutoCommit(true);
-        }
-    }
 }

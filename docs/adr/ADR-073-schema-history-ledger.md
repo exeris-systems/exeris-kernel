@@ -60,6 +60,14 @@ the classpath now hashes differently, the migration file changed after it was ap
 database does not match the code that is about to run against it. The runner throws and the kernel
 does not start.
 
+The refusal also emits `eu.exeris.kernel.persistence.SchemaMigrationRefused`, carrying the version,
+the script, **and both checksums**. The thrown exception is the right mechanism for stopping a boot
+and the wrong one for telling an operator why: a fleet that will not start is the worst moment to be
+parsing a message out of a log aggregator, and a refused boot is a bootstrap failure point, which the
+kernel's JFR-first guidance names explicitly. Both checksums rather than the fact of a mismatch,
+because the actionable question is *which file changed* — comparing the recorded value against
+another deployment answers it without access to this database.
+
 This is the fail-closed choice and it is deliberate: **a database that no longer matches its code must
 not look healthy.** The alternative — warn and continue — produces exactly the silent drift described
 above, and an operator who wanted the change applied has an ordinary remedy (a new migration), while
@@ -137,5 +145,13 @@ being spent, not a mechanism, and it is written down here so nobody later mistak
 - Checksum refusal is asserted by mutating a migration between two boots against the same database.
 - Per-migration commit is asserted by failing the last migration of a set and confirming the earlier
   ones survived, in the ledger and in the schema.
-- Every one of these is mutation-checked against the pre-decision runner: each must fail before it is
-  claimed to hold.
+- The refusal's JFR event is asserted through a `RecordingStream`, including that the two checksums
+  differ — an event that fired with the same value twice would carry no information.
+- Every one of these is mutation-checked: against the pre-decision runner (4 of 5 fail; the fifth is
+  the pure checksum unit test, which never touches the runner), and targeted at each mechanism on its
+  own — the refusal, and the event emit — so a passing suite is known to depend on each rather than
+  on their sum.
+- Cleanup after a failed migration attaches rollback and auto-commit failures to the original as
+  **suppressed** rather than replacing it. The previous `finally` shape let a rollback failure — a
+  dropped connection is the ordinary way — become the reported error, losing the migration failure
+  that caused it.
